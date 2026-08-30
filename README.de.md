@@ -100,6 +100,11 @@ Das ist im Kern dieselbe Schematron-Prüfung wie der **[KoSIT-Validator](https:/
 
 Beiträge willkommen — siehe [CONTRIBUTING.md](CONTRIBUTING.md). Rechtliche Korrekturen bitte mit Quelle (Norm/BMF-Schreiben) gegen [COMPLIANCE.md](COMPLIANCE.md).
 
+## Wartung
+
+Gebaut und gepflegt von [AutomationsManufaktur](https://automationsmanufaktur.de), Bardowick.
+Fragen zur E-Rechnungspflicht: info@automationsmanufaktur.de
+
 ## Lizenz
 
 **[AGPL-3.0](LICENSE).** Du darfst die Software nutzen, ändern und selbst hosten. Wer sie als Netzwerk-Dienst betreibt, muss den (modifizierten) Quellcode den Nutzern verfügbar machen — so bleibt das Projekt für alle frei. Begründung der Lizenzwahl: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md#3-lizenz-empfehlung).
