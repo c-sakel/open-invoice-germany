@@ -105,6 +105,11 @@ This is essentially the same Schematron check as the **[KoSIT validator](https:/
 
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please file legal corrections with a source (statute/BMF letter) against [COMPLIANCE.md](COMPLIANCE.md).
 
+## Maintainer
+
+Built and maintained by [AutomationsManufaktur](https://automationsmanufaktur.de), Bardowick (Germany).
+Questions on German e-invoicing compliance: info@automationsmanufaktur.de
+
 ## License
 
 **[AGPL-3.0](LICENSE).** You may use, modify and self-host the software. Anyone who runs it as a network service must make the (modified) source available to its users — keeping the project free for everyone. Rationale for the licence choice: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md#3-lizenz-empfehlung).
