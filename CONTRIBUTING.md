@@ -12,6 +12,20 @@ npm run db:seed
 npm run dev
 ```
 
+Schemaänderungen betreffen **beide** Schemadateien. `prisma/schema.postgres.prisma`
+unterscheidet sich von `prisma/schema.prisma` nur in der Provider-Zeile und wird
+abgeleitet:
+
+    sed 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma \
+      > prisma/schema.postgres.prisma
+
+Danach je eine Migration pro Provider erzeugen:
+
+    npm run db:migrate    -- --name <beschreibung>   # SQLite
+    npm run db:migrate:pg -- --name <beschreibung>   # PostgreSQL (Compose-DB muss laufen)
+
+Der CI-Job `schema-drift` schlägt fehl, wenn die beiden Dateien auseinanderlaufen.
+
 ## Vor jedem Pull Request
 
 ```bash
