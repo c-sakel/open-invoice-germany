@@ -41,6 +41,12 @@ npm run db:migrate:pg -- --name <beschreibung>
 docker rm -f oig-migrate
 ```
 
+`migrate dev` erzeugt am Ende den Prisma-Client neu. Weil beide Schemadateien in
+denselben Pfad (`src/generated/prisma`) generieren, ruft `db:migrate:pg` über
+`scripts/migrate-postgres.sh` anschließend `prisma generate` auf und stellt den
+SQLite-Client wieder her — sonst schlagen danach `npm test` und `npm run dev` mit
+einem irreführenden Protokollfehler fehl.
+
 Der CI-Job `schema-drift` schlägt fehl, wenn die beiden Dateien auseinanderlaufen.
 
 ## Vor jedem Pull Request
