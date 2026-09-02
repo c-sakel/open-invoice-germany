@@ -1,5 +1,10 @@
 # Backlog — OpenInvoice Germany (Fork c-sakel)
 
+> **Abgelöst am 2026-09-02:** Das Lastenheft unter
+> `docs/superpowers/requirements/2026-09-02-lastenheft-auftragsverwaltung.md`
+> ist die maßgebliche Anforderung und gibt neun Umsetzungsphasen vor. Die
+> Paketierung A–H unten bleibt als Übersicht stehen, die Reihenfolge gilt nicht mehr.
+
 Stand: 2026-09-02. Quelle: Anforderungen des Betreibers, `docs/LIMITATIONEN.md` des
 Upstream-Projekts, Architekturdokument (`docs/ARCHITEKTUR.md`, Stufen 2/3).
 
