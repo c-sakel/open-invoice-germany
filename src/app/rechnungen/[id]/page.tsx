@@ -198,6 +198,14 @@ export default async function InvoiceDetail({
 
       {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
 
+      {invoice.internalNotes && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <span className="mr-2 font-medium">Interne Notiz</span>
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
+          <p className="mt-1 whitespace-pre-line">{invoice.internalNotes}</p>
+        </div>
+      )}
+
       {isInvoiceType && !isDraft && !isCancelled && (
         <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">

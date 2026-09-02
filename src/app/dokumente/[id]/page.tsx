@@ -107,6 +107,14 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
       </div>
 
       {q.notes && <p className="text-sm text-slate-600">{q.notes}</p>}
+
+      {q.internalNotes && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <span className="mr-2 font-medium">Interne Notiz</span>
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
+          <p className="mt-1 whitespace-pre-line">{q.internalNotes}</p>
+        </div>
+      )}
     </div>
   );
 }
