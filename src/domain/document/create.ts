@@ -60,7 +60,7 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
         currency: input.currency,
         taxScheme: input.taxScheme,
         notes: input.notes,
-        // internalNotes folgt in Task 3 (Feld existiert noch nicht auf CreateDocumentInput).
+        internalNotes: input.internalNotes,
         sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)),
         buyerSnapshotJson: JSON.stringify(buildBuyerSnapshot(customer)),
         snapshotSource: "CREATE",

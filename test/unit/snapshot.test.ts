@@ -38,4 +38,16 @@ describe("Snapshot-Builder und -Schemas", () => {
     expect(parseBuyerSnapshot(JSON.stringify({ name: 1 }), customer, "inv-1")).toEqual(customer);
     expect(parseBuyerSnapshot(null, customer, "inv-1")).toEqual(customer);
   });
+
+  it("internalNotes erreicht EInvoiceData strukturell nicht", async () => {
+    const { buildEInvoiceData } = await import("@/lib/einvoice/mapper");
+    const data = buildEInvoiceData({
+      number: "RE-1", type: "INVOICE", issueDate: new Date(), dueDate: null, deliveryDate: null, currency: "EUR",
+      buyerReference: null, paymentTerms: null, notes: "sichtbar", netTotalCents: 0, taxTotalCents: 0,
+      grossTotalCents: 0, paidAmountCents: 0, taxBreakdownJson: "[]", org, customer, lines: [],
+      // @ts-expect-error internalNotes ist bewusst kein Teil von MapInput
+      internalNotes: "GEHEIM",
+    });
+    expect(JSON.stringify(data)).not.toContain("GEHEIM");
+  });
 });

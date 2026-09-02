@@ -32,6 +32,7 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
+  const [internalNotes, setInternalNotes] = useState("");
   const [lines, setLines] = useState<LineState[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,6 +61,7 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
       currency: "EUR",
       validUntil: validUntil || undefined,
       notes: notes || undefined,
+      internalNotes: internalNotes || undefined,
       lines: lines.map((l) => ({
         description: l.description,
         quantityMilli: toMilli(l.quantity),
@@ -156,6 +158,14 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-slate-700">Hinweis / Notiz</span>
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium text-slate-700">
+          Interne Notiz
+          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
+        </span>
+        <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
       </label>
 
       <div className="flex items-center justify-between border-t border-slate-200 pt-4">

@@ -142,6 +142,7 @@ export const createInvoiceSchema = z.object({
   buyerReference: z.string().optional(),
   notes: z.string().optional(),
   paymentTerms: z.string().optional(),
+  internalNotes: z.string().optional(), // nur intern, nie im Beleg
   lines: z.array(invoiceLineInputSchema).min(1),
 });
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
@@ -157,6 +158,7 @@ export const createDocumentSchema = z.object({
   currency: z.string().length(3).default("EUR"),
   validUntil: z.coerce.date().optional(),
   notes: z.string().optional(),
+  internalNotes: z.string().optional(),
   lines: z.array(invoiceLineInputSchema).min(1),
 });
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
