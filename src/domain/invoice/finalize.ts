@@ -15,6 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { appendChangeLog } from "@/domain/audit";
+import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { validateMandatoryFields } from "./mandatory";
 
 export class FinalizeError extends Error {
@@ -87,6 +88,11 @@ export async function finalizeWithinTx(
       taxTotalCents: totals.taxTotalCents,
       grossTotalCents: totals.grossTotalCents,
       taxBreakdownJson: JSON.stringify(totals.breakdown),
+      // Parteien-Snapshot (Phase 0): ab jetzt rendern PDF/XML aus diesem Stand.
+      sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(invoice.org)),
+      buyerSnapshotJson: JSON.stringify(buildBuyerSnapshot(invoice.customer)),
+      snapshotSource: "FINALIZE",
+      snapshotAt: now,
     },
   });
   if (claim.count === 0) {
@@ -118,7 +124,7 @@ export async function finalizeWithinTx(
     action: "FINALIZE",
     actor,
     at: now,
-    diff: { number, status: "FINALIZED", grossTotalCents: totals.grossTotalCents },
+    diff: { number, status: "FINALIZED", grossTotalCents: totals.grossTotalCents, snapshotSource: "FINALIZE" },
   });
 
   const result = await tx.invoice.findUnique({

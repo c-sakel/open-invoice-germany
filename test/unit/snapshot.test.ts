@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { sellerSnapshotSchema, buyerSnapshotSchema } from "@/schemas";
 import { buildSellerSnapshot, buildBuyerSnapshot, parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
+import type { MapInput } from "@/lib/einvoice/mapper";
 
 const org = {
   legalName: "Muster GmbH", addressLine1: "Weg 1", addressLine2: null, postalCode: "12345", city: "Ort",
@@ -21,6 +22,10 @@ describe("Snapshot-Builder und -Schemas", () => {
   it("Schluesselmengen entsprechen exakt den Mapper-Eingaben", () => {
     expect(Object.keys(buildSellerSnapshot(org)).sort()).toEqual(Object.keys(org).sort());
     expect(Object.keys(buildBuyerSnapshot(customer)).sort()).toEqual(Object.keys(customer).sort());
+    // Compile-Time-Waechter: Builder-Ausgabe muss der Mapper-Eingabe entsprechen.
+    const _sellerCheck: MapInput["org"] = buildSellerSnapshot(org);
+    const _buyerCheck: MapInput["customer"] = buildBuyerSnapshot(customer);
+    void _sellerCheck; void _buyerCheck;
   });
 
   it("parse bevorzugt einen gueltigen Snapshot", () => {

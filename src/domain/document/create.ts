@@ -7,6 +7,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNetCents } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import type { CreateDocumentInput } from "@/schemas";
 
 export async function createBusinessDocument(orgId: string, input: CreateDocumentInput, opts: { now?: Date } = {}) {
@@ -28,8 +29,9 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
   );
 
   return dbInternal.$transaction(async (tx) => {
-    const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true } });
+    const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId } });
     if (!customer) throw new Error("Kunde nicht gefunden.");
+    const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
 
     const year = now.getFullYear();
     const docType = input.kind;
@@ -58,6 +60,11 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
         currency: input.currency,
         taxScheme: input.taxScheme,
         notes: input.notes,
+        // internalNotes folgt in Task 3 (Feld existiert noch nicht auf CreateDocumentInput).
+        sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)),
+        buyerSnapshotJson: JSON.stringify(buildBuyerSnapshot(customer)),
+        snapshotSource: "CREATE",
+        snapshotAt: now,
         netTotalCents: totals.netTotalCents,
         taxTotalCents: totals.taxTotalCents,
         grossTotalCents: totals.grossTotalCents,
