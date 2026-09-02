@@ -75,6 +75,19 @@ cp .env.example .env            # DATABASE_URL auf die postgresql://-Zeile umste
 docker compose up --build
 ```
 
+**Bestehende Instanz aktualisieren.** Wurde die Datenbank mit einer älteren Version
+per `prisma db push` angelegt, fehlt ihr die Migrationshistorie. Der Container
+startet dann nicht, sondern nennt den einmalig nötigen Befehl. Vorher ein Backup
+ziehen, dann:
+
+```bash
+docker compose run --rm app \
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init
+```
+
+Danach startet der Container normal; künftige Schemaänderungen laufen über
+`prisma migrate deploy`.
+
 `docker-compose.yml` startet App + PostgreSQL + den **Mustang**-Sidecar (XRechnung-/ZUGFeRD-Erzeugung & -Validierung). Das Postgres-Schema liegt in `prisma/schema.postgres.prisma` (modellidentisch, nur andere Datasource).
 
 ## Tests
