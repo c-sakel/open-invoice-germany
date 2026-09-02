@@ -97,7 +97,7 @@ docker compose run --rm app \
   Datenbank entspricht bereits der Baseline. `migrate resolve --applied 0_init`
   unten ist sicher.
 - **Ausgabe enthält nur `CREATE TABLE` / `ALTER TABLE ... ADD COLUMN` /
-  `CREATE INDEX`**: die Datenbank ist älter als die Baseline. Dieses SQL prüfen
+  `CREATE INDEX` / `ALTER TABLE … ADD CONSTRAINT` (Fremdschlüssel)**: die Datenbank ist älter als die Baseline. Dieses SQL prüfen
   und mit `docker compose run --rm app npx prisma db execute --url
   "$DATABASE_URL" --stdin` einspielen, danach mit `migrate resolve` fortfahren.
 - **Ausgabe enthält irgendein `DROP`**: abbrechen. Nicht anwenden, kein

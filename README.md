@@ -98,7 +98,7 @@ docker compose run --rm app \
 - **Empty output** (only the comment "This is an empty migration"): the database
   already matches the baseline. `migrate resolve --applied 0_init` below is safe.
 - **Output contains only `CREATE TABLE` / `ALTER TABLE ... ADD COLUMN` /
-  `CREATE INDEX`**: the database predates the baseline. Review the SQL, apply it
+  `CREATE INDEX` / `ALTER TABLE … ADD CONSTRAINT` (foreign keys)**: the database predates the baseline. Review the SQL, apply it
   with `docker compose run --rm app npx prisma db execute --url "$DATABASE_URL"
   --stdin`, then continue with `migrate resolve`.
 - **Output contains any `DROP`**: stop. Do not apply it and do not run
