@@ -16,13 +16,30 @@ Schemaänderungen betreffen **beide** Schemadateien. `prisma/schema.postgres.pri
 unterscheidet sich von `prisma/schema.prisma` nur in der Provider-Zeile und wird
 abgeleitet:
 
-    sed 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma \
-      > prisma/schema.postgres.prisma
+```bash
+sed 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma \
+  > prisma/schema.postgres.prisma
+```
 
-Danach je eine Migration pro Provider erzeugen:
+Danach je eine Migration pro Provider erzeugen. Für SQLite genügt:
 
-    npm run db:migrate    -- --name <beschreibung>   # SQLite
-    npm run db:migrate:pg -- --name <beschreibung>   # PostgreSQL (Compose-DB muss laufen)
+```bash
+npm run db:migrate -- --name <beschreibung>
+```
+
+Für PostgreSQL braucht es eine vom Host erreichbare Datenbank. Der `db`-Service in
+`docker-compose.yml` veröffentlicht bewusst keinen Port (er läuft mit
+`POSTGRES_HOST_AUTH_METHOD: trust`), deshalb dafür einen Wegwerf-Container nutzen:
+
+```bash
+docker run -d --name oig-migrate \
+  -e POSTGRES_USER=oig -e POSTGRES_PASSWORD=test -e POSTGRES_DB=openinvoice \
+  -p 55432:5432 postgres:16-alpine
+export DATABASE_URL="postgresql://oig:test@localhost:55432/openinvoice?schema=public"
+npx prisma migrate deploy --config prisma.postgres.config.ts   # Baseline anwenden
+npm run db:migrate:pg -- --name <beschreibung>
+docker rm -f oig-migrate
+```
 
 Der CI-Job `schema-drift` schlägt fehl, wenn die beiden Dateien auseinanderlaufen.
 
