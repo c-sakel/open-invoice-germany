@@ -29,7 +29,11 @@ export const LineType = z.enum(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
 export type LineType = z.infer<typeof LineType>;
 
 export const CustomerType = z.enum(["BUSINESS", "CONSUMER"]);
-export const InvoiceType = z.enum(["INVOICE", "CREDIT_NOTE", "CORRECTION"]);
+// PARTIAL/DOWNPAYMENT/FINAL (Phase 5, §13-15 UStG): Teil-, Abschlags- und
+// Schlussrechnung — jeweils eigenstaendige, festschreibbare Rechnungen (GoBD-Kette wie
+// INVOICE/CREDIT_NOTE/CORRECTION), nur mit zusaetzlicher Quellreferenz (sourceType/
+// sourceId, siehe unten) und ggf. Abzugsbloecke (FinalInvoiceDeduction).
+export const InvoiceType = z.enum(["INVOICE", "CREDIT_NOTE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
 export const DocType = z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA", "INVOICE", "CREDIT_NOTE", "DUNNING", "DELIVERY_NOTE", "CUSTOMER", "PRODUCT"]);
 // Codes kommen aus der Tabelle PaymentMethod (Stammdaten je Organisation); die
 // Pruefung auf Existenz/Zugehoerigkeit erfolgt in recordPayment, nicht hier.
@@ -320,6 +324,66 @@ export const updateInvoiceSchema = z
   .omit({ type: true })
   .superRefine(refineSkontoTargets);
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
+
+// ── Teil-, Abschlags- und Schlussrechnungen (Phase 5, §13-15 UStG) ──────────
+// mode bestimmt, welches der optionalen Felder Pflicht ist (per superRefine geprueft,
+// analog refineSkontoTargets oben): PERCENT/NET_AMOUNT/GROSS_AMOUNT brauchen permille
+// bzw. amountCents, POSITIONS lineIds, QUANTITIES quantities.
+export const createPartialInvoiceSchema = z
+  .object({
+    sourceType: z.enum(["QUOTE", "DELIVERY_NOTE"]),
+    sourceId: z.string().min(1),
+    mode: z.enum(["PERCENT", "NET_AMOUNT", "GROSS_AMOUNT", "POSITIONS", "QUANTITIES"]),
+    permille: z.number().int().min(1).max(1000).optional(),
+    amountCents: z.number().int().positive().optional(),
+    lineIds: z.array(z.string().min(1)).min(1).optional(),
+    quantities: z
+      .array(z.object({ sourceLineId: z.string().min(1), quantityMilli: z.number().int().positive() }))
+      .min(1)
+      .optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.mode === "PERCENT" && v.permille === undefined) {
+      ctx.addIssue({ code: "custom", message: "permille ist bei mode PERCENT erforderlich", path: ["permille"] });
+    }
+    if ((v.mode === "NET_AMOUNT" || v.mode === "GROSS_AMOUNT") && v.amountCents === undefined) {
+      ctx.addIssue({ code: "custom", message: "amountCents ist bei mode NET_AMOUNT/GROSS_AMOUNT erforderlich", path: ["amountCents"] });
+    }
+    if (v.mode === "POSITIONS" && v.lineIds === undefined) {
+      ctx.addIssue({ code: "custom", message: "lineIds ist bei mode POSITIONS erforderlich", path: ["lineIds"] });
+    }
+    if (v.mode === "QUANTITIES" && v.quantities === undefined) {
+      ctx.addIssue({ code: "custom", message: "quantities ist bei mode QUANTITIES erforderlich", path: ["quantities"] });
+    }
+  });
+export type CreatePartialInvoiceInput = z.infer<typeof createPartialInvoiceSchema>;
+
+export const createDownpaymentInvoiceSchema = z
+  .object({
+    sourceType: z.literal("QUOTE"),
+    sourceId: z.string().min(1),
+    mode: z.enum(["PERCENT", "AMOUNT"]),
+    permille: z.number().int().min(1).max(1000).optional(),
+    amountCents: z.number().int().positive().optional(),
+    // Nur bei mode AMOUNT relevant: amountCents als Brutto- statt Nettobetrag lesen
+    // (Rueckrechnung je Steuersatz-Bucket, src/lib/pricing/partial.ts#splitByTaxRate).
+    amountIsGross: z.boolean().default(false),
+  })
+  .superRefine((v, ctx) => {
+    if (v.mode === "PERCENT" && v.permille === undefined) {
+      ctx.addIssue({ code: "custom", message: "permille ist bei mode PERCENT erforderlich", path: ["permille"] });
+    }
+    if (v.mode === "AMOUNT" && v.amountCents === undefined) {
+      ctx.addIssue({ code: "custom", message: "amountCents ist bei mode AMOUNT erforderlich", path: ["amountCents"] });
+    }
+  });
+export type CreateDownpaymentInvoiceInput = z.infer<typeof createDownpaymentInvoiceSchema>;
+
+export const createFinalInvoiceSchema = z.object({
+  sourceType: z.literal("QUOTE"),
+  sourceId: z.string().min(1),
+});
+export type CreateFinalInvoiceInput = z.infer<typeof createFinalInvoiceSchema>;
 
 // ── Geschäftsdokumente (Angebot / Auftragsbestätigung / Proforma) ────────────
 export const DocumentKind = z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]);
