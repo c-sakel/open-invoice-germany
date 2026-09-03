@@ -50,7 +50,7 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 `id` · `orgId` · `entity` (INVOICE | PAYMENT | …) · `entityId` · `action` (CREATE | UPDATE | FINALIZE | CANCEL | DELETE_PRE_FINALIZE) · `actorId` · `at` · `diff` (JSON: alte→neue Werte) · `prevHash` · `hash`
 → Append-only: **kein** UPDATE/DELETE-Recht (DB-User ohne diese Grants + App-Layer), Hash-Chain (`hash = sha256(prevHash + canonical(diff))`) macht Manipulation erkennbar.
 
-**EmailLog** — existiert **nicht**. Ein Versandprotokoll (Resend o.ä.) ist geplant (Phase 1), aber im aktuellen Schema (`prisma/schema.prisma`) nicht vorhanden.
+**Phase 1: Verknüpfungen, Stammdaten, Lieferschein** — zehn zusätzliche Tabellen. `DocumentRelation` bildet Beleg-zu-Beleg-Verknüpfungen (Umwandlung, Storno, Korrektur, Abo-Erzeugung) explizit ab, ergänzend zu den bisherigen Fremdschlüsseln. `DeliveryNote`/`DeliveryNoteLine` bilden den Lieferschein als eigenes, nummeriertes Dokument mit Snapshot ab (Service `createDeliveryNote`, noch ohne UI). `TextTemplate` und `EmailTemplate` speichern wiederverwendbare Text-/Mailvorlagen je Organisation, `EmailLog` protokolliert versendete Mails. `CustomerAddress` und `ContactPerson` erlauben mehrere Adressen/Ansprechpartner je Kunde zusätzlich zur Stammadresse. `PaymentMethod` und `DunningStage` sind Organisations-Stammdaten (Systemzahlungsmethoden bzw. Mahnstufen), die per Migration und bei Organisationsanlage (`ensureOrgMasterdata`) angelegt werden; `Dunning.stageId` verweist künftig auf `DunningStage` statt nur auf `level`.
 
 ### GoBD-Unveränderbarkeit + lückenloser Nummernkreis — technisch erzwungen
 

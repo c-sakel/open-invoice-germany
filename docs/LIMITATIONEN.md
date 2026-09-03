@@ -24,6 +24,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Feld-Validierung** von IBAN/BIC/USt-IdNr. ist bewusst locker (keine Prüfziffer/Mod-97). Offensichtlich falsche Werte können durchrutschen.
 - **GoBD:** Die Software ermöglicht Unveränderbarkeit + Audit-Chain, ersetzt aber **nicht** die anwenderseitige **Verfahrensdokumentation**.
 - **Beleg-Snapshots:** Seit Phase 0 speichern festgeschriebene Rechnungen und nummerierte Geschäftsdokumente Käufer-/Verkäuferdaten als Snapshot; Stammdatenänderungen wirken nicht mehr zurück. Belege aus der Zeit davor wurden per Migration aus dem damals aktuellen Stamm eingefroren (`snapshotSource = MIGRATION`) — ihr Snapshot entspricht dem Stand zum Migrationszeitpunkt, nicht zwingend dem Ausstellungszeitpunkt. Storno und Gutschrift erben den Snapshot des Originalbelegs (`INHERITED`). **Mahnungen** werden noch nicht gesnapshottet — der PDF-Nachdruck einer Mahnung liest weiterhin den aktuellen Stamm (Organisation/Kunde) live; das folgt erst in Phase 1.
+- **Phase 1:** Verknüpfungen zwischen Belegen (Umwandlung, Storno, Gutschrift, Abo-Erzeugung) werden zusätzlich in `DocumentRelation` gespiegelt; Zahlungsmethoden und Mahnstufen sind Stammdaten (noch ohne UI, Phasen 4/6); Lieferscheine existieren als Datenmodell + Service, UI folgt in Phase 3.
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, eingebauter Scheduler, nutzungsbasierte Abo-Abrechnung.
