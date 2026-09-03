@@ -34,9 +34,17 @@ type ResolvedConvertOptions = Required<ConvertOptions>;
 // bestaetigung) ist bereits eine Zusage — nur DRAFT/SENT duerfen noch in eine Rechnung
 // umgewandelt werden, waehrend ein Angebot zusaetzlich aus ACCEPTED/EXPIRED heraus darf.
 const ANGEBOT_TO_AB_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
-const ANGEBOT_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
-const AB_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT"]);
 const QUOTE_TO_DELIVERY_NOTE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+
+// Fix-Runde 2 (Re-Review): erlaubte Quellstatus fuer die Umwandlung in eine Rechnung, je
+// Quote-Kind. PROFORMA fehlte bisher komplett (keine Pruefung) — jetzt wie ANGEBOT
+// behandelt (DRAFT/SENT/ACCEPTED/EXPIRED); AUFTRAGSBESTAETIGUNG bleibt auf DRAFT/SENT
+// eingeschraenkt (bereits eine Zusage).
+const ALLOWED_SOURCE_STATUS_FOR_INVOICE: Record<string, Set<string>> = {
+  ANGEBOT: new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]),
+  PROFORMA: new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]),
+  AUFTRAGSBESTAETIGUNG: new Set(["DRAFT", "SENT"]),
+};
 
 /** Wandelt ein Geschaeftsdokument (Angebot/AB/Proforma) in eine Rechnung um (DRAFT). */
 export async function convertDocumentToInvoice(orgId: string, documentId: string, opts: ConvertOptions = {}): Promise<Invoice> {
@@ -48,10 +56,10 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     if (!q) throw new ConvertError("Dokument nicht gefunden.");
     if (q.convertedToInvoiceId) throw new ConvertError("Dokument wurde bereits in eine Rechnung umgewandelt.");
 
-    if (q.kind === "ANGEBOT" || q.kind === "AUFTRAGSBESTAETIGUNG") {
+    {
       const eff = effectiveQuoteStatus({ status: q.status, validUntil: q.validUntil }, now);
-      const allowed = q.kind === "AUFTRAGSBESTAETIGUNG" ? AB_TO_INVOICE_STATUSES : ANGEBOT_TO_INVOICE_STATUSES;
-      if (!allowed.has(eff)) {
+      const allowed = ALLOWED_SOURCE_STATUS_FOR_INVOICE[q.kind];
+      if (allowed && !allowed.has(eff)) {
         throw new ConvertError(`Dokument im Status "${eff}" kann nicht in eine Rechnung umgewandelt werden.`);
       }
     }
