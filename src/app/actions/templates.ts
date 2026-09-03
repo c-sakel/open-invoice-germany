@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { emailTemplateInputSchema } from "@/schemas/email";
+import { saveEmailTemplate } from "@/domain/email/templates";
 import type { ActionResult } from "./result";
 
 function str(fd: FormData, key: string): string | undefined {
@@ -29,37 +30,10 @@ export async function saveEmailTemplateAction(_prev: ActionResult, fd: FormData)
     isDefault: fd.get("isDefault") === "on",
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
-  const v = parsed.data;
 
   try {
     const org = await getActiveOrg();
-    const data = {
-      orgId: org.id,
-      docType: v.docType,
-      name: v.name,
-      subject: v.subject,
-      body: v.body,
-      signature: v.signature ?? null,
-      isDefault: v.isDefault,
-    };
-
-    await dbInternal.$transaction(async (tx) => {
-      let templateId = v.id;
-      if (templateId) {
-        const existing = await tx.emailTemplate.findFirst({ where: { id: templateId, orgId: org.id } });
-        if (!existing) throw new Error("Vorlage nicht gefunden.");
-        await tx.emailTemplate.update({ where: { id: templateId }, data });
-      } else {
-        const created = await tx.emailTemplate.create({ data });
-        templateId = created.id;
-      }
-      if (v.isDefault) {
-        await tx.emailTemplate.updateMany({
-          where: { orgId: org.id, docType: v.docType, id: { not: templateId } },
-          data: { isDefault: false },
-        });
-      }
-    });
+    await saveEmailTemplate(org.id, parsed.data);
   } catch (e) {
     console.error("saveEmailTemplateAction:", e);
     return { ok: false, error: e instanceof Error ? e.message : "Speichern fehlgeschlagen." };
