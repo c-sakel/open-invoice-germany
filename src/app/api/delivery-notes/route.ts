@@ -18,7 +18,10 @@ export async function POST(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    const status = e instanceof DeliveryNoteError ? 409 : 500;
-    return NextResponse.json({ error: (e as Error).message }, { status });
+    if (e instanceof DeliveryNoteError) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
+    }
+    console.error("POST /api/delivery-notes:", e);
+    return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }
