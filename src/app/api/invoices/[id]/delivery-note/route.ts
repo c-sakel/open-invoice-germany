@@ -30,7 +30,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    const status = e instanceof ConvertError ? 409 : 500;
-    return NextResponse.json({ error: (e as Error).message }, { status });
+    if (e instanceof ConvertError) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
+    }
+    console.error("POST /api/invoices/[id]/delivery-note:", e);
+    return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

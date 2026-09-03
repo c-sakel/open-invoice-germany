@@ -41,7 +41,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    const status = e instanceof StatusTransitionError ? 409 : 500;
-    return NextResponse.json({ error: (e as Error).message }, { status });
+    if (e instanceof StatusTransitionError) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
+    }
+    console.error("POST /api/delivery-notes/[id]/status:", e);
+    return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

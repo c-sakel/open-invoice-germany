@@ -21,6 +21,15 @@ const KIND_TITLE: Record<string, string> = {
   PROFORMA: "Proforma-Rechnung",
 };
 
+// Client-seitige Kopie der Statuslisten aus src/domain/document/convert.ts (dort nicht
+// importierbar, weil die Datei dbInternal fuer den Schreibpfad laedt) — steuert nur, welche
+// ConvertMenu-Optionen angeboten werden; die eigentliche Pruefung bleibt serverseitig
+// (ConvertError/409 bei Verstoss, W2 Fix-Runde 2).
+const ANGEBOT_TO_AB_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+const ANGEBOT_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+const AB_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT"]);
+const QUOTE_TO_DELIVERY_NOTE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+
 export default async function DokumentDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const org = await getActiveOrg();
@@ -62,23 +71,29 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
             PDF
           </a>
           <SendEmailDialog docType={q.kind as EmailDocType} docId={q.id} />
-          {q.convertedToInvoiceId ? (
+          {q.convertedToInvoiceId && (
             <Link href={`/rechnungen/${q.convertedToInvoiceId}`} className="text-sm font-medium text-indigo-600 hover:underline">
               → zur Rechnung
             </Link>
-          ) : (
-            <ConvertMenu
-              sourceType="QUOTE"
-              sourceId={q.id}
-              showToOrderConfirmation={q.kind === "ANGEBOT"}
-              showToInvoice={q.kind !== "PROFORMA"}
-              showToDeliveryNote
-            />
           )}
+          {/* G8 (Fix-Runde 2): ConvertMenu bleibt auch nach Umwandlung in eine Rechnung
+              sichtbar — ein Lieferschein (Teilmengen) kann weiterhin erzeugt werden, nur
+              die Rechnungs-/AB-Optionen ergeben nach der Umwandlung keinen Sinn mehr.
+              W2: jede Option nur bei einem fuer die Konvertierung zulaessigen Status. */}
+          <ConvertMenu
+            sourceType="QUOTE"
+            sourceId={q.id}
+            showToOrderConfirmation={q.kind === "ANGEBOT" && !q.convertedToInvoiceId && ANGEBOT_TO_AB_STATUSES.has(status)}
+            showToInvoice={
+              !q.convertedToInvoiceId &&
+              ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) || (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
+            }
+            showToDeliveryNote={QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status)}
+          />
         </div>
       </div>
 
-      <DocumentActions type="QUOTE" id={q.id} status={q.status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} />
+      <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} />
 
       {q.kind === "PROFORMA" && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

@@ -107,7 +107,11 @@ async function findRoot(orgId: string, type: RefType, id: string): Promise<{ typ
 
   for (let depth = 0; depth < MAX_ROOT_DEPTH; depth++) {
     const relations = await listRelations(orgId, cur.type, cur.id);
-    const incoming = relations.find((r) => r.toType === cur.type && r.toId === cur.id);
+    // G6 (Fix-Runde 2): DUPLICATED_FROM (from = Kopie, to = Quelle) beim Rueckwaertslauf
+    // ueberspringen — sonst wuerde das Oeffnen des Originals faelschlich eine spaeter davon
+    // gezogene Kopie als Vorgaenger/Wurzel behandeln. Die Kopie wird stattdessen im
+    // Vorwaertsbaum als Blatt angezeigt (buildNode).
+    const incoming = relations.find((r) => r.toType === cur.type && r.toId === cur.id && r.relationType !== "DUPLICATED_FROM");
     if (!incoming) break;
 
     const key = `${incoming.fromType}:${incoming.fromId}`;
@@ -117,6 +121,29 @@ async function findRoot(orgId: string, type: RefType, id: string): Promise<{ typ
   }
 
   return cur;
+}
+
+/**
+ * Baut einen NICHT expandierten Blattknoten fuer eine DUPLICATED_FROM-Relation (G6,
+ * Fix-Runde 2) — `relationLabel` unterscheidet die Blickrichtung ("Kopie von" = dieser
+ * Knoten ist die Quelle, das Kind die Kopie; "Kopie" = dieser Knoten ist die Kopie,
+ * das Kind die Quelle).
+ */
+async function buildDuplicateLeaf(orgId: string, type: RefType, id: string, relationLabel: "Kopie von" | "Kopie"): Promise<ChainNode> {
+  const data = await fetchNodeData(orgId, type, id);
+  if (!data) {
+    return { type, id, label: type, number: null, status: "UNBEKANNT", href: null, relation: relationLabel, children: [] };
+  }
+  return {
+    type,
+    id,
+    label: labelFor(type, data),
+    number: data.number,
+    status: data.status,
+    href: hrefFor(type, id, data),
+    relation: relationLabel,
+    children: [],
+  };
 }
 
 /** Baut rekursiv den Teilbaum ab (type, id). `visited` verhindert Endlosschleifen bei Zyklen. */
@@ -143,11 +170,25 @@ async function buildNode(orgId: string, type: RefType, id: string, relation: str
   visited.add(key);
 
   const relations = await listRelations(orgId, type, id);
-  const outgoing = relations.filter((r) => r.fromType === type && r.fromId === id);
+  // G6 (Fix-Runde 2): DUPLICATED_FROM nie regulaer absteigen — weder wenn DIESER Knoten
+  // die Kopie ist (fromId == id, zeigt auf die Quelle) noch wenn er die Quelle ist
+  // (toId == id, eine spaetere Kopie zeigt auf ihn). Beide Faelle werden als Blatt
+  // angehaengt, damit ein Duplikat die Kette nicht faelschlich fortsetzt.
+  const outgoing = relations.filter((r) => r.fromType === type && r.fromId === id && r.relationType !== "DUPLICATED_FROM");
+  const outgoingDuplicates = relations.filter((r) => r.fromType === type && r.fromId === id && r.relationType === "DUPLICATED_FROM");
+  const incomingDuplicates = relations.filter((r) => r.toType === type && r.toId === id && r.relationType === "DUPLICATED_FROM");
+
   for (const r of outgoing) {
     const childKey = `${r.toType}:${r.toId}`;
     if (visited.has(childKey)) continue;
     node.children.push(await buildNode(orgId, r.toType as RefType, r.toId, r.relationType, visited));
+  }
+
+  for (const r of outgoingDuplicates) {
+    node.children.push(await buildDuplicateLeaf(orgId, r.toType as RefType, r.toId, "Kopie von"));
+  }
+  for (const r of incomingDuplicates) {
+    node.children.push(await buildDuplicateLeaf(orgId, r.fromType as RefType, r.fromId, "Kopie"));
   }
 
   if (type === "INVOICE") {

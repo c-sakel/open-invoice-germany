@@ -21,6 +21,7 @@ export async function GET(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("GET /api/text-templates/pick:", e);
+    return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

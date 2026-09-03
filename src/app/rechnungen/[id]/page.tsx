@@ -36,8 +36,11 @@ export default async function InvoiceDetail({
   const { id } = await params;
   const { error } = await searchParams;
 
-  const invoice = await prisma.invoice.findUnique({
-    where: { id },
+  const org = await getActiveOrg();
+  // G7 (Fix-Runde 2): findUnique(id) ohne orgId erlaubte fremden Organisationen den Zugriff
+  // auf eine Rechnungsseite ueber die reine ID — jetzt mandantengeprueft.
+  const invoice = await prisma.invoice.findFirst({
+    where: { id, orgId: org.id },
     include: {
       lines: { orderBy: { position: "asc" } },
       customer: true,
@@ -57,7 +60,6 @@ export default async function InvoiceDetail({
   const isOverdue = !isDraft && !isCancelled && openCents > 0 && new Date() > dueDate;
   const canPay = !isDraft && !isCancelled && isInvoiceType && openCents > 0;
   const emailDocType: EmailDocType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
-  const org = await getActiveOrg();
 
   return (
     <div className="space-y-6">

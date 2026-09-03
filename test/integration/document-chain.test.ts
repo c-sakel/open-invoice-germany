@@ -9,6 +9,7 @@ import { recordPayment } from "@/domain/invoice/payment";
 import { createDunning } from "@/domain/dunning/create";
 import { createRecurring } from "@/domain/recurring/create";
 import { linkDocuments } from "@/domain/relations";
+import { duplicateDocument } from "@/domain/document/duplicate";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { buildDocumentChain } from "@/domain/document/chain";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -140,6 +141,35 @@ describe("buildDocumentChain", () => {
 
     const { root } = await buildDocumentChain(orgId, "QUOTE", a.id);
     expect(root).toBeDefined();
+  });
+
+  it("G6 (Fix-Runde 2): Original oeffnen -> Wurzel ist das Original, Kopie erscheint als Blatt 'Kopie'", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] } as Parameters<typeof createBusinessDocument>[1], { now: FIX_DATE });
+    const copy = await duplicateDocument(orgId, "QUOTE", quote.id, "tester", FIX_DATE);
+
+    const { root, currentId } = await buildDocumentChain(orgId, "QUOTE", quote.id);
+    expect(currentId).toBe(quote.id);
+    expect(root.type).toBe("QUOTE");
+    expect(root.id).toBe(quote.id); // NICHT die Kopie
+
+    const copyNode = root.children.find((c) => c.id === copy.id);
+    expect(copyNode).toBeDefined();
+    expect(copyNode!.relation).toBe("Kopie");
+    expect(copyNode!.children).toHaveLength(0); // kein Abstieg in die Kopie
+  });
+
+  it("G6 (Fix-Runde 2): Kopie oeffnen -> die Quelle erscheint als Blatt 'Kopie von', kein Abstieg", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] } as Parameters<typeof createBusinessDocument>[1], { now: FIX_DATE });
+    const copy = await duplicateDocument(orgId, "QUOTE", quote.id, "tester", FIX_DATE);
+
+    const { root, currentId } = await buildDocumentChain(orgId, "QUOTE", copy.id);
+    expect(currentId).toBe(copy.id);
+    expect(root.id).toBe(copy.id); // Kopie hat selbst keinen Vorgaenger (DUPLICATED_FROM zaehlt nicht)
+
+    const sourceNode = root.children.find((c) => c.id === quote.id);
+    expect(sourceNode).toBeDefined();
+    expect(sourceNode!.relation).toBe("Kopie von");
+    expect(sourceNode!.children).toHaveLength(0);
   });
 
   it("zeigt ein Abo als Wurzelknoten mit Label 'Abo' und href /abos/<id>", async () => {
