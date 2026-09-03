@@ -75,7 +75,7 @@ export async function saveMailSettings(orgId: string, rawInput: MailSettingsInpu
     copyToSelf: input.copyToSelf,
   };
 
-  const row = await dbInternal.mailSettings.upsert({
+  await dbInternal.mailSettings.upsert({
     where: { orgId },
     create: { orgId, ...data },
     update: data,
@@ -83,7 +83,6 @@ export async function saveMailSettings(orgId: string, rawInput: MailSettingsInpu
 
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new Error("Mail-Einstellungen konnten nicht geladen werden.");
-  void row;
   return settings;
 }
 

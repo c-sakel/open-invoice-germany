@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { buildStandardAttachments, type Attachment } from "@/domain/email/attachments";
+import { buildTemplateContext } from "@/domain/email/context";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
@@ -32,6 +33,11 @@ export async function sendDocumentEmail(
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
   const prov = provider ?? createSmtpProvider(settings);
+
+  // Mandanten-Gate: wirft DocumentNotFoundError bei Fremd-Org, falschem Belegtyp oder
+  // Nichtexistenz — VOR jeder Log-Anlage. buildStandardAttachments allein reicht nicht,
+  // da es bei fremder/erfundener docId still [] liefert statt zu werfen.
+  const { docNumber } = await buildTemplateContext(orgId, input.docType, input.docId);
 
   const std = await buildStandardAttachments(orgId, input.docType, input.docId);
   const attachments = [...std.filter((a) => input.standardAttachments.includes(a.filename)), ...extra];
@@ -97,7 +103,7 @@ export async function sendDocumentEmail(
       action: status,
       actor,
       at: new Date(),
-      diff: { docType: input.docType, docId: input.docId, to: input.to, cc: input.cc, bcc, subject: input.subject, attachments: attachmentsMeta, error: error ?? null },
+      diff: { docType: input.docType, docId: input.docId, docNumber, to: input.to, cc: input.cc, bcc, subject: input.subject, attachments: attachmentsMeta, error: error ?? null },
     });
   });
 
