@@ -3,14 +3,15 @@ import { SYSTEM_PAYMENT_METHODS, DEFAULT_DUNNING_STAGES } from "@/domain/masterd
 import { PaymentMethod, RelationType, DocType } from "@/schemas";
 
 describe("Stammdaten-Defaults", () => {
-  it("acht Systemzahlungsmethoden mit eindeutigen Codes und UNTDID-4461-Codes", () => {
-    expect(SYSTEM_PAYMENT_METHODS).toHaveLength(8);
-    expect(new Set(SYSTEM_PAYMENT_METHODS.map((m) => m.code)).size).toBe(8);
-    for (const code of ["TRANSFER", "CASH", "CARD", "SEPA"]) {
+  it("neun Systemzahlungsmethoden mit eindeutigen Codes und UNTDID-4461-Codes", () => {
+    expect(SYSTEM_PAYMENT_METHODS).toHaveLength(9);
+    expect(new Set(SYSTEM_PAYMENT_METHODS.map((m) => m.code)).size).toBe(9);
+    for (const code of ["TRANSFER", "CASH", "CARD", "SEPA", "SKONTO"]) {
       expect(SYSTEM_PAYMENT_METHODS.some((m) => m.code === code)).toBe(true); // Altcodes bleiben aufloesbar
     }
     expect(SYSTEM_PAYMENT_METHODS.find((m) => m.code === "TRANSFER")!.untdidCode).toBe("58");
     expect(SYSTEM_PAYMENT_METHODS.find((m) => m.code === "SEPA")!.untdidCode).toBe("59");
+    expect(SYSTEM_PAYMENT_METHODS.find((m) => m.code === "SKONTO")!.sortOrder).toBe(9);
   });
 
   it("vier Standard-Mahnstufen, Zins und B2B-Pauschale ab Stufe 1", () => {
