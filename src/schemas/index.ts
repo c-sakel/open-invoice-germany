@@ -131,6 +131,7 @@ export const customerSchema = z.object({
   leitwegId: z.string().optional(),
   peppolId: z.string().optional(),
   defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
+  defaultPaymentMethodId: z.string().optional(),
   notes: z.string().optional(),
 });
 export type CustomerInput = z.infer<typeof customerSchema>;
@@ -316,6 +317,13 @@ export const recordPaymentSchema = z.object({
   applySkonto: z.boolean().default(false),
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+
+// Query von GET /api/invoices/[id]/skonto-check (Phase 4a) — reine Vorschau ohne Schreiben.
+export const skontoCheckQuerySchema = z.object({
+  amountCents: z.coerce.number().int().positive(),
+  paidAt: z.coerce.date().optional(),
+});
+export type SkontoCheckQuery = z.infer<typeof skontoCheckQuerySchema>;
 
 // ── Wiederkehrende Rechnungen / Abos ─────────────────────────────────────────
 export const RecurInterval = z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
