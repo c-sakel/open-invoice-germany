@@ -11,7 +11,7 @@ import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuye
 import { formatDateDe, formatMoneyDe } from "@/lib/template/format";
 import type { TemplateContext } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
-import type { BuyerSnapshot } from "@/schemas";
+import type { BuyerSnapshot, SellerSnapshot } from "@/schemas";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 
 export { DOC_TYPE_LABEL };
@@ -69,6 +69,54 @@ function docCtx(
     total: grossCents !== null ? formatMoneyDe(grossCents, currency) : "",
     netTotal: netCents !== null ? formatMoneyDe(netCents, currency) : "",
     taxTotal: taxCents !== null ? formatMoneyDe(taxCents, currency) : "",
+  };
+}
+
+export interface DocumentTextContextInput {
+  docType: EmailDocType;
+  number: string | null;
+  issueDate: Date;
+  dueDate?: Date | null;
+  validUntil?: Date | null;
+  totals?: { netCents: number; taxCents: number; grossCents: number } | null;
+  currency: string;
+  seller: SellerSnapshot;
+  buyer: BuyerSnapshot;
+}
+
+/**
+ * DB-freier Platzhalterkontext fuer Kopf-/Fusstexte in PDFs (Rechnung, Dokument,
+ * Lieferschein). Nutzt dieselben Zweige (customerCtx/docCtx) wie buildTemplateContext,
+ * laedt aber nichts selbst — Seller/Buyer kommen bereits aufgeloest (Snapshot-mit-
+ * Fallback) vom Aufrufer (mapper.ts/pdf-data.ts/delivery-note-data.ts).
+ * internalNotes ist hier strukturell nicht erreichbar (48).
+ */
+export function buildDocumentTextContext(input: DocumentTextContextInput): TemplateContext {
+  const company = {
+    name: input.seller.legalName,
+    email: input.seller.email ?? "",
+    phone: input.seller.phone ?? "",
+    iban: input.seller.iban ?? "",
+    bic: input.seller.bic ?? "",
+  };
+  const payment = { iban: input.seller.iban ?? "", bic: input.seller.bic ?? "" };
+  const dueOrValid = input.dueDate ?? input.validUntil ?? null;
+
+  return {
+    customer: customerCtx(input.buyer, { email: null }),
+    company,
+    payment,
+    document: docCtx(
+      input.docType,
+      input.number,
+      input.issueDate,
+      dueOrValid,
+      input.totals?.grossCents ?? null,
+      input.totals?.netCents ?? null,
+      input.totals?.taxCents ?? null,
+      input.currency,
+    ),
+    contact: { name: input.buyer.contactName ?? "" },
   };
 }
 

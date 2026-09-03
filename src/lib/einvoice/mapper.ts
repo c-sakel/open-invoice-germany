@@ -3,6 +3,9 @@
  * EInvoiceData-Struktur ab — gemeinsame Quelle für XRechnung- und PDF-Export.
  */
 import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
+import { buildDocumentTextContext } from "@/domain/email/context";
+import { renderTemplate } from "@/lib/template/render";
+import type { EmailDocType } from "@/schemas/email";
 import type { EInvoiceData, EInvoiceTaxSubtotal } from "./types";
 
 export interface MapInput {
@@ -15,6 +18,8 @@ export interface MapInput {
   buyerReference: string | null;
   paymentTerms: string | null;
   notes: string | null;
+  headerText?: string | null;
+  footerText?: string | null;
   netTotalCents: number;
   taxTotalCents: number;
   grossTotalCents: number;
@@ -69,6 +74,22 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   const ctx = invoice.id ?? invoice.number ?? "unbekannt";
   const org = parseSellerSnapshot(invoice.sellerSnapshotJson, invoice.org, ctx);
   const customer = parseBuyerSnapshot(invoice.buyerSnapshotJson, invoice.customer, ctx);
+
+  // Kopf-/Fusstext: Platzhalter mit einem DB-freien Kontext aus den bereits aufgeloesten
+  // Snapshot-Werten aufloesen — Ruling: das Ergebnis geht NUR ins PDF, nie ins XML.
+  const emailDocType: EmailDocType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+  const textCtx = buildDocumentTextContext({
+    docType: emailDocType,
+    number: invoice.number,
+    issueDate: invoice.issueDate,
+    dueDate: invoice.dueDate,
+    totals: { netCents: invoice.netTotalCents, taxCents: invoice.taxTotalCents, grossCents: invoice.grossTotalCents },
+    currency: invoice.currency,
+    seller: org,
+    buyer: customer,
+  });
+  const headerText = invoice.headerText ? renderTemplate(invoice.headerText, textCtx).text : null;
+  const footerText = invoice.footerText ? renderTemplate(invoice.footerText, textCtx).text : null;
 
   return {
     number: invoice.number ?? "ENTWURF",
@@ -125,5 +146,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    headerText,
+    footerText,
   };
 }

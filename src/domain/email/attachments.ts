@@ -6,6 +6,8 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
+import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
+import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { dbInternal } from "@/lib/db";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import type { EmailDocType } from "@/schemas/email";
@@ -58,7 +60,16 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
     return out;
   }
 
-  if (docType === "DELIVERY_NOTE") return []; // PDF kommt in Phase 3
+  if (docType === "DELIVERY_NOTE") {
+    // Mandanten-Gate ueber orgId direkt in der Query (analog Mahnung/Rechnung oben).
+    const dn = await dbInternal.deliveryNote.findFirst({
+      where: { id: docId, orgId },
+      include: { org: true, customer: true, lines: { orderBy: { position: "asc" } } },
+    });
+    if (!dn) return [];
+    const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer));
+    return [{ filename: `${safe(dn.number ?? "Lieferschein")}.pdf`, contentType: "application/pdf", content: pdf }];
+  }
 
   const q = await dbInternal.quote.findFirst({
     where: { id: docId, orgId, kind: docType },
