@@ -47,7 +47,7 @@ describe("Phase 1 — Verknuepfungen", () => {
   it("Angebot -> Rechnung schreibt Altfeld UND DocumentRelation", async () => {
     const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] });
     const inv = await convertDocumentToInvoice(q.id, { now: FIX });
-    const rel = await listRelations("QUOTE", q.id);
+    const rel = await listRelations(orgId, "QUOTE", q.id);
     expect(rel).toEqual([expect.objectContaining({ toType: "INVOICE", toId: inv.id, relationType: "CONVERTED_TO" })]);
     const q2 = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
     expect(q2.convertedToInvoiceId).toBe(inv.id);
@@ -57,7 +57,7 @@ describe("Phase 1 — Verknuepfungen", () => {
     const inv = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [line], deliveryDate: FIX });
     await finalizeInvoice(inv.id, { now: FIX });
     const { creditNote } = await cancelInvoice(inv.id, { now: FIX });
-    const rels = await listRelations("INVOICE", creditNote.id);
+    const rels = await listRelations(orgId, "INVOICE", creditNote.id);
     expect(rels.map((r) => r.relationType).sort()).toEqual(["CORRECTS", "REVERSES"]);
   });
 
@@ -70,7 +70,7 @@ describe("Phase 1 — Verknuepfungen", () => {
       .split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
     const run = async () => { for (const s of sql.split(";").map((x) => x.trim()).filter(Boolean)) await dbInternal.$executeRawUnsafe(s); };
     await run(); await run(); // zweimal: idempotent
-    const rel = await listRelations("QUOTE", q.id);
+    const rel = await listRelations(orgId, "QUOTE", q.id);
     expect(rel).toHaveLength(1);
     expect(rel[0].toId).toBe(inv.id);
     expect(await dbInternal.paymentMethod.count({ where: { orgId } })).toBe(8);

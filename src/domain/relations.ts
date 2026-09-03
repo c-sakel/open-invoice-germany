@@ -19,11 +19,13 @@ export function tableForRefType(t: RefType) { return TABLE[t]; }
 
 export class RelationError extends Error { constructor(m: string) { super(m); this.name = "RelationError"; } }
 
-export async function assertDocExists(tx: Tx, type: RefType, id: string): Promise<void> {
+export async function assertDocExists(tx: Tx, orgId: string, type: RefType, id: string): Promise<void> {
   const table = tableForRefType(type);
-  // Prisma-Delegates sind strukturell gleich fuer findUnique({ where: { id } }).
-  const found = await (tx[table] as unknown as { findUnique: (a: { where: { id: string }; select: { id: true } }) => Promise<{ id: string } | null> })
-    .findUnique({ where: { id }, select: { id: true } });
+  // DUNNING hat keine eigene orgId-Spalte -> Mandantenfilter ueber die verknuepfte Rechnung.
+  const where = type === "DUNNING" ? { id, invoice: { orgId } } : { id, orgId };
+  // Prisma-Delegates sind strukturell gleich fuer findFirst({ where }).
+  const found = await (tx[table] as unknown as { findFirst: (a: { where: unknown; select: { id: true } }) => Promise<{ id: string } | null> })
+    .findFirst({ where, select: { id: true } });
   if (!found) throw new RelationError(`${type} ${id} existiert nicht.`);
 }
 
@@ -31,8 +33,8 @@ export async function linkDocuments(
   tx: Tx,
   rel: { orgId: string; fromType: RefType; fromId: string; toType: RefType; toId: string; relationType: RelType },
 ) {
-  await assertDocExists(tx, rel.fromType, rel.fromId);
-  await assertDocExists(tx, rel.toType, rel.toId);
+  await assertDocExists(tx, rel.orgId, rel.fromType, rel.fromId);
+  await assertDocExists(tx, rel.orgId, rel.toType, rel.toId);
   return tx.documentRelation.upsert({
     where: { fromType_fromId_toType_toId_relationType: { fromType: rel.fromType, fromId: rel.fromId, toType: rel.toType, toId: rel.toId, relationType: rel.relationType } },
     create: rel,
@@ -40,9 +42,9 @@ export async function linkDocuments(
   });
 }
 
-export function listRelations(docType: RefType, docId: string) {
+export function listRelations(orgId: string, docType: RefType, docId: string) {
   return dbInternal.documentRelation.findMany({
-    where: { OR: [{ fromType: docType, fromId: docId }, { toType: docType, toId: docId }] },
+    where: { orgId, OR: [{ fromType: docType, fromId: docId }, { toType: docType, toId: docId }] },
     orderBy: { createdAt: "asc" },
   });
 }
