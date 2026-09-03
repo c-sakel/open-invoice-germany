@@ -4,6 +4,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { setQuoteStatus } from "@/domain/document/status";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -444,6 +445,23 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     const updated = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
     expect(updated.status).toBe("SENT");
     expect(updated.sentAt).not.toBeNull();
+  });
+
+  it("10b) SENT-Hook: Angebot bereits ACCEPTED -> nach Versand bleibt Status ACCEPTED", async () => {
+    const q = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0 }],
+    });
+    await setQuoteStatus(orgId, q.id, "ACCEPTED", { actor: "system" });
+
+    const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+    const memProvider = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    expect(res.status).toBe("SENT");
+
+    const updated = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
+    expect(updated.status).toBe("ACCEPTED");
   });
 
   it("11) SENT-Hook: Provider-Fehler (FAILED) -> Quote-Status bleibt unveraendert", async () => {

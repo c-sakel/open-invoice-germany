@@ -103,7 +103,7 @@ export function buildDocumentTextContext(input: DocumentTextContextInput): Templ
   const dueOrValid = input.dueDate ?? input.validUntil ?? null;
 
   return {
-    customer: customerCtx(input.buyer, { email: null }),
+    customer: customerCtx(input.buyer, { email: input.buyer.email }),
     company,
     payment,
     document: docCtx(
