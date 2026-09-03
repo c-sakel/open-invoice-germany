@@ -175,6 +175,47 @@ describe("updateDraftInvoice — Fix-Runde 1: Ansprechpartner/Adressen kundengep
   });
 });
 
+describe("updateDraftInvoice — Fix-Welle (K2): Referenzen bei Kundenwechsel", () => {
+  it("setzt Ansprechpartner/Rechnungs-/Lieferadresse serverseitig auf null, wenn der Kunde gewechselt wird und die Felder nicht mitgesendet werden", async () => {
+    const invoice = await draftInvoice();
+    const withRefs = await updateDraftInvoice(orgId, invoice.id, { contactPersonId, billingAddressId }, "tester");
+    expect(withRefs.contactPersonId).toBe(contactPersonId);
+    expect(withRefs.billingAddressId).toBe(billingAddressId);
+
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde K2 GmbH", addressLine1: "Nebenstr. 9", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    // Kundenwechsel OHNE contactPersonId/billingAddressId/shippingAddressId im Aufruf ->
+    // die alten Referenzen (gehoerten zum vorherigen Kunden) werden serverseitig genullt.
+    const updated = await updateDraftInvoice(orgId, invoice.id, { customerId: otherCustomer.id }, "tester");
+    expect(updated.customerId).toBe(otherCustomer.id);
+    expect(updated.contactPersonId).toBeNull();
+    expect(updated.billingAddressId).toBeNull();
+    expect(updated.shippingAddressId).toBeNull();
+  });
+
+  it("lehnt eine fremde Referenz beim Kundenwechsel ab (gehoert nicht zum neuen Kunden)", async () => {
+    const invoice = await draftInvoice();
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde K2b GmbH", addressLine1: "Nebenstr. 10", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    // contactPersonId gehoert zum ALTEN Kunden, nicht zum neuen -> Fehler.
+    await expect(
+      updateDraftInvoice(orgId, invoice.id, { customerId: otherCustomer.id, contactPersonId }, "tester"),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it("setzt ein Feld explizit auf null, wenn null gesendet wird (ohne Kundenwechsel)", async () => {
+    const invoice = await draftInvoice();
+    const withRefs = await updateDraftInvoice(orgId, invoice.id, { contactPersonId, billingAddressId }, "tester");
+    expect(withRefs.contactPersonId).toBe(contactPersonId);
+
+    const cleared = await updateDraftInvoice(orgId, invoice.id, { contactPersonId: null, billingAddressId: null }, "tester");
+    expect(cleared.contactPersonId).toBeNull();
+    expect(cleared.billingAddressId).toBeNull();
+  });
+});
+
 describe("updateDraftInvoice — Fix-Runde 1: type unveraenderbar", () => {
   it("ignoriert ein mitgesendetes type-Feld (Zod streift unbekannte Felder, kein Fehler) und laesst die Rechnungsart unveraendert", async () => {
     const invoice = await draftInvoice();

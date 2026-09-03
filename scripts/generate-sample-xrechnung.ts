@@ -343,6 +343,46 @@ const sections = () =>
     ],
   });
 
+// 11) Storno einer Rechnung mit Positionsbloecken (Fix-Welle nach Abschluss-Review, K1):
+// cancelInvoice uebernimmt lineType/descriptionLong/articleNumber unveraendert und
+// negiert nur die ITEM-Betraege — HEADING/TEXT/SUBTOTAL bleiben 0-Betraege und duerfen
+// im XML nicht auftauchen (§8). Gleiche Blockstruktur wie "sections", als Gutschrift.
+const creditNoteSections = () =>
+  buildSample({
+    number: "GS-2034-0012",
+    type: "CREDIT_NOTE",
+    sign: -1,
+    orderNumber: "BEST-2034-4711",
+    lines: [
+      {
+        description: "Einrichtung",
+        descriptionLong: "**Einmalig:** Einrichtung inkl. Grundkonfiguration.",
+        articleNumber: "ART-SETUP",
+        quantityMilli: 1000,
+        unit: "C62",
+        unitNetPriceCents: 50000,
+        taxRate: 19,
+        taxCategory: "S",
+      },
+      { description: "Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "HEADING" },
+      {
+        description: "Hinweis",
+        descriptionLong: "Gilt für die folgenden Hosting-Positionen.",
+        quantityMilli: 0,
+        unit: "C62",
+        unitNetPriceCents: 0,
+        taxRate: 0,
+        taxCategory: "S",
+        lineType: "TEXT",
+      },
+      { description: "Hosting 12 Monate", articleNumber: "ART-HOST", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 24000, taxRate: 19, taxCategory: "S" },
+      { description: "Domainverwaltung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 6000, taxRate: 19, taxCategory: "S" },
+      { description: "Zwischensumme Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "SUBTOTAL" },
+    ],
+    precedingInvoiceNumber: "RE-2034-0011",
+    precedingInvoiceDate: new Date("2034-06-09"),
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -356,6 +396,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "card-48": cardFallback,
   "sepa-59": sepaFallback,
   sections,
+  "credit-note-sections": creditNoteSections,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

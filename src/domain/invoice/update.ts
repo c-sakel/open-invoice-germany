@@ -87,6 +87,26 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     if (input.contactPersonId !== undefined) { data.contactPersonId = input.contactPersonId; changedFields.push("contactPersonId"); }
     if (input.billingAddressId !== undefined) { data.billingAddressId = input.billingAddressId; changedFields.push("billingAddressId"); }
     if (input.shippingAddressId !== undefined) { data.shippingAddressId = input.shippingAddressId; changedFields.push("shippingAddressId"); }
+
+    // Fix-Welle (K2): bei Kundenwechsel duerfen NICHT mitgesendete Referenzen (Ansprechpartner/
+    // Rechnungs-/Lieferadresse) nicht unveraendert am neuen Kunden haengen bleiben — sie
+    // gehoerten zum ALTEN Kunden. Wurden sie explizit mitgesendet, greift die Pruefung oben
+    // (fremde Referenz -> Fehler) bzw. der explizite Wert (auch null) oberhalb.
+    const customerChanged = input.customerId !== undefined && input.customerId !== invoice.customerId;
+    if (customerChanged) {
+      if (input.contactPersonId === undefined && invoice.contactPersonId !== null) {
+        data.contactPersonId = null;
+        changedFields.push("contactPersonId");
+      }
+      if (input.billingAddressId === undefined && invoice.billingAddressId !== null) {
+        data.billingAddressId = null;
+        changedFields.push("billingAddressId");
+      }
+      if (input.shippingAddressId === undefined && invoice.shippingAddressId !== null) {
+        data.shippingAddressId = null;
+        changedFields.push("shippingAddressId");
+      }
+    }
     if (input.notes !== undefined) { data.notes = input.notes; changedFields.push("notes"); }
     if (input.paymentTerms !== undefined) { data.paymentTerms = input.paymentTerms; changedFields.push("paymentTerms"); }
     if (input.headerText !== undefined) { data.headerText = input.headerText; changedFields.push("headerText"); }

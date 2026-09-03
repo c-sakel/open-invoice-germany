@@ -113,6 +113,7 @@ const SAMPLE_NAMES = [
   "card-48", // K2: Kartenzahlung faellt auf PaymentMeans-Code 1 zurueck
   "sepa-59", // K2: SEPA-Lastschrift faellt trotz IBAN auf PaymentMeans-Code 1 zurueck
   "sections", // Phase 4b (Task 4): Positionsbloecke (HEADING/TEXT/SUBTOTAL) + Artikelnummer/Langtext/Bestellnummer
+  "credit-note-sections", // Fix-Welle (K1): Storno einer Rechnung mit Positionsbloecken
 ];
 
 async function main(): Promise<void> {

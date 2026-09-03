@@ -279,9 +279,12 @@ const invoiceHeaderFields = {
   subject: z.string().max(200).optional(),
   orderNumber: z.string().max(100).optional(),
   internalReference: z.string().max(100).optional(),
-  contactPersonId: z.string().optional(),
-  billingAddressId: z.string().optional(),
-  shippingAddressId: z.string().optional(),
+  // Fix-Welle (K2): explizit als null sendbar — der Client sendet null, wenn das Feld
+  // im Editor geleert wurde, damit der Server die Referenz aktiv entfernt statt sie
+  // unveraendert zu lassen (Zod-Boundary, Domain siehe invoice/update.ts).
+  contactPersonId: z.string().nullable().optional(),
+  billingAddressId: z.string().nullable().optional(),
+  shippingAddressId: z.string().nullable().optional(),
   notes: z.string().optional(),
   paymentTerms: z.string().optional(),
   headerText: z.string().max(5000).optional(),
@@ -335,8 +338,9 @@ const documentTextFields = {
   deliveryTerms: z.string().max(2000).optional(),
   paymentTerms: z.string().max(2000).optional(),
   customerReference: z.string().max(200).optional(),
-  contactPersonId: z.string().optional(),
-  billingAddressId: z.string().optional(),
+  // Fix-Welle (K2): siehe invoiceHeaderFields — explizit als null sendbar.
+  contactPersonId: z.string().nullable().optional(),
+  billingAddressId: z.string().nullable().optional(),
 };
 
 export const createDocumentSchema = z.object({
@@ -560,8 +564,19 @@ export const ATTACHMENT_MIME_WHITELIST = [
 // Domain-Funktion addAttachment ueber die Summe bestehender Anhaenge geprueft, nicht hier.
 export const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_FILE_BYTES;
 
+// G6 (Fix-Welle): Steuerzeichen (inkl. CR/LF — Header-Injection in Content-Disposition/
+// E-Mail-Anhangsnamen), Pfadtrenner und ".." sind im Dateinamen verboten — eine Stelle
+// (dieses Schema), von der Domain (addAttachment) als einzigem Aufrufer genutzt.
+const FORBIDDEN_FILENAME_CHARS = /[\x00-\x1f\x7f]|\/|\\|\.\./;
+
 export const attachmentUploadSchema = z.object({
-  filename: z.string().min(1).max(255),
+  filename: z
+    .string()
+    .min(1)
+    .max(255)
+    .refine((v) => !FORBIDDEN_FILENAME_CHARS.test(v), {
+      message: "Dateiname enthaelt unzulaessige Zeichen (Steuerzeichen, '/', '\\' oder '..').",
+    }),
   mime: z.enum(ATTACHMENT_MIME_WHITELIST),
   sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_SIZE_BYTES),
 });
