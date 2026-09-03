@@ -61,8 +61,13 @@ import {
   OnQuoteAccept,
   TaxScheme,
   PaymentMethod,
+  DocRefType,
+  LineType,
 } from "@/schemas";
 import { NotFoundError } from "@/domain/errors";
+import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
+import { addAttachment, removeAttachment, listAttachments, type AttachmentDocType } from "@/domain/attachment/manage";
+import { AttachmentValidationError } from "@/lib/attachments/storage";
 
 // ── Helfer ────────────────────────────────────────────────────────────────
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -126,6 +131,29 @@ async function resolveDeliveryNote(orgId: string, ref: string) {
   return n;
 }
 
+/** Loest einen Belegverweis (Nummer oder ID) fuer Beleganhaenge ueber alle DocRefType
+ *  hinweg auf — dieselbe Auflosung wie die uebrigen resolve*-Helfer, nur docType-generisch. */
+async function resolveDocForAttachment(orgId: string, docType: AttachmentDocType, ref: string): Promise<{ id: string }> {
+  switch (docType) {
+    case "INVOICE":
+      return resolveInvoice(orgId, ref);
+    case "QUOTE":
+      return resolveDocument(orgId, ref);
+    case "DELIVERY_NOTE":
+      return resolveDeliveryNote(orgId, ref);
+    case "RECURRING": {
+      const r = await dbInternal.recurringInvoice.findFirst({ where: { orgId, OR: [{ id: ref }, { title: ref }] } });
+      if (!r) throw new Error(`Kein Abo "${ref}" gefunden.`);
+      return r;
+    }
+    case "DUNNING": {
+      const d = await dbInternal.dunning.findFirst({ where: { id: ref, invoice: { orgId } } });
+      if (!d) throw new Error(`Keine Mahnung "${ref}" gefunden.`);
+      return d;
+    }
+  }
+}
+
 /** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). Exportiert für Unit-Tests. */
 export async function buildSimpleLines(
   orgId: string,
@@ -157,6 +185,72 @@ export async function buildSimpleLines(
     if (unitPriceEuro == null) throw new Error(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
     return {
       description,
+      quantityMilli: qtyToMilli(l.quantity),
+      unit: unit ?? "C62",
+      unitNetPriceCents: euroToCents(unitPriceEuro),
+      taxRate: taxRate ?? 19,
+      taxCategory: "S",
+      discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
+      discountCents: l.discountAmount ? euroToCents(l.discountAmount) : 0,
+    };
+  });
+}
+
+/** Wie buildSimpleLines, aber mit lineType (Phase 4b, §8): HEADING/TEXT/SUBTOTAL tragen
+ *  nie einen Betrag und brauchen weder Menge noch Preis. Fuer update_invoice_draft. */
+async function buildEditorLines(
+  orgId: string,
+  inputLines: {
+    lineType?: "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
+    description: string;
+    descriptionLong?: string;
+    articleNumber?: string;
+    quantity?: number;
+    unitPriceEuro?: number;
+    productName?: string;
+    unit?: string;
+    taxRatePercent?: number;
+    discountPercent?: number;
+    discountAmount?: number;
+  }[],
+) {
+  const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
+  return inputLines.map((l, idx) => {
+    const lineType = l.lineType ?? "ITEM";
+    if (lineType !== "ITEM") {
+      return {
+        lineType,
+        description: l.description,
+        descriptionLong: l.descriptionLong,
+        articleNumber: l.articleNumber,
+        quantityMilli: 0,
+        unit: l.unit ?? "C62",
+        unitNetPriceCents: 0,
+        taxRate: 0,
+        taxCategory: "S",
+        discountPermille: 0,
+        discountCents: 0,
+      };
+    }
+    let unitPriceEuro = l.unitPriceEuro;
+    let unit = l.unit;
+    let taxRate = l.taxRatePercent;
+    let description = l.description;
+    if (unitPriceEuro == null && l.productName) {
+      const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
+      if (!p) throw new Error(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      unitPriceEuro = p.netPriceCents / 100;
+      unit = unit ?? p.unit;
+      taxRate = taxRate ?? p.taxRate;
+      description = description || p.name;
+    }
+    if (l.quantity == null) throw new Error(`Position ${idx + 1} (ITEM) braucht "quantity".`);
+    if (unitPriceEuro == null) throw new Error(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+    return {
+      lineType: "ITEM" as const,
+      description,
+      descriptionLong: l.descriptionLong,
+      articleNumber: l.articleNumber,
       quantityMilli: qtyToMilli(l.quantity),
       unit: unit ?? "C62",
       unitNetPriceCents: euroToCents(unitPriceEuro),
@@ -1313,6 +1407,153 @@ server.registerTool(
       return ok(`Dokument-Einstellungen gespeichert: onQuoteAccept=${saved.onQuoteAccept}, shareLinkDays=${saved.shareLinkDays}, storeAcceptIp=${saved.storeAcceptIp}.`);
     } catch (e) {
       if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_invoice_draft ─────────────────────────────────────────────────────
+server.registerTool(
+  "update_invoice_draft",
+  {
+    title: "Rechnungsentwurf bearbeiten",
+    description:
+      "Aktualisiert einen Rechnungsentwurf (nur DRAFT — festgeschriebene Rechnungen sind unveraenderbar, GoBD). Nicht angegebene Felder bleiben unveraendert. Wird 'lines' angegeben, werden ALLE Positionen ersetzt; lineType erlaubt Ueberschriften/Textbloecke/Zwischensummen (HEADING/TEXT/SUBTOTAL, tragen nie einen Betrag).",
+    inputSchema: {
+      invoice: z.string().describe("Rechnungsnummer oder ID"),
+      subject: z.string().optional().describe("Betreff"),
+      orderNumber: z.string().optional().describe("Bestellnummer (BT-13)"),
+      internalReference: z.string().optional(),
+      buyerReference: z.string().optional().describe("Leitweg-ID-Override (BT-10)"),
+      notes: z.string().optional(),
+      internalNotes: z.string().optional().describe("Nur intern sichtbar, erscheint nie im Beleg/E-Mail"),
+      paymentTerms: z.string().optional(),
+      dueDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
+      deliveryDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
+      lines: z
+        .array(
+          z.object({
+            lineType: LineType.default("ITEM"),
+            description: z.string(),
+            descriptionLong: z.string().optional().describe("Rich-Text-Langbeschreibung (Markdown-Teilmenge)"),
+            articleNumber: z.string().optional(),
+            quantity: z.number().optional().describe("Menge (Pflicht bei ITEM)"),
+            unitPriceEuro: z.number().optional(),
+            productName: z.string().optional(),
+            unit: z.string().optional(),
+            taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+            discountPercent: z.number().min(0).max(100).optional(),
+            discountAmount: z.number().min(0).optional(),
+          }),
+        )
+        .optional(),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const inv = await resolveInvoice(org.id, args.invoice);
+      const patch: Record<string, unknown> = {};
+      if (args.subject !== undefined) patch.subject = args.subject;
+      if (args.orderNumber !== undefined) patch.orderNumber = args.orderNumber;
+      if (args.internalReference !== undefined) patch.internalReference = args.internalReference;
+      if (args.buyerReference !== undefined) patch.buyerReference = args.buyerReference;
+      if (args.notes !== undefined) patch.notes = args.notes;
+      if (args.internalNotes !== undefined) patch.internalNotes = args.internalNotes;
+      if (args.paymentTerms !== undefined) patch.paymentTerms = args.paymentTerms;
+      if (args.dueDate !== undefined) patch.dueDate = parseDateInput(args.dueDate);
+      if (args.deliveryDate !== undefined) patch.deliveryDate = parseDateInput(args.deliveryDate);
+      if (args.lines) patch.lines = await buildEditorLines(org.id, args.lines);
+
+      const updated = await updateDraftInvoice(org.id, inv.id, patch, "mcp");
+      return ok(`Entwurf aktualisiert: ${updated.number ?? "Entwurf " + updated.id.slice(0, 8)} · Netto ${formatCents(updated.netTotalCents)} · Brutto ${formatCents(updated.grossTotalCents)}.`);
+    } catch (e) {
+      if (e instanceof InvoiceUpdateError) return fail(e.message);
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── add_attachment ───────────────────────────────────────────────────────────
+server.registerTool(
+  "add_attachment",
+  {
+    title: "Beleganhang hochladen",
+    description:
+      "Fuegt einem Beleg (Rechnung/Angebot/Lieferschein/Abo/Mahnung) einen Anhang hinzu. Dateiinhalt als Base64. Gleiche Grenzen/Whitelist wie im UI (10 MB je Datei, 50 MB je Beleg, keine ausfuehrbaren Formate, Magic-Bytes-Pruefung).",
+    inputSchema: {
+      docType: DocRefType,
+      docId: z.string().describe("Belegnummer oder ID"),
+      filename: z.string(),
+      mime: z.string().describe("MIME-Typ, z. B. application/pdf"),
+      contentBase64: z.string().describe("Dateiinhalt Base64-kodiert"),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocForAttachment(org.id, args.docType, args.docId);
+      const buffer = Buffer.from(args.contentBase64, "base64");
+      const row = await addAttachment(org.id, args.docType, doc.id, { filename: args.filename, mime: args.mime, buffer }, "mcp");
+      return ok(`Anhang gespeichert: ${row.filename} (${(row.sizeBytes / 1024).toFixed(0)} KB). ID: ${row.id}.`);
+    } catch (e) {
+      if (e instanceof AttachmentValidationError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_attachments ─────────────────────────────────────────────────────────
+server.registerTool(
+  "list_attachments",
+  {
+    title: "Beleganhaenge auflisten",
+    description: "Listet die Anhaenge eines Belegs.",
+    inputSchema: {
+      docType: DocRefType,
+      docId: z.string().describe("Belegnummer oder ID"),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocForAttachment(org.id, args.docType, args.docId);
+      const rows = await listAttachments(org.id, args.docType, doc.id);
+      if (rows.length === 0) return ok("Keine Anhaenge.");
+      return ok(
+        JSON.stringify(
+          rows.map((r) => ({ id: r.id, filename: r.filename, mime: r.mime, sizeBytes: r.sizeBytes, uploadedAt: r.createdAt.toISOString() })),
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── remove_attachment ────────────────────────────────────────────────────────
+server.registerTool(
+  "remove_attachment",
+  {
+    title: "Beleganhang entfernen",
+    description: "Entfernt einen Anhang von einem Beleg (kein GoBD-Beleg — die Datei ist loeschbar, die Aktion geht ins ChangeLog).",
+    inputSchema: {
+      docType: DocRefType,
+      docId: z.string().describe("Belegnummer oder ID"),
+      attachmentId: z.string(),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocForAttachment(org.id, args.docType, args.docId);
+      await removeAttachment(org.id, args.docType, doc.id, args.attachmentId, "mcp");
+      return ok(`Anhang ${args.attachmentId} entfernt.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
