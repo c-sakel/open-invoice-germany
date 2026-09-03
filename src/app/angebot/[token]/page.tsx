@@ -2,11 +2,12 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { resolveShareToken } from "@/domain/quote-share/link";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
-import { formatCents, formatQuantity } from "@/lib/money";
+import { formatCents } from "@/lib/money";
 import { formatDateDe } from "@/lib/template/format";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { DecisionForm } from "./DecisionForm";
+import { LineItemsTable } from "@/components/LineItemsTable";
 
 export const dynamic = "force-dynamic";
 
@@ -114,32 +115,7 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
 
       {data.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{data.headerText}</p>}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Beschreibung</th>
-              <th className="px-4 py-2 text-right">Menge</th>
-              <th className="px-4 py-2 text-right">Einzel</th>
-              <th className="px-4 py-2 text-right">USt</th>
-              <th className="px-4 py-2 text-right">Netto</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {data.lines.map((l) => (
-              <tr key={l.id}>
-                <td className="px-4 py-2 text-slate-700">{l.description}</td>
-                <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {l.unit}
-                </td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, data.currency)}</td>
-                <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.lineNetCents, data.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LineItemsTable lines={data.lines} currency={data.currency} />
 
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         <div className="flex justify-between">

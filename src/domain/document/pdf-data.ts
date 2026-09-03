@@ -84,8 +84,12 @@ interface DocInput {
 }
 
 export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
+  // G1 (Fix-Welle): Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) tragen keinen Betrag und
+  // gehen nie in die Steueraufschluesselung ein (§8) — Fehlt lineType (Alt-Fixtures),
+  // wird ITEM angenommen (gleiche Regel wie isItemLine in xrechnung.ts).
+  const itemLines = q.lines.filter((l) => toLineType(l.lineType) === "ITEM");
   const totals = computeTaxBreakdown(
-    q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     {
       discountPermille: q.documentDiscountPermille,
       discountCents: q.documentDiscountCents,
