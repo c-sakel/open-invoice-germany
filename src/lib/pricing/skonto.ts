@@ -41,6 +41,12 @@ function addUtcDays(d: Date, days: number): Date {
   return base;
 }
 
+// Fristende = UTC-Tagesende (bewusste Konvention, siehe Modulkommentar oben). In der
+// deutschen Zeitzone (Berlin, UTC+1/+2) bedeutet das: die Frist laeuft praktisch bis
+// 01:00 bzw. 02:00 Uhr NACHTS des Folgetags weiter, weil UTC-Mitternacht des Folgetags
+// erst dann erreicht ist. Ein Zahlungseingang in diesen fruehen Morgenstunden zaehlt
+// also noch fristgerecht — bewusst grosszuegig statt eine serverlokale Zeitzone
+// mitzufuehren (die bei DST-Umstellungen ohnehin uneindeutig waere).
 function endOfUtcDay(d: Date): Date {
   const base = toUtcMidnight(d);
   return new Date(base.getTime() + 24 * 60 * 60 * 1000 - 1);
@@ -85,10 +91,17 @@ export function skontoTerms(i: SkontoTermsInput): SkontoTerm[] {
 
 /**
  * Ermittelt die zutreffende Skonto-Frist für einen Zahlungseingang.
- * Treffer, wenn `paidAt` bis Tagesende der Frist liegt, der gezahlte Betrag
- * mindestens dem Skonto-Zahlbetrag entspricht (Rundungstoleranz 1 Cent) und
- * kleiner als der noch offene Betrag vor dieser Zahlung ist. Bei mehreren
- * Treffern gewinnt der höchste Skonto-Satz.
+ *
+ * Fix-Welle (G-detectSkonto): die alte Regel `amountCents >= payableCents - 1` traf
+ * auf JEDE Zahlung zwischen Skonto-Zahlbetrag und offenem Betrag zu — z. B. wurde
+ * eine Zahlung von 999,99 € auf eine Forderung von 1.000,00 € faelschlich als
+ * "2 % Skonto genommen" erkannt, obwohl nur 1 Cent fehlte. Jetzt muss der gezahlte
+ * Betrag INNERHALB ±1 Cent zum Skonto-Zahlbetrag (`payableCents`) liegen — bei
+ * mehreren Treffern gewinnt der naechstliegende. Zusaetzlich muss der tatsaechlich
+ * gewaehrte Rest (offener Betrag vor der Zahlung minus gezahlter Betrag) ±1 Cent zum
+ * Skontobetrag des Terms (`amountCents`) passen, sonst gibt es KEINEN Vorschlag —
+ * das faengt Teilzahlungen ab, bei denen `openBeforeCents` vom vollen Rechnungsbetrag
+ * abweicht (z. B. durch eine vorherige Anzahlung).
  */
 export function detectSkonto(
   terms: readonly SkontoTerm[],
@@ -97,13 +110,15 @@ export function detectSkonto(
   openBeforeCents: number,
 ): SkontoTerm | null {
   const matches = terms.filter(
-    (t) =>
-      paidAt.getTime() <= endOfUtcDay(t.dueDate).getTime() &&
-      amountCents >= t.payableCents - 1 &&
-      amountCents < openBeforeCents,
+    (t) => paidAt.getTime() <= endOfUtcDay(t.dueDate).getTime() && Math.abs(amountCents - t.payableCents) <= 1,
   );
   if (matches.length === 0) return null;
-  return matches.reduce((best, t) => (t.permille > best.permille ? t : best));
+  const best = matches.reduce((b, t) =>
+    Math.abs(amountCents - t.payableCents) < Math.abs(amountCents - b.payableCents) ? t : b,
+  );
+  const restCents = openBeforeCents - amountCents;
+  if (Math.abs(restCents - best.amountCents) > 1) return null;
+  return best;
 }
 
 /**

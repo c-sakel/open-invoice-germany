@@ -356,6 +356,18 @@ describe("Fix-Welle (K2) — PaymentMeans-Allowlist", () => {
     expect(data.paymentMeans?.code).toBe("1");
   });
 
+  it("W3 — paymentTermsHuman ergaenzt bei GESETZTEM Freitext-Zahlungsziel den Skonto-Klartext (statt ihn zu verschlucken)", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentTerms: "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
+      skonto1: { permille: 20, days: 7 },
+    });
+    expect(data.paymentTermsHuman).toContain("Zahlbar innerhalb von 30 Tagen ohne Abzug.");
+    expect(data.paymentTermsHuman).toContain("Skonto");
+    expect(data.paymentTermsHuman).not.toContain("#SKONTO#");
+    expect(data.paymentTermsNote).toContain("#SKONTO#TAGE=7#PROZENT=2.00#");
+  });
+
   it("paymentMethodSchema laesst nur die Allowlist zu", async () => {
     const { paymentMethodSchema } = await import("@/schemas");
     expect(paymentMethodSchema.safeParse({ code: "X", name: "X", untdidCode: "48" }).success).toBe(true);
