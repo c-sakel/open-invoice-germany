@@ -72,6 +72,19 @@ export async function recordPayment(
     const paidAt = input.paidAt ?? now;
     const openBeforeCents = inv.grossTotalCents - inv.paidAmountCents;
 
+    // Ueberzahlung verhindern (Fix-Runde 1, Low-Befund): eine bereits vollstaendig
+    // bezahlte Rechnung (offener Rest <= 0) nimmt keine weitere Zahlung mehr an, und eine
+    // einzelne Zahlung darf den noch offenen Rest nicht uebersteigen — es entsteht kein
+    // Ueberzahlungs-Datensatz.
+    if (openBeforeCents <= 0) {
+      throw new PaymentError("Rechnung ist bereits vollstaendig bezahlt");
+    }
+    if (input.amountCents > openBeforeCents) {
+      throw new PaymentError(
+        `Zahlung (${input.amountCents} Cent) uebersteigt den offenen Betrag (${openBeforeCents} Cent).`,
+      );
+    }
+
     const payment = await tx.payment.create({
       data: {
         invoiceId,

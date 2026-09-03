@@ -184,6 +184,52 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(original!.status).toBe("FINALIZED"); // NICHT storniert
   });
 
+  it("Teilgutschrift: Beleg-Festbetrag (Rabatt/Aufschlag) proportional zum Positionsverhaeltnis", async () => {
+    // Original: 2 * 100,00 € = 200,00 € netto, Festrabatt 20,00 € -> 180,00 € Basis.
+    const finDiscount = await finalizeInvoice(
+      (await createDraftInvoice(orgId, baseInput({ documentDiscountCents: 2000 }))).id,
+      { now: FIX_DATE },
+    );
+    // Teilgutschrift ueber 50,00 € (0,5 der Original-Positionsmenge von 2) -> Rabattanteil
+    // round(2000 * 5000 / 20000) = 500 (5,00 €), Netto -4.500 Cent (-45,00 €).
+    const resDiscount = await createPartialCreditNote(
+      finDiscount.id,
+      { lines: [{ description: "Teilerstattung", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
+      { now: FIX_DATE },
+    );
+    expect(resDiscount.creditNote.documentDiscountCents).toBe(500);
+    expect(resDiscount.creditNote.netTotalCents).toBe(-4500);
+
+    // Original: 2 * 100,00 € = 200,00 € netto, Festaufschlag 10,00 € -> 210,00 € Basis.
+    const finCharge = await finalizeInvoice(
+      (await createDraftInvoice(orgId, baseInput({ documentChargeCents: 1000 }))).id,
+      { now: FIX_DATE },
+    );
+    // Teilgutschrift ueber 50,00 € -> Aufschlagsanteil round(1000 * 5000 / 20000) = 250
+    // (2,50 €), Netto -5.250 Cent (-52,50 €).
+    const resCharge = await createPartialCreditNote(
+      finCharge.id,
+      { lines: [{ description: "Teilerstattung", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
+      { now: FIX_DATE },
+    );
+    expect(resCharge.creditNote.documentChargeCents).toBe(250);
+    expect(resCharge.creditNote.netTotalCents).toBe(-5250);
+  });
+
+  it("Teilgutschrift ueber ALLE Positionen: voller Beleg-Festbetrag wird uebernommen", async () => {
+    const fin = await finalizeInvoice(
+      (await createDraftInvoice(orgId, baseInput({ documentDiscountCents: 2000 }))).id,
+      { now: FIX_DATE },
+    );
+    const res = await createPartialCreditNote(
+      fin.id,
+      { lines: [{ description: "Volle Erstattung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
+      { now: FIX_DATE },
+    );
+    expect(res.creditNote.documentDiscountCents).toBe(2000);
+    expect(res.creditNote.netTotalCents).toBe(-18000); // (20.000 - 2.000) Cent, negativ
+  });
+
   it("Dokument: Angebot anlegen + in Rechnung umwandeln", async () => {
     const doc = await createBusinessDocument(
       orgId,
