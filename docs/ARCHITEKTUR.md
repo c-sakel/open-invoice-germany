@@ -104,6 +104,20 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 - Vergabe **nur** beim Festschreiben, transaktional, monoton steigend pro `(orgId, docType, year)`. Drafts haben keine Nummer → kein „Loch" durch verworfene Entwürfe.
 - Stornos verbrauchen reguläre Nummern aus dem Kreis → entstehende „Sprünge" sind systemdokumentiert (ChangeLog), damit bei BP erklärbar (UStAE 14.5(10): Einmaligkeit zwingend, Lückenlosigkeit nicht; unerklärte Lücken = Schätzungsrisiko).
 
+### Pricing-Modul (Phase 4a): Rabatte, Skonto, Zahlungsmethoden
+
+**Rabatt/Aufschlag** (`src/lib/pricing/`, reine Funktionen, kein DB-Zugriff):
+
+- **Positionsrabatt** (`line.ts`, `computeLineNet`): Prozent (`discountPermille`, 0..1000) **und** Festbetrag (`discountCents`) kombinierbar, in dieser Reihenfolge auf den Bruttozeilenwert angewandt; der Rabatt darf den Netto-Zeilenwert nicht übersteigen (`PricingError`).
+- **Belegrabatt/-aufschlag** (`allocate.ts`, `applyDocumentAdjustments`): wird proportional auf die Steuersatz-Buckets (19 %/7 %/0 %) verteilt, nach dem **Largest-Remainder-Verfahren** (`allocateProportional`) — Rundungsdifferenzen landen deterministisch beim Bucket mit dem größten Bruchteil (bei Gleichstand beim kleineren Index), sodass die Summe der Buckets exakt dem Gesamtbetrag entspricht.
+- **Vorzeichen-Invarianz**: Bei Storno/Gutschrift sind die Steuersatz-Buckets negativ (gespiegelte Originalrechnung); `applyDocumentAdjustments` rechnet intern auf den negierten (positiven) Beträgen wie bei einer regulären Rechnung und negiert das Ergebnis zurück — Rabatt-/Aufschlagsbeträge bleiben dadurch für Storno und Gutschrift exakt spiegelbildlich zur Originalrechnung. Gemischte Vorzeichen über die Buckets hinweg sind bei einer Anpassung ≠ 0 unzulässig (`PricingError`).
+- **Teilgutschrift**: Festbetragsrabatte (Positions- wie Belegebene) werden proportional zur erstatteten Menge/den erstatteten Positionen herunterskaliert, nie 1:1 vom Originalbeleg übernommen — sonst würde eine Teilgutschrift über mehrere Festbetragsrabatte hinweg mehr erstatten als ursprünglich gewährt.
+- **E-Rechnung-Mapping**: Positionsrabatt → `AllowanceCharge` auf Zeilenebene, Belegrabatt/-aufschlag → `AllowanceCharge` auf Dokumentebene je Steuersatz (EN 16931 BG-27/BG-28 Zeile, BG-20/BG-21 Dokument; BT-107/BT-108 Netto-Summenfelder) — sowohl UBL (`xrechnung.ts`) als auch CII (`cii.ts`).
+
+**Skonto** (`src/lib/pricing/skonto.ts`): bis zu zwei Skontoziele (`skonto1…`/`skonto2…Permille`/`…Days`) je Rechnung; Ziel 2 ist nur zusammen mit Ziel 1 und mit einer längeren Frist zulässig (Zod-Validierung, `documentAdjustmentFields` in `src/schemas/index.ts`). `computeSkontoTerms` berechnet Fälligkeitsdatum, Skontobetrag und Zahlbetrag je Ziel; die BT-20-Freitext-Syntax `#SKONTO#TAGE=n#PROZENT=x.xx#` (eine Zeile je Ziel) wird sowohl in den PDF-Zahlungsbedingungen als auch im UBL-/CII-`PaymentTerms`-Feld ausgegeben (Details + Quelle: `COMPLIANCE.md` Abschnitt 11). Der Zahlungseingang (`src/domain/invoice/payment.ts`) erkennt anhand `paidAt` und Zahlbetrag automatisch einen möglichen Skontoabzug, schlägt ihn im Formular vor und markiert die Zahlung bei Bestätigung als `isSkonto = true`; eine Überzahlung über den offenen Betrag hinaus wird gesperrt.
+
+**Zahlungsmethoden** (`PaymentMethod`, `src/domain/payment-method/manage.ts`): Organisations-Stammdaten mit UI-CRUD (`/einstellungen/zahlungsmethoden`), Systemcodes (u. a. `SKONTO`, per Backfill/`ensureOrgMasterdata` je Organisation angelegt) und einem optionalen Kunden-Default (`Customer.defaultPaymentMethodId`). Beim Festschreiben einer Rechnung wird die gewählte Zahlungsmethode als Snapshot auf die Rechnung übernommen (unabhängig von späteren Änderungen an der Stammdaten-Zahlungsmethode) und liefert den `PaymentMeansCode` (UNTDID 4461, z. B. `58` SEPA-Überweisung) fürs XML; ohne hinterlegte IBAN fällt der Export auf Code `1` („Nicht näher spezifiziert") zurück, statt eine ungültige/leere `PaymentMeans`-Angabe zu erzeugen.
+
 ---
 
 ## 2. E-Rechnung: Erzeugung & Validierung

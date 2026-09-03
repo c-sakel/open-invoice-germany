@@ -40,6 +40,8 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 - **Tax schemes**: standard rating (19/7/0), small business (§ 19), reverse charge (§ 13b), intra-EU supply, margin scheme (§ 25a), small amount (§ 33).
 - **E-invoice**: **XRechnung** (UBL, EN 16931) **and ZUGFeRD/Factur-X hybrid PDF** (embedded EN-16931 CII), both validated against the **official Schematron** rules (SaxonJS, no Java) — cross-checked by the KoSIT validator in CI.
 - **Documents**: quotes, order confirmations, pro-forma — convertible into an invoice.
+- **Discounts, surcharges & Skonto**: per-line discount (percent + fixed amount) and document-level discount/surcharge (allocated proportionally per tax rate), correctly mapped to `AllowanceCharge` in XRechnung/ZUGFeRD (BG-20/21/27/28); early-payment discount (Skonto, up to two terms) as BT-20 text incl. the `#SKONTO#TAGE=n#PROZENT=x.xx#` convention, with a payment-recording suggestion.
+- **Payment methods**: per-organisation catalogue (system codes + custom), optional customer default, snapshotted on finalisation, mapped to UNTDID 4461 `PaymentMeansCode`.
 - **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate) + €40 flat fee (B2B), each as a PDF.
 - **Recurring invoices / subscriptions**: weekly–yearly templates, optional auto-finalisation, run via UI/MCP or cron (`npm run recurring:run`).
 - **Credit notes**: full cancellation **or** partial credit, original stays finalised.
