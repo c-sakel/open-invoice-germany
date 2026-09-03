@@ -265,6 +265,32 @@ const noIban = () =>
     lines: [{ description: "Beratung vor Ort", quantityMilli: 3000, unit: "HUR", unitNetPriceCents: 9500, taxRate: 19, taxCategory: "S" }],
   });
 
+// 8) Kartenzahlung (CARD, UNTDID 4461 = 48) — der Mapper kennt keine CardAccount-
+// Zusatzgruppe (K2) und faellt daher auf Code 1 zurueck (kein PayeeFinancialAccount).
+const cardFallback = () =>
+  buildSample({
+    number: "RE-2034-0009",
+    lines: [{ description: "Beratung vor Ort", quantityMilli: 3000, unit: "HUR", unitNetPriceCents: 9500, taxRate: 19, taxCategory: "S" }],
+    paymentMethod: { code: "CARD", name: "EC-/Debitkarte", invoiceText: "Zahlung per Karte.", untdidCode: "48", bankIban: null, bankBic: null, bankName: null },
+  });
+
+// 9) SEPA-Lastschrift (SEPA, UNTDID 4461 = 59) — trotz vorhandener IBAN faellt der
+// Mapper auf Code 1 zurueck (K2), weil die PaymentMandate-Zusatzgruppe fehlt.
+const sepaFallback = () =>
+  buildSample({
+    number: "RE-2034-0010",
+    lines: [{ description: "Beratung vor Ort", quantityMilli: 3000, unit: "HUR", unitNetPriceCents: 9500, taxRate: 19, taxCategory: "S" }],
+    paymentMethod: {
+      code: "SEPA",
+      name: "SEPA-Lastschrift",
+      invoiceText: "Einzug per SEPA-Lastschrift.",
+      untdidCode: "59",
+      bankIban: "DE02120300000000202051",
+      bankBic: "BYLADEM1001",
+      bankName: "Muster Bank",
+    },
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -275,6 +301,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   cash,
   "credit-note-doc-discount": creditNoteDocDiscount,
   "no-iban": noIban,
+  "card-48": cardFallback,
+  "sepa-59": sepaFallback,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

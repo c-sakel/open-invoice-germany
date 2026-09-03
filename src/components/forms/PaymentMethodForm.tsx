@@ -47,7 +47,11 @@ export function PaymentMethodForm({ method }: { method?: PaymentMethodFormData |
           label="UNTDID-4461-Code (BT-81)"
           name="untdidCode"
           defaultValue={method?.untdidCode ?? "ZZZ"}
-          hint={isSystem ? "Systemcode — Änderungen werden beim Speichern ignoriert." : undefined}
+          hint={
+            isSystem
+              ? "Systemcode — Änderungen werden beim Speichern ignoriert."
+              : "Erlaubt: 58, 30, 10, 68, 97, 1, ZZZ, 48, 54, 55, 59 (48/54/55/59 erscheinen in der E-Rechnung als Code 1)."
+          }
           placeholder="ZZZ"
         />
         <TextAreaField label="Rechnungstext" name="invoiceText" defaultValue={method?.invoiceText} className="sm:col-span-2" hint="Erscheint als Zahlungshinweis auf der Rechnung." />
