@@ -52,6 +52,27 @@ async function makeQuote(netCents: number, taxRate: 19 | 7 | 0 = 19) {
   );
 }
 
+async function makeDiscountedMixedRateQuote() {
+  // Reviewer-Fixture (Fix-Runde 2): 500.000@19 % + 500.000@7 %, 10 % Beleg-Rabatt.
+  // Gesamtleistung: lineTotal 1.000.000, D = 100.000, je Bucket -50.000 -> 450.000/450.000
+  // netto, Steuer 85.500/31.500, brutto gesamt 1.017.000.
+  return createBusinessDocument(
+    orgId,
+    {
+      kind: "ANGEBOT",
+      customerId,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      documentDiscountPermille: 100,
+      lines: [
+        { lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 500_000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+        { lineType: "ITEM", description: "Literatur", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 500_000, taxRate: 7, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+      ],
+    },
+    { now: FIX_DATE },
+  );
+}
+
 beforeAll(async () => {
   const org = await dbInternal.organization.create({
     data: { legalName: "Teilrechnung GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
@@ -176,6 +197,44 @@ describe("Fix-Runde 1 (HIGH): kumulativer Ueberbuchungs-Guard fuer PERCENT/NET_A
     await expect(
       createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "NET_AMOUNT", amountCents: 100_000 }, { now: FIX_DATE }),
     ).rejects.toThrow(PartialInvoiceError);
+  });
+});
+
+describe("Fix-Runde 2: Anteilsbasis ist die Gesamtleistung NACH Beleg-Rabatt/-Aufschlag der Quelle", () => {
+  it("PARTIAL (PERCENT) auf einer Quelle mit 10 % Beleg-Rabatt: 100 % Anteil == grossTotalCents, darueber wird verweigert", async () => {
+    const quote = await makeDiscountedMixedRateQuote();
+    expect(quote.grossTotalCents).toBe(1_017_000);
+
+    const full = await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 1000 }, { now: FIX_DATE });
+    expect(full.grossTotalCents).toBe(1_017_000);
+
+    await expect(
+      createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 100 }, { now: FIX_DATE }),
+    ).rejects.toThrow(PartialInvoiceError);
+  });
+
+  it("DOWNPAYMENT (30 %) auf einer Quelle mit 10 % Beleg-Rabatt liefert netto 135.000/135.000 je Satz; FINAL payable = 711.900; ueber 100 % wird verweigert", async () => {
+    const quote = await makeDiscountedMixedRateQuote();
+    expect(quote.grossTotalCents).toBe(1_017_000);
+
+    const dp = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: FIX_DATE });
+    const line19 = dp.lines.find((l) => l.taxRate === 19)!;
+    const line7 = dp.lines.find((l) => l.taxRate === 7)!;
+    expect(line19.unitNetPriceCents).toBe(135_000);
+    expect(line7.unitNetPriceCents).toBe(135_000);
+    expect(dp.grossTotalCents).toBe(305_100);
+
+    const finalizedDp = await finalizeInvoice(dp.id, { now: FIX_DATE });
+    expect(finalizedDp.grossTotalCents).toBe(305_100);
+
+    // 30 % + 80 % > 100 % (Reviewer-Fixture, korrekte Bezugsgroesse) wird verweigert.
+    await expect(
+      createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 800 }, { now: FIX_DATE }),
+    ).rejects.toThrow(DownpaymentInvoiceError);
+
+    const final = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: FIX_DATE });
+    const finalized = await finalizeInvoice(final.id, { now: FIX_DATE });
+    expect(finalized.payableCents).toBe(711_900);
   });
 });
 

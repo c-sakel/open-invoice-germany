@@ -17,8 +17,10 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { splitByTaxRate, bucketsFromLines, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
+import { computeTaxBreakdown } from "@/lib/tax";
+import { splitByTaxRate, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
+import type { RateBucket } from "@/lib/pricing/allocate";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -64,9 +66,28 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
       throw new DownpaymentInvoiceError("Auf dieser Quelle bestehen bereits Teilrechnungen — Teil- und Abschlagsrechnungen koennen nicht gemischt werden.");
     }
 
+    // Fix-Runde 2 (Ruling Koordinator): Anteilsbasis ist die Gesamtleistung NACH
+    // Beleg-Rabatt/-Aufschlag der Quelle, nicht die rohen Positionsbetraege — sonst
+    // wuerde z. B. eine 30 %-Abschlagsrechnung bei einer Quelle mit Beleg-Rabatt einen
+    // zu hohen Betrag ausweisen (die 100-%-Grenze verglich ohnehin bereits
+    // quote.grossTotalCents, war also inkonsistent zur Bucket-Basis).
     const itemLines = quote.lines.filter((l) => l.lineType === "ITEM");
-    const buckets = bucketsFromLines(itemLines.map((l) => ({ taxRate: l.taxRate, taxCategory: l.taxCategory, lineNetCents: l.lineNetCents })));
-    if (buckets.length === 0) throw new DownpaymentInvoiceError("Die Quelle enthaelt keine abrechenbaren Positionen.");
+    const adjustedTotals = computeTaxBreakdown(
+      itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+      {
+        discountPermille: quote.documentDiscountPermille,
+        discountCents: quote.documentDiscountCents,
+        chargePermille: quote.documentChargePermille,
+        chargeCents: quote.documentChargeCents,
+      },
+    );
+    if (adjustedTotals.breakdown.length === 0) throw new DownpaymentInvoiceError("Die Quelle enthaelt keine abrechenbaren Positionen.");
+    const buckets: RateBucket[] = adjustedTotals.breakdown.map((b) => ({
+      key: `${b.taxCategory}:${b.taxRate}`,
+      taxCategory: b.taxCategory,
+      taxRate: b.taxRate,
+      netCents: b.netCents,
+    }));
 
     const share = input.mode === "PERCENT" ? { permille: input.permille! } : { amountCents: input.amountCents!, isGross: input.amountIsGross };
     let splits: TaxRateSplit[];
