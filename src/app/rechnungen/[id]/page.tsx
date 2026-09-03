@@ -6,6 +6,7 @@ import { formatCents, formatQuantity } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction, cancelAction } from "@/app/actions/invoices";
 import { PaymentForm } from "@/components/PaymentForm";
+import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { DunningButton } from "@/components/DunningButton";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
@@ -43,7 +44,7 @@ export default async function InvoiceDetail({
     where: { id, orgId: org.id },
     include: {
       lines: { orderBy: { position: "asc" } },
-      customer: true,
+      customer: { include: { defaultPaymentMethod: true } },
       org: true,
       payments: { orderBy: { paidAt: "asc" } },
       dunnings: { orderBy: { level: "asc" } },
@@ -78,6 +79,14 @@ export default async function InvoiceDetail({
   const isOverdue = !isDraft && !isCancelled && openCents > 0 && new Date() > dueDate;
   const canPay = !isDraft && !isCancelled && isInvoiceType && openCents > 0;
   const emailDocType: EmailDocType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+
+  // Zahlungsmethoden-Auswahl im Zahlungsformular: aktive Methoden OHNE den Systemcode
+  // SKONTO (der wird ausschliesslich automatisch bei detectSkonto gebucht, nie manuell
+  // ausgewaehlt). Default-Kette: Kunden-Standard -> Methode der Rechnung -> TRANSFER.
+  const activePaymentMethods = canPay
+    ? (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO")
+    : [];
+  const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
 
   return (
     <div className="space-y-6">
@@ -223,16 +232,20 @@ export default async function InvoiceDetail({
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         {hasDocumentAdjustment && (
           <>
-            {documentDiscountTotalCents > 0 && (
+            {/* Gutschriften spiegeln die Betraege (negativ) — Math.abs() zeigt die
+                Zeile trotzdem an (Bestandskonvention, analog invoice-pdf.ts). Der
+                Grund (documentChargeReason) gehoert NUR zum Aufschlag, nicht zum
+                Rabatt (der Rabattgrund ist immer "Rabatt", siehe mapper.ts). */}
+            {Math.abs(documentDiscountTotalCents) !== 0 && (
               <div className="flex justify-between text-slate-600">
-                <span>Belegrabatt{invoice.documentChargeReason ? ` (${invoice.documentChargeReason})` : ""}</span>
-                <span className="tabular">−{formatCents(documentDiscountTotalCents, invoice.currency)}</span>
+                <span>Belegrabatt</span>
+                <span className="tabular">−{formatCents(Math.abs(documentDiscountTotalCents), invoice.currency)}</span>
               </div>
             )}
-            {documentChargeTotalCents > 0 && (
+            {Math.abs(documentChargeTotalCents) !== 0 && (
               <div className="flex justify-between text-slate-600">
                 <span>Belegaufschlag{invoice.documentChargeReason ? ` (${invoice.documentChargeReason})` : ""}</span>
-                <span className="tabular">+{formatCents(documentChargeTotalCents, invoice.currency)}</span>
+                <span className="tabular">+{formatCents(Math.abs(documentChargeTotalCents), invoice.currency)}</span>
               </div>
             )}
           </>
@@ -290,7 +303,14 @@ export default async function InvoiceDetail({
             </span>
           </div>
 
-          {canPay && <PaymentForm invoiceId={invoice.id} openCents={openCents} />}
+          {canPay && (
+            <PaymentForm
+              invoiceId={invoice.id}
+              openCents={openCents}
+              methods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
+              defaultMethod={defaultPaymentMethodCode}
+            />
+          )}
 
           {invoice.payments.length > 0 && (
             <div className="space-y-1 text-sm">

@@ -29,8 +29,10 @@ export default async function NewInvoicePage() {
     }),
     listPaymentMethods(orgId),
   ]);
+  // SKONTO ist ein reiner Systemcode fuer die automatische Skontobuchung
+  // (detectSkonto) — im Rechnungs-Editor nie manuell waehlbar.
   const paymentMethodOptions = paymentMethods
-    .filter((m) => m.isActive)
+    .filter((m) => m.isActive && m.code !== "SKONTO")
     .map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays }));
 
   if (customers.length === 0) {
