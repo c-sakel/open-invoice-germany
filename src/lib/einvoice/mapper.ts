@@ -105,20 +105,23 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
 
   // Phase 4a — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, aus der bereits
   // (bei Festschreibung) proportional aufgeteilten Aufschluesselung.
+  // Fix-Runde 1 (Befund A): Gutschrift-Buckets sind vorzeichen-gespiegelt (negativ,
+  // Bestandskonvention "positive Darstellung + TypeCode 381") — Filter auf !== 0 und
+  // Math.abs() beim Schreiben von Amount/BaseAmount, analog zum Zeilenrabatt.
   const documentAllowances: EInvoiceDocumentAllowanceCharge[] = breakdown
-    .filter((b) => b.allowanceCents > 0)
+    .filter((b) => b.allowanceCents !== 0)
     .map((b) => ({
-      amountCents: b.allowanceCents,
-      baseCents: b.baseNetCents,
+      amountCents: Math.abs(b.allowanceCents),
+      baseCents: Math.abs(b.baseNetCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
       reason: "Rabatt",
     }));
   const documentCharges: EInvoiceDocumentAllowanceCharge[] = breakdown
-    .filter((b) => b.chargeCents > 0)
+    .filter((b) => b.chargeCents !== 0)
     .map((b) => ({
-      amountCents: b.chargeCents,
-      baseCents: b.baseNetCents - b.allowanceCents,
+      amountCents: Math.abs(b.chargeCents),
+      baseCents: Math.abs(b.baseNetCents - b.allowanceCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
       reason: invoice.documentChargeReason || "Aufschlag",
@@ -138,25 +141,43 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     skonto2Permille: invoice.skonto2Permille ?? null,
     skonto2Days: invoice.skonto2Days ?? null,
   });
-  const humanPaymentTerms =
+  // Fix-Runde 1 (Befund C): Klartext OHNE #SKONTO#-Tags fuer das PDF — identisch
+  // zu paymentTermsNote, wenn kein Skonto gesetzt ist (Alt-Belege byte-identisch).
+  const paymentTermsHuman =
     invoice.paymentTerms ?? (skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate) : null);
   const paymentTermsNote =
-    skTerms.length > 0 && humanPaymentTerms ? xrechnungSkontoNote(skTerms, humanPaymentTerms) : humanPaymentTerms;
+    skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : paymentTermsHuman;
 
   // Phase 4a — Zahlungsweg aus dem Zahlungsmethoden-Snapshot; Fallback Org-Konto,
-  // Code 58 (SEPA-Überweisung) — identisch zum bisherigen hartkodierten Verhalten.
-  let paymentMeans: EInvoicePaymentMeans = { code: "58", iban: org.iban, bic: org.bic, accountName: org.bankName };
+  // Code 58 (SEPA-Überweisung).
+  // Fix-Runde 1 (Befund B), angepasst: XRechnung-CIUS verlangt BG-16 (PAYMENT
+  // INSTRUCTIONS) auf JEDER Rechnung (BR-DE-1) — ein komplett fehlendes PaymentMeans
+  // faellt beim offiziellen Validator durch (siehe validate:erechnung, Fixture
+  // "no-iban"). OHNE gewaehlte Methode und OHNE Org-IBAN wird daher UNTDID-4461-Code
+  // "1" ("Instrument not defined") OHNE Kontodaten gesetzt — BG-16 ist damit erfuellt,
+  // ohne ein irrefuehrendes Konto vorzutaeuschen. Verlangt der gewaehlte Methoden-Code
+  // ein Konto (58/59/30 — BR-DE-23) und liegt weder ein Methoden- noch ein Org-Konto
+  // vor, greift derselbe Fallback (protokolliert).
+  const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
+  const NO_ACCOUNT_FALLBACK: EInvoicePaymentMeans = { code: "1", iban: null, bic: null, accountName: null };
+  let paymentMeans: EInvoicePaymentMeans = org.iban
+    ? { code: "58", iban: org.iban, bic: org.bic, accountName: org.bankName }
+    : NO_ACCOUNT_FALLBACK;
   let paymentMethodText: string | null = null;
   if (invoice.paymentMethodSnapshotJson) {
     const pmParsed = paymentMethodSnapshotSchema.safeParse(tryParseJson(invoice.paymentMethodSnapshotJson));
     if (pmParsed.success) {
       const pm = pmParsed.data;
-      paymentMeans = {
-        code: pm.untdidCode || "58",
-        iban: pm.bankIban ?? org.iban,
-        bic: pm.bankBic ?? org.bic,
-        accountName: pm.bankName ?? org.bankName,
-      };
+      const code = pm.untdidCode || "58";
+      const iban = pm.bankIban ?? org.iban;
+      if (ACCOUNT_REQUIRING_CODES.has(code) && !iban) {
+        console.warn(
+          `mapper: Zahlungsmethode von ${ctx} verlangt ein Konto (Code ${code}), aber weder Methode noch Organisation haben eine IBAN — nutze Fallback "Instrument not defined"`,
+        );
+        paymentMeans = NO_ACCOUNT_FALLBACK;
+      } else {
+        paymentMeans = { code, iban, bic: pm.bankBic ?? org.bic, accountName: pm.bankName ?? org.bankName };
+      }
       paymentMethodText = pm.invoiceText;
     } else {
       console.warn(`mapper: Zahlungsmethoden-Snapshot von ${ctx} ungueltig, nutze Org-Konto`);
@@ -190,6 +211,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     buyerReference: invoice.buyerReference ?? customer.leitwegId,
     paymentTerms: invoice.paymentTerms,
     paymentTermsNote,
+    paymentTermsHuman,
     notes: invoice.notes,
     seller: {
       name: org.legalName,

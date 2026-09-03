@@ -152,7 +152,10 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
     y += 16;
     doc.fontSize(9).fillColor("#333");
     if (data.notes) doc.text(data.notes, left, y, { width: right - left });
-    if (data.paymentTerms) doc.moveDown(0.4).text(data.paymentTerms, { width: right - left });
+    // Fix-Runde 1 (Befund C): paymentTermsHuman traegt bei Skonto den Klartext ohne
+    // #SKONTO#-Tags; ohne Skonto identisch zu paymentTerms (Alt-Belege unveraendert).
+    const paymentTermsHuman = data.paymentTermsHuman ?? data.paymentTerms;
+    if (paymentTermsHuman) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
     if (data.paymentMethodText) doc.moveDown(0.4).text(data.paymentMethodText, { width: right - left });
 
     // Fußzeile: Aussteller-Pflichtangaben

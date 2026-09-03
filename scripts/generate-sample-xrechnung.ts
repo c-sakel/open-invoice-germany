@@ -99,6 +99,10 @@ const CUSTOMER: MapInput["customer"] = {
   leitwegId: null,
 };
 
+// Fix-Runde 1 (Befund B): Organisation OHNE IBAN — ohne gewaehlte Zahlungsmethode
+// darf dabei KEIN PaymentMeans-Element entstehen (Altverhalten).
+const ORG_NO_IBAN: MapInput["org"] = { ...ORG, iban: null, bic: null, bankName: null };
+
 interface SampleLine {
   description: string;
   quantityMilli: number;
@@ -112,6 +116,8 @@ interface SampleLine {
 
 function buildSample(opts: {
   number: string;
+  type?: string;
+  org?: MapInput["org"];
   lines: SampleLine[];
   adjustments?: DocumentAdjustments;
   documentChargeReason?: string | null;
@@ -127,16 +133,22 @@ function buildSample(opts: {
     bankName: string | null;
   };
   paidAmountCents?: number;
+  // Fix-Runde 1 (Befund A): Gutschrift — Betraege gespiegelt (negativ), quantityMilli
+  // bleibt POSITIV (Bestandskonvention, siehe src/domain/invoice/cancel.ts).
+  sign?: 1 | -1;
+  precedingInvoiceNumber?: string;
+  precedingInvoiceDate?: Date;
 }): EInvoiceData {
-  const lines = opts.lines.map((l) => ({
-    ...l,
-    lineNetCents: computeLineNet({
+  const sign = opts.sign ?? 1;
+  const lines = opts.lines.map((l) => {
+    const lineNetCents = computeLineNet({
       quantityMilli: l.quantityMilli,
       unitNetPriceCents: l.unitNetPriceCents,
       discountPermille: l.discountPermille,
       discountCents: l.discountCents,
-    }).lineNetCents,
-  }));
+    }).lineNetCents;
+    return { ...l, unitNetPriceCents: l.unitNetPriceCents * sign, lineNetCents: lineNetCents * sign };
+  });
   const totals = computeTaxBreakdown(
     lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     opts.adjustments,
@@ -144,7 +156,7 @@ function buildSample(opts: {
 
   const mapInput: MapInput = {
     number: opts.number,
-    type: "INVOICE",
+    type: opts.type ?? "INVOICE",
     issueDate: new Date("2034-06-09"),
     dueDate: new Date("2034-07-09"),
     deliveryDate: new Date("2034-06-01"),
@@ -163,7 +175,7 @@ function buildSample(opts: {
     skonto2Permille: opts.skonto2?.permille ?? null,
     skonto2Days: opts.skonto2?.days ?? null,
     paymentMethodSnapshotJson: opts.paymentMethod ? JSON.stringify(opts.paymentMethod) : null,
-    org: ORG,
+    org: opts.org ?? ORG,
     customer: CUSTOMER,
     lines: lines.map((l, i) => ({
       id: String(i + 1),
@@ -178,7 +190,10 @@ function buildSample(opts: {
       discountCents: l.discountCents,
     })),
   };
-  return buildEInvoiceData(mapInput);
+  const data = buildEInvoiceData(mapInput);
+  if (opts.precedingInvoiceNumber) data.precedingInvoiceNumber = opts.precedingInvoiceNumber;
+  if (opts.precedingInvoiceDate) data.precedingInvoiceDate = opts.precedingInvoiceDate;
+  return data;
 }
 
 // 1) Positionsrabatt (BG-27): 10 % auf eine einzelne Zeile.
@@ -228,6 +243,28 @@ const cash = () =>
     paymentMethod: { code: "CASH", name: "Barzahlung", invoiceText: "Zahlung bar bei Übergabe.", untdidCode: "10", bankIban: null, bankBic: null, bankName: null },
   });
 
+// 6) Gutschrift mit Belegrabatt (Fix-Runde 1, Befund A): −100,00 € (19 %) mit 10 %
+// Belegrabatt -> LineExtension 100,00, AllowanceTotal 10,00, TaxExclusive 90,00.
+const creditNoteDocDiscount = () =>
+  buildSample({
+    number: "GS-2034-0007",
+    type: "CREDIT_NOTE",
+    sign: -1,
+    lines: [{ description: "Beratung vor Ort (Storno)", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+    adjustments: { discountPermille: 100 },
+    precedingInvoiceNumber: "RE-2034-0002",
+    precedingInvoiceDate: new Date("2034-06-09"),
+  });
+
+// 7) Rechnung ohne IBAN und ohne gewaehlte Zahlungsmethode (Fix-Runde 1, Befund B):
+// KEIN PaymentMeans-Element im XML.
+const noIban = () =>
+  buildSample({
+    number: "RE-2034-0008",
+    org: ORG_NO_IBAN,
+    lines: [{ description: "Beratung vor Ort", quantityMilli: 3000, unit: "HUR", unitNetPriceCents: 9500, taxRate: 19, taxCategory: "S" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -236,6 +273,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   charge,
   "skonto-two-terms": skontoTwoTerms,
   cash,
+  "credit-note-doc-discount": creditNoteDocDiscount,
+  "no-iban": noIban,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
