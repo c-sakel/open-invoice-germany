@@ -34,6 +34,14 @@ describe("computeLineNet", () => {
     expect(r.lineNetCents).toBe(0);
     expect(r.discountTotalCents).toBe(1000);
   });
+
+  it("negative quantityMilli wirft PricingError (Aufrufer negiert ausserhalb, z. B. cancel.ts/credit.ts)", () => {
+    expect(() => computeLineNet({ quantityMilli: -1000, unitNetPriceCents: 10000 })).toThrow(PricingError);
+  });
+
+  it("negative unitNetPriceCents wirft PricingError", () => {
+    expect(() => computeLineNet({ quantityMilli: 1000, unitNetPriceCents: -10000 })).toThrow(PricingError);
+  });
 });
 
 describe("allocateProportional", () => {
@@ -157,5 +165,89 @@ describe("computeTaxBreakdown mit Anpassungen", () => {
     expect(t.chargeTotalCents).toBe(0);
     expect(t.breakdown.every((e) => e.allowanceCents === 0 && e.chargeCents === 0)).toBe(true);
     expect(t.breakdown.every((e) => e.netCents === e.baseNetCents)).toBe(true);
+  });
+});
+
+describe("applyDocumentAdjustments — vorzeichen-invariant (Storno/Gutschrift)", () => {
+  const negativeBuckets = [
+    { key: "S:19", taxRate: 19, taxCategory: "S", netCents: -10000 },
+    { key: "S:7", taxRate: 7, taxCategory: "S", netCents: -10000 },
+  ];
+
+  it("10 % Rabatt auf Gutschrift -10000/-10000 -> allowance -1000/-1000, adjustedNet -9000/-9000", () => {
+    const result = applyDocumentAdjustments(negativeBuckets, { discountPermille: 100 });
+    expect(result[0].allowanceCents).toBe(-1000);
+    expect(result[1].allowanceCents).toBe(-1000);
+    expect(result[0].adjustedNetCents).toBe(-9000);
+    expect(result[1].adjustedNetCents).toBe(-9000);
+  });
+
+  it("computeTaxBreakdown auf Gutschrift mit 10 % Rabatt -> Steuer -1710/-630, brutto -20340", () => {
+    const t = computeTaxBreakdown(
+      [
+        { lineNetCents: -10000, taxRate: 19, taxCategory: "S" },
+        { lineNetCents: -10000, taxRate: 7, taxCategory: "S" },
+      ],
+      { discountPermille: 100 },
+    );
+    const b19 = t.breakdown.find((e) => e.taxRate === 19)!;
+    const b7 = t.breakdown.find((e) => e.taxRate === 7)!;
+    expect(b19.taxCents).toBe(-1710);
+    expect(b7.taxCents).toBe(-630);
+    expect(t.grossTotalCents).toBe(-20340);
+  });
+
+  it("Festbetragsrabatt 1500 auf negative Buckets (-30000/-10000) -> -1125/-375", () => {
+    const result = applyDocumentAdjustments(
+      [
+        { key: "S:19", taxRate: 19, taxCategory: "S", netCents: -30000 },
+        { key: "S:7", taxRate: 7, taxCategory: "S", netCents: -10000 },
+      ],
+      { discountCents: 1500 },
+    );
+    expect(result[0].allowanceCents).toBe(-1125);
+    expect(result[1].allowanceCents).toBe(-375);
+  });
+
+  it("5 % Aufschlag auf Gutschrift -10000 (ohne Rabatt) -> -450", () => {
+    const result = applyDocumentAdjustments(
+      [{ key: "S:19", taxRate: 19, taxCategory: "S", netCents: -10000 }],
+      { chargePermille: 50 },
+    );
+    expect(result[0].chargeCents).toBe(-500);
+    expect(result[0].adjustedNetCents).toBe(-10500);
+  });
+
+  it("gemischte Vorzeichen mit Anpassung wirft PricingError", () => {
+    expect(() =>
+      applyDocumentAdjustments(
+        [
+          { key: "S:19", taxRate: 19, taxCategory: "S", netCents: 10000 },
+          { key: "S:7", taxRate: 7, taxCategory: "S", netCents: -10000 },
+        ],
+        { discountPermille: 100 },
+      ),
+    ).toThrow(PricingError);
+  });
+
+  it("gemischte Vorzeichen ohne Anpassung (total 0) bleibt erlaubt", () => {
+    const result = applyDocumentAdjustments(
+      [
+        { key: "S:19", taxRate: 19, taxCategory: "S", netCents: 10000 },
+        { key: "S:7", taxRate: 7, taxCategory: "S", netCents: -10000 },
+      ],
+      {},
+    );
+    expect(result[0].adjustedNetCents).toBe(10000);
+    expect(result[1].adjustedNetCents).toBe(-10000);
+  });
+
+  it("Rabatt > |Netto| auf Gutschrift wirft PricingError mit sprechender Meldung", () => {
+    expect(() =>
+      applyDocumentAdjustments(
+        [{ key: "S:19", taxRate: 19, taxCategory: "S", netCents: -1000 }],
+        { discountCents: 2000 },
+      ),
+    ).toThrow(/Storno\/Gutschrift/);
   });
 });
