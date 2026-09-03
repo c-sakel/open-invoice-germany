@@ -263,7 +263,9 @@ export const RelationType = z.enum(["CONVERTED_TO", "CORRECTS", "REVERSES", "GEN
 // INVOICED wird nicht gespeichert, sondern aus DocumentRelation (DELIVERED_BY-Gegenrichtung
 // bzw. Rechnungsbezug) abgeleitet — daher kein eigener Statuswert hier.
 export const DeliveryNoteStatus = z.enum(["DRAFT", "CREATED", "SENT", "DELIVERED", "CANCELLED"]);
+export type DeliveryNoteStatus = z.infer<typeof DeliveryNoteStatus>;
 export const BillingState = z.enum(["NONE", "PARTIAL", "FULL"]);
+export type BillingState = z.infer<typeof BillingState>;
 export const TextTemplatePosition = z.enum(["HEAD", "FOOT", "TERMS_DELIVERY", "TERMS_PAYMENT"]);
 export const EmailLogStatus = z.enum(["QUEUED", "SENT", "DELIVERED", "BOUNCED", "FAILED"]);
 export const AddressType = z.enum(["BILLING", "SHIPPING", "OTHER"]);
