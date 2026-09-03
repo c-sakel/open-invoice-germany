@@ -12,12 +12,17 @@
  */
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
-import { computeTaxBreakdown } from "@/lib/tax";
+import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { appendChangeLog } from "@/domain/audit";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
+import { PricingError } from "@/lib/pricing/errors";
+import type { RateBucket } from "@/lib/pricing/allocate";
 import type { SnapshotSource } from "@/schemas";
 import { validateMandatoryFields } from "./mandatory";
+
+const FINALIZED_DOWNPAYMENT_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
 
 export class FinalizeError extends Error {
   constructor(message: string) {
@@ -120,6 +125,84 @@ export async function finalizeWithinTx(
   const buyerSnapshotJson = canInherit ? inherited!.buyerSnapshotJson : JSON.stringify(buildBuyerSnapshot(invoice.customer));
   const snapshotSource: SnapshotSource = canInherit ? "INHERITED" : "FINALIZE";
 
+  // 2b) Phase 5 (§14 Abs.5 S.2 UStG): Schlussrechnung -> Abzugs-Snapshot je Abschlagsrechnung/
+  // Steuersatz. Laeuft VOR dem Claim, damit eine unzulaessige Ueberdeckung (Abschlaege >
+  // Gesamtleistung je Satz) die Rechnung nicht festschreibt und keine Nummer verbraucht.
+  let prepaidCents = 0;
+  let payableCents: number | null = null;
+  let finalDeductionRows: Array<{
+    downpaymentInvoiceId: string;
+    number: string;
+    issueDate: Date;
+    netCents: number;
+    taxCents: number;
+    grossCents: number;
+    taxRate: number;
+    taxCategory: string;
+  }> = [];
+
+  if (invoice.type === "FINAL") {
+    if (!invoice.sourceId) throw new FinalizeError("Schlussrechnung ohne Quellangebot kann nicht festgeschrieben werden.");
+
+    const downpaymentRelations = await tx.documentRelation.findMany({
+      where: { orgId: invoice.orgId, relationType: "DOWNPAYMENT_OF", fromType: "INVOICE", toType: "QUOTE", toId: invoice.sourceId },
+    });
+    const downpaymentIds = downpaymentRelations.map((r) => r.fromId);
+    const downpayments = downpaymentIds.length
+      ? await tx.invoice.findMany({
+          where: { id: { in: downpaymentIds }, orgId: invoice.orgId, status: { in: [...FINALIZED_DOWNPAYMENT_STATUSES] } },
+        })
+      : [];
+
+    const deductionInputs: Array<DeductionInput & { downpaymentInvoiceId: string; number: string; issueDate: Date }> = [];
+    for (const dp of downpayments) {
+      const breakdown = JSON.parse(dp.taxBreakdownJson) as TaxBreakdownEntry[];
+      for (const entry of breakdown) {
+        deductionInputs.push({
+          downpaymentInvoiceId: dp.id,
+          number: dp.number!,
+          issueDate: dp.issueDate,
+          taxRate: entry.taxRate,
+          taxCategory: entry.taxCategory,
+          netCents: entry.netCents,
+          taxCents: entry.taxCents,
+          grossCents: entry.netCents + entry.taxCents,
+        });
+      }
+    }
+
+    const finalBuckets: RateBucket[] = totals.breakdown.map((b) => ({
+      key: `${b.taxCategory}:${b.taxRate}`,
+      taxCategory: b.taxCategory,
+      taxRate: b.taxRate,
+      netCents: b.netCents,
+    }));
+
+    try {
+      const summary = deductionsFor(finalBuckets, deductionInputs);
+      prepaidCents = summary.totalDeductedGrossCents;
+    } catch (e) {
+      if (e instanceof PricingError) throw new FinalizeError(`Abschlaege uebersteigen die Gesamtleistung: ${e.message}`);
+      throw e;
+    }
+
+    payableCents = totals.grossTotalCents - prepaidCents;
+    if (payableCents < 0) {
+      throw new FinalizeError("Abschlaege uebersteigen die Gesamtleistung der Schlussrechnung.");
+    }
+
+    finalDeductionRows = deductionInputs.map((d) => ({
+      downpaymentInvoiceId: d.downpaymentInvoiceId,
+      number: d.number,
+      issueDate: d.issueDate,
+      netCents: d.netCents,
+      taxCents: d.taxCents,
+      grossCents: d.grossCents,
+      taxRate: d.taxRate,
+      taxCategory: d.taxCategory,
+    }));
+  }
+
   // 3) Atomarer Status-Claim: nur wenn noch DRAFT. Verhindert unter Nebenläufigkeit
   //    (Postgres READ COMMITTED) doppelte Festschreibung + doppelten Nummern-Verbrauch.
   const claim = await tx.invoice.updateMany({
@@ -137,10 +220,17 @@ export async function finalizeWithinTx(
       snapshotSource,
       snapshotAt: now,
       paymentMethodSnapshotJson,
+      ...(invoice.type === "FINAL" ? { prepaidCents, payableCents } : {}),
     },
   });
   if (claim.count === 0) {
     throw new FinalizeError("Rechnung wurde zwischenzeitlich bereits festgeschrieben.");
+  }
+
+  if (finalDeductionRows.length > 0) {
+    await tx.finalInvoiceDeduction.createMany({
+      data: finalDeductionRows.map((r) => ({ finalInvoiceId: invoiceId, ...r })),
+    });
   }
 
   // 4) Nummer ERST nach gewonnenem Claim vergeben -> der Verlierer verbraucht keine Nummer (kein Loch).
