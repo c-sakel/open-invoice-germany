@@ -70,7 +70,7 @@ async function pickDunningTemplate(orgId: string, docId: string) {
 
 async function pickTemplate(orgId: string, docType: EmailDocType, docId: string) {
   if (docType === "DUNNING") return pickDunningTemplate(orgId, docId);
-  return dbInternal.emailTemplate.findFirst({ where: { orgId, docType, isDefault: true } });
+  return dbInternal.emailTemplate.findFirst({ where: { orgId, docType, isDefault: true }, orderBy: { createdAt: "asc" } });
 }
 
 /** Baut die Vorbelegung entweder aus einem Beleg (docType/docId) oder aus einem

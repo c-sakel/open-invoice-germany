@@ -5,11 +5,11 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
 import type { CreateInvoiceInput } from "@/schemas";
-import { saveMailSettings, loadMailSettings, describeMailSettings, sendTestMail } from "@/domain/email/settings";
+import { saveMailSettings, loadMailSettings, describeMailSettings, sendTestMail, MailNotConfiguredError } from "@/domain/email/settings";
 import { prefillEmail } from "@/domain/email/compose";
+import { DocumentNotFoundError } from "@/domain/email/context";
 import { sendDocumentEmail } from "@/domain/email/send";
 import { createMemoryProvider } from "@/lib/mail/memory";
-import { MailNotConfiguredError } from "@/domain/email/settings";
 import type { SendEmailInput } from "@/schemas/email";
 
 let orgId: string;
@@ -226,6 +226,59 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     await expect(sendDocumentEmail(org2.id, "system", input, [])).rejects.toBeInstanceOf(MailNotConfiguredError);
     const after = await dbInternal.emailLog.count({ where: { orgId: org2.id } });
     expect(after).toBe(before);
+  });
+
+  it("7b) Mandanten-Gate: docId einer Rechnung einer ZWEITEN Org -> DocumentNotFoundError, kein Log/ChangeLog", async () => {
+    const org3 = await dbInternal.organization.create({
+      data: { legalName: "Fremde Org GmbH", addressLine1: "Fremdweg 1", postalCode: "10117", city: "Berlin", vatId: "DE111111111", taxNumber: "9/8/7" },
+    });
+    await saveMailSettings(org3.id, {
+      host: "localhost",
+      port: 2525,
+      security: "NONE",
+      fromName: "Fremde Org GmbH",
+      fromEmail: "fremd@example.org",
+      defaultBcc: "",
+      defaultCc: "",
+      copyToSelf: false,
+    });
+    const logsBefore = await dbInternal.emailLog.count({ where: { orgId: org3.id } });
+    const changeLogsBefore = await dbInternal.changeLog.count({ where: { orgId: org3.id } });
+    const input: SendEmailInput = {
+      docType: "INVOICE",
+      docId: invoiceId, // gehoert zu orgId, nicht zu org3
+      to: ["kunde@example.org"],
+      cc: [],
+      bcc: [],
+      subject: "Test",
+      body: "Text",
+      signature: "",
+      copyToSelf: false,
+      standardAttachments: [],
+    };
+    await expect(sendDocumentEmail(org3.id, "system", input, [])).rejects.toBeInstanceOf(DocumentNotFoundError);
+    expect(await dbInternal.emailLog.count({ where: { orgId: org3.id } })).toBe(logsBefore);
+    expect(await dbInternal.changeLog.count({ where: { orgId: org3.id } })).toBe(changeLogsBefore);
+  });
+
+  it("7c) Mandanten-Gate: erfundene docId -> DocumentNotFoundError, kein Log/ChangeLog", async () => {
+    const logsBefore = await dbInternal.emailLog.count({ where: { orgId } });
+    const changeLogsBefore = await dbInternal.changeLog.count({ where: { orgId } });
+    const input: SendEmailInput = {
+      docType: "INVOICE",
+      docId: "does-not-exist",
+      to: ["kunde@example.org"],
+      cc: [],
+      bcc: [],
+      subject: "Test",
+      body: "Text",
+      signature: "",
+      copyToSelf: false,
+      standardAttachments: [],
+    };
+    await expect(sendDocumentEmail(orgId, "system", input, [])).rejects.toBeInstanceOf(DocumentNotFoundError);
+    expect(await dbInternal.emailLog.count({ where: { orgId } })).toBe(logsBefore);
+    expect(await dbInternal.changeLog.count({ where: { orgId } })).toBe(changeLogsBefore);
   });
 
   it("8) describeMailSettings ohne password/passwordEnc, hasPassword; leeres Passwort laesst es unveraendert", async () => {
