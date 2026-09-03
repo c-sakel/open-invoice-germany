@@ -33,12 +33,67 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
   return dbInternal.$transaction(async (tx) => {
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
-      include: { lines: { orderBy: { position: "asc" } } },
+      include: { lines: { orderBy: { position: "asc" } }, finalDeductions: true },
     });
     if (!original) throw new CancelError("Rechnung nicht gefunden.");
     if (original.status === "DRAFT") throw new CancelError("Entwürfe werden gelöscht, nicht storniert.");
     if (original.status === "CANCELLED") throw new CancelError("Rechnung ist bereits storniert.");
     if (original.type === "CREDIT_NOTE") throw new CancelError("Eine Gutschrift/Storno kann nicht erneut storniert werden.");
+
+    // Phase 5: Storno einer Schlussrechnung erstattet nur den tatsaechlich offenen Rest
+    // (payableCents), nicht die volle Gesamtleistung — die bereits vereinnahmten Abschlaege
+    // (FinalInvoiceDeduction, unveraendert, NICHT kopiert/dupliziert) werden dazu je
+    // Steuersatz als positive Ausgleichszeile GEGEN die negierten Gesamtleistungs-Zeilen
+    // gebucht, sodass Original + Storno-Gutschrift in Summe = payableCents ergibt (der
+    // Kunde hat die Abschlaege bereits bezahlt/erhalten und diese werden hier nicht erneut
+    // beruehrt — Ruling Task-2-Brief: "Storno der Schlussrechnung erstattet den Rest").
+    const deductionOffsetByRate = new Map<string, { taxRate: number; taxCategory: string; netCents: number }>();
+    if (original.type === "FINAL") {
+      for (const d of original.finalDeductions) {
+        const key = `${d.taxCategory}:${d.taxRate}`;
+        const acc = deductionOffsetByRate.get(key) ?? { taxRate: d.taxRate, taxCategory: d.taxCategory, netCents: 0 };
+        acc.netCents += d.netCents;
+        deductionOffsetByRate.set(key, acc);
+      }
+    }
+    const offsetLines = [...deductionOffsetByRate.values()];
+
+    const negatedLines = original.lines.map((l) => {
+      const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
+      return {
+        position: l.position,
+        lineType: l.lineType,
+        productId: l.productId,
+        description: l.description,
+        descriptionLong: l.descriptionLong,
+        articleNumber: l.articleNumber,
+        quantityMilli: l.quantityMilli,
+        unit: l.unit,
+        unitNetPriceCents: isItem ? -l.unitNetPriceCents : 0,
+        taxRate: l.taxRate,
+        taxCategory: l.taxCategory,
+        discountPermille: l.discountPermille,
+        discountCents: l.discountCents,
+        lineNetCents: isItem ? -l.lineNetCents : 0,
+      };
+    });
+    const nextPosition = negatedLines.length > 0 ? Math.max(...negatedLines.map((l) => l.position)) + 1 : 1;
+    const offsetLinesCreate = offsetLines.map((o, i) => ({
+      position: nextPosition + i,
+      lineType: "ITEM",
+      productId: null,
+      description: `Bereits abgerechneter Abschlag (nicht Teil dieser Storno-Gutschrift)`,
+      descriptionLong: null,
+      articleNumber: null,
+      quantityMilli: 1000,
+      unit: "C62",
+      unitNetPriceCents: o.netCents,
+      taxRate: o.taxRate,
+      taxCategory: o.taxCategory,
+      discountPermille: 0,
+      discountCents: 0,
+      lineNetCents: o.netCents,
+    }));
 
     const credit = await tx.invoice.create({
       data: {
@@ -56,6 +111,10 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
         notes: `Storno zu Rechnung ${original.number}.${original.notes ? " " + original.notes : ""}`,
         paymentTerms: original.paymentTerms,
         correctsInvoiceId: original.id,
+        // Phase 5: Verweis auf dieselbe Quelle wie das Original (PARTIAL/DOWNPAYMENT/FINAL) —
+        // rein informativ (denormalisierter Schnellzugriff, keine eigene Relation).
+        sourceType: original.sourceType,
+        sourceId: original.sourceId,
         // Beleg-Rabatt/-Aufschlag unveraendert (positiv) uebernehmen — applyDocumentAdjustments
         // ist vorzeichen-invariant und rechnet bei ausschliesslich negativen Zeilen-Buckets auf
         // den negierten (positiven) Betraegen wie im Original (Ruling Task-1-Review).
@@ -64,29 +123,13 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
         documentChargePermille: original.documentChargePermille,
         documentChargeCents: original.documentChargeCents,
         documentChargeReason: original.documentChargeReason,
-        // Betragsspiegelbild: negierte Beträge, damit Original + Storno = 0 ergibt.
-        // Zeilentyp/Langtext/Artikelnummer 1:1 uebernehmen (§8: die Struktur der Rechnung
-        // bleibt im Storno erkennbar). Nicht-ITEM-Zeilen tragen weiterhin keine Betraege.
+        // Betragsspiegelbild: negierte Beträge, damit Original + Storno = 0 ergibt (bei
+        // FINAL-Rechnungen zzgl. der Abschlags-Ausgleichszeilen oben, damit die Gutschrift
+        // in Summe payableCents statt grossTotalCents erstattet). Zeilentyp/Langtext/
+        // Artikelnummer 1:1 uebernehmen (§8: die Struktur der Rechnung bleibt im Storno
+        // erkennbar). Nicht-ITEM-Zeilen tragen weiterhin keine Betraege.
         lines: {
-          create: original.lines.map((l) => {
-            const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
-            return {
-              position: l.position,
-              lineType: l.lineType,
-              productId: l.productId,
-              description: l.description,
-              descriptionLong: l.descriptionLong,
-              articleNumber: l.articleNumber,
-              quantityMilli: l.quantityMilli,
-              unit: l.unit,
-              unitNetPriceCents: isItem ? -l.unitNetPriceCents : 0,
-              taxRate: l.taxRate,
-              taxCategory: l.taxCategory,
-              discountPermille: l.discountPermille,
-              discountCents: l.discountCents,
-              lineNetCents: isItem ? -l.lineNetCents : 0,
-            };
-          }),
+          create: [...negatedLines, ...offsetLinesCreate],
         },
       },
     });
