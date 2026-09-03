@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "15" ] || fail "erwartet 15 Tabellen, gefunden $COUNT"
-echo "    ok — 15 Tabellen angelegt"
+[ "$COUNT" = "25" ] || fail "erwartet 25 Tabellen, gefunden $COUNT"
+echo "    ok — 25 Tabellen angelegt"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -56,6 +56,10 @@ INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","
   VALUES ('cust1','org1','O''Brien AG','Str. 2','54321','Altdorf',NOW());
 INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
   VALUES ('inv1','org1','cust1','RE-2026-00001','FINALIZED',NOW());
+INSERT INTO "Quote" ("id","orgId","customerId","kind","number","status","convertedToInvoiceId","updatedAt")
+  VALUES ('q1','org1','cust1','ANGEBOT','AN-2026-0001','CONVERTED','inv1',NOW());
+INSERT INTO "Payment" ("id","invoiceId","amountCents","method") VALUES ('pay1','inv1',100,'TRANSFER');
+INSERT INTO "Dunning" ("id","invoiceId","level") VALUES ('dun1','inv1',1);
 SQL
 
 echo "==> Fall 2: Bestands-DB ohne Historie wird erkannt"
@@ -98,5 +102,18 @@ BKEYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from \"Invoice\", jsonb_object_keys(\"buyerSnapshotJson\"::jsonb) where id='inv1'" 2>/dev/null || echo 0)
 [ "$BKEYS" = "10" ] || fail "Buyer-Snapshot hat $BKEYS Schluessel, erwartet 10"
 echo "    ok — Backfill mit Herkunft MIGRATION, JSON gueltig"
+
+echo "==> Fall 6: Phase-1-Backfill (Relationen, Stammdaten, Mahnstufen)"
+REL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"relationType\" from \"DocumentRelation\" where \"fromId\"='q1'")
+[ "$REL" = "CONVERTED_TO" ] || fail "Relation fuer q1 fehlt ('$REL')"
+PM=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"PaymentMethod\" where \"orgId\"='org1'")
+[ "$PM" = "8" ] || fail "erwartet 8 Zahlungsmethoden, gefunden $PM"
+DS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"DunningStage\" where \"orgId\"='org1'")
+[ "$DS" = "4" ] || fail "erwartet 4 Mahnstufen, gefunden $DS"
+ST=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"stageId\" from \"Dunning\" where id='dun1'")
+EXP=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select id from \"DunningStage\" where \"orgId\"='org1' and \"order\"=1")
+[ -n "$ST" ] && [ "$ST" = "$EXP" ] || fail "Dunning dun1 hat stageId '$ST', erwartet Stufe order=1 ('$EXP')"
+echo "    ok — Backfill vollstaendig"
 
 echo "ALLE TESTS BESTANDEN"
