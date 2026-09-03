@@ -262,7 +262,9 @@ async function buildEditorLines(
   });
 }
 
-const server = new McpServer({ name: "open-invoice-germany", version: "0.1.0" });
+// Exportiert fuer Integrationstests (test/integration/mcp-server.test.ts): erlaubt,
+// registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
+export const server = new McpServer({ name: "open-invoice-germany", version: "0.1.0" });
 
 // ── get_status ──────────────────────────────────────────────────────────────
 server.registerTool(
