@@ -17,7 +17,7 @@ describe("relations", () => {
     let orgBId = "";
     let customerAId = "";
     let customerBId = "";
-    const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+    const line = { lineType: "ITEM" as const, description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
     beforeAll(async () => {
       const orgA = await dbInternal.organization.create({

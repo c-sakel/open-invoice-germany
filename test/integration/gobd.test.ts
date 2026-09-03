@@ -82,7 +82,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
       baseInput({
         documentDiscountPermille: 100,
         lines: [
-          { description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 100, discountCents: 0 },
+          { lineType: "ITEM" as const, description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 100, discountCents: 0 },
         ],
       }),
     );
@@ -297,7 +297,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
       paymentTermsDays: 14,
       autoFinalize: true,
       lines: [
-        { description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+        { lineType: "ITEM" as const, description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
       ],
     });
     expect(rec.nextRunDate.toISOString().slice(0, 10)).toBe("2026-06-01");
@@ -347,7 +347,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
       paymentTermsDays: 14,
       autoFinalize: false,
       lines: [
-        { description: "Pos", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+        { lineType: "ITEM" as const, description: "Pos", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
       ],
     });
     const summaries = await runDueRecurring({ now: FIX_DATE, orgId, maxPerAbo: 12 });
