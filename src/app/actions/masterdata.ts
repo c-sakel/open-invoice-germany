@@ -66,11 +66,11 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
 
   try {
     const existing = await dbInternal.organization.findFirst();
-    if (existing) await dbInternal.organization.update({ where: { id: existing.id }, data });
-    else {
-      const created = await dbInternal.organization.create({ data });
-      await ensureOrgMasterdata(dbInternal, created.id);
-    }
+    const org = existing
+      ? await dbInternal.organization.update({ where: { id: existing.id }, data })
+      : await dbInternal.organization.create({ data });
+    // idempotent: Bestandsorganisationen ohne Systemdaten bekommen sie beim naechsten Speichern
+    await ensureOrgMasterdata(dbInternal, org.id);
   } catch (e) {
     console.error("saveOrganization:", e);
     return { ok: false, error: "Speichern fehlgeschlagen." };

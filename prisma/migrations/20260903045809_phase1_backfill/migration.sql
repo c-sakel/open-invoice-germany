@@ -43,6 +43,11 @@ FROM "Organization" o,
    UNION ALL SELECT 3,'3. Mahnung',7,1,1) s
 WHERE NOT EXISTS (SELECT 1 FROM "DunningStage" d WHERE d."orgId"=o."id" AND d."order"=s.ord);
 
--- 4) Bestandsmahnungen der passenden Stufe zuordnen (level -> order derselben Organisation).
-UPDATE "Dunning" SET "stageId" = 'ds_' || (SELECT i."orgId" FROM "Invoice" i WHERE i."id"="Dunning"."invoiceId") || '_' || "level"
+-- 4) Bestandsmahnungen der passenden Stufe zuordnen: Zuordnung per (orgId, order),
+-- unabhaengig vom ID-Format der DunningStage-Zeile (Migration oder App-Code).
+UPDATE "Dunning" SET "stageId" = (
+  SELECT d."id" FROM "DunningStage" d
+  WHERE d."orgId" = (SELECT i."orgId" FROM "Invoice" i WHERE i."id" = "Dunning"."invoiceId")
+    AND d."order" = "Dunning"."level"
+)
 WHERE "stageId" IS NULL AND "level" BETWEEN 0 AND 3;
