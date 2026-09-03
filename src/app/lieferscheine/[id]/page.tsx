@@ -62,6 +62,12 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
 
       <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} />
 
+      {dn.status === "DRAFT" && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Entwurf — noch keine Nummer. Erst mit „Lieferschein erstellen&rdquo; wird eine Belegnummer vergeben.
+        </div>
+      )}
+
       {sourceLabel && (
         <p className="text-sm text-slate-600">
           Bezugsbeleg:{" "}

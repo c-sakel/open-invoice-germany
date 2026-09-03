@@ -12,6 +12,7 @@ import {
   createDeliveryNoteSchema,
   deliveryNoteLineInputSchema,
   convertDocumentSchema,
+  convertDocumentBodySchema,
   documentStatusActionSchema,
 } from "@/schemas";
 
@@ -142,13 +143,32 @@ describe("convertDocumentSchema", () => {
 
 describe("documentStatusActionSchema", () => {
   it("akzeptiert bekannte Aktionen mit optionaler Notiz", () => {
-    for (const action of ["MARK_SENT", "MARK_ACCEPTED", "MARK_REJECTED", "MARK_DELIVERED", "CANCEL", "ARCHIVE", "UNARCHIVE"]) {
+    for (const action of ["MARK_SENT", "MARK_ACCEPTED", "MARK_REJECTED", "MARK_DELIVERED", "MARK_CREATED", "CANCEL", "ARCHIVE", "UNARCHIVE"]) {
       expect(documentStatusActionSchema.safeParse({ action }).success).toBe(true);
     }
   });
 
   it("lehnt unbekannte Aktionen ab", () => {
     expect(documentStatusActionSchema.safeParse({ action: "FOO" }).success).toBe(false);
+  });
+
+  it("kennt MARK_CREATED (Fix-Runde 1, Befund 1: Lieferschein-Entwurf -> CREATED)", () => {
+    expect(documentStatusActionSchema.shape.action.options).toContain("MARK_CREATED");
+  });
+});
+
+describe("convertDocumentBodySchema", () => {
+  it("entspricht convertDocumentSchema ohne fromType/fromId", () => {
+    const result = convertDocumentBodySchema.safeParse({
+      toKind: "DELIVERY_NOTE",
+      quantities: [{ sourceLineId: "line1", quantityMilli: 500 }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("lehnt fromType/fromId nicht ab, ignoriert sie aber (nicht im Schema definiert)", () => {
+    const parsed = convertDocumentBodySchema.safeParse({ toKind: "INVOICE" });
+    expect(parsed.success && !("fromType" in parsed.data) && !("fromId" in parsed.data)).toBe(true);
   });
 });
 

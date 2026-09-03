@@ -9,6 +9,7 @@ import { computeLineNetCents } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { StatusTransitionError } from "@/domain/document/status";
+import { NotFoundError } from "@/domain/errors";
 import { updateDocumentSchema } from "@/schemas";
 import type { Quote, Prisma } from "@/generated/prisma/client";
 
@@ -18,22 +19,22 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
 
   return dbInternal.$transaction(async (tx) => {
     const quote = await tx.quote.findFirst({ where: { id, orgId } });
-    if (!quote) throw new Error(`Dokument ${id} nicht gefunden.`);
+    if (!quote) throw new NotFoundError(`Dokument ${id} nicht gefunden.`);
     if (quote.status !== "DRAFT") {
       throw new StatusTransitionError(`Nur Entwuerfe (DRAFT) koennen bearbeitet werden (aktueller Status "${quote.status}").`);
     }
 
     if (input.customerId && input.customerId !== quote.customerId) {
       const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId } });
-      if (!customer) throw new Error("Kunde nicht gefunden.");
+      if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
     }
     if (input.contactPersonId) {
       const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId } });
-      if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
+      if (!contact) throw new NotFoundError("Ansprechpartner nicht gefunden.");
     }
     if (input.billingAddressId) {
       const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId } });
-      if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
+      if (!address) throw new NotFoundError("Rechnungsadresse nicht gefunden.");
     }
 
     const changedFields: string[] = [];

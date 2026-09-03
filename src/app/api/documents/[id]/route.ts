@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { updateDraftDocument } from "@/domain/document/update";
 import { StatusTransitionError } from "@/domain/document/status";
+import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
 
@@ -22,10 +23,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (e instanceof StatusTransitionError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
-    if (e instanceof Error && /nicht gefunden/.test(e.message)) {
+    if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
     console.error("PATCH /api/documents/[id]:", e);
-    return NextResponse.json({ error: "Aktualisieren fehlgeschlagen." }, { status: 400 });
+    return NextResponse.json({ error: "Aktualisieren fehlgeschlagen." }, { status: 500 });
   }
 }

@@ -181,6 +181,19 @@ describe("Duplizieren", () => {
     expect(copy.lines).toHaveLength(1);
   });
 
+  it("Lieferschein: Kopf-sourceType/sourceId werden mitkopiert (Fix-Runde 1, Befund 3)", async () => {
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const { id: noteId } = await convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE });
+    const original = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: noteId } });
+    expect(original.sourceType).toBe("INVOICE");
+    expect(original.sourceId).toBe(invoice.id);
+
+    const result = await duplicateDocument(orgId, "DELIVERY_NOTE", noteId, "tester", FIX_DATE);
+    const copy = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: result.id } });
+    expect(copy.sourceType).toBe("INVOICE");
+    expect(copy.sourceId).toBe(invoice.id);
+  });
+
   it("Quelle darf storniert sein", async () => {
     const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
     await setQuoteStatus(orgId, quote.id, "CANCELLED", { now: FIX_DATE });

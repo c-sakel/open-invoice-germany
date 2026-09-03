@@ -9,6 +9,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { NotFoundError } from "@/domain/errors";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
 
@@ -69,7 +70,7 @@ export async function setQuoteStatusWithinTx(
   const actor = opts.actor ?? "system";
 
   const quote = await tx.quote.findFirst({ where: { id: quoteId, orgId } });
-  if (!quote) throw new StatusTransitionError(`Angebot ${quoteId} nicht gefunden.`);
+  if (!quote) throw new NotFoundError(`Angebot ${quoteId} nicht gefunden.`);
 
   const from = QuoteStatus.parse(quote.status);
   assertTransition(QUOTE_TRANSITIONS, from, target);
@@ -150,7 +151,7 @@ export async function setDeliveryNoteStatus(
 
   return dbInternal.$transaction(async (tx) => {
     const note = await tx.deliveryNote.findFirst({ where: { id, orgId } });
-    if (!note) throw new StatusTransitionError(`Lieferschein ${id} nicht gefunden.`);
+    if (!note) throw new NotFoundError(`Lieferschein ${id} nicht gefunden.`);
 
     const from = DeliveryNoteStatus.parse(note.status);
     assertTransition(DELIVERY_TRANSITIONS, from, target);
@@ -207,11 +208,11 @@ export async function setArchived(
   await dbInternal.$transaction(async (tx) => {
     if (type === "QUOTE") {
       const found = await tx.quote.findFirst({ where: { id, orgId }, select: { id: true } });
-      if (!found) throw new StatusTransitionError(`Angebot ${id} nicht gefunden.`);
+      if (!found) throw new NotFoundError(`Angebot ${id} nicht gefunden.`);
       await tx.quote.update({ where: { id }, data: { archivedAt } });
     } else {
       const found = await tx.deliveryNote.findFirst({ where: { id, orgId }, select: { id: true } });
-      if (!found) throw new StatusTransitionError(`Lieferschein ${id} nicht gefunden.`);
+      if (!found) throw new NotFoundError(`Lieferschein ${id} nicht gefunden.`);
       await tx.deliveryNote.update({ where: { id }, data: { archivedAt } });
     }
 

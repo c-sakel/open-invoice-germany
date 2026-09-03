@@ -8,6 +8,7 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
+import { NotFoundError } from "@/domain/errors";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
@@ -15,7 +16,7 @@ export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
 async function duplicateQuote(orgId: string, id: string, actor: string, now: Date) {
   return dbInternal.$transaction(async (tx) => {
     const src = await tx.quote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
-    if (!src) throw new Error(`Dokument ${id} nicht gefunden.`);
+    if (!src) throw new NotFoundError(`Dokument ${id} nicht gefunden.`);
 
     const totals = computeTaxBreakdown(src.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })));
 
@@ -69,7 +70,7 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
 async function duplicateDeliveryNote(orgId: string, id: string, actor: string, now: Date) {
   return dbInternal.$transaction(async (tx) => {
     const src = await tx.deliveryNote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
-    if (!src) throw new Error(`Lieferschein ${id} nicht gefunden.`);
+    if (!src) throw new NotFoundError(`Lieferschein ${id} nicht gefunden.`);
 
     const copy = await tx.deliveryNote.create({
       data: {
@@ -88,6 +89,11 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
         internalNotes: src.internalNotes,
         headerText: src.headerText,
         footerText: src.footerText,
+        // Bezugsbeleg des Kopfes mitkopieren, sonst geht der Bezug im Duplikat verloren
+        // (die Zeilen-Ebene sourceLineId war bereits kopiert, der Kopf nicht — Fix-Runde 1,
+        // Befund 3).
+        sourceType: src.sourceType,
+        sourceId: src.sourceId,
         lines: {
           create: src.lines.map((l, i) => ({
             position: i + 1,
@@ -120,7 +126,7 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
 async function duplicateInvoice(orgId: string, id: string, actor: string, now: Date) {
   return dbInternal.$transaction(async (tx) => {
     const src = await tx.invoice.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
-    if (!src) throw new Error(`Rechnung ${id} nicht gefunden.`);
+    if (!src) throw new NotFoundError(`Rechnung ${id} nicht gefunden.`);
 
     const input: CreateInvoiceInput = {
       customerId: src.customerId,
