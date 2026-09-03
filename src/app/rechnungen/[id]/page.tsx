@@ -14,6 +14,8 @@ import { ConvertMenu } from "@/components/ConvertMenu";
 import { DocumentChain } from "@/components/DocumentChain";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { EmailDocType } from "@/schemas/email";
+import { AttachmentPanel } from "@/components/AttachmentPanel";
+import { listAttachments } from "@/domain/attachment/manage";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +89,7 @@ export default async function InvoiceDetail({
     ? (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO")
     : [];
   const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
+  const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
 
   return (
     <div className="space-y-6">
@@ -132,6 +135,14 @@ export default async function InvoiceDetail({
             </a>
           )}
           <SendEmailDialog docType={emailDocType} docId={invoice.id} label={isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} />
+          {isDraft && (
+            <Link
+              href={`/rechnungen/${invoice.id}/bearbeiten`}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Bearbeiten
+            </Link>
+          )}
           {isDraft && (
             <form action={finalizeAction}>
               <input type="hidden" name="id" value={invoice.id} />
@@ -352,6 +363,12 @@ export default async function InvoiceDetail({
           )}
         </section>
       )}
+
+      <AttachmentPanel
+        docType="INVOICE"
+        docId={invoice.id}
+        initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+      />
 
       <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
 

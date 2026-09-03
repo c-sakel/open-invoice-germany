@@ -12,6 +12,8 @@ import { DocumentChain } from "@/components/DocumentChain";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { ShareLinkPanel } from "@/components/ShareLinkPanel";
+import { AttachmentPanel } from "@/components/AttachmentPanel";
+import { listAttachments } from "@/domain/attachment/manage";
 import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +45,7 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
   const status = effectiveQuoteStatus({ status: q.status, validUntil: q.validUntil });
   const billing = q.kind !== "PROFORMA" ? await billingStateFor(org.id, "QUOTE", q.id) : null;
   const archived = q.archivedAt !== null;
+  const attachments = await listAttachments(org.id, "QUOTE", q.id);
 
   return (
     <div className="space-y-6">
@@ -214,6 +217,8 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
       )}
 
       {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
+
+      <AttachmentPanel docType="QUOTE" docId={q.id} initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))} />
 
       <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
 
