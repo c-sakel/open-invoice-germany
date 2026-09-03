@@ -139,3 +139,22 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 5. **E2 Scheduler** — schaltet E3 und Mail-Retry frei
 6. **G1 DATEV** — Formatspezifikation vorab beschaffen
 7. E1, E3, H1, H2, F, G2–G4, D2–D4
+
+## Aus dem Abschluss-Review Phase 1 (2026-09-03)
+
+- **DunningStage.documentTemplateId ohne Ziel** — kein FK, kein Modell. In Phase 6 auf `TextTemplate`
+  verknuepfen oder Feld entfernen (Migration additiv/rueckwaertskompatibel).
+- **SQLite-Integrationstest ohne Mahnung** — `phase1.test.ts` prueft Backfill-Block 4 (stageId) nicht;
+  nur Postgres-Fall 6 deckt ihn. Bei Phase-6-Arbeit eine Mahnung in die Test-Org legen.
+- **Selbstheilung in payment.ts bei jedem Fehlversuch** — zwoelf Upserts in der Zahlungs-Tx vor dem
+  Fehler. Optional: nur ausloesen, wenn die Org gar keine PaymentMethod-Zeile hat (Phase 4).
+- **Gemischte ID-Formate** (`rel_*`, `pm_*`, `ds_*` aus Backfill neben cuids) — dauerhaft, dokumentiert;
+  ID-Form nie als Herkunftsmerkmal verwenden.
+- **createDeliveryNote parst Input nicht mit Zod** — heute kein Boundary. Phase 3 muss
+  `createDeliveryNoteSchema` an Route/Action/MCP anwenden.
+- **Auswahllisten Zahlungsmethoden/Mahnstufen** (Phase 4/6) muessen leere Listen vertragen; nie auf
+  „genau 8/4 Eintraege" bauen.
+- **Testkopplung** — `phase1.test.ts` fuehrt Migrations-SQL gegen die geteilte test.db aus und legt
+  Stammdaten fuer alle Orgs anderer Testdateien an. Harmlos, aber Reihenfolgen-abhaengig.
+- **untdidCode an PaymentMethod** wird bis Phase 4 von nichts gelesen; XRechnung/CII schreiben
+  PaymentMeansCode hart 58. Phase 4 verdrahtet es (Lastenheft 12, 52).
