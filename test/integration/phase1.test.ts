@@ -89,4 +89,23 @@ describe("Phase 1 — Verknuepfungen", () => {
     const dn2 = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, lines: [{ description: "Kabel", quantityMilli: 1000, unit: "C62" }] }, { now: FIX });
     expect(dn2.number).toBe("LS-2028-0002");
   });
+
+  it("neue Organisation bekommt Systemzahlungsmethoden und Mahnstufen", async () => {
+    const { ensureOrgMasterdata } = await import("@/domain/masterdata/ensure");
+    const org = await dbInternal.organization.create({ data: { legalName: "Neu GmbH", addressLine1: "A 1", postalCode: "1", city: "B" } });
+    await ensureOrgMasterdata(dbInternal, org.id);
+    await ensureOrgMasterdata(dbInternal, org.id); // idempotent
+    expect(await dbInternal.paymentMethod.count({ where: { orgId: org.id, isSystem: true } })).toBe(8);
+    expect(await dbInternal.dunningStage.count({ where: { orgId: org.id } })).toBe(4);
+  });
+
+  it("recordPayment lehnt unbekannte Zahlungsmethode ab und akzeptiert Systemcode", async () => {
+    const { recordPayment } = await import("@/domain/invoice/payment");
+    const { ensureOrgMasterdata } = await import("@/domain/masterdata/ensure");
+    await ensureOrgMasterdata(dbInternal, orgId);
+    const inv = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [line], deliveryDate: FIX });
+    await finalizeInvoice(inv.id, { now: FIX });
+    await expect(recordPayment(inv.id, { amountCents: 100, method: "GIBTSNICHT", isSkonto: false })).rejects.toThrow(/Zahlungsmethode/);
+    await expect(recordPayment(inv.id, { amountCents: 100, method: "PAYPAL", isSkonto: false })).resolves.toBeTruthy();
+  });
 });

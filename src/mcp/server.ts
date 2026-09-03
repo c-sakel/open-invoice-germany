@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { roundHalfUp, formatCents } from "@/lib/money";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { SCHEME_NOTICE } from "@/domain/invoice/mandatory";
@@ -200,6 +201,8 @@ server.registerTool(
       const org = existing
         ? await dbInternal.organization.update({ where: { id: existing.id }, data })
         : await dbInternal.organization.create({ data });
+      // idempotent, deshalb unabhaengig von Create/Update sicher aufrufbar
+      await ensureOrgMasterdata(dbInternal, org.id);
       return ok(`Unternehmen ${existing ? "aktualisiert" : "angelegt"}: ${org.legalName} (${org.id}).`);
     } catch (e) {
       return fail(`Konnte Unternehmen nicht speichern: ${(e as Error).message}`);
