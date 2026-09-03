@@ -2,7 +2,8 @@
 
 > **Stand 2026-09-02.** Dieses Dokument beschreibt den **implementierten** Stand. Frühere
 > Fassungen enthielten Entwurfsvorschläge (Decimal-Preise, Mustang-Sidecar, Dunning-Enum,
-> EmailLog), die nie umgesetzt wurden — sie sind entfernt. Wo Code und Dokument abweichen,
+> EmailLog), die nie umgesetzt wurden — sie sind entweder entfernt oder ausdrücklich als
+> historisch gekennzeichnet. Wo Code und Dokument abweichen,
 > gilt der Code. Roadmap: `docs/superpowers/requirements/` (Branch `specs`).
 
 > Begleitdokument zu `COMPLIANCE.md`.
@@ -80,7 +81,7 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 ### Anforderung
 EN-16931-konform: **XRechnung** (UBL oder CII, reines XML) und **ZUGFeRD/Factur-X** (PDF/A-3 mit eingebettetem CII-XML, Profil ≥ EN16931/COMFORT — **niemals** MINIMUM/BASIC-WL, gelten nicht als E-Rechnung). Bei Hybrid ist der XML-Teil führend (BMF 15.10.2025) → 14c-Risiko bei Divergenz, daher PDF deterministisch aus denselben Daten rendern.
 
-### Optionen bewertet
+### Optionen bewertet (historische Abwägung 2026-06 — nicht umgesetzt, siehe unten)
 
 | Schicht | Optionen | Bewertung |
 |---|---|---|
@@ -127,6 +128,9 @@ src/
     api/                  # auth/, cron/, documents/, dunnings/, invoices/, recurring/
     actions/              # invoices.ts, masterdata.ts, result.ts (Server Actions)
     rechnungen/ dokumente/ kunden/ produkte/ abos/ einstellungen/ setup/ login/
+  components/             # UI-Komponenten (12 Dateien), inkl. forms/ (CustomerForm.tsx,
+                           # OrganizationForm.tsx, ProductForm.tsx, fields.tsx)
+  proxy.ts                # Next.js Middleware: Session-Prüfung, öffentliche Pfade (/login, /api/cron, …)
   domain/                 # framework-frei, testbar
     audit.ts
     changelog.ts          # Hash-Chain
@@ -160,6 +164,9 @@ scripts/                  # db-prepare.sh, migrate-postgres.sh, test-postgres-mi
 test/
   unit/
   integration/
+docker-compose.yml       # db + app für Docker-Betrieb; enthält einen auskommentierten,
+                          # optionalen Mustang-Sidecar-Block (Profil "einvoice", Build-Pfad
+                          # einvoice-service/ existiert nicht) — nicht aktiv genutzt
 ```
 
 ---
