@@ -285,6 +285,23 @@ model Invoice {
   correctsInvoiceId         String? // Korrekturrechnung-Verknüpfung (§31 Abs.5 UStDV)
   recurringInvoiceId        String? // Herkunft: aus Abo/Dauerrechnung erzeugt
   recurringInvoice          RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
+  // Phase 5 (§13-15 UStG): Quelle bei type PARTIAL/DOWNPAYMENT/FINAL — QUOTE oder
+  // DELIVERY_NOTE (Teilrechnung) bzw. QUOTE (Abschlag/Schluss). NULL bei INVOICE/
+  // CREDIT_NOTE/CORRECTION. Die Relation selbst (PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR)
+  // laeuft weiterhin ueber DocumentRelation (linkDocuments) — diese Felder sind ein
+  // denormalisierter Schnellzugriff fuer Abfragen/UI, keine zweite Quelle der Wahrheit.
+  sourceType                String?
+  sourceId                  String?
+  // Anteil in Promille bei PERCENT-Teil-/Abschlagsrechnung (Snapshot zum Zeitpunkt der
+  // Anlage). NULL bei Festbetrags-/Positions-/Mengen-Teilrechnungen und bei FINAL.
+  partialPermille           Int?
+  // Summe der bereits vereinnahmten Abschlaege (brutto) — nur bei type FINAL gesetzt;
+  // Snapshot aus den FinalInvoiceDeduction-Zeilen zum Festschreibungszeitpunkt.
+  prepaidCents              Int               @default(0)
+  // Offener Betrag der Rechnung (brutto). NULL = grossTotalCents (Normalfall INVOICE/
+  // PARTIAL/DOWNPAYMENT); bei FINAL = grossTotalCents - prepaidCents. Zahlungen/
+  // Mahnwesen rechnen mit COALESCE(payableCents, grossTotalCents).
+  payableCents              Int?
   xmlFormat                 String? // XRECHNUNG | ZUGFERD
   xmlHash                   String?
   pdfPath                   String?
@@ -292,9 +309,11 @@ model Invoice {
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
 
-  lines    InvoiceLine[]
-  payments Payment[]
-  dunnings Dunning[]
+  lines               InvoiceLine[]
+  payments            Payment[]
+  dunnings            Dunning[]
+  finalDeductions     FinalInvoiceDeduction[] @relation("FinalInvoiceDeductions")
+  downpaymentOfFinals FinalInvoiceDeduction[] @relation("DownpaymentInvoiceDeductions")
 
   @@index([orgId])
   @@index([customerId])
@@ -303,6 +322,31 @@ model Invoice {
   @@index([contactPersonId])
   @@index([billingAddressId])
   @@index([shippingAddressId])
+}
+
+// Phase 5 (§14 Abs. 5 Satz 2 UStG): Snapshot einer auf einer Schlussrechnung
+// abgesetzten Abschlagsrechnung, je Steuersatz/-kategorie. Wird beim Festschreiben
+// der Schlussrechnung erzeugt und danach nie mehr veraendert (GoBD) — Storno der
+// Schlussrechnung stornoiert die Rechnung selbst, nicht diese Zeilen.
+model FinalInvoiceDeduction {
+  id                  String   @id @default(cuid())
+  finalInvoiceId      String
+  finalInvoice        Invoice  @relation("FinalInvoiceDeductions", fields: [finalInvoiceId], references: [id], onDelete: Cascade)
+  downpaymentInvoiceId String
+  downpaymentInvoice  Invoice  @relation("DownpaymentInvoiceDeductions", fields: [downpaymentInvoiceId], references: [id])
+  // Snapshot der Abschlagsrechnung zum Zeitpunkt der Schlussrechnung (BG-3 Preceding
+  // invoice reference: BT-25 Nummer, BT-26 Datum).
+  number              String
+  issueDate           DateTime
+  netCents            Int
+  taxCents            Int
+  grossCents          Int
+  taxRate             Int
+  taxCategory         String
+  createdAt           DateTime @default(now())
+
+  @@index([finalInvoiceId])
+  @@unique([finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory])
 }
 
 model InvoiceLine {
