@@ -11,6 +11,9 @@ export const runtime = "nodejs";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+// Toleranz fuer multipart-Overhead (Boundary, Feldnamen, payload-JSON) oberhalb der
+// eigentlichen Anhangsgroesse.
+const CONTENT_LENGTH_TOLERANCE_BYTES = 64 * 1024;
 const MIME_WHITELIST = new Set([
   "application/pdf",
   "image/png",
@@ -26,6 +29,14 @@ function sanitizeFilename(name: string): string {
 }
 
 export async function POST(req: Request) {
+  // Groesse VOR jedem Einlesen (auch vor DB-/Auth-Zugriff) anhand des Headers pruefen —
+  // fehlt er oder ist er zu gross, wird der Body nie gelesen (W2).
+  const contentLengthHeader = req.headers.get("content-length");
+  const contentLength = contentLengthHeader === null ? NaN : Number(contentLengthHeader);
+  if (!Number.isFinite(contentLength) || contentLength > MAX_TOTAL_BYTES + CONTENT_LENGTH_TOLERANCE_BYTES) {
+    return NextResponse.json({ error: "Anfrage zu gross" }, { status: 413 });
+  }
+
   let formData: FormData;
   try {
     formData = await req.formData();

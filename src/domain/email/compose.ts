@@ -4,7 +4,7 @@
  * `EmailLog` (Wiederversand).
  */
 import { dbInternal } from "@/lib/db";
-import { buildTemplateContext } from "@/domain/email/context";
+import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { buildStandardAttachments } from "@/domain/email/attachments";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
@@ -90,7 +90,10 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
   const from = { name: settings.fromName, address: settings.fromEmail };
 
   if ("logId" in source) {
-    const log = await dbInternal.emailLog.findFirstOrThrow({ where: { id: source.logId, orgId } });
+    // G7: findFirst statt findFirstOrThrow — ein unbekanntes/fremdes logId ist kein
+    // Serverfehler, sondern ein regulaerer 404-Fall (Route mappt DocumentNotFoundError).
+    const log = await dbInternal.emailLog.findFirst({ where: { id: source.logId, orgId } });
+    if (!log) throw new DocumentNotFoundError("Versandprotokoll nicht gefunden");
     const docType = log.docType as EmailDocType;
     const attachments = await buildStandardAttachments(orgId, docType, log.docId);
     return {
