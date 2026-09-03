@@ -120,8 +120,23 @@ export function buildDocumentTextContext(input: DocumentTextContextInput): Templ
   };
 }
 
+export interface BuildTemplateContextOptions {
+  /**
+   * Fertige URL des aktiven Angebotslinks fuer `{{offer.link}}` (nur docType ANGEBOT).
+   * Wird vom Aufrufer (compose.ts, `prefillEmail`) ermittelt/erzeugt — `buildTemplateContext`
+   * selbst legt nie einen Link an (bleibt lesend, ohne Seitenwirkung, damit Preview/Send
+   * gefahrlos wiederholt aufgerufen werden koennen). Ohne Wert bleibt `offer.link` "".
+   */
+  offerLink?: string;
+}
+
 /** Baut den Platzhalterkontext eines Belegs. Festgeschriebene Belege: Werte aus dem Snapshot. */
-export async function buildTemplateContext(orgId: string, docType: EmailDocType, docId: string): Promise<TemplateContextResult> {
+export async function buildTemplateContext(
+  orgId: string,
+  docType: EmailDocType,
+  docId: string,
+  opts: BuildTemplateContextOptions = {},
+): Promise<TemplateContextResult> {
   const org = await dbInternal.organization.findUniqueOrThrow({ where: { id: orgId } });
   const company = { name: org.legalName, email: org.email ?? "", phone: org.phone ?? "", iban: org.iban ?? "", bic: org.bic ?? "" };
   const payment = { iban: org.iban ?? "", bic: org.bic ?? "" };
@@ -228,7 +243,7 @@ export async function buildTemplateContext(orgId: string, docType: EmailDocType,
       company: { ...company, name: seller.legalName },
       payment,
       document: docCtx(docType, q.number, q.issueDate, q.validUntil, q.grossTotalCents, q.netTotalCents, q.taxTotalCents, q.currency),
-      offer: { number: q.number ?? "", validUntil: formatDateDe(q.validUntil) },
+      offer: { number: q.number ?? "", validUntil: formatDateDe(q.validUntil), link: docType === "ANGEBOT" ? (opts.offerLink ?? "") : "" },
       contact: { name: q.customer.contactName ?? "" },
     },
     customerEmail: q.customer.email ?? null,
@@ -266,7 +281,7 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
     payment,
     document: documentByType[docType],
     invoice: { number: "RE-2026-0042", date: formatDateDe(today), total: formatMoneyDe(119000, "EUR"), dueDate: formatDateDe(dueDate), openAmount: formatMoneyDe(119000, "EUR") },
-    offer: { number: "AN-2026-0042", validUntil: formatDateDe(dueDate) },
+    offer: { number: "AN-2026-0042", validUntil: formatDateDe(dueDate), link: "https://beispiel.invalid/angebot/beispiel-token" },
     dunning: { level: 1, number: "MA-2026-0042", newDueDate: formatDateDe(dueDate), fee: formatMoneyDe(500, "EUR"), interest: formatMoneyDe(1200, "EUR"), total: formatMoneyDe(120700, "EUR") },
     contact: { name: "Max Mustermann" },
   };

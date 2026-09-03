@@ -10,6 +10,8 @@ import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/setting
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
 import { DEFAULT_DUNNING_STAGES } from "@/domain/masterdata/defaults";
 import { renderTemplate } from "@/lib/template/render";
+import { createShareLink, ShareLinkError } from "@/domain/quote-share/link";
+import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import type { EmailDocType } from "@/schemas/email";
 
 export interface PrefillSource {
@@ -43,6 +45,37 @@ function splitAddresses(s: string): string[] {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+/**
+ * Ermittelt die URL fuer `{{offer.link}}` beim Vorbelegen einer ANGEBOT-Mail (Phase 3b).
+ * Ohne `APP_BASE_URL` bleibt der Platzhalter leer (Ruling). Existiert bereits ein
+ * gueltiger (nicht widerrufener/entschiedener/abgelaufener) Link, wird dessen URL NICHT
+ * angezeigt — das Klartext-Token wird nie gespeichert und ist nach der Erzeugung nicht
+ * mehr abrufbar (Sicherheitsregel, Task 2). Nur wenn noch KEIN gueltiger Link existiert,
+ * wird automatisch einer erzeugt (Komfortfunktion: "Angebot verfassen" stellt dem Kunden
+ * automatisch einen funktionierenden Annahme-Link bereit).
+ */
+async function resolveOfferLink(orgId: string, docType: EmailDocType, docId: string): Promise<string | undefined> {
+  if (docType !== "ANGEBOT") return undefined;
+  const baseUrl = appBaseUrlFromEnv();
+  if (!baseUrl) return undefined;
+
+  const existing = await dbInternal.quoteShareLink.findFirst({
+    where: { orgId, quoteId: docId, revokedAt: null, decidedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) return undefined;
+
+  try {
+    const { token } = await createShareLink(orgId, docId, {}, { actor: "system" });
+    return `${baseUrl}/angebot/${token}`;
+  } catch (e) {
+    // Angebot nicht (mehr) in einem fuer Links zulaessigen Status/Kind — kein Abbruch des
+    // Mailversands deswegen, der Platzhalter bleibt einfach leer.
+    if (e instanceof ShareLinkError) return undefined;
+    throw e;
+  }
 }
 
 async function templatesOf(orgId: string, docType: EmailDocType) {
@@ -116,7 +149,8 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
   }
 
   const { docType, docId, templateId } = source;
-  const { ctx, customerEmail } = await buildTemplateContext(orgId, docType, docId);
+  const offerLink = await resolveOfferLink(orgId, docType, docId);
+  const { ctx, customerEmail } = await buildTemplateContext(orgId, docType, docId, { offerLink });
 
   let template = await pickTemplate(orgId, docType, docId, templateId);
   if (!template) {

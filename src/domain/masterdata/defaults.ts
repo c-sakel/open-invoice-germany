@@ -26,7 +26,7 @@ export const DEFAULT_DUNNING_STAGES = [
 /** Standard-E-Mail-Vorlagen (Lastenheft 19). Alle vom Nutzer editierbar; isSystem markiert nur die Herkunft. */
 export const DEFAULT_EMAIL_TEMPLATES = [
   { docType: "ANGEBOT", name: "Standard", subject: "Angebot {{document.number}} von {{company.name}}",
-    body: "Guten Tag,\n\nanbei erhalten Sie unser Angebot {{document.number}}.\nDas Angebot ist bis zum {{offer.validUntil}} gültig.\n\nFür Rückfragen stehen wir gerne zur Verfügung.\n\nFreundliche Grüße\n{{company.name}}" },
+    body: "Guten Tag,\n\nanbei erhalten Sie unser Angebot {{document.number}}.\nDas Angebot ist bis zum {{offer.validUntil}} gültig.\nSie können das Angebot auch online ansehen und annehmen: {{offer.link}}\n\nFür Rückfragen stehen wir gerne zur Verfügung.\n\nFreundliche Grüße\n{{company.name}}" },
   { docType: "AUFTRAGSBESTAETIGUNG", name: "Standard", subject: "Auftragsbestätigung {{document.number}}",
     body: "Guten Tag,\n\nvielen Dank für Ihren Auftrag.\nAnbei erhalten Sie die Auftragsbestätigung {{document.number}}.\n\nFreundliche Grüße\n{{company.name}}" },
   { docType: "PROFORMA", name: "Standard", subject: "Proformarechnung {{document.number}}",
