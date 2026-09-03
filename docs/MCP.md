@@ -93,6 +93,10 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `duplicate_document` | Angebot/AB/Proforma, Lieferschein oder Rechnung als neuen Entwurf duplizieren |
 | `create_recurring` / `list_recurring` | Abo / wiederkehrende Rechnung anlegen & auflisten |
 | `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort) |
+| `create_share_link` | Angebots-Annahmelink (ohne Login) erzeugen — liefert die URL einmalig in der Antwort |
+| `revoke_share_link` | Angebots-Annahmelink widerrufen |
+| `list_share_links` | Annahme-Links eines Angebots auflisten (Status/Aufrufe/Entscheidung, nie der Klartext-Token) |
+| `save_document_settings` | Angebotsannahme-Einstellungen speichern (Automatik nach Annahme, Link-Gültigkeitsdauer, IP-Speicherung) |
 
 ## 4. Was die KI **nicht** kaputt machen kann
 
