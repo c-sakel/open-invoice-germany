@@ -161,4 +161,34 @@ describe("Skonto: Erkennung und Buchung bei Zahlungseingang", () => {
       recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: 100, method: "UNBEKANNT" })),
     ).rejects.toBeInstanceOf(PaymentError);
   });
+
+  it("Ueberzahlung: eine bereits vollstaendig bezahlte Rechnung nimmt keine weitere Zahlung an", async () => {
+    const inv = await finalizedInvoiceWithSkonto();
+    const paidAt = new Date("2034-06-15T00:00:00.000Z");
+
+    const full = await recordPayment(
+      inv.id,
+      recordPaymentSchema.parse({ amountCents: inv.grossTotalCents, method: "TRANSFER", paidAt, applySkonto: true }),
+    );
+    expect(full.payment.status).toBe("PAID");
+
+    await expect(
+      recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: 100, method: "TRANSFER", paidAt, applySkonto: true })),
+    ).rejects.toBeInstanceOf(PaymentError);
+
+    const payments = await prisma.payment.findMany({ where: { invoiceId: inv.id } });
+    expect(payments).toHaveLength(1); // keine zusaetzliche (Ueberzahlungs-)Zahlung angelegt
+  });
+
+  it("Ueberzahlung: eine einzelne Zahlung darf den offenen Rest nicht uebersteigen", async () => {
+    const inv = await finalizedInvoiceWithSkonto();
+    const paidAt = new Date("2034-06-15T00:00:00.000Z");
+
+    await expect(
+      recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: inv.grossTotalCents + 100, method: "TRANSFER", paidAt })),
+    ).rejects.toBeInstanceOf(PaymentError);
+
+    const payments = await prisma.payment.findMany({ where: { invoiceId: inv.id } });
+    expect(payments).toHaveLength(0);
+  });
 });
