@@ -5,6 +5,7 @@
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { linkDocuments } from "@/domain/relations";
 
 export class ConvertError extends Error {
   constructor(message: string) {
@@ -58,6 +59,7 @@ export async function convertDocumentToInvoice(documentId: string, opts: { actor
     });
 
     await tx.quote.update({ where: { id: documentId }, data: { status: "CONVERTED", convertedToInvoiceId: invoice.id } });
+    await linkDocuments(tx, { orgId: q.orgId, fromType: "QUOTE", fromId: documentId, toType: "INVOICE", toId: invoice.id, relationType: "CONVERTED_TO" });
     await appendChangeLog(tx, {
       orgId: q.orgId,
       entity: "INVOICE",

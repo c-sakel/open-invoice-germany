@@ -7,6 +7,7 @@
 import { dbInternal } from "@/lib/db";
 import { computeLineNetCents } from "@/lib/money";
 import { appendChangeLog } from "@/domain/audit";
+import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
 
 export class CreditError extends Error {
@@ -89,6 +90,8 @@ export async function createPartialCreditNote(
       // Teilgutschrift berichtigt genau die Original-Rechnung: gleicher Empfaenger/Verkaeufer wie dort.
       inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson },
     });
+
+    await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalized.id, toType: "INVOICE", toId: original.id, relationType: "CORRECTS" });
 
     await appendChangeLog(tx, {
       orgId: original.orgId,
