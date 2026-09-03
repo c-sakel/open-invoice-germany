@@ -13,6 +13,56 @@ describe("parseRichText / renderRichTextHtml — Escaping (§9)", () => {
   });
 });
 
+describe("parseRichText / renderRichTextHtml — Apostroph-Escaping (§9)", () => {
+  it("Apostroph wird als &#39; escaped (Attribut-Injection-Schutz)", () => {
+    const blocks = parseRichText("It's a 'test'");
+    const html = renderRichTextHtml(blocks);
+    expect(html).not.toContain("'");
+    expect(html).toContain("It&#39;s a &#39;test&#39;");
+  });
+
+  it("Apostroph im Link-Label wird escaped, Attribut bleibt korrekt geschlossen", () => {
+    const blocks = parseRichText("[O'Brien](https://example.com)");
+    const html = renderRichTextHtml(blocks);
+    expect(html).toContain('<a href="https://example.com" rel="noopener noreferrer" target="_blank">O&#39;Brien</a>');
+  });
+});
+
+describe("parseRichText / renderRichTextHtml — Rand-Payloads (§9)", () => {
+  it("[x](JAVASCRIPT:alert(1)) — Schema-Prüfung ist case-insensitiv, wird zu Klartext", () => {
+    const blocks = parseRichText("[x](JAVASCRIPT:alert(1))");
+    const html = renderRichTextHtml(blocks);
+    // Der Linkmuster-Regex ist nicht-gierig bis zur ersten schließenden Klammer;
+    // der Rest (")") bleibt als Klartext stehen. Entscheidend: kein <a>-Tag.
+    expect(html).toBe("<p>x)</p>");
+    expect(html).not.toContain("<a ");
+  });
+
+  it('[x](https://a\\"onmouseover=\\"x) — Anführungszeichen im href werden escaped, kein Attribut-Escape möglich', () => {
+    const blocks = parseRichText('[x](https://a"onmouseover="x)');
+    const html = renderRichTextHtml(blocks);
+    expect(html).toContain('href="https://a&quot;onmouseover=&quot;x"');
+    expect(html).not.toContain('onmouseover="x"');
+  });
+
+  it('**<img src=x onerror=1>** — bleibt Text innerhalb von <strong>, kein rohes <img>', () => {
+    const blocks = parseRichText("**<img src=x onerror=1>**");
+    const html = renderRichTextHtml(blocks);
+    expect(html).toBe("<p><strong>&lt;img src=x onerror=1&gt;</strong></p>");
+    expect(html).not.toContain("<img ");
+  });
+
+  it("unbalancierte Marker terminieren am Blockende, statt in den nächsten Block zu lecken", () => {
+    const blocks = parseRichText("**offen bleibt fett\n\nNeuer Absatz normal");
+    expect(blocks).toEqual([
+      { type: "paragraph", runs: [{ text: "offen bleibt fett", bold: true }] },
+      { type: "paragraph", runs: [{ text: "Neuer Absatz normal" }] },
+    ]);
+    const html = renderRichTextHtml(blocks);
+    expect(html).toBe("<p><strong>offen bleibt fett</strong></p><p>Neuer Absatz normal</p>");
+  });
+});
+
 describe("parseRichText — Links", () => {
   it("erlaubt https:// und mailto: Links", () => {
     const blocks = parseRichText("[Website](https://example.com) und [Mail](mailto:info@example.com)");
