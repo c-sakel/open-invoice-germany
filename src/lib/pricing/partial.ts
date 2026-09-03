@@ -45,8 +45,9 @@
  * `deductionsFor` zieht die auf den Abschlagsrechnungen bereits ausgewiesenen
  * Beträge je Steuersatz von der Gesamtleistung (Schlussrechnung) ab und liefert
  * den Rest je Satz sowie in Summe (§ 14 Abs. 5 Satz 2 UStG — Doppelbesteuerung
- * vermeiden). Übersteigt die Summe der Abschläge (je Satz ODER insgesamt) die
- * Gesamtleistung, wird ein `PricingError` geworfen.
+ * vermeiden). Übersteigt die Summe der Abschläge je Satz die Gesamtleistung dieses
+ * Satzes, wird ein `PricingError` geworfen (das schließt eine Überdeckung in Summe
+ * automatisch aus, da die Summe nur aus nicht-negativen Je-Satz-Resten gebildet wird).
  *
  *   Rechenbeispiel (Gesamtleistung 10.000,00 €/19 %, zwei Abschläge à 3.000,00 €
  *   netto/570,00 € USt/3.570,00 € brutto):
@@ -185,9 +186,10 @@ function bucketKey(taxRate: number, taxCategory: string): string {
 /**
  * Zieht die Abschläge (`downpayments`, eine Zeile je Steuersatz je Abschlagsrechnung —
  * entspricht je einer `FinalInvoiceDeduction`-Zeile) von der Gesamtleistung
- * (`finalBuckets`) ab. Wirft `PricingError`, wenn die Summe der Abschläge — je Satz
- * ODER insgesamt — die Gesamtleistung übersteigt (§ 14 Abs. 5 Satz 2 UStG: sonst
- * würde die Schlussrechnung eine negative Steuer je Satz oder insgesamt ausweisen).
+ * (`finalBuckets`) ab. Wirft `PricingError`, wenn die Summe der Abschläge je Satz die
+ * Gesamtleistung dieses Satzes übersteigt (§ 14 Abs. 5 Satz 2 UStG: sonst würde die
+ * Schlussrechnung eine negative Steuer je Satz ausweisen) — das schließt eine
+ * Überdeckung in Summe automatisch aus.
  */
 export function deductionsFor(
   finalBuckets: readonly RateBucket[],
@@ -254,13 +256,6 @@ export function deductionsFor(
   const totalDeductedNetCents = perRate.reduce((s, r) => s + r.deductedNetCents, 0);
   const totalDeductedTaxCents = perRate.reduce((s, r) => s + r.deductedTaxCents, 0);
   const totalDeductedGrossCents = perRate.reduce((s, r) => s + r.deductedGrossCents, 0);
-  const totalGrossCents = perRate.reduce((s, r) => s + r.deductedGrossCents + r.remainingGrossCents, 0);
-
-  if (totalDeductedGrossCents > totalGrossCents) {
-    throw new PricingError(
-      `Summe der Abschläge (${totalDeductedGrossCents} Cent brutto) übersteigt die Gesamtleistung (${totalGrossCents} Cent brutto)`,
-    );
-  }
 
   return {
     perRate,
