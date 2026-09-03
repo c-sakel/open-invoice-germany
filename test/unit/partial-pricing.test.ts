@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitByTaxRate, deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
+import { splitByTaxRate, deductionsFor, bucketsFromLines, bucketsGrossTotalCents, formatPermilleDE, type DeductionInput } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
 
@@ -147,5 +147,48 @@ describe("deductionsFor", () => {
       { taxRate: 19, taxCategory: "S", netCents: -1, taxCents: 0, grossCents: -1 },
     ];
     expect(() => deductionsFor(finalBuckets, downpayments)).toThrow(PricingError);
+  });
+});
+
+describe("bucketsFromLines (Fix-Runde 1, LOW: gemeinsamer Helper fuer partial.ts/downpayment.ts)", () => {
+  it("gruppiert Zeilen nach (taxCategory, taxRate) und summiert lineNetCents", () => {
+    const buckets = bucketsFromLines([
+      { taxRate: 19, taxCategory: "S", lineNetCents: 100_000 },
+      { taxRate: 7, taxCategory: "S", lineNetCents: 50_000 },
+      { taxRate: 19, taxCategory: "S", lineNetCents: 25_000 },
+    ]);
+    expect(buckets).toHaveLength(2);
+    expect(buckets.find((b) => b.taxRate === 19)?.netCents).toBe(125_000);
+    expect(buckets.find((b) => b.taxRate === 7)?.netCents).toBe(50_000);
+  });
+
+  it("liefert ein leeres Array fuer keine Zeilen", () => {
+    expect(bucketsFromLines([])).toEqual([]);
+  });
+});
+
+describe("bucketsGrossTotalCents (Fix-Runde 1, HIGH: Gesamtleistung brutto fuer den Ueberbuchungs-Guard)", () => {
+  it("summiert die Bruttobetraege ueber gemischte Steuersaetze", () => {
+    const buckets: RateBucket[] = [
+      { key: "S:19", taxRate: 19, taxCategory: "S", netCents: 500_000 },
+      { key: "S:7", taxRate: 7, taxCategory: "S", netCents: 500_000 },
+    ];
+    // 500.000*1,19 + 500.000*1,07 = 595.000 + 535.000 = 1.130.000
+    expect(bucketsGrossTotalCents(buckets)).toBe(1_130_000);
+  });
+
+  it("liefert 0 fuer keine Buckets", () => {
+    expect(bucketsGrossTotalCents([])).toBe(0);
+  });
+});
+
+describe("formatPermilleDE (Fix-Runde 1, LOW: gemeinsamer Helper)", () => {
+  it("formatiert glatte Zehntel ohne Nachkommastelle", () => {
+    expect(formatPermilleDE(300)).toBe("30");
+    expect(formatPermilleDE(1000)).toBe("100");
+  });
+
+  it("formatiert Achtel-Prozent mit einer Nachkommastelle", () => {
+    expect(formatPermilleDE(335)).toBe("33,5");
   });
 });

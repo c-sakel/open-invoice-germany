@@ -17,9 +17,8 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { splitByTaxRate, type TaxRateSplit } from "@/lib/pricing/partial";
+import { splitByTaxRate, bucketsFromLines, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
-import type { RateBucket } from "@/lib/pricing/allocate";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -37,28 +36,6 @@ export class DownpaymentInvoiceError extends Error {
 const QUOTE_KINDS_ALLOWED = new Set(["ANGEBOT", "AUFTRAGSBESTAETIGUNG"]);
 const QUOTE_STATUS_ALLOWED = new Set(["DRAFT", "SENT", "ACCEPTED"]);
 const FINALIZED_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
-
-function formatPermilleDE(permille: number): string {
-  const tenths = Math.round(permille / 10);
-  return (tenths / 10).toLocaleString("de-DE", { minimumFractionDigits: tenths % 10 === 0 ? 0 : 1, maximumFractionDigits: 1 });
-}
-
-interface QuoteBucketLine {
-  taxRate: number;
-  taxCategory: string;
-  lineNetCents: number;
-}
-
-function bucketsFromLines(lines: readonly QuoteBucketLine[]): RateBucket[] {
-  const map = new Map<string, RateBucket>();
-  for (const l of lines) {
-    const key = `${l.taxCategory}:${l.taxRate}`;
-    const existing = map.get(key);
-    if (existing) existing.netCents += l.lineNetCents;
-    else map.set(key, { key, taxCategory: l.taxCategory, taxRate: l.taxRate, netCents: l.lineNetCents });
-  }
-  return [...map.values()];
-}
 
 export interface CreateDownpaymentInvoiceOptions {
   actor?: string;

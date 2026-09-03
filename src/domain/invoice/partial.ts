@@ -18,9 +18,8 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { splitByTaxRate, type TaxRateSplit } from "@/lib/pricing/partial";
+import { splitByTaxRate, bucketsFromLines, bucketsGrossTotalCents, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
-import type { RateBucket } from "@/lib/pricing/allocate";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -158,27 +157,12 @@ interface BuiltLine {
   sourceLineId?: string;
 }
 
-function bucketsFromSource(lines: readonly PartialSourceLine[]): RateBucket[] {
-  const map = new Map<string, RateBucket>();
-  for (const l of lines) {
-    const key = `${l.taxCategory}:${l.taxRate}`;
-    const existing = map.get(key);
-    if (existing) {
-      existing.netCents += l.lineNetCents;
-    } else {
-      map.set(key, { key, taxCategory: l.taxCategory, taxRate: l.taxRate, netCents: l.lineNetCents });
-    }
-  }
-  return [...map.values()];
-}
-
-function formatPermilleDE(permille: number): string {
-  const tenths = Math.round(permille / 10);
-  return (tenths / 10).toLocaleString("de-DE", { minimumFractionDigits: tenths % 10 === 0 ? 0 : 1, maximumFractionDigits: 1 });
-}
-
-function splitLinesForShareMode(input: CreatePartialInvoiceInput, source: PartialSource): { lines: BuiltLine[]; partialPermille: number | null } {
-  const buckets = bucketsFromSource(source.lines);
+function splitLinesForShareMode(
+  input: CreatePartialInvoiceInput,
+  source: PartialSource,
+  existingActiveGrossCents: number,
+): { lines: BuiltLine[]; partialPermille: number | null } {
+  const buckets = bucketsFromLines(source.lines);
   if (buckets.length === 0) {
     throw new PartialInvoiceError("Die Quelle enthaelt keine abrechenbaren Positionen.");
   }
@@ -190,6 +174,20 @@ function splitLinesForShareMode(input: CreatePartialInvoiceInput, source: Partia
   } catch (e) {
     if (e instanceof PricingError) throw new PartialInvoiceError(e.message);
     throw e;
+  }
+
+  // Fix-Runde 1 (HIGH): kumulativer Ueberbuchungs-Guard fuer PERCENT/NET_AMOUNT/
+  // GROSS_AMOUNT — ohne ihn liesse sich dieselbe Quelle beliebig oft ueber 100 % hinaus
+  // per Teilrechnung abrechnen (anders als POSITIONS/QUANTITIES, die bereits per
+  // `billedQuantities` je Position geschuetzt sind). Zaehlt wie `billingStateFor`s
+  // `billedPermille` ALLE aktiven, nicht stornierten Teilrechnungen dieser Quelle
+  // (DRAFT zaehlt bereits mit — analog `billedQuantities`).
+  const newGrossCents = splits.reduce((s, sp) => s + sp.grossCents, 0);
+  const sourceGrossCents = bucketsGrossTotalCents(buckets);
+  if (existingActiveGrossCents + newGrossCents > sourceGrossCents) {
+    throw new PartialInvoiceError(
+      `Die Summe der Teilrechnungen (${existingActiveGrossCents + newGrossCents} Cent) wuerde die Gesamtleistung (${sourceGrossCents} Cent) uebersteigen.`,
+    );
   }
 
   const label =
@@ -269,6 +267,24 @@ function positionLinesForMode(
   return { lines, partialPermille: null };
 }
 
+/**
+ * Bruttosumme aller aktiven (nicht stornierten) Teilrechnungen dieser Quelle — Grundlage
+ * des kumulativen Ueberbuchungs-Guards (Fix-Runde 1, HIGH). DRAFT zaehlt bereits mit
+ * (analog `billedQuantities`/`billingStateFor`s `billedPermille`).
+ */
+async function activePartialGrossCents(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  sourceType: PartialSourceType,
+  sourceId: string,
+): Promise<number> {
+  const active = await tx.invoice.findMany({
+    where: { orgId, sourceType, sourceId, type: "PARTIAL", status: { not: "CANCELLED" } },
+    select: { grossTotalCents: true },
+  });
+  return active.reduce((s, i) => s + i.grossTotalCents, 0);
+}
+
 export interface CreatePartialInvoiceOptions {
   actor?: string;
   now?: Date;
@@ -282,10 +298,10 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
   return dbInternal.$transaction(async (tx) => {
     const source = await loadPartialSource(tx, orgId, input.sourceType, input.sourceId);
 
-    const built =
-      input.mode === "PERCENT" || input.mode === "NET_AMOUNT" || input.mode === "GROSS_AMOUNT"
-        ? splitLinesForShareMode(input, source)
-        : positionLinesForMode(input, source, await billedQuantities(orgId, input.sourceType, input.sourceId, tx));
+    const isShareMode = input.mode === "PERCENT" || input.mode === "NET_AMOUNT" || input.mode === "GROSS_AMOUNT";
+    const built = isShareMode
+      ? splitLinesForShareMode(input, source, await activePartialGrossCents(tx, orgId, input.sourceType, input.sourceId))
+      : positionLinesForMode(input, source, await billedQuantities(orgId, input.sourceType, input.sourceId, tx));
 
     const createInput: CreateInvoiceInput = {
       customerId: source.customerId,
