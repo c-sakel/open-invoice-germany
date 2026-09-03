@@ -10,11 +10,14 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { StatusTransitionError } from "@/domain/document/status";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
+import { normalizeLines } from "@/domain/document/lines";
 import { NotFoundError } from "@/domain/errors";
 import { updateDocumentSchema } from "@/schemas";
-import type { Quote, Prisma } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 
-export async function updateDraftDocument(orgId: string, id: string, rawInput: unknown, actor: string): Promise<Quote> {
+type QuoteWithLines = Prisma.QuoteGetPayload<{ include: { lines: true } }>;
+
+export async function updateDraftDocument(orgId: string, id: string, rawInput: unknown, actor: string): Promise<QuoteWithLines> {
   const input = updateDocumentSchema.parse(rawInput);
   const now = new Date();
 
@@ -70,10 +73,16 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
     // Rabatt/Aufschlag wirken auf ALLE Positionen — deshalb Summen auch neu berechnen,
     // wenn NUR die Beleg-Anpassung geaendert wurde (ohne neue Positionen).
     if (input.lines || adjustmentFieldChanged) {
+      // normalizeLines (§8, zweite Verteidigungslinie neben Zod) fuer neue Positionen;
+      // bleiben die Positionen unveraendert (nur Beleg-Anpassung geaendert), werden die
+      // bereits gespeicherten Zeilen samt lineType uebernommen.
       const lines = input.lines
-        ? input.lines.map((l, i) => ({
-            position: i + 1,
+        ? normalizeLines(input.lines).map((l) => ({
+            position: l.position,
+            lineType: l.lineType,
             description: l.description,
+            descriptionLong: l.descriptionLong,
+            articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
             unitNetPriceCents: l.unitNetPriceCents,
@@ -81,11 +90,14 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
-            lineNetCents: computeLineNet(l).lineNetCents,
+            lineNetCents: l.lineType === "ITEM" ? computeLineNet(l).lineNetCents : 0,
           }))
         : quote.lines.map((l) => ({
             position: l.position,
+            lineType: l.lineType as "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL",
             description: l.description,
+            descriptionLong: l.descriptionLong,
+            articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
             unitNetPriceCents: l.unitNetPriceCents,
@@ -95,8 +107,10 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
             discountCents: l.discountCents,
             lineNetCents: l.lineNetCents,
           }));
+      // Nicht-ITEM-Zeilen gehen nie in Summen/Steuerberechnung ein (§8).
+      const itemLines = lines.filter((l) => l.lineType === "ITEM");
       const totals = computeTaxBreakdown(
-        lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+        itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
         {
           discountPermille: input.documentDiscountPermille ?? quote.documentDiscountPermille,
           discountCents: input.documentDiscountCents ?? quote.documentDiscountCents,

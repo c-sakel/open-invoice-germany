@@ -369,6 +369,7 @@ server.registerTool(
       unit: z.string().default("C62").describe("Einheit (UN/ECE): C62=Stück, HUR=Stunde, DAY=Tag, KGM=kg, MTR=m"),
       taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).default(19),
       description: z.string().optional(),
+      articleNumber: z.string().max(60).optional().describe("Artikelnummer, wird als Snapshot in Positionen uebernommen"),
     },
   },
   async (args): Promise<Result> => {
@@ -377,6 +378,7 @@ server.registerTool(
       const data = {
         name: args.name,
         description: args.description ?? null,
+        articleNumber: args.articleNumber ?? null,
         unit: args.unit,
         netPriceCents: euroToCents(args.netPriceEuro),
         taxRate: args.taxRatePercent,

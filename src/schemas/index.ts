@@ -144,6 +144,9 @@ export type CustomerInput = z.infer<typeof customerSchema>;
 export const productSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  // Frei vergebene Artikelnummer (Phase 4b) — wird als Snapshot in Positionen uebernommen,
+  // kein Live-Bezug zum Produktstamm.
+  articleNumber: z.string().max(60).optional(),
   unit: z.string().default("C62"),
   netPriceCents: z.number().int(),
   taxRate: TaxRate.default(19),
