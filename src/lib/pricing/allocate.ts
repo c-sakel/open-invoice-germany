@@ -14,6 +14,16 @@
  *   D  = round(20000 * 100 / 1000) = 2000
  *   D_r = allocateProportional(2000, [10000, 10000]) = [1000, 1000]
  *   Basis_r = [9000, 9000]  → Steuer 19 %: 1710,00; 7 %: 630,00
+ *
+ * Rechenbeispiel Storno/Gutschrift (vorzeichen-invariant): Buckets 19 %/−10000
+ * Cent netto und 7 %/−10000 Cent netto (Spiegelung der Originalrechnung),
+ * Belegrabatt 10 % (discountPermille = 100, wie im Original als positiver
+ * Wert übergeben): intern wird auf den negierten (positiven) Buckets
+ * [10000, 10000] gerechnet wie oben (D_r = [1000, 1000], Basis_r = [9000, 9000])
+ * und das Ergebnis anschließend negiert:
+ *   allowanceCents = [−1000, −1000]; adjustedNetCents = [−9000, −9000]
+ * Gemischte Vorzeichen (mind. ein Bucket > 0 und einer < 0) sind bei einer
+ * Anpassung ≠ 0 unzulässig → `PricingError`.
  */
 import { roundHalfUp } from "../money";
 import { PricingError } from "./errors";
@@ -89,25 +99,23 @@ export interface AdjustedRateBucket extends RateBucket {
 }
 
 /**
- * Verteilt Belegrabatt und -aufschlag proportional zum Netto je Steuersatz-Bucket.
+ * Verteilt Belegrabatt und -aufschlag proportional zum Netto je Steuersatz-Bucket,
+ * ausgehend von nicht-negativen Netto-Buckets (Normalfall).
  * Der Aufschlag wird auf Basis des Netto NACH Rabatt berechnet (D vor C).
  * Wirft `PricingError`, wenn der Rabatt die Nettosumme übersteigt.
  */
-export function applyDocumentAdjustments(
+function applyDocumentAdjustmentsNonNegative(
   buckets: readonly RateBucket[],
-  adj: DocumentAdjustments,
+  discountPermille: number,
+  discountCents: number,
+  chargePermille: number,
+  chargeCentsFixed: number,
 ): AdjustedRateBucket[] {
-  const discountPermille = adj.discountPermille ?? 0;
-  const discountCents = adj.discountCents ?? 0;
-  const chargePermille = adj.chargePermille ?? 0;
-  const chargeCentsFixed = adj.chargeCents ?? 0;
-
   const netSum = buckets.reduce((s, b) => s + b.netCents, 0);
   const discountTotal = discountCents + roundHalfUp((netSum * discountPermille) / 1000);
 
   // Nur eine tatsächlich beantragte Rabattierung (> 0) kann die Nettosumme
-  // "übersteigen" — bei 0 bleibt auch eine negative Nettosumme (Gutschrift)
-  // unangetastet.
+  // "übersteigen".
   if (discountTotal > 0 && discountTotal > netSum) {
     throw new PricingError(
       `Belegrabatt (${discountTotal} Cent) übersteigt die Nettosumme (${netSum} Cent)`,
@@ -128,4 +136,72 @@ export function applyDocumentAdjustments(
     chargeCents: charges[i],
     adjustedNetCents: bases[i] + charges[i],
   }));
+}
+
+/**
+ * Verteilt Belegrabatt und -aufschlag proportional zum Netto je Steuersatz-Bucket.
+ * Vorzeichen-invariant: Sind ALLE Buckets `netCents <= 0` (Storno/Gutschrift
+ * spiegelt die Originalrechnung samt Rabatten), wird auf den negierten
+ * (positiven) Beträgen wie bei einem normalen Beleg gerechnet und das
+ * Ergebnis (`allowanceCents`, `chargeCents`, `adjustedNetCents`) anschließend
+ * negiert — `discountCents`/`chargeCents` werden dabei weiterhin als
+ * Beträge des Originals verstanden, also positiv übergeben.
+ * Gemischte Vorzeichen (mindestens ein Bucket > 0 und einer < 0) sind bei
+ * einer Anpassung ≠ 0 unzulässig und werfen `PricingError`.
+ * Wirft `PricingError`, wenn der Rabatt die (absolute) Nettosumme übersteigt.
+ */
+export function applyDocumentAdjustments(
+  buckets: readonly RateBucket[],
+  adj: DocumentAdjustments,
+): AdjustedRateBucket[] {
+  const discountPermille = adj.discountPermille ?? 0;
+  const discountCents = adj.discountCents ?? 0;
+  const chargePermille = adj.chargePermille ?? 0;
+  const chargeCentsFixed = adj.chargeCents ?? 0;
+
+  const hasAdjustment =
+    discountPermille !== 0 || discountCents !== 0 || chargePermille !== 0 || chargeCentsFixed !== 0;
+
+  if (hasAdjustment) {
+    const hasPositive = buckets.some((b) => b.netCents > 0);
+    const hasNegative = buckets.some((b) => b.netCents < 0);
+
+    if (hasPositive && hasNegative) {
+      throw new PricingError("Beleganpassungen sind bei gemischten Vorzeichen nicht zulaessig");
+    }
+
+    if (hasNegative) {
+      const negatedBuckets = buckets.map((b) => ({ ...b, netCents: -b.netCents }));
+      let result: AdjustedRateBucket[];
+      try {
+        result = applyDocumentAdjustmentsNonNegative(
+          negatedBuckets,
+          discountPermille,
+          discountCents,
+          chargePermille,
+          chargeCentsFixed,
+        );
+      } catch (err) {
+        if (err instanceof PricingError) {
+          throw new PricingError(`Beleganpassung auf Storno/Gutschrift nicht moeglich: ${err.message}`);
+        }
+        throw err;
+      }
+      return result.map((r) => ({
+        ...r,
+        netCents: -r.netCents,
+        allowanceCents: -r.allowanceCents,
+        chargeCents: -r.chargeCents,
+        adjustedNetCents: -r.adjustedNetCents,
+      }));
+    }
+  }
+
+  return applyDocumentAdjustmentsNonNegative(
+    buckets,
+    discountPermille,
+    discountCents,
+    chargePermille,
+    chargeCentsFixed,
+  );
 }

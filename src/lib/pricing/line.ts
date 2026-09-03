@@ -34,6 +34,12 @@ export function computeLineNet(l: LineInput): LineNetResult {
   const discountPermille = l.discountPermille ?? 0;
   const discountCents = l.discountCents ?? 0;
 
+  if (l.quantityMilli < 0) {
+    throw new PricingError(`quantityMilli darf nicht negativ sein: ${l.quantityMilli}`);
+  }
+  if (l.unitNetPriceCents < 0) {
+    throw new PricingError(`unitNetPriceCents darf nicht negativ sein: ${l.unitNetPriceCents}`);
+  }
   if (discountPermille < 0 || discountPermille > 1000) {
     throw new PricingError(`discountPermille muss zwischen 0 und 1000 liegen: ${discountPermille}`);
   }
