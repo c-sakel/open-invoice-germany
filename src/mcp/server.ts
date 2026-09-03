@@ -126,8 +126,8 @@ async function resolveDeliveryNote(orgId: string, ref: string) {
   return n;
 }
 
-/** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). */
-async function buildSimpleLines(
+/** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). Exportiert für Unit-Tests. */
+export async function buildSimpleLines(
   orgId: string,
   inputLines: {
     description: string;
@@ -137,6 +137,7 @@ async function buildSimpleLines(
     unit?: string;
     taxRatePercent?: number;
     discountPercent?: number;
+    discountAmount?: number;
   }[],
 ) {
   const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
@@ -162,6 +163,7 @@ async function buildSimpleLines(
       taxRate: taxRate ?? 19,
       taxCategory: "S",
       discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
+      discountCents: l.discountAmount ? euroToCents(l.discountAmount) : 0,
     };
   });
 }
@@ -683,6 +685,7 @@ const docLineSchema = z.object({
   unit: z.string().optional(),
   taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
   discountPercent: z.number().min(0).max(100).optional().describe("Positionsrabatt in Prozent"),
+  discountAmount: z.number().min(0).optional().describe("Zusätzlicher Festbetragsrabatt je Position in Euro"),
 });
 
 // ── create_document ─────────────────────────────────────────────────────────
@@ -1319,7 +1322,11 @@ async function main() {
   console.error("[open-invoice-germany] MCP-Server bereit (stdio).");
 }
 
-main().catch((e) => {
-  console.error("[open-invoice-germany] Fehler:", e);
-  process.exit(1);
-});
+// Nur starten, wenn direkt ausgeführt (nicht beim Import in Unit-Tests).
+const isEntrypoint = process.argv[1] && import.meta.url === `file://${path.resolve(process.argv[1])}`;
+if (isEntrypoint) {
+  main().catch((e) => {
+    console.error("[open-invoice-germany] Fehler:", e);
+    process.exit(1);
+  });
+}
