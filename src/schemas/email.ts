@@ -57,5 +57,3 @@ export const sendEmailInputSchema = z.object({
   resendOfId: z.string().optional(),
 });
 export type SendEmailInput = z.infer<typeof sendEmailInputSchema>;
-
-export const EMAIL_STATUS = ["queued", "sent", "failed", "delivered", "bounced"] as const;
