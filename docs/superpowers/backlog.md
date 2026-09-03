@@ -178,3 +178,22 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - **MIME-Whitelist vertraut dem Client-Typ** (`f.type`); echte Magic-Byte-Pruefung optional.
 - **Mahnungs-Mails ohne Historie** — EmailHistory steht nur fuer den Rechnungs-docType auf der Rechnungsseite; DUNNING-Logs je Mahnung
   anzeigen (Phase 6 Mahnuebersicht).
+
+## Aus Phase 3a (Dokumentworkflow, 2026-09-03)
+
+- **Lint-Check auf Steuerzeichen** (NUL-Bytes in Quelldateien, Phase 3a Task 3): kleiner Schritt in der Pruefkette, z. B. `git grep -Il $'\x00' -- src test` muss leer sein.
+- **Routen-/Action-Tests fuer den Dokumentworkflow** (`/api/documents/*`, `/api/delivery-notes/*`, Text-Template-Actions) fehlen; nur Domain
+  getestet. Muster: `test/integration/email-route.test.ts`.
+- **Artikelnummer an Positionen** (Product, QuoteLine, InvoiceLine) — Lieferschein-Konvertierung laesst `articleNumber` leer (Lastenheft 6).
+- **EXPIRED persistieren** per Scheduler (Phase 6); heute nur abgeleitet (`effectiveQuoteStatus`).
+- **Prisma ohne select** in status.ts/duplicate.ts (Konvention) — bei naechster Aenderung nachziehen.
+- **`isSystemTemplate` fuer Dokumenttexte** wird ueber Name "Standard" + Kombination erkannt, nicht ueber ein Flag wie bei E-Mail-Vorlagen —
+  bei Gelegenheit `TextTemplate.isSystem` einfuehren (Migration additiv).
+- **Quote-Status 409 vs 404**: „nicht gefunden" liefert seit Phase 3a 404 (NotFoundError) — bei MCP-Doku beruecksichtigen.
+- **PDF-Seitenumbruch** (invoice-pdf.ts, delivery-note-pdf.ts): lineare y-Positionen ohne Umbruch — ab ~30 Positionen laeuft die Tabelle in die
+  Fusszeile. Vorbestand, aber mit dem Lieferschein-PDF verdoppelt. Phase 7 (PDF-Layout) beheben.
+- **Restmengen ueber Belegketten**: Restmengen werden je Quellposition gefuehrt; nach Angebot→Rechnung koennen dieselben Waren einmal gegen
+  Angebots- und einmal gegen Rechnungspositionen ausgeliefert werden. Design-Entscheidung fuer Phase 5 (Teil-/Schlussrechnung): Lieferung
+  gegen die Kette statt gegen den Einzelbeleg.
+- **Race bei gleichzeitiger Lieferschein-Anlage unter Postgres** (READ COMMITTED) trotz Pruefung in der Tx — dokumentiert in LIMITATIONEN;
+  Loesung: SELECT ... FOR UPDATE auf die Quellzeilen (Postgres) oder Serialisierung ueber Advisory Lock.
