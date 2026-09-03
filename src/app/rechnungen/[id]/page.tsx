@@ -232,20 +232,18 @@ export default async function InvoiceDetail({
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         {hasDocumentAdjustment && (
           <>
-            {/* Gutschriften spiegeln die Betraege (negativ) — Math.abs() zeigt die
-                Zeile trotzdem an (Bestandskonvention, analog invoice-pdf.ts). Der
-                Grund (documentChargeReason) gehoert NUR zum Aufschlag, nicht zum
-                Rabatt (der Rabattgrund ist immer "Rabatt", siehe mapper.ts). */}
-            {Math.abs(documentDiscountTotalCents) !== 0 && (
+            {/* Gutschriften spiegeln die Betraege (negativ). Anzeige vorzeichenrichtig
+                (analog invoice-pdf.ts); der Grund gehoert nur zum Aufschlag. */}
+            {documentDiscountTotalCents !== 0 && (
               <div className="flex justify-between text-slate-600">
                 <span>Belegrabatt</span>
-                <span className="tabular">−{formatCents(Math.abs(documentDiscountTotalCents), invoice.currency)}</span>
+                <span className="tabular">{formatCents(-documentDiscountTotalCents, invoice.currency)}</span>
               </div>
             )}
-            {Math.abs(documentChargeTotalCents) !== 0 && (
+            {documentChargeTotalCents !== 0 && (
               <div className="flex justify-between text-slate-600">
                 <span>Belegaufschlag{invoice.documentChargeReason ? ` (${invoice.documentChargeReason})` : ""}</span>
-                <span className="tabular">+{formatCents(Math.abs(documentChargeTotalCents), invoice.currency)}</span>
+                <span className="tabular">{formatCents(documentChargeTotalCents, invoice.currency)}</span>
               </div>
             )}
           </>

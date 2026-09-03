@@ -124,14 +124,15 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
     const lineTotal = data.lineTotalCents ?? data.netTotalCents;
     const allowanceTotal = data.allowanceTotalCents ?? 0;
     const chargeTotal = data.chargeTotalCents ?? 0;
-    // Gutschriften spiegeln die Betraege (negativ, Bestandskonvention) — Math.abs()
-    // zeigt die Zeile trotzdem an und rechnet mit dem Betragswert, nicht dem Vorzeichen.
-    if (Math.abs(allowanceTotal) !== 0 || Math.abs(chargeTotal) !== 0) {
-      sumRow("Zwischensumme netto", formatCents(Math.abs(lineTotal), cur));
-      if (Math.abs(allowanceTotal) !== 0) sumRow("abzgl. Rabatt", `−${formatCents(Math.abs(allowanceTotal), cur)}`);
-      if (Math.abs(chargeTotal) !== 0) {
+    // Gutschriften spiegeln die Betraege (negativ, Bestandskonvention). Der Block wird
+    // vorzeichenrichtig ausgegeben (Zwischensumme -100,00 / Rabatt +10,00 / Netto -90,00),
+    // nur die Sichtbarkeit prueft den Betrag.
+    if (allowanceTotal !== 0 || chargeTotal !== 0) {
+      sumRow("Zwischensumme netto", formatCents(lineTotal, cur));
+      if (allowanceTotal !== 0) sumRow("abzgl. Rabatt", formatCents(-allowanceTotal, cur));
+      if (chargeTotal !== 0) {
         const chargeReason = data.documentCharges?.[0]?.reason;
-        sumRow(chargeReason ? `zzgl. Aufschlag (${chargeReason})` : "zzgl. Aufschlag", formatCents(Math.abs(chargeTotal), cur));
+        sumRow(chargeReason ? `zzgl. Aufschlag (${chargeReason})` : "zzgl. Aufschlag", formatCents(chargeTotal, cur));
       }
     }
     sumRow("Nettobetrag", formatCents(data.netTotalCents, cur));
