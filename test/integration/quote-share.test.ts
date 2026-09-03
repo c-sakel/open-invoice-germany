@@ -2,8 +2,10 @@
  * Task 2 (Phase 3b): Angebotslinks, Online-Entscheidung, Automatik, Benachrichtigung.
  * In-Memory-Mailprovider, eigenes Jahr (2032) fuer die Nummernvergabe.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
+import * as audit from "@/domain/audit";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createBusinessDocument } from "@/domain/document/create";
 import { saveMailSettings } from "@/domain/email/settings";
@@ -356,6 +358,39 @@ describe("decideOffer", () => {
     expect(invoice.status).toBe("DRAFT");
 
     await saveDocumentSettings(orgId, { onQuoteAccept: "NONE", shareLinkDays: 30, storeAcceptIp: false });
+  });
+
+  it("G4: P2002 auf ChangeLog (prevHash-Kollision) -> genau ein Retry, dann erfolgreich", async () => {
+    resetRateLimits();
+    const quote = await makeQuote();
+    const { token } = await createShareLink(orgId, quote.id, {}, { now: FIX_DATE });
+    const decideNow = new Date(FIX_DATE.getTime() + 1000);
+
+    const spy = vi.spyOn(audit, "appendChangeLog");
+    spy.mockImplementationOnce(async () => {
+      throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`orgId`,`prevHash`)", {
+        code: "P2002",
+        clientVersion: "test",
+      });
+    });
+
+    const result = await decideOffer(token, { decision: "ACCEPTED", name: "Retry Test", email: "retry@example.org" }, { now: decideNow });
+    expect(result.decision).toBe("ACCEPTED");
+    // Der erste appendChangeLog-Aufruf ueberhaupt (Statuswechsel-Eintrag aus
+    // setQuoteStatusWithinTx, noch vor ACCEPTED_ONLINE) schlaegt mit P2002 fehl — das
+    // rollt die gesamte Entscheidungs-Transaktion zurueck; decideOffer faengt genau
+    // diesen Fall ab und wiederholt die Transaktion EIN weiteres Mal, was hier gelingt
+    // (mind. ein weiterer appendChangeLog-Aufruf danach, plus die Versandprotokollierung
+    // der internen Benachrichtigung).
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    const updatedQuote = await dbInternal.quote.findUniqueOrThrow({ where: { id: quote.id } });
+    expect(updatedQuote.status).toBe("ACCEPTED");
+    const cl = await dbInternal.changeLog.findMany({ where: { orgId, entity: "QUOTE", entityId: quote.id, action: "ACCEPTED_ONLINE" } });
+    expect(cl.length).toBe(1);
+    expect(await chainValid()).toBe(true);
+
+    spy.mockRestore();
   });
 
   it("IP wird nur mit storeAcceptIp=true gespeichert", async () => {

@@ -6,6 +6,7 @@
  * ein Fehler dort darf die bereits verbuchte Entscheidung nicht zuruecknehmen.
  */
 import { dbInternal } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { appendChangeLog } from "@/domain/audit";
 import { rateLimit } from "@/lib/rate-limit";
 import { hashToken } from "@/domain/quote-share/token";
@@ -68,36 +69,54 @@ export async function decideOffer(
   const settings = await loadDocumentSettings(quote.orgId);
   const actor = `public:${input.name}`;
 
-  await dbInternal.$transaction(async (tx) => {
-    // Atomar gegen doppelte Entscheidung (z. B. zwei parallele Anfragen mit demselben
-    // Token): der Update-Filter greift nur, wenn decidedAt noch null ist.
-    const claimed = await tx.quoteShareLink.updateMany({
-      where: { id: link.id, decidedAt: null },
-      data: {
-        decidedAt: now,
-        decision: input.decision,
-        deciderName: input.name,
-        deciderEmail: input.email,
-        deciderComment: input.comment ?? null,
-        // IP nur speichern, wenn die Organisation es erlaubt (Sicherheitsregel).
-        deciderIp: settings.storeAcceptIp ? (ctx.ip ?? null) : null,
-      },
-    });
-    if (claimed.count === 0) throw new AlreadyDecidedError();
+  const runDecisionTx = () =>
+    dbInternal.$transaction(async (tx) => {
+      // Atomar gegen doppelte Entscheidung (z. B. zwei parallele Anfragen mit demselben
+      // Token): der Update-Filter greift nur, wenn decidedAt noch null ist.
+      const claimed = await tx.quoteShareLink.updateMany({
+        where: { id: link.id, decidedAt: null },
+        data: {
+          decidedAt: now,
+          decision: input.decision,
+          deciderName: input.name,
+          deciderEmail: input.email ?? null,
+          deciderComment: input.comment ?? null,
+          // IP nur speichern, wenn die Organisation es erlaubt (Sicherheitsregel).
+          deciderIp: settings.storeAcceptIp ? (ctx.ip ?? null) : null,
+        },
+      });
+      if (claimed.count === 0) throw new AlreadyDecidedError();
 
-    await setQuoteStatusWithinTx(tx, quote.orgId, quote.id, input.decision, { actor, now, note: input.comment });
+      await setQuoteStatusWithinTx(tx, quote.orgId, quote.id, input.decision, { actor, now, note: input.comment });
 
-    await appendChangeLog(tx, {
-      orgId: quote.orgId,
-      entity: "QUOTE",
-      entityId: quote.id,
-      action: input.decision === "ACCEPTED" ? "ACCEPTED_ONLINE" : "REJECTED_ONLINE",
-      actor,
-      at: now,
-      // IP nie im ChangeLog (Sicherheitsregel) — nur Entscheider-Angaben + linkId.
-      diff: { name: input.name, email: input.email, comment: input.comment ?? null, linkId: link.id },
+      await appendChangeLog(tx, {
+        orgId: quote.orgId,
+        entity: "QUOTE",
+        entityId: quote.id,
+        action: input.decision === "ACCEPTED" ? "ACCEPTED_ONLINE" : "REJECTED_ONLINE",
+        actor,
+        at: now,
+        // IP nie im ChangeLog (Sicherheitsregel) — nur Entscheider-Angaben + linkId.
+        diff: { name: input.name, email: input.email ?? null, comment: input.comment ?? null, linkId: link.id },
+      });
     });
-  });
+
+  try {
+    await runDecisionTx();
+  } catch (e) {
+    // G4: ChangeLog.@@unique([orgId, prevHash]) kann bei zwei nahezu gleichzeitigen
+    // Entscheidungen verschiedener Angebote derselben Organisation kollidieren (die
+    // prevHash-Kette wurde zwischen Lesen und Schreiben von einer anderen Transaktion
+    // fortgeschrieben). Die gesamte Transaktion (inkl. des Claims per updateMany) wurde
+    // dabei zurueckgerollt, ein einziger Retry mit frisch gelesenem prevHash reicht —
+    // der Claim ist idempotent, ein Doppelversuch fuehrt bei bereits entschiedenem Link
+    // regulaer zu AlreadyDecidedError statt zu einer zweiten Kollision.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      await runDecisionTx();
+    } else {
+      throw e;
+    }
+  }
 
   const result: DecideOfferResult = { quoteId: quote.id, decision: input.decision };
 
@@ -130,7 +149,7 @@ export async function decideOffer(
 export interface SendInternalNotificationInput {
   decision: "ACCEPTED" | "REJECTED";
   name: string;
-  email: string;
+  email?: string;
   comment?: string;
   automationError?: string;
   now?: Date;
@@ -164,7 +183,7 @@ export async function sendInternalNotification(
   const bodyLines = [
     `Das Angebot ${docLabel} wurde online ${decisionLabel}.`,
     `Name: ${input.name}`,
-    `E-Mail: ${input.email}`,
+    `E-Mail: ${input.email ?? "(nicht angegeben)"}`,
     ...(input.comment ? [`Kommentar: ${input.comment}`] : []),
     ...(input.automationError
       ? [`Achtung: die automatische Weiterverarbeitung ist fehlgeschlagen: ${input.automationError}`]

@@ -193,6 +193,11 @@ export interface ResolvedShareLink {
  * unterscheidbar. Bei Gueltigkeit werden `viewCount`/`lastViewedAt` gezaehlt (reiner
  * Lesezugriff, daher bewusst OHNE ChangeLog-Eintrag).
  */
+// W4: dieselbe Seitenanfrage feuert mehrfach (PDF-Link, Reload, Prefetch) — ohne
+// Drosselung waechst viewCount pro Besuch beliebig. Ein Zaehl-Update pro Link hoechstens
+// alle 60s reicht als grobe "Aufrufe"-Anzeige im Betreiber-Panel.
+const VIEW_COUNT_THROTTLE_MS = 60_000;
+
 export async function resolveShareToken(token: string, now: Date = new Date()): Promise<ResolvedShareLink | null> {
   const tokenHash = hashToken(token);
   const link = await dbInternal.quoteShareLink.findFirst({ where: { tokenHash } });
@@ -202,12 +207,21 @@ export async function resolveShareToken(token: string, now: Date = new Date()): 
   if (!quote) return null;
   if (!isLinkCurrentlyValid(link, quote, now)) return null;
 
-  const updatedLink = await dbInternal.quoteShareLink.update({
-    where: { id: link.id },
-    data: { viewCount: { increment: 1 }, lastViewedAt: now },
-  });
+  const shouldCountView = !link.lastViewedAt || now.getTime() - link.lastViewedAt.getTime() >= VIEW_COUNT_THROTTLE_MS;
+  if (shouldCountView) {
+    // updateMany statt update: die Bedingung ist Teil des WHERE (kein Race mit einem
+    // zwischenzeitlichen zweiten Aufruf), keine Rueckgabe noetig — der Zaehlerstand ist
+    // fuer die Antwort dieser Anfrage nur naeherungsweise relevant.
+    await dbInternal.quoteShareLink.updateMany({
+      where: {
+        id: link.id,
+        OR: [{ lastViewedAt: null }, { lastViewedAt: { lt: new Date(now.getTime() - VIEW_COUNT_THROTTLE_MS) } }],
+      },
+      data: { viewCount: { increment: 1 }, lastViewedAt: now },
+    });
+  }
 
-  return { link: updatedLink, quote };
+  return { link: shouldCountView ? { ...link, viewCount: link.viewCount + 1, lastViewedAt: now } : link, quote };
 }
 
 /** Nur fuer decideOffer: laedt Link + Angebot ohne Seiteneffekt (kein viewCount-Zaehler — das ist keine Ansicht). */
