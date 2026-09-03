@@ -69,6 +69,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       padding: range.seqPadding,
       year,
       month: now.getMonth() + 1,
+      day: now.getDate(),
     });
 
     const newDueDate = new Date(now.getTime() + (opts.dueInDays ?? 14) * 24 * 60 * 60 * 1000);

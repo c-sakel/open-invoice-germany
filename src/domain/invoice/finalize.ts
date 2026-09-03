@@ -130,6 +130,7 @@ export async function finalizeWithinTx(
     padding: range.seqPadding,
     year,
     month: now.getMonth() + 1,
+    day: now.getDate(),
   });
   await tx.invoice.update({ where: { id: invoiceId }, data: { number } });
 

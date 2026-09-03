@@ -18,4 +18,23 @@ describe("numbering", () => {
     expect(defaultPrefix("INVOICE")).toBe("RE-");
     expect(defaultPrefix("CREDIT_NOTE")).toBe("GS-");
   });
+
+  it("unterstuetzt {SEQ:n} mit expliziter Stellenzahl und {DD}", () => {
+    expect(
+      formatDocumentNumber("{PREFIX}{YYYY}-{SEQ:5}", { prefix: "LS-", seq: 7, padding: 4, year: 2026, month: 9, day: 3 }),
+    ).toBe("LS-2026-00007");
+    expect(
+      formatDocumentNumber("{YYYY}{MM}{DD}-{SEQ:2}", { prefix: "", seq: 3, padding: 4, year: 2026, month: 9, day: 3 }),
+    ).toBe("20260903-03");
+  });
+
+  it("{SEQ} ohne Stellenangabe nutzt weiterhin padding", () => {
+    expect(formatDocumentNumber("{SEQ}", { prefix: "", seq: 7, padding: 4, year: 2026, month: 1 })).toBe("0007");
+  });
+
+  it("kennt Praefixe fuer Lieferschein, Kunde, Produkt", () => {
+    expect(defaultPrefix("DELIVERY_NOTE")).toBe("LS-");
+    expect(defaultPrefix("CUSTOMER")).toBe("K-");
+    expect(defaultPrefix("PRODUCT")).toBe("P-");
+  });
 });
