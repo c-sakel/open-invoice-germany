@@ -1,6 +1,6 @@
 # Bekannte Einschränkungen (MVP)
 
-Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-06-09.
+Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-03.
 
 ## Betrieb & Sicherheit
 - **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Mehrbenutzer, Rollen, Passwort-Reset und 2FA sind Roadmap. In Produktion `AUTH_SECRET` setzen + hinter HTTPS betreiben.
@@ -23,7 +23,6 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Kein Zustell-/Bounce-Tracking.** Der Versandstatus bleibt nach erfolgreichem SMTP-Aufruf dauerhaft `SENT` — die Werte `DELIVERED`/`BOUNCED` sind im Schema reserviert, werden aber mangels Provider-Webhook nicht gesetzt.
 - **QUEUED-Eintraege ohne Abgleich.** Bricht der Prozess waehrend des SMTP-Versands ab, bleibt der `EmailLog`-Eintrag dauerhaft auf `QUEUED` stehen, ohne dass ein ChangeLog-Satz nachgezogen wird; ein Abgleich (Scheduler) folgt in Phase 6.
 - **Nur Text/plain**, kein HTML-Mailversand.
-- **Lieferschein-Versand** ist noch nicht angebunden (kein PDF-Rendering für `DELIVERY_NOTE`); folgt mit der Lieferschein-UI in Phase 3.
 - **`AUTH_SECRET`-Wechsel invalidiert das gespeicherte SMTP-Passwort** (Verschlüsselung per HKDF aus `AUTH_SECRET`, siehe `src/lib/crypto/secrets.ts`) — nach einem Secret-Wechsel muss das Passwort in den Mail-Einstellungen neu eingetragen werden.
 - **Zusatzanhänge werden nicht persistiert.** Im `EmailLog` werden nur Dateiname, Größe und SHA-256-Hash protokolliert, nicht der Dateiinhalt.
 
@@ -33,7 +32,15 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Feld-Validierung** von IBAN/BIC/USt-IdNr. ist bewusst locker (keine Prüfziffer/Mod-97). Offensichtlich falsche Werte können durchrutschen.
 - **GoBD:** Die Software ermöglicht Unveränderbarkeit + Audit-Chain, ersetzt aber **nicht** die anwenderseitige **Verfahrensdokumentation**.
 - **Beleg-Snapshots:** Seit Phase 0 speichern festgeschriebene Rechnungen und nummerierte Geschäftsdokumente Käufer-/Verkäuferdaten als Snapshot; Stammdatenänderungen wirken nicht mehr zurück. Belege aus der Zeit davor wurden per Migration aus dem damals aktuellen Stamm eingefroren (`snapshotSource = MIGRATION`) — ihr Snapshot entspricht dem Stand zum Migrationszeitpunkt, nicht zwingend dem Ausstellungszeitpunkt. Storno und Gutschrift erben den Snapshot des Originalbelegs (`INHERITED`). **Mahnungen** werden noch nicht gesnapshottet — der PDF-Nachdruck einer Mahnung liest weiterhin den aktuellen Stamm (Organisation/Kunde) live; das folgt erst in Phase 6 (Mahnwesen).
-- **Phase 1:** Verknüpfungen zwischen Belegen (Umwandlung, Storno, Gutschrift, Abo-Erzeugung) werden zusätzlich in `DocumentRelation` gespiegelt; Zahlungsmethoden und Mahnstufen sind Stammdaten (noch ohne UI, Phasen 4/6); Lieferscheine existieren als Datenmodell + Service, UI folgt in Phase 3.
+- **Phase 1:** Verknüpfungen zwischen Belegen (Umwandlung, Storno, Gutschrift, Abo-Erzeugung) werden zusätzlich in `DocumentRelation` gespiegelt; Zahlungsmethoden und Mahnstufen sind Stammdaten (noch ohne UI, Phasen 4/6); Lieferscheine existieren als Datenmodell + Service, UI (Erstellung, Status, Versand) folgt mit Phase 3a.
+
+## Dokumentworkflow (Phase 3a)
+- **EXPIRED ist kein gespeicherter Status.** Ein Angebot/eine AB gilt als abgelaufen, wenn `status` noch `DRAFT`/`SENT` ist und `validUntil` in der Vergangenheit liegt (`effectiveQuoteStatus`) — abgeleitet bei jeder Anzeige, nicht per Scheduler nachgezogen. Ohne erneuten Aufruf der Seite/API bleibt der gespeicherte Status unverändert stehen.
+- **Online-Annahme durch den Kunden** (Angebotslink mit Annehmen/Ablehnen-Aktion ohne Login) ist noch nicht umgesetzt — folgt in Phase 3b. Aktuell setzt nur ein authentifizierter Nutzer (UI/MCP) den Status auf `ACCEPTED`/`REJECTED`.
+- **Teillieferung ist rein mengenbasiert.** Der Lieferschein übernimmt Mengen aus den Quellpositionen (Angebot/AB/Rechnung) inkl. Überlieferungsschutz (`assertNoOverDelivery`), aber keine Artikelnummern — `Product`/`QuoteLine`/`InvoiceLine` führen bislang keine Artikelnummer, `DeliveryNoteLine.articleNumber` bleibt daher leer, bis das Feld an den Positionen ergänzt wird (siehe Backlog).
+- **Dokumentkette maximal 6 Ebenen tief.** `buildDocumentChain` verfolgt Vorgänger-Relationen rückwärts bis `MAX_ROOT_DEPTH = 6` oder bis ein Zyklus erkannt wird; bei tieferen Ketten wird der am weitesten zurückverfolgbare Knoten innerhalb dieses Limits als Wurzel angezeigt, nicht der tatsächliche Ursprung.
+- **`DeliveryNote.status = INVOICED` ist reserviert, aber nicht Teil der Statusmaschine.** `DELIVERY_TRANSITIONS` kennt nur DRAFT/CREATED/SENT/DELIVERED/CANCELLED; ob ein Lieferschein bereits abgerechnet ist, ergibt sich aus der Relation `DELIVERED_BY` (Gegenrichtung) auf eine Rechnung, nicht aus dem gespeicherten Status.
+- **Abgeleiteter Abrechnungsstand (FULL/PARTIAL/NONE)** für Angebote/AB kommt ausschließlich aus `DocumentRelation` (`CONVERTED_TO`, `PARTIAL_OF`/`DOWNPAYMENT_OF`, `FINAL_FOR`) — `PARTIAL` (Abschlags-/Teilrechnung) ist als Zustand vorbereitet, aber es gibt in Phase 3a noch keinen Weg, eine solche Relation tatsächlich zu erzeugen (folgt in Phase 5).
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, eingebauter Scheduler, nutzungsbasierte Abo-Abrechnung.

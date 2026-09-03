@@ -47,6 +47,18 @@ npm run mcp   # MCP-Server (stdio) starten / in Claude Code via .mcp.json einbin
 
 MVP. Was funktioniert: Stammdaten/Kunden/Produkte, Angebots-/Rechnungsmodell, Entwurf→Festschreiben→Storno, PDF- + XRechnung-Export, GoBD-Nummernkreis + Audit. Auf der Roadmap: Mahnwesen-UI, wiederkehrende Rechnungen, ZUGFeRD-Hybrid, DATEV-Export, B2G/Leitweg-ID, OSS/ZM, Multi-User. Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / Stufe 2 / Stufe 3) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
 
+## Dokumentworkflow
+
+Angebot → Auftragsbestätigung → Lieferschein → Rechnung, alles verknüpft:
+
+1. **Angebot** anlegen (Entwurf, editierbar), versenden — Status `DRAFT → SENT`.
+2. Auf `ACCEPTED` setzen (oder direkt in eine **Auftragsbestätigung** umwandeln).
+3. In einen **Lieferschein** umwandeln (Mengen aus Angebot/AB, Überlieferung blockiert) und/oder in einen **Rechnungsentwurf**.
+4. Jede Umwandlung wird als Dokumentverknüpfung gespeichert; die **Dokumentkette** (auf jeder Angebots-/Rechnungs-/Lieferschein-Seite sichtbar) zeigt die volle Historie — Angebot → AB → Lieferschein → Rechnung → Zahlungen/Mahnungen.
+5. Der Abrechnungsstand (keine/teilweise/voll) wird aus diesen Verknüpfungen abgeleitet, nicht gespeichert.
+
+Dieselben Aktionen auch per MCP: `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`. Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md), Einschränkungen: [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
+
 ## Tech-Stack
 
 Next.js 16 (App Router) · TypeScript (strict) · Prisma 6 · SQLite/PostgreSQL · TailwindCSS · Zod · Vitest.

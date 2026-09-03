@@ -1,6 +1,6 @@
 # ARCHITEKTUR-Vorschlag: Open-Source-Rechnungssoftware DE
 
-> **Stand 2026-09-02.** Dieses Dokument beschreibt den **implementierten** Stand. Frühere
+> **Stand 2026-09-03.** Dieses Dokument beschreibt den **implementierten** Stand. Frühere
 > Fassungen enthielten Entwurfsvorschläge (Decimal-Preise, Mustang-Sidecar, Dunning-Enum,
 > EmailLog), die nie umgesetzt wurden — sie sind entweder entfernt oder ausdrücklich als
 > historisch gekennzeichnet. Wo Code und Dokument abweichen,
@@ -50,7 +50,25 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 `id` · `orgId` · `entity` (INVOICE | PAYMENT | …) · `entityId` · `action` (CREATE | UPDATE | FINALIZE | CANCEL | DELETE_PRE_FINALIZE) · `actorId` · `at` · `diff` (JSON: alte→neue Werte) · `prevHash` · `hash`
 → Append-only: **kein** UPDATE/DELETE-Recht (DB-User ohne diese Grants + App-Layer), Hash-Chain (`hash = sha256(prevHash + canonical(diff))`) macht Manipulation erkennbar.
 
-**Phase 1: Verknüpfungen, Stammdaten, Lieferschein** — zehn zusätzliche Tabellen. `DocumentRelation` bildet Beleg-zu-Beleg-Verknüpfungen (Umwandlung, Storno, Korrektur, Abo-Erzeugung) explizit ab, ergänzend zu den bisherigen Fremdschlüsseln. `DeliveryNote`/`DeliveryNoteLine` bilden den Lieferschein als eigenes, nummeriertes Dokument mit Snapshot ab (Service `createDeliveryNote`, noch ohne UI). `TextTemplate` und `EmailTemplate` speichern wiederverwendbare Text-/Mailvorlagen je Organisation, `EmailLog` protokolliert versendete Mails. `CustomerAddress` und `ContactPerson` erlauben mehrere Adressen/Ansprechpartner je Kunde zusätzlich zur Stammadresse. `PaymentMethod` und `DunningStage` sind Organisations-Stammdaten (Systemzahlungsmethoden bzw. Mahnstufen), die per Migration und bei Organisationsanlage (`ensureOrgMasterdata`) angelegt werden; `Dunning.stageId` verweist künftig auf `DunningStage` statt nur auf `level`.
+**Phase 1: Verknüpfungen, Stammdaten, Lieferschein** — zehn zusätzliche Tabellen. `DocumentRelation` bildet Beleg-zu-Beleg-Verknüpfungen (Umwandlung, Storno, Korrektur, Abo-Erzeugung) explizit ab, ergänzend zu den bisherigen Fremdschlüsseln. `DeliveryNote`/`DeliveryNoteLine` bilden den Lieferschein als eigenes, nummeriertes Dokument mit Snapshot ab (Service `createDeliveryNote`, UI seit Phase 3a). `TextTemplate` und `EmailTemplate` speichern wiederverwendbare Text-/Mailvorlagen je Organisation, `EmailLog` protokolliert versendete Mails. `CustomerAddress` und `ContactPerson` erlauben mehrere Adressen/Ansprechpartner je Kunde zusätzlich zur Stammadresse. `PaymentMethod` und `DunningStage` sind Organisations-Stammdaten (Systemzahlungsmethoden bzw. Mahnstufen), die per Migration und bei Organisationsanlage (`ensureOrgMasterdata`) angelegt werden; `Dunning.stageId` verweist künftig auf `DunningStage` statt nur auf `level`.
+
+### Dokumentworkflow (Phase 3a): Zustandsmaschinen, abgeleiteter Abrechnungsstand, Kette, Textvorlagen
+
+Angebot/Auftragsbestätigung (`Quote`) und Lieferschein (`DeliveryNote`) sind — anders als `Invoice` — **keine** GoBD-Belege und bleiben frei editier-/löschbar; sie haben aber eigene Statusmaschinen mit fester Übergangstabelle (`src/domain/document/status.ts`), gegen die jeder Wechsel geprüft wird (`assertTransition`), transaktional läuft und einen `ChangeLog`-Eintrag schreibt (Nachvollziehbarkeit, auch ohne GoBD-Pflicht):
+
+- **Quote**: `DRAFT → {SENT, ACCEPTED, REJECTED, CANCELLED}`, `SENT → {ACCEPTED, REJECTED, EXPIRED, CANCELLED}`, `ACCEPTED → {CANCELLED}`, `EXPIRED → {SENT, ACCEPTED}`, `REJECTED`/`CANCELLED` terminal. `EXPIRED` ist **kein** gespeicherter Wert, sondern wird bei jedem Lesezugriff aus `validUntil` abgeleitet (`effectiveQuoteStatus`, `src/domain/document/status.ts`) — DRAFT/SENT gilt als abgelaufen, wenn `validUntil` in der Vergangenheit liegt. Beim Übergang nach `SENT` wird — falls noch kein Snapshot existiert oder er aus `CREATE` stammt — ein neuer Käufer-/Verkäufer-Snapshot (Quelle `SENT`) eingefroren; `ACCEPTED`/`REJECTED` setzen `decidedAt`/`decisionNote`.
+- **DeliveryNote**: `DRAFT → {CREATED, CANCELLED}`, `CREATED → {SENT, DELIVERED, CANCELLED}`, `SENT → {DELIVERED, CANCELLED}`, `DELIVERED → {CANCELLED}`. Der Übergang `DRAFT → CREATED` vergibt — falls noch keine Nummer existiert (z. B. bei einem duplizierten Entwurf) — erst hier eine Nummer aus dem Nummernkreis `DELIVERY_NOTE`, da `DRAFT` als reiner Entwurf nicht zählt. `INVOICED` ist im Schema als möglicher Statuswert vermerkt, aber **nicht** Teil der Übergangstabelle (siehe `docs/LIMITATIONEN.md`) — ob ein Lieferschein bereits abgerechnet ist, ergibt sich aus der Relation, nicht aus dem Status.
+- **Archivieren** (`setArchived`, für `QUOTE`/`DELIVERY_NOTE`) ist rein organisatorisch (`archivedAt`), kein Statuswechsel, ebenfalls mit `ChangeLog`-Eintrag.
+
+**Abgeleiteter Abrechnungsstand** (`src/domain/document/billing-state.ts`, `billingStateFor`): Ob ein Angebot/eine AB bereits (teilweise) abgerechnet ist, wird **nicht** gespeichert, sondern bei jeder Abfrage aus den ausgehenden `DocumentRelation`-Einträgen berechnet — `FULL`, wenn mindestens eine nicht stornierte `CONVERTED_TO`-Relation auf eine Rechnung existiert; `PARTIAL`, wenn `PARTIAL_OF`/`DOWNPAYMENT_OF`-Relationen ohne `FINAL_FOR`-Relation vorhanden sind (Teil-/Abschlagsrechnung, Datenmodell aus Phase 3a vorbereitet, Erzeugung folgt erst Phase 5); sonst `NONE`.
+
+**Dokumentkette** (`src/domain/document/chain.ts`, `buildDocumentChain`): baut für einen beliebigen Beleg den vollständigen Beziehungsbaum. Zuerst wird rückwärts über `DocumentRelation` der am weitesten zurückverfolgbare Vorgänger gesucht (`findRoot`, max. `MAX_ROOT_DEPTH = 6` Ebenen, Zyklenerkennung per besuchte-Knoten-Set), dann rekursiv vorwärts der Baum aus allen ausgehenden Relationen aufgebaut, inklusive `Payment`/`Dunning` als Blattknoten unter einer `Invoice`. Mandantengeprüft (`orgId`-Filter in jedem Teilschritt); ein Knoten, dessen Beleg laut Relation existiert, aber nicht (mehr) sichtbar ist, wird als Platzhalter (`status: "UNBEKANNT"`) angezeigt statt den Aufbau abzubrechen. Wird auf allen Belegdetailseiten (Angebot, Rechnung, Lieferschein) angezeigt; `internalNotes` fließt **nie** in einen Kettenknoten ein.
+
+**Generische Konvertierung** (`src/domain/document/convert.ts`, `convertDocument`): ein Einstiegspunkt, der per Zod (`convertDocumentSchema`) parst und nach `toKind` verzweigt — Angebot/AB/Proforma → Rechnung (`convertDocumentToInvoice`, neue `Invoice` im Status `DRAFT`, Positionen kopiert, Kopf-/Fußtext/Zahlungsbedingungen vom Quelldokument oder per Selbstheilung aus der `INVOICE`-Textvorlage), Angebot → AB (`convertQuoteToOrderConfirmation`, setzt das Angebot bei Bedarf auf `ACCEPTED`, kopiert die Positionen in ein neues Geschäftsdokument über `createBusinessDocumentWithinTx`; nur `kind=ANGEBOT` ist zulässige Quelle), Angebot/AB/Rechnung → Lieferschein (`convertToDeliveryNote`, Mengen aus Eingabe oder Restmenge, `assertNoOverDelivery` verhindert Überlieferung anhand `remainingQuantities`). Jede Variante schreibt Erzeugung, `DocumentRelation` (`CONVERTED_TO` bzw. `DELIVERED_BY`) und `ChangeLog` in **einer** Transaktion (Lastenheft 50).
+
+**Duplizieren** (Relation `DUPLICATED_FROM`) und **Standard-Dokumenttexte**: `TextTemplate` (Positionen `HEAD`/`FOOT`/`TERMS_DELIVERY`/`TERMS_PAYMENT`, `@@unique([orgId, docType, position, name])`) liefert per `pickTextTemplate` (`src/domain/text-template/pick.ts`) die als Standard markierte oder älteste passende Vorlage; neue Belege übernehmen den Text als Snapshot (Selbstheilung — fehlt eine Vorlage, bleibt das Feld leer statt einen Fehler zu werfen). Kopf-/Fußtexte erscheinen im PDF, **nicht** im XRechnung-/ZUGFeRD-XML.
+
+**MCP-Tools** (`src/mcp/server.ts`, Lastenheft 55, gleiche Zod-Validierung wie die UI/API-Pfade — keine Bypass-Pfade): `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`, ergänzend zu `convert_document_to_invoice`. Fehlt ein Beleg, wirft die Domain `NotFoundError` (`src/domain/errors.ts`), das API-/MCP-Boundary mappt das auf HTTP 404.
 
 ### GoBD-Unveränderbarkeit + lückenloser Nummernkreis — technisch erzwungen
 
@@ -156,7 +174,7 @@ src/
     api/                  # auth/, cron/, documents/, dunnings/, invoices/, recurring/,
                            # emails/ (send, preview, prefill, [id])
     actions/              # invoices.ts, masterdata.ts, email.ts, templates.ts, result.ts (Server Actions)
-    rechnungen/ dokumente/ kunden/ produkte/ abos/ einstellungen/ setup/ login/
+    rechnungen/ dokumente/ lieferscheine/ kunden/ produkte/ abos/ einstellungen/ setup/ login/
                            # einstellungen/email (MailSettings + Testmail), einstellungen/vorlagen (EmailTemplate)
   components/             # UI-Komponenten, inkl. forms/ (CustomerForm.tsx, OrganizationForm.tsx,
                            # ProductForm.tsx, MailSettingsForm.tsx, EmailTemplateForm.tsx,
@@ -167,7 +185,10 @@ src/
     changelog.ts          # Hash-Chain
     numbering.ts
     snapshot.ts           # Käufer-/Verkäufer-Snapshot (Phase 0)
-    document/              # convert.ts, create.ts, pdf-data.ts
+    document/              # convert.ts, create.ts, status.ts, chain.ts, billing-state.ts, pdf-data.ts
+    delivery-note/          # create.ts, quantities.ts
+    text-template/          # pick.ts
+    relations.ts            # DocumentRelation (Phase 1), genutzt von convert.ts/chain.ts
     dunning/                # create.ts
     invoice/                # cancel.ts, create.ts, credit.ts, finalize.ts, mandatory.ts, payment.ts
     recurring/              # create.ts, run.ts
