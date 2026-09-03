@@ -16,6 +16,7 @@ import { createInvoiceSchema } from "@/schemas";
 import { createBusinessDocument } from "@/domain/document/create";
 import { updateDraftDocument } from "@/domain/document/update";
 import { convertDocument } from "@/domain/document/convert";
+import { duplicateDocument } from "@/domain/document/duplicate";
 
 const FIX_DATE = new Date("2035-03-01T10:00:00.000Z");
 
@@ -170,5 +171,26 @@ describe("convertDocument — Positionstypen bleiben erhalten (Commit 0)", () =>
     const result = await convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: FIX_DATE, actor: "tester" });
     const ab = await dbInternal.quote.findUniqueOrThrow({ where: { id: result.id }, include: { lines: { orderBy: { position: "asc" } } } });
     expect(ab.lines.map((l) => l.lineType)).toEqual(["HEADING", "ITEM"]);
+  });
+});
+
+
+describe("duplicateDocument — Positionstypen bleiben erhalten (Fix-Runde 1, Befund 2)", () => {
+  it("Angebot mit HEADING + 2 ITEM + SUBTOTAL duplizieren: Kopie traegt dieselben Typen, Summen gleich", async () => {
+    const quote = await createBusinessDocument(
+      orgId,
+      { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: linesWithHeadingAndSubtotal },
+      { now: FIX_DATE },
+    );
+    expect(quote.lines.map((l) => l.lineType)).toEqual(["HEADING", "ITEM", "ITEM", "SUBTOTAL"]);
+    expect(quote.netTotalCents).toBe(74000);
+
+    const result = await duplicateDocument(orgId, "QUOTE", quote.id, "tester", FIX_DATE);
+    const copy = await dbInternal.quote.findUniqueOrThrow({ where: { id: result.id }, include: { lines: { orderBy: { position: "asc" } } } });
+
+    expect(copy.lines.map((l) => l.lineType)).toEqual(["HEADING", "ITEM", "ITEM", "SUBTOTAL"]);
+    expect(copy.lines[0].quantityMilli).toBe(0);
+    expect(copy.netTotalCents).toBe(quote.netTotalCents);
+    expect(copy.netTotalCents).toBe(74000);
   });
 });

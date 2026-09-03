@@ -18,8 +18,11 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
     const src = await tx.quote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!src) throw new NotFoundError(`Dokument ${id} nicht gefunden.`);
 
+    // Fix-Runde 1, Befund 2: Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) gehen nie in die
+    // Summen ein (§8) — wie in createBusinessDocumentWithinTx/updateDraftDocument.
+    const itemLines = src.lines.filter((l) => l.lineType === "ITEM");
     const totals = computeTaxBreakdown(
-      src.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+      itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
       {
         discountPermille: src.documentDiscountPermille,
         discountCents: src.documentDiscountCents,
@@ -60,7 +63,10 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
         lines: {
           create: src.lines.map((l, i) => ({
             position: i + 1,
+            lineType: l.lineType,
             description: l.description,
+            descriptionLong: l.descriptionLong,
+            articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
             unitNetPriceCents: l.unitNetPriceCents,
