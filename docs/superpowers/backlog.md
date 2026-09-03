@@ -25,7 +25,8 @@ Status: ☐ offen · ◐ in Arbeit · ☑ fertig
 - ◐ **Docker-Build reparieren** — Branch `fix/dockerfile-build` fertig, PR wartet
   auf Freigabe.
 - ☑ **Phase 0 — Beleg-Snapshots + interne Notizen** — in `main` (2026-09-03), 7 Commits,
-  Abschluss-Review + Fix-Welle durch. Deployment auf die Produktivinstanz ausstehend.
+  Abschluss-Review + Fix-Welle durch. **Deployt 2026-09-03 06:43** (Baseline `0_init` verbucht,
+  Phase-0-Migrationen + Backfill angewendet, 2 Belege eingefroren, Backup 06:42).
 
 ## Folgepunkte aus den Reviews (Migrations-Branch + Phase 0)
 
@@ -37,6 +38,7 @@ Status: ☐ offen · ◐ in Arbeit · ☑ fertig
 - ☐ **`canonicalize` nutzt `localeCompare`** statt Codepoint-Vergleich (Hash-Chain-Portabilität)
 - ☐ **`docker-compose.yml` (Upstream)**: auskommentierter Mustang-Block referenziert `einvoice-service/`, existiert nicht
 - ☐ **Postgres-Test**: Umlaut-Inhalt hart prüfen (heute nur Schlüsselzahl)
+- ☐ **Repo-Dockerfile ohne `openssl`** — Prisma warnt im Container (`failed to detect the libssl/openssl version`); das fruehere Inline-Dockerfile hatte `apt-get install openssl`. In den Docker-Build-PR aufnehmen.
 - ☐ **ARCHITEKTUR.md §2** straffen (historische Tabelle + Umgesetzt-Absatz lesen sich als Flickenteppich)
 
 ---
