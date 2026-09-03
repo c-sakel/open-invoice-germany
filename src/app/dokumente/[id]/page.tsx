@@ -11,6 +11,7 @@ import { ConvertMenu } from "@/components/ConvertMenu";
 import { DocumentChain } from "@/components/DocumentChain";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
+import { ShareLinkPanel } from "@/components/ShareLinkPanel";
 import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
@@ -211,6 +212,8 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
           <p className="mt-1 whitespace-pre-line">{q.internalNotes}</p>
         </div>
       )}
+
+      {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
 
       <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
 
