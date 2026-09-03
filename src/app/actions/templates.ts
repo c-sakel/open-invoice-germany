@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { emailTemplateInputSchema } from "@/schemas/email";
-import { saveEmailTemplate } from "@/domain/email/templates";
+import {
+  saveEmailTemplate,
+  deleteEmailTemplate,
+  TemplateNotFoundError,
+  SystemTemplateProtectedError,
+  TemplateNameConflictError,
+} from "@/domain/email/templates";
 import type { ActionResult } from "./result";
 
 function str(fd: FormData, key: string): string | undefined {
@@ -35,38 +41,30 @@ export async function saveEmailTemplateAction(_prev: ActionResult, fd: FormData)
     const org = await getActiveOrg();
     await saveEmailTemplate(org.id, parsed.data);
   } catch (e) {
+    // G6: eine verstaendliche Meldung bei doppeltem Namen/docType; alle anderen Fehler
+    // nur generisch — e.message wird nicht mehr durchgereicht.
+    if (e instanceof TemplateNameConflictError) return { ok: false, error: e.message };
     console.error("saveEmailTemplateAction:", e);
-    return { ok: false, error: e instanceof Error ? e.message : "Speichern fehlgeschlagen." };
+    return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen/vorlagen");
   return { ok: true };
 }
 
 /** Loescht eine Vorlage. Eine Systemvorlage darf nur geloescht werden, wenn fuer denselben
- *  Dokumenttyp eine ANDERE Vorlage bereits als Standard markiert ist. */
+ *  Dokumenttyp eine ANDERE Vorlage bereits als Standard markiert ist. War die geloeschte
+ *  Vorlage Standard, wird in derselben Transaktion eine verbleibende Vorlage desselben
+ *  Dokumenttyps zum neuen Standard (bevorzugt Systemvorlage, sonst aelteste) (W1). */
 export async function deleteEmailTemplateAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
   if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
   try {
     const org = await getActiveOrg();
-    const tpl = await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
-    if (!tpl) return { ok: false, error: "Vorlage nicht gefunden." };
-
-    if (tpl.isSystem) {
-      const otherDefault = await dbInternal.emailTemplate.count({
-        where: { orgId: org.id, docType: tpl.docType, isDefault: true, id: { not: tpl.id } },
-      });
-      if (otherDefault === 0) {
-        return {
-          ok: false,
-          error: "Systemvorlage kann nicht gelöscht werden: keine andere Standardvorlage für diesen Dokumenttyp vorhanden.",
-        };
-      }
-    }
-
-    await dbInternal.emailTemplate.delete({ where: { id: tpl.id } });
+    await deleteEmailTemplate(org.id, id);
   } catch (e) {
+    if (e instanceof TemplateNotFoundError) return { ok: false, error: "Vorlage nicht gefunden." };
+    if (e instanceof SystemTemplateProtectedError) return { ok: false, error: e.message };
     console.error("deleteEmailTemplateAction:", e);
     return { ok: false, error: "Löschen fehlgeschlagen." };
   }

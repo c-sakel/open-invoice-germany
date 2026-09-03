@@ -151,6 +151,9 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
         standardAttachments: Array.from(selectedStandard),
         templateId: templateId || undefined,
         resendOfId: resendLogId,
+        // Warnungen aus der Vorbelegung (z. B. unbekannte Platzhalter) mitschicken, damit
+        // sie im EmailLog protokolliert werden (G3).
+        warnings: data?.warnings ?? [],
       };
       const fd = new FormData();
       fd.set("payload", JSON.stringify(payload));
