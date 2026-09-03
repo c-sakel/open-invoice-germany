@@ -8,7 +8,14 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createBusinessDocument } from "@/domain/document/create";
 import { saveMailSettings } from "@/domain/email/settings";
 import { saveDocumentSettings, loadDocumentSettings } from "@/domain/document/settings";
-import { createShareLink, revokeShareLink, resolveShareToken, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
+import {
+  createShareLink,
+  revokeShareLink,
+  resolveShareToken,
+  listShareLinks,
+  revealShareLinkToken,
+  ShareLinkError,
+} from "@/domain/quote-share/link";
 import { decideOffer, AlreadyDecidedError, InvalidShareLinkError } from "@/domain/quote-share/decide";
 import { resetRateLimits, RateLimitError } from "@/lib/rate-limit";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
@@ -129,6 +136,32 @@ describe("createShareLink", () => {
     const quote2 = await makeQuote();
     const { link: link2 } = await createShareLink(orgId, quote2.id, { expiresInDays: 5 }, { now: FIX_DATE });
     expect(link2.expiresAt.getTime()).toBe(FIX_DATE.getTime() + 5 * 24 * 60 * 60 * 1000);
+  });
+
+  it("tokenEnc ist gesetzt; revealShareLinkToken liefert den Klartext zurueck (Adjudikation Task-1)", async () => {
+    const quote = await makeQuote();
+    const { link, token } = await createShareLink(orgId, quote.id, {}, { now: FIX_DATE });
+
+    const row = await dbInternal.quoteShareLink.findUniqueOrThrow({ where: { id: link.id } });
+    expect(row.tokenEnc).toBeTruthy();
+    expect(row.tokenEnc).not.toBe(token);
+
+    const revealed = await revealShareLinkToken(orgId, link.id);
+    expect(revealed).toBe(token);
+  });
+
+  it("revealShareLinkToken: fremde Organisation -> null", async () => {
+    const quote = await makeQuote();
+    const { link } = await createShareLink(orgId, quote.id, {}, { now: FIX_DATE });
+
+    const foreignOrg = await dbInternal.organization.create({
+      data: { legalName: "Fremdorg GmbH", addressLine1: "Fremdweg 1", postalCode: "10115", city: "Berlin" },
+    });
+    expect(await revealShareLinkToken(foreignOrg.id, link.id)).toBeNull();
+  });
+
+  it("revealShareLinkToken: unbekannte linkId -> null", async () => {
+    expect(await revealShareLinkToken(orgId, "does-not-exist")).toBeNull();
   });
 
   it("listShareLinks: listet alle Links eines Angebots, neueste zuerst", async () => {

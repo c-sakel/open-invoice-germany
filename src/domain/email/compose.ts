@@ -10,7 +10,8 @@ import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/setting
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
 import { DEFAULT_DUNNING_STAGES } from "@/domain/masterdata/defaults";
 import { renderTemplate } from "@/lib/template/render";
-import { createShareLink, ShareLinkError } from "@/domain/quote-share/link";
+import { revealShareLinkToken } from "@/domain/quote-share/link";
+import { effectiveQuoteStatus } from "@/domain/document/status";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import type { EmailDocType } from "@/schemas/email";
 
@@ -48,34 +49,35 @@ function splitAddresses(s: string): string[] {
 }
 
 /**
- * Ermittelt die URL fuer `{{offer.link}}` beim Vorbelegen einer ANGEBOT-Mail (Phase 3b).
- * Ohne `APP_BASE_URL` bleibt der Platzhalter leer (Ruling). Existiert bereits ein
- * gueltiger (nicht widerrufener/entschiedener/abgelaufener) Link, wird dessen URL NICHT
- * angezeigt — das Klartext-Token wird nie gespeichert und ist nach der Erzeugung nicht
- * mehr abrufbar (Sicherheitsregel, Task 2). Nur wenn noch KEIN gueltiger Link existiert,
- * wird automatisch einer erzeugt (Komfortfunktion: "Angebot verfassen" stellt dem Kunden
- * automatisch einen funktionierenden Annahme-Link bereit).
+ * Ermittelt die URL fuer `{{offer.link}}` beim Vorbelegen einer ANGEBOT-Mail (Phase 3b,
+ * Adjudikation Task-1). Ohne `APP_BASE_URL` bleibt der Platzhalter leer (Ruling). Es wird
+ * NICHT mehr automatisch ein neuer Link erzeugt (das war die urspruengliche W3-Luecke:
+ * jeder Aufruf minte einen weiteren Link) — stattdessen wird der aktivste gueltige
+ * bestehende Link wiederverwendet (`revokedAt` null, `decidedAt` null, `expiresAt` in der
+ * Zukunft, Angebotsstatus effektiv DRAFT/SENT/EXPIRED) und dessen Token authentifiziert
+ * ueber `revealShareLinkToken` entschluesselt. Existiert kein solcher Link, bleibt der
+ * Platzhalter leer — der Betreiber erzeugt ihn bewusst ueber das Link-Panel.
  */
 async function resolveOfferLink(orgId: string, docType: EmailDocType, docId: string): Promise<string | undefined> {
   if (docType !== "ANGEBOT") return undefined;
   const baseUrl = appBaseUrlFromEnv();
   if (!baseUrl) return undefined;
 
-  const existing = await dbInternal.quoteShareLink.findFirst({
-    where: { orgId, quoteId: docId, revokedAt: null, decidedAt: null, expiresAt: { gt: new Date() } },
+  const now = new Date();
+  const quote = await dbInternal.quote.findFirst({ where: { id: docId, orgId }, select: { status: true, validUntil: true } });
+  if (!quote) return undefined;
+  const eff = effectiveQuoteStatus({ status: quote.status, validUntil: quote.validUntil }, now);
+  if (eff !== "DRAFT" && eff !== "SENT" && eff !== "EXPIRED") return undefined;
+
+  const link = await dbInternal.quoteShareLink.findFirst({
+    where: { orgId, quoteId: docId, revokedAt: null, decidedAt: null, expiresAt: { gt: now } },
     orderBy: { createdAt: "desc" },
   });
-  if (existing) return undefined;
+  if (!link) return undefined;
 
-  try {
-    const { token } = await createShareLink(orgId, docId, {}, { actor: "system" });
-    return `${baseUrl}/angebot/${token}`;
-  } catch (e) {
-    // Angebot nicht (mehr) in einem fuer Links zulaessigen Status/Kind — kein Abbruch des
-    // Mailversands deswegen, der Platzhalter bleibt einfach leer.
-    if (e instanceof ShareLinkError) return undefined;
-    throw e;
-  }
+  const token = await revealShareLinkToken(orgId, link.id);
+  if (!token) return undefined;
+  return `${baseUrl}/angebot/${token}`;
 }
 
 async function templatesOf(orgId: string, docType: EmailDocType) {
@@ -164,7 +166,17 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
   let signature = "";
   if (template) {
     const subj = renderTemplate(template.subject, ctx);
-    const bod = renderTemplate(template.body, ctx);
+    // Ohne ermittelbare Angebots-URL bleibt der Platzhalter nicht als leere Stelle im
+    // Fliesstext stehen ("Sie koennen das Angebot hier einsehen: ") — stattdessen wird
+    // die komplette Zeile mit `{{offer.link}}` VOR dem Rendern entfernt.
+    let rawBody = template.body;
+    if (docType === "ANGEBOT" && !offerLink && /\{\{\s*offer\.link\s*\}\}/.test(rawBody)) {
+      rawBody = rawBody
+        .split("\n")
+        .filter((line) => !/\{\{\s*offer\.link\s*\}\}/.test(line))
+        .join("\n");
+    }
+    const bod = renderTemplate(rawBody, ctx);
     subject = subj.text;
     body = bod.text;
     warnings.push(...subj.warnings, ...bod.warnings);

@@ -1,7 +1,11 @@
 /**
- * Task 3 (Phase 3b): {{offer.link}}-Platzhalter in buildTemplateContext/prefillEmail.
- * APP_BASE_URL wird testweise gesetzt/zurueckgesetzt — ohne Env bleibt der Platzhalter
- * leer (Ruling), mit Env wird bei fehlendem gueltigem Link automatisch einer erzeugt.
+ * Task 3 (Phase 3b) + Adjudikation Task-1-Fix-Runde: {{offer.link}}-Platzhalter in
+ * buildTemplateContext/prefillEmail. APP_BASE_URL wird testweise gesetzt/zurueckgesetzt
+ * — ohne Env bleibt der Platzhalter leer (Ruling). Seit der Fix-Runde wird beim
+ * Vorbelegen NIE mehr automatisch ein Link erzeugt (das war W3): existiert ein
+ * gueltiger Link, wird dessen Token entschluesselt (`revealShareLinkToken`) und
+ * verlinkt; existiert keiner, wird die komplette Platzhalter-Zeile aus dem Body
+ * entfernt, ohne einen neuen Link zu minten.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { dbInternal } from "@/lib/db";
@@ -63,23 +67,24 @@ describe("{{offer.link}} in prefillEmail (ANGEBOT)", () => {
     expect(pre.body).not.toContain("/angebot/");
   });
 
-  it("mit APP_BASE_URL und ohne gueltigen Link wird automatisch einer erzeugt und verlinkt", async () => {
+  it("mit APP_BASE_URL, aber OHNE gueltigen Link: kein neuer Link wird erzeugt, die Platzhalter-Zeile wird komplett entfernt", async () => {
     process.env.APP_BASE_URL = "https://instanz.example.org/";
     const q = await makeQuote();
     const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
-    expect(pre.body).toContain("https://instanz.example.org/angebot/");
+    expect(pre.body).not.toContain("/angebot/");
+    expect(pre.body).not.toContain("Sie können das Angebot auch online ansehen und annehmen");
 
     const links = await dbInternal.quoteShareLink.findMany({ where: { orgId, quoteId: q.id } });
-    expect(links.length).toBe(1);
+    expect(links.length).toBe(0);
   });
 
-  it("existiert bereits ein gueltiger Link, wird kein zweiter erzeugt und der Platzhalter bleibt leer (Token nicht rekonstruierbar)", async () => {
+  it("existiert bereits ein gueltiger Link, wird dessen Token entschluesselt und verlinkt (kein zweiter Link entsteht)", async () => {
     process.env.APP_BASE_URL = "https://instanz.example.org";
     const q = await makeQuote();
-    await createShareLink(orgId, q.id, {}, { now: FIX_DATE });
+    const { token } = await createShareLink(orgId, q.id, {}, { now: FIX_DATE });
 
     const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
-    expect(pre.body).not.toContain("/angebot/");
+    expect(pre.body).toContain(`https://instanz.example.org/angebot/${token}`);
 
     const links = await dbInternal.quoteShareLink.findMany({ where: { orgId, quoteId: q.id } });
     expect(links.length).toBe(1);

@@ -4,6 +4,7 @@ CREATE TABLE "QuoteShareLink" (
     "orgId" TEXT NOT NULL,
     "quoteId" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
+    "tokenEnc" TEXT,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "revokedAt" TIMESTAMP(3),
     "createdBy" TEXT NOT NULL,
