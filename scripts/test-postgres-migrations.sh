@@ -45,8 +45,18 @@ echo "    ok — 15 Tabellen angelegt"
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
   -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
-npx prisma db push --schema prisma/schema.postgres.prisma \
-  --skip-generate --accept-data-loss >/dev/null
+# Bestands-DB = exakt der Baseline-Stand, ohne Migrationshistorie und ohne spaetere Spalten.
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+# Legacy-Belege fuer den Backfill-Test (Fall 5): Organisation, Kunde, festgeschriebene Rechnung.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org1','Alt GmbH','Weg 1','12345','Altstadt',NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust1','org1','Alt AG','Str. 2','54321','Altdorf',NOW());
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
+  VALUES ('inv1','org1','cust1','RE-2026-00001','FINALIZED',NOW());
+SQL
 
 echo "==> Fall 2: Bestands-DB ohne Historie wird erkannt"
 if OUT=$(run_with_timeout 120 ./scripts/db-prepare.sh 2>&1); then
@@ -61,9 +71,11 @@ echo "    ok — abgebrochen, Daten unveraendert"
 
 echo "==> Fall 3: nach Baseline laeuft deploy durch"
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "deploy nach Baseline fehlgeschlagen"
 npx prisma migrate deploy --config prisma.postgres.config.ts 2>&1 \
-  | grep -q "No pending migrations" || fail "deploy war nicht wirkungslos"
-echo "    ok — Baseline verbucht, deploy wirkungslos"
+  | grep -q "No pending migrations" || fail "zweiter deploy war nicht wirkungslos"
+echo "    ok — Baseline verbucht, Folgemigrationen angewendet, deploy idempotent"
 
 echo "==> Fall 4: db-prepare.sh nach Baseline ist wirkungslos"
 OUT=$(run_with_timeout 120 ./scripts/db-prepare.sh 2>&1) \
@@ -71,5 +83,20 @@ OUT=$(run_with_timeout 120 ./scripts/db-prepare.sh 2>&1) \
 printf '%s' "$OUT" | grep -q "No pending migrations" \
   || fail "db-prepare.sh hat keine ausstehenden Migrationen gemeldet"
 echo "    ok — db-prepare.sh laeuft nach Baseline sauber durch"
+
+echo "==> Fall 5: Backfill friert Legacy-Belege ein"
+SRC=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"snapshotSource\" from \"Invoice\" where id='inv1'")
+[ "$SRC" = "MIGRATION" ] || fail "snapshotSource ist '$SRC', erwartet MIGRATION"
+NAME=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select (\"buyerSnapshotJson\"::jsonb)->>'name' from \"Invoice\" where id='inv1'")
+[ "$NAME" = "Alt AG" ] || fail "Buyer-Snapshot enthaelt '$NAME', erwartet 'Alt AG'"
+KEYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"Invoice\", jsonb_object_keys(\"sellerSnapshotJson\"::jsonb) where id='inv1'" 2>/dev/null || echo 0)
+[ "$KEYS" = "14" ] || fail "Seller-Snapshot hat $KEYS Schluessel, erwartet 14"
+BKEYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"Invoice\", jsonb_object_keys(\"buyerSnapshotJson\"::jsonb) where id='inv1'" 2>/dev/null || echo 0)
+[ "$BKEYS" = "10" ] || fail "Buyer-Snapshot hat $BKEYS Schluessel, erwartet 10"
+echo "    ok — Backfill mit Herkunft MIGRATION, JSON gueltig"
 
 echo "ALLE TESTS BESTANDEN"
