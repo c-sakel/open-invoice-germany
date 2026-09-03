@@ -34,6 +34,7 @@ export function AttachmentPanel({
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AttachmentItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -94,8 +95,29 @@ export function AttachmentPanel({
     }
   }
 
+  // Drag-and-Drop-Upload (Ruling docs/K1): dieselbe upload()-Funktion wie der Datei-
+  // Dialog, nur ueber DataTransfer.files statt eines <input>. dragging steuert
+  // ausschliesslich das visuelle Feedback (Rahmenfarbe), keine eigene Logik.
+  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragging(true);
+  }
+  function onDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    if (e.currentTarget === e.target) setDragging(false);
+  }
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragging(false);
+    void upload(e.dataTransfer.files);
+  }
+
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`space-y-3 rounded-lg border p-4 transition-colors ${dragging ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white"}`}
+    >
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-slate-900">Anhänge</h2>
         <label className="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
