@@ -170,6 +170,40 @@ describe("POST /api/attachments", () => {
     expect(json.failed).toHaveLength(1);
     expect(json.failed[0].filename).toBe("schlecht.pdf");
   });
+
+  it("G6: lehnt einen Dateinamen mit '..' ab", async () => {
+    const req = multipartRequest({ docType: "INVOICE", docId: invoiceId }, [{ field: "files", filename: "../../etc/passwd.pdf", bytes: pdfBytes("traversal"), mime: "application/pdf" }]);
+    const res = await POST(req);
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.error).toContain("unzulaessige Zeichen");
+  });
+
+  it("G6: lehnt einen Dateinamen mit Steuerzeichen (CR/LF, Header-Injection) ab", async () => {
+    const req = multipartRequest({ docType: "INVOICE", docId: invoiceId }, [{ field: "files", filename: "gut.pdf\r\nX-Injected: evil", bytes: pdfBytes("injection"), mime: "application/pdf" }]);
+    const res = await POST(req);
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.error).toContain("unzulaessige Zeichen");
+  });
+
+  it("G4: gleichzeitige Uploads desselben Inhalts fuer denselben Beleg liefern idempotent nur EINEN Anhang", async () => {
+    const bytes = pdfBytes("race");
+    const [res1, res2] = await Promise.all([
+      POST(multipartRequest({ docType: "INVOICE", docId: invoiceId }, [{ field: "files", filename: "race-a.pdf", bytes, mime: "application/pdf" }])),
+      POST(multipartRequest({ docType: "INVOICE", docId: invoiceId }, [{ field: "files", filename: "race-b.pdf", bytes, mime: "application/pdf" }])),
+    ]);
+    const j1 = await res1.json();
+    const j2 = await res2.json();
+    expect(res1.status).toBe(201);
+    expect(res2.status).toBe(201);
+    // Beide Requests liefern DIESELBE Zeile zurueck (idempotent) statt eines Unique-
+    // Constraint-Fehlers (P2002) auf dem Verlierer.
+    expect(j1.saved[0].id).toBe(j2.saved[0].id);
+
+    const matching = await dbInternal.documentAttachment.count({ where: { orgId, docId: invoiceId, id: j1.saved[0].id } });
+    expect(matching).toBe(1);
+  });
 });
 
 describe("GET /api/attachments/[id]", () => {
@@ -184,6 +218,20 @@ describe("GET /api/attachments/[id]", () => {
     expect(res.headers.get("content-disposition")).toContain("attachment");
     expect(res.headers.get("content-disposition")).toContain("download.pdf");
     expect(res.headers.get("cache-control")).toBe("no-store");
+    // W1: nosniff verhindert, dass der Browser den content-type ignoriert.
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("W1: Content-Disposition mit Geviertstrich/Emoji im Dateinamen enthaelt ASCII-Fallback UND filename*", async () => {
+    const uploadRes = await POST(
+      multipartRequest({ docType: "INVOICE", docId: invoiceId }, [{ field: "files", filename: "Rechnung — 📎.pdf", bytes: pdfBytes("emoji"), mime: "application/pdf" }]),
+    );
+    const uploaded = (await uploadRes.json()).saved[0] as { id: string };
+
+    const res = await downloadGet(new Request(`http://localhost/api/attachments/${uploaded.id}`), { params: Promise.resolve({ id: uploaded.id }) });
+    const disposition = res.headers.get("content-disposition") ?? "";
+    expect(disposition).toContain(`filename="Rechnung _ __.pdf"`);
+    expect(disposition).toContain(`filename*=UTF-8''Rechnung%20%E2%80%94%20%F0%9F%93%8E.pdf`);
   });
 
   it("404 bei fremdem Anhang (andere Org)", async () => {

@@ -9,6 +9,7 @@
  * Datei-IO (storeFile) laeuft bewusst AUSSERHALB der Prisma-Transaktion — analog
  * sendDocumentEmail (kein Netz-/Dateisystemaufruf innerhalb einer SQLite-Sperre).
  */
+import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { assertDocExists } from "@/domain/relations";
@@ -64,31 +65,45 @@ export async function addAttachment(
   if (dupe) return dupe;
 
   const now = new Date();
-  return dbInternal.$transaction(async (tx) => {
-    const row = await tx.documentAttachment.create({
-      data: {
+  // G4: zwei gleichzeitige Uploads desselben Inhalts fuer denselben Beleg koennen BEIDE
+  // die obige find()-Pruefung ohne Treffer passieren (kein Row-Lock zwischen Lesen und
+  // Schreiben) — der zweite create() verletzt dann die Unique-Constraint
+  // (orgId, sha256, docType, docId). Statt den Fehler durchzureichen, wird idempotent
+  // die inzwischen vom Gewinner angelegte Zeile geladen und zurueckgegeben (wie beim
+  // regulaeren Dedup-Fall oben).
+  try {
+    return await dbInternal.$transaction(async (tx) => {
+      const row = await tx.documentAttachment.create({
+        data: {
+          orgId,
+          docType,
+          docId,
+          filename: parsed.filename,
+          mime: parsed.mime,
+          sizeBytes: stored.sizeBytes,
+          sha256: stored.sha256,
+          storagePath: stored.storagePath,
+          uploadedBy: actor,
+        },
+      });
+      await appendChangeLog(tx, {
         orgId,
-        docType,
-        docId,
-        filename: parsed.filename,
-        mime: parsed.mime,
-        sizeBytes: stored.sizeBytes,
-        sha256: stored.sha256,
-        storagePath: stored.storagePath,
-        uploadedBy: actor,
-      },
+        entity: "ATTACHMENT",
+        entityId: row.id,
+        action: "ADD",
+        actor,
+        at: now,
+        diff: { filename: row.filename, sizeBytes: row.sizeBytes, sha256: row.sha256, docType, docId },
+      });
+      return row;
     });
-    await appendChangeLog(tx, {
-      orgId,
-      entity: "ATTACHMENT",
-      entityId: row.id,
-      action: "ADD",
-      actor,
-      at: now,
-      diff: { filename: row.filename, sizeBytes: row.sizeBytes, sha256: row.sha256, docType, docId },
-    });
-    return row;
-  });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const winner = await dbInternal.documentAttachment.findFirst({ where: { orgId, sha256: stored.sha256, docType, docId } });
+      if (winner) return winner;
+    }
+    throw e;
+  }
 }
 
 /**

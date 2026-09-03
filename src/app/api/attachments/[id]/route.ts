@@ -5,6 +5,7 @@ import { dbInternal } from "@/lib/db";
 import { removeAttachment, type AttachmentDocType } from "@/domain/attachment/manage";
 import { readFile } from "@/lib/attachments/storage";
 import { NotFoundError } from "@/domain/errors";
+import { contentDispositionAttachment } from "@/lib/http/content-disposition";
 
 export const runtime = "nodejs";
 
@@ -21,9 +22,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       status: 200,
       headers: {
         "content-type": row.mime,
-        "content-disposition": `attachment; filename="${row.filename.replace(/["\\]/g, "_")}"`,
+        "content-disposition": contentDispositionAttachment(row.filename),
         "content-length": String(row.sizeBytes),
         "cache-control": "no-store",
+        // W1: verhindert, dass der Browser den vom Client gemeldeten MIME-Typ ignoriert
+        // und den Anhang anhand des Inhalts als etwas anderes (z. B. HTML) interpretiert.
+        "x-content-type-options": "nosniff",
       },
     });
   } catch (e) {

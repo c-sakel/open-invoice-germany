@@ -581,4 +581,28 @@ describe("Mailversand: Beleganhaenge (Phase 4b, attachmentIds)", () => {
       sendDocumentEmail(orgId, "system", toSendInput(pre, { attachmentIds: [foreignRow.id] }), [], memProvider),
     ).rejects.toThrow();
   });
+
+  it("G3: lehnt den Versand ab, wenn Standard- + Beleganhaenge zusammen 20 MB ueberschreiten", async () => {
+    // Drei Beleganhaenge je ~9 MB (< 10-MB-Datei-Limit, zusammen < 50-MB-Beleg-Limit,
+    // aber > 20 MB Mail-Gesamtgrenze).
+    const pdfChunk = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(9 * 1024 * 1024, 0x41)]);
+    const rows = await Promise.all(
+      [1, 2, 3].map((i) =>
+        addAttachment(
+          orgId,
+          "INVOICE",
+          invoiceId,
+          { filename: `gross-${i}.pdf`, mime: "application/pdf", buffer: Buffer.concat([pdfChunk, Buffer.from(`\n% ${i}`)]) },
+          "tester",
+        ),
+      ),
+    );
+
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const memProvider = createMemoryProvider();
+    await expect(
+      sendDocumentEmail(orgId, "system", toSendInput(pre, { attachmentIds: rows.map((r) => r.id) }), [], memProvider),
+    ).rejects.toThrow(/20 MB/);
+    expect(memProvider.sent.length).toBe(0);
+  });
 });
