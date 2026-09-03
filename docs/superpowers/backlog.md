@@ -208,3 +208,16 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - **Cloudflare-Only am Origin** ist Voraussetzung dafuer, dass `cf-connecting-ip` vertrauenswuerdig ist — nginx-Allowlist existiert
   (BETRIEB.md); bei Serverwechsel beachten.
 - **HKDF-Domain-Separation**: `secrets.ts` nutzt fuer SMTP-Passwort und `tokenEnc` denselben Info-String; je Zweck eigener Info-String (Migration: alte Werte mit altem Info entschluesseln, neu verschluesseln).
+
+## Aus Phase 4a (Rechenwerk, 2026-09-03)
+
+- **Routen-/Action-Tests fehlen** fuer `skonto-check`, Payment-Route mit `applySkonto`, Zahlungsmethoden-Actions (duenne Zod→Domain-Wrapper).
+- **Formulare rechnen Steuer lokal** (`Math.round(adjustedNet*rate/100)`) statt `computeTaxBreakdown` zu importieren — heute bytegleich, DRY-Nit.
+- **MCP-Tools mit `lines`** (Gutschrift, Abo) haben `discountPercent/discountAmount` geerbt — Tests fuer diese Tools ergaenzen.
+- **Skonto nur als BT-20-Text**; ZUGFeRD EXTENDED (`ApplicableTradePaymentDiscountTerms`) Backlog.
+- **PaymentMeans Fallback Code 1** bei Org ohne IBAN — Betreiber-Hinweis: IBAN in den Stammdaten pflegen, sonst keine Kontodaten in der E-Rechnung.
+- **`allocateProportional` bei Gewichtssumme 0** legt alles auf Index 0 — ein Aufschlag auf einen zu 100 % rabattierten Beleg wird komplett mit dem
+  Steuersatz des ersten Buckets versteuert. Loesung: Gewichte = Basis vor Rabatt, wenn Basis nach Rabatt 0 ist.
+- **Audit fuer Zahlungsmethoden-CRUD**: `savePaymentMethod`/`deletePaymentMethod` schreiben keinen ChangeLog/ActivityLog-Eintrag (Stammdaten — ActivityLog-Tabelle, Audit K5).
+- **Ungetestete Pfade**: Server-Actions `payment-methods.ts`, PDF-Rendering mit Rabatt/Skonto, Storno mit Belegrabatt auf Domaenenebene, MCP-Skonto-/Belegrabatt-Parameter.
+- **Karten-/Lastschrift-Methoden in der E-Rechnung** nur als Code 1 (CardAccount/PaymentMandate nicht abgebildet) — bei Bedarf BG-18/BG-19 modellieren.
