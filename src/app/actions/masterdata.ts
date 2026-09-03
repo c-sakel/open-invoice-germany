@@ -98,6 +98,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     leitwegId: str(fd, "leitwegId"),
     peppolId: str(fd, "peppolId"),
     defaultPaymentTermsDays: Number(str(fd, "defaultPaymentTermsDays") ?? "14"),
+    defaultPaymentMethodId: str(fd, "defaultPaymentMethodId"),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
@@ -119,6 +120,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
       vatId: v.vatId ?? null,
       leitwegId: v.leitwegId ?? null,
       defaultPaymentTermsDays: v.defaultPaymentTermsDays,
+      defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
       notes: v.notes ?? null,
     };
     // peppolId wird (mangels Formularfeld) NICHT geschrieben, damit ein bestehender Wert beim Bearbeiten erhalten bleibt.
