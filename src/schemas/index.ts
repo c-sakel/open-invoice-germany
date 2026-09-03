@@ -144,6 +144,8 @@ export const createInvoiceSchema = z.object({
   buyerReference: z.string().optional(),
   notes: z.string().optional(),
   paymentTerms: z.string().optional(),
+  headerText: z.string().max(5000).optional(),
+  footerText: z.string().max(5000).optional(),
   internalNotes: z.string().optional(), // nur intern, nie im Beleg
   lines: z.array(invoiceLineInputSchema).min(1),
 });

@@ -51,6 +51,70 @@ interface StatusOptions {
 }
 
 /**
+ * Kern von setQuoteStatus, laeuft in einer vom Aufrufer uebergebenen Transaktion
+ * (Muster: finalizeWithinTx) — genutzt von der Konvertierung Angebot -> AB
+ * (src/domain/document/convert.ts), damit Statuswechsel, Erstellung, Relation und
+ * ChangeLog atomar in EINER Transaktion laufen (Lastenheft 50).
+ */
+export async function setQuoteStatusWithinTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  quoteId: string,
+  to: QuoteStatus,
+  opts: StatusOptions = {},
+): Promise<Quote> {
+  const target = QuoteStatus.parse(to);
+  const now = opts.now ?? new Date();
+  const actor = opts.actor ?? "system";
+
+  const quote = await tx.quote.findFirst({ where: { id: quoteId, orgId } });
+  if (!quote) throw new StatusTransitionError(`Angebot ${quoteId} nicht gefunden.`);
+
+  const from = QuoteStatus.parse(quote.status);
+  assertTransition(QUOTE_TRANSITIONS, from, target);
+
+  const data: Prisma.QuoteUpdateInput = { status: target };
+
+  if (target === "SENT") {
+    data.sentAt = now;
+    // Der CREATE-Snapshot (Entwurf, noch kein ausgestellter Beleg) wird beim Versand
+    // durch den SENT-Snapshot ersetzt — nur so landen z. B. nachtraeglich gesetzte
+    // Ansprechpartner im versendeten Dokument. FINALIZE/SENT/MIGRATION/INHERITED
+    // werden nie ueberschrieben (Task-2-Review-Auflage).
+    if (!quote.buyerSnapshotJson || quote.snapshotSource === "CREATE") {
+      const customer = await tx.customer.findFirstOrThrow({ where: { id: quote.customerId, orgId } });
+      const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
+
+      const buyer = await resolveBuyerSnapshot(tx, orgId, customer, quote.contactPersonId, quote.billingAddressId);
+      const seller = buildSellerSnapshot(org);
+      const source: SnapshotSource = "SENT";
+
+      data.sellerSnapshotJson = JSON.stringify(seller);
+      data.buyerSnapshotJson = JSON.stringify(buyer);
+      data.snapshotSource = source;
+      data.snapshotAt = now;
+    }
+  } else if (target === "ACCEPTED" || target === "REJECTED") {
+    data.decidedAt = now;
+    data.decisionNote = opts.note ?? null;
+  }
+
+  const updated = await tx.quote.update({ where: { id: quoteId }, data });
+
+  await appendChangeLog(tx, {
+    orgId,
+    entity: "QUOTE",
+    entityId: quoteId,
+    action: `STATUS_${target}`,
+    actor,
+    at: now,
+    diff: { from, to: target, note: opts.note ?? null },
+  });
+
+  return updated;
+}
+
+/**
  * Setzt den Status eines Angebots/einer Auftragsbestaetigung. Bei SENT wird — falls
  * noch kein Snapshot existiert — der Kaeufer-/Verkaeufer-Snapshot eingefroren
  * (Quelle "SENT"), damit spaetere Stammdatenaenderungen das versendete Dokument nicht
@@ -62,57 +126,7 @@ export async function setQuoteStatus(
   to: QuoteStatus,
   opts: StatusOptions = {},
 ): Promise<Quote> {
-  const target = QuoteStatus.parse(to);
-  const now = opts.now ?? new Date();
-  const actor = opts.actor ?? "system";
-
-  return dbInternal.$transaction(async (tx) => {
-    const quote = await tx.quote.findFirst({ where: { id: quoteId, orgId } });
-    if (!quote) throw new StatusTransitionError(`Angebot ${quoteId} nicht gefunden.`);
-
-    const from = QuoteStatus.parse(quote.status);
-    assertTransition(QUOTE_TRANSITIONS, from, target);
-
-    const data: Prisma.QuoteUpdateInput = { status: target };
-
-    if (target === "SENT") {
-      data.sentAt = now;
-      // Der CREATE-Snapshot (Entwurf, noch kein ausgestellter Beleg) wird beim Versand
-      // durch den SENT-Snapshot ersetzt — nur so landen z. B. nachtraeglich gesetzte
-      // Ansprechpartner im versendeten Dokument. FINALIZE/SENT/MIGRATION/INHERITED
-      // werden nie ueberschrieben (Task-2-Review-Auflage).
-      if (!quote.buyerSnapshotJson || quote.snapshotSource === "CREATE") {
-        const customer = await tx.customer.findFirstOrThrow({ where: { id: quote.customerId, orgId } });
-        const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
-
-        const buyer = await resolveBuyerSnapshot(tx, orgId, customer, quote.contactPersonId, quote.billingAddressId);
-        const seller = buildSellerSnapshot(org);
-        const source: SnapshotSource = "SENT";
-
-        data.sellerSnapshotJson = JSON.stringify(seller);
-        data.buyerSnapshotJson = JSON.stringify(buyer);
-        data.snapshotSource = source;
-        data.snapshotAt = now;
-      }
-    } else if (target === "ACCEPTED" || target === "REJECTED") {
-      data.decidedAt = now;
-      data.decisionNote = opts.note ?? null;
-    }
-
-    const updated = await tx.quote.update({ where: { id: quoteId }, data });
-
-    await appendChangeLog(tx, {
-      orgId,
-      entity: "QUOTE",
-      entityId: quoteId,
-      action: `STATUS_${target}`,
-      actor,
-      at: now,
-      diff: { from, to: target, note: opts.note ?? null },
-    });
-
-    return updated;
-  });
+  return dbInternal.$transaction((tx) => setQuoteStatusWithinTx(tx, orgId, quoteId, to, opts));
 }
 
 /** Setzt den Status eines Lieferscheins. Bei SENT/DELIVERED werden sentAt/deliveredAt gesetzt. */

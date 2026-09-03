@@ -7,7 +7,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
-import { createDraftInvoice } from "@/domain/invoice/create";
+import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
@@ -112,38 +112,48 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
   });
 }
 
-/** INVOICE-Duplikat ueber createDraftInvoice (bereits ohne Snapshot/Nummer) — Ruling des Koordinators. */
+/**
+ * INVOICE-Duplikat ueber createDraftInvoiceWithinTx (bereits ohne Snapshot/Nummer) — Ruling
+ * des Koordinators. `dueDate` wird bewusst NICHT uebernommen — sie wird beim Festschreiben
+ * neu berechnet. Erstellung, Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
+ */
 async function duplicateInvoice(orgId: string, id: string, actor: string, now: Date) {
-  const src = await dbInternal.invoice.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
-  if (!src) throw new Error(`Rechnung ${id} nicht gefunden.`);
+  return dbInternal.$transaction(async (tx) => {
+    const src = await tx.invoice.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
+    if (!src) throw new Error(`Rechnung ${id} nicht gefunden.`);
 
-  const input: CreateInvoiceInput = {
-    customerId: src.customerId,
-    type: src.type as CreateInvoiceInput["type"],
-    taxScheme: src.taxScheme as CreateInvoiceInput["taxScheme"],
-    currency: src.currency,
-    issueDate: now,
-    notes: src.notes ?? undefined,
-    paymentTerms: src.paymentTerms ?? undefined,
-    internalNotes: src.internalNotes ?? undefined,
-    lines: src.lines.map((l) => ({
-      description: l.description,
-      quantityMilli: l.quantityMilli,
-      unit: l.unit,
-      unitNetPriceCents: l.unitNetPriceCents,
-      taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
-      taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
-      discountPermille: l.discountPermille,
-    })),
-  };
+    const input: CreateInvoiceInput = {
+      customerId: src.customerId,
+      type: src.type as CreateInvoiceInput["type"],
+      taxScheme: src.taxScheme as CreateInvoiceInput["taxScheme"],
+      currency: src.currency,
+      issueDate: now,
+      deliveryDate: src.deliveryDate ?? undefined,
+      deliveryStart: src.deliveryStart ?? undefined,
+      deliveryEnd: src.deliveryEnd ?? undefined,
+      buyerReference: src.buyerReference ?? undefined,
+      notes: src.notes ?? undefined,
+      paymentTerms: src.paymentTerms ?? undefined,
+      headerText: src.headerText ?? undefined,
+      footerText: src.footerText ?? undefined,
+      internalNotes: src.internalNotes ?? undefined,
+      lines: src.lines.map((l) => ({
+        description: l.description,
+        quantityMilli: l.quantityMilli,
+        unit: l.unit,
+        unitNetPriceCents: l.unitNetPriceCents,
+        taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
+        taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
+        discountPermille: l.discountPermille,
+      })),
+    };
 
-  const copy = await createDraftInvoice(orgId, input, { actor, now });
+    const copy = await createDraftInvoiceWithinTx(tx, orgId, input, { actor, now });
 
-  await dbInternal.$transaction((tx) =>
-    linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: copy.id, toType: "INVOICE", toId: id, relationType: "DUPLICATED_FROM" }),
-  );
+    await linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: copy.id, toType: "INVOICE", toId: id, relationType: "DUPLICATED_FROM" });
 
-  return { type: "INVOICE" as const, id: copy.id };
+    return { type: "INVOICE" as const, id: copy.id };
+  });
 }
 
 export async function duplicateDocument(
