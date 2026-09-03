@@ -7,12 +7,114 @@
  * Status CANCELLED und einen Verweis auf die Gutschrift (§ 31 Abs. 5 UStDV).
  */
 import { dbInternal } from "@/lib/db";
+import type { TaxBreakdownEntry } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
 
 /** Zeilentypen, die keinen Betrag tragen (§8: HEADING/TEXT/SUBTOTAL nie in Summen/XML). */
 const NON_ITEM_LINE_TYPES = new Set(["HEADING", "TEXT", "SUBTOTAL"]);
+
+interface StornoCreateLine {
+  position: number;
+  lineType: string;
+  productId: string | null;
+  description: string;
+  descriptionLong: string | null;
+  articleNumber: string | null;
+  quantityMilli: number;
+  unit: string;
+  unitNetPriceCents: number;
+  taxRate: number;
+  taxCategory: string;
+  discountPermille: number;
+  discountCents: number;
+  lineNetCents: number;
+}
+
+/**
+ * Storno-Zeilen fuer eine normale (nicht FINAL) Rechnung: betragsspiegelbildliches
+ * 1:1-Abbild aller Original-Zeilen (Zeilentyp/Langtext/Artikelnummer erhalten, damit die
+ * Struktur der Rechnung im Storno erkennbar bleibt — §8).
+ */
+function mirrorLines(original: { lines: readonly { position: number; lineType: string; productId: string | null; description: string; descriptionLong: string | null; articleNumber: string | null; quantityMilli: number; unit: string; unitNetPriceCents: number; taxRate: number; taxCategory: string; discountPermille: number; discountCents: number; lineNetCents: number }[] }): StornoCreateLine[] {
+  return original.lines.map((l) => {
+    const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
+    return {
+      position: l.position,
+      lineType: l.lineType,
+      productId: l.productId,
+      description: l.description,
+      descriptionLong: l.descriptionLong,
+      articleNumber: l.articleNumber,
+      quantityMilli: l.quantityMilli,
+      unit: l.unit,
+      unitNetPriceCents: isItem ? -l.unitNetPriceCents : 0,
+      taxRate: l.taxRate,
+      taxCategory: l.taxCategory,
+      discountPermille: l.discountPermille,
+      discountCents: l.discountCents,
+      lineNetCents: isItem ? -l.lineNetCents : 0,
+    };
+  });
+}
+
+/**
+ * Storno-Zeilen fuer eine FINAL-Rechnung (Fix-Runde 1, MEDIUM — Ruling Koordinator):
+ * GENAU EINE Summenzeile je Steuersatz/-kategorie, nicht die gespiegelten
+ * Gesamtleistungs-Zeilen zzgl. Ausgleichszeilen (das fuehrte bei einem Beleg-Rabatt/
+ * -Aufschlag mit mehreren Steuersaetzen zu gemischten Vorzeichen je Bucket und liess
+ * `applyDocumentAdjustments` mit einem PricingError abbrechen). Je Satz:
+ *   net = -(rateNetAfterAdjustments - deductedNetForRate)
+ *   tax = -(rateTaxAfterAdjustments - deductedTaxForRate)
+ * `rateNetAfterAdjustments`/`rateTaxAfterAdjustments` kommen direkt aus dem beim
+ * Festschreiben der Schlussrechnung gespeicherten `taxBreakdownJson` (bereits NACH
+ * Beleg-Rabatt/-Aufschlag) — `deductedNetForRate`/`deductedTaxForRate` aus den
+ * `FinalInvoiceDeduction`-Zeilen (Snapshot, wird NICHT kopiert/dupliziert, nur deren
+ * Betraege fliessen als Abzug ein). Summe ueber alle Zeilen ergibt exakt
+ * `-payableCents`; das Storno-Dokument selbst traegt documentDiscount/Charge = 0, weil
+ * die Beleganpassung bereits in den Bucket-Betraegen steckt.
+ */
+function finalStornoLines(original: {
+  number: string | null;
+  taxBreakdownJson: string;
+  finalDeductions: readonly { taxRate: number; taxCategory: string; netCents: number; taxCents: number }[];
+}): StornoCreateLine[] {
+  const breakdown = JSON.parse(original.taxBreakdownJson) as TaxBreakdownEntry[];
+
+  const deductedByRate = new Map<string, { netCents: number; taxCents: number }>();
+  for (const d of original.finalDeductions) {
+    const key = `${d.taxCategory}:${d.taxRate}`;
+    const acc = deductedByRate.get(key) ?? { netCents: 0, taxCents: 0 };
+    acc.netCents += d.netCents;
+    acc.taxCents += d.taxCents;
+    deductedByRate.set(key, acc);
+  }
+
+  const description = `Storno Schlussrechnung ${original.number} – Restbetrag nach Abzug der Abschlagsrechnungen`;
+
+  return breakdown.map((entry, i) => {
+    const key = `${entry.taxCategory}:${entry.taxRate}`;
+    const deducted = deductedByRate.get(key) ?? { netCents: 0, taxCents: 0 };
+    const remainingNetCents = entry.netCents - deducted.netCents;
+    return {
+      position: i + 1,
+      lineType: "ITEM",
+      productId: null,
+      description,
+      descriptionLong: null,
+      articleNumber: null,
+      quantityMilli: 1000,
+      unit: "C62",
+      unitNetPriceCents: -remainingNetCents,
+      taxRate: entry.taxRate,
+      taxCategory: entry.taxCategory,
+      discountPermille: 0,
+      discountCents: 0,
+      lineNetCents: -remainingNetCents,
+    };
+  });
+}
 
 export class CancelError extends Error {
   constructor(message: string) {
@@ -40,60 +142,15 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
     if (original.status === "CANCELLED") throw new CancelError("Rechnung ist bereits storniert.");
     if (original.type === "CREDIT_NOTE") throw new CancelError("Eine Gutschrift/Storno kann nicht erneut storniert werden.");
 
-    // Phase 5: Storno einer Schlussrechnung erstattet nur den tatsaechlich offenen Rest
-    // (payableCents), nicht die volle Gesamtleistung — die bereits vereinnahmten Abschlaege
-    // (FinalInvoiceDeduction, unveraendert, NICHT kopiert/dupliziert) werden dazu je
-    // Steuersatz als positive Ausgleichszeile GEGEN die negierten Gesamtleistungs-Zeilen
-    // gebucht, sodass Original + Storno-Gutschrift in Summe = payableCents ergibt (der
-    // Kunde hat die Abschlaege bereits bezahlt/erhalten und diese werden hier nicht erneut
-    // beruehrt — Ruling Task-2-Brief: "Storno der Schlussrechnung erstattet den Rest").
-    const deductionOffsetByRate = new Map<string, { taxRate: number; taxCategory: string; netCents: number }>();
-    if (original.type === "FINAL") {
-      for (const d of original.finalDeductions) {
-        const key = `${d.taxCategory}:${d.taxRate}`;
-        const acc = deductionOffsetByRate.get(key) ?? { taxRate: d.taxRate, taxCategory: d.taxCategory, netCents: 0 };
-        acc.netCents += d.netCents;
-        deductionOffsetByRate.set(key, acc);
-      }
-    }
-    const offsetLines = [...deductionOffsetByRate.values()];
-
-    const negatedLines = original.lines.map((l) => {
-      const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
-      return {
-        position: l.position,
-        lineType: l.lineType,
-        productId: l.productId,
-        description: l.description,
-        descriptionLong: l.descriptionLong,
-        articleNumber: l.articleNumber,
-        quantityMilli: l.quantityMilli,
-        unit: l.unit,
-        unitNetPriceCents: isItem ? -l.unitNetPriceCents : 0,
-        taxRate: l.taxRate,
-        taxCategory: l.taxCategory,
-        discountPermille: l.discountPermille,
-        discountCents: l.discountCents,
-        lineNetCents: isItem ? -l.lineNetCents : 0,
-      };
-    });
-    const nextPosition = negatedLines.length > 0 ? Math.max(...negatedLines.map((l) => l.position)) + 1 : 1;
-    const offsetLinesCreate = offsetLines.map((o, i) => ({
-      position: nextPosition + i,
-      lineType: "ITEM",
-      productId: null,
-      description: `Bereits abgerechneter Abschlag (nicht Teil dieser Storno-Gutschrift)`,
-      descriptionLong: null,
-      articleNumber: null,
-      quantityMilli: 1000,
-      unit: "C62",
-      unitNetPriceCents: o.netCents,
-      taxRate: o.taxRate,
-      taxCategory: o.taxCategory,
-      discountPermille: 0,
-      discountCents: 0,
-      lineNetCents: o.netCents,
-    }));
+    // Phase 5 (Fix-Runde 1, MEDIUM — Ruling Koordinator): Storno einer Schlussrechnung
+    // erstattet nur den tatsaechlich offenen Rest (payableCents), nicht die volle
+    // Gesamtleistung — als GENAU EINE Summenzeile je Steuersatz (finalStornoLines), NICHT
+    // als gespiegelte Gesamtleistungs-Zeilen zzgl. separater Ausgleichszeilen (das ergab
+    // bei Beleg-Rabatt/-Aufschlag mit mehreren Steuersaetzen gemischte Vorzeichen je Bucket
+    // und liess applyDocumentAdjustments abbrechen). documentDiscount/Charge = 0 auf dem
+    // Storno-Dokument, weil die Beleganpassung bereits im taxBreakdownJson eingepreist ist.
+    const isFinalStorno = original.type === "FINAL";
+    const stornoLines = isFinalStorno ? finalStornoLines(original) : mirrorLines(original);
 
     const credit = await tx.invoice.create({
       data: {
@@ -115,21 +172,22 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
         // rein informativ (denormalisierter Schnellzugriff, keine eigene Relation).
         sourceType: original.sourceType,
         sourceId: original.sourceId,
-        // Beleg-Rabatt/-Aufschlag unveraendert (positiv) uebernehmen — applyDocumentAdjustments
-        // ist vorzeichen-invariant und rechnet bei ausschliesslich negativen Zeilen-Buckets auf
-        // den negierten (positiven) Betraegen wie im Original (Ruling Task-1-Review).
-        documentDiscountPermille: original.documentDiscountPermille,
-        documentDiscountCents: original.documentDiscountCents,
-        documentChargePermille: original.documentChargePermille,
-        documentChargeCents: original.documentChargeCents,
-        documentChargeReason: original.documentChargeReason,
-        // Betragsspiegelbild: negierte Beträge, damit Original + Storno = 0 ergibt (bei
-        // FINAL-Rechnungen zzgl. der Abschlags-Ausgleichszeilen oben, damit die Gutschrift
-        // in Summe payableCents statt grossTotalCents erstattet). Zeilentyp/Langtext/
-        // Artikelnummer 1:1 uebernehmen (§8: die Struktur der Rechnung bleibt im Storno
-        // erkennbar). Nicht-ITEM-Zeilen tragen weiterhin keine Betraege.
+        // Beleg-Rabatt/-Aufschlag: bei FINAL-Storno bewusst 0 (bereits in finalStornoLines
+        // eingepreist, siehe dort); sonst unveraendert (positiv) uebernommen —
+        // applyDocumentAdjustments ist vorzeichen-invariant und rechnet bei ausschliesslich
+        // negativen Zeilen-Buckets auf den negierten (positiven) Betraegen wie im Original
+        // (Ruling Task-1-Review).
+        documentDiscountPermille: isFinalStorno ? 0 : original.documentDiscountPermille,
+        documentDiscountCents: isFinalStorno ? 0 : original.documentDiscountCents,
+        documentChargePermille: isFinalStorno ? 0 : original.documentChargePermille,
+        documentChargeCents: isFinalStorno ? 0 : original.documentChargeCents,
+        documentChargeReason: isFinalStorno ? null : original.documentChargeReason,
+        // Betragsspiegelbild: negierte Betraege, damit Original + Storno = 0 ergibt
+        // (bei FINAL: Summe = -payableCents, siehe finalStornoLines). Zeilentyp/Langtext/
+        // Artikelnummer bei einer normalen Rechnung 1:1 uebernommen (§8: die Struktur bleibt
+        // im Storno erkennbar); bei FINAL eine Summenzeile je Steuersatz (siehe oben).
         lines: {
-          create: [...negatedLines, ...offsetLinesCreate],
+          create: stornoLines,
         },
       },
     });

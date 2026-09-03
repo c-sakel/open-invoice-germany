@@ -8,7 +8,7 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
@@ -154,7 +154,7 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
     const src = await tx.invoice.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!src) throw new NotFoundError(`Rechnung ${id} nicht gefunden.`);
     if (NOT_DUPLICATABLE_INVOICE_TYPES.has(src.type)) {
-      throw new Error(`Rechnungen vom Typ "${src.type}" (Teil-/Abschlags-/Schlussrechnung) koennen nicht dupliziert werden.`);
+      throw new InvalidOperationError(`Rechnungen vom Typ "${src.type}" (Teil-/Abschlags-/Schlussrechnung) koennen nicht dupliziert werden.`);
     }
 
     const input: CreateInvoiceInput = {

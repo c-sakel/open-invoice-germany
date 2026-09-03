@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { duplicateDocument } from "@/domain/document/duplicate";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 
@@ -16,6 +16,11 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   } catch (e) {
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
+    }
+    // Fix-Runde 1 (MEDIUM): PARTIAL/DOWNPAYMENT/FINAL koennen nicht dupliziert werden —
+    // dedizierte Fehlerklasse statt generischem Error, gemappt auf 409 Conflict.
+    if (e instanceof InvalidOperationError) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
     }
     console.error("POST /duplicate:", e);
     return NextResponse.json({ error: "Duplizieren fehlgeschlagen." }, { status: 500 });

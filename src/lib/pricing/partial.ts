@@ -267,3 +267,52 @@ export function deductionsFor(
     totalRemainingGrossCents: perRate.reduce((s, r) => s + r.remainingGrossCents, 0),
   };
 }
+
+/** Minimale Zeilenform fuer `bucketsFromLines` — Quote-/Invoice-/DeliveryNote-Zeile. */
+export interface BucketableLine {
+  taxRate: number;
+  taxCategory: string;
+  lineNetCents: number;
+}
+
+/**
+ * Gruppiert Positionen nach (Steuersatz, -kategorie) zu Steuersatz-Buckets fuer
+ * `splitByTaxRate`/`bucketsGrossTotalCents` — gemeinsamer Helper fuer
+ * `src/domain/invoice/partial.ts` und `src/domain/invoice/downpayment.ts` (Fix-Runde 1,
+ * LOW: vorher zwei inhaltsgleiche Kopien).
+ */
+export function bucketsFromLines(lines: readonly BucketableLine[]): RateBucket[] {
+  const map = new Map<string, RateBucket>();
+  for (const l of lines) {
+    const key = `${l.taxCategory}:${l.taxRate}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.netCents += l.lineNetCents;
+    } else {
+      map.set(key, { key, taxCategory: l.taxCategory, taxRate: l.taxRate, netCents: l.lineNetCents });
+    }
+  }
+  return [...map.values()];
+}
+
+/**
+ * Bruttosumme ueber alle Steuersatz-Buckets (Gesamtleistung brutto) — Grundlage des
+ * kumulativen Ueberbuchungs-Guards fuer PERCENT/NET_AMOUNT/GROSS_AMOUNT-Teilrechnungen
+ * (Fix-Runde 1, HIGH) und fuer die 100-%-Abschlagsgrenze.
+ */
+export function bucketsGrossTotalCents(buckets: readonly RateBucket[]): number {
+  return buckets.reduce((s, b) => s + roundHalfUp((b.netCents * (100 + b.taxRate)) / 100), 0);
+}
+
+/**
+ * Formatiert einen Promille-Wert (0..1000) als deutsches Prozent-Literal ohne "%"-
+ * Zeichen (der Aufrufer haengt es an) — glatte Zehntel ohne Nachkommastelle, sonst mit
+ * genau einer (z. B. 335 -> "33,5", 300 -> "30"). Gemeinsamer Helper fuer die
+ * Beschreibungstexte in `partial.ts`/`downpayment.ts` (Fix-Runde 1, LOW).
+ */
+export function formatPermilleDE(permille: number): string {
+  // permille 335 (= 33,5 %) -> roundedTenths 335 -> "33,5"; permille 300 -> 300 -> "30".
+  const roundedTenths = Math.round(permille);
+  const isWhole = roundedTenths % 10 === 0;
+  return (roundedTenths / 10).toLocaleString("de-DE", { minimumFractionDigits: isWhole ? 0 : 1, maximumFractionDigits: 1 });
+}

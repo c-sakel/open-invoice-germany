@@ -17,6 +17,7 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { recordPayment } from "@/domain/invoice/payment";
 import { duplicateDocument } from "@/domain/document/duplicate";
+import { InvalidOperationError } from "@/domain/errors";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
 
@@ -151,6 +152,33 @@ describe("Teilrechnung 40 % + 60 % -> Abrechnungsstand FULL", () => {
   });
 });
 
+describe("Fix-Runde 1 (HIGH): kumulativer Ueberbuchungs-Guard fuer PERCENT/NET_AMOUNT/GROSS_AMOUNT", () => {
+  it("60 % + 60 % wird verweigert, 40 % + 60 % bleibt erlaubt", async () => {
+    const quote = await makeQuote(200_000, 7);
+
+    await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 600 }, { now: FIX_DATE });
+
+    await expect(
+      createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 600 }, { now: FIX_DATE }),
+    ).rejects.toThrow(PartialInvoiceError);
+
+    // 40 % obendrauf (600 + 400 = 1000) bleibt erlaubt.
+    const rest = await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 400 }, { now: FIX_DATE });
+    expect(rest.lines).toHaveLength(1);
+  });
+
+  it("NET_AMOUNT: eine Ueberschreitung der Gesamtleistung wird verweigert", async () => {
+    const quote = await makeQuote(200_000, 7); // 200.000 Cent netto Gesamtleistung.
+
+    await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "NET_AMOUNT", amountCents: 150_000 }, { now: FIX_DATE });
+
+    // Weitere 100.000 Cent netto wuerden brutto ueber die Gesamtleistung hinausgehen.
+    await expect(
+      createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "NET_AMOUNT", amountCents: 100_000 }, { now: FIX_DATE }),
+    ).rejects.toThrow(PartialInvoiceError);
+  });
+});
+
 describe("POSITIONS/QUANTITIES: Ueberberechnung wird verweigert", () => {
   it("QUANTITIES: eine zweite Teilrechnung ueber die Restmenge hinaus wirft PartialInvoiceError", async () => {
     const quote = await createBusinessDocument(
@@ -234,10 +262,10 @@ describe("Abschlagssumme darf 100 % nicht uebersteigen", () => {
 });
 
 describe("Teil-/Abschlags-/Schlussrechnungen koennen nicht dupliziert werden", () => {
-  it("wirft einen Fehler beim Duplizieren-Versuch", async () => {
+  it("wirft InvalidOperationError beim Duplizieren-Versuch (Fix-Runde 1, MEDIUM)", async () => {
     const quote = await makeQuote(100_000);
     const partial = await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 500 }, { now: FIX_DATE });
-    await expect(duplicateDocument(orgId, "INVOICE", partial.id, "tester", FIX_DATE)).rejects.toThrow();
+    await expect(duplicateDocument(orgId, "INVOICE", partial.id, "tester", FIX_DATE)).rejects.toThrow(InvalidOperationError);
   });
 });
 
@@ -252,6 +280,36 @@ describe("Storno der Schlussrechnung erstattet nur den Rest (nicht die Abschlaeg
 
     const { creditNote } = await cancelInvoice(final.id, { now: FIX_DATE });
     expect(creditNote.grossTotalCents).toBe(-(finalized.payableCents as number));
+  });
+});
+
+describe("Fix-Runde 1 (MEDIUM): Storno einer Schlussrechnung mit Beleg-Rabatt + gemischten Steuersaetzen", () => {
+  it("stoerniert eine FINAL-Rechnung mit 10 % Beleg-Rabatt und 19 %/7 %-Zeilen ohne Fehler und nettet zu -payableCents", async () => {
+    const quote = await createBusinessDocument(
+      orgId,
+      {
+        kind: "ANGEBOT",
+        customerId,
+        taxScheme: "REGULAR",
+        currency: "EUR",
+        documentDiscountPermille: 100, // 10 % Beleg-Rabatt
+        lines: [
+          { lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 500_000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+          { lineType: "ITEM", description: "Literatur", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 500_000, taxRate: 7, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+        ],
+      },
+      { now: FIX_DATE },
+    );
+
+    await finalizeInvoice((await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: FIX_DATE })).id, { now: FIX_DATE });
+
+    const final = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: FIX_DATE });
+    const finalized = await finalizeInvoice(final.id, { now: FIX_DATE });
+    expect(finalized.payableCents).not.toBeNull();
+
+    const { creditNote } = await cancelInvoice(final.id, { now: FIX_DATE });
+    expect(creditNote.grossTotalCents).toBe(-(finalized.payableCents as number));
+    expect(creditNote.documentDiscountPermille).toBe(0);
   });
 });
 
