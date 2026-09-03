@@ -66,7 +66,8 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     const data: Prisma.InvoiceUncheckedUpdateInput = {};
 
     if (input.customerId !== undefined) { data.customerId = input.customerId; changedFields.push("customerId"); }
-    if (input.type !== undefined) { data.type = input.type; changedFields.push("type"); }
+    // Fix-Runde 1: `type` ist bewusst NICHT im Schema (updateInvoiceSchema.omit({type:true}))
+    // und wird hier deshalb nie gesetzt — die Rechnungsart aendert sich beim Bearbeiten nicht.
     if (input.taxScheme !== undefined) { data.taxScheme = input.taxScheme; changedFields.push("taxScheme"); }
     if (input.currency !== undefined) { data.currency = input.currency; changedFields.push("currency"); }
     if (input.issueDate !== undefined) { data.issueDate = input.issueDate; changedFields.push("issueDate"); }

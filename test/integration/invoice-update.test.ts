@@ -133,6 +133,20 @@ describe("updateDraftInvoice — Kopffelder, Positionen, Rabatt/Skonto/Zahlungsm
   });
 });
 
+describe("updateDraftInvoice — Fix-Runde 1: type unveraenderbar", () => {
+  it("ignoriert ein mitgesendetes type-Feld (Zod streift unbekannte Felder, kein Fehler) und laesst die Rechnungsart unveraendert", async () => {
+    const invoice = await draftInvoice();
+    expect(invoice.type).toBe("INVOICE");
+
+    const updated = await updateDraftInvoice(orgId, invoice.id, { type: "CREDIT_NOTE", subject: "Trotzdem aktualisiert" } as never, "tester");
+    expect(updated.type).toBe("INVOICE");
+    expect(updated.subject).toBe("Trotzdem aktualisiert");
+
+    const reloaded = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(reloaded.type).toBe("INVOICE");
+  });
+});
+
 describe("updateDraftInvoice — GoBD: nur DRAFT", () => {
   it("verweigert die Bearbeitung einer FINALIZED-Rechnung", async () => {
     const invoice = await draftInvoice();

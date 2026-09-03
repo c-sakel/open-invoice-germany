@@ -3,6 +3,9 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
+// Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
+// zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
+import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 
 // ── Enumerationen ────────────────────────────────────────────────────────
 export const TaxScheme = z.enum([
@@ -306,6 +309,12 @@ export const updateInvoiceSchema = z
     lines: z.array(invoiceLineInputSchema).min(1).optional(),
   })
   .partial()
+  // Fix-Runde 1: `type` (INVOICE/CREDIT_NOTE/CORRECTION) ist beim Bearbeiten eines
+  // Entwurfs NICHT aenderbar — die Rechnungsart wird bei der Anlage festgelegt (§14
+  // UStG-Belegcharakter haengt daran). .omit NACH .partial(), weil createInvoiceSchema
+  // (die Quelle von invoiceHeaderFields) bereits ein ZodEffects ist und .omit nur auf
+  // einem ZodObject existiert — updateInvoiceSchema baut sein eigenes ZodObject neu auf.
+  .omit({ type: true })
   .superRefine(refineSkontoTargets);
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 
@@ -546,9 +555,10 @@ export const ATTACHMENT_MIME_WHITELIST = [
   "application/vnd.ms-excel",
 ] as const;
 
-// 10 MB je Datei (Global Constraint §38). Die Obergrenze von 50 MB je Beleg wird von der
+// 10 MB je Datei (Global Constraint §38) — aus src/lib/attachments/mime.ts uebernommen
+// (eine Quelle, Fix-Runde 1). Die Obergrenze von 50 MB je Beleg wird von der
 // Domain-Funktion addAttachment ueber die Summe bestehender Anhaenge geprueft, nicht hier.
-export const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_FILE_BYTES;
 
 export const attachmentUploadSchema = z.object({
   filename: z.string().min(1).max(255),
