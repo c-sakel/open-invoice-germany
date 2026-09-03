@@ -36,6 +36,10 @@ import { createBusinessDocument } from "@/domain/document/create";
 import { convertDocument, ConvertError } from "@/domain/document/convert";
 import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/create";
 import { setQuoteStatus, setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/domain/document/status";
+import { createShareLink, revokeShareLink, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
+import { saveDocumentSettings } from "@/domain/document/settings";
+import { SecretsUnavailableError } from "@/lib/crypto/secrets";
+import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
@@ -52,9 +56,12 @@ import {
   createDeliveryNoteSchema,
   documentStatusActionSchema,
   convertDocumentBodySchema,
+  documentSettingsInputSchema,
+  OnQuoteAccept,
   TaxScheme,
   PaymentMethod,
 } from "@/schemas";
+import { NotFoundError } from "@/domain/errors";
 
 // ── Helfer ────────────────────────────────────────────────────────────────
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -1087,6 +1094,115 @@ server.registerTool(
       return ok(`${total} Rechnung(en) aus ${summaries.length} Abo(s) erzeugt:\n${lines.join("\n")}`);
     } catch (e) {
       if (e instanceof RecurringError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── create_share_link ─────────────────────────────────────────────────────────
+server.registerTool(
+  "create_share_link",
+  {
+    title: "Angebots-Annahmelink erzeugen",
+    description:
+      "Erzeugt einen oeffentlichen Annahme-Link (ohne Login) fuer ein Angebot (kind=ANGEBOT, Status DRAFT/SENT/EXPIRED). Der Kunde kann darueber das Angebot ansehen, als PDF herunterladen und annehmen/ablehnen. expiresInDays ueberschreibt die Standard-Gueltigkeitsdauer aus den Dokument-Einstellungen.",
+    inputSchema: {
+      documentId: z.string().describe("Nummer oder ID des Angebots"),
+      expiresInDays: z.number().int().min(1).max(365).optional(),
+    },
+  },
+  async ({ documentId, expiresInDays }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocument(org.id, documentId);
+      const { link, token } = await createShareLink(org.id, doc.id, { expiresInDays });
+      const baseUrl = appBaseUrlFromEnv();
+      const url = baseUrl ? `${baseUrl}/angebot/${token}` : `(APP_BASE_URL nicht gesetzt) /angebot/${token}`;
+      return ok(`Annahme-Link erzeugt fuer ${doc.number ?? doc.id} · gueltig bis ${link.expiresAt.toISOString().slice(0, 10)} · ${url}`);
+    } catch (e) {
+      if (e instanceof ShareLinkError) return fail(e.message);
+      if (e instanceof SecretsUnavailableError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── revoke_share_link ─────────────────────────────────────────────────────────
+server.registerTool(
+  "revoke_share_link",
+  {
+    title: "Angebots-Annahmelink widerrufen",
+    description: "Widerruft einen Angebots-Annahmelink (linkId). Der Link liefert danach 404, eine Entscheidung ist nicht mehr moeglich.",
+    inputSchema: {
+      linkId: z.string(),
+    },
+  },
+  async ({ linkId }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      await revokeShareLink(org.id, linkId);
+      return ok(`Link ${linkId} widerrufen.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_share_links ──────────────────────────────────────────────────────────
+server.registerTool(
+  "list_share_links",
+  {
+    title: "Angebots-Annahmelinks auflisten",
+    description:
+      "Listet alle Annahme-Links eines Angebots mit Status/Aufrufen/Entscheidung — NIE den Klartext-Token (der ist ueber diesen Weg nicht abrufbar; siehe Betreiber-UI fuer 'Link anzeigen').",
+    inputSchema: {
+      documentId: z.string().describe("Nummer oder ID des Angebots"),
+    },
+  },
+  async ({ documentId }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocument(org.id, documentId);
+      const links = await listShareLinks(org.id, doc.id);
+      if (links.length === 0) return ok(`Keine Annahme-Links fuer ${doc.number ?? doc.id}.`);
+      const lines = links.map((l) => {
+        const status = l.revokedAt
+          ? "widerrufen"
+          : l.decidedAt
+            ? `entschieden (${l.decision})`
+            : l.expiresAt.getTime() < Date.now()
+              ? "abgelaufen"
+              : "aktiv";
+        return `• ${l.id} · ${status} · erzeugt ${l.createdAt.toISOString().slice(0, 10)} · laeuft ab ${l.expiresAt.toISOString().slice(0, 10)} · ${l.viewCount} Aufruf(e)`;
+      });
+      return ok(lines.join("\n"));
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── save_document_settings ────────────────────────────────────────────────────
+server.registerTool(
+  "save_document_settings",
+  {
+    title: "Dokument-Einstellungen speichern",
+    description:
+      "Speichert die org-weiten Einstellungen fuer Angebotsannahme: onQuoteAccept (Automatik nach Online-Annahme: NONE/ORDER_CONFIRMATION/INVOICE), shareLinkDays (Standard-Gueltigkeitsdauer neuer Links in Tagen), storeAcceptIp (ob die IP-Adresse des Entscheiders gespeichert wird).",
+    inputSchema: {
+      onQuoteAccept: OnQuoteAccept.optional(),
+      shareLinkDays: z.number().int().min(1).max(365).optional(),
+      storeAcceptIp: z.boolean().optional(),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const saved = await saveDocumentSettings(org.id, documentSettingsInputSchema.parse(args));
+      return ok(`Dokument-Einstellungen gespeichert: onQuoteAccept=${saved.onQuoteAccept}, shareLinkDays=${saved.shareLinkDays}, storeAcceptIp=${saved.storeAcceptIp}.`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
