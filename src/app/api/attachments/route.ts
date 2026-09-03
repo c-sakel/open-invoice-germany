@@ -19,6 +19,36 @@ const fieldsSchema = z.object({
   docId: z.string().min(1),
 });
 
+interface SavedAttachment {
+  id: string;
+  filename: string;
+  mime: string;
+  sizeBytes: number;
+}
+interface FailedAttachment {
+  filename: string;
+  error: string;
+}
+
+/** Ordnet einen Domain-Fehler einer Statuscode/Meldung zu (fuer den Fall, dass GAR
+ *  nichts gespeichert wurde — dann bleibt der Gesamt-Statuscode wie bisher). */
+function classifyError(e: unknown): { status: number; message: string } {
+  if (e instanceof z.ZodError) {
+    return { status: 400, message: "Validierung fehlgeschlagen: " + (e.issues[0]?.message ?? "") };
+  }
+  if (e instanceof AttachmentValidationError) {
+    return { status: 400, message: e.message };
+  }
+  if (e instanceof RelationError) {
+    return { status: 404, message: e.message };
+  }
+  if (e instanceof Error && e.message.includes("ueberschreiten insgesamt")) {
+    return { status: 400, message: e.message };
+  }
+  console.error("POST /api/attachments:", e);
+  return { status: 500, message: "Anhang konnte nicht gespeichert werden." };
+}
+
 export async function POST(req: Request) {
   // Groesse VOR jedem Einlesen anhand des Headers pruefen (analog api/emails/send) —
   // fehlt er oder ist er zu gross, wird der Body nie gelesen.
@@ -46,33 +76,46 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Keine Datei uebergeben." }, { status: 400 });
   }
 
+  let org: Awaited<ReturnType<typeof getActiveOrg>>;
+  let actor: string;
   try {
-    const org = await getActiveOrg();
-    const actor = (await getCurrentUserId()) ?? "system";
-    const created = [];
-    for (const f of files) {
-      if (f.size > MAX_ATTACHMENT_FILE_BYTES) {
-        return NextResponse.json({ error: `Datei "${f.name}" ueberschreitet die Groesse von ${MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB.` }, { status: 400 });
-      }
-      const buffer = Buffer.from(await f.arrayBuffer());
-      const row = await addAttachment(org.id, docType, docId, { filename: f.name, mime: f.type || "application/octet-stream", buffer }, actor);
-      created.push({ id: row.id, filename: row.filename, mime: row.mime, sizeBytes: row.sizeBytes });
-    }
-    return NextResponse.json({ attachments: created }, { status: 201 });
+    org = await getActiveOrg();
+    actor = (await getCurrentUserId()) ?? "system";
   } catch (e) {
-    if (e instanceof z.ZodError) {
-      return NextResponse.json({ error: "Validierung fehlgeschlagen: " + (e.issues[0]?.message ?? "") }, { status: 400 });
-    }
-    if (e instanceof AttachmentValidationError) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
-    }
-    if (e instanceof RelationError) {
-      return NextResponse.json({ error: e.message }, { status: 404 });
-    }
-    if (e instanceof Error && e.message.includes("ueberschreiten insgesamt")) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
-    }
     console.error("POST /api/attachments:", e);
     return NextResponse.json({ error: "Anhang konnte nicht gespeichert werden." }, { status: 500 });
   }
+
+  // Fix-Runde 1: ein fehlerhafter Anhang (z. B. falsches Format) darf die uebrigen
+  // Dateien EINES Mehrfach-Uploads nicht blockieren — jede Datei wird einzeln versucht,
+  // Erfolge und Fehlschlaege werden getrennt zurueckgegeben statt beim ersten Fehler
+  // abzubrechen.
+  const saved: SavedAttachment[] = [];
+  const failed: FailedAttachment[] = [];
+  let firstError: unknown = null;
+
+  for (const f of files) {
+    try {
+      if (f.size > MAX_ATTACHMENT_FILE_BYTES) {
+        throw new AttachmentValidationError(`Datei "${f.name}" ueberschreitet die Groesse von ${MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB.`);
+      }
+      const buffer = Buffer.from(await f.arrayBuffer());
+      const row = await addAttachment(org.id, docType, docId, { filename: f.name, mime: f.type || "application/octet-stream", buffer }, actor);
+      saved.push({ id: row.id, filename: row.filename, mime: row.mime, sizeBytes: row.sizeBytes });
+    } catch (e) {
+      firstError ??= e;
+      const { message } = classifyError(e);
+      failed.push({ filename: f.name, error: message });
+    }
+  }
+
+  if (saved.length === 0) {
+    // Nichts gespeichert: Statuscode wie bisher (400/404/500), abgeleitet vom ersten Fehler.
+    const { status, message } = classifyError(firstError);
+    return NextResponse.json({ error: message }, { status });
+  }
+
+  // Voller Erfolg (201) vs. Teilerfolg (207) — der Client zeigt "failed" als Warnung an
+  // und uebernimmt "saved" in die Anhangsliste.
+  return NextResponse.json({ saved, failed }, { status: failed.length === 0 ? 201 : 207 });
 }

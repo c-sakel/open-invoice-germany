@@ -23,6 +23,7 @@ import * as relationsModule from "@/domain/relations";
 import { listRelations } from "@/domain/relations";
 import { DEFAULT_TEXT_TEMPLATES } from "@/domain/text-template/defaults";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
+import { NotFoundError } from "@/domain/errors";
 
 const FIX_DATE = new Date("2033-05-01T10:00:00.000Z");
 
@@ -293,6 +294,30 @@ describe("Entwurf bearbeiten", () => {
     const buyerAfter = JSON.parse(updated.buyerSnapshotJson!);
     expect(buyerAfter.name).toBe("Neuer Kunde GmbH");
     expect(updated.snapshotSource).toBe("CREATE");
+  });
+});
+
+describe("Entwurf bearbeiten — Fix-Runde 1: Ansprechpartner/Adressen kundengeprueft", () => {
+  it("lehnt einen Ansprechpartner eines ANDEREN Kunden derselben Org ab", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde B GmbH", addressLine1: "Nebenstr. 1", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const contactOfOtherCustomer = await dbInternal.contactPerson.create({
+      data: { orgId, customerId: otherCustomer.id, firstName: "Bea", lastName: "Fremdkunde" },
+    });
+    await expect(updateDraftDocument(orgId, quote.id, { contactPersonId: contactOfOtherCustomer.id }, "tester")).rejects.toThrow(NotFoundError);
+  });
+
+  it("lehnt eine Rechnungsadresse eines ANDEREN Kunden derselben Org ab", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde C GmbH", addressLine1: "Nebenstr. 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const addressOfOtherCustomer = await dbInternal.customerAddress.create({
+      data: { orgId, customerId: otherCustomer.id, type: "BILLING", addressLine1: "Fremdweg 1", postalCode: "20095", city: "Hamburg" },
+    });
+    await expect(updateDraftDocument(orgId, quote.id, { billingAddressId: addressOfOtherCustomer.id }, "tester")).rejects.toThrow(NotFoundError);
   });
 });
 

@@ -74,12 +74,15 @@ export async function createBusinessDocumentWithinTx(
   if (!customer) throw new Error("Kunde nicht gefunden.");
   const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
 
+  // Fix-Runde 1: org- UND kundengeprueft — Ansprechpartner/Rechnungsadresse muessen zum
+  // ausgewaehlten Kunden gehoeren, sonst koennte ein fremder Ansprechpartner/eine fremde
+  // Adresse (anderer Kunde derselben Org) unbemerkt uebernommen werden.
   if (input.contactPersonId) {
-    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId } });
+    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId, customerId: input.customerId } });
     if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
   }
   if (input.billingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId } });
+    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId, customerId: input.customerId } });
     if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
   }
 
