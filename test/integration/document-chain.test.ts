@@ -7,6 +7,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { recordPayment } from "@/domain/invoice/payment";
 import { createDunning } from "@/domain/dunning/create";
+import { createRecurring } from "@/domain/recurring/create";
 import { linkDocuments } from "@/domain/relations";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { buildDocumentChain } from "@/domain/document/chain";
@@ -139,5 +140,34 @@ describe("buildDocumentChain", () => {
 
     const { root } = await buildDocumentChain(orgId, "QUOTE", a.id);
     expect(root).toBeDefined();
+  });
+
+  it("zeigt ein Abo als Wurzelknoten mit Label 'Abo' und href /abos/<id>", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Wartungsvertrag Kette",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: FIX_DATE,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      lines: [line],
+    });
+    const invoice = await createDraftInvoice(orgId, await invoiceInput(), { now: FIX_DATE });
+
+    await dbInternal.$transaction((tx) =>
+      linkDocuments(tx, { orgId, fromType: "RECURRING", fromId: rec.id, toType: "INVOICE", toId: invoice.id, relationType: "GENERATED_BY" }),
+    );
+
+    const { root } = await buildDocumentChain(orgId, "RECURRING", rec.id);
+    expect(root.type).toBe("RECURRING");
+    expect(root.id).toBe(rec.id);
+    expect(root.label).toBe("Abo");
+    expect(root.href).toBe(`/abos/${rec.id}`);
+
+    const invoiceNode = root.children.find((c) => c.type === "INVOICE");
+    expect(invoiceNode?.id).toBe(invoice.id);
   });
 });

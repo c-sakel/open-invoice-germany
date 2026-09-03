@@ -1,0 +1,109 @@
+/**
+ * Restmengen einer Angebots-/AB-/Rechnungsposition: bestellte Menge minus bereits
+ * gelieferte Menge (Summe ueber nicht-stornierte Lieferscheine). Grundlage fuer die
+ * Teillieferung (src/domain/document/convert.ts).
+ */
+import { dbInternal } from "@/lib/db";
+
+export class OverDeliveryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OverDeliveryError";
+  }
+}
+
+export type DeliverySourceType = "QUOTE" | "INVOICE";
+
+export interface SourceLine {
+  id: string;
+  description: string;
+  unit: string;
+  quantityMilli: number;
+  unitNetPriceCents: number;
+  taxRate: number;
+}
+
+export interface RemainingQuantity {
+  sourceLineId: string;
+  description: string;
+  unit: string;
+  orderedMilli: number;
+  deliveredMilli: number;
+  remainingMilli: number;
+}
+
+/** Laedt die Quellpositionen (QuoteLine bzw. InvoiceLine) mandantengeprueft. */
+export async function loadSourceLines(
+  orgId: string,
+  sourceType: DeliverySourceType,
+  sourceId: string,
+): Promise<{ customerId: string; lines: SourceLine[] }> {
+  if (sourceType === "QUOTE") {
+    const q = await dbInternal.quote.findFirst({
+      where: { id: sourceId, orgId },
+      include: { lines: { orderBy: { position: "asc" } } },
+    });
+    if (!q) throw new Error(`Angebot/Auftragsbestaetigung ${sourceId} nicht gefunden.`);
+    return {
+      customerId: q.customerId,
+      lines: q.lines.map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+    };
+  }
+  const inv = await dbInternal.invoice.findFirst({
+    where: { id: sourceId, orgId },
+    include: { lines: { orderBy: { position: "asc" } } },
+  });
+  if (!inv) throw new Error(`Rechnung ${sourceId} nicht gefunden.`);
+  return {
+    customerId: inv.customerId,
+    lines: inv.lines.map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+  };
+}
+
+/**
+ * Restmenge je Quellposition: bestellte Menge minus die Summe der DeliveryNoteLine-Mengen
+ * ueber alle nicht-stornierten Lieferscheine derselben Organisation mit passender sourceLineId.
+ */
+export async function remainingQuantities(orgId: string, sourceType: DeliverySourceType, sourceId: string): Promise<RemainingQuantity[]> {
+  const { lines } = await loadSourceLines(orgId, sourceType, sourceId);
+  const ids = lines.map((l) => l.id);
+
+  const delivered = ids.length
+    ? await dbInternal.deliveryNoteLine.groupBy({
+        by: ["sourceLineId"],
+        where: { sourceLineId: { in: ids }, deliveryNote: { orgId, status: { not: "CANCELLED" } } },
+        _sum: { quantityMilli: true },
+      })
+    : [];
+  const deliveredMap = new Map<string, number>(delivered.map((d) => [d.sourceLineId as string, d._sum.quantityMilli ?? 0]));
+
+  return lines.map((l) => {
+    const deliveredMilli = deliveredMap.get(l.id) ?? 0;
+    return {
+      sourceLineId: l.id,
+      description: l.description,
+      unit: l.unit,
+      orderedMilli: l.quantityMilli,
+      deliveredMilli,
+      remainingMilli: l.quantityMilli - deliveredMilli,
+    };
+  });
+}
+
+/** Wirft OverDeliveryError, wenn eine angeforderte Menge die Restmenge uebersteigt. Menge 0 = Position weglassen. */
+export function assertNoOverDelivery(
+  remaining: RemainingQuantity[],
+  requested: Array<{ sourceLineId: string; quantityMilli: number }>,
+): void {
+  const byId = new Map(remaining.map((r) => [r.sourceLineId, r]));
+  for (const req of requested) {
+    if (req.quantityMilli === 0) continue;
+    const r = byId.get(req.sourceLineId);
+    if (!r) throw new OverDeliveryError(`Quellposition ${req.sourceLineId} unbekannt.`);
+    if (req.quantityMilli > r.remainingMilli) {
+      throw new OverDeliveryError(
+        `Menge ${req.quantityMilli} ueberschreitet die Restmenge ${r.remainingMilli} fuer Position "${r.description}".`,
+      );
+    }
+  }
+}

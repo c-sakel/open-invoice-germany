@@ -6,7 +6,8 @@
  */
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
-import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { buildSellerSnapshot } from "@/domain/snapshot";
+import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
 
@@ -76,44 +77,15 @@ export async function setQuoteStatus(
 
     if (target === "SENT") {
       data.sentAt = now;
-      if (!quote.buyerSnapshotJson) {
+      // Der CREATE-Snapshot (Entwurf, noch kein ausgestellter Beleg) wird beim Versand
+      // durch den SENT-Snapshot ersetzt — nur so landen z. B. nachtraeglich gesetzte
+      // Ansprechpartner im versendeten Dokument. FINALIZE/SENT/MIGRATION/INHERITED
+      // werden nie ueberschrieben (Task-2-Review-Auflage).
+      if (!quote.buyerSnapshotJson || quote.snapshotSource === "CREATE") {
         const customer = await tx.customer.findFirstOrThrow({ where: { id: quote.customerId, orgId } });
         const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
 
-        let contactName: string | null = customer.contactName ?? null;
-        let addressLine1 = customer.addressLine1;
-        let addressLine2 = customer.addressLine2;
-        let postalCode = customer.postalCode;
-        let city = customer.city;
-        let countryCode = customer.countryCode;
-
-        if (quote.contactPersonId) {
-          const contact = await tx.contactPerson.findFirst({ where: { id: quote.contactPersonId, orgId } });
-          if (contact) contactName = `${contact.firstName} ${contact.lastName}`.trim();
-        }
-        if (quote.billingAddressId) {
-          const address = await tx.customerAddress.findFirst({ where: { id: quote.billingAddressId, orgId } });
-          if (address) {
-            addressLine1 = address.addressLine1;
-            addressLine2 = address.addressLine2;
-            postalCode = address.postalCode;
-            city = address.city;
-            countryCode = address.countryCode;
-          }
-        }
-
-        const buyer = buildBuyerSnapshot({
-          name: customer.name,
-          contactName,
-          addressLine1,
-          addressLine2,
-          postalCode,
-          city,
-          countryCode,
-          vatId: customer.vatId,
-          email: customer.email,
-          leitwegId: customer.leitwegId,
-        });
+        const buyer = await resolveBuyerSnapshot(tx, orgId, customer, quote.contactPersonId, quote.billingAddressId);
         const seller = buildSellerSnapshot(org);
         const source: SnapshotSource = "SENT";
 

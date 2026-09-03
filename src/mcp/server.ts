@@ -689,7 +689,7 @@ server.registerTool(
     try {
       const org = await requireOrg();
       const doc = await resolveDocument(org.id, document);
-      const invoice = await convertDocumentToInvoice(doc.id);
+      const invoice = await convertDocumentToInvoice(org.id, doc.id);
       return ok(`Umgewandelt: ${doc.number} → Rechnungs-Entwurf ${invoice.id}. Mit finalize_invoice festschreiben.`);
     } catch (e) {
       if (e instanceof ConvertError) return fail(e.message);

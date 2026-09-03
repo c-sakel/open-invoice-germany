@@ -1,17 +1,30 @@
 /**
  * Erstellt ein Geschäftsdokument (Angebot / Auftragsbestätigung / Proforma).
  * KEIN GoBD-Beleg — bekommt eine Nummer aus dem kind-spezifischen Nummernkreis,
- * bleibt aber editierbar (keine Festschreibung/Unveränderbarkeit).
+ * bleibt aber editierbar (keine Festschreibung/Unveränderbarkeit). Fehlende Kopf-/
+ * Fusstexte und Bedingungen werden aus den Textvorlagen der Organisation vorbelegt
+ * (Selbstheilung, src/domain/text-template) — der Text wird am Beleg gespeichert,
+ * kein Live-Bezug auf die Vorlage.
  */
 import { dbInternal } from "@/lib/db";
 import { computeLineNetCents } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
-import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
-import type { CreateDocumentInput, SnapshotSource } from "@/schemas";
+import { buildSellerSnapshot } from "@/domain/snapshot";
+import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
+import { pickTextTemplate } from "@/domain/text-template/pick";
+import { appendChangeLog } from "@/domain/audit";
+import { createDocumentSchema, type SnapshotSource } from "@/schemas";
 
-export async function createBusinessDocument(orgId: string, input: CreateDocumentInput, opts: { now?: Date } = {}) {
+export interface CreateDocumentOptions {
+  actor?: string;
+  now?: Date;
+}
+
+export async function createBusinessDocument(orgId: string, rawInput: unknown, opts: CreateDocumentOptions = {}) {
+  const input = createDocumentSchema.parse(rawInput);
   const now = opts.now ?? new Date();
+  const actor = opts.actor ?? "system";
 
   const lines = input.lines.map((l, i) => ({
     position: i + 1,
@@ -33,6 +46,15 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
     if (!customer) throw new Error("Kunde nicht gefunden.");
     const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
 
+    if (input.contactPersonId) {
+      const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId } });
+      if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
+    }
+    if (input.billingAddressId) {
+      const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId } });
+      if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
+    }
+
     const year = now.getFullYear();
     const docType = input.kind;
     const range = await tx.numberRange.upsert({
@@ -49,8 +71,17 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
       day: now.getDate(),
     });
 
+    // Fehlende Texte/Bedingungen aus den Textvorlagen der Organisation vorbelegen
+    // (Selbstheilung) — der Beleg speichert den Text, kein Live-Bezug auf die Vorlage.
+    const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD"));
+    const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT"));
+    const deliveryTerms = input.deliveryTerms ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_DELIVERY"));
+    const paymentTerms = input.paymentTerms ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_PAYMENT"));
+
+    const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, input.contactPersonId, input.billingAddressId);
+
     const snapshotSource: SnapshotSource = "CREATE";
-    return tx.quote.create({
+    const doc = await tx.quote.create({
       data: {
         orgId,
         customerId: input.customerId,
@@ -61,10 +92,18 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
         validUntil: input.validUntil,
         currency: input.currency,
         taxScheme: input.taxScheme,
+        subject: input.subject,
         notes: input.notes,
         internalNotes: input.internalNotes,
+        headerText,
+        footerText,
+        deliveryTerms,
+        paymentTerms,
+        customerReference: input.customerReference,
+        contactPersonId: input.contactPersonId,
+        billingAddressId: input.billingAddressId,
         sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)),
-        buyerSnapshotJson: JSON.stringify(buildBuyerSnapshot(customer)),
+        buyerSnapshotJson: JSON.stringify(buyerSnapshot),
         snapshotSource,
         snapshotAt: now,
         netTotalCents: totals.netTotalCents,
@@ -74,5 +113,17 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
       },
       include: { lines: { orderBy: { position: "asc" } } },
     });
+
+    await appendChangeLog(tx, {
+      orgId,
+      entity: "QUOTE",
+      entityId: doc.id,
+      action: "CREATE",
+      actor,
+      at: now,
+      diff: { kind: input.kind, number, grossTotalCents: totals.grossTotalCents },
+    });
+
+    return doc;
   });
 }
