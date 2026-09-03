@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { SYSTEM_PAYMENT_METHODS, DEFAULT_DUNNING_STAGES, DEFAULT_EMAIL_TEMPLATES } from "./defaults";
+import { ensureOrgTextTemplates } from "@/domain/text-template/ensure";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -20,6 +21,7 @@ export async function ensureOrgMasterdata(db: Db, orgId: string): Promise<void> 
     });
   }
   await ensureOrgEmailTemplates(db, orgId);
+  await ensureOrgTextTemplates(db, orgId);
 }
 
 /** Standard-E-Mail-Vorlagen anlegen (idempotent) und Mahnstufen verknuepfen, falls noch ohne Vorlage. */
