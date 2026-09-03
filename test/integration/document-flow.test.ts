@@ -122,6 +122,20 @@ describe("W2 (Fix-Runde 2): Statuspruefung bei der Konvertierung", () => {
     await dbInternal.invoice.update({ where: { id: invoice.id }, data: { status: "CANCELLED" } });
     await expect(convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
   });
+
+  it("Re-Review Fix-Runde 2: storniertes Proforma kann nicht in eine Rechnung umgewandelt werden", async () => {
+    const proforma = await createBusinessDocument(orgId, { kind: "PROFORMA", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    await setQuoteStatus(orgId, proforma.id, "CANCELLED", { now: FIX_DATE });
+    await expect(convertDocument(orgId, { fromType: "QUOTE", fromId: proforma.id, toKind: "INVOICE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
+  });
+
+  it("Re-Review Fix-Runde 2: nicht-storniertes Proforma kann in eine Rechnung umgewandelt werden", async () => {
+    const proforma = await createBusinessDocument(orgId, { kind: "PROFORMA", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const result = await convertDocument(orgId, { fromType: "QUOTE", fromId: proforma.id, toKind: "INVOICE" }, { now: FIX_DATE });
+    expect(result.type).toBe("INVOICE");
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: result.id } });
+    expect(invoice.status).toBe("DRAFT");
+  });
 });
 
 describe("Teillieferung mit Restmengen", () => {
