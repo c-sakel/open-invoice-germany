@@ -5,6 +5,9 @@
  */
 import { computeTaxBreakdown } from "@/lib/tax";
 import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
+import { buildDocumentTextContext } from "@/domain/email/context";
+import { renderTemplate } from "@/lib/template/render";
+import type { EmailDocType } from "@/schemas/email";
 import type { EInvoiceData } from "@/lib/einvoice/types";
 
 const PROFORMA_NOTE = "Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG. Berechtigt nicht zum Vorsteuerabzug.";
@@ -13,8 +16,11 @@ interface DocInput {
   number: string | null;
   kind: string;
   issueDate: Date;
+  validUntil?: Date | null;
   currency: string;
   notes: string | null;
+  headerText?: string | null;
+  footerText?: string | null;
   id?: string;
   sellerSnapshotJson?: string | null;
   buyerSnapshotJson?: string | null;
@@ -65,6 +71,23 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
   const ctx = q.id ?? q.number ?? "unbekannt";
   const org = parseSellerSnapshot(q.sellerSnapshotJson, q.org, ctx);
   const customer = parseBuyerSnapshot(q.buyerSnapshotJson, q.customer, ctx);
+
+  // Kopf-/Fusstext: siehe buildEInvoiceData (mapper.ts) — gleiches Vorgehen, gleiches
+  // Ruling (nicht ins XML, da Geschaeftsdokumente ohnehin keine E-Rechnung sind, aber
+  // konsistent zur Rechnung gehalten).
+  const emailDocType = q.kind as EmailDocType; // ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
+  const textCtx = buildDocumentTextContext({
+    docType: emailDocType,
+    number: q.number,
+    issueDate: q.issueDate,
+    validUntil: q.validUntil ?? null,
+    totals: { netCents: totals.netTotalCents, taxCents: totals.taxTotalCents, grossCents: totals.grossTotalCents },
+    currency: q.currency,
+    seller: org,
+    buyer: customer,
+  });
+  const headerText = q.headerText ? renderTemplate(q.headerText, textCtx).text : null;
+  const footerText = q.footerText ? renderTemplate(q.footerText, textCtx).text : null;
 
   return {
     number: q.number ?? "ENTWURF",
@@ -120,5 +143,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    headerText,
+    footerText,
   };
 }
