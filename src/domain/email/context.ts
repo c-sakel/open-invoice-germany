@@ -12,16 +12,9 @@ import { formatDateDe, formatMoneyDe } from "@/lib/template/format";
 import type { TemplateContext } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
 import type { BuyerSnapshot } from "@/schemas";
+import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 
-const DOC_TYPE_LABEL: Record<EmailDocType, string> = {
-  ANGEBOT: "Angebot",
-  AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
-  PROFORMA: "Proformarechnung",
-  INVOICE: "Rechnung",
-  CREDIT_NOTE: "Gutschrift",
-  DUNNING: "Mahnung",
-  DELIVERY_NOTE: "Lieferschein",
-};
+export { DOC_TYPE_LABEL };
 
 export interface TemplateContextResult {
   ctx: TemplateContext;
@@ -192,5 +185,41 @@ export async function buildTemplateContext(orgId: string, docType: EmailDocType,
     },
     customerEmail: q.customer.email ?? null,
     docNumber: q.number ?? "ENTWURF",
+  };
+}
+
+/**
+ * Fester Beispielkontext fuer die Vorlagen-Vorschau im Editor (Lastenheft 19, Abschnitt 5).
+ * Kein Datenbankzugriff — dient ausschliesslich der Anzeige im Vorlagen-Editor, bevor ein
+ * echter Beleg gewaehlt wurde.
+ */
+export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
+  const today = new Date();
+  const dueDate = new Date(today);
+  dueDate.setDate(dueDate.getDate() + 14);
+
+  const company = { name: "Muster GmbH", email: "kontakt@muster-gmbh.de", phone: "+49 30 1234567", iban: "DE12 3456 7890 1234 5678 90", bic: "MUSTDE00XXX" };
+  const payment = { iban: company.iban, bic: company.bic };
+  const customer = { name: "Beispiel AG", firstName: "Max", lastName: "Mustermann", number: "", email: "buchhaltung@beispiel-ag.de", customField: {} };
+
+  const documentByType: Record<EmailDocType, ReturnType<typeof docCtx>> = {
+    ANGEBOT: docCtx("ANGEBOT", "AN-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
+    AUFTRAGSBESTAETIGUNG: docCtx("AUFTRAGSBESTAETIGUNG", "AB-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
+    PROFORMA: docCtx("PROFORMA", "PF-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
+    INVOICE: docCtx("INVOICE", "RE-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
+    CREDIT_NOTE: docCtx("CREDIT_NOTE", "GS-2026-0042", today, dueDate, 119000, 100000, 19000, "EUR"),
+    DUNNING: docCtx("DUNNING", "MA-2026-0042", today, dueDate, 119000, null, null, "EUR"),
+    DELIVERY_NOTE: docCtx("DELIVERY_NOTE", "LS-2026-0042", today, dueDate, null, null, null, "EUR"),
+  };
+
+  return {
+    customer,
+    company,
+    payment,
+    document: documentByType[docType],
+    invoice: { number: "RE-2026-0042", date: formatDateDe(today), total: formatMoneyDe(119000, "EUR"), dueDate: formatDateDe(dueDate), openAmount: formatMoneyDe(119000, "EUR") },
+    offer: { number: "AN-2026-0042", validUntil: formatDateDe(dueDate) },
+    dunning: { level: 1, number: "MA-2026-0042", newDueDate: formatDateDe(dueDate), fee: formatMoneyDe(500, "EUR"), interest: formatMoneyDe(1200, "EUR"), total: formatMoneyDe(120700, "EUR") },
+    contact: { name: "Max Mustermann" },
   };
 }
