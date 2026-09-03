@@ -83,6 +83,32 @@ describe("detectSkonto", () => {
     const paidAt = new Date(Date.UTC(2034, 5, 10));
     expect(detectSkonto(terms, paidAt, 116620, 116620)).toBeNull();
   });
+
+  // G-detectSkonto: alte Regel (amountCents >= payableCents - 1) erkannte JEDE Zahlung
+  // zwischen dem Skonto-Zahlbetrag und dem vollen offenen Betrag als "Skonto genommen" —
+  // z. B. 999,99 € auf eine 1.000,00-€-Forderung (nur 1 Cent fehlt zum vollen Preis,
+  // kein Skonto-Bezug erkennbar). Jetzt muss der Zahlbetrag INNERHALB ±1 Cent zum
+  // Skonto-Zahlbetrag liegen.
+  it("999,99 € auf eine 1.000,00-€-Forderung mit 2 %/7 Tage Skonto -> kein Treffer", () => {
+    const smallTerms = skontoTerms({
+      issueDate,
+      grossTotalCents: 100000,
+      skonto1Permille: 20,
+      skonto1Days: 7,
+      skonto2Permille: null,
+      skonto2Days: null,
+    });
+    const paidAt = new Date(Date.UTC(2034, 5, 9));
+    expect(detectSkonto(smallTerms, paidAt, 99999, 100000)).toBeNull();
+  });
+
+  it("Teilzahlung: Rest passt NICHT zum Skontobetrag des Terms -> kein Treffer", () => {
+    // openBeforeCents (90000) weicht vom vollen Rechnungsbetrag (119000) ab, z. B.
+    // durch eine vorherige Anzahlung — der Zahlbetrag trifft zwar payableCents (7 Tage),
+    // aber der resultierende Rest (90000 - 116620 < 0) kann nicht zum Skontobetrag passen.
+    const paidAt = new Date(Date.UTC(2034, 5, 9));
+    expect(detectSkonto(terms, paidAt, 116620, 90000)).toBeNull();
+  });
 });
 
 describe("paymentTermsText", () => {

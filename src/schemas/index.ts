@@ -201,6 +201,21 @@ function refineSkontoTargets<T extends { skonto1Permille?: number; skonto1Days?:
     } else if (input.skonto2Days !== undefined && input.skonto2Days <= input.skonto1Days) {
       ctx.addIssue({ code: "custom", message: "Die Frist von Skonto 2 muss laenger sein als die von Skonto 1.", path: ["skonto2Days"] });
     }
+    // G-Refine: Skonto 2 ist das SPAETERE, GUENSTIGERE Ziel — laengere Frist bei
+    // niedrigerem Satz. Ohne diese Regel liesse sich ein Ziel 2 eintragen, das einen
+    // hoeheren oder gleichen Skontosatz bei laengerer Frist gewaehrt (wirtschaftlich
+    // widersinnig, verwirrt den Zahlungsvorschlag in detectSkonto).
+    if (
+      input.skonto1Permille !== undefined &&
+      input.skonto2Permille !== undefined &&
+      input.skonto2Permille >= input.skonto1Permille
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Der Prozentsatz von Skonto 2 muss niedriger sein als der von Skonto 1.",
+        path: ["skonto2Permille"],
+      });
+    }
   }
 }
 

@@ -143,8 +143,14 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   });
   // Fix-Runde 1 (Befund C): Klartext OHNE #SKONTO#-Tags fuer das PDF — identisch
   // zu paymentTermsNote, wenn kein Skonto gesetzt ist (Alt-Belege byte-identisch).
+  // Fix-Welle (W3): ist ZUSAETZLICH ein Freitext-Zahlungsziel gesetzt, ergaenzt der
+  // Skonto-Klartext per Zeilenumbruch, statt ihn zu verschlucken (bisher liess `??`
+  // den Skonto-Hinweis komplett entfallen, sobald `paymentTerms` gesetzt war).
+  const skontoHumanText = skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate) : null;
   const paymentTermsHuman =
-    invoice.paymentTerms ?? (skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate) : null);
+    invoice.paymentTerms && skontoHumanText
+      ? `${invoice.paymentTerms}\n${skontoHumanText}`
+      : (invoice.paymentTerms ?? skontoHumanText);
   const paymentTermsNote =
     skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : paymentTermsHuman;
 

@@ -106,7 +106,10 @@ describe("Zahlungsmethoden-Verwaltung", () => {
     const updated = await savePaymentMethod(orgId, transfer.id, {
       code: "SOLL_IGNORIERT_WERDEN",
       name: "Ueberweisung (Text angepasst)",
-      untdidCode: "99",
+      // K2: untdidCode ist jetzt auf die Allowlist eingeschraenkt (Enum) — "48" statt
+      // eines beliebigen Codes, um den Systemschutz weiterhin unabhaengig von der
+      // Codepruefung zu testen (der Systemcode "58" bleibt trotzdem bestehen).
+      untdidCode: "48",
       sortOrder: 999,
       isActive: true,
     });
