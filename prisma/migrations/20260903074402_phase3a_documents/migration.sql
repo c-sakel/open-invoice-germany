@@ -108,3 +108,9 @@ CREATE UNIQUE INDEX "TextTemplate_orgId_docType_position_name_key" ON "TextTempl
 -- Backfill: status CONVERTED wird durch getrennte convertedToInvoiceId-Verknuepfung
 -- ersetzt; bestehende Datensaetze erhalten den Status ACCEPTED (Betreiberentscheidung).
 UPDATE "Quote" SET "status" = 'ACCEPTED' WHERE "status" = 'CONVERTED';
+
+-- Backfill (Fix-Runde 2, G4): der Wert "DECLINED" stammte aus einer frueheren
+-- Schemakommentar-/Statusbenennung, die auf REJECTED umbenannt wurde. Diese Migration
+-- ist bislang nicht ausgeliefert (Produktivinstanz noch nicht auf diesem Stand) --
+-- idempotent, betrifft nur eventuell vorhandene Datensaetze mit dem alten Wert.
+UPDATE "Quote" SET "status" = 'REJECTED' WHERE "status" = 'DECLINED';
