@@ -12,6 +12,7 @@ import { createShareLink, revokeShareLink, resolveShareToken, listShareLinks, Sh
 import { decideOffer, AlreadyDecidedError, InvalidShareLinkError } from "@/domain/quote-share/decide";
 import { resetRateLimits, RateLimitError } from "@/lib/rate-limit";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
+import { createMemoryProvider } from "@/lib/mail/memory";
 
 const FIX_DATE = new Date("2032-03-01T10:00:00.000Z");
 
@@ -191,11 +192,12 @@ describe("decideOffer", () => {
     const quote = await makeQuote();
     const { token, link } = await createShareLink(orgId, quote.id, {}, { now: FIX_DATE });
 
+    const provider = createMemoryProvider();
     const decideNow = new Date(FIX_DATE.getTime() + 1000);
     const result = await decideOffer(
       token,
       { decision: "ACCEPTED", name: "Max Mustermann", email: "max@example.org", comment: "Passt so." },
-      { ip: "203.0.113.1", now: decideNow },
+      { ip: "203.0.113.1", now: decideNow, provider },
     );
     expect(result.decision).toBe("ACCEPTED");
     expect(result.automation).toBeUndefined();
@@ -222,13 +224,14 @@ describe("decideOffer", () => {
 
     expect(await chainValid()).toBe(true);
 
-    // Benachrichtigung laeuft mit dem SMTP-Provider (kein Testprovider uebergeben) —
-    // ueber DB pruefen: EmailLog docType ANGEBOT/docId quote.id existiert (Status FAILED,
-    // da localhost:2525 in der Testumgebung nicht erreichbar ist).
+    // Benachrichtigung laeuft mit dem injizierten In-Memory-Provider (kein echter
+    // SMTP-Connect im Test) — Status SENT statt FAILED.
     const notifyLog = await dbInternal.emailLog.findFirst({ where: { orgId, docType: "ANGEBOT", docId: quote.id }, orderBy: { createdAt: "desc" } });
     expect(notifyLog).not.toBeNull();
+    expect(notifyLog!.status).toBe("SENT");
     expect(notifyLog!.toJson).toContain("org@example.org");
     expect(notifyLog!.bodySnapshot).toContain("Max Mustermann");
+    expect(provider.sent.length).toBe(1);
   });
 
   it("zweite Entscheidung auf denselben Link -> AlreadyDecidedError", async () => {
