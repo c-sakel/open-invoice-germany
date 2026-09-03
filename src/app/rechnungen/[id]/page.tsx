@@ -62,6 +62,11 @@ export default async function InvoiceDetail({
             {TYPE_TITLE[invoice.type] ?? "Beleg"} {invoice.number ?? "(Entwurf)"}
           </h1>
           <StatusBadge status={invoice.status} />
+          {invoice.snapshotSource === "MIGRATION" && (
+            <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+              Adressstand per Migration eingefroren
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <a

@@ -28,7 +28,7 @@ export const PaymentMethod = z.enum(["TRANSFER", "CASH", "CARD", "SEPA"]);
 // ── Beleg-Snapshots (Phase 0) ────────────────────────────────────────────────
 // Feldgenau identisch mit MapInput.org / MapInput.customer in src/lib/einvoice/mapper.ts.
 // Ein Unit-Test prueft die Schluesselmengen gegeneinander.
-export const SnapshotSource = z.enum(["FINALIZE", "CREATE", "MIGRATION"]);
+export const SnapshotSource = z.enum(["FINALIZE", "CREATE", "MIGRATION", "INHERITED"]);
 export type SnapshotSource = z.infer<typeof SnapshotSource>;
 
 export const sellerSnapshotSchema = z.object({
