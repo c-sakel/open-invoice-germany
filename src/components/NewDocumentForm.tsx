@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface CustomerOption {
@@ -14,6 +14,16 @@ interface ProductOption {
   netPriceCents: number;
   taxRate: number;
 }
+interface ContactOption {
+  id: string;
+  customerId: string;
+  label: string;
+}
+interface AddressOption {
+  id: string;
+  customerId: string;
+  label: string;
+}
 interface LineState {
   description: string;
   quantity: string;
@@ -22,24 +32,84 @@ interface LineState {
   taxRate: number;
 }
 
+export interface DocumentInitial {
+  id: string;
+  kind: string;
+  customerId: string;
+  subject: string;
+  customerReference: string;
+  contactPersonId: string;
+  billingAddressId: string;
+  validUntil: string;
+  headerText: string;
+  footerText: string;
+  deliveryTerms: string;
+  paymentTerms: string;
+  notes: string;
+  internalNotes: string;
+  lines: LineState[];
+}
+
 function emptyLine(): LineState {
   return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19 };
 }
 
-export function NewDocumentForm({ customers, products }: { customers: CustomerOption[]; products: ProductOption[] }) {
+export function NewDocumentForm({
+  customers,
+  products,
+  contacts = [],
+  addresses = [],
+  initial,
+}: {
+  customers: CustomerOption[];
+  products: ProductOption[];
+  contacts?: ContactOption[];
+  addresses?: AddressOption[];
+  initial?: DocumentInitial;
+}) {
   const router = useRouter();
-  const [kind, setKind] = useState("ANGEBOT");
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
-  const [validUntil, setValidUntil] = useState("");
-  const [notes, setNotes] = useState("");
-  const [internalNotes, setInternalNotes] = useState("");
-  const [lines, setLines] = useState<LineState[]>([emptyLine()]);
+  const isEdit = Boolean(initial);
+  const [kind, setKind] = useState(initial?.kind ?? "ANGEBOT");
+  const [customerId, setCustomerId] = useState(initial?.customerId ?? customers[0]?.id ?? "");
+  const [subject, setSubject] = useState(initial?.subject ?? "");
+  const [customerReference, setCustomerReference] = useState(initial?.customerReference ?? "");
+  const [contactPersonId, setContactPersonId] = useState(initial?.contactPersonId ?? "");
+  const [billingAddressId, setBillingAddressId] = useState(initial?.billingAddressId ?? "");
+  const [validUntil, setValidUntil] = useState(initial?.validUntil ?? "");
+  const [headerText, setHeaderText] = useState(initial?.headerText ?? "");
+  const [footerText, setFooterText] = useState(initial?.footerText ?? "");
+  const [deliveryTerms, setDeliveryTerms] = useState(initial?.deliveryTerms ?? "");
+  const [paymentTerms, setPaymentTerms] = useState(initial?.paymentTerms ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [internalNotes, setInternalNotes] = useState(initial?.internalNotes ?? "");
+  const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Kopf-/Fusstext/Bedingungen bei Neuanlage vorbelegen, sobald sich die Art aendert —
+  // nur solange der Nutzer noch nichts eingetragen hat und wir nicht bearbeiten.
+  useEffect(() => {
+    if (isEdit) return;
+    async function loadDefault(position: "HEAD" | "FOOT" | "TERMS_DELIVERY" | "TERMS_PAYMENT", set: (v: string) => void, current: string) {
+      if (current.trim() !== "") return;
+      const res = await fetch(`/api/text-templates/pick?docType=${kind}&position=${position}`);
+      if (!res.ok) return;
+      const j = (await res.json()) as { body: string | null };
+      if (j.body) set(j.body);
+    }
+    void loadDefault("HEAD", setHeaderText, headerText);
+    void loadDefault("FOOT", setFooterText, footerText);
+    void loadDefault("TERMS_DELIVERY", setDeliveryTerms, deliveryTerms);
+    void loadDefault("TERMS_PAYMENT", setPaymentTerms, paymentTerms);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, isEdit]);
 
   const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
   const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
   const netCents = lines.reduce((sum, l) => sum + Math.round((toMilli(l.quantity) * toCents(l.price)) / 1000), 0);
+
+  const customerContacts = contacts.filter((c) => c.customerId === customerId);
+  const customerAddresses = addresses.filter((a) => a.customerId === customerId);
 
   function patchLine(i: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -54,37 +124,54 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const body = {
-      kind,
+    const linesBody = lines.map((l) => ({
+      description: l.description,
+      quantityMilli: toMilli(l.quantity),
+      unit: l.unit,
+      unitNetPriceCents: toCents(l.price),
+      taxRate: l.taxRate,
+      taxCategory: "S",
+      discountPermille: 0,
+    }));
+    const shared = {
       customerId,
       taxScheme: "REGULAR",
       currency: "EUR",
+      subject: subject || undefined,
+      customerReference: customerReference || undefined,
+      contactPersonId: contactPersonId || undefined,
+      billingAddressId: billingAddressId || undefined,
       validUntil: validUntil || undefined,
+      headerText: headerText || undefined,
+      footerText: footerText || undefined,
+      deliveryTerms: deliveryTerms || undefined,
+      paymentTerms: paymentTerms || undefined,
       notes: notes || undefined,
       internalNotes: internalNotes || undefined,
-      lines: lines.map((l) => ({
-        description: l.description,
-        quantityMilli: toMilli(l.quantity),
-        unit: l.unit,
-        unitNetPriceCents: toCents(l.price),
-        taxRate: l.taxRate,
-        taxCategory: "S",
-        discountPermille: 0,
-      })),
+      lines: linesBody,
     };
-    const res = await fetch("/api/documents", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+
+    const res = isEdit
+      ? await fetch(`/api/documents/${initial!.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(shared),
+        })
+      : await fetch("/api/documents", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind, ...shared }),
+        });
+
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(j.error ?? "Anlegen fehlgeschlagen.");
+      setError(j.error ?? "Speichern fehlgeschlagen.");
       setBusy(false);
       return;
     }
     const j = (await res.json()) as { id: string };
-    router.push(`/dokumente/${j.id}`);
+    router.push(`/dokumente/${isEdit ? initial!.id : j.id}`);
+    router.refresh();
   }
 
   const input = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none";
@@ -96,7 +183,7 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Art</span>
-          <select className={input} value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select className={input} value={kind} onChange={(e) => setKind(e.target.value)} disabled={isEdit}>
             <option value="ANGEBOT">Angebot</option>
             <option value="AUFTRAGSBESTAETIGUNG">Auftragsbestätigung</option>
             <option value="PROFORMA">Proforma-Rechnung</option>
@@ -115,6 +202,39 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Gültig bis (optional)</span>
           <input type="date" className={input} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Betreff</span>
+          <input className={input} value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Kundenreferenz / Bestellnummer</span>
+          <input className={input} value={customerReference} onChange={(e) => setCustomerReference(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Ansprechpartner</span>
+          <select className={input} value={contactPersonId} onChange={(e) => setContactPersonId(e.target.value)}>
+            <option value="">— keiner —</option>
+            {customerContacts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Rechnungsadresse</span>
+          <select className={input} value={billingAddressId} onChange={(e) => setBillingAddressId(e.target.value)}>
+            <option value="">— Standardadresse —</option>
+            {customerAddresses.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 
@@ -155,6 +275,25 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
         ))}
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Kopftext</span>
+          <textarea className={input} rows={3} value={headerText} onChange={(e) => setHeaderText(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Fußtext</span>
+          <textarea className={input} rows={3} value={footerText} onChange={(e) => setFooterText(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Lieferbedingungen</span>
+          <textarea className={input} rows={2} value={deliveryTerms} onChange={(e) => setDeliveryTerms(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Zahlungsbedingungen</span>
+          <textarea className={input} rows={2} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
+        </label>
+      </div>
+
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-slate-700">Hinweis / Notiz</span>
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -173,7 +312,7 @@ export function NewDocumentForm({ customers, products }: { customers: CustomerOp
           Nettosumme: <span className="tabular font-medium text-slate-800">{(netCents / 100).toFixed(2)} €</span>
         </span>
         <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-          {busy ? "Speichern…" : "Dokument anlegen"}
+          {busy ? "Speichern…" : isEdit ? "Änderungen speichern" : "Dokument anlegen"}
         </button>
       </div>
     </form>
