@@ -221,3 +221,14 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - **Audit fuer Zahlungsmethoden-CRUD**: `savePaymentMethod`/`deletePaymentMethod` schreiben keinen ChangeLog/ActivityLog-Eintrag (Stammdaten — ActivityLog-Tabelle, Audit K5).
 - **Ungetestete Pfade**: Server-Actions `payment-methods.ts`, PDF-Rendering mit Rabatt/Skonto, Storno mit Belegrabatt auf Domaenenebene, MCP-Skonto-/Belegrabatt-Parameter.
 - **Karten-/Lastschrift-Methoden in der E-Rechnung** nur als Code 1 (CardAccount/PaymentMandate nicht abgebildet) — bei Bedarf BG-18/BG-19 modellieren.
+
+## Aus Phase 4b (Editor/Anhaenge, 2026-09-04)
+
+- **Lieferschein-Positionsbloecke**: `DeliveryNoteLine` hat kein `lineType`; Ueberschriften/Textbloecke gehen bei Konvertierung in Lieferscheine verloren (Modellentscheidung 4b).
+- **Rich-Text-Teilmenge**: keine Bilder, eine Listenebene, keine Tabellen; Link-Labels werden nicht rekursiv geparst.
+- **Anhaenge-Backup**: Volume `oig-attachments` muss in `backup.sh` auf dem Server aufgenommen werden (Betrieb).
+- **Produkt-Artikelnummer im Produkt-UI** (ProductForm) — pruefen, ob Task 5 sie im Formular anzeigt; sonst nachziehen.
+- **`line.productId` nicht org-geprueft** (Bestand) — bei Rechnungs-/Dokumentanlage `findFirst({ id: productId, orgId })` ergaenzen.
+- **`isAllowedHref` erlaubt abschliessendes `\n`** (`$` ohne `m`) — im HTML escaped, folgenlos; Regex auf `\z`-Aequivalent (`[^\s]+$` mit `s`-Flag-Pruefung) haerten.
+- **Abos ohne Positionsbloecke** (`RecurringInvoiceLine` ohne `lineType`) — bei Bedarf Phase 6/8 nachziehen.
+- **Anhaenge an festgeschriebenen Rechnungen** erlaubt (bewusst, ChangeLog) — in LIMITATIONEN dokumentiert.
