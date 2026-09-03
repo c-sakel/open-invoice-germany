@@ -8,6 +8,7 @@ import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
+import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
 
@@ -129,7 +130,14 @@ export async function setQuoteStatus(
   return dbInternal.$transaction((tx) => setQuoteStatusWithinTx(tx, orgId, quoteId, to, opts));
 }
 
-/** Setzt den Status eines Lieferscheins. Bei SENT/DELIVERED werden sentAt/deliveredAt gesetzt. */
+/**
+ * Setzt den Status eines Lieferscheins. Bei SENT/DELIVERED werden sentAt/deliveredAt
+ * gesetzt. Beim Uebergang DRAFT->CREATED wird — falls noch keine Nummer vergeben ist
+ * (z. B. ein per "Duplizieren" erzeugtes DRAFT-Duplikat, das noch nie eine Nummer
+ * hatte) — jetzt eine Nummer aus dem Nummernkreis DELIVERY_NOTE gezogen (Nachtrag
+ * Task 5: DRAFT->CREATED vergibt sonst keine Nummer, obwohl CREATED ein wirksamer,
+ * zaehlender Beleg ist, remainingQuantities zaehlt CREATED mit).
+ */
 export async function setDeliveryNoteStatus(
   orgId: string,
   id: string,
@@ -150,6 +158,24 @@ export async function setDeliveryNoteStatus(
     const data: Prisma.DeliveryNoteUpdateInput = { status: target };
     if (target === "SENT") data.sentAt = now;
     if (target === "DELIVERED") data.deliveredAt = now;
+
+    if (target === "CREATED" && !note.number) {
+      const docType = "DELIVERY_NOTE";
+      const year = now.getFullYear();
+      const range = await tx.numberRange.upsert({
+        where: { orgId_docType_year: { orgId, docType, year } },
+        create: { orgId, docType, year, currentValue: 1, prefix: defaultPrefix(docType) },
+        update: { currentValue: { increment: 1 } },
+      });
+      data.number = formatDocumentNumber(range.pattern, {
+        prefix: range.prefix || defaultPrefix(docType),
+        seq: range.currentValue,
+        padding: range.seqPadding,
+        year,
+        month: now.getMonth() + 1,
+        day: now.getDate(),
+      });
+    }
 
     const updated = await tx.deliveryNote.update({ where: { id }, data });
 

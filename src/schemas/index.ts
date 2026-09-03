@@ -322,4 +322,20 @@ export const dunningStageSchema = z.object({
 export const textTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, position: TextTemplatePosition, body: z.string(), isDefault: z.boolean().default(false) });
 export const emailTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, subject: z.string().min(1), body: z.string(), signature: z.string().optional(), isDefault: z.boolean().default(false) });
 
+// ── Phase 3a Task 5: Textvorlagen-Verwaltung, Statusaktionen, Restmengen-Query ───
+export const textTemplateInputSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1).max(120),
+  docType: DocType,
+  position: TextTemplatePosition,
+  body: z.string().min(1).max(5000),
+  isDefault: z.boolean().default(false),
+});
+export type TextTemplateInput = z.infer<typeof textTemplateInputSchema>;
+
+export const textTemplatePickQuerySchema = z.object({
+  docType: z.string().min(1),
+  position: TextTemplatePosition,
+});
+
 export * from "./email";
