@@ -21,9 +21,11 @@ const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "_");
 /** Standardanhaenge je Belegtyp (Spec, Abschnitt 2). */
 export async function buildStandardAttachments(orgId: string, docType: EmailDocType, docId: string): Promise<Attachment[]> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
-    const expectedType = docType === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+    // Invoice.type kennt INVOICE, CREDIT_NOTE und CORRECTION (Korrekturrechnung).
+    // Fuer den E-Mail-Dokumenttyp INVOICE zaehlen sowohl INVOICE als auch CORRECTION.
+    const okTypes = docType === "CREDIT_NOTE" ? ["CREDIT_NOTE"] : ["INVOICE", "CORRECTION"];
     const loaded = await loadEInvoiceData(docId);
-    if (!loaded || loaded.invoice.orgId !== orgId || loaded.invoice.type !== expectedType) return [];
+    if (!loaded || loaded.invoice.orgId !== orgId || !okTypes.includes(loaded.invoice.type)) return [];
     const { invoice, data } = loaded;
     const base = safe(invoice.number ?? "Entwurf");
     // Festgeschrieben ODER storniert -> das rechtsverbindliche ZUGFeRD-PDF; nur echte
