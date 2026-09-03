@@ -367,6 +367,11 @@ model InvoiceLine {
   discountPermille  Int     @default(0)
   discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
   lineNetCents      Int
+  // Phase 5 (Paragraph 13-15 UStG): Quellposition bei einer Teilrechnung (type PARTIAL,
+  // mode POSITIONS/QUANTITIES) -- Id der QuoteLine/DeliveryNoteLine, gegen die
+  // billedQuantities() die bereits abgerechnete Menge prueft. NULL bei allen anderen
+  // Zeilen (Festbetrags-/Prozent-Teil-/Abschlagsrechnung, normale Rechnung).
+  sourceLineId      String?
 
   @@index([invoiceId])
 }
