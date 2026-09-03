@@ -58,6 +58,8 @@ INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
   VALUES ('inv1','org1','cust1','RE-2026-00001','FINALIZED',NOW());
 INSERT INTO "Quote" ("id","orgId","customerId","kind","number","status","convertedToInvoiceId","updatedAt")
   VALUES ('q1','org1','cust1','ANGEBOT','AN-2026-0001','CONVERTED','inv1',NOW());
+INSERT INTO "Quote" ("id","orgId","customerId","kind","number","status","convertedToInvoiceId","updatedAt")
+  VALUES ('q2','org1','cust1','ANGEBOT','AN-2026-0002','CONVERTED','inv1',NOW());
 INSERT INTO "Payment" ("id","invoiceId","amountCents","method") VALUES ('pay1','inv1',100,'TRANSFER');
 INSERT INTO "Dunning" ("id","invoiceId","level") VALUES ('dun1','inv1',1);
 SQL
@@ -109,10 +111,16 @@ BKEYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$BKEYS" = "10" ] || fail "Buyer-Snapshot hat $BKEYS Schluessel, erwartet 10"
 echo "    ok — Backfill mit Herkunft MIGRATION, JSON gueltig"
 
-echo "==> Fall 6: Phase-1-Backfill (Relationen, Stammdaten, Mahnstufen)"
+echo "==> Fall 6: Phase-1-Backfill (Relationen, Stammdaten, Mahnstufen, Legacy-Quote-Status)"
 REL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select \"relationType\" from \"DocumentRelation\" where \"fromId\"='q1'")
 [ "$REL" = "CONVERTED_TO" ] || fail "Relation fuer q1 fehlt ('$REL')"
+Q2STATUS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select status from \"Quote\" where id='q2'")
+[ "$Q2STATUS" = "ACCEPTED" ] || fail "q2 hat Status '$Q2STATUS', erwartet ACCEPTED (Phase-3a-Backfill CONVERTED->ACCEPTED)"
+CONVCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"DocumentRelation\" where \"relationType\"='CONVERTED_TO' and \"fromType\"='QUOTE'")
+[ "$CONVCOUNT" = "2" ] || fail "erwartet 2 CONVERTED_TO-Relationen (q1, q2), gefunden $CONVCOUNT"
 PM=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"PaymentMethod\" where \"orgId\"='org1'")
 [ "$PM" = "8" ] || fail "erwartet 8 Zahlungsmethoden, gefunden $PM"
 DS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"DunningStage\" where \"orgId\"='org1'")
@@ -120,6 +128,6 @@ DS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) f
 ST=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"stageId\" from \"Dunning\" where id='dun1'")
 EXP=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select id from \"DunningStage\" where \"orgId\"='org1' and \"order\"=1")
 [ -n "$ST" ] && [ "$ST" = "$EXP" ] || fail "Dunning dun1 hat stageId '$ST', erwartet Stufe order=1 ('$EXP')"
-echo "    ok — Backfill vollstaendig"
+echo "    ok — Backfill vollstaendig, Legacy-Quote q2 (CONVERTED) nach ACCEPTED migriert"
 
 echo "ALLE TESTS BESTANDEN"
