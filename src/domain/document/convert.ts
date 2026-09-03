@@ -8,11 +8,11 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
-import { createBusinessDocument } from "@/domain/document/create";
-import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { createBusinessDocumentWithinTx } from "@/domain/document/create";
+import { createDeliveryNoteWithinTx } from "@/domain/delivery-note/create";
 import { remainingQuantities, assertNoOverDelivery, loadSourceLines, type DeliverySourceType } from "@/domain/delivery-note/quantities";
 import { pickTextTemplate } from "@/domain/text-template/pick";
-import { setQuoteStatus, effectiveQuoteStatus } from "@/domain/document/status";
+import { setQuoteStatusWithinTx, effectiveQuoteStatus } from "@/domain/document/status";
 import { convertDocumentSchema, type ConvertDocumentInput } from "@/schemas";
 import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
 
@@ -105,54 +105,63 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
  * Wandelt ein Angebot in eine Auftragsbestaetigung um: neues Dokument mit kopierten
  * Positionen (createBusinessDocument uebernimmt Nummernkreis, Snapshot und AB-Textvorlage),
  * Relation CONVERTED_TO. Das Angebot wird — sofern noch nicht entschieden — auf ACCEPTED
- * gesetzt (Ruling); PROFORMA kann NICHT in eine AB umgewandelt werden.
+ * gesetzt (Ruling); PROFORMA kann NICHT in eine AB umgewandelt werden. Statuswechsel,
+ * Erstellung, Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50) — schlaegt
+ * ein Schritt fehl, bleibt weder der Statuswechsel noch die AB noch die Relation stehen.
  */
 async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, opts: ResolvedConvertOptions): Promise<Quote> {
   const { actor, now } = opts;
-  const src = await dbInternal.quote.findFirst({ where: { id: fromId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
-  if (!src) throw new ConvertError("Angebot nicht gefunden.");
-  if (src.kind !== "ANGEBOT") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
 
-  const eff = effectiveQuoteStatus({ status: src.status, validUntil: src.validUntil }, now);
-  if (eff === "DRAFT" || eff === "SENT" || eff === "EXPIRED") {
-    await setQuoteStatus(orgId, fromId, "ACCEPTED", { actor, now });
-  }
+  return dbInternal.$transaction(async (tx) => {
+    const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
+    if (!src) throw new ConvertError("Angebot nicht gefunden.");
+    if (src.kind !== "ANGEBOT") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
 
-  const ab = await createBusinessDocument(
-    orgId,
-    {
-      kind: "AUFTRAGSBESTAETIGUNG",
-      customerId: src.customerId,
-      taxScheme: src.taxScheme,
-      currency: src.currency,
-      subject: src.subject ?? undefined,
-      customerReference: src.customerReference ?? undefined,
-      contactPersonId: src.contactPersonId ?? undefined,
-      billingAddressId: src.billingAddressId ?? undefined,
-      deliveryTerms: src.deliveryTerms ?? undefined,
-      paymentTerms: src.paymentTerms ?? undefined,
-      // headerText/footerText bewusst nicht uebernommen -> AB-Textvorlage greift.
-      lines: src.lines.map((l) => ({
-        description: l.description,
-        quantityMilli: l.quantityMilli,
-        unit: l.unit,
-        unitNetPriceCents: l.unitNetPriceCents,
-        taxRate: l.taxRate as 19 | 7 | 0,
-        taxCategory: l.taxCategory as "S" | "AE" | "K" | "G" | "E" | "Z",
-        discountPermille: l.discountPermille,
-      })),
-    },
-    { actor, now },
-  );
+    const eff = effectiveQuoteStatus({ status: src.status, validUntil: src.validUntil }, now);
+    if (eff === "DRAFT" || eff === "SENT" || eff === "EXPIRED") {
+      await setQuoteStatusWithinTx(tx, orgId, fromId, "ACCEPTED", { actor, now });
+    }
 
-  await dbInternal.$transaction((tx) =>
-    linkDocuments(tx, { orgId, fromType: "QUOTE", fromId, toType: "QUOTE", toId: ab.id, relationType: "CONVERTED_TO" }),
-  );
+    const ab = await createBusinessDocumentWithinTx(
+      tx,
+      orgId,
+      {
+        kind: "AUFTRAGSBESTAETIGUNG",
+        customerId: src.customerId,
+        taxScheme: src.taxScheme,
+        currency: src.currency,
+        subject: src.subject ?? undefined,
+        customerReference: src.customerReference ?? undefined,
+        contactPersonId: src.contactPersonId ?? undefined,
+        billingAddressId: src.billingAddressId ?? undefined,
+        deliveryTerms: src.deliveryTerms ?? undefined,
+        paymentTerms: src.paymentTerms ?? undefined,
+        notes: src.notes ?? undefined,
+        internalNotes: src.internalNotes ?? undefined,
+        // headerText/footerText bewusst nicht uebernommen -> AB-Textvorlage greift.
+        lines: src.lines.map((l) => ({
+          description: l.description,
+          quantityMilli: l.quantityMilli,
+          unit: l.unit,
+          unitNetPriceCents: l.unitNetPriceCents,
+          taxRate: l.taxRate as 19 | 7 | 0,
+          taxCategory: l.taxCategory as "S" | "AE" | "K" | "G" | "E" | "Z",
+          discountPermille: l.discountPermille,
+        })),
+      },
+      { actor, now },
+    );
 
-  return ab;
+    await linkDocuments(tx, { orgId, fromType: "QUOTE", fromId, toType: "QUOTE", toId: ab.id, relationType: "CONVERTED_TO" });
+
+    return ab;
+  });
 }
 
-/** Wandelt Angebot/AB/Rechnung in einen Lieferschein um — Mengen = Eingabe oder Restmengen. */
+/**
+ * Wandelt Angebot/AB/Rechnung in einen Lieferschein um — Mengen = Eingabe oder Restmengen.
+ * Erstellung, Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
+ */
 async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput, opts: ResolvedConvertOptions): Promise<DeliveryNote> {
   const fromType = input.fromType as DeliverySourceType;
   const fromId = input.fromId;
@@ -181,27 +190,28 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
     });
   if (lines.length === 0) throw new ConvertError("Keine Restmenge zum Liefern vorhanden.");
 
-  const note = await createDeliveryNote(
-    orgId,
-    {
-      customerId,
-      sourceType: fromType,
-      sourceId: fromId,
-      deliveryDate: input.deliveryDate,
-      showPrices: false,
-      showTax: false,
-      showArticleNumber: true,
-      showDescription: true,
-      lines,
-    },
-    opts,
-  );
+  return dbInternal.$transaction(async (tx) => {
+    const note = await createDeliveryNoteWithinTx(
+      tx,
+      orgId,
+      {
+        customerId,
+        sourceType: fromType,
+        sourceId: fromId,
+        deliveryDate: input.deliveryDate,
+        showPrices: false,
+        showTax: false,
+        showArticleNumber: true,
+        showDescription: true,
+        lines,
+      },
+      opts,
+    );
 
-  await dbInternal.$transaction((tx) =>
-    linkDocuments(tx, { orgId, fromType, fromId, toType: "DELIVERY_NOTE", toId: note.id, relationType: "DELIVERED_BY" }),
-  );
+    await linkDocuments(tx, { orgId, fromType, fromId, toType: "DELIVERY_NOTE", toId: note.id, relationType: "DELIVERED_BY" });
 
-  return note;
+    return note;
+  });
 }
 
 /** Generischer Einstieg: dispatcht nach `toKind`, parst die Eingabe selbst. */

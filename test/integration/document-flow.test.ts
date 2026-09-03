@@ -6,7 +6,7 @@
  * finalisiert keine Rechnung (nur DRAFT-Erzeugung/-Konvertierung), daher keine Kollision
  * mit test/integration/document-chain.test.ts (nutzt 2031 ebenfalls, aber finalisiert).
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createBusinessDocument } from "@/domain/document/create";
@@ -16,6 +16,7 @@ import { duplicateDocument } from "@/domain/document/duplicate";
 import { updateDraftDocument } from "@/domain/document/update";
 import { remainingQuantities, OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { setDeliveryNoteStatus, setQuoteStatus, StatusTransitionError } from "@/domain/document/status";
+import * as relationsModule from "@/domain/relations";
 import { listRelations } from "@/domain/relations";
 import { DEFAULT_TEXT_TEMPLATES } from "@/domain/text-template/defaults";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
@@ -219,6 +220,120 @@ describe("Fremde Organisation", () => {
     await expect(remainingQuantities(otherOrgId, "QUOTE", quote.id)).rejects.toThrow();
     await expect(duplicateDocument(otherOrgId, "QUOTE", quote.id, "tester")).rejects.toThrow();
     await expect(updateDraftDocument(otherOrgId, quote.id, { subject: "Fremd" }, "tester")).rejects.toThrow();
+  });
+});
+
+describe("Fix-Runde 1 -- F1: Konvertierung/Duplikat sind transaktional", () => {
+  it("Angebot -> AB: schlaegt linkDocuments fehl, bleiben weder AB noch Relation noch Statuswechsel in der DB", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const abCountBefore = await dbInternal.quote.count({ where: { orgId, kind: "AUFTRAGSBESTAETIGUNG" } });
+
+    const spy = vi.spyOn(relationsModule, "linkDocuments").mockRejectedValueOnce(new Error("kaputt (Test)"));
+    await expect(
+      convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: FIX_DATE }),
+    ).rejects.toThrow("kaputt (Test)");
+    spy.mockRestore();
+
+    const reloaded = await dbInternal.quote.findUniqueOrThrow({ where: { id: quote.id } });
+    expect(reloaded.status).toBe("DRAFT"); // Statuswechsel auf ACCEPTED wurde zurueckgerollt
+    const abCountAfter = await dbInternal.quote.count({ where: { orgId, kind: "AUFTRAGSBESTAETIGUNG" } });
+    expect(abCountAfter).toBe(abCountBefore); // keine verwaiste AB
+    expect(await listRelations(orgId, "QUOTE", quote.id)).toHaveLength(0);
+  });
+
+  it("Rechnung -> Lieferschein: schlaegt linkDocuments fehl, bleibt kein Lieferschein in der DB", async () => {
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const noteCountBefore = await dbInternal.deliveryNote.count({ where: { orgId } });
+
+    const spy = vi.spyOn(relationsModule, "linkDocuments").mockRejectedValueOnce(new Error("kaputt (Test)"));
+    await expect(
+      convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE }),
+    ).rejects.toThrow("kaputt (Test)");
+    spy.mockRestore();
+
+    expect(await dbInternal.deliveryNote.count({ where: { orgId } })).toBe(noteCountBefore);
+    expect(await listRelations(orgId, "INVOICE", invoice.id)).toHaveLength(0);
+  });
+
+  it("Rechnungs-Duplikat: schlaegt linkDocuments fehl, bleibt kein Duplikat in der DB", async () => {
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const invoiceCountBefore = await dbInternal.invoice.count({ where: { orgId } });
+
+    const spy = vi.spyOn(relationsModule, "linkDocuments").mockRejectedValueOnce(new Error("kaputt (Test)"));
+    await expect(duplicateDocument(orgId, "INVOICE", invoice.id, "tester", FIX_DATE)).rejects.toThrow("kaputt (Test)");
+    spy.mockRestore();
+
+    expect(await dbInternal.invoice.count({ where: { orgId } })).toBe(invoiceCountBefore);
+    expect(await listRelations(orgId, "INVOICE", invoice.id)).toHaveLength(0);
+  });
+});
+
+describe("Fix-Runde 1 -- F2: Restmengen zaehlen nur wirksame Lieferscheine", () => {
+  it("DRAFT-Duplikat eines Lieferscheins zaehlt nicht mit; erst nach CREATED sinkt die Restmenge", async () => {
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const invLine = (await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: true } })).lines[0]!;
+
+    // 4 von 10 liefern -> DN1 CREATED, Rest 6
+    const dn1 = await convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE", quantities: [{ sourceLineId: invLine.id, quantityMilli: 4000 }] }, { now: FIX_DATE });
+    let remaining = await remainingQuantities(orgId, "INVOICE", invoice.id);
+    expect(remaining[0]!.remainingMilli).toBe(6000);
+
+    // DN1 duplizieren -> DN2 ist DRAFT und behaelt sourceLineId, zaehlt aber (noch) nicht mit
+    const dn2 = await duplicateDocument(orgId, "DELIVERY_NOTE", dn1.id, "tester", FIX_DATE);
+    const dn2Note = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: dn2.id }, include: { lines: true } });
+    expect(dn2Note.status).toBe("DRAFT");
+    expect(dn2Note.lines[0]!.sourceLineId).toBe(invLine.id);
+
+    remaining = await remainingQuantities(orgId, "INVOICE", invoice.id);
+    expect(remaining[0]!.remainingMilli).toBe(6000); // unveraendert, DRAFT zaehlt nicht
+
+    // DN2 auf CREATED setzen -> zaehlt jetzt mit
+    await setDeliveryNoteStatus(orgId, dn2.id, "CREATED", { now: FIX_DATE });
+    remaining = await remainingQuantities(orgId, "INVOICE", invoice.id);
+    expect(remaining[0]!.remainingMilli).toBe(2000); // 6000 - 4000 (DN2 hat dieselbe Menge wie DN1)
+  });
+});
+
+describe("Fix-Runde 1 -- F3: Rechnungs-Duplikat vollstaendig", () => {
+  it("uebernimmt headerText/footerText/Lieferdatum/buyerReference der Quelle, aber NICHT dueDate", async () => {
+    const invoice = await createDraftInvoice(
+      orgId,
+      {
+        customerId,
+        type: "INVOICE",
+        taxScheme: "REGULAR",
+        currency: "EUR",
+        lines: [lineA],
+        headerText: "Kopftext Quelle",
+        footerText: "Fusstext Quelle",
+        deliveryDate: FIX_DATE,
+        buyerReference: "PO-123",
+        dueDate: new Date("2031-06-01T00:00:00.000Z"),
+      },
+      { now: FIX_DATE },
+    );
+
+    const result = await duplicateDocument(orgId, "INVOICE", invoice.id, "tester", FIX_DATE);
+    const copy = await dbInternal.invoice.findUniqueOrThrow({ where: { id: result.id } });
+    expect(copy.headerText).toBe("Kopftext Quelle");
+    expect(copy.footerText).toBe("Fusstext Quelle");
+    expect(copy.deliveryDate?.toISOString()).toBe(FIX_DATE.toISOString());
+    expect(copy.buyerReference).toBe("PO-123");
+    expect(copy.dueDate).toBeNull(); // wird beim Festschreiben neu berechnet, nicht uebernommen
+  });
+});
+
+describe("Fix-Runde 1 -- Info: convertQuoteToOrderConfirmation uebernimmt notes/internalNotes", () => {
+  it("uebertraegt notes und internalNotes des Angebots auf die AB", async () => {
+    const quote = await createBusinessDocument(
+      orgId,
+      { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA], notes: "Oeffentliche Notiz", internalNotes: "Interne Notiz" },
+      { now: FIX_DATE },
+    );
+    const result = await convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: FIX_DATE });
+    const ab = await dbInternal.quote.findUniqueOrThrow({ where: { id: result.id } });
+    expect(ab.notes).toBe("Oeffentliche Notiz");
+    expect(ab.internalNotes).toBe("Interne Notiz");
   });
 });
 

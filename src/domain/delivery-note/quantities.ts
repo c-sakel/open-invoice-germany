@@ -60,9 +60,16 @@ export async function loadSourceLines(
   };
 }
 
+// Nur Lieferscheine, die tatsaechlich "unterwegs" oder angekommen sind, zaehlen als geliefert.
+// DRAFT (Formular-Zwischenspeicherung, Task 5) ist noch kein wirksamer Beleg und CANCELLED
+// ist storniert — beide zaehlen NICHT mit (nicht nur "!= CANCELLED", sonst wuerde ein
+// DRAFT-Duplikat faelschlich die Restmenge reduzieren).
+const DELIVERED_STATUSES = ["CREATED", "SENT", "DELIVERED"] as const;
+
 /**
  * Restmenge je Quellposition: bestellte Menge minus die Summe der DeliveryNoteLine-Mengen
- * ueber alle nicht-stornierten Lieferscheine derselben Organisation mit passender sourceLineId.
+ * ueber alle wirksamen Lieferscheine (status CREATED/SENT/DELIVERED) derselben Organisation
+ * mit passender sourceLineId.
  */
 export async function remainingQuantities(orgId: string, sourceType: DeliverySourceType, sourceId: string): Promise<RemainingQuantity[]> {
   const { lines } = await loadSourceLines(orgId, sourceType, sourceId);
@@ -71,7 +78,7 @@ export async function remainingQuantities(orgId: string, sourceType: DeliverySou
   const delivered = ids.length
     ? await dbInternal.deliveryNoteLine.groupBy({
         by: ["sourceLineId"],
-        where: { sourceLineId: { in: ids }, deliveryNote: { orgId, status: { not: "CANCELLED" } } },
+        where: { sourceLineId: { in: ids }, deliveryNote: { orgId, status: { in: [...DELIVERED_STATUSES] } } },
         _sum: { quantityMilli: true },
       })
     : [];
