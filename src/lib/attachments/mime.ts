@@ -17,8 +17,15 @@
 export const MAX_ATTACHMENT_FILE_BYTES = 10 * 1024 * 1024;
 /** Summe je Beleg (Beleganhaenge, src/domain/attachment/manage.ts). */
 export const MAX_ATTACHMENT_TOTAL_BYTES_PER_DOC = 50 * 1024 * 1024;
-/** Summe der Zusatzanhaenge EINER Mail (bestehende Grenze der Send-Route). */
+/** Summe der Zusatzanhaenge EINER Mail (fruehe Grenze der Send-Route, VOR dem Zusammenbau
+ *  mit Standard-/Beleganhaengen — siehe MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES fuer die
+ *  massgebliche Gesamtgrenze). */
 export const MAX_EMAIL_EXTRA_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024;
+/** G3 (Fix-Welle): Gesamtgroesse ALLER Anhaenge EINER Mail — Standard- (PDF/XML) +
+ *  Zusatz- + Beleganhaenge zusammen. Die Route prueft oben nur die Zusatzanhaenge frueh
+ *  (vor DB-/Netzzugriff); massgeblich ist die Pruefung in sendDocumentEmail, NACHDEM
+ *  Standard- und Beleganhaenge geladen wurden. */
+export const MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES = 20 * 1024 * 1024;
 
 /** Datei-Endung (ohne Punkt, kleingeschrieben) je erlaubtem MIME-Typ — verhindert eine
  *  echte PDF unter ".exe" ebenso wie eine .exe unter ".pdf" (Whitelist zusaetzlich zu

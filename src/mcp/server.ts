@@ -68,6 +68,7 @@ import { NotFoundError } from "@/domain/errors";
 import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
 import { addAttachment, removeAttachment, listAttachments, type AttachmentDocType } from "@/domain/attachment/manage";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
+import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 
 // ── Helfer ────────────────────────────────────────────────────────────────
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -1494,6 +1495,15 @@ server.registerTool(
   },
   async (args): Promise<Result> => {
     try {
+      // G2: Base64-Laenge VOR dem Dekodieren gegen die Datei-Obergrenze pruefen — ein
+      // riesiger Base64-String wuerde sonst erst vollstaendig in einen Buffer dekodiert
+      // (bis zu ~33 % groesser im Speicher) und danach ERST von addAttachment abgelehnt.
+      // Base64 kodiert 3 Rohbytes in 4 Zeichen -> max. zulaessige Zeichenlaenge =
+      // ceil(MAX_BYTES * 4/3) + 4 (Puffer fuer Padding/Zeilenumbrueche).
+      const maxBase64Length = Math.ceil((MAX_ATTACHMENT_FILE_BYTES * 4) / 3) + 4;
+      if (args.contentBase64.length > maxBase64Length) {
+        return fail(`Anhang ueberschreitet die Groesse von ${MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB.`);
+      }
       const org = await requireOrg();
       const doc = await resolveDocForAttachment(org.id, args.docType, args.docId);
       const buffer = Buffer.from(args.contentBase64, "base64");

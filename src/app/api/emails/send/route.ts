@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
-import { sendDocumentEmail } from "@/domain/email/send";
+import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
@@ -100,6 +100,9 @@ export async function POST(req: Request) {
     }
     if (e instanceof MailNotConfiguredError) {
       return NextResponse.json({ error: "MAIL_NOT_CONFIGURED" }, { status: 409 });
+    }
+    if (e instanceof EmailAttachmentsTooLargeError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
     }
     console.error("POST /api/emails/send:", e);
     return NextResponse.json({ error: "Versand fehlgeschlagen." }, { status: 500 });
