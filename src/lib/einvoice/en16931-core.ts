@@ -50,7 +50,12 @@ export function validateXRechnung(data: EInvoiceData, xml: string): ValidationRe
   if (!data.buyer.name) errors.push("BR-07: Name des Käufers fehlt.");
   if (!data.buyer.addressLine1 || !data.buyer.city || !data.buyer.postalCode || !data.buyer.countryCode)
     errors.push("BR-10: Postanschrift des Käufers unvollständig.");
-  if (data.lines.length === 0) errors.push("BR-16: Mindestens eine Rechnungsposition erforderlich.");
+  // Phase-4b-Review (Commit 0): data.lines enthaelt auch HEADING/TEXT/SUBTOTAL-Zeilen
+  // (§8, reine Gliederungszeilen ohne Betrag) — BR-16 verlangt mindestens eine echte
+  // Rechnungsposition (ITEM), nicht irgendeine Zeile. Fehlt lineType (Alt-Fixtures vor
+  // Phase 4b), gilt die Zeile als ITEM (siehe xrechnung.ts/cii.ts isItemLine).
+  const itemLineCount = data.lines.filter((l) => (l.lineType ?? "ITEM") === "ITEM").length;
+  if (itemLineCount === 0) errors.push("BR-16: Mindestens eine Rechnungsposition erforderlich.");
   if (data.taxSubtotals.length === 0) errors.push("BR-CO-18: Mindestens eine USt-Aufschlüsselungsgruppe erforderlich.");
 
   data.lines.forEach((line, i) => {
