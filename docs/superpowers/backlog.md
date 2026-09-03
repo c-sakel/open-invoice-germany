@@ -24,6 +24,20 @@ Status: ☐ offen · ◐ in Arbeit · ☑ fertig
   existiert, die App sperrt `/setup` selbst.
 - ◐ **Docker-Build reparieren** — Branch `fix/dockerfile-build` fertig, PR wartet
   auf Freigabe.
+- ☑ **Phase 0 — Beleg-Snapshots + interne Notizen** — in `main` (2026-09-03), 7 Commits,
+  Abschluss-Review + Fix-Welle durch. Deployment auf die Produktivinstanz ausstehend.
+
+## Folgepunkte aus den Reviews (Migrations-Branch + Phase 0)
+
+- ☐ **Mahnungs-PDF snapshotten** (`dunnings/[id]/pdf` liest live, braucht Dunning-Schema) → Phase 1
+- ☐ **Stiller Snapshot-Fallback** bei defektem JSON: nur `console.warn` — ChangeLog-Eintrag/UI-Signal
+- ☐ **`internalNotes` bearbeiten** — kein Edit-Pfad, kommt mit dem Entwurfs-Editor (Phase 4)
+- ☐ **Drift-Warnung nach `migrate deploy`** (nicht-fatales `migrate diff --exit-code`) in `db-prepare.sh`
+- ☐ **`Invoice.number` global `@unique`** statt je `orgId`; `documents/[id]/pdf` ohne `orgId`-Scope → Multi-Tenant
+- ☐ **`canonicalize` nutzt `localeCompare`** statt Codepoint-Vergleich (Hash-Chain-Portabilität)
+- ☐ **`docker-compose.yml` (Upstream)**: auskommentierter Mustang-Block referenziert `einvoice-service/`, existiert nicht
+- ☐ **Postgres-Test**: Umlaut-Inhalt hart prüfen (heute nur Schlüsselzahl)
+- ☐ **ARCHITEKTUR.md §2** straffen (historische Tabelle + Umgesetzt-Absatz lesen sich als Flickenteppich)
 
 ---
 
