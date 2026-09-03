@@ -414,6 +414,7 @@ server.registerTool(
             unit: z.string().optional(),
             taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
             discountPercent: z.number().min(0).max(100).optional(),
+            discountAmount: z.number().min(0).optional().describe("Zusaetzlicher Festbetragsrabatt je Position in Euro"),
           }),
         )
         .min(1),
@@ -465,6 +466,7 @@ server.registerTool(
           taxRate: isRegular ? (taxRatePercent ?? 19) : 0,
           taxCategory: category,
           discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
+          discountCents: l.discountAmount ? euroToCents(l.discountAmount) : 0,
         };
       });
 

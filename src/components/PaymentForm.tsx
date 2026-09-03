@@ -17,10 +17,28 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function PaymentForm({ invoiceId, openCents }: { invoiceId: string; openCents: number }) {
+interface PaymentMethodOption {
+  code: string;
+  name: string;
+}
+
+export function PaymentForm({
+  invoiceId,
+  openCents,
+  methods,
+  defaultMethod,
+}: {
+  invoiceId: string;
+  openCents: number;
+  /** Aktive Zahlungsmethoden der Organisation OHNE den Systemcode SKONTO. */
+  methods: PaymentMethodOption[];
+  /** Vorbelegung: Kunden-Standard -> Methode der Rechnung -> "TRANSFER" (siehe Aufrufer). */
+  defaultMethod: string;
+}) {
   const router = useRouter();
   const [amount, setAmount] = useState((openCents / 100).toFixed(2));
   const [paidAt, setPaidAt] = useState(todayIso());
+  const [method, setMethod] = useState(defaultMethod);
   const [applySkonto, setApplySkonto] = useState(false);
   const [suggestion, setSuggestion] = useState<SkontoSuggestion | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,7 +82,7 @@ export function PaymentForm({ invoiceId, openCents }: { invoiceId: string; openC
       body: JSON.stringify({
         amountCents: cents,
         paidAt: paidAt || undefined,
-        method: "TRANSFER",
+        method,
         applySkonto: suggestion ? applySkonto : false,
       }),
     });
@@ -87,6 +105,16 @@ export function PaymentForm({ invoiceId, openCents }: { invoiceId: string; openC
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Zahlungsdatum</span>
           <input type="date" className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Zahlungsart</span>
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={method} onChange={(e) => setMethod(e.target.value)}>
+            {methods.map((m) => (
+              <option key={m.code} value={m.code}>
+                {m.name}
+              </option>
+            ))}
+          </select>
         </label>
         <button type="submit" disabled={busy} className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
           {busy ? "…" : "Buchen"}

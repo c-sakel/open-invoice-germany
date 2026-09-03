@@ -106,6 +106,18 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
 
   try {
     const org = await getActiveOrg();
+    // G — defaultPaymentMethodId kam ungeprueft aus dem Formular: eine fremde
+    // Organisation haette (per manipuliertem Request) die ID einer Zahlungsmethode
+    // einer ANDEREN Organisation eintragen koennen (Prisma prueft nur, dass die ID
+    // existiert, nicht die orgId). Jetzt Mandanten-Pruefung wie bei allen anderen
+    // Fremdschluessel-Feldern.
+    if (v.defaultPaymentMethodId) {
+      const method = await dbInternal.paymentMethod.findFirst({
+        where: { id: v.defaultPaymentMethodId, orgId: org.id },
+        select: { id: true },
+      });
+      if (!method) return { ok: false, error: "Zahlungsmethode nicht gefunden." };
+    }
     const data = {
       type: v.type,
       name: v.name,
