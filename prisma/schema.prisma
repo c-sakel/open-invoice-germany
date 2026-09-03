@@ -663,6 +663,7 @@ model QuoteShareLink {
   quoteId        String
   quote          Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   tokenHash      String    @unique
+  tokenEnc       String? // Task-1-Adjudikation: AES-256-GCM-verschluesselt (AUTH_SECRET), fuer Betreiber-Wiederabruf
   expiresAt      DateTime
   revokedAt      DateTime?
   createdBy      String

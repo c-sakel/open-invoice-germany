@@ -13,6 +13,7 @@ import { generateToken, hashToken } from "@/domain/quote-share/token";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { createShareLinkInputSchema } from "@/schemas/quote-share";
+import { encryptSecret, decryptSecret } from "@/lib/crypto/secrets";
 import type { QuoteShareLink } from "@/generated/prisma/client";
 
 export class ShareLinkError extends Error {
@@ -66,10 +67,15 @@ export async function createShareLink(
 
   const token = generateToken();
   const tokenHash = hashToken(token);
+  // Wirft SecretsUnavailableError, wenn AUTH_SECRET fehlt/zu kurz ist — VOR jedem
+  // Schreibvorgang, damit ohne funktionierende Verschluesselung kein Link entsteht
+  // (Adjudikation Task-1: Token muss fuer den spaeteren Betreiber-Wiederabruf
+  // verschluesselt gespeichert werden koennen).
+  const tokenEnc = encryptSecret(token);
 
   const link = await dbInternal.$transaction(async (tx) => {
     const created = await tx.quoteShareLink.create({
-      data: { orgId, quoteId, tokenHash, expiresAt, createdBy: actor },
+      data: { orgId, quoteId, tokenHash, tokenEnc, expiresAt, createdBy: actor },
     });
     await appendChangeLog(tx, {
       orgId,
@@ -109,6 +115,25 @@ export async function revokeShareLink(orgId: string, linkId: string, opts: Share
   });
 }
 
+/**
+ * Entschluesselt den Klartext-Token eines bestehenden Links fuer den Betreiber
+ * (authentifizierter, org-gepruefter Pfad — z. B. `GET
+ * /api/documents/[id]/share-links/[linkId]/token`, `prefillEmail`). NIE in
+ * `/api/public/` oder `resolveShareToken`/`resolveShareLinkForDecision` verwenden —
+ * die oeffentlichen Pfade duerfen ausschliesslich ueber den Hash aufloesen. Liefert
+ * `null`, wenn der Link unbekannt ist, kein `tokenEnc` gespeichert wurde (Alt-Link vor
+ * dieser Aenderung) oder die Entschluesselung fehlschlaegt (z. B. AUTH_SECRET rotiert).
+ */
+export async function revealShareLinkToken(orgId: string, linkId: string): Promise<string | null> {
+  const link = await dbInternal.quoteShareLink.findFirst({ where: { id: linkId, orgId }, select: { tokenEnc: true } });
+  if (!link?.tokenEnc) return null;
+  try {
+    return decryptSecret(link.tokenEnc);
+  } catch {
+    return null;
+  }
+}
+
 /** Alle Angebotslinks eines Angebots (Mandantenpruefung ueber das Angebot). */
 export async function listShareLinks(orgId: string, quoteId: string): Promise<QuoteShareLink[]> {
   const quote = await dbInternal.quote.findFirst({ where: { id: quoteId, orgId }, select: { id: true } });
@@ -124,14 +149,22 @@ export async function listShareLinks(orgId: string, quoteId: string): Promise<Qu
  * beide duerfen nach aussen keinen Unterschied zwischen den Ungueltigkeitsgruenden zeigen.
  */
 function isLinkCurrentlyValid(
-  link: { revokedAt: Date | null; expiresAt: Date },
-  quote: { archivedAt: Date | null; status: string },
+  link: { revokedAt: Date | null; expiresAt: Date; decidedAt: Date | null },
+  quote: { archivedAt: Date | null; status: string; validUntil: Date | null },
   now: Date,
 ): boolean {
   if (link.revokedAt) return false;
   if (link.expiresAt.getTime() < now.getTime()) return false;
   if (quote.archivedAt) return false;
   if (quote.status === "CANCELLED") return false;
+  // G2: Der Effektivstatus (inkl. abgeleitetem EXPIRED aus validUntil) muss weiterhin
+  // annahmefaehig sein. Bereits entschiedene Links (decidedAt gesetzt) sind davon
+  // ausgenommen — die Seite soll dann "bereits entschieden" zeigen, kein 404, auch wenn
+  // das Angebot inzwischen z. B. ACCEPTED ist.
+  if (!link.decidedAt) {
+    const eff = effectiveQuoteStatus({ status: quote.status, validUntil: quote.validUntil }, now);
+    if (eff !== "DRAFT" && eff !== "SENT" && eff !== "EXPIRED") return false;
+  }
   return true;
 }
 

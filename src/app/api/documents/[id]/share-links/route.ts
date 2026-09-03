@@ -6,6 +6,7 @@ import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { resolveBaseUrl } from "@/lib/http/base-url";
+import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof ShareLinkError) return NextResponse.json({ error: e.message }, { status: 409 });
+    if (e instanceof SecretsUnavailableError) return NextResponse.json({ error: e.message }, { status: 503 });
     console.error("POST /api/documents/[id]/share-links:", e);
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }

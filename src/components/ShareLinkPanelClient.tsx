@@ -37,6 +37,7 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
   const [error, setError] = useState<string | null>(null);
   const [newUrl, setNewUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [revealing, setRevealing] = useState<string | null>(null);
 
   async function createLink() {
     setCreating(true);
@@ -61,6 +62,28 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
       setError("Link konnte nicht erzeugt werden.");
     } finally {
       setCreating(false);
+    }
+  }
+
+  /** Adjudikation Task-1: Klartext-URL eines bestehenden Links ueber die Betreiber-Route abrufen (statt neu zu minten). */
+  async function reveal(id: string) {
+    setRevealing(id);
+    setError(null);
+    setNewUrl(null);
+    setCopied(false);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/share-links/${id}/token`);
+      const j = await res.json();
+      if (!res.ok) {
+        setError(j.error ?? "Link konnte nicht angezeigt werden.");
+        return;
+      }
+      setNewUrl(j.url);
+      dialogRef.current?.showModal();
+    } catch {
+      setError("Link konnte nicht angezeigt werden.");
+    } finally {
+      setRevealing(null);
     }
   }
 
@@ -118,7 +141,17 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
                 <td className="tabular py-1.5 pr-2 text-slate-600">{l.viewCount}</td>
                 <td className="py-1.5 pr-2 text-slate-600">{statusLabel(l)}</td>
                 <td className="py-1.5 pr-2 text-slate-600">{l.deciderName ?? "—"}</td>
-                <td className="py-1.5 text-right">
+                <td className="py-1.5 text-right space-x-3">
+                  {statusLabel(l) === "Aktiv" && (
+                    <button
+                      type="button"
+                      onClick={() => reveal(l.id)}
+                      disabled={revealing === l.id}
+                      className="text-indigo-600 hover:underline disabled:opacity-60"
+                    >
+                      {revealing === l.id ? "Lade…" : "Link anzeigen"}
+                    </button>
+                  )}
                   {!l.revokedAt && !l.decidedAt && (
                     <button type="button" onClick={() => revoke(l.id)} className="text-rose-600 hover:underline">
                       Widerrufen
@@ -132,9 +165,9 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
       )}
 
       <dialog ref={dialogRef} className="w-full max-w-lg rounded-lg border border-slate-200 p-5 backdrop:bg-slate-900/40">
-        <h3 className="mb-2 font-semibold text-slate-900">Link erzeugt</h3>
+        <h3 className="mb-2 font-semibold text-slate-900">Annahme-Link</h3>
         <p className="mb-3 text-sm text-slate-600">
-          Dieser Link wird nur jetzt angezeigt — er kann später nicht erneut abgerufen werden. Bitte jetzt kopieren.
+          Solange der Link gültig ist, kann er hier jederzeit erneut angezeigt werden (Klartext-Token verschlüsselt gespeichert).
         </p>
         <div className="mb-3 flex items-center gap-2">
           <input
