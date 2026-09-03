@@ -20,6 +20,10 @@ const TYPE_TITLE: Record<string, string> = {
   ANGEBOT: "Angebot",
   AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
   PROFORMA: "Proforma-Rechnung",
+  // Phase 5 (§13-15 UStG)
+  PARTIAL: "Teilrechnung",
+  DOWNPAYMENT: "Abschlagsrechnung",
+  FINAL: "Schlussrechnung",
 };
 
 const NUMBER_LABEL: Record<string, string> = {
@@ -29,7 +33,16 @@ const NUMBER_LABEL: Record<string, string> = {
   ANGEBOT: "Angebotsnummer",
   AUFTRAGSBESTAETIGUNG: "Auftragsnummer",
   PROFORMA: "Proforma-Nr.",
+  // Phase 5
+  PARTIAL: "Rechnungsnummer",
+  DOWNPAYMENT: "Rechnungsnummer",
+  FINAL: "Rechnungsnummer",
 };
+
+// Phase 5 (§13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG) — Hinweis auf Abschlagsrechnungen:
+// die Steuer entsteht mit Vereinnahmung des Entgelts, nicht mit Leistungserbringung.
+const DOWNPAYMENT_TAX_HINT =
+  "Anzahlung, Steuer wird mit Vereinnahmung geschuldet (§ 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG).";
 
 function deDate(date: Date | null | undefined): string {
   if (!date) return "—";
@@ -73,6 +86,9 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
     if (data.deliveryDate) doc.text(`Leistungsdatum: ${deDate(data.deliveryDate)}`, { align: "right" });
     if (data.dueDate) doc.text(`Fällig am: ${deDate(data.dueDate)}`, { align: "right" });
     if (data.buyer.vatId) doc.text(`USt-IdNr. Empfänger: ${data.buyer.vatId}`, { align: "right" });
+    // Phase 5 — Bezug zur Quelle (Angebot/Auftrag/Lieferschein) bei Teil-/Abschlags-/
+    // Schlussrechnung, NUR fürs PDF-Layout (kein XML-Feld).
+    if (data.sourceNumber) doc.text(`Bezug: zu ${data.sourceLabel ?? "Beleg"} ${data.sourceNumber}`, { align: "right" });
 
     // Kopftext (Platzhalter bereits aufgeloest, siehe buildEInvoiceData/buildDocEInvoiceData).
     // Nach dem Meta-Block, vor der Positions-Tabelle — y danach dynamisch (doc.y), kein
@@ -196,11 +212,31 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
         sumRow(chargeReason ? `zzgl. Aufschlag (${chargeReason})` : "zzgl. Aufschlag", formatCents(chargeTotal, cur));
       }
     }
-    sumRow("Nettobetrag", formatCents(data.netTotalCents, cur));
+    // Phase 5 — Schlussrechnung: der Summenblock weist die GESAMTLEISTUNG aus (alle
+    // Positionen der Quelle), nicht nur den Restbetrag — daher eigene Beschriftung.
+    const isFinal = data.type === "FINAL";
+    sumRow(isFinal ? "Gesamtleistung netto" : "Nettobetrag", formatCents(data.netTotalCents, cur));
     for (const t of data.taxSubtotals) {
       if (t.taxCents > 0) sumRow(`zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
     }
-    sumRow("Gesamtbetrag", formatCents(data.grossTotalCents, cur), true);
+    sumRow(isFinal ? "Gesamtleistung brutto" : "Gesamtbetrag", formatCents(data.grossTotalCents, cur), true);
+
+    // Phase 5 (§14 Abs. 5 S. 2 UStG) — je abgesetzter Abschlagsrechnung eine Abzugszeile,
+    // dann fett der Restbetrag (= data.payableCents, aus dem Abzugs-Snapshot berechnet).
+    if (isFinal && data.deductions?.length) {
+      doc.font("Helvetica").fontSize(9).fillColor("#333");
+      for (const d of data.deductions) {
+        doc.text(
+          `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} −${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`,
+          left + 300,
+          y,
+          { width: right - (left + 300), align: "right" },
+        );
+        y = doc.y + 4;
+      }
+      doc.fillColor("#000").fontSize(10);
+      sumRow("Restbetrag", formatCents(data.payableCents, cur), true);
+    }
     doc.font("Helvetica");
 
     // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen, vor notes/paymentTerms.
@@ -215,6 +251,12 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
     // und Zahlungsmethoden-Text (invoiceText) aus dem Snapshot.
     y += 16;
     doc.fontSize(9).fillColor("#333");
+    // Phase 5 (§13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG) — Anzahlungs-/Sollversteuerungs-
+    // Hinweis auf jeder Abschlagsrechnung, vor den übrigen Hinweisen.
+    if (data.type === "DOWNPAYMENT") {
+      doc.text(DOWNPAYMENT_TAX_HINT, left, y, { width: right - left });
+      y = doc.y + 4;
+    }
     if (data.notes) doc.text(data.notes, left, y, { width: right - left });
     // Fix-Runde 1 (Befund C): paymentTermsHuman traegt bei Skonto den Klartext ohne
     // #SKONTO#-Tags; ohne Skonto identisch zu paymentTerms (Alt-Belege unveraendert).
