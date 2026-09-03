@@ -97,6 +97,8 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `revoke_share_link` | Angebots-Annahmelink widerrufen |
 | `list_share_links` | Annahme-Links eines Angebots auflisten (Status/Aufrufe/Entscheidung, nie der Klartext-Token) |
 | `save_document_settings` | Angebotsannahme-Einstellungen speichern (Automatik nach Annahme, Link-Gültigkeitsdauer, IP-Speicherung) |
+| `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType` (ITEM/HEADING/TEXT/SUBTOTAL); Rechnungstyp bleibt unveränderbar |
+| `add_attachment` / `list_attachments` / `remove_attachment` | Beleganhänge verwalten (Rechnung/Angebot/Lieferschein/Abo/Mahnung) — Upload als Base64, dieselben Grenzen wie im UI (10 MB je Datei, 50 MB je Beleg) |
 
 ## 4. Was die KI **nicht** kaputt machen kann
 
