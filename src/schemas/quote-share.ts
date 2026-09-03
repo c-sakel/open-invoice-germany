@@ -24,7 +24,14 @@ export const createShareLinkInputSchema = z.object({
 });
 export type CreateShareLinkInput = z.infer<typeof createShareLinkInputSchema>;
 
-const deciderEmail = z.string().trim().pipe(z.email("Ungueltige E-Mail-Adresse"));
+// W1: E-Mail ist optional — ein leerer String (aus dem Formular, wo das Feld nicht
+// `required` ist) wird VOR der Validierung zu `undefined`, damit er nicht als
+// "ungueltige E-Mail-Adresse" abgelehnt wird. Ein tatsaechlich angegebener Wert muss
+// weiterhin eine gueltige Adresse sein.
+const deciderEmail = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z.string().trim().pipe(z.email("Ungueltige E-Mail-Adresse")).optional(),
+);
 
 export const decideOfferInputSchema = z.object({
   decision: z.enum(["ACCEPTED", "REJECTED"]),

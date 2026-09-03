@@ -18,19 +18,29 @@ export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // G1: der Client-Header wird bei JEDER Anfrage zuerst entfernt — ohne diesen Schritt
+  // koennte ein Client ihn selbst setzen und sich damit als "oeffentliche, navigationslose"
+  // Anfrage ausgeben (z. B. um das schlanke Layout ohne interne Navigation zu erzwingen).
+  // Erst danach wird er fuer NO_NAV_PREFIXES wieder gesetzt.
+  const headers = new Headers(req.headers);
+  headers.delete(PUBLIC_NO_NAV_HEADER);
+
   const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 
   if (isPublic) {
     if (NO_NAV_PREFIXES.some((p) => pathname.startsWith(p))) {
-      const headers = new Headers(req.headers);
       headers.set(PUBLIC_NO_NAV_HEADER, "1");
-      return NextResponse.next({ request: { headers } });
+      const res = NextResponse.next({ request: { headers } });
+      // G3: /angebot/ und /api/public/ liefern personenbezogene Angebotsdaten ohne Login
+      // — CDN/Browser duerfen sie nicht zwischenspeichern.
+      res.headers.set("cache-control", "private, no-store");
+      return res;
     }
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers } });
   }
 
   const userId = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
-  if (userId) return NextResponse.next();
+  if (userId) return NextResponse.next({ request: { headers } });
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });

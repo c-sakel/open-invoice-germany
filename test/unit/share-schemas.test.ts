@@ -45,8 +45,15 @@ describe("decideOfferInputSchema", () => {
     expect(decideOfferInputSchema.safeParse({ decision: "ACCEPTED", name: "A", email: "max@example.com" }).success).toBe(true);
   });
 
-  it("verlangt eine gueltige E-Mail-Adresse", () => {
-    expect(decideOfferInputSchema.safeParse({ decision: "ACCEPTED", name: "Max Muster" }).success).toBe(false);
+  it("E-Mail ist optional (W1) — fehlend oder leer ist gueltig, ein angegebener Wert muss aber eine echte Adresse sein", () => {
+    const ohneEmail = decideOfferInputSchema.safeParse({ decision: "ACCEPTED", name: "Max Muster" });
+    expect(ohneEmail.success).toBe(true);
+    if (ohneEmail.success) expect(ohneEmail.data.email).toBeUndefined();
+
+    const leereEmail = decideOfferInputSchema.safeParse({ decision: "ACCEPTED", name: "Max Muster", email: "" });
+    expect(leereEmail.success).toBe(true);
+    if (leereEmail.success) expect(leereEmail.data.email).toBeUndefined();
+
     expect(
       decideOfferInputSchema.safeParse({ decision: "ACCEPTED", name: "Max Muster", email: "keine-email" }).success,
     ).toBe(false);

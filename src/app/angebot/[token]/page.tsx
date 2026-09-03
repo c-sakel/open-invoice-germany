@@ -1,11 +1,17 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { resolveShareToken } from "@/domain/quote-share/link";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { formatDateDe } from "@/lib/template/format";
+import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { DecisionForm } from "./DecisionForm";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_RATE_LIMIT = 60;
+const PAGE_RATE_WINDOW_MS = 60_000;
 
 const KIND_TITLE: Record<string, string> = {
   ANGEBOT: "Angebot",
@@ -22,6 +28,26 @@ const KIND_TITLE: Record<string, string> = {
  */
 export default async function AngebotPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+
+  // W4: Rate-Limit je IP fuer die oeffentliche Lesevariante der Seite.
+  const h = await headers();
+  const ip = clientIpFromHeaders(h) ?? undefined;
+  if (ip) {
+    try {
+      rateLimit(`public:ip:${ip}`, { limit: PAGE_RATE_LIMIT, windowMs: PAGE_RATE_WINDOW_MS });
+    } catch (e) {
+      if (e instanceof RateLimitError) {
+        return (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
+            <p className="text-lg font-medium text-amber-900">Zu viele Anfragen</p>
+            <p className="mt-2 text-sm text-amber-700">Bitte versuchen Sie es in Kuerze erneut.</p>
+          </div>
+        );
+      }
+      throw e;
+    }
+  }
+
   const resolved = await resolveShareToken(token);
   if (!resolved) notFound();
 
