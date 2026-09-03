@@ -9,6 +9,7 @@ import { computeLineNetCents } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { StatusTransitionError } from "@/domain/document/status";
+import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
 import { updateDocumentSchema } from "@/schemas";
 import type { Quote, Prisma } from "@/generated/prisma/client";
@@ -75,6 +76,30 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
       data.taxTotalCents = totals.taxTotalCents;
       data.grossTotalCents = totals.grossTotalCents;
       changedFields.push("lines");
+    }
+
+    // W3 (Fix-Runde 2): aendert sich Kunde/Ansprechpartner/Rechnungsadresse eines Entwurfs,
+    // dessen Kaeufer-Snapshot noch aus CREATE stammt (oder — Altfall — gar nicht gesetzt
+    // ist), wird der Snapshot mit den NEUEN Daten neu gebaut. FINALIZE/SENT/MIGRATION/
+    // INHERITED-Snapshots werden von updateDraftDocument nie erreicht (nur DRAFT editierbar),
+    // sind hier also nicht relevant. Der Seller-Snapshot bleibt unveraendert.
+    const buyerRelevantChanged =
+      (input.customerId !== undefined && input.customerId !== quote.customerId) ||
+      (input.contactPersonId !== undefined && input.contactPersonId !== quote.contactPersonId) ||
+      (input.billingAddressId !== undefined && input.billingAddressId !== quote.billingAddressId);
+
+    if (buyerRelevantChanged && (quote.snapshotSource === "CREATE" || quote.snapshotSource === null)) {
+      const effectiveCustomerId = input.customerId ?? quote.customerId;
+      const effectiveContactPersonId = input.contactPersonId !== undefined ? input.contactPersonId : quote.contactPersonId;
+      const effectiveBillingAddressId = input.billingAddressId !== undefined ? input.billingAddressId : quote.billingAddressId;
+
+      const customer = await tx.customer.findFirstOrThrow({ where: { id: effectiveCustomerId, orgId } });
+      const buyer = await resolveBuyerSnapshot(tx, orgId, customer, effectiveContactPersonId, effectiveBillingAddressId);
+
+      data.buyerSnapshotJson = JSON.stringify(buyer);
+      data.snapshotSource = "CREATE";
+      data.snapshotAt = now;
+      changedFields.push("buyerSnapshotJson");
     }
 
     const updated = await tx.quote.update({ where: { id }, data, include: { lines: { orderBy: { position: "asc" } } } });

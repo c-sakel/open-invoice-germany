@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { remainingQuantities } from "@/domain/delivery-note/quantities";
+import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 
 export const runtime = "nodejs";
@@ -11,7 +12,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const remaining = await remainingQuantities(org.id, "INVOICE", id);
     return NextResponse.json(remaining);
   } catch (e) {
-    const status = e instanceof Error && /nicht gefunden/.test(e.message) ? 404 : 500;
-    return NextResponse.json({ error: (e as Error).message }, { status });
+    if (e instanceof NotFoundError) {
+      return NextResponse.json({ error: e.message }, { status: 404 });
+    }
+    console.error("GET /api/invoices/[id]/remaining:", e);
+    return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

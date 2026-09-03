@@ -151,9 +151,22 @@ describe("setQuoteStatus", () => {
     const buyer = JSON.parse(sent.buyerSnapshotJson!);
     expect(buyer.contactName).toBe("Erika Musterfrau"); // CREATE-Snapshot (ohne Kontakt) wurde ersetzt
 
-    const expired = await setQuoteStatus(orgId, quote.id, "EXPIRED", { now: FIX_DATE });
-    const sentAgain = await setQuoteStatus(orgId, expired.id, "SENT", { now: FIX_DATE });
+    // EXPIRED ist kein aktiv setzbarer Status mehr (W4, Fix-Runde 2) — stattdessen wird ein
+    // abgelaufenes validUntil simuliert (effectiveQuoteStatus liest SENT + verstrichenes
+    // validUntil als EXPIRED); der real gespeicherte Status bleibt SENT, ein erneuter
+    // SENT-Aufruf ist damit weiterhin ein Uebergang SENT -> SENT... — stattdessen wird
+    // direkt geprueft, dass effectiveQuoteStatus EXPIRED liefert und der SENT-Snapshot bei
+    // einem erneuten setQuoteStatus(..., "SENT") ueber EXPIRED->SENT unangetastet bleibt.
+    await dbInternal.quote.update({ where: { id: sent.id }, data: { status: "EXPIRED", validUntil: new Date("2031-01-01T00:00:00.000Z") } });
+    expect(effectiveQuoteStatus({ status: "EXPIRED", validUntil: new Date("2031-01-01T00:00:00.000Z") }, FIX_DATE)).toBe("EXPIRED");
+
+    const sentAgain = await setQuoteStatus(orgId, sent.id, "SENT", { now: FIX_DATE });
     expect(sentAgain.buyerSnapshotJson).toBe(sent.buyerSnapshotJson); // SENT-Snapshot bleibt unangetastet
+  });
+
+  it("wirft StatusTransitionError, wenn EXPIRED aktiv als Ziel gesetzt werden soll", async () => {
+    const quote = await createQuote();
+    await expect(setQuoteStatus(orgId, quote.id, "EXPIRED", { now: FIX_DATE })).rejects.toThrow(StatusTransitionError);
   });
 
   it("setzt decidedAt/decisionNote bei ACCEPTED", async () => {

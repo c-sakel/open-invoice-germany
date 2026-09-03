@@ -22,9 +22,13 @@ export class StatusTransitionError extends Error {
 
 // DRAFT->ACCEPTED/REJECTED erlaubt: Annahme/Ablehnung ohne vorherigen digitalen Versand
 // (Postversand, telefonische Zusage) — Ruling des Betreibers.
+// EXPIRED ist kein Ziel, das aktiv gesetzt werden kann — es ergibt sich rein abgeleitet
+// aus validUntil (effectiveQuoteStatus). SENT->EXPIRED bleibt daher ausgeschlossen; EXPIRED
+// bleibt aber als QUELLZUSTAND in der Tabelle (ein Angebot, dessen validUntil verstrichen
+// ist, kann weiterhin erneut versendet oder angenommen werden — W4, Fix-Runde 2).
 export const QUOTE_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
   DRAFT: ["SENT", "ACCEPTED", "REJECTED", "CANCELLED"],
-  SENT: ["ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"],
+  SENT: ["ACCEPTED", "REJECTED", "CANCELLED"],
   ACCEPTED: ["CANCELLED"],
   REJECTED: [],
   EXPIRED: ["SENT", "ACCEPTED"],
@@ -68,6 +72,13 @@ export async function setQuoteStatusWithinTx(
   const target = QuoteStatus.parse(to);
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
+
+  // W4 (Fix-Runde 2): EXPIRED ist kein aktiv setzbares Ziel, sondern wird ausschliesslich
+  // aus validUntil abgeleitet (effectiveQuoteStatus). Explizite Pruefung VOR der
+  // Uebergangstabelle, damit die Fehlermeldung eindeutig auf die Ursache verweist.
+  if (target === "EXPIRED") {
+    throw new StatusTransitionError("EXPIRED wird nur abgeleitet (effectiveQuoteStatus) und kann nicht aktiv gesetzt werden.");
+  }
 
   const quote = await tx.quote.findFirst({ where: { id: quoteId, orgId } });
   if (!quote) throw new NotFoundError(`Angebot ${quoteId} nicht gefunden.`);
