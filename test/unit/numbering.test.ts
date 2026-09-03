@@ -4,13 +4,13 @@ import { formatDocumentNumber, defaultPrefix } from "@/domain/numbering";
 describe("numbering", () => {
   it("formatiert das Standard-Pattern", () => {
     expect(
-      formatDocumentNumber("{PREFIX}{YYYY}-{SEQ}", { prefix: "RE-", seq: 7, padding: 4, year: 2026, month: 6 }),
+      formatDocumentNumber("{PREFIX}{YYYY}-{SEQ}", { prefix: "RE-", seq: 7, padding: 4, year: 2026, month: 6, day: 1 }),
     ).toBe("RE-2026-0007");
   });
 
   it("unterstützt Kurzjahr + Monat", () => {
     expect(
-      formatDocumentNumber("{PREFIX}{YY}{MM}-{SEQ}", { prefix: "X", seq: 42, padding: 3, year: 2026, month: 6 }),
+      formatDocumentNumber("{PREFIX}{YY}{MM}-{SEQ}", { prefix: "X", seq: 42, padding: 3, year: 2026, month: 6, day: 1 }),
     ).toBe("X2606-042");
   });
 
@@ -29,7 +29,7 @@ describe("numbering", () => {
   });
 
   it("{SEQ} ohne Stellenangabe nutzt weiterhin padding", () => {
-    expect(formatDocumentNumber("{SEQ}", { prefix: "", seq: 7, padding: 4, year: 2026, month: 1 })).toBe("0007");
+    expect(formatDocumentNumber("{SEQ}", { prefix: "", seq: 7, padding: 4, year: 2026, month: 1, day: 1 })).toBe("0007");
   });
 
   it("kennt Praefixe fuer Lieferschein, Kunde, Produkt", () => {

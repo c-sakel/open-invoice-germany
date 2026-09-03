@@ -14,7 +14,7 @@ export interface NumberPatternContext {
   padding: number;
   year: number;
   month: number;
-  day?: number;
+  day: number;
 }
 
 const DOC_TYPE_DEFAULT_PREFIX: Record<string, string> = {
@@ -44,7 +44,7 @@ export function formatDocumentNumber(pattern: string, ctx: NumberPatternContext)
     .replace(/\{YYYY\}/g, String(ctx.year).padStart(4, "0"))
     .replace(/\{YY\}/g, String(ctx.year % 100).padStart(2, "0"))
     .replace(/\{MM\}/g, String(ctx.month).padStart(2, "0"))
-    .replace(/\{DD\}/g, String(ctx.day ?? 1).padStart(2, "0"))
+    .replace(/\{DD\}/g, String(ctx.day).padStart(2, "0"))
     // {SEQ:n} — explizite Stellenzahl hat Vorrang vor padding
     .replace(/\{SEQ:(\d+)\}/g, (_m, n: string) => String(ctx.seq).padStart(Number(n), "0"))
     .replace(/\{SEQ\}/g, String(ctx.seq).padStart(ctx.padding, "0"));

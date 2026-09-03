@@ -39,7 +39,7 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
-import { organizationSchema, customerSchema, createInvoiceSchema, createDocumentSchema, recordPaymentSchema, createRecurringSchema, TaxScheme } from "@/schemas";
+import { organizationSchema, customerSchema, createInvoiceSchema, createDocumentSchema, recordPaymentSchema, createRecurringSchema, TaxScheme, PaymentMethod } from "@/schemas";
 
 // ── Helfer ────────────────────────────────────────────────────────────────
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -741,7 +741,7 @@ server.registerTool(
     inputSchema: {
       invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
       amountEuro: z.number().describe("Gezahlter Betrag in Euro"),
-      method: z.enum(["TRANSFER", "CASH", "CARD", "SEPA"]).default("TRANSFER"),
+      method: PaymentMethod.default("TRANSFER"),
       reference: z.string().optional(),
     },
   },
