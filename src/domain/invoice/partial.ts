@@ -18,8 +18,10 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { splitByTaxRate, bucketsFromLines, bucketsGrossTotalCents, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
+import { computeTaxBreakdown } from "@/lib/tax";
+import { splitByTaxRate, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
+import type { RateBucket } from "@/lib/pricing/allocate";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -60,6 +62,14 @@ interface PartialSource {
   headerText: string | null;
   footerText: string | null;
   paymentTerms: string | null;
+  // Fix-Runde 2: Anteilsbasis fuer PERCENT/NET_AMOUNT/GROSS_AMOUNT ist die
+  // Gesamtleistung NACH Beleg-Rabatt/-Aufschlag der Quelle (Ruling Koordinator) —
+  // ohne diese Felder wuerde eine 100 %-Teilrechnung mehr als grossTotalCents
+  // ausweisen, sobald die Quelle einen Beleg-Rabatt/-Aufschlag traegt.
+  documentDiscountPermille: number;
+  documentDiscountCents: number;
+  documentChargePermille: number;
+  documentChargeCents: number;
   lines: PartialSourceLine[];
 }
 
@@ -94,6 +104,10 @@ async function loadPartialSource(
       headerText: q.headerText,
       footerText: q.footerText,
       paymentTerms: q.paymentTerms,
+      documentDiscountPermille: q.documentDiscountPermille,
+      documentDiscountCents: q.documentDiscountCents,
+      documentChargePermille: q.documentChargePermille,
+      documentChargeCents: q.documentChargeCents,
       lines: q.lines
         .filter((l) => l.lineType === "ITEM")
         .map((l) => ({
@@ -143,6 +157,11 @@ async function loadPartialSource(
     headerText: n.headerText,
     footerText: n.footerText,
     paymentTerms: null,
+    // DeliveryNote kennt keinen Beleg-Rabatt/-Aufschlag (Abgrenzung Task 1-Schema).
+    documentDiscountPermille: 0,
+    documentDiscountCents: 0,
+    documentChargePermille: 0,
+    documentChargeCents: 0,
     lines,
   };
 }
@@ -162,10 +181,30 @@ function splitLinesForShareMode(
   source: PartialSource,
   existingActiveGrossCents: number,
 ): { lines: BuiltLine[]; partialPermille: number | null } {
-  const buckets = bucketsFromLines(source.lines);
-  if (buckets.length === 0) {
+  // Fix-Runde 2 (Ruling Koordinator): Anteilsbasis ist die Gesamtleistung NACH
+  // Beleg-Rabatt/-Aufschlag der Quelle, nicht die rohen Positionsbetraege — sonst
+  // summiert eine 100 %-Teilrechnung mehr als source.grossTotalCents, sobald die
+  // Quelle einen Beleg-Rabatt/-Aufschlag traegt. `computeTaxBreakdown` (wie beim
+  // Festschreiben/bei der Konvertierung) liefert je Steuersatz den bereits
+  // angepassten Nettobetrag; Σ(net+tax) == source.grossTotalCents (QUOTE) exakt.
+  const adjustedTotals = computeTaxBreakdown(
+    source.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    {
+      discountPermille: source.documentDiscountPermille,
+      discountCents: source.documentDiscountCents,
+      chargePermille: source.documentChargePermille,
+      chargeCents: source.documentChargeCents,
+    },
+  );
+  if (adjustedTotals.breakdown.length === 0) {
     throw new PartialInvoiceError("Die Quelle enthaelt keine abrechenbaren Positionen.");
   }
+  const buckets: RateBucket[] = adjustedTotals.breakdown.map((b) => ({
+    key: `${b.taxCategory}:${b.taxRate}`,
+    taxCategory: b.taxCategory,
+    taxRate: b.taxRate,
+    netCents: b.netCents,
+  }));
 
   const share = input.mode === "PERCENT" ? { permille: input.permille! } : { amountCents: input.amountCents!, isGross: input.mode === "GROSS_AMOUNT" };
   let splits: TaxRateSplit[];
@@ -181,9 +220,11 @@ function splitLinesForShareMode(
   // per Teilrechnung abrechnen (anders als POSITIONS/QUANTITIES, die bereits per
   // `billedQuantities` je Position geschuetzt sind). Zaehlt wie `billingStateFor`s
   // `billedPermille` ALLE aktiven, nicht stornierten Teilrechnungen dieser Quelle
-  // (DRAFT zaehlt bereits mit — analog `billedQuantities`).
+  // (DRAFT zaehlt bereits mit — analog `billedQuantities`). Vergleichsbasis ab
+  // Fix-Runde 2: die beleg-angepasste Gesamtleistung (`adjustedTotals.grossTotalCents`),
+  // nicht mehr die rohe Bucket-Summe.
   const newGrossCents = splits.reduce((s, sp) => s + sp.grossCents, 0);
-  const sourceGrossCents = bucketsGrossTotalCents(buckets);
+  const sourceGrossCents = adjustedTotals.grossTotalCents;
   if (existingActiveGrossCents + newGrossCents > sourceGrossCents) {
     throw new PartialInvoiceError(
       `Die Summe der Teilrechnungen (${existingActiveGrossCents + newGrossCents} Cent) wuerde die Gesamtleistung (${sourceGrossCents} Cent) uebersteigen.`,
