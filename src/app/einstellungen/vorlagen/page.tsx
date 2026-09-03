@@ -4,7 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 import { EMAIL_DOC_TYPES, type EmailDocType } from "@/schemas/email";
-import { deleteEmailTemplateAction, setDefaultEmailTemplateAction } from "@/app/actions/templates";
+import { TemplateRowActions } from "@/components/forms/TemplateRowActions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,18 +49,7 @@ export default async function EmailTemplatesPage() {
                     <Link href={`/einstellungen/vorlagen/${t.id}`} className="text-indigo-600 hover:underline">
                       Bearbeiten
                     </Link>
-                    {!t.isDefault && (
-                      <form action={setDefaultEmailTemplateAction.bind(null, t.id)}>
-                        <button type="submit" className="text-slate-600 hover:underline">
-                          Als Standard
-                        </button>
-                      </form>
-                    )}
-                    <form action={deleteEmailTemplateAction.bind(null, t.id)}>
-                      <button type="submit" className="text-rose-600 hover:underline">
-                        Löschen
-                      </button>
-                    </form>
+                    <TemplateRowActions id={t.id} isDefault={t.isDefault} />
                   </div>
                 </div>
               ))}

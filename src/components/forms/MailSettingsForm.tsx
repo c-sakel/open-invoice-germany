@@ -25,6 +25,7 @@ export function MailSettingsForm({ settings }: { settings?: MailSettingsFormData
   return (
     <form action={action} className="space-y-6">
       <ErrorBanner message={state.error} />
+      {state.ok && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
 
       <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-900">SMTP-Server</h2>
