@@ -76,4 +76,17 @@ describe("Phase 1 — Verknuepfungen", () => {
     expect(await dbInternal.paymentMethod.count({ where: { orgId } })).toBe(8);
     expect(await dbInternal.dunningStage.count({ where: { orgId } })).toBe(4);
   });
+
+  it("Lieferschein bekommt LS-Nummer, Snapshot CREATE und ChangeLog", async () => {
+    const { createDeliveryNote } = await import("@/domain/delivery-note/create");
+    const dn = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, lines: [{ description: "Router", quantityMilli: 2000, unit: "C62" }] }, { now: FIX });
+    expect(dn.number).toBe("LS-2028-0001");
+    expect(dn.snapshotSource).toBe("CREATE");
+    expect(dn.lines).toHaveLength(1);
+    const log = await dbInternal.changeLog.findFirst({ where: { entity: "DELIVERY_NOTE", entityId: dn.id } });
+    expect(log?.action).toBe("CREATE");
+
+    const dn2 = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, lines: [{ description: "Kabel", quantityMilli: 1000, unit: "C62" }] }, { now: FIX });
+    expect(dn2.number).toBe("LS-2028-0002");
+  });
 });
