@@ -18,7 +18,7 @@ let orgId: string;
 let customerId: string;
 const FIX_DATE = new Date("2031-07-01T10:00:00.000Z");
 
-const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0 };
+const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
 beforeAll(async () => {
   const org = await dbInternal.organization.create({
@@ -90,7 +90,7 @@ describe("buildDocumentChain", () => {
     const note = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, showArticleNumber: true, showDescription: true, lines: [{ description: "Paket", quantityMilli: 1000, unit: "C62" }] } as Parameters<typeof createDeliveryNote>[1], { now: FIX_DATE });
     const invoice = await createDraftInvoice(orgId, await invoiceInput(), { now: FIX_DATE });
     const finalized = await finalizeInvoice(invoice.id, { now: FIX_DATE });
-    await recordPayment(finalized.id, { amountCents: Math.floor(finalized.grossTotalCents / 2), method: "TRANSFER", isSkonto: false }, { now: FIX_DATE });
+    await recordPayment(finalized.id, { amountCents: Math.floor(finalized.grossTotalCents / 2), method: "TRANSFER", isSkonto: false, applySkonto: false }, { now: FIX_DATE });
     const { dunning } = await createDunning(finalized.id, { now: new Date("2031-08-15T00:00:00.000Z") });
 
     await dbInternal.$transaction(async (tx) => {

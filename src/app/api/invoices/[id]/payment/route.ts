@@ -9,8 +9,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const input = recordPaymentSchema.parse(await req.json());
-    const inv = await recordPayment(id, input);
-    return NextResponse.json({ status: inv.status, paidAmountCents: inv.paidAmountCents });
+    const result = await recordPayment(id, input);
+    return NextResponse.json({
+      status: result.payment.status,
+      paidAmountCents: result.payment.paidAmountCents,
+      skontoSuggestion: result.skontoSuggestion ?? null,
+      skontoApplied: !!result.skontoPayment,
+    });
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
