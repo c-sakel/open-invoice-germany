@@ -344,3 +344,27 @@ export const textTemplatePickQuerySchema = z.object({
 });
 
 export * from "./email";
+
+// ── Phase 3b Task 1: Angebotsannahme — Einstellungen, Freigabe-Link, Entscheidung ──
+export const OnQuoteAccept = z.enum(["NONE", "ORDER_CONFIRMATION", "INVOICE"]);
+export type OnQuoteAccept = z.infer<typeof OnQuoteAccept>;
+
+export const documentSettingsSchema = z.object({
+  onQuoteAccept: OnQuoteAccept.default("NONE"),
+  shareLinkDays: z.coerce.number().int().min(1).max(365).default(30),
+  storeAcceptIp: z.boolean().default(false),
+});
+export type DocumentSettingsInput = z.infer<typeof documentSettingsSchema>;
+
+export const shareLinkCreateSchema = z.object({
+  expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
+});
+export type ShareLinkCreateInput = z.infer<typeof shareLinkCreateSchema>;
+
+export const offerDecisionSchema = z.object({
+  decision: z.enum(["ACCEPTED", "REJECTED"]),
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().pipe(z.email()).optional().or(z.literal("")),
+  comment: z.string().trim().max(2000).optional(),
+});
+export type OfferDecisionInput = z.infer<typeof offerDecisionSchema>;
