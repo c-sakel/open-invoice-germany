@@ -58,6 +58,48 @@ describe("createPartialInvoiceSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("permille 0 wird abgelehnt, 1 akzeptiert (untere Grenze)", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "PERCENT" as const };
+    expect(createPartialInvoiceSchema.safeParse({ ...base, permille: 0 }).success).toBe(false);
+    expect(createPartialInvoiceSchema.safeParse({ ...base, permille: 1 }).success).toBe(true);
+  });
+
+  it("permille 1001 wird abgelehnt, 1000 akzeptiert (obere Grenze)", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "PERCENT" as const };
+    expect(createPartialInvoiceSchema.safeParse({ ...base, permille: 1001 }).success).toBe(false);
+    expect(createPartialInvoiceSchema.safeParse({ ...base, permille: 1000 }).success).toBe(true);
+  });
+
+  it("amountCents 0 wird abgelehnt", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "NET_AMOUNT" as const };
+    expect(createPartialInvoiceSchema.safeParse({ ...base, amountCents: 0 }).success).toBe(false);
+  });
+
+  it("negativer amountCents wird abgelehnt", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "NET_AMOUNT" as const };
+    expect(createPartialInvoiceSchema.safeParse({ ...base, amountCents: -1 }).success).toBe(false);
+  });
+
+  it("leere lineIds werden abgelehnt", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "POSITIONS" as const };
+    expect(createPartialInvoiceSchema.safeParse({ ...base, lineIds: [] }).success).toBe(false);
+  });
+
+  it("leere quantities werden abgelehnt", () => {
+    const base = { sourceType: "DELIVERY_NOTE" as const, sourceId: "d1", mode: "QUANTITIES" as const };
+    expect(createPartialInvoiceSchema.safeParse({ ...base, quantities: [] }).success).toBe(false);
+  });
+
+  it("quantityMilli 0 in einer quantities-Zeile wird abgelehnt", () => {
+    const base = { sourceType: "DELIVERY_NOTE" as const, sourceId: "d1", mode: "QUANTITIES" as const };
+    expect(
+      createPartialInvoiceSchema.safeParse({
+        ...base,
+        quantities: [{ sourceLineId: "l1", quantityMilli: 0 }],
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("createDownpaymentInvoiceSchema", () => {
@@ -83,6 +125,28 @@ describe("createDownpaymentInvoiceSchema", () => {
       amountIsGross: true,
     });
     expect(parsed.amountIsGross).toBe(true);
+  });
+
+  it("permille 0 wird abgelehnt, 1 akzeptiert (untere Grenze)", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "PERCENT" as const };
+    expect(createDownpaymentInvoiceSchema.safeParse({ ...base, permille: 0 }).success).toBe(false);
+    expect(createDownpaymentInvoiceSchema.safeParse({ ...base, permille: 1 }).success).toBe(true);
+  });
+
+  it("permille 1001 wird abgelehnt, 1000 akzeptiert (obere Grenze)", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "PERCENT" as const };
+    expect(createDownpaymentInvoiceSchema.safeParse({ ...base, permille: 1001 }).success).toBe(false);
+    expect(createDownpaymentInvoiceSchema.safeParse({ ...base, permille: 1000 }).success).toBe(true);
+  });
+
+  it("amountCents 0 wird abgelehnt", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "AMOUNT" as const };
+    expect(createDownpaymentInvoiceSchema.safeParse({ ...base, amountCents: 0 }).success).toBe(false);
+  });
+
+  it("negativer amountCents wird abgelehnt", () => {
+    const base = { sourceType: "QUOTE" as const, sourceId: "q1", mode: "AMOUNT" as const };
+    expect(createDownpaymentInvoiceSchema.safeParse({ ...base, amountCents: -1 }).success).toBe(false);
   });
 });
 
