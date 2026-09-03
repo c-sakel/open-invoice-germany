@@ -8,7 +8,8 @@
  */
 import { create } from "xmlbuilder2";
 import { roundHalfUp } from "@/lib/money";
-import type { EInvoiceData } from "./types";
+import { parseRichText, plainText } from "@/lib/richtext";
+import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
 
@@ -67,6 +68,12 @@ function exemptionReason(category: string): string | null {
 // BR-DE-23: PayeeFinancialAccount nur bei Überweisung/Lastschrift (58 SEPA-Überweisung,
 // 59 SEPA-Lastschrift, 30 Überweisung) — NICHT bei Barzahlung (10) o.ä.
 const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
+
+/** Phase 4b (§8): nur ITEM-Zeilen gehen ins XML — HEADING/TEXT/SUBTOTAL sind reine
+ * PDF-Gliederungszeilen. Fehlt lineType (Alt-Fixtures), wird ITEM angenommen. */
+function isItemLine(line: EInvoiceLine): boolean {
+  return (line.lineType ?? "ITEM") === "ITEM";
+}
 
 /** BG-27/BG-20 — Zeilen- bzw. Beleg-AllowanceCharge (ChargeIndicator false = Rabatt). */
 function appendAllowanceCharge(
@@ -178,6 +185,12 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // XRechnung: BT-10 Buyer reference Pflicht (Leitweg-ID im B2G); Fallback Belegnummer
   root.ele("cbc:BuyerReference").txt(data.buyerReference || data.number).up();
 
+  // BT-13 — Bestellnummer des Kunden (Phase 4b). UBL-Reihenfolge: direkt nach
+  // BuyerReference und vor BillingReference (BG-3).
+  if (data.orderNumber) {
+    root.ele("cac:OrderReference").ele("cbc:ID").txt(data.orderNumber).up().up();
+  }
+
   // BG-3 — Bezug zur Originalrechnung (Gutschrift/Korrektur, § 31 Abs. 5 UStDV)
   if (data.precedingInvoiceNumber) {
     const idr = root.ele("cac:BillingReference").ele("cac:InvoiceDocumentReference");
@@ -287,10 +300,13 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   mon.ele("cbc:PayableAmount", { currencyID: cur }).txt(amt(data.payableCents)).up();
   mon.up();
 
-  // BG-25 — Positionen (Invoice- bzw. CreditNote-Zeilen)
+  // BG-25 — Positionen (Invoice- bzw. CreditNote-Zeilen). Phase 4b (§8): nur ITEM-Zeilen;
+  // die Zeilen-IDs werden fortlaufend NEU über die gefilterten ITEMs vergeben (nicht die
+  // gespeicherte Position, die auch HEADING/TEXT/SUBTOTAL zählt).
   const lineTag = isCredit ? "cac:CreditNoteLine" : "cac:InvoiceLine";
   const qtyTag = isCredit ? "cbc:CreditedQuantity" : "cbc:InvoicedQuantity";
-  data.lines.forEach((line, index) => {
+  const itemLines = data.lines.filter(isItemLine);
+  itemLines.forEach((line, index) => {
     const il = root.ele(lineTag);
     il.ele("cbc:ID").txt(String(index + 1)).up();
     il.ele(qtyTag, { unitCode: line.unit }).txt(qty(line.quantityMilli)).up();
@@ -311,7 +327,16 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     }
 
     const item = il.ele("cac:Item");
+    // BT-154 — Langtext als Klartext (kein Markdown), XSD-Reihenfolge: Description VOR Name.
+    if (line.descriptionLong) {
+      const text = plainText(parseRichText(line.descriptionLong));
+      if (text) item.ele("cbc:Description").txt(text).up();
+    }
     item.ele("cbc:Name").txt(line.description).up();
+    // BT-155 — Artikelnummer. XSD-Reihenfolge: SellersItemIdentification NACH Name.
+    if (line.articleNumber) {
+      item.ele("cac:SellersItemIdentification").ele("cbc:ID").txt(line.articleNumber).up().up();
+    }
     const ctc = item.ele("cac:ClassifiedTaxCategory");
     ctc.ele("cbc:ID").txt(line.taxCategory).up();
     ctc.ele("cbc:Percent").txt(String(line.taxRate)).up();

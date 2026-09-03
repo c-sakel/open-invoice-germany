@@ -112,6 +112,7 @@ const SAMPLE_NAMES = [
   "no-iban", // Fix-Runde 1, Befund B
   "card-48", // K2: Kartenzahlung faellt auf PaymentMeans-Code 1 zurueck
   "sepa-59", // K2: SEPA-Lastschrift faellt trotz IBAN auf PaymentMeans-Code 1 zurueck
+  "sections", // Phase 4b (Task 4): Positionsbloecke (HEADING/TEXT/SUBTOTAL) + Artikelnummer/Langtext/Bestellnummer
 ];
 
 async function main(): Promise<void> {
