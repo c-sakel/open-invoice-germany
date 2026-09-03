@@ -15,6 +15,8 @@ import type { EmailDocType } from "@/schemas/email";
 export interface PrefillSource {
   docType: EmailDocType;
   docId: string;
+  /** Vorlage explizit waehlen statt Default/Mahnstufen-Logik. */
+  templateId?: string;
 }
 
 export interface PrefillResult {
@@ -65,10 +67,17 @@ async function pickDunningTemplate(orgId: string, docId: string) {
     const byName = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING", name: stageName } });
     if (byName) return byName;
   }
-  return dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING" }, orderBy: { isDefault: "desc" } });
+  return dbInternal.emailTemplate.findFirst({
+    where: { orgId, docType: "DUNNING" },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+  });
 }
 
-async function pickTemplate(orgId: string, docType: EmailDocType, docId: string) {
+async function pickTemplate(orgId: string, docType: EmailDocType, docId: string, templateId?: string) {
+  if (templateId) {
+    const explicit = await dbInternal.emailTemplate.findFirst({ where: { id: templateId, orgId, docType } });
+    if (explicit) return explicit;
+  }
   if (docType === "DUNNING") return pickDunningTemplate(orgId, docId);
   return dbInternal.emailTemplate.findFirst({ where: { orgId, docType, isDefault: true }, orderBy: { createdAt: "asc" } });
 }
@@ -103,13 +112,13 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     };
   }
 
-  const { docType, docId } = source;
+  const { docType, docId, templateId } = source;
   const { ctx, customerEmail } = await buildTemplateContext(orgId, docType, docId);
 
-  let template = await pickTemplate(orgId, docType, docId);
+  let template = await pickTemplate(orgId, docType, docId, templateId);
   if (!template) {
     await ensureOrgEmailTemplates(dbInternal, orgId);
-    template = await pickTemplate(orgId, docType, docId);
+    template = await pickTemplate(orgId, docType, docId, templateId);
   }
 
   const warnings: string[] = [];

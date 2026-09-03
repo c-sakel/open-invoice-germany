@@ -206,6 +206,22 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     expect(pre.subject).toContain(invoiceNumber);
   });
 
+  it("6b) PrefillSource.templateId waehlt eine bestimmte Vorlage statt des Defaults", async () => {
+    const alt = await dbInternal.emailTemplate.create({
+      data: {
+        orgId,
+        docType: "INVOICE",
+        name: "Alternative Vorlage",
+        subject: "Alternativer Betreff {{document.number}}",
+        body: "Alternativer Text",
+        isDefault: false,
+      },
+    });
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId, templateId: alt.id });
+    expect(pre.subject).toBe(`Alternativer Betreff ${invoiceNumber}`);
+    expect(pre.templateId).toBe(alt.id);
+  });
+
   it("7) ohne MailSettings wirft sendDocumentEmail MailNotConfiguredError, kein Log", async () => {
     const org2 = await dbInternal.organization.create({
       data: { legalName: "Ohne Mail GmbH", addressLine1: "Weg 1", postalCode: "10115", city: "Berlin", vatId: "DE999999999", taxNumber: "1/2/3" },
