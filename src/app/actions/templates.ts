@@ -70,34 +70,55 @@ export async function saveEmailTemplateAction(_prev: ActionResult, fd: FormData)
 
 /** Loescht eine Vorlage. Eine Systemvorlage darf nur geloescht werden, wenn fuer denselben
  *  Dokumenttyp eine ANDERE Vorlage bereits als Standard markiert ist. */
-export async function deleteEmailTemplateAction(id: string): Promise<void> {
-  const org = await getActiveOrg();
-  const tpl = await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
-  if (!tpl) return;
+export async function deleteEmailTemplateAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
-  if (tpl.isSystem) {
-    const otherDefault = await dbInternal.emailTemplate.count({
-      where: { orgId: org.id, docType: tpl.docType, isDefault: true, id: { not: tpl.id } },
-    });
-    if (otherDefault === 0) {
-      throw new Error("Systemvorlage kann nicht geloescht werden: keine andere Standardvorlage fuer diesen Dokumenttyp vorhanden.");
+  try {
+    const org = await getActiveOrg();
+    const tpl = await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
+    if (!tpl) return { ok: false, error: "Vorlage nicht gefunden." };
+
+    if (tpl.isSystem) {
+      const otherDefault = await dbInternal.emailTemplate.count({
+        where: { orgId: org.id, docType: tpl.docType, isDefault: true, id: { not: tpl.id } },
+      });
+      if (otherDefault === 0) {
+        return {
+          ok: false,
+          error: "Systemvorlage kann nicht gelöscht werden: keine andere Standardvorlage für diesen Dokumenttyp vorhanden.",
+        };
+      }
     }
-  }
 
-  await dbInternal.emailTemplate.delete({ where: { id: tpl.id } });
+    await dbInternal.emailTemplate.delete({ where: { id: tpl.id } });
+  } catch (e) {
+    console.error("deleteEmailTemplateAction:", e);
+    return { ok: false, error: "Löschen fehlgeschlagen." };
+  }
   revalidatePath("/einstellungen/vorlagen");
+  return { ok: true };
 }
 
 /** Setzt eine Vorlage als Standard fuer ihren Dokumenttyp; alle anderen Vorlagen desselben
  *  Typs werden in derselben Transaktion auf `isDefault = false` gesetzt. */
-export async function setDefaultEmailTemplateAction(id: string): Promise<void> {
-  const org = await getActiveOrg();
-  const tpl = await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
-  if (!tpl) return;
+export async function setDefaultEmailTemplateAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  if (!id) return { ok: false, error: "Vorlage nicht gefunden." };
 
-  await dbInternal.$transaction(async (tx) => {
-    await tx.emailTemplate.updateMany({ where: { orgId: org.id, docType: tpl.docType }, data: { isDefault: false } });
-    await tx.emailTemplate.update({ where: { id: tpl.id }, data: { isDefault: true } });
-  });
+  try {
+    const org = await getActiveOrg();
+    const tpl = await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
+    if (!tpl) return { ok: false, error: "Vorlage nicht gefunden." };
+
+    await dbInternal.$transaction(async (tx) => {
+      await tx.emailTemplate.updateMany({ where: { orgId: org.id, docType: tpl.docType }, data: { isDefault: false } });
+      await tx.emailTemplate.update({ where: { id: tpl.id }, data: { isDefault: true } });
+    });
+  } catch (e) {
+    console.error("setDefaultEmailTemplateAction:", e);
+    return { ok: false, error: "Aktion fehlgeschlagen." };
+  }
   revalidatePath("/einstellungen/vorlagen");
+  return { ok: true };
 }

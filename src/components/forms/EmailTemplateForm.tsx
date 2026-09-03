@@ -47,17 +47,33 @@ export function EmailTemplateForm({ template }: { template?: EmailTemplateFormDa
     <div className="grid gap-6 lg:grid-cols-3">
       <form action={action} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 lg:col-span-2">
         <ErrorBanner message={state.error} />
+        {state.ok && <p className="text-sm text-emerald-700">Vorlage gespeichert.</p>}
         {template?.id && <input type="hidden" name="id" value={template.id} />}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Name" name="name" defaultValue={template?.name} required />
-          <SelectField
-            label="Dokumenttyp"
-            name="docType"
-            defaultValue={docType}
-            options={EMAIL_DOC_TYPES.map((t) => ({ value: t, label: DOC_TYPE_LABEL[t] }))}
-            onChange={(e) => setDocType(e.target.value as EmailDocType)}
-          />
+          {template?.id ? (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-700">Dokumenttyp</span>
+              <input
+                type="text"
+                value={DOC_TYPE_LABEL[docType]}
+                disabled
+                readOnly
+                className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-500"
+              />
+              <input type="hidden" name="docType" value={docType} />
+              <span className="text-xs text-slate-400">Der Dokumenttyp kann nach dem Anlegen nicht mehr geändert werden.</span>
+            </label>
+          ) : (
+            <SelectField
+              label="Dokumenttyp"
+              name="docType"
+              defaultValue={docType}
+              options={EMAIL_DOC_TYPES.map((t) => ({ value: t, label: DOC_TYPE_LABEL[t] }))}
+              onChange={(e) => setDocType(e.target.value as EmailDocType)}
+            />
+          )}
         </div>
 
         <TextField label="Betreff" name="subject" defaultValue={subject} required onChange={(e) => setSubject(e.target.value)} />
