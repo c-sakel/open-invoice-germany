@@ -64,8 +64,10 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
       }
     }
 
+    // Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) gehen nie in Summen/Steuerberechnung ein (§8).
+    const itemLines = q.lines.filter((l) => l.lineType === "ITEM");
     const totals = computeTaxBreakdown(
-      q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+      itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
       {
         discountPermille: q.documentDiscountPermille,
         discountCents: q.documentDiscountCents,
@@ -112,7 +114,10 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
         lines: {
           create: q.lines.map((l) => ({
             position: l.position,
+            lineType: l.lineType,
             description: l.description,
+            descriptionLong: l.descriptionLong,
+            articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
             unitNetPriceCents: l.unitNetPriceCents,
@@ -191,7 +196,10 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
         documentChargeCents: src.documentChargeCents,
         documentChargeReason: src.documentChargeReason ?? undefined,
         lines: src.lines.map((l) => ({
+          lineType: l.lineType as "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL",
           description: l.description,
+          descriptionLong: l.descriptionLong ?? undefined,
+          articleNumber: l.articleNumber ?? undefined,
           quantityMilli: l.quantityMilli,
           unit: l.unit,
           unitNetPriceCents: l.unitNetPriceCents,

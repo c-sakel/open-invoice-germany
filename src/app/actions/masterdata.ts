@@ -172,6 +172,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
   const parsed = productSchema.safeParse({
     name: str(fd, "name"),
     description: str(fd, "description"),
+    articleNumber: str(fd, "articleNumber"),
     unit: str(fd, "unit") ?? "C62",
     netPriceCents,
     taxRate,
@@ -186,6 +187,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
     const data = {
       name: v.name,
       description: v.description ?? null,
+      articleNumber: v.articleNumber ?? null,
       unit: v.unit,
       netPriceCents: v.netPriceCents,
       taxRate: v.taxRate,
