@@ -164,12 +164,14 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
       }),
     );
     expect(doc.number).toMatch(/^AN-\d{4}-\d{4}$/);
-    const inv = await convertDocumentToInvoice(doc.id);
+    const inv = await convertDocumentToInvoice(orgId, doc.id);
     expect(inv.type).toBe("INVOICE");
     expect(inv.status).toBe("DRAFT");
     expect(inv.grossTotalCents).toBe(5950); // 50 € + 19 % = 59,50 €
     const q = await prisma.quote.findUnique({ where: { id: doc.id } });
-    expect(q!.status).toBe("CONVERTED");
+    // Status bleibt unveraendert (Task 3): der Abrechnungsstand ergibt sich aus der
+    // Relation/convertedToInvoiceId, nicht mehr aus einem eigenen CONVERTED-Status.
+    expect(q!.status).toBe("DRAFT");
     expect(q!.convertedToInvoiceId).toBe(inv.id);
   });
 

@@ -111,9 +111,9 @@ describe("setQuoteStatus", () => {
       data: { orgId, customerId, firstName: "Erika", lastName: "Musterfrau" },
     });
     const quote = await createQuote();
-    // createBusinessDocument (Task 1) persistiert contactPersonId nicht und friert bereits
-    // bei CREATE einen Snapshot ein — fuer diesen Test werden beide Ausgangszustaende
-    // (Kontaktperson gesetzt, kein Snapshot) direkt simuliert (z. B. Migrationsfall).
+    // Simuliert einen Altfall ohne Snapshot (z. B. Migration) mit nachtraeglich gesetzter
+    // Kontaktperson — der reguläre Fall (Kontaktperson bereits bei CREATE gesetzt) wird
+    // im folgenden Test abgedeckt.
     await dbInternal.quote.update({ where: { id: quote.id }, data: { contactPersonId: contact.id, buyerSnapshotJson: null, sellerSnapshotJson: null } });
 
     const updated = await setQuoteStatus(orgId, quote.id, "SENT", { now: FIX_DATE, actor: "tester" });
@@ -128,12 +128,31 @@ describe("setQuoteStatus", () => {
     expect(logs.some((l) => l.action === "STATUS_SENT")).toBe(true);
   });
 
-  it("setzt buyerSnapshotJson nicht erneut, wenn bereits vorhanden", async () => {
+  it("setzt buyerSnapshotJson nicht erneut, wenn bereits ein SENT-Snapshot vorhanden ist", async () => {
     const quote = await createQuote();
     const sent = await setQuoteStatus(orgId, quote.id, "SENT", { now: FIX_DATE });
     const snapshotBefore = sent.buyerSnapshotJson;
     const cancelled = await setQuoteStatus(orgId, quote.id, "CANCELLED", { now: FIX_DATE });
     expect(cancelled.buyerSnapshotJson).toBe(snapshotBefore);
+  });
+
+  it("ersetzt den CREATE-Snapshot bei SENT (nachtraeglicher Ansprechpartner), zweiter SENT-Versuch aendert den SENT-Snapshot nicht mehr", async () => {
+    const quote = await createQuote();
+    expect(quote.snapshotSource).toBe("CREATE"); // createBusinessDocument friert bereits bei CREATE einen Snapshot ein
+
+    const contact = await dbInternal.contactPerson.create({
+      data: { orgId, customerId, firstName: "Erika", lastName: "Musterfrau" },
+    });
+    await dbInternal.quote.update({ where: { id: quote.id }, data: { contactPersonId: contact.id } }); // nachtraeglich gesetzt
+
+    const sent = await setQuoteStatus(orgId, quote.id, "SENT", { now: FIX_DATE });
+    expect(sent.snapshotSource).toBe("SENT");
+    const buyer = JSON.parse(sent.buyerSnapshotJson!);
+    expect(buyer.contactName).toBe("Erika Musterfrau"); // CREATE-Snapshot (ohne Kontakt) wurde ersetzt
+
+    const expired = await setQuoteStatus(orgId, quote.id, "EXPIRED", { now: FIX_DATE });
+    const sentAgain = await setQuoteStatus(orgId, expired.id, "SENT", { now: FIX_DATE });
+    expect(sentAgain.buyerSnapshotJson).toBe(sent.buyerSnapshotJson); // SENT-Snapshot bleibt unangetastet
   });
 
   it("setzt decidedAt/decisionNote bei ACCEPTED", async () => {

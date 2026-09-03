@@ -1,11 +1,20 @@
 /**
- * Wandelt ein Geschäftsdokument (Angebot/Auftragsbestätigung/Proforma) in eine
- * Rechnung um — als Entwurf (DRAFT), den man anschließend festschreibt.
+ * Generische Dokumentkonvertierung: Angebot -> Auftragsbestaetigung, Angebot/AB/Proforma
+ * -> Rechnung (Entwurf), Angebot/AB/Rechnung -> Lieferschein (mit Teilmengen). Jede
+ * Konvertierung schreibt eine DocumentRelation (src/domain/relations.ts) und einen
+ * ChangeLog-Eintrag in derselben Transaktion wie die jeweilige Schreiboperation.
  */
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
+import { createBusinessDocument } from "@/domain/document/create";
+import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { remainingQuantities, assertNoOverDelivery, loadSourceLines, type DeliverySourceType } from "@/domain/delivery-note/quantities";
+import { pickTextTemplate } from "@/domain/text-template/pick";
+import { setQuoteStatus, effectiveQuoteStatus } from "@/domain/document/status";
+import { convertDocumentSchema, type ConvertDocumentInput } from "@/schemas";
+import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
 
 export class ConvertError extends Error {
   constructor(message: string) {
@@ -14,18 +23,31 @@ export class ConvertError extends Error {
   }
 }
 
-export async function convertDocumentToInvoice(documentId: string, opts: { actor?: string; now?: Date } = {}) {
+interface ConvertOptions {
+  actor?: string;
+  now?: Date;
+}
+type ResolvedConvertOptions = Required<ConvertOptions>;
+
+/** Wandelt ein Geschaeftsdokument (Angebot/AB/Proforma) in eine Rechnung um (DRAFT). */
+export async function convertDocumentToInvoice(orgId: string, documentId: string, opts: ConvertOptions = {}): Promise<Invoice> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
-    const q = await tx.quote.findUnique({ where: { id: documentId }, include: { lines: { orderBy: { position: "asc" } } } });
+    const q = await tx.quote.findFirst({ where: { id: documentId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!q) throw new ConvertError("Dokument nicht gefunden.");
     if (q.convertedToInvoiceId) throw new ConvertError("Dokument wurde bereits in eine Rechnung umgewandelt.");
 
     const totals = computeTaxBreakdown(
       q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     );
+
+    // Kopf-/Fusstext und Zahlungsbedingungen vom Dokument uebernehmen; fehlen sie, aus der
+    // INVOICE-Textvorlage vorbelegen (Selbstheilung, wie bei createBusinessDocument).
+    const headerText = q.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD"));
+    const footerText = q.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT"));
+    const paymentTerms = q.paymentTerms ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT"));
 
     const invoice = await tx.invoice.create({
       data: {
@@ -38,6 +60,9 @@ export async function convertDocumentToInvoice(documentId: string, opts: { actor
         issueDate: now,
         notes: q.notes,
         internalNotes: q.internalNotes,
+        headerText,
+        footerText,
+        paymentTerms,
         netTotalCents: totals.netTotalCents,
         taxTotalCents: totals.taxTotalCents,
         grossTotalCents: totals.grossTotalCents,
@@ -58,7 +83,9 @@ export async function convertDocumentToInvoice(documentId: string, opts: { actor
       },
     });
 
-    await tx.quote.update({ where: { id: documentId }, data: { status: "CONVERTED", convertedToInvoiceId: invoice.id } });
+    // Status bleibt unveraendert (der Abrechnungsstand ergibt sich aus der Relation, nicht
+    // mehr aus einem eigenen CONVERTED-Status) — nur die Verknuepfung wird gesetzt.
+    await tx.quote.update({ where: { id: documentId }, data: { convertedToInvoiceId: invoice.id } });
     await linkDocuments(tx, { orgId: q.orgId, fromType: "QUOTE", fromId: documentId, toType: "INVOICE", toId: invoice.id, relationType: "CONVERTED_TO" });
     await appendChangeLog(tx, {
       orgId: q.orgId,
@@ -72,4 +99,132 @@ export async function convertDocumentToInvoice(documentId: string, opts: { actor
 
     return invoice;
   });
+}
+
+/**
+ * Wandelt ein Angebot in eine Auftragsbestaetigung um: neues Dokument mit kopierten
+ * Positionen (createBusinessDocument uebernimmt Nummernkreis, Snapshot und AB-Textvorlage),
+ * Relation CONVERTED_TO. Das Angebot wird — sofern noch nicht entschieden — auf ACCEPTED
+ * gesetzt (Ruling); PROFORMA kann NICHT in eine AB umgewandelt werden.
+ */
+async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, opts: ResolvedConvertOptions): Promise<Quote> {
+  const { actor, now } = opts;
+  const src = await dbInternal.quote.findFirst({ where: { id: fromId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
+  if (!src) throw new ConvertError("Angebot nicht gefunden.");
+  if (src.kind !== "ANGEBOT") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
+
+  const eff = effectiveQuoteStatus({ status: src.status, validUntil: src.validUntil }, now);
+  if (eff === "DRAFT" || eff === "SENT" || eff === "EXPIRED") {
+    await setQuoteStatus(orgId, fromId, "ACCEPTED", { actor, now });
+  }
+
+  const ab = await createBusinessDocument(
+    orgId,
+    {
+      kind: "AUFTRAGSBESTAETIGUNG",
+      customerId: src.customerId,
+      taxScheme: src.taxScheme,
+      currency: src.currency,
+      subject: src.subject ?? undefined,
+      customerReference: src.customerReference ?? undefined,
+      contactPersonId: src.contactPersonId ?? undefined,
+      billingAddressId: src.billingAddressId ?? undefined,
+      deliveryTerms: src.deliveryTerms ?? undefined,
+      paymentTerms: src.paymentTerms ?? undefined,
+      // headerText/footerText bewusst nicht uebernommen -> AB-Textvorlage greift.
+      lines: src.lines.map((l) => ({
+        description: l.description,
+        quantityMilli: l.quantityMilli,
+        unit: l.unit,
+        unitNetPriceCents: l.unitNetPriceCents,
+        taxRate: l.taxRate as 19 | 7 | 0,
+        taxCategory: l.taxCategory as "S" | "AE" | "K" | "G" | "E" | "Z",
+        discountPermille: l.discountPermille,
+      })),
+    },
+    { actor, now },
+  );
+
+  await dbInternal.$transaction((tx) =>
+    linkDocuments(tx, { orgId, fromType: "QUOTE", fromId, toType: "QUOTE", toId: ab.id, relationType: "CONVERTED_TO" }),
+  );
+
+  return ab;
+}
+
+/** Wandelt Angebot/AB/Rechnung in einen Lieferschein um — Mengen = Eingabe oder Restmengen. */
+async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput, opts: ResolvedConvertOptions): Promise<DeliveryNote> {
+  const fromType = input.fromType as DeliverySourceType;
+  const fromId = input.fromId;
+
+  const { customerId, lines: sourceLines } = await loadSourceLines(orgId, fromType, fromId);
+  const remaining = await remainingQuantities(orgId, fromType, fromId);
+  const requested = input.quantities ?? remaining.filter((r) => r.remainingMilli > 0).map((r) => ({ sourceLineId: r.sourceLineId, quantityMilli: r.remainingMilli }));
+  assertNoOverDelivery(remaining, requested);
+
+  const sourceLineMap = new Map(sourceLines.map((l) => [l.id, l]));
+  const lines = requested
+    .filter((r) => r.quantityMilli > 0)
+    .map((r) => {
+      const src = sourceLineMap.get(r.sourceLineId);
+      if (!src) throw new ConvertError(`Quellposition ${r.sourceLineId} unbekannt.`);
+      return {
+        description: src.description,
+        quantityMilli: r.quantityMilli,
+        unit: src.unit,
+        sourceType: fromType,
+        sourceId: fromId,
+        sourceLineId: r.sourceLineId,
+        unitNetPriceCents: src.unitNetPriceCents,
+        taxRate: src.taxRate,
+      };
+    });
+  if (lines.length === 0) throw new ConvertError("Keine Restmenge zum Liefern vorhanden.");
+
+  const note = await createDeliveryNote(
+    orgId,
+    {
+      customerId,
+      sourceType: fromType,
+      sourceId: fromId,
+      deliveryDate: input.deliveryDate,
+      showPrices: false,
+      showTax: false,
+      showArticleNumber: true,
+      showDescription: true,
+      lines,
+    },
+    opts,
+  );
+
+  await dbInternal.$transaction((tx) =>
+    linkDocuments(tx, { orgId, fromType, fromId, toType: "DELIVERY_NOTE", toId: note.id, relationType: "DELIVERED_BY" }),
+  );
+
+  return note;
+}
+
+/** Generischer Einstieg: dispatcht nach `toKind`, parst die Eingabe selbst. */
+export async function convertDocument(
+  orgId: string,
+  rawInput: unknown,
+  opts: ConvertOptions = {},
+): Promise<{ type: "QUOTE" | "INVOICE" | "DELIVERY_NOTE"; id: string }> {
+  const input = convertDocumentSchema.parse(rawInput);
+  const resolved: ResolvedConvertOptions = { actor: opts.actor ?? "system", now: opts.now ?? new Date() };
+
+  if (input.toKind === "INVOICE") {
+    if (input.fromType !== "QUOTE") throw new ConvertError("Nur ein Geschaeftsdokument kann in eine Rechnung umgewandelt werden.");
+    const invoice = await convertDocumentToInvoice(orgId, input.fromId, resolved);
+    return { type: "INVOICE", id: invoice.id };
+  }
+
+  if (input.toKind === "AUFTRAGSBESTAETIGUNG") {
+    if (input.fromType !== "QUOTE") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
+    const ab = await convertQuoteToOrderConfirmation(orgId, input.fromId, resolved);
+    return { type: "QUOTE", id: ab.id };
+  }
+
+  const note = await convertToDeliveryNote(orgId, input, resolved);
+  return { type: "DELIVERY_NOTE", id: note.id };
 }

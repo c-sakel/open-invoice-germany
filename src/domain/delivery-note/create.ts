@@ -1,13 +1,17 @@
 /**
- * Legt einen Lieferschein an (Phase 1). Kein GoBD-Beleg, aber Nachweis des
- * Leistungszeitpunkts (§ 14 Abs. 4 Nr. 6) — daher Nummernkreis, Parteien-Snapshot
- * (Phase 0-Muster) und ChangeLog-Eintrag. Konvertierung aus Angebot/AB folgt in Phase 3.
+ * Legt einen Lieferschein an (Phase 1, erweitert in Phase 3a um Quelle/Texte/Restmengen-
+ * Positionen). Kein GoBD-Beleg, aber Nachweis des Leistungszeitpunkts (§ 14 Abs. 4 Nr. 6)
+ * — daher Nummernkreis, Parteien-Snapshot (Phase 0-Muster) und ChangeLog-Eintrag. Status
+ * bei Anlage immer CREATED (Nummer wird sofort vergeben) — DRAFT bleibt fuer das
+ * Formular-Zwischenspeichern (Task 5) reserviert.
  */
 import { dbInternal } from "@/lib/db";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { appendChangeLog } from "@/domain/audit";
-import type { CreateDeliveryNoteInput, SnapshotSource } from "@/schemas";
+import { assertDocExists } from "@/domain/relations";
+import { pickTextTemplate } from "@/domain/text-template/pick";
+import { createDeliveryNoteSchema, type SnapshotSource } from "@/schemas";
 
 export class DeliveryNoteError extends Error {
   constructor(message: string) {
@@ -18,9 +22,10 @@ export class DeliveryNoteError extends Error {
 
 export async function createDeliveryNote(
   orgId: string,
-  input: CreateDeliveryNoteInput,
+  rawInput: unknown,
   opts: { actor?: string; now?: Date } = {},
 ) {
+  const input = createDeliveryNoteSchema.parse(rawInput);
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
@@ -28,6 +33,14 @@ export async function createDeliveryNote(
     const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId } });
     if (!customer) throw new DeliveryNoteError("Kunde nicht gefunden.");
     const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
+
+    if (input.sourceType && input.sourceId) {
+      try {
+        await assertDocExists(tx, orgId, input.sourceType, input.sourceId);
+      } catch {
+        throw new DeliveryNoteError(`Quelldokument ${input.sourceId} nicht gefunden.`);
+      }
+    }
 
     const docType = "DELIVERY_NOTE";
     const year = now.getFullYear();
@@ -45,6 +58,9 @@ export async function createDeliveryNote(
       day: now.getDate(),
     });
 
+    const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD"));
+    const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT"));
+
     const source: SnapshotSource = "CREATE";
     const note = await tx.deliveryNote.create({
       data: {
@@ -57,8 +73,14 @@ export async function createDeliveryNote(
         shippingDate: input.shippingDate,
         showPrices: input.showPrices,
         showTax: input.showTax,
+        showArticleNumber: input.showArticleNumber,
+        showDescription: input.showDescription,
         notes: input.notes,
         internalNotes: input.internalNotes,
+        headerText,
+        footerText,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
         sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)),
         buyerSnapshotJson: JSON.stringify(buildBuyerSnapshot(customer)),
         snapshotSource: source,
@@ -72,6 +94,9 @@ export async function createDeliveryNote(
             unit: l.unit,
             sourceType: l.sourceType,
             sourceId: l.sourceId,
+            sourceLineId: l.sourceLineId,
+            unitNetPriceCents: l.unitNetPriceCents,
+            taxRate: l.taxRate,
           })),
         },
       },
@@ -85,7 +110,7 @@ export async function createDeliveryNote(
       action: "CREATE",
       actor,
       at: now,
-      diff: { number, status: "CREATED", lines: note.lines.length },
+      diff: { number, status: "CREATED", lines: note.lines.length, sourceType: input.sourceType ?? null, sourceId: input.sourceId ?? null },
     });
 
     return note;

@@ -46,7 +46,7 @@ describe("Phase 1 — Verknuepfungen", () => {
 
   it("Angebot -> Rechnung schreibt Altfeld UND DocumentRelation", async () => {
     const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] });
-    const inv = await convertDocumentToInvoice(q.id, { now: FIX });
+    const inv = await convertDocumentToInvoice(orgId, q.id, { now: FIX });
     const rel = await listRelations(orgId, "QUOTE", q.id);
     expect(rel).toEqual([expect.objectContaining({ toType: "INVOICE", toId: inv.id, relationType: "CONVERTED_TO" })]);
     const q2 = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
@@ -63,7 +63,7 @@ describe("Phase 1 — Verknuepfungen", () => {
 
   it("Backfill-Migration spiegelt Altfelder idempotent", async () => {
     const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] });
-    const inv = await convertDocumentToInvoice(q.id, { now: FIX });
+    const inv = await convertDocumentToInvoice(orgId, q.id, { now: FIX });
     await dbInternal.documentRelation.deleteMany({ where: { fromId: q.id } });
     const dir = readdirSync("prisma/migrations").find((d) => d.endsWith("_phase1_backfill"))!;
     const sql = readFileSync(join("prisma/migrations", dir, "migration.sql"), "utf8")
