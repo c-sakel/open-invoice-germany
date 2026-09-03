@@ -51,6 +51,12 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **`DeliveryNote.status = INVOICED` ist reserviert, aber nicht Teil der Statusmaschine.** `DELIVERY_TRANSITIONS` kennt nur DRAFT/CREATED/SENT/DELIVERED/CANCELLED; ob ein Lieferschein bereits abgerechnet ist, ergibt sich aus der Relation `DELIVERED_BY` (Gegenrichtung) auf eine Rechnung, nicht aus dem gespeicherten Status.
 - **Abgeleiteter Abrechnungsstand (FULL/PARTIAL/NONE)** für Angebote/AB kommt ausschließlich aus `DocumentRelation` (`CONVERTED_TO`, `PARTIAL_OF`/`DOWNPAYMENT_OF`, `FINAL_FOR`) — `PARTIAL` (Abschlags-/Teilrechnung) ist als Zustand vorbereitet, aber es gibt in Phase 3a noch keinen Weg, eine solche Relation tatsächlich zu erzeugen (folgt in Phase 5).
 
+## Editor & Beleganhaenge (Phase 4b)
+- **Rich-Text ist eine eingeschraenkte Markdown-Teilmenge**, kein vollwertiger Editor: Absaetze, `\n`-Umbrueche, fett/kursiv/unterstrichen (auch verschachtelt), **eine** Listenebene (ungeordnet/geordnet) und Links (`https://`/`mailto:`). Keine Bilder, keine Tabellen, keine verschachtelten Listen. Es wird nie rohes HTML gespeichert oder durchgereicht.
+- **Beleganhaenge werden nicht in ZUGFeRD eingebettet.** Der Hybrid-PDF-Container enthaelt weiterhin nur `factur-x.xml`; hochgeladene Beleganhaenge (z. B. Lieferschein-Scan) bleiben separate Dateien, die ueber die App/den Mailversand abrufbar sind, nicht Teil des PDF/A-3-Anhangs.
+- **Dedup ist je Organisation**, nicht global — derselbe Dateiinhalt wird pro Org einmal gespeichert, aber nicht organisationsuebergreifend erkannt.
+- **Loeschen entfernt die Datei nur, wenn keine weitere `DocumentAttachment`-Zeile mehr auf denselben Hash verweist** (Dedup-Referenzzaehlung ueber den Speicherpfad) — ein einzelnes Entfernen loescht also nicht zwangslaeufig sofort die physische Datei.
+
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, eingebauter Scheduler, nutzungsbasierte Abo-Abrechnung.
 

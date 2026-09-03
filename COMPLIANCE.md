@@ -208,7 +208,10 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | BT-2 | Ausstellungsdatum | § 14 Abs. 4 Nr. 3 |
 | BT-9 | Fälligkeitsdatum | (Mahnwesen) |
 | BT-10 | **Buyer reference** (= Leitweg-ID im B2G; im B2B i.d.R. leer) | § 5 ERechV (B2G) |
+| BT-13 | Referenz der Bestellung (Bestellnummer, Phase 4b) | § 14 Abs. 4 Nr. 5 (Leistungsbeschreibung/Bezug) |
 | BT-20 | Payment terms (Zahlungs-/Skontobedingungen, Freitext) | § 14 Abs. 4 Nr. 7 |
+| BT-154 | Freitext-Detailbeschreibung der Position (Rich-Text als Klartext, Phase 4b) | § 14 Abs. 4 Nr. 5 |
+| BT-155 | Artikelnummer der Position (Phase 4b) | § 14 Abs. 4 Nr. 5 |
 | BG-23 / BT-118, BT-119 | VAT category code + rate | § 14 Abs. 4 Nr. 8 |
 | BT-121 | VAT category code (z.B. „AE" Reverse charge, „E" steuerbefreit) | § 14a |
 | BG-25 / BT-129, BT-153 | Menge / Art der Leistung | § 14 Abs. 4 Nr. 5 |

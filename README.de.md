@@ -40,6 +40,8 @@ npm run mcp   # MCP-Server (stdio) starten / in Claude Code via .mcp.json einbin
 - **Steuerschemata**: Regelbesteuerung (19/7/0), Kleinunternehmer (§ 19), Reverse Charge (§ 13b), ig. Lieferung, Differenzbesteuerung (§ 25a), Kleinbetrag (§ 33).
 - **E-Rechnung**: **XRechnung** (UBL, EN 16931) — Export inkl. EN-16931-Kernregel-Validierung. ZUGFeRD/Factur-X über Mustang-Sidecar (Docker).
 - **PDF-Export** ("sonstige Rechnung") mit allen Pflichtangaben.
+- **Positions-Editor**: Drag-and-Drop zum Umordnen, Positionen duplizieren, Überschriften/Textblöcke/berechnete Zwischensummen neben regulären Positionen (nur reguläre Positionen landen im E-Rechnung-XML), Rich-Text (eingeschränktes Markdown — fett/kursiv/unterstrichen, eine Listenebene, Links) in Positionsbeschreibungen, Artikelnummern sowie Kopffelder (Betreff, Bestellnummer, interne Referenz, Ansprechpartner, Liefer-/Rechnungsadresse).
+- **Beleganhänge**: Dateien an jeden Beleg (Rechnung, Angebot, Lieferschein, Mahnung, Abo) anhängen — 10 MB je Datei, 50 MB je Beleg, MIME-Whitelist + Magic-Bytes-Prüfung, hash-adressierte Ablage mit Dedup, auswählbar als Zusatzanhang beim Mailversand.
 - **Self-hosted**: SQLite-Solo ohne Server **oder** PostgreSQL via Docker.
 - **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie) — App und API geschützt.
 
@@ -90,6 +92,8 @@ Die SQLite-Datei liegt unter `prisma/dev.db` und gehört nur dir. Beim ersten St
 cp .env.example .env            # DATABASE_URL auf die postgresql://-Zeile umstellen
 docker compose up --build
 ```
+
+`docker-compose.yml` mountet ein benanntes Volume (`oig-attachments`) unter `/app/data/attachments` für Beleganhänge (`ATTACHMENTS_DIR`); beim Sichern zusammen mit `oig-db` mitnehmen.
 
 **Bestehende Instanz aktualisieren.** Wurde die Datenbank mit einer älteren Version
 per `prisma db push` angelegt, fehlt ihr die Migrationshistorie. Der Container
