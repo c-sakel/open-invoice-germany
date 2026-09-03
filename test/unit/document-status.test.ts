@@ -3,6 +3,7 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { duplicateDocument } from "@/domain/document/duplicate";
 import {
   QUOTE_TRANSITIONS,
   DELIVERY_TRANSITIONS,
@@ -192,6 +193,18 @@ describe("setDeliveryNoteStatus", () => {
   it("wirft bei verbotenem Uebergang CREATED -> DRAFT", async () => {
     const note = await createNote();
     await expect(setDeliveryNoteStatus(orgId, note.id, "DRAFT", { now: FIX_DATE })).rejects.toThrow(StatusTransitionError);
+  });
+
+  it("DRAFT -> CREATED vergibt eine Nummer, wenn noch keine vorhanden ist (Duplikat)", async () => {
+    const note = await createNote();
+    const copy = await duplicateDocument(orgId, "DELIVERY_NOTE", note.id, "system", FIX_DATE);
+    const draft = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: copy.id } });
+    expect(draft.status).toBe("DRAFT");
+    expect(draft.number).toBeNull();
+
+    const created = await setDeliveryNoteStatus(orgId, copy.id, "CREATED", { now: FIX_DATE });
+    expect(created.number).not.toBeNull();
+    expect(created.number).not.toBe(note.number);
   });
 });
 

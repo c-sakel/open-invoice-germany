@@ -14,7 +14,12 @@ export type DeliveryNoteRow = Prisma.DeliveryNoteGetPayload<{ include: { lines: 
 export type OrgRow = Prisma.OrganizationGetPayload<Record<string, never>>;
 export type CustomerRow = Prisma.CustomerGetPayload<Record<string, never>>;
 
-export function buildDeliveryNotePdfData(dn: DeliveryNoteRow, org: OrgRow, customer: CustomerRow): DeliveryNotePdfData {
+export function buildDeliveryNotePdfData(
+  dn: DeliveryNoteRow,
+  org: OrgRow,
+  customer: CustomerRow,
+  sourceNumber: string | null = null,
+): DeliveryNotePdfData {
   const ctx = dn.id;
   const seller = parseSellerSnapshot(dn.sellerSnapshotJson, buildSellerSnapshot(org), ctx);
   const buyer = parseBuyerSnapshot(dn.buyerSnapshotJson, buildBuyerSnapshot(customer), ctx);
@@ -77,7 +82,6 @@ export function buildDeliveryNotePdfData(dn: DeliveryNoteRow, org: OrgRow, custo
     showDescription: dn.showDescription,
     headerText,
     footerText,
-    // Aufloesung des Quellbelegs (sourceType/sourceId) kommt mit der Route in Task 5.
-    sourceNumber: null,
+    sourceNumber,
   };
 }
