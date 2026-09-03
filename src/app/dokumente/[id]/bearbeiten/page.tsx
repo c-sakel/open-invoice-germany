@@ -50,12 +50,19 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     paymentTerms: q.paymentTerms ?? "",
     notes: q.notes ?? "",
     internalNotes: q.internalNotes ?? "",
+    documentDiscountPercent: (q.documentDiscountPermille / 10).toString(),
+    documentDiscountAmount: (q.documentDiscountCents / 100).toFixed(2),
+    documentChargePercent: (q.documentChargePermille / 10).toString(),
+    documentChargeAmount: (q.documentChargeCents / 100).toFixed(2),
+    documentChargeReason: q.documentChargeReason ?? "",
     lines: q.lines.map((l) => ({
       description: l.description,
       quantity: (l.quantityMilli / 1000).toString(),
       unit: l.unit,
       price: (l.unitNetPriceCents / 100).toFixed(2),
       taxRate: l.taxRate,
+      discountPercent: (l.discountPermille / 10).toString(),
+      discountAmount: (l.discountCents / 100).toFixed(2),
     })),
   };
 

@@ -45,15 +45,33 @@ export default async function InvoiceDetail({
       lines: { orderBy: { position: "asc" } },
       customer: true,
       org: true,
-      payments: true,
+      payments: { orderBy: { paidAt: "asc" } },
       dunnings: { orderBy: { level: "asc" } },
+      paymentMethod: true,
     },
   });
   if (!invoice) notFound();
 
   const isDraft = invoice.status === "DRAFT";
   const isCancelled = invoice.status === "CANCELLED";
-  const breakdown = JSON.parse(invoice.taxBreakdownJson) as Array<{ taxRate: number; netCents: number; taxCents: number }>;
+  const breakdown = JSON.parse(invoice.taxBreakdownJson) as Array<{
+    taxRate: number;
+    netCents: number;
+    taxCents: number;
+    allowanceCents?: number;
+    chargeCents?: number;
+  }>;
+  const hasDocumentAdjustment =
+    invoice.documentDiscountPermille > 0 ||
+    invoice.documentDiscountCents > 0 ||
+    invoice.documentChargePermille > 0 ||
+    invoice.documentChargeCents > 0;
+  const documentDiscountTotalCents = breakdown.reduce((s, b) => s + (b.allowanceCents ?? 0), 0);
+  const documentChargeTotalCents = breakdown.reduce((s, b) => s + (b.chargeCents ?? 0), 0);
+  const hasSkonto = invoice.skonto1Permille != null && invoice.skonto1Days != null;
+  const paymentMethodName = invoice.paymentMethodSnapshotJson
+    ? (JSON.parse(invoice.paymentMethodSnapshotJson) as { name: string }).name
+    : (invoice.paymentMethod?.name ?? null);
   const isInvoiceType = invoice.type === "INVOICE" || invoice.type === "CORRECTION";
   const openCents = invoice.grossTotalCents - invoice.paidAmountCents;
   const dueDate = invoice.dueDate ?? invoice.issueDate;
@@ -163,6 +181,12 @@ export default async function InvoiceDetail({
             <dd className="text-right">{deDate(invoice.dueDate)}</dd>
             <dt>Steuerschema</dt>
             <dd className="text-right">{invoice.taxScheme}</dd>
+            {paymentMethodName && (
+              <>
+                <dt>Zahlungsmethode</dt>
+                <dd className="text-right">{paymentMethodName}</dd>
+              </>
+            )}
           </dl>
         </div>
       </div>
@@ -197,6 +221,22 @@ export default async function InvoiceDetail({
       </div>
 
       <div className="ml-auto max-w-xs space-y-1 text-sm">
+        {hasDocumentAdjustment && (
+          <>
+            {documentDiscountTotalCents > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Belegrabatt{invoice.documentChargeReason ? ` (${invoice.documentChargeReason})` : ""}</span>
+                <span className="tabular">−{formatCents(documentDiscountTotalCents, invoice.currency)}</span>
+              </div>
+            )}
+            {documentChargeTotalCents > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Belegaufschlag{invoice.documentChargeReason ? ` (${invoice.documentChargeReason})` : ""}</span>
+                <span className="tabular">+{formatCents(documentChargeTotalCents, invoice.currency)}</span>
+              </div>
+            )}
+          </>
+        )}
         <div className="flex justify-between">
           <span className="text-slate-600">Netto</span>
           <span className="tabular font-medium">{formatCents(invoice.netTotalCents, invoice.currency)}</span>
@@ -214,6 +254,19 @@ export default async function InvoiceDetail({
           <span className="tabular">{formatCents(invoice.grossTotalCents, invoice.currency)}</span>
         </div>
       </div>
+
+      {hasSkonto && (
+        <div className="ml-auto max-w-xs rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          <span className="font-medium text-slate-800">Skonto: </span>
+          {(invoice.skonto1Permille! / 10).toString().replace(".", ",")} % bei Zahlung innerhalb {invoice.skonto1Days} Tagen
+          {invoice.skonto2Permille != null && invoice.skonto2Days != null && (
+            <>
+              , {(invoice.skonto2Permille / 10).toString().replace(".", ",")} % innerhalb {invoice.skonto2Days} Tagen
+            </>
+          )}
+          .
+        </div>
+      )}
 
       {invoice.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.footerText}</p>}
       {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
@@ -238,6 +291,20 @@ export default async function InvoiceDetail({
           </div>
 
           {canPay && <PaymentForm invoiceId={invoice.id} openCents={openCents} />}
+
+          {invoice.payments.length > 0 && (
+            <div className="space-y-1 text-sm">
+              {invoice.payments.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
+                  <span>
+                    {deDate(p.paidAt)} · {formatCents(p.amountCents, invoice.currency)} · {p.method}
+                    {p.isSkonto && <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">Skonto</span>}
+                  </span>
+                  {p.reference && <span className="text-xs text-slate-400">{p.reference}</span>}
+                </div>
+              ))}
+            </div>
+          )}
 
           {openCents > 0 && (
             <div className="flex flex-wrap items-center gap-3">
