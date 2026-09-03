@@ -29,6 +29,15 @@ interface ConvertOptions {
 }
 type ResolvedConvertOptions = Required<ConvertOptions>;
 
+// W2 (Fix-Runde 2): erlaubte Quellstatus je Zielkonvertierung, geprueft gegen den
+// EFFEKTIVEN Status (effectiveQuoteStatus, EXPIRED eingeschlossen). AB (Auftrags-
+// bestaetigung) ist bereits eine Zusage — nur DRAFT/SENT duerfen noch in eine Rechnung
+// umgewandelt werden, waehrend ein Angebot zusaetzlich aus ACCEPTED/EXPIRED heraus darf.
+const ANGEBOT_TO_AB_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+const ANGEBOT_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+const AB_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT"]);
+const QUOTE_TO_DELIVERY_NOTE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+
 /** Wandelt ein Geschaeftsdokument (Angebot/AB/Proforma) in eine Rechnung um (DRAFT). */
 export async function convertDocumentToInvoice(orgId: string, documentId: string, opts: ConvertOptions = {}): Promise<Invoice> {
   const now = opts.now ?? new Date();
@@ -38,6 +47,14 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     const q = await tx.quote.findFirst({ where: { id: documentId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!q) throw new ConvertError("Dokument nicht gefunden.");
     if (q.convertedToInvoiceId) throw new ConvertError("Dokument wurde bereits in eine Rechnung umgewandelt.");
+
+    if (q.kind === "ANGEBOT" || q.kind === "AUFTRAGSBESTAETIGUNG") {
+      const eff = effectiveQuoteStatus({ status: q.status, validUntil: q.validUntil }, now);
+      const allowed = q.kind === "AUFTRAGSBESTAETIGUNG" ? AB_TO_INVOICE_STATUSES : ANGEBOT_TO_INVOICE_STATUSES;
+      if (!allowed.has(eff)) {
+        throw new ConvertError(`Dokument im Status "${eff}" kann nicht in eine Rechnung umgewandelt werden.`);
+      }
+    }
 
     const totals = computeTaxBreakdown(
       q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
@@ -118,6 +135,9 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
     if (src.kind !== "ANGEBOT") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
 
     const eff = effectiveQuoteStatus({ status: src.status, validUntil: src.validUntil }, now);
+    if (!ANGEBOT_TO_AB_STATUSES.has(eff)) {
+      throw new ConvertError(`Angebot im Status "${eff}" kann nicht in eine Auftragsbestaetigung umgewandelt werden.`);
+    }
     if (eff === "DRAFT" || eff === "SENT" || eff === "EXPIRED") {
       await setQuoteStatusWithinTx(tx, orgId, fromId, "ACCEPTED", { actor, now });
     }
@@ -160,37 +180,58 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
 
 /**
  * Wandelt Angebot/AB/Rechnung in einen Lieferschein um — Mengen = Eingabe oder Restmengen.
- * Erstellung, Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
+ * W1 (Fix-Runde 2): Laden der Restmengen UND die Ueberlieferungspruefung laufen jetzt
+ * INNERHALB derselben Transaktion wie das Anlegen des Lieferscheins (statt davor) — unter
+ * SQLite serialisiert das ohnehin schon die Schreibtransaktion, unter Postgres (READ
+ * COMMITTED) verkleinert es das Race-Fenster zwischen Lesen und Schreiben zweier
+ * gleichzeitiger Anlagen auf dieselbe Restmenge (siehe LIMITATIONEN.md — vollstaendig
+ * ausgeschlossen ist die Ueberlieferung unter Postgres damit weiterhin nicht). Erstellung,
+ * Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
  */
 async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput, opts: ResolvedConvertOptions): Promise<DeliveryNote> {
   const fromType = input.fromType as DeliverySourceType;
   const fromId = input.fromId;
 
-  const { customerId, lines: sourceLines } = await loadSourceLines(orgId, fromType, fromId);
-  const remaining = await remainingQuantities(orgId, fromType, fromId);
-  const requested = input.quantities ?? remaining.filter((r) => r.remainingMilli > 0).map((r) => ({ sourceLineId: r.sourceLineId, quantityMilli: r.remainingMilli }));
-  assertNoOverDelivery(remaining, requested);
-
-  const sourceLineMap = new Map(sourceLines.map((l) => [l.id, l]));
-  const lines = requested
-    .filter((r) => r.quantityMilli > 0)
-    .map((r) => {
-      const src = sourceLineMap.get(r.sourceLineId);
-      if (!src) throw new ConvertError(`Quellposition ${r.sourceLineId} unbekannt.`);
-      return {
-        description: src.description,
-        quantityMilli: r.quantityMilli,
-        unit: src.unit,
-        sourceType: fromType,
-        sourceId: fromId,
-        sourceLineId: r.sourceLineId,
-        unitNetPriceCents: src.unitNetPriceCents,
-        taxRate: src.taxRate,
-      };
-    });
-  if (lines.length === 0) throw new ConvertError("Keine Restmenge zum Liefern vorhanden.");
-
   return dbInternal.$transaction(async (tx) => {
+    if (fromType === "QUOTE") {
+      const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, select: { status: true, validUntil: true } });
+      if (!src) throw new ConvertError("Dokument nicht gefunden.");
+      const eff = effectiveQuoteStatus({ status: src.status, validUntil: src.validUntil }, opts.now);
+      if (!QUOTE_TO_DELIVERY_NOTE_STATUSES.has(eff)) {
+        throw new ConvertError(`Dokument im Status "${eff}" kann nicht in einen Lieferschein umgewandelt werden.`);
+      }
+    } else {
+      const src = await tx.invoice.findFirst({ where: { id: fromId, orgId }, select: { status: true } });
+      if (!src) throw new ConvertError("Rechnung nicht gefunden.");
+      if (src.status === "CANCELLED") {
+        throw new ConvertError("Stornierte Rechnung kann nicht in einen Lieferschein umgewandelt werden.");
+      }
+    }
+
+    const { customerId, lines: sourceLines } = await loadSourceLines(orgId, fromType, fromId, tx);
+    const remaining = await remainingQuantities(orgId, fromType, fromId, tx);
+    const requested = input.quantities ?? remaining.filter((r) => r.remainingMilli > 0).map((r) => ({ sourceLineId: r.sourceLineId, quantityMilli: r.remainingMilli }));
+    assertNoOverDelivery(remaining, requested);
+
+    const sourceLineMap = new Map(sourceLines.map((l) => [l.id, l]));
+    const lines = requested
+      .filter((r) => r.quantityMilli > 0)
+      .map((r) => {
+        const src = sourceLineMap.get(r.sourceLineId);
+        if (!src) throw new ConvertError(`Quellposition ${r.sourceLineId} unbekannt.`);
+        return {
+          description: src.description,
+          quantityMilli: r.quantityMilli,
+          unit: src.unit,
+          sourceType: fromType,
+          sourceId: fromId,
+          sourceLineId: r.sourceLineId,
+          unitNetPriceCents: src.unitNetPriceCents,
+          taxRate: src.taxRate,
+        };
+      });
+    if (lines.length === 0) throw new ConvertError("Keine Restmenge zum Liefern vorhanden.");
+
     const note = await createDeliveryNoteWithinTx(
       tx,
       orgId,

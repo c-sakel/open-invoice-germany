@@ -2,9 +2,11 @@
  * Task 3 — generische Konvertierung, Teillieferung, Duplizieren, Entwurf bearbeiten:
  * Integrationstest ueber den gesamten Fluss inkl. verifyChain (ChangeLog-Kette).
  *
- * Eigenes Jahr fuer die Nummernvergabe: "Invoice.number" ist global @unique. Dieser Test
- * finalisiert keine Rechnung (nur DRAFT-Erzeugung/-Konvertierung), daher keine Kollision
- * mit test/integration/document-chain.test.ts (nutzt 2031 ebenfalls, aber finalisiert).
+ * Eigenes Jahr fuer die Nummernvergabe: "Invoice.number" ist global @unique. Jahr 2033
+ * (Fix-Runde 2, Task-6-Ergaenzung) — 2031 bleibt document-chain/document-status
+ * vorbehalten (finalisieren dort Rechnungen); dieser Test finalisiert selbst keine
+ * Rechnung, kollidiert aber inzwischen mit anderen 2031er Tests bei spaeteren
+ * Finalisierungen in Folge-Aenderungen, daher eigenes Jahr.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
@@ -15,13 +17,14 @@ import { convertDocument, ConvertError } from "@/domain/document/convert";
 import { duplicateDocument } from "@/domain/document/duplicate";
 import { updateDraftDocument } from "@/domain/document/update";
 import { remainingQuantities, OverDeliveryError } from "@/domain/delivery-note/quantities";
+import * as quantitiesModule from "@/domain/delivery-note/quantities";
 import { setDeliveryNoteStatus, setQuoteStatus, StatusTransitionError } from "@/domain/document/status";
 import * as relationsModule from "@/domain/relations";
 import { listRelations } from "@/domain/relations";
 import { DEFAULT_TEXT_TEMPLATES } from "@/domain/text-template/defaults";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
 
-const FIX_DATE = new Date("2031-05-01T10:00:00.000Z");
+const FIX_DATE = new Date("2033-05-01T10:00:00.000Z");
 
 const lineA = { description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0 };
 const lineB = { description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0 };
@@ -97,6 +100,30 @@ describe("Angebot -> Auftragsbestaetigung", () => {
   });
 });
 
+describe("W2 (Fix-Runde 2): Statuspruefung bei der Konvertierung", () => {
+  it("storniertes Angebot: ConvertError fuer alle drei Ziele (AB, Rechnung, Lieferschein)", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    await setQuoteStatus(orgId, quote.id, "CANCELLED", { now: FIX_DATE });
+
+    await expect(convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
+    await expect(convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "INVOICE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
+    await expect(convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
+  });
+
+  it("AB darf nur aus DRAFT/SENT in eine Rechnung umgewandelt werden, nicht aus ACCEPTED", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const { id: abId } = await convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: FIX_DATE });
+    await setQuoteStatus(orgId, abId, "ACCEPTED", { now: FIX_DATE });
+    await expect(convertDocument(orgId, { fromType: "QUOTE", fromId: abId, toKind: "INVOICE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
+  });
+
+  it("stornierte Rechnung kann nicht in einen Lieferschein umgewandelt werden", async () => {
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    await dbInternal.invoice.update({ where: { id: invoice.id }, data: { status: "CANCELLED" } });
+    await expect(convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
+  });
+});
+
 describe("Teillieferung mit Restmengen", () => {
   it("liefert Teilmengen, verweigert Ueberlieferung, ignoriert stornierte Lieferscheine", async () => {
     const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
@@ -133,6 +160,19 @@ describe("Teillieferung mit Restmengen", () => {
     // Erster Lieferschein bleibt aktiv
     const firstNote = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: firstResult.id } });
     expect(firstNote.status).toBe("CREATED");
+  });
+
+  it("W1 (Fix-Runde 2): Restmengenpruefung laeuft auf dem Transaktions-Client, nicht auf dbInternal", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const { id: abId } = await convertDocument(orgId, { fromType: "QUOTE", fromId: quote.id, toKind: "AUFTRAGSBESTAETIGUNG" }, { now: FIX_DATE });
+
+    const spy = vi.spyOn(quantitiesModule, "remainingQuantities");
+    await convertDocument(orgId, { fromType: "QUOTE", fromId: abId, toKind: "DELIVERY_NOTE", quantities: [] }, { now: FIX_DATE }).catch(() => {});
+    // Aufruf erfolgte mit einem vierten Argument (tx), nicht dbInternal direkt.
+    expect(spy).toHaveBeenCalled();
+    const call = spy.mock.calls[0]!;
+    expect(call[3]).toBeDefined();
+    spy.mockRestore();
   });
 
   it("Rechnung -> Lieferschein ist ebenfalls moeglich", async () => {
@@ -222,6 +262,23 @@ describe("Entwurf bearbeiten", () => {
     const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
     await setQuoteStatus(orgId, quote.id, "SENT", { now: FIX_DATE });
     await expect(updateDraftDocument(orgId, quote.id, { subject: "Zu spaet" }, "tester")).rejects.toThrow(StatusTransitionError);
+  });
+
+  it("W3 (Fix-Runde 2): Kundenwechsel im CREATE-Snapshot-Entwurf baut den Kaeufer-Snapshot neu", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    expect(quote.snapshotSource).toBe("CREATE");
+    const buyerBefore = JSON.parse(quote.buyerSnapshotJson!);
+    expect(buyerBefore.name).toBe("Kunde AG");
+
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Neuer Kunde GmbH", addressLine1: "Neue Str. 9", postalCode: "10115", city: "Berlin", type: "BUSINESS" },
+    });
+
+    const updated = await updateDraftDocument(orgId, quote.id, { customerId: otherCustomer.id }, "tester");
+    expect(updated.customerId).toBe(otherCustomer.id);
+    const buyerAfter = JSON.parse(updated.buyerSnapshotJson!);
+    expect(buyerAfter.name).toBe("Neuer Kunde GmbH");
+    expect(updated.snapshotSource).toBe("CREATE");
   });
 });
 

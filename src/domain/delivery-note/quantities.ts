@@ -3,7 +3,9 @@
  * gelieferte Menge (Summe ueber nicht-stornierte Lieferscheine). Grundlage fuer die
  * Teillieferung (src/domain/document/convert.ts).
  */
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { NotFoundError } from "@/domain/errors";
 
 export class OverDeliveryError extends Error {
   constructor(message: string) {
@@ -11,6 +13,12 @@ export class OverDeliveryError extends Error {
     this.name = "OverDeliveryError";
   }
 }
+
+// Wie ensure.ts: Aufrufer koennen entweder den globalen Client oder einen
+// Transaktions-Client uebergeben, damit Laden + Pruefung wahlweise INNERHALB einer
+// laufenden $transaction laufen koennen (Fix-Runde 2, W1 — Race unter Postgres
+// READ COMMITTED sonst zwischen Lesen und Schreiben, siehe LIMITATIONEN.md).
+type Db = PrismaClient | Prisma.TransactionClient;
 
 export type DeliverySourceType = "QUOTE" | "INVOICE";
 
@@ -37,23 +45,24 @@ export async function loadSourceLines(
   orgId: string,
   sourceType: DeliverySourceType,
   sourceId: string,
+  db: Db = dbInternal,
 ): Promise<{ customerId: string; lines: SourceLine[] }> {
   if (sourceType === "QUOTE") {
-    const q = await dbInternal.quote.findFirst({
+    const q = await db.quote.findFirst({
       where: { id: sourceId, orgId },
       include: { lines: { orderBy: { position: "asc" } } },
     });
-    if (!q) throw new Error(`Angebot/Auftragsbestaetigung ${sourceId} nicht gefunden.`);
+    if (!q) throw new NotFoundError(`Angebot/Auftragsbestaetigung ${sourceId} nicht gefunden.`);
     return {
       customerId: q.customerId,
       lines: q.lines.map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
     };
   }
-  const inv = await dbInternal.invoice.findFirst({
+  const inv = await db.invoice.findFirst({
     where: { id: sourceId, orgId },
     include: { lines: { orderBy: { position: "asc" } } },
   });
-  if (!inv) throw new Error(`Rechnung ${sourceId} nicht gefunden.`);
+  if (!inv) throw new NotFoundError(`Rechnung ${sourceId} nicht gefunden.`);
   return {
     customerId: inv.customerId,
     lines: inv.lines.map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
@@ -69,14 +78,14 @@ const DELIVERED_STATUSES = ["CREATED", "SENT", "DELIVERED"] as const;
 /**
  * Restmenge je Quellposition: bestellte Menge minus die Summe der DeliveryNoteLine-Mengen
  * ueber alle wirksamen Lieferscheine (status CREATED/SENT/DELIVERED) derselben Organisation
- * mit passender sourceLineId.
+ * mit passender sourceLineId. `db` optional als Transaktions-Client (siehe loadSourceLines).
  */
-export async function remainingQuantities(orgId: string, sourceType: DeliverySourceType, sourceId: string): Promise<RemainingQuantity[]> {
-  const { lines } = await loadSourceLines(orgId, sourceType, sourceId);
+export async function remainingQuantities(orgId: string, sourceType: DeliverySourceType, sourceId: string, db: Db = dbInternal): Promise<RemainingQuantity[]> {
+  const { lines } = await loadSourceLines(orgId, sourceType, sourceId, db);
   const ids = lines.map((l) => l.id);
 
   const delivered = ids.length
-    ? await dbInternal.deliveryNoteLine.groupBy({
+    ? await db.deliveryNoteLine.groupBy({
         by: ["sourceLineId"],
         where: { sourceLineId: { in: ids }, deliveryNote: { orgId, status: { in: [...DELIVERED_STATUSES] } } },
         _sum: { quantityMilli: true },
