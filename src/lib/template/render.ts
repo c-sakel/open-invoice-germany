@@ -9,7 +9,7 @@ const PATTERN = /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g;
 function resolve(ctx: TemplateContext, path: string): unknown {
   let cur: unknown = ctx;
   for (const part of path.split(".")) {
-    if (cur === null || typeof cur !== "object" || !(part in (cur as Record<string, unknown>))) return undefined;
+    if (cur === null || typeof cur !== "object" || !Object.hasOwn(cur as Record<string, unknown>, part)) return undefined;
     cur = (cur as Record<string, unknown>)[part];
   }
   return cur;

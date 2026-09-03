@@ -4,7 +4,7 @@ import { encryptSecret, decryptSecret, SecretsUnavailableError } from "@/lib/cry
 describe("secrets", () => {
   const prev = process.env.AUTH_SECRET;
   beforeEach(() => { process.env.AUTH_SECRET = "test-secret-please-change-0123456789"; });
-  afterEach(() => { process.env.AUTH_SECRET = prev; });
+  afterEach(() => { if (prev === undefined) delete process.env.AUTH_SECRET; else process.env.AUTH_SECRET = prev; });
 
   it("roundtrip", () => {
     const enc = encryptSecret("Pa$$wort");
