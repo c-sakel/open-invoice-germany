@@ -110,6 +110,8 @@ const SAMPLE_NAMES = [
   "cash",
   "credit-note-doc-discount", // Fix-Runde 1, Befund A
   "no-iban", // Fix-Runde 1, Befund B
+  "card-48", // K2: Kartenzahlung faellt auf PaymentMeans-Code 1 zurueck
+  "sepa-59", // K2: SEPA-Lastschrift faellt trotz IBAN auf PaymentMeans-Code 1 zurueck
 ];
 
 async function main(): Promise<void> {

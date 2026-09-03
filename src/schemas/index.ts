@@ -401,11 +401,18 @@ export const contactPersonSchema = z.object({
   firstName: z.string().min(1), lastName: z.string().min(1), role: z.string().optional(), phone: z.string().optional(),
   mobile: z.string().optional(), email: z.email().optional(), isDefault: z.boolean().default(false),
 });
+// K2 — UNTDID-4461-Codes, die der Zahlungsmethoden-Snapshot annehmen darf: exportierbar
+// ohne Zusatzgruppen (58/30/10/68/97/1/ZZZ) sowie Karte (48/54/55) und Lastschrift (59),
+// die der Mapper mit console.warn auf Code 1 zurueckfallen laesst (kein CardAccount/
+// PaymentMandate-Support). Verhindert, dass der Betreiber beliebige Codes eintraegt.
+export const UNTDID_PAYMENT_MEANS_CODES = [
+  "58", "30", "10", "68", "97", "1", "ZZZ", "48", "54", "55", "59",
+] as const;
 export const paymentMethodSchema = z.object({
   code: z.string().min(1).max(40).regex(/^[A-Z0-9_]+$/), name: z.string().min(1), description: z.string().optional(),
   paymentTermsDays: z.number().int().min(0).optional(), invoiceText: z.string().optional(), bankAccountRef: z.string().optional(),
   bankIban: z.string().optional(), bankBic: z.string().optional(), bankName: z.string().optional(),
-  untdidCode: z.string().min(1).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
+  untdidCode: z.enum(UNTDID_PAYMENT_MEANS_CODES).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
 });
 export type PaymentMethodInput = z.infer<typeof paymentMethodSchema>;
 export const dunningStageSchema = z.object({

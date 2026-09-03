@@ -159,6 +159,11 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // ein Konto (58/59/30 — BR-DE-23) und liegt weder ein Methoden- noch ein Org-Konto
   // vor, greift derselbe Fallback (protokolliert).
   const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
+  // K2 — Allowlist exportierbarer PaymentMeans-Codes OHNE Zusatzgruppen (CardAccount/
+  // PaymentMandate), die die XRechnung/ZUGFeRD-Mapper nicht abbilden. Karte (48/54/55)
+  // und Lastschrift (59) fallen auf Code 1 zurueck — die brauchten je ein eigenes
+  // XML-Element (CardAccount bzw. PaymentMandate), das dieser Mapper nicht erzeugt.
+  const NON_EXPORTABLE_CODES = new Set(["48", "54", "55", "59"]);
   const NO_ACCOUNT_FALLBACK: EInvoicePaymentMeans = { code: "1", iban: null, bic: null, accountName: null };
   let paymentMeans: EInvoicePaymentMeans = org.iban
     ? { code: "58", iban: org.iban, bic: org.bic, accountName: org.bankName }
@@ -170,7 +175,10 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       const pm = pmParsed.data;
       const code = pm.untdidCode || "58";
       const iban = pm.bankIban ?? org.iban;
-      if (ACCOUNT_REQUIRING_CODES.has(code) && !iban) {
+      if (NON_EXPORTABLE_CODES.has(code)) {
+        console.warn(`mapper: PaymentMeans ${code} nicht exportierbar, Fallback 1`);
+        paymentMeans = NO_ACCOUNT_FALLBACK;
+      } else if (ACCOUNT_REQUIRING_CODES.has(code) && !iban) {
         console.warn(
           `mapper: Zahlungsmethode von ${ctx} verlangt ein Konto (Code ${code}), aber weder Methode noch Organisation haben eine IBAN — nutze Fallback "Instrument not defined"`,
         );

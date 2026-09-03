@@ -315,3 +315,51 @@ describe("Fix-Runde 1", () => {
     expect(data.paymentTermsNote).toBe("Zahlbar sofort.");
   });
 });
+
+describe("Fix-Welle (K2) — PaymentMeans-Allowlist", () => {
+  it("Kartenzahlung (48): Fallback auf Code 1, kein Konto", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentMethodSnapshotJson: JSON.stringify({
+        code: "CARD", name: "EC-/Debitkarte", invoiceText: "Zahlung per Karte.", untdidCode: "48",
+        bankIban: null, bankBic: null, bankName: null,
+      }),
+    });
+    expect(data.paymentMeans).toEqual({ code: "1", iban: null, bic: null, accountName: null });
+    const ubl = buildXRechnungUBL(data);
+    expect(ubl).toContain("<cbc:PaymentMeansCode>1</cbc:PaymentMeansCode>");
+    expect(validateXRechnung(data, ubl).errors).toEqual([]);
+  });
+
+  it("SEPA-Lastschrift (59): Fallback auf Code 1, auch WENN eine IBAN hinterlegt ist", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentMethodSnapshotJson: JSON.stringify({
+        code: "SEPA", name: "SEPA-Lastschrift", invoiceText: "Einzug per SEPA-Lastschrift.", untdidCode: "59",
+        bankIban: "DE44500105175407324931", bankBic: "INGDDEFFXXX", bankName: "ING",
+      }),
+    });
+    expect(data.paymentMeans).toEqual({ code: "1", iban: null, bic: null, accountName: null });
+    const ubl = buildXRechnungUBL(data);
+    expect(ubl).not.toContain("DE44500105175407324931");
+    expect(validateXRechnung(data, ubl).errors).toEqual([]);
+  });
+
+  it("Kreditkarte (54): ebenfalls Fallback auf Code 1", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentMethodSnapshotJson: JSON.stringify({
+        code: "CREDIT_CARD", name: "Kreditkarte", invoiceText: null, untdidCode: "54",
+        bankIban: null, bankBic: null, bankName: null,
+      }),
+    });
+    expect(data.paymentMeans?.code).toBe("1");
+  });
+
+  it("paymentMethodSchema laesst nur die Allowlist zu", async () => {
+    const { paymentMethodSchema } = await import("@/schemas");
+    expect(paymentMethodSchema.safeParse({ code: "X", name: "X", untdidCode: "48" }).success).toBe(true);
+    expect(paymentMethodSchema.safeParse({ code: "X", name: "X", untdidCode: "59" }).success).toBe(true);
+    expect(paymentMethodSchema.safeParse({ code: "X", name: "X", untdidCode: "42" }).success).toBe(false);
+  });
+});
