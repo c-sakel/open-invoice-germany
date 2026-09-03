@@ -72,6 +72,7 @@ export async function finalizeWithinTx(
       quantityMilli: l.quantityMilli,
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
+      lineType: l.lineType,
     })),
     org: invoice.org,
     customer: invoice.customer,
@@ -80,9 +81,13 @@ export async function finalizeWithinTx(
     throw new FinalizeError("Pflichtangaben unvollständig:\n- " + problems.join("\n- "));
   }
 
-  // 2) Summen-Snapshot
+  // 2) Summen-Snapshot. Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) gehen nie in Summen/
+  // Steuerberechnung ein (§8) — sie tragen zwar bereits lineNetCents=0/taxRate=0
+  // (normalizeLines), koennten aber ohne Filter eine zusaetzliche 0-Betrags-Steuergruppe
+  // fuer ihre (unveraenderte) taxCategory erzeugen (Fix-Welle, K1).
+  const itemLinesForTotals = invoice.lines.filter((l) => l.lineType === "ITEM");
   const totals = computeTaxBreakdown(
-    invoice.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    itemLinesForTotals.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     {
       discountPermille: invoice.documentDiscountPermille,
       discountCents: invoice.documentDiscountCents,

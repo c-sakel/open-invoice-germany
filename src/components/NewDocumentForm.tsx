@@ -278,8 +278,11 @@ export function NewDocumentForm({
       currency: "EUR",
       subject: subject || undefined,
       customerReference: customerReference || undefined,
-      contactPersonId: contactPersonId || undefined,
-      billingAddressId: billingAddressId || undefined,
+      // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde (siehe
+      // NewInvoiceForm.tsx) — sonst bleibt die alte Referenz beim Bearbeiten (PATCH)
+      // serverseitig unveraendert stehen.
+      contactPersonId: contactPersonId || null,
+      billingAddressId: billingAddressId || null,
       validUntil: validUntil || undefined,
       headerText: headerText || undefined,
       footerText: footerText || undefined,

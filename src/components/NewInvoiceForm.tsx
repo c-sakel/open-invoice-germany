@@ -344,9 +344,13 @@ export function NewInvoiceForm({
       orderNumber: orderNumber || undefined,
       internalReference: internalReference || undefined,
       buyerReference: buyerReference || undefined,
-      contactPersonId: contactPersonId || undefined,
-      billingAddressId: billingAddressId || undefined,
-      shippingAddressId: shippingAddressId || undefined,
+      // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde — sonst
+      // wird das leere Feld beim Bearbeiten (PATCH) einfach weggelassen und die alte
+      // Referenz bleibt serverseitig unveraendert stehen (JSON.stringify entfernt
+      // undefined-Properties, null bleibt erhalten).
+      contactPersonId: contactPersonId || null,
+      billingAddressId: billingAddressId || null,
+      shippingAddressId: shippingAddressId || null,
       deliveryStart: deliveryStart || undefined,
       deliveryEnd: deliveryEnd || undefined,
       deliveryDate: deliveryDate || undefined,

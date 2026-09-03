@@ -23,13 +23,17 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
     );
   }
 
-  const initialLines = inv.lines.map((l) => ({
-    description: l.description,
-    quantity: String(l.quantityMilli / 1000),
-    unit: l.unit,
-    price: (Math.abs(l.unitNetPriceCents) / 100).toFixed(2),
-    taxRate: l.taxRate,
-  }));
+  // Teilgutschrift nur ueber ITEM-Positionen — HEADING/TEXT/SUBTOTAL tragen keinen Betrag
+  // und werden hier nicht angeboten (§8, K1).
+  const initialLines = inv.lines
+    .filter((l) => l.lineType === "ITEM")
+    .map((l) => ({
+      description: l.description,
+      quantity: String(l.quantityMilli / 1000),
+      unit: l.unit,
+      price: (Math.abs(l.unitNetPriceCents) / 100).toFixed(2),
+      taxRate: l.taxRate,
+    }));
 
   return (
     <div className="space-y-6">
