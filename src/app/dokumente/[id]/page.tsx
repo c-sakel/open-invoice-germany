@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
-import { formatCents, formatQuantity } from "@/lib/money";
+import { formatCents } from "@/lib/money";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
@@ -14,6 +14,7 @@ import { EmailHistory } from "@/components/EmailHistory";
 import { ShareLinkPanel } from "@/components/ShareLinkPanel";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
+import { LineItemsTable } from "@/components/LineItemsTable";
 import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
@@ -163,32 +164,7 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
 
       {q.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.headerText}</p>}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Beschreibung</th>
-              <th className="px-4 py-2 text-right">Menge</th>
-              <th className="px-4 py-2 text-right">Einzel</th>
-              <th className="px-4 py-2 text-right">USt</th>
-              <th className="px-4 py-2 text-right">Netto</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {q.lines.map((l) => (
-              <tr key={l.id}>
-                <td className="px-4 py-2 text-slate-700">{l.description}</td>
-                <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {l.unit}
-                </td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, q.currency)}</td>
-                <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.lineNetCents, q.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LineItemsTable lines={q.lines} currency={q.currency} />
 
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         <div className="flex justify-between">

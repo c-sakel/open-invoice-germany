@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
-import { formatCents, formatQuantity } from "@/lib/money";
+import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction, cancelAction } from "@/app/actions/invoices";
 import { PaymentForm } from "@/components/PaymentForm";
@@ -16,6 +16,7 @@ import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { EmailDocType } from "@/schemas/email";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
+import { LineItemsTable } from "@/components/LineItemsTable";
 
 export const dynamic = "force-dynamic";
 
@@ -213,32 +214,7 @@ export default async function InvoiceDetail({
 
       {invoice.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.headerText}</p>}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Beschreibung</th>
-              <th className="px-4 py-2 text-right">Menge</th>
-              <th className="px-4 py-2 text-right">Einzel</th>
-              <th className="px-4 py-2 text-right">USt</th>
-              <th className="px-4 py-2 text-right">Netto</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {invoice.lines.map((l) => (
-              <tr key={l.id}>
-                <td className="px-4 py-2 text-slate-700">{l.description}</td>
-                <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {l.unit}
-                </td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, invoice.currency)}</td>
-                <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.lineNetCents, invoice.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LineItemsTable lines={invoice.lines} currency={invoice.currency} />
 
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         {hasDocumentAdjustment && (
