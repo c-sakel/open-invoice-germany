@@ -49,7 +49,7 @@ export interface DecideOfferResult {
 export async function decideOffer(
   token: string,
   rawInput: unknown,
-  ctx: { ip?: string; now?: Date } = {},
+  ctx: { ip?: string; now?: Date; provider?: MailProvider } = {},
 ): Promise<DecideOfferResult> {
   const input = decideOfferInputSchema.parse(rawInput);
   const now = ctx.now ?? new Date();
@@ -119,7 +119,7 @@ export async function decideOffer(
       comment: input.comment,
       automationError: result.automationError,
       now,
-    });
+    }, ctx.provider);
   } catch (e) {
     console.warn("decideOffer: interne Benachrichtigung fehlgeschlagen", e);
   }
