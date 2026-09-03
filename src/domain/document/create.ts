@@ -8,7 +8,7 @@ import { computeLineNetCents } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
-import type { CreateDocumentInput } from "@/schemas";
+import type { CreateDocumentInput, SnapshotSource } from "@/schemas";
 
 export async function createBusinessDocument(orgId: string, input: CreateDocumentInput, opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();
@@ -48,6 +48,7 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
       month: now.getMonth() + 1,
     });
 
+    const snapshotSource: SnapshotSource = "CREATE";
     return tx.quote.create({
       data: {
         orgId,
@@ -63,7 +64,7 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
         internalNotes: input.internalNotes,
         sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)),
         buyerSnapshotJson: JSON.stringify(buildBuyerSnapshot(customer)),
-        snapshotSource: "CREATE",
+        snapshotSource,
         snapshotAt: now,
         netTotalCents: totals.netTotalCents,
         taxTotalCents: totals.taxTotalCents,

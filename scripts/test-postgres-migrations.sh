@@ -51,9 +51,9 @@ npx prisma db execute --url "$DATABASE_URL" \
 # Legacy-Belege fuer den Backfill-Test (Fall 5): Organisation, Kunde, festgeschriebene Rechnung.
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
-  VALUES ('org1','Alt GmbH','Weg 1','12345','Altstadt',NOW());
+  VALUES ('org1','Müller & Söhne GmbH','Weg 1','12345','Lüneburg',NOW());
 INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
-  VALUES ('cust1','org1','Alt AG','Str. 2','54321','Altdorf',NOW());
+  VALUES ('cust1','org1','O''Brien AG','Str. 2','54321','Altdorf',NOW());
 INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
   VALUES ('inv1','org1','cust1','RE-2026-00001','FINALIZED',NOW());
 SQL
@@ -90,7 +90,7 @@ SRC=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$SRC" = "MIGRATION" ] || fail "snapshotSource ist '$SRC', erwartet MIGRATION"
 NAME=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select (\"buyerSnapshotJson\"::jsonb)->>'name' from \"Invoice\" where id='inv1'")
-[ "$NAME" = "Alt AG" ] || fail "Buyer-Snapshot enthaelt '$NAME', erwartet 'Alt AG'"
+[ "$NAME" = "O'Brien AG" ] || fail "Buyer-Snapshot enthaelt $NAME, erwartet O'Brien AG"
 KEYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from \"Invoice\", jsonb_object_keys(\"sellerSnapshotJson\"::jsonb) where id='inv1'" 2>/dev/null || echo 0)
 [ "$KEYS" = "14" ] || fail "Seller-Snapshot hat $KEYS Schluessel, erwartet 14"

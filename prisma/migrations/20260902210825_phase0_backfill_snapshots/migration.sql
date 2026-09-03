@@ -15,7 +15,7 @@ UPDATE "Invoice" SET
       'countryCode', c."countryCode", 'vatId', c."vatId", 'email', c."email", 'leitwegId', c."leitwegId")
     FROM "Customer" c WHERE c."id" = "Invoice"."customerId"),
   "snapshotSource" = 'MIGRATION',
-  "snapshotAt" = CURRENT_TIMESTAMP
+  "snapshotAt" = CAST(strftime('%s','now') AS INTEGER) * 1000
 WHERE "status" <> 'DRAFT' AND "snapshotSource" IS NULL;
 
 UPDATE "Quote" SET
@@ -31,5 +31,5 @@ UPDATE "Quote" SET
       'countryCode', c."countryCode", 'vatId', c."vatId", 'email', c."email", 'leitwegId', c."leitwegId")
     FROM "Customer" c WHERE c."id" = "Quote"."customerId"),
   "snapshotSource" = 'MIGRATION',
-  "snapshotAt" = CURRENT_TIMESTAMP
+  "snapshotAt" = CAST(strftime('%s','now') AS INTEGER) * 1000
 WHERE "number" IS NOT NULL AND "snapshotSource" IS NULL;

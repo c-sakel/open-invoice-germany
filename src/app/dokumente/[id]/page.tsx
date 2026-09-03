@@ -30,6 +30,11 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
           <h1 className="text-2xl font-bold tracking-tight">
             {KIND_TITLE[q.kind] ?? "Dokument"} {q.number}
           </h1>
+          {q.snapshotSource === "MIGRATION" && (
+            <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+              Adressstand per Migration eingefroren
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <a
