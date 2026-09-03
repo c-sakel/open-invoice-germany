@@ -65,6 +65,34 @@ export const buyerSnapshotSchema = z.object({
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
 
+// Feldgenau identisch mit dem JSON aus src/domain/invoice/finalize.ts (paymentMethodSnapshotJson).
+export const paymentMethodSnapshotSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  invoiceText: z.string().nullable(),
+  untdidCode: z.string(),
+  bankIban: z.string().nullable(),
+  bankBic: z.string().nullable(),
+  bankName: z.string().nullable(),
+});
+export type PaymentMethodSnapshot = z.infer<typeof paymentMethodSnapshotSchema>;
+
+// taxBreakdownJson (Invoice.taxBreakdownJson) — Alt-Belege ohne Beleganpassung (Phase 4a)
+// kennen baseNetCents/allowanceCents/chargeCents noch nicht: Default 0 bzw. netCents.
+export const taxBreakdownEntrySchema = z
+  .object({
+    taxCategory: z.string(),
+    taxRate: z.number(),
+    netCents: z.number(),
+    taxCents: z.number(),
+    baseNetCents: z.number().optional(),
+    allowanceCents: z.number().default(0),
+    chargeCents: z.number().default(0),
+  })
+  .transform((e) => ({ ...e, baseNetCents: e.baseNetCents ?? e.netCents }));
+export const taxBreakdownSchema = z.array(taxBreakdownEntrySchema);
+export type TaxBreakdownEntrySnapshot = z.infer<typeof taxBreakdownEntrySchema>;
+
 // ── Stammdaten ───────────────────────────────────────────────────────────
 export const organizationSchema = z.object({
   legalName: z.string().min(1),

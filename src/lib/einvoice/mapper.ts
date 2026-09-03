@@ -5,8 +5,19 @@
 import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
+import { roundHalfUp } from "@/lib/money";
+import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
+import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
-import type { EInvoiceData, EInvoiceTaxSubtotal } from "./types";
+import type { EInvoiceData, EInvoiceDocumentAllowanceCharge, EInvoicePaymentMeans } from "./types";
+
+function tryParseJson(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+}
 
 export interface MapInput {
   number: string | null;
@@ -25,6 +36,15 @@ export interface MapInput {
   grossTotalCents: number;
   paidAmountCents: number;
   taxBreakdownJson: string;
+  // Phase 4a — Beleg-Aufschlagsgrund (Freitext) und Skonto-Konditionen.
+  documentChargeReason?: string | null;
+  skonto1Permille?: number | null;
+  skonto1Days?: number | null;
+  skonto2Permille?: number | null;
+  skonto2Days?: number | null;
+  // Phase 4a — Snapshot der gewaehlten Zahlungsmethode (siehe finalize.ts). NULL,
+  // wenn keine Zahlungsmethode gewaehlt war -> Fallback Org-Konto, Code 58.
+  paymentMethodSnapshotJson?: string | null;
   // Phase 0: Snapshot der Parteien; bei Entwuerfen null -> Live-Relation.
   sellerSnapshotJson?: string | null;
   buyerSnapshotJson?: string | null;
@@ -66,14 +86,82 @@ export interface MapInput {
     lineNetCents: number;
     taxRate: number;
     taxCategory: string;
+    // Phase 4a — Zeilenrabatt (BG-27). Fehlen diese Felder (Alt-Belege), bleibt
+    // grossLineCents === lineNetCents -> kein Zeilen-AllowanceCharge im XML.
+    discountPermille?: number;
+    discountCents?: number;
   }>;
 }
 
 export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
-  const breakdown = JSON.parse(invoice.taxBreakdownJson) as EInvoiceTaxSubtotal[];
   const ctx = invoice.id ?? invoice.number ?? "unbekannt";
+  const breakdownParsed = taxBreakdownSchema.safeParse(tryParseJson(invoice.taxBreakdownJson));
+  if (!breakdownParsed.success) {
+    console.warn(`mapper: taxBreakdownJson von ${ctx} ungueltig, nutze leere Aufschluesselung`);
+  }
+  const breakdown = breakdownParsed.success ? breakdownParsed.data : [];
   const org = parseSellerSnapshot(invoice.sellerSnapshotJson, invoice.org, ctx);
   const customer = parseBuyerSnapshot(invoice.buyerSnapshotJson, invoice.customer, ctx);
+
+  // Phase 4a — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, aus der bereits
+  // (bei Festschreibung) proportional aufgeteilten Aufschluesselung.
+  const documentAllowances: EInvoiceDocumentAllowanceCharge[] = breakdown
+    .filter((b) => b.allowanceCents > 0)
+    .map((b) => ({
+      amountCents: b.allowanceCents,
+      baseCents: b.baseNetCents,
+      taxRate: b.taxRate,
+      taxCategory: b.taxCategory,
+      reason: "Rabatt",
+    }));
+  const documentCharges: EInvoiceDocumentAllowanceCharge[] = breakdown
+    .filter((b) => b.chargeCents > 0)
+    .map((b) => ({
+      amountCents: b.chargeCents,
+      baseCents: b.baseNetCents - b.allowanceCents,
+      taxRate: b.taxRate,
+      taxCategory: b.taxCategory,
+      reason: invoice.documentChargeReason || "Aufschlag",
+    }));
+  const lineTotalCents = invoice.lines.reduce((s, l) => s + l.lineNetCents, 0);
+  const allowanceTotalCents = breakdown.reduce((s, b) => s + b.allowanceCents, 0);
+  const chargeTotalCents = breakdown.reduce((s, b) => s + b.chargeCents, 0);
+
+  // Phase 4a — Skonto (BT-20): #SKONTO#-Syntax vor dem Menschentext, sofern Skonto-
+  // Konditionen gesetzt sind. Ohne Skonto ist paymentTermsNote === paymentTerms
+  // (byte-identisch zum bisherigen Verhalten fuer Alt-Belege).
+  const skTerms = skontoTerms({
+    issueDate: invoice.issueDate,
+    grossTotalCents: invoice.grossTotalCents,
+    skonto1Permille: invoice.skonto1Permille ?? null,
+    skonto1Days: invoice.skonto1Days ?? null,
+    skonto2Permille: invoice.skonto2Permille ?? null,
+    skonto2Days: invoice.skonto2Days ?? null,
+  });
+  const humanPaymentTerms =
+    invoice.paymentTerms ?? (skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate) : null);
+  const paymentTermsNote =
+    skTerms.length > 0 && humanPaymentTerms ? xrechnungSkontoNote(skTerms, humanPaymentTerms) : humanPaymentTerms;
+
+  // Phase 4a — Zahlungsweg aus dem Zahlungsmethoden-Snapshot; Fallback Org-Konto,
+  // Code 58 (SEPA-Überweisung) — identisch zum bisherigen hartkodierten Verhalten.
+  let paymentMeans: EInvoicePaymentMeans = { code: "58", iban: org.iban, bic: org.bic, accountName: org.bankName };
+  let paymentMethodText: string | null = null;
+  if (invoice.paymentMethodSnapshotJson) {
+    const pmParsed = paymentMethodSnapshotSchema.safeParse(tryParseJson(invoice.paymentMethodSnapshotJson));
+    if (pmParsed.success) {
+      const pm = pmParsed.data;
+      paymentMeans = {
+        code: pm.untdidCode || "58",
+        iban: pm.bankIban ?? org.iban,
+        bic: pm.bankBic ?? org.bic,
+        accountName: pm.bankName ?? org.bankName,
+      };
+      paymentMethodText = pm.invoiceText;
+    } else {
+      console.warn(`mapper: Zahlungsmethoden-Snapshot von ${ctx} ungueltig, nutze Org-Konto`);
+    }
+  }
 
   // Kopf-/Fusstext: Platzhalter mit einem DB-freien Kontext aus den bereits aufgeloesten
   // Snapshot-Werten aufloesen — Ruling: das Ergebnis geht NUR ins PDF, nie ins XML.
@@ -101,6 +189,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     // B2G: Leitweg-ID des Kunden als Buyer reference (BT-10), sonst explizit gesetzter Wert.
     buyerReference: invoice.buyerReference ?? customer.leitwegId,
     paymentTerms: invoice.paymentTerms,
+    paymentTermsNote,
     notes: invoice.notes,
     seller: {
       name: org.legalName,
@@ -127,16 +216,27 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       vatId: customer.vatId,
       email: customer.email,
     },
-    lines: invoice.lines.map((l) => ({
-      id: l.id,
-      description: l.description,
-      quantityMilli: l.quantityMilli,
-      unit: l.unit,
-      unitNetPriceCents: l.unitNetPriceCents,
-      lineNetCents: l.lineNetCents,
-      taxRate: l.taxRate,
-      taxCategory: l.taxCategory,
-    })),
+    lines: invoice.lines.map((l) => {
+      const grossLineCents = roundHalfUp((l.quantityMilli * l.unitNetPriceCents) / 1000);
+      const discountCents = grossLineCents - l.lineNetCents;
+      // MultiplierFactorNumeric nur bei REIN prozentualem Rabatt (kein zusaetzlicher
+      // Festbetrag) — sonst ist die Prozent/Betrag-Beziehung nicht mehr exakt.
+      const discountPermille =
+        !l.discountCents && l.discountPermille ? l.discountPermille : undefined;
+      return {
+        id: l.id,
+        description: l.description,
+        quantityMilli: l.quantityMilli,
+        unit: l.unit,
+        unitNetPriceCents: l.unitNetPriceCents,
+        lineNetCents: l.lineNetCents,
+        taxRate: l.taxRate,
+        taxCategory: l.taxCategory,
+        grossLineCents,
+        discountCents,
+        discountPermille,
+      };
+    }),
     taxSubtotals: breakdown,
     netTotalCents: invoice.netTotalCents,
     taxTotalCents: invoice.taxTotalCents,
@@ -146,6 +246,13 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    documentAllowances,
+    documentCharges,
+    lineTotalCents,
+    allowanceTotalCents,
+    chargeTotalCents,
+    paymentMeans,
+    paymentMethodText,
     headerText,
     footerText,
   };
