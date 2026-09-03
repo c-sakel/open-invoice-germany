@@ -66,6 +66,12 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
 
     const totals = computeTaxBreakdown(
       q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+      {
+        discountPermille: q.documentDiscountPermille,
+        discountCents: q.documentDiscountCents,
+        chargePermille: q.documentChargePermille,
+        chargeCents: q.documentChargeCents,
+      },
     );
 
     // Kopf-/Fusstext und Zahlungsbedingungen vom Dokument uebernehmen; fehlen sie, aus der
@@ -73,6 +79,11 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     const headerText = q.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD"));
     const footerText = q.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT"));
     const paymentTerms = q.paymentTerms ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT"));
+
+    // Fehlt eine Zahlungsmethode am Dokument (Quote kennt keine eigene), greift die
+    // Standard-Zahlungsmethode des Kunden (gleiches Muster wie createDraftInvoiceWithinTx).
+    const customer = await tx.customer.findUnique({ where: { id: q.customerId }, select: { defaultPaymentMethodId: true } });
+    const paymentMethodId = customer?.defaultPaymentMethodId ?? undefined;
 
     const invoice = await tx.invoice.create({
       data: {
@@ -88,6 +99,12 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
         headerText,
         footerText,
         paymentTerms,
+        documentDiscountPermille: q.documentDiscountPermille,
+        documentDiscountCents: q.documentDiscountCents,
+        documentChargePermille: q.documentChargePermille,
+        documentChargeCents: q.documentChargeCents,
+        documentChargeReason: q.documentChargeReason,
+        paymentMethodId,
         netTotalCents: totals.netTotalCents,
         taxTotalCents: totals.taxTotalCents,
         grossTotalCents: totals.grossTotalCents,
@@ -102,6 +119,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
             taxRate: l.taxRate,
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
+            discountCents: l.discountCents,
             lineNetCents: l.lineNetCents,
           })),
         },
@@ -167,6 +185,11 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
         notes: src.notes ?? undefined,
         internalNotes: src.internalNotes ?? undefined,
         // headerText/footerText bewusst nicht uebernommen -> AB-Textvorlage greift.
+        documentDiscountPermille: src.documentDiscountPermille,
+        documentDiscountCents: src.documentDiscountCents,
+        documentChargePermille: src.documentChargePermille,
+        documentChargeCents: src.documentChargeCents,
+        documentChargeReason: src.documentChargeReason ?? undefined,
         lines: src.lines.map((l) => ({
           description: l.description,
           quantityMilli: l.quantityMilli,
@@ -175,6 +198,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
           taxRate: l.taxRate as 19 | 7 | 0,
           taxCategory: l.taxCategory as "S" | "AE" | "K" | "G" | "E" | "Z",
           discountPermille: l.discountPermille,
+          discountCents: l.discountCents,
         })),
       },
       { actor, now },

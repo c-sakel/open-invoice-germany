@@ -15,7 +15,7 @@
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
-import { computeLineNetCents } from "@/lib/money";
+import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { buildSellerSnapshot } from "@/domain/snapshot";
@@ -48,10 +48,17 @@ export async function createBusinessDocumentWithinTx(
     taxRate: l.taxRate,
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
-    lineNetCents: computeLineNetCents(l.quantityMilli, l.unitNetPriceCents, l.discountPermille),
+    discountCents: l.discountCents,
+    lineNetCents: computeLineNet(l).lineNetCents,
   }));
   const totals = computeTaxBreakdown(
     lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    {
+      discountPermille: input.documentDiscountPermille,
+      discountCents: input.documentDiscountCents,
+      chargePermille: input.documentChargePermille,
+      chargeCents: input.documentChargeCents,
+    },
   );
 
   const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId } });
@@ -114,6 +121,11 @@ export async function createBusinessDocumentWithinTx(
       customerReference: input.customerReference,
       contactPersonId: input.contactPersonId,
       billingAddressId: input.billingAddressId,
+      documentDiscountPermille: input.documentDiscountPermille,
+      documentDiscountCents: input.documentDiscountCents,
+      documentChargePermille: input.documentChargePermille,
+      documentChargeCents: input.documentChargeCents,
+      documentChargeReason: input.documentChargeReason,
       sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)),
       buyerSnapshotJson: JSON.stringify(buyerSnapshot),
       snapshotSource,

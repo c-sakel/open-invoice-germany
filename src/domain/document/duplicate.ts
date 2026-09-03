@@ -18,7 +18,15 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
     const src = await tx.quote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!src) throw new NotFoundError(`Dokument ${id} nicht gefunden.`);
 
-    const totals = computeTaxBreakdown(src.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })));
+    const totals = computeTaxBreakdown(
+      src.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+      {
+        discountPermille: src.documentDiscountPermille,
+        discountCents: src.documentDiscountCents,
+        chargePermille: src.documentChargePermille,
+        chargeCents: src.documentChargeCents,
+      },
+    );
 
     const copy = await tx.quote.create({
       data: {
@@ -41,6 +49,11 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
         customerReference: src.customerReference,
         contactPersonId: src.contactPersonId,
         billingAddressId: src.billingAddressId,
+        documentDiscountPermille: src.documentDiscountPermille,
+        documentDiscountCents: src.documentDiscountCents,
+        documentChargePermille: src.documentChargePermille,
+        documentChargeCents: src.documentChargeCents,
+        documentChargeReason: src.documentChargeReason,
         netTotalCents: totals.netTotalCents,
         taxTotalCents: totals.taxTotalCents,
         grossTotalCents: totals.grossTotalCents,
@@ -54,6 +67,7 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
             taxRate: l.taxRate,
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
+            discountCents: l.discountCents,
             lineNetCents: l.lineNetCents,
           })),
         },
@@ -143,6 +157,16 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
       headerText: src.headerText ?? undefined,
       footerText: src.footerText ?? undefined,
       internalNotes: src.internalNotes ?? undefined,
+      documentDiscountPermille: src.documentDiscountPermille,
+      documentDiscountCents: src.documentDiscountCents,
+      documentChargePermille: src.documentChargePermille,
+      documentChargeCents: src.documentChargeCents,
+      documentChargeReason: src.documentChargeReason ?? undefined,
+      skonto1Permille: src.skonto1Permille ?? undefined,
+      skonto1Days: src.skonto1Days ?? undefined,
+      skonto2Permille: src.skonto2Permille ?? undefined,
+      skonto2Days: src.skonto2Days ?? undefined,
+      paymentMethodId: src.paymentMethodId ?? undefined,
       lines: src.lines.map((l) => ({
         description: l.description,
         quantityMilli: l.quantityMilli,
@@ -151,6 +175,7 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
         taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,
+        discountCents: l.discountCents,
       })),
     };
 

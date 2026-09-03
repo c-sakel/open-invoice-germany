@@ -930,12 +930,16 @@ server.registerTool(
     try {
       const org = await requireOrg();
       const inv = await resolveInvoice(org.id, args.invoice);
-      const updated = await recordPayment(
+      const result = await recordPayment(
         inv.id,
         recordPaymentSchema.parse({ amountCents: euroToCents(args.amountEuro), method: args.method, reference: args.reference }),
       );
+      const updated = result.payment;
       const open = updated.grossTotalCents - updated.paidAmountCents;
-      return ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.`);
+      const skontoNote = result.skontoSuggestion
+        ? ` Skonto moeglich bis ${result.skontoSuggestion.dueDate.toISOString().slice(0, 10)} (${formatCents(result.skontoSuggestion.restCents)}).`
+        : "";
+      return ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}`);
     } catch (e) {
       if (e instanceof PaymentError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);

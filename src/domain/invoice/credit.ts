@@ -5,7 +5,7 @@
  * behält seinen Status (für Voll-Storno siehe cancelInvoice).
  */
 import { dbInternal } from "@/lib/db";
-import { computeLineNetCents } from "@/lib/money";
+import { computeLineNet } from "@/lib/pricing/line";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
@@ -47,6 +47,8 @@ export async function createPartialCreditNote(
       select: {
         id: true, orgId: true, customerId: true, number: true, taxScheme: true, currency: true, status: true, type: true,
         sellerSnapshotJson: true, buyerSnapshotJson: true,
+        documentDiscountPermille: true, documentDiscountCents: true,
+        documentChargePermille: true, documentChargeCents: true, documentChargeReason: true,
       },
     });
     if (!original) throw new CreditError("Rechnung nicht gefunden.");
@@ -64,10 +66,18 @@ export async function createPartialCreditNote(
         issueDate: now,
         notes: `Teilgutschrift zu Rechnung ${original.number}.${input.notes ? " " + input.notes : ""}`,
         correctsInvoiceId: original.id,
+        // Beleg-Rabatt/-Aufschlag unveraendert (positiv) uebernehmen — applyDocumentAdjustments
+        // ist vorzeichen-invariant und rechnet bei negativen Zeilen-Buckets auf den negierten
+        // (positiven) Betraegen wie im Original (Ruling Task-1-Review).
+        documentDiscountPermille: original.documentDiscountPermille,
+        documentDiscountCents: original.documentDiscountCents,
+        documentChargePermille: original.documentChargePermille,
+        documentChargeCents: original.documentChargeCents,
+        documentChargeReason: original.documentChargeReason,
         lines: {
           create: input.lines.map((l, i) => {
             const unitPos = Math.abs(l.unitNetPriceCents);
-            const lineNetPos = computeLineNetCents(l.quantityMilli, unitPos, 0);
+            const lineNetPos = computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: unitPos }).lineNetCents;
             return {
               position: i + 1,
               description: l.description,
@@ -77,6 +87,7 @@ export async function createPartialCreditNote(
               taxRate: l.taxRate,
               taxCategory: l.taxCategory,
               discountPermille: 0,
+              discountCents: 0,
               lineNetCents: -lineNetPos,
             };
           }),
