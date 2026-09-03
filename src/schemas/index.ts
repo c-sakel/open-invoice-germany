@@ -200,8 +200,13 @@ export const convertDocumentSchema = z.object({
 });
 export type ConvertDocumentInput = z.infer<typeof convertDocumentSchema>;
 
+/** Body von POST /api/documents/[id]/convert und /api/invoices/[id]/delivery-note —
+ *  fromType/fromId kommen dort aus der URL, nicht aus dem Body (Fix-Runde 1, Befund 2). */
+export const convertDocumentBodySchema = convertDocumentSchema.omit({ fromType: true, fromId: true });
+export type ConvertDocumentBodyInput = z.infer<typeof convertDocumentBodySchema>;
+
 export const documentStatusActionSchema = z.object({
-  action: z.enum(["MARK_SENT", "MARK_ACCEPTED", "MARK_REJECTED", "MARK_DELIVERED", "CANCEL", "ARCHIVE", "UNARCHIVE"]),
+  action: z.enum(["MARK_SENT", "MARK_ACCEPTED", "MARK_REJECTED", "MARK_DELIVERED", "MARK_CREATED", "CANCEL", "ARCHIVE", "UNARCHIVE"]),
   note: z.string().max(1000).optional(),
 });
 export type DocumentStatusActionInput = z.infer<typeof documentStatusActionSchema>;

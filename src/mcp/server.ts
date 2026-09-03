@@ -51,6 +51,7 @@ import {
   createRecurringSchema,
   createDeliveryNoteSchema,
   documentStatusActionSchema,
+  convertDocumentBodySchema,
   TaxScheme,
   PaymentMethod,
 } from "@/schemas";
@@ -728,11 +729,13 @@ server.registerTool(
     inputSchema: {
       fromType: z.enum(["QUOTE", "INVOICE"]).default("QUOTE").describe("QUOTE fuer Angebot/AB/Proforma, INVOICE fuer eine Rechnung"),
       document: z.string().describe("Dokument- oder Rechnungs-Nummer bzw. -ID der Quelle"),
-      toKind: z.enum(["AUFTRAGSBESTAETIGUNG", "INVOICE", "DELIVERY_NOTE"]),
-      quantities: z
-        .array(z.object({ sourceLineId: z.string(), quantityMilli: z.number().int().nonnegative() }))
-        .optional()
-        .describe("Nur fuer DELIVERY_NOTE: Mengen je Quellposition (in Milliunits). Ohne Angabe = volle Restmenge."),
+      // toKind/quantities wiederverwenden aus dem Routen-Schema (Fix-Runde 1, Befund 2) —
+      // deliveryDate bleibt ein eigener String-Typ, da hier natuerlichsprachliche Eingaben
+      // (z. B. "heute") ueber parseDateInput geparst werden, nicht Zod-coerce.
+      toKind: convertDocumentBodySchema.shape.toKind,
+      quantities: convertDocumentBodySchema.shape.quantities.describe(
+        "Nur fuer DELIVERY_NOTE: Mengen je Quellposition (in Milliunits). Ohne Angabe = volle Restmenge.",
+      ),
       deliveryDate: z.string().optional().describe("Nur fuer DELIVERY_NOTE, YYYY-MM-DD"),
     },
   },
@@ -800,7 +803,7 @@ server.registerTool(
   {
     title: "Dokument-/Lieferscheinstatus setzen",
     description:
-      "Setzt den Status eines Angebots/einer Auftragsbestaetigung (QUOTE) oder eines Lieferscheins (DELIVERY_NOTE): MARK_SENT, MARK_ACCEPTED, MARK_REJECTED (nur QUOTE), MARK_DELIVERED (nur DELIVERY_NOTE), CANCEL, ARCHIVE, UNARCHIVE.",
+      "Setzt den Status eines Angebots/einer Auftragsbestaetigung (QUOTE) oder eines Lieferscheins (DELIVERY_NOTE): MARK_SENT, MARK_ACCEPTED, MARK_REJECTED (nur QUOTE), MARK_CREATED, MARK_DELIVERED (nur DELIVERY_NOTE), CANCEL, ARCHIVE, UNARCHIVE. MARK_CREATED vergibt bei einem DRAFT-Lieferschein (z. B. einem Duplikat) die Belegnummer.",
     inputSchema: {
       type: z.enum(["QUOTE", "DELIVERY_NOTE"]),
       document: z.string().describe("Nummer oder ID des Angebots/Lieferscheins"),
@@ -827,10 +830,10 @@ server.registerTool(
         return ok(`Status gesetzt: ${updated.status}.`);
       }
 
-      if (action !== "MARK_SENT" && action !== "MARK_DELIVERED" && action !== "CANCEL") {
+      if (action !== "MARK_CREATED" && action !== "MARK_SENT" && action !== "MARK_DELIVERED" && action !== "CANCEL") {
         return fail(`${action} ist fuer DELIVERY_NOTE nicht gueltig.`);
       }
-      const target = { MARK_SENT: "SENT", MARK_DELIVERED: "DELIVERED", CANCEL: "CANCELLED" } as const;
+      const target = { MARK_CREATED: "CREATED", MARK_SENT: "SENT", MARK_DELIVERED: "DELIVERED", CANCEL: "CANCELLED" } as const;
       const updated = await setDeliveryNoteStatus(org.id, doc.id, target[action], { actor: "mcp", note });
       return ok(`Status gesetzt: ${updated.status}${updated.number ? ` (Nummer ${updated.number})` : ""}.`);
     } catch (e) {

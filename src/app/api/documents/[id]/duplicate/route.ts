@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { duplicateDocument } from "@/domain/document/duplicate";
+import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 
@@ -13,7 +14,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     const copy = await duplicateDocument(org.id, "QUOTE", id, actor);
     return NextResponse.json(copy, { status: 201 });
   } catch (e) {
-    const status = e instanceof Error && /nicht gefunden/.test(e.message) ? 404 : 500;
-    return NextResponse.json({ error: (e as Error).message }, { status });
+    if (e instanceof NotFoundError) {
+      return NextResponse.json({ error: e.message }, { status: 404 });
+    }
+    console.error("POST /duplicate:", e);
+    return NextResponse.json({ error: "Duplizieren fehlgeschlagen." }, { status: 500 });
   }
 }

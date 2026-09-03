@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type DocType = "QUOTE" | "DELIVERY_NOTE";
-type Action = "MARK_SENT" | "MARK_ACCEPTED" | "MARK_REJECTED" | "MARK_DELIVERED" | "CANCEL" | "ARCHIVE" | "UNARCHIVE";
+type Action = "MARK_SENT" | "MARK_ACCEPTED" | "MARK_REJECTED" | "MARK_DELIVERED" | "MARK_CREATED" | "CANCEL" | "ARCHIVE" | "UNARCHIVE";
 
 // Client-seitige Kopie der Uebergangstabellen aus src/domain/document/status.ts (dort
 // nicht importierbar, weil die Datei dbInternal laedt) — steuert nur, welche Aktionen
@@ -18,7 +18,7 @@ const QUOTE_ACTIONS: Record<string, Action[]> = {
   CANCELLED: [],
 };
 const DELIVERY_ACTIONS: Record<string, Action[]> = {
-  DRAFT: ["CANCEL"],
+  DRAFT: ["MARK_CREATED", "CANCEL"],
   CREATED: ["MARK_SENT", "MARK_DELIVERED", "CANCEL"],
   SENT: ["MARK_DELIVERED", "CANCEL"],
   DELIVERED: ["CANCEL"],
@@ -30,6 +30,7 @@ const ACTION_LABEL: Record<Action, string> = {
   MARK_ACCEPTED: "Annehmen",
   MARK_REJECTED: "Ablehnen",
   MARK_DELIVERED: "Als geliefert markieren",
+  MARK_CREATED: "Lieferschein erstellen (Nummer vergeben)",
   CANCEL: "Stornieren",
   ARCHIVE: "Archivieren",
   UNARCHIVE: "Aus Archiv holen",
