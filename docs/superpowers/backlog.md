@@ -197,3 +197,14 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
   gegen die Kette statt gegen den Einzelbeleg.
 - **Race bei gleichzeitiger Lieferschein-Anlage unter Postgres** (READ COMMITTED) trotz Pruefung in der Tx — dokumentiert in LIMITATIONEN;
   Loesung: SELECT ... FOR UPDATE auf die Quellzeilen (Postgres) oder Serialisierung ueber Advisory Lock.
+
+## Aus Phase 3b (Online-Angebotsannahme, 2026-09-03)
+
+- **Auth nur im Proxy** (Matcher-Ausnahme fuer Dateiendungen): `getActiveOrg()`/`getCurrentUserId()` pruefen selbst nichts. Defense-in-Depth:
+  Session-Pruefung zusaetzlich in Routen/Actions (Helper `requireUser()`), Matcher auf `_next/` begrenzen. Kandidat fuer Upstream-PR.
+- **Browser-E2E fehlt** fuer die oeffentliche Angebotsseite (Server Action per curl nicht nachbaubar). Playwright-Smoke fuer Annahme/Ablehnung.
+- **Rate-Limit nur je Instanz** — bei mehreren App-Containern Redis/Advisory Lock (LIMITATIONEN).
+- **`actor: "public:<Name>"`** im ChangeLog traegt kundenkontrollierten Text (bis 200 Zeichen) — bewusst, Praefix verhindert Verwechslung.
+- **Cloudflare-Only am Origin** ist Voraussetzung dafuer, dass `cf-connecting-ip` vertrauenswuerdig ist — nginx-Allowlist existiert
+  (BETRIEB.md); bei Serverwechsel beachten.
+- **HKDF-Domain-Separation**: `secrets.ts` nutzt fuer SMTP-Passwort und `tokenEnc` denselben Info-String; je Zweck eigener Info-String (Migration: alte Werte mit altem Info entschluesseln, neu verschluesseln).
