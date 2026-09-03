@@ -76,18 +76,20 @@ export async function createDraftInvoiceWithinTx(
     if (!method) throw new Error("Zahlungsmethode nicht gefunden.");
   }
 
-  // Kopffelder (Phase 4b) — org-geprueft wie in update.ts (Ansprechpartner/Rechnungs-/
-  // Lieferadresse muessen zur Organisation gehoeren, sonst 500 statt stiller Fremd-Org-Referenz).
+  // Kopffelder (Phase 4b) — org- UND kundengeprueft (Fix-Runde 1): Ansprechpartner/
+  // Rechnungs-/Lieferadresse muessen zur Organisation UND zum ausgewaehlten Kunden
+  // gehoeren, sonst koennte ein fremder Ansprechpartner/eine fremde Adresse (anderer
+  // Kunde derselben Org) unbemerkt an die Rechnung gehaengt werden.
   if (input.contactPersonId) {
-    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId }, select: { id: true } });
+    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId, customerId: input.customerId }, select: { id: true } });
     if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
   }
   if (input.billingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId }, select: { id: true } });
+    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
     if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
   }
   if (input.shippingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId }, select: { id: true } });
+    const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
     if (!address) throw new Error("Lieferadresse nicht gefunden.");
   }
 

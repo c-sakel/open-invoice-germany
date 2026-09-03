@@ -207,6 +207,20 @@ export function NewDocumentForm({
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
 
+  // Fix-Runde 1: Ansprechpartner/Rechnungsadresse gehoeren zum ALTEN Kunden — beim
+  // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen (sonst
+  // koennte ein fremder Ansprechpartner/Adresse unbemerkt am Dokument haengen bleiben;
+  // serverseitig zusaetzlich in create.ts/update.ts geprueft).
+  function selectCustomer(id: string) {
+    setCustomerId(id);
+    if (contactPersonId && !contacts.some((c) => c.id === contactPersonId && c.customerId === id)) {
+      setContactPersonId("");
+    }
+    if (billingAddressId && !addresses.some((a) => a.id === billingAddressId && a.customerId === id)) {
+      setBillingAddressId("");
+    }
+  }
+
   function patchLine(i: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
@@ -321,7 +335,7 @@ export function NewDocumentForm({
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Kunde</span>
-          <select className={input} value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+          <select className={input} value={customerId} onChange={(e) => selectCustomer(e.target.value)} required>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

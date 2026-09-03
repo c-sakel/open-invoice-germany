@@ -133,6 +133,48 @@ describe("updateDraftInvoice — Kopffelder, Positionen, Rabatt/Skonto/Zahlungsm
   });
 });
 
+describe("updateDraftInvoice — Fix-Runde 1: Ansprechpartner/Adressen kundengeprueft", () => {
+  it("lehnt einen Ansprechpartner eines ANDEREN Kunden derselben Org ab", async () => {
+    const invoice = await draftInvoice();
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde B GmbH", addressLine1: "Nebenstr. 1", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const contactOfOtherCustomer = await dbInternal.contactPerson.create({
+      data: { orgId, customerId: otherCustomer.id, firstName: "Bea", lastName: "Fremdkunde" },
+    });
+    await expect(updateDraftInvoice(orgId, invoice.id, { contactPersonId: contactOfOtherCustomer.id }, "tester")).rejects.toThrow(NotFoundError);
+  });
+
+  it("lehnt eine Rechnungsadresse eines ANDEREN Kunden derselben Org ab", async () => {
+    const invoice = await draftInvoice();
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde C GmbH", addressLine1: "Nebenstr. 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const addressOfOtherCustomer = await dbInternal.customerAddress.create({
+      data: { orgId, customerId: otherCustomer.id, type: "BILLING", addressLine1: "Fremdweg 1", postalCode: "20095", city: "Hamburg" },
+    });
+    await expect(updateDraftInvoice(orgId, invoice.id, { billingAddressId: addressOfOtherCustomer.id }, "tester")).rejects.toThrow(NotFoundError);
+  });
+
+  it("akzeptiert Ansprechpartner/Adresse des NEUEN Kunden, wenn customerId im selben Aufruf gewechselt wird", async () => {
+    const invoice = await draftInvoice();
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde D GmbH", addressLine1: "Nebenstr. 3", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const contactOfOtherCustomer = await dbInternal.contactPerson.create({
+      data: { orgId, customerId: otherCustomer.id, firstName: "Dora", lastName: "Neukunde" },
+    });
+    const updated = await updateDraftInvoice(
+      orgId,
+      invoice.id,
+      { customerId: otherCustomer.id, contactPersonId: contactOfOtherCustomer.id },
+      "tester",
+    );
+    expect(updated.customerId).toBe(otherCustomer.id);
+    expect(updated.contactPersonId).toBe(contactOfOtherCustomer.id);
+  });
+});
+
 describe("updateDraftInvoice — Fix-Runde 1: type unveraenderbar", () => {
   it("ignoriert ein mitgesendetes type-Feld (Zod streift unbekannte Felder, kein Fehler) und laesst die Rechnungsart unveraendert", async () => {
     const invoice = await draftInvoice();

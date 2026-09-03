@@ -45,16 +45,21 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId } });
       if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
     }
+    // Fix-Runde 1: Ansprechpartner/Adressen gegen den EFFEKTIVEN Kunden pruefen (den neu
+    // gesetzten, sonst den bestehenden) UND die Organisation — sonst koennte ein
+    // Ansprechpartner/eine Adresse eines ANDEREN Kunden derselben Org unbemerkt uebernommen
+    // werden (z. B. wenn nur contactPersonId geaendert wird, ohne customerId anzugeben).
+    const effectiveCustomerIdForContacts = input.customerId ?? invoice.customerId;
     if (input.contactPersonId) {
-      const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId } });
+      const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId, customerId: effectiveCustomerIdForContacts } });
       if (!contact) throw new NotFoundError("Ansprechpartner nicht gefunden.");
     }
     if (input.billingAddressId) {
-      const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId } });
+      const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId, customerId: effectiveCustomerIdForContacts } });
       if (!address) throw new NotFoundError("Rechnungsadresse nicht gefunden.");
     }
     if (input.shippingAddressId) {
-      const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId } });
+      const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId, customerId: effectiveCustomerIdForContacts } });
       if (!address) throw new NotFoundError("Lieferadresse nicht gefunden.");
     }
     if (input.paymentMethodId) {

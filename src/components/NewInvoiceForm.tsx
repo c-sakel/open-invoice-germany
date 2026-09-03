@@ -174,6 +174,19 @@ export function NewInvoiceForm({
       const c = customers.find((x) => x.id === id);
       setPaymentMethodId(c?.defaultPaymentMethodId ?? "");
     }
+    // Fix-Runde 1: Ansprechpartner/Adressen gehoeren zum ALTEN Kunden — beim
+    // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen,
+    // sonst koennte ein fremder Ansprechpartner/Adresse unbemerkt an die Rechnung
+    // gehaengt werden (serverseitig zusaetzlich in update.ts/create.ts geprueft).
+    if (contactPersonId && !contacts.some((c) => c.id === contactPersonId && c.customerId === id)) {
+      setContactPersonId("");
+    }
+    if (billingAddressId && !addresses.some((a) => a.id === billingAddressId && a.customerId === id)) {
+      setBillingAddressId("");
+    }
+    if (shippingAddressId && !addresses.some((a) => a.id === shippingAddressId && a.customerId === id)) {
+      setShippingAddressId("");
+    }
   }
 
   function applySuggestedDueDate() {

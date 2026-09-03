@@ -52,7 +52,15 @@ export function AttachmentPanel({
         setError(j.error ?? "Upload fehlgeschlagen.");
         return;
       }
-      setItems((prev) => [...prev, ...(j.attachments as AttachmentItem[])]);
+      // 201 (alle gespeichert) oder 207 (Teilerfolg) — saved uebernehmen, failed als
+      // Warnung anzeigen, statt den gesamten Mehrfach-Upload an einer fehlerhaften
+      // Datei scheitern zu lassen (Fix-Runde 1).
+      const saved = (j.saved ?? []) as AttachmentItem[];
+      const failed = (j.failed ?? []) as { filename: string; error: string }[];
+      setItems((prev) => [...prev, ...saved]);
+      if (failed.length > 0) {
+        setError(failed.map((f) => `${f.filename}: ${f.error}`).join(" · "));
+      }
     } catch {
       setError("Upload fehlgeschlagen.");
     } finally {
