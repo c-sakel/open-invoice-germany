@@ -21,6 +21,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 ## E-Mail-Versand
 - **Nur SMTP.** Es gibt genau einen Provider (`src/lib/mail/smtp.ts`); Resend/SES o. Ä. sind nicht angebunden (siehe `docs/ARCHITEKTUR.md`).
 - **Kein Zustell-/Bounce-Tracking.** Der Versandstatus bleibt nach erfolgreichem SMTP-Aufruf dauerhaft `SENT` — die Werte `DELIVERED`/`BOUNCED` sind im Schema reserviert, werden aber mangels Provider-Webhook nicht gesetzt.
+- **QUEUED-Eintraege ohne Abgleich.** Bricht der Prozess waehrend des SMTP-Versands ab, bleibt der `EmailLog`-Eintrag dauerhaft auf `QUEUED` stehen, ohne dass ein ChangeLog-Satz nachgezogen wird; ein Abgleich (Scheduler) folgt in Phase 6.
 - **Nur Text/plain**, kein HTML-Mailversand.
 - **Lieferschein-Versand** ist noch nicht angebunden (kein PDF-Rendering für `DELIVERY_NOTE`); folgt mit der Lieferschein-UI in Phase 3.
 - **`AUTH_SECRET`-Wechsel invalidiert das gespeicherte SMTP-Passwort** (Verschlüsselung per HKDF aus `AUTH_SECRET`, siehe `src/lib/crypto/secrets.ts`) — nach einem Secret-Wechsel muss das Passwort in den Mail-Einstellungen neu eingetragen werden.
