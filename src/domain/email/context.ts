@@ -86,7 +86,8 @@ export async function buildTemplateContext(orgId: string, docType: EmailDocType,
   const payment = { iban: org.iban ?? "", bic: org.bic ?? "" };
 
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
-    const inv = await dbInternal.invoice.findFirst({ where: { id: docId, orgId }, include: { customer: true } });
+    const expectedType = docType === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+    const inv = await dbInternal.invoice.findFirst({ where: { id: docId, orgId, type: expectedType }, include: { customer: true } });
     if (!inv) throw new DocumentNotFoundError("Rechnung nicht gefunden");
     const snapshotCtx = `email:${docType}:${docId}`;
     const buyer = parseBuyerSnapshot(inv.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);

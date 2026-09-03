@@ -7,6 +7,7 @@ import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
 import { dbInternal } from "@/lib/db";
+import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import type { EmailDocType } from "@/schemas/email";
 
 export interface Attachment {
@@ -20,8 +21,9 @@ const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "_");
 /** Standardanhaenge je Belegtyp (Spec, Abschnitt 2). */
 export async function buildStandardAttachments(orgId: string, docType: EmailDocType, docId: string): Promise<Attachment[]> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
+    const expectedType = docType === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
     const loaded = await loadEInvoiceData(docId);
-    if (!loaded || loaded.invoice.orgId !== orgId) return [];
+    if (!loaded || loaded.invoice.orgId !== orgId || loaded.invoice.type !== expectedType) return [];
     const { invoice, data } = loaded;
     const base = safe(invoice.number ?? "Entwurf");
     // Festgeschrieben ODER storniert -> das rechtsverbindliche ZUGFeRD-PDF; nur echte
@@ -31,7 +33,10 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
       return [{ filename: `${base}-ENTWURF.pdf`, contentType: "application/pdf", content: await renderInvoicePdf(data) }];
     }
     const out: Attachment[] = [{ filename: `${base}.pdf`, contentType: "application/pdf", content: await renderZugferdPdf(data) }];
-    if (invoice.customer.leitwegId) {
+    // Leitweg-ID aus dem Kaeufer-Snapshot (nicht aus dem Stamm) — festgeschriebene Belege
+    // duerfen durch spaetere Stammdatenaenderungen nicht rueckwirkend die Anhaenge aendern.
+    const buyer = parseBuyerSnapshot(invoice.buyerSnapshotJson, buildBuyerSnapshot(invoice.customer), `email:${docType}:${docId}`);
+    if (buyer.leitwegId) {
       out.push({ filename: `${base}-xrechnung.xml`, contentType: "application/xml", content: Buffer.from(buildXRechnungUBL(data), "utf8") });
     }
     return out;
