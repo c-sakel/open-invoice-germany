@@ -9,7 +9,8 @@
  */
 import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
-import { buildStandardAttachments, type Attachment } from "@/domain/email/attachments";
+import { buildStandardAttachments, attachmentDocTypeFor, type Attachment } from "@/domain/email/attachments";
+import { loadAttachmentForSend } from "@/domain/attachment/manage";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
@@ -57,7 +58,11 @@ export async function sendDocumentEmail(
   }
 
   const std = await buildStandardAttachments(orgId, input.docType, input.docId);
-  const attachments = [...std.filter((a) => input.standardAttachments.includes(a.filename)), ...extra];
+  // Zusaetzliche Beleganhaenge (Phase 4b, DocumentAttachment) — org- und beleggeprueft
+  // ueber loadAttachmentForSend, damit keine fremde/erfundene id einen Anhang eines
+  // anderen Belegs oder einer anderen Organisation mitversendet (Lastenheft §38).
+  const stored = await loadAttachmentForSend(orgId, attachmentDocTypeFor(input.docType), input.docId, input.attachmentIds);
+  const attachments = [...std.filter((a) => input.standardAttachments.includes(a.filename)), ...stored, ...extra];
   const bcc = input.copyToSelf && !input.bcc.includes(settings.fromEmail) ? [...input.bcc, settings.fromEmail] : input.bcc;
   const text = input.signature.trim() ? `${input.body}\n\n${input.signature}` : input.body;
 

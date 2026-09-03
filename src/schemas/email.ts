@@ -57,6 +57,9 @@ export const sendEmailInputSchema = z.object({
   resendOfId: z.string().optional(),
   /** Warnungen aus der Vorbelegung (z. B. unbekannte Platzhalter) — werden mitprotokolliert (G3). */
   warnings: z.array(z.string().max(300)).max(50).default([]),
+  /** IDs bestehender Beleganhaenge (DocumentAttachment), die zusaetzlich mitgesendet werden
+   *  sollen (Phase 4b) — send.ts laedt sie org- und beleggeprueft ueber loadAttachmentForSend. */
+  attachmentIds: z.array(z.string()).default([]),
 });
 export type SendEmailInput = z.infer<typeof sendEmailInputSchema>;
 /** Rohe Eingabeform vor dem Parsen (to/cc/bcc als kommagetrennter String statt Array) —

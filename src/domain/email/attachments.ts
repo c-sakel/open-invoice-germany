@@ -11,11 +11,23 @@ import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { dbInternal } from "@/lib/db";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import type { EmailDocType } from "@/schemas/email";
+import type { AttachmentDocType } from "@/domain/attachment/manage";
 
 export interface Attachment {
   filename: string;
   contentType: string;
   content: Buffer;
+}
+
+/** Uebersetzt den Mail-Belegtyp (EmailDocType, Quote.kind-Werte fuer Geschaeftsdokumente)
+ *  in den Beleganhang-Belegtyp (AttachmentDocType, DocRefType-Werte) — DocumentAttachment
+ *  kennt nur QUOTE/INVOICE/DELIVERY_NOTE/DUNNING/RECURRING, waehrend der Mailversand
+ *  ANGEBOT/AUFTRAGSBESTAETIGUNG/PROFORMA/CREDIT_NOTE als eigene Typen unterscheidet. */
+export function attachmentDocTypeFor(docType: EmailDocType): AttachmentDocType {
+  if (docType === "INVOICE" || docType === "CREDIT_NOTE") return "INVOICE";
+  if (docType === "DUNNING") return "DUNNING";
+  if (docType === "DELIVERY_NOTE") return "DELIVERY_NOTE";
+  return "QUOTE"; // ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
 }
 
 const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "_");
