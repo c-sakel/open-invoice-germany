@@ -59,6 +59,7 @@ model Organization {
   paymentMethods    PaymentMethod[]
   dunningStages     DunningStage[]
   mailSettings      MailSettings?
+  documentSettings  DocumentSettings?
 }
 
 /// Kunde / Leistungsempfänger.
@@ -178,7 +179,8 @@ model Quote {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  lines QuoteLine[]
+  lines      QuoteLine[]
+  shareLinks QuoteShareLink[]
 
   @@index([orgId])
   @@index([customerId])
@@ -651,4 +653,39 @@ model ChangeLog {
   @@unique([orgId, prevHash])
   @@index([orgId])
   @@index([entity, entityId])
+}
+
+/// Angebotsannahme-Link (Phase 3b). orgId wie EmailLog als reines Feld ohne Relation
+/// (Tenancy-Filter genuegt; kein Cascade-Delete ueber Organization noetig).
+model QuoteShareLink {
+  id             String    @id @default(cuid())
+  orgId          String
+  quoteId        String
+  quote          Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdBy      String
+  createdAt      DateTime  @default(now())
+  viewCount      Int       @default(0)
+  lastViewedAt   DateTime?
+  decidedAt      DateTime?
+  decision       String? // ACCEPTED | REJECTED
+  deciderName    String?
+  deciderEmail   String?
+  deciderComment String?
+  deciderIp      String?
+
+  @@index([orgId, quoteId])
+}
+
+/// Org-weite Einstellungen fuer Angebotsannahme und Dokumentverhalten (Phase 3b).
+model DocumentSettings {
+  id            String       @id @default(cuid())
+  orgId         String       @unique
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  onQuoteAccept String       @default("NONE") // NONE | ORDER_CONFIRMATION | INVOICE
+  shareLinkDays Int          @default(30)
+  storeAcceptIp Boolean      @default(false)
+  updatedAt     DateTime     @updatedAt
 }
