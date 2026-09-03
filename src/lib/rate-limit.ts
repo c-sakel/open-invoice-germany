@@ -57,6 +57,14 @@ export function rateLimit(key: string, options: RateLimitOptions): void {
 
   if (bucket.tokens <= 0) {
     const retryAfterMs = windowMs - (now - bucket.windowStart);
+    // Zaehler auch im Ablehnungspfad erhoehen — sonst waechst die Map bei
+    // ausschliesslich abgewiesenem Traffic (z.B. Angriff) unbegrenzt, weil
+    // cleanup() nie ausgeloest wird.
+    callsSinceCleanup += 1;
+    if (callsSinceCleanup >= CLEANUP_INTERVAL) {
+      callsSinceCleanup = 0;
+      cleanup(now, windowMs);
+    }
     throw new RateLimitError(Math.max(retryAfterMs, 0));
   }
 
@@ -82,4 +90,9 @@ function cleanup(now: number, windowMs: number): void {
 export function resetRateLimits(): void {
   buckets.clear();
   callsSinceCleanup = 0;
+}
+
+/** Nur fuer Tests: Anzahl der aktuell im Speicher gehaltenen Schluessel. */
+export function debugRateLimitBucketCount(): number {
+  return buckets.size;
 }
