@@ -127,8 +127,37 @@ export interface EInvoiceData {
   // BG-3 Vorausgehende Rechnung (für Gutschrift/Korrektur, BT-25/BT-26)
   precedingInvoiceNumber?: string | null;
   precedingInvoiceDate?: Date | null;
+  /** Phase 5 — BG-3 mit MEHREREN Vorgängern (Schlussrechnung: je abgesetzte
+   * Abschlagsrechnung ein Eintrag, BT-25/BT-26). Ist dieses Array gesetzt (nicht leer),
+   * hat es beim XML-Export Vorrang vor precedingInvoiceNumber/-Date; ohne dieses Feld
+   * (Alt-/Nicht-FINAL-Belege) bleibt das bisherige Einzelverhalten byte-identisch. */
+  precedingInvoices?: { number: string; issueDate: Date }[];
+  /** Phase 5 (§14 Abs. 5 Satz 2 UStG) — auf einer Schlussrechnung abgesetzte
+   * Abschlagsrechnungen, je Abschlagsrechnung über alle Steuersätze aggregiert
+   * (Snapshot aus FinalInvoiceDeduction). Nur bei type FINAL gesetzt; NIE live aus den
+   * Abschlagsrechnungen selbst. */
+  deductions?: EInvoiceDeduction[];
+  /** Phase 5 — Nummer der Quelle (Angebot/Auftragsbestätigung/Lieferschein) bei
+   * type PARTIAL/DOWNPAYMENT/FINAL. NUR fürs PDF ("Bezug zu ..."), geht NICHT ins XML. */
+  sourceNumber?: string | null;
+  /** Phase 5 — Menschentext-Label der Quellart fürs PDF ("Angebot" | "Auftrag" |
+   * "Lieferschein"). NUR fürs PDF-Layout. */
+  sourceLabel?: string | null;
   // Kopf-/Fusstext (Platzhalter bereits aufgeloest) — NUR fuer PDF-Layout, Ruling:
   // gehen NICHT ins XRechnung-/ZUGFeRD-XML.
   headerText?: string | null;
   footerText?: string | null;
+}
+
+/** Phase 5 (§14 Abs. 5 Satz 2 UStG) — Snapshot einer auf einer Schlussrechnung
+ * abgesetzten Abschlagsrechnung, über alle Steuersätze aggregiert (BT-25/BT-26 +
+ * Beträge für PDF-Abzugsblock/BT-22-Aufstellung). */
+export interface EInvoiceDeduction {
+  /** BT-25 — Nummer der Abschlagsrechnung. */
+  number: string;
+  /** BT-26 — Ausstellungsdatum der Abschlagsrechnung. */
+  issueDate: Date;
+  netCents: number;
+  taxCents: number;
+  grossCents: number;
 }
