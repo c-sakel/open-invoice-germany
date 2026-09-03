@@ -2,6 +2,7 @@ import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { cancelInvoice } from "@/domain/invoice/cancel";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { buildStandardAttachments } from "@/domain/email/attachments";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -133,5 +134,51 @@ describe("buildTemplateContext / buildStandardAttachments — Rechnung", () => {
     await expect(buildTemplateContext(otherOrgId, "INVOICE", finalized.id)).rejects.toBeInstanceOf(DocumentNotFoundError);
     const attachments = await buildStandardAttachments(otherOrgId, "INVOICE", finalized.id);
     expect(attachments).toEqual([]);
+  });
+
+  it("Belegtyp-Abgleich: eine echte Rechnung wird nicht als CREDIT_NOTE angeboten", async () => {
+    const draft = await createDraftInvoice(orgId, baseInput());
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+
+    await expect(buildTemplateContext(orgId, "CREDIT_NOTE", finalized.id)).rejects.toBeInstanceOf(DocumentNotFoundError);
+    const attachments = await buildStandardAttachments(orgId, "CREDIT_NOTE", finalized.id);
+    expect(attachments).toEqual([]);
+  });
+
+  it("XRechnung-Anhang folgt dem Kaeufer-Snapshot, nicht dem aktuellen Kundenstamm", async () => {
+    const customerOhneLeitweg = await dbInternal.customer.create({
+      data: { orgId, name: "Snapshot-Kunde ohne Leitweg", addressLine1: "Weg 2", postalCode: "10000", city: "Berlin", type: "BUSINESS", email: "snap1@example.com" },
+    });
+    const draftOhne = await createDraftInvoice(orgId, baseInput({ customerId: customerOhneLeitweg.id }));
+    const finalizedOhne = await finalizeInvoice(draftOhne.id, { now: FIX_DATE });
+    // Leitweg-ID wird NACH Festschreibung am Stamm ergaenzt -> darf den Anhang nicht aendern.
+    await dbInternal.customer.update({ where: { id: customerOhneLeitweg.id }, data: { leitwegId: "04011000-99999-99" } });
+    const attachmentsOhne = await buildStandardAttachments(orgId, "INVOICE", finalizedOhne.id);
+    expect(attachmentsOhne).toHaveLength(1);
+    expect(attachmentsOhne[0]!.filename.endsWith(".pdf")).toBe(true);
+
+    const customerMitLeitweg = await dbInternal.customer.create({
+      data: { orgId, name: "Snapshot-Kunde mit Leitweg", addressLine1: "Weg 3", postalCode: "10000", city: "Berlin", type: "BUSINESS", email: "snap2@example.com", leitwegId: "04011000-11111-11" },
+    });
+    const draftMit = await createDraftInvoice(orgId, baseInput({ customerId: customerMitLeitweg.id }));
+    const finalizedMit = await finalizeInvoice(draftMit.id, { now: FIX_DATE });
+    // Leitweg-ID wird NACH Festschreibung wieder entfernt -> Anhang bleibt trotzdem dabei.
+    await dbInternal.customer.update({ where: { id: customerMitLeitweg.id }, data: { leitwegId: null } });
+    const attachmentsMit = await buildStandardAttachments(orgId, "INVOICE", finalizedMit.id);
+    expect(attachmentsMit).toHaveLength(2);
+    expect(attachmentsMit.some((a) => a.filename.endsWith("-xrechnung.xml"))).toBe(true);
+  });
+
+  it("stornierte Rechnung liefert weiterhin das ZUGFeRD-PDF, kein ENTWURF-Anhang", async () => {
+    const draft = await createDraftInvoice(orgId, baseInput());
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    const cancelled = await cancelInvoice(finalized.id, { now: FIX_DATE });
+
+    const attachments = await buildStandardAttachments(orgId, "INVOICE", cancelled.originalId);
+    expect(attachments.length).toBeGreaterThanOrEqual(1);
+    const pdf = attachments.find((a) => a.filename.endsWith(".pdf"))!;
+    expect(pdf.filename).toBe(`${cancelled.originalNumber}.pdf`);
+    expect(pdf.filename).not.toMatch(/ENTWURF/);
+    expect(pdf.content.subarray(0, 4).toString()).toBe("%PDF");
   });
 });
