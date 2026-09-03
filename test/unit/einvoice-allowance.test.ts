@@ -44,29 +44,36 @@ function build(opts: {
   skonto2?: { permille: number; days: number };
   paymentMethodSnapshotJson?: string | null;
   paidAmountCents?: number;
+  type?: string;
+  org?: MapInput["org"];
+  paymentTerms?: string | null;
+  // Fix-Runde 1 (Befund A): Gutschrift — Betraege gespiegelt (negativ), quantityMilli
+  // bleibt POSITIV (Bestandskonvention, siehe src/domain/invoice/cancel.ts).
+  sign?: 1 | -1;
 }) {
-  const lines = opts.lines.map((l) => ({
-    ...l,
-    lineNetCents: computeLineNet({
+  const sign = opts.sign ?? 1;
+  const lines = opts.lines.map((l) => {
+    const lineNetCents = computeLineNet({
       quantityMilli: l.quantityMilli,
       unitNetPriceCents: l.unitNetPriceCents,
       discountPermille: l.discountPermille,
       discountCents: l.discountCents,
-    }).lineNetCents,
-  }));
+    }).lineNetCents;
+    return { ...l, unitNetPriceCents: l.unitNetPriceCents * sign, lineNetCents: lineNetCents * sign };
+  });
   const totals = computeTaxBreakdown(
     lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     opts.adjustments,
   );
   const mapInput: MapInput = {
     number: "RE-2034-0100",
-    type: "INVOICE",
+    type: opts.type ?? "INVOICE",
     issueDate: new Date("2034-06-09"),
     dueDate: new Date("2034-07-09"),
     deliveryDate: new Date("2034-06-01"),
     currency: "EUR",
     buyerReference: null,
-    paymentTerms: opts.skonto1 ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
+    paymentTerms: opts.paymentTerms !== undefined ? opts.paymentTerms : opts.skonto1 ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
     notes: null,
     netTotalCents: totals.netTotalCents,
     taxTotalCents: totals.taxTotalCents,
@@ -79,7 +86,7 @@ function build(opts: {
     skonto2Permille: opts.skonto2?.permille ?? null,
     skonto2Days: opts.skonto2?.days ?? null,
     paymentMethodSnapshotJson: opts.paymentMethodSnapshotJson ?? null,
-    org: ORG,
+    org: opts.org ?? ORG,
     customer: CUSTOMER,
     lines: lines.map((l, i) => ({
       id: String(i + 1),
@@ -96,6 +103,8 @@ function build(opts: {
   };
   return buildEInvoiceData(mapInput);
 }
+
+const ORG_NO_IBAN: MapInput["org"] = { ...ORG, iban: null, bic: null, bankName: null };
 
 describe("EN-16931-Rechenregeln (BR-CO-10/11/12/13) — unabhängig vom Schematron", () => {
   it("Positionsrabatt: Σ LineExtension − Allowance + Charge = TaxExclusive (ohne Belegrabatt)", () => {
@@ -233,5 +242,76 @@ describe("EN-16931-Rechenregeln (BR-CO-10/11/12/13) — unabhängig vom Schematr
     expect(data.paymentMeans).toEqual({ code: "58", iban: ORG.iban, bic: ORG.bic, accountName: ORG.bankName });
     const ubl = buildXRechnungUBL(data);
     expect(ubl).not.toContain("AllowanceCharge");
+  });
+});
+
+describe("Fix-Runde 1", () => {
+  it("Befund A — Gutschrift mit Belegrabatt: BR-CO-13 rechnerisch korrekt, Amount/BaseAmount positiv im XML", () => {
+    const data = build({
+      type: "CREDIT_NOTE",
+      sign: -1,
+      lines: [{ description: "Beratung (Storno)", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      adjustments: { discountPermille: 100 },
+    });
+    // Gutschrift −10000 (19 %) mit 10 % Belegrabatt: LineExtension 100,00, AllowanceTotal
+    // 10,00, TaxExclusive 90,00 (Betraege intern negativ, XML positiv/TypeCode 381).
+    expect(data.lineTotalCents).toBe(-10000);
+    expect(data.allowanceTotalCents).toBe(-1000);
+    expect((data.lineTotalCents ?? 0) - (data.allowanceTotalCents ?? 0) + (data.chargeTotalCents ?? 0)).toBe(data.netTotalCents);
+    expect(data.netTotalCents).toBe(-9000);
+    expect(data.documentAllowances).toHaveLength(1);
+    expect(data.documentAllowances![0]).toEqual({ amountCents: 1000, baseCents: 10000, taxRate: 19, taxCategory: "S", reason: "Rabatt" });
+
+    const ubl = buildXRechnungUBL(data);
+    expect(ubl).toContain("<cbc:LineExtensionAmount currencyID=\"EUR\">100.00</cbc:LineExtensionAmount>");
+    expect(ubl).toContain("<cbc:AllowanceTotalAmount currencyID=\"EUR\">10.00</cbc:AllowanceTotalAmount>");
+    expect(ubl).toContain("<cbc:TaxExclusiveAmount currencyID=\"EUR\">90.00</cbc:TaxExclusiveAmount>");
+    expect(ubl).toContain("<cbc:Amount currencyID=\"EUR\">10.00</cbc:Amount>");
+    expect(validateXRechnung(data, ubl).errors).toEqual([]);
+    expect(() => buildFacturXCII(data)).not.toThrow();
+  });
+
+  it("Befund B — ohne Methode und ohne Org-IBAN: PaymentMeans mit Code 1 (Instrument not defined), kein Konto", () => {
+    const data = build({
+      org: ORG_NO_IBAN,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+    });
+    expect(data.paymentMeans).toEqual({ code: "1", iban: null, bic: null, accountName: null });
+    const ubl = buildXRechnungUBL(data);
+    expect(ubl).toContain("<cbc:PaymentMeansCode>1</cbc:PaymentMeansCode>");
+    expect(ubl).not.toContain("PayeeFinancialAccount");
+    expect(validateXRechnung(data, ubl).errors).toEqual([]);
+  });
+
+  it("Befund B — Methode verlangt Konto (58), aber weder Methode noch Org haben IBAN: Fallback Code 1", () => {
+    const data = build({
+      org: ORG_NO_IBAN,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentMethodSnapshotJson: JSON.stringify({
+        code: "TRANSFER", name: "Ueberweisung", invoiceText: null, untdidCode: "58",
+        bankIban: null, bankBic: null, bankName: null,
+      }),
+    });
+    expect(data.paymentMeans).toEqual({ code: "1", iban: null, bic: null, accountName: null });
+  });
+
+  it("Befund C — paymentTermsHuman traegt bei Skonto den Klartext ohne #SKONTO#-Tags", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentTerms: null,
+      skonto1: { permille: 20, days: 7 },
+    });
+    expect(data.paymentTermsHuman).toContain("Skonto");
+    expect(data.paymentTermsHuman).not.toContain("#SKONTO#");
+    expect(data.paymentTermsNote).toContain("#SKONTO#TAGE=7#PROZENT=2.00#");
+  });
+
+  it("Befund C — Alt-Beleg ohne Skonto: paymentTermsHuman === paymentTerms", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      paymentTerms: "Zahlbar sofort.",
+    });
+    expect(data.paymentTermsHuman).toBe("Zahlbar sofort.");
+    expect(data.paymentTermsNote).toBe("Zahlbar sofort.");
   });
 });

@@ -80,6 +80,9 @@ export interface EInvoiceData {
   /** BT-20 XML-Fassung inkl. Skonto-Syntax (#SKONTO#...#) — Mapper-Ausgabe von
    * xrechnungSkontoNote(). Fehlt dieses Feld, nutzen die Builder `paymentTerms`. */
   paymentTermsNote?: string | null;
+  /** Fix-Runde 1 (Befund C): Klartext OHNE #SKONTO#-Tags — invoice.paymentTerms bzw.
+   * (wenn leer) paymentTermsText(skontoTerms). NUR fuers PDF, nicht ins XML. */
+  paymentTermsHuman?: string | null;
   notes?: string | null; // BT-22
   seller: EInvoiceParty;
   buyer: EInvoiceParty;

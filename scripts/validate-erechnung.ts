@@ -101,7 +101,16 @@ async function validateFile(target: string): Promise<boolean> {
 // Phase 4a — Fixture-Set: die Bestandsregression ("base", UBL) PLUS fünf neue
 // Beispiele (Positionsrabatt, Belegrabatt 2 Sätze, Aufschlag, Skonto 2 Ziele,
 // Barzahlung), jeweils als UBL UND CII erzeugt (siehe scripts/generate-sample-xrechnung.ts).
-const SAMPLE_NAMES = ["base", "line-discount", "doc-discount-two-rates", "charge", "skonto-two-terms", "cash"];
+const SAMPLE_NAMES = [
+  "base",
+  "line-discount",
+  "doc-discount-two-rates",
+  "charge",
+  "skonto-two-terms",
+  "cash",
+  "credit-note-doc-discount", // Fix-Runde 1, Befund A
+  "no-iban", // Fix-Runde 1, Befund B
+];
 
 async function main(): Promise<void> {
   mkdirSync(CACHE, { recursive: true });

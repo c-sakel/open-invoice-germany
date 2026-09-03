@@ -265,8 +265,10 @@ export function buildFacturXCII(data: EInvoiceData): string {
   const chargeTotal = data.chargeTotalCents ?? 0;
   const sum = set.ele("ram:SpecifiedTradeSettlementHeaderMonetarySummation");
   sum.ele("ram:LineTotalAmount").txt(amt(lineTotal)).up();
-  if (allowanceTotal > 0) sum.ele("ram:AllowanceTotalAmount").txt(amt(allowanceTotal)).up();
-  if (chargeTotal > 0) sum.ele("ram:ChargeTotalAmount").txt(amt(chargeTotal)).up();
+  // Fix-Runde 1 (Befund A): Gutschrift-Buckets sind vorzeichen-gespiegelt (negativ) —
+  // Gate auf !== 0 und Math.abs() statt amt()/isCredit.
+  if (allowanceTotal !== 0) sum.ele("ram:AllowanceTotalAmount").txt(money(Math.abs(allowanceTotal))).up();
+  if (chargeTotal !== 0) sum.ele("ram:ChargeTotalAmount").txt(money(Math.abs(chargeTotal))).up();
   sum.ele("ram:TaxBasisTotalAmount").txt(amt(data.netTotalCents)).up();
   sum.ele("ram:TaxTotalAmount", { currencyID: cur }).txt(amt(data.taxTotalCents)).up();
   sum.ele("ram:GrandTotalAmount").txt(amt(data.grossTotalCents)).up();

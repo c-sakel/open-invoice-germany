@@ -278,8 +278,11 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   mon.ele("cbc:LineExtensionAmount", { currencyID: cur }).txt(amt(lineExtensionTotal)).up();
   mon.ele("cbc:TaxExclusiveAmount", { currencyID: cur }).txt(amt(data.netTotalCents)).up();
   mon.ele("cbc:TaxInclusiveAmount", { currencyID: cur }).txt(amt(data.grossTotalCents)).up();
-  if (allowanceTotal > 0) mon.ele("cbc:AllowanceTotalAmount", { currencyID: cur }).txt(amt(allowanceTotal)).up();
-  if (chargeTotal > 0) mon.ele("cbc:ChargeTotalAmount", { currencyID: cur }).txt(amt(chargeTotal)).up();
+  // Fix-Runde 1 (Befund A): Gutschrift-Buckets sind vorzeichen-gespiegelt (negativ) —
+  // Gate auf !== 0 und Math.abs() statt amt()/isCredit, damit ein Rabatt/Aufschlag auf
+  // einer Gutschrift ebenfalls (positiv) ausgegeben wird.
+  if (allowanceTotal !== 0) mon.ele("cbc:AllowanceTotalAmount", { currencyID: cur }).txt(money(Math.abs(allowanceTotal))).up();
+  if (chargeTotal !== 0) mon.ele("cbc:ChargeTotalAmount", { currencyID: cur }).txt(money(Math.abs(chargeTotal))).up();
   if (data.paidCents) mon.ele("cbc:PrepaidAmount", { currencyID: cur }).txt(amt(data.paidCents)).up();
   mon.ele("cbc:PayableAmount", { currencyID: cur }).txt(amt(data.payableCents)).up();
   mon.up();
