@@ -74,11 +74,19 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
 
     const newDueDate = new Date(now.getTime() + (opts.dueInDays ?? 14) * 24 * 60 * 60 * 1000);
 
+    // Passende Mahnstufe (order = level) verknuepfen, falls konfiguriert. Fehlt eine Stufe
+    // (z. B. weil ueber die vier Standardstufen hinaus gemahnt wird), bleibt stageId null.
+    const stage = await tx.dunningStage.findUnique({
+      where: { orgId_order: { orgId: inv.orgId, order: level } },
+      select: { id: true },
+    });
+
     const dunning = await tx.dunning.create({
       data: {
         invoiceId,
         number,
         level,
+        stageId: stage?.id ?? null,
         sentAt: now,
         dueDate: newDueDate,
         baseInterestRatePermille: baseRateBp, // gespeichert in Basispunkten
