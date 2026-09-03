@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "25" ] || fail "erwartet 25 Tabellen, gefunden $COUNT"
-echo "    ok — 25 Tabellen angelegt"
+[ "$COUNT" = "26" ] || fail "erwartet 26 Tabellen, gefunden $COUNT"
+echo "    ok — 26 Tabellen angelegt"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -79,7 +79,13 @@ npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
   || fail "deploy nach Baseline fehlgeschlagen"
 npx prisma migrate deploy --config prisma.postgres.config.ts 2>&1 \
   | grep -q "No pending migrations" || fail "zweiter deploy war nicht wirkungslos"
-echo "    ok — Baseline verbucht, Folgemigrationen angewendet, deploy idempotent"
+MAILSETTINGS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select to_regclass('\"MailSettings\"') is not null")
+[ "$MAILSETTINGS" = "t" ] || fail "Tabelle MailSettings fehlt nach deploy"
+IDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='EmailTemplate_orgId_docType_name_key'")
+[ "$IDX" = "1" ] || fail "Index EmailTemplate_orgId_docType_name_key fehlt nach deploy"
+echo "    ok — Baseline verbucht, Folgemigrationen angewendet, deploy idempotent, MailSettings/EmailTemplate-Index vorhanden"
 
 echo "==> Fall 4: db-prepare.sh nach Baseline ist wirkungslos"
 OUT=$(run_with_timeout 120 ./scripts/db-prepare.sh 2>&1) \
