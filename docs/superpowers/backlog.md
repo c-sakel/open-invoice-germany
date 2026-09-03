@@ -158,3 +158,23 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
   Stammdaten fuer alle Orgs anderer Testdateien an. Harmlos, aber Reihenfolgen-abhaengig.
 - **untdidCode an PaymentMethod** wird bis Phase 4 von nichts gelesen; XRechnung/CII schreiben
   PaymentMeansCode hart 58. Phase 4 verdrahtet es (Lastenheft 12, 52).
+
+## Aus Phase 2 (Mail, 2026-09-03)
+
+- **scripts/migrate-postgres.sh fragt interaktiv** bei Prisma-Warnungen (z. B. neuer Unique-Index). Fuer CI/Subagenten: Bestaetigung automatisieren oder --create-only + deploy. (Phase 2 Task 1)
+- **Mail: Zustell-/Bounce-Status** — SMTP liefert keine Rueckmeldung; DELIVERED/BOUNCED reserviert. Optional spaeter: Provider mit Webhook
+  (Resend/SES) hinter dem `MailProvider`-Interface (`src/lib/mail/provider.ts`). Lastenheft 21/22.
+- **Mail: HTML-Variante** — Phase 2 sendet Text/plain. Lastenheft verlangt es nicht; Nutzerwunsch moeglich.
+- **Mail: Hintergrund-Queue** — Versand laeuft synchron in der Route (SMTP-Timeout 20 s). Scheduler-Phase (6) kann QUEUED-Logs abarbeiten.
+- **Mail: Lieferschein-Versand** — Button erst mit Lieferschein-PDF (Phase 3); `buildStandardAttachments` liefert fuer DELIVERY_NOTE `[]`.
+- **Mail: Einstellungsseite reicht das ganze describeMailSettings-Objekt an die Client-Form** (keine Geheimnisse, aber breite Props) — bei
+  naechster Aenderung auf `MailSettingsFormData` zuschneiden.
+- **Mail: MCP-Tool `send_document_email`** (Lastenheft 55) — eigene Phase; Domain `sendDocumentEmail` ist bereit, gleiche Validierung.
+- **Invoice.number global unique** (bekannt) zwingt jede Testdatei in ein eigenes Jahr (2026 gobd, 2028 phase1, 2029 email-context, 2030 email).
+- **proxy.ts-Matcher** (vorbestehend) schliesst alle Pfade mit Bildendung aus — `/api/emails/<id>.png` umgeht die Middleware
+  (praktisch folgenlos, 404). Ausschluss auf `_next/`-Pfade begrenzen; eigener kleiner PR-Kandidat fuer Upstream.
+- **Prisma ohne select** in templates-Actions, pickTemplate, emailLog-Reads — bei naechster Aenderung nachziehen.
+- **Routen-Tests fuer /api/emails/*** — nur Content-Length-Test vorhanden (Fix-Welle); MIME-Whitelist, payload-Parsing, 404/409-Mapping ungetestet.
+- **MIME-Whitelist vertraut dem Client-Typ** (`f.type`); echte Magic-Byte-Pruefung optional.
+- **Mahnungs-Mails ohne Historie** — EmailHistory steht nur fuer den Rechnungs-docType auf der Rechnungsseite; DUNNING-Logs je Mahnung
+  anzeigen (Phase 6 Mahnuebersicht).
