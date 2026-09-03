@@ -393,6 +393,43 @@ describe("decideOffer", () => {
     spy.mockRestore();
   });
 
+  it("W2: exakter Formular-Rohinput (leere E-Mail/Kommentar als String) -> ACCEPTED, deciderEmail null", async () => {
+    resetRateLimits();
+    const quote = await makeQuote();
+    const { token, link } = await createShareLink(orgId, quote.id, {}, { now: FIX_DATE });
+    const decideNow = new Date(FIX_DATE.getTime() + 1000);
+
+    // Exakt das Format, das DecisionForm/decideOfferAction aus einem FormData-Objekt
+    // baut: leere Felder kommen als leerer String an, nicht als undefined.
+    const result = await decideOffer(
+      token,
+      { decision: "ACCEPTED", name: "Max Muster", email: "", comment: "" },
+      { now: decideNow },
+    );
+    expect(result.decision).toBe("ACCEPTED");
+
+    const updatedLink = await dbInternal.quoteShareLink.findUniqueOrThrow({ where: { id: link.id } });
+    expect(updatedLink.deciderName).toBe("Max Muster");
+    expect(updatedLink.deciderEmail).toBeNull();
+  });
+
+  it("W2: Formular-Rohinput mit tatsaechlicher E-Mail wird gespeichert", async () => {
+    resetRateLimits();
+    const quote = await makeQuote();
+    const { token, link } = await createShareLink(orgId, quote.id, {}, { now: FIX_DATE });
+    const decideNow = new Date(FIX_DATE.getTime() + 1000);
+
+    const result = await decideOffer(
+      token,
+      { decision: "ACCEPTED", name: "Erika Musterfrau", email: "kunde@example.org", comment: "" },
+      { now: decideNow },
+    );
+    expect(result.decision).toBe("ACCEPTED");
+
+    const updatedLink = await dbInternal.quoteShareLink.findUniqueOrThrow({ where: { id: link.id } });
+    expect(updatedLink.deciderEmail).toBe("kunde@example.org");
+  });
+
   it("IP wird nur mit storeAcceptIp=true gespeichert", async () => {
     resetRateLimits();
     await saveDocumentSettings(orgId, { onQuoteAccept: "NONE", shareLinkDays: 30, storeAcceptIp: true });
