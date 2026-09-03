@@ -55,5 +55,10 @@ export const sendEmailInputSchema = z.object({
   standardAttachments: z.array(z.string()).default([]),
   templateId: z.string().optional(),
   resendOfId: z.string().optional(),
+  /** Warnungen aus der Vorbelegung (z. B. unbekannte Platzhalter) — werden mitprotokolliert (G3). */
+  warnings: z.array(z.string().max(300)).max(50).default([]),
 });
 export type SendEmailInput = z.infer<typeof sendEmailInputSchema>;
+/** Rohe Eingabeform vor dem Parsen (to/cc/bcc als kommagetrennter String statt Array) —
+ *  die Domain (send.ts) parst selbst (G5, Lastenheft 55: kein Bypass ueber MCP/Route). */
+export type SendEmailRawInput = z.input<typeof sendEmailInputSchema>;

@@ -52,4 +52,22 @@ export async function ensureOrgEmailTemplates(db: Db, orgId: string): Promise<vo
       });
     }
   }
+
+  // W1: Der obige upsert setzt isDefault nur beim ERSTEN Anlegen einer Vorlage — existiert
+  // sie bereits (z. B. weil die zuvor als Standard markierte Vorlage geloescht wurde, ohne
+  // dass die Systemvorlage neu angelegt werden musste), bleibt update:{} ein No-Op und ein
+  // fehlender Default heilt sich sonst nicht selbst. Deshalb hier je Nicht-DUNNING-Typ
+  // nachziehen: Systemvorlage bevorzugt, sonst die aelteste vorhandene Vorlage.
+  const nonDunningTypes = [...new Set(DEFAULT_EMAIL_TEMPLATES.filter((t) => t.docType !== "DUNNING").map((t) => t.docType))];
+  for (const docType of nonDunningTypes) {
+    const hasDefault = await db.emailTemplate.count({ where: { orgId, docType, isDefault: true } });
+    if (hasDefault > 0) continue;
+    const successor = await db.emailTemplate.findFirst({
+      where: { orgId, docType },
+      orderBy: [{ isSystem: "desc" }, { createdAt: "asc" }],
+    });
+    if (successor) {
+      await db.emailTemplate.update({ where: { id: successor.id }, data: { isDefault: true } });
+    }
+  }
 }

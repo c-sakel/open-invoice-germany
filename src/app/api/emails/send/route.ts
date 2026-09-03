@@ -4,7 +4,7 @@ import { getCurrentUserId } from "@/lib/auth/server";
 import { sendDocumentEmail } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { MailNotConfiguredError } from "@/domain/email/settings";
-import { sendEmailInputSchema } from "@/schemas/email";
+import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import type { Attachment } from "@/domain/email/attachments";
 
 export const runtime = "nodejs";
@@ -43,10 +43,15 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "payload ist kein gueltiges JSON." }, { status: 400 });
   }
+  // Grobpruefung fuer eine fruehe, verstaendliche 400-Antwort. Massgeblich fuer den
+  // eigentlichen Versand ist der Parse-Aufruf INNERHALB von sendDocumentEmail (G5,
+  // Lastenheft 55: kein Bypass ueber MCP) — das rohe payloadJson wird unveraendert
+  // durchgereicht, nicht das hier bereits transformierte Ergebnis.
   const parsed = sendEmailInputSchema.safeParse(payloadJson);
   if (!parsed.success) {
     return NextResponse.json({ error: "Validierung fehlgeschlagen: " + (parsed.error.issues[0]?.message ?? "") }, { status: 400 });
   }
+  const rawPayload = payloadJson as SendEmailRawInput;
 
   const files = formData.getAll("files").filter((f): f is File => f instanceof File);
   let totalBytes = 0;
@@ -70,7 +75,7 @@ export async function POST(req: Request) {
   try {
     const org = await getActiveOrg();
     const actor = (await getCurrentUserId()) ?? "system";
-    const result = await sendDocumentEmail(org.id, actor, parsed.data, extra);
+    const result = await sendDocumentEmail(org.id, actor, rawPayload, extra);
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof DocumentNotFoundError) {

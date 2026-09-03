@@ -9,8 +9,9 @@ import { saveMailSettings, loadMailSettings, describeMailSettings, sendTestMail,
 import { prefillEmail } from "@/domain/email/compose";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { sendDocumentEmail } from "@/domain/email/send";
+import { saveEmailTemplate, deleteEmailTemplate, TemplateNotFoundError, TemplateNameConflictError } from "@/domain/email/templates";
 import { createMemoryProvider } from "@/lib/mail/memory";
-import type { SendEmailInput } from "@/schemas/email";
+import type { SendEmailRawInput } from "@/schemas/email";
 
 let orgId: string;
 let customerId: string;
@@ -98,19 +99,22 @@ async function chainValid(): Promise<boolean> {
   return verifyChain(entries).valid;
 }
 
-function toSendInput(pre: Awaited<ReturnType<typeof prefillEmail>>, overrides: Partial<SendEmailInput> = {}): SendEmailInput {
+function toSendInput(pre: Awaited<ReturnType<typeof prefillEmail>>, overrides: Partial<SendEmailRawInput> = {}): SendEmailRawInput {
   return {
     docType: pre.docType,
     docId: pre.docId,
-    to: pre.to,
-    cc: pre.cc,
-    bcc: pre.bcc,
+    // sendDocumentEmail parst jetzt selbst (G5) — addressListSchema erwartet die rohe,
+    // kommagetrennte Form, nicht das bereits aufgeloeste Array.
+    to: pre.to.join(", "),
+    cc: pre.cc.join(", "),
+    bcc: pre.bcc.join(", "),
     subject: pre.subject,
     body: pre.body,
     signature: pre.signature,
     copyToSelf: pre.copyToSelf,
     standardAttachments: pre.attachments.map((a) => a.filename),
     templateId: pre.templateId,
+    warnings: pre.warnings,
     ...overrides,
   };
 }
@@ -222,17 +226,97 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     expect(pre.templateId).toBe(alt.id);
   });
 
+  it("6c) eigene Vorlage als Default loeschen -> Systemvorlage wird wieder Default (W1)", async () => {
+    const own = await dbInternal.emailTemplate.create({
+      data: {
+        orgId,
+        docType: "INVOICE",
+        name: "Eigene Standardvorlage",
+        subject: "Eigener Betreff {{document.number}}",
+        body: "Eigener Text",
+        isDefault: false,
+      },
+    });
+    // Als Standard setzen -> alle anderen INVOICE-Vorlagen (inkl. Systemvorlage) verlieren isDefault.
+    await dbInternal.$transaction([
+      dbInternal.emailTemplate.updateMany({ where: { orgId, docType: "INVOICE" }, data: { isDefault: false } }),
+      dbInternal.emailTemplate.update({ where: { id: own.id }, data: { isDefault: true } }),
+    ]);
+
+    await deleteEmailTemplate(orgId, own.id);
+
+    const system = await dbInternal.emailTemplate.findFirstOrThrow({ where: { orgId, docType: "INVOICE", isSystem: true } });
+    expect(system.isDefault).toBe(true);
+
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    expect(pre.subject).not.toBe("");
+    expect(pre.templateId).toBe(system.id);
+  });
+
+  it("6d) deleteEmailTemplate: unbekannte id -> TemplateNotFoundError", async () => {
+    await expect(deleteEmailTemplate(orgId, "does-not-exist")).rejects.toBeInstanceOf(TemplateNotFoundError);
+  });
+
+  it("6e) saveEmailTemplate: doppelter Name/docType -> TemplateNameConflictError statt Prisma-Fehlertext (G6)", async () => {
+    await saveEmailTemplate(orgId, { name: "Doppelt", docType: "PROFORMA", subject: "S1", body: "B1", isDefault: false });
+    await expect(
+      saveEmailTemplate(orgId, { name: "Doppelt", docType: "PROFORMA", subject: "S2", body: "B2", isDefault: false }),
+    ).rejects.toBeInstanceOf(TemplateNameConflictError);
+  });
+
+  it("6f) templateId einer fremden/erfundenen Vorlage -> DocumentNotFoundError, kein Log (G4)", async () => {
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const logsBefore = await dbInternal.emailLog.count({ where: { orgId } });
+    const memProvider = createMemoryProvider();
+    await expect(
+      sendDocumentEmail(orgId, "system", toSendInput(pre, { templateId: "does-not-exist" }), [], memProvider),
+    ).rejects.toBeInstanceOf(DocumentNotFoundError);
+    expect(await dbInternal.emailLog.count({ where: { orgId } })).toBe(logsBefore);
+  });
+
+  it("6g) resendOfId eines fremden/erfundenen Logs -> DocumentNotFoundError, kein Log (G4)", async () => {
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const logsBefore = await dbInternal.emailLog.count({ where: { orgId } });
+    const memProvider = createMemoryProvider();
+    await expect(
+      sendDocumentEmail(orgId, "system", toSendInput(pre, { resendOfId: "does-not-exist" }), [], memProvider),
+    ).rejects.toBeInstanceOf(DocumentNotFoundError);
+    expect(await dbInternal.emailLog.count({ where: { orgId } })).toBe(logsBefore);
+  });
+
+  it("6h) Warnungen aus der Vorbelegung landen im EmailLog (G3)", async () => {
+    const alt = await dbInternal.emailTemplate.create({
+      data: {
+        orgId,
+        docType: "INVOICE",
+        name: "Vorlage mit unbekanntem Platzhalter",
+        subject: "Betreff {{unbekanntes.feld}}",
+        body: "Text",
+        isDefault: false,
+      },
+    });
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId, templateId: alt.id });
+    expect(pre.warnings.length).toBeGreaterThan(0);
+
+    const memProvider = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    const log = await dbInternal.emailLog.findUniqueOrThrow({ where: { id: res.logId } });
+    const warnings = JSON.parse(log.warningsJson) as string[];
+    expect(warnings.length).toBe(pre.warnings.length);
+    expect(warnings).toEqual(pre.warnings);
+  });
+
   it("7) ohne MailSettings wirft sendDocumentEmail MailNotConfiguredError, kein Log", async () => {
     const org2 = await dbInternal.organization.create({
       data: { legalName: "Ohne Mail GmbH", addressLine1: "Weg 1", postalCode: "10115", city: "Berlin", vatId: "DE999999999", taxNumber: "1/2/3" },
     });
     const before = await dbInternal.emailLog.count({ where: { orgId: org2.id } });
-    const input: SendEmailInput = {
+    const input: SendEmailRawInput = {
       docType: "INVOICE",
       docId: invoiceId,
-      to: ["kunde@example.org"],
-      cc: [],
-      bcc: [],
+      to: "kunde@example.org",
+      cc: "",
+      bcc: "",
       subject: "Test",
       body: "Text",
       signature: "",
@@ -260,12 +344,12 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     });
     const logsBefore = await dbInternal.emailLog.count({ where: { orgId: org3.id } });
     const changeLogsBefore = await dbInternal.changeLog.count({ where: { orgId: org3.id } });
-    const input: SendEmailInput = {
+    const input: SendEmailRawInput = {
       docType: "INVOICE",
       docId: invoiceId, // gehoert zu orgId, nicht zu org3
-      to: ["kunde@example.org"],
-      cc: [],
-      bcc: [],
+      to: "kunde@example.org",
+      cc: "",
+      bcc: "",
       subject: "Test",
       body: "Text",
       signature: "",
@@ -280,12 +364,12 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
   it("7c) Mandanten-Gate: erfundene docId -> DocumentNotFoundError, kein Log/ChangeLog", async () => {
     const logsBefore = await dbInternal.emailLog.count({ where: { orgId } });
     const changeLogsBefore = await dbInternal.changeLog.count({ where: { orgId } });
-    const input: SendEmailInput = {
+    const input: SendEmailRawInput = {
       docType: "INVOICE",
       docId: "does-not-exist",
-      to: ["kunde@example.org"],
-      cc: [],
-      bcc: [],
+      to: "kunde@example.org",
+      cc: "",
+      bcc: "",
       subject: "Test",
       body: "Text",
       signature: "",
