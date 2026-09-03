@@ -6,7 +6,8 @@
  * Gutschriften (CREDIT_NOTE) werden mit positiven Beträgen + TypeCode 381 erzeugt.
  */
 import { create } from "xmlbuilder2";
-import type { EInvoiceData } from "./types";
+import { parseRichText, plainText } from "@/lib/richtext";
+import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
 
@@ -51,6 +52,12 @@ function exemptionReason(category: string): string | null {
 
 // BR-DE-23: PayeePartyCreditorFinancialAccount nur bei Überweisung/Lastschrift.
 const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
+
+/** Phase 4b (§8): nur ITEM-Zeilen gehen ins XML — HEADING/TEXT/SUBTOTAL sind reine
+ * PDF-Gliederungszeilen. Fehlt lineType (Alt-Fixtures), wird ITEM angenommen. */
+function isItemLine(line: EInvoiceLine): boolean {
+  return (line.lineType ?? "ITEM") === "ITEM";
+}
 
 /** BG-27/BG-20 — SpecifiedTradeAllowanceCharge (ChargeIndicator false = Rabatt). */
 function appendAllowanceCharge(
@@ -125,11 +132,22 @@ export function buildFacturXCII(data: EInvoiceData): string {
 
   const tx = root.ele("rsm:SupplyChainTradeTransaction");
 
-  // Positionen
-  data.lines.forEach((line, i) => {
+  // Positionen. Phase 4b (§8): nur ITEM-Zeilen; LineID fortlaufend NEU über die
+  // gefilterten ITEMs (nicht die gespeicherte Position, die auch HEADING/TEXT/SUBTOTAL zählt).
+  const itemLines = data.lines.filter(isItemLine);
+  itemLines.forEach((line, i) => {
     const li = tx.ele("ram:IncludedSupplyChainTradeLineItem");
     li.ele("ram:AssociatedDocumentLineDocument").ele("ram:LineID").txt(String(i + 1)).up().up();
-    li.ele("ram:SpecifiedTradeProduct").ele("ram:Name").txt(line.description).up().up();
+    const product = li.ele("ram:SpecifiedTradeProduct");
+    // BT-155 — Artikelnummer. XSD-Reihenfolge: SellerAssignedID VOR Name.
+    if (line.articleNumber) product.ele("ram:SellerAssignedID").txt(line.articleNumber).up();
+    product.ele("ram:Name").txt(line.description).up();
+    // BT-154 — Langtext als Klartext (kein Markdown). XSD-Reihenfolge: Description NACH Name.
+    if (line.descriptionLong) {
+      const text = plainText(parseRichText(line.descriptionLong));
+      if (text) product.ele("ram:Description").txt(text).up();
+    }
+    product.up();
     li
       .ele("ram:SpecifiedLineTradeAgreement")
       .ele("ram:NetPriceProductTradePrice")
@@ -188,6 +206,12 @@ export function buildFacturXCII(data: EInvoiceData): string {
     buyer.ele("ram:SpecifiedTaxRegistration").ele("ram:ID", { schemeID: "VA" }).txt(data.buyer.vatId).up().up();
   }
   buyer.up();
+
+  // BT-13 — Bestellnummer des Kunden (Phase 4b). CII-Reihenfolge: nach BuyerTradeParty,
+  // vor SpecifiedTradeSettlement/HeaderTradeDelivery.
+  if (data.orderNumber) {
+    agr.ele("ram:BuyerOrderReferencedDocument").ele("ram:IssuerAssignedID").txt(data.orderNumber).up().up();
+  }
   agr.up();
 
   // Lieferung
