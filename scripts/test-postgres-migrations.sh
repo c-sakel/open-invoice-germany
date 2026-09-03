@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "28" ] || fail "erwartet 28 Tabellen, gefunden $COUNT"
-echo "    ok — 28 Tabellen angelegt"
+[ "$COUNT" = "29" ] || fail "erwartet 29 Tabellen, gefunden $COUNT"
+echo "    ok — 29 Tabellen angelegt"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \

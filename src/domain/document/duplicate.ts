@@ -168,7 +168,10 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
       skonto2Days: src.skonto2Days ?? undefined,
       paymentMethodId: src.paymentMethodId ?? undefined,
       lines: src.lines.map((l) => ({
+        lineType: l.lineType as CreateInvoiceInput["lines"][number]["lineType"],
         description: l.description,
+        descriptionLong: l.descriptionLong ?? undefined,
+        articleNumber: l.articleNumber ?? undefined,
         quantityMilli: l.quantityMilli,
         unit: l.unit,
         unitNetPriceCents: l.unitNetPriceCents,

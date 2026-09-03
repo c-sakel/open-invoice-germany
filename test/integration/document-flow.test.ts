@@ -26,8 +26,8 @@ import { verifyChain, type ChainEntry } from "@/domain/changelog";
 
 const FIX_DATE = new Date("2033-05-01T10:00:00.000Z");
 
-const lineA = { description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
-const lineB = { description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const lineA = { lineType: "ITEM" as const, description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const lineB = { lineType: "ITEM" as const, description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
 let orgId: string;
 let customerId: string;

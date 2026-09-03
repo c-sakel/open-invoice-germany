@@ -20,6 +20,11 @@ export type TaxCategory = z.infer<typeof TaxCategory>;
 
 export const TaxRate = z.union([z.literal(19), z.literal(7), z.literal(0)]);
 
+// Positionstyp (Phase 4b) — HEADING/TEXT/SUBTOTAL tragen nie Betraege, gehen nie in
+// Summen, XML oder Steuerberechnung (Lastenheft §8: kein Menge-0-Workaround).
+export const LineType = z.enum(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
+export type LineType = z.infer<typeof LineType>;
+
 export const CustomerType = z.enum(["BUSINESS", "CONSUMER"]);
 export const InvoiceType = z.enum(["INVOICE", "CREDIT_NOTE", "CORRECTION"]);
 export const DocType = z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA", "INVOICE", "CREDIT_NOTE", "DUNNING", "DELIVERY_NOTE", "CUSTOMER", "PRODUCT"]);
@@ -148,17 +153,49 @@ export const productSchema = z.object({
 export type ProductInput = z.infer<typeof productSchema>;
 
 // ── Rechnung ─────────────────────────────────────────────────────────────
-export const invoiceLineInputSchema = z.object({
-  productId: z.string().optional(),
-  description: z.string().min(1),
-  quantityMilli: z.number().int().refine((v) => v !== 0, "Menge darf nicht 0 sein"),
-  unit: z.string().default("C62"),
-  unitNetPriceCents: z.number().int(),
-  taxRate: TaxRate,
-  taxCategory: TaxCategory.default("S"),
-  discountPermille: z.number().int().min(0).max(1000).default(0),
-  discountCents: z.number().int().nonnegative().default(0),
-});
+// lineType default "ITEM" haelt bestehende Aufrufer (ohne das Feld) abwaertskompatibel.
+export const invoiceLineInputSchema = z
+  .object({
+    lineType: LineType.default("ITEM"),
+    productId: z.string().optional(),
+    description: z.string().min(1),
+    // Rich-Text-Langbeschreibung (Markdown-Teilmenge, §9) — optionaler Zusatztext zur Position.
+    descriptionLong: z.string().max(5000).optional(),
+    // Artikelnummer-Snapshot zum Erfassungszeitpunkt (unabhaengig vom Produktstamm).
+    articleNumber: z.string().max(60).optional(),
+    quantityMilli: z.number().int(),
+    unit: z.string().default("C62"),
+    unitNetPriceCents: z.number().int(),
+    taxRate: TaxRate,
+    taxCategory: TaxCategory.default("S"),
+    discountPermille: z.number().int().min(0).max(1000).default(0),
+    discountCents: z.number().int().nonnegative().default(0),
+  })
+  .superRefine((line, ctx) => {
+    if (line.lineType === "ITEM") {
+      if (line.quantityMilli === 0) {
+        ctx.addIssue({ code: "custom", message: "Menge darf nicht 0 sein", path: ["quantityMilli"] });
+      }
+      return;
+    }
+    // Nicht-ITEM (HEADING/TEXT/SUBTOTAL): keine Betraege — kein Menge-0-Workaround
+    // fuers Rechnen (Lastenheft §8), diese Zeilen gehen nie in Summen/XML/Steuer.
+    if (line.quantityMilli !== 0) {
+      ctx.addIssue({ code: "custom", message: "Menge muss bei Nicht-Positionszeilen 0 sein", path: ["quantityMilli"] });
+    }
+    if (line.unitNetPriceCents !== 0) {
+      ctx.addIssue({ code: "custom", message: "Einzelpreis muss bei Nicht-Positionszeilen 0 sein", path: ["unitNetPriceCents"] });
+    }
+    if (line.discountPermille !== 0) {
+      ctx.addIssue({ code: "custom", message: "Rabatt muss bei Nicht-Positionszeilen 0 sein", path: ["discountPermille"] });
+    }
+    if (line.discountCents !== 0) {
+      ctx.addIssue({ code: "custom", message: "Rabatt muss bei Nicht-Positionszeilen 0 sein", path: ["discountCents"] });
+    }
+    if (line.taxRate !== 0) {
+      ctx.addIssue({ code: "custom", message: "Steuersatz muss bei Nicht-Positionszeilen 0 sein", path: ["taxRate"] });
+    }
+  });
 export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
 
 // ── Beleg-Rabatt/-Aufschlag + Skonto (Phase 4a) ─────────────────────────────
@@ -219,29 +256,55 @@ function refineSkontoTargets<T extends { skonto1Permille?: number; skonto1Days?:
   }
 }
 
+// Gemeinsame Kopffelder fuer createInvoiceSchema/updateInvoiceSchema (Phase 4b: Betreff,
+// Bestellnummer, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse — analog
+// den Feldern, die Quote seit Phase 3a traegt).
+const invoiceHeaderFields = {
+  customerId: z.string().min(1),
+  type: InvoiceType.default("INVOICE"),
+  taxScheme: TaxScheme.default("REGULAR"),
+  currency: z.string().length(3).default("EUR"),
+  issueDate: z.coerce.date().optional(),
+  deliveryDate: z.coerce.date().optional(),
+  deliveryStart: z.coerce.date().optional(),
+  deliveryEnd: z.coerce.date().optional(),
+  dueDate: z.coerce.date().optional(),
+  buyerReference: z.string().optional(),
+  subject: z.string().max(200).optional(),
+  orderNumber: z.string().max(100).optional(),
+  internalReference: z.string().max(100).optional(),
+  contactPersonId: z.string().optional(),
+  billingAddressId: z.string().optional(),
+  shippingAddressId: z.string().optional(),
+  notes: z.string().optional(),
+  paymentTerms: z.string().optional(),
+  headerText: z.string().max(5000).optional(),
+  footerText: z.string().max(5000).optional(),
+  internalNotes: z.string().optional(), // nur intern, nie im Beleg
+  ...documentAdjustmentFields,
+  ...skontoFields,
+};
+
 export const createInvoiceSchema = z
   .object({
-    customerId: z.string().min(1),
-    type: InvoiceType.default("INVOICE"),
-    taxScheme: TaxScheme.default("REGULAR"),
-    currency: z.string().length(3).default("EUR"),
-    issueDate: z.coerce.date().optional(),
-    deliveryDate: z.coerce.date().optional(),
-    deliveryStart: z.coerce.date().optional(),
-    deliveryEnd: z.coerce.date().optional(),
-    dueDate: z.coerce.date().optional(),
-    buyerReference: z.string().optional(),
-    notes: z.string().optional(),
-    paymentTerms: z.string().optional(),
-    headerText: z.string().max(5000).optional(),
-    footerText: z.string().max(5000).optional(),
-    internalNotes: z.string().optional(), // nur intern, nie im Beleg
-    ...documentAdjustmentFields,
-    ...skontoFields,
+    ...invoiceHeaderFields,
     lines: z.array(invoiceLineInputSchema).min(1),
   })
   .superRefine(refineSkontoTargets);
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
+
+// Partial-Update (Phase 4b, src/domain/invoice/update.ts) — nur fuer DRAFT-Rechnungen.
+// .partial() auf ...invoiceHeaderFields statt createInvoiceSchema.partial(), weil
+// createInvoiceSchema bereits ein ZodEffects (superRefine) ist und .partial() nur auf
+// ZodObject existiert.
+export const updateInvoiceSchema = z
+  .object({
+    ...invoiceHeaderFields,
+    lines: z.array(invoiceLineInputSchema).min(1).optional(),
+  })
+  .partial()
+  .superRefine(refineSkontoTargets);
+export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 
 // ── Geschäftsdokumente (Angebot / Auftragsbestätigung / Proforma) ────────────
 export const DocumentKind = z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]);
@@ -461,3 +524,32 @@ export * from "./email";
 // importiert); hier nur Re-Export fuer Aufrufer, die ueber den Sammelindex importieren
 // (Task-2-Review, Auflage: quote-share.ts war zuvor nicht re-exportiert).
 export * from "./quote-share";
+
+// ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
+// Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung
+// erfolgt zusaetzlich in src/lib/attachments/mime.ts (sniffMime) — dieses Schema prueft
+// nur den vom Client behaupteten MIME-Typ und die Groessenobergrenze.
+export const ATTACHMENT_MIME_WHITELIST = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "text/plain",
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/msword",
+  "application/vnd.ms-excel",
+] as const;
+
+// 10 MB je Datei (Global Constraint §38). Die Obergrenze von 50 MB je Beleg wird von der
+// Domain-Funktion addAttachment ueber die Summe bestehender Anhaenge geprueft, nicht hier.
+export const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+
+export const attachmentUploadSchema = z.object({
+  filename: z.string().min(1).max(255),
+  mime: z.enum(ATTACHMENT_MIME_WHITELIST),
+  sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_SIZE_BYTES),
+});
+export type AttachmentUploadInput = z.infer<typeof attachmentUploadSchema>;

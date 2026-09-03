@@ -49,17 +49,18 @@ model Organization {
   numberRanges NumberRange[]
   changeLogs   ChangeLog[]
 
-  documentRelations DocumentRelation[]
-  deliveryNotes     DeliveryNote[]
-  textTemplates     TextTemplate[]
-  emailTemplates    EmailTemplate[]
-  emailLogs         EmailLog[]
-  customerAddresses CustomerAddress[]
-  contactPersons    ContactPerson[]
-  paymentMethods    PaymentMethod[]
-  dunningStages     DunningStage[]
-  mailSettings      MailSettings?
-  documentSettings  DocumentSettings?
+  documentRelations   DocumentRelation[]
+  deliveryNotes       DeliveryNote[]
+  textTemplates       TextTemplate[]
+  emailTemplates      EmailTemplate[]
+  emailLogs           EmailLog[]
+  customerAddresses   CustomerAddress[]
+  contactPersons      ContactPerson[]
+  paymentMethods      PaymentMethod[]
+  dunningStages       DunningStage[]
+  mailSettings        MailSettings?
+  documentSettings    DocumentSettings?
+  documentAttachments DocumentAttachment[]
 }
 
 /// Kunde / Leistungsempfänger.
@@ -107,6 +108,7 @@ model Product {
   org           Organization @relation(fields: [orgId], references: [id])
   name          String
   description   String?
+  articleNumber String? // frei vergebene Artikelnummer, Snapshot in Positionen (Phase 4b)
   unit          String       @default("C62") // UN/ECE Rec 20: C62=Stück, HUR=Stunde, KGM=kg, MTR=m …
   netPriceCents Int
   taxRate       Int          @default(19) // 19 | 7 | 0
@@ -117,6 +119,7 @@ model Product {
   updatedAt     DateTime     @updatedAt
 
   @@index([orgId])
+  @@index([orgId, articleNumber])
 }
 
 /// Nummernkreis — transaktionaler Zähler. Nummern werden NUR bei Festschreibung vergeben.
@@ -196,18 +199,21 @@ model Quote {
 }
 
 model QuoteLine {
-  id                String @id @default(cuid())
+  id                String  @id @default(cuid())
   quoteId           String
-  quote             Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quote             Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   position          Int
+  lineType          String  @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (Phase 4b, §8: kein Menge-0-Workaround)
   description       String
+  descriptionLong   String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge, Phase 4b)
+  articleNumber     String? // Artikelnummer-Snapshot zum Erfassungszeitpunkt
   quantityMilli     Int // 1/1000 Einheit
-  unit              String @default("C62")
+  unit              String  @default("C62")
   unitNetPriceCents Int
   taxRate           Int
-  taxCategory       String @default("S")
-  discountPermille  Int    @default(0) // 0..1000 (= 0..100 %)
-  discountCents     Int    @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
+  taxCategory       String  @default("S")
+  discountPermille  Int     @default(0) // 0..1000 (= 0..100 %)
+  discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
   lineNetCents      Int
 
   @@index([quoteId])
@@ -231,6 +237,15 @@ model Invoice {
   deliveryEnd               DateTime?
   dueDate                   DateTime?
   buyerReference            String? // BT-10 / Leitweg-ID (B2G)
+  subject                   String? // Betreffzeile (Phase 4b, analog Quote.subject)
+  orderNumber               String? // Bestellnummer des Kunden, zusaetzlich zu buyerReference
+  internalReference         String? // interne Referenz/Kostenstelle, nur intern
+  contactPersonId           String?
+  contactPerson             ContactPerson?    @relation(fields: [contactPersonId], references: [id], onDelete: SetNull)
+  billingAddressId          String?
+  billingAddress            CustomerAddress?  @relation("InvoiceBillingAddress", fields: [billingAddressId], references: [id], onDelete: SetNull)
+  shippingAddressId         String?
+  shippingAddress           CustomerAddress?  @relation("InvoiceShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
   notes                     String?
   paymentTerms              String? // Skonto-/Zahlungsbedingungen (Freitext, §14 Abs.4 Nr.7)
   internalNotes             String? // Nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails
@@ -285,6 +300,9 @@ model Invoice {
   @@index([customerId])
   @@index([recurringInvoiceId])
   @@index([paymentMethodId])
+  @@index([contactPersonId])
+  @@index([billingAddressId])
+  @@index([shippingAddressId])
 }
 
 model InvoiceLine {
@@ -292,8 +310,11 @@ model InvoiceLine {
   invoiceId         String
   invoice           Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   position          Int
+  lineType          String  @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (Phase 4b, §8: kein Menge-0-Workaround)
   productId         String? // nur Snapshot-Referenz, kein Live-Lookup
   description       String
+  descriptionLong   String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge, Phase 4b)
+  articleNumber     String? // Artikelnummer-Snapshot zum Erfassungszeitpunkt
   quantityMilli     Int
   unit              String  @default("C62")
   unitNetPriceCents Int
@@ -579,7 +600,9 @@ model CustomerAddress {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  quotes Quote[]
+  quotes           Quote[]
+  invoicesBilling  Invoice[] @relation("InvoiceBillingAddress")
+  invoicesShipping Invoice[] @relation("InvoiceShippingAddress")
 
   @@index([orgId])
   @@index([customerId])
@@ -601,7 +624,8 @@ model ContactPerson {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  quotes Quote[]
+  quotes   Quote[]
+  invoices Invoice[]
 
   @@index([orgId])
   @@index([customerId])
@@ -723,4 +747,26 @@ model DocumentSettings {
   shareLinkDays Int          @default(30)
   storeAcceptIp Boolean      @default(false)
   updatedAt     DateTime     @updatedAt
+}
+
+/// Beleganhang (Phase 4b) — Datei ausserhalb des Web-Roots (§38), Zugriff nur org-geprueft.
+/// Whitelist + Magic-Bytes-Pruefung erzwingt src/lib/attachments (nicht dieses Modell).
+/// Kein GoBD-Beleg: loeschbar, Loeschung wird ueber ActivityLog protokolliert (Audit K5),
+/// nicht ueber die ChangeLog-Hash-Kette.
+model DocumentAttachment {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  docType     String // QUOTE | INVOICE | DELIVERY_NOTE | DUNNING | RECURRING
+  docId       String
+  filename    String
+  mime        String
+  sizeBytes   Int
+  sha256      String
+  storagePath String
+  uploadedBy  String
+  createdAt   DateTime     @default(now())
+
+  @@unique([orgId, sha256, docType, docId])
+  @@index([orgId, docType, docId])
 }
