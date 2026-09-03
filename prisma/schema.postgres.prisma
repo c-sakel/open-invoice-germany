@@ -58,6 +58,7 @@ model Organization {
   contactPersons    ContactPerson[]
   paymentMethods    PaymentMethod[]
   dunningStages     DunningStage[]
+  mailSettings      MailSettings?
 }
 
 /// Kunde / Leistungsempfänger.
@@ -436,11 +437,13 @@ model EmailTemplate {
   body      String
   signature String?
   isDefault Boolean      @default(false)
+  isSystem  Boolean      @default(false)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
   dunningStages DunningStage[]
 
+  @@unique([orgId, docType, name])
   @@index([orgId, docType])
 }
 
@@ -455,17 +458,44 @@ model EmailLog {
   toJson          String       @default("[]")
   ccJson          String       @default("[]")
   bccJson         String       @default("[]")
+  fromEmail       String       @default("")
+  replyTo         String?
   subject         String
   bodySnapshot    String
   attachmentsJson String       @default("[]") // [{name, sha256, bytes}]
   status          String       @default("QUEUED") // QUEUED | SENT | DELIVERED | BOUNCED | FAILED
   providerId      String?
   error           String?
+  warningsJson    String       @default("[]")
+  resendOfId      String?
+  sentByUserId    String?
   sentAt          DateTime?
   createdAt       DateTime     @default(now())
 
   @@index([orgId])
   @@index([docType, docId])
+}
+
+/// SMTP-Zugang je Organisation. passwordEnc: AES-256-GCM, Schluessel aus AUTH_SECRET (src/lib/crypto/secrets.ts).
+model MailSettings {
+  id          String       @id @default(cuid())
+  orgId       String       @unique
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  host        String
+  port        Int
+  security    String       // "STARTTLS" | "TLS" | "NONE"
+  username    String?
+  passwordEnc String?
+  fromName    String
+  fromEmail   String
+  replyTo     String?
+  defaultCc   String       @default("")
+  defaultBcc  String       @default("")
+  copyToSelf  Boolean      @default(false)
+  lastTestAt  DateTime?
+  lastTestOk  Boolean?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 }
 
 /// Zusatzadressen eines Kunden. Die Hauptadresse bleibt in Customer.
