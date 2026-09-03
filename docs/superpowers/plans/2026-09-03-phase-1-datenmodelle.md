@@ -816,7 +816,7 @@ ST=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"stageId\
 echo "    ok — Backfill vollstaendig"
 ```
 
-Fall 1 erwartet jetzt **24** Tabellen (15 + 9 neue), Fall 2 **23** — Werte anpassen.
+Fall 1 erwartet jetzt **25** Tabellen (15 + 10 neue: DocumentRelation, DeliveryNote, DeliveryNoteLine, TextTemplate, EmailTemplate, EmailLog, CustomerAddress, ContactPerson, PaymentMethod, DunningStage), Fall 2 **24** — Werte anpassen.
 
 - [ ] **Schritt 3: Doku** — `docs/LIMITATIONEN.md`: Absatz „Daten & Recht" um „Phase 1: Verknüpfungen zusätzlich in `DocumentRelation`; Zahlungsmethoden und Mahnstufen sind Stammdaten (noch ohne UI, Phasen 4/6); Lieferscheine existieren als Datenmodell + Service, UI folgt in Phase 3". `docs/ARCHITEKTUR.md` Abschnitt 1: die neun Modelle in einem Absatz nennen.
 
