@@ -248,3 +248,9 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - Reorder von Mahnstufen wirkt auf laufende Mahnprozesse (Stufenwahl ueber order der letzten Mahnung) — dokumentiert; Option: Stufen-Historie je Mahnung einfrieren. (Abschluss-Review Phase 6, S3)
 - Basiszins-Historie (halbjaehrlich) statt Einzelwert mit gueltig-ab. (Spec Phase 6)
 - Nummer-erst-beim-Versand als Option fuer Angebot/AB/Lieferschein (Lastenheft §34, Ruling Phase 7).
+
+## Phase 7 (Nachtrag 2026-09-04)
+
+- test/integration/attachments-route.test.ts G4 flackert auf macOS (Rename-Race im Dateispeicher) — Ursache pruefen (storage.ts rename vs. fs.promises), Test stabilisieren. (Phase 7 Task 1 Beobachtung)
+- Customer.customerNumber ohne Unique-Constraint (nur Index); Wechsel yearlyReset auf CUSTOMER kann Nummern neu vergeben — Unique je Org erwaegen + Guard wie bei Rechnungen. (Abschluss-Review Phase 7)
+- Audit-Ansicht des ChangeLog im UI (nur intern) — bisher nicht sichtbar. (Phase 8b Spec)
