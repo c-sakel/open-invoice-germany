@@ -32,6 +32,18 @@ export function attachmentDocTypeFor(docType: EmailDocType): AttachmentDocType {
 
 const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
+/**
+ * eInvoiceDefault (Phase 7, §33): Vorbelegung der beim Oeffnen des Versand-Dialogs
+ * vorausgewaehlten Standardanhaenge. Bei `true` sind alle Standardanhaenge (PDF + ggf.
+ * XRechnung-XML) vorausgewaehlt; bei `false` nur das PDF — der Nutzer kann die
+ * XRechnung-XML weiterhin manuell dazuwaehlen (reine Vorbelegung, kein Verbot).
+ */
+export function defaultStandardAttachmentFilenames(attachments: { filename: string }[], eInvoiceDefault: boolean): string[] {
+  const names = attachments.map((a) => a.filename);
+  if (eInvoiceDefault) return names;
+  return names.filter((n) => !n.toLowerCase().endsWith(".xml"));
+}
+
 /** Standardanhaenge je Belegtyp (Spec, Abschnitt 2). */
 export async function buildStandardAttachments(orgId: string, docType: EmailDocType, docId: string): Promise<Attachment[]> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {

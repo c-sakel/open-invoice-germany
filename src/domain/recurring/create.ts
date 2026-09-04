@@ -5,6 +5,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { normalizeToNoon } from "@/lib/recurring";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import type { CreateRecurringInput } from "@/schemas";
 
 export class RecurringError extends Error {
@@ -22,6 +23,12 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
   // Stichtage auf 12:00 lokal ankern (DST-/Zeitzonen-sichere Tagesanzeige).
   const startDate = normalizeToNoon(input.startDate);
   const endDate = input.endDate ? normalizeToNoon(input.endDate) : null;
+
+  // recurringAutoFinalizeDefault/recurringAutoSendDefault (Phase 7, §33): greifen nur,
+  // wenn der Aufrufer die Felder nicht selbst gesetzt hat.
+  const docSettings = await loadDocumentSettings(orgId);
+  const autoFinalize = input.autoFinalize ?? docSettings.recurringAutoFinalizeDefault;
+  const autoSend = input.autoSend ?? docSettings.recurringAutoSendDefault;
 
   const lines = input.lines.map((l, i) => ({
     position: i + 1,
@@ -49,7 +56,8 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       taxScheme: input.taxScheme,
       currency: input.currency,
       paymentTermsDays: input.paymentTermsDays,
-      autoFinalize: input.autoFinalize,
+      autoFinalize,
+      autoSend,
       notes: input.notes ?? null,
       lines: { create: lines },
     },

@@ -1,14 +1,25 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { getActiveOrg } from "@/lib/org";
+import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
 import { archiveCustomer } from "@/app/actions/masterdata";
 
 export const dynamic = "force-dynamic";
 
 export default async function KundenPage() {
+  try {
+    const org = await getActiveOrg();
+    // Selbstheilung (Phase 7, §34): Bestandskunden ohne Kundennummer bekommen beim ersten
+    // Laden der Liste eine — idempotent, kein Effekt bei bereits vergebenen Nummern.
+    await ensureCustomerNumbers(org.id);
+  } catch {
+    // Keine Organisation eingerichtet -> keine Kunden vorhanden, Liste bleibt leer.
+  }
+
   const customers = await prisma.customer.findMany({
     where: { isArchived: false },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, city: true, type: true, vatId: true },
+    select: { id: true, name: true, city: true, type: true, vatId: true, customerNumber: true },
   });
 
   return (
@@ -29,6 +40,7 @@ export default async function KundenPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-4 py-3">Nr.</th>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Ort</th>
                 <th className="px-4 py-3">Typ</th>
@@ -39,6 +51,7 @@ export default async function KundenPage() {
             <tbody className="divide-y divide-slate-100">
               {customers.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 text-slate-500">{c.customerNumber ?? "—"}</td>
                   <td className="px-4 py-3">
                     <Link href={`/kunden/${c.id}`} className="font-medium text-indigo-600 hover:underline">
                       {c.name}

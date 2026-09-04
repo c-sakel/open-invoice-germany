@@ -50,6 +50,7 @@ import { duplicateDocument, type DuplicatableType } from "@/domain/document/dupl
 import { createPartialInvoice, PartialInvoiceError } from "@/domain/invoice/partial";
 import { createDownpaymentInvoice, DownpaymentInvoiceError } from "@/domain/invoice/downpayment";
 import { createFinalInvoice, FinalInvoiceError } from "@/domain/invoice/final";
+import { assignCustomerNumber, assignArticleNumber } from "@/domain/numbering/ranges";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { PricingError } from "@/lib/pricing/errors";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
@@ -449,7 +450,10 @@ server.registerTool(
       );
       const customer = existing
         ? await dbInternal.customer.update({ where: { id: existing.id }, data })
-        : await dbInternal.customer.create({ data: { ...data, orgId: org.id } });
+        : await dbInternal.$transaction(async (tx) => {
+            const customerNumber = await assignCustomerNumber(tx, org.id);
+            return tx.customer.create({ data: { ...data, customerNumber, orgId: org.id } });
+          });
       return ok(`Kunde ${existing ? "aktualisiert" : "angelegt"}: ${customer.name} (${customer.id}).`);
     } catch (e) {
       return fail(`Konnte Kunde nicht speichern: ${(e as Error).message}`);
@@ -510,7 +514,10 @@ server.registerTool(
       );
       const product = existing
         ? await dbInternal.product.update({ where: { id: existing.id }, data })
-        : await dbInternal.product.create({ data: { ...data, orgId: org.id } });
+        : await dbInternal.$transaction(async (tx) => {
+            const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, org.id));
+            return tx.product.create({ data: { ...data, articleNumber, orgId: org.id } });
+          });
       return ok(`Produkt ${existing ? "aktualisiert" : "gespeichert"}: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
     } catch (e) {
       return fail(`Konnte Produkt nicht speichern: ${(e as Error).message}`);
@@ -1468,7 +1475,8 @@ server.registerTool(
       endDate: z.string().optional().describe("Letzter Stichtag YYYY-MM-DD (optional)"),
       anchorDay: z.number().int().min(1).max(28).optional().describe("Fester Tag im Monat (1..28)"),
       paymentTermsDays: z.number().int().min(0).max(365).default(14),
-      autoFinalize: z.boolean().default(false).describe("true = erzeugte Rechnungen sofort festschreiben"),
+      autoFinalize: z.boolean().optional().describe("true = erzeugte Rechnungen sofort festschreiben (ohne Angabe: Org-Standard aus den Einstellungen)"),
+      autoSend: z.boolean().optional().describe("true = erzeugte Rechnungen automatisch per E-Mail versenden (ohne Angabe: Org-Standard aus den Einstellungen)"),
       notes: z.string().optional(),
     },
   },
@@ -1489,6 +1497,7 @@ server.registerTool(
         endDate: parseDateInput(args.endDate),
         paymentTermsDays: args.paymentTermsDays,
         autoFinalize: args.autoFinalize,
+        autoSend: args.autoSend,
         taxScheme: "REGULAR",
         currency: "EUR",
         notes: args.notes,

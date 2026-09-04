@@ -144,6 +144,8 @@ export const customerSchema = z.object({
   peppolId: z.string().optional(),
   defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
   defaultPaymentMethodId: z.string().optional(),
+  // Phase 7, §34 — frei editierbar; bleibt leer -> assignCustomerNumber bei der Anlage.
+  customerNumber: z.string().max(30).optional(),
   notes: z.string().optional(),
 });
 export type CustomerInput = z.infer<typeof customerSchema>;
@@ -498,7 +500,11 @@ export const createRecurringSchema = z.object({
   taxScheme: TaxScheme.default("REGULAR"),
   currency: z.string().length(3).default("EUR"),
   paymentTermsDays: z.number().int().min(0).max(365).default(14),
-  autoFinalize: z.boolean().default(false),
+  // Ohne explizite Angabe greifen recurringAutoFinalizeDefault/recurringAutoSendDefault
+  // (Phase 7, §33) — bewusst KEIN `.default()`, sonst koennte die Domain nicht mehr
+  // unterscheiden, ob der Aufrufer bewusst false gewaehlt hat.
+  autoFinalize: z.boolean().optional(),
+  autoSend: z.boolean().optional(),
   notes: z.string().optional(),
   lines: z.array(invoiceLineInputSchema).min(1),
 });
@@ -539,10 +545,14 @@ export const createDeliveryNoteSchema = z.object({
   sourceId: z.string().optional(),
   deliveryDate: z.coerce.date().optional(),
   shippingDate: z.coerce.date().optional(),
-  showPrices: z.boolean().default(false),
-  showTax: z.boolean().default(false),
-  showArticleNumber: z.boolean().default(true),
-  showDescription: z.boolean().default(true),
+  // Ohne explizite Angabe greifen die dnShow*-Org-Einstellungen (Phase 7, §33) — bewusst
+  // KEIN Zod-`.default()` hier, sonst wuerde die Domain nie unterscheiden koennen, ob der
+  // Aufrufer den Wert bewusst gesetzt hat.
+  showPrices: z.boolean().optional(),
+  showTax: z.boolean().optional(),
+  showArticleNumber: z.boolean().optional(),
+  showDescription: z.boolean().optional(),
+  showDeliveryAddress: z.boolean().optional(),
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   notes: z.string().optional(),

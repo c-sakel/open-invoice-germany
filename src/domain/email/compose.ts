@@ -5,9 +5,10 @@
  */
 import { dbInternal } from "@/lib/db";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
-import { buildStandardAttachments, attachmentDocTypeFor } from "@/domain/email/attachments";
+import { buildStandardAttachments, attachmentDocTypeFor, defaultStandardAttachmentFilenames } from "@/domain/email/attachments";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
 import { DEFAULT_DUNNING_STAGES } from "@/domain/masterdata/defaults";
 import { renderTemplate } from "@/lib/template/render";
@@ -35,6 +36,8 @@ export interface PrefillResult {
   signature: string;
   copyToSelf: boolean;
   attachments: { filename: string; size: number }[];
+  /** Dateinamen der standardmaessig vorausgewaehlten Anhaenge (eInvoiceDefault, Phase 7). */
+  defaultStandardAttachments: string[];
   /** Bestehende Beleganhaenge (Phase 4b, DocumentAttachment) — zusaetzlich zu den
    *  automatischen Standardanhaenge oben waehlbar (sendEmailInputSchema.attachmentIds). */
   documentAttachments: { id: string; filename: string; sizeBytes: number }[];
@@ -130,6 +133,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
   const from = { name: settings.fromName, address: settings.fromEmail };
+  const docSettings = await loadDocumentSettings(orgId);
 
   if ("logId" in source) {
     // G7: findFirst statt findFirstOrThrow — ein unbekanntes/fremdes logId ist kein
@@ -155,6 +159,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
       signature: "",
       copyToSelf: settings.copyToSelf,
       attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
+      defaultStandardAttachments: defaultStandardAttachmentFilenames(attachments, docSettings.eInvoiceDefault),
       documentAttachments,
       warnings: [],
       templateId: log.templateId ?? undefined,
@@ -219,6 +224,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     signature,
     copyToSelf: settings.copyToSelf,
     attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
+    defaultStandardAttachments: defaultStandardAttachmentFilenames(attachments, docSettings.eInvoiceDefault),
     documentAttachments,
     warnings,
     templateId: template?.id,

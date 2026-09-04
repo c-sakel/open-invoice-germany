@@ -72,6 +72,8 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
             <dd className="text-right">{rec.paymentTermsDays} Tage</dd>
             <dt>Festschreiben</dt>
             <dd className="text-right">{rec.autoFinalize ? "automatisch" : "manuell"}</dd>
+            <dt>Versand</dt>
+            <dd className="text-right">{rec.autoSend ? "automatisch" : "manuell"}</dd>
           </dl>
         </div>
       </div>

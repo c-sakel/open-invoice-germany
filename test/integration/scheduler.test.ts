@@ -15,6 +15,8 @@ import { saveDunningSettings } from "@/domain/dunning/settings";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveMailSettings } from "@/domain/email/settings";
 import { createMemoryProvider } from "@/lib/mail/memory";
+import { createRecurring } from "@/domain/recurring/create";
+import { runDueRecurring } from "@/domain/recurring/run";
 import type { CreateInvoiceInput } from "@/schemas";
 
 const FIX_DATE = new Date("2051-06-09T10:00:00.000Z"); // 8 Tage nach dueDate (2051-06-01)
@@ -243,5 +245,91 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     const results = await runScheduledJobs({ trigger: "MANUAL", now });
     expect(results.map((r) => r.job)).toEqual(["recurring", "dunning"]);
     expect(results.every((r) => r.ok)).toBe(true);
+  });
+});
+
+// Phase 7, Task 2 (§33) — RecurringInvoice.autoSend: `runDueRecurring` versendet die
+// erzeugte Rechnung ueber die Standardvorlage INVOICE, Provider-Injektion analog
+// `runDunningJob` (MemoryMailProvider statt echtem SMTP).
+describe("Phase 7 — RecurringInvoice.autoSend (recurring/run.ts)", () => {
+  const abo = { lineType: "ITEM" as const, description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+
+  it("autoSend an: die erzeugte Rechnung wird per MemoryMailProvider versendet, EmailLog entsteht", async () => {
+    const customerId = await makeCustomer("abo-versand@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Abo mit Autoversand",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2051-07-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: true,
+      autoSend: true,
+      lines: [abo],
+    });
+
+    const provider = createMemoryProvider();
+    const now = new Date("2051-07-01T10:00:00.000Z");
+    const summaries = await runDueRecurring({ now, orgId, provider });
+    const summary = summaries.find((s) => s.recurringId === rec.id)!;
+    expect(summary.emitted).toHaveLength(1);
+    expect(summary.emitted[0]!.emailStatus).toBe("SENT");
+    expect(provider.sent).toHaveLength(1);
+    expect(provider.sent[0]!.to).toEqual(["abo-versand@example.org"]);
+
+    const log = await dbInternal.emailLog.findFirst({ where: { orgId, docId: summary.emitted[0]!.invoiceId, status: "SENT" } });
+    expect(log).not.toBeNull();
+  });
+
+  it("autoSend aus: keine E-Mail wird versendet", async () => {
+    const customerId = await makeCustomer("abo-kein-versand@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Abo ohne Autoversand",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2051-07-02T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: true,
+      autoSend: false,
+      lines: [abo],
+    });
+
+    const provider = createMemoryProvider();
+    const now = new Date("2051-07-02T10:00:00.000Z");
+    const summaries = await runDueRecurring({ now, orgId, provider });
+    const summary = summaries.find((s) => s.recurringId === rec.id)!;
+    expect(summary.emitted).toHaveLength(1);
+    expect(summary.emitted[0]!.emailStatus).toBeUndefined();
+    expect(provider.sent).toHaveLength(0);
+  });
+
+  it("autoSend an, aber Kunde ohne E-Mail -> SKIPPED, kein Fehler", async () => {
+    const customerId = await makeCustomer(); // keine E-Mail
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Abo ohne Kunden-E-Mail",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2051-07-03T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: true,
+      autoSend: true,
+      lines: [abo],
+    });
+
+    const provider = createMemoryProvider();
+    const now = new Date("2051-07-03T10:00:00.000Z");
+    const summaries = await runDueRecurring({ now, orgId, provider });
+    const summary = summaries.find((s) => s.recurringId === rec.id)!;
+    expect(summary.emitted).toHaveLength(1);
+    expect(summary.emitted[0]!.emailStatus).toBe("SKIPPED");
+    expect(provider.sent).toHaveLength(0);
   });
 });

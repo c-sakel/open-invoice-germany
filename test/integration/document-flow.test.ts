@@ -430,7 +430,7 @@ describe("Fix-Runde 1 -- F2: Restmengen zaehlen nur wirksame Lieferscheine", () 
 });
 
 describe("Fix-Runde 1 -- F3: Rechnungs-Duplikat vollstaendig", () => {
-  it("uebernimmt headerText/footerText/Lieferdatum/buyerReference der Quelle, aber NICHT dueDate", async () => {
+  it("uebernimmt headerText/footerText/Lieferdatum/buyerReference der Quelle, aber NICHT die dueDate der Quelle (Phase 7: wird aus invoiceDueDays neu berechnet)", async () => {
     const invoice = await createDraftInvoice(
       orgId,
       {
@@ -458,7 +458,10 @@ describe("Fix-Runde 1 -- F3: Rechnungs-Duplikat vollstaendig", () => {
     expect(copy.footerText).toBe("Fusstext Quelle");
     expect(copy.deliveryDate?.toISOString()).toBe(FIX_DATE.toISOString());
     expect(copy.buyerReference).toBe("PO-123");
-    expect(copy.dueDate).toBeNull(); // wird beim Festschreiben neu berechnet, nicht uebernommen
+    // Phase 7 (§33): dueDate wird NICHT von der Quelle uebernommen, sondern beim Anlegen
+    // des Duplikats neu aus DocumentSettings.invoiceDueDays (Default 14 Tage) berechnet —
+    // die dueDate der Quelle (2031-06-01) darf hier nicht wieder auftauchen.
+    expect(copy.dueDate?.toISOString()).toBe(new Date(FIX_DATE.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString());
   });
 });
 

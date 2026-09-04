@@ -23,7 +23,10 @@ import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { appendChangeLog } from "@/domain/audit";
 import { normalizeLines } from "@/domain/document/lines";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { createDocumentSchema, type SnapshotSource } from "@/schemas";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface CreateDocumentOptions {
   actor?: string;
@@ -111,6 +114,14 @@ export async function createBusinessDocumentWithinTx(
 
   const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, input.contactPersonId, input.billingAddressId);
 
+  // quoteValidityDays (Phase 7, §33): fehlt `validUntil` bei einem Angebot, wird es aus
+  // Ausstellungsdatum + Org-Einstellung vorbelegt.
+  let validUntil = input.validUntil;
+  if (!validUntil && input.kind === "ANGEBOT") {
+    const settings = await loadDocumentSettings(orgId);
+    validUntil = new Date(now.getTime() + settings.quoteValidityDays * DAY_MS);
+  }
+
   const snapshotSource: SnapshotSource = "CREATE";
   const doc = await tx.quote.create({
     data: {
@@ -120,7 +131,7 @@ export async function createBusinessDocumentWithinTx(
       number,
       status: "DRAFT",
       issueDate: now,
-      validUntil: input.validUntil,
+      validUntil,
       currency: input.currency,
       taxScheme: input.taxScheme,
       subject: input.subject,

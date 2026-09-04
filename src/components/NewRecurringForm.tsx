@@ -30,7 +30,19 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function NewRecurringForm({ customers, products }: { customers: CustomerOption[]; products: ProductOption[] }) {
+export function NewRecurringForm({
+  customers,
+  products,
+  defaultAutoFinalize = false,
+  defaultAutoSend = false,
+}: {
+  customers: CustomerOption[];
+  products: ProductOption[];
+  /** Vorbelegung aus DocumentSettings.recurringAutoFinalizeDefault (Phase 7, §33). */
+  defaultAutoFinalize?: boolean;
+  /** Vorbelegung aus DocumentSettings.recurringAutoSendDefault (Phase 7, §33). */
+  defaultAutoSend?: boolean;
+}) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
@@ -39,7 +51,8 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState("");
   const [paymentTermsDays, setPaymentTermsDays] = useState("14");
-  const [autoFinalize, setAutoFinalize] = useState(false);
+  const [autoFinalize, setAutoFinalize] = useState(defaultAutoFinalize);
+  const [autoSend, setAutoSend] = useState(defaultAutoSend);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineState[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +84,7 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
       endDate: endDate || undefined,
       paymentTermsDays: Number(paymentTermsDays) || 14,
       autoFinalize,
+      autoSend,
       taxScheme: "REGULAR",
       currency: "EUR",
       notes: notes || undefined,
@@ -154,6 +168,10 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
         <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
           <input type="checkbox" checked={autoFinalize} onChange={(e) => setAutoFinalize(e.target.checked)} />
           <span className="text-slate-700">Rechnungen automatisch festschreiben (sofort GoBD-konform &amp; nummeriert)</span>
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+          <input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} />
+          <span className="text-slate-700">Rechnungen automatisch per E-Mail versenden</span>
         </label>
       </div>
 

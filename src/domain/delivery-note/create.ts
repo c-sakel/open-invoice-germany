@@ -16,6 +16,7 @@ import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { appendChangeLog } from "@/domain/audit";
 import { assertDocExists } from "@/domain/relations";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { createDeliveryNoteSchema, type SnapshotSource } from "@/schemas";
 
 export class DeliveryNoteError extends Error {
@@ -66,6 +67,18 @@ export async function createDeliveryNoteWithinTx(
   const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD"));
   const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT"));
 
+  // dnShow*-Defaults + showDeliveryAddress (Phase 7, §33): fehlt ein Anzeige-Flag am
+  // Aufruf, greift die Org-Einstellung statt eines hart codierten Werts.
+  const docSettings = await loadDocumentSettings(orgId);
+  const showPrices = input.showPrices ?? docSettings.dnShowPrices;
+  // showTax/showDescription kennen keine eigene Org-Einstellung (Brief nennt nur
+  // dnShowPrices/dnShowArticleNumber/dnShowDeliveryAddress) — Defaults bleiben wie zuvor
+  // im Zod-Schema (false/true).
+  const showTax = input.showTax ?? false;
+  const showArticleNumber = input.showArticleNumber ?? docSettings.dnShowArticleNumber;
+  const showDescription = input.showDescription ?? true;
+  const showDeliveryAddress = input.showDeliveryAddress ?? docSettings.dnShowDeliveryAddress;
+
   const source: SnapshotSource = "CREATE";
   const note = await tx.deliveryNote.create({
     data: {
@@ -76,10 +89,11 @@ export async function createDeliveryNoteWithinTx(
       issueDate: now,
       deliveryDate: input.deliveryDate,
       shippingDate: input.shippingDate,
-      showPrices: input.showPrices,
-      showTax: input.showTax,
-      showArticleNumber: input.showArticleNumber,
-      showDescription: input.showDescription,
+      showPrices,
+      showTax,
+      showArticleNumber,
+      showDescription,
+      showDeliveryAddress,
       notes: input.notes,
       internalNotes: input.internalNotes,
       headerText,
