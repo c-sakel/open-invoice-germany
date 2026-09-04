@@ -241,3 +241,10 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - Index auf Invoice(sourceType, sourceId) (activePartialGrossCents/billedQuantities filtern darauf) — eigene Migration SQLite+Postgres. (Abschluss-Review Phase 5, Nit)
 - BT-113 auf Schlussrechnung ignoriert Zahlungen nach Festschreibung (XML entsteht bei Festschreibung) — COMPLIANCE-Hinweis. (Abschluss-Review)
 - Unique-Constraint fuer aktive Schlussrechnung je Quelle (sourceId, type=FINAL, nicht storniert) — Postgres READ COMMITTED Doppelklick-Race vollstaendig schliessen (Migration SQLite+Postgres). (Fix-Welle B13)
+
+## Phase 6 (Nachtrag 2026-09-04)
+
+- MCP-Tools fuer Mahnwesen-Konfiguration (Stufen, DunningSettings) fehlen — in Phase 7 `get_settings/update_*` mit area `dunning` liefern (§55). (Abschluss-Review Phase 6)
+- Reorder von Mahnstufen wirkt auf laufende Mahnprozesse (Stufenwahl ueber order der letzten Mahnung) — dokumentiert; Option: Stufen-Historie je Mahnung einfrieren. (Abschluss-Review Phase 6, S3)
+- Basiszins-Historie (halbjaehrlich) statt Einzelwert mit gueltig-ab. (Spec Phase 6)
+- Nummer-erst-beim-Versand als Option fuer Angebot/AB/Lieferschein (Lastenheft §34, Ruling Phase 7).
