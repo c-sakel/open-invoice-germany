@@ -59,6 +59,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <Link href="/rechnungen" className="text-slate-600 hover:text-slate-900">
                   Rechnungen
                 </Link>
+                <Link href="/mahnwesen" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
+                  Mahnwesen
+                </Link>
                 <Link href="/kunden" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
                   Kunden
                 </Link>
