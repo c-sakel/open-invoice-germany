@@ -9,6 +9,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { dbInternal } from "@/lib/db";
+import { logActivity } from "@/domain/activity/log";
 import { createApiKeyInputSchema, type ApiKeyScope, type CreateApiKeyInput } from "@/schemas";
 
 const TOKEN_PREFIX = "oig_";
@@ -74,6 +75,19 @@ export async function createApiKey(orgId: string, input: CreateApiKeyInput, crea
       createdBy: createdBy ?? null,
     },
   });
+  // Fix-Welle (Should-fix 6): Anlage eines Credentials, das lesend UND schreibend auf
+  // alle GoBD-relevanten Daten zugreifen kann, muss protokolliert werden — NIE
+  // Token/Hash im Protokoll (analog webhook/endpoints.ts, das schon appendChangeLog
+  // nutzt; hier ActivityLog statt ChangeLog, Ruling: "ActivityLog, nicht ChangeLog").
+  await logActivity(dbInternal, {
+    orgId,
+    entityType: "API_KEY",
+    entityId: row.id,
+    type: "CREATED",
+    actor: createdBy ?? "system",
+    data: { name: row.name, prefix: row.prefix, scopes: parsed.scopes },
+  });
+
   return {
     id: row.id,
     name: row.name,
