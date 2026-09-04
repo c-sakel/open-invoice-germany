@@ -41,7 +41,11 @@ export const organizationSchema = z.object({
   kuIdNr: z.string().optional(),
   smallBusiness: z.boolean().default(false),
   defaultTaxScheme: TaxScheme.default("REGULAR"),
-  iban: z.string().optional(),
+  iban: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.replace(/\s+/g, "") : s))
+    .refine((s) => !s || /^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(s), "Ungültige IBAN"),
   bic: z.string().optional(),
   bankName: z.string().optional(),
   electronicAddress: z.string().optional(),
