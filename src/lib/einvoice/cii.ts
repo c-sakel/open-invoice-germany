@@ -301,8 +301,9 @@ export function buildFacturXCII(data: EInvoiceData): string {
   sum.ele("ram:LineTotalAmount").txt(amt(lineTotal)).up();
   // Fix-Runde 1 (Befund A): Gutschrift-Buckets sind vorzeichen-gespiegelt (negativ) —
   // Gate auf !== 0 und Math.abs() statt amt()/isCredit.
-  if (allowanceTotal !== 0) sum.ele("ram:AllowanceTotalAmount").txt(money(Math.abs(allowanceTotal))).up();
+  // XSD-Reihenfolge (CII D16B): ChargeTotalAmount VOR AllowanceTotalAmount (umgekehrt zu UBL).
   if (chargeTotal !== 0) sum.ele("ram:ChargeTotalAmount").txt(money(Math.abs(chargeTotal))).up();
+  if (allowanceTotal !== 0) sum.ele("ram:AllowanceTotalAmount").txt(money(Math.abs(allowanceTotal))).up();
   sum.ele("ram:TaxBasisTotalAmount").txt(amt(data.netTotalCents)).up();
   sum.ele("ram:TaxTotalAmount", { currencyID: cur }).txt(amt(data.taxTotalCents)).up();
   sum.ele("ram:GrandTotalAmount").txt(amt(data.grossTotalCents)).up();
