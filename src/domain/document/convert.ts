@@ -90,15 +90,20 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     // Fehlt eine Zahlungsmethode am Dokument (Quote kennt keine eigene), greift zuerst die
     // Standard-Zahlungsmethode des Kunden (gleiches Muster wie createDraftInvoiceWithinTx),
     // danach die Org-weite Standard-Zahlungsmethode (Phase 7, `defaultPaymentMethodId`).
-    const customer = await tx.customer.findUnique({ where: { id: q.customerId }, select: { defaultPaymentMethodId: true } });
+    const customer = await tx.customer.findUnique({
+      where: { id: q.customerId },
+      select: { defaultPaymentMethodId: true, defaultPaymentTermsDays: true },
+    });
     const paymentMethodId = customer?.defaultPaymentMethodId ?? settings.defaultPaymentMethodId ?? undefined;
     const method = paymentMethodId
       ? await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { paymentTermsDays: true } })
       : null;
 
-    // Faelligkeit/Leistungsdatum (Phase 7, §33) — dieselbe Prioritaet wie
-    // createDraftInvoiceWithinTx: Zahlungsmethode > invoiceDueDays > 14 Tage.
-    const dueDate = new Date(now.getTime() + (method?.paymentTermsDays ?? settings.invoiceDueDays ?? 14) * DAY_MS);
+    // Faelligkeit/Leistungsdatum (Phase 7, §33; S1 Fix-Welle) — dieselbe Prioritaet wie
+    // createDraftInvoiceWithinTx: Customer.defaultPaymentTermsDays > Zahlungsmethode >
+    // invoiceDueDays > 14 Tage.
+    const paymentTermsDays = customer?.defaultPaymentTermsDays ?? method?.paymentTermsDays ?? settings.invoiceDueDays ?? 14;
+    const dueDate = new Date(now.getTime() + paymentTermsDays * DAY_MS);
     const deliveryDate = settings.autoDeliveryDate ? now : undefined;
 
     const invoice = await tx.invoice.create({
