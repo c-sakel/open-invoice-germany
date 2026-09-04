@@ -17,8 +17,9 @@
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
-import { formatCents } from "@/lib/money";
+import { formatCents, roundHalfUp } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
+import { computeLineNet } from "@/lib/pricing/line";
 import { splitByTaxRate, formatPermilleDE, type TaxRateSplit } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
@@ -47,10 +48,20 @@ interface PartialSourceLine {
   description: string;
   unit: string;
   quantityMilli: number;
-  unitNetPriceCents: number;
-  taxRate: number;
+  // B12 (Fix-Welle): DeliveryNoteLine.unitNetPriceCents/taxRate sind nullable
+  // (preisloser Lieferschein ist der Normalfall, `showPrices` defaultet auf false) —
+  // die Preis-/Steuerpruefung darf deshalb nicht beim Laden ALLER Quellzeilen
+  // pauschal fehlschlagen, sondern erst dort, wo eine konkrete Zeile tatsaechlich
+  // abgerechnet wird (`positionLinesForMode`/`assertAllLinesPriced`).
+  unitNetPriceCents: number | null;
+  taxRate: number | null;
   taxCategory: string;
   lineNetCents: number;
+  // Fix-Welle (B1): Positionsrabatt der Quellzeile — ohne diese Felder wuerden
+  // POSITIONS/QUANTITIES-Teilrechnungen einen Zeilenrabatt der Quelle stillschweigend
+  // fallen lassen und den Kunden ueberhoeht abrechnen (Ruling Koordinator).
+  discountPermille: number;
+  discountCents: number;
 }
 
 interface PartialSource {
@@ -90,7 +101,9 @@ async function loadPartialSource(
       throw new PartialInvoiceError(`Angebot/Auftragsbestaetigung im Status "${q.status}" kann nicht teilweise abgerechnet werden.`);
     }
     // Keine Vermischung Teil-/Abschlagsrechnung auf derselben Quelle (Ruling Task-2-Facts).
-    const relations = await listRelations(orgId, "QUOTE", sourceId);
+    // B13 (Fix-Welle): tx statt dbInternal — das Mischverbot-Pruefung liest damit
+    // innerhalb derselben Transaktion, in der auch geschrieben wird.
+    const relations = await listRelations(orgId, "QUOTE", sourceId, tx);
     const hasDownpayment = relations.some((r) => r.fromType === "INVOICE" && r.toType === "QUOTE" && r.toId === sourceId && r.relationType === "DOWNPAYMENT_OF");
     if (hasDownpayment) {
       throw new PartialInvoiceError("Auf dieser Quelle bestehen bereits Abschlagsrechnungen — Teil- und Abschlagsrechnungen koennen nicht gemischt werden.");
@@ -119,6 +132,8 @@ async function loadPartialSource(
           taxRate: l.taxRate,
           taxCategory: l.taxCategory,
           lineNetCents: l.lineNetCents,
+          discountPermille: l.discountPermille,
+          discountCents: l.discountCents,
         })),
     };
   }
@@ -128,24 +143,24 @@ async function loadPartialSource(
   if (!DELIVERY_NOTE_STATUS_ALLOWED.has(n.status)) {
     throw new PartialInvoiceError(`Lieferschein im Status "${n.status}" kann nicht abgerechnet werden.`);
   }
-  const lines = n.lines.map((l) => {
-    if (l.unitNetPriceCents == null || l.taxRate == null) {
-      throw new PartialInvoiceError(`Lieferschein-Position "${l.description}" hat keinen Preis/Steuersatz und kann nicht abgerechnet werden.`);
-    }
-    // DeliveryNoteLine kennt weder taxCategory noch lineNetCents (Abgrenzung Task 1-Schema)
-    // — Standardkategorie "S" (Regelsteuersatz), lineNetCents aus Menge*Preis (kein
-    // Positionsrabatt auf Lieferscheinebene vorgesehen).
-    return {
-      id: l.id,
-      description: l.description,
-      unit: l.unit,
-      quantityMilli: l.quantityMilli,
-      unitNetPriceCents: l.unitNetPriceCents,
-      taxRate: l.taxRate,
-      taxCategory: "S",
-      lineNetCents: Math.round((l.quantityMilli * l.unitNetPriceCents) / 1000),
-    };
-  });
+  // B12 (Fix-Welle): kein eager throw mehr fuer preislose Zeilen — ein Lieferschein ohne
+  // Preise (`showPrices: false`, der Normalfall) darf weiterhin per POSITIONS/QUANTITIES
+  // abgerechnet werden, solange die tatsaechlich ausgewaehlten Zeilen einen Preis tragen
+  // (Pruefung in `positionLinesForMode`/`assertAllLinesPriced`, nicht hier).
+  const lines = n.lines.map((l) => ({
+    id: l.id,
+    description: l.description,
+    unit: l.unit,
+    quantityMilli: l.quantityMilli,
+    unitNetPriceCents: l.unitNetPriceCents,
+    taxRate: l.taxRate,
+    // DeliveryNoteLine kennt keine taxCategory (Abgrenzung Task 1-Schema) — Standard "S".
+    taxCategory: "S",
+    lineNetCents: l.unitNetPriceCents != null ? Math.round((l.quantityMilli * l.unitNetPriceCents) / 1000) : 0,
+    // DeliveryNoteLine kennt keinen Positionsrabatt (Abgrenzung Task 1-Schema).
+    discountPermille: 0,
+    discountCents: 0,
+  }));
   return {
     customerId: n.customerId,
     number: n.number ?? "",
@@ -174,21 +189,37 @@ interface BuiltLine {
   taxRate: number;
   taxCategory: string;
   sourceLineId?: string;
+  // Fix-Welle (B1): Positionsrabatt, der auf die gebaute Zeile uebertragen wird
+  // (0 bei den Anteils-Modi PERCENT/NET_AMOUNT/GROSS_AMOUNT, dort steckt der einzige
+  // Rabatt/Aufschlag bereits in den Bucket-Nettobetraegen).
+  discountPermille: number;
+  discountCents: number;
 }
 
-function splitLinesForShareMode(
-  input: CreatePartialInvoiceInput,
-  source: PartialSource,
-  existingActiveGrossCents: number,
-): { lines: BuiltLine[]; partialPermille: number | null } {
-  // Fix-Runde 2 (Ruling Koordinator): Anteilsbasis ist die Gesamtleistung NACH
-  // Beleg-Rabatt/-Aufschlag der Quelle, nicht die rohen Positionsbetraege — sonst
-  // summiert eine 100 %-Teilrechnung mehr als source.grossTotalCents, sobald die
-  // Quelle einen Beleg-Rabatt/-Aufschlag traegt. `computeTaxBreakdown` (wie beim
-  // Festschreiben/bei der Konvertierung) liefert je Steuersatz den bereits
-  // angepassten Nettobetrag; Σ(net+tax) == source.grossTotalCents (QUOTE) exakt.
-  const adjustedTotals = computeTaxBreakdown(
-    source.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+interface BuiltResult {
+  lines: BuiltLine[];
+  partialPermille: number | null;
+  documentDiscountPermille: number;
+  documentDiscountCents: number;
+  documentChargePermille: number;
+  documentChargeCents: number;
+}
+
+/**
+ * Gesamtleistung der Quelle NACH Beleg-Rabatt/-Aufschlag (Fix-Runde 2) — Grundlage
+ * sowohl der PERCENT/NET_AMOUNT/GROSS_AMOUNT-Bucket-Aufteilung als auch des
+ * kumulativen Ueberbuchungs-Guards (B3, Fix-Welle) fuer ALLE Modi (auch POSITIONS/
+ * QUANTITIES). `computeTaxBreakdown` liefert je Steuersatz den bereits angepassten
+ * Nettobetrag; Σ(net+tax) == source.grossTotalCents (QUOTE) exakt.
+ */
+function sourceAdjustedTotals(source: PartialSource) {
+  // B12: preislose Zeilen (Lieferschein, taxRate=null) tragen bereits lineNetCents=0
+  // (loadPartialSource) und gehen mit taxRate 0 in eine eigene, wirkungslose Gruppe ein
+  // — diese Funktion dient nur als Bezugsgroesse fuer den Ueberbuchungs-Guard/die
+  // Bucket-Aufteilung, nicht als Preis-Validierung (die laeuft lazy, siehe
+  // assertLinePriced/assertAllLinesPriced).
+  const totals = computeTaxBreakdown(
+    source.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate ?? 0, taxCategory: l.taxCategory })),
     {
       discountPermille: source.documentDiscountPermille,
       discountCents: source.documentDiscountCents,
@@ -196,9 +227,35 @@ function splitLinesForShareMode(
       chargeCents: source.documentChargeCents,
     },
   );
-  if (adjustedTotals.breakdown.length === 0) {
+  if (totals.breakdown.length === 0) {
     throw new PartialInvoiceError("Die Quelle enthaelt keine abrechenbaren Positionen.");
   }
+  return totals;
+}
+
+/**
+ * B12/B11 (Fix-Welle): PERCENT/NET_AMOUNT/GROSS_AMOUNT rechnen den Anteil ueber die
+ * GESAMTE Quelle (Steuersatz-Buckets aus allen Zeilen) — anders als POSITIONS/
+ * QUANTITIES, wo nur die tatsaechlich gewaehlten Zeilen einen Preis brauchen, kann ein
+ * Anteils-Modus ohne Preis auf JEDER Zeile keine sinnvolle Gesamtleistung bilden. Wird
+ * nur fuer die Anteils-Modi aufgerufen (POSITIONS/QUANTITIES pruefen lazy je Zeile,
+ * siehe `assertLinePriced`).
+ */
+function assertAllLinesPriced(source: PartialSource): void {
+  const unpriced = source.lines.find((l) => l.unitNetPriceCents == null || l.taxRate == null);
+  if (unpriced) {
+    throw new PartialInvoiceError(
+      `Position "${unpriced.description}" hat keinen Preis/Steuersatz — ein prozentualer/fester Anteil kann nur berechnet werden, wenn alle Positionen der Quelle einen Preis tragen. Nutze POSITIONS/QUANTITIES fuer preislose Quellen.`,
+    );
+  }
+}
+
+function splitLinesForShareMode(
+  input: CreatePartialInvoiceInput,
+  source: PartialSource,
+  adjustedTotals: ReturnType<typeof sourceAdjustedTotals>,
+): BuiltResult {
+  assertAllLinesPriced(source);
   const buckets: RateBucket[] = adjustedTotals.breakdown.map((b) => ({
     key: `${b.taxCategory}:${b.taxRate}`,
     taxCategory: b.taxCategory,
@@ -213,22 +270,6 @@ function splitLinesForShareMode(
   } catch (e) {
     if (e instanceof PricingError) throw new PartialInvoiceError(e.message);
     throw e;
-  }
-
-  // Fix-Runde 1 (HIGH): kumulativer Ueberbuchungs-Guard fuer PERCENT/NET_AMOUNT/
-  // GROSS_AMOUNT — ohne ihn liesse sich dieselbe Quelle beliebig oft ueber 100 % hinaus
-  // per Teilrechnung abrechnen (anders als POSITIONS/QUANTITIES, die bereits per
-  // `billedQuantities` je Position geschuetzt sind). Zaehlt wie `billingStateFor`s
-  // `billedPermille` ALLE aktiven, nicht stornierten Teilrechnungen dieser Quelle
-  // (DRAFT zaehlt bereits mit — analog `billedQuantities`). Vergleichsbasis ab
-  // Fix-Runde 2: die beleg-angepasste Gesamtleistung (`adjustedTotals.grossTotalCents`),
-  // nicht mehr die rohe Bucket-Summe.
-  const newGrossCents = splits.reduce((s, sp) => s + sp.grossCents, 0);
-  const sourceGrossCents = adjustedTotals.grossTotalCents;
-  if (existingActiveGrossCents + newGrossCents > sourceGrossCents) {
-    throw new PartialInvoiceError(
-      `Die Summe der Teilrechnungen (${existingActiveGrossCents + newGrossCents} Cent) wuerde die Gesamtleistung (${sourceGrossCents} Cent) uebersteigen.`,
-    );
   }
 
   const label =
@@ -246,20 +287,78 @@ function splitLinesForShareMode(
       taxRate: s.taxRate,
       taxCategory: s.taxCategory,
       sourceLineId: undefined,
+      discountPermille: 0,
+      discountCents: 0,
     }));
 
   if (lines.length === 0) {
     throw new PartialInvoiceError("Der berechnete Anteil ergibt keine abrechenbare Position (Betrag 0).");
   }
 
-  return { lines, partialPermille: input.mode === "PERCENT" ? input.permille! : null };
+  // B1: der Beleg-Rabatt/-Aufschlag der Quelle steckt bereits in den Bucket-Netto-
+  // betraegen (adjustedTotals kommt aus computeTaxBreakdown MIT den Beleg-Feldern) —
+  // die Teilrechnung selbst traegt deshalb keinen eigenen Beleg-Rabatt/-Aufschlag,
+  // sonst wuerde er doppelt wirken.
+  return {
+    lines,
+    partialPermille: input.mode === "PERCENT" ? input.permille! : null,
+    documentDiscountPermille: 0,
+    documentDiscountCents: 0,
+    documentChargePermille: 0,
+    documentChargeCents: 0,
+  };
 }
 
-function positionLinesForMode(
-  input: CreatePartialInvoiceInput,
+/**
+ * B1 (Fix-Welle, Ruling Koordinator): Beleg-Rabatt/-Aufschlag der Quelle anteilig auf
+ * eine POSITIONS/QUANTITIES-Teilrechnung uebertragen — sonst wuerde eine Teilrechnung
+ * ueber einzelne Positionen den Beleg-Rabatt der Quelle stillschweigend verlieren und
+ * den Kunden ueberhoeht abrechnen. Permille-Anteile werden 1:1 uebernommen (sie
+ * skalieren automatisch mit der kleineren abgerechneten Netto-Basis); feste Cent-
+ * Anteile werden proportional zum Anteil des abgerechneten Zeilen-Nettos (NACH
+ * Zeilenrabatt, VOR Beleganpassung) am gesamten Quell-Netto aufgeteilt (roundHalfUp).
+ */
+function documentAdjustmentForBilledLines(
   source: PartialSource,
-  billed: Map<string, number>,
-): { lines: BuiltLine[]; partialPermille: null } {
+  builtLines: readonly BuiltLine[],
+): Pick<BuiltResult, "documentDiscountPermille" | "documentDiscountCents" | "documentChargePermille" | "documentChargeCents"> {
+  const totalSourceNetCents = source.lines.reduce((s, l) => s + l.lineNetCents, 0);
+  if (totalSourceNetCents <= 0) {
+    return { documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0 };
+  }
+  const billedNetCents = builtLines.reduce(
+    (s, l) =>
+      s +
+      computeLineNet({
+        quantityMilli: l.quantityMilli,
+        unitNetPriceCents: l.unitNetPriceCents,
+        discountPermille: l.discountPermille,
+        discountCents: l.discountCents,
+      }).lineNetCents,
+    0,
+  );
+  return {
+    documentDiscountPermille: source.documentDiscountPermille,
+    documentDiscountCents: roundHalfUp((source.documentDiscountCents * billedNetCents) / totalSourceNetCents),
+    documentChargePermille: source.documentChargePermille,
+    documentChargeCents: roundHalfUp((source.documentChargeCents * billedNetCents) / totalSourceNetCents),
+  };
+}
+
+/**
+ * B12 (Fix-Welle, Ruling Koordinator): Preis-/Steuersatz-Pruefung NUR fuer die
+ * tatsaechlich ausgewaehlte Zeile — vorher schlug `loadPartialSource` bereits beim
+ * Laden fuer JEDE preislose Lieferschein-Zeile fehl, obwohl `showPrices: false` der
+ * Normalfall ist (Lieferscheine sind meist ohne Preise) und die konkret gewaehlten
+ * Zeilen durchaus einen Preis tragen koennen.
+ */
+function assertLinePriced(src: PartialSourceLine): asserts src is PartialSourceLine & { unitNetPriceCents: number; taxRate: number } {
+  if (src.unitNetPriceCents == null || src.taxRate == null) {
+    throw new PartialInvoiceError(`Position "${src.description}" hat keinen Preis/Steuersatz und kann nicht abgerechnet werden.`);
+  }
+}
+
+function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialSource, billed: Map<string, number>): BuiltResult {
   const byId = new Map(source.lines.map((l) => [l.id, l]));
   const lines: BuiltLine[] = [];
 
@@ -267,6 +366,7 @@ function positionLinesForMode(
     for (const lineId of input.lineIds!) {
       const src = byId.get(lineId);
       if (!src) throw new PartialInvoiceError(`Quellposition ${lineId} unbekannt.`);
+      assertLinePriced(src);
       const billedMilli = billed.get(lineId) ?? 0;
       if (billedMilli > 0) {
         throw new PartialInvoiceError(`Position "${src.description}" wurde bereits (teilweise) abgerechnet und kann nicht erneut als volle Position gewaehlt werden.`);
@@ -279,12 +379,16 @@ function positionLinesForMode(
         taxRate: src.taxRate,
         taxCategory: src.taxCategory,
         sourceLineId: lineId,
+        // B1: volle Position -> Zeilenrabatt unveraendert uebernommen.
+        discountPermille: src.discountPermille,
+        discountCents: src.discountCents,
       });
     }
   } else {
     for (const q of input.quantities!) {
       const src = byId.get(q.sourceLineId);
       if (!src) throw new PartialInvoiceError(`Quellposition ${q.sourceLineId} unbekannt.`);
+      assertLinePriced(src);
       const billedMilli = billed.get(q.sourceLineId) ?? 0;
       const remainingMilli = src.quantityMilli - billedMilli;
       if (q.quantityMilli > remainingMilli) {
@@ -300,12 +404,17 @@ function positionLinesForMode(
         taxRate: src.taxRate,
         taxCategory: src.taxCategory,
         sourceLineId: q.sourceLineId,
+        // B1: Teilmenge -> Prozentrabatt 1:1 (skaliert automatisch mit der kleineren
+        // Menge ueber computeLineNet), Festbetragsrabatt proportional zur abgerechneten
+        // Menge (discountCents gilt fuer die GESAMTE Quellzeile, nicht je Einheit).
+        discountPermille: src.discountPermille,
+        discountCents: roundHalfUp((src.discountCents * q.quantityMilli) / src.quantityMilli),
       });
     }
   }
 
   if (lines.length === 0) throw new PartialInvoiceError("Mindestens eine Position ist erforderlich.");
-  return { lines, partialPermille: null };
+  return { lines, partialPermille: null, ...documentAdjustmentForBilledLines(source, lines) };
 }
 
 /**
@@ -338,10 +447,11 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
 
   return dbInternal.$transaction(async (tx) => {
     const source = await loadPartialSource(tx, orgId, input.sourceType, input.sourceId);
+    const adjustedTotals = sourceAdjustedTotals(source);
 
     const isShareMode = input.mode === "PERCENT" || input.mode === "NET_AMOUNT" || input.mode === "GROSS_AMOUNT";
     const built = isShareMode
-      ? splitLinesForShareMode(input, source, await activePartialGrossCents(tx, orgId, input.sourceType, input.sourceId))
+      ? splitLinesForShareMode(input, source, adjustedTotals)
       : positionLinesForMode(input, source, await billedQuantities(orgId, input.sourceType, input.sourceId, tx));
 
     const createInput: CreateInvoiceInput = {
@@ -356,10 +466,13 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
       headerText: source.headerText ?? undefined,
       footerText: source.footerText ?? undefined,
       paymentTerms: source.paymentTerms ?? undefined,
-      documentDiscountPermille: 0,
-      documentDiscountCents: 0,
-      documentChargePermille: 0,
-      documentChargeCents: 0,
+      // B1 (Fix-Welle): bei POSITIONS/QUANTITIES anteiliger Beleg-Rabatt/-Aufschlag der
+      // Quelle (documentAdjustmentForBilledLines); bei den Anteils-Modi 0 (bereits in
+      // den Bucket-Nettobetraegen eingepreist, siehe splitLinesForShareMode).
+      documentDiscountPermille: built.documentDiscountPermille,
+      documentDiscountCents: built.documentDiscountCents,
+      documentChargePermille: built.documentChargePermille,
+      documentChargeCents: built.documentChargeCents,
       lines: built.lines.map((l) => ({
         lineType: "ITEM",
         description: l.description,
@@ -368,12 +481,27 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
         unitNetPriceCents: l.unitNetPriceCents,
         taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
-        discountPermille: 0,
-        discountCents: 0,
+        discountPermille: l.discountPermille,
+        discountCents: l.discountCents,
       })),
     };
 
     const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now });
+
+    // B3 (Fix-Welle): kumulativer Ueberbuchungs-Guard fuer ALLE Modi (vorher nur
+    // PERCENT/NET_AMOUNT/GROSS_AMOUNT) — ohne ihn liess sich dieselbe Quelle per
+    // POSITIONS/QUANTITIES nach einer bereits ausgeschoepften PERCENT-Teilrechnung
+    // (sourceLineId = null, von `billedQuantities` nicht erfasst) beliebig oft ueber
+    // 100 % hinaus abrechnen. Vergleich auf dem tatsaechlich persistierten
+    // `invoice.grossTotalCents` (nicht einer separat vorgerechneten Schaetzung) —
+    // ein Verstoss wirft und rollt die ganze Transaktion zurueck (Invoice nie sichtbar).
+    const existingActiveGrossCents = await activePartialGrossCents(tx, orgId, input.sourceType, input.sourceId);
+    const sourceGrossCents = adjustedTotals.grossTotalCents;
+    if (existingActiveGrossCents + invoice.grossTotalCents > sourceGrossCents) {
+      throw new PartialInvoiceError(
+        `Die Summe der Teilrechnungen (${existingActiveGrossCents + invoice.grossTotalCents} Cent) wuerde die Gesamtleistung (${sourceGrossCents} Cent) uebersteigen.`,
+      );
+    }
 
     await tx.invoice.update({
       where: { id: invoice.id },
