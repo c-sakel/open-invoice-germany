@@ -98,6 +98,8 @@ export async function recordPayment(
         method: input.method,
         reference: input.reference ?? null,
         isSkonto: input.isSkonto,
+        // Phase 8b (§42): freie Notiz zur Zahlung.
+        note: input.note ?? null,
       },
     });
 

@@ -525,6 +525,8 @@ export const recordPaymentSchema = z.object({
   isSkonto: z.boolean().default(false),
   // true: erkannter Skontoabzug wird sofort als zweite Zahlung gebucht (recordPayment).
   applySkonto: z.boolean().default(false),
+  // Phase 8b (§42): freie Notiz zur Zahlung (z. B. "per Scheck, Kunde meldete sich").
+  note: z.string().max(500).optional(),
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
@@ -535,8 +537,35 @@ export const skontoCheckQuerySchema = z.object({
 });
 export type SkontoCheckQuery = z.infer<typeof skontoCheckQuerySchema>;
 
+// ── Rechnungsliste: Filter/Suche (Phase 8b, §40) ─────────────────────────────
+export const InvoiceListStatusFilter = z.enum(["all", "draft", "open", "due", "overdue", "partial", "paid", "cancelled"]);
+export type InvoiceListStatusFilter = z.infer<typeof InvoiceListStatusFilter>;
+
+export const invoiceListFilterSchema = z.object({
+  status: InvoiceListStatusFilter.default("all"),
+  // Ruling (Task-1-Facts): zusaetzlich `type`, damit T4 eine eigene Gutschriften-
+  // Navigation (CREDIT_NOTE) ohne separate Domain-Funktion bauen kann.
+  type: InvoiceType.optional(),
+  customerId: z.string().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  minCents: z.coerce.number().int().optional(),
+  maxCents: z.coerce.number().int().optional(),
+  number: z.string().optional(),
+  paymentMethodId: z.string().min(1).optional(),
+  eInvoice: z.boolean().optional(),
+  currency: z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Grossbuchstaben (ISO 4217)").optional(),
+  q: z.string().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  sort: z.enum(["issueDate_desc", "issueDate_asc", "dueDate_asc", "gross_desc", "number_desc"]).default("issueDate_desc"),
+});
+export type InvoiceListFilter = z.infer<typeof invoiceListFilterSchema>;
+
 // ── Wiederkehrende Rechnungen / Abos ─────────────────────────────────────────
-export const RecurInterval = z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
+// Phase 8b (§43): DAY ergaenzt WEEKLY/MONTHLY/QUARTERLY/YEARLY — advanceDate() rechnet
+// DAY als "+intervalCount Tage" (src/lib/recurring.ts).
+export const RecurInterval = z.enum(["DAY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
 export type RecurInterval = z.infer<typeof RecurInterval>;
 
 export const createRecurringSchema = z.object({
@@ -547,6 +576,9 @@ export const createRecurringSchema = z.object({
   anchorDay: z.number().int().min(1).max(28).optional(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
+  // Phase 8b (§43): harte Obergrenze der Laeufe zusaetzlich/alternativ zu endDate — nach
+  // `issuedCount >= maxRuns` (nach dem jeweiligen Lauf) wechselt das Abo auf ENDED.
+  maxRuns: z.number().int().positive().optional(),
   taxScheme: TaxScheme.default("REGULAR"),
   // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
   currency: z.string().length(3).optional(),
@@ -556,6 +588,13 @@ export const createRecurringSchema = z.object({
   // unterscheiden, ob der Aufrufer bewusst false gewaehlt hat.
   autoFinalize: z.boolean().optional(),
   autoSend: z.boolean().optional(),
+  // Phase 8b (§43): Vorlage fuer den automatischen Versand (autoSend) — ohne Angabe
+  // greift weiterhin die Standardvorlage INVOICE (prefillEmail-Default).
+  emailTemplateId: z.string().min(1).optional(),
+  // Phase 8b (§43): ueberstimmt je Abo den Settings-Default (recurringInsertPeriodText).
+  // Bewusst KEIN `.default()` — createRecurring() setzt den Settings-Default nur, wenn
+  // der Aufrufer das Feld nicht selbst gesetzt hat (Task-1-Facts).
+  showPeriodText: z.boolean().optional(),
   notes: z.string().optional(),
   lines: z.array(invoiceLineInputSchema).min(1),
 });

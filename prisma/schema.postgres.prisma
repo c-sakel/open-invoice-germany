@@ -450,6 +450,7 @@ model Payment {
   isSkonto           Boolean  @default(false) // §17-Fall: keine Rechnungsberichtigung nötig
   // Bei isSkonto=true: die Zahlung, deren Skontoabzug hierdurch verbucht wird.
   skontoForPaymentId String?
+  note               String? // Phase 8b (§42): freie Notiz zur Zahlung
   createdAt          DateTime @default(now())
 
   @@index([invoiceId])
@@ -500,18 +501,28 @@ model RecurringInvoice {
   customer         Customer     @relation(fields: [customerId], references: [id])
   title            String // interne Bezeichnung, z. B. "Wartungsvertrag Mustermann"
   status           String       @default("ACTIVE") // ACTIVE | PAUSED | ENDED
-  interval         String       @default("MONTHLY") // WEEKLY | MONTHLY | QUARTERLY | YEARLY
+  interval         String       @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
   intervalCount    Int          @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
   anchorDay        Int? // fixer Tag im Monat (1..28) für MONTHLY/QUARTERLY/YEARLY
   startDate        DateTime
   nextRunDate      DateTime // Stichtag der nächsten Erzeugung
   endDate          DateTime?
+  // Phase 8b (§43): harte Obergrenze der Laeufe — nach issuedCount >= maxRuns (nach dem
+  // jeweiligen Lauf) wechselt das Abo auf ENDED, zusaetzlich/alternativ zu endDate.
+  maxRuns          Int?
   taxScheme        String       @default("REGULAR")
   currency         String       @default("EUR")
   paymentTermsDays Int          @default(14)
   notes            String?
   autoFinalize     Boolean      @default(false) // true = erzeugte Rechnung sofort festschreiben
   autoSend         Boolean      @default(false) // Phase 7, Task 1 — true = erzeugte Rechnung nach Festschreibung automatisch versenden
+  // Phase 8b (§43): Vorlage fuer den automatischen Versand (autoSend); NULL = weiterhin
+  // die Standardvorlage INVOICE (prefillEmail-Default).
+  emailTemplateId  String?
+  emailTemplate    EmailTemplate? @relation(fields: [emailTemplateId], references: [id], onDelete: SetNull)
+  // Phase 8b (§43): ueberstimmt je Abo den Settings-Default (recurringInsertPeriodText).
+  // Default true = uebernimmt den bisherigen Settings-Default beim Anlegen (createRecurring).
+  showPeriodText   Boolean      @default(true)
   lastRunAt        DateTime?
   issuedCount      Int          @default(0)
   createdAt        DateTime     @default(now())
@@ -523,6 +534,7 @@ model RecurringInvoice {
   @@index([orgId])
   @@index([customerId])
   @@index([status, nextRunDate])
+  @@index([emailTemplateId])
 }
 
 model RecurringInvoiceLine {
@@ -660,7 +672,8 @@ model EmailTemplate {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  dunningStages DunningStage[]
+  dunningStages     DunningStage[]
+  recurringInvoices RecurringInvoice[]
 
   @@unique([orgId, docType, name])
   @@index([orgId, docType])

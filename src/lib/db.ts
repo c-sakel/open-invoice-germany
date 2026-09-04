@@ -26,6 +26,20 @@ function resolveDatasourceUrl(): string | undefined {
   return `file:${abs}`;
 }
 
+/**
+ * Case-insensitiver "contains"-Filter, portabel ueber SQLite und Postgres (Phase
+ * 8b, Ruling Task-1-Facts). SQLite `contains` ist fuer ASCII bereits case-
+ * insensitiv (Datenbank-Collation), `mode: "insensitive"` ist dort ein
+ * Laufzeitfehler (Prisma unterstuetzt den Modus nur bei Postgres) — deshalb wird
+ * `mode` NUR gesetzt, wenn der Provider Postgres ist (erkannt am Praefix von
+ * `DATABASE_URL`, analog `resolveDatasourceUrl` oben).
+ */
+export function ciContains(value: string): { contains: string; mode?: "insensitive" } {
+  const url = process.env.DATABASE_URL ?? "";
+  const isPostgres = url.startsWith("postgres");
+  return isPostgres ? { contains: value, mode: "insensitive" } : { contains: value };
+}
+
 export class GobdImmutabilityError extends Error {
   constructor(public readonly ref: string) {
     super(
