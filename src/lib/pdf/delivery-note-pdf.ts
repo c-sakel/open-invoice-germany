@@ -141,6 +141,15 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     const right = doc.page.width - margins.right;
     const titleColor = theme.brand.primaryColor;
 
+    // S2 (Fix-Welle, Final-Review): Summenblock aus `right` statt `left + 300` ableiten
+    // (siehe invoice-pdf.ts) — sonst wandern die Betraege bei grossen Raendern aus dem
+    // Inhaltsbereich heraus.
+    const sumValueWidth = 70;
+    const sumLabelWidth = 120;
+    const sumColGap = 5;
+    const sumValueX = right - sumValueWidth;
+    const sumLabelX = sumValueX - sumColGap - sumLabelWidth;
+
     drawLogo(doc, theme, right, margins.top);
 
     // Kopf: Absender
@@ -217,12 +226,12 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // Summen — nur mit Preisen (ohne showPrices gibt es keinen Wert, den man summieren koennte).
     if (data.showPrices) {
       y += 10;
-      doc.moveTo(left + 300, y).lineTo(right, y).strokeColor(titleColor).stroke();
+      doc.moveTo(sumLabelX, y).lineTo(right, y).strokeColor(titleColor).stroke();
       y += 6;
       const sumRow = (label: string, value: string, bold = false) => {
         doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
-        doc.text(label, left + 300, y, { width: 120, align: "right" });
-        doc.text(value, left + 425, y, { width: 70, align: "right" });
+        doc.text(label, sumLabelX, y, { width: sumLabelWidth, align: "right" });
+        doc.text(value, sumValueX, y, { width: sumValueWidth, align: "right" });
         y += 16;
       };
       if (data.showTax) {
