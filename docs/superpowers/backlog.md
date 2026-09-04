@@ -254,3 +254,9 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - test/integration/attachments-route.test.ts G4 flackert auf macOS (Rename-Race im Dateispeicher) — Ursache pruefen (storage.ts rename vs. fs.promises), Test stabilisieren. (Phase 7 Task 1 Beobachtung)
 - Customer.customerNumber ohne Unique-Constraint (nur Index); Wechsel yearlyReset auf CUSTOMER kann Nummern neu vergeben — Unique je Org erwaegen + Guard wie bei Rechnungen. (Abschluss-Review Phase 7)
 - Audit-Ansicht des ChangeLog im UI (nur intern) — bisher nicht sichtbar. (Phase 8b Spec)
+
+## Phase 8a (Nachtrag 2026-09-04)
+
+- NewInvoiceForm hat keine Kopf-/Fusstext-Felder (nur Angebot/AB) — Take-over und Kundentexte greifen dort nicht; Felder ergaenzen (8b progressive Formulare). (8a Task 3)
+- recurring/run.ts erzeugt Rechnungen ohne createDraftInvoiceWithinTx → keine Kundenvorgaben (Adresse/Kontakt/Rabatt) auf Abo-Rechnungen; Refactor auf gemeinsamen Pfad. (8a Abschluss-Review)
+- Invoice.shippingAddressId: BG-13/BG-15 Mapping (DeliveryLocation/ShipToTradeParty) + PDF-Block. (8a Abschluss-Review)
