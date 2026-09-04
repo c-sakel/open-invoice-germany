@@ -5,7 +5,7 @@
  * bereits erstellten Lieferschein nicht rueckwirkend veraendern.
  */
 import type { Prisma } from "@/generated/prisma/client";
-import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { DeliveryNotePdfData } from "./delivery-note-pdf";
@@ -30,6 +30,7 @@ export function buildDeliveryNotePdfData(
   const ctx = dn.id;
   const seller = parseSellerSnapshot(dn.sellerSnapshotJson, buildSellerSnapshot(org), ctx);
   const buyer = parseBuyerSnapshot(dn.buyerSnapshotJson, buildBuyerSnapshot(customer), ctx);
+  const contact = parseContactSnapshot(dn.contactSnapshotJson, null, ctx);
 
   // Kopf-/Fusstext: Platzhalter mit einem DB-freien Kontext aus den bereits aufgeloesten
   // Snapshot-Werten aufloesen (kein Beleg-Betrag am Lieferschein -> totals: null).
@@ -42,6 +43,7 @@ export function buildDeliveryNotePdfData(
     currency: "EUR",
     seller,
     buyer,
+    contact,
   });
   const headerText = dn.headerText ? renderTemplate(dn.headerText, textCtx).text : null;
   const footerText = dn.footerText ? renderTemplate(dn.footerText, textCtx).text : null;
