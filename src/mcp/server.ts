@@ -91,13 +91,21 @@ import {
   customerAddressInputSchema,
   contactPersonInputSchema,
   customFieldDefinitionInputSchema,
+  customFieldsReorderSchema,
   customerDefaultsInputSchema,
 } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
-import { listAddresses, createAddress, updateAddress, deleteAddress } from "@/domain/customer/addresses";
-import { listContacts, createContact, updateContact, deleteContact } from "@/domain/customer/contacts";
+import { listAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from "@/domain/customer/addresses";
+import { listContacts, createContact, updateContact, deleteContact, setDefaultContact } from "@/domain/customer/contacts";
 import { saveCustomerDefaults, customerDefaultsFor } from "@/domain/customer/defaults";
-import { listCustomFieldDefinitions, upsertCustomFieldDefinition, setCustomerCustomFields, parseCustomerCustomFields } from "@/domain/customer/custom-fields";
+import {
+  listCustomFieldDefinitions,
+  upsertCustomFieldDefinition,
+  deleteCustomFieldDefinition,
+  reorderCustomFields,
+  setCustomerCustomFields,
+  parseCustomerCustomFields,
+} from "@/domain/customer/custom-fields";
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
 import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
 import { addAttachment, removeAttachment, listAttachments, type AttachmentDocType } from "@/domain/attachment/manage";
@@ -2180,6 +2188,30 @@ server.registerTool(
   },
 );
 
+// ── set_default_address ────────────────────────────────────────────────────────
+// Nit (Fix-Welle): fehlte bisher als eigenes MCP-Tool — upsert_customer_address deckt
+// isDefault zwar mit ab, aber nur zusammen mit einem vollstaendigen Ersatz der Adresse
+// (§55, keine Bypass-Pfade — nutzt denselben Domain-Aufruf wie das UI).
+server.registerTool(
+  "set_default_address",
+  {
+    title: "Kunden-Zusatzadresse als Default setzen",
+    description: "Setzt eine Zusatzadresse als Default ihres Typs (§29); verdraengt den bisherigen Default desselben Typs.",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID"), id: z.string().describe("Adress-ID") },
+  },
+  async ({ customer, id }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const address = await setDefaultAddress(org.id, c.id, id);
+      return ok(`Default gesetzt: ${JSON.stringify(address)}`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
 // ── list_contact_persons ───────────────────────────────────────────────────────
 server.registerTool(
   "list_contact_persons",
@@ -2250,6 +2282,28 @@ server.registerTool(
   },
 );
 
+// ── set_default_contact ────────────────────────────────────────────────────────
+// Nit (Fix-Welle): siehe set_default_address oben.
+server.registerTool(
+  "set_default_contact",
+  {
+    title: "Ansprechpartner als Default setzen",
+    description: "Setzt einen Ansprechpartner als kundenweiten Default (§30); verdraengt den bisherigen Default.",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID"), id: z.string().describe("Ansprechpartner-ID") },
+  },
+  async ({ customer, id }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const contact = await setDefaultContact(org.id, c.id, id);
+      return ok(`Default gesetzt: ${JSON.stringify(contact)}`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
 // ── update_customer_defaults ───────────────────────────────────────────────────
 server.registerTool(
   "update_customer_defaults",
@@ -2313,6 +2367,52 @@ server.registerTool(
     } catch (e) {
       if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
       if (e instanceof NotFoundError) return fail(e.message);
+      if (e instanceof InvalidOperationError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── delete_custom_field ────────────────────────────────────────────────────────
+// Nit (Fix-Welle): fehlte bisher als eigenes MCP-Tool (§55, keine Bypass-Pfade).
+server.registerTool(
+  "delete_custom_field",
+  {
+    title: "Kundenfeld-Definition loeschen",
+    description:
+      "Loescht eine Kundenfeld-Definition der Organisation (§31). Bereits gespeicherte Werte bleiben im JSON der betroffenen Kunden stehen (kein Cleanup), werden aber beim Lesen still ignoriert.",
+    inputSchema: { id: z.string().describe("Definitions-ID") },
+  },
+  async ({ id }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      await deleteCustomFieldDefinition(org.id, id);
+      return ok(`Kundenfeld ${id} geloescht.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── reorder_custom_fields ──────────────────────────────────────────────────────
+// Nit (Fix-Welle): fehlte bisher als eigenes MCP-Tool (§55, keine Bypass-Pfade).
+server.registerTool(
+  "reorder_custom_fields",
+  {
+    title: "Kundenfeld-Definitionen neu sortieren",
+    description:
+      "Setzt die Reihenfolge (sortOrder) aller Kundenfeld-Definitionen der Organisation neu (§31). ids muss genau die vorhandene Menge der Definitions-IDs enthalten.",
+    inputSchema: { ...customFieldsReorderSchema.shape },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      await reorderCustomFields(org.id, args);
+      const definitions = await listCustomFieldDefinitions(org.id);
+      return ok(`Reihenfolge gespeichert: ${JSON.stringify(definitions)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
       if (e instanceof InvalidOperationError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);
     }
