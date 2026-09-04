@@ -13,9 +13,13 @@ export interface ApiKeySummary {
   createdAt: Date;
 }
 
-export async function listApiKeys(orgId: string): Promise<ApiKeySummary[]> {
-  const rows = await dbInternal.apiKey.findMany({ where: { orgId }, orderBy: { createdAt: "desc" } });
-  return rows.map((r) => ({
+export interface ListApiKeysResult {
+  rows: ApiKeySummary[];
+  total: number;
+}
+
+function toSummary(r: { id: string; name: string; prefix: string; scopesJson: string; lastUsedAt: Date | null; expiresAt: Date | null; revokedAt: Date | null; createdAt: Date }): ApiKeySummary {
+  return {
     id: r.id,
     name: r.name,
     prefix: r.prefix,
@@ -24,5 +28,20 @@ export async function listApiKeys(orgId: string): Promise<ApiKeySummary[]> {
     expiresAt: r.expiresAt,
     revokedAt: r.revokedAt,
     createdAt: r.createdAt,
-  }));
+  };
+}
+
+/**
+ * Fix-Welle (Nit 14): vorher lud diese Funktion ALLE Zeilen der Organisation und
+ * paginierte erst danach in der Route (`.slice(offset, offset+limit)`) — bei vielen
+ * Schluesseln unnoetiger Speicher-/Netzwerk-Overhead. `take`/`skip` + `count` (analog
+ * src/domain/attachment/list.ts) laesst die Datenbank paginieren.
+ */
+export async function listApiKeys(orgId: string, opts: { limit: number; offset: number }): Promise<ListApiKeysResult> {
+  const where = { orgId };
+  const [total, rows] = await Promise.all([
+    dbInternal.apiKey.count({ where }),
+    dbInternal.apiKey.findMany({ where, orderBy: { createdAt: "desc" }, skip: opts.offset, take: opts.limit }),
+  ]);
+  return { rows: rows.map(toSummary), total };
 }

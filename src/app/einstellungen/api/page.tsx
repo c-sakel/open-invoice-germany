@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ApiSettingsPage() {
   const org = await getActiveOrg();
-  const keys = await listApiKeys(org.id);
+  const { rows: keys } = await listApiKeys(org.id, { limit: 1000, offset: 0 });
 
   return (
     <div className="space-y-6">

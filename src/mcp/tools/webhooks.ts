@@ -20,7 +20,7 @@ export function registerWebhookTools(server: McpServer, ctx: McpToolsContext): v
     async (): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const endpoints = await listWebhookEndpoints(org.id);
+        const { rows: endpoints } = await listWebhookEndpoints(org.id);
         return ctx.ok(JSON.stringify(endpoints, null, 2));
       } catch (e) {
         return ctx.failUnknown(e);

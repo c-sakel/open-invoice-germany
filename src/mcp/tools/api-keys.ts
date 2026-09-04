@@ -65,7 +65,7 @@ export function registerApiKeyTools(server: McpServer, ctx: McpToolsContext): vo
     async (): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const keys = await listApiKeys(org.id);
+        const { rows: keys } = await listApiKeys(org.id, { limit: 1000, offset: 0 });
         return ctx.ok(JSON.stringify(keys, null, 2));
       } catch (e) {
         return ctx.failUnknown(e);

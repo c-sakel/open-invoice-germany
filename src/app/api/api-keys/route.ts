@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const org = await getActiveOrg();
-  const keys = await listApiKeys(org.id);
+  const { rows: keys } = await listApiKeys(org.id, { limit: 1000, offset: 0 });
   return NextResponse.json({ keys });
 }
 

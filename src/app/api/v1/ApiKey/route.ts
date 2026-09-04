@@ -18,9 +18,10 @@ export const dynamic = "force-dynamic";
 export const GET = withApi(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
   const { limit, offset } = parsePagination(searchParams);
-  const all = await listApiKeys(ctx.orgId);
-  const page = all.slice(offset, offset + limit);
-  return apiList(page.map(serializeApiKey), { total: all.length, limit, offset });
+  // Fix-Welle (Nit 14): DB-seitige Pagination (take/skip/count) statt alle Zeilen zu
+  // laden und erst hier in-memory zu slicen.
+  const { rows, total } = await listApiKeys(ctx.orgId, { limit, offset });
+  return apiList(rows.map(serializeApiKey), { total, limit, offset });
 }, { scope: "admin" });
 
 export const POST = withApi(async (_req, ctx) => {

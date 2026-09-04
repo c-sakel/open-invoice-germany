@@ -22,7 +22,7 @@ import { setQuoteStatus } from "@/domain/document/status";
 import { createShareLink } from "@/domain/quote-share/link";
 import { decideOffer } from "@/domain/quote-share/decide";
 
-import { createWebhookEndpoint, updateWebhookEndpoint, getWebhookEndpoint } from "@/domain/webhook/endpoints";
+import { createWebhookEndpoint, updateWebhookEndpoint, getWebhookEndpoint, listWebhookEndpoints } from "@/domain/webhook/endpoints";
 import { emitEvent } from "@/domain/webhook/emit";
 import { attemptDelivery, runWebhookDeliveries, BACKOFF_MINUTES, type FetchLike } from "@/domain/webhook/deliver";
 import { sendTestDelivery, replayWebhookDelivery } from "@/domain/webhook/actions";
@@ -160,6 +160,24 @@ describe("Webhook-Endpunkte (endpoints.ts) — Anlage lehnt SSRF-Verstoesse ab (
     const fetched = await getWebhookEndpoint(orgId, created.id);
     expect(fetched).not.toHaveProperty("secret");
     expect(fetched).not.toHaveProperty("secretEnc");
+  });
+
+  // Fix-Welle (Nit 14): DB-seitige Pagination (take/skip/count) statt alles zu laden und
+  // in-memory zu slicen; ohne `opts` (Session-Route/MCP) bleibt das Verhalten "alles laden".
+  it("listWebhookEndpoints paginiert per limit/offset auf DB-Ebene, ohne opts laedt sie alles", async () => {
+    const before = await listWebhookEndpoints(orgId);
+    await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.60/hook");
+    await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.61/hook");
+    const all = await listWebhookEndpoints(orgId);
+    expect(all.total).toBe(before.total + 2);
+    expect(all.rows.length).toBe(all.total);
+
+    const page1 = await listWebhookEndpoints(orgId, { limit: 1, offset: 0 });
+    expect(page1.rows.length).toBe(1);
+    expect(page1.total).toBe(all.total);
+    const page2 = await listWebhookEndpoints(orgId, { limit: 1, offset: 1 });
+    expect(page2.rows.length).toBe(1);
+    expect(page2.rows[0].id).not.toBe(page1.rows[0].id);
   });
 });
 

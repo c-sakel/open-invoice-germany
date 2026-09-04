@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function WebhooksSettingsPage() {
   const org = await getActiveOrg();
-  const endpoints = await listWebhookEndpoints(org.id);
+  const { rows: endpoints } = await listWebhookEndpoints(org.id);
 
   return (
     <div className="space-y-6">

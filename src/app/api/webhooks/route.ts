@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const org = await getActiveOrg();
-  const endpoints = await listWebhookEndpoints(org.id);
+  const { rows: endpoints } = await listWebhookEndpoints(org.id);
   return NextResponse.json({ endpoints });
 }
 

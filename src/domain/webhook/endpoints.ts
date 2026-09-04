@@ -88,9 +88,23 @@ export async function createWebhookEndpoint(
   return { ...toView(created), secret };
 }
 
-export async function listWebhookEndpoints(orgId: string): Promise<WebhookEndpointView[]> {
-  const rows = await dbInternal.webhookEndpoint.findMany({ where: { orgId }, orderBy: { createdAt: "desc" } });
-  return rows.map(toView);
+export interface ListWebhookEndpointsResult {
+  rows: WebhookEndpointView[];
+  total: number;
+}
+
+/**
+ * Fix-Welle (Nit 14): optionales `opts` fuer DB-seitige Pagination (take/skip/count) —
+ * ohne Angabe (Session-Route, MCP-Tool) werden weiterhin ALLE Zeilen geladen wie zuvor
+ * (kein Verhaltensbruch fuer diese beiden Aufrufer, die keine Paginierungs-UI haben).
+ */
+export async function listWebhookEndpoints(orgId: string, opts?: { limit: number; offset: number }): Promise<ListWebhookEndpointsResult> {
+  const where = { orgId };
+  const [total, rows] = await Promise.all([
+    dbInternal.webhookEndpoint.count({ where }),
+    dbInternal.webhookEndpoint.findMany({ where, orderBy: { createdAt: "desc" }, ...(opts ? { skip: opts.offset, take: opts.limit } : {}) }),
+  ]);
+  return { rows: rows.map(toView), total };
 }
 
 export async function getWebhookEndpoint(orgId: string, id: string): Promise<WebhookEndpointView> {
