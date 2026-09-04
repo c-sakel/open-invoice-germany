@@ -1151,7 +1151,7 @@ model WebhookEndpoint {
 /// `dataJson` ist der Serializer-Snapshot (Task 2, ohne internalNotes) zum
 /// Emit-Zeitpunkt — die tatsaechlich gesendete Nutzlast (`{id,type,createdAt,data}`)
 /// wird erst bei der Zustellung aus id/event/createdAt/dataJson zusammengesetzt.
-/// `attempts`/`nextAttemptAt` steuern Backoff (1/5/30/120 Min., DEAD nach 5 Versuchen);
+/// `attempts`/`nextAttemptAt` steuern Backoff (1/5/30/120/600 Min., DEAD nach dem 6. fehlgeschlagenen Versuch);
 /// `replayOfId` verweist auf die urspruengliche Zeile, wenn diese Zeile ein manueller
 /// Replay ist (jeder Replay legt eine NEUE Zeile an, aendert nie die alte).
 model WebhookDelivery {

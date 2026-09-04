@@ -894,4 +894,54 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 
 ---
 
-*Ende COMPLIANCE.md — Stand 2026-06-09. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
+## 18. REST-API & Webhooks (Phase 10) — Audit-Actor, GoBD-Bindung, Datenschutz
+
+### Kein Bypass der GoBD-Regeln
+Die REST-API (`/api/v1`) ruft für jede schreibende Aktion exakt dieselbe
+Domain-Funktion auf wie UI und MCP-Server (`finalize`, `cancel`, `recordPayment`
+u. Ä.) — es gibt keinen zweiten, API-eigenen Schreibpfad. Der GoBD-Guard
+(`src/lib/db.ts`, verhindert die direkte Änderung festgeschriebener Belege
+außerhalb der zugelassenen Domain-Services) gilt für API-Aufrufe unverändert;
+ein Versuch, einen festgeschriebenen Beleg per `PATCH` zu ändern, liefert
+`409 CONFLICT` wie in UI/MCP.
+
+### Audit-Actor `api:<Schlüsselname>`
+Jede schreibende Aktion über die API läuft mit
+`actor = "api:<slugifizierter Schluesselname>"` (`src/domain/api-key/create.ts`,
+`slugifyKeyName()` — NFKD-Transliteration, Fallback `"key"`) statt eines
+Nutzernamens. Dieser Actor-Wert landet in `ChangeLog` (Hash-Kette, GoBD-relevant)
+und `ActivityLog` (Zeitleiste) genauso wie jeder andere Actor-Wert der
+Anwendung — die Verfahrensdokumentation kann anhand des Präfixes `api:`
+nachvollziehen, ob eine Aktion über die REST-API statt über UI oder MCP erfolgt
+ist. Der Schlüsselname selbst (nicht der Klartext-Token, nicht der Hash) ist
+Teil des Actor-Strings; wird ein Schlüssel widerrufen, bleiben bereits
+geschriebene `ChangeLog`/`ActivityLog`-Einträge mit diesem Actor-Wert
+unverändert stehen (Hash-Kette bleibt intakt).
+
+### Webhook-Zustellungen: keine internen Notizen
+Die an Webhook-Endpunkte gesendete Nutzlast (`data`-Feld) ist derselbe
+Serializer-Schnappschuss wie die entsprechende REST-Ressource — sie enthält wie
+jede andere Ausgabe (PDF, XRechnung/ZUGFeRD, E-Mail) **niemals**
+`internalNotes` (Lastenheft §48: interne Notizen erscheinen in keinem
+Kunden-/externen Kanal). Verifiziert per Test
+(`test/integration/webhooks.test.ts`, `finalizeInvoice` mit gesetztem
+`internalNotes` → `dataJson` enthält weder den Text noch den Schlüssel).
+
+### Webhook-Secrets
+Endpunkt-Secrets werden AES-GCM-verschlüsselt gespeichert
+(`src/lib/crypto/secrets.ts`, dieselbe Verschlüsselung wie SMTP-Passwort und
+Angebotslink-Token) und sind nach Anlage/Rotation nicht mehr im Klartext
+abrufbar — ein Datenbankzugriff allein genügt nicht, um gültige Signaturen zu
+fälschen. Ein Wechsel von `AUTH_SECRET` macht bestehende Webhook-Secrets
+unlesbar (analog SMTP-Passwort, siehe `docs/LIMITATIONEN.md`) — betroffene
+Endpunkte müssen ihr Secret neu rotieren.
+
+### API-Schlüssel
+Nur der SHA-256-Hash eines API-Schlüssels wird gespeichert (`ApiKey.keyHash`),
+niemals der Klartext-Token — ein Datenbank-Dump allein erlaubt keine
+Wiederherstellung gültiger Bearer-Token. Widerruf ist unveränderlich
+(`revokedAt`, kein Zurücksetzen).
+
+---
+
+*Ende COMPLIANCE.md — Stand 2026-09-04. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*

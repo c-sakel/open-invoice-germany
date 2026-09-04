@@ -92,6 +92,34 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Aging-Buckets unterscheiden sich zwischen Dashboard und Mahnübersicht — bewusst.** Beide nutzen dieselbe Funktion `agingBuckets()` (`src/domain/dashboard/summary.ts`), aber mit unterschiedlichen Parametern: das Dashboard (`GET /api/dashboard`, §45) zählt `bounds=[7,30,60,90]` mit `minDays:0` (der heutige Fälligkeitstag zählt bereits als „überfällig ab Tag 0"), die Mahnübersicht (`/mahnwesen`, §25, unverändertes Verhalten seit Phase 6) zählt `bounds=[7,30,60]` mit `minDays:1` (erst ab dem Folgetag). Dieselbe Rechnung kann dadurch auf dem Dashboard bereits im ersten Bucket erscheinen, während sie in der Mahnübersicht noch als „nicht überfällig" gilt — kein Fehler, sondern zwei unterschiedliche fachliche Fragestellungen (Frühwarnung vs. Mahnwesen-Eskalation).
 - **`onEmailBounced` hat keinen produktiven Aufrufer.** Es existiert kein SMTP-Bounce-Webhook in diesem Programm (siehe „Kein Zustell-/Bounce-Tracking" oben) — `markEmailBounced()` (`src/domain/email/email-log.ts`) ist der vorbereitete Einstiegspunkt für einen künftigen Provider-Webhook, wird aber aktuell nur aus Tests aufgerufen (kein MCP-Tool, keine Route). Die Benachrichtigungstyp-Checkbox „E-Mail unzustellbar" ist deshalb in `/einstellungen/benachrichtigungen` deaktiviert und als „noch nicht aktiv" gekennzeichnet (Fix-Welle Phase 8b, S4).
 
+## REST-API, OpenAPI & Webhooks (Phase 10)
+- **Rate-Limit nur pro Instanz.** Wie das übrige Rate-Limiting (`src/lib/rate-limit.ts`,
+  siehe „Dokumentworkflow" oben) ist auch das API-Kontingent (600 Anfragen/Minute je
+  Schlüssel, `src/api/rate-limit.ts`) In-Memory und prozesslokal — bei mehreren
+  App-Instanzen hinter einem Load-Balancer teilt sich das Kontingent nicht.
+- **Keine Bulk-API.** Jeder Endpunkt verarbeitet genau eine Ressource je Aufruf
+  (`POST`/`PATCH` mit einem Objekt im Body) — es gibt keinen Batch-/Bulk-Endpunkt
+  für mehrere Datensätze in einem Request.
+- **Kein OAuth.** Authentifizierung läuft ausschließlich über statische API-Schlüssel
+  (Bearer-Token, `Authorization: Bearer oig_...`) — kein OAuth2/OIDC-Flow, kein
+  Refresh-Token, keine delegierte Autorisierung Dritter.
+- **Idempotency-Key gilt 24 Stunden.** Danach wird die gespeicherte Zeile beim
+  nächsten Zugriff auf denselben Schlüssel gelöscht (lazy, kein eigener
+  Scheduler-Job) — ein Retry mit demselben Schlüssel nach Ablauf führt den Handler
+  erneut aus, statt die alte Antwort zu wiederholen.
+- **`DeliveryNote` hat keinen `PATCH`-Endpunkt.** Es gibt keine
+  `updateDraft`-Domainfunktion für Lieferscheine (anders als bei Quote/
+  OrderConfirmation/Invoice) — `PATCH /api/v1/DeliveryNote/{id}` existiert daher
+  nicht; Statusänderungen laufen ausschließlich über `POST .../status`. Backlog:
+  `updateDraft`-Domainfunktion für Lieferscheine nachrüsten, sobald benötigt.
+- **Webhook-Secrets sind nie im Klartext abrufbar** (analog API-Schlüssel) — nur bei
+  Anlage/Rotation einmalig in der Antwort. Zustellung ist streng seriell (ein
+  Scheduler-Job je Lauf, kein `Promise.all`) — bei sehr vielen fälligen Zustellungen
+  ist das kein Parallelversand, siehe [WEBHOOKS.md](WEBHOOKS.md).
+- **Kein Hard-Delete für Webhook-Endpunkte.** `active=false` deaktiviert Zustellung
+  und Anlage neuer Deliveries, das Zustellprotokoll bleibt aber referenzierbar (GoBD-
+  analoges Muster: keine Historie im Programm wird hart gelöscht).
+
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.
 

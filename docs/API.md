@@ -24,7 +24,7 @@ Schlüssel ohne den passenden Scope liefert `403 FORBIDDEN`.
 | `read`  | Lesen (GET) |
 | `write` | Anlegen/Ändern/zustandsändernde Aktionen (finalisieren, stornieren, Zahlung erfassen, …) |
 | `send`  | E-Mail-Versand und Mahnungen (`/send`, `/dunning`) |
-| `admin` | Einstellungen (`/Settings`) und API-Schlüsselverwaltung (`/ApiKey`) |
+| `admin` | Einstellungen (`/Settings`), API-Schlüsselverwaltung (`/ApiKey`) und Webhook-Endpunkte (`/Webhook`) |
 
 ## Antwortformat
 
@@ -155,15 +155,26 @@ erneut. Nach vollständiger Zahlung wechselt die Rechnung auf Status `PAID`.
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
 `OrderConfirmation`, `DeliveryNote`, `Invoice`, `Payment`, `Dunning`, `Attachment`,
 `EmailLog`, `PaymentMethod`, `TextTemplate`, `EmailTemplate`, `Recurring`,
-`Settings`, `ApiKey` — vollständige Liste mit Feldern, Filtern (`embed=`,
+`Settings`, `ApiKey`, `Webhook` — vollständige Liste mit Feldern, Filtern (`embed=`,
 Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
+
+## Webhooks
+
+Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
+`/api/v1/Webhook` (Scope `admin`) — Ereignisse, Payload-Form, Signaturprüfung
+(Node/PHP), Retry-Zeitplan und SSRF-Regeln: siehe [WEBHOOKS.md](WEBHOOKS.md).
 
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
-- Aktions-Endpunkte (`/finalize`, `/cancel`, `/convert`, …) liefern ein knappes,
-  aktionsspezifisches Antwortobjekt (nicht die vollständige Ressource) —
-  `GET /api/v1/<Resource>/{id}` danach liefert den vollständigen, aktuellen Stand.
-  Ihre Antwortform ist in `/api/docs` als generisches Objekt dokumentiert, nicht als
-  vollständiges Feld-für-Feld-Schema.
+- Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,
+  `/status`, `/duplicate`, …) liefern die **vollständige, aktualisierte Ressource**
+  (nicht nur ein Teilobjekt) — Ausnahmen mit einem kleinen, expliziten
+  Antwortobjekt: `/send` (`{emailLogId, status}`), `/payment`
+  (`{payment, invoice}` — `payment` ist trotz des Feldnamens die aktualisierte
+  Rechnung, siehe `/api/docs`), `/dunning` (`{dunning}`), `/share-link`
+  (`{url, token?, expiresAt}`). Datei-Endpunkte (`/pdf`, `/xrechnung`,
+  `/zugferd`) bleiben binär.
+- `DeliveryNote` hat keinen `PATCH`-Endpunkt (keine `updateDraft`-Domainfunktion
+  vorhanden) — siehe [LIMITATIONEN.md](LIMITATIONEN.md).
 - Multi-Tenant-Rollen gibt es nicht — ein API-Schlüssel gehört zu genau einer
   Organisation, „Berechtigungen" bedeuten hier ausschließlich Scopes.

@@ -2,16 +2,17 @@
  * Zustellung von Webhook-Deliveries (Phase 10, Task 5, task-5-facts.md "Zustellung"):
  * signiert (sign.ts), sendet per injizierbarem `fetch` (Tests mocken ihn — kein echter
  * Netzwerkzugriff), Timeout 10s (AbortController), Backoff bei Fehlschlag, DEAD nach dem
- * 5. Versuch. `runWebhookDeliveries` ist der Scheduler-Job-Koerper (Reihenfolge nach
+ * 6. Versuch. `runWebhookDeliveries` ist der Scheduler-Job-Koerper (Reihenfolge nach
  * "notifications", siehe src/domain/scheduler/jobs.ts) — laeuft seriell (einfache
  * for-Schleife, kein Promise.all), wie von den Token-Sparregeln/Batchjob-Ruling verlangt.
  *
- * Backoff-Design (Abweichung/Praezisierung von task-5-facts.md "Backoff 1/5/30/120/600
- * Min., DEAD nach 5 Versuchen"): `BACKOFF_MINUTES` hat 5 Eintraege, aber weil DEAD bereits
- * NACH dem 5. (nicht 6.) Versuch eintritt, wird nur `BACKOFF_MINUTES[0..3]` (1/5/30/120)
- * tatsaechlich als Wartezeit vor einem weiteren Versuch verwendet — der 5. Versuch
- * scheitert -> sofort DEAD, der 5. Backoff-Wert (600) wird nie als Planungswert gebraucht.
- * Siehe task-5-report.md fuer die ausfuehrliche Begruendung dieser Lesart.
+ * Backoff-Design (Praezisierung aus Task 6, task-6-facts.md, Ruling aus dem Task-5-Review):
+ * Erstversuch + 5 Wiederholungen mit Backoff 1/5/30/120/600 Minuten, DEAD nach dem 6.
+ * fehlgeschlagenen Versuch — `MAX_ATTEMPTS = 6`, `BACKOFF_MINUTES[attempts-1]` deckt
+ * ALLE 5 Eintraege ab (Versuch 1 scheitert -> 1 Min. Backoff vor Versuch 2, ..., Versuch 5
+ * scheitert -> 600 Min. Backoff vor Versuch 6, Versuch 6 scheitert -> sofort DEAD, kein
+ * weiterer Backoff-Wert noetig). Ersetzt die fruehere (Task-5-)Lesart "DEAD nach 5
+ * Versuchen, nur die ersten 4 Backoff-Werte genutzt" — siehe task-6-facts.md.
  */
 import { dbInternal } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto/secrets";
@@ -20,7 +21,7 @@ import { buildSignatureHeader } from "./sign";
 import type { WebhookDelivery, WebhookEndpoint } from "@/generated/prisma/client";
 
 export const BACKOFF_MINUTES = [1, 5, 30, 120, 600] as const;
-export const MAX_ATTEMPTS = 5;
+export const MAX_ATTEMPTS = 6;
 export const DELIVERY_TIMEOUT_MS = 10_000;
 const RESPONSE_BODY_MAX_CHARS = 2000;
 const ERROR_MAX_CHARS = 500;

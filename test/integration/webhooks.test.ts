@@ -224,15 +224,15 @@ describe("Zustellung (deliver.ts) — attemptDelivery", () => {
     expect(updated.deliveredAt).not.toBeNull();
   });
 
-  it("Backoff-Zeiten 1/5/30/120 Minuten, DEAD nach dem 5. Versuch", async () => {
+  it("Backoff-Zeiten 1/5/30/120/600 Minuten (Erstversuch + 5 Wiederholungen), DEAD nach dem 6. Versuch", async () => {
     const endpoint = await makeActiveEndpoint(["invoice.finalized"]);
     let delivery = await dbInternal.webhookDelivery.create({
       data: { orgId, endpointId: endpoint.id, event: "invoice.finalized", objectName: "Invoice", objectId: "d2", dataJson: JSON.stringify({ a: 1 }), status: "PENDING", nextAttemptAt: FIX_DATE },
     });
     const raw = await loadEndpointRaw(endpoint.id);
 
-    const expectedMinutes = [BACKOFF_MINUTES[0], BACKOFF_MINUTES[1], BACKOFF_MINUTES[2], BACKOFF_MINUTES[3]];
-    for (let i = 0; i < 4; i++) {
+    const expectedMinutes = [BACKOFF_MINUTES[0], BACKOFF_MINUTES[1], BACKOFF_MINUTES[2], BACKOFF_MINUTES[3], BACKOFF_MINUTES[4]];
+    for (let i = 0; i < 5; i++) {
       const now = new Date(FIX_DATE.getTime() + i * 1000);
       const result = await attemptDelivery({ ...delivery, endpoint: raw }, failFetch(500), now);
       expect(result.outcome).toBe("retry");
@@ -242,12 +242,12 @@ describe("Zustellung (deliver.ts) — attemptDelivery", () => {
       expect(delivery.nextAttemptAt.getTime()).toBe(now.getTime() + expectedMinutes[i] * 60_000);
     }
 
-    // 5. Versuch -> DEAD.
+    // 6. Versuch -> DEAD.
     const finalNow = new Date(FIX_DATE.getTime() + 10 * 1000);
     const result = await attemptDelivery({ ...delivery, endpoint: raw }, failFetch(503), finalNow);
     expect(result.outcome).toBe("dead");
     delivery = await dbInternal.webhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(delivery.attempts).toBe(5);
+    expect(delivery.attempts).toBe(6);
     expect(delivery.status).toBe("DEAD");
   });
 
