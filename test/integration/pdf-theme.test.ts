@@ -356,6 +356,32 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
   });
 });
 
+describe("PdfTheme — S2 (Fix-Welle): Summenblock aus `right` bei extremen Raendern (5/40 mm)", () => {
+  it("marginLeft 5mm, marginRight 40mm: Rechnung enthaelt die Summen im PDF-Text, keine Exception", async () => {
+    const orgId = await makeOrg();
+    await saveBrandingSettings(orgId, { marginLeftMm: 5, marginRightMm: 40, marginTopMm: 5, marginBottomMm: 5 });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const data = baseInvoiceData({ number: "RE-2056-00011", giroAmountCents: 0 });
+    const pdf = await renderInvoicePdf(data, theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Nettobetrag");
+    expect(parsed.text).toContain("Gesamtbetrag");
+  });
+
+  it("marginLeft 40mm, marginRight 5mm: Rechnung enthaelt die Summen im PDF-Text, keine Exception", async () => {
+    const orgId = await makeOrg();
+    await saveBrandingSettings(orgId, { marginLeftMm: 40, marginRightMm: 5, marginTopMm: 5, marginBottomMm: 5 });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const data = baseInvoiceData({ number: "RE-2056-00012", giroAmountCents: 0 });
+    const pdf = await renderInvoicePdf(data, theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Nettobetrag");
+    expect(parsed.text).toContain("Gesamtbetrag");
+  });
+});
+
 describe("loadPdfTheme — fehlende Logo-/Hintergrunddatei", () => {
   it("rendert ohne Logo, wenn logoPath auf eine nicht existierende Datei zeigt (kein Wurf)", async () => {
     const orgId = await makeOrg();

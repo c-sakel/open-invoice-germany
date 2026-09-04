@@ -130,6 +130,17 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const right = doc.page.width - margins.right;
   const titleColor = theme.brand.primaryColor;
 
+  // S2 (Fix-Welle, Final-Review): der Summenblock (SUBTOTAL-Zeilen + sumRow) wird jetzt
+  // aus `right` abgeleitet statt aus `left + 300`/`left + 425` — bei den schema-erlaubten
+  // Randextremen (marginLeft 5mm, marginRight 40mm) wanderten die Betraege vorher bis zu
+  // 27pt aus dem Inhaltsbereich heraus. Layout bleibt identisch zum Standard-18mm-Rand,
+  // nur der Ankerpunkt ist jetzt der rechte statt der linke Rand.
+  const sumValueWidth = 70;
+  const sumLabelWidth = 120;
+  const sumColGap = 5;
+  const sumValueX = right - sumValueWidth;
+  const sumLabelX = sumValueX - sumColGap - sumLabelWidth;
+
   drawLogo(doc, theme, right, margins.top);
 
   // Kopf: Absender (Briefpapier-Absenderzeile, sonst der bisherige Fallback-Text)
@@ -235,9 +246,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     if (type === "SUBTOTAL") {
       y = ensureSpace(y, 16);
       doc.font("Helvetica-Bold").fontSize(9).fillColor("#000");
-      doc.text(line.description, left + 300, y, { width: 120, align: "right" });
+      doc.text(line.description, sumLabelX, y, { width: sumLabelWidth, align: "right" });
       if (theme.options.showLineTotals) {
-        doc.text(formatCents(subtotals[i] ?? 0, cur), left + 425, y, { width: 70, align: "right" });
+        doc.text(formatCents(subtotals[i] ?? 0, cur), sumValueX, y, { width: sumValueWidth, align: "right" });
       }
       doc.font("Helvetica").fontSize(9);
       y += 16;
@@ -290,13 +301,13 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   };
   y = ensurePlainSpace(y, 40);
   y += 10;
-  doc.moveTo(left + 300, y).lineTo(right, y).strokeColor(titleColor).stroke();
+  doc.moveTo(sumLabelX, y).lineTo(right, y).strokeColor(titleColor).stroke();
   y += 6;
   const sumRow = (label: string, value: string, bold = false) => {
     y = ensurePlainSpace(y, 16);
     doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
-    doc.text(label, left + 300, y, { width: 120, align: "right" });
-    doc.text(value, left + 425, y, { width: 70, align: "right" });
+    doc.text(label, sumLabelX, y, { width: sumLabelWidth, align: "right" });
+    doc.text(value, sumValueX, y, { width: sumValueWidth, align: "right" });
     y += 16;
   };
   const lineTotal = data.lineTotalCents ?? data.netTotalCents;
@@ -329,9 +340,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     for (const d of data.deductions) {
       doc.text(
         `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} −${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`,
-        left + 300,
+        sumLabelX,
         y,
-        { width: right - (left + 300), align: "right" },
+        { width: right - sumLabelX, align: "right" },
       );
       y = doc.y + 4;
     }
