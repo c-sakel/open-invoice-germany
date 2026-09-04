@@ -34,7 +34,7 @@ export class DunningStageNotFoundError extends DunningStageError {
 
 // 409: bewusst kein Loeschen einer bereits verwendeten Stufe (Mahnungen referenzieren
 // sie per stageId) — der Aufrufer soll stattdessen ueber updateDunningStage
-// `enabled: false` setzen, damit nextEnabledStage sie uebergeht.
+// `enabled: false` setzen, damit dunningScheduleFor sie uebergeht.
 export class DunningStageInUseError extends DunningStageError {
   constructor() {
     super("Mahnstufe ist mit bestehenden Mahnungen verknuepft und kann nicht geloescht werden. Stattdessen deaktivieren (enabled=false).", 409);
@@ -104,18 +104,6 @@ export async function reorderDunningStages(orgId: string, rawInput: unknown): Pr
     for (let i = 0; i < ids.length; i++) {
       await tx.dunningStage.update({ where: { id: ids[i] }, data: { order: i } });
     }
-  });
-}
-
-/**
- * Naechste aktivierte Mahnstufe nach `afterOrder` (null = erste ueberhaupt), deaktivierte
- * Stufen (enabled=false) werden uebersprungen. `null`, wenn keine weitere existiert —
- * die Erstellung meldet dann DunningError("Keine weitere Mahnstufe konfiguriert.") (Task 2).
- */
-export async function nextEnabledStage(orgId: string, afterOrder: number | null) {
-  return dbInternal.dunningStage.findFirst({
-    where: { orgId, enabled: true, order: afterOrder === null ? undefined : { gt: afterOrder } },
-    orderBy: { order: "asc" },
   });
 }
 

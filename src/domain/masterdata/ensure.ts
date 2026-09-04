@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { SYSTEM_PAYMENT_METHODS, DEFAULT_DUNNING_STAGES, DEFAULT_EMAIL_TEMPLATES } from "./defaults";
 import { ensureOrgTextTemplates } from "@/domain/text-template/ensure";
-import { DEFAULT_DUNNING_SETTINGS } from "@/domain/dunning/settings";
+import { DEFAULT_DUNNING_SETTINGS, defaultAutoCreateForOrg } from "@/domain/dunning/settings";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -27,11 +27,16 @@ export async function ensureOrgMasterdata(db: Db, orgId: string): Promise<void> 
       update: {},
     });
   }
+  const dunningSettingsExists = await db.dunningSettings.count({ where: { orgId } });
+  // B2 (Fix-Welle, Bestandsschutz): Bestandsorgs (schon eine festgeschriebene Rechnung zum
+  // Anlagezeitpunkt) bekommen autoCreate=false, damit der Scheduler nicht sofort nach dem
+  // ersten Start ueber den kompletten Altbestand mahnt — siehe defaultAutoCreateForOrg.
+  const autoCreate = dunningSettingsExists > 0 ? DEFAULT_DUNNING_SETTINGS.autoCreate : await defaultAutoCreateForOrg(db, orgId);
   await db.dunningSettings.upsert({
     where: { orgId },
     create: {
       orgId,
-      autoCreate: DEFAULT_DUNNING_SETTINGS.autoCreate,
+      autoCreate,
       autoSend: DEFAULT_DUNNING_SETTINGS.autoSend,
       baseInterestRateBp: DEFAULT_DUNNING_SETTINGS.baseInterestRateBp,
       baseRateValidFrom: DEFAULT_DUNNING_SETTINGS.baseRateValidFrom,

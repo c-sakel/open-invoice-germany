@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { getActiveOrg } from "@/lib/org";
 import { loadDunningOverview } from "@/domain/dunning/overview";
+import { loadDunningSettings } from "@/domain/dunning/settings";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { OverviewWidgets } from "@/components/dunning/OverviewWidgets";
 import { OverdueTable } from "@/components/dunning/OverdueTable";
@@ -16,8 +18,12 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
   if (state === "ACTIVE" || state === "PAUSED" || state === "STOPPED") filter.state = state;
   if (customerId) filter.customerId = customerId;
 
-  const overview = await loadDunningOverview(org.id, new Date(), filter);
-  const paymentMethods = (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ code: m.code, name: m.name }));
+  const [overview, settings, paymentMethodsRaw] = await Promise.all([
+    loadDunningOverview(org.id, new Date(), filter),
+    loadDunningSettings(org.id),
+    listPaymentMethods(org.id),
+  ]);
+  const paymentMethods = paymentMethodsRaw.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ code: m.code, name: m.name }));
 
   const rows = overview.rows.map((r) => ({
     ...r,
@@ -32,6 +38,16 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Mahnwesen</h1>
       </div>
+
+      {!settings.autoCreate && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Automatische Erstellung ist aus — fällige Mahnungen werden nicht automatisch angelegt, nur manuell über die Rechnung.{" "}
+          <Link href="/einstellungen/mahnwesen" className="font-medium underline">
+            In den Einstellungen prüfen und aktivieren
+          </Link>
+          .
+        </div>
+      )}
 
       <OverviewWidgets widgets={overview.widgets} />
 
