@@ -65,7 +65,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       size: "A4",
       margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
       bufferPages: true,
-      compress: false,
+      compress: theme.compress ?? true,
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));

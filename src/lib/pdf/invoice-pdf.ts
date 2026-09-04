@@ -112,7 +112,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     size: "A4",
     margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
     bufferPages: true,
-    compress: false,
+    compress: theme.compress ?? true,
   });
   const chunks: Buffer[] = [];
   const finished = new Promise<Buffer>((resolve, reject) => {
@@ -361,8 +361,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (data.notes) doc.text(data.notes, left, y, { width: right - left });
   // Fix-Runde 1 (Befund C): paymentTermsHuman traegt bei Skonto den Klartext ohne
   // #SKONTO#-Tags; ohne Skonto identisch zu paymentTerms (Alt-Belege unveraendert).
+  // Fix-Runde 1 (Koordinator, §33 DocumentSettings.showPaymentTermsText): diese Zeile
+  // ("Zahlbar bis ..."/Skonto-Klartext) nur, wenn die Einstellung an ist.
   const paymentTermsHuman = data.paymentTermsHuman ?? data.paymentTerms;
-  if (paymentTermsHuman) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
+  if (paymentTermsHuman && theme.showPaymentTermsText) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
   if (data.paymentMethodText) doc.moveDown(0.4).text(data.paymentMethodText, { width: right - left });
 
   // Fußzeile: Aussteller-Pflichtangaben (nur wenn options.showFooter an ist).
