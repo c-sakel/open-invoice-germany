@@ -7,6 +7,7 @@
  * (48).
  */
 import { dbInternal } from "@/lib/db";
+import { payableBaseCents } from "@/domain/invoice/amounts";
 import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { formatDateDe, formatMoneyDe } from "@/lib/template/format";
 import type { TemplateContext } from "@/lib/template/render";
@@ -142,15 +143,22 @@ export async function buildTemplateContext(
   const payment = { iban: org.iban ?? "", bic: org.bic ?? "" };
 
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
-    // Invoice.type kennt INVOICE, CREDIT_NOTE und CORRECTION (Korrekturrechnung).
-    // Fuer den E-Mail-Dokumenttyp INVOICE zaehlen sowohl INVOICE als auch CORRECTION.
-    const okTypes = docType === "CREDIT_NOTE" ? ["CREDIT_NOTE"] : ["INVOICE", "CORRECTION"];
+    // Invoice.type kennt INVOICE, CREDIT_NOTE, CORRECTION und (Phase 5) PARTIAL/
+    // DOWNPAYMENT/FINAL. Fuer den E-Mail-Dokumenttyp INVOICE zaehlen alle vier
+    // Nicht-Gutschrift-Typen (B2, Fix-Welle) — sonst waere ausgerechnet die
+    // Schlussrechnung, die § 14 Abs. 5 UStG zwingend an den Kunden gehen muss, per Mail
+    // unversendbar ("Rechnung nicht gefunden").
+    const okTypes = docType === "CREDIT_NOTE" ? ["CREDIT_NOTE"] : ["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"];
     const inv = await dbInternal.invoice.findFirst({ where: { id: docId, orgId, type: { in: okTypes } }, include: { customer: true } });
     if (!inv) throw new DocumentNotFoundError("Rechnung nicht gefunden");
     const snapshotCtx = `email:${docType}:${docId}`;
     const buyer = parseBuyerSnapshot(inv.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);
     const seller = parseSellerSnapshot(inv.sellerSnapshotJson, buildSellerSnapshot(org), snapshotCtx);
-    const open = inv.grossTotalCents - inv.paidAmountCents;
+    // B2 (Fix-Welle): payableBaseCents statt grossTotalCents — sonst zeigt
+    // {{invoice.openAmount}} bei einer Schlussrechnung den vollen Rechnungsbetrag statt
+    // des Rests nach Abzug der Abschlaege (der Kunde wuerde zur erneuten Zahlung der
+    // bereits geleisteten Abschlaege aufgefordert).
+    const open = payableBaseCents(inv) - inv.paidAmountCents;
     return {
       ctx: {
         customer: customerCtx(buyer, inv.customer),

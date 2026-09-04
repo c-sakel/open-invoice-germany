@@ -7,6 +7,11 @@ import { dbInternal } from "@/lib/db";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { computeDunning, daysBetween, DEFAULT_BASE_RATE_BP } from "@/lib/dunning";
 import { appendChangeLog } from "@/domain/audit";
+import { payableBaseCents } from "@/domain/invoice/amounts";
+
+// B7 (Fix-Welle, Ruling Koordinator): Teil-/Abschlags-/Schlussrechnungen sind reguläre,
+// enforceable Forderungen und muessen mahnbar sein wie eine normale Rechnung.
+const DUNNABLE_TYPES = new Set(["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
 
 export class DunningError extends Error {
   constructor(message: string) {
@@ -33,12 +38,15 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       include: { customer: { select: { type: true } }, dunnings: { select: { level: true, flatFee40Cents: true } } },
     });
     if (!inv) throw new DunningError("Rechnung nicht gefunden.");
-    if (inv.type !== "INVOICE" && inv.type !== "CORRECTION") throw new DunningError("Nur Rechnungen können gemahnt werden.");
+    if (!DUNNABLE_TYPES.has(inv.type)) throw new DunningError("Nur Rechnungen können gemahnt werden.");
     if (inv.status === "DRAFT") throw new DunningError("Die Rechnung muss zuerst festgeschrieben werden.");
     if (inv.status === "CANCELLED") throw new DunningError("Die Rechnung ist storniert.");
     if (inv.status === "PAID") throw new DunningError("Die Rechnung ist bereits vollständig bezahlt.");
 
-    const openAmount = inv.grossTotalCents - inv.paidAmountCents;
+    // B7 (Fix-Welle): Bemessungsgrundlage wie bei Zahlung/Skonto (`payableBaseCents`) —
+    // bei einer Schlussrechnung ist das der Rest nach Abzug der Abschlaege, nicht die
+    // Gesamtleistung (sonst wuerde bereits bezahltes/verrechnetes erneut gemahnt).
+    const openAmount = payableBaseCents(inv) - inv.paidAmountCents;
     if (openAmount <= 0) throw new DunningError("Kein offener Betrag.");
 
     const dueDate = inv.dueDate ?? inv.issueDate;
