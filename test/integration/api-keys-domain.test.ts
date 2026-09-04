@@ -92,6 +92,38 @@ describe("revokeApiKey", () => {
   });
 });
 
+// Fix-Welle (Should-fix 6): Anlage/Widerruf eines API-Schluessels schrieb bisher KEINEN
+// Audit-Eintrag (weder ChangeLog noch ActivityLog) — Minten/Widerrufen eines Credentials,
+// das lesend UND schreibend auf alle GoBD-Daten zugreifen kann, war damit spurlos.
+describe("ActivityLog fuer API-Schluessel (Should-fix 6)", () => {
+  it("createApiKey schreibt einen ActivityLog-Eintrag (CREATED, ohne Token/Hash)", async () => {
+    const key = await createApiKey(orgId, { name: "Protokolliert-Create", scopes: ["read", "write"] }, "tester");
+    const entries = await dbInternal.activityLog.findMany({ where: { orgId, entityType: "API_KEY", entityId: key.id } });
+    expect(entries.length).toBe(1);
+    expect(entries[0].type).toBe("CREATED");
+    expect(entries[0].actor).toBe("tester");
+    const data = JSON.parse(entries[0].dataJson!);
+    expect(data.name).toBe("Protokolliert-Create");
+    expect(data.prefix).toBe(key.prefix);
+    expect(data.scopes).toEqual(["read", "write"]);
+    expect(JSON.stringify(data)).not.toMatch(/oig_/);
+    expect(data.token).toBeUndefined();
+    expect(data.hash).toBeUndefined();
+  });
+
+  it("revokeApiKey schreibt einen ActivityLog-Eintrag (REVOKED, ohne Token/Hash)", async () => {
+    const key = await createApiKey(orgId, { name: "Protokolliert-Revoke", scopes: ["admin"] });
+    await revokeApiKey(orgId, key.id, "tester");
+    const entries = await dbInternal.activityLog.findMany({ where: { orgId, entityType: "API_KEY", entityId: key.id, type: "REVOKED" } });
+    expect(entries.length).toBe(1);
+    expect(entries[0].actor).toBe("tester");
+    const data = JSON.parse(entries[0].dataJson!);
+    expect(data.name).toBe("Protokolliert-Revoke");
+    expect(data.scopes).toEqual(["admin"]);
+    expect(JSON.stringify(data)).not.toMatch(/oig_/);
+  });
+});
+
 describe("listApiKeys", () => {
   it("liefert nie das Klartext-Token, nur Metadaten", async () => {
     await createApiKey(orgId, { name: "Sichtbarkeitstest", scopes: ["send"] });

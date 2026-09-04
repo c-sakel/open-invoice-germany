@@ -46,7 +46,7 @@ export function registerApiKeyTools(server: McpServer, ctx: McpToolsContext): vo
     async ({ id }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        await revokeApiKey(org.id, id);
+        await revokeApiKey(org.id, id, "mcp");
         return ctx.ok(`API-Schluessel "${id}" widerrufen.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);

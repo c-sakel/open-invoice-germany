@@ -10,7 +10,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    await revokeApiKey(org.id, id);
+    await revokeApiKey(org.id, id, "session");
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof NotFoundError) {

@@ -30,7 +30,7 @@ const patchBodySchema = z.object({ revoked: z.literal(true) });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
   patchBodySchema.parse(ctx.body);
-  await revokeApiKey(ctx.orgId, ctx.params.id);
+  await revokeApiKey(ctx.orgId, ctx.params.id, ctx.actor);
   const row = await dbInternal.apiKey.findFirstOrThrow({ where: { id: ctx.params.id, orgId: ctx.orgId } });
   return apiData(serializeApiKey(toSummary(row)));
 }, { scope: "admin" });

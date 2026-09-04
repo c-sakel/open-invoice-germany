@@ -13,7 +13,11 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
 export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING";
+// "API_KEY" (Fix-Welle Should-fix 6): Anlage/Widerruf eines API-Schluessels — ein
+// Credential, das lesend UND schreibend auf alle GoBD-relevanten Daten zugreifen kann,
+// darf keine spurlose Anlage/Widerruf haben. ActivityLog statt ChangeLog (Audit K5 —
+// unverkettetes Protokoll, keine Hash-Kette, siehe Modulkommentar oben).
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -38,6 +42,7 @@ export const ACTIVITY_TYPES = {
   SHARE_LINK_CREATED: "Annahme-Link erstellt",
   QUOTE_ACCEPTED: "Angebot angenommen",
   QUOTE_REJECTED: "Angebot abgelehnt",
+  REVOKED: "Widerrufen",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;
