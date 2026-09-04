@@ -55,7 +55,11 @@ function emptyBucket(): AgingBucket {
   return { count: 0, cents: 0 };
 }
 
+// Nit (Fix-Welle): daysOverdue === 0 (heute faellig, noch nicht wirklich ueberfaellig)
+// fiel bisher in den "1-7 Tage"-Bucket (<= 7 schliesst 0 ein). Faellt jetzt aus den
+// Aging-Buckets heraus (zaehlt weiterhin in overdueCount/openTotalCents, s. Aufrufer).
 function addToBucket(aging: DunningOverview["widgets"]["aging"], daysOverdue: number, cents: number) {
+  if (daysOverdue < 1) return;
   const bucket = daysOverdue <= 7 ? aging.d1_7 : daysOverdue <= 30 ? aging.d8_30 : daysOverdue <= 60 ? aging.d31_60 : aging.d60plus;
   bucket.count += 1;
   bucket.cents += cents;
@@ -73,15 +77,31 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     select: { order: true, enabled: true, daysAfterDue: true, name: true },
   });
 
+  // S6 (Fix-Welle): explizites `select` statt `include` ohne Einschraenkung — vorher kam
+  // jede passende Rechnung MIT `taxBreakdownJson`/`sellerSnapshotJson`/`buyerSnapshotJson`/
+  // `notes`/`internalNotes` usw. in den Speicher, obwohl nur ein Bruchteil der Felder
+  // tatsaechlich benutzt wird (CLAUDE.md: "Prisma immer mit select/include"). Faelligkeit
+  // (dueDate bzw. Fallback issueDate) zusaetzlich in die where-Klausel gezogen statt erst
+  // in JS zu filtern, damit nicht-faellige Rechnungen gar nicht erst geladen werden.
   const invoices = await dbInternal.invoice.findMany({
     where: {
       orgId,
       type: { in: Array.from(DUNNABLE_TYPES) },
       status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] },
+      OR: [{ dueDate: { lte: now } }, { dueDate: null, issueDate: { lte: now } }],
       ...(filter.customerId ? { customerId: filter.customerId } : {}),
       ...(filter.state ? { dunningState: filter.state } : {}),
     },
-    include: {
+    select: {
+      id: true,
+      number: true,
+      grossTotalCents: true,
+      paidAmountCents: true,
+      payableCents: true,
+      dueDate: true,
+      issueDate: true,
+      dunningState: true,
+      dunningPausedUntil: true,
       customer: { select: { name: true } },
       dunnings: {
         orderBy: { createdAt: "desc" },
@@ -105,8 +125,9 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
   for (const inv of invoices) {
     const openCents = computeOpenAmountCents(inv);
     if (openCents <= 0) continue;
+    // Faelligkeit ist bereits in der where-Klausel gefiltert (dueDate <= now bzw.
+    // Fallback issueDate <= now) — hier nur noch fuer daysOverdue gebraucht.
     const dueDate = inv.dueDate ?? inv.issueDate;
-    if (dueDate.getTime() > now.getTime()) continue; // noch nicht faellig
 
     const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
 
