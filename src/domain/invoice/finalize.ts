@@ -259,7 +259,19 @@ export async function finalizeWithinTx(
     action: "FINALIZE",
     actor,
     at: now,
-    diff: { number, status: "FINALIZED", grossTotalCents: totals.grossTotalCents, snapshotSource },
+    diff: {
+      number,
+      status: "FINALIZED",
+      grossTotalCents: totals.grossTotalCents,
+      snapshotSource,
+      // B9 (Fix-Welle): der Abzugs-Snapshot ist der rechtlich entscheidende Teil einer
+      // Schlussrechnung (Abschn. 14.8 UStAE) — er gehoert in die Hash-Kette, nicht nur
+      // in die (davon unabhaengige) `FinalInvoiceDeduction`-Tabelle. Nur bei type FINAL
+      // nicht-leer; bei allen anderen Rechnungstypen bleiben es leere Defaults.
+      ...(invoice.type === "FINAL"
+        ? { prepaidCents, payableCents, deductedInvoiceNumbers: finalDeductionRows.map((r) => r.number) }
+        : {}),
+    },
   });
 
   const result = await tx.invoice.findUnique({
