@@ -53,9 +53,20 @@ export interface LogActivityInput {
 }
 
 /**
- * Schreibt einen Aktivitaetseintrag. Wirft NIE — ein Fehler (z. B. DB-Ausfall) wird nur
- * geloggt, das eigentliche Domain-Ereignis (Rechnung anlegen, Mail versenden, …) darf davon
- * nicht abbrechen.
+ * Schreibt einen Aktivitaetseintrag. Wirft NIE als JS-Exception — ein Fehler (z. B.
+ * DB-Ausfall) wird nur geloggt.
+ *
+ * Fix-Welle (S8, Ruling — Doku statt Umbau): AUSSERHALB einer Transaktion (db =
+ * dbInternal) blockiert ein Fehler hier tatsaechlich nie das aufrufende Ereignis. RUFT
+ * MAN diese Funktion aber mit `tx` INNERHALB eines `$transaction`-Blocks auf (finalize,
+ * payment, status, attachment/manage, dunning/*, recurring/run), gilt das auf Postgres
+ * NICHT uneingeschraenkt: ein fehlgeschlagenes SQL-Statement versetzt die Postgres-
+ * Transaktion in den Zustand "aborted" — das Abfangen der JS-Exception hier hebt diesen
+ * DB-seitigen Abort nicht auf, jeder nachfolgende `tx.*`-Aufruf UND der Commit schlagen
+ * dann ebenfalls fehl, das eigentliche Geschaeftsereignis wird also doch blockiert. Das
+ * betrifft nur einen echten DB-Fehler beim ActivityLog-Insert (Kontention/Ausfall), nicht
+ * den Normalfall. Backlog: ActivityLog-Eintraege nach dem Commit schreiben (auszerhalb der
+ * Transaktion), dann gilt die "blockiert nie"-Garantie ausnahmslos.
  */
 export async function logActivity(db: ActivityDbClient, input: LogActivityInput): Promise<void> {
   try {
