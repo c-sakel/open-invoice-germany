@@ -5,6 +5,7 @@ import { dbInternal } from "@/lib/db";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
+import { ConvertMenu } from "@/components/ConvertMenu";
 import { DocumentChain } from "@/components/DocumentChain";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
@@ -12,6 +13,12 @@ import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
 
 export const dynamic = "force-dynamic";
+
+// B11 (Fix-Welle): Client-seitige Kopie von DELIVERY_NOTE_STATUS_ALLOWED
+// (src/domain/invoice/partial.ts, dort nicht importierbar wegen dbInternal) — steuert
+// nur, ob der ConvertMenu-Einstieg angeboten wird, die eigentliche Pruefung bleibt
+// serverseitig (409 bei Regelverstoss).
+const DELIVERY_NOTE_PARTIAL_INVOICE_STATUSES = new Set(["CREATED", "SENT", "DELIVERED"]);
 
 function deDate(d: Date | null) {
   return d ? new Intl.DateTimeFormat("de-DE").format(d) : "—";
@@ -28,6 +35,11 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
 
   const archived = dn.archivedAt !== null;
   const attachments = await listAttachments(org.id, "DELIVERY_NOTE", dn.id);
+  // B11 (Fix-Welle): Teilrechnung-Einstieg nur in einem abrechenbaren Status; Anteils-
+  // Modi (PERCENT/NET_AMOUNT/GROSS_AMOUNT) nur, wenn ALLE Positionen einen Preis tragen
+  // (preisloser Lieferschein ist der Normalfall, `showPrices` defaultet auf false).
+  const canBillDeliveryNote = DELIVERY_NOTE_PARTIAL_INVOICE_STATUSES.has(dn.status);
+  const allowShareModes = dn.lines.length > 0 && dn.lines.every((l) => l.unitNetPriceCents != null);
 
   let sourceLabel: { href: string; text: string } | null = null;
   if (dn.sourceType === "QUOTE" && dn.sourceId) {
@@ -60,6 +72,16 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
             </a>
           )}
           {dn.status !== "DRAFT" && <SendEmailDialog docType="DELIVERY_NOTE" docId={dn.id} />}
+          {/* B11 (Fix-Welle): Teilrechnung aus Lieferschein — Backend/MCP existierten
+              bereits, der UI-Einstieg fehlte. Share-Modi nur, wenn alle Positionen einen
+              Preis tragen. */}
+          <ConvertMenu
+            sourceType="DELIVERY_NOTE"
+            sourceId={dn.id}
+            showToDeliveryNote={false}
+            showPartialInvoice={canBillDeliveryNote}
+            allowShareModesInPartialInvoice={allowShareModes}
+          />
         </div>
       </div>
 

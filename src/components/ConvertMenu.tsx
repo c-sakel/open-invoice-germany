@@ -52,16 +52,25 @@ export function ConvertMenu({
   showToInvoice,
   showToDeliveryNote = true,
   showPartialInvoice,
+  allowShareModesInPartialInvoice = true,
   showDownpaymentInvoice,
   showFinalInvoice,
 }: {
-  sourceType: "QUOTE" | "INVOICE";
+  // B11 (Fix-Welle): "DELIVERY_NOTE" ergaenzt fuer den Teilrechnung-Einstieg auf der
+  // Lieferschein-Detailseite — dort sind ausschliesslich showPartialInvoice und
+  // allowShareModesInPartialInvoice relevant, alle anderen show*-Props bleiben false.
+  sourceType: "QUOTE" | "INVOICE" | "DELIVERY_NOTE";
   sourceId: string;
   showToOrderConfirmation?: boolean;
   showToInvoice?: boolean;
   showToDeliveryNote?: boolean;
-  /** Task 4 (nur sourceType QUOTE): Teilrechnung erzeugen. */
+  /** Task 4 (sourceType QUOTE/DELIVERY_NOTE): Teilrechnung erzeugen. */
   showPartialInvoice?: boolean;
+  /** B11 (Fix-Welle, nur sourceType DELIVERY_NOTE relevant): Anteils-Modi (PERCENT/
+   *  NET_AMOUNT/GROSS_AMOUNT) nur anbieten, wenn ALLE Positionen des Lieferscheins einen
+   *  Preis tragen (sonst kann keine Gesamtleistung berechnet werden, siehe B12/
+   *  assertAllLinesPriced) — Default true (QUOTE hat immer Preise). */
+  allowShareModesInPartialInvoice?: boolean;
   /** Task 4 (nur sourceType QUOTE): Abschlagsrechnung erzeugen. */
   showDownpaymentInvoice?: boolean;
   /** Task 4 (nur sourceType QUOTE): Schlussrechnung erzeugen (nur wenn Abschlaege
@@ -100,6 +109,10 @@ export function ConvertMenu({
   const [downpaymentBusy, setDownpaymentBusy] = useState(false);
 
   const convertRoute = `/api/documents/${sourceId}/convert`;
+  // B11 (Fix-Welle): Teilrechnung-Routen je nach Quelltyp — QUOTE nutzt
+  // /api/documents/..., DELIVERY_NOTE die eigene, gleich benannte Ressource.
+  const partialBillingRoute = sourceType === "DELIVERY_NOTE" ? `/api/delivery-notes/${sourceId}/billing` : `/api/documents/${sourceId}/billing`;
+  const partialInvoiceRoute = sourceType === "DELIVERY_NOTE" ? `/api/delivery-notes/${sourceId}/partial-invoice` : `/api/documents/${sourceId}/partial-invoice`;
 
   async function convertTo(toKind: "AUFTRAGSBESTAETIGUNG" | "INVOICE") {
     setBusy(toKind);
@@ -177,10 +190,10 @@ export function ConvertMenu({
     setError(null);
     partialDialogRef.current?.showModal();
     setPartialError(null);
-    setPartialMode("PERCENT");
+    setPartialMode(allowShareModesInPartialInvoice ? "PERCENT" : "POSITIONS");
     setPartialPercent("");
     setPartialAmount("");
-    const res = await fetch(`/api/documents/${sourceId}/billing`);
+    const res = await fetch(partialBillingRoute);
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       setPartialError(j.error ?? "Abrechnungsstand konnte nicht geladen werden.");
@@ -219,7 +232,7 @@ export function ConvertMenu({
           .filter((q) => q.quantityMilli > 0),
       };
     }
-    const res = await fetch(`/api/documents/${sourceId}/partial-invoice`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await fetch(partialInvoiceRoute, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       setPartialError(j.error ?? "Teilrechnung konnte nicht erzeugt werden.");
@@ -412,9 +425,11 @@ export function ConvertMenu({
               <label className="flex flex-col gap-1 text-sm">
                 <span className="font-medium text-slate-700">Art der Teilrechnung</span>
                 <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={partialMode} onChange={(e) => setPartialMode(e.target.value as PartialMode)}>
-                  <option value="PERCENT">Prozentualer Anteil</option>
-                  <option value="NET_AMOUNT">Fester Nettobetrag</option>
-                  <option value="GROSS_AMOUNT">Fester Bruttobetrag</option>
+                  {/* B11 (Fix-Welle): Anteils-Modi nur, wenn alle Quellpositionen einen
+                      Preis tragen (preisloser Lieferschein -> nur POSITIONS/QUANTITIES). */}
+                  {allowShareModesInPartialInvoice && <option value="PERCENT">Prozentualer Anteil</option>}
+                  {allowShareModesInPartialInvoice && <option value="NET_AMOUNT">Fester Nettobetrag</option>}
+                  {allowShareModesInPartialInvoice && <option value="GROSS_AMOUNT">Fester Bruttobetrag</option>}
                   <option value="POSITIONS">Einzelne Positionen (vollstaendig)</option>
                   <option value="QUANTITIES">Teilmengen je Position</option>
                 </select>
