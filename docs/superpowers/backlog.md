@@ -260,3 +260,7 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - NewInvoiceForm hat keine Kopf-/Fusstext-Felder (nur Angebot/AB) — Take-over und Kundentexte greifen dort nicht; Felder ergaenzen (8b progressive Formulare). (8a Task 3)
 - recurring/run.ts erzeugt Rechnungen ohne createDraftInvoiceWithinTx → keine Kundenvorgaben (Adresse/Kontakt/Rabatt) auf Abo-Rechnungen; Refactor auf gemeinsamen Pfad. (8a Abschluss-Review)
 - Invoice.shippingAddressId: BG-13/BG-15 Mapping (DeliveryLocation/ShipToTradeParty) + PDF-Block. (8a Abschluss-Review)
+
+## Phase 8b (Nachtrag 2026-09-04)
+
+- ActivityLog nach Commit schreiben (Outbox/After-Commit), damit die Nicht-Blockier-Garantie auch in Transaktionen unter Postgres gilt. (8b Abschluss-Review S8)
