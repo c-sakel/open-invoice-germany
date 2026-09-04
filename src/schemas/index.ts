@@ -533,7 +533,8 @@ export const BillingState = z.enum(["NONE", "PARTIAL", "FULL"]);
 export type BillingState = z.infer<typeof BillingState>;
 export const TextTemplatePosition = z.enum(["HEAD", "FOOT", "TERMS_DELIVERY", "TERMS_PAYMENT"]);
 export const EmailLogStatus = z.enum(["QUEUED", "SENT", "DELIVERED", "BOUNCED", "FAILED"]);
-export const AddressType = z.enum(["BILLING", "SHIPPING", "OTHER"]);
+// AddressType lebt in ./customer (Phase 8a) und wird ueber "export * from './customer'"
+// unten re-exportiert.
 
 export const deliveryNoteLineInputSchema = z.object({
   description: z.string().min(1),
@@ -568,14 +569,9 @@ export const createDeliveryNoteSchema = z.object({
 });
 export type CreateDeliveryNoteInput = z.infer<typeof createDeliveryNoteSchema>;
 
-export const customerAddressSchema = z.object({
-  type: AddressType, label: z.string().optional(), addressLine1: z.string().min(1), addressLine2: z.string().optional(),
-  postalCode: z.string().min(1), city: z.string().min(1), countryCode: z.string().length(2).default("DE"), isDefault: z.boolean().default(false),
-});
-export const contactPersonSchema = z.object({
-  firstName: z.string().min(1), lastName: z.string().min(1), role: z.string().optional(), phone: z.string().optional(),
-  mobile: z.string().optional(), email: z.email().optional(), isDefault: z.boolean().default(false),
-});
+// customerAddressInputSchema/contactPersonInputSchema (Phase 8a, §29/§30) leben in
+// src/schemas/customer.ts, zusammen mit den uebrigen Kundendomain-Schemas.
+
 // K2 — UNTDID-4461-Codes, die der Zahlungsmethoden-Snapshot annehmen darf: exportierbar
 // ohne Zusatzgruppen (58/30/10/68/97/1/ZZZ) sowie Karte (48/54/55) und Lastschrift (59),
 // die der Mapper mit console.warn auf Code 1 zurueckfallen laesst (kein CardAccount/
@@ -728,6 +724,9 @@ export * from "./quote-share";
 
 // ── Phase 7: Belegeinstellungen, Briefpapier, Druckoptionen, Nummernkreise ──
 export * from "./settings";
+
+// ── Phase 8a: Kundendomain — Adressen, Ansprechpartner, Kundenfelder, Vorgaben ──
+export * from "./customer";
 
 // ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
 // Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung
