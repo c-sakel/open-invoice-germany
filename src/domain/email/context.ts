@@ -44,6 +44,9 @@ function splitContactName(contactName: string | null | undefined): { firstName: 
  * `number` ist ein reservierter, aktuell leerer Pfad (Lastenheft 28, kein Kundennummernfeld
  * im Schema). `customField` (Lastenheft 31): Werte aus dem Buyer-Snapshot (`customFields`,
  * Phase 8a), falls vorhanden — sonst live vom Aufrufer nachgeladen (parseCustomerCustomFields).
+ * Fix-Welle B1: dieselben Werte stehen ZUSAETZLICH unter dem Top-Level-Pfad `customField.*`
+ * im Kontext (siehe buildContextObject unten) — die Doku/der Vorlagen-Editor nennen
+ * `{{customField.<key>}}`, nicht `{{customer.customField.<key>}}`.
  */
 function customerCtx(buyer: BuyerSnapshot, customer: { email: string | null }, customFields: Record<string, unknown> = {}) {
   const { firstName, lastName } = splitContactName(buyer.contactName);
@@ -143,6 +146,7 @@ export function buildDocumentTextContext(input: DocumentTextContextInput): Templ
 
   return {
     customer: customerCtx(input.buyer, { email: input.buyer.email }, input.buyer.customFields),
+    customField: input.buyer.customFields ?? {},
     company,
     payment,
     document: docCtx(
@@ -202,6 +206,7 @@ export async function buildTemplateContext(
     return {
       ctx: {
         customer: customerCtx(buyer, inv.customer, customFields),
+        customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
         document: docCtx(docType, inv.number, inv.issueDate, inv.dueDate, inv.grossTotalCents, inv.netTotalCents, inv.taxTotalCents, inv.currency),
@@ -248,6 +253,7 @@ export async function buildTemplateContext(
     return {
       ctx: {
         customer: customerCtx(buyer, inv.customer, customFields),
+        customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
         document: docCtx("DUNNING", d.number, d.sentAt, d.dueDate, total, null, null, inv.currency),
@@ -286,6 +292,7 @@ export async function buildTemplateContext(
     return {
       ctx: {
         customer: customerCtx(buyer, dn.customer, customFields),
+        customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
         document: docCtx("DELIVERY_NOTE", dn.number, dn.issueDate, dn.deliveryDate, null, null, null, "EUR"),
@@ -309,6 +316,7 @@ export async function buildTemplateContext(
   return {
     ctx: {
       customer: customerCtx(buyer, q.customer, customFields),
+      customField: customFields,
       company: { ...company, name: seller.legalName },
       payment,
       document: docCtx(docType, q.number, q.issueDate, q.validUntil, q.grossTotalCents, q.netTotalCents, q.taxTotalCents, q.currency),
@@ -348,6 +356,7 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
 
   return {
     customer,
+    customField: {},
     company,
     payment,
     document: documentByType[docType],

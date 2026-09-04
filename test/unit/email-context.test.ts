@@ -6,6 +6,7 @@ import { cancelInvoice } from "@/domain/invoice/cancel";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { buildStandardAttachments } from "@/domain/email/attachments";
+import { renderTemplate } from "@/lib/template/render";
 import type { CreateInvoiceInput } from "@/schemas";
 
 let orgId: string;
@@ -168,6 +169,30 @@ describe("buildTemplateContext / buildStandardAttachments — Rechnung", () => {
     const attachmentsMit = await buildStandardAttachments(orgId, "INVOICE", finalizedMit.id);
     expect(attachmentsMit).toHaveLength(2);
     expect(attachmentsMit.some((a) => a.filename.endsWith("-xrechnung.xml"))).toBe(true);
+  });
+
+  it("B1 (Fix-Welle): {{customField.<key>}} loest sich ueber den Top-Level-Pfad auf", async () => {
+    const def = await dbInternal.customFieldDefinition.create({
+      data: { orgId, key: "branche", label: "Branche", type: "TEXT", required: false, sortOrder: 0, isActive: true },
+    });
+    const customerWithField = await dbInternal.customer.create({
+      data: {
+        orgId,
+        name: "Kunde mit Kundenfeld",
+        addressLine1: "Feldweg 1",
+        postalCode: "10000",
+        city: "Berlin",
+        type: "BUSINESS",
+        email: "feld@example.com",
+        customFieldsJson: JSON.stringify({ branche: "Handwerk" }),
+      },
+    });
+    const draft = await createDraftInvoice(orgId, baseInput({ customerId: customerWithField.id }));
+
+    const { ctx } = await buildTemplateContext(orgId, "INVOICE", draft.id);
+    expect(renderTemplate("Branche: {{customField.branche}}", ctx).text).toBe("Branche: Handwerk");
+
+    await dbInternal.customFieldDefinition.delete({ where: { id: def.id } });
   });
 
   it("stornierte Rechnung liefert weiterhin das ZUGFeRD-PDF, kein ENTWURF-Anhang", async () => {
