@@ -598,6 +598,42 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 **Quellen:** [§ 286 BGB](https://www.gesetze-im-internet.de/bgb/__286.html) · [§ 288 BGB](https://www.gesetze-im-internet.de/bgb/__288.html) · [Bundesbank — Basiszinssatz 01.01.2026](https://www.bundesbank.de/de/presse/pressenotizen/bekanntgabe-des-basiszinssatzes-zum-1-januar-2026-basiszinssatz-bleibt-unveraendert-bei-1-27--973974) · [BGH VIII ZR 95/18](https://dejure.org/dienste/vernetzung/rechtsprechung?Gericht=BGH&Datum=26.06.2019&Aktenzeichen=VIII+ZR+95/18) · [EuGH C-419/21](https://dejure.org/dienste/vernetzung/rechtsprechung?Gericht=EuGH&Datum=01.12.2022&Aktenzeichen=C-419%2F21)
 **Stand:** 2026-01-01 (Basiszins H1 2026)
 
+### Umsetzung in der Software (Phase 6 — Mahnwesen/Scheduler)
+
+- **Stufen-getriebene Logik statt fester Level 1–4:** Mahnstufen (`DunningStage`, je Organisation
+  frei konfigurierbar: Name, Tage nach Fälligkeit, neue Zahlungsfrist, Mahnkosten, Zinsberechnung
+  an/aus, B2B-Pauschale an/aus, Auto-Versand an/aus, aktiviert/deaktiviert, Reihenfolge) ersetzen
+  die vier vormals hartkodierten Stufen. Vier Standardstufen werden je Organisation als Startwerte
+  angelegt (weiterhin editierbar/deaktivierbar/erweiterbar), spiegeln aber keine gesetzliche
+  Stufenzahl wider — das BGB kennt keine "Mahnstufen 1–4", nur die in Abschnitt 12 dargestellten
+  Verzugsvoraussetzungen; die Softwarestufen sind ein rein betriebswirtschaftliches
+  Eskalationsschema.
+- **Mahnkosten (`feeCents`) nur ab der 2. Mahnstufe (`order ≥ 2`) — technisch erzwungen, nicht
+  nur dokumentiert:** Zod (`dunningStageInputSchema`, `src/schemas/index.ts`) lehnt `feeCents > 0`
+  auf Stufe 0/1 beim Anlegen/Ändern einer Stufe ab; `createDunning`
+  (`src/domain/dunning/create.ts`) prüft `stage.order >= 2` zusätzlich defensiv vor dem
+  Verbuchen. Grund (Abschnitt 12, "Mahngebühren"): die erste, verzugsbegründende Mahnung ist
+  nicht ersatzfähig, erst Folgemahnungen sind Verzugsschaden — die Software verhindert damit,
+  dass eine erste Mahnung versehentlich mit einer rechtlich nicht durchsetzbaren Gebühr versehen
+  wird. Ob eine konkrete `feeCents`-Höhe im Einzelfall als "tatsächlich angefallener" Schaden
+  (Porto/Material, ca. 2,50–3 €) durchsetzbar ist, bleibt Sache des Betreibers/Steuerberaters —
+  die Software erzwingt nur die Stufenschranke, nicht die Angemessenheit der Höhe.
+- **40-€-Pauschale** (`includeB2BFlatFee` je Stufe) nur, wenn der Kunde `isConsumer === false`
+  ist, und höchstens einmal je Rechnung (`create.ts` prüft vor dem Verbuchen, ob bereits eine
+  frühere Mahnung derselben Rechnung die Pauschale trägt) — unabhängig vom Zinsschalter, wie in
+  Abschnitt 12 gefordert ("verschuldensunabhängig, ohne gesonderte Mahnung", "je verspäteter
+  Zahlung/Rechnung gesondert", aber nicht mehrfach je Rechnung).
+- **Verzugszinsen:** `DunningStage.calculateInterest` schaltet die Berechnung je Stufe frei;
+  der Satz (5 Pp B2C / 9 Pp B2B über Basiszins) und die taggenaue Berechnung stammen unverändert
+  aus `computeDunning`. **Basiszins-Pflege:** `DunningSettings.baseInterestRateBp` (Basispunkte,
+  Default 127 = 1,27 %) und `DunningSettings.baseRateValidFrom` (Einstellungen → Mahnwesen) bilden
+  den je Organisation hinterlegten, AKTUELL gültigen Basiszinssatz ab — bei der halbjährlichen
+  Bundesbank-Anpassung (nächste zum 01.07.2026, siehe Quellen oben) muss der Betreiber den Wert
+  manuell nachpflegen. **Bekannte Lücke (siehe `docs/LIMITATIONEN.md`):** es gibt keine Historie
+  je Zeitabschnitt — eine Änderung wirkt sofort auf alle künftigen Zinsberechnungen; bereits
+  gestellte Mahnungen (GoBD-Snapshot) bleiben unverändert, aber eine rückwirkend korrekte,
+  abschnittsweise Verzinsung über einen Satzwechsel hinweg wird nicht automatisch berechnet.
+
 ---
 
 ## 13. DSGVO für Rechnungsdaten + E-Rechnung-Tooling

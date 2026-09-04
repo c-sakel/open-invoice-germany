@@ -48,7 +48,7 @@ npm run mcp   # MCP-Server (stdio) starten / in Claude Code via .mcp.json einbin
 
 ### Status
 
-MVP. Was funktioniert: Stammdaten/Kunden/Produkte, Angebots-/Rechnungsmodell, Entwurf→Festschreiben→Storno, PDF- + XRechnung-Export, GoBD-Nummernkreis + Audit. Auf der Roadmap: Mahnwesen-UI, wiederkehrende Rechnungen, ZUGFeRD-Hybrid, DATEV-Export, B2G/Leitweg-ID, OSS/ZM, Multi-User. Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / Stufe 2 / Stufe 3) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
+MVP. Was funktioniert: Stammdaten/Kunden/Produkte, Angebots-/Rechnungsmodell, Entwurf→Festschreiben→Storno, Teilgutschriften, **stufen-getriebenes Mahnwesen mit eingebautem Scheduler (§ 288 BGB)**, **wiederkehrende Rechnungen/Abos**, PDF- + **XRechnung- + ZUGFeRD**-Export, GoBD-Nummernkreis + Audit. Auf der Roadmap: DATEV-Export, B2G/Leitweg-ID, OSS/ZM, Multi-User. Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / Stufe 2 / Stufe 3) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
 
 ## Dokumentworkflow
 

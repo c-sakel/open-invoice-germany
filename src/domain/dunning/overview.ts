@@ -85,10 +85,18 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     },
   });
 
-  const rows: DunningOverviewRow[] = [];
-  const aging = { d1_7: emptyBucket(), d8_30: emptyBucket(), d31_60: emptyBucket(), d60plus: emptyBucket() };
-  let openTotalCents = 0;
-
+  // Vorfilterung (offen, faellig, ggf. stageOrder) OHNE DB-Zugriffe, damit die anschliessende
+  // EmailLog-Abfrage nur die tatsaechlich angezeigten Zeilen betrifft und in EINEM Batch
+  // (statt einer Query je Zeile — vormals N+1, Task-4-Review) laufen kann.
+  type Candidate = {
+    inv: (typeof invoices)[number];
+    openCents: number;
+    dueDate: Date;
+    daysOverdue: number;
+    last: (typeof invoices)[number]["dunnings"][number] | null;
+    currentStage: { name: string; order: number } | null;
+  };
+  const candidates: Candidate[] = [];
   for (const inv of invoices) {
     const openCents = computeOpenAmountCents(inv);
     if (openCents <= 0) continue;
@@ -102,22 +110,60 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
 
     if (filter.stageOrder !== undefined && currentStage?.order !== filter.stageOrder) continue;
 
+    candidates.push({ inv, openCents, dueDate, daysOverdue, last, currentStage });
+  }
+
+  // EIN Batch statt einer emailLog.aggregate()-Abfrage je Rechnung: groupBy ueber (docType,
+  // docId) fuer alle betroffenen invoiceIds/dunningIds auf einmal, danach in-memory je
+  // Rechnung auf das Maximum aus ihrer eigenen INVOICE-Zeile und allen ihren DUNNING-Zeilen
+  // reduziert.
+  const invoiceIds = candidates.map((c) => c.inv.id);
+  const dunningToInvoice = new Map<string, string>();
+  for (const c of candidates) {
+    for (const d of c.inv.dunnings) dunningToInvoice.set(d.id, c.inv.id);
+  }
+  const dunningIds = Array.from(dunningToInvoice.keys());
+
+  const lastContactByInvoiceId = new Map<string, Date>();
+  if (invoiceIds.length > 0 || dunningIds.length > 0) {
+    const grouped = await dbInternal.emailLog.groupBy({
+      by: ["docType", "docId"],
+      where: {
+        orgId,
+        sentAt: { not: null },
+        OR: [
+          ...(invoiceIds.length > 0 ? [{ docType: "INVOICE", docId: { in: invoiceIds } }] : []),
+          ...(dunningIds.length > 0 ? [{ docType: "DUNNING", docId: { in: dunningIds } }] : []),
+        ],
+      },
+      _max: { sentAt: true },
+    });
+    const bump = (invoiceId: string, sentAt: Date | null) => {
+      if (!sentAt) return;
+      const current = lastContactByInvoiceId.get(invoiceId);
+      if (!current || sentAt.getTime() > current.getTime()) lastContactByInvoiceId.set(invoiceId, sentAt);
+    };
+    for (const g of grouped) {
+      const sentAt = g._max.sentAt;
+      if (g.docType === "INVOICE") bump(g.docId, sentAt);
+      else if (g.docType === "DUNNING") {
+        const invoiceId = dunningToInvoice.get(g.docId);
+        if (invoiceId) bump(invoiceId, sentAt);
+      }
+    }
+  }
+
+  const rows: DunningOverviewRow[] = [];
+  const aging = { d1_7: emptyBucket(), d8_30: emptyBucket(), d31_60: emptyBucket(), d60plus: emptyBucket() };
+  let openTotalCents = 0;
+
+  for (const { inv, openCents, dueDate, daysOverdue, last, currentStage } of candidates) {
     const schedule = dunningScheduleFor({
       invoiceDueDate: dueDate,
       lastDunning: last ? { order: currentStage!.order, dueDate: last.dueDate, sentAt: last.sentAt } : null,
       stages,
       gracePeriodDays: settings.gracePeriodDays,
       now,
-    });
-
-    const dunningIds = inv.dunnings.map((d) => d.id);
-    const emailMax = await dbInternal.emailLog.aggregate({
-      where: {
-        orgId,
-        sentAt: { not: null },
-        OR: [{ docType: "INVOICE", docId: inv.id }, { docType: "DUNNING", docId: { in: dunningIds } }],
-      },
-      _max: { sentAt: true },
     });
 
     rows.push({
@@ -134,7 +180,7 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
       nextDunningAt: schedule.dueAt,
       dunningState: inv.dunningState,
       pausedUntil: inv.dunningPausedUntil,
-      lastContactAt: emailMax._max.sentAt ?? null,
+      lastContactAt: lastContactByInvoiceId.get(inv.id) ?? null,
     });
 
     openTotalCents += openCents;
