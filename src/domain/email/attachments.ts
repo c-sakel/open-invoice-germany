@@ -97,8 +97,14 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
       include: { org: true, customer: true, lines: { orderBy: { position: "asc" } } },
     });
     if (!dn) return [];
+    const shippingAddress = dn.showDeliveryAddress
+      ? await dbInternal.customerAddress.findFirst({
+          where: { orgId, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
+          select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
+        })
+      : null;
     const theme = await loadPdfTheme(orgId, dn.printOptionsJson);
-    const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer), theme);
+    const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, null, shippingAddress), theme);
     return [{ filename: `${safe(dn.number ?? "Lieferschein")}.pdf`, contentType: "application/pdf", content: pdf }];
   }
 

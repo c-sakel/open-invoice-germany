@@ -40,6 +40,14 @@ export interface DeliveryNotePdfSeller {
   bankName?: string | null;
 }
 
+/** S7 (Fix-Welle, §36) — zusaetzlicher Block, KEIN Ersatz fuer den Empfaengerblock. */
+export interface DeliveryNotePdfShippingAddress {
+  addressLine1: string;
+  addressLine2?: string | null;
+  postalCode: string;
+  city: string;
+}
+
 export interface DeliveryNotePdfData {
   number: string;
   issueDate: Date;
@@ -53,8 +61,15 @@ export interface DeliveryNotePdfData {
   showTax: boolean;
   showArticleNumber: boolean;
   showDescription: boolean;
-  /** Phase 7, Task 1/3 (§36) — Lieferadresse (Empfängerblock) auf dem Ausdruck anzeigen. */
+  /**
+   * S7 (Fix-Welle, Final-Review, §36): steuert NUR den zusaetzlichen "Lieferadresse"-Block
+   * aus der Standard-SHIPPING-Adresse des Kunden (`deliveryAddress`). Der Empfaengerblock
+   * (`buyer`) wird davon unabhaengig IMMER gedruckt — ohne ihn waere ein Lieferschein an
+   * niemanden adressiert.
+   */
   showDeliveryAddress: boolean;
+  /** Standard-SHIPPING-CustomerAddress des Kunden, falls vorhanden (siehe showDeliveryAddress). */
+  deliveryAddress?: DeliveryNotePdfShippingAddress | null;
   headerText?: string | null;
   footerText?: string | null;
   // Nummer des Quellbelegs (Angebot/Rechnung) — Aufloesung von sourceType/sourceId
@@ -132,15 +147,28 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     const senderFallback = `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`;
     drawSenderLine(doc, theme, left, margins.top, senderFallback);
 
-    // Empfänger / Lieferadresse — nur wenn showDeliveryAddress an ist.
+    // Empfänger — S7 (Fix-Welle): IMMER gedruckt, unabhaengig von showDeliveryAddress
+    // (ein Lieferschein ohne Empfaengerblock waere an niemanden adressiert).
     const buyerY = margins.top + 60;
-    if (data.showDeliveryAddress) {
-      doc.fillColor("#000").fontSize(11);
-      doc.text(data.buyer.name, left, buyerY);
-      if (data.buyer.contactName) doc.text(data.buyer.contactName);
-      doc.text(data.buyer.addressLine1);
-      if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
-      doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
+    doc.fillColor("#000").fontSize(11);
+    doc.text(data.buyer.name, left, buyerY);
+    if (data.buyer.contactName) doc.text(data.buyer.contactName);
+    doc.text(data.buyer.addressLine1);
+    if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
+    doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
+    let leftColumnBottom = doc.y;
+
+    // Lieferadresse — S7 (Fix-Welle, §36): zusaetzlicher Block aus der Standard-SHIPPING-
+    // Adresse des Kunden, NUR wenn showDeliveryAddress an ist UND eine solche Adresse
+    // existiert (ohne sie kein Block, kein leeres "Lieferadresse:").
+    if (data.showDeliveryAddress && data.deliveryAddress) {
+      const da = data.deliveryAddress;
+      doc.fontSize(9).fillColor("#555").text("Lieferadresse:", left, doc.y + 8);
+      doc.fontSize(11).fillColor("#000");
+      doc.text(da.addressLine1);
+      if (da.addressLine2) doc.text(da.addressLine2);
+      doc.text(`${da.postalCode} ${da.city}`);
+      leftColumnBottom = doc.y;
     }
 
     // Titel + Meta (rechts)
@@ -152,9 +180,13 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     if (data.deliveryDate) doc.text(`Lieferdatum: ${deDate(data.deliveryDate)}`, { align: "right" });
     if (data.shippingDate) doc.text(`Versanddatum: ${deDate(data.shippingDate)}`, { align: "right" });
     if (data.sourceNumber) doc.text(`Bezugsbeleg: ${data.sourceNumber}`, { align: "right" });
+    const rightColumnBottom = doc.y;
 
     // Kopftext (Platzhalter bereits aufgeloest) — vor der Positions-Tabelle, y danach dynamisch.
-    let y = margins.top + 170;
+    // y wird jetzt aus dem tatsaechlich gedruckten Empfaenger-/Lieferadress-/Meta-Block
+    // abgeleitet statt fest auf margins.top+170 — der optionale Lieferadress-Block braucht
+    // je nach Inhalt mehr oder weniger Platz.
+    let y = Math.max(leftColumnBottom, rightColumnBottom, margins.top + 150) + 20;
     if (data.headerText) {
       doc.fontSize(9).fillColor("#333").text(data.headerText, left, y, { width: right - left });
       y = doc.y + 10;

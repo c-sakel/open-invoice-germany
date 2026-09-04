@@ -156,6 +156,19 @@ describe("buildDeliveryNotePdfData", () => {
     expect(data.seller.name).toBe("Muster GmbH");
     expect(data.buyer.name).toBe("Kunde AG");
   });
+
+  it("S7 (Fix-Welle): eine uebergebene Standard-SHIPPING-Adresse landet unveraendert in deliveryAddress; ohne sie ist es null", () => {
+    const withAddress = buildDeliveryNotePdfData(deliveryNote(), org, customer, null, {
+      addressLine1: "Lagerhalle 7",
+      addressLine2: null,
+      postalCode: "88888",
+      city: "Werksstadt",
+    });
+    expect(withAddress.deliveryAddress).toEqual({ addressLine1: "Lagerhalle 7", addressLine2: null, postalCode: "88888", city: "Werksstadt" });
+
+    const withoutAddress = buildDeliveryNotePdfData(deliveryNote(), org, customer);
+    expect(withoutAddress.deliveryAddress).toBeNull();
+  });
 });
 
 describe("renderDeliveryNotePdf", () => {
