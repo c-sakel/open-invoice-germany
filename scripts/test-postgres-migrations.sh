@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "35" ] || fail "erwartet 35 Tabellen, gefunden $COUNT"
-echo "    ok — 35 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings)"
+[ "$COUNT" = "36" ] || fail "erwartet 36 Tabellen, gefunden $COUNT"
+echo "    ok — 36 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -305,5 +305,53 @@ ACTIVE_YEAR=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select year from \"NumberRange\" where \"orgId\"='org9' and \"docType\"='INVOICE' and \"isActive\"=true")
 [ "$ACTIVE_YEAR" = "2026" ] || fail "aktive Zeile hat year='$ACTIVE_YEAR', erwartet 2026 nach dem Switch"
 echo "    ok — NumberRange.isActive Default true, Customer.defaultPaymentTermsDays nullable ohne Default, aktive-Zeile-Switch (year 0 -> year <Jahr>) funktioniert"
+
+echo "==> Fall 11 (Phase 8a): Kundendomain — Migration angewendet, CustomFieldDefinition-Unique, Customer-Defaults, DeliveryNote-FKs SetNull"
+PHASE8AMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260904091901_phase8a_customer' and finished_at is not null")
+[ "$PHASE8AMIG" = "1" ] || fail "Phase-8a-Migration ist nicht als angewendet verbucht"
+EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"CustomFieldDefinition\"') is not null")
+[ "$EXISTS" = "t" ] || fail "Tabelle CustomFieldDefinition fehlt nach der Phase-8a-Migration"
+CFDUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='CustomFieldDefinition_orgId_key_key'")
+[ "$CFDUNIQUE" = "1" ] || fail "Unique-Index CustomFieldDefinition_orgId_key_key fehlt nach der Phase-8a-Migration"
+# Fall 9 hat das Schema neu aufgesetzt (nur org9 existiert dort noch) — eigener Kunde fuer
+# diesen Block, org9 wiederverwendet.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust9','org9','Acht-A GmbH','Weg 9','99998','Bestadt',NOW());
+INSERT INTO "CustomFieldDefinition" ("id","orgId","key","label","type","updatedAt")
+  VALUES ('cfd1','org9','branche','Branche','TEXT',NOW());
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "CustomFieldDefinition" ("id","orgId","key","label","type","updatedAt")
+  VALUES ('cfd2','org9','branche','Branche (2)','TEXT',NOW());
+SQL
+then
+  fail "zweite CustomFieldDefinition mit gleichem (orgId, key) haette am Unique-Constraint scheitern muessen"
+fi
+# Customer-Spalten-Defaults auf der frisch angelegten Zeile cust9 (Spalten existieren erst
+# seit der Phase-8a-Migration, hier per normalem INSERT ohne die neuen Spalten befuellt —
+# die DB-Defaults muessen greifen).
+CUSTOMERDEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"defaultDiscountPermille\",\"eInvoicePreferred\",\"language\" from \"Customer\" where id='cust9'")
+[ "$CUSTOMERDEFAULTS" = "0|f|de" ] \
+  || fail "Kunde cust9: Customer-Defaults abweichend ('$CUSTOMERDEFAULTS'), erwartet '0|f|de'"
+# DeliveryNote-FKs SetNull: Adresse + Ansprechpartner anlegen, per Lieferschein referenzieren,
+# dann loeschen — die FK-Spalten muessen auf NULL fallen statt die Loeschung zu blockieren.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "CustomerAddress" ("id","orgId","customerId","type","addressLine1","postalCode","city","updatedAt")
+  VALUES ('addr1','org9','cust9','SHIPPING','Lieferweg 3','67890','Bremen',NOW());
+INSERT INTO "ContactPerson" ("id","orgId","customerId","firstName","lastName","updatedAt")
+  VALUES ('cp1','org9','cust9','Erika','Musterfrau',NOW());
+INSERT INTO "DeliveryNote" ("id","orgId","customerId","status","shippingAddressId","contactPersonId","updatedAt")
+  VALUES ('dn1','org9','cust9','DRAFT','addr1','cp1',NOW());
+DELETE FROM "CustomerAddress" WHERE id = 'addr1';
+DELETE FROM "ContactPerson" WHERE id = 'cp1';
+SQL
+DNFKS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select coalesce(\"shippingAddressId\",'NULL')||'|'||coalesce(\"contactPersonId\",'NULL') from \"DeliveryNote\" where id='dn1'")
+[ "$DNFKS" = "NULL|NULL" ] || fail "DeliveryNote dn1 nach Loeschen von Adresse/Kontakt: '$DNFKS', erwartet 'NULL|NULL' (SetNull)"
+echo "    ok — Phase-8a-Migration angewendet, CustomFieldDefinition-Unique (orgId, key) erzwungen, Customer-Defaults auf Bestandszeile korrekt, DeliveryNote.shippingAddressId/contactPersonId per SetNull auf NULL gesetzt"
 
 echo "ALLE TESTS BESTANDEN"

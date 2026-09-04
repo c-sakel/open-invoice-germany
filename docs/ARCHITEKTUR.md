@@ -218,6 +218,28 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **MCP**: `get_settings`, `update_document_settings`, `update_print_settings`, `update_branding_settings` (verwirft `logoPath`/`backgroundPath` — Upload läuft ausschließlich über die HTTP-Upload-Route), `update_number_range`, `update_dunning_settings`, `list_dunning_stages`, `update_dunning_stage` (dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade) — siehe `docs/MCP.md`.
 
+### Kundendomain: Adressen, Ansprechpartner, Kundenfelder, Vorgaben, Letztes Dokument übernehmen (Phase 8a)
+
+**Kundendomain** (`src/domain/customer/`, org-gescoped, kein ChangeLog — kein GoBD-Beleg):
+- `addresses.ts` — `CustomerAddress` (bereits Phase 1) bekommt CRUD (`listAddresses`/`createAddress`/`updateAddress`/`deleteAddress`) + `setDefaultAddress`/`defaultAddressFor` je `type` (BILLING | SHIPPING | OTHER): `isDefault: true` verdrängt in einer `$transaction` den bisherigen Default **desselben Typs** desselben Kunden. `deleteAddress` löscht direkt (FKs `SetNull`, kein Snapshot-Effekt, keine „in Verwendung"-Sperre — anders als Mahnstufen gibt es hier keinen laufenden Prozess).
+- `contacts.ts` — `ContactPerson` (bereits Phase 1) analog, Default ist kundenweit statt typgebunden.
+- `custom-fields.ts` — neues Model `CustomFieldDefinition` (org-weite Definition: `key` (`^[a-z][a-z0-9_]{1,39}$`), `label`, `type` (TEXT|NUMBER|DATE|BOOLEAN|SELECT), `optionsJson?`, `required`, `sortOrder`, `isActive`, `@@unique([orgId, key])`) — `listCustomFieldDefinitions`, `upsertCustomFieldDefinition(orgId, rawInput, id?)` (409 bei Key-Konflikt statt Prisma-P2002), `deleteCustomFieldDefinition` (Werte bleiben im `Customer.customFieldsJson`, siehe `docs/LIMITATIONEN.md`), `reorderCustomFields`. Die Werte selbst leben als JSON auf `Customer.customFieldsJson`: `parseCustomerCustomFields` liest tolerant gegen **alle** Definitionen (auch deaktivierte, ein Wert zu einer gelöschten Definition wird still übergangen), `setCustomerCustomFields`/`customFieldValuesSchema(definitions)` validieren beim Schreiben **strikt** (`.strict()`, nur aktive Definitionen, unbekannte Keys → 400).
+- `defaults.ts` — zehn Vorgaben-Felder auf `Customer` (`defaultCurrency`, `defaultDiscountPermille`, `invoiceEmail`/`invoiceCc`/`quoteEmail`, `eInvoicePreferred`, `orderReference`, `deliveryTermsText`/`paymentTermsText`, `language`). `saveCustomerDefaults` ist **Vollersatz** (kein Merge, analog den Settings-Formularen) — ein weggelassenes Feld wird `NULL`. `customerDefaultsFor` liefert zusätzlich die aufgelösten `defaultBillingAddress`/`defaultShippingAddress`/`defaultContact`.
+
+**Konsum bei Beleganlage** — Prioritätskette überall **Eingabe > Kunde > Zahlungsmethode (nur Frist) > DocumentSettings > Systemdefault**, implementiert in `createDraftInvoiceWithinTx` (`src/domain/invoice/create.ts`) und `createBusinessDocumentWithinTx` (`src/domain/document/create.ts`): Währung, Rabatt (nur wenn BEIDE Beleg-Rabattfelder fehlen — `documentDiscountPermille`/`-Cents` sind dafür `.optional()` statt `.default(0)`), Bestellreferenz (`orderReference` → `Invoice.orderNumber`/`Quote.customerReference`, belegt BT-13), Kopf-/Fuß-/Zahlungs-/Lieferbedingungstext (Kunde vor `TextTemplate`), Rechnungs-/Lieferadresse und Ansprechpartner (Kunden-Default je Typ, ein explizites `null` übernimmt keinen Default). `Invoice`/`Quote`/`DeliveryNote` legen dabei `contactSnapshotJson` zusätzlich zu `sellerSnapshotJson`/`buyerSnapshotJson` an. `eInvoicePreferred` kann die Org-Vorbelegung (`DocumentSettings.eInvoiceDefault`) nur einschalten, nie ausschalten. Empfänger-/CC-Priorität beim Mailversand: Kontakt-E-Mail (Snapshot) > `Customer.invoiceEmail`/`quoteEmail` (je Belegtyp) > `Customer.email`; CC: `Customer.invoiceCc` > `MailSettings.defaultCc`.
+
+**Snapshot-Erweiterung** (`src/domain/snapshot.ts`, additiv, bestehende Schlüsselmengen unverändert): `BuyerSnapshot` bekommt optionale Felder `address` (gewählte `CustomerAddress`, strukturiert) und `customFields` (`Record<string, unknown>`); neu `ContactSnapshot`/`contactSnapshotJson` (`{firstName, lastName, role, email, phone}`) auf `Invoice`/`Quote`/`DeliveryNote`. `resolveBuyerSnapshot` (`src/domain/document/snapshot-input.ts`) baut beide Erweiterungen an allen vier Aufrufstellen (Anlage, SENT-Snapshot, Update, Invoice-Update). Abschlags-/Teil-/Schlussrechnungen erben `sellerSnapshotJson`/`buyerSnapshotJson`/`contactSnapshotJson` sowie `contactPersonId`/`billingAddressId`/`shippingAddressId` **1:1 vom Quellbeleg** bei Anlage (`snapshotSource: "INHERITED"`) — eine spätere reguläre Festschreibung dieses Entwurfs baut wie gehabt einen frischen Live-Snapshot. Kundenstamm-Änderungen (Name, Default-Adresse/-Kontakt) wirken nie auf bereits erstellte/festgeschriebene Belege zurück.
+
+**Platzhalter** (`src/lib/template/placeholders.ts`): `contact.firstName/lastName/email/role/phone` (aus dem Beleg-Snapshot) sowie dynamisch `customField.<key>` je `CustomFieldDefinition` (`customFieldPlaceholders(definitions)`), gerendert sowohl in PDF-Kopf-/Fußtexten (`buildDocumentTextContext`) als auch in E-Mail-Vorlagen (`buildTemplateContext`).
+
+**Letztes Dokument übernehmen** (`src/domain/document/take-over.ts`, rein lesend, kein Schreibzugriff): `findLastDocumentForCustomer(orgId, customerId, kind)` (INVOICE | QUOTE | ORDER_CONFIRMATION, ignoriert Entwürfe, sortiert nach `issueDate`/`createdAt` absteigend) + `buildTakeOverPrefill(orgId, docId, {lines, texts, terms, prices})` (Positionen, Kopf-/Fußtext, Zahlungs-/Lieferbedingungen, Beleg-Rabatt; `prices: false` nullt nur bei ITEM-Zeilen; `internalNotes` wird nie gelesen). UI: `TakeOverPrompt` erscheint einmal je Kundenwahl bei Neuanlage, nur wenn `DocumentSettings.offerLastDocument` aktiv ist; „Übernehmen" befüllt den Editor-State clientseitig, „Dokument duplizieren" verlinkt auf die bestehende Duplizierfunktion.
+
+**Routen**: `/api/customers/[id]/addresses(/[addressId](/default))`, `/api/customers/[id]/contacts(/[contactId](/default))`, `/api/customers/[id]/defaults`, `/api/customers/[id]/custom-fields`, `/api/custom-fields(/[id]|/reorder)`, `/api/customers/[id]/last-document`, `/api/documents/[id]/take-over-prefill` — Session+Org-gescoped, dieselbe Fehlerabbildung wie Phase 5–7 (`ZodError`→400, `NotFoundError`→404, `InvalidOperationError`→409).
+
+**MCP**: 11 neue Tools (`list_customer_addresses`, `upsert_customer_address`, `delete_customer_address`, `list_contact_persons`, `upsert_contact_person`, `delete_contact_person`, `update_customer_defaults`, `list_custom_fields`, `upsert_custom_field`, `set_customer_custom_fields`, `take_over_last_document`) — dieselben Zod-Schemas/Domain-Funktionen wie die Routen, keine Bypass-Pfade. Details siehe `docs/MCP.md`.
+
+**Migration**: `20260904091901_phase8a_customer` (SQLite: `prisma/migrations/`, Postgres: `prisma/migrations-postgres/`) — additive Spalten auf `Customer`/`Invoice`/`Quote`/`DeliveryNote`, neues Model `CustomFieldDefinition`, zwei neue `DeliveryNote`-FKs (`shippingAddressId`, `contactPersonId`, beide `onDelete: SetNull`). Tabellenzahl danach 36 (35 Modelle + `_prisma_migrations`); `scripts/test-postgres-migrations.sh` Fall 11 prüft Migration, `CustomFieldDefinition`-Unique, Customer-Spalten-Defaults auf Bestandszeilen und die beiden neuen `SetNull`-FKs gegen einen Wegwerf-Postgres.
+
 ---
 
 ## 2. E-Rechnung: Erzeugung & Validierung
@@ -314,9 +336,10 @@ src/
     numbering.ts
     numbering/             # ranges.ts (Nummernkreise ueber Rechnungen hinaus, Kunden-/Artikelnummern, Phase 7)
     settings/               # print.ts, branding.ts, theme.ts, preview.ts (Phase 7)
-    snapshot.ts           # Käufer-/Verkäufer-Snapshot (Phase 0)
+    snapshot.ts           # Käufer-/Verkäufer-Snapshot (Phase 0), + Kontakt-Snapshot (Phase 8a)
+    customer/               # addresses.ts, contacts.ts, custom-fields.ts, defaults.ts (Phase 8a)
     document/              # convert.ts, create.ts, update.ts, duplicate.ts, status.ts, chain.ts,
-                           # billing-state.ts, pdf-data.ts, snapshot-input.ts
+                           # billing-state.ts, pdf-data.ts, snapshot-input.ts, take-over.ts (Phase 8a)
     delivery-note/          # create.ts, quantities.ts
     text-template/          # pick.ts
     relations.ts            # DocumentRelation (Phase 1), genutzt von convert.ts/chain.ts
@@ -343,6 +366,7 @@ src/
   schemas/
     index.ts               # Zod — DTOs, EN-16931-Mapping, API-Boundaries
     settings.ts             # Zod — DocumentSettings/PrintSettings/BrandingSettings/NumberRange (Phase 7)
+    customer.ts             # Zod — Adressen/Ansprechpartner/Kundenfelder/Vorgaben (Phase 8a)
   mcp/                     # bootstrap.ts, server.ts
   generated/prisma/        # generierter Prisma-Client (nicht im Repo versioniert editieren)
 prisma/
