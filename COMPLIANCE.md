@@ -394,6 +394,17 @@ Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11).
 
 - Reverse Charge beim Empfänger im Bestimmungsland; Rechnung bis 15. Tag des Folgemonats, USt-IdNr. beider Parteien + „Steuerschuldnerschaft des Leistungsempfängers" (§ 14a Abs. 1).
 
+### (3a) Drittland-Leistung (§ 3a Abs. 2 UStG — Nicht-EU)
+
+- **Ort der Leistung** beim Empfänger im Drittland (außerhalb EU) → **nicht im Inland steuerbar** (kein USt-Ausweis, kein Steuersatz).
+- **Keine USt-IdNr.-Pflicht** für den Empfänger (Drittland), keine ZM-Meldung.
+- **EN 16931 Steuerkategorie:** `O` (Out of scope) — nicht `G` (Export/Waren), nicht `AE` (Reverse Charge/EU), nicht `Z` (Nullsatz).
+- **Pflichthinweis:** „Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG" (§ 14 Abs. 4 Nr. 8 — bei Steuerfreiheit/nicht-Steuerbarkeit Hinweis erforderlich).
+- **Abgrenzung zu `G` (Ausfuhrlieferung):** `G` = Warenexport § 4 Nr. 1 i.V.m. § 6 UStG (Gegenstand geht ins Drittland). `O` = sonstige Leistung, bei der der Ort nach § 3a Abs. 2 im Ausland liegt — kein Warenexport.
+- **Währung:** Fremdwährung (z.B. USD) zulässig; GoBD-Belegfunktion (Rz 77) erfordert Währung/Wechselkurs-Angabe.
+- **Quellen:** [§ 3a UStG](https://www.gesetze-im-internet.de/ustg_1980/__3a.html) · [§ 14 Abs. 4 Nr. 8 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html)
+**Stand:** 2026-08-17
+
 ### USt-IdNr.-Prüfung (§ 18e UStG / VIES)
 
 | Anfrage-Art | Prüft | Nachweiswert |

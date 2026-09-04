@@ -51,6 +51,7 @@ export const SCHEME_NOTICE: Record<string, string> = {
   DIFFERENZ: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
   IG_LIEFERUNG: "Steuerfreie innergemeinschaftliche Lieferung",
   IG_LEISTUNG: "Steuerschuldnerschaft des Leistungsempfängers",
+  DRITTLAND_LEISTUNG: "Nicht im Inland steuerbar",
 };
 
 function hasDeliveryInfo(inv: MandatoryInvoice): boolean {

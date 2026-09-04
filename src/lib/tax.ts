@@ -14,7 +14,8 @@ export type TaxCategory =
   | "K" // Innergemeinschaftliche Lieferung (§ 6a)
   | "G" // Export außerhalb EU
   | "E" // Steuerbefreit (z.B. Kleinunternehmer § 19)
-  | "Z"; // Nullsatz
+  | "Z" // Nullsatz
+  | "O"; // Out of scope (nicht im Inland steuerbar, § 3a Abs. 2 UStG)
 
 export interface TaxLineInput {
   lineNetCents: number;
@@ -83,6 +84,7 @@ export const ZERO_TAX_SCHEMES = new Set([
   "REVERSE_CHARGE",
   "IG_LIEFERUNG",
   "IG_LEISTUNG",
+  "DRITTLAND_LEISTUNG",
 ]);
 
 /** Default-Steuerkategorie je Schema (für neue Positionen/Hinweise). */
@@ -96,6 +98,8 @@ export function defaultCategoryForScheme(scheme: string): TaxCategory {
       return "K";
     case "IG_LEISTUNG":
       return "AE";
+    case "DRITTLAND_LEISTUNG":
+      return "O";
     default:
       return "S";
   }
