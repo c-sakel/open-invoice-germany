@@ -28,7 +28,7 @@ import {
   customFieldsReorderSchema,
   customerDefaultsInputSchema,
 } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): void {
   // ── list_customers ───────────────────────────────────────────────────────────
@@ -43,7 +43,14 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
       // Kunden ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
       // andere Kunden-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
-      const org = await ctx.requireOrg();
+      // Fix-Welle Punkt 4: requireOrg jetzt innerhalb try/catch (analog list_documents in
+      // documents.ts) statt ungefangen durchzuwerfen.
+      let org: Awaited<ReturnType<typeof ctx.requireOrg>>;
+      try {
+        org = await ctx.requireOrg();
+      } catch {
+        return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
       const all = await dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())) : all;
       return ctx.ok(
@@ -63,57 +70,60 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       title: "Kunde anlegen/aktualisieren",
       description:
         "Legt einen Kunden an oder aktualisiert ihn (Match per exaktem Namen). Für rechtssichere Rechnungen sind Name + vollständige Anschrift nötig.",
+      // Fix-Welle Punkt 8: Feldliste aus customerSchema komponiert statt handgepflegtem
+      // inline-Zod (analog update_customer/Fix-Runde 1) — sonst driften upsert_customer und
+      // customerSchema/saveCustomer auseinander (z. B. fehlten hier bisher addressLine2,
+      // phone, peppolId, customerNumber). Lookup-Feld "name" bleibt ueber customerSchema
+      // (min(1)) Pflicht. defaultPaymentMethodId entfaellt: der MCP-Aufrufer uebergibt einen
+      // Namen/Code (defaultPaymentMethod), keine interne ID.
       inputSchema: {
-        name: z.string(),
-        addressLine1: z.string(),
-        postalCode: z.string(),
-        city: z.string(),
-        countryCode: z.string().length(2).default("DE"),
-        type: z.enum(["BUSINESS", "CONSUMER"]).default("BUSINESS"),
-        vatId: z.string().optional().describe("USt-IdNr. (Pflicht bei ig. Lieferung/Leistung)"),
-        email: z.string().optional(),
-        contactName: z.string().optional(),
-        leitwegId: z.string().optional().describe("Leitweg-ID für Behörden (B2G)"),
-        // S1 (Fix-Welle Phase 7): weggelassen = kein Kunden-Override, kaskadiert auf
-        // Zahlungsmethode -> DocumentSettings.invoiceDueDays -> 14 (siehe invoice/create.ts) —
-        // dieselbe Semantik wie die UI-/REST-API-Route (keine Bypass-Pfade, Lastenheft §55).
-        defaultPaymentTermsDays: z.number().int().min(0).max(365).optional().describe("Kunden-eigene Zahlungsfrist; weglassen = Zahlungsmethode/Voreinstellung greift"),
+        ...customerSchema.omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
-        notes: z.string().optional(),
       },
     },
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const v = customerSchema.parse({ ...args, email: args.email ?? "" });
-        const defaultPaymentMethod = args.defaultPaymentMethod ? await ctx.resolvePaymentMethod(org.id, args.defaultPaymentMethod) : null;
+        const { defaultPaymentMethod, ...rest } = args;
+        const v = customerSchema.omit({ defaultPaymentMethodId: true }).parse({ ...rest, email: rest.email ?? "" });
+        const method = defaultPaymentMethod ? await ctx.resolvePaymentMethod(org.id, defaultPaymentMethod) : null;
         const data = {
           type: v.type,
           name: v.name,
           contactName: v.contactName ?? null,
           addressLine1: v.addressLine1,
+          addressLine2: v.addressLine2 ?? null,
           postalCode: v.postalCode,
           city: v.city,
           countryCode: v.countryCode,
           email: v.email || null,
+          phone: v.phone ?? null,
           vatId: v.vatId ?? null,
           leitwegId: v.leitwegId ?? null,
+          peppolId: v.peppolId ?? null,
           defaultPaymentTermsDays: v.defaultPaymentTermsDays ?? null,
-          defaultPaymentMethodId: defaultPaymentMethod?.id,
+          defaultPaymentMethodId: method?.id,
           notes: v.notes ?? null,
         };
         const existing = (await dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false } })).find(
           (c) => c.name.toLowerCase() === v.name.toLowerCase(),
         );
         const customer = existing
-          ? await dbInternal.customer.update({ where: { id: existing.id }, data })
+          ? await dbInternal.customer.update({
+              where: { id: existing.id },
+              // customerNumber nur schreiben, wenn angegeben (wie saveCustomer/Server Action):
+              // sonst bliebe eine bereits vergebene Nummer beim Speichern anderer Felder erhalten.
+              data: v.customerNumber ? { ...data, customerNumber: v.customerNumber } : data,
+            })
           : await dbInternal.$transaction(async (tx) => {
-              const customerNumber = await assignCustomerNumber(tx, org.id);
+              const customerNumber = v.customerNumber ?? (await assignCustomerNumber(tx, org.id));
               return tx.customer.create({ data: { ...data, customerNumber, orgId: org.id } });
             });
         return ctx.ok(`Kunde ${existing ? "aktualisiert" : "angelegt"}: ${customer.name} (${customer.id}).`);
       } catch (e) {
-        return ctx.fail(`Konnte Kunde nicht speichern: ${(e as Error).message}`);
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -160,7 +170,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Kunde aktualisiert: ${customer.name} (${customer.id}).`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Konnte Kunde nicht aktualisieren: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -180,7 +191,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         await archiveCustomer(org.id, existing.id);
         return ctx.ok(`Kunde archiviert: ${existing.name}.`);
       } catch (e) {
-        return ctx.fail(`Konnte Kunde nicht archivieren: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -201,7 +213,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(JSON.stringify(overview, null, 2));
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -222,7 +235,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(JSON.stringify(addresses, null, 2));
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -250,7 +264,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -271,7 +286,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Adresse ${id} geloescht.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -295,7 +311,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Default gesetzt: ${JSON.stringify(address)}`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -316,7 +333,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(JSON.stringify(contacts, null, 2));
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -344,7 +362,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -365,7 +384,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Ansprechpartner ${id} geloescht.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -387,7 +407,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Default gesetzt: ${JSON.stringify(contact)}`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -411,7 +432,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -430,7 +452,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         const definitions = await listCustomFieldDefinitions(org.id);
         return ctx.ok(JSON.stringify(definitions, null, 2));
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -456,7 +479,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -478,7 +502,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Kundenfeld ${id} geloescht.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -502,7 +527,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -529,7 +555,8 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

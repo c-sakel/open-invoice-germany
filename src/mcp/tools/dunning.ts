@@ -12,7 +12,7 @@ import { loadDunningOverview } from "@/domain/dunning/overview";
 import { listDunningStages, updateDunningStage, DunningStageError } from "@/domain/dunning/stages";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { dunningStageFieldsSchema } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerDunningTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_dunning ───────────────────────────────────────────────────────────
@@ -35,7 +35,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`${res.stage.name} ${res.dunning.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}.`);
       } catch (e) {
         if (e instanceof DunningError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -61,7 +62,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof MailNotConfiguredError) return ctx.fail(e.message);
         if (e instanceof DunningError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -87,7 +89,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Mahnprozess-Status: ${res.state}${res.pausedUntil ? ` bis ${res.pausedUntil.toISOString().slice(0, 10)}` : ""}.`);
       } catch (e) {
         if (e instanceof DunningError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -125,7 +128,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -144,7 +148,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         const stages = await listDunningStages(org.id);
         return ctx.ok(JSON.stringify(stages, null, 2));
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -182,7 +187,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof DunningStageError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

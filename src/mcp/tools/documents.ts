@@ -29,7 +29,7 @@ import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { NotFoundError } from "@/domain/errors";
 import { createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
-import { docLineSchema, type McpToolsContext, type Result } from "./context";
+import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
 
@@ -76,7 +76,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const doc = await createBusinessDocument(org.id, input);
         return ctx.ok(`${args.kind} angelegt: ${doc.number} für ${customer.name} · Brutto ${formatCents(doc.grossTotalCents)}.`);
       } catch (e) {
-        return ctx.fail(`Konnte Dokument nicht anlegen: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -151,7 +152,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -190,7 +192,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -312,7 +315,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -333,7 +337,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Umgewandelt: ${doc.number} → Rechnungs-Entwurf ${result.id}. Mit finalize_invoice festschreiben.`);
       } catch (e) {
         if (e instanceof ConvertError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -372,7 +377,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Umgewandelt zu ${toKind}: ${result.type} ${result.id}.`);
       } catch (e) {
         if (e instanceof ConvertError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -411,7 +417,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Lieferschein angelegt: ${note.number} für ${customer.name}.`);
       } catch (e) {
         if (e instanceof DeliveryNoteError) return ctx.fail(e.message);
-        return ctx.fail(`Konnte Lieferschein nicht anlegen: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -457,7 +464,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Status gesetzt: ${updated.status}${updated.number ? ` (Nummer ${updated.number})` : ""}.`);
       } catch (e) {
         if (e instanceof StatusTransitionError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -486,7 +494,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const copy = await duplicateDocument(org.id, src, doc.id, "mcp");
         return ctx.ok(`Dupliziert als neuer Entwurf: ${copy.type} ${copy.id}.`);
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -514,7 +523,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof ShareLinkError) return ctx.fail(e.message);
         if (e instanceof SecretsUnavailableError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -536,7 +546,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Link ${linkId} widerrufen.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -570,7 +581,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         });
         return ctx.ok(lines.join("\n"));
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -606,7 +618,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(JSON.stringify({ source: last, prefill }, null, 2));
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

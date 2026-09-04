@@ -16,7 +16,7 @@ import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { createRecurringSchema, updateRecurringSchema } from "@/schemas";
-import { docLineSchema, type McpToolsContext, type Result } from "./context";
+import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerRecurringTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_recurring ─────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         const customer = await ctx.resolveCustomer(org.id, args.customer);
         const lines = await ctx.buildSimpleLines(org.id, args.lines);
         const start = ctx.parseDateInput(args.startDate);
-        if (!start) throw new Error("startDate konnte nicht gelesen werden (YYYY-MM-DD oder 'heute').");
+        if (!start) throw new ToolError("startDate konnte nicht gelesen werden (YYYY-MM-DD oder 'heute').");
         const input = createRecurringSchema.parse({
           customerId: customer.id,
           title: args.title,
@@ -72,7 +72,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         );
       } catch (e) {
         if (e instanceof RecurringError) return ctx.fail(e.message);
-        return ctx.fail(`Konnte Abo nicht anlegen: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -134,13 +135,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       try {
         const org = await ctx.requireOrg();
         if (recurring) {
-          const all = await dbInternal.recurringInvoice.findMany({ where: { orgId: org.id } });
-          const lower = recurring.trim().toLowerCase();
-          const match =
-            all.find((r) => r.id === recurring) ??
-            all.find((r) => r.title.toLowerCase() === lower) ??
-            all.filter((r) => r.title.toLowerCase().includes(lower))[0];
-          if (!match) return ctx.fail(`Kein Abo "${recurring}" gefunden.`);
+          const match = await ctx.resolveRecurring(org.id, recurring);
           const res = await emitRecurringNow(match.id);
           return ctx.ok(
             `Rechnung erzeugt für Abo "${match.title}": ${res.number ?? "Entwurf " + res.invoiceId.slice(0, 8)}` +
@@ -156,7 +151,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         return ctx.ok(`${total} Rechnung(en) aus ${summaries.length} Abo(s) erzeugt:\n${lines.join("\n")}`);
       } catch (e) {
         if (e instanceof RecurringError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -180,7 +176,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
         if (e instanceof RecurringError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -203,13 +200,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     async ({ recurring, state }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const all = await dbInternal.recurringInvoice.findMany({ where: { orgId: org.id } });
-        const lower = recurring.trim().toLowerCase();
-        const match =
-          all.find((r) => r.id === recurring) ??
-          all.find((r) => r.title.toLowerCase() === lower) ??
-          all.filter((r) => r.title.toLowerCase().includes(lower))[0];
-        if (!match) return ctx.fail(`Kein Abo "${recurring}" gefunden.`);
+        const match = await ctx.resolveRecurring(org.id, recurring);
         const updated = await updateRecurringInvoice(org.id, match.id, { status: state }, "mcp");
         return ctx.ok(`Abo-Status gesetzt: "${updated.title}" ist jetzt ${updated.status}.`);
       } catch (e) {
@@ -217,7 +208,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
         if (e instanceof RecurringError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

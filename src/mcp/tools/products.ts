@@ -11,8 +11,8 @@ import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { assignArticleNumber } from "@/domain/numbering/ranges";
 import { archiveProduct } from "@/domain/product/archive";
-import { productSchema } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { productSchema, TaxRate } from "@/schemas";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 async function resolveProduct(orgId: string, ref: string) {
   const byId = await dbInternal.product.findFirst({ where: { id: ref, orgId } });
@@ -24,8 +24,8 @@ async function resolveProduct(orgId: string, ref: string) {
   const contains = all.filter((p) => p.name.toLowerCase().includes(lower));
   if (contains.length === 1) return contains[0];
   if (contains.length > 1)
-    throw new Error(`Mehrere Produkte passen zu "${ref}": ${contains.map((p) => p.name).join(", ")}. Bitte präzisieren.`);
-  throw new Error(`Kein Produkt "${ref}" gefunden.`);
+    throw new ToolError(`Mehrere Produkte passen zu "${ref}": ${contains.map((p) => p.name).join(", ")}. Bitte präzisieren.`);
+  throw new ToolError(`Kein Produkt "${ref}" gefunden.`);
 }
 
 export function registerProductTools(server: McpServer, ctx: McpToolsContext): void {
@@ -41,7 +41,14 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
       // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
       // Produkte ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
       // andere Produkt-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
-      const org = await ctx.requireOrg();
+      // Fix-Welle Punkt 4: requireOrg jetzt innerhalb try/catch (analog list_documents in
+      // documents.ts) statt ungefangen durchzuwerfen.
+      let org: Awaited<ReturnType<typeof ctx.requireOrg>>;
+      try {
+        org = await ctx.requireOrg();
+      } catch {
+        return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
       const all = await dbInternal.product.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((p) => p.name.toLowerCase().includes(query.toLowerCase())) : all;
       return ctx.ok(
@@ -60,40 +67,38 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
     {
       title: "Produkt/Leistung speichern",
       description: "Speichert eine wiederkehrende Leistung/ein Produkt im Katalog (Match per exaktem Namen).",
+      // Fix-Welle Punkt 8: Feldliste aus productSchema komponiert statt handgepflegtem
+      // inline-Zod (analog update_product) — sonst driften upsert_product und productSchema
+      // auseinander. netPriceCents/taxRate/taxCategory bleiben ausgenommen: der MCP-
+      // Aufrufer uebergibt netPriceEuro (Euro statt Cent) und taxRatePercent (leitet
+      // taxCategory ab). Lookup-Feld "name" bleibt ueber productSchema (min(1)) Pflicht.
       inputSchema: {
-        name: z.string(),
+        ...productSchema.omit({ netPriceCents: true, taxRate: true, taxCategory: true }).shape,
         netPriceEuro: z.number().describe("Nettopreis in Euro, z. B. 95 oder 95.50"),
-        unit: z.string().default("C62").describe("Einheit (UN/ECE): C62=Stück, HUR=Stunde, DAY=Tag, KGM=kg, MTR=m"),
-        taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).default(19),
-        description: z.string().optional(),
-        articleNumber: z.string().max(60).optional().describe("Artikelnummer, wird als Snapshot in Positionen uebernommen"),
-        differential: z.boolean().default(false).describe("Differenzbesteuerung nach § 25a UStG"),
+        taxRatePercent: TaxRate.default(19),
       },
     },
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
+        const { netPriceEuro, taxRatePercent, ...rest } = args;
         // Paritaet mit saveProduct/createProductInline (Server Actions): dieselbe Zod
         // (productSchema) statt eines eigenen Objekts — sonst Drift (§25a "differential"
-        // fehlte vorher am MCP-Pfad).
-        const v = productSchema.parse({
-          name: args.name,
-          description: args.description,
-          articleNumber: args.articleNumber,
-          unit: args.unit,
-          netPriceCents: ctx.euroToCents(args.netPriceEuro),
-          taxRate: args.taxRatePercent,
-          taxCategory: args.taxRatePercent === 0 ? "Z" : "S",
-          differential: args.differential,
-        });
+        // fehlte vorher am MCP-Pfad). taxRatePercent separat gegen dieselbe TaxRate-Union
+        // geprueft, mit der auch productSchema.taxRate validiert (die Tools rufen den
+        // Handler in Tests direkt auf, ohne die SDK-Dispatch-Validierung des inputSchema —
+        // die Laufzeitpruefung muss also im Handler selbst stattfinden, nicht nur in der
+        // inputSchema-Deklaration).
+        const v = productSchema.omit({ netPriceCents: true, taxRate: true, taxCategory: true }).parse(rest);
+        const taxRate = TaxRate.default(19).parse(taxRatePercent);
         const data = {
           name: v.name,
           description: v.description ?? null,
           articleNumber: v.articleNumber ?? null,
           unit: v.unit,
-          netPriceCents: v.netPriceCents,
-          taxRate: v.taxRate,
-          taxCategory: v.taxCategory,
+          netPriceCents: ctx.euroToCents(netPriceEuro),
+          taxRate,
+          taxCategory: taxRate === 0 ? "Z" : "S",
           differential: v.differential,
         };
         const existing = (await dbInternal.product.findMany({ where: { orgId: org.id, isArchived: false } })).find(
@@ -107,7 +112,8 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
             });
         return ctx.ok(`Produkt ${existing ? "aktualisiert" : "gespeichert"}: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
-        return ctx.fail(`Konnte Produkt nicht speichern: ${(e as Error).message}`);
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -155,7 +161,8 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Produkt aktualisiert: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Konnte Produkt nicht aktualisieren: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -175,7 +182,8 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         await archiveProduct(org.id, existing.id);
         return ctx.ok(`Produkt archiviert: ${existing.name}.`);
       } catch (e) {
-        return ctx.fail(`Konnte Produkt nicht archivieren: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
