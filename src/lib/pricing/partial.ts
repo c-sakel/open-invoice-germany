@@ -25,10 +25,15 @@
  *      Largest-Remainder-proportional zum BRUTTO-Gewicht der Buckets verteilt
  *      (Gewicht = netCents * (100 + taxRate), ganzzahlig — vermeidet Floats und ist
  *      proportional zum tatsächlichen Bruttoanteil des Buckets an der Gesamtleistung).
- *      Je Bucket wird danach zurückgerechnet:
- *        netCents_i = round(grossCents_i * 100 / (100 + taxRate_i))
- *        taxCents_i = grossCents_i - netCents_i   (kein zweiter Rundungsschritt —
- *                     die Bruttosumme bleibt dadurch exakt `amountCents`).
+ *      Je Bucket wird danach ein Netto zurueckgerechnet und ueber `reconcileNetsForGross`
+ *      (Fix-Welle, B5) so nachjustiert, dass `net_i + roundHalfUp(net_i*taxRate_i/100)`
+ *      — DIESELBE Formel, die `computeTaxBreakdown` beim Persistieren erneut anwendet,
+ *      nicht `grossCents_i - netCents_i` — in Summe exakt `amountCents` trifft.
+ *      **Keine Exaktheitsgarantie bei genau einem Steuersatz-Bucket:** ohne einen
+ *      zweiten Bucket zum Ausgleich ist ein Teil der Zielbetraege rechnerisch gar nicht
+ *      erreichbar (bei 19 % z. B. 31.933 von 200.000 moeglichen Cent-Betraegen) — in
+ *      diesem Fall bleibt die kleinstmoegliche Abweichung (i. d. R. ±1 Cent) bestehen,
+ *      dokumentiert in `docs/LIMITATIONEN.md` statt stillschweigend als exakt behauptet.
  *
  *      Rechenbeispiel (gemischte Sätze 19 % / 7 %, Bruttobetrag 1.000,00 €;
  *      Gesamtleistung netto 500,00 €/19 % und 500,00 €/7 %):
@@ -119,12 +124,68 @@ function splitByGrossAmount(buckets: readonly RateBucket[], amountCents: number)
   // das Verhältnis der Gewichte zueinander bleibt identisch zu netCents * (1 + taxRate/100).
   const weights = buckets.map((b) => b.netCents * (100 + b.taxRate));
   const grosses = allocateProportional(amountCents, weights);
+  const naiveNets = grosses.map((g, i) => roundHalfUp((g * 100) / (100 + buckets[i].taxRate)));
+
+  // B5 (Fix-Welle): `naiveNets` allein garantiert NICHT, dass die tatsaechlich
+  // persistierte Bruttosumme exakt `amountCents` trifft — der Downstream-Persistenzpfad
+  // (createDraftInvoiceWithinTx -> computeTaxBreakdown) berechnet die Steuer je Bucket
+  // NEU als roundHalfUp(net*rate/100) statt `grossCents - netCents` zu uebernehmen; das
+  // kann bei zwei unabhaengigen Rundungen ±1 Cent von der Zielsumme abweichen (siehe
+  // Rechenbeispiel im Dateikopf). `reconcileNetsForGross` verschiebt bei Bedarf EIN
+  // Bucket-Netto um ±1 Cent, um die Summe wieder exakt zu treffen — bei nur einem
+  // Steuersatz-Bucket ist das rechnerisch nicht immer moeglich (kein zweiter Bucket zum
+  // Ausgleich), die kleinstmoegliche Abweichung bleibt dann bestehen
+  // (docs/LIMITATIONEN.md).
+  const nets = reconcileNetsForGross(
+    buckets.map((b, i) => ({ netCents: naiveNets[i], taxRate: b.taxRate })),
+    amountCents,
+  );
+
   return buckets.map((b, i) => {
-    const grossCents = grosses[i];
-    const netCents = roundHalfUp((grossCents * 100) / (100 + b.taxRate));
-    const taxCents = grossCents - netCents;
-    return { key: b.key, taxRate: b.taxRate, taxCategory: b.taxCategory, netCents, taxCents, grossCents };
+    const netCents = nets[i];
+    const taxCents = roundHalfUp((netCents * b.taxRate) / 100);
+    return { key: b.key, taxRate: b.taxRate, taxCategory: b.taxCategory, netCents, taxCents, grossCents: netCents + taxCents };
   });
+}
+
+/**
+ * B5/B6 (Fix-Welle): passt Bucket-Nettobetraege so an, dass ihre je Bucket NEU
+ * berechnete Steuer (`net + roundHalfUp(net*rate/100)` — dieselbe Formel, die
+ * `computeTaxBreakdown` beim Persistieren anwendet) in Summe exakt `targetGrossCents`
+ * ergibt, statt sich auf eine bereits vorab (unabhaengig) berechnete Steuer je Bucket zu
+ * verlassen. Versucht dazu, EIN Bucket-Netto um ±1 Cent zu verschieben. Gemeinsamer
+ * Helper fuer `splitByGrossAmount` (Zielbetrag = angeforderter Bruttobetrag) und
+ * `finalStornoLines` (`src/domain/invoice/cancel.ts`, Zielbetrag = `-payableCents`).
+ *
+ * Bei nur einem Steuersatz-Bucket ist eine Verschiebung oft wirkungslos (kein zweiter
+ * Bucket zum Ausgleich) — `splitByGrossAmount` hat z. B. bei 19 % 31.933 von 200.000
+ * Zielbetraegen, die grundsaetzlich unerreichbar sind (die Zielfunktion
+ * `f(net) = net + round(net*0.19)` ueberspringt sie). In diesem Fall bleibt die
+ * kleinstmoegliche Abweichung (meist ±1 Cent) bestehen — akzeptiert und in
+ * `docs/LIMITATIONEN.md` dokumentiert, statt eine (falsche) Exaktheit zu behaupten.
+ */
+export function reconcileNetsForGross(buckets: readonly { netCents: number; taxRate: number }[], targetGrossCents: number): number[] {
+  const grossFor = (netCents: number, taxRate: number) => netCents + roundHalfUp((netCents * taxRate) / 100);
+  const nets = buckets.map((b) => b.netCents);
+  const actual = nets.map((n, i) => grossFor(n, buckets[i].taxRate));
+  let diff = targetGrossCents - actual.reduce((s, v) => s + v, 0);
+
+  if (diff !== 0) {
+    outer: for (const delta of [1, -1]) {
+      for (let i = 0; i < buckets.length; i++) {
+        const candidateNet = nets[i] + delta;
+        if (candidateNet < 0) continue;
+        const candidateGross = grossFor(candidateNet, buckets[i].taxRate);
+        if (diff - (candidateGross - actual[i]) === 0) {
+          nets[i] = candidateNet;
+          diff = 0;
+          break outer;
+        }
+      }
+    }
+  }
+
+  return nets;
 }
 
 /**
