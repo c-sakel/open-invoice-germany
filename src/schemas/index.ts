@@ -650,6 +650,15 @@ export const dunningStateInputSchema = z
     }
   });
 export type DunningStateInput = z.infer<typeof dunningStateInputSchema>;
+
+// Task 4: Filter fuer GET /api/dunning/overview (Query-String, daher alle Felder als
+// String/optional — coerce fuer stageOrder).
+export const dunningOverviewFilterSchema = z.object({
+  customerId: z.string().min(1).optional(),
+  state: DunningState.optional(),
+  stageOrder: z.coerce.number().int().min(0).optional(),
+});
+export type DunningOverviewFilterInput = z.infer<typeof dunningOverviewFilterSchema>;
 export const textTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, position: TextTemplatePosition, body: z.string(), isDefault: z.boolean().default(false) });
 export const emailTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, subject: z.string().min(1), body: z.string(), signature: z.string().optional(), isDefault: z.boolean().default(false) });
 
