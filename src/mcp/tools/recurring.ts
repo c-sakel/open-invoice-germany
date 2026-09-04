@@ -1,5 +1,11 @@
 // ── Abos / wiederkehrende Rechnungen ───────────────────────────────────────────
-// Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
+// Task 1 (Phase 9): reiner Move aus server.ts + neuer Tool set_recurring_state.
+// Facts Task 1: update_recurring/set_recurring_state existieren im Kern bereits als
+// update_recurring_invoice (updateRecurringSchema traegt schon "status") — status ist
+// also NICHT dupliziert, sondern set_recurring_state ist nur ein duenner Wrapper
+// (dieselbe Domain-Funktion updateRecurringInvoice) fuer eine bequemere, dedizierte
+// Pause/Fortsetzen/Beenden-Aktion (analog set_dunning_state). Kein zweites "update_recurring"
+// Tool — waere reine Dopplung von update_recurring_invoice (CLAUDE.md "Nichts doppelt bauen").
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -162,6 +168,43 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         const { recurring, ...patch } = args;
         const updated = await updateRecurringInvoice(org.id, recurring, patch, "mcp");
         return ctx.ok(`Abo aktualisiert: ${updated.title} (${updated.status}).`);
+      } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
+        if (e instanceof InvalidOperationError) return ctx.fail(e.message);
+        if (e instanceof RecurringError) return ctx.fail(e.message);
+        return ctx.fail(`Fehler: ${(e as Error).message}`);
+      }
+    },
+  );
+
+  // ── set_recurring_state ──────────────────────────────────────────────────────
+  // Facts Task 1: duenner Wrapper um updateRecurringInvoice (status ist bereits Teil von
+  // updateRecurringSchema/update_recurring_invoice) — bequemere, dedizierte Aktion analog
+  // set_dunning_state, KEINE zweite Statuslogik.
+  server.registerTool(
+    "set_recurring_state",
+    {
+      title: "Abo-Status setzen (pausieren/fortsetzen/beenden)",
+      description:
+        "Setzt den Status eines Abos auf ACTIVE (laeuft normal weiter), PAUSED (keine Rechnungen bis zum erneuten Aktivieren) oder ENDED (dauerhaft beendet). Duenner Wrapper um update_recurring_invoice — identische Domain-Funktion, kein Bypass.",
+      inputSchema: {
+        recurring: z.string().describe("Abo-ID oder -Titel"),
+        state: z.enum(["ACTIVE", "PAUSED", "ENDED"]),
+      },
+    },
+    async ({ recurring, state }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const all = await dbInternal.recurringInvoice.findMany({ where: { orgId: org.id } });
+        const lower = recurring.trim().toLowerCase();
+        const match =
+          all.find((r) => r.id === recurring) ??
+          all.find((r) => r.title.toLowerCase() === lower) ??
+          all.filter((r) => r.title.toLowerCase().includes(lower))[0];
+        if (!match) return ctx.fail(`Kein Abo "${recurring}" gefunden.`);
+        const updated = await updateRecurringInvoice(org.id, match.id, { status: state }, "mcp");
+        return ctx.ok(`Abo-Status gesetzt: "${updated.title}" ist jetzt ${updated.status}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);

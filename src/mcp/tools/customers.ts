@@ -1,5 +1,6 @@
 // ── Kunden (Stammdaten, Adressen, Ansprechpartner, Vorgaben, Custom Fields) ──
-// Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
+// Task 1 (Phase 9): reiner Move aus server.ts + neue Tools update_customer/
+// archive_customer (Domain: archiveCustomer aus src/domain/customer/archive.ts).
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -17,6 +18,7 @@ import {
   setCustomerCustomFields,
   parseCustomerCustomFields,
 } from "@/domain/customer/custom-fields";
+import { archiveCustomer } from "@/domain/customer/archive";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
   customerSchema,
@@ -108,6 +110,79 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Kunde ${existing ? "aktualisiert" : "angelegt"}: ${customer.name} (${customer.id}).`);
       } catch (e) {
         return ctx.fail(`Konnte Kunde nicht speichern: ${(e as Error).message}`);
+      }
+    },
+  );
+
+  // ── update_customer ──────────────────────────────────────────────────────────
+  server.registerTool(
+    "update_customer",
+    {
+      title: "Kunde bearbeiten (per ID/Name)",
+      description:
+        "Aktualisiert einen bestehenden Kunden gezielt per ID oder Name (anders als upsert_customer KEIN Anlegen). Nicht angegebene Felder bleiben unveraendert.",
+      inputSchema: {
+        customer: z.string().describe("Kunden-ID oder -Name"),
+        name: z.string().optional(),
+        addressLine1: z.string().optional(),
+        postalCode: z.string().optional(),
+        city: z.string().optional(),
+        countryCode: z.string().length(2).optional(),
+        type: z.enum(["BUSINESS", "CONSUMER"]).optional(),
+        vatId: z.string().optional(),
+        email: z.string().optional(),
+        contactName: z.string().optional(),
+        leitwegId: z.string().optional(),
+        defaultPaymentTermsDays: z.number().int().min(0).max(365).optional(),
+        defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
+        notes: z.string().optional(),
+      },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const existing = await ctx.resolveCustomer(org.id, args.customer);
+        const patch: Record<string, unknown> = {};
+        if (args.name !== undefined) patch.name = args.name;
+        if (args.addressLine1 !== undefined) patch.addressLine1 = args.addressLine1;
+        if (args.postalCode !== undefined) patch.postalCode = args.postalCode;
+        if (args.city !== undefined) patch.city = args.city;
+        if (args.countryCode !== undefined) patch.countryCode = args.countryCode;
+        if (args.type !== undefined) patch.type = args.type;
+        if (args.vatId !== undefined) patch.vatId = args.vatId;
+        if (args.email !== undefined) patch.email = args.email || null;
+        if (args.contactName !== undefined) patch.contactName = args.contactName;
+        if (args.leitwegId !== undefined) patch.leitwegId = args.leitwegId;
+        if (args.defaultPaymentTermsDays !== undefined) patch.defaultPaymentTermsDays = args.defaultPaymentTermsDays;
+        if (args.notes !== undefined) patch.notes = args.notes;
+        if (args.defaultPaymentMethod !== undefined) {
+          const method = await ctx.resolvePaymentMethod(org.id, args.defaultPaymentMethod);
+          patch.defaultPaymentMethodId = method.id;
+        }
+        const customer = await dbInternal.customer.update({ where: { id: existing.id }, data: patch });
+        return ctx.ok(`Kunde aktualisiert: ${customer.name} (${customer.id}).`);
+      } catch (e) {
+        return ctx.fail(`Konnte Kunde nicht aktualisieren: ${(e as Error).message}`);
+      }
+    },
+  );
+
+  // ── archive_customer ─────────────────────────────────────────────────────────
+  server.registerTool(
+    "archive_customer",
+    {
+      title: "Kunde archivieren",
+      description: "Archiviert einen Kunden (verschwindet aus list_customers/dem Kunden-Picker, bleibt aber in bestehenden Belegen als Snapshot erhalten).",
+      inputSchema: { customer: z.string().describe("Kunden-ID oder -Name") },
+    },
+    async ({ customer }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const existing = await ctx.resolveCustomer(org.id, customer);
+        await archiveCustomer(org.id, existing.id);
+        return ctx.ok(`Kunde archiviert: ${existing.name}.`);
+      } catch (e) {
+        return ctx.fail(`Konnte Kunde nicht archivieren: ${(e as Error).message}`);
       }
     },
   );

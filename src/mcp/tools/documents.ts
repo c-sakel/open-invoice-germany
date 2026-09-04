@@ -1,5 +1,8 @@
 // ── Angebote / Auftragsbestaetigungen / Proforma / Lieferscheine / Annahme-Links ─
-// Task 1 (Phase 9): reiner Move aus server.ts — Verhalten unveraendert.
+// Task 1 (Phase 9): reiner Move aus server.ts + neue Tools get_quote, get_delivery_note,
+// get_document_file (Base64-Export ueber alle vier Belegarten hinweg, ohne Datei-I/O —
+// Facts Task 1: kind INVOICE|QUOTE|DELIVERY_NOTE|DUNNING, format pdf|xrechnung|zugferd
+// (xrechnung/zugferd nur INVOICE), Antwort <= 10 MB sonst fail).
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -14,9 +17,21 @@ import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
+import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
+import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
+import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
+import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
+import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
+import { loadEInvoiceData } from "@/lib/einvoice/load";
+import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
+import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { loadPdfTheme } from "@/domain/settings/theme";
 import { NotFoundError } from "@/domain/errors";
 import { createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, type McpToolsContext, type Result } from "./context";
+
+const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
 
 export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_document ─────────────────────────────────────────────────────────
@@ -90,6 +105,208 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           2,
         ),
       );
+    },
+  );
+
+  // ── get_quote ────────────────────────────────────────────────────────────────
+  server.registerTool(
+    "get_quote",
+    {
+      title: "Angebot/AB/Proforma anzeigen",
+      description: "Zeigt Details eines Angebots/einer Auftragsbestaetigung/Proforma (Status, Nummer, Positionen, Summen).",
+      inputSchema: { document: z.string().describe("Dokument-Nummer oder -ID") },
+    },
+    async ({ document }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const ref = await ctx.resolveDocument(org.id, document);
+        const q = await dbInternal.quote.findUnique({
+          where: { id: ref.id },
+          include: { lines: { orderBy: { position: "asc" } }, customer: true },
+        });
+        if (!q) return ctx.fail("Nicht gefunden.");
+        return ctx.ok(
+          JSON.stringify(
+            {
+              id: q.id,
+              number: q.number,
+              kind: q.kind,
+              status: q.status,
+              customer: q.customer.name,
+              validUntil: q.validUntil ? q.validUntil.toISOString().slice(0, 10) : null,
+              net: formatCents(q.netTotalCents),
+              tax: formatCents(q.taxTotalCents),
+              gross: formatCents(q.grossTotalCents),
+              lines: q.lines.map((l) => ({ description: l.description, qty: l.quantityMilli / 1000, unit: l.unit, net: formatCents(l.lineNetCents) })),
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (e) {
+        return ctx.fail(`Fehler: ${(e as Error).message}`);
+      }
+    },
+  );
+
+  // ── get_delivery_note ────────────────────────────────────────────────────────
+  server.registerTool(
+    "get_delivery_note",
+    {
+      title: "Lieferschein anzeigen",
+      description: "Zeigt Details eines Lieferscheins (Status, Nummer, Positionen, Quelle).",
+      inputSchema: { document: z.string().describe("Lieferschein-Nummer oder -ID") },
+    },
+    async ({ document }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const ref = await ctx.resolveDeliveryNote(org.id, document);
+        const dn = await dbInternal.deliveryNote.findUnique({
+          where: { id: ref.id },
+          include: { lines: { orderBy: { position: "asc" } }, customer: true },
+        });
+        if (!dn) return ctx.fail("Nicht gefunden.");
+        return ctx.ok(
+          JSON.stringify(
+            {
+              id: dn.id,
+              number: dn.number,
+              status: dn.status,
+              customer: dn.customer.name,
+              deliveryDate: dn.deliveryDate ? dn.deliveryDate.toISOString().slice(0, 10) : null,
+              sourceType: dn.sourceType,
+              sourceId: dn.sourceId,
+              lines: dn.lines.map((l) => ({ description: l.description, qty: l.quantityMilli / 1000, unit: l.unit })),
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (e) {
+        return ctx.fail(`Fehler: ${(e as Error).message}`);
+      }
+    },
+  );
+
+  // ── get_document_file ────────────────────────────────────────────────────────
+  // Task 1 (Facts): Base64-Export ueber alle vier Belegarten, ohne Datei-I/O — Gegenstueck
+  // zu export_invoice (das nur Rechnungen kennt und auf die Platte schreibt). xrechnung/
+  // zugferd nur fuer INVOICE (§52, E-Rechnung ist nur fuer Rechnungen definiert).
+  server.registerTool(
+    "get_document_file",
+    {
+      title: "Beleg als Datei abrufen (Base64)",
+      description:
+        "Liefert einen Beleg (Rechnung/Angebot-AB-Proforma/Lieferschein/Mahnung) als Base64-kodierte Datei — PDF fuer alle vier Belegarten, XRechnung/ZUGFeRD nur fuer festgeschriebene Rechnungen (kind=INVOICE). Antworten ueber 10 MB werden abgelehnt.",
+      inputSchema: {
+        kind: z.enum(["INVOICE", "QUOTE", "DELIVERY_NOTE", "DUNNING"]),
+        document: z.string().describe("Beleg-Nummer oder -ID"),
+        format: z.enum(["pdf", "xrechnung", "zugferd"]).default("pdf"),
+      },
+    },
+    async ({ kind, document, format }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+
+        if (format !== "pdf" && kind !== "INVOICE") {
+          return ctx.fail(`${format} ist nur fuer kind=INVOICE verfuegbar.`);
+        }
+
+        let buffer: Buffer;
+        let mimeType: string;
+        let filenameBase: string;
+
+        if (kind === "INVOICE") {
+          const ref = await ctx.resolveInvoice(org.id, document);
+          const loaded = await loadEInvoiceData(ref.id);
+          if (!loaded) return ctx.fail("Nicht gefunden.");
+          const { invoice: inv, data } = loaded;
+          filenameBase = (inv.number ?? `entwurf-${inv.id.slice(0, 8)}`).replace(/[^A-Za-z0-9._-]/g, "_");
+          const theme = await loadPdfTheme(org.id, inv.printOptionsJson);
+          if (format === "pdf") {
+            buffer = await renderInvoicePdf(data, theme);
+            mimeType = "application/pdf";
+          } else if (format === "xrechnung") {
+            if (inv.status === "DRAFT") return ctx.fail("XRechnung nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
+            buffer = Buffer.from(buildXRechnungUBL(data), "utf8");
+            mimeType = "application/xml";
+          } else {
+            if (inv.status === "DRAFT") return ctx.fail("ZUGFeRD nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
+            buffer = await renderZugferdPdf(data, theme);
+            mimeType = "application/pdf";
+          }
+        } else if (kind === "QUOTE") {
+          const ref = await ctx.resolveDocument(org.id, document);
+          const q = await dbInternal.quote.findFirst({
+            where: { id: ref.id, orgId: org.id },
+            include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
+          });
+          if (!q) return ctx.fail("Nicht gefunden.");
+          filenameBase = (q.number ?? "dokument").replace(/[^A-Za-z0-9._-]/g, "_");
+          const theme = await loadPdfTheme(org.id, q.printOptionsJson);
+          buffer = await renderInvoicePdf(buildDocEInvoiceData(q), theme);
+          mimeType = "application/pdf";
+        } else if (kind === "DELIVERY_NOTE") {
+          const ref = await ctx.resolveDeliveryNote(org.id, document);
+          const dn = await dbInternal.deliveryNote.findFirst({
+            where: { id: ref.id, orgId: org.id },
+            include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
+          });
+          if (!dn) return ctx.fail("Nicht gefunden.");
+          let sourceNumber: string | null = null;
+          if (dn.sourceType === "QUOTE" && dn.sourceId) {
+            const q = await dbInternal.quote.findFirst({ where: { id: dn.sourceId, orgId: org.id }, select: { number: true } });
+            sourceNumber = q?.number ?? null;
+          } else if (dn.sourceType === "INVOICE" && dn.sourceId) {
+            const src = await dbInternal.invoice.findFirst({ where: { id: dn.sourceId, orgId: org.id }, select: { number: true } });
+            sourceNumber = src?.number ?? null;
+          }
+          const shippingAddress = dn.showDeliveryAddress
+            ? await dbInternal.customerAddress.findFirst({
+                where: { orgId: org.id, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
+                select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
+              })
+            : null;
+          filenameBase = (dn.number ?? "lieferschein").replace(/[^A-Za-z0-9._-]/g, "_");
+          const theme = await loadPdfTheme(org.id, dn.printOptionsJson);
+          buffer = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
+          mimeType = "application/pdf";
+        } else {
+          const d = await dbInternal.dunning.findFirst({
+            where: { id: document, invoice: { orgId: org.id } },
+            include: { invoice: { include: { org: true, customer: true } }, stage: true },
+          });
+          const byNumber = d ?? (await dbInternal.dunning.findFirst({
+            where: { number: document, invoice: { orgId: org.id } },
+            include: { invoice: { include: { org: true, customer: true } }, stage: true },
+          }));
+          if (!byNumber) return ctx.fail(`Keine Mahnung "${document}" gefunden.`);
+          filenameBase = (byNumber.number ?? "mahnung").replace(/[^A-Za-z0-9._-]/g, "_");
+          const theme = await loadPdfTheme(org.id);
+          buffer = await renderDunningPdf(buildDunningPdfData(byNumber, byNumber.invoice), theme);
+          mimeType = "application/pdf";
+        }
+
+        const base64 = buffer.toString("base64");
+        if (Buffer.byteLength(base64, "utf8") > MAX_FILE_BASE64_BYTES) {
+          return ctx.fail(`Datei zu gross fuer eine MCP-Antwort (> 10 MB). Fuer Rechnungen alternativ export_invoice (schreibt auf die Platte).`);
+        }
+        const ext = format === "xrechnung" ? "xml" : "pdf";
+        return ctx.ok(
+          JSON.stringify(
+            {
+              filename: `${filenameBase}.${ext}`,
+              mimeType,
+              encoding: "base64",
+              data: base64,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (e) {
+        return ctx.fail(`Fehler: ${(e as Error).message}`);
+      }
     },
   );
 

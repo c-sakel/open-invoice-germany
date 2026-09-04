@@ -13,7 +13,9 @@
  * Bereichs-Module unter src/mcp/tools/*.ts (register<Bereich>Tools(server, ctx)) —
  * reiner Move, Verhalten identisch. `server` bleibt hier exportiert (bestehende
  * Integrationstests greifen ueber server["_registeredTools"][name].handler zu),
- * ebenso `buildSimpleLines` (jetzt aus ./tools/context re-exportiert).
+ * ebenso `buildSimpleLines` (jetzt aus ./tools/context re-exportiert). `mcpContext`
+ * ist zusaetzlich exportiert, damit Tests send_email einen Test-MailProvider injizieren
+ * koennen (mcpContext.mailProvider = fakeProvider), ohne echtes SMTP/Mailcow zu brauchen.
  */
 import "./bootstrap";
 import path from "node:path";
@@ -28,6 +30,7 @@ import { registerInvoiceTools } from "./tools/invoices";
 import { registerDocumentTools } from "./tools/documents";
 import { registerPaymentTools } from "./tools/payments";
 import { registerDunningTools } from "./tools/dunning";
+import { registerEmailTools } from "./tools/email";
 import { registerAttachmentTools } from "./tools/attachments";
 import { registerSettingsTools } from "./tools/settings";
 import { registerRecurringTools } from "./tools/recurring";
@@ -41,19 +44,23 @@ export const server = new McpServer({ name: "open-invoice-germany", version: "0.
 // buildSimpleLines direkt aus "@/mcp/server").
 export { buildSimpleLines };
 
-const ctx = createDefaultContext();
+// Exportiert fuer Tests: send_email liest ctx.mailProvider bei JEDEM Aufruf frisch (kein
+// destructuring beim Registrieren) — ein Test kann also vor dem Aufruf
+// mcpContext.mailProvider setzen, ohne den Server neu aufzubauen.
+export const mcpContext = createDefaultContext();
 
-registerSystemTools(server, ctx);
-registerCustomerTools(server, ctx);
-registerProductTools(server, ctx);
-registerInvoiceTools(server, ctx);
-registerDocumentTools(server, ctx);
-registerPaymentTools(server, ctx);
-registerDunningTools(server, ctx);
-registerAttachmentTools(server, ctx);
-registerSettingsTools(server, ctx);
-registerRecurringTools(server, ctx);
-registerSchedulerTools(server, ctx);
+registerSystemTools(server, mcpContext);
+registerCustomerTools(server, mcpContext);
+registerProductTools(server, mcpContext);
+registerInvoiceTools(server, mcpContext);
+registerDocumentTools(server, mcpContext);
+registerPaymentTools(server, mcpContext);
+registerDunningTools(server, mcpContext);
+registerEmailTools(server, mcpContext);
+registerAttachmentTools(server, mcpContext);
+registerSettingsTools(server, mcpContext);
+registerRecurringTools(server, mcpContext);
+registerSchedulerTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function main() {
