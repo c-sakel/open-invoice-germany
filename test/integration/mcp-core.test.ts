@@ -240,6 +240,37 @@ describe("set_recurring_state", () => {
     const res = await callTool("set_recurring_state", { recurring: "unbekannt-xyz", state: "PAUSED" });
     expect(res.isError).toBe(true);
   });
+
+  it("Fehlerpfad: mehrdeutiger Titel (zwei Substring-Treffer) — Fehler nennt beide Namen, kein Statuswechsel (Fix-Welle Punkt 1)", async () => {
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "MCP-Core-Abo-Kunde-Mehrdeutig AG", addressLine1: "Abo-Weg 2", postalCode: "10115", city: "Berlin", type: "BUSINESS" },
+    });
+    const baseInput: CreateRecurringInput = {
+      customerId: customer.id,
+      title: "Wartung Müller",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: FIX_DATE,
+      paymentTermsDays: 14,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      lines: [{ description: "Wartung", quantityMilli: 1000, unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateRecurringInput;
+    const recA = await createRecurring(orgId, baseInput);
+    const recB = await createRecurring(orgId, { ...baseInput, title: "Wartung Müller Süd" });
+    expect(recA.status).toBe("ACTIVE");
+    expect(recB.status).toBe("ACTIVE");
+
+    const res = await callTool("set_recurring_state", { recurring: "Müller", state: "PAUSED" });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("Wartung Müller");
+    expect(text(res)).toContain("Wartung Müller Süd");
+
+    const reloadedA = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: recA.id } });
+    const reloadedB = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: recB.id } });
+    expect(reloadedA.status).toBe("ACTIVE");
+    expect(reloadedB.status).toBe("ACTIVE");
+  });
 });
 
 describe("get_status", () => {
@@ -338,6 +369,47 @@ describe("list_products / upsert_product (Task 2)", () => {
   it("upsert_product: Fehlerpfad bei ungueltigem taxRatePercent (TaxRate-Union)", async () => {
     const res = await callTool("upsert_product", { name: "MCP-Core-Ungueltiges-Produkt", netPriceEuro: 10, taxRatePercent: 15 });
     expect(res.isError).toBe(true);
+  });
+});
+
+describe("list_customers / list_products: kein Mandanten-Leck (Fix-Welle Punkt 3)", () => {
+  it("zeigt keine Kunden/Produkte einer fremden Organisation", async () => {
+    // Zweite Organisation in derselben (geteilten) Test-DB — list_customers/list_products
+    // filterten vor Task 2 NICHT nach orgId (echtes Mandanten-Leck, siehe task-2-report.md).
+    // Regressionstest dafuer (Fix-Welle Punkt 3).
+    const otherOrg = await dbInternal.organization.create({
+      data: { legalName: "MCP-Core-Fremdorg GmbH", addressLine1: "Fremdweg 1", postalCode: "99999", city: "Fremdstadt", vatId: "DE999999999", taxNumber: "11/111/11111" },
+    });
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId: otherOrg.id, name: "MCP-Core-Fremdkunde AG", addressLine1: "X", postalCode: "1", city: "Y", type: "BUSINESS" },
+    });
+    const otherProduct = await dbInternal.product.create({
+      data: { orgId: otherOrg.id, name: "MCP-Core-Fremdprodukt", articleNumber: "FREMD-1", unit: "C62", netPriceCents: 1000, taxRate: 19, taxCategory: "S" },
+    });
+
+    const customers = JSON.parse(text(await callTool("list_customers", {}))) as Array<{ id: string }>;
+    const products = JSON.parse(text(await callTool("list_products", {}))) as Array<{ id: string }>;
+    expect(customers.some((c) => c.id === otherCustomer.id)).toBe(false);
+    expect(products.some((p) => p.id === otherProduct.id)).toBe(false);
+  });
+});
+
+describe("failUnknown (Fix-Welle Punkt 6): unbekannte Fehler generisch, kein Rohtext", () => {
+  it("ein gemockter DB-Fehler liefert eine generische Antwort statt der Rohnachricht", async () => {
+    const spy = vi.spyOn(dbInternal.customer, "findMany").mockRejectedValueOnce(new Error("ECONNREFUSED 127.0.0.1:5432 — Interna, die niemals im Chat landen duerfen"));
+    try {
+      const res = await callTool("upsert_customer", {
+        name: "MCP-Core-DB-Fehler-Kunde AG",
+        addressLine1: "Fehlerweg 1",
+        postalCode: "12345",
+        city: "Fehlerstadt",
+      });
+      expect(res.isError).toBe(true);
+      expect(text(res)).toBe("Unerwarteter Fehler — Details im Serverlog.");
+      expect(text(res)).not.toContain("ECONNREFUSED");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

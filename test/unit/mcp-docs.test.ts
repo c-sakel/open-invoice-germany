@@ -8,16 +8,30 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-const MCP_TOOLS_DIR = path.join(process.cwd(), "src/mcp/tools");
+const MCP_DIR = path.join(process.cwd(), "src/mcp");
 const MCP_DOCS_PATH = path.join(process.cwd(), "docs/MCP.md");
+// Fix-Welle Punkt 5: Ziffern zulassen (Tool-IDs koennten z. B. "..._v2" heissen) — bisher
+// [a-z_]+, jetzt [a-z0-9_]+ wie vom Koordinator vorgegeben.
+const TOOL_ID_RE = /registerTool\(\s*"([a-z0-9_]+)"/g;
+
+/** Fix-Welle Punkt 5: rekursiv ueber ALLE .ts-Dateien unter src/mcp/** (nicht nur
+ *  src/mcp/tools/) — schliesst insbesondere src/mcp/server.ts (Composition Root) mit ein,
+ *  falls dort je wieder ein registerTool(...) direkt landet. */
+function collectTsFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectTsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith(".ts")) out.push(full);
+  }
+  return out;
+}
 
 function collectRegisteredToolIds(): Set<string> {
   const ids = new Set<string>();
-  const files = readdirSync(MCP_TOOLS_DIR).filter((f) => f.endsWith(".ts"));
-  const re = /registerTool\(\s*"([a-z_]+)"/g;
-  for (const file of files) {
-    const source = readFileSync(path.join(MCP_TOOLS_DIR, file), "utf8");
-    for (const match of source.matchAll(re)) {
+  for (const file of collectTsFiles(MCP_DIR)) {
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(TOOL_ID_RE)) {
       ids.add(match[1]);
     }
   }
@@ -45,7 +59,7 @@ function stripRemovedSection(markdown: string): string {
 
 function collectDocBacktickIds(markdown: string): Set<string> {
   const ids = new Set<string>();
-  const re = /`([a-z_]+)`/g;
+  const re = /`([a-z0-9_]+)`/g;
   for (const match of markdown.matchAll(re)) {
     ids.add(match[1]);
   }
@@ -68,7 +82,7 @@ describe("docs/MCP.md — Doku-Drift", () => {
   });
 
   it("docs/MCP.md nennt keine Backtick-ID, die aussieht wie ein Tool-Name, aber nicht registriert ist (ausserhalb '## Entfernt')", () => {
-    const toolLikePattern = /^[a-z]+(_[a-z]+)+$/;
+    const toolLikePattern = /^[a-z0-9]+(_[a-z0-9]+)+$/;
     const stray = [...docIdsExcludingRemoved]
       .filter((id) => toolLikePattern.test(id) && !registeredIds.has(id))
       .sort();
