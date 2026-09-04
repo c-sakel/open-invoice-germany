@@ -13,8 +13,11 @@ import { createDeliveryNoteWithinTx } from "@/domain/delivery-note/create";
 import { remainingQuantities, assertNoOverDelivery, loadSourceLines, type DeliverySourceType } from "@/domain/delivery-note/quantities";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { setQuoteStatusWithinTx, effectiveQuoteStatus } from "@/domain/document/status";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { convertDocumentSchema, type ConvertDocumentInput } from "@/schemas";
 import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class ConvertError extends Error {
   constructor(message: string) {
@@ -82,10 +85,21 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     const footerText = q.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT"));
     const paymentTerms = q.paymentTerms ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT"));
 
-    // Fehlt eine Zahlungsmethode am Dokument (Quote kennt keine eigene), greift die
-    // Standard-Zahlungsmethode des Kunden (gleiches Muster wie createDraftInvoiceWithinTx).
+    const settings = await loadDocumentSettings(orgId);
+
+    // Fehlt eine Zahlungsmethode am Dokument (Quote kennt keine eigene), greift zuerst die
+    // Standard-Zahlungsmethode des Kunden (gleiches Muster wie createDraftInvoiceWithinTx),
+    // danach die Org-weite Standard-Zahlungsmethode (Phase 7, `defaultPaymentMethodId`).
     const customer = await tx.customer.findUnique({ where: { id: q.customerId }, select: { defaultPaymentMethodId: true } });
-    const paymentMethodId = customer?.defaultPaymentMethodId ?? undefined;
+    const paymentMethodId = customer?.defaultPaymentMethodId ?? settings.defaultPaymentMethodId ?? undefined;
+    const method = paymentMethodId
+      ? await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { paymentTermsDays: true } })
+      : null;
+
+    // Faelligkeit/Leistungsdatum (Phase 7, §33) — dieselbe Prioritaet wie
+    // createDraftInvoiceWithinTx: Zahlungsmethode > invoiceDueDays > 14 Tage.
+    const dueDate = new Date(now.getTime() + (method?.paymentTermsDays ?? settings.invoiceDueDays ?? 14) * DAY_MS);
+    const deliveryDate = settings.autoDeliveryDate ? now : undefined;
 
     const invoice = await tx.invoice.create({
       data: {
@@ -96,6 +110,8 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
         taxScheme: q.taxScheme,
         currency: q.currency,
         issueDate: now,
+        dueDate,
+        deliveryDate,
         notes: q.notes,
         internalNotes: q.internalNotes,
         headerText,
@@ -280,10 +296,9 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
         sourceType: fromType,
         sourceId: fromId,
         deliveryDate: input.deliveryDate,
-        showPrices: false,
-        showTax: false,
-        showArticleNumber: true,
-        showDescription: true,
+        // showPrices/showTax/showArticleNumber/showDescription/showDeliveryAddress bewusst
+        // NICHT hier vorgegeben (Phase 7, §33) — createDeliveryNoteWithinTx belegt sie aus
+        // den dnShow*-Org-Einstellungen vor.
         lines,
       },
       opts,

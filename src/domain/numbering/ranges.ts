@@ -175,6 +175,30 @@ export async function assignArticleNumber(tx: Db, orgId: string, now: Date = new
   return assignRangeNumber(tx, orgId, "PRODUCT", now);
 }
 
+/**
+ * Selbstheilung fuer Bestandskunden ohne Kundennummer (Phase 7, Task 2, §34): vergibt
+ * `assignCustomerNumber` idempotent und aufsteigend nach `createdAt` an alle Kunden der
+ * Organisation, deren `customerNumber` noch leer ist. Wird beim ersten Laden der
+ * Kundenliste aufgerufen — bereits nummerierte Kunden bleiben unangetastet, jeder Lauf
+ * nach dem ersten ist ein No-Op.
+ */
+export async function ensureCustomerNumbers(orgId: string, now: Date = new Date()): Promise<void> {
+  const missing = await dbInternal.customer.findMany({
+    where: { orgId, customerNumber: null },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  for (const c of missing) {
+    // Seriell (kein Promise.all): assignCustomerNumber schreibt denselben NumberRange-
+    // Datensatz je Aufruf (upsert-increment) — parallele Aufrufe wuerden sich gegenseitig
+    // ueberschreiben/Nummern doppelt vergeben koennen.
+    await dbInternal.$transaction(async (tx) => {
+      const customerNumber = await assignCustomerNumber(tx, orgId, now);
+      await tx.customer.update({ where: { id: c.id }, data: { customerNumber } });
+    });
+  }
+}
+
 async function assignRangeNumber(tx: Db, orgId: string, docType: "CUSTOMER" | "PRODUCT", now: Date): Promise<string> {
   const fallback = defaultPattern(docType);
   const active = await loadActiveRange(tx, orgId, docType, now.getFullYear());

@@ -13,6 +13,10 @@ import { buildStandardAttachments, attachmentDocTypeFor, type Attachment } from 
 import { loadAttachmentForSend } from "@/domain/attachment/manage";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { createShareLink } from "@/domain/quote-share/link";
+import { effectiveQuoteStatus } from "@/domain/document/status";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
@@ -48,6 +52,49 @@ export async function sendDocumentEmail(
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
   const prov = provider ?? createSmtpProvider(settings);
+
+  // autoFinalizeOnSend (Phase 7, §33): ein Rechnungsentwurf (INVOICE-Familie:
+  // INVOICE/CORRECTION/PARTIAL/DOWNPAYMENT/FINAL/CREDIT_NOTE) wird vor dem Versand
+  // automatisch festgeschrieben, wenn die Org-Einstellung aktiv ist. Ein Fehler beim
+  // Festschreiben (z. B. fehlende Pflichtangaben) bricht den Versand mit derselben
+  // Fehlerklasse ab — VOR jeder Log-Anlage, also ohne Eintrag im EmailLog.
+  if (input.docType === "INVOICE" || input.docType === "CREDIT_NOTE") {
+    const okTypes = input.docType === "CREDIT_NOTE" ? ["CREDIT_NOTE"] : ["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"];
+    const inv = await dbInternal.invoice.findFirst({ where: { id: input.docId, orgId, type: { in: okTypes } }, select: { id: true, status: true } });
+    if (inv && inv.status === "DRAFT") {
+      const docSettings = await loadDocumentSettings(orgId);
+      if (docSettings.autoFinalizeOnSend) {
+        await finalizeInvoice(input.docId, { actor });
+      }
+    }
+  }
+
+  // shareLinkDefaultOn (Phase 7, §33): existiert beim Versand eines Angebots per E-Mail
+  // kein aktiver Annahme-Link, wird automatisch einer erzeugt, wenn die Org-Einstellung
+  // aktiv ist — unabhaengig davon, ob der bereits gerenderte Mailtext {{offer.link}}
+  // enthaelt (der Text wurde beim Vorbelegen des Dialogs gerendert, VOR diesem Aufruf;
+  // `prefillEmail`/`resolveOfferLink` minten dabei bewusst NIE selbst einen Link, siehe
+  // dortiger Kommentar). Ein Fehler hier bricht den Versand nicht ab (best effort).
+  if (input.docType === "ANGEBOT") {
+    try {
+      const settingsForLink = await loadDocumentSettings(orgId);
+      if (settingsForLink.shareLinkDefaultOn) {
+        const now = new Date();
+        const quote = await dbInternal.quote.findFirst({ where: { id: input.docId, orgId }, select: { status: true, validUntil: true } });
+        if (quote) {
+          const eff = effectiveQuoteStatus({ status: quote.status, validUntil: quote.validUntil }, now);
+          if (eff === "DRAFT" || eff === "SENT" || eff === "EXPIRED") {
+            const activeLink = await dbInternal.quoteShareLink.findFirst({
+              where: { orgId, quoteId: input.docId, revokedAt: null, decidedAt: null, expiresAt: { gt: now } },
+            });
+            if (!activeLink) await createShareLink(orgId, input.docId, {}, { actor, now });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("sendDocumentEmail: shareLinkDefaultOn-Linkerzeugung fehlgeschlagen", e);
+    }
+  }
 
   // Mandanten-Gate: wirft DocumentNotFoundError bei Fremd-Org, falschem Belegtyp oder
   // Nichtexistenz — VOR jeder Log-Anlage. buildStandardAttachments allein reicht nicht,

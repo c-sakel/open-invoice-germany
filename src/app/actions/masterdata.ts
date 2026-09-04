@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { assignCustomerNumber, assignArticleNumber } from "@/domain/numbering/ranges";
 import { organizationSchema, customerSchema, productSchema } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
 import type { ActionResult } from "./result";
@@ -99,6 +100,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     peppolId: str(fd, "peppolId"),
     defaultPaymentTermsDays: Number(str(fd, "defaultPaymentTermsDays") ?? "14"),
     defaultPaymentMethodId: str(fd, "defaultPaymentMethodId"),
+    customerNumber: str(fd, "customerNumber"),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
@@ -137,10 +139,18 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     };
     // peppolId wird (mangels Formularfeld) NICHT geschrieben, damit ein bestehender Wert beim Bearbeiten erhalten bleibt.
     if (id) {
-      const res = await dbInternal.customer.updateMany({ where: { id, orgId: org.id }, data });
+      // customerNumber nur schreiben, wenn im Formular gesetzt (Bearbeitung) — sonst bleibt
+      // eine bereits vergebene Nummer beim Speichern anderer Felder erhalten.
+      const updateData = v.customerNumber ? { ...data, customerNumber: v.customerNumber } : data;
+      const res = await dbInternal.customer.updateMany({ where: { id, orgId: org.id }, data: updateData });
       if (res.count === 0) return { ok: false, error: "Kunde nicht gefunden." };
     } else {
-      await dbInternal.customer.create({ data: { ...data, orgId: org.id } });
+      // Kundennummer (Phase 7, §34): frei im Formular vergeben, sonst Selbstheilung ueber
+      // den Nummernkreis CUSTOMER (assignCustomerNumber) — atomar mit der Anlage.
+      await dbInternal.$transaction(async (tx) => {
+        const customerNumber = v.customerNumber ?? (await assignCustomerNumber(tx, org.id));
+        await tx.customer.create({ data: { ...data, customerNumber, orgId: org.id } });
+      });
     }
   } catch (e) {
     console.error("saveCustomer:", e);
@@ -198,7 +208,11 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
       const res = await dbInternal.product.updateMany({ where: { id, orgId: org.id }, data });
       if (res.count === 0) return { ok: false, error: "Produkt nicht gefunden." };
     } else {
-      await dbInternal.product.create({ data: { ...data, orgId: org.id } });
+      // Artikelnummer (Phase 7, §34): nur belegen, wenn im Formular leer gelassen.
+      await dbInternal.$transaction(async (tx) => {
+        const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, org.id));
+        await tx.product.create({ data: { ...data, articleNumber, orgId: org.id } });
+      });
     }
   } catch (e) {
     console.error("saveProduct:", e);
@@ -249,18 +263,21 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
 
   try {
     const org = await getActiveOrg();
-    const product = await dbInternal.product.create({
-      data: {
-        orgId: org.id,
-        name: v.name,
-        description: v.description ?? null,
-        articleNumber: v.articleNumber ?? null,
-        unit: v.unit,
-        netPriceCents: v.netPriceCents,
-        taxRate: v.taxRate,
-        taxCategory: v.taxCategory,
-        differential: v.differential,
-      },
+    const product = await dbInternal.$transaction(async (tx) => {
+      const articleNumber = v.articleNumber ?? (await assignArticleNumber(tx, org.id));
+      return tx.product.create({
+        data: {
+          orgId: org.id,
+          name: v.name,
+          description: v.description ?? null,
+          articleNumber,
+          unit: v.unit,
+          netPriceCents: v.netPriceCents,
+          taxRate: v.taxRate,
+          taxCategory: v.taxCategory,
+          differential: v.differential,
+        },
+      });
     });
     revalidatePath("/produkte");
     return { ok: true, product: { id: product.id, name: product.name, unit: product.unit, netPriceCents: product.netPriceCents, taxRate: product.taxRate } };

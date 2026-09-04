@@ -20,7 +20,16 @@ import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
 import type { SnapshotSource } from "@/schemas";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { validateMandatoryFields } from "./mandatory";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Nur das UTC-Kalenderdatum (ohne Uhrzeit) als Millisekunden-Zeitstempel — fuer den
+ *  tagesgenauen Vergleich "Entwurf-issueDate liegt in der Vergangenheit" (refreshIssueDateOnFinalize). */
+function utcDateOnly(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
 
 const FINALIZED_DOWNPAYMENT_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
 
@@ -44,6 +53,12 @@ export interface FinalizeOptions {
    * wenn BEIDE Werte gesetzt sind; sonst greift der bisherige Live-Pfad (Herkunft FINALIZE).
    */
   inheritSnapshotFrom?: { sellerSnapshotJson: string | null; buyerSnapshotJson: string | null };
+  /**
+   * Explizites Rechnungsdatum fuer diese Festschreibung (Phase 7, §33). Ist es gesetzt,
+   * greift `refreshIssueDateOnFinalize` NICHT (Ruling Task-2-Facts) — der Aufrufer hat
+   * das Datum bewusst gewaehlt.
+   */
+  issueDate?: Date;
 }
 
 export async function finalizeWithinTx(
@@ -62,11 +77,37 @@ export async function finalizeWithinTx(
   if (invoice.status !== "DRAFT")
     throw new FinalizeError(`Nur Entwürfe können festgeschrieben werden (Status: ${invoice.status}).`);
 
+  // 1b) refreshIssueDateOnFinalize (Phase 7, §33): ein Entwurf-Rechnungsdatum, das
+  // gegenueber dem TATSAECHLICHEN Kalendertag ("heute", Systemuhr — bewusst NICHT
+  // `opts.now`, siehe unten) in der Vergangenheit liegt, wird beim Festschreiben auf
+  // `now` nachgezogen — Faelligkeit um dieselbe Tagesdifferenz verschoben. Greift NICHT
+  // bei explizit uebergebenem `opts.issueDate` (Ruling) und NICHT auf das Leistungsdatum.
+  //
+  // "heute" ist die Systemuhr (`new Date()`), nicht `opts.now`: `opts.now` ist ein
+  // deterministischer Zeitpunkt-Override fuer Tests/Backdating (ueberall im Repo, z. B.
+  // Mahnlauf-Fixtures mit Jahren weit in der Zukunft) — ein Entwurf, dessen issueDate rein
+  // durch einen solchen Override "in der Vergangenheit" gegenueber `opts.now` erscheint,
+  // ist kein echter stehen gebliebener Entwurf und darf nicht faelschlich nachgezogen
+  // werden (sonst wuerden rueckdatierte Testfixtures ihre Faelligkeit verlieren).
+  const today = new Date();
+  let issueDateBefore: Date | null = null;
+  let issueDate = opts.issueDate ?? invoice.issueDate ?? now;
+  let dueDate = invoice.dueDate;
+  if (!opts.issueDate) {
+    const settings = await loadDocumentSettings(invoice.orgId);
+    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && utcDateOnly(invoice.issueDate) < utcDateOnly(today)) {
+      issueDateBefore = invoice.issueDate;
+      const diffDays = Math.round((utcDateOnly(now) - utcDateOnly(invoice.issueDate)) / DAY_MS);
+      issueDate = now;
+      if (invoice.dueDate) dueDate = new Date(invoice.dueDate.getTime() + diffDays * DAY_MS);
+    }
+  }
+
   // 1) Pflichtangaben
   const problems = validateMandatoryFields({
     type: invoice.type,
     taxScheme: invoice.taxScheme,
-    issueDate: invoice.issueDate ?? now,
+    issueDate,
     deliveryDate: invoice.deliveryDate,
     deliveryStart: invoice.deliveryStart,
     deliveryEnd: invoice.deliveryEnd,
@@ -210,7 +251,8 @@ export async function finalizeWithinTx(
     data: {
       status: "FINALIZED",
       finalizedAt: now,
-      issueDate: invoice.issueDate ?? now,
+      issueDate,
+      dueDate,
       netTotalCents: totals.netTotalCents,
       taxTotalCents: totals.taxTotalCents,
       grossTotalCents: totals.grossTotalCents,
@@ -264,6 +306,9 @@ export async function finalizeWithinTx(
       status: "FINALIZED",
       grossTotalCents: totals.grossTotalCents,
       snapshotSource,
+      ...(issueDateBefore
+        ? { issueDateBefore: issueDateBefore.toISOString(), issueDateAfter: issueDate.toISOString() }
+        : {}),
       // B9 (Fix-Welle): der Abzugs-Snapshot ist der rechtlich entscheidende Teil einer
       // Schlussrechnung (Abschn. 14.8 UStAE) — er gehoert in die Hash-Kette, nicht nur
       // in die (davon unabhaengige) `FinalInvoiceDeduction`-Tabelle. Nur bei type FINAL

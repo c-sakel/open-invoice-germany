@@ -16,6 +16,8 @@ interface PrefillResult {
   signature: string;
   copyToSelf: boolean;
   attachments: { filename: string; size: number }[];
+  // eInvoiceDefault (Phase 7, §33): Dateinamen, die beim Oeffnen vorausgewaehlt sind.
+  defaultStandardAttachments: string[];
   // Beleganhaenge (Phase 4b) — zusaetzlich zu den Standardanhaengen waehlbar, per
   // attachmentIds im Payload (src/schemas/email.ts, sendEmailInputSchema.attachmentIds).
   documentAttachments: { id: string; filename: string; sizeBytes: number }[];
@@ -67,7 +69,7 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
     setBody(pre.body);
     setSignature(pre.signature);
     setCopyToSelf(pre.copyToSelf);
-    setSelectedStandard(new Set(pre.attachments.map((a) => a.filename)));
+    setSelectedStandard(new Set(pre.defaultStandardAttachments));
     setSelectedDocAttachments(new Set());
     setPreview(null);
   }
