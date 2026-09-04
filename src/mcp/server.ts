@@ -44,7 +44,7 @@ import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/cr
 import { setQuoteStatus, setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/domain/document/status";
 import { createShareLink, revokeShareLink, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
-import { loadPrintSettings, savePrintSettings } from "@/domain/settings/print";
+import { loadPrintSettings, savePrintSettings, setPrintOptions } from "@/domain/settings/print";
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { listNumberRanges, updateNumberRange } from "@/domain/numbering/ranges";
 import { loadDunningSettings, saveDunningSettings } from "@/domain/dunning/settings";
@@ -79,6 +79,7 @@ import {
   convertDocumentBodySchema,
   documentSettingsInputSchema,
   printSettingsInputSchema,
+  printOptionsOverrideSchema,
   brandingSettingsInputSchema,
   NumberRangeDocType,
   dunningSettingsInputSchema,
@@ -1831,6 +1832,35 @@ server.registerTool(
       return ok(`Nummernkreis "${docType}" gespeichert: ${JSON.stringify(saved)}`);
     } catch (e) {
       if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── set_print_options ────────────────────────────────────────────────────────
+// S9 (Fix-Welle, Final-Review): MCP-Pendant zu PUT /api/{invoices,documents,
+// delivery-notes}/[id]/print-options — dieselbe Domain-Funktion (setPrintOptions),
+// dieselbe Zod-Validierung (printOptionsOverrideSchema), kein Bypass-Pfad (§55).
+server.registerTool(
+  "set_print_options",
+  {
+    title: "Beleg-individuelle Druckoptionen setzen",
+    description:
+      "Setzt die Beleg-individuelle Ueberschreibung der globalen Druckoptionen (§36) fuer eine Rechnung/Gutschrift (kind=INVOICE), ein Angebot/eine Auftragsbestaetigung (kind=QUOTE) oder einen Lieferschein (kind=DELIVERY_NOTE). Nur erlaubt, solange der Beleg im Entwurf (DRAFT) ist. Nur die uebergebenen Felder werden gesetzt (Ersatz der bisherigen Ueberschreibung, kein Merge).",
+    inputSchema: {
+      kind: z.enum(["INVOICE", "QUOTE", "DELIVERY_NOTE"]),
+      id: z.string().min(1),
+      options: printOptionsOverrideSchema,
+    },
+  },
+  async ({ kind, id, options }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const saved = await setPrintOptions(org.id, { kind, id }, options);
+      return ok(`Druckoptionen fuer ${kind} "${id}" gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
