@@ -13,7 +13,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
-import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
@@ -277,20 +277,10 @@ export async function finalizeWithinTx(
 
   // 4) Nummer ERST nach gewonnenem Claim vergeben -> der Verlierer verbraucht keine Nummer (kein Loch).
   const docType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
-  const year = now.getFullYear();
-  const range = await tx.numberRange.upsert({
-    where: { orgId_docType_year: { orgId: invoice.orgId, docType, year } },
-    create: { orgId: invoice.orgId, docType, year, currentValue: 1, prefix: defaultPrefix(docType) },
-    update: { currentValue: { increment: 1 } },
-  });
-  const number = formatDocumentNumber(range.pattern, {
-    prefix: range.prefix || defaultPrefix(docType),
-    seq: range.currentValue,
-    padding: range.seqPadding,
-    year,
-    month: now.getMonth() + 1,
-    day: now.getDate(),
-  });
+  // B3 (Final-Review): ueber assignDocumentNumber() vergeben — liest/schreibt die AKTIVE
+  // Zeile (year 0 bei yearlyReset:false), statt hart auf `year: now.getFullYear()` zu
+  // vergeben (das ignorierte "jaehrlich zuruecksetzen = aus" komplett).
+  const number = await assignDocumentNumber(tx, invoice.orgId, docType, now);
   await tx.invoice.update({ where: { id: invoiceId }, data: { number } });
 
   // 5) Audit

@@ -17,7 +17,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
-import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { pickTextTemplate } from "@/domain/text-template/pick";
@@ -89,21 +89,9 @@ export async function createBusinessDocumentWithinTx(
     if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
   }
 
-  const year = now.getFullYear();
   const docType = input.kind;
-  const range = await tx.numberRange.upsert({
-    where: { orgId_docType_year: { orgId, docType, year } },
-    create: { orgId, docType, year, currentValue: 1, prefix: defaultPrefix(docType) },
-    update: { currentValue: { increment: 1 } },
-  });
-  const number = formatDocumentNumber(range.pattern, {
-    prefix: range.prefix || defaultPrefix(docType),
-    seq: range.currentValue,
-    padding: range.seqPadding,
-    year,
-    month: now.getMonth() + 1,
-    day: now.getDate(),
-  });
+  // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
+  const number = await assignDocumentNumber(tx, orgId, docType, now);
 
   // Fehlende Texte/Bedingungen aus den Textvorlagen der Organisation vorbelegen
   // (Selbstheilung) — der Beleg speichert den Text, kein Live-Bezug auf die Vorlage.
