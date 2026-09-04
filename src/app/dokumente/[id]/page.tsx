@@ -45,6 +45,11 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
 
   const status = effectiveQuoteStatus({ status: q.status, validUntil: q.validUntil });
   const billing = q.kind !== "PROFORMA" ? await billingStateFor(org.id, "QUOTE", q.id) : null;
+  // Task 4: Teil-/Abschlags-/Schlussrechnung nur fuer Angebot/AB, solange noch nicht
+  // voll abgerechnet — Teil- und Abschlagsrechnungen werden nie gemischt (Task-2-Ruling).
+  const canBillQuote = q.kind !== "PROFORMA" && QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status) && billing != null && billing.state !== "FULL";
+  const hasPartialInvoices = billing != null && billing.state === "PARTIAL" && billing.downpaymentGrossCents === 0;
+  const hasDownpayments = billing != null && billing.downpaymentGrossCents > 0;
   const archived = q.archivedAt !== null;
   const attachments = await listAttachments(org.id, "QUOTE", q.id);
 
@@ -59,7 +64,7 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
             {KIND_TITLE[q.kind] ?? "Dokument"} {q.number ?? "(Entwurf)"}
           </h1>
           <StatusBadge status={status} />
-          {billing && <BillingStateBadge state={billing.state} />}
+          {billing && <BillingStateBadge state={billing.state} billedPermille={billing.billedPermille} />}
           {archived && <span className="inline-block rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Archiviert</span>}
           {q.snapshotSource === "MIGRATION" && (
             <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
@@ -94,6 +99,15 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
               ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) || (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
             }
             showToDeliveryNote={QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status)}
+            // Task 4 (Phase 5, §13-15 UStG): nur solange die Gesamtleistung noch nicht
+            // voll abgerechnet ist (billing.state !== FULL); Teil- und Abschlagsrechnungen
+            // werden nie gemischt (Task-2-Ruling) — hasDownpayments/hasPartialInvoices
+            // blenden hier nur die jeweils andere Art aus, die endgueltige Pruefung bleibt
+            // serverseitig (409). Schlussrechnung nur, wenn bereits (mind. ein) Abschlag
+            // vorliegt.
+            showPartialInvoice={canBillQuote && !hasDownpayments}
+            showDownpaymentInvoice={canBillQuote && !hasPartialInvoices}
+            showFinalInvoice={billing != null && billing.state === "PARTIAL" && hasDownpayments}
           />
         </div>
       </div>
