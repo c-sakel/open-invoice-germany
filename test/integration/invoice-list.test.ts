@@ -113,6 +113,10 @@ describe("listInvoices: Status-Filter", () => {
     const returnedIds = result.rows.map((r) => r.id);
     for (const id of Object.values(ids)) expect(returnedIds).toContain(id);
     expect(result.total).toBeGreaterThanOrEqual(6);
+    // Fix-Welle (Nit): dunningCount steuert in RowActionsMenu, ob "Zahlungserinnerung
+    // senden" oder "Nächste Mahnung erstellen" angezeigt wird — keine der Fixtures hier
+    // hat eine Mahnung erhalten.
+    for (const r of result.rows) expect(r.dunningCount).toBe(0);
   });
 
   it("draft: nur der Entwurf", async () => {

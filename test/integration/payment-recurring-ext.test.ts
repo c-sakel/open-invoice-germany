@@ -156,6 +156,63 @@ describe("Recurring: maxRuns", () => {
   });
 });
 
+// Fix-Welle Phase 8b (Nit): Reaktivierung eines wegen maxRuns beendeten Abos ohne
+// gleichzeitige maxRuns-Erhoehung wuerde beim naechsten Lauf sofort wieder auf ENDED
+// zurueckfallen (stiller Zyklus) — updateRecurringInvoke lehnt das jetzt mit einer
+// klaren Fehlermeldung ab (409 auf Routen-Ebene). logActivity UPDATED wird ausserdem
+// bei jeder erfolgreichen Aenderung geschrieben (vorher keinerlei Timeline-Eintrag fuer
+// Abo-Bearbeitungen).
+describe("Recurring: Reaktivierung aus ENDED (maxRuns) + logActivity UPDATED", () => {
+  it("ACTIVE aus ENDED mit issuedCount >= maxRuns wird abgelehnt (InvalidOperationError)", async () => {
+    const customer = await makeCustomer("reactivate-blocked@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo Reaktivierung blockiert",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      maxRuns: 2,
+      startDate: new Date("2064-08-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      lines: [line],
+    });
+    await runDueRecurring({ now: new Date("2065-01-01T10:00:00.000Z"), orgId, maxPerAbo: 10 });
+    const ended = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id } });
+    expect(ended.status).toBe("ENDED");
+
+    const { updateRecurringInvoice } = await import("@/domain/recurring/update");
+    await expect(updateRecurringInvoice(orgId, rec.id, { status: "ACTIVE" })).rejects.toThrow(/reaktiviert/);
+
+    // Mit gleichzeitiger maxRuns-Erhoehung ist die Reaktivierung erlaubt.
+    const reactivated = await updateRecurringInvoice(orgId, rec.id, { status: "ACTIVE", maxRuns: 5 });
+    expect(reactivated.status).toBe("ACTIVE");
+  });
+
+  it("updateRecurringInvoice schreibt einen ActivityLog-Eintrag UPDATED fuer RECURRING", async () => {
+    const customer = await makeCustomer("recurring-activity@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo Activity-Test",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2064-08-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      lines: [line],
+    });
+    const { updateRecurringInvoice } = await import("@/domain/recurring/update");
+    await updateRecurringInvoice(orgId, rec.id, { title: "Abo Activity-Test (geaendert)" }, "tester");
+
+    const activity = await dbInternal.activityLog.findFirst({ where: { orgId, entityType: "RECURRING", entityId: rec.id, type: "UPDATED" } });
+    expect(activity).not.toBeNull();
+    expect(activity?.actor).toBe("tester");
+  });
+});
+
 describe("Recurring: autoSend nutzt emailTemplateId", () => {
   it("verwendet die auf dem Abo hinterlegte Vorlage statt der Standardvorlage", async () => {
     const customer = await makeCustomer("autosend-template@example.org");

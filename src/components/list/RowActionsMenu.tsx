@@ -41,6 +41,7 @@ export function RowActionsMenu({
   cancelRoute,
   cancelBody,
   dunningRoute,
+  dunningCount,
   payment,
 }: {
   kind: DocKind;
@@ -60,6 +61,11 @@ export function RowActionsMenu({
   cancelRoute?: string;
   cancelBody?: Record<string, unknown>;
   dunningRoute?: string;
+  /** Fix-Welle (Nit): Anzahl bereits erstellter Mahnungen fuer diesen Beleg — steuert,
+   *  ob "Zahlungserinnerung senden" oder "Nächste Mahnung erstellen" angezeigt wird.
+   *  `undefined` (Aufrufer liefert den Wert nicht) verhaelt sich wie 0 (bisheriges
+   *  Verhalten: REMINDER-Button anzeigen). */
+  dunningCount?: number;
   payment?: { openCents: number; methods: PaymentMethodOption[]; defaultMethod: string };
 }) {
   const router = useRouter();
@@ -199,19 +205,41 @@ export function RowActionsMenu({
           </div>
         )}
         {/* Ruling (a): REMINDER legt eine Mahnung an und oeffnet danach IHREN
-            Versand-Dialog (docType DUNNING) — niemals den Rechnungs-Versand-Dialog. */}
-        {has("REMINDER") && dunningRoute && (
-          <button type="button" onClick={() => createDunning(false, "REMINDER", true)} disabled={busy === "REMINDER"} className={itemCls}>
-            {busy === "REMINDER" ? "…" : "Zahlungserinnerung senden"}
-          </button>
+            Versand-Dialog (docType DUNNING) — niemals den Rechnungs-Versand-Dialog.
+            Fix-Welle (Nit): REMINDER und DUNNING erstellen beide identisch per POST
+            dunningRoute eine Mahnung (nur das Verhalten NACH dem Anlegen unterscheidet
+            sich) — vorher wurden beide Buttons IMMER gleichzeitig angezeigt, was zwei
+            unterschiedliche Labels fuer denselben Effekt suggerierte. Jetzt genau EIN
+            Button: "Zahlungserinnerung senden" nur, solange noch keine Mahnung existiert
+            (dunningCount 0 -> die anzulegende waere Stufe 0/die erste); sobald bereits
+            mindestens eine existiert, "Nächste Mahnung erstellen" (reines DUNNING-
+            Verhalten, kein Auto-Open des Versand-Dialogs). */}
+        {has("REMINDER") && has("DUNNING") && dunningRoute ? (
+          (dunningCount ?? 0) === 0 ? (
+            <button type="button" onClick={() => createDunning(false, "REMINDER", true)} disabled={busy === "REMINDER"} className={itemCls}>
+              {busy === "REMINDER" ? "…" : "Zahlungserinnerung senden"}
+            </button>
+          ) : (
+            <button type="button" onClick={() => createDunning(false, "DUNNING", false)} disabled={busy === "DUNNING"} className={itemCls}>
+              {busy === "DUNNING" ? "…" : "Nächste Mahnung erstellen"}
+            </button>
+          )
+        ) : (
+          <>
+            {has("REMINDER") && dunningRoute && (
+              <button type="button" onClick={() => createDunning(false, "REMINDER", true)} disabled={busy === "REMINDER"} className={itemCls}>
+                {busy === "REMINDER" ? "…" : "Zahlungserinnerung senden"}
+              </button>
+            )}
+            {has("DUNNING") && dunningRoute && (
+              <button type="button" onClick={() => createDunning(false, "DUNNING", false)} disabled={busy === "DUNNING"} className={itemCls}>
+                {busy === "DUNNING" ? "…" : "Mahnung erstellen"}
+              </button>
+            )}
+          </>
         )}
         {reminderDunningId && (
           <SendEmailDialog key={reminderDunningId} docType="DUNNING" docId={reminderDunningId} label="Mahnung senden" autoOpen hideTrigger />
-        )}
-        {has("DUNNING") && dunningRoute && (
-          <button type="button" onClick={() => createDunning(false, "DUNNING", false)} disabled={busy === "DUNNING"} className={itemCls}>
-            {busy === "DUNNING" ? "…" : "Mahnung erstellen"}
-          </button>
         )}
         {has("DELIVERY_NOTE") && (kind === "QUOTE" || kind === "INVOICE") && (
           <div className={itemCls}>

@@ -17,7 +17,7 @@ import { dbInternal } from "@/lib/db";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
 import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { effectiveQuoteStatus } from "@/domain/document/status";
-import { dunningCandidates, dunningCandidateWhere } from "@/domain/dunning/auto";
+import { dunningCandidateWhere } from "@/domain/dunning/auto";
 import { utcDateOnly, utcDateOnlyPlusDays } from "@/lib/date-only";
 
 export interface AgingBucket {
