@@ -89,6 +89,16 @@ describe("Phase 7, Task 2 — Faelligkeit (invoiceDueDays, PaymentMethod-Priorit
     expect(inv.dueDate?.toISOString()).toBe(new Date(FIX_DATE.getTime() + 5 * DAY_MS).toISOString());
     await saveDocumentSettings(orgId, { invoiceDueDays: 14 });
   });
+
+  it("S1 (Fix-Welle): Customer.defaultPaymentTermsDays schlaegt Zahlungsmethode.paymentTermsDays", async () => {
+    const method = await dbInternal.paymentMethod.create({
+      data: { orgId, code: "S1_METHOD", name: "S1-Methode", paymentTermsDays: 5 },
+    });
+    const custom = await makeCustomer(orgId);
+    await dbInternal.customer.update({ where: { id: custom }, data: { defaultPaymentTermsDays: 30 } });
+    const inv = await createDraftInvoice(orgId, invoiceInput({ customerId: custom, issueDate: FIX_DATE, paymentMethodId: method.id }));
+    expect(inv.dueDate?.toISOString()).toBe(new Date(FIX_DATE.getTime() + 30 * DAY_MS).toISOString());
+  });
 });
 
 describe("Phase 7, Task 2 — defaultPaymentMethodId (Org-Fallback)", () => {

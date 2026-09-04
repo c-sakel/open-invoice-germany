@@ -98,7 +98,10 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     vatId: str(fd, "vatId"),
     leitwegId: str(fd, "leitwegId"),
     peppolId: str(fd, "peppolId"),
-    defaultPaymentTermsDays: Number(str(fd, "defaultPaymentTermsDays") ?? "14"),
+    // S1 (Fix-Welle Phase 7): leeres Feld = kein Kunden-Override (null), NICHT der
+    // bisherige Zwangs-Default 14 — sonst wuerde ein zufaellig auf 14 gesetzter Wert weiter
+    // die Zahlungsmethode/DocumentSettings.invoiceDueDays-Kaskade unterbrechen.
+    defaultPaymentTermsDays: str(fd, "defaultPaymentTermsDays") ? Number(str(fd, "defaultPaymentTermsDays")) : null,
     defaultPaymentMethodId: str(fd, "defaultPaymentMethodId"),
     customerNumber: str(fd, "customerNumber"),
     notes: str(fd, "notes"),
@@ -133,7 +136,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
       phone: v.phone ?? null,
       vatId: v.vatId ?? null,
       leitwegId: v.leitwegId ?? null,
-      defaultPaymentTermsDays: v.defaultPaymentTermsDays,
+      defaultPaymentTermsDays: v.defaultPaymentTermsDays ?? null,
       defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
       notes: v.notes ?? null,
     };

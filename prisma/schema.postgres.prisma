@@ -85,7 +85,11 @@ model Customer {
   vatIdValidatedAt        DateTime? // §18e / VIES qualifizierte Bestätigung
   leitwegId               String? // B2G, BT-10
   peppolId                String?
-  defaultPaymentTermsDays Int          @default(14)
+  // S1 (Fix-Welle Phase 7): NULL = kein Kunden-Override (kaskadiert auf Zahlungsmethode ->
+  // DocumentSettings.invoiceDueDays -> 14 Tage, siehe invoice/create.ts). War vorher
+  // `Int @default(14)` — dadurch hatte JEDER Kunde immer einen Wert und die Zahlungsmethode
+  // wurde nie erreicht ("Setting a 30-day term on a customer has zero effect").
+  defaultPaymentTermsDays Int?
   notes                   String?
   isArchived              Boolean      @default(false) // Soft-Delete; kein Hard-Delete bei Belegbezug (DSGVO vs. §147 AO)
   customerNumber          String? // Phase 7, Task 1 (§34) — Nummernkreis CUSTOMER, formatiert wie Belegnummern

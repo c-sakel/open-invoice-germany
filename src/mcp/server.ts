@@ -430,7 +430,10 @@ server.registerTool(
       email: z.string().optional(),
       contactName: z.string().optional(),
       leitwegId: z.string().optional().describe("Leitweg-ID für Behörden (B2G)"),
-      defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
+      // S1 (Fix-Welle Phase 7): weggelassen = kein Kunden-Override, kaskadiert auf
+      // Zahlungsmethode -> DocumentSettings.invoiceDueDays -> 14 (siehe invoice/create.ts) —
+      // dieselbe Semantik wie die UI-/REST-API-Route (keine Bypass-Pfade, Lastenheft §55).
+      defaultPaymentTermsDays: z.number().int().min(0).max(365).optional().describe("Kunden-eigene Zahlungsfrist; weglassen = Zahlungsmethode/Voreinstellung greift"),
       defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
       notes: z.string().optional(),
     },
@@ -451,7 +454,7 @@ server.registerTool(
         email: v.email || null,
         vatId: v.vatId ?? null,
         leitwegId: v.leitwegId ?? null,
-        defaultPaymentTermsDays: v.defaultPaymentTermsDays,
+        defaultPaymentTermsDays: v.defaultPaymentTermsDays ?? null,
         defaultPaymentMethodId: defaultPaymentMethod?.id,
         notes: v.notes ?? null,
       };

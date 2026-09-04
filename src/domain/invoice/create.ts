@@ -69,7 +69,10 @@ export async function createDraftInvoiceWithinTx(
   );
 
   // Kunde muss zur Organisation gehören (kein Cross-Tenant-Bezug).
-  const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultPaymentMethodId: true } });
+  const customer = await tx.customer.findFirst({
+    where: { id: input.customerId, orgId },
+    select: { id: true, defaultPaymentMethodId: true, defaultPaymentTermsDays: true },
+  });
   if (!customer) throw new Error("Kunde nicht gefunden.");
 
   const settings = await loadDocumentSettings(orgId);
@@ -85,11 +88,14 @@ export async function createDraftInvoiceWithinTx(
   }
 
   const issueDate = input.issueDate ?? now;
-  // Faelligkeit (Phase 7, §33): explizite Eingabe schlaegt alles; sonst die Zahlungsfrist
-  // der Zahlungsmethode, danach DocumentSettings.invoiceDueDays, danach 14 Tage
-  // (Zahlungsfrist-Prioritaet, Task-2-Facts). Faelligkeit liegt konstruktionsbedingt nie
-  // vor dem Rechnungsdatum, da sie stets als issueDate + Tage berechnet wird.
-  const dueDate = input.dueDate ?? new Date(issueDate.getTime() + (method?.paymentTermsDays ?? settings.invoiceDueDays ?? 14) * DAY_MS);
+  // Faelligkeit (Phase 7, §33; S1 Fix-Welle): explizite Eingabe schlaegt alles; sonst
+  // Customer.defaultPaymentTermsDays (der Kunde ist die spezifischste Zusage — z.B. ein
+  // vertraglich vereinbartes 30-Tage-Ziel), danach die Zahlungsfrist der Zahlungsmethode,
+  // danach DocumentSettings.invoiceDueDays, danach 14 Tage. Faelligkeit liegt
+  // konstruktionsbedingt nie vor dem Rechnungsdatum, da sie stets als issueDate + Tage
+  // berechnet wird.
+  const paymentTermsDays = customer.defaultPaymentTermsDays ?? method?.paymentTermsDays ?? settings.invoiceDueDays ?? 14;
+  const dueDate = input.dueDate ?? new Date(issueDate.getTime() + paymentTermsDays * DAY_MS);
 
   // autoDeliveryDate (Phase 7, §33): fehlt jedes der drei Leistungsdatum-Felder, wird das
   // Rechnungsdatum als Leistungsdatum uebernommen, wenn die Einstellung aktiv ist.

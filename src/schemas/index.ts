@@ -142,7 +142,9 @@ export const customerSchema = z.object({
   vatId: z.string().optional(),
   leitwegId: z.string().optional(),
   peppolId: z.string().optional(),
-  defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
+  // S1 (Fix-Welle Phase 7): null/fehlend = kein Kunden-Override (kaskadiert auf
+  // Zahlungsmethode -> DocumentSettings.invoiceDueDays -> 14, siehe invoice/create.ts).
+  defaultPaymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
   defaultPaymentMethodId: z.string().optional(),
   // Phase 7, §34 — frei editierbar; bleibt leer -> assignCustomerNumber bei der Anlage.
   customerNumber: z.string().max(30).optional(),
