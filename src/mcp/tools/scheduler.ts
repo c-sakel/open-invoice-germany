@@ -22,7 +22,7 @@ export function registerSchedulerTools(server: McpServer, ctx: McpToolsContext):
         const lines = results.map((r) => `${r.job}: ${r.ok ? "OK" : `FEHLER (${r.error})`} · ${JSON.stringify(r.summary)}`);
         return ctx.ok(lines.join("\n"));
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        return ctx.failUnknown(e);
       }
     },
   );
