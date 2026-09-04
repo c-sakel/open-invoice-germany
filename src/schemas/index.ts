@@ -3,6 +3,7 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
+import { isValidIban, normalizeIban } from "@/lib/iban";
 
 // ── Enumerationen ────────────────────────────────────────────────────────
 export const TaxScheme = z.enum([
@@ -45,8 +46,8 @@ export const organizationSchema = z.object({
   iban: z
     .string()
     .optional()
-    .transform((s) => (s ? s.replace(/\s+/g, "") : s))
-    .refine((s) => !s || /^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(s), "Ungültige IBAN"),
+    .transform((s) => (s ? normalizeIban(s) : s))
+    .refine((s) => !s || isValidIban(s), "Ungültige IBAN"),
   bic: z.string().optional(),
   bankName: z.string().optional(),
   electronicAddress: z.string().optional(),
