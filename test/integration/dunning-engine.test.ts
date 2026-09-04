@@ -245,6 +245,26 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(await ensureDunningSnapshots(orgId)).toBe(0);
   });
 
+  it("S2 (Fix-Welle): MIGRATION-Snapshot (nur Stammdaten nachgetragen) faellt im PDF weiterhin auf die live berechnete Restforderung zurueck, nicht auf claimBaseCents=0", async () => {
+    const customerId = await makeCustomer("BUSINESS", "Live-Fallback-Kunde");
+    const fin = await makeFinalizedInvoice(customerId);
+    await recordPayment(fin.id, recordPaymentSchema.parse({ amountCents: 5000, method: "TRANSFER", paidAt: FIX_DATE }));
+    const legacy = await dbInternal.dunning.create({ data: { invoiceId: fin.id, level: 0, number: `MA-ALT2-${n}` } });
+
+    await ensureDunningSnapshots(orgId); // hebt snapshotSource auf MIGRATION, claimBaseCents bleibt 0
+    const migrated = await dbInternal.dunning.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect(migrated.snapshotSource).toBe("MIGRATION");
+    expect(migrated.claimBaseCents).toBe(0);
+
+    const row = await dbInternal.dunning.findUniqueOrThrow({
+      where: { id: legacy.id },
+      include: { invoice: { include: { org: true, customer: true } }, stage: true },
+    });
+    const pdfData = buildDunningPdfData(row, row.invoice);
+    expect(pdfData.openAmountCents).toBeGreaterThan(0); // NICHT 0,00 € — live berechnet
+    expect(pdfData.openAmountCents).toBe(fin.grossTotalCents - 5000);
+  });
+
   it("sendDunning: MemoryMailProvider -> EmailLog + sentAt gesetzt, Vorlage aus stage.emailTemplateId", async () => {
     await saveMailSettings(orgId, {
       host: "localhost",

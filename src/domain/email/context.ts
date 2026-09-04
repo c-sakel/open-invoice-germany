@@ -193,9 +193,12 @@ export async function buildTemplateContext(
     // dieser Mahnung (`claimBaseCents`, Snapshot), nicht den heutigen Live-Stand — sonst
     // wuerde eine E-Mail zu einer bereits verschickten Mahnung nachtraeglich einen anderen
     // Betrag zeigen, wenn zwischenzeitlich eine Teilzahlung eingegangen ist. Altmahnungen
-    // ohne Snapshot (`claimBaseCents` 0, vor der Selbstheilung) fallen auf den Live-Stand
-    // zurueck.
-    const open = d.snapshotSource != null ? d.claimBaseCents : inv.grossTotalCents - inv.paidAmountCents;
+    // ohne echten Betrags-Snapshot (`claimBaseCents` 0) fallen auf den Live-Stand zurueck.
+    // S2 (Fix-Welle): NUR "CREATE" traegt einen Betrags-Snapshot — "MIGRATION"
+    // (ensureDunningSnapshots) traegt nur Kaeufer-/Verkaeuferdaten nach, claimBaseCents
+    // bleibt dort 0 (nicht rekonstruierbar); `!= null` haette MIGRATION-Zeilen faelschlich
+    // 0,00 € als offenen Betrag in der Mail zeigen lassen statt live zu berechnen.
+    const open = d.snapshotSource === "CREATE" ? d.claimBaseCents : inv.grossTotalCents - inv.paidAmountCents;
     const fees = d.lateFeeCents + d.flatFee40Cents + d.feeCents;
     const total = open + d.interestAmountCents + fees;
     return {

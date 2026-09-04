@@ -334,4 +334,15 @@ describe("GET /api/dunning/overview", () => {
     const res = await overviewGet(new Request("http://x/api/dunning/overview?stageOrder=nichtnumerisch"));
     expect(res.status).toBe(400);
   });
+
+  it("S2 (Fix-Welle): GET /api/dunning/overview heilt Altmahnungen ohne Snapshot der Org (ensureDunningSnapshots)", async () => {
+    const legacy = await dbInternal.dunning.create({ data: { invoiceId: inv3.id, level: 0, number: `OVW-ALT-${inv3.id}` } });
+    expect(legacy.snapshotSource).toBeNull();
+
+    const res = await overviewGet(new Request("http://x/api/dunning/overview"));
+    expect(res.status).toBe(200);
+
+    const healed = await dbInternal.dunning.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect(healed.snapshotSource).toBe("MIGRATION");
+  });
 });

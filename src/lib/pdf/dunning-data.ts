@@ -23,7 +23,13 @@ export type DunningRow = Prisma.DunningGetPayload<{
 
 export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfData {
   const snapshotCtx = `dunning-pdf:${d.id}`;
-  const hasSnapshot = d.snapshotSource != null && !!d.sellerSnapshotJson && !!d.buyerSnapshotJson;
+  // S2 (Fix-Welle): NUR "CREATE" traegt einen tatsaechlichen Betrags-Snapshot
+  // (claimBaseCents/invoiceNumber/invoiceDueDate zum Erstellungszeitpunkt). "MIGRATION"
+  // (ensureDunningSnapshots) traegt NUR Kaeufer-/Verkaeufer-Stammdaten nach, claimBaseCents
+  // bleibt dort 0 (nicht rekonstruierbar) — `!= null` haette MIGRATION-Zeilen faelschlich
+  // als "hat Betrags-Snapshot" behandelt und "offener Betrag 0,00 €" ausgewiesen statt auf
+  // die live berechnete Restforderung zurueckzufallen.
+  const hasSnapshot = d.snapshotSource === "CREATE" && !!d.sellerSnapshotJson && !!d.buyerSnapshotJson;
   const seller = parseSellerSnapshot(d.sellerSnapshotJson, buildSellerSnapshot(inv.org), snapshotCtx);
   const buyer = parseBuyerSnapshot(d.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);
 
