@@ -17,7 +17,7 @@ import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
-import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import { getDocumentFile } from "@/api/files";
 import { createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
@@ -233,6 +233,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
+        if (e instanceof EInvoiceInvalidError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

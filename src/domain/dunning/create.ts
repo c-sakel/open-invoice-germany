@@ -61,7 +61,9 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
   const createdBy = opts.createdBy ?? "user";
 
   const inv0 = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true } });
-  if (!inv0) throw new DunningError("Rechnung nicht gefunden.");
+  // Fix-Runde (Koordinator-Ruling a, Task 3): eine voellig unbekannte invoiceId ist
+  // "nicht gefunden" (404), kein Zustandskonflikt (409) — vorher DunningError.
+  if (!inv0) throw new NotFoundError("Rechnung nicht gefunden.");
   if (opts.orgId && inv0.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
   // Basiszinssatz aus den org-weiten Mahnwesen-Einstellungen (Selbstheilung legt sie
   // bei Bedarf an) — AUSSERHALB der Transaktion, da hier nur gelesen wird und der Upsert
@@ -82,7 +84,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         },
       },
     });
-    if (!inv) throw new DunningError("Rechnung nicht gefunden.");
+    if (!inv) throw new NotFoundError("Rechnung nicht gefunden.");
     if (!DUNNABLE_TYPES.has(inv.type)) throw new DunningError("Nur Rechnungen können gemahnt werden.");
     if (inv.status === "DRAFT") throw new DunningError("Die Rechnung muss zuerst festgeschrieben werden.");
     if (inv.status === "CANCELLED") throw new DunningError("Die Rechnung ist storniert.");

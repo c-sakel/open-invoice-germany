@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { createDunning, DunningError } from "@/domain/dunning/create";
+import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
+    }
+    // Fix-Runde (Koordinator-Ruling a, Task 3): createDunning wirft fuer eine voellig
+    // unbekannte invoiceId jetzt NotFoundError (404) statt DunningError (409) — in der
+    // Praxis unerreichbar (der Vorab-Check oben faengt das schon ab), aber als
+    // Verteidigung in der Tiefe explizit gemappt.
+    if (e instanceof NotFoundError) {
+      return NextResponse.json({ error: e.message }, { status: 404 });
     }
     if (e instanceof DunningError) {
       return NextResponse.json({ error: e.message }, { status: 409 });

@@ -65,7 +65,9 @@ export async function recordPayment(
         skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
       },
     });
-    if (!inv) throw new PaymentError("Rechnung nicht gefunden.");
+    // Fix-Runde (Koordinator-Ruling a, Task 3): eine voellig unbekannte invoiceId ist
+    // "nicht gefunden" (404), kein Zustandskonflikt (409) — vorher PaymentError.
+    if (!inv) throw new NotFoundError("Rechnung nicht gefunden.");
     // Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): recordPayment pruefte bisher NICHT,
     // dass invoiceId zur aufrufenden Organisation gehoert — nur wirksam, wenn der
     // Aufrufer opts.orgId mitgibt (Session-Routen/MCP-Tools, die bereits per getActiveOrg()

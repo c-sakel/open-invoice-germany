@@ -11,6 +11,7 @@ import { setDunningState } from "@/domain/dunning/state";
 import { loadDunningOverview } from "@/domain/dunning/overview";
 import { listDunningStages, updateDunningStage, DunningStageError } from "@/domain/dunning/stages";
 import { MailNotConfiguredError } from "@/domain/email/settings";
+import { NotFoundError } from "@/domain/errors";
 import { dunningStageFieldsSchema } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -34,6 +35,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         const res = await createDunning(inv.id, { force, createdBy: "mcp", orgId: org.id });
         return ctx.ok(`${res.stage.name} ${res.dunning.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}.`);
       } catch (e) {
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof DunningError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
