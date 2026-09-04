@@ -25,7 +25,15 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
       ...(query ? { OR: [{ name: { contains: query } }, { customerNumber: { contains: query } }] } : {}),
     },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, city: true, type: true, vatId: true, customerNumber: true },
+    select: {
+      id: true,
+      name: true,
+      city: true,
+      type: true,
+      vatId: true,
+      customerNumber: true,
+      contacts: { where: { isDefault: true }, select: { firstName: true, lastName: true }, take: 1 },
+    },
   });
 
   return (
@@ -63,6 +71,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Ort</th>
                 <th className="px-4 py-3">Typ</th>
+                <th className="px-4 py-3">Standardkontakt</th>
                 <th className="px-4 py-3">USt-IdNr.</th>
                 <th className="px-4 py-3 text-right">Aktion</th>
               </tr>
@@ -78,6 +87,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
                   </td>
                   <td className="px-4 py-3 text-slate-600">{c.city}</td>
                   <td className="px-4 py-3 text-slate-600">{c.type === "BUSINESS" ? "B2B" : "B2C"}</td>
+                  <td className="px-4 py-3 text-slate-600">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</td>
                   <td className="px-4 py-3 text-slate-500">{c.vatId ?? "—"}</td>
                   <td className="px-4 py-3 text-right">
                     <form action={archiveCustomer} className="inline">

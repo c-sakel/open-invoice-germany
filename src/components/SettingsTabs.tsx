@@ -11,6 +11,7 @@ const TABS = [
   { href: "/einstellungen/textvorlagen", key: "textvorlagen", label: "Dokumenttexte" },
   { href: "/einstellungen/zahlungsmethoden", key: "zahlungsmethoden", label: "Zahlungsmethoden" },
   { href: "/einstellungen/mahnwesen", key: "mahnwesen", label: "Mahnwesen" },
+  { href: "/einstellungen/kundenfelder", key: "kundenfelder", label: "Kundenfelder" },
   { href: "/einstellungen/automatisierung", key: "automatisierung", label: "Automatisierung" },
 ] as const;
 
@@ -25,6 +26,7 @@ export type SettingsTabKey =
   | "textvorlagen"
   | "zahlungsmethoden"
   | "mahnwesen"
+  | "kundenfelder"
   | "automatisierung";
 
 export function SettingsTabs({ active }: { active: SettingsTabKey }) {

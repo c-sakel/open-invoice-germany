@@ -21,7 +21,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (q.status !== "DRAFT") redirect(`/dokumente/${id}`);
 
   const [customers, products, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
