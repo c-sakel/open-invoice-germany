@@ -8,7 +8,7 @@ import { finalizeAction, cancelAction } from "@/app/actions/invoices";
 import { PaymentForm } from "@/components/PaymentForm";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { DunningActions } from "@/components/dunning/DunningActions";
-import { dunningScheduleFor } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
@@ -129,7 +129,10 @@ export default async function InvoiceDetail({
   if (openCents > 0 && !isDraft && !isCancelled) {
     const dunningStages = await prisma.dunningStage.findMany({ where: { orgId: org.id }, select: { order: true, enabled: true, daysAfterDue: true, name: true } });
     const dunningSettings = await loadDunningSettings(org.id);
-    const lastDunning = invoice.dunnings.length > 0 ? invoice.dunnings[invoice.dunnings.length - 1] : null;
+    // Nit (Fix-Welle): `latestDunning` statt "letztes Element nach orderBy level asc" —
+    // nach einem Umsortieren der Mahnstufen (S3) ist `level`/`stage.order` nicht mehr
+    // zuverlaessig die zeitliche Reihenfolge; einheitlich mit create.ts/auto.ts.
+    const lastDunning = latestDunning(invoice.dunnings);
     const schedule = dunningScheduleFor({
       invoiceDueDate: dueDate,
       lastDunning: lastDunning ? { order: lastDunning.stage?.order ?? lastDunning.level, dueDate: lastDunning.dueDate, sentAt: lastDunning.sentAt } : null,

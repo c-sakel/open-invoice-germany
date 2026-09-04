@@ -48,6 +48,41 @@ function daysBetweenDates(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+export interface DunningLike {
+  createdAt: Date;
+  level: number;
+  stage?: { order: number } | null;
+}
+
+/**
+ * Nit (Fix-Welle): "letzte Mahnung" wurde an drei Stellen unterschiedlich bestimmt
+ * (create.ts: createdAt desc + take 1; auto.ts: dieselbe DB-Query; die Rechnungsseite:
+ * `orderBy level asc`, letztes Array-Element). Normalerweise identisch, aber nach einem
+ * Reorder der Mahnstufen (S3 — order-Werte aendern sich rueckwirkend) NICHT mehr: die
+ * Rechnungsseite haette dann die falsche Mahnung als "letzte" angezeigt. Ein Helper statt
+ * drei divergierender Implementierungen — Tiebreak bei gleichem `createdAt` ueber die
+ * Stufenordnung (`stage.order`, Fallback `level`), nicht ueber die Array-Position.
+ */
+export function latestDunning<T extends DunningLike>(dunnings: T[]): T | null {
+  let best: T | null = null;
+  for (const d of dunnings) {
+    if (!best) {
+      best = d;
+      continue;
+    }
+    const dTime = d.createdAt.getTime();
+    const bestTime = best.createdAt.getTime();
+    if (dTime > bestTime) {
+      best = d;
+    } else if (dTime === bestTime) {
+      const dOrder = d.stage?.order ?? d.level;
+      const bestOrder = best.stage?.order ?? best.level;
+      if (dOrder > bestOrder) best = d;
+    }
+  }
+  return best;
+}
+
 /**
  * Ermittelt die naechste faellige Mahnstufe. `nextStage` = erste aktivierte Stufe mit
  * `order` groesser als die Stufe der letzten Mahnung (bzw. die erste ueberhaupt, wenn noch

@@ -15,7 +15,10 @@ const all = process.argv.includes("--all");
 const jobs: SchedulerJob[] | undefined = all ? undefined : ["dunning"];
 
 async function main() {
-  const results = await runScheduledJobs({ jobs, trigger: "MANUAL" });
+  // Nit (Fix-Welle): ANLEITUNG.md dokumentiert dieses Skript als den Cron-Weg
+  // (Crontab-Beispiel `npm run scheduler:run`) — trigger war bisher "MANUAL", im
+  // SchedulerRun-Protokoll damit nicht mehr von einem UI-Klick zu unterscheiden.
+  const results = await runScheduledJobs({ jobs, trigger: "CRON" });
   for (const r of results) {
     if (!r.ok) {
       console.error(`Job "${r.job}" fehlgeschlagen: ${r.error}`);
