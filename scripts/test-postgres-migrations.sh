@@ -278,4 +278,32 @@ for COL in Invoice:printOptionsJson Quote:printOptionsJson DeliveryNote:printOpt
 done
 echo "    ok — Phase-7-Migration auf einer Bestands-DB angewendet, DocumentSettings-Bestandszeile hat alle neuen Defaults, BrandingSettings/PrintSettings existieren (leer), Customer-Index und printOptionsJson-Spalten vorhanden"
 
+echo "==> Fall 10 (Fix-Welle B3/S1): NumberRange.isActive-Default, Customer.defaultPaymentTermsDays nullable, aktive-Zeile-Switch"
+ISACTIVE_DEFAULT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='NumberRange' and column_name='isActive'")
+echo "$ISACTIVE_DEFAULT" | grep -q "^true" || fail "NumberRange.isActive hat Default '$ISACTIVE_DEFAULT', erwartet true"
+PTD_NULLABLE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select is_nullable from information_schema.columns where table_name='Customer' and column_name='defaultPaymentTermsDays'")
+[ "$PTD_NULLABLE" = "YES" ] || fail "Customer.defaultPaymentTermsDays ist NOT NULL, erwartet nullable (B3-Fix-Welle S1)"
+PTD_DEFAULT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='Customer' and column_name='defaultPaymentTermsDays'")
+[ -z "$PTD_DEFAULT" ] || fail "Customer.defaultPaymentTermsDays hat noch einen DB-Default ('$PTD_DEFAULT'), erwartet keinen (NULL = kein Kunden-Override)"
+# Aktive-Zeile-Switch (wie updateNumberRange ihn erzeugt): zwei Zeilen desselben docType
+# (year 0 und year <Jahr>) — nur eine darf gleichzeitig aktiv sein, isActive schaltet um.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "NumberRange" ("id","orgId","docType","year","currentValue","isActive","updatedAt")
+  VALUES ('nr1','org9','INVOICE',0,4999,true,NOW());
+INSERT INTO "NumberRange" ("id","orgId","docType","year","currentValue","isActive","updatedAt")
+  VALUES ('nr2','org9','INVOICE',2026,0,false,NOW());
+UPDATE "NumberRange" SET "isActive" = false WHERE id = 'nr1';
+UPDATE "NumberRange" SET "isActive" = true WHERE id = 'nr2';
+SQL
+ACTIVE_COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"NumberRange\" where \"orgId\"='org9' and \"docType\"='INVOICE' and \"isActive\"=true")
+[ "$ACTIVE_COUNT" = "1" ] || fail "erwartet genau 1 aktive NumberRange-Zeile nach dem Switch, gefunden $ACTIVE_COUNT"
+ACTIVE_YEAR=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select year from \"NumberRange\" where \"orgId\"='org9' and \"docType\"='INVOICE' and \"isActive\"=true")
+[ "$ACTIVE_YEAR" = "2026" ] || fail "aktive Zeile hat year='$ACTIVE_YEAR', erwartet 2026 nach dem Switch"
+echo "    ok — NumberRange.isActive Default true, Customer.defaultPaymentTermsDays nullable ohne Default, aktive-Zeile-Switch (year 0 -> year <Jahr>) funktioniert"
+
 echo "ALLE TESTS BESTANDEN"
