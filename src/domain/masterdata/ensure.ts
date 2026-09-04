@@ -1,10 +1,17 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { SYSTEM_PAYMENT_METHODS, DEFAULT_DUNNING_STAGES, DEFAULT_EMAIL_TEMPLATES } from "./defaults";
 import { ensureOrgTextTemplates } from "@/domain/text-template/ensure";
+import { DEFAULT_DUNNING_SETTINGS } from "@/domain/dunning/settings";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** Legt Systemzahlungsmethoden und Standard-Mahnstufen fuer eine Organisation an (idempotent). */
+/**
+ * Legt Systemzahlungsmethoden, Standard-Mahnstufen und Mahnwesen-Einstellungen fuer eine
+ * Organisation an (idempotent). Die DunningSettings-Zeile wird hier bereits mit
+ * angelegt (nicht erst per Selbstheilung beim ersten `loadDunningSettings`), damit der
+ * Scheduler (Task 3) beim seriellen Durchlauf aller Organisationen ohne zusaetzliche
+ * Schreibvorgaenge lesen kann.
+ */
 export async function ensureOrgMasterdata(db: Db, orgId: string): Promise<void> {
   for (const m of SYSTEM_PAYMENT_METHODS) {
     await db.paymentMethod.upsert({
@@ -20,6 +27,18 @@ export async function ensureOrgMasterdata(db: Db, orgId: string): Promise<void> 
       update: {},
     });
   }
+  await db.dunningSettings.upsert({
+    where: { orgId },
+    create: {
+      orgId,
+      autoCreate: DEFAULT_DUNNING_SETTINGS.autoCreate,
+      autoSend: DEFAULT_DUNNING_SETTINGS.autoSend,
+      baseInterestRateBp: DEFAULT_DUNNING_SETTINGS.baseInterestRateBp,
+      baseRateValidFrom: DEFAULT_DUNNING_SETTINGS.baseRateValidFrom,
+      gracePeriodDays: DEFAULT_DUNNING_SETTINGS.gracePeriodDays,
+    },
+    update: {},
+  });
   await ensureOrgEmailTemplates(db, orgId);
   await ensureOrgTextTemplates(db, orgId);
 }

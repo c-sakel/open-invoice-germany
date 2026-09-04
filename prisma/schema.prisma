@@ -58,6 +58,7 @@ model Organization {
   contactPersons      ContactPerson[]
   paymentMethods      PaymentMethod[]
   dunningStages       DunningStage[]
+  dunningSettings     DunningSettings?
   mailSettings        MailSettings?
   documentSettings    DocumentSettings?
   documentAttachments DocumentAttachment[]
@@ -306,6 +307,13 @@ model Invoice {
   xmlHash                   String?
   pdfPath                   String?
   finalizedAt               DateTime?
+  // Mahnprozess-Status (Phase 6): ACTIVE = laeuft normal weiter, PAUSED = bis
+  // dunningPausedUntil ausgesetzt (z.B. Ratenzahlung vereinbart), STOPPED = dauerhaft
+  // angehalten (z.B. Inkasso uebergeben). Wirkt nur auf Neuerstellung/-versand, bereits
+  // erstellte Mahnungen bleiben unveraendert (GoBD).
+  dunningState              String            @default("ACTIVE")
+  dunningPausedUntil        DateTime?
+  dunningStateNote          String?
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
 
@@ -329,24 +337,24 @@ model Invoice {
 // der Schlussrechnung erzeugt und danach nie mehr veraendert (GoBD) — Storno der
 // Schlussrechnung stornoiert die Rechnung selbst, nicht diese Zeilen.
 model FinalInvoiceDeduction {
-  id                  String   @id @default(cuid())
-  finalInvoiceId      String
-  finalInvoice        Invoice  @relation("FinalInvoiceDeductions", fields: [finalInvoiceId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  finalInvoiceId       String
+  finalInvoice         Invoice  @relation("FinalInvoiceDeductions", fields: [finalInvoiceId], references: [id], onDelete: Cascade)
   downpaymentInvoiceId String
-  downpaymentInvoice  Invoice  @relation("DownpaymentInvoiceDeductions", fields: [downpaymentInvoiceId], references: [id])
+  downpaymentInvoice   Invoice  @relation("DownpaymentInvoiceDeductions", fields: [downpaymentInvoiceId], references: [id])
   // Snapshot der Abschlagsrechnung zum Zeitpunkt der Schlussrechnung (BG-3 Preceding
   // invoice reference: BT-25 Nummer, BT-26 Datum).
-  number              String
-  issueDate           DateTime
-  netCents            Int
-  taxCents            Int
-  grossCents          Int
-  taxRate             Int
-  taxCategory         String
-  createdAt           DateTime @default(now())
+  number               String
+  issueDate            DateTime
+  netCents             Int
+  taxCents             Int
+  grossCents           Int
+  taxRate              Int
+  taxCategory          String
+  createdAt            DateTime @default(now())
 
-  @@index([finalInvoiceId])
   @@unique([finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory])
+  @@index([finalInvoiceId])
 }
 
 model InvoiceLine {
@@ -407,10 +415,22 @@ model Dunning {
   flatFee40Cents           Int       @default(0) // §288 Abs.5, nur B2B
   pdfPath                  String?
   createdAt                DateTime  @default(now())
+  // Snapshots der Parteien zum Erstellungszeitpunkt (Phase 6, analog Invoice/Quote).
+  // NULL bei Altmahnungen vor Phase 6 — Selbstheilung per ensureDunningSnapshots
+  // (Herkunft MIGRATION), PDF faellt bis dahin auf Live-Berechnung zurueck (Task 2).
+  sellerSnapshotJson       String?
+  buyerSnapshotJson        String?
+  snapshotSource           String? // CREATE | MIGRATION
+  claimBaseCents           Int       @default(0) // Forderungsbasis zum Erstellungszeitpunkt; 0 bei Altmahnungen (nicht rekonstruierbar)
+  feeCents                 Int       @default(0) // Mahnkosten der Stufe (Snapshot von DunningStage.feeCents); lateFeeCents bleibt fuer konkrete Zusatzkosten
+  invoiceNumber            String? // Snapshot der Rechnungsnummer zum Erstellungszeitpunkt
+  invoiceDueDate           DateTime? // Snapshot der Rechnungsfaelligkeit zum Erstellungszeitpunkt
+  createdBy                String    @default("user") // user | scheduler | mcp | api
 
   stageId String?
   stage   DunningStage? @relation(fields: [stageId], references: [id])
 
+  @@unique([invoiceId, stageId])
   @@index([invoiceId])
 }
 
@@ -723,6 +743,7 @@ model DunningStage {
   emailTemplateId    String?
   emailTemplate      EmailTemplate? @relation(fields: [emailTemplateId], references: [id])
   documentTemplateId String?
+  autoSend           Boolean        @default(false) // Versand nur, wenn zusaetzlich global aktiv (DunningSettings.autoSend)
   enabled            Boolean        @default(true)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
@@ -731,6 +752,39 @@ model DunningStage {
 
   @@unique([orgId, order])
   @@index([orgId])
+}
+
+/// Org-weite Mahnwesen-Einstellungen (Phase 6) — globale Automatik-Schalter und
+/// Basiszinssatz-Override. Ohne gespeicherte Zeile gelten die Defaults (Selbstheilung
+/// analog DocumentSettings), bevor eine Organisation die Einstellungen zum ersten Mal
+/// oeffnet.
+model DunningSettings {
+  id                 String       @id @default(cuid())
+  orgId              String       @unique
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  autoCreate         Boolean      @default(true)
+  autoSend           Boolean      @default(false) // §26: Default AUS; Versand nur wenn global UND je Stufe aktiv
+  baseInterestRateBp Int          @default(127) // Basiszinssatz in Basispunkten (1,27 % = 127)
+  baseRateValidFrom  DateTime?
+  gracePeriodDays    Int          @default(0)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+/// Protokoll der Scheduler-Laeufe (Phase 6) — DB-Lock und Nachvollziehbarkeit fuer den
+/// Intervall-Runner (dunning, recurring). Kein Org-Bezug: der Scheduler laeuft prozessweit
+/// ueber alle Organisationen hinweg, ein Lauf verarbeitet mehrere Organisationen seriell.
+model SchedulerRun {
+  id          String    @id @default(cuid())
+  job         String // dunning | recurring
+  trigger     String // cron | api | manual
+  status      String // RUNNING | SUCCESS | FAILED
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  summaryJson String?
+  error       String?
+
+  @@index([job, startedAt])
 }
 
 /// Anmeldekonto (Self-Hosting). MVP: ein Admin-Konto, beim ersten Start angelegt.
