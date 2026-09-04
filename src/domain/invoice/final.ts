@@ -40,7 +40,9 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
       throw new FinalInvoiceError(`Nur ein Angebot/eine Auftragsbestaetigung kann Quelle einer Schlussrechnung sein (kind: ${quote.kind}).`);
     }
 
-    const relations = await listRelations(orgId, "QUOTE", input.sourceId);
+    // B13 (Fix-Welle): tx statt dbInternal — die "keine zweite Schlussrechnung"-Pruefung
+    // liest damit innerhalb derselben Transaktion, in der auch geschrieben wird.
+    const relations = await listRelations(orgId, "QUOTE", input.sourceId, tx);
     const downpaymentIds = relations
       .filter((r) => r.fromType === "INVOICE" && r.toType === "QUOTE" && r.toId === input.sourceId && r.relationType === "DOWNPAYMENT_OF")
       .map((r) => r.fromId);

@@ -60,7 +60,9 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
     }
 
     // Kein Mischen von Teil- und Abschlagsrechnungen auf derselben Quelle (Ruling).
-    const relations = await listRelations(orgId, "QUOTE", input.sourceId);
+    // B13 (Fix-Welle): tx statt dbInternal — die Mischverbots-/100-%-Guards lesen
+    // damit innerhalb derselben Transaktion, in der auch geschrieben wird.
+    const relations = await listRelations(orgId, "QUOTE", input.sourceId, tx);
     const hasPartial = relations.some((r) => r.fromType === "INVOICE" && r.toType === "QUOTE" && r.toId === input.sourceId && r.relationType === "PARTIAL_OF");
     if (hasPartial) {
       throw new DownpaymentInvoiceError("Auf dieser Quelle bestehen bereits Teilrechnungen — Teil- und Abschlagsrechnungen koennen nicht gemischt werden.");
@@ -110,9 +112,15 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
       : [];
     const existingGrossCents = existingFinalized.reduce((s, i) => s + i.grossTotalCents, 0);
 
-    if (existingGrossCents + newGrossCents > quote.grossTotalCents) {
+    // B14 (Fix-Welle): dieselbe Basis wie die Bucket-Aufteilung selbst
+    // (`adjustedTotals.grossTotalCents`, oben) statt der separat gelesenen
+    // `quote.grossTotalCents`-Spalte — beide sollten im Normalfall identisch sein, aber
+    // `partial.ts` wurde in Fix-Runde 2 bewusst auf die berechnete Basis umgestellt, um
+    // genau diese Inkonsistenzquelle auszuschliessen (Ruling Koordinator: Konsistenz).
+    const sourceGrossCents = adjustedTotals.grossTotalCents;
+    if (existingGrossCents + newGrossCents > sourceGrossCents) {
       throw new DownpaymentInvoiceError(
-        `Die Summe der Abschlaege (${existingGrossCents + newGrossCents} Cent) wuerde die Gesamtleistung (${quote.grossTotalCents} Cent) uebersteigen.`,
+        `Die Summe der Abschlaege (${existingGrossCents + newGrossCents} Cent) wuerde die Gesamtleistung (${sourceGrossCents} Cent) uebersteigen.`,
       );
     }
 
