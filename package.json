@@ -21,6 +21,7 @@
     "dunning:run": "tsx scripts/run-dunning.ts",
     "scheduler:run": "tsx scripts/run-dunning.ts --all",
     "validate:erechnung": "tsx scripts/validate-erechnung.ts",
+    "api:check": "tsx scripts/api-check.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -38,6 +39,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.78.0",
+    "swagger-ui-dist": "^5.32.15",
     "xmlbuilder2": "^4.0.3",
     "zod": "^4.4.3"
   },

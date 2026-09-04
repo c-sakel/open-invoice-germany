@@ -32,6 +32,16 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 
 > 🔒 **Data protection (GDPR).** The app core runs **100% locally**, but the MCP feature is optional and **not automatically GDPR-compliant**: when you let a **cloud LLM** (e.g. Claude) create the invoice, the data you describe (customer name, items, amounts = personal data) is sent to that provider and processed on your behalf (Art. 28 GDPR). For business use with real personal data, either use a **local model** (the MCP server is model-agnostic) or a **commercial API with a DPA** — note that Claude **Code/Desktop** always use Anthropic's cloud and the consumer **Pro/Max subscription has no DPA**. List the provider as a sub-processor in your records and privacy policy. Details: **[docs/MCP.md](docs/MCP.md)**. Not legal advice.
 
+## REST API (`/api/v1`)
+
+A versioned, OpenAPI-documented REST API is available under `/api/v1`, calling the exact same domain functions as the UI and the MCP server — same GoBD rules, same § 14 UStG mandatory-field checks. Authentication is via a per-organisation **API key** (Bearer token, scopes `read`/`write`/`send`/`admin`), created under **Einstellungen → API**.
+
+```bash
+curl -H "Authorization: Bearer oig_..." https://your-instance/api/v1/Invoice
+```
+
+Interactive docs (Swagger UI, session login or API key): `GET /api/docs`. Machine-readable spec: `GET /api/v1/openapi.json`. Full walkthrough with curl examples (customer → invoice → finalise → PDF/XRechnung → payment): **[docs/API.md](docs/API.md)**.
+
 ## Features
 
 - **Voice control via MCP** (Claude Code/Desktop) — see above.

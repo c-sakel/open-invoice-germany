@@ -1,7 +1,8 @@
+import { z } from "zod";
 import { iso } from "./common";
-import { serializeInvoiceLine } from "./lines";
+import { serializeInvoiceLine, invoiceLineSchema } from "./lines";
 import type { Invoice, InvoiceLine, Customer, Payment } from "@/generated/prisma/client";
-import { serializePayment } from "./payment";
+import { serializePayment, paymentSchema } from "./payment";
 
 export type InvoiceWithOptionalRelations = Invoice & { lines?: InvoiceLine[]; customer?: Customer; payments?: Payment[] };
 
@@ -64,3 +65,66 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     ...(embed.has("payments") ? { payments: (inv.payments ?? []).map(serializePayment) } : {}),
   };
 }
+
+/**
+ * OpenAPI-Response-Schema (Phase 10, Task 4) — aus serializeInvoice abgeleitet.
+ * customerName/lines/payments sind optional (nur bei embed=customer,lines,payments
+ * gesetzt, siehe serializeInvoice).
+ */
+export const invoiceSchema = z.object({
+  objectName: z.literal("Invoice"),
+  id: z.string(),
+  number: z.string().nullable(),
+  status: z.string(),
+  type: z.string(),
+  taxScheme: z.string(),
+  customerId: z.string(),
+  contactPersonId: z.string().nullable(),
+  billingAddressId: z.string().nullable(),
+  shippingAddressId: z.string().nullable(),
+  currency: z.string(),
+  issueDate: z.string().nullable(),
+  deliveryDate: z.string().nullable(),
+  deliveryStart: z.string().nullable(),
+  deliveryEnd: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  buyerReference: z.string().nullable(),
+  subject: z.string().nullable(),
+  orderNumber: z.string().nullable(),
+  notes: z.string().nullable(),
+  paymentTerms: z.string().nullable(),
+  headerText: z.string().nullable(),
+  footerText: z.string().nullable(),
+  documentDiscountPermille: z.number().int(),
+  documentDiscountCents: z.number().int(),
+  documentChargePermille: z.number().int(),
+  documentChargeCents: z.number().int(),
+  documentChargeReason: z.string().nullable(),
+  skonto1Permille: z.number().int().nullable(),
+  skonto1Days: z.number().int().nullable(),
+  skonto2Permille: z.number().int().nullable(),
+  skonto2Days: z.number().int().nullable(),
+  paymentMethodId: z.string().nullable(),
+  netTotalCents: z.number().int(),
+  taxTotalCents: z.number().int(),
+  grossTotalCents: z.number().int(),
+  paidAmountCents: z.number().int(),
+  payableCents: z.number().int().nullable(),
+  prepaidCents: z.number().int(),
+  reversedByInvoiceId: z.string().nullable(),
+  correctsInvoiceId: z.string().nullable(),
+  recurringInvoiceId: z.string().nullable(),
+  sourceType: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  partialPermille: z.number().int().nullable(),
+  xmlFormat: z.string().nullable(),
+  finalizedAt: z.string().nullable(),
+  dunningState: z.string(),
+  dunningPausedUntil: z.string().nullable(),
+  dunningStateNote: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  customerName: z.string().optional(),
+  lines: z.array(invoiceLineSchema).optional(),
+  payments: z.array(paymentSchema).optional(),
+});

@@ -3,8 +3,9 @@
  * Quote-Modells, siehe src/domain/document/list.ts `kind`) — `objectName` wird vom Aufrufer
  * (Route) uebergeben, da beide Ressourcen dieselbe Prisma-Tabelle nutzen. NIE `internalNotes`.
  */
+import { z } from "zod";
 import { iso } from "./common";
-import { serializeQuoteLine } from "./lines";
+import { serializeQuoteLine, quoteLineSchema } from "./lines";
 import type { Quote, QuoteLine, Customer } from "@/generated/prisma/client";
 
 export type QuoteWithOptionalLines = Quote & { lines?: QuoteLine[]; customer?: Customer };
@@ -49,3 +50,50 @@ export function serializeQuote(q: QuoteWithOptionalLines, objectName: "Quote" | 
     ...(embed.has("lines") ? { lines: (q.lines ?? []).map(serializeQuoteLine) } : {}),
   };
 }
+
+
+/**
+ * OpenAPI-Response-Schemas (Phase 10, Task 4) fuer Quote/OrderConfirmation — aus
+ * serializeQuote abgeleitet (gemeinsame Form, `objectName` unterscheidet die beiden
+ * Ressourcen wie beim Serialisierer selbst).
+ */
+const documentBaseSchema = z.object({
+  id: z.string(),
+  number: z.string().nullable(),
+  kind: z.string(),
+  status: z.string(),
+  customerId: z.string(),
+  contactPersonId: z.string().nullable(),
+  billingAddressId: z.string().nullable(),
+  issueDate: z.string().nullable(),
+  validUntil: z.string().nullable(),
+  currency: z.string(),
+  taxScheme: z.string(),
+  subject: z.string().nullable(),
+  notes: z.string().nullable(),
+  headerText: z.string().nullable(),
+  footerText: z.string().nullable(),
+  deliveryTerms: z.string().nullable(),
+  paymentTerms: z.string().nullable(),
+  customerReference: z.string().nullable(),
+  documentDiscountPermille: z.number().int(),
+  documentDiscountCents: z.number().int(),
+  documentChargePermille: z.number().int(),
+  documentChargeCents: z.number().int(),
+  documentChargeReason: z.string().nullable(),
+  netTotalCents: z.number().int(),
+  taxTotalCents: z.number().int(),
+  grossTotalCents: z.number().int(),
+  convertedToInvoiceId: z.string().nullable(),
+  sentAt: z.string().nullable(),
+  decidedAt: z.string().nullable(),
+  decisionNote: z.string().nullable(),
+  archivedAt: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  customerName: z.string().optional(),
+  lines: z.array(quoteLineSchema).optional(),
+});
+
+export const quoteSchema = documentBaseSchema.extend({ objectName: z.literal("Quote") });
+export const orderConfirmationSchema = documentBaseSchema.extend({ objectName: z.literal("OrderConfirmation") });
