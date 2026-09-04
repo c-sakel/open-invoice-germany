@@ -5,7 +5,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
-import { buildStandardAttachments, attachmentDocTypeFor, defaultStandardAttachmentFilenames } from "@/domain/email/attachments";
+import { buildStandardAttachments, attachmentDocTypeFor, defaultStandardAttachmentFilenames, customerEInvoicePreferred } from "@/domain/email/attachments";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { loadDocumentSettings } from "@/domain/document/settings";
@@ -164,6 +164,8 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
       filename: a.filename,
       sizeBytes: a.sizeBytes,
     }));
+    // §28: Kundenvorgabe eInvoicePreferred kann die Org-Vorbelegung nur EINSCHALTEN, nie ausschalten.
+    const eInvoiceDefault = docSettings.eInvoiceDefault || ((await customerEInvoicePreferred(orgId, docType, log.docId)) ?? false);
     return {
       docType,
       docId: log.docId,
@@ -176,7 +178,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
       signature: "",
       copyToSelf: settings.copyToSelf,
       attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
-      defaultStandardAttachments: defaultStandardAttachmentFilenames(attachments, docSettings.eInvoiceDefault),
+      defaultStandardAttachments: defaultStandardAttachmentFilenames(attachments, eInvoiceDefault),
       documentAttachments,
       warnings: [],
       templateId: log.templateId ?? undefined,
@@ -187,7 +189,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
 
   const { docType, docId, templateId } = source;
   const offerLink = await resolveOfferLink(orgId, docType, docId);
-  const { ctx, customerEmail } = await buildTemplateContext(orgId, docType, docId, { offerLink });
+  const { ctx, customerEmail, customerCc } = await buildTemplateContext(orgId, docType, docId, { offerLink });
 
   let template = await pickTemplate(orgId, docType, docId, templateId);
   if (!template) {
@@ -228,20 +230,24 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     filename: a.filename,
     sizeBytes: a.sizeBytes,
   }));
+  // §28: Kundenvorgabe eInvoicePreferred kann die Org-Vorbelegung nur EINSCHALTEN, nie ausschalten.
+  const eInvoiceDefault = docSettings.eInvoiceDefault || ((await customerEInvoicePreferred(orgId, docType, docId)) ?? false);
 
   return {
     docType,
     docId,
     from,
     to: customerEmail ? [customerEmail] : [],
-    cc: splitAddresses(settings.defaultCc),
+    // Phase 8a (§28): Customer.invoiceCc (nur INVOICE/CREDIT_NOTE/DUNNING) schlaegt den
+    // Org-weiten Standard-CC vor; ohne Kundenvorgabe bleibt MailSettings.defaultCc der Fallback.
+    cc: customerCc ? splitAddresses(customerCc) : splitAddresses(settings.defaultCc),
     bcc: splitAddresses(settings.defaultBcc),
     subject,
     body,
     signature,
     copyToSelf: settings.copyToSelf,
     attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
-    defaultStandardAttachments: defaultStandardAttachmentFilenames(attachments, docSettings.eInvoiceDefault),
+    defaultStandardAttachments: defaultStandardAttachmentFilenames(attachments, eInvoiceDefault),
     documentAttachments,
     warnings,
     templateId: template?.id,

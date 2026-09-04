@@ -60,7 +60,7 @@ export async function createPartialCreditNote(
       where: { id: invoiceId },
       select: {
         id: true, orgId: true, customerId: true, number: true, taxScheme: true, currency: true, status: true, type: true,
-        sellerSnapshotJson: true, buyerSnapshotJson: true,
+        sellerSnapshotJson: true, buyerSnapshotJson: true, contactSnapshotJson: true,
         documentDiscountPermille: true, documentDiscountCents: true,
         documentChargePermille: true, documentChargeCents: true, documentChargeReason: true,
         lines: { select: { lineNetCents: true } },
@@ -125,7 +125,7 @@ export async function createPartialCreditNote(
       actor,
       now,
       // Teilgutschrift berichtigt genau die Original-Rechnung: gleicher Empfaenger/Verkaeufer wie dort.
-      inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson },
+      inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson, contactSnapshotJson: original.contactSnapshotJson },
     });
 
     await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalized.id, toType: "INVOICE", toId: original.id, relationType: "CORRECTS" });

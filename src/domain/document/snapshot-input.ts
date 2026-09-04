@@ -4,9 +4,15 @@
  * bzw. CustomerAddress am Beleg gesetzt, ueberschreibt sie Name/Adresse im Snapshot —
  * sonst gelten die Kundendaten (Fallback). Von createBusinessDocument (CREATE) UND
  * setQuoteStatus (SENT) genutzt, damit beide denselben Snapshot bauen.
+ *
+ * Phase 8a (§29/§31): traegt zusaetzlich `address` (die strukturierte, tatsaechlich
+ * gewaehlte CustomerAddress-Zeile — nur gesetzt, wenn `billingAddressId` eine Adresse
+ * trifft) und `customFields` (Snapshot der Kunden-Zusatzfelder zum Zeitpunkt der Anlage)
+ * in den Buyer-Snapshot ein.
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { buildBuyerSnapshot } from "@/domain/snapshot";
+import { parseCustomerCustomFields } from "@/domain/customer/custom-fields";
 import type { BuyerSnapshot } from "@/schemas";
 
 interface CustomerLike {
@@ -20,6 +26,7 @@ interface CustomerLike {
   vatId: string | null;
   email: string | null;
   leitwegId: string | null;
+  customFieldsJson?: string | null;
 }
 
 export async function resolveBuyerSnapshot(
@@ -35,21 +42,34 @@ export async function resolveBuyerSnapshot(
   let postalCode = customer.postalCode;
   let city = customer.city;
   let countryCode = customer.countryCode;
+  let address: BuyerSnapshot["address"] | undefined;
 
   if (contactPersonId) {
     const contact = await tx.contactPerson.findFirst({ where: { id: contactPersonId, orgId } });
     if (contact) contactName = `${contact.firstName} ${contact.lastName}`.trim();
   }
   if (billingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: billingAddressId, orgId } });
-    if (address) {
-      addressLine1 = address.addressLine1;
-      addressLine2 = address.addressLine2;
-      postalCode = address.postalCode;
-      city = address.city;
-      countryCode = address.countryCode;
+    const found = await tx.customerAddress.findFirst({ where: { id: billingAddressId, orgId } });
+    if (found) {
+      addressLine1 = found.addressLine1;
+      addressLine2 = found.addressLine2;
+      postalCode = found.postalCode;
+      city = found.city;
+      countryCode = found.countryCode;
+      address = {
+        type: found.type as "BILLING" | "SHIPPING" | "OTHER",
+        label: found.label,
+        addressLine1: found.addressLine1,
+        addressLine2: found.addressLine2,
+        postalCode: found.postalCode,
+        city: found.city,
+        countryCode: found.countryCode,
+      };
     }
   }
+
+  const customFields =
+    customer.customFieldsJson !== undefined ? await parseCustomerCustomFields(orgId, customer.customFieldsJson ?? null) : undefined;
 
   return buildBuyerSnapshot({
     name: customer.name,
@@ -62,5 +82,7 @@ export async function resolveBuyerSnapshot(
     vatId: customer.vatId,
     email: customer.email,
     leitwegId: customer.leitwegId,
+    ...(address !== undefined ? { address } : {}),
+    ...(customFields !== undefined ? { customFields } : {}),
   });
 }
