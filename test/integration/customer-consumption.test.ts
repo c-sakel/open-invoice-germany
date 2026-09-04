@@ -254,6 +254,34 @@ describe("Phase 8a — Konsum bei Lieferscheinen (§29/§30)", () => {
     expect(note.contactPersonId).toBe(contact.id);
     expect(note.contactSnapshotJson).toBeTruthy();
   });
+
+  it("B2 (Fix-Welle): Buyer-Postfelder bleiben Firmensitz, Lieferadresse landet unter shippingAddress — vererbt sich korrekt in eine Teilrechnung", async () => {
+    const customer = await makeCustomer({ addressLine1: "Firmensitz 1", postalCode: "10115", city: "Berlin" });
+    const shipping = await createAddress(orgId, customer.id, { type: "SHIPPING", addressLine1: "Lagerhalle 7", postalCode: "99999", city: "Lagerstadt", isDefault: true });
+
+    const note = await createDeliveryNote(orgId, {
+      customerId: customer.id,
+      lines: [{ description: "Ware", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19 }],
+    });
+    expect(note.shippingAddressId).toBe(shipping.id);
+    const buyer = parseBuyerSnapshot(note.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
+    expect(buyer.addressLine1).toBe("Firmensitz 1");
+    expect(buyer.city).toBe("Berlin");
+    expect(buyer.shippingAddress?.addressLine1).toBe("Lagerhalle 7");
+    expect(buyer.shippingAddress?.city).toBe("Lagerstadt");
+
+    const partial = await createPartialInvoice(
+      orgId,
+      { sourceType: "DELIVERY_NOTE", sourceId: note.id, mode: "PERCENT", permille: 1000 },
+      { now: ISSUE },
+    );
+    const finalized = await finalizeInvoice(partial.id, { now: ISSUE });
+    const partialBuyer = parseBuyerSnapshot(finalized.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
+    // BG-8 (Rechnungsadresse des Kaeufers, aus den flachen Feldern) muss der Firmensitz
+    // bleiben, NICHT die Lieferadresse — shippingAddress wird dafuer ignoriert.
+    expect(partialBuyer.addressLine1).toBe("Firmensitz 1");
+    expect(partialBuyer.city).toBe("Berlin");
+  });
 });
 
 describe("Phase 8a — customerDefaultsFor gespeicherte Vorgaben wirken im Konsum", () => {
@@ -336,5 +364,26 @@ describe("Fix-Runde 1 (Koordinator) — Snapshot-Konsistenz Angebot -> Abschlag/
     expect(partial.snapshotSource).toBe("INHERITED");
     const partialBuyer = parseBuyerSnapshot(partial.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
     expect(partialBuyer.name).not.toBe("Umbenannt nach Angebot GmbH");
+  });
+
+  it("B4 (Fix-Welle): finalizeInvoice behaelt den bei Anlage geerbten Snapshot einer Abschlagsrechnung bei (kein Live-Rebuild)", async () => {
+    const customer = await makeCustomer({ name: "Vor-Umbenennung AG" });
+    const quote = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId: customer.id,
+      taxScheme: "REGULAR",
+      lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 100000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+    const downpayment = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: ISSUE });
+    expect(downpayment.snapshotSource).toBe("INHERITED");
+
+    // Kunde NACH Angebots- und Abschlagsrechnungs-Anlage, aber VOR dem Festschreiben
+    // umbenannt — die festgeschriebene Abschlagsrechnung muss trotzdem den alten Namen zeigen.
+    await dbInternal.customer.update({ where: { id: customer.id }, data: { name: "Umbenannt nach Anlage GmbH" } });
+
+    const finalized = await finalizeInvoice(downpayment.id, { now: ISSUE });
+    expect(finalized.snapshotSource).toBe("INHERITED");
+    const finalizedBuyer = parseBuyerSnapshot(finalized.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
+    expect(finalizedBuyer.name).toBe("Vor-Umbenennung AG");
   });
 });

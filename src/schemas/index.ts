@@ -63,6 +63,16 @@ export const sellerSnapshotSchema = z.object({
 });
 export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
 
+const snapshotAddressSchema = z.object({
+  type: z.enum(["BILLING", "SHIPPING", "OTHER"]),
+  label: z.string().nullable(),
+  addressLine1: z.string(),
+  addressLine2: z.string().nullable(),
+  postalCode: z.string(),
+  city: z.string(),
+  countryCode: z.string(),
+});
+
 export const buyerSnapshotSchema = z.object({
   name: z.string(),
   contactName: z.string().nullable(),
@@ -80,18 +90,12 @@ export const buyerSnapshotSchema = z.object({
   // dieses Feld nur setzt, wenn der Aufrufer eine Adresse mitgibt — Alt-Snapshots (Phase 0-7)
   // und Aufrufer ohne Adressauswahl bleiben unveraendert (Object.keys-Kompatibilitaet,
   // siehe test/unit/snapshot.test.ts "Schluesselmengen").
-  address: z
-    .object({
-      type: z.enum(["BILLING", "SHIPPING", "OTHER"]),
-      label: z.string().nullable(),
-      addressLine1: z.string(),
-      addressLine2: z.string().nullable(),
-      postalCode: z.string(),
-      city: z.string(),
-      countryCode: z.string(),
-    })
-    .nullable()
-    .optional(),
+  address: snapshotAddressSchema.nullable().optional(),
+  // Fix-Welle B2: die am Lieferschein gewaehlte Lieferadresse — EIGENER Schluessel, damit
+  // die flachen addressLine1-Felder oben (BG-8, Rechnungsadresse des Kaeufers) auf dem
+  // Kundenstamm/Default-BILLING bleiben, statt (wie zuvor faelschlich) die Lieferadresse
+  // zu tragen. Nur bei Lieferscheinen mit gewaehlter Lieferadresse gesetzt.
+  shippingAddress: snapshotAddressSchema.nullable().optional(),
   // Phase 8a (§31): Werte der Kunden-Zusatzfelder zum Snapshot-Zeitpunkt. Optional aus
   // demselben Grund wie `address`.
   customFields: z.record(z.string(), z.unknown()).optional(),
