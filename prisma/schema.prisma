@@ -1174,6 +1174,12 @@ model WebhookDelivery {
   createdAt     DateTime        @default(now())
   deliveredAt   DateTime?
 
+  // Fix-Welle (Should-fix 7): der Scheduler-Job "webhooks" filtert AUSSCHLIESSLICH auf
+  // status + nextAttemptAt (kein orgId-Praedikat, siehe deliver.ts#runWebhookDeliveries) —
+  // der bisherige Index (orgId, status, nextAttemptAt) kann dafuer die fuehrende Spalte
+  // nicht nutzen (sequenzieller Scan bei jedem Tick). Eigener Index ohne orgId zusaetzlich
+  // zum bestehenden (der bleibt fuer org-gescopte Abfragen, z. B. das Zustellprotokoll-UI).
   @@index([orgId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
   @@index([endpointId, createdAt])
 }
