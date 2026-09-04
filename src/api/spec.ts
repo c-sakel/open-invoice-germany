@@ -23,7 +23,7 @@ export function apiListResponseSchema<T extends z.ZodTypeAny>(itemSchema: T) {
   return z.object({ data: z.array(itemSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() });
 }
 
-export type ApiScope = "read" | "write" | "admin";
+export type ApiScope = "read" | "write" | "send" | "admin";
 
 export interface RouteSpec {
   path: string;
