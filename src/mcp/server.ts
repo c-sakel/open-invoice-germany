@@ -43,7 +43,12 @@ import { convertDocument, ConvertError } from "@/domain/document/convert";
 import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/create";
 import { setQuoteStatus, setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/domain/document/status";
 import { createShareLink, revokeShareLink, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
-import { saveDocumentSettings } from "@/domain/document/settings";
+import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
+import { loadPrintSettings, savePrintSettings } from "@/domain/settings/print";
+import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
+import { listNumberRanges, updateNumberRange } from "@/domain/numbering/ranges";
+import { loadDunningSettings, saveDunningSettings } from "@/domain/dunning/settings";
+import { listDunningStages, updateDunningStage, DunningStageError } from "@/domain/dunning/stages";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
@@ -73,6 +78,11 @@ import {
   documentStatusActionSchema,
   convertDocumentBodySchema,
   documentSettingsInputSchema,
+  printSettingsInputSchema,
+  brandingSettingsInputSchema,
+  NumberRangeDocType,
+  dunningSettingsInputSchema,
+  dunningStageFieldsSchema,
   OnQuoteAccept,
   TaxScheme,
   PaymentMethod,
@@ -1699,6 +1709,230 @@ server.registerTool(
       return ok(`Dokument-Einstellungen gespeichert: onQuoteAccept=${saved.onQuoteAccept}, shareLinkDays=${saved.shareLinkDays}, storeAcceptIp=${saved.storeAcceptIp}.`);
     } catch (e) {
       if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── get_settings ─────────────────────────────────────────────────────────────
+server.registerTool(
+  "get_settings",
+  {
+    title: "Einstellungen abrufen",
+    description:
+      "Liest die Einstellungen eines Bereichs: documents (Beleg-Defaults, §33), print (globale Druckoptionen, §36), branding (Briefpapier, §35 — ohne Dateiinhalte), numberRanges (Nummernkreise, §34, optional 'year'), dunning (Mahnwesen-Einstellungen, §26).",
+    inputSchema: {
+      area: z.enum(["documents", "print", "branding", "numberRanges", "dunning"]),
+      year: z.number().int().optional().describe("Nur fuer area=numberRanges — Geschaeftsjahr (Default: laufendes Jahr)"),
+    },
+  },
+  async ({ area, year }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      switch (area) {
+        case "documents":
+          return ok(JSON.stringify(await loadDocumentSettings(org.id), null, 2));
+        case "print":
+          return ok(JSON.stringify(await loadPrintSettings(org.id), null, 2));
+        case "branding":
+          return ok(JSON.stringify(await loadBrandingSettings(org.id), null, 2));
+        case "numberRanges":
+          return ok(JSON.stringify(await listNumberRanges(org.id, year ?? new Date().getFullYear()), null, 2));
+        case "dunning":
+          return ok(JSON.stringify(await loadDunningSettings(org.id), null, 2));
+      }
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_document_settings ───────────────────────────────────────────────────
+server.registerTool(
+  "update_document_settings",
+  {
+    title: "Beleg-Einstellungen aktualisieren",
+    description:
+      "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+    inputSchema: documentSettingsInputSchema.partial().shape,
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const current = await loadDocumentSettings(org.id);
+      const saved = await saveDocumentSettings(org.id, { ...current, ...args });
+      return ok(`Beleg-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_print_settings ──────────────────────────────────────────────────────
+server.registerTool(
+  "update_print_settings",
+  {
+    title: "Globale Druckoptionen aktualisieren",
+    description: "Aktualisiert die zehn globalen Druckoptionen-Schalter (§36). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+    inputSchema: printSettingsInputSchema.partial().shape,
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const current = await loadPrintSettings(org.id);
+      const saved = await savePrintSettings(org.id, { ...current, ...args });
+      return ok(`Druckoptionen gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_branding_settings ───────────────────────────────────────────────────
+server.registerTool(
+  "update_branding_settings",
+  {
+    title: "Briefpapier-Einstellungen aktualisieren",
+    description:
+      "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35). OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert.",
+    inputSchema: brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true }).partial().shape,
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const current = await loadBrandingSettings(org.id);
+      // Verteidigung in der Tiefe: logoPath/backgroundPath NIE aus `args` uebernehmen,
+      // selbst wenn ein Aufrufer sie mitschickt — die inputSchema-Validierung des
+      // McpServer-Dispatchers wuerde sie zwar bereits herausfiltern (Zod-Objekt ohne
+      // .passthrough), aber ein direkter Handler-Aufruf (z. B. in Tests) umgeht diese
+      // Schicht. Datei-Uploads laufen ausschliesslich ueber die UI-Route.
+      const { logoPath: _ignoredLogoPath, backgroundPath: _ignoredBackgroundPath, ...safeArgs } = args as Record<string, unknown>;
+      void _ignoredLogoPath;
+      void _ignoredBackgroundPath;
+      const saved = await saveBrandingSettings(org.id, { ...current, ...safeArgs, logoPath: current.logoPath, backgroundPath: current.backgroundPath });
+      return ok(`Briefpapier-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_number_range ────────────────────────────────────────────────────────
+server.registerTool(
+  "update_number_range",
+  {
+    title: "Nummernkreis aktualisieren",
+    description:
+      "Aktualisiert Muster/Praefix/Polsterung/jaehrlichen Reset/naechste Nummer eines Nummernkreises (§34, u.a. CUSTOMER/PRODUCT/INVOICE/ANGEBOT/...). Nummern koennen nie zurueckgedreht werden (GoBD). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand des laufenden Jahres).",
+    inputSchema: {
+      docType: NumberRangeDocType,
+      pattern: z.string().optional(),
+      prefix: z.string().optional(),
+      seqPadding: z.number().int().min(1).max(8).optional(),
+      yearlyReset: z.boolean().optional(),
+      nextValue: z.number().int().min(1).optional(),
+    },
+  },
+  async ({ docType, ...args }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const year = new Date().getFullYear();
+      const ranges = await listNumberRanges(org.id, year);
+      const current = ranges.find((r) => r.docType === docType);
+      if (!current) return fail(`Unbekannter Nummernkreis-Typ "${docType}".`);
+      const merged = {
+        pattern: args.pattern ?? current.pattern,
+        prefix: args.prefix ?? current.prefix,
+        seqPadding: args.seqPadding ?? current.seqPadding,
+        yearlyReset: args.yearlyReset ?? current.yearlyReset,
+        nextValue: args.nextValue ?? current.currentValue + 1,
+      };
+      const saved = await updateNumberRange(org.id, docType, merged, "mcp");
+      return ok(`Nummernkreis "${docType}" gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_dunning_settings ────────────────────────────────────────────────────
+server.registerTool(
+  "update_dunning_settings",
+  {
+    title: "Mahnwesen-Einstellungen aktualisieren",
+    description:
+      "Aktualisiert die org-weiten Mahnwesen-Einstellungen (§26, Nachtrag Phase 7/§55: autoCreate, autoSend, Basiszinssatz, Karenztage). Nicht angegebene Felder bleiben unveraendert.",
+    inputSchema: dunningSettingsInputSchema.partial().shape,
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const current = await loadDunningSettings(org.id);
+      const saved = await saveDunningSettings(org.id, { ...current, ...args });
+      return ok(`Mahnwesen-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_dunning_stages ─────────────────────────────────────────────────────────
+server.registerTool(
+  "list_dunning_stages",
+  {
+    title: "Mahnstufen auflisten",
+    description: "Listet alle Mahnstufen der Organisation, aufsteigend nach Reihenfolge (Nachtrag Phase 7/§55).",
+    inputSchema: {},
+  },
+  async (): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const stages = await listDunningStages(org.id);
+      return ok(JSON.stringify(stages, null, 2));
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_dunning_stage ────────────────────────────────────────────────────────
+server.registerTool(
+  "update_dunning_stage",
+  {
+    title: "Mahnstufe aktualisieren",
+    description:
+      "Aktualisiert eine bestehende Mahnstufe (Name/Fristen/Mahnkosten/Zinsen/Pauschale/Auto-Versand/aktiv). Mahnkosten sind erst ab der 3. Stufe zulaessig (order >= 2, COMPLIANCE §12). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand). Nachtrag Phase 7/§55.",
+    inputSchema: {
+      id: z.string().describe("Mahnstufen-ID"),
+      ...dunningStageFieldsSchema.partial().shape,
+    },
+  },
+  async ({ id, ...args }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const existing = await dbInternal.dunningStage.findFirst({ where: { id, orgId: org.id } });
+      if (!existing) return fail(`Mahnstufe "${id}" nicht gefunden.`);
+      const merged = {
+        name: args.name ?? existing.name,
+        daysAfterDue: args.daysAfterDue ?? existing.daysAfterDue,
+        newDueDays: args.newDueDays ?? existing.newDueDays,
+        feeCents: args.feeCents ?? existing.feeCents,
+        calculateInterest: args.calculateInterest ?? existing.calculateInterest,
+        includeB2BFlatFee: args.includeB2BFlatFee ?? existing.includeB2BFlatFee,
+        emailTemplateId: args.emailTemplateId !== undefined ? args.emailTemplateId : existing.emailTemplateId,
+        autoSend: args.autoSend ?? existing.autoSend,
+        enabled: args.enabled ?? existing.enabled,
+      };
+      const saved = await updateDunningStage(org.id, id, merged);
+      return ok(`Mahnstufe "${saved.name}" gespeichert: ${JSON.stringify(saved)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof DunningStageError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
