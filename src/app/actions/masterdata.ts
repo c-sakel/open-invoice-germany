@@ -5,11 +5,12 @@ import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { assignCustomerNumber, assignArticleNumber } from "@/domain/numbering/ranges";
 import { organizationSchema, customerSchema, productSchema } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
 import { archiveCustomer as archiveCustomerDomain } from "@/domain/customer/archive";
+import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
 import { archiveProduct as archiveProductDomain } from "@/domain/product/archive";
+import { createProduct, updateProduct } from "@/domain/product/save";
 import type { ActionResult } from "./result";
 
 function str(fd: FormData, key: string): string | undefined {
@@ -113,51 +114,25 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
 
   try {
     const org = await getActiveOrg();
-    // G — defaultPaymentMethodId kam ungeprueft aus dem Formular: eine fremde
-    // Organisation haette (per manipuliertem Request) die ID einer Zahlungsmethode
-    // einer ANDEREN Organisation eintragen koennen (Prisma prueft nur, dass die ID
-    // existiert, nicht die orgId). Jetzt Mandanten-Pruefung wie bei allen anderen
-    // Fremdschluessel-Feldern.
-    if (v.defaultPaymentMethodId) {
-      const method = await dbInternal.paymentMethod.findFirst({
-        where: { id: v.defaultPaymentMethodId, orgId: org.id },
-        select: { id: true },
-      });
-      if (!method) return { ok: false, error: "Zahlungsmethode nicht gefunden." };
-    }
-    const data = {
-      type: v.type,
-      name: v.name,
-      contactName: v.contactName ?? null,
-      addressLine1: v.addressLine1,
-      addressLine2: v.addressLine2 ?? null,
-      postalCode: v.postalCode,
-      city: v.city,
-      countryCode: v.countryCode,
-      email: v.email || null,
-      phone: v.phone ?? null,
-      vatId: v.vatId ?? null,
-      leitwegId: v.leitwegId ?? null,
-      defaultPaymentTermsDays: v.defaultPaymentTermsDays ?? null,
-      defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
-      notes: v.notes ?? null,
-    };
-    // peppolId wird (mangels Formularfeld) NICHT geschrieben, damit ein bestehender Wert beim Bearbeiten erhalten bleibt.
+    // Fix-Runde 1 (Koordinator-Ruling a, 2026-09-04): Anlage-/Aenderungslogik
+    // (Nummernkreis, defaultPaymentMethodId-Mandantenpruefung) lebt jetzt ausschliesslich
+    // in src/domain/customer/save.ts — dieselbe Funktion nutzen MCP-Tools und die v1-API.
     if (id) {
-      // customerNumber nur schreiben, wenn im Formular gesetzt (Bearbeitung) — sonst bleibt
-      // eine bereits vergebene Nummer beim Speichern anderer Felder erhalten.
-      const updateData = v.customerNumber ? { ...data, customerNumber: v.customerNumber } : data;
-      const res = await dbInternal.customer.updateMany({ where: { id, orgId: org.id }, data: updateData });
-      if (res.count === 0) return { ok: false, error: "Kunde nicht gefunden." };
+      const res = await dbInternal.customer.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
+      if (!res) return { ok: false, error: "Kunde nicht gefunden." };
+      // peppolId wird (mangels Formularfeld) hier immer als Schluessel VORHANDEN (aber
+      // undefined) mitgefuehrt, da str(fd,"peppolId") ohne echtes Formularfeld immer
+      // undefined liefert. Beim Aufruf von updateCustomer MUSS der Schluessel deshalb
+      // explizit entfernt werden (nicht nur auf undefined gesetzt) -- eine PATCH-Semantik
+      // schreibt sonst ueber "Schluessel vorhanden" einen bestehenden Wert auf null.
+      const { peppolId: _peppolIdIgnored, ...updatePayload } = v;
+      void _peppolIdIgnored;
+      await updateCustomer(org.id, id, updatePayload);
     } else {
-      // Kundennummer (Phase 7, §34): frei im Formular vergeben, sonst Selbstheilung ueber
-      // den Nummernkreis CUSTOMER (assignCustomerNumber) — atomar mit der Anlage.
-      await dbInternal.$transaction(async (tx) => {
-        const customerNumber = v.customerNumber ?? (await assignCustomerNumber(tx, org.id));
-        await tx.customer.create({ data: { ...data, customerNumber, orgId: org.id } });
-      });
+      await createCustomer(org.id, v);
     }
   } catch (e) {
+    if (e instanceof CustomerValidationError) return { ok: false, error: e.message };
     console.error("saveCustomer:", e);
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
@@ -203,25 +178,15 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
 
   try {
     const org = await getActiveOrg();
-    const data = {
-      name: v.name,
-      description: v.description ?? null,
-      articleNumber: v.articleNumber ?? null,
-      unit: v.unit,
-      netPriceCents: v.netPriceCents,
-      taxRate: v.taxRate,
-      taxCategory: v.taxCategory,
-      differential: v.differential,
-    };
+    // Fix-Runde 1 (Koordinator-Ruling a, 2026-09-04): Anlage-/Aenderungslogik lebt jetzt
+    // ausschliesslich in src/domain/product/save.ts — dieselbe Funktion nutzen MCP-Tools
+    // und die v1-API.
     if (id) {
-      const res = await dbInternal.product.updateMany({ where: { id, orgId: org.id }, data });
-      if (res.count === 0) return { ok: false, error: "Produkt nicht gefunden." };
+      const res = await dbInternal.product.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
+      if (!res) return { ok: false, error: "Produkt nicht gefunden." };
+      await updateProduct(org.id, id, v);
     } else {
-      // Artikelnummer (Phase 7, §34): nur belegen, wenn im Formular leer gelassen.
-      await dbInternal.$transaction(async (tx) => {
-        const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, org.id));
-        await tx.product.create({ data: { ...data, articleNumber, orgId: org.id } });
-      });
+      await createProduct(org.id, v);
     }
   } catch (e) {
     console.error("saveProduct:", e);
@@ -272,22 +237,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
 
   try {
     const org = await getActiveOrg();
-    const product = await dbInternal.$transaction(async (tx) => {
-      const articleNumber = v.articleNumber ?? (await assignArticleNumber(tx, org.id));
-      return tx.product.create({
-        data: {
-          orgId: org.id,
-          name: v.name,
-          description: v.description ?? null,
-          articleNumber,
-          unit: v.unit,
-          netPriceCents: v.netPriceCents,
-          taxRate: v.taxRate,
-          taxCategory: v.taxCategory,
-          differential: v.differential,
-        },
-      });
-    });
+    const product = await createProduct(org.id, v);
     revalidatePath("/produkte");
     return { ok: true, product: { id: product.id, name: product.name, unit: product.unit, netPriceCents: product.netPriceCents, taxRate: product.taxRate } };
   } catch (e) {

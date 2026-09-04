@@ -1,10 +1,9 @@
 /**
  * /api/v1/Payment — Zahlungen (task-2-facts.md Registry). Kein PATCH (Zahlungen sind
- * append-only, es gibt keine Domain-Funktion zum Aendern einer erfassten Zahlung —
- * `recordPayment` selbst prueft NICHT, dass die uebergebene invoiceId zur aufrufenden
- * Organisation gehoert (siehe Modulkommentar dort), daher der explizite orgId-Check HIER
- * vor dem Aufruf — sonst koennte ein Schluessel einer fremden Organisation eine invoiceId
- * erraten/kennen und dort eine Zahlung buchen).
+ * append-only, es gibt keine Domain-Funktion zum Aendern einer erfassten Zahlung).
+ * Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): `recordPayment` prueft jetzt selbst
+ * (per optionalem `opts.orgId`) die Organisationszugehoerigkeit der invoiceId — der
+ * fruehere Vorab-Check per eigenem `prisma.invoice.findFirst` in dieser Route entfaellt.
  */
 import { z } from "zod";
 import { withApi } from "@/api/auth";
@@ -15,7 +14,6 @@ import { listPaymentsApi, paymentListFilterSchema } from "@/domain/invoice/payme
 import { recordPayment } from "@/domain/invoice/payment";
 import { recordPaymentSchema } from "@/schemas";
 import { prisma } from "@/lib/db";
-import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,9 +28,7 @@ export const GET = withApi(async (req, ctx) => {
 
 export const POST = withApi(async (_req, ctx) => {
   const { invoiceId, ...rest } = createBodySchema.parse(ctx.body);
-  const invoice = await prisma.invoice.findFirst({ where: { id: invoiceId, orgId: ctx.orgId }, select: { id: true } });
-  if (!invoice) throw new NotFoundError("Rechnung nicht gefunden.");
-  await recordPayment(invoiceId, rest, { actor: ctx.actor });
+  await recordPayment(invoiceId, rest, { actor: ctx.actor, orgId: ctx.orgId });
   const created = await prisma.payment.findFirstOrThrow({ where: { invoiceId }, orderBy: { createdAt: "desc" } });
   return apiData(serializePayment(created), 201);
 }, { scope: "write" });
