@@ -29,12 +29,13 @@
  * "Deviations"; ausserhalb des Scopes dieses Tasks, ~20 Routen retroaktiv mit exakten
  * Ad-hoc-Antwortschemas zu versehen).
  */
+import "./openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { OpenAPIRegistry, OpenApiGeneratorV31, extendZodWithOpenApi, type RouteConfig } from "@asteasolutions/zod-to-openapi";
-import type { SchemaObject } from "openapi3-ts/oas31";
+import { OpenAPIRegistry, OpenApiGeneratorV31, type RouteConfig } from "@asteasolutions/zod-to-openapi";
 import type { RouteSpec } from "./spec";
+import { apiErrorResponseSchema } from "./spec";
 import { contactSchema, contactAddressSchema, contactPersonSchema } from "./serializers/contact";
 import { productSchema } from "./serializers/product";
 import { quoteSchema, orderConfirmationSchema } from "./serializers/document";
@@ -49,8 +50,6 @@ import { textTemplateSchema } from "./serializers/text-template";
 import { emailTemplateSchema } from "./serializers/email-template";
 import { apiKeySchema } from "./serializers/api-key";
 import { recurringSchema } from "./serializers/recurring";
-
-extendZodWithOpenApi(z);
 
 const V1_ROOT = path.resolve(process.cwd(), "src/app/api/v1");
 
@@ -126,6 +125,63 @@ export function baseResourceName(routePath: string): string | undefined {
   return m?.[1];
 }
 
+/** Ressourcenname je RAW-Schema-Instanz (Objektidentitaet — dieselben Singletons, die
+ *  auch die Routen-Dateien importieren). Fix-Runde 1 (Koordinator-Befund 2): erlaubt,
+ *  Aktions-Endpunkte (Task 3), deren `spec.response` jetzt direkt ein Ressourcen-Schema
+ *  referenziert (z. B. `apiDataResponseSchema(invoiceSchema)` bei `/finalize`), auf
+ *  dieselbe registrierte (`$ref`-faehige) Schema-Instanz + dasselbe Beispiel umzulenken
+ *  wie die Basis-CRUD-Routen — ohne diese Umlenkung wuerde `registry.register()` fuer
+ *  jede dieser ~15 Aktionsrouten eine EIGENE, unregistrierte Kopie des Schemas inline
+ *  ausgeben (voller Feld-Satz je Route statt einem einzigen `$ref`).
+ */
+const RAW_TO_RESOURCE_NAME = new Map<z.ZodTypeAny, string>(Object.entries(RESOURCE_SCHEMAS).map(([name, schema]) => [schema, name]));
+
+/**
+ * Erkennt, ob ein `spec.response`-Schema strukturell EXAKT `{data: <Ressource>}` oder
+ * `{data: <Ressource>[], total, limit, offset}` ist, wobei `<Ressource>` (per
+ * Objektidentitaet) eine der RAW `RESOURCE_SCHEMAS`-Instanzen ist. Nur diese beiden
+ * Formen werden erkannt (keine tiefe/rekursive Suche in beliebig verschachtelten
+ * Kombinatoren noetig — alle betroffenen Routen nutzen ausschliesslich
+ * `apiDataResponseSchema`/`apiListResponseSchema`, siehe src/api/spec.ts).
+ */
+function detectResourceReference(schema: z.ZodTypeAny): { name: string; isList: boolean } | undefined {
+  const def = (schema as unknown as { def: Record<string, unknown> }).def;
+  if (def.type !== "object") return undefined;
+  const shape = def.shape as Record<string, z.ZodTypeAny>;
+  const keys = Object.keys(shape).sort();
+  if (keys.length === 1 && keys[0] === "data") {
+    const name = RAW_TO_RESOURCE_NAME.get(shape.data);
+    return name ? { name, isList: false } : undefined;
+  }
+  if (keys.length === 4 && keys.join(",") === "data,limit,offset,total") {
+    const dataDef = (shape.data as unknown as { def: Record<string, unknown> }).def;
+    if (dataDef.type !== "array") return undefined;
+    const name = RAW_TO_RESOURCE_NAME.get(dataDef.element as z.ZodTypeAny);
+    return name ? { name, isList: true } : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Erkennt `{data: z.union([<Ressource1>, <Ressource2>, ...])}` (aktuell nur
+ * `/{resource}/{id}/convert`, das je nach `toKind` Invoice/OrderConfirmation/
+ * DeliveryNote liefert) — liefert die Namen aller Mitglieder, WENN jedes einzelne
+ * Mitglied (per Objektidentitaet) eine RAW `RESOURCE_SCHEMAS`-Instanz ist. Ohne diese
+ * Erkennung wuerde jedes der drei vollstaendigen Ressourcen-Schemas INLINE dupliziert
+ * (kein `$ref`) — bei zwei Aufrufstellen (Quote/OrderConfirmation) sechsfach.
+ */
+function detectResourceUnion(schema: z.ZodTypeAny): string[] | undefined {
+  const def = (schema as unknown as { def: Record<string, unknown> }).def;
+  if (def.type !== "object") return undefined;
+  const shape = def.shape as Record<string, z.ZodTypeAny>;
+  if (Object.keys(shape).length !== 1 || !("data" in shape)) return undefined;
+  const dataDef = (shape.data as unknown as { def: Record<string, unknown> }).def;
+  if (dataDef.type !== "union") return undefined;
+  const options = dataDef.options as z.ZodTypeAny[];
+  const names = options.map((o) => RAW_TO_RESOURCE_NAME.get(o));
+  return names.every((n): n is string => !!n) ? names : undefined;
+}
+
 /** Pfadparameter aus `{name}`-Platzhaltern im Pfad ableiten (keine Route deklariert
  *  `request.params` explizit, siehe task-2/3-report — alle nutzen `ctx.params` roh). */
 function paramsSchemaFromPath(routePath: string): z.ZodObject | undefined {
@@ -175,35 +231,17 @@ export function sampleValue(schema: z.ZodTypeAny, hint?: string): unknown {
 }
 
 /**
- * Rohes OpenAPI-SchemaObject fuer den Fehler-Umschlag (statt eines Zod-Schemas):
- * `@asteasolutions/zod-to-openapi@9.1.0#registry.register()` ruft intern
- * `zodSchema.openapi(refId, ...)` auf, was bei zod@4.4.3s "classic"-Klassen (ZodObject
- * etc. teilen sich NICHT das Prototyp-Objekt von `z.ZodType`, obwohl `instanceof`
- * dank eines eigenen `Symbol.hasInstance` trotzdem `true` liefert — verifiziert per
- * Spike) mit `TypeError: zodSchema.openapi is not a function` bricht. Betrifft NUR
- * `.register()`/`.registerParameter()` (die `.openapi()` selbst aufrufen), NICHT das
- * direkte Verwenden von Zod-Schemas als `content.schema` in `registerPath()` (die
- * Bibliothek liest deren Form ueber die interne Zod-Introspektion, ruft dafuer nie
- * `.openapi()` auf der Instanz auf) — deshalb bleiben alle Ressourcen-/Request-Schemas
- * unten normale Zod-Schemas, nur der wiederkehrende Fehler-Umschlag wird als rohes
- * SchemaObject definiert.
+ * Fix-Runde 1 (Koordinator-Befund): der urspruengliche Bericht deutete den
+ * `TypeError: zodSchema.openapi is not a function`-Fehler faelschlich als
+ * Zod-4-Inkompatibilitaet und wich deshalb auf ein rohes SchemaObject fuer den
+ * Fehler-Umschlag aus (kein `$ref`, volle Duplizierung in jeder Fehlerantwort).
+ * Tatsaechliche Ursache: eine Import-Reihenfolge-Falle (siehe openapi-zod-init.ts) —
+ * `extendZodWithOpenApi(z)` lief NACH den bereits (transitiv) importierten
+ * Serialisierer-Schemas. Mit dem Shim-Modul als erstem Import in jeder betroffenen
+ * Datei funktioniert `.openapi()`/`registry.register()` normal; der Fehler-Umschlag
+ * wird jetzt wie jedes Ressourcen-Schema per `registry.register()` zu einer
+ * benannten `$ref`-Komponente (siehe `buildOpenApiDocument`, `registerAllComponents`).
  */
-const API_ERROR_SCHEMA_OBJECT: SchemaObject = {
-  type: "object",
-  properties: {
-    error: {
-      type: "object",
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      required: ["code", "message"],
-    },
-  },
-  required: ["error"],
-};
-
 const ERROR_INFO: Record<number, { code: string; message: string }> = {
   400: { code: "VALIDATION", message: "Validierung fehlgeschlagen." },
   401: { code: "UNAUTHORIZED", message: "Kein gueltiger API-Schluessel im Authorization-Header." },
@@ -253,10 +291,14 @@ export function sortKeysDeep<T>(value: T): T {
   return value;
 }
 
-/** JSON-Serialisierung mit sortierten Schluesseln + abschliessendem Zeilenumbruch —
- *  identisch fuer Generator UND `openapi/openapi.json` (fuer den `api:check`-Diff). */
+/** JSON-Serialisierung mit sortierten Schluesseln, KOMPAKT (kein Einrueckungs-
+ *  Whitespace) + abschliessendem Zeilenumbruch — identisch fuer Generator UND
+ *  `openapi/openapi.json` (fuer den `api:check`-Diff). Fix-Runde 1 (Koordinator-
+ *  Groessenziel "deutlich unter 300 KB"): Pretty-Print-Einrueckung verdoppelte die
+ *  Dateigroesse ohne inhaltlichen Nutzen (die Datei wird nie von Hand gelesen, nur
+ *  von Swagger UI/Werkzeugen geladen und per `api:check` byte-genau verglichen). */
 export function serializeDocument(doc: unknown): string {
-  return JSON.stringify(sortKeysDeep(doc), null, 2) + "\n";
+  return JSON.stringify(sortKeysDeep(doc)) + "\n";
 }
 
 export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, unknown> {
@@ -268,6 +310,44 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     description: 'API-Schluessel als Bearer-Token, Format "oig_<32 Byte base64url>" (Einstellungen -> API).',
   });
 
+  // Fix-Runde 1: jedes Ressourcen-Schema (+ der Fehler-Umschlag) wird EINMAL als
+  // benannte Komponente registriert — `registry.register()` haengt dabei Metadaten
+  // (u. a. den `$ref`-Namen) an GENAU DIESE Schema-INSTANZ. Wird dieselbe Instanz
+  // spaeter (hier: beim Aufbau der Responses unten UND verschachtelt, z. B.
+  // `invoiceSchema.lines` -> `invoiceLineSchema`) erneut verwendet, erkennt der
+  // Generator sie per Objektidentitaet wieder und erzeugt automatisch einen `$ref`
+  // statt der vollen Inline-Definition — daher exakt dieselben importierten
+  // Schema-Objekte weiterverwenden, NIE Kopien/Neubauten.
+  const registeredError = registry.register("ApiError", apiErrorResponseSchema);
+  const registeredResources: Record<string, z.ZodTypeAny> = {};
+  for (const [name, schema] of Object.entries(RESOURCE_SCHEMAS)) {
+    registeredResources[name] = registry.register(name, schema);
+  }
+
+  // Fix-Runde 1 (Groessenziel "deutlich unter 300 KB"): jeder Fehlercode kommt ueber
+  // alle Endpunkte hinweg dutzendfach vor (67 Routen x bis zu 6 Fehlercodes) — ein
+  // benanntes `components.examples`-Beispiel je Code + `$ref` in jeder Fehlerantwort
+  // dedupliziert das (statt denselben Beispieltext hunderte Male inline zu wiederholen).
+  for (const [status, info] of Object.entries(ERROR_INFO)) {
+    registry.registerComponent("examples", `Error${status}`, { value: { error: { code: info.code, message: info.message } } });
+  }
+
+  // Dasselbe Dedup-Prinzip fuer Ressourcen-Beispiele: EIN Beispielobjekt je Ressource
+  // (nicht je Endpunkt) — sowohl Basis-CRUD- (list/get/create/update) als auch
+  // Aktions-Endpunkte (Task 3, z. B. `/finalize`, `/status`), deren Antwort strukturell
+  // exakt einer Ressource entspricht (siehe `detectResourceReference`), referenzieren
+  // per `$ref` dasselbe `components.examples`-Beispiel, statt es je Endpunkt neu
+  // aufzufuehren (bei ~15 betroffenen Aktionsrouten sonst mehrere hundert KB Duplikat).
+  const resourceExampleValues: Record<string, unknown> = {};
+  for (const [name, schema] of Object.entries(RESOURCE_SCHEMAS)) {
+    const value = sampleValue(schema);
+    resourceExampleValues[name] = value;
+    // Komponente traegt bereits den `{data: ...}`-Umschlag, weil GENAU das per `$ref`
+    // im Single-Resource-Fall unten eingesetzt wird (die Antwort selbst ist immer
+    // `{data: <Ressource>}`, nie die blanke Ressource).
+    registry.registerComponent("examples", `${name}Example`, { value: { data: value } });
+  }
+
   // Alle Specs einer Datei einsammeln, nach Pfad+Methode sortieren fuer einen
   // deterministischen Registrierungslauf (die endgueltige JSON-Ausgabe wird zusaetzlich
   // per sortKeysDeep() sortiert — diese Sortierung hier dient nur der Nachvollziehbarkeit).
@@ -276,19 +356,33 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     .sort((a, b) => (a.spec.path === b.spec.path ? a.spec.method.localeCompare(b.spec.method) : a.spec.path.localeCompare(b.spec.path)));
 
   for (const { key, spec } of flatSpecs) {
-    const resource = baseResourceName(spec.path);
-    const resourceSchema = resource ? RESOURCE_SCHEMAS[resource] : undefined;
+    const pathResource = baseResourceName(spec.path);
+    const structuralRef = pathResource ? undefined : detectResourceReference(spec.response);
+    const resource = pathResource ?? structuralRef?.name;
+    const resourceSchema = resource ? registeredResources[resource] : undefined;
+    const isList = pathResource ? key === "list" : (structuralRef?.isList ?? false);
     const binaryKind = binaryKindForPath(spec.path);
 
     let responseSchema: z.ZodTypeAny | undefined;
+    let exampleRef: string | undefined;
     let example: unknown;
-    if (resourceSchema && key === "list") {
+    if (resourceSchema && resource && isList) {
       responseSchema = z.object({ data: z.array(resourceSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() });
-      const item = sampleValue(resourceSchema);
-      example = { data: [item], total: 1, limit: 50, offset: 0 };
-    } else if (resourceSchema) {
+      example = { data: [resourceExampleValues[resource]], total: 1, limit: 50, offset: 0 };
+    } else if (resourceSchema && resource) {
       responseSchema = z.object({ data: resourceSchema });
-      example = { data: sampleValue(resourceSchema) };
+      exampleRef = `#/components/examples/${resource}Example`;
+    } else if (!binaryKind && !pathResource) {
+      const unionNames = detectResourceUnion(spec.response);
+      if (unionNames) {
+        responseSchema = z.object({ data: z.union(unionNames.map((n) => registeredResources[n])) });
+        // Kein einzelnes `$ref`-Beispiel moeglich (drei moegliche Formen je nach `toKind`) —
+        // das erste Mitglied dient als repraesentatives Minimalbeispiel.
+        exampleRef = `#/components/examples/${unionNames[0]}Example`;
+      } else {
+        responseSchema = spec.response;
+        example = sampleValue(spec.response);
+      }
     } else if (!binaryKind) {
       responseSchema = spec.response;
       example = sampleValue(spec.response);
@@ -304,7 +398,12 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
       const successStatus = spec.method === "POST" && key !== "list" ? (key === "create" ? "201" : "200") : "200";
       responses[successStatus] = {
         description: spec.summary,
-        content: { "application/json": { schema: responseSchema, example } },
+        content: {
+          "application/json": {
+            schema: responseSchema,
+            ...(exampleRef ? { examples: { default: { $ref: exampleRef } } } : { example }),
+          },
+        },
       };
     }
     for (const status of spec.errors) {
@@ -313,8 +412,8 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
         description: ERROR_DESCRIPTIONS[status] ?? "Fehler.",
         content: {
           "application/json": {
-            schema: API_ERROR_SCHEMA_OBJECT,
-            example: info ? { error: { code: info.code, message: info.message } } : undefined,
+            schema: registeredError,
+            ...(info ? { examples: { default: { $ref: `#/components/examples/Error${status}` } } } : {}),
           },
         },
       };

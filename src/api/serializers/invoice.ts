@@ -1,3 +1,4 @@
+import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { z } from "zod";
 import { iso } from "./common";
 import { serializeInvoiceLine, invoiceLineSchema } from "./lines";

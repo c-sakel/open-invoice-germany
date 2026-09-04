@@ -4,6 +4,7 @@
  * als "intern" behandeln: `notes` ist hier das oeffentliche Notizfeld des Abos (analog
  * Contact.notes), es gibt kein separates `internalNotes` auf diesem Modell.
  */
+import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { iso } from "./common";
 import type { RecurringInvoice } from "@/generated/prisma/client";
 import { z } from "zod";

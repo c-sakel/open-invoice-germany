@@ -8,11 +8,16 @@
  * Stammdaten-/Belegschreibvorgang; ein API-Key mit blossem `write`-Scope (z. B. fuer
  * Rechnungsverwaltung) soll keine Mahnungen auf den Weg bringen koennen. `recordDunning`
  * (createDunning) prueft die Organisationszugehoerigkeit selbst ueber `opts.orgId`.
+ *
+ * Fix-Runde 1 (Koordinator-Befund 2): Antwort `{dunning}` (statt {dunningId,number,
+ * level,stage}) — die vollstaendige erzeugte Mahnung; `createDunning` liefert die
+ * volle Zeile bereits ueber `res.dunning`, kein zusaetzlicher Fetch noetig.
  */
 import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
+import { serializeDunning, dunningSchema } from "@/api/serializers/dunning";
 import { createDunning } from "@/domain/dunning/create";
 
 export const runtime = "nodejs";
@@ -23,6 +28,8 @@ const bodySchema = z.object({
   lateFeeCents: z.number().int().min(0).optional(),
 });
 
+const dunningActionResponseSchema = z.object({ dunning: dunningSchema });
+
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const input = bodySchema.parse(ctx.body ?? {});
   const res = await createDunning(ctx.params.id, {
@@ -32,17 +39,17 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
     createdBy: "api",
     orgId: ctx.orgId,
   });
-  return apiData({ dunningId: res.dunning.id, number: res.dunning.number, level: res.level, stage: res.stage }, 201);
+  return apiData({ dunning: serializeDunning(res.dunning) }, 201);
 }, { scope: "send" });
 
 export const spec = {
   create: {
     path: "/api/v1/Invoice/{id}/dunning",
     method: "POST",
-    summary: "Naechste Mahnstufe fuer eine Rechnung erstellen",
+    summary: "Naechste Mahnstufe fuer eine Rechnung erstellen (liefert die erzeugte Mahnung)",
     scope: "send",
     request: { body: bodySchema },
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(dunningActionResponseSchema),
     errors: [400, 401, 403, 404, 409, 429],
   },
 } satisfies Record<string, RouteSpec>;

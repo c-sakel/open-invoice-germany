@@ -9,6 +9,9 @@
  * intern kommagetrennte Strings erwartet. Ad-hoc-Dateianhaenge (spontane Uploads wie in
  * der HTTP-Session-Route) sind bewusst NICHT Teil dieser Aktion — Aufrufer nutzen
  * bestehende Beleganhaenge (`attachmentIds`) oder Standardanhaenge (`standardAttachments`).
+ *
+ * Fix-Runde 1 (Koordinator-Befund 2): Antwortfeld `logId` in `emailLogId` umbenannt,
+ * `spec.response` nutzt jetzt ein explizites `{emailLogId,status}`-Schema statt `z.unknown()`.
  */
 import { z } from "zod";
 import { withApi } from "@/api/auth";
@@ -22,6 +25,8 @@ import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const sendActionResponseSchema = z.object({ emailLogId: z.string(), status: z.string() });
 
 const sendActionBodySchema = z.object({
   to: z.array(z.string()).min(1),
@@ -60,7 +65,7 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   try {
     const result = await sendDocumentEmail(ctx.orgId, ctx.actor, rawInput, []);
     if (result.status === "FAILED") throw new InvalidOperationError(result.error ?? "Versand fehlgeschlagen.");
-    return apiData({ logId: result.logId, status: result.status });
+    return apiData({ emailLogId: result.logId, status: result.status });
   } catch (e) {
     if (e instanceof DocumentNotFoundError) throw new NotFoundError(e.message);
     if (e instanceof EmailAttachmentsTooLargeError) throw new InvalidOperationError(e.message);
@@ -75,7 +80,7 @@ export const spec = {
     summary: "Rechnung/Gutschrift per E-Mail versenden",
     scope: "send",
     request: { body: sendActionBodySchema },
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(sendActionResponseSchema),
     errors: [400, 401, 403, 404, 409, 429],
   },
 } satisfies Record<string, RouteSpec>;
