@@ -34,6 +34,16 @@ services:
       ATTACHMENTS_DIR: "/app/data/attachments"
       # E-Rechnung-Sidecar (optional, siehe unten):
       # EINVOICE_SERVICE_URL: "http://einvoice:8080"
+      # Scheduler (Mahnwesen/Abos, Phase 6) — Intervall-Loop läuft standardmäßig im
+      # App-Prozess mit (siehe .env.example). Bei mehreren App-Repliken/Containern
+      # (hier standardmäßig nicht der Fall) entweder SCHEDULER_ENABLED=false auf allen
+      # außer einer Instanz setzen, oder ausschließlich über Cron
+      # (/api/cron/run-all, CRON_SECRET) fahren, um doppelte Läufe zu vermeiden — der
+      # DB-Lock (SchedulerRun) verhindert zwar parallele Job-Ausführung, aber nicht
+      # unnötige redundante Versuche.
+      # SCHEDULER_ENABLED: "true"
+      # SCHEDULER_INTERVAL_MINUTES: "15"
+      # CRON_SECRET: ""
     volumes:
       - oig-attachments:/app/data/attachments
     ports:
