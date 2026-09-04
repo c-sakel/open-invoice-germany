@@ -88,16 +88,19 @@ export async function runScheduledJobs(opts: RunScheduledJobsOptions): Promise<J
 
       try {
         const summary = await jobs[job](now);
+        // Nit (Fix-Welle): finishedAt war bisher `now` (= startedAt) — die Spalte
+        // "Beendet" in SchedulerRunsTable zeigte damit immer die Startzeit, eine
+        // Laufzeit war nicht ablesbar. `new Date()` = tatsaechlicher Abschlusszeitpunkt.
         await dbInternal.schedulerRun.update({
           where: { id: entry.id },
-          data: { status: "OK", finishedAt: now, summaryJson: JSON.stringify(summary) },
+          data: { status: "OK", finishedAt: new Date(), summaryJson: JSON.stringify(summary) },
         });
         results.push({ job, ok: true, summary, runId: entry.id });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         await dbInternal.schedulerRun.update({
           where: { id: entry.id },
-          data: { status: "FAILED", finishedAt: now, error: message },
+          data: { status: "FAILED", finishedAt: new Date(), error: message },
         });
         results.push({ job, ok: false, summary: {}, error: message, runId: entry.id });
       }

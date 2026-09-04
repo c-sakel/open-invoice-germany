@@ -134,7 +134,12 @@ async function resolveInvoice(orgId: string, ref: string) {
 }
 
 async function resolveDunning(orgId: string, ref: string) {
-  const d = await dbInternal.dunning.findFirst({ where: { invoice: { orgId }, OR: [{ id: ref }, { number: ref }] } });
+  // Nit (Fix-Welle): explizites select statt vollem Row-Load — der einzige Aufrufer
+  // (send_dunning) braucht nur id/number.
+  const d = await dbInternal.dunning.findFirst({
+    where: { invoice: { orgId }, OR: [{ id: ref }, { number: ref }] },
+    select: { id: true, number: true },
+  });
   if (!d) throw new Error(`Keine Mahnung "${ref}" gefunden (weder als ID noch als Nummer).`);
   return d;
 }

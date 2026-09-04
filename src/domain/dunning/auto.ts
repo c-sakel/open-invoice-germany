@@ -14,7 +14,7 @@
 import { dbInternal } from "@/lib/db";
 import { createDunning, DunningError, DUNNABLE_TYPES } from "@/domain/dunning/create";
 import { sendDunning } from "@/domain/dunning/send";
-import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { openAmountCents } from "@/domain/invoice/amounts";
@@ -59,13 +59,18 @@ interface DunningCandidate {
   paidAmountCents: number;
   payableCents: number | null;
   customer: { email: string | null };
-  dunnings: { dueDate: Date | null; sentAt: Date; level: number; stage: { order: number } | null }[];
+  dunnings: { createdAt: Date; dueDate: Date | null; sentAt: Date; level: number; stage: { order: number } | null }[];
+}
+
+interface AutoStage extends StageLike {
+  id: string;
+  autoSend: boolean;
 }
 
 async function processCandidate(
   orgId: string,
   candidate: DunningCandidate,
-  stages: StageLike[],
+  stages: AutoStage[],
   gracePeriodDays: number,
   now: Date,
   autoSendGlobal: boolean,
@@ -79,7 +84,7 @@ async function processCandidate(
   }
 
   const dueDate = candidate.dueDate ?? candidate.issueDate;
-  const last = candidate.dunnings[0] ?? null;
+  const last = latestDunning(candidate.dunnings);
   const lastOrder = last ? (last.stage?.order ?? last.level) : null;
   const schedule = dunningScheduleFor({
     invoiceDueDate: dueDate,
@@ -112,7 +117,9 @@ async function processCandidate(
 
   if (!autoSendGlobal) return;
 
-  const stageRow = await dbInternal.dunningStage.findUnique({ where: { id: stageId }, select: { autoSend: true } });
+  // Nit (Fix-Welle): `stages` (unten geladen, inkl. autoSend) statt einer zusaetzlichen
+  // Query je erzeugter Mahnung — eine Query zu viel, die Stufe ist bereits im Speicher.
+  const stageRow = stages.find((s) => s.id === stageId);
   if (!stageRow?.autoSend) return;
 
   if (!candidate.customer.email) {
@@ -150,7 +157,10 @@ export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobO
     if (!settings.autoCreate) continue;
     result.orgs += 1;
 
-    const stages: StageLike[] = await dbInternal.dunningStage.findMany({ where: { orgId: org.id } });
+    const stages: AutoStage[] = await dbInternal.dunningStage.findMany({
+      where: { orgId: org.id },
+      select: { id: true, order: true, enabled: true, daysAfterDue: true, autoSend: true },
+    });
 
     const candidates = await dbInternal.invoice.findMany({
       where: {
@@ -167,10 +177,10 @@ export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobO
         paidAmountCents: true,
         payableCents: true,
         customer: { select: { email: true } },
+        // Nit (Fix-Welle): kein orderBy+take:1 mehr — `latestDunning` bestimmt die "letzte
+        // Mahnung" einheitlich (siehe create.ts, rechnungen/[id]/page.tsx).
         dunnings: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
+          select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
         },
       },
     });

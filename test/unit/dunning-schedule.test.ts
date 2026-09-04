@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, type StageLike, type DunningLike } from "@/domain/dunning/schedule";
 
 const STAGES: StageLike[] = [
   { order: 0, enabled: true, daysAfterDue: 3 },
@@ -103,5 +103,38 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       now: new Date("2050-01-04T23:59:00.000Z"), // faellig am 04.01. (01.01 + 3 Tage), spaet abends
     });
     expect(s.isDue).toBe(true);
+  });
+});
+
+// Nit (Fix-Welle): "letzte Mahnung" wurde an drei Stellen unterschiedlich bestimmt
+// (create.ts, auto.ts: createdAt desc + take 1; Rechnungsseite: orderBy level asc, letztes
+// Element) — nach einem Reorder der Mahnstufen (S3) nicht mehr aequivalent. Ein Helper.
+describe("latestDunning (Nit, Fix-Welle)", () => {
+  function d(createdAt: string, level: number, order?: number): DunningLike {
+    return { createdAt: new Date(createdAt), level, stage: order === undefined ? null : { order } };
+  }
+
+  it("leere Liste -> null", () => {
+    expect(latestDunning([])).toBeNull();
+  });
+
+  it("waehlt das juengste createdAt, unabhaengig von order/Array-Position", () => {
+    const older = d("2050-01-01T00:00:00.000Z", 2, 2);
+    const newer = d("2050-01-10T00:00:00.000Z", 0, 0);
+    expect(latestDunning([older, newer])).toBe(newer);
+    expect(latestDunning([newer, older])).toBe(newer); // Reihenfolge im Array egal
+  });
+
+  it("Tiebreak bei gleichem createdAt: hoehere Stufenordnung (stage.order, Fallback level)", () => {
+    const low = d("2050-01-01T00:00:00.000Z", 1, 1);
+    const high = d("2050-01-01T00:00:00.000Z", 3, 3);
+    expect(latestDunning([low, high])).toBe(high);
+    expect(latestDunning([high, low])).toBe(high);
+  });
+
+  it("ohne stage (Altmahnung) faellt der Tiebreak auf level zurueck", () => {
+    const low = d("2050-01-01T00:00:00.000Z", 0);
+    const high = d("2050-01-01T00:00:00.000Z", 2);
+    expect(latestDunning([low, high])).toBe(high);
   });
 });

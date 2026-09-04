@@ -8,7 +8,7 @@
 import { dbInternal } from "@/lib/db";
 import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
 import { computeDunning } from "@/lib/dunning";
-import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
@@ -66,10 +66,11 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       include: {
         customer: true,
         org: true,
+        // Nit (Fix-Welle): kein `take: 1` mehr — `latestDunning` (schedule.ts) bestimmt
+        // die "letzte Mahnung" jetzt einheitlich ueber alle drei Aufrufer hinweg (siehe
+        // dort), nicht mehr per DB-seitigem orderBy+take.
         dunnings: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
+          select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
         },
       },
     });
@@ -112,7 +113,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       where: { orgId: inv.orgId },
       select: { id: true, name: true, order: true, enabled: true, daysAfterDue: true, feeCents: true, newDueDays: true, calculateInterest: true, includeB2BFlatFee: true },
     });
-    const last = inv.dunnings[0] ?? null;
+    const last = latestDunning(inv.dunnings);
     const lastOrder = last ? (last.stage?.order ?? last.level) : null;
     const schedule = dunningScheduleFor({
       invoiceDueDate: dueDate,
