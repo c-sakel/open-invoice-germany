@@ -3,11 +3,10 @@
  * (je Typ) setzen. Task 3, task-3-facts.md: ruft exakt `setDefaultAddress` (dieselbe
  * Domain-Funktion wie die Session-Route `/api/customers/[id]/addresses/[addressId]/default`).
  */
-import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializeContactAddress } from "@/api/serializers/contact";
+import { serializeContactAddress, contactAddressSchema } from "@/api/serializers/contact";
 import { setDefaultAddress } from "@/domain/customer/addresses";
 
 export const runtime = "nodejs";
@@ -24,7 +23,7 @@ export const spec = {
     method: "POST",
     summary: "Zusatzadresse als Standard (je Typ) setzen",
     scope: "write",
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(contactAddressSchema),
     errors: [401, 403, 404, 429],
   },
 } satisfies Record<string, RouteSpec>;

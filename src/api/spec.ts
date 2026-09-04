@@ -9,6 +9,7 @@
  * referenziert, wo vorhanden, dieselben Zod-Schemas, die die Route auch selbst zur
  * Validierung nutzt (kein zweites, driftendes Schema).
  */
+import "./openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { z } from "zod";
 
 export const apiErrorResponseSchema = z.object({

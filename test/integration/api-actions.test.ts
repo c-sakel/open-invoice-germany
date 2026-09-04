@@ -188,13 +188,20 @@ beforeAll(async () => {
 });
 
 describe("/api/v1/Invoice/{id}/finalize", () => {
-  it("finalisiert einen Entwurf", async () => {
+  it("finalisiert einen Entwurf (liefert die volle Rechnung, Fix-Runde 1)", async () => {
     const draft = await createDraftInvoice(orgId, invoiceInput());
     const res = await InvoiceFinalize(req(`http://x/api/v1/Invoice/${draft.id}/finalize`, { method: "POST", token }), ctx1(draft.id));
     expect(res.status).toBe(200);
-    const body = (await json(res)).data;
+    const parsedBody = await json(res);
+    const body = parsedBody.data;
     expect(body.status).toBe("FINALIZED");
     expect(body.number).toBeTruthy();
+    expect(body.objectName).toBe("Invoice");
+
+    // Fix-Runde 1 (Koordinator-Befund 2): die tatsaechliche Antwort validiert gegen
+    // das im spec deklarierte Schema — kein Auseinanderlaufen von Realitaet/Doku.
+    const { spec } = await import("@/app/api/v1/Invoice/[id]/finalize/route");
+    expect(spec.create.response.safeParse(parsedBody).success).toBe(true);
   });
 
   it("zweimal festschreiben -> 409 CONFLICT", async () => {
@@ -217,13 +224,15 @@ describe("/api/v1/Invoice/{id}/finalize", () => {
 });
 
 describe("/api/v1/Invoice/{id}/cancel", () => {
-  it("storniert eine festgeschriebene Rechnung", async () => {
+  it("storniert eine festgeschriebene Rechnung (liefert die volle Storno-Gutschrift, Fix-Runde 1)", async () => {
     const fin = await makeFinalizedInvoice();
     const res = await InvoiceCancel(req(`http://x/api/v1/Invoice/${fin.id}/cancel`, { method: "POST", token }), ctx1(fin.id));
     expect(res.status).toBe(200);
     const body = (await json(res)).data;
-    expect(body.creditNoteNumber).toBeTruthy();
-    expect(body.originalNumber).toBe(fin.number);
+    expect(body.objectName).toBe("Invoice");
+    expect(body.type).toBe("CREDIT_NOTE");
+    expect(body.number).toBeTruthy();
+    expect(body.correctsInvoiceId).toBe(fin.id);
   });
 });
 
@@ -239,16 +248,27 @@ describe("/api/v1/Invoice/{id}/credit", () => {
       ctx1(fin.id),
     );
     expect(res.status).toBe(201);
-    expect((await json(res)).data.creditNoteNumber).toBeTruthy();
+    const body = (await json(res)).data;
+    expect(body.type).toBe("CREDIT_NOTE");
+    expect(body.number).toBeTruthy();
   });
 });
 
 describe("/api/v1/Invoice/{id}/payment", () => {
-  it("erfasst eine Zahlung", async () => {
+  it("erfasst eine Zahlung (liefert {payment, invoice}, Fix-Runde 1)", async () => {
     const fin = await makeFinalizedInvoice();
     const res = await InvoicePayment(req(`http://x/api/v1/Invoice/${fin.id}/payment`, { method: "POST", token, body: { amountCents: fin.grossTotalCents } }), ctx1(fin.id));
     expect(res.status).toBe(201);
-    expect((await json(res)).data.status).toBe("PAID");
+    const parsedBody = await json(res);
+    const body = parsedBody.data;
+    expect(body.invoice.status).toBe("PAID");
+    expect(body.payment.objectName).toBe("Payment");
+    expect(body.payment.amountCents).toBe(fin.grossTotalCents);
+
+    // Fix-Runde 1 (Koordinator-Befund 2): die tatsaechliche Antwort validiert gegen
+    // das im spec deklarierte Schema — kein Auseinanderlaufen von Realitaet/Doku.
+    const { spec } = await import("@/app/api/v1/Invoice/[id]/payment/route");
+    expect(spec.create.response.safeParse(parsedBody).success).toBe(true);
   });
 
   it("Idempotency-Key: doppelter Aufruf -> genau eine Buchung", async () => {
@@ -301,7 +321,10 @@ describe("/api/v1/Invoice/{id}/dunning", () => {
     await dbInternal.invoice.update({ where: { id: fin.id }, data: { dueDate: new Date("2020-01-01") } });
     const res = await InvoiceDunning(req(`http://x/api/v1/Invoice/${fin.id}/dunning`, { method: "POST", token }), ctx1(fin.id));
     expect(res.status).toBe(201);
-    expect((await json(res)).data.dunningId).toBeTruthy();
+    const body = (await json(res)).data;
+    expect(body.dunning.objectName).toBe("Dunning");
+    expect(body.dunning.id).toBeTruthy();
+    expect(body.dunning.invoiceId).toBe(fin.id);
   });
 
   it("write-Scope ohne send -> 403", async () => {
@@ -390,11 +413,18 @@ describe("/api/v1/Invoice/{id}/pdf,xrechnung,zugferd", () => {
 });
 
 describe("/api/v1/Quote/{id}/* (Angebot)", () => {
-  it("convert wandelt in eine Rechnung um", async () => {
+  it("convert wandelt in eine Rechnung um (liefert die volle Rechnung, Fix-Runde 1)", async () => {
     const doc = await createBusinessDocument(orgId, documentInput());
     const res = await QuoteConvert(req(`http://x/api/v1/Quote/${doc.id}/convert`, { method: "POST", token, body: {} }), ctx1(doc.id));
     expect(res.status).toBe(201);
-    expect((await json(res)).data.type).toBe("INVOICE");
+    const parsedBody = await json(res);
+    expect(parsedBody.data.type).toBe("INVOICE");
+    expect(parsedBody.data.objectName).toBe("Invoice");
+
+    // Fix-Runde 1 (Koordinator-Befund 2): die tatsaechliche Antwort validiert gegen
+    // das im spec deklarierte Schema (z.union aus Invoice/OrderConfirmation/DeliveryNote).
+    const { spec } = await import("@/app/api/v1/Quote/[id]/convert/route");
+    expect(spec.create.response.safeParse(parsedBody).success).toBe(true);
   });
 
   it("status: MARK_SENT setzt den Status", async () => {
@@ -412,11 +442,20 @@ describe("/api/v1/Quote/{id}/* (Angebot)", () => {
     expect(copy.id).not.toBe(doc.id);
   });
 
-  it("share-link erzeugt einen Annahme-Link", async () => {
+  it("share-link erzeugt einen Annahme-Link (liefert {url,token,expiresAt}, Fix-Runde 1)", async () => {
     const doc = await createBusinessDocument(orgId, documentInput());
     const res = await QuoteShareLink(req(`http://x/api/v1/Quote/${doc.id}/share-link`, { method: "POST", token, body: {} }), ctx1(doc.id));
     expect(res.status).toBe(201);
-    expect((await json(res)).data.url).toContain("/angebot/");
+    const parsedBody = await json(res);
+    expect(parsedBody.data.url).toContain("/angebot/");
+    expect(parsedBody.data.token).toBeTruthy();
+    expect(parsedBody.data.url).toContain(parsedBody.data.token);
+    expect(parsedBody.data.expiresAt).toBeTruthy();
+
+    // Fix-Runde 1 (Koordinator-Befund 2): die tatsaechliche Antwort validiert gegen
+    // das im spec deklarierte Schema.
+    const { spec } = await import("@/app/api/v1/Quote/[id]/share-link/route");
+    expect(spec.create.response.safeParse(parsedBody).success).toBe(true);
   });
 
   it("send versendet das Angebot", async () => {
@@ -525,7 +564,9 @@ describe("/api/v1/Recurring/{id}/run,state", () => {
     });
     const res = await RecurringRun(req(`http://x/api/v1/Recurring/${rec.id}/run`, { method: "POST", token }), ctx1(rec.id));
     expect(res.status).toBe(201);
-    expect((await json(res)).data.invoiceId).toBeTruthy();
+    const body = (await json(res)).data;
+    expect(body.objectName).toBe("Invoice");
+    expect(body.recurringInvoiceId).toBe(rec.id);
   });
 
   it("state pausiert ein Abo", async () => {

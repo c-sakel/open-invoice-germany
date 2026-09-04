@@ -2,6 +2,7 @@
  * Serialisierer fuer Contact (=Customer), ContactAddress, ContactPerson
  * (Phase 10, Task 2, task-2-facts.md Registry).
  */
+import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { iso } from "./common";
 import type { Customer, CustomerAddress, ContactPerson as ContactPersonRow } from "@/generated/prisma/client";
 import { z } from "zod";

@@ -3,6 +3,7 @@
  * Quote-Modells, siehe src/domain/document/list.ts `kind`) — `objectName` wird vom Aufrufer
  * (Route) uebergeben, da beide Ressourcen dieselbe Prisma-Tabelle nutzen. NIE `internalNotes`.
  */
+import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { z } from "zod";
 import { iso } from "./common";
 import { serializeQuoteLine, quoteLineSchema } from "./lines";

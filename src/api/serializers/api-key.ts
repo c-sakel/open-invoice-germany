@@ -1,3 +1,4 @@
+import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { iso } from "./common";
 import type { ApiKeySummary } from "@/domain/api-key/list";
 import { z } from "zod";

@@ -3,11 +3,10 @@
  * setzen. Task 3, task-3-facts.md: ruft exakt `setDefaultContact` (dieselbe Domain-
  * Funktion wie die Session-Route `/api/customers/[id]/contacts/[contactId]/default`).
  */
-import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializeContactPerson } from "@/api/serializers/contact";
+import { serializeContactPerson, contactPersonSchema } from "@/api/serializers/contact";
 import { setDefaultContact } from "@/domain/customer/contacts";
 
 export const runtime = "nodejs";
@@ -24,7 +23,7 @@ export const spec = {
     method: "POST",
     summary: "Ansprechpartner als Standard setzen",
     scope: "write",
-    response: apiDataResponseSchema(z.unknown()),
+    response: apiDataResponseSchema(contactPersonSchema),
     errors: [401, 403, 404, 429],
   },
 } satisfies Record<string, RouteSpec>;
