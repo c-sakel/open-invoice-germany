@@ -85,14 +85,25 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => {
             const d = drafts[r.docType];
+            const label = LABELS[r.docType] ?? r.docType;
             return (
               <tr key={r.docType}>
-                <td className="px-3 py-2 font-medium text-slate-700">{LABELS[r.docType] ?? r.docType}</td>
+                <td className="px-3 py-2 font-medium text-slate-700">{label}</td>
                 <td className="px-3 py-2">
-                  <input value={d.prefix} onChange={(e) => setDraft(r.docType, { prefix: e.target.value })} className="w-20 rounded border border-slate-300 px-2 py-1" />
+                  <input
+                    value={d.prefix}
+                    onChange={(e) => setDraft(r.docType, { prefix: e.target.value })}
+                    className="w-20 rounded border border-slate-300 px-2 py-1"
+                    aria-label={`Präfix — ${label}`}
+                  />
                 </td>
                 <td className="px-3 py-2">
-                  <input value={d.pattern} onChange={(e) => setDraft(r.docType, { pattern: e.target.value })} className="w-40 rounded border border-slate-300 px-2 py-1" />
+                  <input
+                    value={d.pattern}
+                    onChange={(e) => setDraft(r.docType, { pattern: e.target.value })}
+                    className="w-40 rounded border border-slate-300 px-2 py-1"
+                    aria-label={`Muster — ${label}`}
+                  />
                 </td>
                 <td className="px-3 py-2">
                   <input
@@ -102,10 +113,17 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                     value={d.seqPadding}
                     onChange={(e) => setDraft(r.docType, { seqPadding: Number(e.target.value) })}
                     className="w-16 rounded border border-slate-300 px-2 py-1"
+                    aria-label={`Stellen der laufenden Nummer — ${label}`}
                   />
                 </td>
                 <td className="px-3 py-2">
-                  <input type="checkbox" checked={d.yearlyReset} onChange={(e) => setDraft(r.docType, { yearlyReset: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                  <input
+                    type="checkbox"
+                    checked={d.yearlyReset}
+                    onChange={(e) => setDraft(r.docType, { yearlyReset: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300"
+                    aria-label={`Jährlich zurücksetzen — ${label}`}
+                  />
                 </td>
                 <td className="px-3 py-2">
                   <input
@@ -114,6 +132,7 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                     value={d.nextValue}
                     onChange={(e) => setDraft(r.docType, { nextValue: Number(e.target.value) })}
                     className="w-24 rounded border border-slate-300 px-2 py-1"
+                    aria-label={`Nächste Nummer — ${label}`}
                   />
                 </td>
                 <td className="px-3 py-2 text-slate-500">{r.nextNumberPreview}</td>

@@ -35,7 +35,6 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 
 ## Daten & Recht
 - **PostgreSQL** nutzt echte Migrationen (`prisma/migrations-postgres/`, angewendet beim Containerstart). Bestehende Instanzen, die noch mit `prisma db push` angelegt wurden, müssen einmalig eine Baseline verbuchen — der Container bricht mit der nötigen Anweisung ab, statt die Datenbank anzufassen.
-- **Nummernkreise** sind standardmäßig jahresbasiert; eine UI zum Vorkonfigurieren (Präfix/Muster/jahresunabhängig) fehlt noch.
 - **Feld-Validierung** von IBAN/BIC/USt-IdNr. ist bewusst locker (keine Prüfziffer/Mod-97). Offensichtlich falsche Werte können durchrutschen.
 - **GoBD:** Die Software ermöglicht Unveränderbarkeit + Audit-Chain, ersetzt aber **nicht** die anwenderseitige **Verfahrensdokumentation**.
 - **Beleg-Snapshots:** Seit Phase 0 speichern festgeschriebene Rechnungen und nummerierte Geschäftsdokumente Käufer-/Verkäuferdaten als Snapshot; Stammdatenänderungen wirken nicht mehr zurück. Belege aus der Zeit davor wurden per Migration aus dem damals aktuellen Stamm eingefroren (`snapshotSource = MIGRATION`) — ihr Snapshot entspricht dem Stand zum Migrationszeitpunkt, nicht zwingend dem Ausstellungszeitpunkt. Storno und Gutschrift erben den Snapshot des Originalbelegs (`INHERITED`). **Mahnungen** werden seit Phase 6 ebenfalls gesnapshottet (Käufer-/Verkäuferdaten + Forderungsbetrag zum Erstellungszeitpunkt, Herkunft `CREATE`); Altmahnungen aus der Zeit davor bekommen den Kunden-/Verkäufer-Snapshot per Selbstheilung nachgetragen (Herkunft `MIGRATION`), ihr Forderungsbetrag bleibt jedoch `0` (nicht rekonstruierbar) — siehe „Zahlung, Mahnwesen & Abos" oben.
@@ -72,6 +71,14 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Beleganhaenge werden nicht in ZUGFeRD eingebettet.** Der Hybrid-PDF-Container enthaelt weiterhin nur `factur-x.xml`; hochgeladene Beleganhaenge (z. B. Lieferschein-Scan) bleiben separate Dateien, die ueber die App/den Mailversand abrufbar sind, nicht Teil des PDF/A-3-Anhangs.
 - **Dedup ist je Organisation**, nicht global — derselbe Dateiinhalt wird pro Org einmal gespeichert, aber nicht organisationsuebergreifend erkannt.
 - **Loeschen entfernt die Datei nur, wenn keine weitere `DocumentAttachment`-Zeile mehr auf denselben Hash verweist** (Dedup-Referenzzaehlung ueber den Speicherpfad) — ein einzelnes Entfernen loescht also nicht zwangslaeufig sofort die physische Datei.
+
+## Briefpapier, Druckoptionen, Nummernkreise & GiroCode (Phase 7)
+- **Nur Deutsch.** Briefpapier, Druckoptionen, Nummernkreise (§ 33–37) sowie die erzeugten PDFs/GiroCode-Beschriftungen sind ausschließlich auf Deutsch — keine Mehrsprachigkeit, analog zur öffentlichen Angebotsseite (siehe „Dokumentworkflow" oben).
+- **Ein Briefpapier je Organisation.** `BrandingSettings` ist 1:1 an `orgId` gebunden (kein zweites Layout, keine Vorlagen je Belegtyp/Kunde/Sprache) — Logo, Farbe, Ränder, Absender-/Fußzeile gelten für alle Belegarten gleichermaßen.
+- **GiroCode nur in EUR und nur mit hinterlegter IBAN.** Der EPC-QR-Code (EPC069-12, COMPLIANCE.md Abschnitt 6) wird ausschließlich für Rechnungen in Euro mit einer gültigen IBAN gerendert; Fremdwährungsrechnungen und Rechnungen ohne IBAN erscheinen ohne GiroCode — ohne Fehler, der Beleg bleibt vollständig.
+- **Nummer erst beim Versand ist nicht umgesetzt.** Angebots-/AB-/Lieferschein-Nummern werden weiterhin **bei Erstellung** vergeben (Betreiber-Ruling, COMPLIANCE.md Abschnitt 6), nicht erst beim Versand — eine Option dafür existiert (noch) nicht.
+- **Layoutänderungen wirken auf Nachdrucke bereits festgeschriebener Belege.** Eine spätere Änderung an Briefpapier oder globalen Druckoptionen ändert das Aussehen jedes künftigen PDF-Abrufs eines bereits festgeschriebenen Belegs (das PDF wird bei jedem Abruf aus dem aktuellen Theme neu gerendert) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Steuern, Nummer) bleibt davon unberührt, siehe COMPLIANCE.md Abschnitt 6 „Layoutänderungen vs. Beleginhalt". Je-Beleg-Druckoptionen lassen sich dagegen nach Festschreibung nicht mehr ändern.
+- **`offerLastDocument` ist noch ohne Wirkung.** Die Einstellung („Letztes Dokument übernehmen" für Folgeangebote/-AB) existiert in den Belegeinstellungen, wird aber erst mit Lastenheft §32 (Phase 8) konsumiert.
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.
