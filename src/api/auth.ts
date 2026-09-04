@@ -76,12 +76,21 @@ function invalidIdempotencyKeyError(): z.ZodError {
   return new z.ZodError([{ code: "custom", path: ["Idempotency-Key"], message: `Idempotency-Key muss 1..${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen lang sein.` }]);
 }
 
+/** Marker-Property (Fix-Welle, Nit 12): am Rueckgabewert von `withApi` gesetzt, damit ein
+ *  Test jede exportierte GET/POST/PATCH/PUT/DELETE-Funktion unter src/app/api/v1 darauf
+ *  pruefen kann, ob sie tatsaechlich ein withApi-Produkt ist — `discoverRouteSpecs`
+ *  (src/api/openapi.ts) verlangt bisher nur einen `spec`-Export, nicht dass der Handler
+ *  auch WIRKLICH per withApi laeuft. Da der gesamte /api/v1-Praefix proxy-oeffentlich ist
+ *  (src/proxy.ts), waere eine vergessene withApi-Umhuellung ein Endpunkt ohne jede
+ *  Auth-Pruefung. Siehe test/unit/withapi-coverage.test.ts. */
+export const WITH_API_MARKER = Symbol.for("oig.withApi");
+
 export function withApi<TParams = Record<string, string>>(
   handler: ApiHandler<TParams>,
   opts: { scope: ApiKeyScope; maxBodyBytes?: number },
 ) {
   const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
-  return async (req: Request, routeCtx?: ApiRouteContext<TParams>): Promise<NextResponse> => {
+  const wrapped = async (req: Request, routeCtx?: ApiRouteContext<TParams>): Promise<NextResponse> => {
     try {
       // Fix-Welle (Should-fix 4): IP-gekeytes Kontingent VOR jedem Token-Lookup — sonst
       // verbraucht ein fehlender/ungueltiger Bearer-Token gar kein Kontingent und loest
@@ -161,4 +170,6 @@ export function withApi<TParams = Record<string, string>>(
       return apiError(e);
     }
   };
+  Object.defineProperty(wrapped, WITH_API_MARKER, { value: true, enumerable: false });
+  return wrapped;
 }

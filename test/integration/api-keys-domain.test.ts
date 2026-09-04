@@ -127,12 +127,26 @@ describe("ActivityLog fuer API-Schluessel (Should-fix 6)", () => {
 describe("listApiKeys", () => {
   it("liefert nie das Klartext-Token, nur Metadaten", async () => {
     await createApiKey(orgId, { name: "Sichtbarkeitstest", scopes: ["send"] });
-    const keys = await listApiKeys(orgId);
+    const { rows: keys, total } = await listApiKeys(orgId, { limit: 1000, offset: 0 });
     expect(keys.length).toBeGreaterThan(0);
+    expect(total).toBeGreaterThanOrEqual(keys.length);
     for (const k of keys) {
       expect(k).not.toHaveProperty("token");
       expect(k).not.toHaveProperty("keyHash");
     }
+  });
+
+  // Fix-Welle (Nit 14): DB-seitige Pagination (take/skip) statt alles zu laden und
+  // in-memory zu slicen.
+  it("paginiert per limit/offset auf DB-Ebene", async () => {
+    const before = await listApiKeys(orgId, { limit: 1000, offset: 0 });
+    for (let i = 0; i < 3; i++) await createApiKey(orgId, { name: `Pagination-${i}`, scopes: ["read"] });
+    const page1 = await listApiKeys(orgId, { limit: 1, offset: 0 });
+    expect(page1.rows.length).toBe(1);
+    expect(page1.total).toBe(before.total + 3);
+    const page2 = await listApiKeys(orgId, { limit: 1, offset: 1 });
+    expect(page2.rows.length).toBe(1);
+    expect(page2.rows[0].id).not.toBe(page1.rows[0].id);
   });
 });
 
