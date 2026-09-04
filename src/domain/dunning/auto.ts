@@ -16,6 +16,7 @@ import { createDunning, DunningError, DUNNABLE_TYPES } from "@/domain/dunning/cr
 import { sendDunning } from "@/domain/dunning/send";
 import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
+import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import type { MailProvider } from "@/lib/mail/provider";
 
@@ -139,6 +140,12 @@ export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobO
     : await dbInternal.organization.findMany({ select: { id: true }, orderBy: { createdAt: "asc" } });
 
   for (const org of orgs) {
+    // S2 (Fix-Welle): Selbstheilung fuer Altmahnungen tatsaechlich aufrufen — vorher hatte
+    // `ensureDunningSnapshots` keinen Aufrufer im laufenden System (nur im Test), obwohl
+    // ARCHITEKTUR/COMPLIANCE/LIMITATIONEN das Gegenteil beschrieben. Einmal je Org und
+    // Lauf, unabhaengig von autoCreate (betrifft auch Orgs, die nur manuell mahnen).
+    await ensureDunningSnapshots(org.id);
+
     const settings = await loadDunningSettings(org.id);
     if (!settings.autoCreate) continue;
     result.orgs += 1;

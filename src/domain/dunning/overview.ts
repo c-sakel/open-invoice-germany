@@ -9,6 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
 import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
+import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { DUNNABLE_TYPES } from "@/domain/dunning/create";
 
 export interface DunningOverviewFilter {
@@ -61,6 +62,10 @@ function addToBucket(aging: DunningOverview["widgets"]["aging"], daysOverdue: nu
 }
 
 export async function loadDunningOverview(orgId: string, now: Date = new Date(), filter: DunningOverviewFilter = {}): Promise<DunningOverview> {
+  // S2 (Fix-Welle): Selbstheilung fuer Altmahnungen beim Laden von /mahnwesen anstossen
+  // (zweiter Aufrufer neben runDunningJob) — vorher hatte ensureDunningSnapshots keinen
+  // produktiven Aufrufer.
+  await ensureDunningSnapshots(orgId);
   const settings = await loadDunningSettings(orgId);
 
   const stages: (StageLike & { name: string })[] = await dbInternal.dunningStage.findMany({

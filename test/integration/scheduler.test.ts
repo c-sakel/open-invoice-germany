@@ -180,6 +180,18 @@ describe("Phase 6 — runDunningJob (dunning/auto.ts)", () => {
     // Fuer die folgenden Runner-Tests: autoSend wieder aus, damit sie nicht unerwartet mailen.
     await saveDunningSettings(orgId, { autoCreate: true, autoSend: false, baseInterestRateBp: 127, baseRateValidFrom: null, gracePeriodDays: 0 });
   });
+
+  it("S2 (Fix-Welle): heilt Altmahnungen ohne Snapshot der Org (ensureDunningSnapshots hat jetzt einen produktiven Aufrufer)", async () => {
+    const customerId = await makeCustomer();
+    const fin = await makeFinalizedInvoice(customerId, new Date("2051-06-01"));
+    const legacy = await dbInternal.dunning.create({ data: { invoiceId: fin.id, level: 0, number: `S2-ALT-${n}` } });
+    expect(legacy.snapshotSource).toBeNull();
+
+    await runDunningJob(FIX_DATE, { orgId });
+
+    const healed = await dbInternal.dunning.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect(healed.snapshotSource).toBe("MIGRATION");
+  });
 });
 
 describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
