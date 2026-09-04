@@ -5,7 +5,11 @@
  * Vorbelegen NIE mehr automatisch ein Link erzeugt (das war W3): existiert ein
  * gueltiger Link, wird dessen Token entschluesselt (`revealShareLinkToken`) und
  * verlinkt; existiert keiner, wird die komplette Platzhalter-Zeile aus dem Body
- * entfernt, ohne einen neuen Link zu minten.
+ * entfernt, ohne einen neuen Link zu minten — DIES GILT UNVERAENDERT, solange
+ * `DocumentSettings.shareLinkDefaultOn` AUS ist (Default in dieser Datei, siehe
+ * `beforeAll`). Phase 7 Fix-Runde 1: ist die Einstellung AN, mintet `resolveOfferLink`
+ * (src/domain/email/compose.ts) jetzt doch automatisch einen Link, wenn keiner aktiv
+ * ist — siehe eigener Testfall unten.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { dbInternal } from "@/lib/db";
@@ -13,6 +17,7 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createBusinessDocument } from "@/domain/document/create";
 import { setQuoteStatus } from "@/domain/document/status";
 import { saveMailSettings } from "@/domain/email/settings";
+import { saveDocumentSettings } from "@/domain/document/settings";
 import { prefillEmail } from "@/domain/email/compose";
 import { createShareLink } from "@/domain/quote-share/link";
 
@@ -52,6 +57,9 @@ beforeAll(async () => {
     fromName: "Linkplatzhalter GmbH", fromEmail: "rechnung@example.org",
     defaultBcc: "", defaultCc: "", copyToSelf: false,
   });
+  // Baseline fuer alle Tests dieser Datei ausser dem eigenen shareLinkDefaultOn-Fall
+  // unten (Schema-Default waere sonst "an" und wuerde die W3-Garantie verdecken).
+  await saveDocumentSettings(orgId, { shareLinkDefaultOn: false });
 });
 
 afterAll(() => {
@@ -67,7 +75,7 @@ describe("{{offer.link}} in prefillEmail (ANGEBOT)", () => {
     expect(pre.body).not.toContain("/angebot/");
   });
 
-  it("mit APP_BASE_URL, aber OHNE gueltigen Link: kein neuer Link wird erzeugt, die Platzhalter-Zeile wird komplett entfernt", async () => {
+  it("shareLinkDefaultOn AUS, mit APP_BASE_URL, aber OHNE gueltigen Link: kein neuer Link wird erzeugt, die Platzhalter-Zeile wird komplett entfernt", async () => {
     process.env.APP_BASE_URL = "https://instanz.example.org/";
     const q = await makeQuote();
     const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
@@ -76,6 +84,21 @@ describe("{{offer.link}} in prefillEmail (ANGEBOT)", () => {
 
     const links = await dbInternal.quoteShareLink.findMany({ where: { orgId, quoteId: q.id } });
     expect(links.length).toBe(0);
+  });
+
+  it("shareLinkDefaultOn AN, mit APP_BASE_URL, ohne gueltigen Link: ein neuer Link wird gemintet und im Body verlinkt", async () => {
+    process.env.APP_BASE_URL = "https://instanz.example.org";
+    await saveDocumentSettings(orgId, { shareLinkDefaultOn: true });
+    try {
+      const q = await makeQuote();
+      const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+      expect(pre.body).toContain("https://instanz.example.org/angebot/");
+
+      const links = await dbInternal.quoteShareLink.findMany({ where: { orgId, quoteId: q.id } });
+      expect(links.length).toBe(1);
+    } finally {
+      await saveDocumentSettings(orgId, { shareLinkDefaultOn: false }); // Baseline fuer nachfolgende Tests wiederherstellen
+    }
   });
 
   it("existiert bereits ein gueltiger Link, wird dessen Token entschluesselt und verlinkt (kein zweiter Link entsteht)", async () => {

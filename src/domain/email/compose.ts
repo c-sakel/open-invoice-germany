@@ -12,7 +12,7 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
 import { DEFAULT_DUNNING_STAGES } from "@/domain/masterdata/defaults";
 import { renderTemplate } from "@/lib/template/render";
-import { revealShareLinkToken } from "@/domain/quote-share/link";
+import { revealShareLinkToken, createShareLink } from "@/domain/quote-share/link";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import type { EmailDocType } from "@/schemas/email";
@@ -57,13 +57,20 @@ function splitAddresses(s: string): string[] {
 
 /**
  * Ermittelt die URL fuer `{{offer.link}}` beim Vorbelegen einer ANGEBOT-Mail (Phase 3b,
- * Adjudikation Task-1). Ohne `APP_BASE_URL` bleibt der Platzhalter leer (Ruling). Es wird
- * NICHT mehr automatisch ein neuer Link erzeugt (das war die urspruengliche W3-Luecke:
- * jeder Aufruf minte einen weiteren Link) — stattdessen wird der aktivste gueltige
- * bestehende Link wiederverwendet (`revokedAt` null, `decidedAt` null, `expiresAt` in der
- * Zukunft, Angebotsstatus effektiv DRAFT/SENT/EXPIRED) und dessen Token authentifiziert
- * ueber `revealShareLinkToken` entschluesselt. Existiert kein solcher Link, bleibt der
- * Platzhalter leer — der Betreiber erzeugt ihn bewusst ueber das Link-Panel.
+ * Adjudikation Task-1). Ohne `APP_BASE_URL` bleibt der Platzhalter leer (Ruling). Per
+ * Default wird KEIN neuer Link erzeugt (das war die urspruengliche W3-Luecke: jeder
+ * Aufruf minte einen weiteren Link) — stattdessen wird der aktivste gueltige bestehende
+ * Link wiederverwendet (`revokedAt` null, `decidedAt` null, `expiresAt` in der Zukunft,
+ * Angebotsstatus effektiv DRAFT/SENT/EXPIRED) und dessen Token authentifiziert ueber
+ * `revealShareLinkToken` entschluesselt.
+ *
+ * Phase 7 Fix-Runde 1: existiert kein solcher Link UND ist `DocumentSettings.
+ * shareLinkDefaultOn` aktiv, wird jetzt HIER (statt beim eigentlichen Versand,
+ * `sendDocumentEmail`) automatisch einer erzeugt — nur so kann der frisch erzeugte Link
+ * noch in den {{offer.link}}-Platzhalter der ERSTEN Mail einfliessen, die aus dieser
+ * Vorbelegung entsteht (der Mailtext wird hier gerendert, nicht erst beim Versand). Ist
+ * die Einstellung aus, bleibt der Platzhalter wie zuvor leer — der Betreiber erzeugt den
+ * Link bewusst ueber das Link-Panel.
  */
 async function resolveOfferLink(orgId: string, docType: EmailDocType, docId: string): Promise<string | undefined> {
   if (docType !== "ANGEBOT") return undefined;
@@ -80,11 +87,21 @@ async function resolveOfferLink(orgId: string, docType: EmailDocType, docId: str
     where: { orgId, quoteId: docId, revokedAt: null, decidedAt: null, expiresAt: { gt: now } },
     orderBy: { createdAt: "desc" },
   });
-  if (!link) return undefined;
+  if (link) {
+    const token = await revealShareLinkToken(orgId, link.id);
+    if (!token) return undefined;
+    return `${baseUrl}/angebot/${token}`;
+  }
 
-  const token = await revealShareLinkToken(orgId, link.id);
-  if (!token) return undefined;
-  return `${baseUrl}/angebot/${token}`;
+  const settings = await loadDocumentSettings(orgId);
+  if (!settings.shareLinkDefaultOn) return undefined;
+  try {
+    const created = await createShareLink(orgId, docId, {}, { actor: "system", now });
+    return `${baseUrl}/angebot/${created.token}`;
+  } catch (e) {
+    console.warn("resolveOfferLink: shareLinkDefaultOn-Linkerzeugung fehlgeschlagen", e);
+    return undefined;
+  }
 }
 
 async function templatesOf(orgId: string, docType: EmailDocType) {

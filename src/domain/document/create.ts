@@ -114,13 +114,17 @@ export async function createBusinessDocumentWithinTx(
 
   const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, input.contactPersonId, input.billingAddressId);
 
+  const settings = await loadDocumentSettings(orgId);
+
   // quoteValidityDays (Phase 7, §33): fehlt `validUntil` bei einem Angebot, wird es aus
   // Ausstellungsdatum + Org-Einstellung vorbelegt.
   let validUntil = input.validUntil;
   if (!validUntil && input.kind === "ANGEBOT") {
-    const settings = await loadDocumentSettings(orgId);
     validUntil = new Date(now.getTime() + settings.quoteValidityDays * DAY_MS);
   }
+
+  // defaultCurrency (Phase 7 Fix-Runde 1): ohne explizite Angabe DocumentSettings.defaultCurrency.
+  const currency = input.currency ?? settings.defaultCurrency ?? "EUR";
 
   const snapshotSource: SnapshotSource = "CREATE";
   const doc = await tx.quote.create({
@@ -132,7 +136,7 @@ export async function createBusinessDocumentWithinTx(
       status: "DRAFT",
       issueDate: now,
       validUntil,
-      currency: input.currency,
+      currency,
       taxScheme: input.taxScheme,
       subject: input.subject,
       notes: input.notes,
