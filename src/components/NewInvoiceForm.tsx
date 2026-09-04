@@ -8,11 +8,13 @@ import { PricingError } from "@/lib/pricing/errors";
 import { computeSubtotals } from "@/domain/document/lines";
 import { RichTextField } from "@/components/editor/RichTextField";
 import { ProductPicker, type ProductOption } from "@/components/editor/ProductPicker";
+import { TakeOverPrompt, type TakeOverPrefillDTO, type TakeOverLineDTO } from "@/components/TakeOverPrompt";
 
 interface CustomerOption {
   id: string;
   name: string;
   defaultPaymentMethodId: string | null;
+  defaultDiscountPermille?: number;
 }
 interface PaymentMethodOption {
   id: string;
@@ -80,6 +82,11 @@ function toDays(s: string): number | undefined {
   const n = parseInt(s, 10);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
+// Fix-Runde (Task 3, Kundenkomfort-Facts): permille -> Prozent-String fuer die
+// Vorbelegung des Rabattfelds aus der Kundenvorgabe (defaultDiscountPermille).
+function discountPercentOf(c: { defaultDiscountPermille?: number } | undefined): string {
+  return c?.defaultDiscountPermille ? String(c.defaultDiscountPermille / 10) : "";
+}
 
 export interface InvoiceInitial {
   id: string;
@@ -119,6 +126,7 @@ export function NewInvoiceForm({
   contacts = [],
   addresses = [],
   initial,
+  offerLastDocument = false,
 }: {
   customers: CustomerOption[];
   products: ProductOption[];
@@ -126,6 +134,8 @@ export function NewInvoiceForm({
   contacts?: ContactOption[];
   addresses?: AddressOption[];
   initial?: InvoiceInitial;
+  /** §32/Task 3: DocumentSettings.offerLastDocument — zeigt TakeOverPrompt nur bei Neuanlage. */
+  offerLastDocument?: boolean;
 }) {
   const router = useRouter();
   const isEdit = Boolean(initial);
@@ -148,8 +158,8 @@ export function NewInvoiceForm({
   const [paymentMethodId, setPaymentMethodId] = useState(initial?.paymentMethodId ?? customers[0]?.defaultPaymentMethodId ?? "");
   const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
 
-  const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? "0");
-  const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "0");
+  const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? discountPercentOf(customers[0]));
+  const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "");
   const [documentChargePercent, setDocumentChargePercent] = useState(initial?.documentChargePercent ?? "0");
   const [documentChargeAmount, setDocumentChargeAmount] = useState(initial?.documentChargeAmount ?? "0");
   const [documentChargeReason, setDocumentChargeReason] = useState(initial?.documentChargeReason ?? "");
@@ -173,6 +183,13 @@ export function NewInvoiceForm({
     if (!isEdit) {
       const c = customers.find((x) => x.id === id);
       setPaymentMethodId(c?.defaultPaymentMethodId ?? "");
+      // Kundenkomfort-Facts: Rabattfeld wird beim Kundenwechsel aus der Kundenvorgabe
+      // vorbelegt (wie Adresse/Kontakt) — nur wenn der Nutzer das Feld nicht bereits
+      // selbst befuellt hat, sonst wuerde eine explizite Eingabe stillschweigend
+      // ueberschrieben.
+      if (!documentDiscountPercent.trim()) {
+        setDocumentDiscountPercent(discountPercentOf(c));
+      }
     }
     // Fix-Runde 1: Ansprechpartner/Adressen gehoeren zum ALTEN Kunden — beim
     // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen,
@@ -186,6 +203,30 @@ export function NewInvoiceForm({
     }
     if (shippingAddressId && !addresses.some((a) => a.id === shippingAddressId && a.customerId === id)) {
       setShippingAddressId("");
+    }
+  }
+
+  // §32/Task 3: Prefill aus "Letztes Dokument uebernehmen" in Editor-State abbilden.
+  function toLineState(l: TakeOverLineDTO): LineState {
+    return {
+      lineType: l.lineType,
+      description: l.description,
+      descriptionLong: l.descriptionLong ?? "",
+      articleNumber: l.articleNumber ?? "",
+      quantity: (l.quantityMilli / 1000).toString(),
+      unit: l.unit,
+      price: (l.unitNetPriceCents / 100).toFixed(2),
+      taxRate: l.taxRate,
+      discountPercent: (l.discountPermille / 10).toString(),
+      discountAmount: (l.discountCents / 100).toFixed(2),
+    };
+  }
+  function applyTakeOver(prefill: TakeOverPrefillDTO) {
+    if (prefill.lines?.length) setLines(prefill.lines.map(toLineState));
+    if (prefill.paymentTerms != null) setPaymentTerms(prefill.paymentTerms);
+    if (prefill.documentDiscount) {
+      setDocumentDiscountPercent((prefill.documentDiscount.permille / 10).toString());
+      setDocumentDiscountAmount((prefill.documentDiscount.cents / 100).toFixed(2));
     }
   }
 
@@ -358,8 +399,13 @@ export function NewInvoiceForm({
       notes: finalNotes,
       internalNotes: internalNotes || undefined,
       paymentTerms: paymentTerms || undefined,
-      documentDiscountPermille: toPermille(documentDiscountPercent),
-      documentDiscountCents: toCents(documentDiscountAmount),
+      // Kundenkomfort-Facts: bei der ANLAGE leer -> undefined (sonst greift die
+      // Kundenvorgabe defaultDiscountPermille serverseitig nie); beim BEARBEITEN
+      // (PATCH) bleibt ein geleertes Feld explizit 0 (wie bisher), sonst liesse sich ein
+      // gesetzter Rabatt beim Editieren nie mehr entfernen (Defaults gelten ohnehin nur
+      // bei der Anlage, nicht beim Update).
+      documentDiscountPermille: documentDiscountPercent.trim() ? toPermille(documentDiscountPercent) : isEdit ? 0 : undefined,
+      documentDiscountCents: documentDiscountAmount.trim() ? toCents(documentDiscountAmount) : isEdit ? 0 : undefined,
       documentChargePermille: toPermille(documentChargePercent),
       documentChargeCents: toCents(documentChargeAmount),
       documentChargeReason: documentChargeReason || undefined,
@@ -400,6 +446,10 @@ export function NewInvoiceForm({
   return (
     <form onSubmit={submit} className="space-y-6">
       {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+
+      {!isEdit && customerId && (
+        <TakeOverPrompt enabled={offerLastDocument} customerId={customerId} kind="INVOICE" documentDetailBasePath="/rechnungen" onApply={applyTakeOver} />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
@@ -628,7 +678,7 @@ export function NewInvoiceForm({
         <h2 className="col-span-full font-semibold text-slate-900">Beleg-Rabatt / -Aufschlag</h2>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rabatt %</span>
-          <input className={input} value={documentDiscountPercent} onChange={(e) => setDocumentDiscountPercent(e.target.value)} />
+          <input className={input} value={documentDiscountPercent} onChange={(e) => setDocumentDiscountPercent(e.target.value)} placeholder="leer = Kundenvorgabe" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rabatt € (zusätzlich)</span>

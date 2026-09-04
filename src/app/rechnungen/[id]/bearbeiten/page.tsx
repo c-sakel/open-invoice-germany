@@ -23,7 +23,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (inv.status !== "DRAFT") redirect(`/rechnungen/${id}`);
 
   const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultPaymentMethodId: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultPaymentMethodId: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },

@@ -55,7 +55,7 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
           label="Beim Anlegen den zuletzt verwendeten Beleg als Vorlage anbieten"
           name="offerLastDocument"
           defaultChecked={settings.offerLastDocument}
-          hint="Wird mit „Letztes Dokument übernehmen“ (Phase 8) wirksam."
+          hint="Steuert die Übernehmen-Vorlage bei der Beleganlage (Rechnung/Angebot/Auftragsbestätigung)."
         />
       </section>
 

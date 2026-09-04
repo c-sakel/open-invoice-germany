@@ -88,8 +88,17 @@ import {
   PaymentMethod,
   DocRefType,
   LineType,
+  customerAddressInputSchema,
+  contactPersonInputSchema,
+  customFieldDefinitionInputSchema,
+  customerDefaultsInputSchema,
 } from "@/schemas";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { listAddresses, createAddress, updateAddress, deleteAddress } from "@/domain/customer/addresses";
+import { listContacts, createContact, updateContact, deleteContact } from "@/domain/customer/contacts";
+import { saveCustomerDefaults, customerDefaultsFor } from "@/domain/customer/defaults";
+import { listCustomFieldDefinitions, upsertCustomFieldDefinition, setCustomerCustomFields, parseCustomerCustomFields } from "@/domain/customer/custom-fields";
+import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
 import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
 import { addAttachment, removeAttachment, listAttachments, type AttachmentDocType } from "@/domain/attachment/manage";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
@@ -2094,6 +2103,278 @@ server.registerTool(
       const doc = await resolveDocForAttachment(org.id, args.docType, args.docId);
       await removeAttachment(org.id, args.docType, doc.id, args.attachmentId, "mcp");
       return ok(`Anhang ${args.attachmentId} entfernt.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_customer_addresses ────────────────────────────────────────────────────
+server.registerTool(
+  "list_customer_addresses",
+  {
+    title: "Kunden-Zusatzadressen auflisten",
+    description: "Listet alle Zusatzadressen (Rechnung/Lieferung/Sonstige) eines Kunden (§29, Phase 8a/§55).",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID") },
+  },
+  async ({ customer }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const addresses = await listAddresses(org.id, c.id);
+      return ok(JSON.stringify(addresses, null, 2));
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── upsert_customer_address ────────────────────────────────────────────────────
+server.registerTool(
+  "upsert_customer_address",
+  {
+    title: "Kunden-Zusatzadresse anlegen/aktualisieren",
+    description:
+      "Legt eine Zusatzadresse eines Kunden an (ohne id) oder ersetzt eine bestehende vollstaendig (mit id, §29). isDefault: true verdraengt den bisherigen Default desselben Typs.",
+    inputSchema: {
+      customer: z.string().describe("Kundenname oder -ID"),
+      id: z.string().optional().describe("Adress-ID fuer ein Update; ohne id wird eine neue Adresse angelegt"),
+      ...customerAddressInputSchema.shape,
+    },
+  },
+  async ({ customer, id, ...args }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const address = id ? await updateAddress(org.id, c.id, id, args) : await createAddress(org.id, c.id, args);
+      return ok(`Adresse gespeichert: ${JSON.stringify(address)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      if (e instanceof InvalidOperationError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── delete_customer_address ────────────────────────────────────────────────────
+server.registerTool(
+  "delete_customer_address",
+  {
+    title: "Kunden-Zusatzadresse loeschen",
+    description: "Loescht eine Zusatzadresse eines Kunden (§29). Kein Snapshot-Effekt — Belege behalten ihre Adresse als Snapshot.",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID"), id: z.string().describe("Adress-ID") },
+  },
+  async ({ customer, id }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      await deleteAddress(org.id, c.id, id);
+      return ok(`Adresse ${id} geloescht.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_contact_persons ───────────────────────────────────────────────────────
+server.registerTool(
+  "list_contact_persons",
+  {
+    title: "Ansprechpartner auflisten",
+    description: "Listet alle Ansprechpartner eines Kunden (§30, Phase 8a/§55).",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID") },
+  },
+  async ({ customer }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const contacts = await listContacts(org.id, c.id);
+      return ok(JSON.stringify(contacts, null, 2));
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── upsert_contact_person ──────────────────────────────────────────────────────
+server.registerTool(
+  "upsert_contact_person",
+  {
+    title: "Ansprechpartner anlegen/aktualisieren",
+    description:
+      "Legt einen Ansprechpartner eines Kunden an (ohne id) oder ersetzt einen bestehenden vollstaendig (mit id, §30). isDefault: true verdraengt den bisherigen kundenweiten Default.",
+    inputSchema: {
+      customer: z.string().describe("Kundenname oder -ID"),
+      id: z.string().optional().describe("Ansprechpartner-ID fuer ein Update; ohne id wird ein neuer angelegt"),
+      ...contactPersonInputSchema.shape,
+    },
+  },
+  async ({ customer, id, ...args }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const contact = id ? await updateContact(org.id, c.id, id, args) : await createContact(org.id, c.id, args);
+      return ok(`Ansprechpartner gespeichert: ${JSON.stringify(contact)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      if (e instanceof InvalidOperationError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── delete_contact_person ──────────────────────────────────────────────────────
+server.registerTool(
+  "delete_contact_person",
+  {
+    title: "Ansprechpartner loeschen",
+    description: "Loescht einen Ansprechpartner eines Kunden (§30). Kein Snapshot-Effekt — Belege behalten ihn als Snapshot.",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID"), id: z.string().describe("Ansprechpartner-ID") },
+  },
+  async ({ customer, id }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      await deleteContact(org.id, c.id, id);
+      return ok(`Ansprechpartner ${id} geloescht.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_customer_defaults ───────────────────────────────────────────────────
+server.registerTool(
+  "update_customer_defaults",
+  {
+    title: "Kundenvorgaben aktualisieren",
+    description:
+      "Ersetzt die Kundenvorgaben eines Kunden vollstaendig (§28: Waehrung, Rabatt, E-Mail-Ziele, E-Rechnung-Vorliebe, Bestellreferenz, Konditionstexte, Sprache). Kein Merge — weggelassene optionale Felder werden zurueckgesetzt (NULL).",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID"), ...customerDefaultsInputSchema.shape },
+  },
+  async ({ customer, ...args }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      await saveCustomerDefaults(org.id, c.id, args);
+      const view = await customerDefaultsFor(org.id, c.id);
+      return ok(`Kundenvorgaben gespeichert: ${JSON.stringify(view)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_custom_fields ─────────────────────────────────────────────────────────
+server.registerTool(
+  "list_custom_fields",
+  {
+    title: "Kundenfeld-Definitionen auflisten",
+    description: "Listet alle benutzerdefinierten Kundenfeld-Definitionen der Organisation, aufsteigend nach Reihenfolge (§31).",
+    inputSchema: {},
+  },
+  async (): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const definitions = await listCustomFieldDefinitions(org.id);
+      return ok(JSON.stringify(definitions, null, 2));
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── upsert_custom_field ────────────────────────────────────────────────────────
+server.registerTool(
+  "upsert_custom_field",
+  {
+    title: "Kundenfeld-Definition anlegen/aktualisieren",
+    description:
+      "Legt eine Kundenfeld-Definition an (ohne id) oder ersetzt eine bestehende vollstaendig (mit id, §31). key ist je Organisation eindeutig; options nur bei type SELECT.",
+    inputSchema: {
+      id: z.string().optional().describe("Definitions-ID fuer ein Update; ohne id wird eine neue Definition angelegt"),
+      ...customFieldDefinitionInputSchema.shape,
+    },
+  },
+  async ({ id, ...args }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const definition = await upsertCustomFieldDefinition(org.id, args, id);
+      return ok(`Kundenfeld gespeichert: ${JSON.stringify(definition)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      if (e instanceof InvalidOperationError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── set_customer_custom_fields ─────────────────────────────────────────────────
+server.registerTool(
+  "set_customer_custom_fields",
+  {
+    title: "Kundenfeld-Werte setzen",
+    description:
+      "Setzt die Kundenfeld-Werte eines Kunden (§31). Strikte Validierung gegen die aktiven Definitionen der Organisation: unbekannte Keys/Tippfehler werden abgelehnt. NUMBER-Werte als Dezimal-String (max. 4 Nachkommastellen, kein Float), DATE als YYYY-MM-DD.",
+    inputSchema: {
+      customer: z.string().describe("Kundenname oder -ID"),
+      values: z.record(z.string(), z.unknown()).describe("Kundenfeld-Werte als { key: value }, gemaess den aktiven Definitionen"),
+    },
+  },
+  async ({ customer, values }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const saved = await setCustomerCustomFields(org.id, c.id, values);
+      const view = await parseCustomerCustomFields(org.id, saved.customFieldsJson);
+      return ok(`Kundenfelder gespeichert: ${JSON.stringify(view)}`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── take_over_last_document ────────────────────────────────────────────────────
+server.registerTool(
+  "take_over_last_document",
+  {
+    title: "Letztes Dokument uebernehmen",
+    description:
+      "Findet den letzten festgeschriebenen/versendeten Beleg eines Kunden (INVOICE/QUOTE/ORDER_CONFIRMATION, Entwuerfe ignoriert) und liefert ein rein lesendes Vorbelegungs-Objekt (§32) — legt selbst NICHTS an. internalNotes wird nie uebernommen.",
+    inputSchema: {
+      customer: z.string().describe("Kundenname oder -ID"),
+      kind: z.enum(["INVOICE", "QUOTE", "ORDER_CONFIRMATION"]).describe("Belegart des zu suchenden letzten Belegs"),
+      lines: z.boolean().default(true).describe("Positionen uebernehmen"),
+      texts: z.boolean().default(true).describe("Kopf-/Fusstext uebernehmen"),
+      terms: z.boolean().default(true).describe("Zahlungs-/Lieferbedingungen uebernehmen"),
+      prices: z.boolean().default(true).describe("Preise/Rabatte uebernehmen (nur zusammen mit Positionen sinnvoll)"),
+    },
+  },
+  async ({ customer, kind, lines, texts, terms, prices }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const last = await findLastDocumentForCustomer(org.id, c.id, kind as TakeOverDocumentKind);
+      if (!last) return ok(`Kein festgeschriebener/versendeter Beleg des Typs ${kind} fuer "${c.name}" gefunden.`);
+      const prefill = await buildTakeOverPrefill(org.id, last.id, {
+        lines: lines ?? true,
+        texts: texts ?? true,
+        terms: terms ?? true,
+        prices: prices ?? true,
+      });
+      return ok(JSON.stringify({ source: last, prefill }, null, 2));
     } catch (e) {
       if (e instanceof NotFoundError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);

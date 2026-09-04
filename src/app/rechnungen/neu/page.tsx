@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { NewInvoiceForm } from "@/components/NewInvoiceForm";
 import { NeedOrgNotice } from "@/components/NeedOrgNotice";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { loadDocumentSettings } from "@/domain/document/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function NewInvoicePage() {
   const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
     prisma.customer.findMany({
       where: { orgId, isArchived: false },
-      select: { id: true, name: true, defaultPaymentMethodId: true },
+      select: { id: true, name: true, defaultPaymentMethodId: true, defaultDiscountPermille: true },
       orderBy: { name: "asc" },
     }),
     prisma.product.findMany({
@@ -31,6 +32,7 @@ export default async function NewInvoicePage() {
     prisma.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
     prisma.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
   ]);
+  const documentSettings = await loadDocumentSettings(orgId);
   const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}` }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
@@ -63,7 +65,14 @@ export default async function NewInvoicePage() {
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Neue Rechnung</h1>
       </div>
-      <NewInvoiceForm customers={customers} products={products} paymentMethods={paymentMethodOptions} contacts={contacts} addresses={addresses} />
+      <NewInvoiceForm
+        customers={customers}
+        products={products}
+        paymentMethods={paymentMethodOptions}
+        contacts={contacts}
+        addresses={addresses}
+        offerLastDocument={documentSettings.offerLastDocument}
+      />
     </div>
   );
 }
