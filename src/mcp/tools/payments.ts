@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { formatCents } from "@/lib/money";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
+import { NotFoundError } from "@/domain/errors";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { recordPaymentSchema, PaymentMethod } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
@@ -54,6 +55,7 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
             : "";
         return ctx.ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}`);
       } catch (e) {
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof PaymentError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

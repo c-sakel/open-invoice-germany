@@ -114,6 +114,48 @@ describe("get_document_file", () => {
     expect(xml).toContain("<?xml");
   });
 
+  it("Fix-Runde 1 (Koordinator-Ruling c): EN-16931-Kernvalidierung fehlgeschlagen -> fail() mit Grund", async () => {
+    // Verkaeufer-Postanschrift ohne countryCode (BR-08) — die Pflichtangaben-Pruefung
+    // beim Festschreiben (mandatory.ts) prueft countryCode NICHT, die EN-16931-
+    // Kernvalidierung (en16931-core.ts) hingegen schon: das Festschreiben gelingt also,
+    // der spaetere Export schlaegt fehl.
+    const invalidOrg = await dbInternal.organization.create({
+      data: {
+        legalName: "Ohne Laendercode GmbH",
+        addressLine1: "Unvollstaendig 1",
+        postalCode: "12345",
+        city: "Nirgendwo",
+        country: "",
+        vatId: "DE999999999",
+        taxNumber: "1",
+      },
+    });
+    await ensureOrgMasterdata(dbInternal, invalidOrg.id);
+    await updateNumberRange(invalidOrg.id, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "MC72C-RE-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", FIX_DATE);
+    const invalidCustomer = await dbInternal.customer.create({
+      data: { orgId: invalidOrg.id, name: "Kunde ohne Laendercode-Org", addressLine1: "X", postalCode: "1", city: "X", type: "BUSINESS" },
+    });
+    const draft = await createDraftInvoice(invalidOrg.id, {
+      customerId: invalidCustomer.id,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      deliveryDate: FIX_DATE,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput);
+    const fin = await finalizeInvoice(draft.id, { now: FIX_DATE });
+
+    const previousOrgId = orgStore.id;
+    orgStore.id = invalidOrg.id;
+    try {
+      const res = await callTool("get_document_file", { kind: "INVOICE", document: fin.number!, format: "xrechnung" });
+      expect(res.isError).toBe(true);
+      expect(text(res)).toContain("EN-16931");
+    } finally {
+      orgStore.id = previousOrgId;
+    }
+  });
+
   it("lehnt xrechnung fuer einen Rechnungsentwurf ab", async () => {
     const draft = await createDraftInvoice(orgId, {
       customerId,

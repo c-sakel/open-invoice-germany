@@ -23,6 +23,7 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { createRecurring } from "@/domain/recurring/create";
@@ -68,6 +69,8 @@ import { POST as OrderConfirmationStatus } from "@/app/api/v1/OrderConfirmation/
 import { POST as DeliveryNoteStatus } from "@/app/api/v1/DeliveryNote/[id]/status/route";
 import { POST as ContactAddressDefault } from "@/app/api/v1/Contact/[id]/addresses/[addressId]/default/route";
 import { POST as ContactPersonDefault } from "@/app/api/v1/Contact/[id]/contacts/[contactId]/default/route";
+import { GET as RecurringList, POST as RecurringCreate } from "@/app/api/v1/Recurring/route";
+import { GET as RecurringGet, PATCH as RecurringUpdate } from "@/app/api/v1/Recurring/[id]/route";
 import { POST as RecurringRun } from "@/app/api/v1/Recurring/[id]/run/route";
 import { POST as RecurringState } from "@/app/api/v1/Recurring/[id]/state/route";
 
@@ -260,6 +263,12 @@ describe("/api/v1/Invoice/{id}/payment", () => {
     const payments = await prisma.payment.findMany({ where: { invoiceId: fin.id } });
     expect(payments).toHaveLength(1);
   });
+
+  it("Fix-Runde 1 (Koordinator-Ruling a): unbekannte Rechnungs-ID -> 404 NOT_FOUND (nicht 409)", async () => {
+    const res = await InvoicePayment(req(`http://x/api/v1/Invoice/unbekannt-123/payment`, { method: "POST", token, body: { amountCents: 100 } }), ctx1("unbekannt-123"));
+    expect(res.status).toBe(404);
+    expect((await json(res)).error.code).toBe("NOT_FOUND");
+  });
 });
 
 describe("/api/v1/Invoice/{id}/send", () => {
@@ -301,6 +310,12 @@ describe("/api/v1/Invoice/{id}/dunning", () => {
     const res = await InvoiceDunning(req(`http://x/api/v1/Invoice/${fin.id}/dunning`, { method: "POST", token: writeOnlyToken }), ctx1(fin.id));
     expect(res.status).toBe(403);
   });
+
+  it("Fix-Runde 1 (Koordinator-Ruling a): unbekannte Rechnungs-ID -> 404 NOT_FOUND (nicht 409)", async () => {
+    const res = await InvoiceDunning(req(`http://x/api/v1/Invoice/unbekannt-123/dunning`, { method: "POST", token }), ctx1("unbekannt-123"));
+    expect(res.status).toBe(404);
+    expect((await json(res)).error.code).toBe("NOT_FOUND");
+  });
 });
 
 describe("/api/v1/Invoice/{id}/pdf,xrechnung,zugferd", () => {
@@ -334,6 +349,43 @@ describe("/api/v1/Invoice/{id}/pdf,xrechnung,zugferd", () => {
     expect(res.status).toBe(200);
     const buf = Buffer.from(await res.arrayBuffer());
     expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
+  });
+
+  it("Fix-Runde 1 (Koordinator-Ruling c): EN-16931-Kernvalidierung fehlgeschlagen -> 409 EINVOICE_INVALID", async () => {
+    // Verkaeufer-Postanschrift ohne countryCode (BR-08) — die Pflichtangaben-Pruefung
+    // beim Festschreiben (mandatory.ts) prueft countryCode NICHT, die EN-16931-
+    // Kernvalidierung (en16931-core.ts) hingegen schon: das Festschreiben gelingt also,
+    // der spaetere Export schlaegt fehl. Eigenes Jahr 2075 fuer diesen Beleg (real "now"
+    // wuerde die vorbelegte Sequenz des Haupt-Orgs oben nicht betreffen — hier ein
+    // eigener, frischer Org, der KEINE Vorbelegung braucht, da 2075 laut Testjahr-
+    // Konvention exklusiv dieser Datei gehoert).
+    const invalidOrg = await dbInternal.organization.create({
+      data: { legalName: "Ohne Laendercode GmbH", addressLine1: "Unvollstaendig 1", postalCode: "12345", city: "Nirgendwo", country: "", vatId: "DE999999999", taxNumber: "1" },
+    });
+    await ensureOrgMasterdata(dbInternal, invalidOrg.id);
+    const invalidCustomer = await dbInternal.customer.create({
+      data: { orgId: invalidOrg.id, name: "Kunde ohne Laendercode-Org", addressLine1: "X", postalCode: "1", city: "X", type: "BUSINESS" },
+    });
+    const invalidKey = await createApiKey(invalidOrg.id, { name: "Invalid-Seller-Key", scopes: ["read"] });
+    const draft = await createDraftInvoice(invalidOrg.id, {
+      customerId: invalidCustomer.id,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      deliveryDate: new Date("2075-06-01"),
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput);
+    const fin = await finalizeInvoice(draft.id, { now: new Date("2075-06-01") });
+
+    const xrechnungRes = await InvoiceXRechnung(req(`http://x/api/v1/Invoice/${fin.id}/xrechnung`, { token: invalidKey.token }), ctx1(fin.id));
+    expect(xrechnungRes.status).toBe(409);
+    const xrechnungBody = await json(xrechnungRes);
+    expect(xrechnungBody.error.code).toBe("EINVOICE_INVALID");
+    expect(xrechnungBody.error.details.issues.join(" ")).toContain("BR-08");
+
+    const zugferdRes = await InvoiceZugferd(req(`http://x/api/v1/Invoice/${fin.id}/zugferd`, { token: invalidKey.token }), ctx1(fin.id));
+    expect(zugferdRes.status).toBe(409);
+    expect((await json(zugferdRes)).error.code).toBe("EINVOICE_INVALID");
   });
 });
 
@@ -510,5 +562,87 @@ describe("/api/v1/Recurring/{id}/run,state", () => {
     });
     const res = await RecurringRun(req(`http://x/api/v1/Recurring/${rec.id}/run`, { method: "POST", token }), ctx1(rec.id));
     expect(res.status).toBe(404);
+  });
+});
+
+describe("/api/v1/Recurring (Fix-Runde 1, Koordinator-Ruling b)", () => {
+  it("Create -> 201, dann Liste (Paginierung/Filter) und Get", async () => {
+    const createRes = await RecurringCreate(
+      req("http://x/api/v1/Recurring", {
+        method: "POST",
+        token,
+        body: {
+          customerId,
+          title: "CRUD-Abo",
+          interval: "MONTHLY",
+          intervalCount: 1,
+          startDate: `${YEAR}-01-01`,
+          paymentTermsDays: 14,
+          lines: [{ lineType: "ITEM", description: "Wartung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+        },
+      }),
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await json(createRes)).data;
+    expect(created.objectName).toBe("Recurring");
+    expect(created.status).toBe("ACTIVE");
+
+    const listRes = await RecurringList(req(`http://x/api/v1/Recurring?limit=1&offset=0`, { token }));
+    expect(listRes.status).toBe(200);
+    const listBody = await json(listRes);
+    expect(listBody.limit).toBe(1);
+    expect(listBody.total).toBeGreaterThanOrEqual(1);
+
+    const filteredRes = await RecurringList(req(`http://x/api/v1/Recurring?search=CRUD-Abo`, { token }));
+    expect(filteredRes.status).toBe(200);
+    expect((await json(filteredRes)).data.some((r: { id: string }) => r.id === created.id)).toBe(true);
+
+    const getRes = await RecurringGet(req(`http://x/api/v1/Recurring/${created.id}`, { token }), ctx1(created.id));
+    expect(getRes.status).toBe(200);
+    expect((await json(getRes)).data.title).toBe("CRUD-Abo");
+  });
+
+  it("Create mit fehlendem Pflichtfeld -> 400 VALIDATION", async () => {
+    const res = await RecurringCreate(req("http://x/api/v1/Recurring", { method: "POST", token, body: { title: "Ohne Kunde" } }));
+    expect(res.status).toBe(400);
+    expect((await json(res)).error.code).toBe("VALIDATION");
+  });
+
+  it("Update -> 200", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Update-Abo",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date(`${YEAR}-01-01`),
+      paymentTermsDays: 14,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      lines: [{ lineType: "ITEM", description: "Wartung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+    const res = await RecurringUpdate(req(`http://x/api/v1/Recurring/${rec.id}`, { method: "PATCH", token, body: { title: "Umbenannt" } }), ctx1(rec.id));
+    expect(res.status).toBe(200);
+    expect((await json(res)).data.title).toBe("Umbenannt");
+  });
+
+  it("Get/Update fremder Org -> 404", async () => {
+    const otherOrg = await dbInternal.organization.create({ data: { legalName: "Fremd GmbH 4", addressLine1: "X", postalCode: "1", city: "X" } });
+    await ensureOrgMasterdata(dbInternal, otherOrg.id);
+    const otherCustomer = await dbInternal.customer.create({ data: { orgId: otherOrg.id, name: "Fremd", addressLine1: "X", postalCode: "1", city: "X", type: "BUSINESS" } });
+    const rec = await createRecurring(otherOrg.id, {
+      customerId: otherCustomer.id,
+      title: "Fremdes CRUD-Abo",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date(`${YEAR}-01-01`),
+      paymentTermsDays: 14,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      lines: [{ lineType: "ITEM", description: "Wartung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+    const getRes = await RecurringGet(req(`http://x/api/v1/Recurring/${rec.id}`, { token }), ctx1(rec.id));
+    expect(getRes.status).toBe(404);
+    const updRes = await RecurringUpdate(req(`http://x/api/v1/Recurring/${rec.id}`, { method: "PATCH", token, body: { title: "x" } }), ctx1(rec.id));
+    expect(updRes.status).toBe(404);
   });
 });

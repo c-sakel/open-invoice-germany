@@ -11,7 +11,7 @@
  */
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import { ApiAuthError, ApiScopeError } from "@/domain/api-key/verify";
 import { RateLimitError } from "@/lib/rate-limit";
 import { IdempotencyConflictError, IdempotencyInProgressError } from "./idempotency";
@@ -58,7 +58,17 @@ const DOMAIN_CONFLICT_ERROR_CLASSES = [
   MailNotConfiguredError,
 ] as const;
 
-export type ApiErrorCode = "VALIDATION" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "RATE_LIMITED" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS" | "INTERNAL";
+export type ApiErrorCode =
+  | "VALIDATION"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "CONFLICT"
+  | "RATE_LIMITED"
+  | "IDEMPOTENCY_MISMATCH"
+  | "IDEMPOTENCY_IN_PROGRESS"
+  | "EINVOICE_INVALID"
+  | "INTERNAL";
 
 export interface ApiErrorBody {
   error: { code: ApiErrorCode; message: string; details?: unknown };
@@ -99,6 +109,12 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof IdempotencyInProgressError) {
     return { status: 409, body: { error: { code: "IDEMPOTENCY_IN_PROGRESS", message: e.message } } };
+  }
+  // Fix-Runde 1 (Koordinator-Ruling c, Task 3): muss VOR dem generischen NotFoundError-
+  // Zweig stehen (unabhaengige Klasse, keine Ueberschneidung, aber Reihenfolge analog den
+  // uebrigen spezifischen Vorab-Pruefungen in dieser Funktion).
+  if (e instanceof EInvoiceInvalidError) {
+    return { status: 409, body: { error: { code: "EINVOICE_INVALID", message: e.message, details: { issues: e.issues } } } };
   }
   if (e instanceof NotFoundError) {
     return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message } } };

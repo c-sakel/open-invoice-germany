@@ -4,14 +4,22 @@
  * Extrahiert aus dem MCP-Tool `get_document_file` (src/mcp/tools/documents.ts, Phase 9),
  * damit MCP und `/api/v1` dieselbe Aufloesungs-/Renderlogik nutzen (Lastenheft §55, keine
  * Bypass-Pfade). Bewusst OHNE die MCP-spezifische 10-MB-Base64-Pruefung (die betrifft nur
- * die MCP-JSON-Antwort, nicht einen HTTP-Byte-Stream) und OHNE die EN-16931-Validierung/
- * Benachrichtigung der beiden Session-HTTP-Routen (`/api/invoices/[id]/xrechnung`,
- * `.../zugferd`) — deckungsgleich mit dem MCP-Tool, das ebenfalls nicht validiert.
+ * die MCP-JSON-Antwort, nicht einen HTTP-Byte-Stream).
+ *
+ * Fix-Runde 1 (Koordinator-Ruling c, Task 3): xrechnung/zugferd laufen jetzt durch
+ * DIESELBE EN-16931-Kernvalidierung wie die beiden Session-HTTP-Routen
+ * (`/api/invoices/[id]/xrechnung`, `.../zugferd` — `validateXRechnung()` wird von dort
+ * wiederverwendet, nicht die Regellogik kopiert) — bei einem Regelverstoss wirft diese
+ * Funktion `EInvoiceInvalidError` (409) UND benachrichtigt ueber `onEInvoiceInvalid`,
+ * bevor ueberhaupt eine Datei zurueckgegeben wird. Gilt fuer BEIDE Aufrufer (v1-Routen
+ * UND das MCP-Tool `get_document_file`) — Paritaet, kein optionaler "validate"-Schalter
+ * (Lastenheft §55, "keine nur optisch korrekte E-Rechnung").
  */
 import { dbInternal } from "@/lib/db";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
@@ -19,7 +27,9 @@ import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
-import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
+import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
+import type { EInvoiceData } from "@/lib/einvoice/types";
 
 export type DocumentFileKind = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "DUNNING";
 export type DocumentFileFormat = "pdf" | "xrechnung" | "zugferd";
@@ -36,10 +46,23 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
+ * EN-16931-Kernvalidierung vor xrechnung/zugferd (Fix-Runde 1, Koordinator-Ruling c) —
+ * wirft `EInvoiceInvalidError` UND benachrichtigt (`onEInvoiceInvalid`), BEVOR die Datei
+ * zurueckgegeben wird. Dieselbe `validateXRechnung()` wie die beiden Session-Routen.
+ */
+async function assertXRechnungValid(orgId: string, invoiceId: string, data: EInvoiceData): Promise<void> {
+  const report = validateXRechnung(data, buildXRechnungUBL(data));
+  if (report.valid) return;
+  await onEInvoiceInvalid(orgId, { invoiceId, errors: report.errors });
+  throw new EInvoiceInvalidError(report.errors);
+}
+
+/**
  * Loest `kind`+`document` (Nummer ODER ID, org-gescoped) auf und liefert die Datei als
  * Buffer + MIME-Typ + Dateiname-Basis. Wirft `NotFoundError` (404), wenn der Beleg nicht
  * existiert bzw. nicht zur Organisation gehoert, `InvalidOperationError` (409, GoBD-Regel
- * "kein E-Rechnung-Export fuer Entwuerfe" bzw. "xrechnung/zugferd nur fuer kind=INVOICE").
+ * "kein E-Rechnung-Export fuer Entwuerfe" bzw. "xrechnung/zugferd nur fuer kind=INVOICE"),
+ * `EInvoiceInvalidError` (409, EN-16931-Kernvalidierung fehlgeschlagen — xrechnung/zugferd).
  */
 export async function getDocumentFile(orgId: string, kind: DocumentFileKind, document: string, format: DocumentFileFormat = "pdf"): Promise<DocumentFile> {
   if (format !== "pdf" && kind !== "INVOICE") {
@@ -59,9 +82,11 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     }
     if (format === "xrechnung") {
       if (inv.status === "DRAFT") throw new InvalidOperationError("XRechnung nur fuer festgeschriebene Rechnungen. Zuerst finalisieren.");
+      await assertXRechnungValid(orgId, inv.id, data);
       return { buffer: Buffer.from(buildXRechnungUBL(data), "utf8"), mimeType: "application/xml", filenameBase };
     }
     if (inv.status === "DRAFT") throw new InvalidOperationError("ZUGFeRD nur fuer festgeschriebene Rechnungen. Zuerst finalisieren.");
+    await assertXRechnungValid(orgId, inv.id, data);
     return { buffer: await renderZugferdPdf(data, theme), mimeType: "application/pdf", filenameBase };
   }
 
