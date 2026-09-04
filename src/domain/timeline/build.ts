@@ -13,6 +13,7 @@ import { ACTIVITY_TYPES, type ActivityEntityType, type ActivityType } from "@/do
 import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { openAmountCents } from "@/domain/invoice/amounts";
+import { formatCents } from "@/lib/money";
 
 export type TimelineKind = "INVOICE" | "QUOTE" | "DELIVERY_NOTE";
 export type TimelineEntryKind = "activity" | "email" | "payment" | "dunning" | "milestone";
@@ -57,13 +58,20 @@ async function emailEntries(orgId: string, docId: string): Promise<TimelineEntry
   }));
 }
 
-async function paymentEntries(invoiceId: string): Promise<TimelineEntry[]> {
+/**
+ * Fix-Welle (Nit): `detail` hardcodete "EUR" unabhaengig von `Invoice.currency` — bei
+ * einer Fremdwaehrungsrechnung (z. B. USD) zeigte die Zeitleiste trotzdem "EUR" an.
+ * `formatCents` (lib/money.ts) uebernimmt jetzt die tatsaechliche Waehrung des Belegs.
+ */
+async function paymentEntries(orgId: string, invoiceId: string): Promise<TimelineEntry[]> {
+  const inv = await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, select: { currency: true } });
+  const currency = inv?.currency ?? "EUR";
   const rows = await dbInternal.payment.findMany({ where: { invoiceId }, orderBy: { paidAt: "asc" } });
   return rows.map((p) => ({
     at: p.paidAt,
     kind: "payment" as const,
     label: p.isSkonto ? "Skontoabzug gebucht" : "Zahlung erfasst",
-    detail: `${(p.amountCents / 100).toFixed(2)} EUR (${p.method})`,
+    detail: `${formatCents(p.amountCents, currency)} (${p.method})`,
   }));
 }
 
@@ -154,7 +162,7 @@ export async function buildTimeline(orgId: string, doc: { kind: TimelineKind; id
   entries.push(...(await emailEntries(orgId, doc.id)));
 
   if (doc.kind === "INVOICE") {
-    entries.push(...(await paymentEntries(doc.id)));
+    entries.push(...(await paymentEntries(orgId, doc.id)));
     entries.push(...(await dunningEntries(doc.id)));
     entries.push(...(await invoiceMilestones(orgId, doc.id, now)));
   } else if (doc.kind === "QUOTE") {

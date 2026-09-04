@@ -183,15 +183,17 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   });
   const revenueThisMonthCents = revenueRows.reduce((sum, r) => sum + payableBaseCents(r), 0);
 
-  // Offene Angebote: DRAFT/SENT und (falls gesetzt) noch nicht abgelaufen.
+  // Offene Angebote: NUR SENT (noch nicht abgelaufen) — Fix-Welle (Nit): die Kachel
+  // verlinkt auf /dokumente?status=SENT, zaehlte aber vorher zusaetzlich DRAFT mit, was
+  // Kachel-Zahl und Ziel-Liste auseinanderlaufen liess (Ruling: Kachel zaehlt nur SENT).
   const quotes = await dbInternal.quote.findMany({
-    where: { orgId, status: { in: ["DRAFT", "SENT"] } },
+    where: { orgId, status: "SENT" },
     select: { status: true, validUntil: true, grossTotalCents: true },
   });
   const openQuotes = { count: 0, cents: 0 };
   for (const q of quotes) {
     const status = effectiveQuoteStatus({ status: q.status, validUntil: q.validUntil }, now);
-    if (status === "DRAFT" || status === "SENT") {
+    if (status === "SENT") {
       openQuotes.count += 1;
       openQuotes.cents += q.grossTotalCents;
     }
