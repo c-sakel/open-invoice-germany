@@ -168,11 +168,25 @@ describe("Mahnstufen-Routen (/api/dunning-stages)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("POST /reorder 200: kehrt die Reihenfolge um", async () => {
+  it("POST /reorder 200: kehrt die Reihenfolge der gebuehrenfreien ersten beiden Stufen um", async () => {
+    // S3 (Fix-Welle): ein VOLLES Reverse aller Stufen wuerde die zuvor angelegte "4. Mahnung"
+    // (feeCents 500) auf order 0 schieben — jetzt korrekt 409 (siehe eigener Test unten).
+    // Dieser Test bleibt bei einem Swap, der die Gebuehrenregel nicht verletzt (order 0/1,
+    // beide feeCents 0), um den Grundfall (Reorder funktioniert) weiterhin abzudecken.
     const list = await (await stagesGet()).json();
-    const ids = list.stages.map((s: { id: string }) => s.id).reverse();
+    const stage0 = list.stages.find((s: { order: number }) => s.order === 0);
+    const stage1 = list.stages.find((s: { order: number }) => s.order === 1);
+    const rest = list.stages.filter((s: { id: string }) => s.id !== stage0.id && s.id !== stage1.id).map((s: { id: string }) => s.id);
+    const ids = [stage1.id, stage0.id, ...rest];
     const res = await reorderPost(jsonRequest("http://x/api/dunning-stages/reorder", { ids }));
     expect(res.status).toBe(200);
+  });
+
+  it("POST /reorder 409: eine Stufe mit Mahnkosten darf nicht auf order < 2 wandern (COMPLIANCE §12)", async () => {
+    const list = await (await stagesGet()).json();
+    const ids = list.stages.map((s: { id: string }) => s.id).reverse(); // "4. Mahnung" (feeCents 500) landet auf order 0
+    const res = await reorderPost(jsonRequest("http://x/api/dunning-stages/reorder", { ids }));
+    expect(res.status).toBe(409);
   });
 
   it("POST /reorder 400: unvollstaendige Id-Liste", async () => {
@@ -333,6 +347,21 @@ describe("GET /api/dunning/overview", () => {
   it("400: ungueltiger stageOrder-Filter", async () => {
     const res = await overviewGet(new Request("http://x/api/dunning/overview?stageOrder=nichtnumerisch"));
     expect(res.status).toBe(400);
+  });
+
+  it("Nit (Fix-Welle): heute faellig (daysOverdue=0) faellt aus dem '1-7 Tage'-Bucket, zaehlt aber weiter in overdueCount", async () => {
+    const before = await overviewGet(new Request("http://x/api/dunning/overview"));
+    const jBefore = await before.json();
+    const bucketBefore = jBefore.widgets.aging.d1_7.count;
+    const overdueBefore = jBefore.widgets.overdueCount;
+
+    const invToday = await makeOverdueInvoice(0);
+
+    const after = await overviewGet(new Request("http://x/api/dunning/overview"));
+    const jAfter = await after.json();
+    expect(jAfter.widgets.aging.d1_7.count).toBe(bucketBefore); // NICHT erhoeht
+    expect(jAfter.widgets.overdueCount).toBe(overdueBefore + 1); // trotzdem in overdueCount
+    expect(jAfter.rows.some((r: { invoiceId: string }) => r.invoiceId === invToday.id)).toBe(true);
   });
 
   it("S2 (Fix-Welle): GET /api/dunning/overview heilt Altmahnungen ohne Snapshot der Org (ensureDunningSnapshots)", async () => {
