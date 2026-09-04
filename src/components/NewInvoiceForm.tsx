@@ -522,16 +522,8 @@ export function NewInvoiceForm({
           <input className={input} value={subject} onChange={(e) => setSubject(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Bestellnummer</span>
-          <input className={input} value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Interne Referenz</span>
           <input className={input} value={internalReference} onChange={(e) => setInternalReference(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Leitweg-ID (Override)</span>
-          <input className={input} value={buyerReference} onChange={(e) => setBuyerReference(e.target.value)} placeholder="Standard des Kunden, falls leer" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Ansprechpartner</span>
@@ -566,17 +558,44 @@ export function NewInvoiceForm({
             ))}
           </select>
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Leistungszeitraum von</span>
-            <input type="date" className={input} value={deliveryStart} onChange={(e) => setDeliveryStart(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">bis</span>
-            <input type="date" className={input} value={deliveryEnd} onChange={(e) => setDeliveryEnd(e.target.value)} />
-          </label>
-        </div>
       </div>
+
+      {/* Task 4 (Brief): Bestellreferenz/Leitweg-ID/Lieferzeitraum/Druckoptionen/interne
+         Notizen zusammengefasst in einem einklappbaren "Weitere Optionen"-Block — seltener
+         gebrauchte Kopffelder, ohne die Haupt-Kopfdaten zu ueberladen. */}
+      <details className="rounded-lg border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer select-none font-semibold text-slate-900">Weitere Optionen</summary>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">Bestellnummer</span>
+            <input className={input} value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">Leitweg-ID (Override)</span>
+            <input className={input} value={buyerReference} onChange={(e) => setBuyerReference(e.target.value)} placeholder="Standard des Kunden, falls leer" />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-700">Leistungszeitraum von</span>
+              <input type="date" className={input} value={deliveryStart} onChange={(e) => setDeliveryStart(e.target.value)} />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-700">bis</span>
+              <input type="date" className={input} value={deliveryEnd} onChange={(e) => setDeliveryEnd(e.target.value)} />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+            <span className="font-medium text-slate-700">
+              Interne Notiz
+              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
+            </span>
+            <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
+          </label>
+          <p className="text-xs text-slate-500 sm:col-span-2">
+            Druckoptionen (Logo/Layout-Overrides je Beleg) lassen sich erst nach dem Speichern auf der Belegseite einstellen.
+          </p>
+        </div>
+      </details>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -743,13 +762,6 @@ export function NewInvoiceForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Zahlungsbedingungen</span>
           <textarea className={input} rows={2} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">
-            Interne Notiz
-            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
-          </span>
-          <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
         </label>
       </div>
 

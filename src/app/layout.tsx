@@ -3,7 +3,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
-import { LogoutButton } from "@/components/LogoutButton";
+import { MainNav } from "@/components/MainNav";
 import { PUBLIC_NO_NAV_HEADER } from "@/proxy";
 
 export const metadata: Metadata = {
@@ -54,41 +54,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
               OpenInvoice <span className="text-slate-400">DE</span>
             </Link>
-            {authed && (
-              <nav className="flex items-center gap-4 text-sm sm:gap-5">
-                <Link href="/rechnungen" className="text-slate-600 hover:text-slate-900">
-                  Rechnungen
-                </Link>
-                <Link href="/mahnwesen" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                  Mahnwesen
-                </Link>
-                <Link href="/kunden" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                  Kunden
-                </Link>
-                <Link href="/produkte" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                  Produkte
-                </Link>
-                <Link href="/dokumente" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                  Dokumente
-                </Link>
-                <Link href="/lieferscheine" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                  Lieferscheine
-                </Link>
-                <Link href="/abos" className="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                  Abos
-                </Link>
-                <Link href="/einstellungen" className="text-slate-600 hover:text-slate-900">
-                  Einstellungen
-                </Link>
-                <Link
-                  href="/rechnungen/neu"
-                  className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700"
-                >
-                  Neue Rechnung
-                </Link>
-                <LogoutButton />
-              </nav>
-            )}
+            {authed && <MainNav />}
           </div>
         </header>
         <main className="mx-auto max-w-5xl px-6 py-10">{children}</main>

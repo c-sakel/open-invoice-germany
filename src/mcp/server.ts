@@ -35,8 +35,15 @@ import { setDunningState } from "@/domain/dunning/state";
 import { loadDunningOverview } from "@/domain/dunning/overview";
 import { runScheduledJobs, type SchedulerJob } from "@/domain/scheduler/runner";
 import { MailNotConfiguredError } from "@/domain/email/settings";
+import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { createRecurring, RecurringError } from "@/domain/recurring/create";
 import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
+import { updateRecurringInvoice } from "@/domain/recurring/update";
+import { listInvoices } from "@/domain/invoice/list";
+import { dashboardSummary } from "@/domain/dashboard/summary";
+import { customerOverview } from "@/domain/customer/overview";
+import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
+import { listNotifications, markRead } from "@/domain/notifications/create";
 import { intervalLabel } from "@/lib/recurring";
 import { createBusinessDocument } from "@/domain/document/create";
 import { convertDocument, ConvertError } from "@/domain/document/convert";
@@ -93,6 +100,8 @@ import {
   customFieldDefinitionInputSchema,
   customFieldsReorderSchema,
   customerDefaultsInputSchema,
+  invoiceListFilterSchema,
+  updateRecurringSchema,
 } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { listAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from "@/domain/customer/addresses";
@@ -752,33 +761,6 @@ server.registerTool(
   },
 );
 
-// ── list_invoices ────────────────────────────────────────────────────────────
-server.registerTool(
-  "list_invoices",
-  {
-    title: "Rechnungen auflisten",
-    description: "Listet Rechnungen (optional nach Status: DRAFT, FINALIZED, PAID, CANCELLED …).",
-    inputSchema: { status: z.string().optional() },
-  },
-  async ({ status }): Promise<Result> => {
-    const org = await dbInternal.organization.findFirst();
-    if (!org) return fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
-    const invoices = await dbInternal.invoice.findMany({
-      where: { orgId: org.id, ...(status ? { status } : {}) },
-      orderBy: { createdAt: "desc" },
-      include: { customer: { select: { name: true } } },
-      take: 50,
-    });
-    return ok(
-      JSON.stringify(
-        invoices.map((i) => ({ id: i.id, number: i.number, status: i.status, customer: i.customer.name, gross: formatCents(i.grossTotalCents) })),
-        null,
-        2,
-      ),
-    );
-  },
-);
-
 // ── export_invoice ───────────────────────────────────────────────────────────
 server.registerTool(
   "export_invoice",
@@ -830,6 +812,11 @@ server.registerTool(
         const zpath = path.join(dir, `${base}-zugferd.pdf`);
         writeFileSync(zpath, zpdf);
         written.push(zpath);
+      }
+      if (validation && !validation.valid) {
+        // Task 4 (Facts): Benachrichtigung auch am MCP-Export-Pfad, wenn die EN-16931-
+        // Kernvalidierung fehlschlaegt — analog den beiden HTTP-Export-Routen.
+        await onEInvoiceInvalid(org.id, { invoiceId: inv.id, errors: validation.errors });
       }
       return ok(
         `Export geschrieben:\n${written.join("\n")}` +
@@ -1291,6 +1278,7 @@ server.registerTool(
       paidAt: z.string().optional().describe("Zahlungsdatum YYYY-MM-DD oder 'heute' (Default: heute)"),
       method: PaymentMethod.default("TRANSFER"),
       reference: z.string().optional(),
+      note: z.string().optional().describe("Freitext-Notiz zur Zahlung (Task 4)"),
       applySkonto: z.boolean().default(false).describe("Erkannten Skontoabzug sofort als zweite Zahlung buchen"),
     },
   },
@@ -1305,6 +1293,7 @@ server.registerTool(
           paidAt: parseDateInput(args.paidAt),
           method: args.method,
           reference: args.reference,
+          note: args.note,
           applySkonto: args.applySkonto,
         }),
       );
@@ -2477,6 +2466,214 @@ server.registerTool(
       return ok(JSON.stringify({ source: last, prefill }, null, 2));
     } catch (e) {
       if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_invoices ────────────────────────────────────────────────────────────
+// Task 4 (Facts): ersetzt die bisherige, einfache Version (Status als Rohstring, kein
+// Org-Scoping-via-requireOrg — CLAUDE.md "Nichts doppelt bauen") durch listInvoices
+// (Task 1) mit vollem Filterschema.
+server.registerTool(
+  "list_invoices",
+  {
+    title: "Rechnungen auflisten/filtern",
+    description:
+      "Listet Rechnungen mit Filter/Suche/Paginierung (§40) — Status (effektiv: draft/open/due/overdue/partial/paid/cancelled/all), Typ, Zeitraum, Betragsspanne, Volltextsuche.",
+    inputSchema: {
+      ...invoiceListFilterSchema.shape,
+      customer: z.string().optional().describe("Kundenname oder -ID (Alternative zu customerId)"),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const { customer, ...filter } = args;
+      let customerId = filter.customerId;
+      if (customer) {
+        const c = await resolveCustomer(org.id, customer);
+        customerId = c.id;
+      }
+      const result = await listInvoices(org.id, { ...filter, customerId });
+      return ok(
+        JSON.stringify(
+          {
+            total: result.total,
+            limit: result.limit,
+            offset: result.offset,
+            rows: result.rows.map((r) => ({
+              id: r.id,
+              number: r.number,
+              type: r.type,
+              customer: r.customerName,
+              issueDate: r.issueDate.toISOString().slice(0, 10),
+              dueDate: r.dueDate ? r.dueDate.toISOString().slice(0, 10) : null,
+              gross: formatCents(r.grossTotalCents),
+              open: formatCents(r.openCents),
+              status: r.effectiveStatus,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── get_dashboard ────────────────────────────────────────────────────────────
+server.registerTool(
+  "get_dashboard",
+  {
+    title: "Dashboard-Kennzahlen abrufen",
+    description: "Liefert die Dashboard-Kennzahlen der Organisation (offene/faellige/ueberfaellige Rechnungen, Aging, Umsatz laufender Monat, letzte Belege, offene Angebote).",
+    inputSchema: {},
+  },
+  async (): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const summary = await dashboardSummary(org.id);
+      return ok(JSON.stringify(summary, null, 2));
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── get_customer_overview ────────────────────────────────────────────────────
+server.registerTool(
+  "get_customer_overview",
+  {
+    title: "Kunden-Uebersicht abrufen",
+    description: "Liefert KPIs (offen/ueberfaellig/Gesamtumsatz) und die letzten Belege eines Kunden je Belegart (Rechnungen, Angebote, Lieferscheine, Abos).",
+    inputSchema: { customer: z.string().describe("Kundenname oder -ID") },
+  },
+  async ({ customer }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const c = await resolveCustomer(org.id, customer);
+      const overview = await customerOverview(org.id, c.id);
+      return ok(JSON.stringify(overview, null, 2));
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── get_timeline ─────────────────────────────────────────────────────────────
+server.registerTool(
+  "get_timeline",
+  {
+    title: "Beleg-Zeitstrahl abrufen",
+    description: "Liefert den Zeitstrahl (ActivityLog + E-Mail + Zahlungen + Mahnungen + Meilensteine) einer Rechnung, eines Angebots/AB/Proforma oder eines Lieferscheins.",
+    inputSchema: {
+      kind: z.enum(["INVOICE", "QUOTE", "DELIVERY_NOTE"]),
+      doc: z.string().describe("Belegnummer oder -ID"),
+    },
+  },
+  async ({ kind, doc }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      let id: string;
+      if (kind === "INVOICE") id = (await resolveInvoice(org.id, doc)).id;
+      else if (kind === "QUOTE") id = (await resolveDocument(org.id, doc)).id;
+      else id = (await resolveDeliveryNote(org.id, doc)).id;
+      const entries = await buildTimeline(org.id, { kind: kind as TimelineKind, id });
+      return ok(
+        JSON.stringify(
+          entries.map((e) => ({ at: e.at.toISOString(), kind: e.kind, label: e.label, detail: e.detail, actor: e.actor })),
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_notifications ───────────────────────────────────────────────────────
+server.registerTool(
+  "list_notifications",
+  {
+    title: "Benachrichtigungen auflisten",
+    description: "Listet In-App-Benachrichtigungen der Organisation, neueste zuerst.",
+    inputSchema: {
+      unreadOnly: z.boolean().default(false),
+      limit: z.number().int().min(1).max(200).default(50),
+    },
+  },
+  async ({ unreadOnly, limit }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const notifications = await listNotifications(org.id, { unreadOnly, limit });
+      return ok(
+        JSON.stringify(
+          notifications.map((n) => ({
+            id: n.id,
+            type: n.type,
+            title: n.title,
+            body: n.body,
+            link: n.link,
+            createdAt: n.createdAt.toISOString(),
+            read: n.readAt !== null,
+          })),
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── mark_notifications_read ──────────────────────────────────────────────────
+server.registerTool(
+  "mark_notifications_read",
+  {
+    title: "Benachrichtigungen als gelesen markieren",
+    description: "Markiert einzelne (ids) oder alle (all=true) Benachrichtigungen der Organisation als gelesen.",
+    inputSchema: {
+      ids: z.array(z.string().min(1)).optional(),
+      all: z.boolean().optional(),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const count = await markRead(org.id, args);
+      return ok(`${count} Benachrichtigung(en) als gelesen markiert.`);
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── update_recurring_invoice ─────────────────────────────────────────────────
+server.registerTool(
+  "update_recurring_invoice",
+  {
+    title: "Abo / wiederkehrende Rechnung aendern",
+    description: "Aendert ein bestehendes Abo (Titel, Rhythmus, Enddatum, maxRuns, Zahlungsziel, autoFinalize/autoSend, E-Mail-Vorlage, Leistungszeitraum-Text, Notizen, Status, Positionen).",
+    inputSchema: { ...updateRecurringSchema.shape, recurring: z.string().describe("Abo-ID") },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const { recurring, ...patch } = args;
+      const updated = await updateRecurringInvoice(org.id, recurring, patch);
+      return ok(`Abo aktualisiert: ${updated.title} (${updated.status}).`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof NotFoundError) return fail(e.message);
+      if (e instanceof RecurringError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },

@@ -615,13 +615,22 @@ export function NewDocumentForm({
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">
-          Interne Notiz
-          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
-        </span>
-        <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
-      </label>
+      {/* Task 4 (Brief): "Weitere Optionen" — Angebote/AB/Proforma fuehren kein
+         Bestellreferenz-/Leitweg-ID-/Lieferzeitraum-Feld (nur Rechnungen, siehe
+         invoiceHeaderFields), daher hier nur interne Notizen + Druckoptionen-Hinweis. */}
+      <details className="rounded-lg border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer select-none font-semibold text-slate-900">Weitere Optionen</summary>
+        <div className="mt-4 space-y-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">
+              Interne Notiz
+              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
+            </span>
+            <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
+          </label>
+          <p className="text-xs text-slate-500">Druckoptionen (Logo/Layout-Overrides je Beleg) lassen sich erst nach dem Speichern auf der Belegseite einstellen.</p>
+        </div>
+      </details>
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-4">
         <div className="text-sm text-slate-500">

@@ -18,6 +18,11 @@ const MAP: Record<string, { label: string; cls: string }> = {
   OPEN: { label: "Offen", cls: "bg-sky-100 text-sky-800" },
   DUE: { label: "Fällig heute", cls: "bg-amber-100 text-amber-800" },
   OVERDUE: { label: "Überfällig", cls: "bg-rose-100 text-rose-700" },
+  // Kunden-Archivstatus (Task 4, Kunden-Detailseite).
+  ARCHIVED: { label: "Archiviert", cls: "bg-slate-200 text-slate-600" },
+  ACTIVE: { label: "Aktiv", cls: "bg-emerald-100 text-emerald-800" },
+  PAUSED: { label: "Pausiert", cls: "bg-amber-100 text-amber-800" },
+  ENDED: { label: "Beendet", cls: "bg-slate-100 text-slate-600" },
 };
 
 export function StatusBadge({ status }: { status: string }) {

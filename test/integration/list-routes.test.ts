@@ -33,9 +33,26 @@ import { GET as invoicesGet } from "@/app/api/invoices/route";
 import { GET as documentsGet } from "@/app/api/documents/route";
 import { GET as deliveryNotesGet } from "@/app/api/delivery-notes/route";
 
+// Teil 2 (Task 4): notifications/dashboard/timeline-Routen.
+import { GET as notificationsGet } from "@/app/api/notifications/route";
+import { POST as notificationsReadPost } from "@/app/api/notifications/read/route";
+import { GET as unreadCountGet } from "@/app/api/notifications/unread-count/route";
+import { GET as notificationSettingsGet, PUT as notificationSettingsPut } from "@/app/api/notification-settings/route";
+import { GET as dashboardGet } from "@/app/api/dashboard/route";
+import { GET as customerOverviewGet } from "@/app/api/customers/[id]/overview/route";
+import { GET as invoiceTimelineGet } from "@/app/api/invoices/[id]/timeline/route";
+import { GET as documentTimelineGet } from "@/app/api/documents/[id]/timeline/route";
+import { GET as deliveryNoteTimelineGet } from "@/app/api/delivery-notes/[id]/timeline/route";
+import { createNotification } from "@/domain/notifications/create";
+
 let orgId: string;
 let customerId: string;
 let emailedInvoiceId: string;
+// Teil 2 (Task 4): weitere IDs aus demselben beforeAll fuer notifications/dashboard/
+// timeline-Routen-Tests — dieselbe Org/Testjahr statt eines eigenen Setups.
+let overdueInvoiceId: string;
+let quoteId: string;
+let deliveryNoteId: string;
 
 // Belegdatum/Nummernvergabe ("now" an finalizeInvoice) liegt bewusst im Testjahr 2068
 // (Testjahr-Konvention). Faellig-/Gueltigkeitsdaten fuer OVERDUE/EXPIRED muessen dagegen
@@ -102,6 +119,7 @@ beforeAll(async () => {
   } as CreateInvoiceInput, { now: NOW });
   await dbInternal.invoice.update({ where: { id: finalizedDraft.id }, data: { dueDate: PAST } });
   await finalizeInvoice(finalizedDraft.id, { now: NOW });
+  overdueInvoiceId = finalizedDraft.id;
   void draft;
 
   // Fix-Runde 1 (Ruling b): eine Rechnung MIT EmailLog fuer den hasEmailLog-Test.
@@ -146,13 +164,15 @@ beforeAll(async () => {
     lines: [line("Routentest aktives Angebot")],
   } as CreateDocumentInput);
   await setQuoteStatus(orgId, activeQuote.id, "SENT", { now: NOW });
+  quoteId = activeQuote.id;
 
   // Lieferschein.
-  await createDeliveryNote(orgId, {
+  const dn = await createDeliveryNote(orgId, {
     customerId,
     deliveryDate: NOW,
     lines: [line("Routentest Lieferschein")],
   } as unknown as CreateDeliveryNoteInput, { actor: "tester" });
+  deliveryNoteId = dn.id;
 
   void expiredQuote;
 });
@@ -252,5 +272,164 @@ describe("GET /api/delivery-notes", () => {
   it("400 bei ungueltigem Filter", async () => {
     const res = await deliveryNotesGet(req("http://localhost/api/delivery-notes?offset=-1"));
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Teil 2 (Task 4): notifications/dashboard/customer-overview/timeline-Routen ────────
+
+function ctx(id: string) {
+  return { params: Promise.resolve({ id }) };
+}
+
+describe("GET/POST /api/notifications, /api/notifications/read, /api/notifications/unread-count", () => {
+  it("liefert 0 ungelesene ohne Benachrichtigungen, dann > 0 nach createNotification", async () => {
+    const before = await unreadCountGet();
+    const beforeJson = (await before.json()) as { count: number };
+    expect(beforeJson.count).toBe(0);
+
+    const created = await createNotification({
+      orgId,
+      type: "INVOICE_OVERDUE",
+      title: "Rechnung überfällig",
+      dedupeKey: `INVOICE_OVERDUE:${overdueInvoiceId}`,
+    });
+    expect(created).not.toBeNull();
+
+    const after = await unreadCountGet();
+    const afterJson = (await after.json()) as { count: number };
+    expect(afterJson.count).toBe(1);
+
+    const list = await notificationsGet(req("http://localhost/api/notifications?limit=10"));
+    expect(list.status).toBe(200);
+    const listJson = (await list.json()) as { notifications: Array<{ id: string; readAt: string | null }> };
+    expect(listJson.notifications.length).toBeGreaterThanOrEqual(1);
+    const notifId = listJson.notifications[0].id;
+
+    const markRes = await notificationsReadPost(
+      new Request("http://localhost/api/notifications/read", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: [notifId] }),
+      }),
+    );
+    expect(markRes.status).toBe(200);
+
+    const afterMark = await unreadCountGet();
+    const afterMarkJson = (await afterMark.json()) as { count: number };
+    expect(afterMarkJson.count).toBe(0);
+  });
+
+  it("400 bei ungueltigem Body (weder ids noch all)", async () => {
+    const res = await notificationsReadPost(
+      new Request("http://localhost/api/notifications/read", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: [123] }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET/PUT /api/notification-settings", () => {
+  it("liefert Default-Einstellungen (Selbstheilung) und speichert Aenderungen", async () => {
+    const res = await notificationSettingsGet();
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { settings: { enabledTypes: string[]; emailDigest: boolean } };
+    expect(j.settings.enabledTypes.length).toBeGreaterThan(0);
+
+    const putRes = await notificationSettingsPut(
+      new Request("http://localhost/api/notification-settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabledTypes: ["INVOICE_OVERDUE"], emailDigest: true }),
+      }),
+    );
+    expect(putRes.status).toBe(200);
+    const putJson = (await putRes.json()) as { settings: { enabledTypes: string[]; emailDigest: boolean } };
+    expect(putJson.settings.enabledTypes).toEqual(["INVOICE_OVERDUE"]);
+    expect(putJson.settings.emailDigest).toBe(true);
+  });
+
+  it("400 bei unbekanntem Benachrichtigungstyp", async () => {
+    const res = await notificationSettingsPut(
+      new Request("http://localhost/api/notification-settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabledTypes: ["NICHT_VORHANDEN"], emailDigest: false }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/dashboard", () => {
+  it("liefert Kennzahlen inkl. der ueberfaelligen Testrechnung", async () => {
+    const res = await dashboardGet();
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as {
+      overdueInvoices: { count: number; cents: number };
+      aging: { d1_7: { count: number }; d8_30: { count: number }; d31_60: { count: number }; d60plus: { count: number } };
+      recentDocuments: unknown[];
+      openQuotes: { count: number };
+    };
+    expect(j.overdueInvoices.count).toBeGreaterThanOrEqual(1);
+    const bucketCounts = j.aging.d1_7.count + j.aging.d8_30.count + j.aging.d31_60.count + j.aging.d60plus.count;
+    expect(bucketCounts).toBeGreaterThanOrEqual(1);
+    expect(j.recentDocuments.length).toBeGreaterThan(0);
+    expect(j.openQuotes.count).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("GET /api/customers/[id]/overview", () => {
+  it("liefert KPIs + Belegtabs des Testkunden", async () => {
+    const res = await customerOverviewGet(req(`http://localhost/api/customers/${customerId}/overview`), ctx(customerId));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as {
+      customer: { id: string; name: string };
+      kpis: { openCents: number; overdueCents: number };
+      invoices: unknown[];
+      quotes: unknown[];
+      deliveryNotes: unknown[];
+    };
+    expect(j.customer.id).toBe(customerId);
+    expect(j.kpis.overdueCents).toBeGreaterThan(0);
+    expect(j.invoices.length).toBe(3);
+    expect(j.quotes.length).toBe(2);
+    expect(j.deliveryNotes.length).toBe(1);
+  });
+
+  it("404 fuer unbekannten Kunden", async () => {
+    const res = await customerOverviewGet(req("http://localhost/api/customers/nope/overview"), ctx("nope"));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET .../timeline (invoices/documents/delivery-notes)", () => {
+  it("liefert den Zeitstrahl einer Rechnung (mind. FINALIZED-Aktivitaet)", async () => {
+    const res = await invoiceTimelineGet(req(`http://localhost/api/invoices/${overdueInvoiceId}/timeline`), ctx(overdueInvoiceId));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { entries: Array<{ kind: string; label: string }> };
+    expect(j.entries.length).toBeGreaterThan(0);
+    expect(j.entries.some((e) => e.kind === "activity")).toBe(true);
+  });
+
+  it("404 fuer eine Rechnung einer fremden Organisation", async () => {
+    const res = await invoiceTimelineGet(req("http://localhost/api/invoices/nope/timeline"), ctx("nope"));
+    expect(res.status).toBe(404);
+  });
+
+  it("liefert den Zeitstrahl eines Angebots", async () => {
+    const res = await documentTimelineGet(req(`http://localhost/api/documents/${quoteId}/timeline`), ctx(quoteId));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { entries: unknown[] };
+    expect(j.entries.length).toBeGreaterThan(0);
+  });
+
+  it("liefert den Zeitstrahl eines Lieferscheins", async () => {
+    const res = await deliveryNoteTimelineGet(req(`http://localhost/api/delivery-notes/${deliveryNoteId}/timeline`), ctx(deliveryNoteId));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { entries: unknown[] };
+    expect(j.entries.length).toBeGreaterThan(0);
   });
 });
