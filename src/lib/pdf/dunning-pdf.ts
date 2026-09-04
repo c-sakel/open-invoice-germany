@@ -129,25 +129,28 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // Fuß: Bank + Aussteller (nur wenn options.showFooter an ist).
     const footY = doc.page.height - margins.bottom - 20;
     if (theme.options.showFooter) {
-      drawBrandedFooter(doc, theme, left, right, footY - 11);
-      doc.fontSize(8).fillColor("#666");
-      const sellerLine = [
-        data.seller.name,
-        `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-        data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-        data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
-      const bankLine = [
-        data.seller.bankName ? `Bank: ${data.seller.bankName}` : null,
-        data.seller.iban ? `IBAN: ${data.seller.iban}` : null,
-        data.seller.bic ? `BIC: ${data.seller.bic}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      if (bankLine) doc.text(bankLine, left, footY + 11, { width: right - left, align: "center" });
+      // S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide (siehe invoice-pdf.ts).
+      const branded = drawBrandedFooter(doc, theme, left, right, footY - 11);
+      if (!branded) {
+        doc.fontSize(8).fillColor("#666");
+        const sellerLine = [
+          data.seller.name,
+          `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
+          data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
+          data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
+        const bankLine = [
+          data.seller.bankName ? `Bank: ${data.seller.bankName}` : null,
+          data.seller.iban ? `IBAN: ${data.seller.iban}` : null,
+          data.seller.bic ? `BIC: ${data.seller.bic}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        if (bankLine) doc.text(bankLine, left, footY + 11, { width: right - left, align: "center" });
+      }
     }
 
     // Falz-/Lochmarken + Seitenzahlen.
