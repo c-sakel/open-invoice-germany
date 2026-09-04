@@ -30,18 +30,31 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+interface EmailTemplateOption {
+  id: string;
+  name: string;
+}
+
 export function NewRecurringForm({
   customers,
   products,
+  emailTemplates = [],
   defaultAutoFinalize = false,
   defaultAutoSend = false,
+  defaultShowPeriodText = true,
 }: {
   customers: CustomerOption[];
   products: ProductOption[];
+  /** INVOICE-Vorlagen der Organisation (Phase 8b, §43: emailTemplateId — Auswahl fuer den
+   *  automatischen Versand, siehe autoSend). */
+  emailTemplates?: EmailTemplateOption[];
   /** Vorbelegung aus DocumentSettings.recurringAutoFinalizeDefault (Phase 7, §33). */
   defaultAutoFinalize?: boolean;
   /** Vorbelegung aus DocumentSettings.recurringAutoSendDefault (Phase 7, §33). */
   defaultAutoSend?: boolean;
+  /** Vorbelegung aus DocumentSettings.recurringInsertPeriodText (Phase 8b, §43) — wird
+   *  beim Anlegen als Ausgangswert des Abo-Felds `showPeriodText` uebernommen. */
+  defaultShowPeriodText?: boolean;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -50,9 +63,13 @@ export function NewRecurringForm({
   const [intervalCount, setIntervalCount] = useState("1");
   const [startDate, setStartDate] = useState(todayISO());
   const [endDate, setEndDate] = useState("");
+  // Phase 8b (§43): harte Obergrenze der Laeufe (RecurringInvoice.maxRuns, Task 1).
+  const [maxRuns, setMaxRuns] = useState("");
   const [paymentTermsDays, setPaymentTermsDays] = useState("14");
   const [autoFinalize, setAutoFinalize] = useState(defaultAutoFinalize);
   const [autoSend, setAutoSend] = useState(defaultAutoSend);
+  const [emailTemplateId, setEmailTemplateId] = useState("");
+  const [showPeriodText, setShowPeriodText] = useState(defaultShowPeriodText);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineState[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
@@ -82,9 +99,12 @@ export function NewRecurringForm({
       intervalCount: Number(intervalCount) || 1,
       startDate,
       endDate: endDate || undefined,
+      maxRuns: maxRuns ? Number(maxRuns) : undefined,
       paymentTermsDays: Number(paymentTermsDays) || 14,
       autoFinalize,
       autoSend,
+      emailTemplateId: emailTemplateId || undefined,
+      showPeriodText,
       taxScheme: "REGULAR",
       // S5 (Fix-Welle, Final-Review): keine hartcodierte Waehrung mehr — createRecurring()
       // faellt bei `undefined` auf DocumentSettings.defaultCurrency (bzw. EUR) zurueck.
@@ -142,6 +162,8 @@ export function NewRecurringForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rhythmus</span>
           <select className={input} value={interval} onChange={(e) => setInterval(e.target.value)}>
+            {/* Phase 8b (§43): DAY ergaenzt WEEKLY/MONTHLY/QUARTERLY/YEARLY. */}
+            <option value="DAY">täglich</option>
             <option value="WEEKLY">wöchentlich</option>
             <option value="MONTHLY">monatlich</option>
             <option value="QUARTERLY">vierteljährlich</option>
@@ -162,11 +184,29 @@ export function NewRecurringForm({
         </label>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Zahlungsziel (Tage)</span>
           <input className={input} type="number" min={0} max={365} value={paymentTermsDays} onChange={(e) => setPaymentTermsDays(e.target.value)} />
         </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Maximale Laeufe (optional)</span>
+          <input
+            className={input}
+            type="number"
+            min={1}
+            value={maxRuns}
+            onChange={(e) => setMaxRuns(e.target.value)}
+            placeholder="unbegrenzt"
+          />
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+          <input type="checkbox" checked={showPeriodText} onChange={(e) => setShowPeriodText(e.target.checked)} />
+          <span className="text-slate-700">Leistungszeitraum-Text auf der Rechnung einfügen</span>
+        </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
           <input
             type="checkbox"
@@ -193,6 +233,19 @@ export function NewRecurringForm({
             {autoSend && <span className="block text-xs text-slate-500">Versand setzt Festschreibung voraus.</span>}
           </span>
         </label>
+        {autoSend && emailTemplates.length > 0 && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">E-Mail-Vorlage (optional)</span>
+            <select className={input} value={emailTemplateId} onChange={(e) => setEmailTemplateId(e.target.value)}>
+              <option value="">— Standardvorlage —</option>
+              {emailTemplates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="space-y-3">

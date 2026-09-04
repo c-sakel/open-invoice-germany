@@ -12,6 +12,12 @@ const MAP: Record<string, { label: string; cls: string }> = {
   // DeliveryNoteStatus
   CREATED: { label: "Erstellt", cls: "bg-indigo-100 text-indigo-800" },
   DELIVERED: { label: "Geliefert", cls: "bg-emerald-100 text-emerald-800" },
+  // EffectiveInvoiceStatus (Phase 8b, §39 — src/domain/invoice/status.ts): OPEN/DUE/
+  // OVERDUE werden NIE gespeichert, nur angezeigt. Labels aus INVOICE_STATUS_LABEL
+  // uebernommen (dort die Quelle der Wahrheit fuer den Text), hier nur die Farbe ergaenzt.
+  OPEN: { label: "Offen", cls: "bg-sky-100 text-sky-800" },
+  DUE: { label: "Fällig heute", cls: "bg-amber-100 text-amber-800" },
+  OVERDUE: { label: "Überfällig", cls: "bg-rose-100 text-rose-700" },
 };
 
 export function StatusBadge({ status }: { status: string }) {
