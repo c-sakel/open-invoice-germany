@@ -27,8 +27,11 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
   // recurringAutoFinalizeDefault/recurringAutoSendDefault (Phase 7, §33): greifen nur,
   // wenn der Aufrufer die Felder nicht selbst gesetzt hat.
   const docSettings = await loadDocumentSettings(orgId);
-  const autoFinalize = input.autoFinalize ?? docSettings.recurringAutoFinalizeDefault;
   const autoSend = input.autoSend ?? docSettings.recurringAutoSendDefault;
+  // S4 (Fix-Welle, Final-Review): autoSend ohne autoFinalize versendete bisher eine
+  // Rechnung mit Nummer "ENTWURF" und GiroCode-Verwendungszweck "ENTWURF" an den Kunden.
+  // Versand setzt Festschreibung voraus — autoSend erzwingt autoFinalize.
+  const autoFinalize = autoSend ? true : (input.autoFinalize ?? docSettings.recurringAutoFinalizeDefault);
 
   const lines = input.lines.map((l, i) => ({
     position: i + 1,

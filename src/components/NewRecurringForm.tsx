@@ -86,7 +86,9 @@ export function NewRecurringForm({
       autoFinalize,
       autoSend,
       taxScheme: "REGULAR",
-      currency: "EUR",
+      // S5 (Fix-Welle, Final-Review): keine hartcodierte Waehrung mehr — createRecurring()
+      // faellt bei `undefined` auf DocumentSettings.defaultCurrency (bzw. EUR) zurueck.
+      currency: undefined,
       notes: notes || undefined,
       lines: lines.map((l) => ({
         description: l.description,
@@ -166,12 +168,30 @@ export function NewRecurringForm({
           <input className={input} type="number" min={0} max={365} value={paymentTermsDays} onChange={(e) => setPaymentTermsDays(e.target.value)} />
         </label>
         <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
-          <input type="checkbox" checked={autoFinalize} onChange={(e) => setAutoFinalize(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={autoFinalize}
+            disabled={autoSend}
+            onChange={(e) => setAutoFinalize(e.target.checked)}
+          />
           <span className="text-slate-700">Rechnungen automatisch festschreiben (sofort GoBD-konform &amp; nummeriert)</span>
         </label>
         <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
-          <input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} />
-          <span className="text-slate-700">Rechnungen automatisch per E-Mail versenden</span>
+          <input
+            type="checkbox"
+            checked={autoSend}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setAutoSend(checked);
+              // S4 (Fix-Welle): Versand setzt Festschreibung voraus — sonst ginge eine
+              // Rechnung mit Nummer/GiroCode "ENTWURF" per E-Mail raus.
+              if (checked) setAutoFinalize(true);
+            }}
+          />
+          <span className="text-slate-700">
+            Rechnungen automatisch per E-Mail versenden
+            {autoSend && <span className="block text-xs text-slate-500">Versand setzt Festschreibung voraus.</span>}
+          </span>
         </label>
       </div>
 

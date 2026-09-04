@@ -424,6 +424,35 @@ describe("Phase 7, Task 2 — Wiederkehrende Rechnungen (recurringAutoFinalizeDe
     await saveDocumentSettings(orgId, { recurringAutoFinalizeDefault: false, recurringAutoSendDefault: false });
   });
 
+  it("S4 (Fix-Welle): autoSend ohne explizites autoFinalize erzwingt autoFinalize (Versand setzt Festschreibung voraus)", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Abo autoSend ohne autoFinalize",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: FIX_DATE,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      autoSend: true,
+      lines: [{ lineType: "ITEM" as const, description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 }],
+    });
+    expect(rec.autoFinalize).toBe(true);
+    expect(rec.autoSend).toBe(true);
+
+    const emitted = await emitRecurringNow(rec.id, { now: FIX_DATE });
+    expect(emitted.finalized).toBe(true);
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
+    expect(invoice.status).not.toBe("DRAFT");
+    expect(invoice.number).not.toBeNull();
+  });
+
+  // S5 (Fix-Welle, Final-Review): NewRecurringForm.tsx sendet `currency: undefined` statt
+  // hartcodiert "EUR" — die Domain-Fallback-Kette (createRecurring faellt bei fehlender
+  // Waehrung auf DocumentSettings.defaultCurrency zurueck) ist bereits oben abgedeckt
+  // ("Abo ohne explizite Waehrung bekommt DocumentSettings.defaultCurrency").
+
   it("recurringInsertPeriodText an: erzeugte Rechnung bekommt Kopftext 'Abrechnungszeitraum dd.mm.yyyy – dd.mm.yyyy'", async () => {
     await saveDocumentSettings(orgId, { recurringInsertPeriodText: true });
     const rec = await createRecurring(orgId, {

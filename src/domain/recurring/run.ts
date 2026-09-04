@@ -196,7 +196,11 @@ async function emitOne(
   // SMTP-Aufruf innerhalb einer Prisma-Transaktion). Ein Fehler beim Versand darf die
   // bereits erzeugte/festgeschriebene Rechnung nicht rueckabwickeln — er landet im Feld
   // `emailStatus`/`emailError` des Ergebnisses (Summary), niemals als geworfener Fehler.
-  if (created.autoSend) {
+  // S4 (Fix-Welle, Final-Review): zusaetzlich zu `autoSend` MUSS die Rechnung tatsaechlich
+  // festgeschrieben sein (createRecurring erzwingt zwar autoFinalize bei autoSend, aber
+  // ein Bestandsdatensatz aus der Zeit vor diesem Fix koennte autoSend=true/autoFinalize=false
+  // noch kombiniert haben) — sonst ginge eine Rechnung mit Nummer/GiroCode "ENTWURF" raus.
+  if (created.autoSend && created.result.finalized) {
     const sent = await sendRecurringInvoiceEmail(created.orgId, created.result.invoiceId, provider);
     created.result.emailStatus = sent.status;
     created.result.emailError = sent.error;
