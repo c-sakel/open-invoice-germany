@@ -39,7 +39,7 @@ import {
   invoiceListFilterSchema,
   LineType,
 } from "@/schemas";
-import { docLineSchema, type McpToolsContext, type Result } from "./context";
+import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_invoice ───────────────────────────────────────────────────────────
@@ -98,13 +98,13 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           let description = l.description;
           if (unitPriceEuro == null && l.productName) {
             const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-            if (!p) throw new Error(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+            if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
             unitPriceEuro = p.netPriceCents / 100;
             unit = unit ?? p.unit;
             taxRatePercent = taxRatePercent ?? p.taxRate;
             description = description || p.name;
           }
-          if (unitPriceEuro == null) throw new Error(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+          if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
           return {
             description,
             quantityMilli: ctx.qtyToMilli(l.quantity),
@@ -149,7 +149,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             `Nächster Schritt: finalize_invoice (vergibt die Rechnungsnummer, macht GoBD-konform unveränderbar).`,
         );
       } catch (e) {
-        return ctx.fail(`Konnte Rechnung nicht anlegen: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -171,7 +172,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Festgeschrieben: ${finalized.number} · Brutto ${formatCents(finalized.grossTotalCents)}. Unveränderbar. Export mit export_invoice.`);
       } catch (e) {
         if (e instanceof FinalizeError) return ctx.fail(`Festschreiben nicht möglich:\n${e.message}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -192,7 +194,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.`);
       } catch (e) {
         if (e instanceof CancelError) return ctx.fail(`Storno nicht möglich: ${e.message}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -233,7 +236,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -288,7 +292,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -355,7 +360,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             (validation ? `\nEN-16931-Kernvalidierung: ${validation.valid ? "BESTANDEN" : "FEHLER: " + validation.errors.join("; ")}` : ""),
         );
       } catch (e) {
-        return ctx.fail(`Export fehlgeschlagen: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -406,7 +412,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof PartialInvoiceError || e instanceof PricingError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -442,7 +449,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof DownpaymentInvoiceError || e instanceof PricingError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -465,7 +473,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof FinalInvoiceError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -496,7 +505,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -530,7 +540,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}.`);
       } catch (e) {
         if (e instanceof CreditError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -593,7 +604,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       } catch (e) {
         if (e instanceof InvoiceUpdateError) return ctx.fail(e.message);
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

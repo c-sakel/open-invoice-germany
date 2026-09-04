@@ -13,7 +13,7 @@ import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { EmailDocType, type SendEmailRawInput } from "@/schemas/email";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 const QUOTE_KINDS = new Set(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]);
 const INVOICE_KINDS = new Set(["INVOICE", "CREDIT_NOTE"]);
@@ -25,7 +25,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
     {
       title: "Beleg per E-Mail versenden",
       description:
-        "Versendet einen Beleg (Angebot/AB/Proforma, Rechnung/Gutschrift, Lieferschein, Mahnung) per E-Mail. docId per Nummer oder ID. Betreff/Text/Empfaenger frei waehlbar (kein Vorlagenzwang) — templateId optional nur zur Protokollierung, welche Vorlage als Basis diente.",
+        "Versendet einen Beleg (Angebot/AB/Proforma, Rechnung/Gutschrift, Lieferschein, Mahnung) per E-Mail. docId per Nummer oder ID. Betreff/Text/Empfaenger frei waehlbar (kein Vorlagenzwang) — templateId optional nur zur Protokollierung, welche Vorlage als Basis diente. Bei einem Rechnungs-/Gutschrift-Entwurf greift die Einstellung autoFinalizeOnSend (§33): ist sie aktiv, wird der Entwurf VOR dem Versand automatisch festgeschrieben; ist sie deaktiviert, wird der Entwurf unveraendert als Entwurf verschickt.",
       inputSchema: {
         docType: EmailDocType,
         docId: z.string().min(1).describe("Beleg-Nummer oder -ID"),
@@ -73,7 +73,8 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
         if (e instanceof DocumentNotFoundError) return ctx.fail(e.message);
         if (e instanceof MailNotConfiguredError) return ctx.fail(e.message);
         if (e instanceof EmailAttachmentsTooLargeError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

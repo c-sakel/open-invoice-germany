@@ -8,7 +8,7 @@ import { loadPrintSettings, savePrintSettings, setPrintOptions } from "@/domain/
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { listNumberRanges, updateNumberRange } from "@/domain/numbering/ranges";
 import { loadDunningSettings, saveDunningSettings } from "@/domain/dunning/settings";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
   documentSettingsInputSchema,
   printSettingsInputSchema,
@@ -17,7 +17,7 @@ import {
   NumberRangeDocType,
   dunningSettingsInputSchema,
 } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): void {
   // ── get_settings ─────────────────────────────────────────────────────────────
@@ -48,7 +48,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
             return ctx.ok(JSON.stringify(await loadDunningSettings(org.id), null, 2));
         }
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -70,7 +71,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Beleg-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -91,7 +93,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Druckoptionen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -121,7 +124,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Briefpapier-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -160,7 +164,9 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Nummernkreis "${docType}" gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof InvalidOperationError) return ctx.fail(e.message);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -189,7 +195,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -211,7 +218,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Mahnwesen-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

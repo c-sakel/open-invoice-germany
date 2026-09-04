@@ -8,7 +8,7 @@ import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { NotFoundError } from "@/domain/errors";
 import { DocRefType } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerAttachmentTools(server: McpServer, ctx: McpToolsContext): void {
   // ── add_attachment ───────────────────────────────────────────────────────────
@@ -44,7 +44,8 @@ export function registerAttachmentTools(server: McpServer, ctx: McpToolsContext)
         return ctx.ok(`Anhang gespeichert: ${row.filename} (${(row.sizeBytes / 1024).toFixed(0)} KB). ID: ${row.id}.`);
       } catch (e) {
         if (e instanceof AttachmentValidationError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -74,7 +75,8 @@ export function registerAttachmentTools(server: McpServer, ctx: McpToolsContext)
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -99,7 +101,8 @@ export function registerAttachmentTools(server: McpServer, ctx: McpToolsContext)
         return ctx.ok(`Anhang ${args.attachmentId} entfernt.`);
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

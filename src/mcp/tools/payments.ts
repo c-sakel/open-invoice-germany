@@ -7,7 +7,7 @@ import { formatCents } from "@/lib/money";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { recordPaymentSchema, PaymentMethod } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): void {
   // ── record_payment ───────────────────────────────────────────────────────────
@@ -54,7 +54,8 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}`);
       } catch (e) {
         if (e instanceof PaymentError) return ctx.fail(e.message);
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -86,7 +87,8 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

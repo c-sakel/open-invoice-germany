@@ -9,7 +9,7 @@ import { dashboardSummary } from "@/domain/dashboard/summary";
 import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
 import { organizationSchema, TaxScheme } from "@/schemas";
-import type { McpToolsContext, Result } from "./context";
+import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerSystemTools(server: McpServer, ctx: McpToolsContext): void {
   // ── get_status ──────────────────────────────────────────────────────────────
@@ -91,6 +91,19 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
     async (args): Promise<Result> => {
       try {
         const v = organizationSchema.parse({ ...args, email: args.email ?? "" });
+        // Fix-Welle Punkt 7: dieselbe Org-Aufloesung wie ctx.requireOrg() (getActiveOrg,
+        // findFirst orderBy createdAt asc) statt eines eigenen ungescopten/ungeordneten
+        // dbInternal.organization.findFirst() — sonst kann (in der geteilten Test-DB, aber
+        // im Multi-Org-Fall grundsaetzlich) eine ANDERE Organisation "gefunden" und
+        // ueberschrieben werden statt der aktiven. Ohne Org (noch keine eingerichtet):
+        // weiterhin anlegen (bestehendes Verhalten).
+        let existing: Awaited<ReturnType<typeof dbInternal.organization.findUnique>> | null = null;
+        try {
+          const active = await ctx.requireOrg();
+          existing = await dbInternal.organization.findUnique({ where: { id: active.id } });
+        } catch {
+          existing = null;
+        }
         const data = {
           legalName: v.legalName,
           addressLine1: v.addressLine1,
@@ -108,7 +121,6 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           bankName: v.bankName ?? null,
           electronicAddress: v.email || null,
         };
-        const existing = await dbInternal.organization.findFirst();
         const org = existing
           ? await dbInternal.organization.update({ where: { id: existing.id }, data })
           : await dbInternal.organization.create({ data });
@@ -116,7 +128,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         await ensureOrgMasterdata(dbInternal, org.id);
         return ctx.ok(`Unternehmen ${existing ? "aktualisiert" : "angelegt"}: ${org.legalName} (${org.id}).`);
       } catch (e) {
-        return ctx.fail(`Konnte Unternehmen nicht speichern: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -136,7 +149,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         const summary = await dashboardSummary(org.id);
         return ctx.ok(JSON.stringify(summary, null, 2));
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -168,7 +182,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -204,7 +219,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           ),
         );
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );
@@ -226,7 +242,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         const count = await markRead(org.id, args);
         return ctx.ok(`${count} Benachrichtigung(en) als gelesen markiert.`);
       } catch (e) {
-        return ctx.fail(`Fehler: ${(e as Error).message}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
       }
     },
   );

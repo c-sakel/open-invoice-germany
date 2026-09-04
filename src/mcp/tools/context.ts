@@ -19,6 +19,19 @@ export type Result = { content: { type: "text"; text: string }[]; isError?: bool
 export const ok = (text: string): Result => ({ content: [{ type: "text", text }] });
 export const fail = (text: string): Result => ({ content: [{ type: "text", text }], isError: true });
 
+/** Erwartete, absichtlich mit lesbarem deutschem Text geworfene Fehler aus den resolve*-
+ *  Helfern/buildSimpleLines/buildEditorLines & Co. — deren Text darf dem Aufrufer angezeigt
+ *  werden (Fix-Welle Punkt 6: "Domain-Fehlerklassen behalten ihren Text"). */
+export class ToolError extends Error {}
+
+/** Fix-Welle Punkt 6: Unbekannte (nicht als Domain-/ToolError erkannte) Fehler NIE mit
+ *  Rohtext an den MCP-Client durchreichen (koennten Prisma-/Interna enthalten) — nur
+ *  geloggt, generische Antwort. */
+export function failUnknown(e: unknown): Result {
+  console.error("[mcp] Unerwarteter Fehler:", e instanceof Error ? (e.stack ?? e.message) : e);
+  return fail("Unerwarteter Fehler — Details im Serverlog.");
+}
+
 export const euroToCents = (e: number) => roundHalfUp(e * 100);
 export const qtyToMilli = (q: number) => roundHalfUp(q * 1000);
 
@@ -44,8 +57,8 @@ export async function resolveCustomer(orgId: string, ref: string) {
   const contains = all.filter((c) => c.name.toLowerCase().includes(lower));
   if (contains.length === 1) return contains[0];
   if (contains.length > 1)
-    throw new Error(`Mehrere Kunden passen zu "${ref}": ${contains.map((c) => c.name).join(", ")}. Bitte präzisieren.`);
-  throw new Error(`Kein Kunde "${ref}" gefunden. Lege ihn zuerst mit upsert_customer an (Name + Anschrift).`);
+    throw new ToolError(`Mehrere Kunden passen zu "${ref}": ${contains.map((c) => c.name).join(", ")}. Bitte präzisieren.`);
+  throw new ToolError(`Kein Kunde "${ref}" gefunden. Lege ihn zuerst mit upsert_customer an (Name + Anschrift).`);
 }
 
 export async function resolvePaymentMethod(orgId: string, ref: string) {
@@ -55,12 +68,12 @@ export async function resolvePaymentMethod(orgId: string, ref: string) {
   const lower = ref.trim().toLowerCase();
   const match = all.find((m) => m.name.toLowerCase() === lower);
   if (match) return match;
-  throw new Error(`Keine Zahlungsmethode "${ref}" gefunden. Mit list_payment_methods die verfügbaren Codes/Namen anzeigen.`);
+  throw new ToolError(`Keine Zahlungsmethode "${ref}" gefunden. Mit list_payment_methods die verfügbaren Codes/Namen anzeigen.`);
 }
 
 export async function resolveInvoice(orgId: string, ref: string) {
   const inv = await dbInternal.invoice.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
-  if (!inv) throw new Error(`Keine Rechnung "${ref}" gefunden (weder als ID noch als Nummer).`);
+  if (!inv) throw new ToolError(`Keine Rechnung "${ref}" gefunden (weder als ID noch als Nummer).`);
   return inv;
 }
 
@@ -71,20 +84,37 @@ export async function resolveDunning(orgId: string, ref: string) {
     where: { invoice: { orgId }, OR: [{ id: ref }, { number: ref }] },
     select: { id: true, number: true },
   });
-  if (!d) throw new Error(`Keine Mahnung "${ref}" gefunden (weder als ID noch als Nummer).`);
+  if (!d) throw new ToolError(`Keine Mahnung "${ref}" gefunden (weder als ID noch als Nummer).`);
   return d;
 }
 
 export async function resolveDocument(orgId: string, ref: string) {
   const q = await dbInternal.quote.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
-  if (!q) throw new Error(`Kein Dokument "${ref}" gefunden.`);
+  if (!q) throw new ToolError(`Kein Dokument "${ref}" gefunden.`);
   return q;
 }
 
 export async function resolveDeliveryNote(orgId: string, ref: string) {
   const n = await dbInternal.deliveryNote.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
-  if (!n) throw new Error(`Kein Lieferschein "${ref}" gefunden.`);
+  if (!n) throw new ToolError(`Kein Lieferschein "${ref}" gefunden.`);
   return n;
+}
+
+/** Fix-Welle Punkt 1: exakter Titel/ID zuerst, bei mehreren Substring-Treffern wirft sie
+ *  mit Kandidatenliste (analog resolveCustomer) statt stillschweigend den ersten Treffer
+ *  zu nehmen — bisher inline (und uneinheitlich) in run_recurring/set_recurring_state. */
+export async function resolveRecurring(orgId: string, ref: string) {
+  const byId = await dbInternal.recurringInvoice.findFirst({ where: { id: ref, orgId } });
+  if (byId) return byId;
+  const all = await dbInternal.recurringInvoice.findMany({ where: { orgId } });
+  const lower = ref.trim().toLowerCase();
+  const exact = all.filter((r) => r.title.toLowerCase() === lower);
+  if (exact.length === 1) return exact[0];
+  const contains = all.filter((r) => r.title.toLowerCase().includes(lower));
+  if (contains.length === 1) return contains[0];
+  if (contains.length > 1)
+    throw new ToolError(`Mehrere Abos passen zu "${ref}": ${contains.map((r) => r.title).join(", ")}. Bitte präzisieren.`);
+  throw new ToolError(`Kein Abo "${ref}" gefunden.`);
 }
 
 /** Loest einen Belegverweis (Nummer oder ID) fuer Beleganhaenge ueber alle DocRefType
@@ -99,12 +129,12 @@ export async function resolveDocForAttachment(orgId: string, docType: Attachment
       return resolveDeliveryNote(orgId, ref);
     case "RECURRING": {
       const r = await dbInternal.recurringInvoice.findFirst({ where: { orgId, OR: [{ id: ref }, { title: ref }] } });
-      if (!r) throw new Error(`Kein Abo "${ref}" gefunden.`);
+      if (!r) throw new ToolError(`Kein Abo "${ref}" gefunden.`);
       return r;
     }
     case "DUNNING": {
       const d = await dbInternal.dunning.findFirst({ where: { id: ref, invoice: { orgId } } });
-      if (!d) throw new Error(`Keine Mahnung "${ref}" gefunden.`);
+      if (!d) throw new ToolError(`Keine Mahnung "${ref}" gefunden.`);
       return d;
     }
   }
@@ -132,13 +162,13 @@ export async function buildSimpleLines(
     let description = l.description;
     if (unitPriceEuro == null && l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-      if (!p) throw new Error(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
       unitPriceEuro = p.netPriceCents / 100;
       unit = unit ?? p.unit;
       taxRate = taxRate ?? p.taxRate;
       description = description || p.name;
     }
-    if (unitPriceEuro == null) throw new Error(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+    if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
     return {
       description,
       quantityMilli: qtyToMilli(l.quantity),
@@ -194,14 +224,14 @@ export async function buildEditorLines(
     let description = l.description;
     if (unitPriceEuro == null && l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-      if (!p) throw new Error(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
       unitPriceEuro = p.netPriceCents / 100;
       unit = unit ?? p.unit;
       taxRate = taxRate ?? p.taxRate;
       description = description || p.name;
     }
-    if (l.quantity == null) throw new Error(`Position ${idx + 1} (ITEM) braucht "quantity".`);
-    if (unitPriceEuro == null) throw new Error(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+    if (l.quantity == null) throw new ToolError(`Position ${idx + 1} (ITEM) braucht "quantity".`);
+    if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
     return {
       lineType: "ITEM" as const,
       description,
@@ -238,6 +268,7 @@ export const docLineSchema = z.object({
 export interface McpToolsContext {
   ok: typeof ok;
   fail: typeof fail;
+  failUnknown: typeof failUnknown;
   euroToCents: typeof euroToCents;
   qtyToMilli: typeof qtyToMilli;
   parseDateInput: typeof parseDateInput;
@@ -248,6 +279,7 @@ export interface McpToolsContext {
   resolveDunning: typeof resolveDunning;
   resolveDocument: typeof resolveDocument;
   resolveDeliveryNote: typeof resolveDeliveryNote;
+  resolveRecurring: typeof resolveRecurring;
   resolveDocForAttachment: typeof resolveDocForAttachment;
   buildSimpleLines: typeof buildSimpleLines;
   buildEditorLines: typeof buildEditorLines;
@@ -260,6 +292,7 @@ export function createDefaultContext(overrides: Partial<McpToolsContext> = {}): 
   return {
     ok,
     fail,
+    failUnknown,
     euroToCents,
     qtyToMilli,
     parseDateInput,
@@ -270,6 +303,7 @@ export function createDefaultContext(overrides: Partial<McpToolsContext> = {}): 
     resolveDunning,
     resolveDocument,
     resolveDeliveryNote,
+    resolveRecurring,
     resolveDocForAttachment,
     buildSimpleLines,
     buildEditorLines,
