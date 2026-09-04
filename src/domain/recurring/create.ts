@@ -54,7 +54,8 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       nextRunDate: startDate,
       endDate,
       taxScheme: input.taxScheme,
-      currency: input.currency,
+      // defaultCurrency (Phase 7 Fix-Runde 1): ohne explizite Angabe DocumentSettings.defaultCurrency.
+      currency: input.currency ?? docSettings.defaultCurrency ?? "EUR",
       paymentTermsDays: input.paymentTermsDays,
       autoFinalize,
       autoSend,

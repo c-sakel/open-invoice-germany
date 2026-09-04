@@ -275,7 +275,10 @@ const invoiceHeaderFields = {
   customerId: z.string().min(1),
   type: InvoiceType.default("INVOICE"),
   taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
+  // Phase 7 Fix-Runde 1: ohne explizite Angabe greift DocumentSettings.defaultCurrency
+  // (Selbstheilung), zuletzt "EUR" — bewusst KEIN `.default()`, sonst koennte die
+  // Domain "nicht gesetzt" nicht von "EUR" unterscheiden.
+  currency: z.string().length(3).optional(),
   issueDate: z.coerce.date().optional(),
   deliveryDate: z.coerce.date().optional(),
   deliveryStart: z.coerce.date().optional(),
@@ -413,7 +416,8 @@ export const createDocumentSchema = z.object({
   kind: DocumentKind,
   customerId: z.string().min(1),
   taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
+  // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
+  currency: z.string().length(3).optional(),
   validUntil: z.coerce.date().optional(),
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
@@ -498,7 +502,8 @@ export const createRecurringSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
+  // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
+  currency: z.string().length(3).optional(),
   paymentTermsDays: z.number().int().min(0).max(365).default(14),
   // Ohne explizite Angabe greifen recurringAutoFinalizeDefault/recurringAutoSendDefault
   // (Phase 7, §33) — bewusst KEIN `.default()`, sonst koennte die Domain nicht mehr

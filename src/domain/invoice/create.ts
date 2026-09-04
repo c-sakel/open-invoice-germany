@@ -119,7 +119,10 @@ export async function createDraftInvoiceWithinTx(
       customerId: input.customerId,
       type: input.type,
       taxScheme: input.taxScheme,
-      currency: input.currency,
+      // Phase 7 Fix-Runde 1: ohne explizite Angabe DocumentSettings.defaultCurrency
+      // (selbstheilend geladen, Default darin bereits "EUR" — letzter Rueckfall trotzdem
+      // explizit, falls die Settings-Zeile jemals einen leeren Wert traegt).
+      currency: input.currency ?? settings.defaultCurrency ?? "EUR",
       issueDate,
       deliveryDate,
       deliveryStart: input.deliveryStart,

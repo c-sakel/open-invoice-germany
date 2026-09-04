@@ -169,6 +169,52 @@ describe("Phase 7, Task 2 — quoteValidityDays", () => {
   });
 });
 
+describe("Phase 7, Task 2 — defaultCurrency (Fix-Runde 1)", () => {
+  it("Rechnung ohne explizite Waehrung bekommt DocumentSettings.defaultCurrency", async () => {
+    await saveDocumentSettings(orgId, { defaultCurrency: "CHF" });
+    const inv = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE, currency: undefined }));
+    expect(inv.currency).toBe("CHF");
+    await saveDocumentSettings(orgId, { defaultCurrency: "EUR" });
+  });
+
+  it("Rechnung mit expliziter Waehrung ignoriert DocumentSettings.defaultCurrency", async () => {
+    await saveDocumentSettings(orgId, { defaultCurrency: "CHF" });
+    const inv = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE, currency: "USD" }));
+    expect(inv.currency).toBe("USD");
+    await saveDocumentSettings(orgId, { defaultCurrency: "EUR" });
+  });
+
+  it("Angebot ohne explizite Waehrung bekommt DocumentSettings.defaultCurrency", async () => {
+    await saveDocumentSettings(orgId, { defaultCurrency: "CHF" });
+    const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", lines: [line] }, { now: FIX_DATE });
+    expect(q.currency).toBe("CHF");
+    await saveDocumentSettings(orgId, { defaultCurrency: "EUR" });
+  });
+
+  it("Abo ohne explizite Waehrung bekommt DocumentSettings.defaultCurrency", async () => {
+    await saveDocumentSettings(orgId, { defaultCurrency: "CHF" });
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Abo ohne Waehrung",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: FIX_DATE,
+      taxScheme: "REGULAR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      autoSend: false,
+      lines: [{ lineType: "ITEM" as const, description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 }],
+    });
+    expect(rec.currency).toBe("CHF");
+    await saveDocumentSettings(orgId, { defaultCurrency: "EUR" });
+  });
+
+  it("ohne Org-Standard bleibt es beim letzten Rueckfall EUR", async () => {
+    const inv = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE, currency: undefined }));
+    expect(inv.currency).toBe("EUR");
+  });
+});
+
 describe("Phase 7, Task 2 — Lieferschein-Defaults (dnShowPrices/dnShowArticleNumber/dnShowDeliveryAddress) bei Konvertierung", () => {
   async function makeFinalizedSourceInvoice() {
     const draft = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE }));
@@ -262,41 +308,31 @@ describe("Phase 7, Task 2 — eInvoiceDefault (Standardanhaenge-Vorbelegung)", (
   });
 });
 
-describe("Phase 7, Task 2 — shareLinkDefaultOn", () => {
+describe("Phase 7, Task 2 — shareLinkDefaultOn (Fix-Runde 1: Minting jetzt in prefillEmail/resolveOfferLink)", () => {
   async function makeQuote() {
     return createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] }, { now: FIX_DATE });
   }
 
-  it("an: der Versand einer Angebots-Mail erzeugt automatisch einen Annahme-Link, wenn keiner aktiv ist", async () => {
+  it("an: das Vorbelegen einer Angebots-Mail erzeugt automatisch einen Annahme-Link, wenn keiner aktiv ist", async () => {
     const originalBaseUrl = process.env.APP_BASE_URL;
     process.env.APP_BASE_URL = "https://instanz.example.org";
     await saveDocumentSettings(orgId, { shareLinkDefaultOn: true });
     const q = await makeQuote();
-    await sendDocumentEmail(
-      orgId,
-      "tester",
-      { docType: "ANGEBOT", docId: q.id, to: "kunde@example.org", cc: "", bcc: "", subject: "Ihr Angebot", body: "Hallo", standardAttachments: [] },
-      [],
-      createMemoryProvider(),
-    );
+    const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+    expect(pre.body).toContain("https://instanz.example.org/angebot/");
     const links = await dbInternal.quoteShareLink.findMany({ where: { orgId, quoteId: q.id } });
     expect(links.length).toBe(1);
     if (originalBaseUrl === undefined) delete process.env.APP_BASE_URL;
     else process.env.APP_BASE_URL = originalBaseUrl;
   });
 
-  it("aus: der Versand einer Angebots-Mail erzeugt KEINEN Annahme-Link", async () => {
+  it("aus: das Vorbelegen einer Angebots-Mail erzeugt KEINEN Annahme-Link", async () => {
     const originalBaseUrl = process.env.APP_BASE_URL;
     process.env.APP_BASE_URL = "https://instanz.example.org";
     await saveDocumentSettings(orgId, { shareLinkDefaultOn: false });
     const q = await makeQuote();
-    await sendDocumentEmail(
-      orgId,
-      "tester",
-      { docType: "ANGEBOT", docId: q.id, to: "kunde@example.org", cc: "", bcc: "", subject: "Ihr Angebot", body: "Hallo", standardAttachments: [] },
-      [],
-      createMemoryProvider(),
-    );
+    const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+    expect(pre.body).not.toContain("/angebot/");
     const links = await dbInternal.quoteShareLink.findMany({ where: { orgId, quoteId: q.id } });
     expect(links.length).toBe(0);
     await saveDocumentSettings(orgId, { shareLinkDefaultOn: true });

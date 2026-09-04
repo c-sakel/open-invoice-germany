@@ -15,8 +15,6 @@ import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/cont
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
-import { createShareLink } from "@/domain/quote-share/link";
-import { effectiveQuoteStatus } from "@/domain/document/status";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
@@ -69,32 +67,11 @@ export async function sendDocumentEmail(
     }
   }
 
-  // shareLinkDefaultOn (Phase 7, §33): existiert beim Versand eines Angebots per E-Mail
-  // kein aktiver Annahme-Link, wird automatisch einer erzeugt, wenn die Org-Einstellung
-  // aktiv ist — unabhaengig davon, ob der bereits gerenderte Mailtext {{offer.link}}
-  // enthaelt (der Text wurde beim Vorbelegen des Dialogs gerendert, VOR diesem Aufruf;
-  // `prefillEmail`/`resolveOfferLink` minten dabei bewusst NIE selbst einen Link, siehe
-  // dortiger Kommentar). Ein Fehler hier bricht den Versand nicht ab (best effort).
-  if (input.docType === "ANGEBOT") {
-    try {
-      const settingsForLink = await loadDocumentSettings(orgId);
-      if (settingsForLink.shareLinkDefaultOn) {
-        const now = new Date();
-        const quote = await dbInternal.quote.findFirst({ where: { id: input.docId, orgId }, select: { status: true, validUntil: true } });
-        if (quote) {
-          const eff = effectiveQuoteStatus({ status: quote.status, validUntil: quote.validUntil }, now);
-          if (eff === "DRAFT" || eff === "SENT" || eff === "EXPIRED") {
-            const activeLink = await dbInternal.quoteShareLink.findFirst({
-              where: { orgId, quoteId: input.docId, revokedAt: null, decidedAt: null, expiresAt: { gt: now } },
-            });
-            if (!activeLink) await createShareLink(orgId, input.docId, {}, { actor, now });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("sendDocumentEmail: shareLinkDefaultOn-Linkerzeugung fehlgeschlagen", e);
-    }
-  }
+  // shareLinkDefaultOn (Phase 7, §33): Linkerzeugung fuer Angebote wurde nach
+  // `resolveOfferLink` (src/domain/email/compose.ts, `prefillEmail`) verschoben — dort
+  // entsteht der Text der Mail, ein hier nachtraeglich geminteter Link wuerde den
+  // bereits gerenderten {{offer.link}}-Platzhalter (leer oder Zeile entfernt) nicht mehr
+  // rueckwirkend befuellen (Fix-Runde 1).
 
   // Mandanten-Gate: wirft DocumentNotFoundError bei Fremd-Org, falschem Belegtyp oder
   // Nichtexistenz — VOR jeder Log-Anlage. buildStandardAttachments allein reicht nicht,
