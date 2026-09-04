@@ -59,6 +59,18 @@ describe("Phase 7 — listNumberRanges", () => {
     expect(product.prefix).toBe("ART-");
     expect(product.nextNumberPreview).toBe("ART-00001");
   });
+
+  it("Nit (Final-Review): {MM}/{DD} in der Vorschau zeigen den heutigen Tag, nicht immer 01.01", async () => {
+    const orgId = await makeOrg();
+    await updateNumberRange(orgId, "ANGEBOT", { pattern: "AN-{YYYY}-{MM}-{DD}-{SEQ}", prefix: "AN-", seqPadding: 3, yearlyReset: true, nextValue: 1 }, "tester", NOW);
+    const today = new Date();
+    const expectedMonth = String(today.getUTCMonth() + 1).padStart(2, "0");
+    const expectedDay = String(today.getUTCDate()).padStart(2, "0");
+
+    const ranges = await listNumberRanges(orgId, YEAR);
+    const quote = ranges.find((r) => r.docType === "ANGEBOT")!;
+    expect(quote.nextNumberPreview).toBe(`AN-${YEAR}-${expectedMonth}-${expectedDay}-001`);
+  });
 });
 
 describe("Phase 7 — updateNumberRange", () => {

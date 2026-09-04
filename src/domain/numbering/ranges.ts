@@ -44,6 +44,17 @@ async function loadActiveRange(db: Db, orgId: string, docType: string, year: num
   return rows.reduce((a, b) => (b.year !== 0 ? b : a));
 }
 
+/**
+ * Datum fuer die Nummernkreis-Vorschau: das angefragte Geschaeftsjahr, aber Monat/Tag
+ * von HEUTE (Nit, Final-Review) — vorher stand hier immer der 1. Januar, wodurch
+ * {MM}/{DD}-Platzhalter im Muster faelschlich immer "01"/"01" zeigten statt des
+ * tatsaechlichen heutigen Tages.
+ */
+function previewDateFor(year: number): Date {
+  const now = new Date();
+  return new Date(Date.UTC(year, now.getUTCMonth(), now.getUTCDate()));
+}
+
 /** Formatiert die naechste Nummer eines Musters (rein, ohne DB). */
 export function previewNumber(input: { prefix: string; pattern: string; seqPadding: number }, seq: number, date: Date): string {
   return formatDocumentNumber(input.pattern, {
@@ -58,7 +69,7 @@ export function previewNumber(input: { prefix: string; pattern: string; seqPaddi
 
 /** Uebersicht aller Nummernkreise einer Organisation fuer das angegebene Geschaeftsjahr. */
 export async function listNumberRanges(orgId: string, year: number): Promise<NumberRangeView[]> {
-  const previewDate = new Date(Date.UTC(year, 0, 1));
+  const previewDate = previewDateFor(year);
   const views: NumberRangeView[] = [];
   for (const docType of NUMBER_RANGE_DOC_TYPES) {
     const fallback = defaultPattern(docType);
@@ -167,7 +178,7 @@ export async function updateNumberRange(
       },
     });
 
-    const previewDate = new Date(Date.UTC(year, 0, 1));
+    const previewDate = previewDateFor(year);
     return {
       docType: docType as NumberRangeDocType,
       pattern: written.pattern,
@@ -196,6 +207,13 @@ export async function assignArticleNumber(tx: Db, orgId: string, now: Date = new
  * Organisation, deren `customerNumber` noch leer ist. Wird beim ersten Laden der
  * Kundenliste aufgerufen — bereits nummerierte Kunden bleiben unangetastet, jeder Lauf
  * nach dem ersten ist ein No-Op.
+ *
+ * Nit (Final-Review): frueher EINE Transaktion je Kunde (bei einer grossen unnummerierten
+ * Bestandskundenliste entsprechend viele einzelne Roundtrips beim ersten Laden). Jetzt EIN
+ * Batch/EINE Transaktion fuer alle fehlenden Kunden — weiterhin seriell INNERHALB der
+ * Transaktion (kein Promise.all): assignCustomerNumber schreibt denselben NumberRange-
+ * Datensatz je Aufruf (upsert-increment), parallele Aufrufe wuerden sich gegenseitig
+ * ueberschreiben/Nummern doppelt vergeben koennen.
  */
 export async function ensureCustomerNumbers(orgId: string, now: Date = new Date()): Promise<void> {
   const missing = await dbInternal.customer.findMany({
@@ -203,15 +221,34 @@ export async function ensureCustomerNumbers(orgId: string, now: Date = new Date(
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
-  for (const c of missing) {
-    // Seriell (kein Promise.all): assignCustomerNumber schreibt denselben NumberRange-
-    // Datensatz je Aufruf (upsert-increment) — parallele Aufrufe wuerden sich gegenseitig
-    // ueberschreiben/Nummern doppelt vergeben koennen.
-    await dbInternal.$transaction(async (tx) => {
+  if (missing.length === 0) return;
+  await dbInternal.$transaction(async (tx) => {
+    for (const c of missing) {
       const customerNumber = await assignCustomerNumber(tx, orgId, now);
       await tx.customer.update({ where: { id: c.id }, data: { customerNumber } });
-    });
-  }
+    }
+  });
+}
+
+/**
+ * Nit (Final-Review): Pendant zu `ensureCustomerNumbers` fuer Produkte/Artikel — bisher
+ * gab es keine Selbstheilung, Bestandsprodukte erhielten nie eine Artikelnummer aus dem
+ * PRODUCT-Nummernkreis. Wird beim ersten Laden der Produktliste aufgerufen (analog
+ * `ensureCustomerNumbers`), EIN Batch/EINE Transaktion fuer alle fehlenden Produkte.
+ */
+export async function ensureArticleNumbers(orgId: string, now: Date = new Date()): Promise<void> {
+  const missing = await dbInternal.product.findMany({
+    where: { orgId, articleNumber: null },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (missing.length === 0) return;
+  await dbInternal.$transaction(async (tx) => {
+    for (const p of missing) {
+      const articleNumber = await assignArticleNumber(tx, orgId, now);
+      await tx.product.update({ where: { id: p.id }, data: { articleNumber } });
+    }
+  });
 }
 
 /**

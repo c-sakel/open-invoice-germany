@@ -15,7 +15,7 @@ import { savePrintSettings, loadPrintSettings, effectivePrintOptions, DEFAULT_PR
 import { saveMailSettings } from "@/domain/email/settings";
 import { sendDocumentEmail } from "@/domain/email/send";
 import { prefillEmail } from "@/domain/email/compose";
-import { assignCustomerNumber, assignArticleNumber, ensureCustomerNumbers, updateNumberRange } from "@/domain/numbering/ranges";
+import { assignCustomerNumber, assignArticleNumber, ensureCustomerNumbers, ensureArticleNumbers, updateNumberRange } from "@/domain/numbering/ranges";
 import { createRecurring } from "@/domain/recurring/create";
 import { emitRecurringNow } from "@/domain/recurring/run";
 import { createMemoryProvider } from "@/lib/mail/memory";
@@ -414,6 +414,24 @@ describe("Phase 7, Task 2 — Kunden-/Artikelnummern", () => {
     await ensureCustomerNumbers(org);
     const after1Again = await dbInternal.customer.findUniqueOrThrow({ where: { id: c1.id } });
     expect(after1Again.customerNumber).toBe("KD-00001");
+  });
+
+  it("Nit (Final-Review): ensureArticleNumbers heilt Bestandsprodukte ohne Artikelnummer nach, aufsteigend nach createdAt, idempotent", async () => {
+    const org = await makeOrg();
+    const p1 = await dbInternal.product.create({ data: { orgId: org, name: "Alt-Produkt 1", netPriceCents: 1000 } });
+    await new Promise((r) => setTimeout(r, 5));
+    const p2 = await dbInternal.product.create({ data: { orgId: org, name: "Alt-Produkt 2", netPriceCents: 2000 } });
+
+    await ensureArticleNumbers(org);
+    const after1 = await dbInternal.product.findUniqueOrThrow({ where: { id: p1.id } });
+    const after2 = await dbInternal.product.findUniqueOrThrow({ where: { id: p2.id } });
+    expect(after1.articleNumber).toBe("ART-00001");
+    expect(after2.articleNumber).toBe("ART-00002");
+
+    // idempotent: zweiter Lauf vergibt nichts erneut
+    await ensureArticleNumbers(org);
+    const after1Again = await dbInternal.product.findUniqueOrThrow({ where: { id: p1.id } });
+    expect(after1Again.articleNumber).toBe("ART-00001");
   });
 });
 
