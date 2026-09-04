@@ -44,6 +44,9 @@ import { GET as invoiceTimelineGet } from "@/app/api/invoices/[id]/timeline/rout
 import { GET as documentTimelineGet } from "@/app/api/documents/[id]/timeline/route";
 import { GET as deliveryNoteTimelineGet } from "@/app/api/delivery-notes/[id]/timeline/route";
 import { createNotification } from "@/domain/notifications/create";
+import { createRecurring } from "@/domain/recurring/create";
+import { PATCH as recurringPatch } from "@/app/api/recurring/[id]/route";
+import type { CreateRecurringInput } from "@/schemas";
 
 let orgId: string;
 let customerId: string;
@@ -364,20 +367,28 @@ describe("GET/PUT /api/notification-settings", () => {
 });
 
 describe("GET /api/dashboard", () => {
-  it("liefert Kennzahlen inkl. der ueberfaelligen Testrechnung", async () => {
+  it("liefert Kennzahlen inkl. der ueberfaelligen Testrechnung und der Fix-Runde-1-Kennzahlen (§45)", async () => {
     const res = await dashboardGet();
     expect(res.status).toBe(200);
     const j = (await res.json()) as {
       overdueInvoices: { count: number; cents: number };
-      aging: { d1_7: { count: number }; d8_30: { count: number }; d31_60: { count: number }; d60plus: { count: number } };
+      dueThisWeek: { count: number; cents: number };
+      partiallyPaid: { count: number; cents: number };
+      dunningRequired: { count: number };
+      aging: Array<{ label: string; count: number; cents: number }>;
       recentDocuments: unknown[];
       openQuotes: { count: number };
     };
     expect(j.overdueInvoices.count).toBeGreaterThanOrEqual(1);
-    const bucketCounts = j.aging.d1_7.count + j.aging.d8_30.count + j.aging.d31_60.count + j.aging.d60plus.count;
+    // Fix-Runde 1: Dashboard-Aging hat 5 Buckets (Grenzen 7/30/60/90).
+    expect(j.aging).toHaveLength(5);
+    const bucketCounts = j.aging.reduce((sum, b) => sum + b.count, 0);
     expect(bucketCounts).toBeGreaterThanOrEqual(1);
     expect(j.recentDocuments.length).toBeGreaterThan(0);
     expect(j.openQuotes.count).toBeGreaterThanOrEqual(1);
+    expect(j.dueThisWeek.count).toBeGreaterThanOrEqual(0);
+    expect(j.partiallyPaid.count).toBeGreaterThanOrEqual(0);
+    expect(j.dunningRequired.count).toBeGreaterThanOrEqual(1); // die ueberfaellige Testrechnung ist mahnbar
   });
 });
 
@@ -431,5 +442,112 @@ describe("GET .../timeline (invoices/documents/delivery-notes)", () => {
     expect(res.status).toBe(200);
     const j = (await res.json()) as { entries: unknown[] };
     expect(j.entries.length).toBeGreaterThan(0);
+  });
+});
+
+describe("PATCH /api/recurring/[id]", () => {
+  it("aendert Status ueber die kurze Form {status} (unveraendert seit Task 1/2)", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Routentest-Abo (Status)",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: NOW,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      lines: [line("Routentest-Abo-Position")],
+    } as CreateRecurringInput);
+
+    const res = await recurringPatch(
+      new Request(`http://localhost/api/recurring/${rec.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "PAUSED" }),
+      }),
+      ctx(rec.id),
+    );
+    expect(res.status).toBe(200);
+    const updated = await dbInternal.recurringInvoice.findUnique({ where: { id: rec.id } });
+    expect(updated?.status).toBe("PAUSED");
+  });
+
+  it("aendert Kopf-/Ablauffelder (inkl. startDate) ueber die neue Form {patch} (Fix-Runde 1, Abo-Bearbeiten-UI)", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Routentest-Abo (Patch)",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: NOW,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      lines: [line("Routentest-Abo-Position")],
+    } as CreateRecurringInput);
+
+    const newStart = "2068-07-01";
+    const res = await recurringPatch(
+      new Request(`http://localhost/api/recurring/${rec.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          patch: {
+            title: "Routentest-Abo (Patch, geändert)",
+            interval: "DAY",
+            intervalCount: 3,
+            startDate: newStart,
+            paymentTermsDays: 30,
+            maxRuns: 5,
+          },
+        }),
+      }),
+      ctx(rec.id),
+    );
+    expect(res.status).toBe(200);
+    const updated = await dbInternal.recurringInvoice.findUnique({ where: { id: rec.id } });
+    expect(updated?.title).toBe("Routentest-Abo (Patch, geändert)");
+    expect(updated?.interval).toBe("DAY");
+    expect(updated?.intervalCount).toBe(3);
+    expect(updated?.paymentTermsDays).toBe(30);
+    expect(updated?.maxRuns).toBe(5);
+    // Vor dem ersten Lauf (issuedCount===0) zieht nextRunDate mit startDate mit.
+    expect(updated?.startDate.toISOString().slice(0, 10)).toBe(newStart);
+    expect(updated?.nextRunDate.toISOString().slice(0, 10)).toBe(newStart);
+  });
+
+  it("400 bei ungueltigem patch-Feld", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId,
+      title: "Routentest-Abo (400)",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: NOW,
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      lines: [line("Routentest-Abo-Position")],
+    } as CreateRecurringInput);
+
+    const res = await recurringPatch(
+      new Request(`http://localhost/api/recurring/${rec.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ patch: { intervalCount: 0 } }),
+      }),
+      ctx(rec.id),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("404 fuer ein unbekanntes Abo", async () => {
+    const res = await recurringPatch(
+      new Request("http://localhost/api/recurring/does-not-exist", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ patch: { title: "X" } }),
+      }),
+      ctx("does-not-exist"),
+    );
+    expect(res.status).toBe(404);
   });
 });

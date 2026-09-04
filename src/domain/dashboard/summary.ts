@@ -2,50 +2,73 @@
  * Dashboard-Kennzahlen (Phase 8b, Task 4, `/` fuer angemeldete Nutzer). Rein lesend,
  * org-scoped, DB-portabel (Aggregation in JS ueber select-reduzierte Zeilen statt
  * DB-spezifischer Funktionen — Global Constraint).
+ *
+ * Fix-Runde 1 (Koordinator, §45): drei zusaetzliche Kennzahlen (dueThisWeek/
+ * partiallyPaid/dunningRequired) sowie ein verallgemeinerter `agingBuckets`-Helfer
+ * (N+1 Buckets statt fix vier), damit das Dashboard 5 Buckets (Grenzen 7/30/60/90,
+ * Tag 0 eingeschlossen) zeigen kann, waehrend die Mahnuebersicht weiterhin ihre
+ * bisherigen 4 Buckets (Grenzen 7/30/60, `daysOverdue >= 1`, §25) unveraendert liefert.
  */
 import { dbInternal } from "@/lib/db";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { effectiveQuoteStatus } from "@/domain/document/status";
+import { dunningCandidates } from "@/domain/dunning/auto";
 
 export interface AgingBucket {
+  /** Deutsches Anzeigelabel, aus `bounds`/`minDays` abgeleitet (z. B. "8–30 Tage"). */
+  label: string;
   count: number;
   cents: number;
 }
 
-export interface AgingBuckets {
-  d1_7: AgingBucket;
-  d8_30: AgingBucket;
-  d31_60: AgingBucket;
-  d60plus: AgingBucket;
+/** Beginn des Kalendertags (lokale Zeit) von `d` — analog invoice/status.ts. */
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function emptyBucket(): AgingBucket {
-  return { count: 0, cents: 0 };
+export interface AgingBucketsOptions {
+  /** Kleinste Tagesanzahl, die noch in einen Bucket faellt (Default 1 — "faellig heute",
+   *  daysOverdue===0, zaehlt NICHT mit, §25). Das Dashboard uebergibt 0, um den heutigen
+   *  Faelligkeitstag mit in den ersten Bucket aufzunehmen (§45). */
+  minDays?: number;
 }
 
 /**
- * Aging-Helfer, gemeinsam mit `src/domain/dunning/overview.ts` genutzt (Task-4-Brief):
- * verteilt ueberfaellige Zeilen (Faelligkeitsdatum + offener Betrag) auf vier Buckets.
- * `bounds` = obere Tagesgrenzen der ersten drei Buckets (Default 7/30/60, wie bisher
- * hartkodiert in der Mahnuebersicht) — der vierte Bucket faengt alles darueber.
- * Zeilen mit `daysOverdue < 1` (heute faellig, noch nicht wirklich ueberfaellig) zaehlen
- * NICHT in die Buckets (unveraendertes Verhalten aus der Mahnuebersicht).
+ * Verallgemeinerter Aging-Helfer (Fix-Runde 1, Koordinator): verteilt ueberfaellige
+ * Zeilen (Faelligkeitsdatum + Betrag) auf `bounds.length + 1` Buckets — je Eintrag in
+ * `bounds` ein Bucket mit oberer Tagesgrenze, plus ein abschliessender "> letzte Grenze"-
+ * Bucket. `bounds` MUSS aufsteigend sortiert sein (z. B. `[7, 30, 60]` fuer die
+ * Mahnuebersicht oder `[7, 30, 60, 90]` fuer das Dashboard). Labels werden aus den
+ * Grenzen + `minDays` abgeleitet, keine hartkodierten Bucket-Schluessel mehr (ersetzt die
+ * vorherige feste Vier-Schluessel-Form `{d1_7, d8_30, d31_60, d60plus}` — Aufrufer, die
+ * diese Form nach aussen weiterreichen (z. B. `loadDunningOverview`), bauen sie lokal aus
+ * dem Array wieder auf).
  */
 export function agingBuckets(
   rows: { dueDate: Date; cents: number }[],
   now: Date = new Date(),
-  bounds: [number, number, number] = [7, 30, 60],
-): AgingBuckets {
-  const aging: AgingBuckets = { d1_7: emptyBucket(), d8_30: emptyBucket(), d31_60: emptyBucket(), d60plus: emptyBucket() };
+  bounds: number[] = [7, 30, 60],
+  opts: AgingBucketsOptions = {},
+): AgingBucket[] {
+  const minDays = opts.minDays ?? 1;
+  const buckets: AgingBucket[] = bounds.map((bound, i) => ({
+    label: i === 0 ? `${minDays}–${bound} Tage` : `${bounds[i - 1] + 1}–${bound} Tage`,
+    count: 0,
+    cents: 0,
+  }));
+  buckets.push({ label: `> ${bounds[bounds.length - 1]} Tage`, count: 0, cents: 0 });
+
+  const today = startOfDay(now);
   for (const row of rows) {
-    const daysOverdue = Math.floor((now.getTime() - row.dueDate.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysOverdue < 1) continue;
-    const bucket = daysOverdue <= bounds[0] ? aging.d1_7 : daysOverdue <= bounds[1] ? aging.d8_30 : daysOverdue <= bounds[2] ? aging.d31_60 : aging.d60plus;
-    bucket.count += 1;
-    bucket.cents += row.cents;
+    const daysOverdue = Math.round((today.getTime() - startOfDay(row.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysOverdue < minDays) continue;
+    let idx = bounds.findIndex((bound) => daysOverdue <= bound);
+    if (idx === -1) idx = buckets.length - 1;
+    buckets[idx].count += 1;
+    buckets[idx].cents += row.cents;
   }
-  return aging;
+  return buckets;
 }
 
 export interface DashboardRecentDocument {
@@ -62,8 +85,17 @@ export interface DashboardSummary {
   openInvoices: { count: number; cents: number };
   dueInvoices: { count: number; cents: number };
   overdueInvoices: { count: number; cents: number };
+  /** Fix-Runde 1 (§45): Rechnungen mit Faelligkeit in den naechsten 7 Tagen (heute
+   *  eingeschlossen), unabhaengig vom effektiven Status — nur PAID/CANCELLED sind
+   *  ausgenommen (Vorgabe: "nicht PAID/CANCELLED"). */
+  dueThisWeek: { count: number; cents: number };
+  /** Fix-Runde 1 (§45): Rechnungen mit Status PARTIALLY_PAID. */
+  partiallyPaid: { count: number; cents: number };
+  /** Fix-Runde 1 (§45): Anzahl mahnbarer, bereits faelliger Rechnungen — dieselbe
+   *  Auswahl wie der automatische Mahnlauf (`dunningCandidates`, dunning/auto.ts). */
+  dunningRequired: { count: number };
   revenueThisMonthCents: number;
-  aging: AgingBuckets;
+  aging: AgingBucket[];
   recentDocuments: DashboardRecentDocument[];
   openQuotes: { count: number; cents: number };
 }
@@ -87,7 +119,10 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   const openInvoices = { count: 0, cents: 0 };
   const dueInvoices = { count: 0, cents: 0 };
   const overdueInvoices = { count: 0, cents: 0 };
-  const overdueRows: { dueDate: Date; cents: number }[] = [];
+  const partiallyPaid = { count: 0, cents: 0 };
+  // Aging (§45, Dashboard): Tag 0 ("faellig heute") zaehlt mit, deshalb DUE- UND
+  // OVERDUE-Zeilen sammeln (nicht nur OVERDUE wie bei der Mahnuebersicht).
+  const agingRows: { dueDate: Date; cents: number }[] = [];
 
   for (const inv of openish) {
     const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
@@ -98,14 +133,36 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
     } else if (status === "DUE") {
       dueInvoices.count += 1;
       dueInvoices.cents += open;
+      agingRows.push({ dueDate: inv.dueDate ?? inv.issueDate, cents: open });
     } else if (status === "OVERDUE") {
       overdueInvoices.count += 1;
       overdueInvoices.cents += open;
-      overdueRows.push({ dueDate: inv.dueDate ?? inv.issueDate, cents: open });
+      agingRows.push({ dueDate: inv.dueDate ?? inv.issueDate, cents: open });
+    }
+    if (inv.status === "PARTIALLY_PAID") {
+      partiallyPaid.count += 1;
+      partiallyPaid.cents += open;
     }
   }
 
-  const aging = agingBuckets(overdueRows, now);
+  // Dashboard-Aging: Grenzen 7/30/60/90 (5 Buckets), Tag 0 eingeschlossen (minDays: 0) —
+  // abweichend von der Mahnuebersicht (7/30/60, minDays: 1, §25).
+  const aging = agingBuckets(agingRows, now, [7, 30, 60, 90], { minDays: 0 });
+
+  // Faellig in den naechsten 7 Tagen (heute eingeschlossen), unabhaengig vom effektiven
+  // Status — nur PAID/CANCELLED ausgenommen (§45). Eigene Query (breiter als `openish`,
+  // schliesst z. B. DRAFT mit gesetztem Zahlungsziel ein).
+  const today = startOfDay(now);
+  const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 8); // exklusiv: +7 Tage inklusive
+  const dueThisWeekRows = await dbInternal.invoice.findMany({
+    where: { orgId, status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: today, lt: weekEnd } },
+    select: { grossTotalCents: true, paidAmountCents: true, payableCents: true },
+  });
+  const dueThisWeek = { count: dueThisWeekRows.length, cents: dueThisWeekRows.reduce((sum, r) => sum + openAmountCents(r), 0) };
+
+  // Mahnbare, bereits faellige Rechnungen — dieselbe Auswahl wie der automatische
+  // Mahnlauf (dunning/auto.ts), keine eigene Query (CLAUDE.md "Nichts doppelt bauen").
+  const dunningRequired = { count: (await dunningCandidates(orgId, now)).length };
 
   // Umsatz laufender Monat: Bruttosumme festgeschriebener Rechnungen (nicht DRAFT,
   // nicht CANCELLED) mit issueDate im aktuellen Kalendermonat. Prisma-Aggregat (portabel).
@@ -192,6 +249,9 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
     openInvoices,
     dueInvoices,
     overdueInvoices,
+    dueThisWeek,
+    partiallyPaid,
+    dunningRequired,
     revenueThisMonthCents: revenueAgg._sum.grossTotalCents ?? 0,
     aging,
     recentDocuments,

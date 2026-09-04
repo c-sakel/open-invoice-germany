@@ -119,12 +119,23 @@ describe("list_invoices", () => {
 });
 
 describe("get_dashboard", () => {
-  it("liefert Dashboard-Kennzahlen der Organisation", async () => {
+  it("liefert Dashboard-Kennzahlen der Organisation inkl. der Fix-Runde-1-Kennzahlen (§45)", async () => {
     const res = await callTool("get_dashboard");
     expect(res.isError).toBeFalsy();
-    const j = JSON.parse(text(res)) as { recentDocuments: unknown[]; openInvoices: { count: number } };
+    const j = JSON.parse(text(res)) as {
+      recentDocuments: unknown[];
+      openInvoices: { count: number };
+      dueThisWeek: { count: number; cents: number };
+      partiallyPaid: { count: number; cents: number };
+      dunningRequired: { count: number };
+      aging: Array<{ label: string; count: number; cents: number }>;
+    };
     expect(Array.isArray(j.recentDocuments)).toBe(true);
     expect(j.recentDocuments.length).toBeGreaterThan(0);
+    expect(j.dueThisWeek).toBeDefined();
+    expect(j.partiallyPaid).toBeDefined();
+    expect(j.dunningRequired).toBeDefined();
+    expect(j.aging).toHaveLength(5); // Grenzen 7/30/60/90
   });
 });
 

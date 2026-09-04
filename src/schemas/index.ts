@@ -616,6 +616,9 @@ export const updateRecurringSchema = z.object({
   interval: RecurInterval.optional(),
   intervalCount: z.number().int().min(1).max(48).optional(),
   anchorDay: z.number().int().min(1).max(28).nullable().optional(),
+  // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar —
+  // siehe updateRecurringInvoice() fuer die Ruling-Behandlung von nextRunDate.
+  startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().nullable().optional(),
   maxRuns: z.number().int().positive().nullable().optional(),
   paymentTermsDays: z.number().int().min(0).max(365).optional(),

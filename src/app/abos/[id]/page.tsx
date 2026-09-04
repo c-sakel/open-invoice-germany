@@ -45,7 +45,12 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
           <h1 className="text-2xl font-bold tracking-tight">{rec.title}</h1>
           <span className={`rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>
         </div>
-        <RecurringActions id={rec.id} status={rec.status} />
+        <div className="flex items-center gap-2">
+          <Link href={`/abos/${rec.id}/bearbeiten`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Bearbeiten
+          </Link>
+          <RecurringActions id={rec.id} status={rec.status} />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
