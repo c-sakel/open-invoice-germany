@@ -3,18 +3,23 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+function isoInDays(days: number): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /**
  * Pausiert den Mahnprozess einer Rechnung bis zu einem Datum (mit optionaler Notiz) —
  * POST /api/invoices/[id]/dunning-state, state=PAUSED. Task 4 (Facts): Dialog Datum+Notiz.
+ *
+ * S1 (Fix-Welle): pausedUntil ist am Schema jetzt Pflicht und muss in der Zukunft liegen
+ * — Default +14 Tage (statt "heute", das beim naechsten Scheduler-Lauf sofort wieder
+ * abgelaufen gewesen waere) und `min` = morgen, damit der Dialog kein ungueltiges Datum
+ * mehr vorschlagen kann.
  */
 export function PauseDialog({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [pausedUntil, setPausedUntil] = useState(todayIso());
+  const [pausedUntil, setPausedUntil] = useState(isoInDays(14));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +57,7 @@ export function PauseDialog({ invoiceId }: { invoiceId: string }) {
         <div className="space-y-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">Pausiert bis</span>
-            <input type="date" value={pausedUntil} onChange={(e) => setPausedUntil(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+            <input type="date" min={isoInDays(1)} value={pausedUntil} onChange={(e) => setPausedUntil(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">Notiz</span>
