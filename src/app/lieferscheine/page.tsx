@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
+import { loadListPage } from "@/lib/list-page";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,8 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
   };
 
   const org = await getActiveOrg();
-  const result = await listDeliveryNotes(org.id, { ...sp, includeArchived: showArchived });
+  // Fix-Welle (B1): siehe rechnungen/page.tsx.
+  const result = await loadListPage(sp, (f) => listDeliveryNotes(org.id, f), { extra: { includeArchived: showArchived } });
 
   const fields: FilterField[] = [
     { type: "text", name: "q", label: "Suche", placeholder: "Nummer, Kunde…" },

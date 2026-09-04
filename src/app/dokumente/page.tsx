@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
+import { loadListPage } from "@/lib/list-page";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,8 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   };
 
   const org = await getActiveOrg();
-  const result = await listQuotes(org.id, { ...sp, includeArchived: showArchived });
+  // Fix-Welle (B1): siehe rechnungen/page.tsx.
+  const result = await loadListPage(sp, (f) => listQuotes(org.id, f), { extra: { includeArchived: showArchived } });
   const rows = result.rows;
 
   const fields: FilterField[] = [
