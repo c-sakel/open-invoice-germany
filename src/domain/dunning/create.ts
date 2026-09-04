@@ -11,6 +11,7 @@ import { computeDunning } from "@/lib/dunning";
 import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { formatDateDe } from "@/lib/template/format";
@@ -203,6 +204,15 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         feeCents,
         createdBy,
       },
+    });
+    await logActivity(tx, {
+      orgId: inv.orgId,
+      entityType: "INVOICE",
+      entityId: invoiceId,
+      type: "DUNNING_CREATED",
+      actor,
+      at: now,
+      data: { number, stage: stage.name, order: stage.order },
     });
 
     return {

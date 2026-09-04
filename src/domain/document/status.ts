@@ -6,6 +6,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity, type ActivityType } from "@/domain/activity/log";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
@@ -123,6 +124,9 @@ export async function setQuoteStatusWithinTx(
     at: now,
     diff: { from, to: target, note: opts.note ?? null },
   });
+  const quoteActivityType: ActivityType =
+    target === "ACCEPTED" ? "QUOTE_ACCEPTED" : target === "REJECTED" ? "QUOTE_REJECTED" : target === "CANCELLED" ? "CANCELLED" : "SENT";
+  await logActivity(tx, { orgId, entityType: "QUOTE", entityId: quoteId, type: quoteActivityType, actor, at: now, data: { from, to: target } });
 
   return updated;
 }
@@ -187,6 +191,8 @@ export async function setDeliveryNoteStatus(
       at: now,
       diff: { from, to: target, note: opts.note ?? null },
     });
+    const dnActivityType: ActivityType = target === "SENT" ? "SENT" : target === "DELIVERED" ? "DELIVERED" : target === "CANCELLED" ? "CANCELLED" : "STATUS_CHANGED";
+    await logActivity(tx, { orgId, entityType: "DELIVERY_NOTE", entityId: id, type: dnActivityType, actor, at: now, data: { from, to: target } });
 
     return updated;
   });

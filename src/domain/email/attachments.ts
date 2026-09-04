@@ -3,6 +3,8 @@ import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
+import { validateXRechnung } from "@/lib/einvoice/en16931-core";
+import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
@@ -91,7 +93,16 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
     // duerfen durch spaetere Stammdatenaenderungen nicht rueckwirkend die Anhaenge aendern.
     const buyer = parseBuyerSnapshot(invoice.buyerSnapshotJson, buildBuyerSnapshot(invoice.customer), `email:${docType}:${docId}`);
     if (buyer.leitwegId) {
-      out.push({ filename: `${base}-xrechnung.xml`, contentType: "application/xml", content: Buffer.from(buildXRechnungUBL(data), "utf8") });
+      const xml = buildXRechnungUBL(data);
+      // onEInvoiceInvalid (Task-3-Brief): EN-16931-Kernvalidierung beim Versand, wie schon
+      // im XRechnung-Export (GET .../xrechnung, ?validate=1). Blockt den Versand NICHT
+      // (die verbindliche Validierung bleibt der KoSIT-Validator im CI) — nur die
+      // Benachrichtigung, damit der Betreiber eine fehlerhafte E-Rechnung bemerkt.
+      const report = validateXRechnung(data, xml);
+      if (!report.valid) {
+        await onEInvoiceInvalid(orgId, { invoiceId: invoice.id, errors: report.errors });
+      }
+      out.push({ filename: `${base}-xrechnung.xml`, contentType: "application/xml", content: Buffer.from(xml, "utf8") });
     }
     return out;
   }

@@ -22,6 +22,7 @@ import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { createDocumentSchema, type SnapshotSource } from "@/schemas";
@@ -199,6 +200,7 @@ export async function createBusinessDocumentWithinTx(
     at: now,
     diff: { kind: input.kind, number, grossTotalCents: totals.grossTotalCents },
   });
+  await logActivity(tx, { orgId, entityType: "QUOTE", entityId: doc.id, type: "CREATED", actor, at: now, data: { kind: input.kind, number } });
 
   return doc;
 }

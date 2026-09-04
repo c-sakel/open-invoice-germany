@@ -10,6 +10,7 @@ import { dbInternal } from "@/lib/db";
 import type { TaxBreakdownEntry } from "@/lib/tax";
 import { reconcileNetsForGross } from "@/lib/pricing/partial";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
 
@@ -237,6 +238,15 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
       actor,
       at: now,
       diff: { status: "CANCELLED", reversedBy: finalizedCredit.number },
+    });
+    await logActivity(tx, {
+      orgId: original.orgId,
+      entityType: "INVOICE",
+      entityId: original.id,
+      type: "CANCELLED",
+      actor,
+      at: now,
+      data: { reversedBy: finalizedCredit.number },
     });
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalizedCredit };

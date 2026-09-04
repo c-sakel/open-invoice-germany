@@ -8,6 +8,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
+import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
 import type { InvoiceLineInput } from "@/schemas";
 
 export type TakeOverDocumentKind = "INVOICE" | "QUOTE" | "ORDER_CONFIRMATION";
@@ -110,15 +111,17 @@ function toLineInput(l: {
  * wird nie gelesen (§48). Wirft `NotFoundError`, wenn `docId` zu keinem Beleg der
  * Organisation gehoert (auch bei fremder Org).
  */
-export async function buildTakeOverPrefill(orgId: string, docId: string, opts: TakeOverOptions): Promise<TakeOverPrefill> {
+export async function buildTakeOverPrefill(orgId: string, docId: string, opts: TakeOverOptions, actor = "system"): Promise<TakeOverPrefill> {
   const invoice = await dbInternal.invoice.findFirst({
     where: { id: docId, orgId },
     include: { lines: { orderBy: { position: "asc" } } },
   });
 
   const result: TakeOverPrefill = {};
+  let entityType: ActivityEntityType | null = null;
 
   if (invoice) {
+    entityType = "INVOICE";
     if (opts.lines) result.lines = invoice.lines.map((l) => toLineInput(l, opts.prices));
     if (opts.texts) {
       result.headerText = invoice.headerText;
@@ -131,26 +134,34 @@ export async function buildTakeOverPrefill(orgId: string, docId: string, opts: T
     if (opts.prices) {
       result.documentDiscount = { permille: invoice.documentDiscountPermille, cents: invoice.documentDiscountCents };
     }
-    return result;
+  } else {
+    const quote = await dbInternal.quote.findFirst({
+      where: { id: docId, orgId },
+      include: { lines: { orderBy: { position: "asc" } } },
+    });
+    if (!quote) throw new NotFoundError(`Beleg ${docId} nicht gefunden.`);
+    entityType = "QUOTE";
+
+    if (opts.lines) result.lines = quote.lines.map((l) => toLineInput(l, opts.prices));
+    if (opts.texts) {
+      result.headerText = quote.headerText;
+      result.footerText = quote.footerText;
+    }
+    if (opts.terms) {
+      result.paymentTerms = quote.paymentTerms;
+      result.deliveryTerms = quote.deliveryTerms;
+    }
+    if (opts.prices) {
+      result.documentDiscount = { permille: quote.documentDiscountPermille, cents: quote.documentDiscountCents };
+    }
   }
 
-  const quote = await dbInternal.quote.findFirst({
-    where: { id: docId, orgId },
-    include: { lines: { orderBy: { position: "asc" } } },
-  });
-  if (!quote) throw new NotFoundError(`Beleg ${docId} nicht gefunden.`);
+  // TAKEN_OVER (Phase 8a, §32): rein informativ — diese Funktion selbst legt nichts an
+  // (Modulkommentar), der Aufrufer baut daraus erst spaeter einen neuen Beleg. Der
+  // Aktivitaetseintrag haengt trotzdem am QUELLBELEG, damit dessen Verlauf zeigt, dass er
+  // als Vorlage diente. `logActivity` wirft nie — dieser rein lesende Pfad bleibt so
+  // unveraendert auch bei einem DB-Fehler beim Protokollieren.
+  await logActivity(dbInternal, { orgId, entityType, entityId: docId, type: "TAKEN_OVER", actor });
 
-  if (opts.lines) result.lines = quote.lines.map((l) => toLineInput(l, opts.prices));
-  if (opts.texts) {
-    result.headerText = quote.headerText;
-    result.footerText = quote.footerText;
-  }
-  if (opts.terms) {
-    result.paymentTerms = quote.paymentTerms;
-    result.deliveryTerms = quote.deliveryTerms;
-  }
-  if (opts.prices) {
-    result.documentDiscount = { permille: quote.documentDiscountPermille, cents: quote.documentDiscountCents };
-  }
   return result;
 }

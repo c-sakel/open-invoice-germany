@@ -1030,3 +1030,52 @@ model DocumentAttachment {
   @@unique([orgId, sha256, docType, docId])
   @@index([orgId, docType, docId])
 }
+
+/// Aktivitaetsprotokoll (Phase 8b, Task 3) — GoBD-KEIN Ersatz fuer die ChangeLog-Hash-Kette
+/// (Audit K5): ein Schreiber (`logActivity`, src/domain/activity/log.ts) darf NIE werfen und
+/// das ausloesende Ereignis nie verhindern. Speist `buildTimeline` (src/domain/timeline/build.ts).
+model ActivityLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  entityType String // INVOICE | QUOTE | DELIVERY_NOTE | CUSTOMER | RECURRING
+  entityId   String
+  type       String // siehe ACTIVITY_TYPES (src/domain/activity/log.ts)
+  actor      String
+  at         DateTime @default(now())
+  dataJson   String?
+
+  @@index([orgId, entityType, entityId, at])
+}
+
+/// In-App-Benachrichtigung je Organisation (Phase 8b, Task 3) — erzeugt vom Scheduler-Job
+/// `notifications` (src/domain/notifications/job.ts) und Ereignis-Hooks
+/// (src/domain/notifications/hooks.ts). `dedupeKey` verhindert Doppel-Benachrichtigungen
+/// ueber mehrere Job-Laeufe hinweg (upsert-ignore in `createNotification`).
+model Notification {
+  id         String    @id @default(cuid())
+  orgId      String
+  type       String // siehe NOTIFICATION_TYPES (src/domain/notifications/settings.ts)
+  title      String
+  body       String?
+  link       String?
+  entityType String?
+  entityId   String?
+  createdAt  DateTime  @default(now())
+  readAt     DateTime?
+  dedupeKey  String    @unique
+
+  @@index([orgId, readAt, createdAt])
+}
+
+/// Benachrichtigungs-Einstellungen je Organisation (Phase 8b, Task 3) — Selbstheilung
+/// (`loadNotificationSettings`) legt bei fehlender Zeile alle Typen aktiviert / Digest
+/// deaktiviert an.
+model NotificationSettings {
+  id               String    @id @default(cuid())
+  orgId            String    @unique
+  enabledTypesJson String
+  emailDigest      Boolean   @default(false)
+  lastDigestAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}

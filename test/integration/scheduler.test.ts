@@ -240,10 +240,12 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     expect(after).toBeGreaterThan(before);
   });
 
-  it("Jobreihenfolge: recurring vor dunning, Fehler eines Jobs bricht den anderen nicht ab", async () => {
+  it("Jobreihenfolge: recurring vor dunning vor notifications, Fehler eines Jobs bricht die anderen nicht ab", async () => {
+    // Phase 8b, Task 3: Reihenfolge um den neuen Job "notifications" erweitert
+    // (Task-3-Facts) — recurring -> dunning -> notifications.
     const now = new Date("2051-06-11T10:00:00.000Z");
     const results = await runScheduledJobs({ trigger: "MANUAL", now });
-    expect(results.map((r) => r.job)).toEqual(["recurring", "dunning"]);
+    expect(results.map((r) => r.job)).toEqual(["recurring", "dunning", "notifications"]);
     expect(results.every((r) => r.ok)).toBe(true);
   });
 });

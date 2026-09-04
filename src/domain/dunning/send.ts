@@ -9,6 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail, type SendDocumentEmailResult } from "@/domain/email/send";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { DunningError } from "@/domain/dunning/create";
 import type { MailProvider } from "@/lib/mail/provider";
 
@@ -61,6 +62,15 @@ export async function sendDunning(orgId: string, dunningId: string, opts: SendDu
         actor: opts.actor,
         at: now,
         diff: { dunningId: d.id, number: d.number },
+      });
+      await logActivity(tx, {
+        orgId,
+        entityType: "INVOICE",
+        entityId: d.invoiceId,
+        type: "DUNNING_SENT",
+        actor: opts.actor,
+        at: now,
+        data: { dunningId: d.id, number: d.number },
       });
     });
   }

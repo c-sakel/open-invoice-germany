@@ -8,6 +8,7 @@ import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
 import { computeLineNet } from "@/lib/pricing/line";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
 
@@ -138,6 +139,15 @@ export async function createPartialCreditNote(
       actor,
       at: now,
       diff: { partialCreditNote: finalized.number, grossTotalCents: finalized.grossTotalCents },
+    });
+    await logActivity(tx, {
+      orgId: original.orgId,
+      entityType: "INVOICE",
+      entityId: original.id,
+      type: "CREDIT_NOTE_CREATED",
+      actor,
+      at: now,
+      data: { creditNote: finalized.number },
     });
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalized };
