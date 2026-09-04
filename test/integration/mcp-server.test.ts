@@ -26,6 +26,8 @@ vi.mock("@/lib/org", () => ({
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
+import { createBusinessDocument } from "@/domain/document/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createInvoiceSchema } from "@/schemas";
 import { buildSimpleLines, server } from "@/mcp/server";
 
@@ -196,5 +198,98 @@ describe("MCP-Tools: update_invoice_draft, add_attachment, list_attachments, rem
       });
       expect(result.isError).toBe(true);
     });
+  });
+});
+
+/**
+ * Task 4 — MCP-Tools fuer Teil-/Abschlags-/Schlussrechnungen: dieselben Domain-
+ * Funktionen/Zod-Schemas wie die Routen unter /api/documents/[id]/*-invoice (keine
+ * Bypass-Pfade, Lastenheft 55). Eigenes Datum/Jahr (2044), um mit anderen Test-
+ * Dateien keine Invoice.number-Kollision (global @unique) zu riskieren.
+ */
+describe("MCP-Tools: create_partial_invoice, create_downpayment_invoice, create_final_invoice, get_billing_state", () => {
+  const MCP5_DATE = new Date("2044-07-01T10:00:00.000Z");
+  let orgId: string;
+  let customerId: string;
+
+  beforeAll(async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "MCP-Teilrechnung GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
+    });
+    orgId = org.id;
+    orgStore.id = orgId;
+    await ensureOrgMasterdata(dbInternal, orgId);
+
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    customerId = customer.id;
+  });
+
+  async function makeQuote() {
+    return createBusinessDocument(
+      orgId,
+      {
+        kind: "ANGEBOT",
+        customerId,
+        taxScheme: "REGULAR",
+        currency: "EUR",
+        lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 1_000_000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+      },
+      { now: MCP5_DATE },
+    );
+  }
+
+  it("create_partial_invoice: legt eine Teilrechnung (40 %) an", async () => {
+    const quote = await makeQuote();
+    const result = await callTool("create_partial_invoice", { source: quote.number, mode: "PERCENT", percent: 40 });
+    expect(result.isError).toBeFalsy();
+    expect(text(result)).toMatch(/Teilrechnung angelegt/);
+
+    const created = await dbInternal.invoice.findFirst({ where: { orgId, sourceId: quote.id }, orderBy: { createdAt: "desc" } });
+    expect(created?.type).toBe("PARTIAL");
+    expect(created?.partialPermille).toBe(400);
+  });
+
+  it("create_downpayment_invoice: legt eine Abschlagsrechnung (30 %) an, meldet Ueberbuchung nach Festschreiben als Fehler", async () => {
+    const quote = await makeQuote();
+    const ok1 = await callTool("create_downpayment_invoice", { source: quote.number, mode: "PERCENT", percent: 30 });
+    expect(ok1.isError).toBeFalsy();
+    // Die 100-%-Grenze zaehlt nur FESTGESCHRIEBENE Abschlaege (Task-2-Ruling) — der erste
+    // Abschlag muss dafuer erst festgeschrieben werden, sonst wuerde der zweite Aufruf
+    // (Entwurf + Entwurf) noch keine Ueberbuchung sehen.
+    const dp1 = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, sourceId: quote.id, type: "DOWNPAYMENT" } });
+    await finalizeInvoice(dp1.id, { now: MCP5_DATE });
+
+    const overbook = await callTool("create_downpayment_invoice", { source: quote.number, mode: "PERCENT", percent: 80 });
+    expect(overbook.isError).toBe(true);
+  });
+
+  it("create_final_invoice: erst nach festgeschriebenem Abschlag moeglich", async () => {
+    const quote = await makeQuote();
+    const tooEarly = await callTool("create_final_invoice", { source: quote.number });
+    expect(tooEarly.isError).toBe(true);
+
+    const dpResult = await callTool("create_downpayment_invoice", { source: quote.number, mode: "PERCENT", percent: 30 });
+    expect(dpResult.isError).toBeFalsy();
+    const dp = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, sourceId: quote.id, type: "DOWNPAYMENT" } });
+    await finalizeInvoice(dp.id, { now: MCP5_DATE });
+
+    const finalResult = await callTool("create_final_invoice", { source: quote.number });
+    expect(finalResult.isError).toBeFalsy();
+    const final = await dbInternal.invoice.findFirst({ where: { orgId, sourceId: quote.id, type: "FINAL" } });
+    expect(final).toBeTruthy();
+  });
+
+  it("get_billing_state: NONE ohne, PARTIAL mit 40 % Teilrechnung", async () => {
+    const quote = await makeQuote();
+    const before = await callTool("get_billing_state", { document: quote.number });
+    expect(JSON.parse(text(before)).state).toBe("NONE");
+
+    await callTool("create_partial_invoice", { source: quote.number, mode: "PERCENT", percent: 40 });
+    const after = await callTool("get_billing_state", { document: quote.number });
+    const parsed = JSON.parse(text(after));
+    expect(parsed.state).toBe("PARTIAL");
+    expect(parsed.billedPercent).toBe(40);
   });
 });

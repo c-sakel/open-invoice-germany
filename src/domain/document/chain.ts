@@ -26,6 +26,13 @@ export interface ChainNode {
 
 const MAX_ROOT_DEPTH = 6;
 
+// Task 4 (Phase 5): PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR zeigen — anders als
+// CONVERTED_TO/CORRECTS/REVERSES/GENERATED_BY/DELIVERED_BY — VON der Rechnung AUF ihre
+// Quelle (Task-2-Facts: "from Rechnung, to Quelle"). Fuer die Kettenanzeige ist die
+// Quelle trotzdem der "Elternknoten" (wie bei CONVERTED_TO) — Root-Suche und
+// Kind-Expansion muessen daher beide Richtungen behandeln.
+const REVERSE_DIRECTION_RELATIONS = new Set(["PARTIAL_OF", "DOWNPAYMENT_OF", "FINAL_FOR"]);
+
 interface NodeData {
   number: string | null;
   status: string;
@@ -111,13 +118,21 @@ async function findRoot(orgId: string, type: RefType, id: string): Promise<{ typ
     // ueberspringen — sonst wuerde das Oeffnen des Originals faelschlich eine spaeter davon
     // gezogene Kopie als Vorgaenger/Wurzel behandeln. Die Kopie wird stattdessen im
     // Vorwaertsbaum als Blatt angezeigt (buildNode).
-    const incoming = relations.find((r) => r.toType === cur.type && r.toId === cur.id && r.relationType !== "DUPLICATED_FROM");
-    if (!incoming) break;
+    // Task 4: PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR muessen hier ausgeschlossen werden —
+    // sonst wuerde eine an DIESEM Knoten "ankommende" Relation dieser Art (z. B. eine
+    // Abschlagsrechnung, die auf ein Angebot zeigt) faelschlich die Rechnung als
+    // Elternknoten des Angebots behandeln (genau umgekehrt zur Kettenlogik).
+    const incoming = relations.find((r) => r.toType === cur.type && r.toId === cur.id && r.relationType !== "DUPLICATED_FROM" && !REVERSE_DIRECTION_RELATIONS.has(r.relationType));
+    // PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR laufen umgekehrt (from = diese Rechnung,
+    // to = Quelle) — der "Elternknoten" ist hier `to`, nicht `from`.
+    const reverseParent = relations.find((r) => r.fromType === cur.type && r.fromId === cur.id && REVERSE_DIRECTION_RELATIONS.has(r.relationType));
+    const parent = incoming ? { type: incoming.fromType as RefType, id: incoming.fromId } : reverseParent ? { type: reverseParent.toType as RefType, id: reverseParent.toId } : null;
+    if (!parent) break;
 
-    const key = `${incoming.fromType}:${incoming.fromId}`;
+    const key = `${parent.type}:${parent.id}`;
     if (visited.has(key)) break; // Zyklus — hier abbrechen, letzter gueltiger Knoten bleibt Wurzel
     visited.add(key);
-    cur = { type: incoming.fromType as RefType, id: incoming.fromId };
+    cur = parent;
   }
 
   return cur;
@@ -182,6 +197,17 @@ async function buildNode(orgId: string, type: RefType, id: string, relation: str
     const childKey = `${r.toType}:${r.toId}`;
     if (visited.has(childKey)) continue;
     node.children.push(await buildNode(orgId, r.toType as RefType, r.toId, r.relationType, visited));
+  }
+
+  // Task 4: PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR zeigen von der Rechnung auf die Quelle
+  // (siehe REVERSE_DIRECTION_RELATIONS oben) — aus Sicht DIESES Knotens (der Quelle) sind
+  // das eingehende Relationen, aber fachlich Kinder (verknuepfte Teil-/Abschlags-/
+  // Schlussrechnungen), also wie `outgoing` als Kind-Knoten expandiert.
+  const incomingBilling = relations.filter((r) => r.toType === type && r.toId === id && REVERSE_DIRECTION_RELATIONS.has(r.relationType));
+  for (const r of incomingBilling) {
+    const childKey = `${r.fromType}:${r.fromId}`;
+    if (visited.has(childKey)) continue;
+    node.children.push(await buildNode(orgId, r.fromType as RefType, r.fromId, r.relationType, visited));
   }
 
   for (const r of outgoingDuplicates) {

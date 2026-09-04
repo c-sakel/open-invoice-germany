@@ -11,6 +11,7 @@
  */
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { loadSourceLines } from "@/domain/delivery-note/quantities";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -39,4 +40,36 @@ export async function billedQuantities(
     _sum: { quantityMilli: true },
   });
   return new Map(rows.filter((r) => r.sourceLineId != null).map((r) => [r.sourceLineId as string, r._sum.quantityMilli ?? 0]));
+}
+
+export interface BilledLineDetail {
+  sourceLineId: string;
+  description: string;
+  unit: string;
+  orderedMilli: number;
+  billedMilli: number;
+  remainingMilli: number;
+}
+
+/**
+ * Task 4: je Quellposition (ITEM-Zeilen eines Angebots/einer AB) bestellte, bereits per
+ * Teilrechnung abgerechnete und verbleibende Menge — Grundlage fuer den Positions-/
+ * Mengen-Dialog von `ConvertMenu` (GET /api/documents/[id]/billing). Nutzt `loadSourceLines`
+ * (src/domain/delivery-note/quantities.ts) zur Vermeidung einer zweiten Quellpositions-
+ * Ladefunktion; wirft `NotFoundError`, wenn die Quelle nicht (mandantengeprueft) existiert.
+ */
+export async function billedLineDetails(orgId: string, sourceId: string, db: Db = dbInternal): Promise<BilledLineDetail[]> {
+  const { lines } = await loadSourceLines(orgId, "QUOTE", sourceId, db);
+  const billed = await billedQuantities(orgId, "QUOTE", sourceId, db);
+  return lines.map((l) => {
+    const billedMilli = billed.get(l.id) ?? 0;
+    return {
+      sourceLineId: l.id,
+      description: l.description,
+      unit: l.unit,
+      orderedMilli: l.quantityMilli,
+      billedMilli,
+      remainingMilli: l.quantityMilli - billedMilli,
+    };
+  });
 }
