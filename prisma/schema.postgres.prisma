@@ -1080,3 +1080,40 @@ model NotificationSettings {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
+
+/// API-Schluessel je Organisation (Phase 10, Task 1) — Bearer-Auth fuer /api/v1/*.
+/// Nur der SHA-256-Hash wird gespeichert; das Klartext-Token (`oig_<32 Byte base64url>`)
+/// wird ausschliesslich beim Erzeugen einmalig angezeigt (siehe src/domain/api-key/create.ts).
+/// scopesJson: kommagetrennte Liste aus read/write/send/admin, via Zod geparst — kein
+/// Prisma-Enum/Array fuer SQLite/Postgres-Portabilitaet (siehe Kopfkommentar der Datei).
+model ApiKey {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  scopesJson String
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdBy  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+}
+
+/// Idempotenz-Schluessel fuer schreibende API-v1-Aktionen (Phase 10, Task 1) — Header
+/// `Idempotency-Key` (nur POST). Ablauf 24h, Aufraeumen lazy beim naechsten Lesen
+/// desselben Schluessels (kein eigener Scheduler-Job).
+model ApiIdempotency {
+  id           String   @id @default(cuid())
+  orgId        String
+  key          String
+  requestHash  String
+  responseJson String
+  statusCode   Int
+  createdAt    DateTime @default(now())
+
+  @@unique([orgId, key])
+  @@index([orgId, createdAt])
+}

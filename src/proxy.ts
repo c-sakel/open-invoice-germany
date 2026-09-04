@@ -7,7 +7,10 @@ const PUBLIC_EXACT = new Set(["/"]);
 // /angebot/ (öffentliche Angebotsseite) und /api/public/ (öffentliche PDF-/Entscheidungs-
 // Aktionen, Phase 3b) sind bewusst die einzigen ohne-Login-Präfixe für Kundenzugriff —
 // keine weiteren hier ergänzen, ohne die Sicherheitsfolgen zu prüfen.
-const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/"];
+// /api/v1/ (Phase 10): oeffentlich versionierte REST-API, Auth ausschliesslich per
+// Bearer-Token im withApi-Wrapper (src/api/auth.ts) — KEIN Cookie-Fallback. /api/docs
+// (Swagger UI, spaetere Task) bleibt bewusst NICHT hier: es braucht weiterhin Session.
+const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/"];
 
 // Präfixe, deren Seiten ohne interne Navigation/Layout ausgeliefert werden (Root-Layout
 // liest diesen Request-Header und rendert dann nur eine schlanke Hülle — kein Route-Group-

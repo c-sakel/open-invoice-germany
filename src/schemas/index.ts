@@ -842,6 +842,7 @@ export * from "./settings";
 
 // ── Phase 8a: Kundendomain — Adressen, Ansprechpartner, Kundenfelder, Vorgaben ──
 export * from "./customer";
+export * from "./api-key";
 
 // ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
 // Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung
