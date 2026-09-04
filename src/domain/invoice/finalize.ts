@@ -21,6 +21,7 @@ import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
 import type { SnapshotSource } from "@/schemas";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { loadPrintSettings, freezePrintOptionsJson } from "@/domain/settings/print";
 import { validateMandatoryFields } from "./mandatory";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -166,6 +167,13 @@ export async function finalizeWithinTx(
   const buyerSnapshotJson = canInherit ? inherited!.buyerSnapshotJson : JSON.stringify(buildBuyerSnapshot(invoice.customer));
   const snapshotSource: SnapshotSource = canInherit ? "INHERITED" : "FINALIZE";
 
+  // S6 (Fix-Welle Final-Review): die effektiven Druckoptionen bei Festschreibung
+  // einfrieren (vollstaendig gemergter Satz), damit eine spaetere globale Aenderung
+  // (z. B. showTaxRatePerLine org-weit deaktiviert) den Reprint einer bereits
+  // festgeschriebenen Rechnung nicht mehr veraendert.
+  const globalPrintSettings = await loadPrintSettings(invoice.orgId);
+  const frozenPrintOptionsJson = freezePrintOptionsJson(globalPrintSettings, invoice.printOptionsJson);
+
   // 2b) Phase 5 (§14 Abs.5 S.2 UStG): Schlussrechnung -> Abzugs-Snapshot je Abschlagsrechnung/
   // Steuersatz. Laeuft VOR dem Claim, damit eine unzulaessige Ueberdeckung (Abschlaege >
   // Gesamtleistung je Satz) die Rechnung nicht festschreibt und keine Nummer verbraucht.
@@ -262,6 +270,7 @@ export async function finalizeWithinTx(
       snapshotSource,
       snapshotAt: now,
       paymentMethodSnapshotJson,
+      printOptionsJson: frozenPrintOptionsJson,
       ...(invoice.type === "FINAL" ? { prepaidCents, payableCents } : {}),
     },
   });

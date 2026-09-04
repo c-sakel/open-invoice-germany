@@ -11,6 +11,7 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { convertDocument } from "@/domain/document/convert";
 import { saveDocumentSettings } from "@/domain/document/settings";
+import { savePrintSettings, loadPrintSettings, effectivePrintOptions, DEFAULT_PRINT_SETTINGS } from "@/domain/settings/print";
 import { saveMailSettings } from "@/domain/email/settings";
 import { sendDocumentEmail } from "@/domain/email/send";
 import { prefillEmail } from "@/domain/email/compose";
@@ -222,6 +223,37 @@ describe("Phase 7, Task 2 — defaultCurrency (Fix-Runde 1)", () => {
   it("ohne Org-Standard bleibt es beim letzten Rueckfall EUR", async () => {
     const inv = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE, currency: undefined }));
     expect(inv.currency).toBe("EUR");
+  });
+});
+
+describe("Phase 7 — S6 (Fix-Welle): effektive Druckoptionen werden bei Festschreibung eingefroren", () => {
+  it("eine globale Aenderung NACH der Festschreibung veraendert die Druckoptionen des Belegs nicht mehr", async () => {
+    await savePrintSettings(orgId, { showTaxRatePerLine: true, showLineTotals: true });
+    const draft = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE }));
+    expect(draft.printOptionsJson).toBeNull();
+
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    const frozen = JSON.parse(finalized.printOptionsJson!);
+    expect(frozen.showTaxRatePerLine).toBe(true);
+    expect(frozen.showLineTotals).toBe(true);
+
+    // Globale Aenderung NACH der Festschreibung
+    await savePrintSettings(orgId, { showTaxRatePerLine: false, showLineTotals: false });
+    const global = await loadPrintSettings(orgId);
+    const effective = effectivePrintOptions(global, finalized.printOptionsJson);
+    expect(effective.showTaxRatePerLine).toBe(true);
+    expect(effective.showLineTotals).toBe(true);
+
+    await savePrintSettings(orgId, { showTaxRatePerLine: true, showLineTotals: true }); // zurueck auf Default
+  });
+
+  it("ein bereits vollstaendiger Beleg-Override bleibt beim Einfrieren unveraendert", async () => {
+    const draft = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE }));
+    const fullOverride = { ...DEFAULT_PRINT_SETTINGS, showGiroCode: false };
+    await dbInternal.invoice.update({ where: { id: draft.id }, data: { printOptionsJson: JSON.stringify(fullOverride) } });
+
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    expect(JSON.parse(finalized.printOptionsJson!)).toEqual(fullOverride);
   });
 });
 
