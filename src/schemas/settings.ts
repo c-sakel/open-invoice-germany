@@ -106,16 +106,28 @@ export type NumberRangeDocType = z.infer<typeof NumberRangeDocType>;
 // Das Pattern MUSS einen {SEQ}- oder {SEQ:n}-Platzhalter enthalten — ohne fortlaufende
 // Zaehlung gaebe es keine eindeutige Nummer (§14 Abs.4 Nr.4 UStG fuer Belege; analog
 // fuer Kunden-/Artikelnummern).
-const SEQ_PLACEHOLDER = /\{SEQ(:\d)?\}/;
+// Nit (Final-Review): `{SEQ:10}`+ (zweistellige Explizit-Stellenzahl) wurde vorher vom
+// `\d` (genau eine Ziffer) abgelehnt, obwohl formatDocumentNumber() (numbering.ts) beliebig
+// viele Stellen unterstuetzt — `\d+`.
+const SEQ_PLACEHOLDER = /\{SEQ(:\d+)?\}/;
+// B3 (Final-Review): bei yearlyReset:true MUSS das Muster einen Jahres-Platzhalter
+// enthalten — sonst wiederholt sich z.B. "RE-{SEQ}" jedes Jahr ab 0001 und die
+// Rechnungsnummer waere nicht mehr einmalig (§14 Abs.4 Nr.4 UStG).
+const YEAR_PLACEHOLDER = /\{YYYY\}|\{YY\}/;
 
-export const numberRangeInputSchema = z.object({
-  pattern: z.string().trim().min(1).max(80).refine((v) => SEQ_PLACEHOLDER.test(v), {
-    message: "Das Muster muss einen {SEQ}- oder {SEQ:n}-Platzhalter enthalten.",
-  }),
-  prefix: z.string().trim().max(10).default(""),
-  seqPadding: z.coerce.number().int().min(1).max(8).default(4),
-  yearlyReset: z.boolean().default(false),
-  /** Naechste zu vergebende Nummer (1-basiert, wie NumberRange.currentValue + 1). */
-  nextValue: z.coerce.number().int().min(1),
-});
+export const numberRangeInputSchema = z
+  .object({
+    pattern: z.string().trim().min(1).max(80).refine((v) => SEQ_PLACEHOLDER.test(v), {
+      message: "Das Muster muss einen {SEQ}- oder {SEQ:n}-Platzhalter enthalten.",
+    }),
+    prefix: z.string().trim().max(10).default(""),
+    seqPadding: z.coerce.number().int().min(1).max(8).default(4),
+    yearlyReset: z.boolean().default(false),
+    /** Naechste zu vergebende Nummer (1-basiert, wie NumberRange.currentValue + 1). */
+    nextValue: z.coerce.number().int().min(1),
+  })
+  .refine((v) => !v.yearlyReset || YEAR_PLACEHOLDER.test(v.pattern), {
+    message: "Bei jaehrlichem Zuruecksetzen muss das Muster einen {YYYY}- oder {YY}-Platzhalter enthalten.",
+    path: ["pattern"],
+  });
 export type NumberRangeInput = z.infer<typeof numberRangeInputSchema>;

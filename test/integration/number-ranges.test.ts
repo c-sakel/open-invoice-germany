@@ -14,6 +14,10 @@ import {
   NUMBER_RANGE_DOC_TYPES,
 } from "@/domain/numbering/ranges";
 import { InvalidOperationError } from "@/domain/errors";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import type { CreateInvoiceInput } from "@/schemas";
 
 const YEAR = 2055;
 const NOW = new Date(`${YEAR}-06-15T10:00:00.000Z`);
@@ -180,5 +184,95 @@ describe("Phase 7 — assignCustomerNumber / assignArticleNumber", () => {
     expect(first).toBe("ART-00001");
     const customer = await dbInternal.$transaction((tx) => assignCustomerNumber(tx, orgId, NOW));
     expect(customer).toBe("KD-00001");
+  });
+});
+
+describe("Phase 7 — Fix-Welle B3: yearlyReset:false darf nicht stillschweigend ignoriert werden", () => {
+  async function makeFinalizableOrg() {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "B3-Finalize GmbH", addressLine1: "Weg 3", postalCode: "30000", city: "Hannover", vatId: "DE333222111", taxNumber: "3" },
+    });
+    return org.id;
+  }
+
+  async function makeCustomer(orgId: string) {
+    const c = await dbInternal.customer.create({
+      data: { orgId, name: "B3-Kunde GmbH", addressLine1: "Weg 3", postalCode: "30000", city: "Hannover", type: "BUSINESS" },
+    });
+    return c.id;
+  }
+
+  function invoiceInput(customerId: string): CreateInvoiceInput {
+    return {
+      customerId,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      documentDiscountPermille: 0,
+      documentDiscountCents: 0,
+      documentChargePermille: 0,
+      documentChargeCents: 0,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput;
+  }
+
+  it("yearlyReset:false + naechste Nummer 5000 (Muster ohne Jahr): die naechste Rechnung wird RE-5000, nicht RE-{Jahr}-0001", async () => {
+    const orgId = await makeFinalizableOrg();
+    await ensureOrgMasterdata(dbInternal, orgId);
+    const customerId = await makeCustomer(orgId);
+
+    await updateNumberRange(
+      orgId,
+      "INVOICE",
+      { pattern: "{PREFIX}{SEQ}", prefix: "RE-", seqPadding: 1, yearlyReset: false, nextValue: 5000 },
+      "tester",
+      NOW,
+    );
+
+    const draft = await createDraftInvoice(orgId, invoiceInput(customerId), { now: NOW });
+    const finalized = await finalizeInvoice(draft.id, { now: NOW });
+    expect(finalized.number).toBe("RE-5000");
+
+    // Die jahresgebundene Zeile (year=NOW.getFullYear()) bleibt unberuehrt/inaktiv — kein
+    // "RE-{Jahr}-0001", das mit einer echten Legacy-Nummer kollidieren koennte.
+    const yearRow = await dbInternal.numberRange.findUnique({ where: { orgId_docType_year: { orgId, docType: "INVOICE", year: YEAR } } });
+    expect(yearRow).toBeNull();
+  });
+
+  it("Wechsel zurueck auf jaehrlich: die naechste Rechnung nutzt die Jahres-Zeile", async () => {
+    const orgId = await makeFinalizableOrg();
+    await ensureOrgMasterdata(dbInternal, orgId);
+    const customerId = await makeCustomer(orgId);
+
+    await updateNumberRange(
+      orgId,
+      "INVOICE",
+      { pattern: "{PREFIX}{SEQ}", prefix: "RE-", seqPadding: 1, yearlyReset: false, nextValue: 5000 },
+      "tester",
+      NOW,
+    );
+    // Guard (bestehend): darf nicht unter die bereits vergebene Nummer 4999 (year 0) fallen
+    // — deshalb nextValue 5001 statt 1, um ausschliesslich den Zeilen-Wechsel zu pruefen.
+    await updateNumberRange(
+      orgId,
+      "INVOICE",
+      { pattern: "{PREFIX}{YYYY}-{SEQ:4}", prefix: "RE-", seqPadding: 4, yearlyReset: true, nextValue: 5001 },
+      "tester",
+      NOW,
+    );
+
+    const draft = await createDraftInvoice(orgId, invoiceInput(customerId), { now: NOW });
+    const finalized = await finalizeInvoice(draft.id, { now: NOW });
+    expect(finalized.number).toBe(`RE-${YEAR}-5001`);
+
+    const yearlessRow = await dbInternal.numberRange.findUnique({ where: { orgId_docType_year: { orgId, docType: "INVOICE", year: 0 } } });
+    expect(yearlessRow?.isActive).toBe(false);
+  });
+
+  it("yearlyReset:true ohne {YYYY}/{YY} im Muster wird abgelehnt (Zod)", async () => {
+    const orgId = await makeOrg();
+    await expect(
+      updateNumberRange(orgId, "INVOICE", { pattern: "RE-{SEQ}", prefix: "RE-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "tester", NOW),
+    ).rejects.toThrow();
   });
 });

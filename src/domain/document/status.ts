@@ -8,7 +8,7 @@ import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
-import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
@@ -172,21 +172,8 @@ export async function setDeliveryNoteStatus(
     if (target === "DELIVERED") data.deliveredAt = now;
 
     if (target === "CREATED" && !note.number) {
-      const docType = "DELIVERY_NOTE";
-      const year = now.getFullYear();
-      const range = await tx.numberRange.upsert({
-        where: { orgId_docType_year: { orgId, docType, year } },
-        create: { orgId, docType, year, currentValue: 1, prefix: defaultPrefix(docType) },
-        update: { currentValue: { increment: 1 } },
-      });
-      data.number = formatDocumentNumber(range.pattern, {
-        prefix: range.prefix || defaultPrefix(docType),
-        seq: range.currentValue,
-        padding: range.seqPadding,
-        year,
-        month: now.getMonth() + 1,
-        day: now.getDate(),
-      });
+      // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
+      data.number = await assignDocumentNumber(tx, orgId, "DELIVERY_NOTE", now);
     }
 
     const updated = await tx.deliveryNote.update({ where: { id }, data });

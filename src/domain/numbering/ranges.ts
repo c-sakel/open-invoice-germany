@@ -29,14 +29,19 @@ export interface NumberRangeView {
 }
 
 /**
- * Liest die "aktive" NumberRange-Zeile eines Nummernkreis-Typs — bei einem
- * yearlyReset-Wechsel bleiben beide Zeilen (year 0 und year <Jahr>) erhalten, die
- * zuletzt aktualisierte gilt als aktiv (siehe updateNumberRange).
+ * Liest die "aktive" NumberRange-Zeile eines Nummernkreis-Typs (Fix-Welle Phase 7, B3).
+ * Bei einem yearlyReset-Wechsel bleiben beide Zeilen (year 0 und year <Jahr>) erhalten;
+ * `updateNumberRange` markiert die Zielzeile aktiv und die andere Modus-Zeile inaktiv
+ * (`isActive`). Sind (Legacy-Datenstand vor dieser Spalte, oder ein Datenfehler) BEIDE
+ * Zeilen aktiv, gewinnt die Jahres-Zeile (year <> 0) — sie ist die staerkere Zusage
+ * ("jaehrlich zuruecksetzen" ist explizit an), damit ein Legacy-Datensatz nicht auf den
+ * jahresunabhaengigen Modus zurueckfaellt.
  */
 async function loadActiveRange(db: Db, orgId: string, docType: string, year: number) {
-  const rows = await db.numberRange.findMany({ where: { orgId, docType, year: { in: [0, year] } } });
+  const rows = await db.numberRange.findMany({ where: { orgId, docType, year: { in: [0, year] }, isActive: true } });
   if (rows.length === 0) return null;
-  return rows.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
+  if (rows.length === 1) return rows[0];
+  return rows.reduce((a, b) => (b.year !== 0 ? b : a));
 }
 
 /** Formatiert die naechste Nummer eines Musters (rein, ohne DB). */
@@ -128,13 +133,23 @@ export async function updateNumberRange(
         prefix: input.prefix,
         seqPadding: input.seqPadding,
         currentValue: newCurrentValue,
+        isActive: true,
       },
       update: {
         pattern: input.pattern,
         prefix: input.prefix,
         seqPadding: input.seqPadding,
         currentValue: newCurrentValue,
+        isActive: true,
       },
+    });
+
+    // B3: die andere Modus-Zeile desselben docType (year 0 <-> year <Jahr>) wird inaktiv —
+    // sie bleibt fuer die Historie erhalten, vergibt aber ab jetzt keine Nummern mehr.
+    const otherYear = targetYear === 0 ? year : 0;
+    await tx.numberRange.updateMany({
+      where: { orgId, docType, year: otherYear },
+      data: { isActive: false },
     });
 
     await appendChangeLog(tx, {
@@ -167,12 +182,12 @@ export async function updateNumberRange(
 
 /** Vergibt (upsert-increment, wie Belege) die naechste Kundennummer einer Organisation. */
 export async function assignCustomerNumber(tx: Db, orgId: string, now: Date = new Date()): Promise<string> {
-  return assignRangeNumber(tx, orgId, "CUSTOMER", now);
+  return assignDocumentNumber(tx, orgId, "CUSTOMER", now);
 }
 
 /** Vergibt (upsert-increment, wie Belege) die naechste Artikelnummer einer Organisation. */
 export async function assignArticleNumber(tx: Db, orgId: string, now: Date = new Date()): Promise<string> {
-  return assignRangeNumber(tx, orgId, "PRODUCT", now);
+  return assignDocumentNumber(tx, orgId, "PRODUCT", now);
 }
 
 /**
@@ -199,7 +214,14 @@ export async function ensureCustomerNumbers(orgId: string, now: Date = new Date(
   }
 }
 
-async function assignRangeNumber(tx: Db, orgId: string, docType: "CUSTOMER" | "PRODUCT", now: Date): Promise<string> {
+/**
+ * Vergibt (upsert-increment) die naechste Nummer eines beliebigen Nummernkreis-Typs auf
+ * der AKTIVEN Zeile (`loadActiveRange`) — Fix-Welle Phase 7 (B3): ersetzt die frueher an
+ * fuenf Stellen (invoice/finalize, document/create, document/status, dunning/create,
+ * delivery-note/create) dupliziert hartcodierte `where: { year: now.getFullYear() }`-
+ * Vergabe, die bei `yearlyReset:false` die falsche (nie gelesene) Zeile bediente.
+ */
+export async function assignDocumentNumber(tx: Db, orgId: string, docType: string, now: Date): Promise<string> {
   const fallback = defaultPattern(docType);
   const active = await loadActiveRange(tx, orgId, docType, now.getFullYear());
   const year = active ? active.year : fallback.yearlyReset ? now.getFullYear() : 0;
@@ -213,6 +235,7 @@ async function assignRangeNumber(tx: Db, orgId: string, docType: "CUSTOMER" | "P
       prefix: fallback.prefix,
       pattern: fallback.pattern,
       seqPadding: fallback.seqPadding,
+      isActive: true,
     },
     update: { currentValue: { increment: 1 } },
   });

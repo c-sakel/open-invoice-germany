@@ -6,7 +6,7 @@
  * Stufe dran ist und ob sie bereits faellig ist.
  */
 import { dbInternal } from "@/lib/db";
-import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { computeDunning } from "@/lib/dunning";
 import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
@@ -154,20 +154,8 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     const feeCents = charging ? stage.feeCents : 0;
     const lateFeeCents = charging ? (opts.lateFeeCents ?? 0) : 0;
 
-    const year = now.getFullYear();
-    const range = await tx.numberRange.upsert({
-      where: { orgId_docType_year: { orgId: inv.orgId, docType: "DUNNING", year } },
-      create: { orgId: inv.orgId, docType: "DUNNING", year, currentValue: 1, prefix: defaultPrefix("DUNNING") },
-      update: { currentValue: { increment: 1 } },
-    });
-    const number = formatDocumentNumber(range.pattern, {
-      prefix: range.prefix || defaultPrefix("DUNNING"),
-      seq: range.currentValue,
-      padding: range.seqPadding,
-      year,
-      month: now.getMonth() + 1,
-      day: now.getDate(),
-    });
+    // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
+    const number = await assignDocumentNumber(tx, inv.orgId, "DUNNING", now);
 
     const newDueDate = new Date(now.getTime() + stage.newDueDays * 24 * 60 * 60 * 1000);
 

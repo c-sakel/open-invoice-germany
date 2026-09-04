@@ -138,6 +138,11 @@ model NumberRange {
   seqPadding   Int          @default(4)
   year         Int          @default(0) // 0 = jahresunabhängig
   currentValue Int          @default(0)
+  // Fix-Welle Phase 7 (B3): welche Zeile (year 0 vs. year <Jahr>) je docType tatsaechlich
+  // vergibt. updateNumberRange() setzt beim Umschalten die Zielzeile aktiv und die andere
+  // Modus-Zeile inaktiv; loadActiveRange() liest anhand dieser Spalte (nicht mehr
+  // "zuletzt aktualisiert").
+  isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
