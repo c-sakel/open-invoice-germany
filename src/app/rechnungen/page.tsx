@@ -154,6 +154,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                   status: inv.effectiveStatus,
                   isDraft: inv.effectiveStatus === "DRAFT",
                   hasEmailLog: inv.hasEmailLog,
+                  dunningState: inv.dunningState,
                 });
                 return (
                   <tr key={inv.id} className="hover:bg-slate-50">
@@ -166,7 +167,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                     <td className="px-4 py-3 text-slate-600">{inv.customerName}</td>
                     <td className="px-4 py-3 text-slate-600">{deDate(inv.dueDate)}</td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={inv.effectiveStatus} />
+                      <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
                     </td>
                     <td className="tabular px-4 py-3 text-right font-medium">{formatCents(inv.grossTotalCents, inv.currency)}</td>
                     <td className="tabular px-4 py-3 text-right text-slate-600">{formatCents(inv.openCents, inv.currency)}</td>

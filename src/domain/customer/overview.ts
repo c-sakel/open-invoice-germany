@@ -8,7 +8,7 @@ import { NotFoundError } from "@/domain/errors";
 import { listInvoices, type InvoiceListRow } from "@/domain/invoice/list";
 import { listQuotes, listDeliveryNotes, listRecurring, type QuoteListRow, type DeliveryNoteListRow, type RecurringListRow } from "@/domain/document/list";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
-import { openAmountCents } from "@/domain/invoice/amounts";
+import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 
 export interface CustomerOverviewKpis {
   openCents: number;
@@ -60,8 +60,10 @@ export async function customerOverview(orgId: string, customerId: string, now: D
   let lastActivityAt: Date | null = null;
 
   for (const inv of allInvoices) {
+    // Fix-Welle (S2): payableBaseCents statt grossTotalCents — sonst zaehlt eine
+    // Abschlagskette (§14) den Abschlag doppelt (siehe dashboard/summary.ts).
     if (inv.status !== "DRAFT" && inv.status !== "CANCELLED") {
-      totalRevenueCents += inv.grossTotalCents;
+      totalRevenueCents += payableBaseCents(inv);
     }
     if (["FINALIZED", "SENT", "PARTIALLY_PAID"].includes(inv.status)) {
       const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);

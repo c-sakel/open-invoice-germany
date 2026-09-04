@@ -158,19 +158,23 @@ describe("dashboardSummary", () => {
   it("liefert ueberfaellige Rechnungen, Aging, Umsatz laufender Monat, offene Angebote und die neuen Fix-Runde-1-Kennzahlen (§45)", async () => {
     const summary = await dashboardSummary(orgId, NOW);
 
-    // PARTIALLY_PAID (inv4) faellt bewusst NICHT unter OVERDUE — effectiveInvoiceStatus
-    // reicht PARTIALLY_PAID unveraendert durch (status.ts: "nur FINALIZED/SENT
-    // verzweigen in OPEN/DUE/OVERDUE"), daher unveraendert nur inv1 (10d) + inv2 (40d).
-    expect(summary.overdueInvoices.count).toBe(2);
+    // Fix-Welle (S1, Ruling): PARTIALLY_PAID faellt jetzt in den dueDate-Zweig von
+    // effectiveInvoiceStatus (OPEN/DUE/OVERDUE), solange ein Restbetrag offen ist — inv4
+    // ist teilweise bezahlt UND faellig seit 3 Tagen, zaehlt also jetzt zusaetzlich zu
+    // inv1 (10d) + inv2 (40d) als OVERDUE. Vorher verschwand eine teilbezahlte
+    // ueberfaellige Rechnung komplett aus overdueInvoices/aging (der eigentliche Bug: die
+    // Kundenuebersicht/das Dashboard meldeten "0 € ueberfaellig" fuer einen Kunden, der
+    // noch die Haelfte einer ueberfaelligen Rechnung schuldete).
+    expect(summary.overdueInvoices.count).toBe(3);
     expect(summary.overdueInvoices.cents).toBeGreaterThan(0);
 
     // Dashboard-Aging (Grenzen 7/30/60/90, minDays: 0) -> 5 Buckets; Tag 0 (inv3, faellig
-    // heute) faellt in den ersten Bucket, inv1 (10d) in den zweiten, inv2 (40d) in den
-    // dritten. inv4 (PARTIALLY_PAID) ist wie bei overdueInvoices bewusst NICHT enthalten.
+    // heute) UND inv4 (3d, teilbezahlt-ueberfaellig) faellen in den ersten Bucket, inv1
+    // (10d) in den zweiten, inv2 (40d) in den dritten.
     expect(summary.aging).toHaveLength(5);
     const bucketTotal = summary.aging.reduce((sum, b) => sum + b.count, 0);
-    expect(bucketTotal).toBe(3); // inv1, inv2, inv3 (faellig heute)
-    expect(summary.aging[0].count).toBe(1); // inv3 (0d)
+    expect(bucketTotal).toBe(4); // inv1, inv2, inv3 (faellig heute), inv4 (3d)
+    expect(summary.aging[0].count).toBe(2); // inv3 (0d), inv4 (3d)
     expect(summary.aging[1].count).toBe(1); // inv1 (10d)
     expect(summary.aging[2].count).toBe(1); // inv2 (40d)
 
