@@ -74,7 +74,7 @@ describe("Phase 1 — Verknuepfungen", () => {
     expect(rel).toHaveLength(1);
     expect(rel[0].toId).toBe(inv.id);
     expect(await dbInternal.paymentMethod.count({ where: { orgId } })).toBe(8);
-    expect(await dbInternal.dunningStage.count({ where: { orgId } })).toBeGreaterThanOrEqual(4);
+    expect(await dbInternal.dunningStage.count({ where: { orgId } })).toBe(4);
   });
 
   it("Lieferschein bekommt LS-Nummer, Snapshot CREATE und ChangeLog", async () => {
@@ -96,7 +96,7 @@ describe("Phase 1 — Verknuepfungen", () => {
     await ensureOrgMasterdata(dbInternal, org.id);
     await ensureOrgMasterdata(dbInternal, org.id); // idempotent
     expect(await dbInternal.paymentMethod.count({ where: { orgId: org.id, isSystem: true } })).toBe(9);
-    expect(await dbInternal.dunningStage.count({ where: { orgId: org.id } })).toBeGreaterThanOrEqual(4);
+    expect(await dbInternal.dunningStage.count({ where: { orgId: org.id } })).toBe(4);
   });
 
   it("recordPayment lehnt unbekannte Zahlungsmethode ab und akzeptiert Systemcode", async () => {
