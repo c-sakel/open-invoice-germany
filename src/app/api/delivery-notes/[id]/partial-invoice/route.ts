@@ -25,6 +25,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const invoice = await createPartialInvoice(org.id, body, { actor });
     return NextResponse.json({ id: invoice.id, status: invoice.status, type: invoice.type }, { status: 201 });
   } catch (e) {
+    // Nit (Fix-Welle): siehe /api/documents/[id]/partial-invoice/route.ts.
+    if (e instanceof SyntaxError) {
+      return NextResponse.json({ error: "Ungueltiges JSON im Request-Body" }, { status: 400 });
+    }
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
