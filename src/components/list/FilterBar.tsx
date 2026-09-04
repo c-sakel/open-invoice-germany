@@ -24,6 +24,16 @@ export function FilterBar({
 }) {
   return (
     <form method="get" action={basePath} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      {/* Task 4: Werte, die nicht als sichtbares Filterfeld existieren (z. B. `type` aus
+         der Gutschriften-Navigation, `/rechnungen?type=CREDIT_NOTE`), bleiben beim
+         Absenden des Formulars ueber ein verstecktes Feld erhalten, statt beim naechsten
+         "Filtern" stillschweigend zu verschwinden. `offset` NICHT uebernehmen — eine neue
+         Filterung soll wieder bei Seite 1 beginnen. */}
+      {Object.entries(values)
+        .filter(([key, v]) => v && key !== "offset" && !fields.some((f) => f.name === key))
+        .map(([key, v]) => (
+          <input key={key} type="hidden" name={key} value={v} />
+        ))}
       {fields.map((f) => (
         <label key={f.name} className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">{f.label}</span>

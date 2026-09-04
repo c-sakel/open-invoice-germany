@@ -605,6 +605,30 @@ export const updateRecurringStatusSchema = z.object({
 });
 export type UpdateRecurringStatusInput = z.infer<typeof updateRecurringStatusSchema>;
 
+// Phase 8b (Task 4, §43): Bearbeiten eines bestehenden Abos — alle Kopf-/Ablauffelder
+// optional aendbar (Teil-Update), `customerId` bewusst NICHT enthalten (Kundenwechsel ist
+// kein Anwendungsfall dieses Tasks — ein neues Abo anlegen statt den Kunden zu tauschen).
+// `status` zusaetzlich enthalten, damit ein einzelner Aufruf Kopf+Status aendern kann
+// (die bestehende `updateRecurringStatusSchema`-Route bleibt fuer den reinen Statuswechsel
+// aus der Listenansicht erhalten).
+export const updateRecurringSchema = z.object({
+  title: z.string().min(1).optional(),
+  interval: RecurInterval.optional(),
+  intervalCount: z.number().int().min(1).max(48).optional(),
+  anchorDay: z.number().int().min(1).max(28).nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  maxRuns: z.number().int().positive().nullable().optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).optional(),
+  autoFinalize: z.boolean().optional(),
+  autoSend: z.boolean().optional(),
+  emailTemplateId: z.string().min(1).nullable().optional(),
+  showPeriodText: z.boolean().optional(),
+  notes: z.string().nullable().optional(),
+  status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
+  lines: z.array(invoiceLineInputSchema).min(1).optional(),
+});
+export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
+
 // ── Phase 1: Dokumentketten, Lieferschein, Vorlagen, Stammdaten ──────────────
 export const DocRefType = z.enum(["QUOTE", "INVOICE", "RECURRING", "DELIVERY_NOTE", "DUNNING"]);
 export const RelationType = z.enum(["CONVERTED_TO", "CORRECTS", "REVERSES", "GENERATED_BY", "PARTIAL_OF", "DOWNPAYMENT_OF", "FINAL_FOR", "DELIVERED_BY", "DUPLICATED_FROM"]);

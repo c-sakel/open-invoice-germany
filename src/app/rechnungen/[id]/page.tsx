@@ -23,6 +23,8 @@ import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
 import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
 import { availableActions } from "@/domain/document/actions";
+import { PdfPreview } from "@/components/PdfPreview";
+import { DocumentTimeline } from "@/components/DocumentTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -507,6 +509,19 @@ export default async function InvoiceDetail({
       <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
 
       <EmailHistory docType={emailDocType} docId={invoice.id} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="space-y-3">
+          <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+          <DocumentTimeline kind="INVOICE" docId={invoice.id} />
+        </section>
+        {!isDraft && (
+          <section className="space-y-3">
+            <h2 className="font-semibold text-slate-900">PDF-Vorschau</h2>
+            <PdfPreview src={`/api/invoices/${invoice.id}/pdf`} title={`Rechnung ${invoice.number ?? invoice.id}`} />
+          </section>
+        )}
+      </div>
     </div>
   );
 }
