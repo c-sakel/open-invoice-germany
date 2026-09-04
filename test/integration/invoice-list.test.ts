@@ -18,11 +18,12 @@ let orgId: string;
 let customerId: string;
 let otherCustomerId: string;
 
-// Lokale Zeit — effectiveInvoiceStatus/listInvoices vergleichen tagesgenau lokal.
-const NOW = new Date(2063, 5, 15, 10, 0, 0);
-const TODAY = new Date(2063, 5, 15);
-const YESTERDAY = new Date(2063, 5, 14);
-const IN_10_DAYS = new Date(2063, 5, 25);
+// Fix-Welle (S7): UTC — effectiveInvoiceStatus/listInvoices vergleichen tagesgenau in
+// UTC (utcDateOnly, siehe src/lib/date-only.ts), nicht mehr lokal.
+const NOW = new Date(Date.UTC(2063, 5, 15, 10, 0, 0));
+const TODAY = new Date(Date.UTC(2063, 5, 15));
+const YESTERDAY = new Date(Date.UTC(2063, 5, 14));
+const IN_10_DAYS = new Date(Date.UTC(2063, 5, 25));
 
 const ids: Record<string, string> = {};
 
@@ -141,11 +142,18 @@ describe("listInvoices: Status-Filter", () => {
     expect(result.rows[0].effectiveStatus).toBe("DUE");
   });
 
-  it("overdue: nur die ueberfaellige Rechnung", async () => {
+  // Fix-Welle (S1, Ruling): "overdue" schliesst jetzt auch teilbezahlte Rechnungen mit
+  // Restbetrag ein — `partial` (dueDate gestern, teilweise bezahlt) ist ebenfalls
+  // ueberfaellig und darf nicht mehr aus dem Filter verschwinden (der eigentliche Bug:
+  // eine teilbezahlte ueberfaellige Rechnung war vorher aus JEDER faellig/ueberfaellig-
+  // Ableitung ausgeschlossen).
+  it("overdue: die ueberfaellige UND die teilbezahlte ueberfaellige Rechnung", async () => {
     const result = await listInvoices(orgId, { status: "overdue", limit: 200 }, NOW);
     const returnedIds = result.rows.map((r) => r.id);
-    expect(returnedIds).toEqual([ids.overdue]);
-    expect(result.rows[0].effectiveStatus).toBe("OVERDUE");
+    expect(returnedIds.sort()).toEqual([ids.overdue, ids.partial].sort());
+    for (const r of result.rows) expect(r.effectiveStatus).toBe("OVERDUE");
+    const partialRow = result.rows.find((r) => r.id === ids.partial);
+    expect(partialRow!.partiallyPaid).toBe(true);
   });
 
   it("partial: nur die teilbezahlte Rechnung", async () => {

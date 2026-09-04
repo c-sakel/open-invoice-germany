@@ -8,23 +8,23 @@
  * (N+1 Buckets statt fix vier), damit das Dashboard 5 Buckets (Grenzen 7/30/60/90,
  * Tag 0 eingeschlossen) zeigen kann, waehrend die Mahnuebersicht weiterhin ihre
  * bisherigen 4 Buckets (Grenzen 7/30/60, `daysOverdue >= 1`, §25) unveraendert liefert.
+ *
+ * Fix-Welle (S7): Tagesgrenzen in UTC (utcDateOnly, siehe src/lib/date-only.ts) statt
+ * lokaler Zeit — einheitlich mit invoice/status.ts, invoice/list.ts, dunning/schedule.ts,
+ * invoice/finalize.ts, notifications/job.ts.
  */
 import { dbInternal } from "@/lib/db";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
-import { openAmountCents } from "@/domain/invoice/amounts";
+import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { effectiveQuoteStatus } from "@/domain/document/status";
-import { dunningCandidates } from "@/domain/dunning/auto";
+import { dunningCandidates, dunningCandidateWhere } from "@/domain/dunning/auto";
+import { utcDateOnly, utcDateOnlyPlusDays } from "@/lib/date-only";
 
 export interface AgingBucket {
   /** Deutsches Anzeigelabel, aus `bounds`/`minDays` abgeleitet (z. B. "8–30 Tage"). */
   label: string;
   count: number;
   cents: number;
-}
-
-/** Beginn des Kalendertags (lokale Zeit) von `d` — analog invoice/status.ts. */
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 export interface AgingBucketsOptions {
@@ -59,9 +59,9 @@ export function agingBuckets(
   }));
   buckets.push({ label: `> ${bounds[bounds.length - 1]} Tage`, count: 0, cents: 0 });
 
-  const today = startOfDay(now);
+  const today = utcDateOnly(now);
   for (const row of rows) {
-    const daysOverdue = Math.round((today.getTime() - startOfDay(row.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+    const daysOverdue = Math.round((today - utcDateOnly(row.dueDate)) / (1000 * 60 * 60 * 24));
     if (daysOverdue < minDays) continue;
     let idx = bounds.findIndex((bound) => daysOverdue <= bound);
     if (idx === -1) idx = buckets.length - 1;
@@ -100,12 +100,12 @@ export interface DashboardSummary {
   openQuotes: { count: number; cents: number };
 }
 
-/** Beginn des Kalendermonats (lokale Zeit) von `d`. */
+/** Beginn des Kalendermonats (UTC) von `d`. */
 function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 function startOfNextMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
 }
 
 export async function dashboardSummary(orgId: string, now: Date = new Date()): Promise<DashboardSummary> {
@@ -152,8 +152,8 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   // Faellig in den naechsten 7 Tagen (heute eingeschlossen), unabhaengig vom effektiven
   // Status — nur PAID/CANCELLED ausgenommen (§45). Eigene Query (breiter als `openish`,
   // schliesst z. B. DRAFT mit gesetztem Zahlungsziel ein).
-  const today = startOfDay(now);
-  const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 8); // exklusiv: +7 Tage inklusive
+  const today = new Date(utcDateOnly(now));
+  const weekEnd = new Date(utcDateOnlyPlusDays(now, 8)); // exklusiv: +7 Tage inklusive
   const dueThisWeekRows = await dbInternal.invoice.findMany({
     where: { orgId, status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: today, lt: weekEnd } },
     select: { grossTotalCents: true, paidAmountCents: true, payableCents: true },
@@ -161,19 +161,27 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   const dueThisWeek = { count: dueThisWeekRows.length, cents: dueThisWeekRows.reduce((sum, r) => sum + openAmountCents(r), 0) };
 
   // Mahnbare, bereits faellige Rechnungen — dieselbe Auswahl wie der automatische
-  // Mahnlauf (dunning/auto.ts), keine eigene Query (CLAUDE.md "Nichts doppelt bauen").
-  const dunningRequired = { count: (await dunningCandidates(orgId, now)).length };
+  // Mahnlauf (dunning/auto.ts, geteilter Where-Builder dunningCandidateWhere, S5), aber
+  // ohne die volle `dunnings`-Relation zu laden — nur die Anzahl wird gebraucht.
+  const dunningRequired = { count: await dbInternal.invoice.count({ where: dunningCandidateWhere(orgId, now) }) };
 
-  // Umsatz laufender Monat: Bruttosumme festgeschriebener Rechnungen (nicht DRAFT,
-  // nicht CANCELLED) mit issueDate im aktuellen Kalendermonat. Prisma-Aggregat (portabel).
-  const revenueAgg = await dbInternal.invoice.aggregate({
+  // Umsatz laufender Monat: Summe der Bemessungsgrundlage (payableBaseCents) festgeschriebener
+  // Rechnungen (nicht DRAFT, nicht CANCELLED) mit issueDate im aktuellen Kalendermonat.
+  // Fix-Welle (S2): vorher grossTotalCents per Prisma-Aggregat — bei einer Abschlagskette
+  // (§14) zaehlt das den Abschlag doppelt (Abschlagsrechnung UND Schlussrechnung tragen
+  // beide ihren vollen Brutto-Betrag; die Schlussrechnung reduziert nur `payableCents`,
+  // nicht `grossTotalCents`). payableBaseCents (payableCents ?? grossTotalCents) ist die
+  // korrekte Bemessungsgrundlage — kein DB-Aggregat mehr moeglich, daher `select`-reduzierte
+  // Zeilen + JS-Summe (portabel, siehe Modul-Kommentar).
+  const revenueRows = await dbInternal.invoice.findMany({
     where: {
       orgId,
       status: { notIn: ["DRAFT", "CANCELLED"] },
       issueDate: { gte: startOfMonth(now), lt: startOfNextMonth(now) },
     },
-    _sum: { grossTotalCents: true },
+    select: { grossTotalCents: true, payableCents: true },
   });
+  const revenueThisMonthCents = revenueRows.reduce((sum, r) => sum + payableBaseCents(r), 0);
 
   // Offene Angebote: DRAFT/SENT und (falls gesetzt) noch nicht abgelaufen.
   const quotes = await dbInternal.quote.findMany({
@@ -252,7 +260,7 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
     dueThisWeek,
     partiallyPaid,
     dunningRequired,
-    revenueThisMonthCents: revenueAgg._sum.grossTotalCents ?? 0,
+    revenueThisMonthCents,
     aging,
     recentDocuments,
     openQuotes,

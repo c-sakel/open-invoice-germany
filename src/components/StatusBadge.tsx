@@ -25,9 +25,16 @@ const MAP: Record<string, { label: string; cls: string }> = {
   ENDED: { label: "Beendet", cls: "bg-slate-100 text-slate-600" },
 };
 
-export function StatusBadge({ status }: { status: string }) {
+/**
+ * Fix-Welle (S1): `partiallyPaid` haengt "· teilbezahlt" an ein OPEN/DUE/OVERDUE-Badge an —
+ * seit S1 kann effectiveInvoiceStatus fuer eine teilweise bezahlte Rechnung mit
+ * Restbetrag OVERDUE/DUE/OPEN liefern (statt PARTIALLY_PAID durchzureichen); der Hinweis
+ * macht sichtbar, dass bereits eine Teilzahlung eingegangen ist.
+ */
+export function StatusBadge({ status, partiallyPaid }: { status: string; partiallyPaid?: boolean }) {
   const s = MAP[status] ?? { label: status, cls: "bg-slate-100 text-slate-700" };
-  return <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>;
+  const label = partiallyPaid && status !== "PARTIALLY_PAID" ? `${s.label} · teilbezahlt` : s.label;
+  return <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{label}</span>;
 }
 
 const BILLING_STATE_MAP: Record<string, { label: string; cls: string }> = {

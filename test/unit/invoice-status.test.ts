@@ -1,14 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { effectiveInvoiceStatus, INVOICE_STATUS_LABEL } from "@/domain/invoice/status";
+import { effectiveInvoiceStatus, isPartiallyPaid, INVOICE_STATUS_LABEL } from "@/domain/invoice/status";
 
-// Lokale Zeit (nicht UTC-Z-Strings) — effectiveInvoiceStatus vergleicht tagesgenau
-// in lokaler Zeit (analog effectiveQuoteStatus); Z-Strings nahe der Mitternachtsgrenze
-// wuerden je nach Test-Timezone auf den falschen Kalendertag fallen.
-const NOW = new Date(2063, 5, 15, 10, 0, 0);
-const YESTERDAY = new Date(2063, 5, 14);
-const TODAY = new Date(2063, 5, 15);
-const TOMORROW = new Date(2063, 5, 16);
-const ISSUE = new Date(2063, 5, 1);
+// Fix-Welle Phase 8b (S7): utcDateOnly() vergleicht Kalendertage in UTC, nicht in lokaler
+// Zeit — Fixdaten deshalb ueber Date.UTC(...) konstruiert (feste UTC-Daten), statt ueber
+// die lokale `new Date(year, month, day, ...)`-Form, deren tatsaechlicher UTC-Kalendertag
+// von der Test-Timezone abhaengen wuerde (Europe/Berlin liegt vor Mitternacht bereits auf
+// dem naechsten UTC-Tag).
+const NOW = new Date(Date.UTC(2063, 5, 15, 10, 0, 0));
+const YESTERDAY = new Date(Date.UTC(2063, 5, 14));
+const TODAY = new Date(Date.UTC(2063, 5, 15));
+const TOMORROW = new Date(Date.UTC(2063, 5, 16));
+const ISSUE = new Date(Date.UTC(2063, 5, 1));
 
 describe("effectiveInvoiceStatus", () => {
   it("DRAFT bleibt DRAFT unabhaengig von dueDate", () => {
@@ -20,9 +22,17 @@ describe("effectiveInvoiceStatus", () => {
     expect(effectiveInvoiceStatus({ status: "PAID", dueDate: YESTERDAY, issueDate: ISSUE }, NOW)).toBe("PAID");
   });
 
-  it("PARTIALLY_PAID bleibt PARTIALLY_PAID unabhaengig von dueDate", () => {
-    expect(effectiveInvoiceStatus({ status: "PARTIALLY_PAID", dueDate: YESTERDAY, issueDate: ISSUE }, NOW)).toBe("PARTIALLY_PAID");
-    expect(effectiveInvoiceStatus({ status: "PARTIALLY_PAID", dueDate: TOMORROW, issueDate: ISSUE }, NOW)).toBe("PARTIALLY_PAID");
+  // Fix-Welle (S1, Ruling): PARTIALLY_PAID faellt jetzt in den dueDate-Zweig (OPEN/DUE/
+  // OVERDUE) statt unveraendert durchgereicht zu werden — vorher verschwand eine
+  // teilbezahlte ueberfaellige Rechnung aus jeder faellig/ueberfaellig-Ableitung
+  // (Kundenuebersicht, Dashboard-Aging, Listenfilter "overdue", Mahn-Aktionsmatrix).
+  it("PARTIALLY_PAID faellt in den dueDate-Zweig (OPEN/DUE/OVERDUE), isPartiallyPaid bleibt true", () => {
+    expect(effectiveInvoiceStatus({ status: "PARTIALLY_PAID", dueDate: YESTERDAY, issueDate: ISSUE }, NOW)).toBe("OVERDUE");
+    expect(effectiveInvoiceStatus({ status: "PARTIALLY_PAID", dueDate: TODAY, issueDate: ISSUE }, NOW)).toBe("DUE");
+    expect(effectiveInvoiceStatus({ status: "PARTIALLY_PAID", dueDate: TOMORROW, issueDate: ISSUE }, NOW)).toBe("OPEN");
+    expect(effectiveInvoiceStatus({ status: "PARTIALLY_PAID", dueDate: null, issueDate: ISSUE }, NOW)).toBe("OPEN");
+    expect(isPartiallyPaid("PARTIALLY_PAID")).toBe(true);
+    expect(isPartiallyPaid("FINALIZED")).toBe(false);
   });
 
   it("CANCELLED bleibt CANCELLED unabhaengig von dueDate", () => {
@@ -61,8 +71,8 @@ describe("effectiveInvoiceStatus", () => {
     expect(effectiveInvoiceStatus({ status: "SENT", dueDate: TOMORROW, issueDate: ISSUE }, NOW)).toBe("OPEN");
   });
 
-  it("dueDate exakt an der Mitternachtsgrenze zaehlt tagesgenau, nicht per Uhrzeit", () => {
-    const dueLateToday = new Date(2063, 5, 15, 23, 59, 0);
+  it("dueDate exakt an der UTC-Mitternachtsgrenze zaehlt tagesgenau, nicht per Uhrzeit", () => {
+    const dueLateToday = new Date(Date.UTC(2063, 5, 15, 23, 59, 0));
     expect(effectiveInvoiceStatus({ status: "FINALIZED", dueDate: dueLateToday, issueDate: ISSUE }, NOW)).toBe("DUE");
   });
 

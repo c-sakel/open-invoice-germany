@@ -2,14 +2,24 @@
  * Dynamischer Rechnungsstatus (Phase 8b, §39). "fällig"/"überfällig" wird NIE
  * gespeichert (Global Constraint des Plans) — er ergibt sich ausschließlich aus
  * `status` + `dueDate` zum Anzeigezeitpunkt. Analog zu `effectiveQuoteStatus`
- * (src/domain/document/status.ts): reine Funktion, tagesgenauer Vergleich in
- * lokaler Zeit (kein UTC-Cutoff um Mitternacht).
+ * (src/domain/document/status.ts): reine Funktion, tagesgenauer Vergleich in UTC
+ * (Fix-Welle S7 — einheitliche Konvention mit dunning/schedule.ts, invoice/finalize.ts,
+ * lib/pricing/skonto.ts, notifications/job.ts; siehe src/lib/date-only.ts).
  *
- * Nur FINALIZED/SENT verzweigen in OPEN/DUE/OVERDUE — DRAFT/PAID/PARTIALLY_PAID/
- * CANCELLED sind für den Fälligkeits-Status irrelevant und werden 1:1 durchgereicht
- * (Regel aus dem Task-1-Brief: „(jeweils nicht PAID/CANCELLED)“, gilt sinngemäß auch
- * für PARTIALLY_PAID/DRAFT).
+ * FINALIZED/SENT/PARTIALLY_PAID verzweigen in OPEN/DUE/OVERDUE — DRAFT/PAID/CANCELLED
+ * sind für den Fälligkeits-Status irrelevant und werden 1:1 durchgereicht.
+ *
+ * Fix-Welle (S1, Ruling): eine teilbezahlte Rechnung ist weiterhin faellig/ueberfaellig,
+ * solange ein Restbetrag offen ist — vor der Fix-Welle lieferte diese Funktion fuer
+ * PARTIALLY_PAID immer den Rohstatus zurueck, wodurch teilbezahlte ueberfaellige
+ * Rechnungen aus jeder faellig/ueberfaellig-Ableitung verschwanden (Kundenuebersicht,
+ * Dashboard-Aging, Listenfilter "overdue", Mahn-Aktionsmatrix). PARTIALLY_PAID faellt
+ * jetzt in den dueDate-Zweig; `isPartiallyPaid` liefert das zusaetzliche Flag fuer
+ * Aufrufer, die den Teilzahlungs-Hinweis separat anzeigen wollen (z. B. StatusBadge
+ * "Überfällig · teilbezahlt").
  */
+import { utcDateOnly } from "@/lib/date-only";
+
 export type EffectiveInvoiceStatus =
   | "DRAFT"
   | "FINALIZED"
@@ -41,14 +51,9 @@ export interface EffectiveInvoiceStatusInput {
   issueDate: Date;
 }
 
-/** Beginn des Kalendertags (lokale Zeit) von `d`. */
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
 /**
- * Leitet den tatsächlich wirksamen Rechnungsstatus ab. FINALIZED/SENT ohne
- * `dueDate` gelten als OPEN (kein Zahlungsziel gesetzt, also nichts, dem gegenüber
+ * Leitet den tatsächlich wirksamen Rechnungsstatus ab. FINALIZED/SENT/PARTIALLY_PAID
+ * ohne `dueDate` gelten als OPEN (kein Zahlungsziel gesetzt, also nichts, dem gegenüber
  * "fällig"/"überfällig" sinnvoll wäre).
  */
 export function effectiveInvoiceStatus(
@@ -57,19 +62,27 @@ export function effectiveInvoiceStatus(
 ): EffectiveInvoiceStatus {
   const status = inv.status;
 
-  if (status === "DRAFT" || status === "PAID" || status === "PARTIALLY_PAID" || status === "CANCELLED") {
+  if (status === "DRAFT" || status === "PAID" || status === "CANCELLED") {
     return status;
   }
 
-  // status ist FINALIZED oder SENT (jeder andere/unbekannte Rohstatus faellt hier
-  // ebenfalls durch — bewusst kein throw, reine Anzeige-Funktion).
+  // status ist FINALIZED, SENT oder PARTIALLY_PAID (jeder andere/unbekannte Rohstatus
+  // faellt hier ebenfalls durch — bewusst kein throw, reine Anzeige-Funktion). Eine
+  // teilbezahlte Rechnung mit Restbetrag ist weiterhin faellig/ueberfaellig (S1) —
+  // `isPartiallyPaid` liefert das zusaetzliche Flag fuer Aufrufer, die das separat
+  // anzeigen wollen.
   if (!inv.dueDate) return "OPEN";
 
-  const today = startOfDay(now);
-  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  const due = startOfDay(inv.dueDate);
+  const today = utcDateOnly(now);
+  const due = utcDateOnly(inv.dueDate);
 
-  if (due.getTime() < today.getTime()) return "OVERDUE";
-  if (due.getTime() < tomorrow.getTime()) return "DUE";
+  if (due < today) return "OVERDUE";
+  if (due === today) return "DUE";
   return "OPEN";
+}
+
+/** True, wenn die Rechnung (Rohstatus) teilweise bezahlt ist — unabhaengig vom
+ *  faelligkeits-Status, den `effectiveInvoiceStatus` fuer sie liefert (S1). */
+export function isPartiallyPaid(status: string): boolean {
+  return status === "PARTIALLY_PAID";
 }
