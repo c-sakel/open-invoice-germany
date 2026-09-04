@@ -84,6 +84,15 @@ describe("update_customer / archive_customer", () => {
     expect(res.isError).toBe(true);
   });
 
+  it("update_customer: lehnt eine ungueltige E-Mail-Adresse ab (Fix-Runde 1 — customerSchema statt inline-Zod)", async () => {
+    const res = await callTool("update_customer", { customer: customerId, email: "keine-email" });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toMatch(/[Vv]alidierung/);
+    // Feld bleibt unveraendert (kein Teil-Update bei fehlgeschlagener Validierung)
+    const reloaded = await dbInternal.customer.findUniqueOrThrow({ where: { id: customerId } });
+    expect(reloaded.email).not.toBe("keine-email");
+  });
+
   it("archive_customer setzt isArchived und blendet den Kunden aus list_customers aus", async () => {
     const res = await callTool("archive_customer", { customer: customerId });
     expect(res.isError).toBeFalsy();

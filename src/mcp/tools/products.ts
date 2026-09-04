@@ -109,6 +109,11 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
   );
 
   // ── update_product ───────────────────────────────────────────────────────────
+  // Fix-Runde 1 (Koordinator, Task 1): Feldliste jetzt aus productSchema.partial()
+  // komponiert statt handgepflegtem inline-Zod (analog update_customer) — sonst driften
+  // die Felder auseinander. netPriceCents/taxRate/taxCategory bleiben ausgenommen: der
+  // MCP-Aufrufer uebergibt netPriceEuro (Euro statt Cent) und taxRatePercent (leitet
+  // taxCategory ab), wie bei upsert_product.
   server.registerTool(
     "update_product",
     {
@@ -117,33 +122,35 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         "Aktualisiert ein bestehendes Produkt gezielt per ID oder Name (anders als upsert_product KEIN Anlegen). Nicht angegebene Felder bleiben unveraendert.",
       inputSchema: {
         product: z.string().describe("Produkt-ID oder -Name"),
-        name: z.string().optional(),
+        ...productSchema.partial().omit({ netPriceCents: true, taxRate: true, taxCategory: true }).shape,
         netPriceEuro: z.number().optional(),
-        unit: z.string().optional(),
         taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
-        description: z.string().optional(),
-        articleNumber: z.string().max(60).optional(),
-        differential: z.boolean().optional().describe("Differenzbesteuerung nach § 25a UStG"),
       },
     },
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const existing = await resolveProduct(org.id, args.product);
+        const { product: _productRef, netPriceEuro, taxRatePercent, ...rest } = args;
+        void _productRef;
+        const v = productSchema.partial().omit({ netPriceCents: true, taxRate: true, taxCategory: true }).parse(rest);
+        // NUR die tatsaechlich uebergebenen Felder patchen: zod fuellt bei .partial()
+        // fehlende Schluessel mit dem Schema-Default (z. B. unit="C62",
+        // differential=false) statt sie undefined zu lassen — ein blindes `{ ...v }`
+        // wuerde also nicht angegebene Felder stillschweigend zuruecksetzen.
         const patch: Record<string, unknown> = {};
-        if (args.name !== undefined) patch.name = args.name;
-        if (args.netPriceEuro !== undefined) patch.netPriceCents = ctx.euroToCents(args.netPriceEuro);
-        if (args.unit !== undefined) patch.unit = args.unit;
-        if (args.taxRatePercent !== undefined) {
-          patch.taxRate = args.taxRatePercent;
-          patch.taxCategory = args.taxRatePercent === 0 ? "Z" : "S";
+        for (const key of Object.keys(rest) as (keyof typeof v)[]) {
+          if ((rest as Record<string, unknown>)[key as string] !== undefined) patch[key as string] = v[key];
         }
-        if (args.description !== undefined) patch.description = args.description;
-        if (args.articleNumber !== undefined) patch.articleNumber = args.articleNumber;
-        if (args.differential !== undefined) patch.differential = args.differential;
+        if (netPriceEuro !== undefined) patch.netPriceCents = ctx.euroToCents(netPriceEuro);
+        if (taxRatePercent !== undefined) {
+          patch.taxRate = taxRatePercent;
+          patch.taxCategory = taxRatePercent === 0 ? "Z" : "S";
+        }
         const product = await dbInternal.product.update({ where: { id: existing.id }, data: patch });
         return ctx.ok(`Produkt aktualisiert: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         return ctx.fail(`Konnte Produkt nicht aktualisieren: ${(e as Error).message}`);
       }
     },
