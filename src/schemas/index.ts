@@ -709,6 +709,9 @@ export * from "./email";
 // (Task-2-Review, Auflage: quote-share.ts war zuvor nicht re-exportiert).
 export * from "./quote-share";
 
+// ── Phase 7: Belegeinstellungen, Briefpapier, Druckoptionen, Nummernkreise ──
+export * from "./settings";
+
 // ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
 // Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung
 // erfolgt zusaetzlich in src/lib/attachments/mime.ts (sniffMime) — dieses Schema prueft
