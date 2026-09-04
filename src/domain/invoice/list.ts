@@ -24,6 +24,9 @@ export interface InvoiceListRow {
   openCents: number;
   currency: string;
   effectiveStatus: EffectiveInvoiceStatus;
+  /** Fix-Runde 1 (Ruling b): true, wenn mindestens ein EmailLog fuer diesen Beleg
+   *  existiert — steuert SEND/RESEND in availableActions (Task 1). */
+  hasEmailLog: boolean;
 }
 
 export interface InvoiceListResult {
@@ -155,6 +158,16 @@ export async function listInvoices(
     }),
   ]);
 
+  // Fix-Runde 1 (Ruling b): EIN zusaetzlicher Query fuer die ganze Seite statt N+1 —
+  // EmailLog.docId ist ueber alle Belegtypen hinweg eindeutig (cuid), ein Match auf
+  // `docId` reicht (kein zusaetzlicher docType-Filter noetig: CORRECTION/PARTIAL/
+  // DOWNPAYMENT/FINAL/INVOICE senden alle unter docType "INVOICE", CREDIT_NOTE unter
+  // "CREDIT_NOTE" — die docId allein identifiziert den Beleg bereits eindeutig).
+  const ids = rows.map((r) => r.id);
+  const emailLogDocIds = new Set(
+    ids.length === 0 ? [] : (await prisma.emailLog.findMany({ where: { orgId, docId: { in: ids } }, select: { docId: true } })).map((e) => e.docId),
+  );
+
   return {
     rows: rows.map((r) => ({
       id: r.id,
@@ -173,6 +186,7 @@ export async function listInvoices(
       }),
       currency: r.currency,
       effectiveStatus: effectiveInvoiceStatus({ status: r.status, dueDate: r.dueDate, issueDate: r.issueDate }, now),
+      hasEmailLog: emailLogDocIds.has(r.id),
     })),
     total,
     limit: filter.limit,

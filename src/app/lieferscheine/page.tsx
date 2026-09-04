@@ -88,7 +88,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                   type: "DELIVERY_NOTE",
                   status: n.status,
                   isDraft: n.status === "DRAFT",
-                  hasEmailLog: false,
+                  hasEmailLog: n.hasEmailLog,
                 });
                 return (
                   <tr key={n.id} className={`hover:bg-slate-50 ${n.archivedAt ? "opacity-60" : ""}`}>
@@ -113,6 +113,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                         // nicht Teil dieses Tasks) — EDIT wird trotz ActionKey nicht gerendert.
                         pdfHref={`/api/delivery-notes/${n.id}/pdf`}
                         emailDocType="DELIVERY_NOTE"
+                        hasEmailLog={n.hasEmailLog}
                         duplicateRoute={`/api/delivery-notes/${n.id}/duplicate`}
                         duplicateRedirect="/lieferscheine/{id}"
                         cancelRoute={`/api/delivery-notes/${n.id}/status`}

@@ -7,6 +7,7 @@ import type { ActionKey, DocKind } from "@/domain/document/actions";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { PaymentForm } from "@/components/PaymentForm";
 import { ConvertMenu } from "@/components/ConvertMenu";
+import { shouldForceDunningRetry } from "@/lib/dunning-force";
 import type { EmailDocType } from "@/schemas/email";
 
 const itemCls = "block w-full rounded-md px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50";
@@ -65,6 +66,11 @@ export function RowActionsMenu({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Ruling (a), Phase 8b Fix-Runde 1: REMINDER legt zunaechst eine Mahnung an (wie
+  // DUNNING), oeffnet danach aber den Versand-Dialog DAFUER (docType DUNNING) statt nur
+  // zu aktualisieren — nie den Rechnungs-Versand-Dialog. `key={reminderDunningId}`
+  // erzwingt einen Remount von SendEmailDialog, damit dessen `autoOpen`-Effekt greift.
+  const [reminderDunningId, setReminderDunningId] = useState<string | null>(null);
 
   function closeMenu() {
     setDetailsOpen(false);
@@ -109,9 +115,15 @@ export function RowActionsMenu({
     router.refresh();
   }
 
-  async function createDunning(force = false) {
+  /**
+   * Legt eine Mahnung an (POST dunningRoute). `openSendAfter=true` (REMINDER): oeffnet
+   * nach Erfolg den Versand-Dialog fuer die neue Mahnung, statt nur das Menue zu
+   * schliessen (DUNNING-Verhalten). shouldForceDunningRetry() entscheidet den
+   * force/confirm-Ablauf bei 409 (naechste Stufe noch nicht faellig).
+   */
+  async function createDunning(force: boolean, busyKey: "DUNNING" | "REMINDER", openSendAfter: boolean) {
     if (!dunningRoute) return;
-    setBusy("DUNNING");
+    setBusy(busyKey);
     setError(null);
     const res = await fetch(dunningRoute, {
       method: "POST",
@@ -120,16 +132,22 @@ export function RowActionsMenu({
     });
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!force && res.status === 409 && confirm(`${j.error ?? "Noch nicht fällig."}\n\nTrotzdem jetzt erstellen?`)) {
+      const confirmed = !force && res.status === 409 ? confirm(`${j.error ?? "Noch nicht fällig."}\n\nTrotzdem jetzt erstellen?`) : false;
+      if (shouldForceDunningRetry({ status: res.status, alreadyForced: force, confirmed })) {
         setBusy(null);
-        return createDunning(true);
+        return createDunning(true, busyKey, openSendAfter);
       }
       setError(j.error ?? "Mahnung konnte nicht erstellt werden.");
       setBusy(null);
       return;
     }
+    const j = (await res.json()) as { dunningId: string };
     setBusy(null);
-    closeMenu();
+    if (openSendAfter) {
+      setReminderDunningId(j.dunningId);
+    } else {
+      closeMenu();
+    }
     router.refresh();
   }
 
@@ -180,13 +198,18 @@ export function RowActionsMenu({
             <PaymentForm invoiceId={id} openCents={payment.openCents} methods={payment.methods} defaultMethod={payment.defaultMethod} />
           </div>
         )}
-        {has("REMINDER") && emailDocType && (
-          <div className={itemCls}>
-            <SendEmailDialog docType={emailDocType} docId={id} label="Zahlungserinnerung senden" />
-          </div>
+        {/* Ruling (a): REMINDER legt eine Mahnung an und oeffnet danach IHREN
+            Versand-Dialog (docType DUNNING) — niemals den Rechnungs-Versand-Dialog. */}
+        {has("REMINDER") && dunningRoute && (
+          <button type="button" onClick={() => createDunning(false, "REMINDER", true)} disabled={busy === "REMINDER"} className={itemCls}>
+            {busy === "REMINDER" ? "…" : "Zahlungserinnerung senden"}
+          </button>
+        )}
+        {reminderDunningId && (
+          <SendEmailDialog key={reminderDunningId} docType="DUNNING" docId={reminderDunningId} label="Mahnung senden" autoOpen hideTrigger />
         )}
         {has("DUNNING") && dunningRoute && (
-          <button type="button" onClick={() => createDunning(false)} disabled={busy === "DUNNING"} className={itemCls}>
+          <button type="button" onClick={() => createDunning(false, "DUNNING", false)} disabled={busy === "DUNNING"} className={itemCls}>
             {busy === "DUNNING" ? "…" : "Mahnung erstellen"}
           </button>
         )}

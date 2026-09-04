@@ -26,6 +26,7 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { setQuoteStatus } from "@/domain/document/status";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { availableActions } from "@/domain/document/actions";
 import type { CreateInvoiceInput, CreateDocumentInput, CreateDeliveryNoteInput } from "@/schemas";
 
 import { GET as invoicesGet } from "@/app/api/invoices/route";
@@ -34,6 +35,7 @@ import { GET as deliveryNotesGet } from "@/app/api/delivery-notes/route";
 
 let orgId: string;
 let customerId: string;
+let emailedInvoiceId: string;
 
 // Belegdatum/Nummernvergabe ("now" an finalizeInvoice) liegt bewusst im Testjahr 2068
 // (Testjahr-Konvention). Faellig-/Gueltigkeitsdaten fuer OVERDUE/EXPIRED muessen dagegen
@@ -102,6 +104,28 @@ beforeAll(async () => {
   await finalizeInvoice(finalizedDraft.id, { now: NOW });
   void draft;
 
+  // Fix-Runde 1 (Ruling b): eine Rechnung MIT EmailLog fuer den hasEmailLog-Test.
+  const emailedDraft = await createDraftInvoice(orgId, {
+    customerId,
+    type: "INVOICE",
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    issueDate: NOW,
+    lines: [line("Routentest mit EmailLog")],
+  } as CreateInvoiceInput, { now: NOW });
+  await finalizeInvoice(emailedDraft.id, { now: NOW });
+  emailedInvoiceId = emailedDraft.id;
+  await dbInternal.emailLog.create({
+    data: {
+      orgId,
+      docType: "INVOICE",
+      docId: emailedInvoiceId,
+      subject: "Test",
+      bodySnapshot: "Test",
+      status: "SENT",
+    },
+  });
+
   // Angebote: eines DRAFT mit validUntil in der Vergangenheit (=> EXPIRED), eines SENT
   // mit validUntil in der Zukunft (=> bleibt SENT).
   const expiredQuote = await createBusinessDocument(orgId, {
@@ -138,8 +162,8 @@ describe("GET /api/invoices", () => {
     const res = await invoicesGet(req("http://localhost/api/invoices"));
     expect(res.status).toBe(200);
     const j = (await res.json()) as { rows: unknown[]; total: number };
-    expect(j.total).toBe(2);
-    expect(j.rows).toHaveLength(2);
+    expect(j.total).toBe(3);
+    expect(j.rows).toHaveLength(3);
   });
 
   it("filtert nach status=overdue", async () => {
@@ -148,6 +172,30 @@ describe("GET /api/invoices", () => {
     const j = (await res.json()) as { rows: Array<{ effectiveStatus: string }>; total: number };
     expect(j.total).toBe(1);
     expect(j.rows[0].effectiveStatus).toBe("OVERDUE");
+  });
+
+  it("Fix-Runde 1 (Ruling b): hasEmailLog=true fuer eine Rechnung mit EmailLog, RESEND statt SEND in availableActions", async () => {
+    const res = await invoicesGet(req("http://localhost/api/invoices?q=EmailLog"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: Array<{ id: string; hasEmailLog: boolean; type: string; effectiveStatus: string }>; total: number };
+    expect(j.total).toBe(1);
+    const row = j.rows[0];
+    expect(row.id).toBe(emailedInvoiceId);
+    expect(row.hasEmailLog).toBe(true);
+    const actions = availableActions({ kind: "INVOICE", type: row.type, status: row.effectiveStatus, isDraft: false, hasEmailLog: row.hasEmailLog });
+    expect(actions).toContain("RESEND");
+    expect(actions).not.toContain("SEND");
+  });
+
+  it("hasEmailLog=false fuer eine Rechnung ohne EmailLog (SEND statt RESEND)", async () => {
+    const res = await invoicesGet(req("http://localhost/api/invoices?status=overdue"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: Array<{ hasEmailLog: boolean; type: string; effectiveStatus: string }> };
+    const row = j.rows[0];
+    expect(row.hasEmailLog).toBe(false);
+    const actions = availableActions({ kind: "INVOICE", type: row.type, status: row.effectiveStatus, isDraft: false, hasEmailLog: row.hasEmailLog });
+    expect(actions).toContain("SEND");
+    expect(actions).not.toContain("RESEND");
   });
 
   it("400 bei ungueltigem Filter (limit ausserhalb 1..200)", async () => {
