@@ -45,7 +45,11 @@ services:
       # regelmäßig nur "locked" protokollieren statt echt zu arbeiten).
       # SCHEDULER_ENABLED: "true"
       # SCHEDULER_INTERVAL_MINUTES: "15"
-      # CRON_SECRET: ""
+      # CRON_SECRET (Fix-Welle B3): PFLICHT, sobald /api/cron/* genutzt wird — ohne
+      # gesetzten Wert antworten die Routen fail-closed mit 503 (vorher: ohne Secret
+      # anonym erreichbar, loeste Mahn-/Abo-Versand aus). Setze einen echten Zufallswert
+      # (openssl rand -base64 32), sonst bleiben /api/cron/* schlicht gesperrt.
+      CRON_SECRET: ""
     volumes:
       - oig-attachments:/app/data/attachments
     ports:

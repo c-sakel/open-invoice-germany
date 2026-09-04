@@ -4,28 +4,25 @@
  */
 import { NextResponse } from "next/server";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
+import { checkCronAuth } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function authorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const auth = req.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  const url = new URL(req.url);
-  return url.searchParams.get("secret") === secret;
-}
-
 async function handle(req: Request) {
-  if (!authorized(req)) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
+  const auth = checkCronAuth(req);
+  if (auth === "unset") return NextResponse.json({ error: "CRON_SECRET nicht gesetzt" }, { status: 503 });
+  if (auth === "unauthorized") return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
   try {
     const results = await runScheduledJobs({ trigger: "CRON" });
     const ok = results.every((r) => r.ok);
-    return NextResponse.json({ ok, results }, { status: ok ? 200 : 207 });
+    if (!ok) console.error("cron/run-all:", results.filter((r) => !r.ok).map((r) => r.error));
+    // Fehlertext generisch nach aussen (Details nur im Log/SchedulerRun), Summary bleibt.
+    const safeResults = results.map((r) => ({ job: r.job, ok: r.ok, runId: r.runId, summary: r.summary, ...(r.ok ? {} : { error: "Lauf fehlgeschlagen." }) }));
+    return NextResponse.json({ ok, results: safeResults }, { status: ok ? 200 : 207 });
   } catch (e) {
     console.error("cron/run-all:", e);
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    return NextResponse.json({ error: "Lauf fehlgeschlagen." }, { status: 500 });
   }
 }
 
