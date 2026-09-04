@@ -91,12 +91,30 @@ export async function deleteDunningStage(orgId: string, id: string): Promise<voi
  */
 export async function reorderDunningStages(orgId: string, rawInput: unknown): Promise<void> {
   const { ids } = dunningStagesReorderSchema.parse(rawInput);
-  const existing = await dbInternal.dunningStage.findMany({ where: { orgId }, select: { id: true } });
+  const existing = await dbInternal.dunningStage.findMany({ where: { orgId }, select: { id: true, feeCents: true } });
   const existingIds = new Set(existing.map((s) => s.id));
   const inputIds = new Set(ids);
   if (ids.length !== existing.length || existingIds.size !== inputIds.size || ids.some((id) => !existingIds.has(id))) {
     throw new DunningStageError("ids muss genau die vorhandenen Mahnstufen-Ids der Organisation enthalten.");
   }
+
+  // S3 (Fix-Welle): Reorder darf die feeCents/order>=2-Regel (COMPLIANCE §12) nicht
+  // verletzen. Ohne diese Pruefung wuerde eine Stufe mit Mahnkosten auf order < 0/1
+  // wandern: create.ts (order >= 2) bucht die Gebuehr dann stillschweigend nicht mehr,
+  // obwohl die UI sie weiterhin anzeigt — und die Zeile waere ueber updateDunningStage
+  // (dieselbe Zod-Regel) auch nicht mehr speicherbar, eine UI-Sackgasse. Alle Stufen
+  // erneut pruefen, BEVOR irgendetwas geschrieben wird (409, kein Teilzustand).
+  const feeById = new Map(existing.map((s) => [s.id, s.feeCents]));
+  ids.forEach((id, index) => {
+    const feeCents = feeById.get(id) ?? 0;
+    if (feeCents > 0 && index < 2) {
+      throw new DunningStageError(
+        `Reorder abgelehnt: Eine Stufe mit Mahnkosten (${(feeCents / 100).toFixed(2)} €) kaeme auf Position ${index} — Mahnkosten sind erst ab der 2. Mahnstufe zulässig (order ≥ 2, COMPLIANCE §12). Zuerst die Mahnkosten auf 0 setzen oder die Stufe weiter hinten einsortieren.`,
+        409,
+      );
+    }
+  });
+
   await dbInternal.$transaction(async (tx) => {
     for (let i = 0; i < ids.length; i++) {
       await tx.dunningStage.update({ where: { id: ids[i] }, data: { order: -(i + 1) } });

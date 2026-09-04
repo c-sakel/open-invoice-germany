@@ -39,6 +39,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
   const [newStage, setNewStage] = useState<StageFields>(EMPTY_NEW);
   const [newError, setNewError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   function setDraft(id: string, patch: Partial<StageFields>) {
     setDrafts((d) => ({ ...d, [id]: { ...d[id], ...patch } }));
@@ -80,15 +81,25 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
   async function move(index: number, dir: -1 | 1) {
     const target = index + dir;
     if (target < 0 || target >= stages.length) return;
+    const previous = stages; // S3 (Fix-Welle): bei Fehler zurueckrollen statt die lokal
+    // getauschte Reihenfolge stehen zu lassen (UI zeigte sonst eine Order, die die DB
+    // wegen der abgelehnten Gebuehrenregel gar nicht uebernommen hat).
     const reordered = [...stages];
     [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
     setStages(reordered);
+    setReorderError(null);
     const res = await fetch("/api/dunning-stages/reorder", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ids: reordered.map((s) => s.id) }),
     });
-    if (res.ok) router.refresh();
+    if (res.ok) {
+      router.refresh();
+      return;
+    }
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    setStages(previous);
+    setReorderError(j.error ?? "Umsortieren fehlgeschlagen.");
   }
 
   async function createStage() {
@@ -112,6 +123,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
 
   return (
     <div className="space-y-4">
+      {reorderError && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{reorderError}</div>}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">

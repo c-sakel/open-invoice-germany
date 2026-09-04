@@ -177,6 +177,32 @@ describe("Phase 6 — Mahnstufen-Domain (stages.ts)", () => {
     await expect(reorderDunningStages(orgId, { ids: [...stages.map((s) => s.id), "fremde-id"] })).rejects.toThrow();
   });
 
+  // S3 (Fix-Welle): Reorder darf keine Stufe mit Mahnkosten auf order < 2 schieben (409,
+  // COMPLIANCE §12) — vorher schrieb reorderDunningStages beliebige order-Werte ohne diese
+  // Regel erneut zu pruefen, die Stufe war danach ueber die UI nicht mehr speicherbar.
+  it("reorderDunningStages lehnt ab, wenn eine Stufe mit Mahnkosten auf order < 2 kaeme (409), und schreibt nichts", async () => {
+    const orgId = await makeOrg();
+    const stages = await listDunningStages(orgId);
+    const stage3 = stages.find((s) => s.order === 3)!; // "3. Mahnung", feeCents 0 in den Defaults
+    await updateDunningStage(orgId, stage3.id, {
+      name: stage3.name,
+      daysAfterDue: stage3.daysAfterDue,
+      newDueDays: stage3.newDueDays,
+      feeCents: 500, // jetzt mit Mahnkosten, order 3 ist erlaubt (>= 2)
+      calculateInterest: stage3.calculateInterest,
+      includeB2BFlatFee: stage3.includeB2BFlatFee,
+      enabled: stage3.enabled,
+    });
+
+    // Stufe 3 (jetzt mit Mahnkosten) an die erste Position schieben -> order 0, verboten.
+    const reordered = [stage3.id, ...stages.filter((s) => s.id !== stage3.id).map((s) => s.id)];
+    await expect(reorderDunningStages(orgId, { ids: reordered })).rejects.toMatchObject({ status: 409 });
+
+    // Nichts geschrieben: Reihenfolge unveraendert.
+    const unchanged = await listDunningStages(orgId);
+    expect(unchanged.map((s) => s.order)).toEqual([0, 1, 2, 3]);
+    expect(unchanged.find((s) => s.id === stage3.id)?.order).toBe(3);
+  });
 });
 
 describe("Phase 6 — Mahnwesen-Einstellungen (settings.ts)", () => {
