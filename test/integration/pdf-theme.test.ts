@@ -3,7 +3,6 @@
  * (siehe plan-header.md).
  */
 import { describe, it, expect } from "vitest";
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { dbInternal } from "@/lib/db";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { savePrintSettings } from "@/domain/settings/print";
@@ -11,6 +10,7 @@ import { saveDocumentSettings } from "@/domain/document/settings";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
+import { parsePdf } from "../helpers/pdf-theme";
 
 async function makeOrg(overrides: Partial<{ iban: string | null }> = {}) {
   const org = await dbInternal.organization.create({
@@ -81,15 +81,26 @@ function baseInvoiceData(overrides: Partial<EInvoiceData> = {}): EInvoiceData {
 }
 
 describe("PdfTheme — Seitenzahlen (pdf-parse)", () => {
-  it("eine lange Rechnung mit vielen Positionen erhält 'Seite 1 von 2' unten rechts", async () => {
+  it("eine lange Rechnung mit vielen Positionen erhält 'Seite 1 von 2' unten rechts, genau 2 Seiten (B1)", async () => {
     const orgId = await makeOrg();
     const theme = await loadPdfTheme(orgId);
     theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
     const data = baseInvoiceData({ lines: manyLines(60), number: "RE-2056-00010", giroAmountCents: 0 });
     const pdf = await renderInvoicePdf(data, theme);
-    const parsed = await pdfParse(pdf);
-    expect(parsed.numpages).toBeGreaterThanOrEqual(2);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.numpages).toBe(2);
     expect(parsed.text).toContain("Seite 1 von 2");
+  });
+
+  it("eine 1-Zeilen-Rechnung bleibt bei genau 1 Seite (B1 — keine Blattseite durch Seitenzahlen)", async () => {
+    const orgId = await makeOrg();
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const data = baseInvoiceData({ giroAmountCents: 0 });
+    const pdf = await renderInvoicePdf(data, theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.numpages).toBe(1);
+    expect(parsed.text).toContain("Seite 1 von 1");
   });
 
   it("eine kurze Rechnung bleibt einseitig, keine 'Seite x von y'-Zeile, wenn showPageNumbers aus ist", async () => {
@@ -99,7 +110,8 @@ describe("PdfTheme — Seitenzahlen (pdf-parse)", () => {
     theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
     const data = baseInvoiceData({ giroAmountCents: 0 });
     const pdf = await renderInvoicePdf(data, theme);
-    const parsed = await pdfParse(pdf);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.numpages).toBe(1);
     expect(parsed.text).not.toContain("Seite 1 von");
   });
 });
@@ -142,6 +154,15 @@ describe("PdfTheme — GiroCode (§37)", () => {
     expect(pdf.toString("latin1")).not.toMatch(/\/Subtype\s*\/Image/);
   });
 
+  it("Fremdwaehrung (USD): kein GiroCode trotz IBAN (B2 — GiroCode ist EUR-only)", async () => {
+    const orgId = await makeOrg();
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const data = baseInvoiceData({ number: "RE-2056-00011", currency: "USD" });
+    const pdf = await renderInvoicePdf(data, theme);
+    expect(pdf.toString("latin1")).not.toMatch(/\/Subtype\s*\/Image/);
+  });
+
   it("offener Betrag 0 (vollständig bezahlt): kein GiroCode", async () => {
     const orgId = await makeOrg();
     const theme = await loadPdfTheme(orgId);
@@ -175,7 +196,7 @@ describe("PdfTheme — Lieferschein-Lieferadresse (§36)", () => {
     const theme = await loadPdfTheme(orgId);
     theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
     const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData({ showDeliveryAddress: true }), theme);
-    const parsed = await pdfParse(pdf);
+    const parsed = await parsePdf(pdf);
     expect(parsed.text).toContain("Lieferadressen-Kunde AG");
     expect(parsed.text).toContain("Lieferweg 9");
   });
@@ -185,7 +206,7 @@ describe("PdfTheme — Lieferschein-Lieferadresse (§36)", () => {
     const theme = await loadPdfTheme(orgId);
     theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
     const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData({ showDeliveryAddress: false }), theme);
-    const parsed = await pdfParse(pdf);
+    const parsed = await parsePdf(pdf);
     expect(parsed.text).not.toContain("Lieferadressen-Kunde AG");
     expect(parsed.text).not.toContain("Lieferweg 9");
   });
@@ -198,7 +219,7 @@ describe("PdfTheme — showPaymentTermsText (§33 DocumentSettings)", () => {
     theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
     const data = baseInvoiceData({ number: "RE-2056-00007", giroAmountCents: 0, paymentTermsHuman: "Zahlbar bis 24.03.2056 ohne Abzug." });
     const pdf = await renderInvoicePdf(data, theme);
-    const parsed = await pdfParse(pdf);
+    const parsed = await parsePdf(pdf);
     expect(parsed.text).toContain("Zahlbar bis 24.03.2056 ohne Abzug.");
   });
 
@@ -210,7 +231,7 @@ describe("PdfTheme — showPaymentTermsText (§33 DocumentSettings)", () => {
     expect(theme.showPaymentTermsText).toBe(false);
     const data = baseInvoiceData({ number: "RE-2056-00008", giroAmountCents: 0, paymentTermsHuman: "Zahlbar bis 24.03.2056 ohne Abzug." });
     const pdf = await renderInvoicePdf(data, theme);
-    const parsed = await pdfParse(pdf);
+    const parsed = await parsePdf(pdf);
     expect(parsed.text).not.toContain("Zahlbar bis 24.03.2056 ohne Abzug.");
   });
 });

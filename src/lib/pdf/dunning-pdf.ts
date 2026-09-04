@@ -6,7 +6,7 @@ import PDFDocument from "pdfkit";
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { PdfTheme } from "./theme";
-import { drawFoldMarks, drawPunchMark, drawPageNumbers } from "./marks";
+import { drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
 
 export interface DunningPdfData {
@@ -69,7 +69,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
     doc.on("pageAdded", () => drawBackground(doc, theme));
     drawBackground(doc, theme);
