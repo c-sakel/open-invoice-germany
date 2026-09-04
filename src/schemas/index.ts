@@ -634,6 +634,10 @@ export type DunningState = z.infer<typeof DunningState>;
 // pausedUntil ist nur bei state === PAUSED erlaubt (sonst muss es fehlen/NULL sein) —
 // das Feld beschreibt, bis wann der Prozess pausiert; bei ACTIVE/STOPPED ergibt es
 // keinen Sinn und würde beim naechsten Read veraltete Information vorspiegeln.
+// S1 (Fix-Welle): bei state=PAUSED ist pausedUntil PFLICHT und muss in der Zukunft
+// liegen — vorher war "PAUSED ohne Datum" gueltig, create.ts las das als SOFORT
+// abgelaufen und erstellte die naechste Mahnung trotzdem (stiller No-Op genau im
+// dokumentierten Anwendungsfall "Ratenzahlung vereinbart").
 export const dunningStateInputSchema = z
   .object({
     state: DunningState,
@@ -647,6 +651,25 @@ export const dunningStateInputSchema = z
         path: ["pausedUntil"],
         message: "pausedUntil ist nur bei state=PAUSED zulässig.",
       });
+    }
+    if (v.state === "PAUSED") {
+      if (!v.pausedUntil) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["pausedUntil"],
+          message: "pausedUntil ist bei state=PAUSED Pflicht.",
+        });
+      } else {
+        const today = new Date();
+        const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+        if (new Date(v.pausedUntil).getTime() <= todayUtc) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["pausedUntil"],
+            message: "pausedUntil muss in der Zukunft liegen (nach heute).",
+          });
+        }
+      }
     }
   });
 export type DunningStateInput = z.infer<typeof dunningStateInputSchema>;

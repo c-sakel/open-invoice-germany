@@ -102,6 +102,24 @@ describe("dunningStateInputSchema", () => {
     expect(dunningStateInputSchema.safeParse({ state: "ACTIVE" }).success).toBe(true);
   });
 
+  // S1 (Fix-Welle): PAUSED ohne Datum war zuvor ein stiller No-Op (create.ts sah es als
+  // sofort abgelaufen und mahnte trotzdem) — pausedUntil ist jetzt Pflicht und muss in
+  // der Zukunft liegen.
+  it("state=PAUSED ohne pausedUntil wird abgelehnt", () => {
+    expect(dunningStateInputSchema.safeParse({ state: "PAUSED" }).success).toBe(false);
+  });
+
+  it("state=PAUSED mit pausedUntil=heute oder in der Vergangenheit wird abgelehnt", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(dunningStateInputSchema.safeParse({ state: "PAUSED", pausedUntil: today }).success).toBe(false);
+    expect(dunningStateInputSchema.safeParse({ state: "PAUSED", pausedUntil: "2020-01-01" }).success).toBe(false);
+  });
+
+  it("state=PAUSED mit pausedUntil in der Zukunft ist gueltig", () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    expect(dunningStateInputSchema.safeParse({ state: "PAUSED", pausedUntil: future }).success).toBe(true);
+  });
+
   it("note laenger als 500 Zeichen wird abgelehnt", () => {
     expect(dunningStateInputSchema.safeParse({ state: "ACTIVE", note: "x".repeat(501) }).success).toBe(false);
     expect(dunningStateInputSchema.safeParse({ state: "ACTIVE", note: "x".repeat(500) }).success).toBe(true);

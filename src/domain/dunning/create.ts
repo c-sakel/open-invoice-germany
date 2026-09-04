@@ -87,7 +87,16 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       throw new DunningError("Der Mahnprozess dieser Rechnung wurde dauerhaft angehalten.");
     }
     if (dunningState === "PAUSED") {
-      if (inv.dunningPausedUntil && inv.dunningPausedUntil.getTime() > now.getTime()) {
+      // S1 (Fix-Welle): `pausedUntil` ist am Schema (dunningStateInputSchema) fuer
+      // state=PAUSED inzwischen Pflicht — ueber die API kann PAUSED ohne Datum also nicht
+      // mehr entstehen. Dieser Zweig bleibt trotzdem defensiv: fehlt `dunningPausedUntil`
+      // dennoch (z. B. Altdaten, direkter DB-Zugriff), BLOCKIERT er weiterhin (kein Datum
+      // = kein belegbares Ende der Pause), statt die Pause stillschweigend aufzuheben und
+      // die Mahnung trotzdem zu erstellen.
+      if (!inv.dunningPausedUntil) {
+        throw new DunningError("Der Mahnprozess ist pausiert (ohne Enddatum) — bitte zuerst ein Enddatum setzen oder aktiv schalten.");
+      }
+      if (inv.dunningPausedUntil.getTime() > now.getTime()) {
         throw new DunningError(`Der Mahnprozess ist bis ${formatDateDe(inv.dunningPausedUntil)} pausiert.`);
       }
       dunningState = "ACTIVE";
