@@ -25,6 +25,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     sourceNumber = inv?.number ?? null;
   }
 
+  // B5 (Fix-Welle): nur noch Live-FALLBACK fuer Alt-Belege ohne buyerSnapshotJson.shippingAddress
+  // (buildDeliveryNotePdfData bevorzugt den Snapshot, siehe dort).
   const shippingAddress = dn.showDeliveryAddress
     ? await dbInternal.customerAddress.findFirst({
         where: { orgId: org.id, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
