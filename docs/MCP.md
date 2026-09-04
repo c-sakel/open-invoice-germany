@@ -85,7 +85,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `list_customers` | Kunden auflisten | „Zeig mir alle Kunden." |
-| `upsert_customer` | Kunde anlegen oder per `id` überschreiben (Vollersatz) | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
+| `upsert_customer` | Kunde anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter); gezieltes Ändern per ID: `update_customer` | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
 | `update_customer` | Kunde gezielt per ID/Name patchen (anders als `upsert_customer` **kein** Anlegen; nur angegebene Felder ändern sich) | „Ändere bei Müller GmbH die E-Mail auf buchhaltung@mueller.de." |
 | `archive_customer` | Kunde archivieren (verschwindet aus `list_customers`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere den Kunden Alt-Kunde GmbH." |
 | `get_customer_overview` | Kunden-KPIs (offen/überfällig/Gesamtumsatz/letzte Aktivität) eines einzelnen Kunden | „Wie ist der Kontostand von Müller GmbH?" |
@@ -109,7 +109,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `list_products` | Leistungen/Produkte im Katalog auflisten | „Zeig mir alle gespeicherten Leistungen." |
-| `upsert_product` | Produkt anlegen oder per `id` überschreiben (inkl. §25a Differenzbesteuerung) | „Speichere die Leistung ‚Beratung' zu 95 € pro Stunde." |
+| `upsert_product` | Produkt anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter, inkl. §25a Differenzbesteuerung); gezieltes Ändern per ID: `update_product` | „Speichere die Leistung ‚Beratung' zu 95 € pro Stunde." |
 | `update_product` | Produkt gezielt per ID/Name patchen (anders als `upsert_product` **kein** Anlegen) | „Ändere den Preis von ‚Beratung' auf 105 € pro Stunde." |
 | `archive_product` | Produkt archivieren (verschwindet aus `list_products`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere die Leistung ‚Altprodukt'." |
 
@@ -172,7 +172,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `send_email` | Beleg (Angebot/AB/Proforma, Rechnung/Gutschrift, Lieferschein, Mahnung) per E-Mail versenden — `docId` per Nummer oder ID, Betreff/Text/Empfänger frei wählbar | „Sende RE-2026-00342 per E-Mail an buchhaltung@mueller.de." |
+| `send_email` | Beleg (Angebot/AB/Proforma, Rechnung/Gutschrift, Lieferschein, Mahnung) per E-Mail versenden — `docId` per Nummer oder ID, Betreff/Text/Empfänger frei wählbar. Ein Rechnungs-/Gutschrift-**Entwurf** wird je nach Einstellung `autoFinalizeOnSend` (§33) vor dem Versand automatisch festgeschrieben oder unverändert als Entwurf verschickt | „Sende RE-2026-00342 per E-Mail an buchhaltung@mueller.de." |
 
 ### Dateien
 
