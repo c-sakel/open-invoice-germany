@@ -183,19 +183,27 @@ describe("Phase 6 — runDunningJob (dunning/auto.ts)", () => {
 });
 
 describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
-  it("Lock: junger RUNNING-Eintrag -> Job uebersprungen (skipped: locked)", async () => {
+  it("Lock: junger SchedulerLock -> Job uebersprungen (skipped: locked)", async () => {
+    // Fix Runde 1: der Lock ist jetzt SchedulerLock (Unique-Constraint auf `job`), nicht
+    // mehr der SchedulerRun-Status. Ein RUNNING-SchedulerRun ohne passenden Lock wuerde den
+    // Job NICHT mehr blockieren -- beide Zeilen gehoeren zusammen (runId verknuepft sie).
     const started = new Date("2051-06-09T09:50:00.000Z"); // 10 Min vor `now`
-    await dbInternal.schedulerRun.create({ data: { job: "dunning", trigger: "SCHEDULER", status: "RUNNING", startedAt: started } });
+    const run = await dbInternal.schedulerRun.create({ data: { job: "dunning", trigger: "SCHEDULER", status: "RUNNING", startedAt: started } });
+    await dbInternal.schedulerLock.create({ data: { job: "dunning", runId: run.id, lockedAt: started } });
 
     const results = await runScheduledJobs({ jobs: ["dunning"], trigger: "MANUAL", now: FIX_DATE });
     const dunningResult = results.find((r) => r.job === "dunning")!;
     expect(dunningResult.ok).toBe(true);
     expect(dunningResult.summary.skipped).toBe("locked");
+
+    // Aufraeumen: Lock manuell entfernen, damit er nachfolgende Tests nicht blockiert.
+    await dbInternal.schedulerLock.deleteMany({ where: { job: "dunning", runId: run.id } });
   });
 
-  it("Lock: alter (stale) RUNNING-Eintrag -> auf FAILED gesetzt, Job laeuft trotzdem", async () => {
+  it("Lock: alter (stale) SchedulerLock -> entfernt, SchedulerRun auf FAILED gesetzt, Job laeuft trotzdem", async () => {
     const started = new Date("2051-06-09T09:00:00.000Z"); // 70 Min vor `now` -> stale (> 30 Min)
     const stale = await dbInternal.schedulerRun.create({ data: { job: "recurring", trigger: "SCHEDULER", status: "RUNNING", startedAt: started } });
+    await dbInternal.schedulerLock.create({ data: { job: "recurring", runId: stale.id, lockedAt: started } });
 
     const results = await runScheduledJobs({ jobs: ["recurring"], trigger: "MANUAL", now: FIX_DATE });
     const recurringResult = results.find((r) => r.job === "recurring")!;
@@ -205,6 +213,10 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     const updatedStale = await dbInternal.schedulerRun.findUniqueOrThrow({ where: { id: stale.id } });
     expect(updatedStale.status).toBe("FAILED");
     expect(updatedStale.error).toBe("stale");
+
+    // Der stale Lock wurde entfernt, sein Platz gehoert jetzt dem neuen Lauf.
+    const staleLock = await dbInternal.schedulerLock.findFirst({ where: { job: "recurring", runId: stale.id } });
+    expect(staleLock).toBeNull();
   });
 
   it("SchedulerRun-Eintraege: OK bei Erfolg", async () => {
