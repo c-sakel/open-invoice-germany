@@ -15,7 +15,7 @@
  * Versuchen, nur die ersten 4 Backoff-Werte genutzt" — siehe task-6-facts.md.
  */
 import { dbInternal } from "@/lib/db";
-import { decryptSecret } from "@/lib/crypto/secrets";
+import { decryptSecret, WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 import { assertPublicHttpsUrl, SsrfBlockedError } from "./ssrf";
 import { buildSignatureHeader } from "./sign";
 import type { WebhookDelivery, WebhookEndpoint } from "@/generated/prisma/client";
@@ -80,7 +80,7 @@ export async function attemptDelivery(
 
   let secret: string;
   try {
-    secret = decryptSecret(delivery.endpoint.secretEnc);
+    secret = decryptSecret(delivery.endpoint.secretEnc, WEBHOOK_SECRET_PURPOSE);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Secret konnte nicht entschluesselt werden.";
     await dbInternal.webhookDelivery.update({

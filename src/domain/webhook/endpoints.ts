@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { NotFoundError } from "@/domain/errors";
-import { encryptSecret } from "@/lib/crypto/secrets";
+import { encryptSecret, WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 import { assertPublicHttpsUrl } from "./ssrf";
 import {
   createWebhookEndpointInputSchema,
@@ -60,7 +60,7 @@ export async function createWebhookEndpoint(
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
   const secret = generateWebhookSecret();
-  const secretEnc = encryptSecret(secret);
+  const secretEnc = encryptSecret(secret, WEBHOOK_SECRET_PURPOSE);
 
   const created = await dbInternal.$transaction(async (tx) => {
     const row = await tx.webhookEndpoint.create({
@@ -131,7 +131,7 @@ export async function updateWebhookEndpoint(
   let plainSecret: string | undefined;
   if (input.rotateSecret) {
     plainSecret = generateWebhookSecret();
-    patch.secretEnc = encryptSecret(plainSecret);
+    patch.secretEnc = encryptSecret(plainSecret, WEBHOOK_SECRET_PURPOSE);
   }
 
   const updated = await dbInternal.$transaction(async (tx) => {

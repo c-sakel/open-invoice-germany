@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { encryptSecret, decryptSecret, SecretsUnavailableError } from "@/lib/crypto/secrets";
+import { encryptSecret, decryptSecret, SecretsUnavailableError, WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 
 describe("secrets", () => {
   const prev = process.env.AUTH_SECRET;
@@ -23,5 +23,25 @@ describe("secrets", () => {
   it("ohne AUTH_SECRET: SecretsUnavailableError", () => {
     delete process.env.AUTH_SECRET;
     expect(() => encryptSecret("x")).toThrow(SecretsUnavailableError);
+  });
+
+  // Fix-Welle (Should-fix 10): eigener HKDF-Info-String je Zweck (purpose) — SMTP-
+  // Passwort/Angebotslink-Tokens (Default) und Webhook-Secrets teilen sich nicht mehr
+  // denselben abgeleiteten Schluessel.
+  describe("purpose-Trennung (WEBHOOK_SECRET_PURPOSE)", () => {
+    it("roundtrip mit demselben purpose funktioniert", () => {
+      const enc = encryptSecret("webhook-geheimnis", WEBHOOK_SECRET_PURPOSE);
+      expect(decryptSecret(enc, WEBHOOK_SECRET_PURPOSE)).toBe("webhook-geheimnis");
+    });
+
+    it("mit Default-purpose verschluesselt, mit WEBHOOK_SECRET_PURPOSE entschluesselt -> scheitert", () => {
+      const enc = encryptSecret("mail-passwort");
+      expect(() => decryptSecret(enc, WEBHOOK_SECRET_PURPOSE)).toThrow();
+    });
+
+    it("mit WEBHOOK_SECRET_PURPOSE verschluesselt, mit Default-purpose entschluesselt -> scheitert", () => {
+      const enc = encryptSecret("webhook-geheimnis", WEBHOOK_SECRET_PURPOSE);
+      expect(() => decryptSecret(enc)).toThrow();
+    });
   });
 });
