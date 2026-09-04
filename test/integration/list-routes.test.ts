@@ -1,0 +1,208 @@
+/**
+ * Phase 8b, Task 2 (Teil 1) — Routen-Tests fuer die drei neuen Listen-Endpunkte
+ * GET /api/invoices, GET /api/documents, GET /api/delivery-notes. Domain-Funktionen
+ * (listInvoices/listQuotes/listDeliveryNotes) sind bereits in Task 1 getestet — hier geht
+ * es um den Routen-Vertrag: Org-Scoping, Zod-Filter -> 400 bei Verstoss, Passthrough der
+ * Domain-Ergebnisse. Zusaetzlich (Task-2-Facts-Nachtrag): EXPIRED-Uebersetzung bei
+ * listQuotes ueber die Route.
+ *
+ * Eigenes Jahr 2068 (plan-header.md, Testjahr-Konvention Teil 1 routes/mcp).
+ */
+import { describe, it, expect, beforeAll, vi } from "vitest";
+
+const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
+
+vi.mock("@/lib/org", () => ({
+  getActiveOrg: async () => {
+    if (!orgStore.id) throw new Error("Test-Org noch nicht gesetzt.");
+    return { id: orgStore.id };
+  },
+}));
+
+import { dbInternal } from "@/lib/db";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { createBusinessDocument } from "@/domain/document/create";
+import { setQuoteStatus } from "@/domain/document/status";
+import { createDeliveryNote } from "@/domain/delivery-note/create";
+import type { CreateInvoiceInput, CreateDocumentInput, CreateDeliveryNoteInput } from "@/schemas";
+
+import { GET as invoicesGet } from "@/app/api/invoices/route";
+import { GET as documentsGet } from "@/app/api/documents/route";
+import { GET as deliveryNotesGet } from "@/app/api/delivery-notes/route";
+
+let orgId: string;
+let customerId: string;
+
+// Belegdatum/Nummernvergabe ("now" an finalizeInvoice) liegt bewusst im Testjahr 2068
+// (Testjahr-Konvention). Faellig-/Gueltigkeitsdaten fuer OVERDUE/EXPIRED muessen dagegen
+// gegen die ECHTE Systemzeit liegen — die GET-Routen (anders als die Domain-Funktionen in
+// Task 1) nehmen kein injizierbares `now` entgegen, sondern nutzen wie in Produktion
+// `new Date()`.
+const NOW = new Date(2068, 2, 10, 10, 0, 0);
+const REAL_TODAY = new Date();
+const PAST = new Date(REAL_TODAY.getFullYear(), REAL_TODAY.getMonth(), REAL_TODAY.getDate() - 30);
+const FUTURE = new Date(REAL_TODAY.getFullYear(), REAL_TODAY.getMonth(), REAL_TODAY.getDate() + 30);
+
+function line(description: string) {
+  return {
+    description,
+    quantityMilli: 1000,
+    unit: "HUR" as const,
+    unitNetPriceCents: 5000,
+    taxRate: 19 as const,
+    taxCategory: "S" as const,
+    discountPermille: 0,
+  };
+}
+
+function req(url: string): Request {
+  return new Request(url);
+}
+
+beforeAll(async () => {
+  const org = await dbInternal.organization.create({
+    data: {
+      legalName: "Routen Test GmbH",
+      addressLine1: "Routenweg 1",
+      postalCode: "10115",
+      city: "Berlin",
+      vatId: "DE987654321",
+      taxNumber: "11/222/33344",
+    },
+  });
+  orgId = org.id;
+  orgStore.id = orgId;
+  const customer = await dbInternal.customer.create({
+    data: { orgId, name: "Routenkunde AG", addressLine1: "Marktplatz 9", postalCode: "10117", city: "Berlin", type: "BUSINESS" },
+  });
+  customerId = customer.id;
+  await ensureOrgMasterdata(dbInternal, orgId);
+
+  // Rechnungen: ein Entwurf, eine faellige, eine ueberfaellige.
+  const draft = await createDraftInvoice(orgId, {
+    customerId,
+    type: "INVOICE",
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    issueDate: NOW,
+    lines: [line("Routentest Entwurf")],
+  } as CreateInvoiceInput, { now: NOW });
+
+  const finalizedDraft = await createDraftInvoice(orgId, {
+    customerId,
+    type: "INVOICE",
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    issueDate: NOW,
+    lines: [line("Routentest ueberfaellig")],
+  } as CreateInvoiceInput, { now: NOW });
+  await dbInternal.invoice.update({ where: { id: finalizedDraft.id }, data: { dueDate: PAST } });
+  await finalizeInvoice(finalizedDraft.id, { now: NOW });
+  void draft;
+
+  // Angebote: eines DRAFT mit validUntil in der Vergangenheit (=> EXPIRED), eines SENT
+  // mit validUntil in der Zukunft (=> bleibt SENT).
+  const expiredQuote = await createBusinessDocument(orgId, {
+    kind: "ANGEBOT",
+    customerId,
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    validUntil: PAST,
+    lines: [line("Routentest abgelaufenes Angebot")],
+  } as CreateDocumentInput);
+
+  const activeQuote = await createBusinessDocument(orgId, {
+    kind: "ANGEBOT",
+    customerId,
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    validUntil: FUTURE,
+    lines: [line("Routentest aktives Angebot")],
+  } as CreateDocumentInput);
+  await setQuoteStatus(orgId, activeQuote.id, "SENT", { now: NOW });
+
+  // Lieferschein.
+  await createDeliveryNote(orgId, {
+    customerId,
+    deliveryDate: NOW,
+    lines: [line("Routentest Lieferschein")],
+  } as unknown as CreateDeliveryNoteInput, { actor: "tester" });
+
+  void expiredQuote;
+});
+
+describe("GET /api/invoices", () => {
+  it("liefert alle Rechnungen der aktiven Organisation (listInvoices-Passthrough)", async () => {
+    const res = await invoicesGet(req("http://localhost/api/invoices"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: unknown[]; total: number };
+    expect(j.total).toBe(2);
+    expect(j.rows).toHaveLength(2);
+  });
+
+  it("filtert nach status=overdue", async () => {
+    const res = await invoicesGet(req("http://localhost/api/invoices?status=overdue"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: Array<{ effectiveStatus: string }>; total: number };
+    expect(j.total).toBe(1);
+    expect(j.rows[0].effectiveStatus).toBe("OVERDUE");
+  });
+
+  it("400 bei ungueltigem Filter (limit ausserhalb 1..200)", async () => {
+    const res = await invoicesGet(req("http://localhost/api/invoices?limit=0"));
+    expect(res.status).toBe(400);
+    const j = (await res.json()) as { error: string };
+    expect(j.error).toBeTruthy();
+  });
+
+  it("400 bei ungueltigem status-Wert", async () => {
+    const res = await invoicesGet(req("http://localhost/api/invoices?status=nichtvorhanden"));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/documents", () => {
+  it("liefert alle Angebote der aktiven Organisation", async () => {
+    const res = await documentsGet(req("http://localhost/api/documents"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: unknown[]; total: number };
+    expect(j.total).toBe(2);
+  });
+
+  it("status=EXPIRED uebersetzt DRAFT/SENT mit verstrichenem validUntil (Test-Nachtrag task-2-facts)", async () => {
+    const res = await documentsGet(req("http://localhost/api/documents?status=EXPIRED"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: Array<{ effectiveStatus: string }>; total: number };
+    expect(j.total).toBe(1);
+    expect(j.rows[0].effectiveStatus).toBe("EXPIRED");
+  });
+
+  it("status=SENT liefert NICHT das abgelaufene Angebot (sonst doppelt unter SENT und EXPIRED)", async () => {
+    const res = await documentsGet(req("http://localhost/api/documents?status=SENT"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: Array<{ effectiveStatus: string }>; total: number };
+    expect(j.total).toBe(1);
+    expect(j.rows[0].effectiveStatus).toBe("SENT");
+  });
+
+  it("400 bei ungueltigem Filter", async () => {
+    const res = await documentsGet(req("http://localhost/api/documents?limit=999"));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/delivery-notes", () => {
+  it("liefert alle Lieferscheine der aktiven Organisation", async () => {
+    const res = await deliveryNotesGet(req("http://localhost/api/delivery-notes"));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { rows: unknown[]; total: number };
+    expect(j.total).toBe(1);
+  });
+
+  it("400 bei ungueltigem Filter", async () => {
+    const res = await deliveryNotesGet(req("http://localhost/api/delivery-notes?offset=-1"));
+    expect(res.status).toBe(400);
+  });
+});
