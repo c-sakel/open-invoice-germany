@@ -13,7 +13,7 @@ import { parseRichText, renderRichTextPdf } from "@/lib/richtext";
 import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import type { PdfTheme } from "./theme";
-import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers } from "./marks";
+import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
@@ -117,7 +117,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const chunks: Buffer[] = [];
   const finished = new Promise<Buffer>((resolve, reject) => {
     doc.on("data", (c: Buffer) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
   });
   // Hintergrundbild zuerst — `pageAdded` feuert nicht für die erste (automatisch von
@@ -396,6 +396,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (
     theme.options.showGiroCode &&
     data.iban &&
+    data.currency === "EUR" && // B2 (Final-Review): EPC-QR-Codes tragen "EUR<Betrag>" fest kodiert (epc.ts) —
+    // ohne diese Pruefung wuerde eine Fremdwaehrungsrechnung einen GiroCode mit falscher
+    // Waehrungsangabe drucken (Kunde zahlt EUR-Betrag statt z. B. USD-Betrag).
     GIRO_ELIGIBLE_TYPES.has(data.type) &&
     (data.giroAmountCents ?? 0) > 0
   ) {

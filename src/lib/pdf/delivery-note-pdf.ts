@@ -6,7 +6,7 @@ import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import type { PdfTheme } from "./theme";
-import { drawFoldMarks, drawPunchMark, drawPageNumbers } from "./marks";
+import { drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
 
 export interface DeliveryNotePdfLine {
@@ -116,7 +116,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
     doc.on("pageAdded", () => drawBackground(doc, theme));
     drawBackground(doc, theme);
