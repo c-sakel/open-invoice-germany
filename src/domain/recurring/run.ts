@@ -18,7 +18,6 @@ import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { advanceDate, type RecurInterval } from "@/lib/recurring";
-import { loadDocumentSettings } from "@/domain/document/settings";
 import { formatDateDe } from "@/lib/template/format";
 import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
@@ -54,9 +53,12 @@ async function sendRecurringInvoiceEmail(
   orgId: string,
   invoiceId: string,
   provider: MailProvider | undefined,
+  emailTemplateId: string | null,
 ): Promise<{ status: "SENT" | "FAILED" | "SKIPPED"; error?: string }> {
   try {
-    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    // emailTemplateId (Phase 8b, §43): ohne Angabe greift weiterhin die Standardvorlage
+    // INVOICE (prefillEmail waehlt sie selbst, wenn templateId undefined ist).
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId, templateId: emailTemplateId ?? undefined });
     if (pre.to.length === 0) return { status: "SKIPPED" };
     const result = await sendDocumentEmail(
       orgId,
@@ -90,7 +92,7 @@ async function emitOne(
   now: Date,
   actor: string,
   provider?: MailProvider,
-): Promise<{ result: EmittedInvoice; ended: boolean; autoSend: boolean; orgId: string }> {
+): Promise<{ result: EmittedInvoice; ended: boolean; autoSend: boolean; orgId: string; emailTemplateId: string | null }> {
   const created = await dbInternal.$transaction(async (tx) => {
     const rec = await tx.recurringInvoice.findUnique({
       where: { id: recurringId },
@@ -128,9 +130,11 @@ async function emitOne(
     // dd.mm.yyyy", nur wenn die Org-Einstellung aktiv ist. Periodenstart = ein Intervall
     // vor dem aktuellen Stichtag (negativer advanceDate-Aufruf, dieselbe Monats-/
     // Wochenklemmung wie beim Vorwaertsschieben).
-    const docSettings = await loadDocumentSettings(rec.orgId);
     let headerText: string | undefined;
-    if (docSettings.recurringInsertPeriodText) {
+    // showPeriodText (Phase 8b, §43): das Abo-Feld ist ab jetzt allein massgeblich — der
+    // Settings-Default (recurringInsertPeriodText) wird nur noch beim Anlegen des Abos
+    // uebernommen (createRecurring), nicht mehr live bei jedem Lauf gelesen.
+    if (rec.showPeriodText) {
       const periodStart = advanceDate(periodDate, rec.interval as RecurInterval, -rec.intervalCount, rec.anchorDay);
       headerText = `Abrechnungszeitraum ${formatDateDe(periodStart)} – ${formatDateDe(periodDate)}`;
     }
@@ -177,7 +181,13 @@ async function emitOne(
     }
 
     const next = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
-    const ended = rec.endDate ? next > rec.endDate : false;
+    // issuedCount VOR dem Erhoehen im naechsten Schritt ist die Anzahl der bereits
+    // vorherigen Laeufe — nach DIESEM Lauf steht die Anzahl bei issuedCount + 1
+    // (Task-1-Brief: "maxRuns -> ENDED wenn issuedCount >= maxRuns NACH Lauf").
+    const issuedCountAfter = rec.issuedCount + 1;
+    const endedByDate = rec.endDate ? next > rec.endDate : false;
+    const endedByMaxRuns = rec.maxRuns != null && issuedCountAfter >= rec.maxRuns;
+    const ended = endedByDate || endedByMaxRuns;
     await tx.recurringInvoice.update({
       where: { id: rec.id },
       data: {
@@ -189,7 +199,7 @@ async function emitOne(
     });
 
     const result: EmittedInvoice = { invoiceId: invoice.id, number, periodDate, finalized };
-    return { result, ended, autoSend: rec.autoSend, orgId: rec.orgId };
+    return { result, ended, autoSend: rec.autoSend, orgId: rec.orgId, emailTemplateId: rec.emailTemplateId };
   });
 
   // autoSend (Phase 7, §33): erst NACH der Transaktion versenden (Modulkommentar: kein
@@ -201,7 +211,7 @@ async function emitOne(
   // ein Bestandsdatensatz aus der Zeit vor diesem Fix koennte autoSend=true/autoFinalize=false
   // noch kombiniert haben) — sonst ginge eine Rechnung mit Nummer/GiroCode "ENTWURF" raus.
   if (created.autoSend && created.result.finalized) {
-    const sent = await sendRecurringInvoiceEmail(created.orgId, created.result.invoiceId, provider);
+    const sent = await sendRecurringInvoiceEmail(created.orgId, created.result.invoiceId, provider, created.emailTemplateId);
     created.result.emailStatus = sent.status;
     created.result.emailError = sent.error;
   }
