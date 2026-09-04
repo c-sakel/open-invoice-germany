@@ -1,4 +1,5 @@
 import type { QuoteLine, InvoiceLine, DeliveryNoteLine } from "@/generated/prisma/client";
+import { z } from "zod";
 
 export function serializeQuoteLine(l: QuoteLine) {
   return {
@@ -54,3 +55,43 @@ export function serializeDeliveryNoteLine(l: DeliveryNoteLine) {
     taxRate: l.taxRate,
   };
 }
+
+
+/**
+ * OpenAPI-Response-Schemas (Phase 10, Task 4) fuer embed=lines — aus serializeQuoteLine/
+ * serializeInvoiceLine/serializeDeliveryNoteLine abgeleitet.
+ */
+export const quoteLineSchema = z.object({
+  id: z.string(),
+  position: z.number().int(),
+  lineType: z.string(),
+  description: z.string(),
+  descriptionLong: z.string().nullable(),
+  articleNumber: z.string().nullable(),
+  quantityMilli: z.number().int(),
+  unit: z.string(),
+  unitNetPriceCents: z.number().int(),
+  taxRate: z.number().int(),
+  taxCategory: z.string(),
+  discountPermille: z.number().int(),
+  discountCents: z.number().int(),
+  lineNetCents: z.number().int(),
+});
+
+export const invoiceLineSchema = quoteLineSchema.extend({
+  productId: z.string().nullable(),
+});
+
+export const deliveryNoteLineSchema = z.object({
+  id: z.string(),
+  position: z.number().int(),
+  sourceType: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  sourceLineId: z.string().nullable(),
+  description: z.string(),
+  articleNumber: z.string().nullable(),
+  quantityMilli: z.number().int(),
+  unit: z.string(),
+  unitNetPriceCents: z.number().int().nullable(),
+  taxRate: z.number().int().nullable(),
+});

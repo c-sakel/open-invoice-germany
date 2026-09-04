@@ -32,6 +32,16 @@ npm run mcp   # MCP-Server (stdio) starten / in Claude Code via .mcp.json einbin
 
 > 🔒 **Datenschutz (DSGVO).** Der App-Kern läuft **zu 100 % lokal**, das MCP-Feature ist aber optional und **nicht automatisch DSGVO-konform**: Sobald ein **Cloud-LLM** (z. B. Claude) die Rechnung erstellt, werden die beschriebenen Inhalte (Kundenname, Leistungen, Beträge = personenbezogene Daten) an den Anbieter übermittelt und in deinem Auftrag verarbeitet (Auftragsverarbeitung, Art. 28 DSGVO). Für den geschäftlichen Einsatz mit echten Personendaten entweder ein **lokales Modell** nutzen (der MCP-Server ist anbieterneutral) oder einen **API-Zugang mit AVV** — beachte: Claude **Code/Desktop** nutzen immer die Anthropic-Cloud, und das Consumer-**Abo (Pro/Max) hat keinen AVV**. Den Anbieter als Sub-Auftragsverarbeiter im Verarbeitungsverzeichnis und in der Datenschutzerklärung führen. Details: **[docs/MCP.md](docs/MCP.md)**. Keine Rechtsberatung.
 
+## REST-API (`/api/v1`)
+
+Unter `/api/v1` steht eine versionierte, per OpenAPI dokumentierte REST-API bereit — sie ruft dieselben Domain-Funktionen wie UI und MCP-Server auf (gleiche GoBD-Regeln, gleiche § 14-Pflichtangaben-Prüfung). Authentifizierung per API-Schlüssel je Organisation (Bearer-Token, Scopes `read`/`write`/`send`/`admin`), anlegbar unter **Einstellungen → API**.
+
+```bash
+curl -H "Authorization: Bearer oig_..." https://deine-instanz/api/v1/Invoice
+```
+
+Interaktive Doku (Swagger UI, Session-Login oder API-Schlüssel): `GET /api/docs`. Maschinenlesbare Spezifikation: `GET /api/v1/openapi.json`. Kompletter Ablauf mit curl-Beispielen (Kunde → Rechnung → festschreiben → PDF/XRechnung → Zahlung): **[docs/API.md](docs/API.md)**.
+
 ## Funktionen
 
 - **Sprachsteuerung via MCP** (Claude Code/Desktop) — siehe oben.

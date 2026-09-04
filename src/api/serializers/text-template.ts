@@ -1,5 +1,6 @@
 import { iso } from "./common";
 import type { TextTemplate } from "@/generated/prisma/client";
+import { z } from "zod";
 
 export function serializeTextTemplate(t: TextTemplate) {
   return {
@@ -14,3 +15,17 @@ export function serializeTextTemplate(t: TextTemplate) {
     updatedAt: iso(t.updatedAt),
   };
 }
+
+
+/** OpenAPI-Response-Schema (Phase 10, Task 4) — aus serializeTextTemplate abgeleitet. */
+export const textTemplateSchema = z.object({
+  objectName: z.literal("TextTemplate"),
+  id: z.string(),
+  name: z.string(),
+  docType: z.string(),
+  position: z.string(),
+  body: z.string(),
+  isDefault: z.boolean(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});

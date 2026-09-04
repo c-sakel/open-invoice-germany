@@ -8,9 +8,14 @@ const PUBLIC_EXACT = new Set(["/"]);
 // Aktionen, Phase 3b) sind bewusst die einzigen ohne-Login-Präfixe für Kundenzugriff —
 // keine weiteren hier ergänzen, ohne die Sicherheitsfolgen zu prüfen.
 // /api/v1/ (Phase 10): oeffentlich versionierte REST-API, Auth ausschliesslich per
-// Bearer-Token im withApi-Wrapper (src/api/auth.ts) — KEIN Cookie-Fallback. /api/docs
-// (Swagger UI, spaetere Task) bleibt bewusst NICHT hier: es braucht weiterhin Session.
-const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/"];
+// Bearer-Token im withApi-Wrapper (src/api/auth.ts) — KEIN Cookie-Fallback.
+// /api/docs (Phase 10, Task 4): Swagger UI + ihre Assets (/api/docs/assets/*) sollen
+// SOWOHL per Session (Browser) ALS AUCH per Bearer-API-Schluessel (externe Werkzeuge)
+// erreichbar sein ("Session ODER Key") — die uebliche Proxy-Session-Pruefung kennt nur
+// Cookies und wuerde einen reinen Bearer-Client aussperren, bevor die Route ueberhaupt
+// laeuft. Die eigentliche Pruefung passiert deshalb in den Routen selbst
+// (src/api/docs-auth.ts), nicht hier.
+const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/", "/api/docs"];
 
 // Präfixe, deren Seiten ohne interne Navigation/Layout ausgeliefert werden (Root-Layout
 // liest diesen Request-Header und rendert dann nur eine schlanke Hülle — kein Route-Group-

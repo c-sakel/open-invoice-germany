@@ -4,6 +4,7 @@
  */
 import { iso } from "./common";
 import type { Customer, CustomerAddress, ContactPerson as ContactPersonRow } from "@/generated/prisma/client";
+import { z } from "zod";
 
 export function serializeContact(c: Customer) {
   return {
@@ -67,3 +68,65 @@ export function serializeContactPerson(p: ContactPersonRow) {
     updatedAt: iso(p.updatedAt),
   };
 }
+
+
+/**
+ * OpenAPI-Response-Schemas (Phase 10, Task 4, task-4-facts.md): aus serializeContact/
+ * serializeContactAddress/serializeContactPerson abgeleitet — muessen bei jeder
+ * Feldaenderung an den Serialisierern mitgepflegt werden (kein automatischer Abgleich).
+ */
+export const contactSchema = z.object({
+  objectName: z.literal("Contact"),
+  id: z.string(),
+  type: z.string(),
+  name: z.string(),
+  contactName: z.string().nullable(),
+  addressLine1: z.string(),
+  addressLine2: z.string().nullable(),
+  postalCode: z.string(),
+  city: z.string(),
+  countryCode: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  vatId: z.string().nullable(),
+  leitwegId: z.string().nullable(),
+  peppolId: z.string().nullable(),
+  defaultPaymentTermsDays: z.number().int().nullable(),
+  defaultPaymentMethodId: z.string().nullable(),
+  customerNumber: z.string().nullable(),
+  notes: z.string().nullable(),
+  isArchived: z.boolean(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+
+export const contactAddressSchema = z.object({
+  objectName: z.literal("ContactAddress"),
+  id: z.string(),
+  contactId: z.string(),
+  type: z.string(),
+  label: z.string().nullable(),
+  addressLine1: z.string(),
+  addressLine2: z.string().nullable(),
+  postalCode: z.string(),
+  city: z.string(),
+  countryCode: z.string(),
+  isDefault: z.boolean(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+
+export const contactPersonSchema = z.object({
+  objectName: z.literal("ContactPerson"),
+  id: z.string(),
+  contactId: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  role: z.string().nullable(),
+  phone: z.string().nullable(),
+  mobile: z.string().nullable(),
+  email: z.string().nullable(),
+  isDefault: z.boolean(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});

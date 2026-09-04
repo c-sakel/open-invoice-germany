@@ -6,6 +6,7 @@
  */
 import { iso } from "./common";
 import type { RecurringInvoice } from "@/generated/prisma/client";
+import { z } from "zod";
 
 export function serializeRecurring(r: RecurringInvoice) {
   return {
@@ -35,3 +36,32 @@ export function serializeRecurring(r: RecurringInvoice) {
     updatedAt: iso(r.updatedAt),
   };
 }
+
+
+/** OpenAPI-Response-Schema (Phase 10, Task 4) — aus serializeRecurring abgeleitet. */
+export const recurringSchema = z.object({
+  objectName: z.literal("Recurring"),
+  id: z.string(),
+  customerId: z.string(),
+  title: z.string(),
+  status: z.string(),
+  interval: z.string(),
+  intervalCount: z.number().int(),
+  anchorDay: z.number().int().nullable(),
+  startDate: z.string().nullable(),
+  nextRunDate: z.string().nullable(),
+  endDate: z.string().nullable(),
+  maxRuns: z.number().int().nullable(),
+  taxScheme: z.string(),
+  currency: z.string(),
+  paymentTermsDays: z.number().int(),
+  notes: z.string().nullable(),
+  autoFinalize: z.boolean(),
+  autoSend: z.boolean(),
+  emailTemplateId: z.string().nullable(),
+  showPeriodText: z.boolean(),
+  lastRunAt: z.string().nullable(),
+  issuedCount: z.number().int(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});

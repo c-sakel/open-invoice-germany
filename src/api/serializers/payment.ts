@@ -1,5 +1,6 @@
 import { iso } from "./common";
 import type { Payment } from "@/generated/prisma/client";
+import { z } from "zod";
 
 export function serializePayment(p: Payment) {
   return {
@@ -16,3 +17,19 @@ export function serializePayment(p: Payment) {
     createdAt: iso(p.createdAt),
   };
 }
+
+
+/** OpenAPI-Response-Schema (Phase 10, Task 4) — aus serializePayment abgeleitet. */
+export const paymentSchema = z.object({
+  objectName: z.literal("Payment"),
+  id: z.string(),
+  invoiceId: z.string(),
+  amountCents: z.number().int(),
+  paidAt: z.string().nullable(),
+  method: z.string(),
+  reference: z.string().nullable(),
+  isSkonto: z.boolean(),
+  skontoForPaymentId: z.string().nullable(),
+  note: z.string().nullable(),
+  createdAt: z.string().nullable(),
+});

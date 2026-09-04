@@ -1,5 +1,6 @@
 import { iso } from "./common";
 import type { Product } from "@/generated/prisma/client";
+import { z } from "zod";
 
 export function serializeProduct(p: Product) {
   return {
@@ -18,3 +19,21 @@ export function serializeProduct(p: Product) {
     updatedAt: iso(p.updatedAt),
   };
 }
+
+
+/** OpenAPI-Response-Schema (Phase 10, Task 4) — aus serializeProduct abgeleitet. */
+export const productSchema = z.object({
+  objectName: z.literal("Product"),
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  articleNumber: z.string().nullable(),
+  unit: z.string(),
+  netPriceCents: z.number().int(),
+  taxRate: z.number().int(),
+  taxCategory: z.string(),
+  differential: z.boolean(),
+  isArchived: z.boolean(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
