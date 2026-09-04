@@ -32,9 +32,10 @@
 11. [Storno/Korrektur/Gutschrift + § 14c + Skonto](#11-stornokorrekturgutschrift--14c--skonto-in-e-rechnung)
 12. [Mahnwesen (Verzug, Verzugszinsen, Mahngebühren)](#12-mahnwesen--286-verzug--288-verzugszinsen-mahngebühren)
 13. [DSGVO für Rechnungsdaten + E-Rechnung-Tooling](#13-dsgvo-für-rechnungsdaten--e-rechnung-tooling)
-14. [UMSETZUNGS-MATRIX (Software-Pflichten)](#14-umsetzungs-matrix--software-pflichten)
-15. [Offene rechtliche Fragen (mit Steuerberater klären)](#15-offene-rechtliche-fragen--vor-produktivnutzung-mit-steuerberater-klären)
-16. [Quellenverzeichnis](#16-quellenverzeichnis)
+14. [Abschlags- und Schlussrechnungen (§ 14 Abs. 5 UStG)](#14-abschlags--und-schlussrechnungen--14-abs-5-ustg)
+15. [UMSETZUNGS-MATRIX (Software-Pflichten)](#15-umsetzungs-matrix--software-pflichten)
+16. [Offene rechtliche Fragen (mit Steuerberater klären)](#16-offene-rechtliche-fragen--vor-produktivnutzung-mit-steuerberater-klären)
+17. [Quellenverzeichnis](#17-quellenverzeichnis)
 
 ---
 
@@ -633,7 +634,37 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 
 ---
 
-## 14. UMSETZUNGS-MATRIX — Software-Pflichten
+## 14. Abschlags- und Schlussrechnungen (§ 14 Abs. 5 UStG)
+
+**Kurzregel:** Anzahlungen (Abschlagsrechnungen) lösen die Steuer bereits bei **Vereinnahmung** aus (nicht erst bei Leistungserbringung); die abschließende **Schlussrechnung über die Gesamtleistung** muss die bereits abgerechneten Anzahlungen **und die darauf entfallende Steuer offen absetzen**, sonst droht ein doppelter Steuerausweis.
+
+### Rechtsgrundlagen
+
+| Norm | Regel |
+|------|-------|
+| § 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG | Wird ein Entgelt (oder Teilentgelt) **vor** Ausführung der Leistung vereinnahmt, entsteht die Steuer dafür bereits mit Ablauf des Voranmeldungszeitraums der Vereinnahmung — unabhängig vom späteren Leistungszeitpunkt der Schlussrechnung. |
+| § 14 Abs. 5 Satz 1 UStG | Wird vor Ausführung der Leistung eine Rechnung über die (Teil-)Zahlung erteilt, gilt § 14 Abs. 4 UStG sinngemäß (Abschlagsrechnung ist selbst eine vollwertige Rechnung mit allen Pflichtangaben). |
+| § 14 Abs. 5 Satz 2 UStG | In der **Endrechnung über die Gesamtleistung** sind die vor Ausführung der Leistung **vereinnahmten Teilentgelte und die hierauf entfallenden Steuerbeträge abzusetzen**, soweit über sie Rechnungen mit gesondertem Steuerausweis erteilt wurden. |
+| Abschn. 14.8 UStAE | Verwaltungsauffassung zu § 14 Abs. 5 UStG: konkretisiert Form/Inhalt der Absetzung in der Endrechnung (Bezeichnung der Anzahlungsrechnungen nach Datum und Betrag) und die Folgen einer fehlerhaften/unterlassenen Absetzung (Gefährdung nach § 14c Abs. 1 UStG bei zu hohem Steuerausweis in der Endrechnung). |
+
+### Umsetzung in dieser Software
+
+- **Drei Rechnungstypen, alle GoBD-Rechnungen** (Entwurf → `finalizeWithinTx` → Storno/Gutschrift wie jede andere Rechnung): `PARTIAL` (Teilrechnung über eine Teilleistung — Leistung ist bereits erbracht, keine Anzahlungsbesteuerung), `DOWNPAYMENT` (Abschlagsrechnung vor Leistungserbringung — löst § 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG aus), `FINAL` (Schlussrechnung über die Gesamtleistung mit Absetzung).
+- **Abzugs-Snapshot (`FinalInvoiceDeduction`):** beim Festschreiben einer Schlussrechnung werden alle festgeschriebenen, nicht stornierten Abschlagsrechnungen der Quelle geladen, ihre Netto-/Steuerbeträge je Steuersatz in unveränderlichen `FinalInvoiceDeduction`-Zeilen gesichert (`number`/`issueDate` der jeweiligen Abschlagsrechnung — die von Abschn. 14.8 UStAE geforderte Bezeichnung nach Datum und Betrag) und `prepaidCents`/`payableCents` auf der Schlussrechnung gesetzt. Ein zu hoher Abzug (Summe der Abschläge > Gesamtleistung) wird beim Festschreiben mit Fehler abgelehnt statt einen negativen Restbetrag zuzulassen.
+- **E-Rechnung (EN 16931 / KoSIT-Empfehlung „Schlussrechnung"):** `DOWNPAYMENT` → `InvoiceTypeCode`/`TypeCode` **386** (UNTDID 1001 „Partial invoice"); `PARTIAL`/`FINAL` bleiben **380**. Auf der Schlussrechnung: **BT-113** (Paid amount) = Σ Abschläge **brutto** aus dem Snapshot (nicht die tatsächlich geleisteten Zahlungen — das ist die von der KoSIT-Empfehlung vorgegebene Lesart von „Prepaid amount" bei Abschlagsrechnungen), **BT-115** (Amount due for payment) = Restbetrag, **BG-3** (`cac:BillingReference`/`ram:InvoiceReferencedDocument`) je Abschlagsrechnung mit BT-25 (Nummer) und BT-26 (Datum), zusätzlich ein **BT-22**-Freitext mit der Abzugsaufstellung (Netto/USt je Abschlag). **EN 16931 BR-CO-16** (Payable amount = Tax inclusive amount − Paid amount, ggf. + Rundungsbetrag) ist dadurch automatisch erfüllt, weil `payableCents = grossTotalCents − paidCents` als einzige Formel für alle Rechnungstypen gilt.
+- **PDF-Abschlagsrechnung:** Pflichthinweis „Anzahlung, Steuer wird mit Vereinnahmung geschuldet (§ 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG)."
+- **PDF-Schlussrechnung:** Summenblock zeigt „Gesamtleistung netto/brutto", je Abzug eine Zeile „abzüglich Abschlagsrechnung … − x,xx € (enthaltene USt y,yy €)", danach fett den Restbetrag — spiegelt Abschn. 14.8 UStAE unmittelbar auf dem Beleg.
+
+### Grenzen dieser Umsetzung
+
+Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschlagsrechnungen auf derselben Quelle, Storno einer Abschlagsrechnung nach bereits festgeschriebener Schlussrechnung erfordert manuelles Nacharbeiten (keine automatische Korrektur der Schlussrechnung), Skonto wirkt nur auf den Restbetrag der Schlussrechnung.
+
+**Quellen:** [§ 13 Abs. 1 Nr. 1 Buchst. a UStG](https://www.gesetze-im-internet.de/ustg_1980/__13.html) · [§ 14 Abs. 5 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html) · [Abschn. 14.8 UStAE (NWB-Datenbank)](https://datenbank.nwb.de/Dokument/378652_14___5/) · [xeinkauf.de — XRechnung FAQ](https://xeinkauf.de/xrechnung/) · [ZUGFeRD-Spezifikation — Schlussrechnung/KoSIT-Empfehlung](https://www.ferd-net.de/zugferd/)
+**Stand:** 2026-09-04
+
+---
+
+## 15. UMSETZUNGS-MATRIX — Software-Pflichten
 
 | Anforderung | Konkrete Software-Pflicht (Feld / Validierung / Sperre / Default) | MVP / Später |
 |-------------|---------------------------------------------------------------------|--------------|
@@ -669,7 +700,7 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 
 ---
 
-## 15. Offene rechtliche Fragen — vor Produktivnutzung mit Steuerberater klären
+## 16. Offene rechtliche Fragen — vor Produktivnutzung mit Steuerberater klären
 
 1. **Geschäftsmodell B2B vs. B2C?** Davon hängt ab, ob XRechnung/ZUGFeRD-Erzeugung überhaupt implementiert werden muss (E-Rechnungspflicht nur B2B).
 2. **Vorjahresumsatz über/unter 800.000 €?** Bestimmt, ob die Ausstellungspflicht ab 1.1.2027 oder erst 1.1.2028 greift.
@@ -687,7 +718,7 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 
 ---
 
-## 16. Quellenverzeichnis
+## 17. Quellenverzeichnis
 
 ### Gesetze (gesetze-im-internet.de / dejure.org)
 
@@ -695,6 +726,7 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 - § 3c UStG — https://www.gesetze-im-internet.de/ustg_1980/__3c.html
 - § 4 UStG — https://www.gesetze-im-internet.de/ustg_1980/__4.html
 - § 6a UStG — https://www.gesetze-im-internet.de/ustg_1980/__6a.html
+- § 13 UStG — https://www.gesetze-im-internet.de/ustg_1980/__13.html
 - § 13b UStG — https://www.gesetze-im-internet.de/ustg_1980/__13b.html
 - § 14 UStG — https://www.gesetze-im-internet.de/ustg_1980/__14.html
 - § 14 UStG (dejure, konsolidiert) — https://dejure.org/gesetze/UStG/14.html
@@ -772,6 +804,8 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 - dr-datenschutz — Löschpflicht & Verjährungsfristen — https://www.dr-datenschutz.de/loeschpflicht-und-verjaehrungsfristen/
 - LKC — EuGH 40-€-Verzugspauschale — https://lkc.de/eugh-schafft-klarheit-zur-40-euro-verzugspauschale/
 - Finanztip — Mahngebühren — https://www.finanztip.de/mahngebuehren/
+- xeinkauf.de — XRechnung FAQ (Abschlags-/Schlussrechnung, BT-113/BG-3) — https://xeinkauf.de/xrechnung/
+- ZUGFeRD-Spezifikation / KoSIT-Empfehlung „Schlussrechnung" — https://www.ferd-net.de/zugferd/
 
 ### Tooling (außerhalb des primärquellen-verifizierten Rechts-Scopes)
 

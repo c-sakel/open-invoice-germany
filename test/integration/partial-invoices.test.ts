@@ -372,6 +372,57 @@ describe("Fix-Runde 1 (MEDIUM): Storno einer Schlussrechnung mit Beleg-Rabatt + 
   });
 });
 
+describe("§54: Abschlagsrechnung als Festbetrag (brutto) ueber gemischte Steuersaetze + Teilzahlung auf der Schlussrechnung", () => {
+  it("verteilt den Festbetrag Largest-Remainder-proportional je Satz und erlaubt eine Teilzahlung auf den Restbetrag", async () => {
+    // Dokumentiertes Rechenbeispiel aus src/lib/pricing/partial.ts (splitByTaxRate, Fall c):
+    // Gesamtleistung 500,00 EUR netto/19 % + 500,00 EUR netto/7 %, Abschlag-Festbetrag brutto 1.000,00 EUR.
+    const quote = await createBusinessDocument(
+      orgId,
+      {
+        kind: "ANGEBOT",
+        customerId,
+        taxScheme: "REGULAR",
+        currency: "EUR",
+        lines: [
+          { lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 50_000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+          { lineType: "ITEM", description: "Literatur", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 50_000, taxRate: 7, taxCategory: "S", discountPermille: 0, discountCents: 0 },
+        ],
+      },
+      { now: FIX_DATE },
+    );
+    expect(quote.grossTotalCents).toBe(113_000); // 59.500 + 53.500
+
+    const dp = await createDownpaymentInvoice(
+      orgId,
+      { sourceType: "QUOTE", sourceId: quote.id, mode: "AMOUNT", amountCents: 100_000, amountIsGross: true },
+      { now: FIX_DATE },
+    );
+    const line19 = dp.lines.find((l) => l.taxRate === 19)!;
+    const line7 = dp.lines.find((l) => l.taxRate === 7)!;
+    expect(line19.unitNetPriceCents).toBe(44_248);
+    expect(line7.unitNetPriceCents).toBe(44_248);
+    expect(dp.grossTotalCents).toBe(100_000);
+
+    await finalizeInvoice(dp.id, { now: FIX_DATE });
+
+    const final = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: FIX_DATE });
+    const finalized = await finalizeInvoice(final.id, { now: FIX_DATE });
+    expect(finalized.prepaidCents).toBe(100_000);
+    expect(finalized.payableCents).toBe(13_000); // 113.000 - 100.000
+
+    // Teilzahlung: 5.000 von 13.000 offenem Restbetrag (Bemessungsgrundlage = payableCents,
+    // nicht grossTotalCents) -> PARTIALLY_PAID, offener Betrag danach 8.000.
+    const partial = await recordPayment(final.id, { method: "TRANSFER", amountCents: 5_000, isSkonto: false, applySkonto: false }, { now: FIX_DATE });
+    expect(partial.payment.status).toBe("PARTIALLY_PAID");
+    expect(partial.payment.paidAmountCents).toBe(5_000);
+
+    // Restzahlung auf den verbleibenden offenen Betrag -> PAID.
+    const rest = await recordPayment(final.id, { method: "TRANSFER", amountCents: 8_000, isSkonto: false, applySkonto: false }, { now: FIX_DATE });
+    expect(rest.payment.status).toBe("PAID");
+    expect(rest.payment.paidAmountCents).toBe(13_000);
+  });
+});
+
 describe("ChangeLog-Kette (Phase 5)", () => {
   it("bleibt ueber alle Schreiboperationen dieses Tests gueltig (verifyChain)", async () => {
     const rows = await dbInternal.changeLog.findMany({
