@@ -36,7 +36,17 @@ Korrekturen an Pflichtangaben, Fristen, Steuerlogik etc. **immer mit Quelle** (N
 
 ## Developer Certificate of Origin (DCO)
 
-Bitte signiere deine Commits (`git commit -s`). Damit bestätigst du das [DCO](https://developercertificate.org/). Das hält dem Projekt die Option offen, die Lizenzierung später anzupassen (z. B. optionales Dual-Licensing), ohne den Closed-Source-SaaS-Schutz der AGPL aufzugeben.
+Bitte signiere deine Commits (`git commit -s`). Damit bestätigst du das [DCO](https://developercertificate.org/): Du hast das Recht, den Beitrag einzureichen, und reichst ihn unter der Projektlizenz ein. Das DCO überträgt kein Copyright — dein Beitrag bleibt deiner und steht wie das übrige Projekt unter AGPL-3.0.
+
+## Größere Beiträge
+
+Ein ganzes Feature oder ein umgebauter Fork ist willkommen, aber bitte nicht als ein einziger Monster-PR. Schneide ihn in thematische PRs, die einzeln lauffähig und einzeln sinnvoll sind (z. B. „E-Mail-Versand", „Belegfluss", „REST-API"). Jeder PR gegen den aktuellen `main`, mit Tests für neue Logik und den vier Gates von oben.
+
+Am besten vorher kurz ein Issue aufmachen und den geplanten Schnitt beschreiben — dann klären wir Reihenfolge und Überschneidungen, bevor du Arbeit in etwas steckst, das so nicht passt.
+
+Bei rechtsnahen Änderungen (Pflichtangaben, Steuerlogik, Nummernkreis, Festschreibung, Hash-Chain) rechne mit einer gründlicheren Runde. Das ist die Stelle, an der ein Fehler beim Nutzer teuer wird.
+
+Reviews können ein paar Tage dauern. Wenn du nach einer Woche nichts gehört hast, ping im PR oder schreib an info@automationsmanufaktur.de.
 
 ## Tests
 
