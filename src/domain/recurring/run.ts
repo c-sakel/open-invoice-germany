@@ -15,6 +15,8 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
+import { onRecurringFailed } from "@/domain/notifications/hooks";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { advanceDate, type RecurInterval } from "@/lib/recurring";
@@ -171,6 +173,7 @@ async function emitOne(
       at: now,
       diff: { recurring: rec.id, period: periodDate.toISOString(), grossTotalCents: totals.grossTotalCents },
     });
+    await logActivity(tx, { orgId: rec.orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now, data: { recurring: rec.id } });
 
     let number: string | null = invoice.number;
     let finalized = false;
@@ -231,11 +234,22 @@ export interface RecurringRunSummary {
   recurringId: string;
   title: string;
   emitted: EmittedInvoice[];
+  /** Fehlermeldung, falls der Lauf dieses Abos abgebrochen ist (Task-3-Ergaenzung: Fehler-
+   *  Summary). Bereits erzeugte `emitted`-Eintraege bleiben gueltig — nur der naechste
+   *  (fehlgeschlagene) Versuch dieses Abos wurde abgebrochen. */
+  error?: string;
 }
 
 /**
  * Batch-Lauf (Cron): erzeugt für alle ACTIVE-Abos mit `nextRunDate <= now` die
  * fälligen Rechnungen — bei Rückstand mehrere, gedeckelt durch `maxPerAbo`.
+ *
+ * Fehler-Summary (Phase 8b, Task 3): ein Fehler beim Erzeugen EINES Abo-Laufs (z. B.
+ * fehlende Pflichtangaben beim `autoFinalize`) brach frueher den GESAMTEN Batch ab — kein
+ * try/catch um `emitOne`, ein einziges kaputtes Abo verhinderte die Rechnungen ALLER
+ * anderen faelligen Abos in diesem Lauf. Jetzt: Fehler landen in `RecurringRunSummary.error`,
+ * die Schleife faehrt mit dem naechsten Abo fort; `onRecurringFailed`
+ * (`src/domain/notifications/hooks.ts`) benachrichtigt zusaetzlich die Organisation.
  */
 export async function runDueRecurring(
   opts: RunOptions & { orgId?: string; maxPerAbo?: number } = {},
@@ -246,24 +260,30 @@ export async function runDueRecurring(
 
   const due = await dbInternal.recurringInvoice.findMany({
     where: { status: "ACTIVE", nextRunDate: { lte: now }, ...(opts.orgId ? { orgId: opts.orgId } : {}) },
-    select: { id: true, title: true },
+    select: { id: true, title: true, orgId: true },
     orderBy: { nextRunDate: "asc" },
   });
 
   const summaries: RecurringRunSummary[] = [];
   for (const rec of due) {
     const emitted: EmittedInvoice[] = [];
-    for (let i = 0; i < max; i++) {
-      const cur = await dbInternal.recurringInvoice.findUnique({
-        where: { id: rec.id },
-        select: { status: true, nextRunDate: true },
-      });
-      if (!cur || cur.status !== "ACTIVE" || cur.nextRunDate > now) break;
-      const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
-      emitted.push(result);
-      if (ended) break;
+    let error: string | undefined;
+    try {
+      for (let i = 0; i < max; i++) {
+        const cur = await dbInternal.recurringInvoice.findUnique({
+          where: { id: rec.id },
+          select: { status: true, nextRunDate: true },
+        });
+        if (!cur || cur.status !== "ACTIVE" || cur.nextRunDate > now) break;
+        const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
+        emitted.push(result);
+        if (ended) break;
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      await onRecurringFailed(rec.orgId, { recurringId: rec.id, title: rec.title, message: error, at: now });
     }
-    summaries.push({ recurringId: rec.id, title: rec.title, emitted });
+    summaries.push({ recurringId: rec.id, title: rec.title, emitted, ...(error ? { error } : {}) });
   }
   return summaries;
 }

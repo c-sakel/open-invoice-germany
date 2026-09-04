@@ -15,6 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
@@ -358,6 +359,7 @@ export async function finalizeWithinTx(
         : {}),
     },
   });
+  await logActivity(tx, { orgId: invoice.orgId, entityType: "INVOICE", entityId: invoiceId, type: "FINALIZED", actor, at: now, data: { number } });
 
   const result = await tx.invoice.findUnique({
     where: { id: invoiceId },

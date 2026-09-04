@@ -8,6 +8,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
 import { generateToken, hashToken } from "@/domain/quote-share/token";
 import { effectiveQuoteStatus } from "@/domain/document/status";
@@ -86,6 +87,7 @@ export async function createShareLink(
       at: now,
       diff: { linkId: created.id, expiresAt: expiresAt.toISOString() },
     });
+    await logActivity(tx, { orgId, entityType: "QUOTE", entityId: quoteId, type: "SHARE_LINK_CREATED", actor, at: now, data: { linkId: created.id } });
     return created;
   });
 

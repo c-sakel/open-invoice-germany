@@ -12,6 +12,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { pickTextTemplate } from "@/domain/text-template/pick";
@@ -221,6 +222,7 @@ export async function createDraftInvoiceWithinTx(
     at: now,
     diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents },
   });
+  await logActivity(tx, { orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now });
 
   return invoice;
 }

@@ -6,6 +6,7 @@
  */
 import { runDueRecurring } from "@/domain/recurring/run";
 import { runDunningJob } from "@/domain/dunning/auto";
+import { runNotificationsJob } from "@/domain/notifications/job";
 import type { SchedulerJob } from "./runner";
 
 export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, unknown>>> = {
@@ -16,6 +17,10 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
   },
   dunning: async (now) => {
     const result = await runDunningJob(now);
+    return { ...result };
+  },
+  notifications: async (now) => {
+    const result = await runNotificationsJob(now);
     return { ...result };
   },
 };

@@ -1,6 +1,6 @@
 /**
  * Scheduler-Runner (Phase 6, Task 3) — fuehrt die registrierten Jobs (`jobs.ts`) seriell in
- * fester Reihenfolge (`recurring` -> `dunning`) aus und protokolliert jeden Lauf in
+ * fester Reihenfolge (`recurring` -> `dunning` -> `notifications`) aus und protokolliert jeden Lauf in
  * `SchedulerRun`. Wird sowohl vom Intervall-Loop (`loop.ts`/`instrumentation.ts`) als auch
  * von den Cron-Routen, der manuellen API-Route und den CLI-Skripten aufgerufen — EINE
  * Implementierung, kein zweiter Ausfuehrungspfad.
@@ -23,7 +23,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { jobs } from "./jobs";
 
-export type SchedulerJob = "dunning" | "recurring";
+export type SchedulerJob = "dunning" | "recurring" | "notifications";
 
 export interface JobResult {
   job: SchedulerJob;
@@ -34,7 +34,10 @@ export interface JobResult {
   runId?: string;
 }
 
-const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning"];
+// Reihenfolge (Task-3-Facts): recurring -> dunning -> notifications — Benachrichtigungen
+// (faellig/ueberfaellig/Mahnstufe) sollen den Stand NACH den beiden vorgelagerten Jobs
+// desselben Laufs widerspiegeln (frisch erzeugte Abo-Rechnungen/Mahnungen).
+const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "notifications"];
 const STALE_MS = 30 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {
