@@ -121,6 +121,8 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
       include: { org: true, customer: true, lines: { orderBy: { position: "asc" } } },
     });
     if (!dn) return [];
+    // B5 (Fix-Welle): nur noch Live-FALLBACK fuer Alt-Belege ohne buyerSnapshotJson.shippingAddress
+    // (buildDeliveryNotePdfData bevorzugt den Snapshot, siehe dort).
     const shippingAddress = dn.showDeliveryAddress
       ? await dbInternal.customerAddress.findFirst({
           where: { orgId, customerId: dn.customerId, type: "SHIPPING", isDefault: true },

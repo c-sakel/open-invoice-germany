@@ -169,6 +169,38 @@ describe("buildDeliveryNotePdfData", () => {
     const withoutAddress = buildDeliveryNotePdfData(deliveryNote(), org, customer);
     expect(withoutAddress.deliveryAddress).toBeNull();
   });
+
+  it("B5 (Fix-Welle): Snapshot-Lieferadresse hat Vorrang vor der Live-Fallback-Adresse — ein spaeterer Default-Wechsel aendert den Nachdruck nicht", () => {
+    const buyerSnapshotJson = JSON.stringify({
+      name: "Kunde AG",
+      contactName: null,
+      addressLine1: "Str. 2",
+      addressLine2: null,
+      postalCode: "54321",
+      city: "Stadt",
+      countryCode: "DE",
+      vatId: null,
+      email: null,
+      leitwegId: null,
+      shippingAddress: {
+        type: "SHIPPING",
+        label: null,
+        addressLine1: "Lagerhalle 7 (Snapshot)",
+        addressLine2: null,
+        postalCode: "88888",
+        city: "Werksstadt",
+        countryCode: "DE",
+      },
+    });
+    const data = buildDeliveryNotePdfData(deliveryNote({ buyerSnapshotJson }), org, customer, null, {
+      // Live-Fallback zeigt eine ANDERE (spaeter geaenderte) Standardadresse — muss ignoriert werden.
+      addressLine1: "Neue Default-Adresse (Live)",
+      addressLine2: null,
+      postalCode: "77777",
+      city: "Neustadt",
+    });
+    expect(data.deliveryAddress).toEqual({ addressLine1: "Lagerhalle 7 (Snapshot)", addressLine2: null, postalCode: "88888", city: "Werksstadt" });
+  });
 });
 
 describe("renderDeliveryNotePdf", () => {
