@@ -15,6 +15,9 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
+import { recordPayment } from "@/domain/invoice/payment";
+import { createDunning } from "@/domain/dunning/create";
+import { NotFoundError } from "@/domain/errors";
 
 import { GET as ContactList, POST as ContactCreate } from "@/app/api/v1/Contact/route";
 import { GET as ContactGet, PATCH as ContactUpdate } from "@/app/api/v1/Contact/[id]/route";
@@ -396,6 +399,18 @@ describe("/api/v1/Payment", () => {
     const res = await PaymentCreate(req("http://x/api/v1/Payment", { method: "POST", token: otherToken, body: { invoiceId: created.id, amountCents: 100 } }));
     expect(res.status).toBe(404);
   });
+
+  it("Fix-Runde 1 (Koordinator-Ruling b): recordPayment(orgId) wirft direkt NotFoundError fuer fremde invoiceId", async () => {
+    const created = await createInvoice();
+    await dbInternal.invoice.update({ where: { id: created.id }, data: { status: "FINALIZED", number: `TEST-PAY3-${created.id}` } });
+    await expect(recordPayment(created.id, { amountCents: 100, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: otherOrgId })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    // ohne orgId (kein Organisationskontext) bleibt der Aufruf unveraendert erlaubt.
+    await expect(
+      recordPayment(created.id, { amountCents: 100, method: "TRANSFER", isSkonto: false, applySkonto: false }, {}),
+    ).resolves.toBeDefined();
+  });
 });
 
 // ── Dunning ──────────────────────────────────────────────────────────────────
@@ -411,6 +426,11 @@ describe("/api/v1/Dunning", () => {
     const created = await createInvoice();
     const res = await DunningCreate(req("http://x/api/v1/Dunning", { method: "POST", token: otherToken, body: { invoiceId: created.id } }));
     expect(res.status).toBe(404);
+  });
+
+  it("Fix-Runde 1 (Koordinator-Ruling b): createDunning(orgId) wirft direkt NotFoundError fuer fremde invoiceId", async () => {
+    const created = await createInvoice();
+    await expect(createDunning(created.id, { orgId: otherOrgId })).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

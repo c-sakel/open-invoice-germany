@@ -4,9 +4,8 @@ import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeProduct } from "@/api/serializers/product";
 import { listProductsApi, productListFilterSchema } from "@/domain/product/list";
+import { createProduct } from "@/domain/product/save";
 import { productSchema } from "@/schemas";
-import { dbInternal } from "@/lib/db";
-import { assignArticleNumber } from "@/domain/numbering/ranges";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,21 +17,7 @@ export const GET = withApi(async (req, ctx) => {
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {
-  const v = productSchema.parse(ctx.body);
-  const data = {
-    name: v.name,
-    description: v.description ?? null,
-    articleNumber: v.articleNumber ?? null,
-    unit: v.unit,
-    netPriceCents: v.netPriceCents,
-    taxRate: v.taxRate,
-    taxCategory: v.taxCategory,
-    differential: v.differential,
-  };
-  const created = await dbInternal.$transaction(async (tx) => {
-    const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, ctx.orgId));
-    return tx.product.create({ data: { ...data, articleNumber, orgId: ctx.orgId } });
-  });
+  const created = await createProduct(ctx.orgId, ctx.body);
   return apiData(serializeProduct(created), 201);
 }, { scope: "write" });
 

@@ -1,8 +1,8 @@
 /**
- * /api/v1/Dunning — Mahnungen. Kein PATCH (append-only Beleg). `createDunning` prueft
- * NICHT, dass invoiceId zur aufrufenden Organisation gehoert (siehe
- * src/app/api/invoices/[id]/dunning/route.ts — dieselbe vorbestehende Luecke) — Route
- * prueft daher vorab.
+ * /api/v1/Dunning — Mahnungen. Kein PATCH (append-only Beleg). Fix-Runde 1
+ * (Koordinator-Ruling b, 2026-09-04): `createDunning` prueft jetzt selbst (per
+ * optionalem `opts.orgId`) die Organisationszugehoerigkeit der invoiceId — der
+ * fruehere Vorab-Check per eigenem `dbInternal.invoice.findFirst` entfaellt.
  */
 import { z } from "zod";
 import { withApi } from "@/api/auth";
@@ -11,8 +11,6 @@ import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/
 import { serializeDunning } from "@/api/serializers/dunning";
 import { listDunningsApi, dunningListFilterSchema } from "@/domain/dunning/list";
 import { createDunning } from "@/domain/dunning/create";
-import { dbInternal } from "@/lib/db";
-import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +29,7 @@ export const GET = withApi(async (req, ctx) => {
 
 export const POST = withApi(async (_req, ctx) => {
   const { invoiceId, ...rest } = createBodySchema.parse(ctx.body);
-  const owned = await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId: ctx.orgId }, select: { id: true } });
-  if (!owned) throw new NotFoundError("Rechnung nicht gefunden.");
-  const res = await createDunning(invoiceId, { actor: ctx.actor, force: rest.force, lateFeeCents: rest.lateFeeCents, createdBy: "api" });
+  const res = await createDunning(invoiceId, { actor: ctx.actor, force: rest.force, lateFeeCents: rest.lateFeeCents, createdBy: "api", orgId: ctx.orgId });
   return apiData(serializeDunning(res.dunning), 201);
 }, { scope: "write" });
 

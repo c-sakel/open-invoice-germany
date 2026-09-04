@@ -17,6 +17,7 @@ import { logActivity } from "@/domain/activity/log";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
 import { payableBaseCents } from "@/domain/invoice/amounts";
+import { NotFoundError } from "@/domain/errors";
 import type { RecordPaymentInput } from "@/schemas";
 
 export class PaymentError extends Error {
@@ -50,7 +51,7 @@ async function resolvePaymentMethodId(tx: Prisma.TransactionClient, orgId: strin
 export async function recordPayment(
   invoiceId: string,
   input: RecordPaymentInput,
-  opts: { actor?: string; now?: Date } = {},
+  opts: { actor?: string; now?: Date; orgId?: string } = {},
 ): Promise<RecordPaymentResult> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
@@ -65,6 +66,12 @@ export async function recordPayment(
       },
     });
     if (!inv) throw new PaymentError("Rechnung nicht gefunden.");
+    // Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): recordPayment pruefte bisher NICHT,
+    // dass invoiceId zur aufrufenden Organisation gehoert — nur wirksam, wenn der
+    // Aufrufer opts.orgId mitgibt (Session-Routen/MCP-Tools, die bereits per getActiveOrg()
+    // scopen, geben es ebenfalls mit; ein fehlendes opts.orgId aendert das bisherige
+    // Verhalten NICHT, um interne Aufrufer ohne Organisationskontext nicht zu brechen).
+    if (opts.orgId && inv.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
     if (inv.status === "DRAFT") throw new PaymentError("Zahlung erst nach dem Festschreiben erfassbar.");
     if (inv.status === "CANCELLED") throw new PaymentError("Die Rechnung ist storniert.");
     if (inv.type === "CREDIT_NOTE") throw new PaymentError("Zahlungen werden nur auf Rechnungen erfasst, nicht auf Gutschriften.");

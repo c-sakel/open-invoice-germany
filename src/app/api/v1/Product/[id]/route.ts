@@ -5,6 +5,7 @@ import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeProduct } from "@/api/serializers/product";
 import { productSchema } from "@/schemas";
 import { dbInternal } from "@/lib/db";
+import { updateProduct } from "@/domain/product/save";
 import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
@@ -17,14 +18,7 @@ export const GET = withApi<{ id: string }>(async (_req, ctx) => {
 }, { scope: "read" });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
-  const existing = await dbInternal.product.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId } });
-  if (!existing) throw new NotFoundError("Produkt nicht gefunden.");
-  const v = productSchema.partial().parse(ctx.body);
-  const patch: Record<string, unknown> = {};
-  for (const key of Object.keys(ctx.body as object)) {
-    if (key in v) patch[key] = (v as Record<string, unknown>)[key];
-  }
-  const updated = await dbInternal.product.update({ where: { id: existing.id }, data: patch });
+  const updated = await updateProduct(ctx.orgId, ctx.params.id, ctx.body);
   return apiData(serializeProduct(updated));
 }, { scope: "write" });
 

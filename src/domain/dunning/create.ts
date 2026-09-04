@@ -15,6 +15,7 @@ import { logActivity } from "@/domain/activity/log";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { formatDateDe } from "@/lib/template/format";
+import { NotFoundError } from "@/domain/errors";
 
 // B7 (Fix-Welle, Ruling Koordinator): Teil-/Abschlags-/Schlussrechnungen sind reguläre,
 // enforceable Forderungen und muessen mahnbar sein wie eine normale Rechnung.
@@ -37,6 +38,11 @@ export interface DunningOptions {
   /** Manuelle Erstellung vor Faelligkeit der naechsten Stufe erzwingen. */
   force?: boolean;
   createdBy?: "user" | "scheduler" | "mcp" | "api";
+  /** Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): wenn gesetzt, muss invoiceId zu
+   *  dieser Organisation gehoeren, sonst NotFoundError — bisher ungeprueft (vorbestehende
+   *  Luecke, siehe frueher src/app/api/invoices/[id]/dunning/route.ts). Optional, damit
+   *  interne Aufrufer ohne Organisationskontext nicht brechen. */
+  orgId?: string;
 }
 
 interface DunningStageRow extends StageLike {
@@ -56,6 +62,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
 
   const inv0 = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true } });
   if (!inv0) throw new DunningError("Rechnung nicht gefunden.");
+  if (opts.orgId && inv0.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
   // Basiszinssatz aus den org-weiten Mahnwesen-Einstellungen (Selbstheilung legt sie
   // bei Bedarf an) — AUSSERHALB der Transaktion, da hier nur gelesen wird und der Upsert
   // (Anlegen der Default-Zeile) keine GoBD-relevante Schreibaktion ist.

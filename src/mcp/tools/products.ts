@@ -9,8 +9,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { assignArticleNumber } from "@/domain/numbering/ranges";
 import { archiveProduct } from "@/domain/product/archive";
+import { createProduct, updateProduct } from "@/domain/product/save";
 import { productSchema, TaxRate } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -82,34 +82,19 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const { netPriceEuro, taxRatePercent, ...rest } = args;
-        // Paritaet mit saveProduct/createProductInline (Server Actions): dieselbe Zod
-        // (productSchema) statt eines eigenen Objekts — sonst Drift (§25a "differential"
-        // fehlte vorher am MCP-Pfad). taxRatePercent separat gegen dieselbe TaxRate-Union
-        // geprueft, mit der auch productSchema.taxRate validiert (die Tools rufen den
-        // Handler in Tests direkt auf, ohne die SDK-Dispatch-Validierung des inputSchema —
-        // die Laufzeitpruefung muss also im Handler selbst stattfinden, nicht nur in der
-        // inputSchema-Deklaration).
-        const v = productSchema.omit({ netPriceCents: true, taxRate: true, taxCategory: true }).parse(rest);
+        // taxRatePercent separat gegen dieselbe TaxRate-Union geprueft, mit der auch
+        // productSchema.taxRate validiert (die Tools rufen den Handler in Tests direkt
+        // auf, ohne die SDK-Dispatch-Validierung des inputSchema — die Laufzeitpruefung
+        // muss also im Handler selbst stattfinden, nicht nur in der inputSchema-
+        // Deklaration). Anlage/Aenderung selbst laeuft ueber
+        // src/domain/product/save.ts (Fix-Runde 1, Koordinator-Ruling a, 2026-09-04) —
+        // kein eigenes Feld-Mapping/Prisma-Write mehr hier.
         const taxRate = TaxRate.default(19).parse(taxRatePercent);
-        const data = {
-          name: v.name,
-          description: v.description ?? null,
-          articleNumber: v.articleNumber ?? null,
-          unit: v.unit,
-          netPriceCents: ctx.euroToCents(netPriceEuro),
-          taxRate,
-          taxCategory: taxRate === 0 ? "Z" : "S",
-          differential: v.differential,
-        };
+        const payload = { ...rest, netPriceCents: ctx.euroToCents(netPriceEuro), taxRate, taxCategory: taxRate === 0 ? "Z" : "S" };
         const existing = (await dbInternal.product.findMany({ where: { orgId: org.id, isArchived: false } })).find(
-          (p) => p.name.toLowerCase() === v.name.toLowerCase(),
+          (p) => p.name.toLowerCase() === (rest.name ?? "").toLowerCase(),
         );
-        const product = existing
-          ? await dbInternal.product.update({ where: { id: existing.id }, data })
-          : await dbInternal.$transaction(async (tx) => {
-              const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, org.id));
-              return tx.product.create({ data: { ...data, articleNumber, orgId: org.id } });
-            });
+        const product = existing ? await updateProduct(org.id, existing.id, payload) : await createProduct(org.id, payload);
         return ctx.ok(`Produkt ${existing ? "aktualisiert" : "gespeichert"}: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -143,21 +128,16 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         const existing = await resolveProduct(org.id, args.product);
         const { product: _productRef, netPriceEuro, taxRatePercent, ...rest } = args;
         void _productRef;
-        const v = productSchema.partial().omit({ netPriceCents: true, taxRate: true, taxCategory: true }).parse(rest);
-        // NUR die tatsaechlich uebergebenen Felder patchen: zod fuellt bei .partial()
-        // fehlende Schluessel mit dem Schema-Default (z. B. unit="C62",
-        // differential=false) statt sie undefined zu lassen — ein blindes `{ ...v }`
-        // wuerde also nicht angegebene Felder stillschweigend zuruecksetzen.
-        const patch: Record<string, unknown> = {};
-        for (const key of Object.keys(rest) as (keyof typeof v)[]) {
-          if ((rest as Record<string, unknown>)[key as string] !== undefined) patch[key as string] = v[key];
-        }
-        if (netPriceEuro !== undefined) patch.netPriceCents = ctx.euroToCents(netPriceEuro);
+        // Fix-Runde 1 (Koordinator-Ruling a, 2026-09-04): PATCH-Anwendung laeuft jetzt
+        // ueber src/domain/product/save.ts#updateProduct (nur die im Payload
+        // vorhandenen Schluessel werden geschrieben) statt eines eigenen Patch-Baus hier.
+        const payload: Record<string, unknown> = { ...rest };
+        if (netPriceEuro !== undefined) payload.netPriceCents = ctx.euroToCents(netPriceEuro);
         if (taxRatePercent !== undefined) {
-          patch.taxRate = taxRatePercent;
-          patch.taxCategory = taxRatePercent === 0 ? "Z" : "S";
+          payload.taxRate = taxRatePercent;
+          payload.taxCategory = taxRatePercent === 0 ? "Z" : "S";
         }
-        const product = await dbInternal.product.update({ where: { id: existing.id }, data: patch });
+        const product = await updateProduct(org.id, existing.id, payload);
         return ctx.ok(`Produkt aktualisiert: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
