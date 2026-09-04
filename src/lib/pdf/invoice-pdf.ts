@@ -370,26 +370,33 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // Fußzeile: Aussteller-Pflichtangaben (nur wenn options.showFooter an ist).
   const footY = doc.page.height - margins.bottom - 32;
   if (theme.options.showFooter) {
+    // S3 (Fix-Welle): drawBrandedFooter() liefert `true`, wenn es die Briefpapier-
+    // Fusszeile (footerLeft/-Center/-Right) tatsaechlich gezeichnet hat — dann NICHT
+    // zusaetzlich den hartcodierten Aussteller-/Bank-Fallback zeichnen (vorher standen
+    // beide Bloecke uebereinander, 11pt Abstand bei 8pt Schrift ueberschrieb die
+    // Marken-Fusszeile bei einer zweizeiligen Spalte). Ohne Briefpapier-Fusszeile bleibt
+    // der bisherige Fallback (Aussteller-Pflichtangaben) erhalten.
     const branded = drawBrandedFooter(doc, theme, left, right, footY - 11);
-    doc.fontSize(8).fillColor("#666");
-    const sellerLine = [
-      data.seller.name,
-      `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-      data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-      data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
-    const bankLine = [
-      data.bankName ? `Bank: ${data.bankName}` : null,
-      data.iban ? `IBAN: ${data.iban}` : null,
-      data.bic ? `BIC: ${data.bic}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    if (bankLine) doc.text(bankLine, left, footY + 11, { width: right - left, align: "center" });
-    void branded; // Rueckgabewert nur informativ (ob die Marken-Fusszeile etwas zeichnete)
+    if (!branded) {
+      doc.fontSize(8).fillColor("#666");
+      const sellerLine = [
+        data.seller.name,
+        `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
+        data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
+        data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
+      const bankLine = [
+        data.bankName ? `Bank: ${data.bankName}` : null,
+        data.iban ? `IBAN: ${data.iban}` : null,
+        data.bic ? `BIC: ${data.bic}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (bankLine) doc.text(bankLine, left, footY + 11, { width: right - left, align: "center" });
+    }
   }
 
   // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, 30 mm Kantenlaenge.

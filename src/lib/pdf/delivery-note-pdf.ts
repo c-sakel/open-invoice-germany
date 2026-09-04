@@ -252,17 +252,20 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // Fußzeile: Aussteller-Pflichtangaben (nur wenn options.showFooter an ist).
     const footY = doc.page.height - margins.bottom - 20;
     if (theme.options.showFooter) {
-      drawBrandedFooter(doc, theme, left, right, footY - 11);
-      doc.fontSize(8).fillColor("#666");
-      const sellerLine = [
-        data.seller.name,
-        `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-        data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-        data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
+      // S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide (siehe invoice-pdf.ts).
+      const branded = drawBrandedFooter(doc, theme, left, right, footY - 11);
+      if (!branded) {
+        doc.fontSize(8).fillColor("#666");
+        const sellerLine = [
+          data.seller.name,
+          `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
+          data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
+          data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
+      }
     }
 
     // Falz-/Lochmarken + Seitenzahlen.

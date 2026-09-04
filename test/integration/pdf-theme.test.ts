@@ -6,9 +6,11 @@ import { describe, it, expect } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { savePrintSettings } from "@/domain/settings/print";
+import { saveBrandingSettings } from "@/domain/settings/branding";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
+import { renderDunningPdf, type DunningPdfData } from "@/lib/pdf/dunning-pdf";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import { parsePdf } from "../helpers/pdf-theme";
 
@@ -268,6 +270,89 @@ describe("PdfTheme — showPaymentTermsText (§33 DocumentSettings)", () => {
     const pdf = await renderInvoicePdf(data, theme);
     const parsed = await parsePdf(pdf);
     expect(parsed.text).not.toContain("Zahlbar bis 24.03.2056 ohne Abzug.");
+  });
+});
+
+describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide", () => {
+  function baseDunningData(overrides: Partial<DunningPdfData> = {}): DunningPdfData {
+    return {
+      number: "M-2056-00001",
+      level: 1,
+      sentDate: new Date("2056-05-01"),
+      newDueDate: new Date("2056-05-15"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      invoiceNumber: "RE-2056-00001",
+      invoiceDate: new Date("2056-03-10"),
+      openAmountCents: 11900,
+      interestCents: 100,
+      flatFee40Cents: 4000,
+      feeCents: 0,
+      lateFeeCents: 4100,
+      totalCents: 16000,
+      daysOverdue: 20,
+      ...overrides,
+    };
+  }
+
+  function baseDeliveryNoteData(overrides: Partial<DeliveryNotePdfData> = {}): DeliveryNotePdfData {
+    return {
+      number: "LS-2056-00002",
+      issueDate: new Date("2056-03-10"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      lines: [{ pos: 1, description: "Testartikel", quantityMilli: 1000, unit: "C62" }],
+      showPrices: false,
+      showTax: false,
+      showArticleNumber: false,
+      showDescription: true,
+      showDeliveryAddress: false,
+      ...overrides,
+    };
+  }
+
+  it("Rechnung: ohne Briefpapier-Fusszeile steht der Aussteller-Fallback im PDF", async () => {
+    const orgId = await makeOrg();
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00009", giroAmountCents: 0 }), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Muster GmbH · Hauptstr. 1, 12345 Berlin");
+  });
+
+  it("Rechnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
+    const orgId = await makeOrg();
+    await saveBrandingSettings(orgId, { footerLeft: "Marken-Fusszeile-Links" });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00010", giroAmountCents: 0 }), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Marken-Fusszeile-Links");
+    expect(parsed.text).not.toContain("Muster GmbH · Hauptstr. 1, 12345 Berlin");
+  });
+
+  it("Lieferschein: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
+    const orgId = await makeOrg();
+    await saveBrandingSettings(orgId, { footerCenter: "Marken-Fusszeile-Mitte" });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData(), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Marken-Fusszeile-Mitte");
+    expect(parsed.text).not.toContain("Muster GmbH · Hauptstr. 1, 12345 Berlin");
+  });
+
+  it("Mahnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
+    const orgId = await makeOrg();
+    await saveBrandingSettings(orgId, { footerRight: "Marken-Fusszeile-Rechts" });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderDunningPdf(baseDunningData(), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Marken-Fusszeile-Rechts");
+    expect(parsed.text).not.toContain("Muster GmbH · Hauptstr. 1, 12345 Berlin");
   });
 });
 
