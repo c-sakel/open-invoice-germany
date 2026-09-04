@@ -94,7 +94,11 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         <h2 className="font-semibold text-slate-900">Lieferscheine</h2>
         <CheckboxField label="Preise standardmäßig anzeigen" name="dnShowPrices" defaultChecked={settings.dnShowPrices} />
         <CheckboxField label="Artikelnummern standardmäßig anzeigen" name="dnShowArticleNumber" defaultChecked={settings.dnShowArticleNumber} />
-        <CheckboxField label="Lieferadresse standardmäßig anzeigen" name="dnShowDeliveryAddress" defaultChecked={settings.dnShowDeliveryAddress} />
+        <CheckboxField
+          label="Zusätzlichen Lieferadress-Block standardmäßig anzeigen (aus der Standard-Lieferadresse des Kunden; der Empfängerblock wird immer gedruckt)"
+          name="dnShowDeliveryAddress"
+          defaultChecked={settings.dnShowDeliveryAddress}
+        />
       </section>
 
       <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">

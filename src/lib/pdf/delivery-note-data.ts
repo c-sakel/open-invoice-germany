@@ -13,12 +13,19 @@ import type { DeliveryNotePdfData } from "./delivery-note-pdf";
 export type DeliveryNoteRow = Prisma.DeliveryNoteGetPayload<{ include: { lines: true } }>;
 export type OrgRow = Prisma.OrganizationGetPayload<Record<string, never>>;
 export type CustomerRow = Prisma.CustomerGetPayload<Record<string, never>>;
+export type ShippingAddressRow = Pick<
+  Prisma.CustomerAddressGetPayload<Record<string, never>>,
+  "addressLine1" | "addressLine2" | "postalCode" | "city"
+>;
 
 export function buildDeliveryNotePdfData(
   dn: DeliveryNoteRow,
   org: OrgRow,
   customer: CustomerRow,
   sourceNumber: string | null = null,
+  /** S7 (Fix-Welle): Standard-SHIPPING-CustomerAddress des Kunden, falls vorhanden — der
+   *  Aufrufer laedt sie (siehe Routen/attachments.ts), diese Funktion bleibt DB-frei. */
+  shippingAddress: ShippingAddressRow | null = null,
 ): DeliveryNotePdfData {
   const ctx = dn.id;
   const seller = parseSellerSnapshot(dn.sellerSnapshotJson, buildSellerSnapshot(org), ctx);
@@ -81,6 +88,14 @@ export function buildDeliveryNotePdfData(
     showArticleNumber: dn.showArticleNumber,
     showDescription: dn.showDescription,
     showDeliveryAddress: dn.showDeliveryAddress,
+    deliveryAddress: shippingAddress
+      ? {
+          addressLine1: shippingAddress.addressLine1,
+          addressLine2: shippingAddress.addressLine2,
+          postalCode: shippingAddress.postalCode,
+          city: shippingAddress.city,
+        }
+      : null,
     headerText,
     footerText,
     sourceNumber,

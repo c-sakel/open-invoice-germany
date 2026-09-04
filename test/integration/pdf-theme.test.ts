@@ -191,24 +191,59 @@ describe("PdfTheme — Lieferschein-Lieferadresse (§36)", () => {
     };
   }
 
-  it("showDeliveryAddress an: die Empfängeradresse steht im PDF-Text", async () => {
-    const orgId = await makeOrg();
-    const theme = await loadPdfTheme(orgId);
-    theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
-    const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData({ showDeliveryAddress: true }), theme);
-    const parsed = await parsePdf(pdf);
-    expect(parsed.text).toContain("Lieferadressen-Kunde AG");
-    expect(parsed.text).toContain("Lieferweg 9");
-  });
-
-  it("showDeliveryAddress aus: die Empfängeradresse fehlt im PDF-Text", async () => {
+  it("Empfängerblock steht IMMER im PDF-Text, auch bei showDeliveryAddress aus (S7, Fix-Welle)", async () => {
     const orgId = await makeOrg();
     const theme = await loadPdfTheme(orgId);
     theme.compress = false; // Fix-Runde 1: Produktions-Default ist compress:true; Tests brauchen pdf-parse-kompatible PDFs.
     const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData({ showDeliveryAddress: false }), theme);
     const parsed = await parsePdf(pdf);
-    expect(parsed.text).not.toContain("Lieferadressen-Kunde AG");
-    expect(parsed.text).not.toContain("Lieferweg 9");
+    expect(parsed.text).toContain("Lieferadressen-Kunde AG");
+    expect(parsed.text).toContain("Lieferweg 9");
+  });
+
+  it("showDeliveryAddress an + Standard-SHIPPING-Adresse vorhanden: zusaetzlicher Lieferadress-Block im PDF-Text", async () => {
+    const orgId = await makeOrg();
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderDeliveryNotePdf(
+      baseDeliveryNoteData({
+        showDeliveryAddress: true,
+        deliveryAddress: { addressLine1: "Lagerhalle 7", postalCode: "88888", city: "Werksstadt" },
+      }),
+      theme,
+    );
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Lieferadresse:");
+    expect(parsed.text).toContain("Lagerhalle 7");
+    expect(parsed.text).toContain("Werksstadt");
+    // Empfängerblock bleibt zusaetzlich erhalten.
+    expect(parsed.text).toContain("Lieferadressen-Kunde AG");
+  });
+
+  it("showDeliveryAddress an, aber KEINE Standard-SHIPPING-Adresse: kein Lieferadress-Block", async () => {
+    const orgId = await makeOrg();
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData({ showDeliveryAddress: true, deliveryAddress: null }), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).not.toContain("Lieferadresse:");
+    expect(parsed.text).toContain("Lieferadressen-Kunde AG"); // Empfängerblock bleibt trotzdem.
+  });
+
+  it("showDeliveryAddress aus, aber Standard-SHIPPING-Adresse vorhanden: kein Lieferadress-Block", async () => {
+    const orgId = await makeOrg();
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderDeliveryNotePdf(
+      baseDeliveryNoteData({
+        showDeliveryAddress: false,
+        deliveryAddress: { addressLine1: "Lagerhalle 7", postalCode: "88888", city: "Werksstadt" },
+      }),
+      theme,
+    );
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).not.toContain("Lieferadresse:");
+    expect(parsed.text).not.toContain("Lagerhalle 7");
   });
 });
 
