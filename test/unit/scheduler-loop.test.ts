@@ -45,6 +45,31 @@ describe("startScheduler (Phase 6, Task 3)", () => {
     expect(runScheduledJobsMock).toHaveBeenCalledTimes(1); // nicht 2
   });
 
+  // S4 (Fix-Welle): NaN (Tippfehler in SCHEDULER_INTERVAL_MINUTES) faellt auf 15 zurueck
+  // statt setInterval mit NaN (~0ms, Dauerlast) zu starten.
+  it("NaN-Minuten (Tippfehler) faellt auf 15-Minuten-Intervall zurueck, statt im Millisekundentakt zu feuern", async () => {
+    startScheduler(Number("nicht-numerisch"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(1);
+
+    // Waere das Intervall NaN (~0ms), haetten hier bereits viele weitere Ticks gefeuert.
+    await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60 * 1000); // insgesamt 15 Min nach dem ersten Tick
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("Minuten < 1 (z. B. 0) faellt auf 15-Minuten-Intervall zurueck", async () => {
+    startScheduler(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(runScheduledJobsMock).toHaveBeenCalledTimes(2);
+  });
+
   it("nie zwei Laeufe gleichzeitig: laufender Tick blockiert den naechsten", async () => {
     let resolveFirst!: () => void;
     runScheduledJobsMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveFirst = resolve; }));
