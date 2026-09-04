@@ -337,24 +337,24 @@ model Invoice {
 // der Schlussrechnung erzeugt und danach nie mehr veraendert (GoBD) — Storno der
 // Schlussrechnung stornoiert die Rechnung selbst, nicht diese Zeilen.
 model FinalInvoiceDeduction {
-  id                  String   @id @default(cuid())
-  finalInvoiceId      String
-  finalInvoice        Invoice  @relation("FinalInvoiceDeductions", fields: [finalInvoiceId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  finalInvoiceId       String
+  finalInvoice         Invoice  @relation("FinalInvoiceDeductions", fields: [finalInvoiceId], references: [id], onDelete: Cascade)
   downpaymentInvoiceId String
-  downpaymentInvoice  Invoice  @relation("DownpaymentInvoiceDeductions", fields: [downpaymentInvoiceId], references: [id])
+  downpaymentInvoice   Invoice  @relation("DownpaymentInvoiceDeductions", fields: [downpaymentInvoiceId], references: [id])
   // Snapshot der Abschlagsrechnung zum Zeitpunkt der Schlussrechnung (BG-3 Preceding
   // invoice reference: BT-25 Nummer, BT-26 Datum).
-  number              String
-  issueDate           DateTime
-  netCents            Int
-  taxCents            Int
-  grossCents          Int
-  taxRate             Int
-  taxCategory         String
-  createdAt           DateTime @default(now())
+  number               String
+  issueDate            DateTime
+  netCents             Int
+  taxCents             Int
+  grossCents           Int
+  taxRate              Int
+  taxCategory          String
+  createdAt            DateTime @default(now())
 
-  @@index([finalInvoiceId])
   @@unique([finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory])
+  @@index([finalInvoiceId])
 }
 
 model InvoiceLine {
@@ -759,16 +759,16 @@ model DunningStage {
 /// analog DocumentSettings), bevor eine Organisation die Einstellungen zum ersten Mal
 /// oeffnet.
 model DunningSettings {
-  id                  String       @id @default(cuid())
-  orgId               String       @unique
-  org                 Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  autoCreate          Boolean      @default(true)
-  autoSend            Boolean      @default(false) // §26: Default AUS; Versand nur wenn global UND je Stufe aktiv
-  baseInterestRateBp  Int          @default(127) // Basiszinssatz in Basispunkten (1,27 % = 127)
-  baseRateValidFrom   DateTime?
-  gracePeriodDays     Int          @default(0)
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                 String       @id @default(cuid())
+  orgId              String       @unique
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  autoCreate         Boolean      @default(true)
+  autoSend           Boolean      @default(false) // §26: Default AUS; Versand nur wenn global UND je Stufe aktiv
+  baseInterestRateBp Int          @default(127) // Basiszinssatz in Basispunkten (1,27 % = 127)
+  baseRateValidFrom  DateTime?
+  gracePeriodDays    Int          @default(0)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 }
 
 /// Protokoll der Scheduler-Laeufe (Phase 6) — DB-Lock und Nachvollziehbarkeit fuer den
