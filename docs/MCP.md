@@ -200,6 +200,14 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Basiszins) — Merge | „Aktiviere automatischen Mahnungsversand." |
 | `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
 
+### API-Schluessel
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `create_api_key` | Neuen API-Schluessel fuer `/api/v1` erzeugen (Name, Scopes read/write/send/admin, optional Ablauf) — das Klartext-Token wird NUR in dieser Antwort angezeigt | „Erzeuge einen API-Schluessel ‚Buchhaltung' mit Lese- und Schreibrechten." |
+| `revoke_api_key` | API-Schluessel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schluessel ‚Buchhaltung'." |
+| `list_api_keys` | API-Schluessel auflisten (Name, Praefix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schluessel gibt es?" |
+
 ### Abos (wiederkehrende Rechnungen)
 
 | Tool | Zweck | Beispiel |
