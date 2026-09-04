@@ -12,6 +12,7 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { testPdfTheme } from "../helpers/pdf-theme";
 
 const ORG: MapInput["org"] = {
   legalName: "Test GmbH",
@@ -189,13 +190,13 @@ describe("renderInvoicePdf — Phase 5 Titel/Bezug/Abzugsblock/§13-Hinweis", ()
         sourceLabel: "Angebot",
       }),
     );
-    const pdf = await renderInvoicePdf(data);
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 
   it("Teilrechnung: rendert mit Quellbezug ohne Fehler", async () => {
     const data = buildEInvoiceData(baseInput({ type: "PARTIAL", sourceNumber: "AN-2040-0004", sourceLabel: "Angebot" }));
-    const pdf = await renderInvoicePdf(data);
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 
@@ -205,7 +206,7 @@ describe("renderInvoicePdf — Phase 5 Titel/Bezug/Abzugsblock/§13-Hinweis", ()
       { number: "AR-2040-0002", issueDate: new Date("2040-03-01"), netCents: 300_000, taxCents: 57_000, grossCents: 357_000 },
     ];
     const data = buildEInvoiceData(baseInput({ type: "FINAL", prepaidCents: 714_000, deductions, sourceNumber: "AN-2040-0003", sourceLabel: "Angebot" }));
-    const pdf = await renderInvoicePdf(data);
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 });

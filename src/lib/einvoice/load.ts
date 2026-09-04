@@ -7,6 +7,7 @@
  * fürs PDF ("Bezug zu ..."), nie ins XML.
  */
 import { dbInternal } from "@/lib/db";
+import { payableBaseCents } from "@/domain/invoice/amounts";
 import { buildEInvoiceData } from "./mapper";
 
 const INCLUDE = {
@@ -74,6 +75,9 @@ export async function loadEInvoiceData(invoiceId: string) {
     sourceNumber,
     sourceLabel,
   });
+  // Phase 7 (§37) — offener Betrag zum Renderzeitpunkt fürs GiroCode-Layout (Ruling:
+  // payableBaseCents(invoice) - paidAmountCents, NICHT das XML-BT-115 payableCents).
+  data.giroAmountCents = payableBaseCents(invoice) - invoice.paidAmountCents;
 
   if (invoice.correctsInvoiceId) {
     const original = await dbInternal.invoice.findUnique({

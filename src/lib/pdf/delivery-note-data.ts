@@ -80,6 +80,7 @@ export function buildDeliveryNotePdfData(
     showTax: dn.showTax,
     showArticleNumber: dn.showArticleNumber,
     showDescription: dn.showDescription,
+    showDeliveryAddress: dn.showDeliveryAddress,
     headerText,
     footerText,
     sourceNumber,

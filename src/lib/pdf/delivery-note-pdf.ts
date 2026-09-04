@@ -1,7 +1,13 @@
-/** PDF eines Lieferscheins. Layout an invoice-pdf.ts angelehnt. */
+/**
+ * PDF eines Lieferscheins. Layout an invoice-pdf.ts angelehnt.
+ * Phase 7, Task 3 (§35-§36): Briefpapier + Druckoptionen kommen aus einem `PdfTheme`.
+ */
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
+import type { PdfTheme } from "./theme";
+import { drawFoldMarks, drawPunchMark, drawPageNumbers } from "./marks";
+import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
 
 export interface DeliveryNotePdfLine {
   pos: number;
@@ -47,6 +53,8 @@ export interface DeliveryNotePdfData {
   showTax: boolean;
   showArticleNumber: boolean;
   showDescription: boolean;
+  /** Phase 7, Task 1/3 (§36) — Lieferadresse (Empfängerblock) auf dem Ausdruck anzeigen. */
+  showDeliveryAddress: boolean;
   headerText?: string | null;
   footerText?: string | null;
   // Nummer des Quellbelegs (Angebot/Rechnung) — Aufloesung von sourceType/sourceId
@@ -97,41 +105,56 @@ function buildColumns(data: DeliveryNotePdfData): Column[] {
   return columns;
 }
 
-export function renderDeliveryNotePdf(data: DeliveryNotePdfData): Promise<Buffer> {
+export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const margins = pdfMargins(theme);
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
+      bufferPages: true,
+      compress: false,
+    });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
+    doc.on("pageAdded", () => drawBackground(doc, theme));
+    drawBackground(doc, theme);
 
     const cur = data.currency;
-    const left = 50;
-    const right = 545;
+    const left = margins.left;
+    const right = doc.page.width - margins.right;
+    const titleColor = theme.brand.primaryColor;
+
+    drawLogo(doc, theme, right, margins.top);
 
     // Kopf: Absender
-    doc.fontSize(9).fillColor("#555");
-    doc.text(`${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`, left, 50);
+    const senderFallback = `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`;
+    drawSenderLine(doc, theme, left, margins.top, senderFallback);
 
-    // Empfänger
-    doc.fillColor("#000").fontSize(11);
-    doc.text(data.buyer.name, left, 110);
-    if (data.buyer.contactName) doc.text(data.buyer.contactName);
-    doc.text(data.buyer.addressLine1);
-    if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
-    doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
+    // Empfänger / Lieferadresse — nur wenn showDeliveryAddress an ist.
+    const buyerY = margins.top + 60;
+    if (data.showDeliveryAddress) {
+      doc.fillColor("#000").fontSize(11);
+      doc.text(data.buyer.name, left, buyerY);
+      if (data.buyer.contactName) doc.text(data.buyer.contactName);
+      doc.text(data.buyer.addressLine1);
+      if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
+      doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
+    }
 
     // Titel + Meta (rechts)
-    doc.fontSize(18).fillColor("#111").text("Lieferschein", left, 110, { align: "right" });
+    doc.fontSize(18).fillColor(titleColor).text("Lieferschein", left, buyerY, { align: "right" });
     doc.fontSize(10).fillColor("#333");
-    doc.text(`Lieferscheinnummer: ${data.number}`, 300, 140, { align: "right" });
+    const metaTop = margins.top + 90;
+    doc.text(`Lieferscheinnummer: ${data.number}`, left + 250, metaTop, { align: "right" });
     doc.text(`Datum: ${deDate(data.issueDate)}`, { align: "right" });
     if (data.deliveryDate) doc.text(`Lieferdatum: ${deDate(data.deliveryDate)}`, { align: "right" });
     if (data.shippingDate) doc.text(`Versanddatum: ${deDate(data.shippingDate)}`, { align: "right" });
     if (data.sourceNumber) doc.text(`Bezugsbeleg: ${data.sourceNumber}`, { align: "right" });
 
     // Kopftext (Platzhalter bereits aufgeloest) — vor der Positions-Tabelle, y danach dynamisch.
-    let y = 220;
+    let y = margins.top + 170;
     if (data.headerText) {
       doc.fontSize(9).fillColor("#333").text(data.headerText, left, y, { width: right - left });
       y = doc.y + 10;
@@ -162,7 +185,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData): Promise<Buffer
     // Summen — nur mit Preisen (ohne showPrices gibt es keinen Wert, den man summieren koennte).
     if (data.showPrices) {
       y += 10;
-      doc.moveTo(left + 300, y).lineTo(right, y).strokeColor("#ccc").stroke();
+      doc.moveTo(left + 300, y).lineTo(right, y).strokeColor(titleColor).stroke();
       y += 6;
       const sumRow = (label: string, value: string, bold = false) => {
         doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
@@ -194,18 +217,30 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData): Promise<Buffer
       doc.fontSize(9).fillColor("#333").text(data.footerText, left, y, { width: right - left });
     }
 
-    // Fußzeile: Aussteller-Pflichtangaben
-    const footY = 760;
-    doc.fontSize(8).fillColor("#666");
-    const sellerLine = [
-      data.seller.name,
-      `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-      data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-      data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
+    // Fußzeile: Aussteller-Pflichtangaben (nur wenn options.showFooter an ist).
+    const footY = doc.page.height - margins.bottom - 20;
+    if (theme.options.showFooter) {
+      drawBrandedFooter(doc, theme, left, right, footY - 11);
+      doc.fontSize(8).fillColor("#666");
+      const sellerLine = [
+        data.seller.name,
+        `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
+        data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
+        data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
+    }
+
+    // Falz-/Lochmarken + Seitenzahlen.
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      if (theme.options.foldMarks) drawFoldMarks(doc);
+      if (theme.options.punchMarks) drawPunchMark(doc);
+    }
+    if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
 
     doc.end();
   });
