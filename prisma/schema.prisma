@@ -1122,3 +1122,58 @@ model ApiIdempotency {
   @@unique([orgId, key])
   @@index([orgId, createdAt])
 }
+
+/// Webhook-Endpunkt einer Organisation (Phase 10, Task 5/10b) — URL + verschluesseltes
+/// Secret (AES-GCM, src/lib/crypto/secrets.ts) + abonnierte Ereignisse (eventsJson,
+/// JSON-Array aus src/schemas/webhook.ts#WEBHOOK_EVENTS). Kein Klartext-Secret nach der
+/// Erzeugung/Rotation abrufbar (analog ApiKey). `active=false` deaktiviert Zustellung UND
+/// Anlage neuer Deliveries (emitEvent filtert danach) — kein Hard-Delete, damit
+/// WebhookDelivery-Historie referenzierbar bleibt (siehe WebhookDelivery.onDelete).
+model WebhookEndpoint {
+  id         String            @id @default(cuid())
+  orgId      String
+  url        String
+  secretEnc  String
+  eventsJson String
+  active     Boolean           @default(true)
+  createdBy  String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  deliveries WebhookDelivery[]
+
+  @@index([orgId])
+}
+
+/// Eine Zustellung eines Ereignisses an einen Endpunkt (Outbox-Zeile, Phase 10, Task 5) —
+/// wird von `emitEvent` (src/domain/webhook/emit.ts) IN DERSELBEN Transaktion wie
+/// `appendChangeLog` angelegt (status PENDING), von `runWebhookDeliveries`
+/// (src/domain/webhook/deliver.ts, Scheduler-Job "webhooks") seriell abgearbeitet.
+/// `dataJson` ist der Serializer-Snapshot (Task 2, ohne internalNotes) zum
+/// Emit-Zeitpunkt — die tatsaechlich gesendete Nutzlast (`{id,type,createdAt,data}`)
+/// wird erst bei der Zustellung aus id/event/createdAt/dataJson zusammengesetzt.
+/// `attempts`/`nextAttemptAt` steuern Backoff (1/5/30/120 Min., DEAD nach 5 Versuchen);
+/// `replayOfId` verweist auf die urspruengliche Zeile, wenn diese Zeile ein manueller
+/// Replay ist (jeder Replay legt eine NEUE Zeile an, aendert nie die alte).
+model WebhookDelivery {
+  id            String          @id @default(cuid())
+  orgId         String
+  endpointId    String
+  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event         String
+  objectName    String
+  objectId      String
+  dataJson      String
+  status        String          @default("PENDING") // PENDING | DELIVERED | FAILED | DEAD
+  attempts      Int             @default(0)
+  nextAttemptAt DateTime        @default(now())
+  lastAttemptAt DateTime?
+  responseCode  Int?
+  responseBody  String?
+  lastError     String?
+  replayOfId    String?
+  createdAt     DateTime        @default(now())
+  deliveredAt   DateTime?
+
+  @@index([orgId, status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+}

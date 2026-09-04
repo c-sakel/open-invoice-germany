@@ -12,6 +12,8 @@ import { reconcileNetsForGross } from "@/lib/pricing/partial";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeInvoice } from "@/api/serializers/invoice";
 import { finalizeWithinTx } from "./finalize";
 
 /** Zeilentypen, die keinen Betrag tragen (§8: HEADING/TEXT/SUBTOTAL nie in Summen/XML). */
@@ -222,7 +224,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
       inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson, contactSnapshotJson: original.contactSnapshotJson },
     });
 
-    await tx.invoice.update({
+    const cancelledOriginal = await tx.invoice.update({
       where: { id: original.id },
       data: { status: "CANCELLED", reversedByInvoiceId: finalizedCredit.id },
     });
@@ -247,6 +249,18 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
       actor,
       at: now,
       data: { reversedBy: finalizedCredit.number },
+    });
+
+    // Webhook-Outbox (Phase 10, Task 5): "invoice.cancelled" bezieht sich auf das
+    // Original (jetzt Status CANCELLED) — die Storno-Gutschrift selbst hat bereits ihr
+    // eigenes "invoice.finalized" ausgeloest (finalizeWithinTx oben).
+    await emitEvent(tx, {
+      orgId: original.orgId,
+      type: "invoice.cancelled",
+      objectName: "Invoice",
+      objectId: original.id,
+      data: serializeInvoice({ ...cancelledOriginal, lines: original.lines }, new Set()),
+      now,
     });
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalizedCredit };

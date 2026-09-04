@@ -208,6 +208,15 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `revoke_api_key` | API-Schluessel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schluessel ‚Buchhaltung'." |
 | `list_api_keys` | API-Schluessel auflisten (Name, Praefix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schluessel gibt es?" |
 
+### Webhooks
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `list_webhooks` | Webhook-Endpunkte auflisten (URL, abonnierte Ereignisse, aktiv) — nie das Secret | „Welche Webhooks sind eingerichtet?" |
+| `upsert_webhook` | Webhook-Endpunkt anlegen oder aendern (URL, Events, aktiv) — Klartext-Secret nur bei Neuanlage/Rotation sichtbar | „Lege einen Webhook auf https://example.com/hook fuer invoice.finalized und payment.recorded an." |
+| `test_webhook` | Synthetische Test-Zustellung an einen Endpunkt senden und Ergebnis melden | „Teste den Webhook ‚https://example.com/hook'." |
+| `replay_webhook_delivery` | Eine bestehende Zustellung als NEUE Zustellung erneut versuchen (Original bleibt unveraendert) | „Wiederhole die fehlgeschlagene Zustellung xyz." |
+
 ### Abos (wiederkehrende Rechnungen)
 
 | Tool | Zweck | Beispiel |

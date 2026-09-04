@@ -50,6 +50,7 @@ import { textTemplateSchema } from "./serializers/text-template";
 import { emailTemplateSchema } from "./serializers/email-template";
 import { apiKeySchema } from "./serializers/api-key";
 import { recurringSchema } from "./serializers/recurring";
+import { webhookSchema } from "./serializers/webhook";
 
 const V1_ROOT = path.resolve(process.cwd(), "src/app/api/v1");
 
@@ -116,6 +117,7 @@ export const RESOURCE_SCHEMAS: Record<string, z.ZodTypeAny> = {
   }),
   ApiKey: apiKeySchema,
   Recurring: recurringSchema,
+  Webhook: webhookSchema,
 };
 
 /** `/api/v1/Invoice` oder `/api/v1/Invoice/{id}` -> "Invoice"; alles Tiefere (Aktionen,

@@ -16,6 +16,8 @@ import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeInvoice } from "@/api/serializers/invoice";
 import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
@@ -365,6 +367,20 @@ export async function finalizeWithinTx(
     where: { id: invoiceId },
     include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
   });
+
+  // Webhook-Outbox (Phase 10, Task 5, task-5-facts.md): IN DERSELBEN Tx wie der obige
+  // ChangeLog-Eintrag. Deckt automatisch JEDEN Aufrufer von finalizeWithinTx ab (direktes
+  // Festschreiben, Storno-Gutschrift, Teil-/Abschlags-/Schlussrechnung, Abo-Lauf,
+  // Angebotsannahme) — genau ein Emit-Call-Site fuer "invoice.finalized".
+  await emitEvent(tx, {
+    orgId: invoice.orgId,
+    type: "invoice.finalized",
+    objectName: "Invoice",
+    objectId: invoiceId,
+    data: serializeInvoice(result!, new Set()),
+    now,
+  });
+
   return result!;
 }
 
