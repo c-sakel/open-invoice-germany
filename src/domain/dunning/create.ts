@@ -69,7 +69,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         dunnings: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { dueDate: true, sentAt: true, level: true, flatFee40Cents: true, stage: { select: { order: true } } },
+          select: { dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
         },
       },
     });
@@ -99,7 +99,10 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
 
     const dueDate = inv.dueDate ?? inv.issueDate;
 
-    const stages: DunningStageRow[] = await tx.dunningStage.findMany({ where: { orgId: inv.orgId } });
+    const stages: DunningStageRow[] = await tx.dunningStage.findMany({
+      where: { orgId: inv.orgId },
+      select: { id: true, name: true, order: true, enabled: true, daysAfterDue: true, feeCents: true, newDueDays: true, calculateInterest: true, includeB2BFlatFee: true },
+    });
     const last = inv.dunnings[0] ?? null;
     const lastOrder = last ? (last.stage?.order ?? last.level) : null;
     const schedule = dunningScheduleFor({
@@ -118,7 +121,12 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
 
     const isConsumer = inv.customer.type === "CONSUMER";
     const charging = stage.order >= 2;
-    const alreadyHasFlat = inv.dunnings.some((d) => d.flatFee40Cents > 0);
+    // B1 (Fix-Welle): das `take: 1`-Fenster oben zeigt nur die LETZTE Mahnung — reicht
+    // nicht, um "hoechstens einmal je Rechnung" zu pruefen (Stufe 3 saehe sonst nur Stufe 2,
+    // die selbst schon 0 war, und wuerde die Pauschale ein zweites Mal buchen). Deshalb hier
+    // ZUSAETZLICH ueber ALLE bisherigen Mahnungen dieser Rechnung zaehlen, in derselben Tx.
+    const flatFeeCount = await tx.dunning.count({ where: { invoiceId, flatFee40Cents: { gt: 0 } } });
+    const alreadyHasFlat = flatFeeCount > 0;
     const applyFlatFee = stage.includeB2BFlatFee && !isConsumer && !alreadyHasFlat;
 
     // Ruling (task-2-facts.md): Zinsen werden je Mahnung neu auf die Gesamt-Ueberfaelligkeit

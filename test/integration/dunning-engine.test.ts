@@ -87,6 +87,16 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(r2.dunning.flatFee40Cents).toBe(0); // schon einmal berechnet
   });
 
+  it("B1 (Fix-Welle): 40-€-Pauschale ueber alle vier Standardstufen genau EINMAL (0/4000/0/0), nicht nur gegen die letzte Mahnung geprueft", async () => {
+    const customerId = await makeCustomer("BUSINESS");
+    const fin = await makeFinalizedInvoice(customerId);
+    const r0 = await createDunning(fin.id, { now: FIX_DATE }); // order 0 (Zahlungserinnerung, keine Pauschale)
+    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 1 (1. Mahnung)
+    const r2 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 2 (2. Mahnung)
+    const r3 = await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 3 (3. Mahnung)
+    expect([r0, r1, r2, r3].map((r) => r.dunning.flatFee40Cents)).toEqual([0, 4000, 0, 0]);
+  });
+
   it("Teilzahlung: 1.000 € Forderung, 400 € bezahlt -> Bemessungsgrundlage 600 €, Zinsen auf 600 €", async () => {
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId, {
