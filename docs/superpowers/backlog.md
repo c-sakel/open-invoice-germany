@@ -232,3 +232,12 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 - **`isAllowedHref` erlaubt abschliessendes `\n`** (`$` ohne `m`) — im HTML escaped, folgenlos; Regex auf `\z`-Aequivalent (`[^\s]+$` mit `s`-Flag-Pruefung) haerten.
 - **Abos ohne Positionsbloecke** (`RecurringInvoiceLine` ohne `lineType`) — bei Bedarf Phase 6/8 nachziehen.
 - **Anhaenge an festgeschriebenen Rechnungen** erlaubt (bewusst, ChangeLog) — in LIMITATIONEN dokumentiert.
+
+## Phase 5 (Nachtrag 2026-09-04)
+
+- E-Rechnung: Abschlagsrechnung (386) mit verbuchter Zahlung gibt BT-113 aus paidAmountCents aus (generisches Verhalten aller Typen). Pruefen, ob BT-113 auf 386 sinnvoll ist oder unterdrueckt werden soll. (Task-3-Review, Low)
+- RateBucket-Mapping aus computeTaxBreakdown in partial.ts und downpayment.ts doppelt — in einen Helfer ziehen. (Task 2 Fix-Runde 2)
+- Korrekturrechnung (CORRECTION, 384) hat keine Erzeugungsfunktion (Domain/Route/MCP) — im §16-Aktionsblock nur Erklaertext. Eigenes Backlog-Item: createCorrectionInvoice (ersetzt Rechnung inhaltlich, referenziert Original BG-3). (Task 4)
+- Index auf Invoice(sourceType, sourceId) (activePartialGrossCents/billedQuantities filtern darauf) — eigene Migration SQLite+Postgres. (Abschluss-Review Phase 5, Nit)
+- BT-113 auf Schlussrechnung ignoriert Zahlungen nach Festschreibung (XML entsteht bei Festschreibung) — COMPLIANCE-Hinweis. (Abschluss-Review)
+- Unique-Constraint fuer aktive Schlussrechnung je Quelle (sourceId, type=FINAL, nicht storniert) — Postgres READ COMMITTED Doppelklick-Race vollstaendig schliessen (Migration SQLite+Postgres). (Fix-Welle B13)
