@@ -1062,8 +1062,9 @@ model Notification {
   entityId   String?
   createdAt  DateTime  @default(now())
   readAt     DateTime?
-  dedupeKey  String    @unique
+  dedupeKey  String
 
+  @@unique([orgId, dedupeKey])
   @@index([orgId, readAt, createdAt])
 }
 

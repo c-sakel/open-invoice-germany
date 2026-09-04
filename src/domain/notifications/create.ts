@@ -1,9 +1,11 @@
 /**
  * Anlage/Abruf von In-App-Benachrichtigungen (Phase 8b, Task 3). `createNotification`
- * ist "upsert-ignore": `dedupeKey` ist `@unique` — ein zweiter Versuch mit demselben
- * Schluessel (z. B. der naechste Job-Lauf fuer dieselbe ueberfaellige Rechnung) erzeugt
- * KEINEN zweiten Eintrag und wirft auch keinen Fehler (analog dem Dedup-Muster in
- * `src/domain/attachment/manage.ts`, addAttachment).
+ * ist "upsert-ignore": `(orgId, dedupeKey)` ist `@@unique` (Fix-Welle: vorher `dedupeKey`
+ * global `@unique` — Cross-Tenant-Kopplung in einem sonst strikt org-gescopten Modell) —
+ * ein zweiter Versuch mit demselben Schluessel INNERHALB derselben Org (z. B. der
+ * naechste Job-Lauf fuer dieselbe ueberfaellige Rechnung) erzeugt KEINEN zweiten Eintrag
+ * und wirft auch keinen Fehler (analog dem Dedup-Muster in `src/domain/attachment/
+ * manage.ts`, addAttachment).
  */
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
