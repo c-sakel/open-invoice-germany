@@ -115,6 +115,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
   );
 
   // ── update_customer ──────────────────────────────────────────────────────────
+  // Fix-Runde 1 (Koordinator, Task 1): Feldliste jetzt aus customerSchema.partial()
+  // komponiert statt handgepflegtem inline-Zod — sonst geht z. B. die E-Mail-Format-
+  // Pruefung verloren und die Felder driften auseinander (§55, dieselbe Validierung wie
+  // upsert_customer/saveCustomer). defaultPaymentMethodId bleibt ausgenommen: der MCP-
+  // Aufrufer uebergibt einen Namen/Code (defaultPaymentMethod), keine interne ID.
   server.registerTool(
     "update_customer",
     {
@@ -123,45 +128,34 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         "Aktualisiert einen bestehenden Kunden gezielt per ID oder Name (anders als upsert_customer KEIN Anlegen). Nicht angegebene Felder bleiben unveraendert.",
       inputSchema: {
         customer: z.string().describe("Kunden-ID oder -Name"),
-        name: z.string().optional(),
-        addressLine1: z.string().optional(),
-        postalCode: z.string().optional(),
-        city: z.string().optional(),
-        countryCode: z.string().length(2).optional(),
-        type: z.enum(["BUSINESS", "CONSUMER"]).optional(),
-        vatId: z.string().optional(),
-        email: z.string().optional(),
-        contactName: z.string().optional(),
-        leitwegId: z.string().optional(),
-        defaultPaymentTermsDays: z.number().int().min(0).max(365).optional(),
+        ...customerSchema.partial().omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
-        notes: z.string().optional(),
       },
     },
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const existing = await ctx.resolveCustomer(org.id, args.customer);
+        const { customer: _customerRef, defaultPaymentMethod, ...rest } = args;
+        void _customerRef;
+        const v = customerSchema.partial().omit({ defaultPaymentMethodId: true }).parse(rest);
+        // NUR die tatsaechlich uebergebenen Felder patchen: zod fuellt bei .partial()
+        // fehlende Schluessel mit dem Schema-Default (z. B. type="BUSINESS",
+        // countryCode="DE") statt sie undefined zu lassen — ein blindes `{ ...v }`
+        // wuerde also nicht angegebene Felder stillschweigend zuruecksetzen.
         const patch: Record<string, unknown> = {};
-        if (args.name !== undefined) patch.name = args.name;
-        if (args.addressLine1 !== undefined) patch.addressLine1 = args.addressLine1;
-        if (args.postalCode !== undefined) patch.postalCode = args.postalCode;
-        if (args.city !== undefined) patch.city = args.city;
-        if (args.countryCode !== undefined) patch.countryCode = args.countryCode;
-        if (args.type !== undefined) patch.type = args.type;
-        if (args.vatId !== undefined) patch.vatId = args.vatId;
-        if (args.email !== undefined) patch.email = args.email || null;
-        if (args.contactName !== undefined) patch.contactName = args.contactName;
-        if (args.leitwegId !== undefined) patch.leitwegId = args.leitwegId;
-        if (args.defaultPaymentTermsDays !== undefined) patch.defaultPaymentTermsDays = args.defaultPaymentTermsDays;
-        if (args.notes !== undefined) patch.notes = args.notes;
-        if (args.defaultPaymentMethod !== undefined) {
-          const method = await ctx.resolvePaymentMethod(org.id, args.defaultPaymentMethod);
+        for (const key of Object.keys(rest) as (keyof typeof v)[]) {
+          if ((rest as Record<string, unknown>)[key as string] !== undefined) patch[key as string] = v[key];
+        }
+        if (v.email !== undefined) patch.email = v.email || null;
+        if (defaultPaymentMethod !== undefined) {
+          const method = await ctx.resolvePaymentMethod(org.id, defaultPaymentMethod);
           patch.defaultPaymentMethodId = method.id;
         }
         const customer = await dbInternal.customer.update({ where: { id: existing.id }, data: patch });
         return ctx.ok(`Kunde aktualisiert: ${customer.name} (${customer.id}).`);
       } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         return ctx.fail(`Konnte Kunde nicht aktualisieren: ${(e as Error).message}`);
       }
     },
