@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
+import { loadListPage } from "@/lib/list-page";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,11 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   };
 
   const org = await getActiveOrg();
-  const result = await listInvoices(org.id, sp);
+  // Fix-Welle (B1): rohe searchParams enthalten bei jedem FilterBar-Submit leere Strings
+  // ("Alle" im <select>) — parseListQuery entfernt sie, ein verbleibender ZodError
+  // (handgeschriebene URL, z. B. offset=abc) faengt loadListPage ab statt die Seite
+  // abstuerzen zu lassen.
+  const result = await loadListPage(sp, (f) => listInvoices(org.id, f), { booleanKeys: ["eInvoice"] });
   const allPaymentMethods = await listPaymentMethods(org.id);
   const activePaymentMethods = allPaymentMethods.filter((m) => m.isActive && m.code !== "SKONTO");
   const paymentMethodOptions = activePaymentMethods.map((m) => ({ code: m.code, name: m.name }));

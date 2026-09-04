@@ -5,6 +5,7 @@ import { availableActions } from "@/domain/document/actions";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
+import { loadListPage } from "@/lib/list-page";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,8 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
   };
 
   const org = await getActiveOrg();
-  const result = await listRecurring(org.id, sp);
+  // Fix-Welle (B1): siehe rechnungen/page.tsx.
+  const result = await loadListPage(sp, (f) => listRecurring(org.id, f));
 
   const fields: FilterField[] = [
     { type: "text", name: "q", label: "Suche", placeholder: "Bezeichnung, Kunde…" },
