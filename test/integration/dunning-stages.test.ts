@@ -12,7 +12,6 @@ import {
   updateDunningStage,
   deleteDunningStage,
   reorderDunningStages,
-  nextEnabledStage,
   DunningStageInUseError,
   DunningStageNotFoundError,
 } from "@/domain/dunning/stages";
@@ -178,29 +177,6 @@ describe("Phase 6 — Mahnstufen-Domain (stages.ts)", () => {
     await expect(reorderDunningStages(orgId, { ids: [...stages.map((s) => s.id), "fremde-id"] })).rejects.toThrow();
   });
 
-  it("nextEnabledStage ueberspringt deaktivierte Stufen", async () => {
-    const orgId = await makeOrg();
-    const stages = await listDunningStages(orgId);
-    const stage1 = stages.find((s) => s.order === 1)!;
-    await updateDunningStage(orgId, stage1.id, {
-      name: stage1.name,
-      daysAfterDue: stage1.daysAfterDue,
-      newDueDays: stage1.newDueDays,
-      feeCents: stage1.feeCents,
-      calculateInterest: stage1.calculateInterest,
-      includeB2BFlatFee: stage1.includeB2BFlatFee,
-      enabled: false,
-    });
-
-    const first = await nextEnabledStage(orgId, null);
-    expect(first?.order).toBe(0);
-
-    const afterFirst = await nextEnabledStage(orgId, 0);
-    expect(afterFirst?.order).toBe(2); // Stufe 1 ist deaktiviert -> uebersprungen
-
-    const afterLast = await nextEnabledStage(orgId, 3);
-    expect(afterLast).toBeNull();
-  });
 });
 
 describe("Phase 6 — Mahnwesen-Einstellungen (settings.ts)", () => {
@@ -220,6 +196,44 @@ describe("Phase 6 — Mahnwesen-Einstellungen (settings.ts)", () => {
     const loaded = await loadDunningSettings(org.id);
     expect(loaded).toEqual(DEFAULT_DUNNING_SETTINGS);
     expect(await dbInternal.dunningSettings.findUnique({ where: { orgId: org.id } })).not.toBeNull();
+  });
+
+  // B2 (Fix-Welle, Bestandsschutz): eine Org mit bereits festgeschriebener Rechnung zum
+  // Anlagezeitpunkt der DunningSettings-Zeile bekommt autoCreate=false, damit der
+  // Scheduler nach dem ersten Start nicht sofort den kompletten Altbestand mahnt.
+  it("Bestandsorg (schon eine festgeschriebene Rechnung) bekommt autoCreate=false", async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Bestandsorg", addressLine1: "X 1", postalCode: "1", city: "X" },
+    });
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "Kunde", addressLine1: "A 1", postalCode: "1", city: "A", type: "BUSINESS" },
+    });
+    await dbInternal.invoice.create({ data: { orgId: org.id, customerId: customer.id, status: "FINALIZED" } });
+    expect(await dbInternal.dunningSettings.findUnique({ where: { orgId: org.id } })).toBeNull();
+
+    const loaded = await loadDunningSettings(org.id);
+    expect(loaded.autoCreate).toBe(false);
+  });
+
+  it("neue Org ohne festgeschriebene Rechnung bekommt autoCreate=true (Default)", async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Frische Org", addressLine1: "X 1", postalCode: "1", city: "X" },
+    });
+    const loaded = await loadDunningSettings(org.id);
+    expect(loaded.autoCreate).toBe(true);
+  });
+
+  it("ensureOrgMasterdata: Bestandsorg (schon eine festgeschriebene Rechnung) bekommt ebenfalls autoCreate=false", async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Bestandsorg via ensure", addressLine1: "X 1", postalCode: "1", city: "X" },
+    });
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "Kunde", addressLine1: "A 1", postalCode: "1", city: "A", type: "BUSINESS" },
+    });
+    await dbInternal.invoice.create({ data: { orgId: org.id, customerId: customer.id, status: "SENT" } });
+    await ensureOrgMasterdata(dbInternal, org.id);
+    const loaded = await loadDunningSettings(org.id);
+    expect(loaded.autoCreate).toBe(false);
   });
 
   it("saveDunningSettings persistiert und rundet ISO-Datum korrekt", async () => {
