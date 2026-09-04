@@ -116,6 +116,48 @@ describe("withApi — Rate-Limit", () => {
     expect(j.error.code).toBe("RATE_LIMITED");
     expect(res.headers.get("Retry-After")).not.toBeNull();
   });
+
+  // Fix-Welle (Should-fix 4): OHNE gueltigen Bearer-Token wurde bisher ueberhaupt kein
+  // Kontingent verbraucht (`checkApiRateLimit` lief erst NACH `verifyApiToken`, das aber
+  // bei einem unbekannten Token bereits mit 401 wirft) — ein Angreifer konnte beliebig
+  // viele DB-Lookups (`apiKey.findUnique`) ungebremst ausloesen. Der neue IP-gekeytete
+  // Pre-Auth-Bucket (`preauth:<ip>`, 120/min) muss GREIFEN, BEVOR der Token ueberhaupt
+  // geprueft wird — auch bei komplett fehlendem Authorization-Header.
+  it("pre-auth Rate-Limit (IP-gekeytet) greift VOR der Token-Pruefung — auch ohne Token", async () => {
+    const ip = "203.0.113.77";
+    for (let i = 0; i < 120; i++) rateLimit(`preauth:${ip}`, { limit: 120, windowMs: 60_000 });
+
+    const request = req("http://x/api/v1/ping");
+    request.headers.set("cf-connecting-ip", ip);
+    const res = await pingGet(request);
+    expect(res.status).toBe(429);
+    const j = await res.json();
+    expect(j.error.code).toBe("RATE_LIMITED");
+    expect(res.headers.get("Retry-After")).not.toBeNull();
+  });
+});
+
+describe("withApi — Body-Limit (Should-fix 5)", () => {
+  // Kleines Limit (statt der echten 2 MB) haelt den Test schnell — die Mechanik
+  // (Content-Length-Vorabpruefung + tatsaechliche Laenge) ist identisch.
+  const smallLimitPost = withApi<Record<string, never>>(async (_req, ctx) => {
+    return apiData({ received: ctx.body });
+  }, { scope: "write", maxBodyBytes: 32 });
+
+  it("Body ueber dem Limit -> 413 PAYLOAD_TOO_LARGE", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    const oversized = { text: "x".repeat(100) };
+    const res = await smallLimitPost(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: oversized }));
+    expect(res.status).toBe(413);
+    const j = await res.json();
+    expect(j.error.code).toBe("PAYLOAD_TOO_LARGE");
+  });
+
+  it("Body unter dem Limit -> normale Verarbeitung", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    const res = await smallLimitPost(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { a: 1 } }));
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("withApi — Idempotenz (POST)", () => {

@@ -458,6 +458,22 @@ describe("/api/v1/Attachment", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  // Fix-Welle (Should-fix 5): Base64-Laenge MUSS vor dem Decode geprueft werden — sonst
+  // alloziiert `Buffer.from(v.contentBase64, "base64")` bereits den vollen dekodierten
+  // Puffer, bevor storeFile() die Dateigroesse (10 MB) ablehnt. Ueber 10 MB Rohdaten (hier
+  // etwas mehr als das erlaubte Base64-Aequivalent), aber unter dem 16-MB-Body-Limit der
+  // Route -> 413, nicht 400/500.
+  it("Base64-Anhang ueber dem Dateilimit -> 413 PAYLOAD_TOO_LARGE (Body bleibt unter dem 16-MB-Routenlimit)", async () => {
+    const created = await createInvoice();
+    const contentBase64 = "A".repeat(14_000_000);
+    const res = await AttachmentCreate(
+      req("http://x/api/v1/Attachment", { method: "POST", token, body: { docType: "INVOICE", docId: created.id, filename: "big.txt", mime: "text/plain", contentBase64 } }),
+    );
+    expect(res.status).toBe(413);
+    const j = await json(res);
+    expect(j.error.code).toBe("PAYLOAD_TOO_LARGE");
+  });
 });
 
 // ── EmailLog (nur GET, siehe route.ts-Kommentar) ─────────────────────────────

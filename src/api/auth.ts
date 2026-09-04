@@ -25,19 +25,33 @@
  * Rueckgabe: der Handler liefert `apiData`/`apiList` (src/api/response.ts) oder wirft
  * — withApi mappt jeden Wurf einheitlich. `X-RateLimit-Remaining` wird auf JEDE
  * Antwort (Erfolg wie Fehler-Idempotenz-Replay) gesetzt.
+ *
+ * Fix-Welle (Should-fix 4+5): VOR jedem Token-Lookup laeuft ein IP-gekeytes Pre-Auth-
+ * Kontingent (120/Min, src/api/rate-limit.ts#checkPreAuthRateLimit) — ohne dieses lief
+ * ein ungueltiger/fehlender Bearer-Token unbegrenzt gegen die DB. Bei POST/PATCH/PUT wird
+ * zusaetzlich die Body-Groesse begrenzt (`opts.maxBodyBytes`, Default 2 MB,
+ * `DEFAULT_MAX_BODY_BYTES`) — erst per `Content-Length`-Header (schneller Abbruch ohne
+ * den Body zu lesen), dann per tatsaechlich gelesener Laenge (Header ist faelschbar/
+ * auslassbar). Ueberschreitung wirft `PayloadTooLargeError` -> 413 PAYLOAD_TOO_LARGE.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { ApiKeyScope } from "@/schemas";
 import { verifyApiToken, requireScope, type VerifiedApiKey } from "@/domain/api-key/verify";
 import { slugifyKeyName } from "@/domain/api-key/create";
-import { checkApiRateLimit, attachRateLimitHeader } from "./rate-limit";
+import { checkApiRateLimit, checkPreAuthRateLimit, attachRateLimitHeader } from "./rate-limit";
+import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { beginIdempotency, completeIdempotency, abandonIdempotency } from "./idempotency";
-import { apiError } from "./errors";
+import { apiError, PayloadTooLargeError } from "./errors";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 const BODY_METHODS = new Set(["POST", "PATCH", "PUT"]);
+
+/** Fix-Welle (Should-fix 5): Default-Limit fuer den Request-Body — 2 MB deckt jede
+ *  reguläre JSON-Nutzlast bequem ab (die groesste Ausnahme ist /Attachment, das per
+ *  `maxBodyBytes` in seinem eigenen `withApi(...)`-Aufruf ueberschreibt). */
+export const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 export interface ApiContext<TParams = Record<string, string>> {
   orgId: string;
@@ -62,9 +76,17 @@ function invalidIdempotencyKeyError(): z.ZodError {
   return new z.ZodError([{ code: "custom", path: ["Idempotency-Key"], message: `Idempotency-Key muss 1..${MAX_IDEMPOTENCY_KEY_LENGTH} Zeichen lang sein.` }]);
 }
 
-export function withApi<TParams = Record<string, string>>(handler: ApiHandler<TParams>, opts: { scope: ApiKeyScope }) {
+export function withApi<TParams = Record<string, string>>(
+  handler: ApiHandler<TParams>,
+  opts: { scope: ApiKeyScope; maxBodyBytes?: number },
+) {
+  const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   return async (req: Request, routeCtx?: ApiRouteContext<TParams>): Promise<NextResponse> => {
     try {
+      // Fix-Welle (Should-fix 4): IP-gekeytes Kontingent VOR jedem Token-Lookup — sonst
+      // verbraucht ein fehlender/ungueltiger Bearer-Token gar kein Kontingent und loest
+      // trotzdem einen DB-Round-Trip aus (verifyApiToken -> apiKey.findUnique).
+      checkPreAuthRateLimit(clientIpFromHeaders(req.headers));
       const apiKey = await verifyApiToken(bearerToken(req));
       requireScope(apiKey, opts.scope);
       const remaining = checkApiRateLimit(apiKey.id);
@@ -76,7 +98,17 @@ export function withApi<TParams = Record<string, string>>(handler: ApiHandler<TP
       let rawBody = "";
       let body: unknown;
       if (BODY_METHODS.has(method)) {
+        // Fix-Welle (Should-fix 5): Content-Length VORAB pruefen (schneller Abbruch ohne
+        // den Body ueberhaupt zu lesen) — der Header ist aber vom Client faelschbar/
+        // auslassbar, deshalb zusaetzlich die tatsaechlich gelesene Laenge unten pruefen.
+        const contentLength = req.headers.get("content-length");
+        if (contentLength && Number(contentLength) > maxBodyBytes) {
+          throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBodyBytes} Bytes.`);
+        }
         rawBody = await req.text();
+        if (Buffer.byteLength(rawBody, "utf8") > maxBodyBytes) {
+          throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBodyBytes} Bytes.`);
+        }
         if (rawBody) {
           try {
             body = JSON.parse(rawBody);

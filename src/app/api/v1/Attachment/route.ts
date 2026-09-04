@@ -14,9 +14,22 @@ import { addAttachment } from "@/domain/attachment/manage";
 import { DocRefType } from "@/schemas";
 import { RelationError } from "@/domain/relations";
 import { NotFoundError } from "@/domain/errors";
+import { PayloadTooLargeError } from "@/api/errors";
+import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Fix-Welle (Should-fix 5): Base64 blaeht die Nutzlast um ~33 % auf (10 MB Datei ->
+// ~13,3 MB Base64-Text); 16 MB Body-Limit laesst das volle Dateilimit (mime.ts,
+// MAX_ATTACHMENT_FILE_BYTES) bequem zu, ohne einem beliebig grossen JSON-Body Tuer und
+// Tor zu oeffnen (das allgemeine withApi-Default bleibt 2 MB fuer jede andere Route).
+const ATTACHMENT_MAX_BODY_BYTES = 16 * 1024 * 1024;
+// Base64 kodiert 3 Rohbytes in 4 Zeichen — diese Laenge (VOR dem Decode) muss geprueft
+// werden, damit ein ueberdimensionierter Base64-String nicht erst komplett dekodiert
+// wird, bevor storeFile() die Dateigroesse ablehnt (Buffer.from() alloziiert bereits den
+// vollen dekodierten Puffer im Speicher).
+const MAX_ATTACHMENT_BASE64_CHARS = Math.ceil((MAX_ATTACHMENT_FILE_BYTES * 4) / 3) + 4;
 
 const createBodySchema = z.object({
   docType: DocRefType,
@@ -34,6 +47,9 @@ export const GET = withApi(async (req, ctx) => {
 
 export const POST = withApi(async (_req, ctx) => {
   const v = createBodySchema.parse(ctx.body);
+  if (v.contentBase64.length > MAX_ATTACHMENT_BASE64_CHARS) {
+    throw new PayloadTooLargeError(`Anhang ueberschreitet die Groesse von ${MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB.`);
+  }
   const buffer = Buffer.from(v.contentBase64, "base64");
   try {
     const created = await addAttachment(ctx.orgId, v.docType, v.docId, { filename: v.filename, mime: v.mime, buffer }, ctx.actor);
@@ -45,7 +61,7 @@ export const POST = withApi(async (_req, ctx) => {
     if (e instanceof RelationError) throw new NotFoundError(e.message);
     throw e;
   }
-}, { scope: "write" });
+}, { scope: "write", maxBodyBytes: ATTACHMENT_MAX_BODY_BYTES });
 
 export const spec = {
   list: {
@@ -64,6 +80,6 @@ export const spec = {
     scope: "write",
     request: { body: createBodySchema },
     response: apiDataResponseSchema(z.unknown()),
-    errors: [400, 401, 403, 404, 429],
+    errors: [400, 401, 403, 404, 413, 429],
   },
 } satisfies Record<string, RouteSpec>;

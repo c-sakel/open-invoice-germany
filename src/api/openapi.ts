@@ -250,6 +250,7 @@ const ERROR_INFO: Record<number, { code: string; message: string }> = {
   403: { code: "FORBIDDEN", message: 'API-Schluessel hat nicht den erforderlichen Scope "write".' },
   404: { code: "NOT_FOUND", message: "Nicht gefunden." },
   409: { code: "CONFLICT", message: "Zustandskonflikt (z. B. bereits festgeschrieben)." },
+  413: { code: "PAYLOAD_TOO_LARGE", message: "Request-Body ueberschreitet das Limit." },
   429: { code: "RATE_LIMITED", message: "Rate-Limit ueberschritten (600/Minute je Schluessel)." },
 };
 
@@ -259,6 +260,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   403: "Token hat nicht den erforderlichen Scope.",
   404: "Ressource nicht gefunden oder gehoert nicht zur Organisation des Schluessels.",
   409: "Zustandskonflikt (GoBD-Regel, Idempotenz-Konflikt oder EN-16931-Validierung).",
+  413: "Request-Body ueberschreitet das Groessenlimit (2 MB allgemein, 16 MB fuer /Attachment).",
   429: "Rate-Limit ueberschritten — `Retry-After`-Header beachten.",
 };
 
