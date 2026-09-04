@@ -163,6 +163,78 @@ describe("withApi — Idempotenz (POST)", () => {
     expect(res1.status).toBe(201);
     expect(res2.status).toBe(201);
   });
+
+  // Fix-Runde 1 S1: Reserve-First gegen den urspruenglichen Wettlauf (zwei gleich-
+  // zeitige, identische Requests konnten beide den Handler ausfuehren).
+  it("zwei gleichzeitige identische POSTs (Promise.all) -> Handler laeuft genau EINMAL, der andere bekommt Replay oder IN_PROGRESS", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    const idemKey = `idem-race-${Math.random().toString(36).slice(2)}`;
+    let executions = 0;
+    const slowEcho = withApi<Record<string, never>>(async (_req, ctx) => {
+      executions += 1;
+      // Kuenstliche Verzoegerung, damit der zweite Request seine Pruefung sicher
+      // trifft, WAEHREND der erste noch IN_PROGRESS ist (deterministischer Test).
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const parsed = z.object({ amountCents: z.number().int() }).parse(ctx.body);
+      return apiData({ echoedCents: parsed.amountCents }, 201);
+    }, { scope: "write" });
+
+    const [res1, res2] = await Promise.all([
+      slowEcho(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { amountCents: 42 }, idemKey })),
+      slowEcho(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { amountCents: 42 }, idemKey })),
+    ]);
+
+    expect(executions).toBe(1); // genau EIN Handler-Lauf, egal welcher Request "gewinnt"
+    const statuses = [res1.status, res2.status];
+    // GENAU EINER der beiden liefert 201 (der Handler-Lauf, direkt oder als Replay
+    // danach); der andere entweder ebenfalls 201 (Replay) oder 409 IN_PROGRESS.
+    expect(statuses).toContain(201);
+    for (const status of statuses) {
+      expect([201, 409]).toContain(status);
+    }
+    const loser = statuses[0] === 409 ? res1 : statuses[1] === 409 ? res2 : null;
+    if (loser) {
+      const loserBody = await loser.json();
+      expect(loserBody.error.code).toBe("IDEMPOTENCY_IN_PROGRESS");
+    }
+  });
+
+  it("Handler wirft -> Reservierung wird entfernt, Retry mit demselben Key laeuft normal durch", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    const idemKey = `idem-fail-${Math.random().toString(36).slice(2)}`;
+    let attempt = 0;
+    const flaky = withApi<Record<string, never>>(async (_req, ctx) => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("simulierter transienter Fehler");
+      const parsed = z.object({ amountCents: z.number().int() }).parse(ctx.body);
+      return apiData({ echoedCents: parsed.amountCents }, 201);
+    }, { scope: "write" });
+
+    const res1 = await flaky(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { amountCents: 7 }, idemKey }));
+    expect(res1.status).toBe(500);
+
+    const res2 = await flaky(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: { amountCents: 7 }, idemKey }));
+    expect(res2.status).toBe(201);
+    expect(attempt).toBe(2); // zweiter Aufruf hat den Handler TATSAECHLICH erneut ausgefuehrt
+  });
+
+  it("Handler liefert 5xx (ohne zu werfen) -> Reservierung wird ebenfalls entfernt (kein repliziertes 5xx)", async () => {
+    const key = await issueKey({ scopes: ["write"] });
+    const idemKey = `idem-5xx-${Math.random().toString(36).slice(2)}`;
+    let attempt = 0;
+    const flaky5xx = withApi<Record<string, never>>(async () => {
+      attempt += 1;
+      if (attempt === 1) return NextResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 503 });
+      return apiData({ ok: true }, 201);
+    }, { scope: "write" });
+
+    const res1 = await flaky5xx(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: {}, idemKey }));
+    expect(res1.status).toBe(503);
+
+    const res2 = await flaky5xx(req("http://x/api/v1/echo", { method: "POST", token: key.token, body: {}, idemKey }));
+    expect(res2.status).toBe(201);
+    expect(attempt).toBe(2);
+  });
 });
 
 describe("withApi — Fehlerformat", () => {

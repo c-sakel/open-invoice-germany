@@ -1102,16 +1102,21 @@ model ApiKey {
   @@index([orgId])
 }
 
-/// Idempotenz-Schluessel fuer schreibende API-v1-Aktionen (Phase 10, Task 1) — Header
-/// `Idempotency-Key` (nur POST). Ablauf 24h, Aufraeumen lazy beim naechsten Lesen
-/// desselben Schluessels (kein eigener Scheduler-Job).
+/// Idempotenz-Schluessel fuer schreibende API-v1-Aktionen (Phase 10, Fix-Runde 1) — Header
+/// `Idempotency-Key` (nur POST). Reserve-First-Zustandsmaschine gegen Wettlaufsituationen
+/// (S1): `status` startet IN_PROGRESS (durch das @@unique([orgId, key]) gegen Doppel-
+/// Reservierung abgesichert), wechselt nach dem Handler zu DONE (responseJson/statusCode
+/// gefuellt) oder die Zeile wird bei einem Fehler/5xx geloescht (Retry moeglich). Ablauf
+/// 24h fuer BEIDE Zustaende, Aufraeumen lazy beim naechsten Lesen desselben Schluessels
+/// (kein eigener Scheduler-Job). Siehe src/api/idempotency.ts fuer den vollen Ablauf.
 model ApiIdempotency {
   id           String   @id @default(cuid())
   orgId        String
   key          String
   requestHash  String
-  responseJson String
-  statusCode   Int
+  status       String   @default("IN_PROGRESS") // IN_PROGRESS | DONE
+  responseJson String? // erst bei status=DONE gefuellt
+  statusCode   Int? // erst bei status=DONE gefuellt
   createdAt    DateTime @default(now())
 
   @@unique([orgId, key])

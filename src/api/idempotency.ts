@@ -1,22 +1,48 @@
 /**
- * Idempotenz fuer schreibende /api/v1/*-Aktionen (Phase 10, Task 1, task-1-facts.md):
- * Header `Idempotency-Key` (nur POST, 1..128 Zeichen). requestHash = sha256(method+
- * path+body). Wiederholung mit demselben Hash liefert die gespeicherte Antwort;
- * abweichender Hash -> 409 IDEMPOTENCY_MISMATCH. Ablauf 24h, Aufraeumen lazy beim
- * naechsten Lesen desselben Schluessels (kein eigener Scheduler-Job).
+ * Idempotenz fuer schreibende /api/v1/*-Aktionen (Phase 10, Task 1 + Fix-Runde 1
+ * S1). Header `Idempotency-Key` (nur POST, 1..128 Zeichen). requestHash =
+ * sha256(method+path+body).
  *
- * Nur Antworten mit Status < 500 werden gespeichert — ein 5xx darf bei einem Retry
- * mit demselben Idempotency-Key erneut versucht werden (transiente Fehler), waehrend
- * eine deterministische 2xx/4xx-Antwort (z. B. "bereits festgeschrieben") bewusst
- * repliziert wird, damit Netzwerk-Retries nicht doppelt buchen (GoBD).
+ * Reserve-First-Zustandsmaschine (Fix-Runde 1 — behebt einen Wettlauf: zwei
+ * gleichzeitige, identische Requests konnten beide den Handler ausfuehren, weil
+ * der urspruengliche "lesen, dann am Ende schreiben"-Ablauf keine Sperre hatte):
+ *
+ *   1. `beginIdempotency` versucht, die Zeile ANZULEGEN (status=IN_PROGRESS,
+ *      responseJson=null) — abgesichert durch `@@unique([orgId, key])`. Gelingt
+ *      das, ist der Aufrufer der EINZIGE, der den Handler ausfuehren darf (liefert
+ *      `null`).
+ *   2. Schlaegt das Anlegen mit P2002 fehl, existiert bereits eine Zeile fuer
+ *      denselben Schluessel:
+ *        - abgelaufen (>24h, gilt fuer BEIDE Zustaende) -> loeschen, erneut
+ *          versuchen (rekursiv) — Retry nach TTL ist ein Neuanfang.
+ *        - `requestHash` weicht ab -> `IdempotencyConflictError` (409
+ *          IDEMPOTENCY_MISMATCH).
+ *        - `status === "DONE"` -> gespeicherte Antwort zurueckgeben (Replay).
+ *        - `status === "IN_PROGRESS"` -> `IdempotencyInProgressError` (409
+ *          IDEMPOTENCY_IN_PROGRESS) — der urspruengliche Request laeuft noch.
+ *   3. Nach dem Handler: `completeIdempotency` (Status < 500) schreibt
+ *      responseJson/statusCode und setzt status=DONE — spaetere identische
+ *      Requests replizieren jetzt deterministisch. Bei Status >= 500 ODER wenn
+ *      der Handler wirft, entfernt `abandonIdempotency` die Reservierung wieder
+ *      (`src/api/auth.ts`), damit ein Retry mit demselben Key normal laeuft
+ *      (transiente Fehler duerfen erneut versucht werden — GoBD verlangt keine
+ *      Replikation eines Serverfehlers).
  */
 import { createHash } from "node:crypto";
+import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 
 export class IdempotencyConflictError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "IdempotencyConflictError";
+  }
+}
+
+export class IdempotencyInProgressError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IdempotencyInProgressError";
   }
 }
 
@@ -27,40 +53,70 @@ export interface IdempotentReplay {
   body: unknown;
 }
 
+function isUniqueConstraintError(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+}
+
 export function hashIdempotentRequest(method: string, path: string, rawBody: string): string {
   return createHash("sha256").update(`${method}\n${path}\n${rawBody}`, "utf8").digest("hex");
 }
 
 /**
- * Prueft, ob unter `key` bereits eine gueltige Antwort gespeichert ist. Liefert sie
- * bei identischem Request zurueck, wirft IdempotencyConflictError bei abweichendem
- * Request, oder liefert `null` (kein/abgelaufener Eintrag -> Handler laeuft normal).
+ * Reserviert `key` fuer den aktuellen Request (Reserve-First). Liefert `null`,
+ * wenn die Reservierung gelang — der Aufrufer fuehrt den Handler aus und ruft
+ * danach `completeIdempotency`/`abandonIdempotency`. Liefert eine gespeicherte
+ * Antwort (Replay), wenn `key` bereits mit demselben Request abgeschlossen wurde.
+ * Wirft `IdempotencyConflictError` bei abweichendem Request, `IdempotencyInProgressError`,
+ * wenn der urspruengliche Request noch laeuft.
  */
-export async function checkIdempotency(orgId: string, key: string, method: string, path: string, rawBody: string): Promise<IdempotentReplay | null> {
+export async function beginIdempotency(orgId: string, key: string, method: string, path: string, rawBody: string): Promise<IdempotentReplay | null> {
   const requestHash = hashIdempotentRequest(method, path, rawBody);
+
+  try {
+    await dbInternal.apiIdempotency.create({
+      data: { orgId, key, requestHash, status: "IN_PROGRESS", responseJson: null, statusCode: null },
+    });
+    return null; // Reservierung gelungen — Aufrufer fuehrt den Handler aus.
+  } catch (e) {
+    if (!isUniqueConstraintError(e)) throw e;
+  }
+
   const existing = await dbInternal.apiIdempotency.findUnique({ where: { orgId_key: { orgId, key } } });
-  if (!existing) return null;
+  if (!existing) {
+    // Wettlauf: die Zeile wurde zwischen dem gescheiterten create() und diesem
+    // Lesen bereits wieder geloescht (abandonIdempotency eines anderen Requests) —
+    // erneut versuchen, die Reservierung zu uebernehmen.
+    return beginIdempotency(orgId, key, method, path, rawBody);
+  }
 
   if (Date.now() - existing.createdAt.getTime() > TTL_MS) {
-    // Abgelaufen: lazy loeschen, Aufrufer faehrt wie ohne Eintrag fort.
+    // Abgelaufen (gilt fuer IN_PROGRESS wie DONE): loeschen, erneut versuchen —
+    // der Aufrufer startet einen frischen Zyklus fuer diesen Schluessel.
     await dbInternal.apiIdempotency.delete({ where: { orgId_key: { orgId, key } } }).catch(() => {});
-    return null;
+    return beginIdempotency(orgId, key, method, path, rawBody);
   }
 
   if (existing.requestHash !== requestHash) {
     throw new IdempotencyConflictError(`Idempotency-Key "${key}" wurde bereits mit einem abweichenden Request verwendet.`);
   }
 
-  return { status: existing.statusCode, body: JSON.parse(existing.responseJson) as unknown };
+  if (existing.status === "DONE") {
+    return { status: existing.statusCode!, body: JSON.parse(existing.responseJson!) as unknown };
+  }
+
+  throw new IdempotencyInProgressError("Anfrage mit diesem Idempotency-Key wird gerade verarbeitet");
 }
 
-/** Speichert die Antwort unter `key` (upsert — ein zweiter, identischer Request ueberschreibt mit demselben Inhalt). */
-export async function storeIdempotentResponse(orgId: string, key: string, method: string, path: string, rawBody: string, status: number, body: unknown): Promise<void> {
-  const requestHash = hashIdempotentRequest(method, path, rawBody);
+/** Schliesst die Reservierung erfolgreich ab (status=DONE) — spaetere identische Requests replizieren diese Antwort. */
+export async function completeIdempotency(orgId: string, key: string, status: number, body: unknown): Promise<void> {
   const responseJson = JSON.stringify(body ?? null);
-  await dbInternal.apiIdempotency.upsert({
+  await dbInternal.apiIdempotency.update({
     where: { orgId_key: { orgId, key } },
-    create: { orgId, key, requestHash, statusCode: status, responseJson },
-    update: { requestHash, statusCode: status, responseJson },
+    data: { status: "DONE", statusCode: status, responseJson },
   });
+}
+
+/** Entfernt eine IN_PROGRESS-Reservierung wieder (Handler warf oder lieferte 5xx) — ein Retry mit demselben Key laeuft danach normal. */
+export async function abandonIdempotency(orgId: string, key: string): Promise<void> {
+  await dbInternal.apiIdempotency.delete({ where: { orgId_key: { orgId, key } } }).catch(() => {});
 }
