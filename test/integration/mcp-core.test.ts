@@ -3,8 +3,26 @@
  * archive_product, upsert_product-Paritaet (productSchema/differential §25a),
  * set_recurring_state. Muster: mcp-customer.test.ts (server["_registeredTools"],
  * getActiveOrg gemockt). Eigenes Jahr 2069 (Testjahr-Konvention, plan-header.md).
+ *
+ * Phase 9, Task 2 — erweitert (Facts task-2-facts.md: mcp-core.test.ts ERWEITERN, nicht
+ * neu anlegen) um: get_status, setup_company, list_customers/upsert_customer,
+ * list_products/upsert_product, create_invoice/finalize_invoice/cancel_invoice/
+ * credit_invoice/get_invoice/export_invoice. Eigener NumberRange-Praefix "MC69-RE-" fuer
+ * INVOICE (Jahr 2069, Invoice.number global eindeutig). list_invoices bereits seit
+ * Phase 8b in mcp-workflow.test.ts getestet (facts.md) — hier nicht dupliziert.
+ *
+ * Testbarkeit-Fixes (dokumentiert in task-2-report.md): list_customers/list_products
+ * (src/mcp/tools/customers.ts, products.ts) filterten bisher NICHT nach orgId (listeten
+ * ueber alle Organisationen der geteilten Test-DB hinweg) — auf ctx.requireOrg()+orgId
+ * umgestellt, wie jedes andere Kunden-/Produkt-Tool. get_status/list_documents/
+ * list_recurring (system.ts/documents.ts/recurring.ts) nutzten ungescoptes
+ * dbInternal.organization.findFirst() statt ctx.requireOrg() (respektiert die in Tests
+ * gemockte aktive Org) — get_status zaehlte zudem global statt orgId-gescopt.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
 
@@ -18,6 +36,7 @@ vi.mock("@/lib/org", () => ({
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createRecurring } from "@/domain/recurring/create";
+import { updateNumberRange } from "@/domain/numbering/ranges";
 import { server } from "@/mcp/server";
 import type { CreateRecurringInput } from "@/schemas";
 
@@ -49,6 +68,13 @@ beforeAll(async () => {
   orgId = org.id;
   orgStore.id = orgId;
   await ensureOrgMasterdata(dbInternal, orgId);
+  // Invoice.number ist global eindeutig (siehe mcp-workflow.test.ts/mcp-email-files.test.ts) —
+  // eigener Praefix haelt Kollisionen mit anderen Testdateien fern (Task 2). Die MCP-Tools
+  // create_invoice/finalize_invoice geben (anders als die Domain-Direktaufrufe oben mit
+  // FIX_DATE) kein "now" durch und nummerieren daher mit dem echten Systemdatum — der
+  // Nummernkreis muss also fuer das ECHTE aktuelle Jahr aktiv sein (kein FIX_DATE-Argument,
+  // Default now = new Date()).
+  await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "MC69-RE-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test");
 });
 
 describe("update_customer / archive_customer", () => {
@@ -203,6 +229,254 @@ describe("set_recurring_state", () => {
 
   it("Fehlerpfad: unbekanntes Abo", async () => {
     const res = await callTool("set_recurring_state", { recurring: "unbekannt-xyz", state: "PAUSED" });
+    expect(res.isError).toBe(true);
+  });
+});
+
+describe("get_status", () => {
+  it("meldet companyConfigured=true und liefert auf die aktive Org gescopte Zaehler", async () => {
+    const res = await callTool("get_status", {});
+    expect(res.isError).toBeFalsy();
+    const parsed = JSON.parse(text(res)) as { companyConfigured: boolean; company: { legalName: string } | null; counts: Record<string, number> };
+    expect(parsed.companyConfigured).toBe(true);
+    expect(parsed.company?.legalName).toBe("MCP-Core GmbH");
+    // Testbarkeit-Fix (system.ts): Zaehler sind jetzt orgId-gescopt statt global ueber
+    // alle Organisationen der geteilten Test-DB — direkter Vergleich mit derselben Query.
+    const [customers, products, invoices] = await Promise.all([
+      dbInternal.customer.count({ where: { orgId, isArchived: false } }),
+      dbInternal.product.count({ where: { orgId, isArchived: false } }),
+      dbInternal.invoice.count({ where: { orgId } }),
+    ]);
+    expect(parsed.counts.customers).toBe(customers);
+    expect(parsed.counts.products).toBe(products);
+    expect(parsed.counts.invoices).toBe(invoices);
+  });
+
+  it("meldet companyConfigured=false ohne Fehler, wenn keine Organisation aktiv ist", async () => {
+    const prev = orgStore.id;
+    orgStore.id = null;
+    try {
+      const res = await callTool("get_status", {});
+      expect(res.isError).toBeFalsy();
+      const parsed = JSON.parse(text(res)) as { companyConfigured: boolean; counts: Record<string, number> };
+      expect(parsed.companyConfigured).toBe(false);
+      expect(parsed.counts).toEqual({ customers: 0, products: 0, invoices: 0, drafts: 0 });
+    } finally {
+      orgStore.id = prev;
+    }
+  });
+});
+
+describe("setup_company", () => {
+  it("legt an oder aktualisiert (Match unabhaengig davon, welche Org global 'die erste' der geteilten Test-DB ist) und persistiert die Angaben", async () => {
+    const res = await callTool("setup_company", {
+      legalName: "MCP-Core-Setup GmbH (Task 2)",
+      addressLine1: "Setupweg 9",
+      postalCode: "10999",
+      city: "Berlin",
+      taxNumber: "99/999/99999",
+    });
+    expect(res.isError).toBeFalsy();
+    const match = text(res).match(/\(([^)]+)\)\.\s*$/);
+    expect(match).toBeTruthy();
+    const touched = await dbInternal.organization.findUniqueOrThrow({ where: { id: match![1] } });
+    expect(touched.legalName).toBe("MCP-Core-Setup GmbH (Task 2)");
+    expect(touched.postalCode).toBe("10999");
+    expect(touched.taxNumber).toBe("99/999/99999");
+  });
+
+  it("Fehlerpfad: Validierung schlaegt bei fehlender Postleitzahl fehl (organizationSchema)", async () => {
+    const res = await callTool("setup_company", { legalName: "X-GmbH", addressLine1: "Y-Weg 1", city: "Z-Stadt" });
+    expect(res.isError).toBe(true);
+  });
+});
+
+describe("list_customers / upsert_customer (Task 2)", () => {
+  it("legt einen Kunden per upsert_customer an und findet ihn ueber list_customers wieder", async () => {
+    const name = "MCP-Core-Listenkunde AG";
+    const res = await callTool("upsert_customer", {
+      name,
+      addressLine1: "Listenweg 3",
+      postalCode: "30159",
+      city: "Hannover",
+      vatId: "DE111222333",
+    });
+    expect(res.isError).toBeFalsy();
+    const list = JSON.parse(text(await callTool("list_customers", {}))) as Array<{ id: string; name: string; city: string; vatId: string | null }>;
+    const found = list.find((c) => c.name === name);
+    expect(found).toBeTruthy();
+    expect(found?.city).toBe("Hannover");
+    expect(found?.vatId).toBe("DE111222333");
+  });
+
+  it("upsert_customer: Fehlerpfad bei fehlender Postleitzahl (customerSchema)", async () => {
+    const res = await callTool("upsert_customer", { name: "MCP-Core-Ungueltig AG", addressLine1: "X" });
+    expect(res.isError).toBe(true);
+  });
+});
+
+describe("list_products / upsert_product (Task 2)", () => {
+  it("legt ein Produkt per upsert_product an und findet es ueber list_products wieder", async () => {
+    const name = "MCP-Core-Listenprodukt";
+    const res = await callTool("upsert_product", { name, netPriceEuro: 12.34, taxRatePercent: 7 });
+    expect(res.isError).toBeFalsy();
+    const list = JSON.parse(text(await callTool("list_products", {}))) as Array<{ id: string; name: string; taxRate: number }>;
+    const found = list.find((p) => p.name === name);
+    expect(found).toBeTruthy();
+    expect(found?.taxRate).toBe(7);
+  });
+
+  it("upsert_product: Fehlerpfad bei ungueltigem taxRatePercent (TaxRate-Union)", async () => {
+    const res = await callTool("upsert_product", { name: "MCP-Core-Ungueltiges-Produkt", netPriceEuro: 10, taxRatePercent: 15 });
+    expect(res.isError).toBe(true);
+  });
+});
+
+describe("create_invoice / finalize_invoice / get_invoice / export_invoice / credit_invoice (Task 2)", () => {
+  let customerId: string;
+  let customerName: string;
+  let invoiceId: string;
+  let invoiceNumber: string;
+  let tmpDir: string;
+
+  async function makeCustomer(suffix: string) {
+    const c = await dbInternal.customer.create({
+      data: { orgId, name: `MCP-Core-Rechnungskunde ${suffix} AG`, addressLine1: "Rechnungsweg 1", postalCode: "50667", city: "Köln", type: "BUSINESS" },
+    });
+    return c;
+  }
+
+  beforeAll(async () => {
+    const c = await makeCustomer("A");
+    customerId = c.id;
+    customerName = c.name;
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oig-mcp-core-export-"));
+  });
+
+  it("create_invoice legt einen Entwurf an", async () => {
+    const res = await callTool("create_invoice", {
+      customer: customerName,
+      lines: [{ description: "Beratung", quantity: 3, unitPriceEuro: 100, taxRatePercent: 19 }],
+      deliveryDate: "heute",
+    });
+    expect(res.isError).toBeFalsy();
+    const draft = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, customerId, status: "DRAFT" } });
+    invoiceId = draft.id;
+    expect(draft.grossTotalCents).toBe(35700); // 3 * 100€ netto + 19% USt
+  });
+
+  it("create_invoice: Fehlerpfad bei unbekanntem Kunden", async () => {
+    const res = await callTool("create_invoice", {
+      customer: "Kein-Kunde-XYZ",
+      lines: [{ description: "Beratung", quantity: 1, unitPriceEuro: 10 }],
+    });
+    expect(res.isError).toBe(true);
+  });
+
+  it("finalize_invoice schreibt fest und vergibt die Rechnungsnummer (eigener Praefix MC69-RE-)", async () => {
+    const res = await callTool("finalize_invoice", { invoice: invoiceId });
+    expect(res.isError).toBeFalsy();
+    const finalized = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(finalized.status).toBe("FINALIZED");
+    expect(finalized.number).toMatch(/^MC69-RE-/);
+    invoiceNumber = finalized.number!;
+  });
+
+  it("finalize_invoice: Fehlerpfad bei unbekannter Rechnung", async () => {
+    const res = await callTool("finalize_invoice", { invoice: "unbekannt-mc69" });
+    expect(res.isError).toBe(true);
+  });
+
+  it("get_invoice zeigt die festgeschriebene Rechnung", async () => {
+    const res = await callTool("get_invoice", { invoice: invoiceNumber });
+    expect(res.isError).toBeFalsy();
+    const parsed = JSON.parse(text(res)) as { number: string; status: string; customer: string; gross: string };
+    expect(parsed.number).toBe(invoiceNumber);
+    expect(parsed.status).toBe("FINALIZED");
+    expect(parsed.customer).toBe(customerName);
+  });
+
+  it("get_invoice: Fehlerpfad bei unbekannter Rechnung", async () => {
+    const res = await callTool("get_invoice", { invoice: "unbekannt-mc69" });
+    expect(res.isError).toBe(true);
+  });
+
+  it("export_invoice schreibt eine PDF-Datei ins angegebene Zielverzeichnis", async () => {
+    const res = await callTool("export_invoice", { invoice: invoiceNumber, format: "pdf", outputDir: tmpDir });
+    expect(res.isError).toBeFalsy();
+    const expectedPath = path.join(tmpDir, `${invoiceNumber}.pdf`);
+    expect(text(res)).toContain(expectedPath);
+    const stat = await fs.stat(expectedPath);
+    expect(stat.size).toBeGreaterThan(0);
+  });
+
+  it("export_invoice schreibt eine validierte XRechnung-XML fuer die festgeschriebene Rechnung", async () => {
+    const res = await callTool("export_invoice", { invoice: invoiceNumber, format: "xrechnung", outputDir: tmpDir });
+    expect(res.isError).toBeFalsy();
+    expect(text(res)).toMatch(/BESTANDEN/);
+    const xmlPath = path.join(tmpDir, `${invoiceNumber}.xml`);
+    const xml = await fs.readFile(xmlPath, "utf8");
+    expect(xml).toContain(invoiceNumber);
+  });
+
+  it("export_invoice: Fehlerpfad bei unbekannter Rechnung", async () => {
+    const res = await callTool("export_invoice", { invoice: "unbekannt-mc69", outputDir: tmpDir });
+    expect(res.isError).toBe(true);
+  });
+
+  it("credit_invoice erstellt eine Teilgutschrift ueber eine Position", async () => {
+    const res = await callTool("credit_invoice", {
+      invoice: invoiceNumber,
+      lines: [{ description: "Teilerstattung Beratung", quantity: 1, unitPriceEuro: 100, taxRatePercent: 19 }],
+      notes: "Kulanz",
+    });
+    expect(res.isError).toBeFalsy();
+    expect(text(res)).toMatch(/Teilgutschrift/);
+    const creditNote = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, type: "CREDIT_NOTE", correctsInvoiceId: invoiceId } });
+    expect(creditNote.grossTotalCents).toBe(-11900); // Betragsspiegelbild: negiert (100€ netto + 19% USt)
+  });
+
+  it("credit_invoice: Fehlerpfad bei unbekannter Rechnung", async () => {
+    const res = await callTool("credit_invoice", {
+      invoice: "unbekannt-mc69",
+      lines: [{ description: "X", quantity: 1, unitPriceEuro: 1 }],
+    });
+    expect(res.isError).toBe(true);
+  });
+});
+
+describe("cancel_invoice (Task 2)", () => {
+  let invoiceId: string;
+  let invoiceNumber: string;
+
+  beforeAll(async () => {
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "MCP-Core-Storno-Kunde AG", addressLine1: "Stornoweg 1", postalCode: "50667", city: "Köln", type: "BUSINESS" },
+    });
+    const created = await callTool("create_invoice", {
+      customer: customer.name,
+      lines: [{ description: "Wartung", quantity: 1, unitPriceEuro: 200, taxRatePercent: 19 }],
+      deliveryDate: "heute",
+    });
+    expect(created.isError).toBeFalsy();
+    const draft = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, customerId: customer.id, status: "DRAFT" } });
+    invoiceId = draft.id;
+    const finalized = await callTool("finalize_invoice", { invoice: invoiceId });
+    expect(finalized.isError).toBeFalsy();
+    invoiceNumber = (await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoiceId } })).number!;
+  });
+
+  it("storniert die festgeschriebene Rechnung mit einer Storno-Gutschrift", async () => {
+    const res = await callTool("cancel_invoice", { invoice: invoiceNumber });
+    expect(res.isError).toBeFalsy();
+    const original = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(original.status).toBe("CANCELLED");
+    const creditNote = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, type: "CREDIT_NOTE", correctsInvoiceId: invoiceId } });
+    expect(creditNote.status).toBe("FINALIZED");
+  });
+
+  it("cancel_invoice: Fehlerpfad bei unbekannter Rechnung", async () => {
+    const res = await callTool("cancel_invoice", { invoice: "unbekannt-mc69" });
     expect(res.isError).toBe(true);
   });
 });

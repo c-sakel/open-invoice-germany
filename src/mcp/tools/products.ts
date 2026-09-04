@@ -38,7 +38,11 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
       inputSchema: { query: z.string().optional() },
     },
     async ({ query }): Promise<Result> => {
-      const all = await dbInternal.product.findMany({ where: { isArchived: false }, orderBy: { name: "asc" } });
+      // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
+      // Produkte ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
+      // andere Produkt-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
+      const org = await ctx.requireOrg();
+      const all = await dbInternal.product.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((p) => p.name.toLowerCase().includes(query.toLowerCase())) : all;
       return ctx.ok(
         JSON.stringify(

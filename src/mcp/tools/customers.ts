@@ -40,7 +40,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       inputSchema: { query: z.string().optional().describe("Namensteil zum Filtern") },
     },
     async ({ query }): Promise<Result> => {
-      const all = await dbInternal.customer.findMany({ where: { isArchived: false }, orderBy: { name: "asc" } });
+      // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
+      // Kunden ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
+      // andere Kunden-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
+      const org = await ctx.requireOrg();
+      const all = await dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())) : all;
       return ctx.ok(
         JSON.stringify(

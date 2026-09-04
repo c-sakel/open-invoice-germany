@@ -90,8 +90,15 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       inputSchema: { kind: z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]).optional() },
     },
     async ({ kind }): Promise<Result> => {
-      const org = await dbInternal.organization.findFirst();
-      if (!org) return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      // Testbarkeit-Fix (Task 2, wie get_status in system.ts): ctx.requireOrg() statt
+      // ungescoptem dbInternal.organization.findFirst() — respektiert die in Tests gemockte
+      // aktive Org, Produktivverhalten (Single-Tenant) identisch.
+      let org: Awaited<ReturnType<typeof ctx.requireOrg>>;
+      try {
+        org = await ctx.requireOrg();
+      } catch {
+        return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
       const docs = await dbInternal.quote.findMany({
         where: { orgId: org.id, ...(kind ? { kind } : {}) },
         orderBy: { createdAt: "desc" },
