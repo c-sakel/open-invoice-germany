@@ -35,6 +35,15 @@ describe("proxy", () => {
     expect(res.headers.get("x-middleware-request-" + PUBLIC_NO_NAV_HEADER)).toBe("1");
   });
 
+  // Fix-Welle (Nit): "/" rendert fuer angemeldete Nutzer das Dashboard (Umsatz,
+  // Kundennamen) — cache-control muss explizit gesetzt sein, nicht nur implizit ueber
+  // Next.js' `force-dynamic` (Cloudflare sitzt vor der Produktivinstanz).
+  it("/ setzt cache-control: private, no-store explizit", async () => {
+    const req = new NextRequest("http://localhost/");
+    const res = await proxy(req);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("G1: /rechnungen mit vom Client gesetztem x-oig-public: 1 -> Header wird entfernt (kein Bypass)", async () => {
     const req = new NextRequest("http://localhost/rechnungen", {
       headers: { cookie: "oig_session=valid-token", [PUBLIC_NO_NAV_HEADER]: "1" },

@@ -93,8 +93,20 @@ beforeAll(async () => {
   // relativ zu NOW.
   const FAR_FUTURE = new Date(2066, 11, 31);
 
-  // Angebot: offen (DRAFT).
+  // Angebot: DRAFT — zaehlt NICHT als offen (Fix-Welle Nit: die Dashboard-Kachel zaehlt
+  // nur SENT, weil sie auf /dokumente?status=SENT verlinkt — vorher zaehlte sie
+  // faelschlich auch DRAFT mit, Kachel-Zahl und Ziel-Liste liefen auseinander).
   await createBusinessDocument(orgId, {
+    kind: "ANGEBOT",
+    customerId,
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    validUntil: FAR_FUTURE,
+    lines: [line("Dashboard Entwurf-Angebot")],
+  } as CreateDocumentInput);
+
+  // Angebot: SENT — zaehlt als offen.
+  const sentQuote = await createBusinessDocument(orgId, {
     kind: "ANGEBOT",
     customerId,
     taxScheme: "REGULAR",
@@ -102,6 +114,7 @@ beforeAll(async () => {
     validUntil: FAR_FUTURE,
     lines: [line("Dashboard offenes Angebot")],
   } as CreateDocumentInput);
+  await setQuoteStatus(orgId, sentQuote.id, "SENT", { now: NOW });
 
   // Angebot: bereits angenommen (zaehlt NICHT als offen).
   const acceptedQuote = await createBusinessDocument(orgId, {
@@ -208,7 +221,7 @@ describe("customerOverview", () => {
     expect(overview.kpis.overdueCents).toBeGreaterThan(0);
     expect(overview.kpis.totalRevenueCents).toBeGreaterThan(0);
     expect(overview.invoices.length).toBe(4); // inv1, inv2, inv3, inv4 (teilweise bezahlt)
-    expect(overview.quotes.length).toBe(2);
+    expect(overview.quotes.length).toBe(3);
   });
 
   it("wirft NotFoundError fuer unbekannten Kunden", async () => {

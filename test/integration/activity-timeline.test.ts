@@ -328,6 +328,18 @@ describe("buildTimeline — Reihenfolge + Meilensteine", () => {
     expect(timeline.some((e) => e.label === "Zahlungsziel erreicht")).toBe(true);
   });
 
+  // Fix-Welle (Nit): der Zahlungs-Eintrag hardcodete "EUR" unabhaengig von Invoice.currency.
+  it("Zahlungs-Eintrag zeigt die tatsaechliche Waehrung des Belegs, nicht hartkodiert EUR", async () => {
+    const draft = await createDraftInvoice(orgId, invoiceInput({ currency: "USD", dueDate: new Date("2065-06-01") }), { now: FIX_DATE });
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    await recordPayment(finalized.id, { amountCents: 5000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { now: new Date("2065-06-05T10:00:00.000Z") });
+
+    const timeline = await buildTimeline(orgId, { kind: "INVOICE", id: finalized.id }, FIX_DATE);
+    const paymentEntry = timeline.find((e) => e.kind === "payment");
+    expect(paymentEntry?.detail).toContain("$");
+    expect(paymentEntry?.detail).not.toContain("EUR");
+  });
+
   it("markiert ein Angebot als abgelaufen, wenn validUntil in der Vergangenheit liegt", async () => {
     const quote = await createBusinessDocument(
       orgId,
