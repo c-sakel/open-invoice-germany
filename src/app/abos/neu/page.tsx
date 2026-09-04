@@ -17,13 +17,15 @@ export default async function NeuesAboPage() {
 
   const docSettings = await loadDocumentSettings(orgId);
 
-  const [customers, products] = await Promise.all([
+  const [customers, products, emailTemplates] = await Promise.all([
     dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
       orderBy: { name: "asc" },
     }),
+    // Phase 8b (§43): INVOICE-Vorlagen fuer emailTemplateId (nur relevant bei autoSend).
+    dbInternal.emailTemplate.findMany({ where: { orgId, docType: "INVOICE" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   if (customers.length === 0) {
@@ -49,8 +51,10 @@ export default async function NeuesAboPage() {
       <NewRecurringForm
         customers={customers}
         products={products}
+        emailTemplates={emailTemplates}
         defaultAutoFinalize={docSettings.recurringAutoFinalizeDefault}
         defaultAutoSend={docSettings.recurringAutoSendDefault}
+        defaultShowPeriodText={docSettings.recurringInsertPeriodText}
       />
     </div>
   );

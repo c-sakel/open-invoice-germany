@@ -30,6 +30,9 @@ export const quoteListFilterSchema = z.object({
   ...baseFilterShape,
   status: z.enum(["all", ...QuoteStatus.options]).default("all"),
   kind: z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]).optional(),
+  // Task 2: uebernimmt das bisherige Seitenverhalten (Standard: nur nicht-archivierte
+  // Dokumente) als Domain-Filter statt eines Parallelcodes auf der Seite selbst.
+  includeArchived: z.boolean().optional(),
 });
 export type QuoteListFilter = z.infer<typeof quoteListFilterSchema>;
 
@@ -44,6 +47,7 @@ export interface QuoteListRow {
   grossTotalCents: number;
   currency: string;
   effectiveStatus: QuoteStatus;
+  archivedAt: Date | null;
 }
 
 export interface QuoteListResult {
@@ -59,6 +63,7 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
   const and: Prisma.QuoteWhereInput[] = [{ orgId }];
   if (filter.kind) and.push({ kind: filter.kind });
   if (filter.customerId) and.push({ customerId: filter.customerId });
+  if (!filter.includeArchived) and.push({ archivedAt: null });
 
   // EXPIRED ist kein gespeicherter Status (effectiveQuoteStatus) — als Filter uebersetzt
   // in "status DRAFT/SENT UND validUntil < now"; alle anderen Filterwerte sind direkte
@@ -102,6 +107,7 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
         validUntil: true,
         grossTotalCents: true,
         currency: true,
+        archivedAt: true,
       },
     }),
   ]);
@@ -118,6 +124,7 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
       grossTotalCents: r.grossTotalCents,
       currency: r.currency,
       effectiveStatus: effectiveQuoteStatus({ status: r.status, validUntil: r.validUntil }, now),
+      archivedAt: r.archivedAt,
     })),
     total,
     limit: filter.limit,
@@ -129,6 +136,9 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
 export const deliveryNoteListFilterSchema = z.object({
   ...baseFilterShape,
   status: z.enum(["all", ...DeliveryNoteStatus.options]).default("all"),
+  // Task 2: siehe quoteListFilterSchema.includeArchived — uebernimmt das bisherige
+  // Seitenverhalten (Standard: nur nicht-archivierte Lieferscheine).
+  includeArchived: z.boolean().optional(),
 });
 export type DeliveryNoteListFilter = z.infer<typeof deliveryNoteListFilterSchema>;
 
@@ -139,6 +149,7 @@ export interface DeliveryNoteListRow {
   customerName: string;
   issueDate: Date;
   status: DeliveryNoteStatus;
+  archivedAt: Date | null;
 }
 
 export interface DeliveryNoteListResult {
@@ -154,6 +165,7 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
   const and: Prisma.DeliveryNoteWhereInput[] = [{ orgId }];
   if (filter.status !== "all") and.push({ status: filter.status });
   if (filter.customerId) and.push({ customerId: filter.customerId });
+  if (!filter.includeArchived) and.push({ archivedAt: null });
   const dateRange = dateRangeAnd(filter.from, filter.to);
   if (dateRange) and.push({ issueDate: dateRange });
   if (filter.q) {
@@ -176,6 +188,7 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
         customerId: true,
         customer: { select: { name: true } },
         issueDate: true,
+        archivedAt: true,
       },
     }),
   ]);
@@ -188,6 +201,7 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
       customerName: r.customer.name,
       issueDate: r.issueDate,
       status: DeliveryNoteStatus.parse(r.status),
+      archivedAt: r.archivedAt,
     })),
     total,
     limit: filter.limit,

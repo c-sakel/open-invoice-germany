@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { getActiveOrg } from "@/lib/org";
-import { dbInternal } from "@/lib/db";
+import { listQuotes } from "@/domain/document/list";
+import { availableActions } from "@/domain/document/actions";
 import { formatCents } from "@/lib/money";
-import { effectiveQuoteStatus } from "@/domain/document/status";
 import { StatusBadge } from "@/components/StatusBadge";
+import { FilterBar, type FilterField } from "@/components/list/FilterBar";
+import { Pagination } from "@/components/list/Pagination";
+import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +16,45 @@ const KIND_LABEL: Record<string, string> = {
   PROFORMA: "Proforma",
 };
 
-export default async function DokumentePage({ searchParams }: { searchParams: Promise<{ archiviert?: string }> }) {
-  const { archiviert } = await searchParams;
-  const showArchived = archiviert === "1";
-  const org = await getActiveOrg();
+type SP = Record<string, string | string[] | undefined>;
 
-  const docs = await dbInternal.quote.findMany({
-    where: { orgId: org.id, ...(showArchived ? {} : { archivedAt: null }) },
-    include: { customer: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+function firstOf(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function DokumentePage({ searchParams }: { searchParams: Promise<SP> }) {
+  const sp = await searchParams;
+  const showArchived = firstOf(sp.archiviert) === "1";
+  const values: Record<string, string | undefined> = {
+    q: firstOf(sp.q),
+    status: firstOf(sp.status),
+    kind: firstOf(sp.kind),
+    from: firstOf(sp.from),
+    to: firstOf(sp.to),
+    archiviert: firstOf(sp.archiviert),
+  };
+
+  const org = await getActiveOrg();
+  const result = await listQuotes(org.id, { ...sp, includeArchived: showArchived });
+  const rows = result.rows;
+
+  const fields: FilterField[] = [
+    { type: "text", name: "q", label: "Suche", placeholder: "Nummer, Kunde…" },
+    {
+      type: "select",
+      name: "status",
+      label: "Status",
+      options: ["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"].map((v) => ({ value: v, label: v })),
+    },
+    {
+      type: "select",
+      name: "kind",
+      label: "Art",
+      options: Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label })),
+    },
+    { type: "date", name: "from", label: "Von" },
+    { type: "date", name: "to", label: "Bis" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -39,9 +71,11 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         </Link>
       </div>
 
-      {docs.length === 0 ? (
+      <FilterBar basePath="/dokumente" fields={fields} values={values} />
+
+      {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          Noch keine Dokumente.{" "}
+          Keine Dokumente gefunden.{" "}
           <Link href="/dokumente/neu" className="font-medium text-indigo-600 hover:underline">
             Lege dein erstes Angebot an.
           </Link>
@@ -56,27 +90,53 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                 <th className="px-4 py-3">Kunde</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Brutto</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {docs.map((d) => (
-                <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
-                  <td className="px-4 py-3">
-                    <Link href={`/dokumente/${d.id}`} className="font-medium text-indigo-600 hover:underline">
-                      {d.number ?? "—"}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{KIND_LABEL[d.kind] ?? d.kind}</td>
-                  <td className="px-4 py-3 text-slate-600">{d.customer.name}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={effectiveQuoteStatus({ status: d.status, validUntil: d.validUntil })} />
-                    {d.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
-                  </td>
-                  <td className="tabular px-4 py-3 text-right font-medium">{formatCents(d.grossTotalCents, d.currency)}</td>
-                </tr>
-              ))}
+              {rows.map((d) => {
+                const actions = availableActions({
+                  kind: "QUOTE",
+                  type: d.kind,
+                  status: d.effectiveStatus,
+                  isDraft: d.effectiveStatus === "DRAFT",
+                  hasEmailLog: false,
+                });
+                return (
+                  <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
+                    <td className="px-4 py-3">
+                      <Link href={`/dokumente/${d.id}`} className="font-medium text-indigo-600 hover:underline">
+                        {d.number ?? "—"}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{KIND_LABEL[d.kind] ?? d.kind}</td>
+                    <td className="px-4 py-3 text-slate-600">{d.customerName}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={d.effectiveStatus} />
+                      {d.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
+                    </td>
+                    <td className="tabular px-4 py-3 text-right font-medium">{formatCents(d.grossTotalCents, d.currency)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <RowActionsMenu
+                        kind="QUOTE"
+                        id={d.id}
+                        actions={actions}
+                        openHref={`/dokumente/${d.id}`}
+                        editHref={d.effectiveStatus === "DRAFT" ? `/dokumente/${d.id}/bearbeiten` : undefined}
+                        pdfHref={`/api/documents/${d.id}/pdf`}
+                        emailDocType={d.kind as "ANGEBOT" | "AUFTRAGSBESTAETIGUNG" | "PROFORMA"}
+                        duplicateRoute={`/api/documents/${d.id}/duplicate`}
+                        duplicateRedirect="/dokumente/{id}"
+                        cancelRoute={`/api/documents/${d.id}/status`}
+                        cancelBody={{ action: "CANCEL" }}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          <Pagination basePath="/dokumente" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
         </div>
       )}
     </div>
