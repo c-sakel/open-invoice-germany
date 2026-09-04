@@ -32,11 +32,43 @@ const patchBodySchema = z.object({
   print: printSettingsInputSchema.partial().optional(),
 });
 
+/**
+ * Fix-Welle (Blocking 1): `documentSettingsInputSchema.partial()` etc. machen jedes Feld
+ * OPTIONAL, aber jedes Feld traegt bereits `.default(...)` (dieselben Schemas erzeugen
+ * auch `DEFAULT_*_SETTINGS`) — beim Parsen wird ein FEHLENDES Feld deshalb trotzdem mit
+ * seinem Default befuellt, NICHT einfach weggelassen (`.optional()` wrapt hier aussen um
+ * ein bereits defaultetes Feld, das Default greift also weiterhin bei Abwesenheit).
+ * `parsed` (das Ergebnis von `xSchema.partial().parse(raw)`) enthaelt daher IMMER alle
+ * Felder — nicht nur die tatsaechlich gesendeten. Nur die Feldnamen, die im ROHEN
+ * (ungeparsten) Request-Body wirklich vorkommen, duerfen den geladenen Stand ueberschreiben;
+ * alle anderen Schluessel in `parsed` sind Defaults, keine Nutzereingabe, und wuerden bei
+ * direktem Spread ueber `current` echte, gespeicherte Werte stillschweigend loeschen.
+ */
+function mergeSentFields<T extends Record<string, unknown>>(current: T, raw: unknown, parsed: Partial<T>): T {
+  if (!raw || typeof raw !== "object") return current;
+  const merged: T = { ...current };
+  for (const key of Object.keys(raw as Record<string, unknown>)) {
+    if (key in parsed) (merged as Record<string, unknown>)[key] = (parsed as Record<string, unknown>)[key];
+  }
+  return merged;
+}
+
 export const PATCH = withApi(async (_req, ctx) => {
   const v = patchBodySchema.parse(ctx.body);
-  if (v.documents) await saveDocumentSettings(ctx.orgId, v.documents);
-  if (v.branding) await saveBrandingSettings(ctx.orgId, v.branding);
-  if (v.print) await savePrintSettings(ctx.orgId, v.print);
+  const raw = (ctx.body && typeof ctx.body === "object" ? (ctx.body as Record<string, unknown>) : {}) as Record<string, unknown>;
+
+  if (v.documents) {
+    const current = await loadDocumentSettings(ctx.orgId);
+    await saveDocumentSettings(ctx.orgId, mergeSentFields(current, raw.documents, v.documents));
+  }
+  if (v.branding) {
+    const current = await loadBrandingSettings(ctx.orgId);
+    await saveBrandingSettings(ctx.orgId, mergeSentFields(current, raw.branding, v.branding));
+  }
+  if (v.print) {
+    const current = await loadPrintSettings(ctx.orgId);
+    await savePrintSettings(ctx.orgId, mergeSentFields(current, raw.print, v.print));
+  }
   return apiData(await loadAll(ctx.orgId));
 }, { scope: "admin" });
 

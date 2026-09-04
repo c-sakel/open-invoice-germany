@@ -590,6 +590,30 @@ describe("/api/v1/Settings", () => {
     expect(res.status).toBe(200);
     expect((await json(res)).data.documents.quoteValidityDays).toBe(20);
   });
+
+  // Fix-Welle (Blocking 1): ein Patch-Fragment darf NICHT die restlichen Felder desselben
+  // Bereichs auf ihre Defaults zuruecksetzen — vorher wurde das gesendete Fragment mit dem
+  // VOLLEN Schema (Defaults fuer alles Fehlende) re-geparst und komplett upserted.
+  it("Patch von nur primaryColor laesst alle anderen Branding-Felder unveraendert", async () => {
+    const setup = await SettingsUpdate(
+      req("http://x/api/v1/Settings", {
+        method: "PATCH",
+        token,
+        body: { branding: { senderLine: "Musterfirma GmbH", footerLeft: "USt-IdNr. DE123", marginTopMm: 30 } },
+      }),
+    );
+    expect(setup.status).toBe(200);
+
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", { method: "PATCH", token, body: { branding: { primaryColor: "#ff0000" } } }),
+    );
+    expect(res.status).toBe(200);
+    const branding = (await json(res)).data.branding;
+    expect(branding.primaryColor).toBe("#ff0000");
+    expect(branding.senderLine).toBe("Musterfirma GmbH");
+    expect(branding.footerLeft).toBe("USt-IdNr. DE123");
+    expect(branding.marginTopMm).toBe(30);
+  });
 });
 
 // ── ApiKey ────────────────────────────────────────────────────────────────────
