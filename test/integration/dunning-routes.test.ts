@@ -374,4 +374,29 @@ describe("GET /api/dunning/overview", () => {
     const healed = await dbInternal.dunning.findUniqueOrThrow({ where: { id: legacy.id } });
     expect(healed.snapshotSource).toBe("MIGRATION");
   });
+
+  // Fix-Welle (S7, Nit): daysOverdue (row-Feld) rechnete vorher rohe Millisekunden-
+  // Elapsed statt kalendertaggenau (UTC) wie agingBuckets() — eine Rechnung, deren
+  // dueDate GESTERN (UTC) lag, `now` aber erst 2h spaeter (UTC-Mitternacht dazwischen)
+  // konnte gleichzeitig daysOverdue=0 zeigen UND im "1-7 Tage"-Bucket landen. Mit
+  // injiziertem `now` (loadDunningOverview direkt statt der Route, die nur die echte
+  // Systemzeit kennt) laesst sich das deterministisch nachstellen.
+  it("Nit (Fix-Welle): daysOverdue ist kalendertaggenau (UTC) konsistent mit dem Aging-Bucket", async () => {
+    const { loadDunningOverview } = await import("@/domain/dunning/overview");
+
+    const dueDateYesterday = new Date("2052-09-10T23:00:00.000Z"); // gestern (UTC), 23 Uhr
+    const nowJustAfterMidnight = new Date("2052-09-11T01:00:00.000Z"); // heute (UTC), 2h spaeter
+
+    const customerId = await makeCustomer("BUSINESS");
+    const draft = await createDraftInvoice(orgId, invoiceInput(customerId, dueDateYesterday));
+    const invoice = await finalizeInvoice(draft.id, { now: FIX_DATE });
+
+    const overview = await loadDunningOverview(orgId, nowJustAfterMidnight);
+    const row = overview.rows.find((r) => r.invoiceId === invoice.id);
+    expect(row).toBeDefined();
+    // Kalendertag-Differenz UTC: 2052-09-11 minus 2052-09-10 = 1 Tag, NICHT 0 (wie es der
+    // rohe Millisekunden-Elapsed — nur 2 Stunden — vorher errechnet haette).
+    expect(row!.daysOverdue).toBe(1);
+    expect(overview.widgets.aging.d1_7.count).toBeGreaterThanOrEqual(1);
+  });
 });

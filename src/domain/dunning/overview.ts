@@ -12,6 +12,7 @@ import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { DUNNABLE_TYPES } from "@/domain/dunning/create";
 import { agingBuckets } from "@/domain/dashboard/summary";
+import { utcDateOnly } from "@/lib/date-only";
 
 export interface DunningOverviewFilter {
   customerId?: string;
@@ -124,7 +125,11 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     // Fallback issueDate <= now) — hier nur noch fuer daysOverdue gebraucht.
     const dueDate = inv.dueDate ?? inv.issueDate;
 
-    const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Fix-Welle (S7, Nit): kalendertaggenau (UTC) statt rohem Millisekunden-Elapsed —
+    // vorher konnte eine Zeile gleichzeitig daysOverdue=0 anzeigen UND bereits im
+    // "1-7 Tage"-Bucket von agingBuckets() (unten) auftauchen, weil agingBuckets bereits
+    // kalendertaggenau rechnete, dieses Feld aber nicht (Uhrzeit-Anteil floss mit ein).
+    const daysOverdue = Math.round((utcDateOnly(now) - utcDateOnly(dueDate)) / (1000 * 60 * 60 * 24));
 
     const last = inv.dunnings[0] ?? null;
     const currentStage = last ? { name: last.stage?.name ?? `Stufe ${last.level}`, order: last.stage?.order ?? last.level } : null;
