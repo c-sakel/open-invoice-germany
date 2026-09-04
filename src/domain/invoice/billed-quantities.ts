@@ -12,6 +12,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { loadSourceLines } from "@/domain/delivery-note/quantities";
+import { NotFoundError } from "@/domain/errors";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -70,6 +71,40 @@ export async function billedLineDetails(orgId: string, sourceId: string, db: Db 
       orderedMilli: l.quantityMilli,
       billedMilli,
       remainingMilli: l.quantityMilli - billedMilli,
+    };
+  });
+}
+
+export interface BilledLineDetailWithPrice extends BilledLineDetail {
+  /** B11 (Fix-Welle): null, wenn die Quellzeile keinen Preis traegt (Lieferschein ohne
+   * `showPrices`) — steuert, ob der Positions-/Mengen-Dialog fuer diese Zeile Anteils-
+   * Modi (PERCENT/NET_AMOUNT/GROSS_AMOUNT) anbieten darf. */
+  unitNetPriceCents: number | null;
+}
+
+/**
+ * B11 (Fix-Welle): Einstiegspunkt „Teilrechnung" auf der Lieferschein-Detailseite —
+ * `loadSourceLines` (src/domain/delivery-note/quantities.ts) kennt DELIVERY_NOTE nicht
+ * als Quelltyp (nur QUOTE/INVOICE fuer die Teillieferung), deshalb hier eine eigene,
+ * schlanke Ladefunktion direkt auf `DeliveryNoteLine`. Gibt zusaetzlich `unitNetPriceCents`
+ * zurueck, damit die UI Anteils-Modi nur anbietet, wenn ALLE Zeilen einen Preis tragen
+ * (die Domain-Pruefung selbst bleibt in `assertAllLinesPriced`, B12 — das hier ist nur
+ * die Anzeige-Vorabinformation, keine zweite Quelle der Wahrheit).
+ */
+export async function billedLineDetailsForDeliveryNote(orgId: string, sourceId: string, db: Db = dbInternal): Promise<BilledLineDetailWithPrice[]> {
+  const n = await db.deliveryNote.findFirst({ where: { id: sourceId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
+  if (!n) throw new NotFoundError(`Lieferschein ${sourceId} nicht gefunden.`);
+  const billed = await billedQuantities(orgId, "DELIVERY_NOTE", sourceId, db);
+  return n.lines.map((l) => {
+    const billedMilli = billed.get(l.id) ?? 0;
+    return {
+      sourceLineId: l.id,
+      description: l.description,
+      unit: l.unit,
+      orderedMilli: l.quantityMilli,
+      billedMilli,
+      remainingMilli: l.quantityMilli - billedMilli,
+      unitNetPriceCents: l.unitNetPriceCents,
     };
   });
 }
