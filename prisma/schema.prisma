@@ -787,6 +787,19 @@ model SchedulerRun {
   @@index([job, startedAt])
 }
 
+/// Atomarer DB-Lock je Job (Fix Runde 1, Phase 6 Task 3) — die Praxis "findFirst dann
+/// create" auf SchedulerRun war unter Postgres READ COMMITTED nicht atomar (zwei
+/// gleichzeitige Laeufe konnten beide passieren). Der Primaerschluessel `job` erzwingt
+/// stattdessen ueber den Unique-Constraint, dass `create` bei bereits bestehendem Lock
+/// mit P2002 scheitert -- das ist die tatsaechliche Entscheidung, nicht die vorherige
+/// Lesepruefung. `runId` verknuepft den Lock mit dem SchedulerRun-Eintrag (fuer den
+/// gezielten Release im `finally`); `lockedAt` traegt die Stale-Grenze (30 Minuten).
+model SchedulerLock {
+  job      String   @id
+  runId    String
+  lockedAt DateTime @default(now())
+}
+
 /// Anmeldekonto (Self-Hosting). MVP: ein Admin-Konto, beim ersten Start angelegt.
 model User {
   id           String   @id @default(cuid())
