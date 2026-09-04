@@ -103,10 +103,11 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Kein OAuth.** Authentifizierung läuft ausschließlich über statische API-Schlüssel
   (Bearer-Token, `Authorization: Bearer oig_...`) — kein OAuth2/OIDC-Flow, kein
   Refresh-Token, keine delegierte Autorisierung Dritter.
-- **Idempotency-Key gilt 24 Stunden.** Danach wird die gespeicherte Zeile beim
-  nächsten Zugriff auf denselben Schlüssel gelöscht (lazy, kein eigener
-  Scheduler-Job) — ein Retry mit demselben Schlüssel nach Ablauf führt den Handler
-  erneut aus, statt die alte Antwort zu wiederholen.
+- **Idempotency-Key gilt 24 Stunden.** Ein Retry mit demselben Schlüssel nach Ablauf
+  führt den Handler erneut aus, statt die alte Antwort zu wiederholen. Ein eigener
+  Scheduler-Job (`cleanup`, Fix-Welle Phase 10, siehe unten) räumt abgelaufene Zeilen
+  zusätzlich regelmäßig auf — unabhängig davon, ob derselbe Schlüssel je wieder benutzt
+  wird.
 - **`DeliveryNote` hat keinen `PATCH`-Endpunkt.** Es gibt keine
   `updateDraft`-Domainfunktion für Lieferscheine (anders als bei Quote/
   OrderConfirmation/Invoice) — `PATCH /api/v1/DeliveryNote/{id}` existiert daher
@@ -119,6 +120,13 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Kein Hard-Delete für Webhook-Endpunkte.** `active=false` deaktiviert Zustellung
   und Anlage neuer Deliveries, das Zustellprotokoll bleibt aber referenzierbar (GoBD-
   analoges Muster: keine Historie im Programm wird hart gelöscht).
+- **Retention (Fix-Welle Phase 10):** ein eigener Scheduler-Job `cleanup`
+  (`src/domain/scheduler/cleanup.ts`, läuft als letzter Job nach `webhooks`) löscht
+  abgeschlossene `WebhookDelivery`-Zeilen (Status `DELIVERED`/`DEAD`) älter als **90
+  Tage** sowie `ApiIdempotency`-Zeilen älter als **24 Stunden** — ohne diesen Job
+  wüchsen beide Tabellen unbegrenzt (`WebhookDelivery` trägt je Zeile einen vollen
+  Serializer-Schnappschuss in `dataJson`). `PENDING`/`FAILED`-Zustellungen werden nie
+  gelöscht, unabhängig vom Alter.
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.

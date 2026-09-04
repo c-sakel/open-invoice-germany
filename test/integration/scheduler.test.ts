@@ -240,13 +240,14 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     expect(after).toBeGreaterThan(before);
   });
 
-  it("Jobreihenfolge: recurring vor dunning vor notifications vor webhooks, Fehler eines Jobs bricht die anderen nicht ab", async () => {
+  it("Jobreihenfolge: recurring vor dunning vor notifications vor webhooks vor cleanup, Fehler eines Jobs bricht die anderen nicht ab", async () => {
     // Phase 8b, Task 3: Reihenfolge um den neuen Job "notifications" erweitert
     // (Task-3-Facts) — recurring -> dunning -> notifications. Phase 10, Task 5
-    // (task-5-facts.md): "webhooks" laeuft danach als letzter Job.
+    // (task-5-facts.md): "webhooks" laeuft danach. Fix-Welle (Should-fix 7): "cleanup"
+    // laeuft als LETZTER Job.
     const now = new Date("2051-06-11T10:00:00.000Z");
     const results = await runScheduledJobs({ trigger: "MANUAL", now });
-    expect(results.map((r) => r.job)).toEqual(["recurring", "dunning", "notifications", "webhooks"]);
+    expect(results.map((r) => r.job)).toEqual(["recurring", "dunning", "notifications", "webhooks", "cleanup"]);
     expect(results.every((r) => r.ok)).toBe(true);
   });
 });
