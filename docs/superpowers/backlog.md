@@ -264,3 +264,9 @@ Jede Änderung mit Quelle (Norm/KoSIT) und Update an `COMPLIANCE.md`.
 ## Phase 8b (Nachtrag 2026-09-04)
 
 - ActivityLog nach Commit schreiben (Outbox/After-Commit), damit die Nicht-Blockier-Garantie auch in Transaktionen unter Postgres gilt. (8b Abschluss-Review S8)
+
+## Phase 10 (Nachtrag 2026-09-05)
+
+- DeliveryNote: keine updateDraft-Domain (weder UI noch API PATCH) — Bearbeiten von Lieferschein-Entwuerfen als Domain + UI + API nachziehen. (Phase 10 Task 2)
+- attachments-route.test.ts G4 (Rename-Race) flackert weiterhin auf macOS — stabilisieren. (seit Phase 7)
+- Webhook-SSRF: Connect-Time-Pinning der validierten IP (eigener Agent/Lookup) statt reiner Re-Validierung des DNS-Records. (Phase 10 Abschluss-Review 8)
