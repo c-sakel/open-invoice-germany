@@ -1,52 +1,71 @@
 /**
  * Baut die Eingabedaten fuer das Mahnungs-PDF aus den DB-Entitaeten. Herausgezogen aus
  * der PDF-Route, damit dieselbe Logik auch beim Mailversand (Standardanhaenge) genutzt
- * werden kann. Verhalten unveraendert — Snapshot-Fallback fuer Mahnungen ist Backlog
- * Phase 6, hier nicht angefasst.
+ * werden kann.
+ *
+ * Phase 6 (Task 2): Mahnungen ab Phase 6 tragen einen Snapshot (Seller/Buyer/claimBase/
+ * Rechnungsnummer/-faelligkeit zum Erstellungszeitpunkt) — dieser hat Vorrang, damit eine
+ * spaetere Stammdatenaenderung (Umbenennung des Kunden etc.) das PDF alter Mahnungen nicht
+ * rueckwirkend veraendert (GoBD). Altmahnungen ohne Snapshot (`snapshotSource == null`,
+ * vor der Selbstheilung `ensureDunningSnapshots`) fallen auf die Live-Berechnung aus der
+ * Rechnung zurueck (`payableBaseCents − paidAmountCents`, wie vor Phase 6).
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { daysBetween } from "@/lib/dunning";
+import { payableBaseCents } from "@/domain/invoice/amounts";
+import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import type { DunningPdfData } from "./dunning-pdf";
 
 export type InvoiceRow = Prisma.InvoiceGetPayload<{ include: { org: true; customer: true } }>;
-export type DunningRow = Prisma.DunningGetPayload<{ include: { invoice: { include: { org: true; customer: true } } } }>;
+export type DunningRow = Prisma.DunningGetPayload<{
+  include: { invoice: { include: { org: true; customer: true } }; stage: true };
+}>;
 
 export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfData {
-  const open = inv.grossTotalCents - inv.paidAmountCents;
-  const dueDate = inv.dueDate ?? inv.issueDate;
+  const snapshotCtx = `dunning-pdf:${d.id}`;
+  const hasSnapshot = d.snapshotSource != null && !!d.sellerSnapshotJson && !!d.buyerSnapshotJson;
+  const seller = parseSellerSnapshot(d.sellerSnapshotJson, buildSellerSnapshot(inv.org), snapshotCtx);
+  const buyer = parseBuyerSnapshot(d.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);
+
+  const open = hasSnapshot ? d.claimBaseCents : payableBaseCents(inv) - inv.paidAmountCents;
+  const invoiceNumber = (hasSnapshot ? d.invoiceNumber : null) ?? inv.number ?? "";
+  const invoiceDate = inv.issueDate; // Rechnungsdatum ist kein Snapshot-Feld (aendert sich nie nachtraeglich)
+  const dueDateForOverdue = (hasSnapshot ? d.invoiceDueDate : null) ?? inv.dueDate ?? inv.issueDate;
 
   return {
     number: d.number ?? "",
     level: d.level,
+    stageName: d.stage?.name ?? null,
     sentDate: d.sentAt,
     newDueDate: d.dueDate ?? d.sentAt,
     currency: inv.currency,
     seller: {
-      name: inv.org.legalName,
-      addressLine1: inv.org.addressLine1,
-      postalCode: inv.org.postalCode,
-      city: inv.org.city,
+      name: seller.legalName,
+      addressLine1: seller.addressLine1,
+      postalCode: seller.postalCode,
+      city: seller.city,
       taxNumber: inv.org.taxNumber,
-      vatId: inv.org.vatId,
+      vatId: seller.vatId,
       iban: inv.org.iban,
       bic: inv.org.bic,
       bankName: inv.org.bankName,
     },
     buyer: {
-      name: inv.customer.name,
-      contactName: inv.customer.contactName,
-      addressLine1: inv.customer.addressLine1,
-      addressLine2: inv.customer.addressLine2,
-      postalCode: inv.customer.postalCode,
-      city: inv.customer.city,
+      name: buyer.name,
+      contactName: buyer.contactName,
+      addressLine1: buyer.addressLine1,
+      addressLine2: buyer.addressLine2,
+      postalCode: buyer.postalCode,
+      city: buyer.city,
     },
-    invoiceNumber: inv.number ?? "",
-    invoiceDate: inv.issueDate,
+    invoiceNumber,
+    invoiceDate,
     openAmountCents: open,
     interestCents: d.interestAmountCents,
     flatFee40Cents: d.flatFee40Cents,
+    feeCents: d.feeCents,
     lateFeeCents: d.lateFeeCents,
-    totalCents: open + d.interestAmountCents + d.flatFee40Cents + d.lateFeeCents,
-    daysOverdue: daysBetween(dueDate, d.sentAt),
+    totalCents: open + d.interestAmountCents + d.flatFee40Cents + d.feeCents + d.lateFeeCents,
+    daysOverdue: daysBetween(dueDateForOverdue, d.sentAt),
   };
 }
