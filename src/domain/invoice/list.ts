@@ -36,6 +36,10 @@ export interface InvoiceListRow {
    *  STOPPED duerfen keine neue Mahnung anbieten) — vorher nicht selektiert, wodurch
    *  availableActions jede Zeile faelschlich als ACTIVE behandelte. */
   dunningState: "ACTIVE" | "PAUSED" | "STOPPED";
+  /** Fix-Welle (Nit): Anzahl bereits erstellter Mahnungen — steuert in RowActionsMenu,
+   *  ob "Zahlungserinnerung senden" (noch keine Mahnung, Stufe 0) oder "Nächste Mahnung
+   *  erstellen" (bereits mindestens eine) angezeigt wird. */
+  dunningCount: number;
 }
 
 export interface InvoiceListResult {
@@ -161,6 +165,7 @@ export async function listInvoices(
         payableCents: true,
         currency: true,
         dunningState: true,
+        _count: { select: { dunnings: true } },
       },
     }),
   ]);
@@ -196,6 +201,7 @@ export async function listInvoices(
       hasEmailLog: emailLogDocIds.has(r.id),
       partiallyPaid: isPartiallyPaid(r.status),
       dunningState: r.dunningState as "ACTIVE" | "PAUSED" | "STOPPED",
+      dunningCount: r._count.dunnings,
     })),
     total,
     limit: filter.limit,

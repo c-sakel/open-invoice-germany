@@ -8,17 +8,31 @@
 import { dbInternal } from "@/lib/db";
 import { normalizeToNoon } from "@/lib/recurring";
 import { updateRecurringSchema, type UpdateRecurringInput } from "@/schemas";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { RecurringError } from "@/domain/recurring/create";
+import { logActivity } from "@/domain/activity/log";
 
-export async function updateRecurringInvoice(orgId: string, id: string, raw: unknown) {
+export async function updateRecurringInvoice(orgId: string, id: string, raw: unknown, actor = "system") {
   const input: UpdateRecurringInput = updateRecurringSchema.parse(raw);
 
   const existing = await dbInternal.recurringInvoice.findFirst({
     where: { id, orgId },
-    select: { id: true, startDate: true, endDate: true, issuedCount: true },
+    select: { id: true, startDate: true, endDate: true, issuedCount: true, status: true, maxRuns: true },
   });
   if (!existing) throw new NotFoundError("Abo nicht gefunden.");
+
+  // Fix-Welle (Nit): ein aus ENDED reaktiviertes Abo (status -> ACTIVE) behaelt sein
+  // bisheriges maxRuns unveraendert bei — war das Abo bereits ENDED, WEIL issuedCount
+  // >= maxRuns erreicht war (siehe recurring/run.ts), wuerde die Reaktivierung ohne
+  // gleichzeitige maxRuns-Erhoehung den naechsten Lauf sofort wieder auf ENDED setzen
+  // (stiller Zyklus statt eines Fehlers). Effektives maxRuns = neuer Wert (falls in
+  // diesem Aufruf mitgegeben) sonst der bestehende.
+  const effectiveMaxRuns = input.maxRuns !== undefined ? input.maxRuns : existing.maxRuns;
+  if (input.status === "ACTIVE" && existing.status === "ENDED" && effectiveMaxRuns != null && existing.issuedCount >= effectiveMaxRuns) {
+    throw new InvalidOperationError(
+      `Abo kann nicht reaktiviert werden: issuedCount (${existing.issuedCount}) hat maxRuns (${effectiveMaxRuns}) bereits erreicht. Zuerst maxRuns erhoehen oder entfernen.`,
+    );
+  }
 
   // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar.
   const startDate = input.startDate === undefined ? undefined : normalizeToNoon(input.startDate);
@@ -79,5 +93,12 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       },
       include: { lines: { orderBy: { position: "asc" } } },
     });
+  }).then(async (updated) => {
+    // Fix-Welle (Nit): RECURRING ist eine deklarierte ActivityEntityType, hatte aber
+    // keinen Schreiber fuer Abo-Bearbeitungen — die Timeline eines Abos zeigte bisher
+    // keinerlei UPDATED-Eintraege. Ausserhalb der Transaktion (logActivity() wirft nie,
+    // siehe S8) — die Aenderung ist zu diesem Zeitpunkt bereits committet.
+    await logActivity(dbInternal, { orgId, entityType: "RECURRING", entityId: id, type: "UPDATED", actor });
+    return updated;
   });
 }

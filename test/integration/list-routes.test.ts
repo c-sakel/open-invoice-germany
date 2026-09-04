@@ -18,6 +18,12 @@ vi.mock("@/lib/org", () => ({
     return { id: orgStore.id };
   },
 }));
+// Fix-Welle (Nit, GET /api/recurring/[id]): PATCH nutzt jetzt getCurrentUserId() als
+// Actor fuer logActivity — next/headers' cookies() wirft ausserhalb eines echten
+// Request-Kontexts, daher gemockt (analog invoice-route.test.ts).
+vi.mock("@/lib/auth/server", () => ({
+  getCurrentUserId: async () => "tester",
+}));
 
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";

@@ -186,6 +186,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                         duplicateRedirect="/rechnungen/{id}/bearbeiten"
                         cancelRoute={`/api/invoices/${inv.id}/cancel`}
                         dunningRoute={`/api/invoices/${inv.id}/dunning`}
+                        dunningCount={inv.dunningCount}
                         payment={
                           inv.openCents > 0
                             ? {

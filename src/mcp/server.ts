@@ -2668,11 +2668,12 @@ server.registerTool(
     try {
       const org = await requireOrg();
       const { recurring, ...patch } = args;
-      const updated = await updateRecurringInvoice(org.id, recurring, patch);
+      const updated = await updateRecurringInvoice(org.id, recurring, patch, "mcp");
       return ok(`Abo aktualisiert: ${updated.title} (${updated.status}).`);
     } catch (e) {
       if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
       if (e instanceof NotFoundError) return fail(e.message);
+      if (e instanceof InvalidOperationError) return fail(e.message);
       if (e instanceof RecurringError) return fail(e.message);
       return fail(`Fehler: ${(e as Error).message}`);
     }
