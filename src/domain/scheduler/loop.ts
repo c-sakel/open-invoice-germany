@@ -30,7 +30,12 @@ export function startScheduler(minutes: number): void {
   const state: SchedulerLoopState = { started: true, running: false, timer: null };
   globalThis.__oigSchedulerLoop = state;
 
-  const intervalMs = Math.max(1, minutes) * 60 * 1000;
+  // S4 (Fix-Welle): ein Tippfehler in SCHEDULER_INTERVAL_MINUTES (z. B. "abc") ergibt
+  // Number("abc") = NaN; Math.max(1, NaN) ist selbst wieder NaN (NaN-Vergleiche sind immer
+  // false) — setInterval behandelt NaN wie 0 und feuert im Millisekundentakt gegen Postgres
+  // (SchedulerLock/-Run je Tick). Robust: nur ein endlicher Wert >= 1 zaehlt, sonst Default 15.
+  const safeMinutes = Number.isFinite(minutes) && minutes >= 1 ? minutes : 15;
+  const intervalMs = safeMinutes * 60 * 1000;
 
   const tick = async (): Promise<void> => {
     if (state.running) return; // nie zwei Laeufe gleichzeitig
