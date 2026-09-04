@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { skontoCheckQuerySchema } from "@/schemas";
 import { skontoTerms, detectSkonto } from "@/lib/pricing/skonto";
+import { payableBaseCents } from "@/domain/invoice/amounts";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       select: {
         issueDate: true,
         grossTotalCents: true,
+        payableCents: true,
         paidAmountCents: true,
         skonto1Permille: true,
         skonto1Days: true,
@@ -36,10 +38,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     });
     if (!invoice) return NextResponse.json({ error: "Rechnung nicht gefunden" }, { status: 404 });
 
-    const openBeforeCents = invoice.grossTotalCents - invoice.paidAmountCents;
+    // B4 (Fix-Welle): dieselbe Bemessungsgrundlage wie `recordPayment`
+    // (`payableBaseCents`, src/domain/invoice/amounts.ts) — sonst weicht die Vorschau
+    // (PaymentForm) bei einer Schlussrechnung von der tatsaechlichen Buchung ab (Preview
+    // rechnet auf grossTotalCents, Buchung auf payableCents).
+    const baseCents = payableBaseCents(invoice);
+    const openBeforeCents = baseCents - invoice.paidAmountCents;
     const terms = skontoTerms({
       issueDate: invoice.issueDate,
-      grossTotalCents: invoice.grossTotalCents,
+      grossTotalCents: baseCents,
       skonto1Permille: invoice.skonto1Permille,
       skonto1Days: invoice.skonto1Days,
       skonto2Permille: invoice.skonto2Permille,
