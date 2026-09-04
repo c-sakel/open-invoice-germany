@@ -5,6 +5,14 @@
  * UI selbst laedt die Spec per `fetch`) als auch von einem externen Werkzeug mit
  * API-Schluessel (Bearer) erreichbar sein. Bewusst KEIN `withApi` (src/api/auth.ts) —
  * das erzwingt ausschliesslich Bearer, kein Session-Fallback.
+ *
+ * Fix-Welle (Nit 15): vorher akzeptierte diese Pruefung JEDEN gueltigen Bearer-Schluessel
+ * unabhaengig von seinen Scopes — ein reiner `write`- oder `send`-Schluessel (ohne
+ * `read`) konnte damit trotzdem die vollstaendige API-Dokumentation (Swagger UI, das
+ * OpenAPI-Dokument) einsehen, obwohl er selbst keinen einzigen GET-Endpunkt aufrufen
+ * darf. Ruling: `read`-Scope reicht (kein eigener, staerkerer "docs"-Scope), aber ein
+ * Schluessel OHNE `read` wird abgelehnt (faellt wie ein ungueltiger Token auf die
+ * Session-Pruefung zurueck, siehe Kommentar bei `requireSessionOrApiKey`).
  */
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 import { verifyApiToken } from "@/domain/api-key/verify";
@@ -21,16 +29,19 @@ function readSessionCookie(req: Request): string | undefined {
   return undefined;
 }
 
-/** `true`, wenn entweder ein gueltiger Bearer-API-Schluessel ODER eine gueltige
- *  Session vorliegt. Ein ungueltiger Bearer-Token fuehrt NICHT sofort zu `false` —
- *  es wird zusaetzlich noch die Session geprueft (z. B. ein im Browser gespeicherter,
- *  abgelaufener Testtoken soll eine gueltige Session nicht verdecken). */
+/** `true`, wenn entweder ein gueltiger Bearer-API-Schluessel MIT `read`-Scope ODER eine
+ *  gueltige Session vorliegt. Ein ungueltiger Bearer-Token ODER ein gueltiger Token OHNE
+ *  `read`-Scope fuehrt NICHT sofort zu `false` — es wird zusaetzlich noch die Session
+ *  geprueft (z. B. ein im Browser gespeicherter, abgelaufener/scope-loser Testtoken soll
+ *  eine gueltige Session nicht verdecken). */
 export async function requireSessionOrApiKey(req: Request): Promise<boolean> {
   const auth = req.headers.get("authorization");
   if (auth?.startsWith("Bearer ")) {
     try {
-      await verifyApiToken(auth.slice("Bearer ".length).trim());
-      return true;
+      const apiKey = await verifyApiToken(auth.slice("Bearer ".length).trim());
+      if (apiKey.scopes.includes("read")) return true;
+      // Gueltiger Schluessel, aber ohne read-Scope (Nit 15) — faellt durch auf die
+      // Session-Pruefung, siehe Kommentar oben.
     } catch {
       // faellt durch auf die Session-Pruefung, siehe Kommentar oben.
     }

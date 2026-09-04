@@ -68,7 +68,9 @@ Fehler — einheitlich für jeden Endpunkt:
 `GET /api/docs` — Swagger-UI (Session-Login oder API-Schlüssel), interaktiv gegen
 die eigene Instanz nutzbar ("Authorize" → Bearer-Token einfügen). Das zugrunde
 liegende OpenAPI-3.1-Dokument steht maschinenlesbar unter
-`GET /api/v1/openapi.json` (ebenfalls Session oder Bearer).
+`GET /api/v1/openapi.json` (ebenfalls Session oder Bearer). Per API-Schlüssel
+reicht dafür der Scope `read` — ein Schlüssel ganz ohne `read`-Scope (z. B. nur
+`write`/`send`) wird abgelehnt, auch wenn er sonst gültig ist.
 
 ## Kompletter Ablauf per curl: Kunde → Rechnung → festschreiben → PDF/XRechnung → Zahlung
 
