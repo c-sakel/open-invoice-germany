@@ -99,7 +99,7 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
                       <span className={`rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <RowActionsMenu kind="RECURRING" id={r.id} actions={actions} openHref={`/abos/${r.id}`} />
+                      <RowActionsMenu kind="RECURRING" id={r.id} actions={actions} openHref={`/abos/${r.id}`} editHref={`/abos/${r.id}/bearbeiten`} />
                     </td>
                   </tr>
                 );

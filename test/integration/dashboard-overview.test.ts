@@ -8,6 +8,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
+import { recordPayment } from "@/domain/invoice/payment";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { setQuoteStatus } from "@/domain/document/status";
@@ -73,6 +74,18 @@ beforeAll(async () => {
   );
   await finalizeInvoice(inv3.id, { now: NOW });
 
+  // Rechnung 4: teilweise bezahlt (Fix-Runde 1, §45 partiallyPaid-Kennzahl), faellig vor
+  // 3 Tagen (bleibt auch nach der Teilzahlung ueberfaellig/offen).
+  const PAST_3 = new Date(2066, 4, 12, 10, 0, 0);
+  const inv4 = await createDraftInvoice(
+    orgId,
+    { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: PAST_3, dueDate: PAST_3, lines: [line("Dashboard teilweise bezahlt")] } as CreateInvoiceInput,
+    { now: PAST_3 },
+  );
+  await finalizeInvoice(inv4.id, { now: PAST_3 });
+  const inv4Finalized = await dbInternal.invoice.findUniqueOrThrow({ where: { id: inv4.id } });
+  await recordPayment(inv4.id, { amountCents: Math.floor(inv4Finalized.grossTotalCents / 2), paidAt: NOW, method: "TRANSFER", isSkonto: false, applySkonto: false });
+
   // NOW liegt im Jahr 2066 — createBusinessDocument setzt ohne explizites `validUntil`
   // den Default relativ zur ECHTEN Systemzeit (kein injizierbares `now`, siehe
   // src/domain/document/create.ts), das laege also VOR dem fiktiven Testjahr und wuerde
@@ -104,39 +117,62 @@ beforeAll(async () => {
 });
 
 describe("agingBuckets", () => {
-  it("ordnet Zeilen den richtigen Buckets zu und laesst daysOverdue < 1 aussen vor", () => {
+  it("ordnet Zeilen den richtigen Buckets zu und laesst daysOverdue < minDays aussen vor (Default minDays=1)", () => {
     const result = agingBuckets(
       [
-        { dueDate: PAST_10, cents: 1000 }, // 10 Tage -> d8_30
-        { dueDate: PAST_40, cents: 2000 }, // 40 Tage -> d31_60
-        { dueDate: NOW, cents: 500 }, // heute faellig -> zaehlt NICHT
+        { dueDate: PAST_10, cents: 1000 }, // 10 Tage -> Bucket 1 (8-30)
+        { dueDate: PAST_40, cents: 2000 }, // 40 Tage -> Bucket 2 (31-60)
+        { dueDate: NOW, cents: 500 }, // heute faellig, daysOverdue=0 -> zaehlt NICHT (Default minDays=1)
       ],
       NOW,
     );
-    expect(result.d1_7).toEqual({ count: 0, cents: 0 });
-    expect(result.d8_30).toEqual({ count: 1, cents: 1000 });
-    expect(result.d31_60).toEqual({ count: 1, cents: 2000 });
-    expect(result.d60plus).toEqual({ count: 0, cents: 0 });
+    expect(result).toHaveLength(4); // bounds [7,30,60] -> 4 Buckets
+    expect(result[0]).toEqual({ label: "1–7 Tage", count: 0, cents: 0 });
+    expect(result[1]).toEqual({ label: "8–30 Tage", count: 1, cents: 1000 });
+    expect(result[2]).toEqual({ label: "31–60 Tage", count: 1, cents: 2000 });
+    expect(result[3]).toEqual({ label: "> 60 Tage", count: 0, cents: 0 });
   });
 
   it("respektiert benutzerdefinierte bounds", () => {
     const result = agingBuckets([{ dueDate: PAST_10, cents: 1000 }], NOW, [3, 20, 50]);
-    expect(result.d1_7.count).toBe(0); // 10 Tage > bounds[0]=3
-    expect(result.d8_30.count).toBe(1); // <= bounds[1]=20
+    expect(result[0].count).toBe(0); // 10 Tage > bounds[0]=3
+    expect(result[1].count).toBe(1); // <= bounds[1]=20
+  });
+
+  it("minDays: 0 schliesst den Faelligkeitstag selbst (daysOverdue===0) mit ein (Dashboard, §45)", () => {
+    // Sechs synthetische Zeilen bei 0/5/20/45/75/120 Tagen ueberfaellig, Dashboard-Grenzen
+    // [7, 30, 60, 90] -> 5 Buckets (0-7/8-30/31-60/61-90/>90).
+    const dayMs = 24 * 60 * 60 * 1000;
+    const rows = [0, 5, 20, 45, 75, 120].map((days) => ({ dueDate: new Date(NOW.getTime() - days * dayMs), cents: 100 }));
+    const result = agingBuckets(rows, NOW, [7, 30, 60, 90], { minDays: 0 });
+    expect(result).toHaveLength(5);
+    expect(result[0]).toEqual({ label: "0–7 Tage", count: 2, cents: 200 }); // 0, 5 Tage
+    expect(result[1]).toEqual({ label: "8–30 Tage", count: 1, cents: 100 }); // 20 Tage
+    expect(result[2]).toEqual({ label: "31–60 Tage", count: 1, cents: 100 }); // 45 Tage
+    expect(result[3]).toEqual({ label: "61–90 Tage", count: 1, cents: 100 }); // 75 Tage
+    expect(result[4]).toEqual({ label: "> 90 Tage", count: 1, cents: 100 }); // 120 Tage
   });
 });
 
 describe("dashboardSummary", () => {
-  it("liefert ueberfaellige Rechnungen, Aging, Umsatz laufender Monat und offene Angebote", async () => {
+  it("liefert ueberfaellige Rechnungen, Aging, Umsatz laufender Monat, offene Angebote und die neuen Fix-Runde-1-Kennzahlen (§45)", async () => {
     const summary = await dashboardSummary(orgId, NOW);
 
+    // PARTIALLY_PAID (inv4) faellt bewusst NICHT unter OVERDUE — effectiveInvoiceStatus
+    // reicht PARTIALLY_PAID unveraendert durch (status.ts: "nur FINALIZED/SENT
+    // verzweigen in OPEN/DUE/OVERDUE"), daher unveraendert nur inv1 (10d) + inv2 (40d).
     expect(summary.overdueInvoices.count).toBe(2);
     expect(summary.overdueInvoices.cents).toBeGreaterThan(0);
 
-    const bucketTotal = summary.aging.d1_7.count + summary.aging.d8_30.count + summary.aging.d31_60.count + summary.aging.d60plus.count;
-    expect(bucketTotal).toBe(2);
-    expect(summary.aging.d8_30.count).toBe(1);
-    expect(summary.aging.d31_60.count).toBe(1);
+    // Dashboard-Aging (Grenzen 7/30/60/90, minDays: 0) -> 5 Buckets; Tag 0 (inv3, faellig
+    // heute) faellt in den ersten Bucket, inv1 (10d) in den zweiten, inv2 (40d) in den
+    // dritten. inv4 (PARTIALLY_PAID) ist wie bei overdueInvoices bewusst NICHT enthalten.
+    expect(summary.aging).toHaveLength(5);
+    const bucketTotal = summary.aging.reduce((sum, b) => sum + b.count, 0);
+    expect(bucketTotal).toBe(3); // inv1, inv2, inv3 (faellig heute)
+    expect(summary.aging[0].count).toBe(1); // inv3 (0d)
+    expect(summary.aging[1].count).toBe(1); // inv1 (10d)
+    expect(summary.aging[2].count).toBe(1); // inv2 (40d)
 
     expect(summary.revenueThisMonthCents).toBeGreaterThan(0);
 
@@ -145,6 +181,19 @@ describe("dashboardSummary", () => {
 
     // Ein Angebot ist offen (DRAFT), eines wurde bereits angenommen.
     expect(summary.openQuotes.count).toBe(1);
+
+    // Fix-Runde 1 (§45): dueThisWeek — inv3 ist heute faellig (innerhalb der naechsten 7
+    // Tage), inv1/inv2/inv4 liegen bereits in der Vergangenheit.
+    expect(summary.dueThisWeek.count).toBeGreaterThanOrEqual(1);
+    expect(summary.dueThisWeek.cents).toBeGreaterThan(0);
+
+    // Fix-Runde 1 (§45): partiallyPaid — genau inv4.
+    expect(summary.partiallyPaid.count).toBe(1);
+    expect(summary.partiallyPaid.cents).toBeGreaterThan(0);
+
+    // Fix-Runde 1 (§45): dunningRequired — dieselbe Auswahl wie dunningCandidates
+    // (dunning/auto.ts); inv1/inv2/inv4 sind alle FINALIZED, faellig und mahnbar.
+    expect(summary.dunningRequired.count).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -154,7 +203,7 @@ describe("customerOverview", () => {
     expect(overview.customer.id).toBe(customerId);
     expect(overview.kpis.overdueCents).toBeGreaterThan(0);
     expect(overview.kpis.totalRevenueCents).toBeGreaterThan(0);
-    expect(overview.invoices.length).toBe(3);
+    expect(overview.invoices.length).toBe(4); // inv1, inv2, inv3, inv4 (teilweise bezahlt)
     expect(overview.quotes.length).toBe(2);
   });
 

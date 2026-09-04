@@ -18,7 +18,7 @@ const DOC_HREF: Record<string, (id: string) => string> = {
 export function DashboardWidgets({ summary }: { summary: DashboardSummary }) {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Link href="/rechnungen?status=open" className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300">
           <div className="text-xs uppercase tracking-wide text-slate-500">Offen</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(summary.openInvoices.cents)}</div>
@@ -42,6 +42,22 @@ export function DashboardWidgets({ summary }: { summary: DashboardSummary }) {
           <div className="text-xs uppercase tracking-wide text-slate-500">Offene Angebote</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(summary.openQuotes.cents)}</div>
           <div className="text-xs text-slate-400">{summary.openQuotes.count} Angebot(e)</div>
+        </Link>
+        {/* Fix-Runde 1 (§45): drei zusaetzliche Kennzahlen. */}
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Fällig in 7 Tagen</div>
+          <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(summary.dueThisWeek.cents)}</div>
+          <div className="text-xs text-slate-400">{summary.dueThisWeek.count} Rechnung(en)</div>
+        </div>
+        <Link href="/rechnungen?status=partial" className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Teilweise bezahlt</div>
+          <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(summary.partiallyPaid.cents)}</div>
+          <div className="text-xs text-slate-400">{summary.partiallyPaid.count} Rechnung(en)</div>
+        </Link>
+        <Link href="/mahnwesen" className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Mahnung fällig</div>
+          <div className="mt-1 text-xl font-semibold text-slate-900">{summary.dunningRequired.count}</div>
+          <div className="text-xs text-slate-400">Rechnung(en)</div>
         </Link>
       </div>
 

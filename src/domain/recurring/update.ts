@@ -14,14 +14,28 @@ import { RecurringError } from "@/domain/recurring/create";
 export async function updateRecurringInvoice(orgId: string, id: string, raw: unknown) {
   const input: UpdateRecurringInput = updateRecurringSchema.parse(raw);
 
-  const existing = await dbInternal.recurringInvoice.findFirst({ where: { id, orgId }, select: { id: true, startDate: true, endDate: true } });
+  const existing = await dbInternal.recurringInvoice.findFirst({
+    where: { id, orgId },
+    select: { id: true, startDate: true, endDate: true, issuedCount: true },
+  });
   if (!existing) throw new NotFoundError("Abo nicht gefunden.");
+
+  // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar.
+  const startDate = input.startDate === undefined ? undefined : normalizeToNoon(input.startDate);
+  const effectiveStartDate = startDate ?? existing.startDate;
 
   const endDate = input.endDate === undefined ? undefined : input.endDate ? normalizeToNoon(input.endDate) : null;
   const effectiveEndDate = endDate === undefined ? existing.endDate : endDate;
-  if (effectiveEndDate && effectiveEndDate < existing.startDate) {
+  if (effectiveEndDate && effectiveEndDate < effectiveStartDate) {
     throw new RecurringError("Enddatum liegt vor dem Startdatum.");
   }
+
+  // nextRunDate NUR mitziehen, wenn noch keine Rechnung erzeugt wurde (issuedCount===0) —
+  // sonst wuerde eine nachtraegliche startDate-Korrektur den bereits fortgeschrittenen
+  // Erzeugungsplan eines laufenden Abos zurueckspulen (Ruling: reine Metadatenkorrektur
+  // fuer bereits aktive Abos, volle Schedule-Uebernahme nur vor dem ersten Lauf, analog
+  // createRecurring()).
+  const nextRunDate = startDate !== undefined && existing.issuedCount === 0 ? startDate : undefined;
 
   return dbInternal.$transaction(async (tx) => {
     if (input.lines) {
@@ -35,6 +49,8 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.interval !== undefined ? { interval: input.interval } : {}),
         ...(input.intervalCount !== undefined ? { intervalCount: input.intervalCount } : {}),
         ...(input.anchorDay !== undefined ? { anchorDay: input.anchorDay } : {}),
+        ...(startDate !== undefined ? { startDate } : {}),
+        ...(nextRunDate !== undefined ? { nextRunDate } : {}),
         ...(endDate !== undefined ? { endDate } : {}),
         ...(input.maxRuns !== undefined ? { maxRuns: input.maxRuns } : {}),
         ...(input.paymentTermsDays !== undefined ? { paymentTermsDays: input.paymentTermsDays } : {}),
