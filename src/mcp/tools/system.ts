@@ -22,13 +22,33 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
       inputSchema: {},
     },
     async (): Promise<Result> => {
-      const org = await dbInternal.organization.findFirst();
-      const [customers, products, invoices, drafts] = await Promise.all([
-        dbInternal.customer.count({ where: { isArchived: false } }),
-        dbInternal.product.count({ where: { isArchived: false } }),
-        dbInternal.invoice.count(),
-        dbInternal.invoice.count({ where: { status: "DRAFT" } }),
-      ]);
+      // Testbarkeit-Fix (Task 2): dbInternal.organization.findFirst() (ohne orderBy/Scope)
+      // fand in der geteilten Test-DB die frueheste je angelegte Organisation ueber ALLE
+      // Testdateien hinweg, nicht die per getActiveOrg (in Tests gemockte) aktive Org —
+      // dadurch waren companyConfigured/Zaehler in Tests nicht deterministisch pruefbar.
+      // ctx.requireOrg() nutzt dieselbe Query wie getActiveOrg (findFirst orderBy createdAt
+      // asc) — Produktivverhalten identisch (Single-Tenant, § getActiveOrg-Kommentar) —,
+      // wirft aber, wenn (noch) kein Unternehmen existiert; das faengt get_status ab, um
+      // wie bisher graceful companyConfigured=false statt eines Fehlers zu liefern. Die
+      // Zaehler waren zudem NIE nach orgId gefiltert (globaler Count ueber alle Organisationen) —
+      // ebenfalls behoben. ctx.requireOrg() (getActiveOrg) liefert in Tests nur { id } (Mock-
+      // Rueckgabe) — vollen Datensatz separat laden statt auf Company-Felder aus dem Mock zu
+      // vertrauen.
+      let org: Awaited<ReturnType<typeof dbInternal.organization.findUnique>> | null = null;
+      try {
+        const active = await ctx.requireOrg();
+        org = await dbInternal.organization.findUnique({ where: { id: active.id } });
+      } catch {
+        org = null;
+      }
+      const [customers, products, invoices, drafts] = org
+        ? await Promise.all([
+            dbInternal.customer.count({ where: { orgId: org.id, isArchived: false } }),
+            dbInternal.product.count({ where: { orgId: org.id, isArchived: false } }),
+            dbInternal.invoice.count({ where: { orgId: org.id } }),
+            dbInternal.invoice.count({ where: { orgId: org.id, status: "DRAFT" } }),
+          ])
+        : [0, 0, 0, 0];
       return ctx.ok(
         JSON.stringify(
           {
