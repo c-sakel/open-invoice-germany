@@ -11,7 +11,7 @@ import { updateNumberRange } from "@/domain/numbering/ranges";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
-import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { createDeliveryNote, DeliveryNoteValidationError } from "@/domain/delivery-note/create";
 import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
 import { createPartialInvoice } from "@/domain/invoice/partial";
 import { createFinalInvoice } from "@/domain/invoice/final";
@@ -364,6 +364,19 @@ describe("Fix-Runde 1 (Koordinator) — Snapshot-Konsistenz Angebot -> Abschlag/
     expect(partial.snapshotSource).toBe("INHERITED");
     const partialBuyer = parseBuyerSnapshot(partial.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
     expect(partialBuyer.name).not.toBe("Umbenannt nach Angebot GmbH");
+  });
+
+  it("Nit (Fix-Welle): eine BILLING-Adresse als shippingAddressId wird abgelehnt (400/DeliveryNoteValidationError)", async () => {
+    const customer = await makeCustomer();
+    const billing = await createAddress(orgId, customer.id, { type: "BILLING", addressLine1: "Rechnungsadresse 1", postalCode: "11111", city: "Rechnungsstadt" });
+
+    await expect(
+      createDeliveryNote(orgId, {
+        customerId: customer.id,
+        shippingAddressId: billing.id,
+        lines: [{ description: "Ware", quantityMilli: 1000, unit: "C62" }],
+      }),
+    ).rejects.toBeInstanceOf(DeliveryNoteValidationError);
   });
 
   it("B4 (Fix-Welle): finalizeInvoice behaelt den bei Anlage geerbten Snapshot einer Abschlagsrechnung bei (kein Live-Rebuild)", async () => {

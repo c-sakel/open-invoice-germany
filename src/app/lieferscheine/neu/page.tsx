@@ -29,12 +29,18 @@ export default async function NeuerLieferscheinPage() {
     id: c.id,
     customerId: c.customerId,
     label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
+    isDefault: c.isDefault,
   }));
-  const addresses = addressRows.map((a) => ({
-    id: a.id,
-    customerId: a.customerId,
-    label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
-  }));
+  // Nit (Fix-Welle): eine Lieferadresse ist SHIPPING oder OTHER — BILLING-Adressen
+  // gehoeren nicht in die Lieferadress-Auswahl (create.ts lehnt sie serverseitig ab).
+  const addresses = addressRows
+    .filter((a) => a.type === "SHIPPING" || a.type === "OTHER")
+    .map((a) => ({
+      id: a.id,
+      customerId: a.customerId,
+      isDefault: a.isDefault,
+      label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
+    }));
 
   if (customers.length === 0) {
     return (

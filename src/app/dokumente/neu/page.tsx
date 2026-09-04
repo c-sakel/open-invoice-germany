@@ -31,10 +31,13 @@ export default async function NeuesDokumentPage() {
     id: c.id,
     customerId: c.customerId,
     label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
+    isDefault: c.isDefault,
   }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
+    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
+    isDefault: a.isDefault,
     label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
   }));
 

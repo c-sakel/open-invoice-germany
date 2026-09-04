@@ -9,6 +9,8 @@ import { computeSubtotals } from "@/domain/document/lines";
 import { RichTextField } from "@/components/editor/RichTextField";
 import { ProductPicker, type ProductOption } from "@/components/editor/ProductPicker";
 import { TakeOverPrompt, type TakeOverPrefillDTO, type TakeOverLineDTO } from "@/components/TakeOverPrompt";
+import { optionalSelectValue, emptyOptionLabel } from "@/lib/forms/optional-select";
+import { nextDiscountOnCustomerChange } from "@/lib/forms/discount-prefill";
 
 interface CustomerOption {
   id: string;
@@ -19,11 +21,14 @@ interface ContactOption {
   id: string;
   customerId: string;
   label: string;
+  isDefault?: boolean;
 }
 interface AddressOption {
   id: string;
   customerId: string;
   label: string;
+  type?: "BILLING" | "SHIPPING" | "OTHER";
+  isDefault?: boolean;
 }
 type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
 interface LineState {
@@ -120,6 +125,8 @@ export function NewDocumentForm({
   const [internalNotes, setInternalNotes] = useState(initial?.internalNotes ?? "");
   const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
   const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? discountPercentOf(customers[0]));
+  // Fix-Welle B6: der zuletzt AUTOMATISCH angewendete Default — siehe NewInvoiceForm.tsx.
+  const [appliedDefaultDiscount, setAppliedDefaultDiscount] = useState(initial ? "" : discountPercentOf(customers[0]));
   const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "");
   const [documentChargePercent, setDocumentChargePercent] = useState(initial?.documentChargePercent ?? "0");
   const [documentChargeAmount, setDocumentChargeAmount] = useState(initial?.documentChargeAmount ?? "0");
@@ -243,6 +250,9 @@ export function NewDocumentForm({
 
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
+  // Fix-Welle B3: leere Option nennt die Kundenvorgabe explizit, wenn sie existiert.
+  const hasDefaultContact = customerContacts.some((c) => c.isDefault);
+  const hasDefaultBillingAddress = customerAddresses.some((a) => a.type === "BILLING" && a.isDefault);
 
   // Fix-Runde 1: Ansprechpartner/Rechnungsadresse gehoeren zum ALTEN Kunden — beim
   // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen (sonst
@@ -256,10 +266,15 @@ export function NewDocumentForm({
     if (billingAddressId && !addresses.some((a) => a.id === billingAddressId && a.customerId === id)) {
       setBillingAddressId("");
     }
-    // Kundenkomfort-Facts: Rabattfeld beim Kundenwechsel aus der Kundenvorgabe
-    // vorbelegen (nur, wenn der Nutzer es nicht bereits selbst befuellt hat).
-    if (!isEdit && !documentDiscountPercent.trim()) {
-      setDocumentDiscountPercent(discountPercentOf(customers.find((c) => c.id === id)));
+    // Fix-Welle B6: Rabattfeld beim Kundenwechsel aus der Kundenvorgabe vorbelegen — nur
+    // wenn der Nutzer es nicht selbst befuellt hat ODER es noch dem zuletzt automatisch
+    // angewendeten Default entspricht (siehe NewInvoiceForm.tsx).
+    if (!isEdit) {
+      const nextDiscount = nextDiscountOnCustomerChange(documentDiscountPercent, appliedDefaultDiscount, discountPercentOf(customers.find((c) => c.id === id)));
+      if (nextDiscount.apply) {
+        setDocumentDiscountPercent(nextDiscount.value);
+        setAppliedDefaultDiscount(nextDiscount.value);
+      }
     }
   }
 
@@ -323,8 +338,11 @@ export function NewDocumentForm({
       // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde (siehe
       // NewInvoiceForm.tsx) — sonst bleibt die alte Referenz beim Bearbeiten (PATCH)
       // serverseitig unveraendert stehen.
-      contactPersonId: contactPersonId || null,
-      billingAddressId: billingAddressId || null,
+      // Fix-Welle B3: siehe NewInvoiceForm.tsx (optionalSelectValue) — undefined bei
+      // leerem Feld waehrend der Anlage, damit die Kundenvorgabe greift; null beim
+      // Bearbeiten.
+      contactPersonId: optionalSelectValue(contactPersonId, isEdit),
+      billingAddressId: optionalSelectValue(billingAddressId, isEdit),
       validUntil: validUntil || undefined,
       headerText: headerText || undefined,
       footerText: footerText || undefined,
@@ -421,7 +439,7 @@ export function NewDocumentForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Ansprechpartner</span>
           <select className={input} value={contactPersonId} onChange={(e) => setContactPersonId(e.target.value)}>
-            <option value="">— keiner —</option>
+            <option value="">{emptyOptionLabel(hasDefaultContact)}</option>
             {customerContacts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
@@ -432,7 +450,7 @@ export function NewDocumentForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rechnungsadresse</span>
           <select className={input} value={billingAddressId} onChange={(e) => setBillingAddressId(e.target.value)}>
-            <option value="">— Standardadresse —</option>
+            <option value="">{emptyOptionLabel(hasDefaultBillingAddress)}</option>
             {customerAddresses.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}
