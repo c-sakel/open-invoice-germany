@@ -14,6 +14,7 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { pickTextTemplate } from "@/domain/text-template/pick";
 import type { CreateInvoiceInput } from "@/schemas";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -58,24 +59,28 @@ export async function createDraftInvoiceWithinTx(
 
   // Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) gehen nie in Summen/Steuerberechnung ein.
   const itemLines = lines.filter((l) => l.lineType === "ITEM");
-  const totals = computeTaxBreakdown(
-    itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
-    {
-      discountPermille: input.documentDiscountPermille,
-      discountCents: input.documentDiscountCents,
-      chargePermille: input.documentChargePermille,
-      chargeCents: input.documentChargeCents,
-    },
-  );
 
   // Kunde muss zur Organisation gehören (kein Cross-Tenant-Bezug).
   const customer = await tx.customer.findFirst({
     where: { id: input.customerId, orgId },
-    select: { id: true, defaultPaymentMethodId: true, defaultPaymentTermsDays: true },
+    select: {
+      id: true,
+      defaultPaymentMethodId: true,
+      defaultPaymentTermsDays: true,
+      // Phase 8a (§28): Kundenvorgaben-Prioritaetskette (Eingabe > Kunde > Settings/
+      // TextTemplate > Systemdefault) — siehe Kommentare unten je Feld.
+      defaultCurrency: true,
+      defaultDiscountPermille: true,
+      orderReference: true,
+      paymentTermsText: true,
+    },
   });
   if (!customer) throw new Error("Kunde nicht gefunden.");
 
   const settings = await loadDocumentSettings(orgId);
+  // Waehrung (§28): Eingabe > Customer.defaultCurrency > DocumentSettings.defaultCurrency
+  // (selbstheilend geladen, Default darin bereits "EUR") > "EUR".
+  const currency = input.currency ?? customer.defaultCurrency ?? settings.defaultCurrency ?? "EUR";
 
   // Fehlt die Zahlungsmethode, greift zuerst die Standard-Zahlungsmethode des Kunden
   // (Selbstheilung), danach die Org-weite Standard-Zahlungsmethode aus den Einstellungen
@@ -106,18 +111,63 @@ export async function createDraftInvoiceWithinTx(
   // Rechnungs-/Lieferadresse muessen zur Organisation UND zum ausgewaehlten Kunden
   // gehoeren, sonst koennte ein fremder Ansprechpartner/eine fremde Adresse (anderer
   // Kunde derselben Org) unbemerkt an die Rechnung gehaengt werden.
-  if (input.contactPersonId) {
-    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId, customerId: input.customerId }, select: { id: true } });
+  //
+  // Phase 8a (§29/§30): fehlt die Angabe komplett (`undefined`, nicht explizit `null`),
+  // greift die Default-Adresse/der Default-Ansprechpartner des Kunden (Prioritaetskette
+  // Eingabe > Default). Explizites `null` (Formular geleert) uebernimmt bewusst KEINEN
+  // Default — der Nutzer hat die Auswahl aktiv entfernt.
+  let contactPersonId = input.contactPersonId;
+  if (contactPersonId) {
+    const contact = await tx.contactPerson.findFirst({ where: { id: contactPersonId, orgId, customerId: input.customerId }, select: { id: true } });
     if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
+  } else if (contactPersonId === undefined) {
+    const defaultContact = await tx.contactPerson.findFirst({ where: { orgId, customerId: input.customerId, isDefault: true }, select: { id: true } });
+    contactPersonId = defaultContact?.id ?? null;
   }
-  if (input.billingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
+  let billingAddressId = input.billingAddressId;
+  if (billingAddressId) {
+    const address = await tx.customerAddress.findFirst({ where: { id: billingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
     if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
+  } else if (billingAddressId === undefined) {
+    const defaultAddress = await tx.customerAddress.findFirst({ where: { orgId, customerId: input.customerId, type: "BILLING", isDefault: true }, select: { id: true } });
+    billingAddressId = defaultAddress?.id ?? null;
   }
-  if (input.shippingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
+  let shippingAddressId = input.shippingAddressId;
+  if (shippingAddressId) {
+    const address = await tx.customerAddress.findFirst({ where: { id: shippingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
     if (!address) throw new Error("Lieferadresse nicht gefunden.");
+  } else if (shippingAddressId === undefined) {
+    const defaultAddress = await tx.customerAddress.findFirst({ where: { orgId, customerId: input.customerId, type: "SHIPPING", isDefault: true }, select: { id: true } });
+    shippingAddressId = defaultAddress?.id ?? null;
   }
+
+  // Rabatt (§28): Eingabe > Customer.defaultDiscountPermille — nur wenn BEIDE
+  // Rabattfelder am Beleg fehlen (Task-2-Facts). Ein expliziter Wert (auch 0) gewinnt
+  // immer gegen die Kundenvorgabe.
+  const hasExplicitDiscount = input.documentDiscountPermille !== undefined || input.documentDiscountCents !== undefined;
+  const documentDiscountPermille = hasExplicitDiscount ? (input.documentDiscountPermille ?? 0) : (customer.defaultDiscountPermille ?? 0);
+  const documentDiscountCents = hasExplicitDiscount ? (input.documentDiscountCents ?? 0) : 0;
+
+  // Bestellreferenz (§28): Eingabe > Customer.orderReference (BT-13).
+  const orderNumber = input.orderNumber ?? customer.orderReference ?? undefined;
+
+  // Texte (§28): Eingabe > Kunden-Text (nur Zahlungsbedingungen — Invoice kennt kein
+  // eigenes Kopf-/Fusstext-Kundenfeld) > TextTemplate. createDraftInvoiceWithinTx wandte
+  // bislang GAR KEINE Textvorlage an (anders als createBusinessDocumentWithinTx) — mit
+  // Phase 8a nachgezogen.
+  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD")) ?? undefined;
+  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT")) ?? undefined;
+  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT")) ?? undefined;
+
+  const totals = computeTaxBreakdown(
+    itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    {
+      discountPermille: documentDiscountPermille,
+      discountCents: documentDiscountCents,
+      chargePermille: input.documentChargePermille,
+      chargeCents: input.documentChargeCents,
+    },
+  );
 
   const invoice = await tx.invoice.create({
     data: {
@@ -125,10 +175,7 @@ export async function createDraftInvoiceWithinTx(
       customerId: input.customerId,
       type: input.type,
       taxScheme: input.taxScheme,
-      // Phase 7 Fix-Runde 1: ohne explizite Angabe DocumentSettings.defaultCurrency
-      // (selbstheilend geladen, Default darin bereits "EUR" — letzter Rueckfall trotzdem
-      // explizit, falls die Settings-Zeile jemals einen leeren Wert traegt).
-      currency: input.currency ?? settings.defaultCurrency ?? "EUR",
+      currency,
       issueDate,
       deliveryDate,
       deliveryStart: input.deliveryStart,
@@ -136,18 +183,18 @@ export async function createDraftInvoiceWithinTx(
       dueDate,
       buyerReference: input.buyerReference,
       subject: input.subject,
-      orderNumber: input.orderNumber,
+      orderNumber,
       internalReference: input.internalReference,
-      contactPersonId: input.contactPersonId,
-      billingAddressId: input.billingAddressId,
-      shippingAddressId: input.shippingAddressId,
+      contactPersonId,
+      billingAddressId,
+      shippingAddressId,
       notes: input.notes,
-      paymentTerms: input.paymentTerms,
+      paymentTerms,
       internalNotes: input.internalNotes,
-      headerText: input.headerText,
-      footerText: input.footerText,
-      documentDiscountPermille: input.documentDiscountPermille,
-      documentDiscountCents: input.documentDiscountCents,
+      headerText,
+      footerText,
+      documentDiscountPermille,
+      documentDiscountCents,
       documentChargePermille: input.documentChargePermille,
       documentChargeCents: input.documentChargeCents,
       documentChargeReason: input.documentChargeReason,

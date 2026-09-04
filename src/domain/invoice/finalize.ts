@@ -15,7 +15,8 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
-import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
+import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
@@ -53,7 +54,7 @@ export interface FinalizeOptions {
    * dieses, auch wenn sich die Stammdaten zwischenzeitlich geaendert haben. Nur wirksam,
    * wenn BEIDE Werte gesetzt sind; sonst greift der bisherige Live-Pfad (Herkunft FINALIZE).
    */
-  inheritSnapshotFrom?: { sellerSnapshotJson: string | null; buyerSnapshotJson: string | null };
+  inheritSnapshotFrom?: { sellerSnapshotJson: string | null; buyerSnapshotJson: string | null; contactSnapshotJson?: string | null };
   /**
    * Explizites Rechnungsdatum fuer diese Festschreibung (Phase 7, §33). Ist es gesetzt,
    * greift `refreshIssueDateOnFinalize` NICHT (Ruling Task-2-Facts) — der Aufrufer hat
@@ -164,7 +165,27 @@ export async function finalizeWithinTx(
   const inherited = opts.inheritSnapshotFrom;
   const canInherit = !!inherited?.sellerSnapshotJson && !!inherited?.buyerSnapshotJson;
   const sellerSnapshotJson = canInherit ? inherited!.sellerSnapshotJson : JSON.stringify(buildSellerSnapshot(invoice.org));
-  const buyerSnapshotJson = canInherit ? inherited!.buyerSnapshotJson : JSON.stringify(buildBuyerSnapshot(invoice.customer));
+  // Phase 8a (§29/§31): der Buyer-Snapshot beruecksichtigt die AM BELEG gewaehlte
+  // Rechnungsadresse (`billingAddressId`) und die Kunden-Zusatzfelder — dieselbe Funktion
+  // wie bei Anlage eines Geschaeftsdokuments (resolveBuyerSnapshot), damit Erstellung und
+  // Festschreibung denselben Snapshot bauen.
+  const buyerSnapshotJson = canInherit
+    ? inherited!.buyerSnapshotJson
+    : JSON.stringify(await resolveBuyerSnapshot(tx, invoice.orgId, invoice.customer, invoice.contactPersonId, invoice.billingAddressId));
+  // Ansprechpartner-Snapshot (§30): Storno/Teilgutschrift erben den Snapshot des
+  // Originals (fehlt er dort — Altbelege vor Phase 8a —, bleibt er `null`); sonst wird er
+  // aus dem am Beleg gewaehlten Ansprechpartner gebaut.
+  let contactSnapshotJson: string | null;
+  if (canInherit) {
+    contactSnapshotJson = inherited!.contactSnapshotJson ?? null;
+  } else if (invoice.contactPersonId) {
+    const contact = await tx.contactPerson.findFirst({ where: { id: invoice.contactPersonId, orgId: invoice.orgId } });
+    contactSnapshotJson = contact
+      ? JSON.stringify(buildContactSnapshot({ firstName: contact.firstName, lastName: contact.lastName, role: contact.role, email: contact.email, phone: contact.phone }))
+      : null;
+  } else {
+    contactSnapshotJson = null;
+  }
   const snapshotSource: SnapshotSource = canInherit ? "INHERITED" : "FINALIZE";
 
   // S6 (Fix-Welle Final-Review): die effektiven Druckoptionen bei Festschreibung
@@ -267,6 +288,7 @@ export async function finalizeWithinTx(
       taxBreakdownJson: JSON.stringify(totals.breakdown),
       sellerSnapshotJson,
       buyerSnapshotJson,
+      contactSnapshotJson,
       snapshotSource,
       snapshotAt: now,
       paymentMethodSnapshotJson,

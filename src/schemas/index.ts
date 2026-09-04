@@ -74,8 +74,41 @@ export const buyerSnapshotSchema = z.object({
   vatId: z.string().nullable(),
   email: z.string().nullable(),
   leitwegId: z.string().nullable(),
+  // Phase 8a (§29): die AM BELEG gewaehlte Rechnungs-/Lieferadresse (CustomerAddress),
+  // strukturiert zusaetzlich zu den flachen addressLine1-Feldern oben (die weiterhin die
+  // fuer PDF/XML massgebliche Adresse tragen). Optional/ohne Default, damit buildBuyerSnapshot
+  // dieses Feld nur setzt, wenn der Aufrufer eine Adresse mitgibt — Alt-Snapshots (Phase 0-7)
+  // und Aufrufer ohne Adressauswahl bleiben unveraendert (Object.keys-Kompatibilitaet,
+  // siehe test/unit/snapshot.test.ts "Schluesselmengen").
+  address: z
+    .object({
+      type: z.enum(["BILLING", "SHIPPING", "OTHER"]),
+      label: z.string().nullable(),
+      addressLine1: z.string(),
+      addressLine2: z.string().nullable(),
+      postalCode: z.string(),
+      city: z.string(),
+      countryCode: z.string(),
+    })
+    .nullable()
+    .optional(),
+  // Phase 8a (§31): Werte der Kunden-Zusatzfelder zum Snapshot-Zeitpunkt. Optional aus
+  // demselben Grund wie `address`.
+  customFields: z.record(z.string(), z.unknown()).optional(),
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
+
+// Phase 8a (§30): Snapshot des am Beleg gewaehlten Ansprechpartners (ContactPerson).
+// NULL/kein Objekt = kein Ansprechpartner gewaehlt — anders als Seller/Buyer bewusst kein
+// Pflichtfeld auf dem Beleg.
+export const contactSnapshotSchema = z.object({
+  firstName: z.string(),
+  lastName: z.string(),
+  role: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+});
+export type ContactSnapshot = z.infer<typeof contactSnapshotSchema>;
 
 // Feldgenau identisch mit dem JSON aus src/domain/invoice/finalize.ts (paymentMethodSnapshotJson).
 export const paymentMethodSnapshotSchema = z.object({
@@ -217,9 +250,16 @@ export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
 // Skonto-Ziel 2 ist nur zusammen mit Ziel 1 und mit laengerer Frist zulaessig
 // (sonst ergibt "2. Skonto" keinen Sinn — Ziel 1 muesste immer die kuerzere,
 // hoehere Skontostufe sein).
+// Phase 8a (§28): documentDiscountPermille/documentDiscountCents bewusst OHNE `.default(0)`
+// (wie `currency` oben) — Customer.defaultDiscountPermille soll bei CREATE greifen, wenn
+// BEIDE Rabattfelder fehlen (Task-2-Facts). Mit `.default(0)` koennte die Domain "nicht
+// gesetzt" nie von "explizit 0" unterscheiden. documentChargePermille/-Cents kennen keine
+// Kundenvorgabe und behalten `.default(0)`. `.partial()` (updateInvoiceSchema/
+// updateDocumentSchema) macht ohnehin alle Felder optional — dieser Wechsel aendert dort
+// nichts am beobachtbaren Verhalten (input.xyz !== undefined wird bereits so ausgewertet).
 const documentAdjustmentFields = {
-  documentDiscountPermille: z.number().int().min(0).max(1000).default(0),
-  documentDiscountCents: z.number().int().nonnegative().default(0),
+  documentDiscountPermille: z.number().int().min(0).max(1000).optional(),
+  documentDiscountCents: z.number().int().nonnegative().optional(),
   documentChargePermille: z.number().int().min(0).max(1000).default(0),
   documentChargeCents: z.number().int().nonnegative().default(0),
   documentChargeReason: z.string().max(500).optional(),
@@ -553,6 +593,11 @@ export const createDeliveryNoteSchema = z.object({
   sourceId: z.string().optional(),
   deliveryDate: z.coerce.date().optional(),
   shippingDate: z.coerce.date().optional(),
+  // Phase 8a (§29/§30): ohne explizite Angabe greift die Default-Lieferadresse/der
+  // Default-Ansprechpartner des Kunden (createDeliveryNoteWithinTx). Explizit `null`
+  // sendbar (Fix-Welle-Muster K2), um eine Auswahl aktiv zu entfernen.
+  shippingAddressId: z.string().nullable().optional(),
+  contactPersonId: z.string().nullable().optional(),
   // Ohne explizite Angabe greifen die dnShow*-Org-Einstellungen (Phase 7, §33) — bewusst
   // KEIN Zod-`.default()` hier, sonst wuerde die Domain nie unterscheiden koennen, ob der
   // Aufrufer den Wert bewusst gesetzt hat.

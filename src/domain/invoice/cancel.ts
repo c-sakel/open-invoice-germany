@@ -218,7 +218,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
       actor,
       now,
       // Storno berichtigt genau das Original: gleicher Empfaenger/Verkaeufer wie dort.
-      inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson },
+      inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson, contactSnapshotJson: original.contactSnapshotJson },
     });
 
     await tx.invoice.update({

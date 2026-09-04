@@ -45,6 +45,30 @@ export function defaultStandardAttachmentFilenames(attachments: { filename: stri
   return names.filter((n) => !n.toLowerCase().endsWith(".xml"));
 }
 
+/**
+ * eInvoicePreferred (Phase 8a, §28): der Kunde selbst kann die org-weite Vorbelegung
+ * (DocumentSettings.eInvoiceDefault) UEBERSCHREIBEN, wenn er ausdruecklich die
+ * XRechnung/ZUGFeRD-Vorauswahl wuenscht — nie umgekehrt einschraenken (ein Kunde ohne
+ * Praeferenz aendert an der Org-Vorbelegung nichts). Liefert `null`, wenn kein Kunde zum
+ * Beleg ermittelt werden kann (Aufrufer faellt dann auf `eInvoiceDefault` allein zurueck).
+ */
+export async function customerEInvoicePreferred(orgId: string, docType: EmailDocType, docId: string): Promise<boolean | null> {
+  if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
+    const inv = await dbInternal.invoice.findFirst({ where: { id: docId, orgId }, select: { customer: { select: { eInvoicePreferred: true } } } });
+    return inv?.customer.eInvoicePreferred ?? null;
+  }
+  if (docType === "DUNNING") {
+    const d = await dbInternal.dunning.findFirst({
+      where: { id: docId, invoice: { orgId } },
+      select: { invoice: { select: { customer: { select: { eInvoicePreferred: true } } } } },
+    });
+    return d?.invoice.customer.eInvoicePreferred ?? null;
+  }
+  if (docType === "DELIVERY_NOTE") return null; // kein XML-Anhang moeglich
+  const q = await dbInternal.quote.findFirst({ where: { id: docId, orgId, kind: docType }, select: { customer: { select: { eInvoicePreferred: true } } } });
+  return q?.customer.eInvoicePreferred ?? null;
+}
+
 /** Standardanhaenge je Belegtyp (Spec, Abschnitt 2). */
 export async function buildStandardAttachments(orgId: string, docType: EmailDocType, docId: string): Promise<Attachment[]> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
