@@ -12,6 +12,9 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
+import { createPartialInvoice } from "@/domain/invoice/partial";
+import { createFinalInvoice } from "@/domain/invoice/final";
 import { buildTemplateContext } from "@/domain/email/context";
 import { parseBuyerSnapshot, parseContactSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { createAddress } from "@/domain/customer/addresses";
@@ -269,5 +272,69 @@ describe("Phase 8a — customerDefaultsFor gespeicherte Vorgaben wirken im Konsu
     expect(draft.documentDiscountPermille).toBe(20);
     expect(draft.orderNumber).toBe("SAVED-REF");
     expect(draft.paymentTerms).toBe("Sofort faellig.");
+  });
+});
+
+describe("Fix-Runde 1 (Koordinator) — Snapshot-Konsistenz Angebot -> Abschlag/Teil/Schluss", () => {
+  it("Abschlags-, Teil- und Schlussrechnung erben Adresse/Ansprechpartner-Snapshot der Quelle, nicht die (spaeter geaenderten) Kunden-Defaults", async () => {
+    const customer = await makeCustomer();
+    const billing = await createAddress(orgId, customer.id, { type: "BILLING", addressLine1: "Quellenadresse 1", postalCode: "77777", city: "Quellstadt", isDefault: true });
+    const contact = await createContact(orgId, customer.id, { firstName: "Original", lastName: "Ansprechpartner", email: "original@quelle.de", isDefault: true });
+
+    const quote = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId: customer.id,
+      taxScheme: "REGULAR",
+      lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 100000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+    expect(quote.billingAddressId).toBe(billing.id);
+    expect(quote.contactPersonId).toBe(contact.id);
+
+    // Zweite Quelle (fuer die Teilrechnung, s.u.) VOR der Kundenaenderung anlegen —
+    // Teil- und Abschlagsrechnungen duerfen nicht auf derselben Quelle gemischt werden.
+    const quote2 = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId: customer.id,
+      taxScheme: "REGULAR",
+      contactPersonId: contact.id,
+      billingAddressId: billing.id,
+      lines: [{ lineType: "ITEM", description: "Beratung 2", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 50000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+
+    // Kundenstamm NACH Angebotserstellung aendern: Umbenennung + neuer Default-Kontakt.
+    // Abschlag/Teil/Schluss duerfen davon NICHTS uebernehmen — sie muessen exakt den
+    // Snapshot/die Adresse/den Kontakt des jeweiligen Angebots zeigen.
+    await dbInternal.customer.update({ where: { id: customer.id }, data: { name: "Umbenannt nach Angebot GmbH" } });
+    const newContact = await createContact(orgId, customer.id, { firstName: "Neu", lastName: "Kontakt", isDefault: true });
+    expect(newContact.isDefault).toBe(true);
+
+    const downpayment = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: ISSUE });
+    expect(downpayment.billingAddressId).toBe(billing.id);
+    expect(downpayment.contactPersonId).toBe(contact.id);
+    expect(downpayment.snapshotSource).toBe("INHERITED");
+    const dpBuyer = parseBuyerSnapshot(downpayment.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
+    expect(dpBuyer.name).not.toBe("Umbenannt nach Angebot GmbH");
+    const dpContact = parseContactSnapshot(downpayment.contactSnapshotJson, null, "test");
+    expect(dpContact).toMatchObject({ firstName: "Original", lastName: "Ansprechpartner", email: "original@quelle.de" });
+
+    const finalizedDownpayment = await finalizeInvoice(downpayment.id, { now: ISSUE });
+    expect(finalizedDownpayment.status).toBe("FINALIZED");
+
+    const finalInvoice = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: ISSUE });
+    expect(finalInvoice.billingAddressId).toBe(billing.id);
+    expect(finalInvoice.contactPersonId).toBe(contact.id);
+    expect(finalInvoice.snapshotSource).toBe("INHERITED");
+    const finalContact = parseContactSnapshot(finalInvoice.contactSnapshotJson, null, "test");
+    expect(finalContact).toMatchObject({ firstName: "Original", lastName: "Ansprechpartner" });
+
+    // Teilrechnung auf der ZWEITEN Quelle (Teil-/Abschlagsrechnungen duerfen nicht auf
+    // derselben Quelle gemischt werden, quote2 wurde oben VOR der Kundenaenderung angelegt)
+    // — dieselbe Erbfolge.
+    const partial = await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: quote2.id, mode: "PERCENT", permille: 500 }, { now: ISSUE });
+    expect(partial.billingAddressId).toBe(billing.id);
+    expect(partial.contactPersonId).toBe(contact.id);
+    expect(partial.snapshotSource).toBe("INHERITED");
+    const partialBuyer = parseBuyerSnapshot(partial.buyerSnapshotJson, buildBuyerSnapshot(customer), "test");
+    expect(partialBuyer.name).not.toBe("Umbenannt nach Angebot GmbH");
   });
 });
