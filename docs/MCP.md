@@ -82,7 +82,11 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten) |
 | `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben) |
 | `record_payment` | Zahlungseingang erfassen → Status (bezahlt/teilbezahlt) |
-| `create_dunning` | Nächste Mahnstufe (Zahlungserinnerung → 1./2. Mahnung, Verzugszins § 288 BGB + 40-€-Pauschale B2B) |
+| `create_dunning` | Nächste fällige Mahnstufe erzeugen (frei konfigurierbare Stufen, Verzugszins § 288 BGB + Mahnkosten ab Stufe 2 + 40-€-Pauschale B2B, `force` überspringt die Fälligkeitsprüfung) |
+| `send_dunning` | Eine erstellte Mahnung per E-Mail versenden (dieselbe Mailpipeline wie Rechnungen/Angebote) |
+| `set_dunning_state` | Mahnprozess einer Rechnung pausieren (mit Datum), beenden oder wieder aktivieren |
+| `list_overdue_invoices` | Mahnübersicht: alle überfälligen, offenen Rechnungen (Widgets + Zeilen, Fälligkeits-Aging), optional nach Mahnprozess-Status gefiltert |
+| `run_scheduler_job` | Scheduler-Job(s) manuell anstoßen (`dunning`, `recurring`, oder beide — dieselbe Runner-Funktion wie der eingebaute Loop/Cron) |
 | `get_invoice` / `list_invoices` | Anzeigen/Auflisten |
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei + Validierungsreport |
 | `create_document` / `list_documents` | Angebot / Auftragsbestätigung / Proforma |
