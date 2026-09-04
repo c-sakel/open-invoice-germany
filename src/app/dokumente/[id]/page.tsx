@@ -107,7 +107,12 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
             // vorliegt.
             showPartialInvoice={canBillQuote && !hasDownpayments}
             showDownpaymentInvoice={canBillQuote && !hasPartialInvoices}
-            showFinalInvoice={billing != null && billing.state === "PARTIAL" && hasDownpayments}
+            // B8 (Fix-Welle): unabhaengig von FULL/PARTIAL — 100 % Abschlagsdeckung
+            // (mit `downpaymentGrossCents === grossTotalCents`) haebt den
+            // Abrechnungsstand bereits auf FULL, obwohl §14 Abs. 5 UStG weiterhin eine
+            // Schlussrechnung verlangt. Einzige harte Grenze: keine zweite Schlussrechnung
+            // anbieten, wenn bereits eine festgeschriebene, nicht stornierte existiert.
+            showFinalInvoice={billing != null && hasDownpayments && !billing.hasActiveFinal}
           />
         </div>
       </div>

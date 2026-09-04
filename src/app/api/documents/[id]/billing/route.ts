@@ -26,6 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       state: billing.state,
       billedPermille: billing.billedPermille,
       downpaymentGrossCents: billing.downpaymentGrossCents,
+      hasActiveFinal: billing.hasActiveFinal,
       invoiceIds: billing.invoiceIds,
       lines,
     });

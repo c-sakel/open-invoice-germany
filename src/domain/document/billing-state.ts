@@ -18,6 +18,11 @@ export interface BillingStateResult {
   billedPermille: number;
   /** Phase 5: Summe der Bruttobetraege aktiver (nicht stornierter) Abschlagsrechnungen. */
   downpaymentGrossCents: number;
+  /** Fix-Welle (B8): true, wenn bereits eine festgeschriebene, nicht stornierte
+   * Schlussrechnung (FINAL_FOR) existiert — unabhaengig vom Gesamtstatus FULL/PARTIAL
+   * (der auch durch 100 % Abschlag-/Teilrechnungsdeckung OHNE Schlussrechnung erreicht
+   * wird). Steuert, ob „Schlussrechnung erzeugen" noch angeboten werden darf. */
+  hasActiveFinal: boolean;
 }
 
 const FINALIZED_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
@@ -51,7 +56,7 @@ export async function billingStateFor(orgId: string, type: "QUOTE", id: string):
       select: { id: true },
     });
     if (active.length > 0) {
-      return { state: "FULL", invoiceIds: active.map((i) => i.id), billedPermille: 1000, downpaymentGrossCents: 0 };
+      return { state: "FULL", invoiceIds: active.map((i) => i.id), billedPermille: 1000, downpaymentGrossCents: 0, hasActiveFinal: false };
     }
   }
 
@@ -70,7 +75,7 @@ export async function billingStateFor(orgId: string, type: "QUOTE", id: string):
       select: { id: true },
     });
     if (finalized.length > 0) {
-      return { state: "FULL", invoiceIds: finalized.map((i) => i.id), billedPermille: 1000, downpaymentGrossCents };
+      return { state: "FULL", invoiceIds: finalized.map((i) => i.id), billedPermille: 1000, downpaymentGrossCents, hasActiveFinal: true };
     }
   }
 
@@ -99,12 +104,12 @@ export async function billingStateFor(orgId: string, type: "QUOTE", id: string):
       }
 
       if (billedPermille >= 1000 || allQuantitiesBilled) {
-        return { state: "FULL", invoiceIds: active.map((i) => i.id), billedPermille: 1000, downpaymentGrossCents };
+        return { state: "FULL", invoiceIds: active.map((i) => i.id), billedPermille: 1000, downpaymentGrossCents, hasActiveFinal: false };
       }
 
-      return { state: "PARTIAL", invoiceIds: active.map((i) => i.id), billedPermille, downpaymentGrossCents };
+      return { state: "PARTIAL", invoiceIds: active.map((i) => i.id), billedPermille, downpaymentGrossCents, hasActiveFinal: false };
     }
   }
 
-  return { state: "NONE", invoiceIds: [], billedPermille: 0, downpaymentGrossCents: 0 };
+  return { state: "NONE", invoiceIds: [], billedPermille: 0, downpaymentGrossCents: 0, hasActiveFinal: false };
 }
