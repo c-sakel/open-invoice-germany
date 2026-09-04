@@ -112,6 +112,7 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 - **Backup**: Die SQLite-Datei `prisma/dev.db` (bzw. die PostgreSQL-Datenbank) regelmäßig sichern. Aufbewahrungsfrist beachten (siehe COMPLIANCE.md).
 - **Mehrbenutzer/Internet**: Das MVP hat noch **keine eingebaute Anmeldung**. Betreibe es lokal oder hinter einem Auth-Proxy. Siehe [SECURITY.md](../SECURITY.md).
 - **PostgreSQL/Docker**: `docker compose up --build` (siehe README).
+- **API-Dokumentation im Container**: `/api/docs` (Swagger UI) und `GET /api/v1/openapi.json` lesen die committete Datei `openapi/openapi.json` zur Laufzeit relativ zu `process.cwd()` — das Docker-Image kopiert dieses Verzeichnis in die runner-Stage (`Dockerfile`, Fix-Welle Phase 10). Bei einem selbst angepassten Dockerfile darauf achten, `openapi/` mit auszuliefern, sonst liefert `/api/docs` einen 500er.
 
 ---
 

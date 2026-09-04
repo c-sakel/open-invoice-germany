@@ -276,6 +276,32 @@ describe("Zustellung (deliver.ts) — attemptDelivery", () => {
     expect(updated.lastError).toMatch(/privaten|lokalen/i);
   });
 
+  // Fix-Welle (Blocking 2): ein oeffentlich erreichbarer Endpunkt koennte per 307 auf eine
+  // private Adresse umleiten (z. B. Cloud-Metadata) — die SSRF-Pruefung oben deckt nur die
+  // urspruengliche URL ab. `redirect: "manual"` MUSS verhindern, dass der signierte Request
+  // ein zweites Mal (ans Redirect-Ziel) gesendet wird.
+  it("Redirect (307) wird NICHT gefolgt — genau 1 fetch-Aufruf, Zustellung gilt als fehlgeschlagen", async () => {
+    const endpoint = await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.40/hook");
+    const delivery = await dbInternal.webhookDelivery.create({
+      data: { orgId, endpointId: endpoint.id, event: "invoice.finalized", objectName: "Invoice", objectId: "d-redirect", dataJson: "{}", status: "PENDING", nextAttemptAt: FIX_DATE },
+    });
+    const raw = await loadEndpointRaw(endpoint.id);
+
+    let callCount = 0;
+    const redirectFetch: FetchLike = async () => {
+      callCount += 1;
+      return new Response(null, { status: 307, headers: { Location: "http://169.254.169.254/latest/meta-data/" } });
+    };
+    const result = await attemptDelivery({ ...delivery, endpoint: raw }, redirectFetch, FIX_DATE);
+    expect(callCount).toBe(1);
+    expect(result.outcome).toBe("retry");
+    expect(result.error).toBe("Redirect nicht erlaubt.");
+
+    const updated = await dbInternal.webhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    expect(updated.status).toBe("FAILED");
+    expect(updated.lastError).toBe("Redirect nicht erlaubt.");
+  });
+
   it("deaktivierter Endpunkt -> sofort DEAD, kein fetch-Aufruf", async () => {
     const created = await makeActiveEndpoint(["invoice.finalized"], "https://93.184.216.36/hook");
     await updateWebhookEndpoint(orgId, created.id, { active: false });

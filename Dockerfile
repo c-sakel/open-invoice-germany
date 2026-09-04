@@ -28,6 +28,11 @@ COPY --from=build /app/.next ./.next
 COPY --from=build /app/src/generated ./src/generated
 COPY --from=build /app/public ./public
 COPY --from=build /app/prisma ./prisma
+# Fix-Welle (Blocking 3): src/app/api/v1/openapi.json/route.ts liest die Datei zur
+# Laufzeit relativ zu process.cwd() (`path.join(process.cwd(), "openapi", "openapi.json")`)
+# — ohne diese Zeile fehlte das Verzeichnis in der runner-Stage komplett, /api/docs und
+# GET /api/v1/openapi.json warfen ENOENT -> 500 auf jeder Produktivinstanz.
+COPY --from=build /app/openapi ./openapi
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/tsconfig.json ./tsconfig.json

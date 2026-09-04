@@ -108,9 +108,24 @@ export async function attemptDelivery(
       },
       body,
       signal: controller.signal,
+      // Fix-Welle (Blocking 2): OHNE dies folgt undici 3xx-Antworten automatisch — die
+      // SSRF-Pruefung oben (assertPublicHttpsUrl) prueft aber NUR die urspruengliche URL.
+      // Ein oeffentlich erreichbarer Endpunkt koennte mit einem 307 auf eine private
+      // Adresse (Cloud-Metadata, localhost, ...) antworten; der signierte POST wuerde dann
+      // dorthin repliziert und die Antwort (bis zu RESPONSE_BODY_MAX_CHARS) im Zustellprotokoll
+      // gespeichert/angezeigt — ein Lese-Primitive gegen das interne Netz. `redirect: "manual"`
+      // liefert die 3xx-Antwort selbst zurueck statt ihr zu folgen; jeder 3xx-Status wird unten
+      // als Fehlschlag behandelt (kein zweiter Request).
+      redirect: "manual",
     });
     status = res.status;
-    responseBody = (await res.text().catch(() => "")).slice(0, RESPONSE_BODY_MAX_CHARS);
+    if (status >= 300 && status < 400) {
+      // Kein zweiter Request: die Redirect-Antwort selbst (nicht das Redirect-Ziel)
+      // wird NICHT gelesen/gespeichert — nur der Grund als Fehlertext.
+      errorMessage = "Redirect nicht erlaubt.";
+    } else {
+      responseBody = (await res.text().catch(() => "")).slice(0, RESPONSE_BODY_MAX_CHARS);
+    }
   } catch (e) {
     errorMessage = (e instanceof Error ? e.message : String(e)).slice(0, ERROR_MAX_CHARS);
   } finally {
