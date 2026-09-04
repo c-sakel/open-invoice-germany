@@ -148,13 +148,30 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                 <tr key={s.id}>
                   <td className="px-3 py-2 text-slate-500">{s.order}</td>
                   <td className="px-3 py-2">
-                    <input value={d.name} onChange={(e) => setDraft(s.id, { name: e.target.value })} className="w-40 rounded border border-slate-300 px-2 py-1" />
+                    <input
+                      value={d.name}
+                      onChange={(e) => setDraft(s.id, { name: e.target.value })}
+                      className="w-40 rounded border border-slate-300 px-2 py-1"
+                      aria-label={`Name der Mahnstufe ${s.order}`}
+                    />
                   </td>
                   <td className="px-3 py-2">
-                    <input type="number" value={d.daysAfterDue} onChange={(e) => setDraft(s.id, { daysAfterDue: Number(e.target.value) })} className="w-20 rounded border border-slate-300 px-2 py-1" />
+                    <input
+                      type="number"
+                      value={d.daysAfterDue}
+                      onChange={(e) => setDraft(s.id, { daysAfterDue: Number(e.target.value) })}
+                      className="w-20 rounded border border-slate-300 px-2 py-1"
+                      aria-label={`Tage nach Fälligkeit — Mahnstufe ${s.order}`}
+                    />
                   </td>
                   <td className="px-3 py-2">
-                    <input type="number" value={d.newDueDays} onChange={(e) => setDraft(s.id, { newDueDays: Number(e.target.value) })} className="w-20 rounded border border-slate-300 px-2 py-1" />
+                    <input
+                      type="number"
+                      value={d.newDueDays}
+                      onChange={(e) => setDraft(s.id, { newDueDays: Number(e.target.value) })}
+                      className="w-20 rounded border border-slate-300 px-2 py-1"
+                      aria-label={`Neue Zahlungsfrist in Tagen — Mahnstufe ${s.order}`}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -165,19 +182,44 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       onChange={(e) => setDraft(s.id, { feeCents: Math.round(parseFloat(e.target.value.replace(",", ".")) * 100) || 0 })}
                       className="w-20 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400"
                       title={feeAllowed ? "" : "Mahnkosten erst ab Stufe 3 (order ≥ 2, COMPLIANCE §12)"}
+                      aria-label={`Mahnkosten in Euro — Mahnstufe ${s.order}`}
                     />
                   </td>
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={d.calculateInterest} onChange={(e) => setDraft(s.id, { calculateInterest: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                    <input
+                      type="checkbox"
+                      checked={d.calculateInterest}
+                      onChange={(e) => setDraft(s.id, { calculateInterest: e.target.checked })}
+                      className="h-4 w-4 rounded border-slate-300"
+                      aria-label={`Verzugszinsen berechnen — Mahnstufe ${s.order}`}
+                    />
                   </td>
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={d.includeB2BFlatFee} onChange={(e) => setDraft(s.id, { includeB2BFlatFee: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                    <input
+                      type="checkbox"
+                      checked={d.includeB2BFlatFee}
+                      onChange={(e) => setDraft(s.id, { includeB2BFlatFee: e.target.checked })}
+                      className="h-4 w-4 rounded border-slate-300"
+                      aria-label={`40-€-Pauschale (B2B) — Mahnstufe ${s.order}`}
+                    />
                   </td>
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={d.autoSend} onChange={(e) => setDraft(s.id, { autoSend: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                    <input
+                      type="checkbox"
+                      checked={d.autoSend}
+                      onChange={(e) => setDraft(s.id, { autoSend: e.target.checked })}
+                      className="h-4 w-4 rounded border-slate-300"
+                      aria-label={`Automatischer Versand — Mahnstufe ${s.order}`}
+                    />
                   </td>
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={d.enabled} onChange={(e) => setDraft(s.id, { enabled: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                    <input
+                      type="checkbox"
+                      checked={d.enabled}
+                      onChange={(e) => setDraft(s.id, { enabled: e.target.checked })}
+                      className="h-4 w-4 rounded border-slate-300"
+                      aria-label={`Mahnstufe ${s.order} aktiv`}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col items-end gap-1">

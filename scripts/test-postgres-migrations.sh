@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "33" ] || fail "erwartet 33 Tabellen, gefunden $COUNT"
-echo "    ok — 33 Tabellen angelegt (inkl. _prisma_migrations)"
+[ "$COUNT" = "35" ] || fail "erwartet 35 Tabellen, gefunden $COUNT"
+echo "    ok — 35 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -213,5 +213,69 @@ then
   fail "zweite Dunning-Zeile mit gleichem (invoiceId, stageId) haette am Unique-Constraint scheitern muessen"
 fi
 echo "    ok — beide Phase-6-Migrationen angewendet, DunningStage/DunningSettings/SchedulerRun/SchedulerLock vorhanden, Unique-Index Dunning(invoiceId,stageId) erzwungen, autoSend-Defaults korrekt (Stufe false, Settings-Spalten autoCreate=true/autoSend=false/baseInterestRateBp=127)"
+
+echo "==> Fall 9 (Phase 7): DocumentSettings-Defaults fuer Bestandszeile, neue Tabellen, Customer-Index"
+# Eigenes Bestands-Szenario: DB exakt auf dem Stand VOR der Phase-7-Migration bringen
+# (0_init + alle Migrationen bis einschliesslich Phase 6, jede einzeln per db execute
+# angewendet und per "migrate resolve --applied" verbucht — KEIN "migrate deploy", das
+# wuerde alle ausstehenden Migrationen inkl. Phase 7 in einem Rutsch anwenden). Danach
+# eine Organisation + eine DocumentSettings-Zeile im ALTEN Spaltenumfang anlegen und erst
+# dann per "migrate deploy" genau die Phase-7-Migration nachziehen — so laesst sich
+# pruefen, dass ALTER TABLE ... ADD COLUMN ... DEFAULT die neuen Spalten auch auf einer
+# bereits existierenden Zeile korrekt befuellt (nicht nur auf frisch angelegten Zeilen).
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org9','Bestand GmbH','Altweg 9','99999','Bestadt',NOW());
+INSERT INTO "DocumentSettings" ("id","orgId","onQuoteAccept","shareLinkDays","storeAcceptIp","updatedAt")
+  VALUES ('ds9','org9','NONE',30,false,NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-7-Migration ist auf der Bestands-DB fehlgeschlagen"
+PHASE7MIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260904044136_phase7_settings' and finished_at is not null")
+[ "$PHASE7MIG" = "1" ] || fail "Phase-7-Migration ist nicht als angewendet verbucht"
+DUEDAYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"invoiceDueDays\" from \"DocumentSettings\" where id='ds9'")
+[ "$DUEDAYS" = "14" ] || fail "Bestandszeile ds9: invoiceDueDays ist '$DUEDAYS', erwartet Default 14"
+CURRENCY=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"defaultCurrency\" from \"DocumentSettings\" where id='ds9'")
+[ "$CURRENCY" = "EUR" ] || fail "Bestandszeile ds9: defaultCurrency ist '$CURRENCY', erwartet Default EUR"
+QVALID=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"quoteValidityDays\" from \"DocumentSettings\" where id='ds9'")
+[ "$QVALID" = "30" ] || fail "Bestandszeile ds9: quoteValidityDays ist '$QVALID', erwartet Default 30"
+BOOLDEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"autoFinalizeOnSend\",\"shareLinkDefaultOn\",\"dnShowPrices\",\"dnShowArticleNumber\",\"dnShowDeliveryAddress\",\"showPaymentTermsText\",\"autoDeliveryDate\",\"refreshIssueDateOnFinalize\",\"offerLastDocument\",\"eInvoiceDefault\",\"recurringAutoFinalizeDefault\",\"recurringAutoSendDefault\",\"recurringInsertPeriodText\" from \"DocumentSettings\" where id='ds9'")
+[ "$BOOLDEFAULTS" = "f|t|f|t|t|t|t|t|t|t|f|f|t" ] \
+  || fail "Bestandszeile ds9: Bool-Defaults abweichend ('$BOOLDEFAULTS')"
+PMID=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"defaultPaymentMethodId\" from \"DocumentSettings\" where id='ds9'")
+[ -z "$PMID" ] || fail "Bestandszeile ds9: defaultPaymentMethodId ist '$PMID', erwartet NULL"
+for TBL in BrandingSettings PrintSettings; do
+  EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"$TBL\"') is not null")
+  [ "$EXISTS" = "t" ] || fail "Tabelle $TBL fehlt nach der Phase-7-Migration"
+done
+ROWS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select (select count(*) from \"BrandingSettings\") + (select count(*) from \"PrintSettings\")")
+[ "$ROWS" = "0" ] || fail "BrandingSettings/PrintSettings haben bereits Zeilen ($ROWS) — diese entstehen erst per Selbstheilung zur Laufzeit, nicht per Migration"
+CUSTIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Customer_orgId_customerNumber_idx'")
+[ "$CUSTIDX" = "1" ] || fail "Index Customer_orgId_customerNumber_idx fehlt nach der Phase-7-Migration"
+for COL in Invoice:printOptionsJson Quote:printOptionsJson DeliveryNote:printOptionsJson; do
+  TBL=${COL%%:*}; CNAME=${COL##*:}
+  PRESENT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+    "select count(*) from information_schema.columns where table_name='$TBL' and column_name='$CNAME'")
+  [ "$PRESENT" = "1" ] || fail "Spalte $TBL.$CNAME fehlt nach der Phase-7-Migration"
+done
+echo "    ok — Phase-7-Migration auf einer Bestands-DB angewendet, DocumentSettings-Bestandszeile hat alle neuen Defaults, BrandingSettings/PrintSettings existieren (leer), Customer-Index und printOptionsJson-Spalten vorhanden"
 
 echo "ALLE TESTS BESTANDEN"

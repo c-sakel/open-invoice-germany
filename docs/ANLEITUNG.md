@@ -115,7 +115,42 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 
 ---
 
-## 6. Problembehebung
+## 6. Briefpapier, Nummernkreise, Druckoptionen & GiroCode
+
+Unter **„Einstellungen"** findest du seit Phase 7 vier zusätzliche Seiten für das Erscheinungsbild und die Nummerierung deiner Belege.
+
+### Briefpapier einrichten (`Einstellungen → Briefpapier`)
+- **Logo hochladen**: PNG oder JPEG, max. **2 MB**. Wird oben rechts auf jedem Beleg-PDF angezeigt, Breite über **„Logo-Breite (mm)"** einstellbar (10–100 mm).
+- **Hintergrundbild** (optional): PNG oder JPEG, max. **5 MB**, ganzseitig hinter dem Beleginhalt — nur sichtbar, wenn „Hintergrund anzeigen" aktiv ist.
+- **Primärfarbe**, **Ränder** (oben/rechts/unten/links, mm) und **Schriftgröße** (pt) bestimmen Layout und Optik.
+- **Absenderzeile** und dreispaltige **Fußzeile** (links/mittig/rechts) — freier Text, z. B. Bankverbindung/Handelsregister links, Kontakt mittig, USt-IdNr. rechts.
+- Es gibt **ein** Briefpapier je Organisation (kein separates Layout je Belegtyp/Kunde).
+- **Vorschau**: Link auf der Seite öffnet eine Musterrechnung/-lieferschein mit dem aktuell gespeicherten Layout.
+- Änderungen wirken sofort auf **alle** künftigen PDF-Abrufe, auch bei bereits festgeschriebenen Belegen (Nachdruck) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Nummer) bleibt davon unberührt (siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 6).
+
+### Nummernkreise (`Einstellungen → Nummernkreise`)
+Tabelle mit **neun** Nummernkreisen: Angebote, Auftragsbestätigungen, Proforma-Rechnungen, Lieferscheine, Rechnungen, Gutschriften, Mahnungen sowie **Kundennummern** und **Artikelnummern**. Je Zeile editierbar:
+- **Muster** — z. B. `RE-{YYYY}-{SEQ:5}` (Jahr + 5-stellig auf 0 aufgefüllt) oder `KD-{SEQ:5}` (ohne Jahr). Der Platzhalter `{SEQ}`/`{SEQ:n}` ist Pflicht.
+- **Präfix**, **Nachkommastellen der laufenden Nummer** (Padding), **jahresabhängig zurücksetzen** (an/aus).
+- **Nächste Nummer** — die App zeigt zur Kontrolle eine Vorschau der als Nächstes vergebenen Nummer.
+- **Zurückdrehen ist gesperrt**: eine bereits vergebene Nummer kann nicht erneut ausgegeben werden (GoBD/§ 14 Abs. 4 Nr. 4 UStG für Rechnungen; bei den übrigen Nummernkreisen aus Nachvollziehbarkeitsgründen ebenso gesperrt). Jede Änderung wird protokolliert.
+- Rechnungs-/Gutschriftnummern bleiben weiterhin **erst beim Festschreiben** vergeben; Angebots-/AB-/Lieferschein- sowie Kunden-/Artikelnummern **bei Erstellung** — siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 6.
+
+### Druckoptionen (`Einstellungen → Druckoptionen`)
+Zehn globale Schalter für Beleg-PDFs: Fußzeile, Seitenzahlen, Falz-/Lochmarken (DIN 5008), Artikelnummer-/Beschreibungs-/Steuersatz-/Zeilensummen-Spalte, Absenderzeile, **GiroCode**. Auf einem einzelnen **Entwurf** (Rechnung/Angebot/Lieferschein) lässt sich im Editor unter „Druckoptionen" gezielt von den globalen Werten abweichen — nur die tatsächlich angehakten Felder werden je Beleg überschrieben. Nach dem Festschreiben ist diese Beleg-Auswahl nicht mehr änderbar.
+
+### GiroCode-Voraussetzungen
+Der GiroCode (QR-Code für „Scannen & Bezahlen" in Banking-Apps, Standard EPC069-12) erscheint auf einer Rechnung nur, wenn **alle** Punkte erfüllt sind:
+- „GiroCode anzeigen" ist unter **Druckoptionen** aktiv,
+- eine **IBAN** ist hinterlegt (Organisation oder Zahlungsmethode),
+- die Rechnungswährung ist **EUR**,
+- es besteht noch ein **offener Betrag** (> 0 €),
+- der Belegtyp ist zahlungsrelevant (reguläre Rechnung, Teil-/Abschlags-/Schlussrechnung, Korrektur — nicht Gutschrift).
+Fehlt eine Voraussetzung, erscheint der Beleg einfach **ohne** GiroCode — kein Fehler, kein blockierter Druck.
+
+---
+
+## 7. Problembehebung
 
 | Problem | Lösung |
 |---|---|

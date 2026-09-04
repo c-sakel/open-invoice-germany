@@ -83,7 +83,6 @@ import {
   NumberRangeDocType,
   dunningSettingsInputSchema,
   dunningStageFieldsSchema,
-  OnQuoteAccept,
   TaxScheme,
   PaymentMethod,
   DocRefType,
@@ -1684,31 +1683,6 @@ server.registerTool(
       });
       return ok(lines.join("\n"));
     } catch (e) {
-      return fail(`Fehler: ${(e as Error).message}`);
-    }
-  },
-);
-
-// ── save_document_settings ────────────────────────────────────────────────────
-server.registerTool(
-  "save_document_settings",
-  {
-    title: "Dokument-Einstellungen speichern",
-    description:
-      "Speichert die org-weiten Einstellungen fuer Angebotsannahme: onQuoteAccept (Automatik nach Online-Annahme: NONE/ORDER_CONFIRMATION/INVOICE), shareLinkDays (Standard-Gueltigkeitsdauer neuer Links in Tagen), storeAcceptIp (ob die IP-Adresse des Entscheiders gespeichert wird).",
-    inputSchema: {
-      onQuoteAccept: OnQuoteAccept.optional(),
-      shareLinkDays: z.number().int().min(1).max(365).optional(),
-      storeAcceptIp: z.boolean().optional(),
-    },
-  },
-  async (args): Promise<Result> => {
-    try {
-      const org = await requireOrg();
-      const saved = await saveDocumentSettings(org.id, documentSettingsInputSchema.parse(args));
-      return ok(`Dokument-Einstellungen gespeichert: onQuoteAccept=${saved.onQuoteAccept}, shareLinkDays=${saved.shareLinkDays}, storeAcceptIp=${saved.storeAcceptIp}.`);
-    } catch (e) {
-      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
