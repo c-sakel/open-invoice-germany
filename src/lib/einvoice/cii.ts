@@ -44,6 +44,8 @@ function exemptionReason(category: string): string | null {
       return "Steuerbefreit";
     case "Z":
       return "Nullsatz";
+    case "O":
+      return "Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG";
     default:
       return null;
   }

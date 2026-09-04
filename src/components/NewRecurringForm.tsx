@@ -26,6 +26,21 @@ function emptyLine(): LineState {
   return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19 };
 }
 
+const SCHEME_NOTICE_RECURRING: Record<string, string> = {
+  KLEINUNTERNEHMER: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
+  REVERSE_CHARGE: "Steuerschuldnerschaft des Leistungsempfängers",
+  DIFFERENZ: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
+  DRITTLAND_LEISTUNG: "Leistungsort im Drittland (§ 3a Abs. 2 UStG) — nicht im Inland steuerbar",
+};
+
+const SCHEME_CATEGORY_RECURRING: Record<string, string> = {
+  REGULAR: "S",
+  KLEINUNTERNEHMER: "E",
+  REVERSE_CHARGE: "AE",
+  DIFFERENZ: "S",
+  DRITTLAND_LEISTUNG: "O",
+};
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -41,9 +56,11 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
   const [paymentTermsDays, setPaymentTermsDays] = useState("14");
   const [autoFinalize, setAutoFinalize] = useState(false);
   const [notes, setNotes] = useState("");
+  const [scheme, setScheme] = useState("REGULAR");
   const [lines, setLines] = useState<LineState[]>([emptyLine()]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const isRegular = scheme === "REGULAR";
 
   const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
   const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
@@ -62,6 +79,8 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const notice = SCHEME_NOTICE_RECURRING[scheme];
+    const finalNotes = notice ? `${notice}${notes ? " — " + notes : ""}` : notes || undefined;
     const body = {
       title,
       customerId,
@@ -71,16 +90,16 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
       endDate: endDate || undefined,
       paymentTermsDays: Number(paymentTermsDays) || 14,
       autoFinalize,
-      taxScheme: "REGULAR",
+      taxScheme: scheme,
       currency: "EUR",
-      notes: notes || undefined,
+      notes: finalNotes,
       lines: lines.map((l) => ({
         description: l.description,
         quantityMilli: toMilli(l.quantity),
         unit: l.unit,
         unitNetPriceCents: toCents(l.price),
-        taxRate: l.taxRate,
-        taxCategory: "S",
+        taxRate: isRegular ? l.taxRate : 0,
+        taxCategory: SCHEME_CATEGORY_RECURRING[scheme] ?? "S",
         discountPermille: 0,
       })),
     };
@@ -157,6 +176,19 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
         </label>
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Steuerschema</span>
+          <select className={input} value={scheme} onChange={(e) => setScheme(e.target.value)}>
+            <option value="REGULAR">Regelbesteuerung</option>
+            <option value="KLEINUNTERNEHMER">Kleinunternehmer (§ 19)</option>
+            <option value="REVERSE_CHARGE">Reverse Charge (§ 13b)</option>
+            <option value="DIFFERENZ">Differenzbesteuerung (§ 25a)</option>
+            <option value="DRITTLAND_LEISTUNG">Drittland-Leistung (§ 3a Abs. 2)</option>
+          </select>
+        </label>
+      </div>
+
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">Positionen</h2>
@@ -182,7 +214,7 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
             <input className={`${input} col-span-4 sm:col-span-2`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
             <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
             <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
-            <select className={`${input} col-span-8 sm:col-span-1`} value={line.taxRate} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })}>
+            <select className={`${input} col-span-8 sm:col-span-1`} value={isRegular ? line.taxRate : 0} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })} disabled={!isRegular}>
               <option value={19}>19%</option>
               <option value={7}>7%</option>
               <option value={0}>0%</option>
@@ -197,6 +229,7 @@ export function NewRecurringForm({ customers, products }: { customers: CustomerO
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-slate-700">Hinweis / Notiz (erscheint auf jeder Rechnung)</span>
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        {SCHEME_NOTICE_RECURRING[scheme] && <span className="text-xs text-slate-500">Pflichthinweis „{SCHEME_NOTICE_RECURRING[scheme]}“ wird automatisch ergänzt.</span>}
       </label>
 
       <div className="flex items-center justify-between border-t border-slate-200 pt-4">

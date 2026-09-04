@@ -57,3 +57,75 @@ describe("§ 14 Pflichtangaben", () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe("DRITTLAND_LEISTUNG (§ 3a Abs. 2)", () => {
+  it("ohne Hinweis wird bemängelt", () => {
+    const problems = validateMandatoryFields(
+      inv({
+        taxScheme: "DRITTLAND_LEISTUNG",
+        notes: "",
+        lines: [{ description: "Software development", quantityMilli: 1000, taxRate: 0, taxCategory: "Z" }],
+      }),
+    );
+    expect(problems.join(" ")).toMatch(/Pflichthinweis für Schema DRITTLAND_LEISTUNG/);
+  });
+
+  it("mit Hinweis und 0% ist ok", () => {
+    const problems = validateMandatoryFields(
+      inv({
+        taxScheme: "DRITTLAND_LEISTUNG",
+        notes: "Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG",
+        lines: [{ description: "Software development", quantityMilli: 1000, taxRate: 0, taxCategory: "Z" }],
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it("mit USt > 0 schlägt fehl (§ 14c-Risiko)", () => {
+    const problems = validateMandatoryFields(
+      inv({
+        taxScheme: "DRITTLAND_LEISTUNG",
+        notes: "Nicht im Inland steuerbar",
+        lines: [{ description: "Software development", quantityMilli: 1000, taxRate: 19, taxCategory: "Z" }],
+      }),
+    );
+    expect(problems.join(" ")).toMatch(/USt-Satz > 0/);
+  });
+
+  it("erfordert keine USt-IdNr. des Empfängers (Drittland)", () => {
+    const problems = validateMandatoryFields(
+      inv({
+        taxScheme: "DRITTLAND_LEISTUNG",
+        notes: "Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG",
+        lines: [{ description: "Software development", quantityMilli: 1000, taxRate: 0, taxCategory: "Z" }],
+        customer: { name: "US Corp", addressLine1: "123 Main St", postalCode: "10001", city: "New York" },
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+});
+
+describe("IG_LIEFERUNG (§ 6a)", () => {
+  it("erfordert USt-IdNr. beider Parteien", () => {
+    const problems = validateMandatoryFields(
+      inv({
+        taxScheme: "IG_LIEFERUNG",
+        notes: "Steuerfreie innergemeinschaftliche Lieferung",
+        lines: [{ description: "Ware", quantityMilli: 1000, taxRate: 0, taxCategory: "K" }],
+      }),
+    );
+    expect(problems.join(" ")).toMatch(/USt-IdNr.*Empfänger/);
+  });
+
+  it("vollständig: Hinweis + 0% + USt-IdNr. beide → ok", () => {
+    const problems = validateMandatoryFields(
+      inv({
+        taxScheme: "IG_LIEFERUNG",
+        notes: "Steuerfreie innergemeinschaftliche Lieferung",
+        lines: [{ description: "Ware", quantityMilli: 1000, taxRate: 0, taxCategory: "K" }],
+        customer: { name: "EU Corp", addressLine1: "Rue 1", postalCode: "75001", city: "Paris", vatId: "FR12345678901" },
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+});

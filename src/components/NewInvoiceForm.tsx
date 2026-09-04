@@ -26,12 +26,14 @@ const SCHEME_NOTICE: Record<string, string> = {
   KLEINUNTERNEHMER: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
   REVERSE_CHARGE: "Steuerschuldnerschaft des Leistungsempfängers",
   DIFFERENZ: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
+  DRITTLAND_LEISTUNG: "Leistungsort im Drittland (§ 3a Abs. 2 UStG) — nicht im Inland steuerbar",
 };
 const SCHEME_CATEGORY: Record<string, string> = {
   REGULAR: "S",
   KLEINUNTERNEHMER: "E",
   REVERSE_CHARGE: "AE",
   DIFFERENZ: "S",
+  DRITTLAND_LEISTUNG: "O",
 };
 
 function emptyLine(): LineState {
@@ -129,6 +131,7 @@ export function NewInvoiceForm({ customers, products }: { customers: CustomerOpt
             <option value="KLEINUNTERNEHMER">Kleinunternehmer (§ 19)</option>
             <option value="REVERSE_CHARGE">Reverse Charge (§ 13b)</option>
             <option value="DIFFERENZ">Differenzbesteuerung (§ 25a)</option>
+            <option value="DRITTLAND_LEISTUNG">Drittland-Leistung (§ 3a Abs. 2)</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
