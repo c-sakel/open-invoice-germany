@@ -163,21 +163,40 @@ export async function finalizeWithinTx(
   // Storno/Teilgutschrift erben den Snapshot des Originals (siehe FinalizeOptions.inheritSnapshotFrom),
   // damit der Korrekturbeleg denselben Empfaenger/Verkaeufer nennt wie das Original.
   const inherited = opts.inheritSnapshotFrom;
-  const canInherit = !!inherited?.sellerSnapshotJson && !!inherited?.buyerSnapshotJson;
-  const sellerSnapshotJson = canInherit ? inherited!.sellerSnapshotJson : JSON.stringify(buildSellerSnapshot(invoice.org));
+  const explicitInherit = !!inherited?.sellerSnapshotJson && !!inherited?.buyerSnapshotJson;
+  // Fix-Welle B4 (Ruling Koordinator): eine Abschlags-/Teil-/Schlussrechnung traegt bereits
+  // BEI ANLAGE (createDownpaymentInvoice/createPartialInvoice/createFinalInvoice) einen von
+  // der Quelle geerbten Snapshot (snapshotSource "INHERITED"). Wurde der Snapshot NICHT
+  // explizit ueber opts.inheritSnapshotFrom uebergeben (Storno-Pfad), aber der Entwurf
+  // traegt bereits einen solchen geerbten, vollstaendigen Snapshot, bleibt er beim
+  // Festschreiben UNVERAENDERT bestehen — ohne diese Ausnahme baute die Festschreibung
+  // bislang still einen frischen Live-Snapshot aus dem DANN aktuellen Kundenstamm und
+  // ueberschrieb damit z. B. den Namen des Kunden zum Zeitpunkt des Ursprungsangebots.
+  const draftInherited = !explicitInherit && invoice.snapshotSource === "INHERITED" && !!invoice.sellerSnapshotJson && !!invoice.buyerSnapshotJson;
+  const canInherit = explicitInherit || draftInherited;
+  const sellerSnapshotJson = explicitInherit
+    ? inherited!.sellerSnapshotJson
+    : draftInherited
+      ? invoice.sellerSnapshotJson
+      : JSON.stringify(buildSellerSnapshot(invoice.org));
   // Phase 8a (§29/§31): der Buyer-Snapshot beruecksichtigt die AM BELEG gewaehlte
   // Rechnungsadresse (`billingAddressId`) und die Kunden-Zusatzfelder — dieselbe Funktion
   // wie bei Anlage eines Geschaeftsdokuments (resolveBuyerSnapshot), damit Erstellung und
   // Festschreibung denselben Snapshot bauen.
-  const buyerSnapshotJson = canInherit
+  const buyerSnapshotJson = explicitInherit
     ? inherited!.buyerSnapshotJson
-    : JSON.stringify(await resolveBuyerSnapshot(tx, invoice.orgId, invoice.customer, invoice.contactPersonId, invoice.billingAddressId));
-  // Ansprechpartner-Snapshot (§30): Storno/Teilgutschrift erben den Snapshot des
-  // Originals (fehlt er dort — Altbelege vor Phase 8a —, bleibt er `null`); sonst wird er
-  // aus dem am Beleg gewaehlten Ansprechpartner gebaut.
+    : draftInherited
+      ? invoice.buyerSnapshotJson
+      : JSON.stringify(await resolveBuyerSnapshot(tx, invoice.orgId, invoice.customer, invoice.contactPersonId, invoice.billingAddressId));
+  // Ansprechpartner-Snapshot (§30): Storno/Teilgutschrift bzw. ein bereits vererbter
+  // Entwurf-Snapshot erben den Snapshot des Originals (fehlt er dort — Altbelege vor
+  // Phase 8a —, bleibt er `null`); sonst wird er aus dem am Beleg gewaehlten
+  // Ansprechpartner gebaut.
   let contactSnapshotJson: string | null;
-  if (canInherit) {
+  if (explicitInherit) {
     contactSnapshotJson = inherited!.contactSnapshotJson ?? null;
+  } else if (draftInherited) {
+    contactSnapshotJson = invoice.contactSnapshotJson ?? null;
   } else if (invoice.contactPersonId) {
     const contact = await tx.contactPerson.findFirst({ where: { id: invoice.contactPersonId, orgId: invoice.orgId } });
     contactSnapshotJson = contact

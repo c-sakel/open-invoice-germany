@@ -36,8 +36,8 @@ export function buildSellerSnapshot(org: SellerSnapshot): SellerSnapshot {
 }
 
 /**
- * `address`/`customFields` werden nur in die Ausgabe uebernommen, wenn der Aufrufer sie
- * mitgibt (`!== undefined`) — sonst bliebe der bestehende exakte Schluesselmengen-Vergleich
+ * `address`/`shippingAddress`/`customFields` werden nur in die Ausgabe uebernommen, wenn
+ * der Aufrufer sie mitgibt (`!== undefined`) — sonst bliebe der bestehende exakte Schluesselmengen-Vergleich
  * gegen den Alt-Customer-Fixture (test/unit/snapshot.test.ts) nicht mehr bestehen. Aufrufer
  * ohne Adress-/Custom-Field-Kontext (z. B. Alt-Aufrufe vor Phase 8a) erhalten weiterhin
  * exakt die zehn urspruenglichen Schluessel.
@@ -55,6 +55,7 @@ export function buildBuyerSnapshot(customer: BuyerSnapshot): BuyerSnapshot {
     email: customer.email,
     leitwegId: customer.leitwegId,
     ...(customer.address !== undefined ? { address: customer.address } : {}),
+    ...(customer.shippingAddress !== undefined ? { shippingAddress: customer.shippingAddress } : {}),
     ...(customer.customFields !== undefined ? { customFields: customer.customFields } : {}),
   };
 }

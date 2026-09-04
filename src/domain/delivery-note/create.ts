@@ -89,10 +89,28 @@ export async function createDeliveryNoteWithinTx(
   const showDescription = input.showDescription ?? true;
   const showDeliveryAddress = input.showDeliveryAddress ?? docSettings.dnShowDeliveryAddress;
 
-  // Phase 8a (§29/§30/§31): Buyer-Snapshot beruecksichtigt die gewaehlte Lieferadresse
-  // und die Kunden-Zusatzfelder (resolveBuyerSnapshot, wie bei Rechnung/Geschaeftsdokument);
-  // Ansprechpartner-Snapshot NUR gesetzt, wenn tatsaechlich einer gewaehlt/vorbelegt wurde.
-  const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, contactPersonId, shippingAddressId);
+  // Fix-Welle B2: resolveBuyerSnapshot bekommt IMMER billingAddressId: null — die
+  // flachen Buyer-Postfelder (BG-8, addressLine1 etc.) bleiben Kundenstamm/Default-BILLING,
+  // NICHT die Lieferadresse (zuvor wurde shippingAddressId faelschlich als
+  // billingAddressId hineingereicht, wodurch die Lieferadresse als Rechnungsadresse im
+  // Snapshot landete und sich in eine daraus abgeleitete Teilrechnung vererbte).
+  // Die gewaehlte Lieferadresse landet stattdessen strukturiert unter
+  // buyerSnapshot.shippingAddress (eigener Schluessel, gleiche Adressform wie `address`).
+  const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, contactPersonId, null);
+  if (shippingAddressId) {
+    const shipAddr = await tx.customerAddress.findFirst({ where: { id: shippingAddressId, orgId } });
+    if (shipAddr) {
+      buyerSnapshot.shippingAddress = {
+        type: shipAddr.type as "BILLING" | "SHIPPING" | "OTHER",
+        label: shipAddr.label,
+        addressLine1: shipAddr.addressLine1,
+        addressLine2: shipAddr.addressLine2,
+        postalCode: shipAddr.postalCode,
+        city: shipAddr.city,
+        countryCode: shipAddr.countryCode,
+      };
+    }
+  }
   let contactSnapshotJson: string | null = null;
   if (contactPersonId) {
     const contact = await tx.contactPerson.findFirst({ where: { id: contactPersonId, orgId } });
