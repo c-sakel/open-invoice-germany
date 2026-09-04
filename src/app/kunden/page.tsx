@@ -6,7 +6,10 @@ import { archiveCustomer } from "@/app/actions/masterdata";
 
 export const dynamic = "force-dynamic";
 
-export default async function KundenPage() {
+export default async function KundenPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const { q } = await searchParams;
+  const query = q?.trim() ?? "";
+
   try {
     const org = await getActiveOrg();
     // Selbstheilung (Phase 7, §34): Bestandskunden ohne Kundennummer bekommen beim ersten
@@ -17,7 +20,10 @@ export default async function KundenPage() {
   }
 
   const customers = await prisma.customer.findMany({
-    where: { isArchived: false },
+    where: {
+      isArchived: false,
+      ...(query ? { OR: [{ name: { contains: query } }, { customerNumber: { contains: query } }] } : {}),
+    },
     orderBy: { name: "asc" },
     select: { id: true, name: true, city: true, type: true, vatId: true, customerNumber: true },
   });
@@ -30,6 +36,19 @@ export default async function KundenPage() {
           Neuer Kunde
         </Link>
       </div>
+
+      <form method="get" className="flex gap-2">
+        <input
+          type="search"
+          name="q"
+          defaultValue={query}
+          placeholder="Suche nach Name oder Kundennummer…"
+          className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none sm:w-80"
+        />
+        <button type="submit" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Suchen
+        </button>
+      </form>
 
       {customers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">

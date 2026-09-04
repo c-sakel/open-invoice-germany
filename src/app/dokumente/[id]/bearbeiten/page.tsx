@@ -3,6 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { NewDocumentForm, type DocumentInitial } from "@/components/NewDocumentForm";
+import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
+import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
+import { printOptionsOverrideSchema } from "@/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +72,15 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     })),
   };
 
+  const printSettings = await loadPrintSettings(org.id);
+  const effectivePrint = effectivePrintOptions(printSettings, q.printOptionsJson);
+  let printOverride: ReturnType<typeof printOptionsOverrideSchema.parse> = {};
+  try {
+    printOverride = printOptionsOverrideSchema.parse(q.printOptionsJson ? JSON.parse(q.printOptionsJson) : {});
+  } catch {
+    printOverride = {};
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -78,6 +90,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         <h1 className="text-2xl font-bold tracking-tight">Entwurf bearbeiten</h1>
       </div>
       <NewDocumentForm customers={customers} products={products} contacts={contacts} addresses={addresses} initial={initial} />
+      <PrintOptionsPanel docId={q.id} apiKind="documents" effective={effectivePrint} initialOverride={printOverride} />
     </div>
   );
 }
