@@ -328,6 +328,78 @@ Frühere Planungsnotizen zu einem Resend-basierten Mailversand (falls in ältere
 
 ---
 
+## 3b. REST-API, OpenAPI & Webhooks (Phase 10)
+
+Öffentliche, versionierte REST-API (Lastenheft-Ergänzung Phase 10, `/api/v1`)
+neben UI und MCP-Server — **kein Bypass**: jede v1-Route ruft exakt dieselbe
+Domain-Funktion wie UI/MCP, dieselben Zod-Schemas (`src/schemas`).
+
+### API-Schicht (`src/api/`)
+- `auth.ts` — `withApi(handler, {scope})`-Wrapper: Bearer-Auth
+  (`src/domain/api-key/verify.ts`), Idempotenz-Reservierung/-Abschluss,
+  Rate-Limit-Header, einheitliches Fehler-Mapping. Routen (`src/app/api/v1/
+  <Resource>/route.ts`) sind dünne Wrapper — Body-Parsing, Validierung mit dem
+  Ressourcen-Zod-Schema, Aufruf der Domain-Funktion, `apiData`/`apiList`.
+- `errors.ts` — `mapApiError`: einheitliches `{error:{code,message,details?}}`;
+  Duck-Typing auf `status`-tragende Domain-Fehlerklassen + explizite Zuordnung für
+  Fehlerklassen ohne `status` (GoBD-Fehler bei festgeschriebenen Belegen → 409).
+- `response.ts` — `apiData`/`apiList` (Antwortumschlag, Paginierung `limit`/
+  `offset`/`total`), `rate-limit.ts` (600/min je Schlüssel, `src/lib/rate-limit.ts`
+  wiederverwendet), `idempotency.ts` (Reserve-First-Zustandsmaschine gegen
+  `ApiIdempotency`, 24 h TTL, `Idempotency-Key`-Header, nur POST).
+- `openapi.ts`/`openapi-zod-init.ts`/`spec.ts` — OpenAPI-3.1-Generierung aus
+  Zod (`@asteasolutions/zod-to-openapi`): `discoverRouteSpecs()` scannt
+  `src/app/api/v1/**/route.ts` per Dateisystem und liest deren `spec`-Export
+  (Pfad/Methode/Request-/Response-Zod) — jede Route MUSS `spec` exportieren.
+  `openapi/openapi.json` ist committet, deterministisch (rekursiv sortierte
+  Schlüssel), `npm run api:check` ist CI-Gate gegen Drift. Swagger-UI
+  (`GET /api/docs`, `swagger-ui-dist` aus `node_modules`, kein CDN) und die
+  Spec-Datei selbst (`GET /api/v1/openapi.json`) akzeptieren Session ODER Bearer.
+- `docs-auth.ts` — `requireSessionOrApiKey` für die beiden vorgenannten Routen.
+
+### API-Keys (`src/domain/api-key/`)
+`oig_` + 32 Byte base64url, nur SHA-256-Hash gespeichert (`ApiKey.keyHash`,
+unique), Prefix zur Anzeige, Scopes `read`/`write`/`send`/`admin`,
+`expiresAt`/`revokedAt`/`lastUsedAt` (Schreib-Throttle 60 s). `/api/v1/*`
+akzeptiert ausschließlich Bearer (kein Session-Cookie, `src/proxy.ts` lässt
+`/api/v1/` ungeprüft durch, Auth ausschließlich in `withApi`).
+
+### Webhooks (`src/domain/webhook/`), Outbox-Pattern
+- `emit.ts` — `emitEvent(tx, {...})` legt für jeden aktiven, das Ereignis
+  abonnierenden `WebhookEndpoint` der Organisation eine `WebhookDelivery`-Zeile
+  (Status `PENDING`) an — **immer innerhalb derselben Transaktion** wie der
+  jeweilige `appendChangeLog`-Aufruf (Outbox-Pattern: Emit und fachliche
+  Zustandsänderung committen atomar zusammen, oder keins von beiden). Aufrufer:
+  `finalizeWithinTx`, `cancelInvoice`, `recordPayment`, `setQuoteStatusWithinTx`,
+  `createDeliveryNoteWithinTx`, `finishEmailLog`, `createDunning` — Domain-Ebene,
+  nicht Routen-Ebene, damit UI/MCP-Aktionen dieselben Ereignisse auslösen wie die
+  API.
+- `deliver.ts` — `runWebhookDeliveries` ist der Scheduler-Job-Körper
+  (`src/domain/scheduler/jobs.ts`, `JOB_ORDER` nach `"notifications"`): holt alle
+  fälligen `PENDING`/`FAILED`-Zeilen, arbeitet sie **seriell** ab (kein
+  `Promise.all`, Batchjob-Regel). `attemptDelivery` signiert (`sign.ts`,
+  `X-OIG-Signature: t=<unix>,v1=<hmac_sha256>`), sendet mit 10 s Timeout, verbucht
+  das Ergebnis: Erfolg (2xx) → `DELIVERED`; Fehlschlag bei Versuch 1–5 → `FAILED`
+  + `nextAttemptAt` nach Backoff (1/5/30/120/600 Min.); Fehlschlag beim 6. Versuch
+  → `DEAD` (kein weiterer Retry). SSRF-Verstoß/entschlüsselbares Secret fehlt/
+  deaktivierter Endpunkt → sofort `DEAD` ohne Backoff und ohne Netzwerkaufruf.
+- `ssrf.ts` — `assertPublicHttpsUrl`: nur `https:`, DNS-Auflösung ALLER
+  Adressen, private/lokale Netze (IPv4 + IPv6, inkl. IPv4-mapped) verboten;
+  greift bei Anlage/Änderung EINES Endpunkts UND erneut vor JEDER Zustellung
+  (DNS-Rebinding-Schutz).
+- `endpoints.ts`/`actions.ts` — CRUD (kein Hard-Delete, nur `active=false` — die
+  Zustellhistorie bleibt referenzierbar), `sendTestDelivery`,
+  `replayWebhookDelivery` (neue Zeile, Original unverändert).
+- Secret: AES-GCM verschlüsselt (`src/lib/crypto/secrets.ts`), nie im Klartext
+  nach Anlage/Rotation abrufbar. Payload (`{id,type,createdAt,data}`) nutzt
+  denselben Serializer wie die REST-Ressource — enthält nie `internalNotes`.
+
+### Neue Tabellen (Migrationen `phase10_api`, `phase10_api_idem`,
+`phase10_webhooks`, SQLite + Postgres identisch): `ApiKey`, `ApiIdempotency`
+(`@@unique([orgId, key])`), `WebhookEndpoint`, `WebhookDelivery`.
+
+---
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.
@@ -350,7 +422,11 @@ Begründung:
 src/
   app/                    # Next.js App Router: Routen + api/ + actions/
     api/                  # auth/, cron/, documents/, dunnings/, invoices/, recurring/,
-                           # emails/ (send, preview, prefill, [id])
+                           # emails/ (send, preview, prefill, [id]), api-keys/, webhooks/
+                           # v1/                # REST-API (Phase 10): <Resource>/route.ts +
+                           #                     # Aktionsunterordner (finalize/, cancel/, …),
+                           #                     # openapi.json/route.ts, ping/route.ts
+                           # docs/               # Swagger-UI (Session ODER Bearer, Phase 10)
     actions/              # invoices.ts, masterdata.ts, email.ts, templates.ts, result.ts (Server Actions)
     rechnungen/ dokumente/ lieferscheine/ kunden/ produkte/ abos/ einstellungen/ setup/ login/
                            # einstellungen/email (MailSettings + Testmail), einstellungen/vorlagen (EmailTemplate)
@@ -386,6 +462,11 @@ src/
     notifications/          # settings.ts, create.ts, job.ts (Scheduler-Job), hooks.ts (Phase 8b)
     dashboard/               # summary.ts (Dashboard-Aggregation, Phase 8b)
     email/                  # settings.ts, context.ts, attachments.ts, compose.ts, send.ts (siehe Abschnitt 3)
+    api-key/                # create.ts, verify.ts, revoke.ts, list.ts (Phase 10)
+    webhook/                # emit.ts, deliver.ts, sign.ts, ssrf.ts, endpoints.ts, actions.ts (Phase 10)
+  api/                    # auth.ts (withApi), errors.ts, response.ts, rate-limit.ts, idempotency.ts,
+                           # openapi.ts/openapi-zod-init.ts/spec.ts, docs-auth.ts, serializers/ (Phase 10,
+                           # siehe Abschnitt 3b)
   lib/
     db.ts                 # Prisma-Client
     org.ts
@@ -409,8 +490,11 @@ src/
     tools/                 # context.ts (McpToolsContext, createDefaultContext()), system.ts,
                            # customers.ts, products.ts, invoices.ts, documents.ts, payments.ts,
                            # dunning.ts, email.ts, attachments.ts, settings.ts, recurring.ts,
-                           # scheduler.ts — 80 Tools insgesamt, siehe docs/MCP.md
+                           # scheduler.ts, api-keys.ts, webhooks.ts (Phase 10) — siehe docs/MCP.md
   generated/prisma/        # generierter Prisma-Client (nicht im Repo versioniert editieren)
+openapi/
+  openapi.json             # committete, deterministische OpenAPI-3.1-Spezifikation (Phase 10,
+                           # `npm run api:check` prueft sie als CI-Gate gegen Drift)
 prisma/
   schema.prisma            # SQLite (Solo/Dev)
   schema.postgres.prisma   # PostgreSQL (Docker/Prod)
@@ -418,7 +502,7 @@ prisma/
   migrations-postgres/      # PostgreSQL-Migrationen
 scripts/                  # db-prepare.sh, migrate-postgres.sh, test-postgres-migrations.sh,
                            # validate-erechnung.ts, generate-sample-xrechnung.ts, run-recurring.ts,
-                           # run-dunning.ts (Phase 6, CLI fuer dunning:run/scheduler:run), …
+                           # run-dunning.ts (Phase 6, CLI fuer dunning:run/scheduler:run), api-check.ts …
 test/
   unit/
   integration/

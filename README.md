@@ -42,6 +42,8 @@ curl -H "Authorization: Bearer oig_..." https://your-instance/api/v1/Invoice
 
 Interactive docs (Swagger UI, session login or API key): `GET /api/docs`. Machine-readable spec: `GET /api/v1/openapi.json`. Full walkthrough with curl examples (customer → invoice → finalise → PDF/XRechnung → payment): **[docs/API.md](docs/API.md)**.
 
+Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like `invoice.finalized` or `payment.recorded` to your own endpoint — HMAC-signed, with retry/backoff and an SSRF-guarded, https-only outbox. Events, payload shape, and signature-verification examples in Node.js and PHP: **[docs/WEBHOOKS.md](docs/WEBHOOKS.md)**.
+
 ## Features
 
 - **Voice control via MCP** (Claude Code/Desktop) — see above.
