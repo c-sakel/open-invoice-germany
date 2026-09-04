@@ -49,12 +49,26 @@ export function NotificationSettingsForm({ allTypes, initial }: Props) {
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
       <div className="space-y-2">
-        {allTypes.map(([key, label]) => (
-          <label key={key} className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={enabled.has(key)} onChange={() => toggle(key)} className="h-4 w-4 rounded border-slate-300" />
-            {label}
-          </label>
-        ))}
+        {allTypes.map(([key, label]) => {
+          // Fix-Welle (S4): EMAIL_BOUNCED hat aktuell keinen Erzeuger im laufenden System
+          // (markEmailBounced wird von keiner Route/keinem MCP-Tool aufgerufen — kein
+          // Bounce-Webhook angebunden) — die Checkbox waere ohne Hinweis irrefuehrend
+          // ("aktiviert", aber es passiert nie etwas), deshalb deaktiviert + Hinweistext.
+          const disabled = key === "EMAIL_BOUNCED";
+          return (
+            <label key={key} className={`flex items-center gap-2 text-sm ${disabled ? "text-slate-400" : "text-slate-700"}`}>
+              <input
+                type="checkbox"
+                checked={enabled.has(key)}
+                onChange={() => toggle(key)}
+                disabled={disabled}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              {label}
+              {disabled && <span className="text-xs italic">(noch nicht aktiv — kein Bounce-Empfang angebunden)</span>}
+            </label>
+          );
+        })}
       </div>
       <label className="flex items-center gap-2 border-t border-slate-100 pt-4 text-sm text-slate-700">
         <input
