@@ -58,12 +58,28 @@ const DOMAIN_CONFLICT_ERROR_CLASSES = [
   MailNotConfiguredError,
 ] as const;
 
+/**
+ * Fix-Welle (Should-fix 5): kein Request-Body-Limit bedeutete, dass ein einzelner
+ * (z. B. 500 MB grosser) JSON-Body den Container-Prozess per OOM abschiessen konnte —
+ * `req.text()` liest den kompletten Body in den Speicher, ohne jede Groessenpruefung
+ * vorher. `withApi` (src/api/auth.ts) wirft diesen Fehler, wenn `Content-Length` das
+ * Limit ueberschreitet ODER (falls der Header fehlt/falsch ist) der tatsaechlich
+ * gelesene Body laenger ist.
+ */
+export class PayloadTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PayloadTooLargeError";
+  }
+}
+
 export type ApiErrorCode =
   | "VALIDATION"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
+  | "PAYLOAD_TOO_LARGE"
   | "RATE_LIMITED"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS"
@@ -109,6 +125,9 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof IdempotencyInProgressError) {
     return { status: 409, body: { error: { code: "IDEMPOTENCY_IN_PROGRESS", message: e.message } } };
+  }
+  if (e instanceof PayloadTooLargeError) {
+    return { status: 413, body: { error: { code: "PAYLOAD_TOO_LARGE", message: e.message } } };
   }
   // Fix-Runde 1 (Koordinator-Ruling c, Task 3): muss VOR dem generischen NotFoundError-
   // Zweig stehen (unabhaengige Klasse, keine Ueberschneidung, aber Reihenfolge analog den
