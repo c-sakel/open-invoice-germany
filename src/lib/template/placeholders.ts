@@ -25,6 +25,7 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "offer.number", label: "Angebotsnummer" },
   { path: "offer.validUntil", label: "Angebot gültig bis" },
   { path: "dunning.level", label: "Mahnstufe" },
+  { path: "dunning.stageName", label: "Name der Mahnstufe" },
   { path: "dunning.number", label: "Mahnungsnummer" },
   { path: "dunning.newDueDate", label: "Neue Fälligkeit" },
   { path: "dunning.fee", label: "Mahngebühr" },

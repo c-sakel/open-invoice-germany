@@ -92,8 +92,11 @@ async function templatesOf(orgId: string, docType: EmailDocType) {
   });
 }
 
-/** Waehlt die Vorlage fuer eine Mahnung: Mahnstufe -> emailTemplateId, sonst Standardvorlage
- *  der Stufe (Name aus DEFAULT_DUNNING_STAGES), sonst irgendeine DUNNING-Vorlage. */
+/** Waehlt die Vorlage fuer eine Mahnung: 1) `stage.emailTemplateId` (direkt an der Stufe
+ *  hinterlegt), 2) Fallback ueber den NAMEN der Stufe (Phase 6: Stufen sind frei
+ *  konfigurierbar, `stage.name` statt der fest verdrahteten `DEFAULT_DUNNING_STAGES`-Liste
+ *  — sonst faende eine umbenannte/eigene Stufe nie ihre Vorlage), 3) irgendeine
+ *  DUNNING-Vorlage. */
 async function pickDunningTemplate(orgId: string, docId: string) {
   const d = await dbInternal.dunning.findFirst({
     where: { id: docId, invoice: { orgId } },
@@ -101,7 +104,7 @@ async function pickDunningTemplate(orgId: string, docId: string) {
   });
   if (d?.stage?.emailTemplate) return d.stage.emailTemplate;
 
-  const stageName = DEFAULT_DUNNING_STAGES.find((s) => s.order === d?.level)?.name;
+  const stageName = d?.stage?.name ?? DEFAULT_DUNNING_STAGES.find((s) => s.order === d?.level)?.name;
   if (stageName) {
     const byName = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING", name: stageName } });
     if (byName) return byName;

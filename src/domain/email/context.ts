@@ -182,15 +182,21 @@ export async function buildTemplateContext(
   if (docType === "DUNNING") {
     const d = await dbInternal.dunning.findFirst({
       where: { id: docId, invoice: { orgId } },
-      include: { invoice: { include: { customer: true } } },
+      include: { invoice: { include: { customer: true } }, stage: true },
     });
     if (!d) throw new DocumentNotFoundError("Mahnung nicht gefunden");
     const inv = d.invoice;
     const snapshotCtx = `email:DUNNING:${docId}`;
     const buyer = parseBuyerSnapshot(inv.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);
     const seller = parseSellerSnapshot(inv.sellerSnapshotJson, buildSellerSnapshot(org), snapshotCtx);
-    const open = inv.grossTotalCents - inv.paidAmountCents;
-    const fees = d.lateFeeCents + d.flatFee40Cents;
+    // Phase 6: {{invoice.openAmount}} zeigt die Forderungsbasis ZUM ERSTELLUNGSZEITPUNKT
+    // dieser Mahnung (`claimBaseCents`, Snapshot), nicht den heutigen Live-Stand — sonst
+    // wuerde eine E-Mail zu einer bereits verschickten Mahnung nachtraeglich einen anderen
+    // Betrag zeigen, wenn zwischenzeitlich eine Teilzahlung eingegangen ist. Altmahnungen
+    // ohne Snapshot (`claimBaseCents` 0, vor der Selbstheilung) fallen auf den Live-Stand
+    // zurueck.
+    const open = d.snapshotSource != null ? d.claimBaseCents : inv.grossTotalCents - inv.paidAmountCents;
+    const fees = d.lateFeeCents + d.flatFee40Cents + d.feeCents;
     const total = open + d.interestAmountCents + fees;
     return {
       ctx: {
@@ -207,6 +213,7 @@ export async function buildTemplateContext(
         },
         dunning: {
           level: d.level,
+          stageName: d.stage?.name ?? "",
           number: d.number ?? "",
           newDueDate: formatDateDe(d.dueDate),
           fee: formatMoneyDe(fees, inv.currency),
@@ -290,7 +297,15 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
     document: documentByType[docType],
     invoice: { number: "RE-2026-0042", date: formatDateDe(today), total: formatMoneyDe(119000, "EUR"), dueDate: formatDateDe(dueDate), openAmount: formatMoneyDe(119000, "EUR") },
     offer: { number: "AN-2026-0042", validUntil: formatDateDe(dueDate), link: "https://beispiel.invalid/angebot/beispiel-token" },
-    dunning: { level: 1, number: "MA-2026-0042", newDueDate: formatDateDe(dueDate), fee: formatMoneyDe(500, "EUR"), interest: formatMoneyDe(1200, "EUR"), total: formatMoneyDe(120700, "EUR") },
+    dunning: {
+      level: 1,
+      stageName: "1. Mahnung",
+      number: "MA-2026-0042",
+      newDueDate: formatDateDe(dueDate),
+      fee: formatMoneyDe(500, "EUR"),
+      interest: formatMoneyDe(1200, "EUR"),
+      total: formatMoneyDe(120700, "EUR"),
+    },
     contact: { name: "Max Mustermann" },
   };
 }
