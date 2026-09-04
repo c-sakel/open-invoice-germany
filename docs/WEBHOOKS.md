@@ -167,17 +167,37 @@ eine **neue** Zustellungszeile an, die ursprüngliche bleibt unverändert
 
 Webhook-Ziel-URLs müssen `https://` sein und dürfen nicht auf ein privates oder
 lokales Netz auflösen — geprüft bei Anlage/Änderung des Endpunkts UND erneut vor
-**jeder** Zustellung (DNS-Rebinding-Schutz: eine zum Anlagezeitpunkt öffentliche
-Adresse könnte sich zwischenzeitlich geändert haben). Verboten sind:
+**jeder** Zustellung (eine zum Anlagezeitpunkt öffentliche Adresse könnte sich
+zwischenzeitlich geändert haben). Verboten sind:
 
 - IPv4: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`,
-  `169.254.0.0/16`, `0.0.0.0/8`
-- IPv6: `::1` (Loopback), `fe80::/10` (Link-Local), `fc00::/7` (ULA), sowie
+  `169.254.0.0/16`, `0.0.0.0/8`, `100.64.0.0/10` (CGNAT), `198.18.0.0/15`
+  (Benchmarking, RFC 2544)
+- IPv6: `::` (unspezifiziert), `::1` (Loopback), `fe80::/10` (Link-Local),
+  `fc00::/7` (ULA), `64:ff9b::/96` (NAT64), `2002::/16` (6to4), sowie
   IPv4-mapped IPv6-Adressen (`::ffff:10.0.0.1` u. Ä., gegen dieselbe IPv4-Liste
   geprüft)
 
 Die Prüfung löst den Hostnamen per DNS auf und prüft **jede** zurückgelieferte
 Adresse (nicht nur die erste).
+
+**Wichtig — kein Schutz vor DNS-Rebinding zur Verbindungszeit:** Diese
+Vor-Zustellungs-Prüfung validiert erneut den **DNS-Eintrag** (falls sich die
+zurückgelieferten Adressen seit der Anlage geändert haben, wird die Zustellung
+abgelehnt) — sie ist **kein** Schutz gegen DNS-Rebinding *während* der
+eigentlichen Zustellung selbst: `assertPublicHttpsUrl` löst den Hostnamen
+einmal auf und prüft diese Adressen, der anschließende `fetch()`-Aufruf löst
+denselben Hostnamen **erneut, unabhängig** auf. Bei einem sehr kurzen DNS-TTL
+könnte ein Angreifer der Prüfung eine öffentliche Adresse und dem
+`fetch()`-Aufruf eine private Adresse liefern (klassisches TOCTOU/DNS-Rebinding).
+Eine vollständige Absicherung würde die geprüfte Adresse an die tatsächliche
+Verbindung "pinnen" (eigener `lookup`/Agent statt der Standard-Namensauflösung
+von `fetch`) — mit der eingebauten `fetch`-API ist das nicht möglich; ein
+eigener HTTP-Client mit injizierbarem `lookup` wäre der Weg dorthin (Backlog,
+kein Bestandteil dieser Fix-Welle). Zusätzlich schützt `redirect: "manual"`
+(kein automatisches Folgen einer 3xx-Antwort) gegen den naheliegendsten
+Angriffsweg — ein zunächst öffentlicher Endpunkt, der per Redirect auf ein
+privates Ziel umleitet.
 
 ## Secrets
 

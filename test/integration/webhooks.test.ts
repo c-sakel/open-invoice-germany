@@ -115,7 +115,25 @@ describe("SSRF-Schutz (ssrf.ts) — assertPublicHttpsUrl", () => {
     await expect(assertPublicHttpsUrl("http://93.184.216.34/hook")).rejects.toBeInstanceOf(SsrfBlockedError);
   });
 
-  const privateHosts = ["https://10.0.0.5/hook", "https://172.16.0.5/hook", "https://192.168.1.5/hook", "https://127.0.0.1/hook", "https://169.254.1.1/hook", "https://[::1]/hook"];
+  const privateHosts = [
+    "https://10.0.0.5/hook",
+    "https://172.16.0.5/hook",
+    "https://192.168.1.5/hook",
+    "https://127.0.0.1/hook",
+    "https://169.254.1.1/hook",
+    "https://[::1]/hook",
+    // Fix-Welle (Nit 13): zuvor luekenhafte SSRF-Liste — CGNAT/Benchmarking (IPv4) fehlten.
+    // (Die IPv6-Ergaenzungen — ::, 64:ff9b::/96, 2002::/16, fe80::/10-Bitbereich — werden
+    // in test/unit/ssrf.test.ts direkt gegen isPrivateIPv6 geprueft: `new URL(...).hostname`
+    // fuer IPv6-Literale liefert die Klammerform "[::1]", die `dns.lookup` grundsaetzlich
+    // NICHT aufloesen kann — der Aufruf hier wuerde also so oder so mit SsrfBlockedError
+    // scheitern, unabhaengig davon, ob die Adresse tatsaechlich privat ist. Das ist ein
+    // separates, vorbestehendes Verhalten ausserhalb des Nit-13-Scopes.)
+    "https://100.64.0.1/hook",
+    "https://100.100.100.100/hook", // Mitte von 100.64.0.0/10
+    "https://198.18.0.1/hook",
+    "https://198.19.255.254/hook",
+  ];
   for (const url of privateHosts) {
     it(`private/lokale Adresse wird abgelehnt: ${url}`, async () => {
       await expect(assertPublicHttpsUrl(url)).rejects.toBeInstanceOf(SsrfBlockedError);

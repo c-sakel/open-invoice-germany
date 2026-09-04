@@ -64,7 +64,9 @@ export async function attemptDelivery(
   }
 
   // SSRF-Schutz auch bei Zustellung (nicht nur bei Anlage) — ein zum Anlagezeitpunkt
-  // oeffentlicher Host kann per DNS-Rebinding zwischenzeitlich privat aufloesen.
+  // oeffentlicher Host kann inzwischen (neuer DNS-Eintrag) privat aufloesen. Re-Validierung
+  // des DNS-Eintrags, KEIN Schutz vor DNS-Rebinding waehrend der eigentlichen Verbindung
+  // weiter unten (siehe Praezisierung in ssrf.ts, Fix-Welle Should-fix 8).
   try {
     await assertPublicHttpsUrl(delivery.endpoint.url);
   } catch (e) {
