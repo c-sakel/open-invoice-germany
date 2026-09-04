@@ -42,6 +42,11 @@ import { saveDocumentSettings } from "@/domain/document/settings";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
+import { createPartialInvoice, PartialInvoiceError } from "@/domain/invoice/partial";
+import { createDownpaymentInvoice, DownpaymentInvoiceError } from "@/domain/invoice/downpayment";
+import { createFinalInvoice, FinalInvoiceError } from "@/domain/invoice/final";
+import { billingStateFor } from "@/domain/document/billing-state";
+import { PricingError } from "@/lib/pricing/errors";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
@@ -55,6 +60,9 @@ import {
   recordPaymentSchema,
   createRecurringSchema,
   createDeliveryNoteSchema,
+  createPartialInvoiceSchema,
+  createDownpaymentInvoiceSchema,
+  createFinalInvoiceSchema,
   documentStatusActionSchema,
   convertDocumentBodySchema,
   documentSettingsInputSchema,
@@ -1031,6 +1039,148 @@ server.registerTool(
             : await resolveDeliveryNote(org.id, document);
       const copy = await duplicateDocument(org.id, src, doc.id, "mcp");
       return ok(`Dupliziert als neuer Entwurf: ${copy.type} ${copy.id}.`);
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── create_partial_invoice / create_downpayment_invoice / create_final_invoice ──
+// Task 4 (Phase 5, §13-15 UStG): dieselben Domain-Funktionen/Zod-Schemas wie die
+// Routen unter /api/documents/[id]/*-invoice — keine Bypass-Pfade (Lastenheft 55).
+// permille wird hier als Prozent (0,1..100,0) entgegengenommen (Konvention wie
+// discountPercent in buildSimpleLines), amountCents als Euro-Betrag.
+
+server.registerTool(
+  "create_partial_invoice",
+  {
+    title: "Teilrechnung anlegen",
+    description:
+      "Erstellt eine Teilrechnung (§13 UStG, Entwurf) aus einem Angebot/einer Auftragsbestaetigung oder einem Lieferschein — als Anteil (Prozent/Netto-/Bruttobetrag je Steuersatz) oder als konkrete Positionen/Mengen. Danach mit finalize_invoice festschreiben.",
+    inputSchema: {
+      sourceType: z.enum(["QUOTE", "DELIVERY_NOTE"]).default("QUOTE").describe("QUOTE fuer Angebot/AB, DELIVERY_NOTE fuer einen Lieferschein"),
+      source: z.string().describe("Nummer oder ID der Quelle"),
+      mode: z.enum(["PERCENT", "NET_AMOUNT", "GROSS_AMOUNT", "POSITIONS", "QUANTITIES"]),
+      percent: z.number().min(0.1).max(100).optional().describe("Nur mode PERCENT: Anteil in Prozent, z. B. 30 fuer 30 %"),
+      amountEuro: z.number().positive().optional().describe("Nur mode NET_AMOUNT/GROSS_AMOUNT: Betrag in Euro"),
+      lineIds: z.array(z.string()).optional().describe("Nur mode POSITIONS: IDs der vollstaendig abzurechnenden Quellpositionen"),
+      quantities: z
+        .array(z.object({ sourceLineId: z.string(), quantityMilli: z.number().int().positive() }))
+        .optional()
+        .describe("Nur mode QUANTITIES: Mengen je Quellposition in Milliunits (Stk*1000)"),
+    },
+  },
+  async ({ sourceType, source, mode, percent, amountEuro, lineIds, quantities }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      // Der MCP-SDK-Client wendet Zod-Defaults aus inputSchema an; direkte Testaufrufe
+      // (server["_registeredTools"][name].handler(args)) umgehen das — hier zusaetzlich
+      // defensiv defaulten, damit beide Aufrufwege identisch funktionieren.
+      const effectiveSourceType = sourceType ?? "QUOTE";
+      const src = effectiveSourceType === "DELIVERY_NOTE" ? await resolveDeliveryNote(org.id, source) : await resolveDocument(org.id, source);
+      const input = createPartialInvoiceSchema.parse({
+        sourceType: effectiveSourceType,
+        sourceId: src.id,
+        mode,
+        permille: percent != null ? Math.round(percent * 10) : undefined,
+        amountCents: amountEuro != null ? euroToCents(amountEuro) : undefined,
+        lineIds,
+        quantities,
+      });
+      const invoice = await createPartialInvoice(org.id, input);
+      return ok(`Teilrechnung angelegt: Entwurf ${invoice.id} (${formatCents(invoice.grossTotalCents)} brutto). Mit finalize_invoice festschreiben.`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof PartialInvoiceError || e instanceof PricingError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+server.registerTool(
+  "create_downpayment_invoice",
+  {
+    title: "Abschlagsrechnung anlegen",
+    description:
+      "Erstellt eine Abschlagsrechnung (§13/§14 Abs. 5 UStG, Entwurf) auf ein Angebot/eine Auftragsbestaetigung — als Prozentanteil oder Festbetrag. Danach mit finalize_invoice festschreiben; nach mindestens einem festgeschriebenen Abschlag kann eine Schlussrechnung erzeugt werden.",
+    inputSchema: {
+      source: z.string().describe("Nummer oder ID des Angebots/der Auftragsbestaetigung"),
+      mode: z.enum(["PERCENT", "AMOUNT"]),
+      percent: z.number().min(0.1).max(100).optional().describe("Nur mode PERCENT: Anteil in Prozent"),
+      amountEuro: z.number().positive().optional().describe("Nur mode AMOUNT: Betrag in Euro"),
+      amountIsGross: z.boolean().default(false).describe("Nur mode AMOUNT: amountEuro als Brutto- statt Nettobetrag lesen"),
+    },
+  },
+  async ({ source, mode, percent, amountEuro, amountIsGross }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const quote = await resolveDocument(org.id, source);
+      const input = createDownpaymentInvoiceSchema.parse({
+        sourceType: "QUOTE",
+        sourceId: quote.id,
+        mode,
+        permille: percent != null ? Math.round(percent * 10) : undefined,
+        amountCents: amountEuro != null ? euroToCents(amountEuro) : undefined,
+        amountIsGross,
+      });
+      const invoice = await createDownpaymentInvoice(org.id, input);
+      return ok(`Abschlagsrechnung angelegt: Entwurf ${invoice.id} (${formatCents(invoice.grossTotalCents)} brutto). Mit finalize_invoice festschreiben.`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof DownpaymentInvoiceError || e instanceof PricingError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+server.registerTool(
+  "create_final_invoice",
+  {
+    title: "Schlussrechnung anlegen",
+    description:
+      "Erstellt eine Schlussrechnung (§14 Abs. 5 UStG, Entwurf) ueber die gesamte Leistung eines Angebots/einer Auftragsbestaetigung. Voraussetzung: mindestens eine festgeschriebene, nicht stornierte Abschlagsrechnung. Beim Festschreiben werden die Abschlaege automatisch als Abzug ausgewiesen (Restbetrag).",
+    inputSchema: { source: z.string().describe("Nummer oder ID des Angebots/der Auftragsbestaetigung") },
+  },
+  async ({ source }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const quote = await resolveDocument(org.id, source);
+      const input = createFinalInvoiceSchema.parse({ sourceType: "QUOTE", sourceId: quote.id });
+      const invoice = await createFinalInvoice(org.id, input);
+      return ok(`Schlussrechnung angelegt: Entwurf ${invoice.id}. Mit finalize_invoice festschreiben (Abzugs-Snapshot/Restbetrag werden dabei berechnet).`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+      if (e instanceof FinalInvoiceError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── get_billing_state ────────────────────────────────────────────────────────
+server.registerTool(
+  "get_billing_state",
+  {
+    title: "Abrechnungsstand anzeigen",
+    description: "Zeigt den Abrechnungsstand (NONE/PARTIAL/FULL, Prozent, Summe Abschlaege) eines Angebots/einer Auftragsbestaetigung — Grundlage fuer create_partial_invoice/create_downpayment_invoice/create_final_invoice.",
+    inputSchema: { document: z.string().describe("Dokument-Nummer oder -ID") },
+  },
+  async ({ document }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocument(org.id, document);
+      const billing = await billingStateFor(org.id, "QUOTE", doc.id);
+      return ok(
+        JSON.stringify(
+          {
+            state: billing.state,
+            billedPercent: billing.billedPermille / 10,
+            downpaymentGross: formatCents(billing.downpaymentGrossCents),
+            invoiceIds: billing.invoiceIds,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (e) {
       return fail(`Fehler: ${(e as Error).message}`);
     }
