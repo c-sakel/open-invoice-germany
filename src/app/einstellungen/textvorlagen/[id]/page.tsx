@@ -4,6 +4,8 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { TextTemplateForm } from "@/components/forms/TextTemplateForm";
+import { listCustomFieldDefinitions } from "@/domain/customer/custom-fields";
+import { customFieldPlaceholders } from "@/lib/template/placeholders";
 import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +17,11 @@ export default async function TextTemplateEditPage({ params }: { params: Promise
   const template = id === "neu" ? null : await dbInternal.textTemplate.findFirst({ where: { id, orgId: org.id } });
   if (id !== "neu" && !template) notFound();
 
+  // Fix-Welle B1: siehe einstellungen/vorlagen/[id]/page.tsx — dieselbe Ergaenzung fuer
+  // den Dokumenttext-Editor.
+  const customFieldDefs = await listCustomFieldDefinitions(org.id, { activeOnly: true });
+  const customFieldPlaceholderList = customFieldPlaceholders(customFieldDefs);
+
   return (
     <div className="space-y-6">
       <SettingsTabs active="textvorlagen" />
@@ -25,7 +32,10 @@ export default async function TextTemplateEditPage({ params }: { params: Promise
         <h1 className="text-2xl font-bold tracking-tight">{template ? "Vorlage bearbeiten" : "Neue Vorlage"}</h1>
       </div>
 
-      <TextTemplateForm template={template ? { ...template, docType: template.docType as EmailDocType } : null} />
+      <TextTemplateForm
+        template={template ? { ...template, docType: template.docType as EmailDocType } : null}
+        customFieldPlaceholders={customFieldPlaceholderList}
+      />
     </div>
   );
 }
