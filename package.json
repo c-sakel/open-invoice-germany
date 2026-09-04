@@ -18,6 +18,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "mcp": "tsx src/mcp/server.ts",
     "recurring:run": "tsx scripts/run-recurring.ts",
+    "dunning:run": "tsx scripts/run-dunning.ts",
+    "scheduler:run": "tsx scripts/run-dunning.ts --all",
     "validate:erechnung": "tsx scripts/validate-erechnung.ts",
     "postinstall": "prisma generate"
   },

@@ -17,7 +17,9 @@ import { formatDateDe } from "@/lib/template/format";
 
 // B7 (Fix-Welle, Ruling Koordinator): Teil-/Abschlags-/Schlussrechnungen sind reguläre,
 // enforceable Forderungen und muessen mahnbar sein wie eine normale Rechnung.
-const DUNNABLE_TYPES = new Set(["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
+// Exportiert fuer den Scheduler (Task 3, dunning/auto.ts) — dieselbe Kandidatenmenge,
+// keine zweite, potenziell abweichende Liste.
+export const DUNNABLE_TYPES = new Set(["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
 
 export class DunningError extends Error {
   constructor(message: string) {

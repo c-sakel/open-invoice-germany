@@ -778,7 +778,7 @@ model SchedulerRun {
   id          String    @id @default(cuid())
   job         String // dunning | recurring
   trigger     String // cron | api | manual
-  status      String // RUNNING | SUCCESS | FAILED
+  status      String // RUNNING | OK | FAILED
   startedAt   DateTime  @default(now())
   finishedAt  DateTime?
   summaryJson String?
