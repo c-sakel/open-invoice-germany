@@ -86,9 +86,12 @@ const NUMBER_DECIMAL_STRING_RE = /^-?\d+(\.\d{1,4})?$/;
 /**
  * Baut dynamisch ein Zod-Objekt-Schema fuer die Werte eines Kunden je nach den
  * aktiven CustomFieldDefinition-Zeilen der Organisation. `.strict()`: unbekannte Keys
- * (z. B. aus einer geloeschten Definition oder einem Tippfehler) werden abgelehnt statt
- * stillschweigend uebernommen — deleteCustomFieldDefinition raeumt daher separat aus
- * dem gespeicherten JSON auf, statt sich auf dieses Schema zu verlassen.
+ * (z. B. aus einer geloeschten Definition oder einem Tippfehler) werden beim SCHREIBEN
+ * (setCustomerCustomFields) abgelehnt statt stillschweigend uebernommen. Nit-Fix
+ * (Fix-Welle): `deleteCustomFieldDefinition` raeumt das gespeicherte JSON NICHT auf
+ * (Betreiber-Ruling, siehe Modulkommentar in src/domain/customer/custom-fields.ts) —
+ * verwaiste Keys bleiben stehen, `parseCustomerCustomFields` uebergeht sie beim Lesen
+ * still statt sie gegen dieses Schema zu pruefen.
  */
 export function customFieldValuesSchema(definitions: CustomFieldDefinitionLike[]) {
   const shape: Record<string, z.ZodTypeAny> = {};

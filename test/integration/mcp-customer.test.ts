@@ -111,6 +111,39 @@ describe("list_customer_addresses / upsert_customer_address / delete_customer_ad
   });
 });
 
+describe("set_default_address (Nit, Fix-Welle)", () => {
+  it("setzt eine Adresse als Default ihres Typs und verdraengt den bisherigen Default", async () => {
+    const a1 = JSON.parse(
+      text(
+        await callTool("upsert_customer_address", { customer: customerName, type: "SHIPPING", addressLine1: "Lager A", postalCode: "10115", city: "Berlin", isDefault: true }),
+      ).replace("Adresse gespeichert: ", ""),
+    );
+    const a2 = JSON.parse(
+      text(await callTool("upsert_customer_address", { customer: customerName, type: "SHIPPING", addressLine1: "Lager B", postalCode: "10117", city: "Berlin" })).replace(
+        "Adresse gespeichert: ",
+        "",
+      ),
+    );
+
+    const res = await callTool("set_default_address", { customer: customerName, id: a2.id });
+    expect(res.isError).toBeFalsy();
+
+    const list = JSON.parse(text(await callTool("list_customer_addresses", { customer: customerName })));
+    const found1 = list.find((a: { id: string }) => a.id === a1.id);
+    const found2 = list.find((a: { id: string }) => a.id === a2.id);
+    expect(found1.isDefault).toBe(false);
+    expect(found2.isDefault).toBe(true);
+
+    await callTool("delete_customer_address", { customer: customerName, id: a1.id });
+    await callTool("delete_customer_address", { customer: customerName, id: a2.id });
+  });
+
+  it("meldet eine unbekannte Adress-ID als Fehler", async () => {
+    const res = await callTool("set_default_address", { customer: customerName, id: "nicht-vorhanden" });
+    expect(res.isError).toBe(true);
+  });
+});
+
 describe("list_contact_persons / upsert_contact_person / delete_contact_person", () => {
   let contactId: string;
 
@@ -120,6 +153,22 @@ describe("list_contact_persons / upsert_contact_person / delete_contact_person",
     const list = JSON.parse(text(await callTool("list_contact_persons", { customer: customerName })));
     expect(list.length).toBe(1);
     contactId = list[0].id;
+  });
+
+  it("set_default_contact (Nit, Fix-Welle): setzt einen zweiten Ansprechpartner als Default", async () => {
+    const res2 = await callTool("upsert_contact_person", { customer: customerName, firstName: "Bert", lastName: "Beispiel" });
+    expect(res2.isError).toBeFalsy();
+    const list = JSON.parse(text(await callTool("list_contact_persons", { customer: customerName })));
+    const bert = list.find((c: { firstName: string }) => c.firstName === "Bert");
+
+    const res = await callTool("set_default_contact", { customer: customerName, id: bert.id });
+    expect(res.isError).toBeFalsy();
+
+    const listAfter = JSON.parse(text(await callTool("list_contact_persons", { customer: customerName })));
+    expect(listAfter.find((c: { id: string }) => c.id === contactId).isDefault).toBe(false);
+    expect(listAfter.find((c: { id: string }) => c.id === bert.id).isDefault).toBe(true);
+
+    await callTool("delete_contact_person", { customer: customerName, id: bert.id });
   });
 
   it("aktualisiert den Ansprechpartner", async () => {
@@ -182,6 +231,41 @@ describe("list_custom_fields / upsert_custom_field / set_customer_custom_fields"
 
   it("lehnt einen unbekannten Key ab", async () => {
     const res = await callTool("set_customer_custom_fields", { customer: customerName, values: { unbekannt: "x" } });
+    expect(res.isError).toBe(true);
+  });
+
+  it("reorder_custom_fields (Nit, Fix-Welle): setzt die Reihenfolge neu", async () => {
+    const second = await callTool("upsert_custom_field", { key: "vipmcp2", label: "VIP 2 (MCP)", type: "TEXT" });
+    expect(second.isError).toBeFalsy();
+    const before = JSON.parse(text(await callTool("list_custom_fields")));
+    const ids = before.map((d: { id: string }) => d.id) as string[];
+    const reversed = [...ids].reverse();
+
+    const res = await callTool("reorder_custom_fields", { ids: reversed });
+    expect(res.isError).toBeFalsy();
+    const after = JSON.parse(text(await callTool("list_custom_fields")));
+    expect(after.map((d: { id: string }) => d.id)).toEqual(reversed);
+  });
+
+  it("reorder_custom_fields lehnt eine unvollstaendige ids-Liste ab", async () => {
+    const res = await callTool("reorder_custom_fields", { ids: ["nur-eine-fantasie-id"] });
+    expect(res.isError).toBe(true);
+  });
+
+  it("delete_custom_field (Nit, Fix-Welle): loescht die Definition, Werte bleiben im JSON stehen (§31)", async () => {
+    const res = await callTool("delete_custom_field", { id: fieldId });
+    expect(res.isError).toBeFalsy();
+    const list = JSON.parse(text(await callTool("list_custom_fields")));
+    expect(list.find((d: { id: string }) => d.id === fieldId)).toBeUndefined();
+
+    // Wert des geloeschten Feldes bleibt im gespeicherten JSON stehen (kein Cleanup) —
+    // customFieldsFor uebergeht ihn beim Lesen still statt ihn zu verwerfen.
+    const customer = await dbInternal.customer.findFirstOrThrow({ where: { orgId, name: customerName } });
+    expect(customer.customFieldsJson).toContain("vipmcp");
+  });
+
+  it("meldet eine unbekannte Definitions-ID beim Loeschen als Fehler", async () => {
+    const res = await callTool("delete_custom_field", { id: "nicht-vorhanden" });
     expect(res.isError).toBe(true);
   });
 });
