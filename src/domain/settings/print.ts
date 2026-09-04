@@ -64,9 +64,11 @@ interface SetPrintOptionsTarget {
 
 /**
  * Setzt die Beleg-individuelle Druckoptionen-Ueberschreibung. Nur erlaubt, solange der
- * Beleg im Entwurf ist (status DRAFT) — fuer Invoice greift zusaetzlich der GoBD-Guard
- * in src/lib/db.ts (guardInvoiceWhere), fuer Quote/DeliveryNote gibt es keinen
- * datenbankseitigen Guard (Lastenheft-Ruling), die Pruefung erfolgt ausschliesslich hier.
+ * Beleg im Entwurf ist (status DRAFT). S8 (Fix-Welle, Final-Review): dieser Schreibzugriff
+ * laeuft ueber `dbInternal` (den UNGEGUARDETEN Client, src/lib/db.ts) — der GoBD-Guard
+ * (guardInvoiceWhere) greift hier NICHT. Der einzige Schutz vor einer Aenderung an einer
+ * festgeschriebenen Invoice/Quote/DeliveryNote ist die explizite `status !== "DRAFT"`-
+ * Pruefung unten.
  */
 export async function setPrintOptions(orgId: string, target: SetPrintOptionsTarget, rawInput: unknown): Promise<PrintOptionsOverride> {
   const override = printOptionsOverrideSchema.parse(rawInput);
