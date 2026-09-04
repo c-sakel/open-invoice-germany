@@ -27,6 +27,16 @@ export class DeliveryNoteError extends Error {
   }
 }
 
+/** Nit (Fix-Welle): Eingabevalidierung (z. B. BILLING-Adresse als Lieferadresse) — Route
+ *  mappt dies auf 400, waehrend die generische DeliveryNoteError (nicht gefunden o. ae.)
+ *  bei 409 bleibt. */
+export class DeliveryNoteValidationError extends DeliveryNoteError {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeliveryNoteValidationError";
+  }
+}
+
 export async function createDeliveryNoteWithinTx(
   tx: Prisma.TransactionClient,
   orgId: string,
@@ -55,8 +65,10 @@ export async function createDeliveryNoteWithinTx(
   }
   let shippingAddressId = input.shippingAddressId;
   if (shippingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: shippingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
+    const address = await tx.customerAddress.findFirst({ where: { id: shippingAddressId, orgId, customerId: input.customerId }, select: { id: true, type: true } });
     if (!address) throw new DeliveryNoteError("Lieferadresse nicht gefunden.");
+    // Nit (Fix-Welle): eine Lieferadresse ist SHIPPING oder OTHER, keine BILLING-Adresse.
+    if (address.type === "BILLING") throw new DeliveryNoteValidationError("Als Lieferadresse ist keine Rechnungsadresse (BILLING) zulaessig.");
   } else if (shippingAddressId === undefined) {
     const defaultAddress = await tx.customerAddress.findFirst({ where: { orgId, customerId: input.customerId, type: "SHIPPING", isDefault: true }, select: { id: true } });
     shippingAddressId = defaultAddress?.id ?? null;

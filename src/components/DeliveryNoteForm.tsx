@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { optionalSelectValue, emptyOptionLabel } from "@/lib/forms/optional-select";
 
 interface CustomerOption {
   id: string;
@@ -18,11 +19,13 @@ interface ContactOption {
   id: string;
   customerId: string;
   label: string;
+  isDefault?: boolean;
 }
 interface AddressOption {
   id: string;
   customerId: string;
   label: string;
+  isDefault?: boolean;
 }
 interface LineState {
   description: string;
@@ -68,6 +71,9 @@ export function DeliveryNoteForm({
 
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
+  // Fix-Welle B3: leere Option nennt die Kundenvorgabe explizit, wenn sie existiert.
+  const hasDefaultContact = customerContacts.some((c) => c.isDefault);
+  const hasDefaultShippingAddress = customerAddresses.some((a) => a.isDefault);
 
   function selectCustomer(id: string) {
     setCustomerId(id);
@@ -96,8 +102,11 @@ export function DeliveryNoteForm({
     setError(null);
     const body = {
       customerId,
-      contactPersonId: contactPersonId || null,
-      shippingAddressId: shippingAddressId || null,
+      // Fix-Welle B3: DeliveryNoteForm ist ein reines Anlage-Formular (kein Bearbeiten-Pfad)
+      // — ein leeres Feld wird daher immer als fehlender Schluessel (undefined) gesendet,
+      // damit die Kundenvorgabe (Default-Ansprechpartner/-Lieferadresse) serverseitig greift.
+      contactPersonId: optionalSelectValue(contactPersonId, false),
+      shippingAddressId: optionalSelectValue(shippingAddressId, false),
       deliveryDate: deliveryDate || undefined,
       showPrices,
       showTax,
@@ -152,7 +161,7 @@ export function DeliveryNoteForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Ansprechpartner</span>
           <select className={input} value={contactPersonId} onChange={(e) => setContactPersonId(e.target.value)}>
-            <option value="">— keiner —</option>
+            <option value="">{emptyOptionLabel(hasDefaultContact)}</option>
             {customerContacts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
@@ -163,7 +172,7 @@ export function DeliveryNoteForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Lieferadresse</span>
           <select className={input} value={shippingAddressId} onChange={(e) => setShippingAddressId(e.target.value)}>
-            <option value="">— Standardadresse —</option>
+            <option value="">{emptyOptionLabel(hasDefaultShippingAddress)}</option>
             {customerAddresses.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}

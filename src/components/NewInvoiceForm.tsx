@@ -9,6 +9,8 @@ import { computeSubtotals } from "@/domain/document/lines";
 import { RichTextField } from "@/components/editor/RichTextField";
 import { ProductPicker, type ProductOption } from "@/components/editor/ProductPicker";
 import { TakeOverPrompt, type TakeOverPrefillDTO, type TakeOverLineDTO } from "@/components/TakeOverPrompt";
+import { optionalSelectValue, emptyOptionLabel } from "@/lib/forms/optional-select";
+import { nextDiscountOnCustomerChange } from "@/lib/forms/discount-prefill";
 
 interface CustomerOption {
   id: string;
@@ -25,11 +27,14 @@ interface ContactOption {
   id: string;
   customerId: string;
   label: string;
+  isDefault?: boolean;
 }
 interface AddressOption {
   id: string;
   customerId: string;
   label: string;
+  type?: "BILLING" | "SHIPPING" | "OTHER";
+  isDefault?: boolean;
 }
 
 type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
@@ -159,6 +164,9 @@ export function NewInvoiceForm({
   const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
 
   const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? discountPercentOf(customers[0]));
+  // Fix-Welle B6: der zuletzt AUTOMATISCH angewendete Default — nur wenn das Feld noch
+  // exakt diesem Wert entspricht (oder leer ist), ueberschreibt ein Kundenwechsel es erneut.
+  const [appliedDefaultDiscount, setAppliedDefaultDiscount] = useState(initial ? "" : discountPercentOf(customers[0]));
   const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "");
   const [documentChargePercent, setDocumentChargePercent] = useState(initial?.documentChargePercent ?? "0");
   const [documentChargeAmount, setDocumentChargeAmount] = useState(initial?.documentChargeAmount ?? "0");
@@ -177,18 +185,23 @@ export function NewInvoiceForm({
   const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId);
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
+  // Fix-Welle B3: leere Option nennt die Kundenvorgabe explizit, wenn sie existiert.
+  const hasDefaultContact = customerContacts.some((c) => c.isDefault);
+  const hasDefaultBillingAddress = customerAddresses.some((a) => a.type === "BILLING" && a.isDefault);
 
   function selectCustomer(id: string) {
     setCustomerId(id);
     if (!isEdit) {
       const c = customers.find((x) => x.id === id);
       setPaymentMethodId(c?.defaultPaymentMethodId ?? "");
-      // Kundenkomfort-Facts: Rabattfeld wird beim Kundenwechsel aus der Kundenvorgabe
-      // vorbelegt (wie Adresse/Kontakt) — nur wenn der Nutzer das Feld nicht bereits
-      // selbst befuellt hat, sonst wuerde eine explizite Eingabe stillschweigend
-      // ueberschrieben.
-      if (!documentDiscountPercent.trim()) {
-        setDocumentDiscountPercent(discountPercentOf(c));
+      // Fix-Welle B6: Rabattfeld wird beim Kundenwechsel aus der Kundenvorgabe vorbelegt
+      // (wie Adresse/Kontakt) — nur wenn der Nutzer das Feld nicht selbst befuellt hat
+      // ODER es noch dem zuletzt automatisch angewendeten Default entspricht (sonst blieb
+      // beim ZWEITEN Kundenwechsel der Rabatt des vorigen Kunden stehen).
+      const nextDiscount = nextDiscountOnCustomerChange(documentDiscountPercent, appliedDefaultDiscount, discountPercentOf(c));
+      if (nextDiscount.apply) {
+        setDocumentDiscountPercent(nextDiscount.value);
+        setAppliedDefaultDiscount(nextDiscount.value);
       }
     }
     // Fix-Runde 1: Ansprechpartner/Adressen gehoeren zum ALTEN Kunden — beim
@@ -385,13 +398,16 @@ export function NewInvoiceForm({
       orderNumber: orderNumber || undefined,
       internalReference: internalReference || undefined,
       buyerReference: buyerReference || undefined,
-      // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde — sonst
-      // wird das leere Feld beim Bearbeiten (PATCH) einfach weggelassen und die alte
-      // Referenz bleibt serverseitig unveraendert stehen (JSON.stringify entfernt
-      // undefined-Properties, null bleibt erhalten).
-      contactPersonId: contactPersonId || null,
-      billingAddressId: billingAddressId || null,
-      shippingAddressId: shippingAddressId || null,
+      // Fix-Welle B3 (vorher K2): bei der ANLAGE ein leeres Feld als fehlenden Schluessel
+      // (undefined) senden, damit die serverseitige Kundenvorgabe (Default-Adresse/
+      // -Ansprechpartner) greift — vorher wurde immer explizit `null` gesendet, wodurch
+      // der Default nie zum Zug kam. Beim BEARBEITEN bleibt es explizites `null` (siehe
+      // optionalSelectValue): sonst wuerde das leere Feld beim PATCH einfach weggelassen
+      // und die alte Referenz bliebe serverseitig unveraendert stehen (JSON.stringify
+      // entfernt undefined-Properties, null bleibt erhalten).
+      contactPersonId: optionalSelectValue(contactPersonId, isEdit),
+      billingAddressId: optionalSelectValue(billingAddressId, isEdit),
+      shippingAddressId: optionalSelectValue(shippingAddressId, isEdit),
       deliveryStart: deliveryStart || undefined,
       deliveryEnd: deliveryEnd || undefined,
       deliveryDate: deliveryDate || undefined,
@@ -520,7 +536,7 @@ export function NewInvoiceForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Ansprechpartner</span>
           <select className={input} value={contactPersonId} onChange={(e) => setContactPersonId(e.target.value)}>
-            <option value="">— keiner —</option>
+            <option value="">{emptyOptionLabel(hasDefaultContact)}</option>
             {customerContacts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
@@ -531,7 +547,7 @@ export function NewInvoiceForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rechnungsadresse</span>
           <select className={input} value={billingAddressId} onChange={(e) => setBillingAddressId(e.target.value)}>
-            <option value="">— Standardadresse —</option>
+            <option value="">{emptyOptionLabel(hasDefaultBillingAddress)}</option>
             {customerAddresses.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createDeliveryNoteSchema } from "@/schemas";
-import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/create";
+import { createDeliveryNote, DeliveryNoteError, DeliveryNoteValidationError } from "@/domain/delivery-note/create";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 
@@ -17,6 +17,9 @@ export async function POST(req: Request) {
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
+    }
+    if (e instanceof DeliveryNoteValidationError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
     }
     if (e instanceof DeliveryNoteError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
