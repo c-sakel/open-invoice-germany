@@ -47,6 +47,7 @@ model Organization {
   invoices     Invoice[]
   numberRanges NumberRange[]
   changeLogs   ChangeLog[]
+  recurring    RecurringInvoice[]
 }
 
 /// Kunde / Leistungsempfänger.
@@ -76,6 +77,7 @@ model Customer {
 
   quotes   Quote[]
   invoices Invoice[]
+  recurring RecurringInvoice[]
 
   @@index([orgId])
 }
@@ -201,9 +203,12 @@ model Invoice {
   lines    InvoiceLine[]
   payments Payment[]
   dunnings Dunning[]
+  recurringInvoiceId    String?
+  recurringInvoice      RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
 
   @@index([orgId])
   @@index([customerId])
+  @@index([recurringInvoiceId])
 }
 
 model InvoiceLine {
@@ -284,4 +289,52 @@ model ChangeLog {
   @@unique([orgId, prevHash])
   @@index([orgId])
   @@index([entity, entityId])
+}
+
+model RecurringInvoice {
+  id               String   @id @default(cuid())
+  orgId            String
+  org              Organization @relation(fields: [orgId], references: [id])
+  customerId       String
+  customer         Customer @relation(fields: [customerId], references: [id])
+  title            String
+  status           String   @default("ACTIVE")
+  interval         String   @default("MONTHLY")
+  intervalCount    Int      @default(1)
+  anchorDay        Int?
+  startDate        DateTime
+  nextRunDate      DateTime
+  endDate          DateTime?
+  taxScheme        String   @default("REGULAR")
+  currency         String   @default("EUR")
+  paymentTermsDays Int      @default(14)
+  notes            String?
+  autoFinalize     Boolean  @default(false)
+  lastRunAt        DateTime?
+  issuedCount      Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  lines    RecurringInvoiceLine[]
+  invoices Invoice[]
+
+  @@index([orgId])
+  @@index([customerId])
+  @@index([status, nextRunDate])
+}
+
+model RecurringInvoiceLine {
+  id                 String @id @default(cuid())
+  recurringInvoiceId String
+  recurringInvoice   RecurringInvoice @relation(fields: [recurringInvoiceId], references: [id], onDelete: Cascade)
+  position           Int
+  description        String
+  quantityMilli      Int
+  unit               String @default("C62")
+  unitNetPriceCents  Int
+  taxRate            Int
+  taxCategory        String @default("S")
+  discountPermille   Int    @default(0)
+
+  @@index([recurringInvoiceId])
 }
