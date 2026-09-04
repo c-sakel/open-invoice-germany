@@ -12,6 +12,8 @@ import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunn
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeDunning } from "@/api/serializers/dunning";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { formatDateDe } from "@/lib/template/format";
@@ -222,6 +224,16 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       actor,
       at: now,
       data: { number, stage: stage.name, order: stage.order },
+    });
+
+    // Webhook-Outbox (Phase 10, Task 5): "dunning.created" — IN DERSELBEN Tx.
+    await emitEvent(tx, {
+      orgId: inv.orgId,
+      type: "dunning.created",
+      objectName: "Dunning",
+      objectId: dunning.id,
+      data: serializeDunning(dunning),
+      now,
     });
 
     return {

@@ -16,6 +16,8 @@ import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeDeliveryNote } from "@/api/serializers/delivery-note";
 import { assertDocExists } from "@/domain/relations";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { loadDocumentSettings } from "@/domain/document/settings";
@@ -190,6 +192,16 @@ export async function createDeliveryNoteWithinTx(
     diff: { number, status: "CREATED", lines: note.lines.length, sourceType: input.sourceType ?? null, sourceId: input.sourceId ?? null },
   });
   await logActivity(tx, { orgId, entityType: "DELIVERY_NOTE", entityId: note.id, type: "CREATED", actor, at: now, data: { number } });
+
+  // Webhook-Outbox (Phase 10, Task 5): "delivery_note.created" — IN DERSELBEN Tx.
+  await emitEvent(tx, {
+    orgId,
+    type: "delivery_note.created",
+    objectName: "DeliveryNote",
+    objectId: note.id,
+    data: serializeDeliveryNote(note, new Set()),
+    now,
+  });
 
   return note;
 }
