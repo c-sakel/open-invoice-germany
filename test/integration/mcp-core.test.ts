@@ -75,6 +75,15 @@ beforeAll(async () => {
   // Nummernkreis muss also fuer das ECHTE aktuelle Jahr aktiv sein (kein FIX_DATE-Argument,
   // Default now = new Date()).
   await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "MC69-RE-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test");
+  // Storno-/Teilgutschriften (cancel_invoice/credit_invoice) numerieren ueber einen EIGENEN
+  // Nummernkreis docType=CREDIT_NOTE (finalize.ts: docType = invoice.type === "CREDIT_NOTE"
+  // ? "CREDIT_NOTE" : "INVOICE") — ohne eigenen Praefix kollidierte das reale aktuelle Jahr
+  // (2026) mit dem Default-Praefix anderer Tests, die (mit eigenem FIX_DATE) ebenfalls
+  // Gutschriften in 2026 festschreiben, z. B. test/integration/gobd.test.ts (nicht
+  // deterministisch reproduzierbar, aber im vollen Testlauf beobachtet: "Unique constraint
+  // failed on the fields: (`number`)" abwechselnd in beiden Dateien, je nachdem wer zuerst
+  // inserted — echte Ursache gefunden per Debug-Instrumentierung, siehe task-2-report.md).
+  await updateNumberRange(orgId, "CREDIT_NOTE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "MC69-GS-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test");
 });
 
 describe("update_customer / archive_customer", () => {
