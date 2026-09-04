@@ -8,6 +8,8 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { assignCustomerNumber, assignArticleNumber } from "@/domain/numbering/ranges";
 import { organizationSchema, customerSchema, productSchema } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
+import { archiveCustomer as archiveCustomerDomain } from "@/domain/customer/archive";
+import { archiveProduct as archiveProductDomain } from "@/domain/product/archive";
 import type { ActionResult } from "./result";
 
 function str(fd: FormData, key: string): string | undefined {
@@ -167,7 +169,11 @@ export async function archiveCustomer(fd: FormData): Promise<void> {
   const id = str(fd, "id");
   if (!id) return;
   const org = await getActiveOrg();
-  await dbInternal.customer.updateMany({ where: { id, orgId: org.id }, data: { isArchived: true } });
+  try {
+    await archiveCustomerDomain(org.id, id);
+  } catch {
+    // Unbekannte/fremde ID: wie zuvor stillschweigend ignorieren (Server Action ohne Rueckgabewert).
+  }
   revalidatePath("/kunden");
 }
 
@@ -294,6 +300,10 @@ export async function archiveProduct(fd: FormData): Promise<void> {
   const id = str(fd, "id");
   if (!id) return;
   const org = await getActiveOrg();
-  await dbInternal.product.updateMany({ where: { id, orgId: org.id }, data: { isArchived: true } });
+  try {
+    await archiveProductDomain(org.id, id);
+  } catch {
+    // Unbekannte/fremde ID: wie zuvor stillschweigend ignorieren (Server Action ohne Rueckgabewert).
+  }
   revalidatePath("/produkte");
 }
