@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildDeliveryNotePdfData, type DeliveryNoteRow, type OrgRow, type CustomerRow } from "@/lib/pdf/delivery-note-data";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
+import { testPdfTheme } from "../helpers/pdf-theme";
 
 const org: OrgRow = {
   id: "org-1",
@@ -76,6 +77,8 @@ function deliveryNote(overrides: Partial<DeliveryNoteRow> = {}): DeliveryNoteRow
     showTax: false,
     showArticleNumber: true,
     showDescription: true,
+    showDeliveryAddress: true,
+    printOptionsJson: null,
     notes: null,
     internalNotes: "GEHEIME INTERNE NOTIZ",
     headerText: null,
@@ -162,7 +165,7 @@ describe("renderDeliveryNotePdf", () => {
       org,
       customer,
     );
-    const pdf = await renderDeliveryNotePdf(data);
+    const pdf = await renderDeliveryNotePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 
@@ -172,7 +175,7 @@ describe("renderDeliveryNotePdf", () => {
       org,
       customer,
     );
-    const pdf = await renderDeliveryNotePdf(data);
+    const pdf = await renderDeliveryNotePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 });

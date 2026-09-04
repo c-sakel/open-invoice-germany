@@ -58,6 +58,7 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { loadPdfTheme } from "@/domain/settings/theme";
 import {
   organizationSchema,
   customerSchema,
@@ -774,9 +775,10 @@ server.registerTool(
       const base = (inv.number ?? `entwurf-${inv.id.slice(0, 8)}`).replace(/[^A-Za-z0-9._-]/g, "_");
       const written: string[] = [];
       let validation: { valid: boolean; errors: string[] } | null = null;
+      const theme = await loadPdfTheme(org.id, inv.printOptionsJson);
 
       if (format === "both" || format === "pdf") {
-        const pdf = await renderInvoicePdf(data);
+        const pdf = await renderInvoicePdf(data, theme);
         const pdfPath = path.join(dir, `${base}.pdf`);
         writeFileSync(pdfPath, pdf);
         written.push(pdfPath);
@@ -794,7 +796,7 @@ server.registerTool(
       }
       if (format === "zugferd") {
         if (inv.status === "DRAFT") return fail("ZUGFeRD nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
-        const zpdf = await renderZugferdPdf(data);
+        const zpdf = await renderZugferdPdf(data, theme);
         const zpath = path.join(dir, `${base}-zugferd.pdf`);
         writeFileSync(zpath, zpdf);
         written.push(zpath);

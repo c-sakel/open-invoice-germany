@@ -3,6 +3,7 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { testPdfTheme } from "../helpers/pdf-theme";
 import type { EInvoiceData } from "@/lib/einvoice/types";
 
 const data: EInvoiceData = {
@@ -147,7 +148,7 @@ describe("ZUGFeRD / Factur-X (CII)", () => {
   });
 
   it("bettet die factur-x.xml in ein gültiges PDF ein", async () => {
-    const pdf = await renderZugferdPdf(data);
+    const pdf = await renderZugferdPdf(data, testPdfTheme());
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     expect(pdf.toString("latin1")).toContain("factur-x.xml");
   });

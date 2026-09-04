@@ -4,6 +4,7 @@ import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { loadPdfTheme } from "@/domain/settings/theme";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   if (!resolved) return new Response("Nicht gefunden", { status: 404, headers: { "cache-control": "private, no-store" } });
 
   const { quote } = resolved;
-  const pdf = await renderInvoicePdf(buildDocEInvoiceData(quote));
+  const theme = await loadPdfTheme(quote.orgId, quote.printOptionsJson);
+  const pdf = await renderInvoicePdf(buildDocEInvoiceData(quote), theme);
   const safe = (quote.number ?? "angebot").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {
     headers: {
