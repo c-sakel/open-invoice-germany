@@ -42,6 +42,9 @@ export async function savePrintSettings(orgId: string, rawInput: unknown): Promi
 /**
  * Verschmilzt die globalen Druckoptionen mit einer Beleg-individuellen Ueberschreibung
  * (rein, ohne DB) — nur in `overrideJson` gesetzte Felder ueberschreiben `global`.
+ * Faellt auch auf `global` zurueck, wenn `overrideJson` zwar gueltiges JSON, aber kein
+ * gueltiges PrintOptionsOverride ist (Nit final-review: `.parse()` warf zuvor durch und
+ * liess eine kaputte Zeile die PDF-Route mit 500 abbrechen statt sauber zurueckzufallen).
  */
 export function effectivePrintOptions(global: PrintSettingsInput, overrideJson: string | null | undefined): PrintSettingsInput {
   if (!overrideJson) return global;
@@ -51,8 +54,35 @@ export function effectivePrintOptions(global: PrintSettingsInput, overrideJson: 
   } catch {
     return global;
   }
-  const override: PrintOptionsOverride = printOptionsOverrideSchema.parse(raw);
-  return { ...global, ...override };
+  const parsed = printOptionsOverrideSchema.safeParse(raw);
+  if (!parsed.success) return global;
+  return { ...global, ...parsed.data };
+}
+
+const PRINT_OPTION_KEYS = Object.keys(DEFAULT_PRINT_SETTINGS) as (keyof PrintSettingsInput)[];
+
+/**
+ * S6 (Fix-Welle Final-Review): bei Festschreibung den vollstaendig gemergten Optionssatz
+ * einfrieren, damit eine spaetere Aenderung der GLOBALEN Druckoptionen einen bereits
+ * festgeschriebenen Beleg nicht mehr veraendert. Nur wirksam, wenn `existingOverrideJson`
+ * fehlt oder unvollstaendig ist (nicht alle Schalter gesetzt) — ein bereits vollstaendiger
+ * Override ist schon "eingefroren" (globale Aenderungen wirken sich wegen des Spreads in
+ * `effectivePrintOptions` ohnehin nicht mehr aus) und wird unveraendert uebernommen.
+ */
+export function freezePrintOptionsJson(global: PrintSettingsInput, existingOverrideJson: string | null | undefined): string {
+  let override: PrintOptionsOverride = {};
+  if (existingOverrideJson) {
+    try {
+      const parsed = printOptionsOverrideSchema.safeParse(JSON.parse(existingOverrideJson));
+      if (parsed.success) override = parsed.data;
+    } catch {
+      override = {};
+    }
+  }
+  const isComplete = PRINT_OPTION_KEYS.every((key) => key in override);
+  if (isComplete) return existingOverrideJson as string;
+  const merged: PrintSettingsInput = { ...global, ...override };
+  return JSON.stringify(merged);
 }
 
 type PrintOptionsDocKind = "INVOICE" | "QUOTE" | "DELIVERY_NOTE";
