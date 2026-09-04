@@ -81,13 +81,14 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar |
 | `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten) |
 | `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben) |
-| `record_payment` | Zahlungseingang erfassen → Status (bezahlt/teilbezahlt) |
+| `record_payment` | Zahlungseingang erfassen → Status (bezahlt/teilbezahlt); optional `note` (Freitext, z. B. „telefonisch avisiert") |
 | `create_dunning` | Nächste fällige Mahnstufe erzeugen (frei konfigurierbare Stufen, Verzugszins § 288 BGB + Mahnkosten ab Stufe 2 + 40-€-Pauschale B2B, `force` überspringt die Fälligkeitsprüfung) |
 | `send_dunning` | Eine erstellte Mahnung per E-Mail versenden (dieselbe Mailpipeline wie Rechnungen/Angebote) |
 | `set_dunning_state` | Mahnprozess einer Rechnung pausieren (mit Datum), beenden oder wieder aktivieren |
 | `list_overdue_invoices` | Mahnübersicht: alle überfälligen, offenen Rechnungen (Widgets + Zeilen, Fälligkeits-Aging), optional nach Mahnprozess-Status gefiltert |
 | `run_scheduler_job` | Scheduler-Job(s) manuell anstoßen (`dunning`, `recurring`, oder beide — dieselbe Runner-Funktion wie der eingebaute Loop/Cron) |
-| `get_invoice` / `list_invoices` | Anzeigen/Auflisten |
+| `get_invoice` | Anzeigen |
+| `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig, Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung) — ersetzt die frühere primitive Version ohne Org-Scoping/Filter |
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei + Validierungsreport |
 | `create_document` / `list_documents` | Angebot / Auftragsbestätigung / Proforma |
 | `convert_document_to_invoice` | Dokument → Rechnungs-Entwurf |
@@ -125,6 +126,12 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `upsert_custom_field` | Kundenfeld-Definition anlegen oder ändern (`id` optional); Schlüssel-Konflikt innerhalb derselben Organisation liefert einen Fehler |
 | `set_customer_custom_fields` | Kundenfeldwerte eines Kunden setzen — validiert strikt gegen die aktiven Definitionen (unbekannte Schlüssel werden abgelehnt) |
 | `take_over_last_document` | Letzten passenden Vorgängerbeleg (Rechnung/Angebot/AB) eines Kunden finden und daraus Positionen/Texte/Bedingungen/Preise als Vorschlag liefern (§32) — meldet in Klartext, wenn kein Vorgängerbeleg existiert |
+| `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Umsatz laufender Monat, letzte Belege, offene Angebote |
+| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Gesamtumsatz/letzte Aktivität) eines einzelnen Kunden |
+| `get_timeline` | Chronologische Historie eines Belegs (`kind`: Rechnung/Angebot/Lieferschein + `doc`-ID) — Anlage, Änderungen, Festschreibung, Versand, Zahlungen, Mahnungen, Statuswechsel |
+| `list_notifications` | Benachrichtigungen auflisten (optional nur ungelesen, `limit`) |
+| `mark_notifications_read` | Benachrichtigungen als gelesen markieren (einzelne IDs oder alle) |
+| `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich |
 
 ## 4. Was die KI **nicht** kaputt machen kann
 

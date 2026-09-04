@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "36" ] || fail "erwartet 36 Tabellen, gefunden $COUNT"
-echo "    ok — 36 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition)"
+[ "$COUNT" = "39" ] || fail "erwartet 39 Tabellen, gefunden $COUNT"
+echo "    ok — 39 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -353,5 +353,65 @@ DNFKS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select coalesce(\"shippingAddressId\",'NULL')||'|'||coalesce(\"contactPersonId\",'NULL') from \"DeliveryNote\" where id='dn1'")
 [ "$DNFKS" = "NULL|NULL" ] || fail "DeliveryNote dn1 nach Loeschen von Adresse/Kontakt: '$DNFKS', erwartet 'NULL|NULL' (SetNull)"
 echo "    ok — Phase-8a-Migration angewendet, CustomFieldDefinition-Unique (orgId, key) erzwungen, Customer-Defaults auf Bestandszeile korrekt, DeliveryNote.shippingAddressId/contactPersonId per SetNull auf NULL gesetzt"
+
+echo "==> Fall 12 (Phase 8b): ActivityLog/Notification/NotificationSettings, RecurringInvoice-Erweiterungen, Payment.note"
+# Beide Phase-8b-Migrationen liegen bereits im Verzeichnis prisma/migrations-postgres und
+# wurden dadurch schon von der Schleife in Fall 9 (0_init + alle Migrationen bis auf
+# Phase 7 einzeln per db execute + "migrate resolve --applied") mit angewendet — kein
+# weiterer deploy-Schritt hier noetig, analog Fall 11 (Phase 8a).
+PHASE8BMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name in ('20260904115512_phase8b_workflow','20260904124324_phase8b_activity_notifications') and finished_at is not null")
+[ "$PHASE8BMIG" = "2" ] || fail "erwartet beide Phase-8b-Migrationen als angewendet in _prisma_migrations, gefunden $PHASE8BMIG"
+for TBL in ActivityLog Notification NotificationSettings; do
+  EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"$TBL\"') is not null")
+  [ "$EXISTS" = "t" ] || fail "Tabelle $TBL fehlt nach den Phase-8b-Migrationen"
+done
+ACTIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='ActivityLog_orgId_entityType_entityId_at_idx'")
+[ "$ACTIDX" = "1" ] || fail "Index ActivityLog_orgId_entityType_entityId_at_idx fehlt"
+DEDUPEUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Notification_dedupeKey_key'")
+[ "$DEDUPEUNIQUE" = "1" ] || fail "Unique-Index Notification_dedupeKey_key fehlt"
+NOTIFIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Notification_orgId_readAt_createdAt_idx'")
+[ "$NOTIFIDX" = "1" ] || fail "Index Notification_orgId_readAt_createdAt_idx fehlt"
+NSUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='NotificationSettings_orgId_key'")
+[ "$NSUNIQUE" = "1" ] || fail "Unique-Index NotificationSettings_orgId_key fehlt"
+# Notification.dedupeKey unique tatsaechlich erzwungen: zwei Zeilen mit gleichem dedupeKey
+# muessen scheitern (Dedupe-Mechanismus von createNotification beruht darauf).
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif1','org9','INVOICE_OVERDUE','Test','DEDUPE:test1');
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif2','org9','INVOICE_OVERDUE','Test 2','DEDUPE:test1');
+SQL
+then
+  fail "zweite Notification mit gleichem dedupeKey haette am Unique-Constraint scheitern muessen"
+fi
+# RecurringInvoice-Erweiterungen (maxRuns/emailTemplateId nullable ohne Default,
+# showPeriodText NOT NULL DEFAULT true) auf einer Bestandszeile (org9/cust9 aus Fall 11).
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
+  VALUES ('rec1','org9','cust9','Wartungsvertrag','2026-01-01','2026-02-01',NOW());
+SQL
+RECDEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"maxRuns\",\"emailTemplateId\",\"showPeriodText\" from \"RecurringInvoice\" where id='rec1'")
+[ "$RECDEFAULTS" = "||t" ] \
+  || fail "RecurringInvoice rec1: maxRuns/emailTemplateId/showPeriodText abweichend ('$RECDEFAULTS'), erwartet '||t' (maxRuns/emailTemplateId NULL, showPeriodText true)"
+RECEMAILIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='RecurringInvoice_emailTemplateId_idx'")
+[ "$RECEMAILIDX" = "1" ] || fail "Index RecurringInvoice_emailTemplateId_idx fehlt"
+# Payment.note (nullable, kein Default) — auf einer Bestandszeile befuellen und lesen.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
+  VALUES ('inv9','org9','cust9','RE-2026-00009','FINALIZED',NOW());
+INSERT INTO "Payment" ("id","invoiceId","amountCents","method","note") VALUES ('pay9','inv9',5000,'TRANSFER','Teilzahlung telefonisch avisiert');
+SQL
+PAYNOTE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"note\" from \"Payment\" where id='pay9'")
+[ "$PAYNOTE" = "Teilzahlung telefonisch avisiert" ] || fail "Payment.note ist '$PAYNOTE', erwartet 'Teilzahlung telefonisch avisiert'"
+echo "    ok — beide Phase-8b-Migrationen angewendet, ActivityLog/Notification/NotificationSettings vorhanden, Notification.dedupeKey-Unique erzwungen, ActivityLog-/Notification-Indizes vorhanden, RecurringInvoice-Erweiterungen (maxRuns/emailTemplateId/showPeriodText) und Payment.note korrekt"
 
 echo "ALLE TESTS BESTANDEN"
