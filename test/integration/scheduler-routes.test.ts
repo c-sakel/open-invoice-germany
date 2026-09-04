@@ -12,6 +12,7 @@ vi.mock("@/lib/auth/server", () => ({
 
 import { GET as cronDunningGet } from "@/app/api/cron/run-dunning/route";
 import { GET as cronAllGet } from "@/app/api/cron/run-all/route";
+import { GET as cronRecurringGet } from "@/app/api/cron/run-recurring/route";
 import { POST as schedulerRunPost } from "@/app/api/scheduler/run/route";
 import { GET as schedulerRunsGet } from "@/app/api/scheduler/runs/route";
 
@@ -40,6 +41,38 @@ describe("Cron-Routen: CRON_SECRET-Schutz", () => {
     const res = await cronDunningGet(new Request("http://localhost/api/cron/run-dunning", { headers: { authorization: "Bearer geheim" } }));
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(body.ok).toBe(true);
+  });
+
+  // B3 (Fix-Welle): fail-closed statt "erlaubt, wenn kein Secret konfiguriert ist" — ein
+  // Deployment ohne gesetztes CRON_SECRET darf die Route nicht anonym erreichbar lassen
+  // (Mahn-/Abo-Versand). Alle drei Cron-Routen teilen sich `checkCronAuth`.
+  it("run-dunning: 503 ohne gesetztes CRON_SECRET", async () => {
+    delete process.env.CRON_SECRET;
+    const res = await cronDunningGet(new Request("http://localhost/api/cron/run-dunning"));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toBe("CRON_SECRET nicht gesetzt");
+  });
+
+  it("run-all: 503 ohne gesetztes CRON_SECRET", async () => {
+    delete process.env.CRON_SECRET;
+    const res = await cronAllGet(new Request("http://localhost/api/cron/run-all"));
+    expect(res.status).toBe(503);
+  });
+
+  it("run-recurring: 503 ohne gesetztes CRON_SECRET, 401 mit falschem, 200 mit korrektem Secret", async () => {
+    delete process.env.CRON_SECRET;
+    const resUnset = await cronRecurringGet(new Request("http://localhost/api/cron/run-recurring"));
+    expect(resUnset.status).toBe(503);
+
+    process.env.CRON_SECRET = "geheim";
+    const resWrong = await cronRecurringGet(new Request("http://localhost/api/cron/run-recurring", { headers: { authorization: "Bearer falsch" } }));
+    expect(resWrong.status).toBe(401);
+
+    const resOk = await cronRecurringGet(new Request("http://localhost/api/cron/run-recurring", { headers: { authorization: "Bearer geheim" } }));
+    expect(resOk.status).toBe(200);
+    const body = await resOk.json();
     expect(body.ok).toBe(true);
   });
 });
