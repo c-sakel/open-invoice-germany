@@ -25,6 +25,17 @@ function dateRangeAnd(from: Date | undefined, to: Date | undefined): Prisma.Date
   return { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
 }
 
+/**
+ * Fix-Runde 1 (Ruling b): EIN zusaetzlicher Query fuer die ganze Seite statt N+1 —
+ * liefert die Teilmenge von `ids`, fuer die mindestens ein EmailLog existiert. `docId`
+ * ist ueber alle Belegtypen hinweg eindeutig (cuid), ein Match allein auf `docId` reicht.
+ */
+async function hasEmailLogSet(orgId: string, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const logs = await prisma.emailLog.findMany({ where: { orgId, docId: { in: ids } }, select: { docId: true } });
+  return new Set(logs.map((l) => l.docId));
+}
+
 // ── Angebote / Auftragsbestaetigungen ────────────────────────────────────────
 export const quoteListFilterSchema = z.object({
   ...baseFilterShape,
@@ -48,6 +59,7 @@ export interface QuoteListRow {
   currency: string;
   effectiveStatus: QuoteStatus;
   archivedAt: Date | null;
+  hasEmailLog: boolean;
 }
 
 export interface QuoteListResult {
@@ -112,6 +124,8 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
     }),
   ]);
 
+  const emailLogDocIds = await hasEmailLogSet(orgId, rows.map((r) => r.id));
+
   return {
     rows: rows.map((r) => ({
       id: r.id,
@@ -125,6 +139,7 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
       currency: r.currency,
       effectiveStatus: effectiveQuoteStatus({ status: r.status, validUntil: r.validUntil }, now),
       archivedAt: r.archivedAt,
+      hasEmailLog: emailLogDocIds.has(r.id),
     })),
     total,
     limit: filter.limit,
@@ -150,6 +165,7 @@ export interface DeliveryNoteListRow {
   issueDate: Date;
   status: DeliveryNoteStatus;
   archivedAt: Date | null;
+  hasEmailLog: boolean;
 }
 
 export interface DeliveryNoteListResult {
@@ -193,6 +209,8 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
     }),
   ]);
 
+  const emailLogDocIds = await hasEmailLogSet(orgId, rows.map((r) => r.id));
+
   return {
     rows: rows.map((r) => ({
       id: r.id,
@@ -202,6 +220,7 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
       issueDate: r.issueDate,
       status: DeliveryNoteStatus.parse(r.status),
       archivedAt: r.archivedAt,
+      hasEmailLog: emailLogDocIds.has(r.id),
     })),
     total,
     limit: filter.limit,

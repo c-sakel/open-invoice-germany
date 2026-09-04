@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { getActiveOrg } from "@/lib/org";
+import { dbInternal } from "@/lib/db";
 import { listInvoices } from "@/domain/invoice/list";
 import { availableActions } from "@/domain/document/actions";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { resolveDefaultPaymentMethodCode } from "@/domain/payment-method/default";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
@@ -54,8 +57,25 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
   const org = await getActiveOrg();
   const result = await listInvoices(org.id, sp);
-  const activePaymentMethods = (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO");
+  const allPaymentMethods = await listPaymentMethods(org.id);
+  const activePaymentMethods = allPaymentMethods.filter((m) => m.isActive && m.code !== "SKONTO");
   const paymentMethodOptions = activePaymentMethods.map((m) => ({ code: m.code, name: m.name }));
+
+  // Fix-Runde 1 (Ruling c): Zahlungsart-Vorbelegung je Zeile ueber Kunden-Standard ->
+  // Org-Standard -> erste aktive Methode (resolveDefaultPaymentMethodCode) — NICHT mehr
+  // hartkodiert die erste aktive Methode der Organisation fuer alle Zeilen. Ein
+  // zusaetzlicher Bulk-Query fuer die Kunden-Standardmethoden der aktuellen Seite (kein
+  // N+1) statt eines Joins je Zeile.
+  const docSettings = await loadDocumentSettings(org.id);
+  const orgDefaultCode = docSettings.defaultPaymentMethodId
+    ? (allPaymentMethods.find((m) => m.id === docSettings.defaultPaymentMethodId)?.code ?? null)
+    : null;
+  const customerIds = [...new Set(result.rows.map((r) => r.customerId))];
+  const customerDefaults = await dbInternal.customer.findMany({
+    where: { orgId: org.id, id: { in: customerIds } },
+    select: { id: true, defaultPaymentMethod: { select: { code: true } } },
+  });
+  const customerDefaultCodeById = new Map(customerDefaults.map((c) => [c.id, c.defaultPaymentMethod?.code ?? null]));
 
   // Summenzeile offen/ueberfaellig (Task 2, Brief): Summe bezieht sich bewusst nur auf die
   // aktuell angezeigte Seite (nicht die Gesamtmenge des Filters) — eine globale Aggregation
@@ -128,7 +148,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                   type: inv.type,
                   status: inv.effectiveStatus,
                   isDraft: inv.effectiveStatus === "DRAFT",
-                  hasEmailLog: false,
+                  hasEmailLog: inv.hasEmailLog,
                 });
                 return (
                   <tr key={inv.id} className="hover:bg-slate-50">
@@ -155,13 +175,22 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                         pdfHref={`/api/invoices/${inv.id}/pdf`}
                         xrechnungHref={`/api/invoices/${inv.id}/xrechnung`}
                         emailDocType={inv.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE"}
+                        hasEmailLog={inv.hasEmailLog}
                         duplicateRoute={`/api/invoices/${inv.id}/duplicate`}
                         duplicateRedirect="/rechnungen/{id}/bearbeiten"
                         cancelRoute={`/api/invoices/${inv.id}/cancel`}
                         dunningRoute={`/api/invoices/${inv.id}/dunning`}
                         payment={
                           inv.openCents > 0
-                            ? { openCents: inv.openCents, methods: paymentMethodOptions, defaultMethod: paymentMethodOptions[0]?.code ?? "TRANSFER" }
+                            ? {
+                                openCents: inv.openCents,
+                                methods: paymentMethodOptions,
+                                defaultMethod: resolveDefaultPaymentMethodCode({
+                                  customerDefaultCode: customerDefaultCodeById.get(inv.customerId),
+                                  orgDefaultCode,
+                                  activeMethods: paymentMethodOptions,
+                                }),
+                              }
                             : undefined
                         }
                       />

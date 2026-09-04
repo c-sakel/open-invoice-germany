@@ -100,7 +100,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                   type: d.kind,
                   status: d.effectiveStatus,
                   isDraft: d.effectiveStatus === "DRAFT",
-                  hasEmailLog: false,
+                  hasEmailLog: d.hasEmailLog,
                 });
                 return (
                   <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
@@ -125,6 +125,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                         editHref={d.effectiveStatus === "DRAFT" ? `/dokumente/${d.id}/bearbeiten` : undefined}
                         pdfHref={`/api/documents/${d.id}/pdf`}
                         emailDocType={d.kind as "ANGEBOT" | "AUFTRAGSBESTAETIGUNG" | "PROFORMA"}
+                        hasEmailLog={d.hasEmailLog}
                         duplicateRoute={`/api/documents/${d.id}/duplicate`}
                         duplicateRedirect="/dokumente/{id}"
                         cancelRoute={`/api/documents/${d.id}/status`}

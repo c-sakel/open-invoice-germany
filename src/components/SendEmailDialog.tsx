@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmailDocType } from "@/schemas/email";
 
@@ -34,7 +34,26 @@ function formatKb(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-export function SendEmailDialog({ docType, docId, label, resendLogId }: { docType: EmailDocType; docId: string; label?: string; resendLogId?: string }) {
+export function SendEmailDialog({
+  docType,
+  docId,
+  label,
+  resendLogId,
+  autoOpen,
+  hideTrigger,
+}: {
+  docType: EmailDocType;
+  docId: string;
+  label?: string;
+  resendLogId?: string;
+  /** Phase 8b Fix-Runde 1 (§41, Ruling a): oeffnet den Dialog automatisch beim Mounten
+   *  (z. B. RowActionsMenu REMINDER — Mahnung erst anlegen, dann direkt den Versand-
+   *  Dialog dafuer oeffnen, ohne einen zweiten Klick zu verlangen). Nur einmal pro Mount
+   *  wirksam — der Aufrufer erzwingt einen Remount ueber einen wechselnden `key`. */
+  autoOpen?: boolean;
+  /** Blendet den eigenen Trigger-Button aus (nur bei `autoOpen` sinnvoll). */
+  hideTrigger?: boolean;
+}) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -114,6 +133,16 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
   function close() {
     dialogRef.current?.close();
   }
+
+  // Ruling (a): einmalig beim Mounten oeffnen, wenn autoOpen gesetzt ist — kein
+  // zusaetzlicher Klick auf den Trigger noetig. Ueber setTimeout entkoppelt (statt
+  // direktem setState-Aufruf im Effekt-Koerper — react-hooks/set-state-in-effect).
+  useEffect(() => {
+    if (!autoOpen) return;
+    const t = setTimeout(() => void open(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function onTemplateChange(id: string) {
     setTemplateId(id);
@@ -198,13 +227,15 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
 
   return (
     <>
-      <button
-        type="button"
-        onClick={open}
-        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-      >
-        {label ?? "Per E-Mail senden"}
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={open}
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {label ?? "Per E-Mail senden"}
+        </button>
+      )}
 
       <dialog ref={dialogRef} className="w-full max-w-2xl rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
         <div className="max-h-[85vh] overflow-y-auto p-5">
