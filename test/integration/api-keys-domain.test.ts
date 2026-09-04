@@ -21,6 +21,7 @@ vi.mock("@/lib/auth/server", () => ({
 import { dbInternal } from "@/lib/db";
 import { createApiKey, slugifyKeyName, hashApiToken } from "@/domain/api-key/create";
 import { revokeApiKey } from "@/domain/api-key/revoke";
+import { verifyApiToken } from "@/domain/api-key/verify";
 import { listApiKeys } from "@/domain/api-key/list";
 import { NotFoundError } from "@/domain/errors";
 import { GET as keysGet, POST as keysPost } from "@/app/api/api-keys/route";
@@ -100,6 +101,42 @@ describe("listApiKeys", () => {
       expect(k).not.toHaveProperty("token");
       expect(k).not.toHaveProperty("keyHash");
     }
+  });
+});
+
+describe("verifyApiToken — lastUsedAt-Drosselung (Fix-Runde 1 S2)", () => {
+  // Bewusst KEINE vi.useFakeTimers() — faelscht globale Timer, die Prisma/die SQLite-
+  // Engine fuer echte Async-I/O nutzen (Risiko haengender Queries). Stattdessen wird
+  // die Ausgangslage direkt in der DB praepariert (lastUsedAt in der Vergangenheit).
+
+  it("schreibt lastUsedAt beim ERSTEN Aufruf (vorher NULL)", async () => {
+    const key = await createApiKey(orgId, { name: "Drossel-Test Erstaufruf", scopes: ["read"] });
+    const before = await dbInternal.apiKey.findUnique({ where: { id: key.id } });
+    expect(before?.lastUsedAt).toBeNull();
+
+    await verifyApiToken(key.token);
+    const after = await dbInternal.apiKey.findUnique({ where: { id: key.id } });
+    expect(after?.lastUsedAt).not.toBeNull();
+  });
+
+  it("schreibt lastUsedAt NICHT erneut, wenn der letzte Wert < 60s alt ist", async () => {
+    const key = await createApiKey(orgId, { name: "Drossel-Test Innerhalb", scopes: ["read"] });
+    const recent = new Date(Date.now() - 5_000); // 5s "alt" — deutlich innerhalb des 60s-Fensters
+    await dbInternal.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: recent } });
+
+    await verifyApiToken(key.token);
+    const after = await dbInternal.apiKey.findUnique({ where: { id: key.id } });
+    expect(after?.lastUsedAt?.getTime()).toBe(recent.getTime()); // unveraendert -> kein Write
+  });
+
+  it("schreibt lastUsedAt NEU, wenn der letzte Wert > 60s alt ist", async () => {
+    const key = await createApiKey(orgId, { name: "Drossel-Test Ausserhalb", scopes: ["read"] });
+    const stale = new Date(Date.now() - 61_000); // 61s "alt" — ausserhalb des 60s-Fensters
+    await dbInternal.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: stale } });
+
+    await verifyApiToken(key.token);
+    const after = await dbInternal.apiKey.findUnique({ where: { id: key.id } });
+    expect(after?.lastUsedAt?.getTime()).toBeGreaterThan(stale.getTime()); // wurde aktualisiert
   });
 });
 

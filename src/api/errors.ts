@@ -16,9 +16,9 @@ import { NextResponse } from "next/server";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { ApiAuthError, ApiScopeError } from "@/domain/api-key/verify";
 import { RateLimitError } from "@/lib/rate-limit";
-import { IdempotencyConflictError } from "./idempotency";
+import { IdempotencyConflictError, IdempotencyInProgressError } from "./idempotency";
 
-export type ApiErrorCode = "VALIDATION" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "RATE_LIMITED" | "IDEMPOTENCY_MISMATCH" | "INTERNAL";
+export type ApiErrorCode = "VALIDATION" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "RATE_LIMITED" | "IDEMPOTENCY_MISMATCH" | "IDEMPOTENCY_IN_PROGRESS" | "INTERNAL";
 
 export interface ApiErrorBody {
   error: { code: ApiErrorCode; message: string; details?: unknown };
@@ -56,6 +56,9 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof IdempotencyConflictError) {
     return { status: 409, body: { error: { code: "IDEMPOTENCY_MISMATCH", message: e.message } } };
+  }
+  if (e instanceof IdempotencyInProgressError) {
+    return { status: 409, body: { error: { code: "IDEMPOTENCY_IN_PROGRESS", message: e.message } } };
   }
   if (e instanceof NotFoundError) {
     return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message } } };
