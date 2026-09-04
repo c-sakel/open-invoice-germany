@@ -15,7 +15,20 @@ const PUBLIC_EXACT = new Set(["/"]);
 // Cookies und wuerde einen reinen Bearer-Client aussperren, bevor die Route ueberhaupt
 // laeuft. Die eigentliche Pruefung passiert deshalb in den Routen selbst
 // (src/api/docs-auth.ts), nicht hier.
+// Fix-Welle (Nit 11): "/api/docs" steht bewusst OHNE trailing slash in dieser Liste (die
+// exakte Route selbst hat keinen) — `isPublic` unten prueft dafuer EXAKTE Gleichheit ODER
+// "/api/docs/"-Praefix, nicht mehr ein blosses `startsWith("/api/docs")`, das faelschlich
+// auch einen hypothetischen Pfad wie "/api/docsomething" mit durchgelassen haette.
 const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/", "/api/docs"];
+
+/** true, wenn `pathname` GENAU `prefix` ist ODER mit `prefix + "/"` beginnt — verhindert,
+ *  dass ein Praefix ohne trailing slash (z. B. "/api/docs") auch einen unverwandten
+ *  Pfad mit demselben Textanfang durchlaesst (z. B. "/api/docsomething"). Praefixe, die
+ *  bereits selbst mit "/" enden (z. B. "/angebot/"), verhalten sich unveraendert wie ein
+ *  gewoehnliches startsWith. */
+function matchesPublicPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
+}
 
 // Präfixe, deren Seiten ohne interne Navigation/Layout ausgeliefert werden (Root-Layout
 // liest diesen Request-Header und rendert dann nur eine schlanke Hülle — kein Route-Group-
@@ -33,7 +46,7 @@ export async function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.delete(PUBLIC_NO_NAV_HEADER);
 
-  const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
+  const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => matchesPublicPrefix(pathname, p));
 
   if (isPublic) {
     if (NO_NAV_PREFIXES.some((p) => pathname.startsWith(p))) {
@@ -50,7 +63,13 @@ export async function proxy(req: NextRequest) {
     // `force-dynamic` liefert dafuer zwar bereits regulaer "private, no-store", aber mit
     // Cloudflare vor der Produktivinstanz wird der Header hier explizit gesetzt statt sich
     // auf Next.js' implizites Verhalten zu verlassen (analog /angebot/ oben, G3).
-    if (pathname === "/") res.headers.set("cache-control", "private, no-store");
+    // Fix-Welle (Should-fix 9): /api/v1/ (Rechnungs-/Kundendaten per Bearer-Token) und
+    // /api/docs (Swagger UI, zeigt u. a. Beispieldaten) reichten bisher OHNE eigenen
+    // cache-control-Header bis zu Cloudflare durch — Verteidigung in der Tiefe fuer eine
+    // Produktivinstanz mit echten Kundendaten, analog /angebot//api/public/ oben (G3).
+    if (pathname === "/" || matchesPublicPrefix(pathname, "/api/v1/") || matchesPublicPrefix(pathname, "/api/docs")) {
+      res.headers.set("cache-control", "private, no-store");
+    }
     return res;
   }
 
