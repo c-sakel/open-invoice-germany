@@ -8,6 +8,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import type { TaxBreakdownEntry } from "@/lib/tax";
+import { reconcileNetsForGross } from "@/lib/pricing/partial";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
@@ -78,6 +79,7 @@ function mirrorLines(original: { lines: readonly { position: number; lineType: s
 function finalStornoLines(original: {
   number: string | null;
   taxBreakdownJson: string;
+  payableCents: number | null;
   finalDeductions: readonly { taxRate: number; taxCategory: string; netCents: number; taxCents: number }[];
 }): StornoCreateLine[] {
   const breakdown = JSON.parse(original.taxBreakdownJson) as TaxBreakdownEntry[];
@@ -93,10 +95,30 @@ function finalStornoLines(original: {
 
   const description = `Storno Schlussrechnung ${original.number} – Restbetrag nach Abzug der Abschlagsrechnungen`;
 
-  return breakdown.map((entry, i) => {
+  // B6 (Fix-Welle): `entry.netCents - deducted.netCents` allein garantiert NICHT, dass
+  // die Summe der Storno-Zeilen nach der erneuten Steuerberechnung beim Festschreiben
+  // des Stornos (`finalizeWithinTx` -> `computeTaxBreakdown`) exakt `-payableCents`
+  // ergibt — zwei unabhaengig gerundete Steuerbetraege (Schlussrechnung je Satz,
+  // Abschlaege je Satz) muessen sich nicht zur selben Rundung addieren (Rechenbeispiel:
+  // Ruling-Findung B6). `reconcileNetsForGross` (siehe src/lib/pricing/partial.ts,
+  // gemeinsamer Helper mit B5/GROSS_AMOUNT) verschiebt bei Bedarf EIN Steuersatz-Bucket
+  // um ±1 Cent Netto, damit die Summe wieder exakt `payableCents` trifft. Bei GENAU
+  // EINEM Steuersatz ist das rechnerisch nicht immer moeglich (kein zweiter Bucket zum
+  // Ausgleich) — die kleinstmoegliche Abweichung (i. d. R. ±1 Cent) bleibt dann bestehen
+  // (dokumentierte Ausnahme, docs/LIMITATIONEN.md, ARCHITEKTUR.md).
+  const naiveNets = breakdown.map((entry) => {
     const key = `${entry.taxCategory}:${entry.taxRate}`;
     const deducted = deductedByRate.get(key) ?? { netCents: 0, taxCents: 0 };
-    const remainingNetCents = entry.netCents - deducted.netCents;
+    return entry.netCents - deducted.netCents;
+  });
+  const targetGrossCents = original.payableCents ?? 0;
+  const reconciledNets = reconcileNetsForGross(
+    breakdown.map((entry, i) => ({ netCents: naiveNets[i], taxRate: entry.taxRate })),
+    targetGrossCents,
+  );
+
+  return breakdown.map((entry, i) => {
+    const remainingNetCents = reconciledNets[i];
     return {
       position: i + 1,
       lineType: "ITEM",
