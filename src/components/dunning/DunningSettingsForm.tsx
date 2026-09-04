@@ -51,13 +51,23 @@ export function DunningSettingsForm({ initial }: { initial: Settings }) {
       </label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Basiszinssatz (‰, Basispunkte)</span>
-          <input
-            type="number"
-            value={settings.baseInterestRateBp}
-            onChange={(e) => setSettings((s) => ({ ...s, baseInterestRateBp: Number(e.target.value) }))}
-            className="rounded-md border border-slate-300 px-3 py-2"
-          />
+          {/* S7 (Fix-Welle): "‰, Basispunkte" war widerspruechlich (‰ = Promille, aber der
+              Wert sind Basispunkte — 127 als Promille gelesen waeren 12,7 % statt 1,27 %).
+              Klares Beispiel im Label, min/max/step passend zur Zod-Schranke (0..2000),
+              Prozentwert direkt daneben zur Kontrolle. */}
+          <span className="font-medium text-slate-700">Basiszinssatz in Basispunkten (127 = 1,27 %)</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={2000}
+              step={1}
+              value={settings.baseInterestRateBp}
+              onChange={(e) => setSettings((s) => ({ ...s, baseInterestRateBp: Number(e.target.value) }))}
+              className="rounded-md border border-slate-300 px-3 py-2"
+            />
+            <span className="text-xs text-slate-500">= {(settings.baseInterestRateBp / 100).toFixed(2).replace(".", ",")} %</span>
+          </div>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Karenztage (nur erste Stufe)</span>
