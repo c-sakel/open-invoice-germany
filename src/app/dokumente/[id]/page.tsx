@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { ConvertButton } from "@/components/ConvertButton";
+import { SendEmailDialog } from "@/components/SendEmailDialog";
+import { EmailHistory } from "@/components/EmailHistory";
+import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +47,7 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
           >
             PDF
           </a>
+          <SendEmailDialog docType={q.kind as EmailDocType} docId={q.id} />
           {q.convertedToInvoiceId ? (
             <Link href={`/rechnungen/${q.convertedToInvoiceId}`} className="text-sm font-medium text-indigo-600 hover:underline">
               → zur Rechnung
@@ -120,6 +124,8 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
           <p className="mt-1 whitespace-pre-line">{q.internalNotes}</p>
         </div>
       )}
+
+      <EmailHistory docType={q.kind as EmailDocType} docId={q.id} />
     </div>
   );
 }

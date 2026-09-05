@@ -6,7 +6,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction, cancelAction } from "@/app/actions/invoices";
 import { PaymentForm } from "@/components/PaymentForm";
 import { DunningButton } from "@/components/DunningButton";
+import { SendEmailDialog } from "@/components/SendEmailDialog";
+import { EmailHistory } from "@/components/EmailHistory";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
+import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +53,7 @@ export default async function InvoiceDetail({
   const dueDate = invoice.dueDate ?? invoice.issueDate;
   const isOverdue = !isDraft && !isCancelled && openCents > 0 && new Date() > dueDate;
   const canPay = !isDraft && !isCancelled && isInvoiceType && openCents > 0;
+  const emailDocType: EmailDocType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
 
   return (
     <div className="space-y-6">
@@ -94,6 +98,7 @@ export default async function InvoiceDetail({
               ZUGFeRD (PDF)
             </a>
           )}
+          <SendEmailDialog docType={emailDocType} docId={invoice.id} label={isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} />
           {isDraft && (
             <form action={finalizeAction}>
               <input type="hidden" name="id" value={invoice.id} />
@@ -234,21 +239,26 @@ export default async function InvoiceDetail({
           {invoice.dunnings.length > 0 && (
             <div className="space-y-1 text-sm">
               {invoice.dunnings.map((d) => (
-                <div key={d.id} className="flex items-center justify-between border-t border-slate-100 pt-1 text-slate-600">
+                <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
                   <span>
                     {DUNNING_LEVEL_TITLE[d.level] ?? `${d.level}. Mahnung`} · {d.number} · {deDate(d.sentAt)}
                     {d.interestAmountCents > 0 ? ` · Zinsen ${formatCents(d.interestAmountCents, invoice.currency)}` : ""}
                     {d.flatFee40Cents > 0 ? ` · Pauschale ${formatCents(d.flatFee40Cents, invoice.currency)}` : ""}
                   </span>
-                  <a href={`/api/dunnings/${d.id}/pdf`} target="_blank" className="text-indigo-600 hover:underline">
-                    PDF
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a href={`/api/dunnings/${d.id}/pdf`} target="_blank" className="text-indigo-600 hover:underline">
+                      PDF
+                    </a>
+                    <SendEmailDialog docType="DUNNING" docId={d.id} label="Mahnung senden" />
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </section>
       )}
+
+      <EmailHistory docType={emailDocType} docId={invoice.id} />
     </div>
   );
 }
