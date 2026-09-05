@@ -136,6 +136,16 @@ the migration partially applied, then resolve it with `prisma migrate resolve
 
 `docker-compose.yml` starts the app + PostgreSQL. The **Mustang** sidecar (XRechnung/ZUGFeRD generation & validation) is an optional, commented-out block (`einvoice-service/` is not shipped) — see the section above. The Postgres schema lives in `prisma/schema.postgres.prisma` (model-identical, only a different datasource).
 
+## Sending emails (E-Mail-Versand einrichten)
+
+SMTP only — no built-in Resend/SES integration (see [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md)). Steps:
+
+1. Go to **Einstellungen → E-Mail-Versand** and enter your SMTP host, port, security mode, credentials, and sender address.
+2. `AUTH_SECRET` (see `.env.example`) also serves as the encryption key for the stored SMTP password — set it before configuring mail, and re-enter the password if you ever rotate `AUTH_SECRET`.
+3. Click **Testmail senden** to verify the configuration before using it on real documents.
+4. Under **Einstellungen → Vorlagen**, adjust the built-in email templates (subject/body/signature) per document type, or add your own; placeholders like `{{document.number}}` are listed in the editor.
+5. Sending is currently plain text only, with no delivery/bounce tracking (status stays `SENT`) — see [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md) for the full list of email limitations.
+
 ## Tests
 
 ```bash

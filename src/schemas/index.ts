@@ -272,3 +272,5 @@ export const dunningStageSchema = z.object({
 });
 export const textTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, position: TextTemplatePosition, body: z.string(), isDefault: z.boolean().default(false) });
 export const emailTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, subject: z.string().min(1), body: z.string(), signature: z.string().optional(), isDefault: z.boolean().default(false) });
+
+export * from "./email";

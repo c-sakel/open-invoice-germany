@@ -104,7 +104,35 @@ Damit entfällt der JVM-Sidecar vollständig; die einzige Einschränkung gegenü
 
 ---
 
-## 3. Lizenz-Empfehlung
+## 3. E-Mail
+
+Belegversand per E-Mail (Lastenheft 17–22): Vorlagen, Rendering, SMTP-Versand, Historie.
+
+### Module
+- `src/lib/mail/provider.ts` — `MailProvider`-Interface (`send(mail): Promise<{ providerId }>`), providerunabhängig.
+- `src/lib/mail/smtp.ts` — Produktiv-Implementierung (nodemailer/SMTP); `src/lib/mail/memory.ts` — In-Memory-Implementierung für Tests. Aktuell einziger Produktivweg ist SMTP; das Interface ist bewusst so geschnitten, dass ein späterer Resend-/SES-Provider ohne Änderungen an `domain/email` andockt.
+- `src/lib/template/` — Platzhalter-Definition (`placeholders.ts`), Rendering (`render.ts`) und Formatierung (`format.ts`) der Vorlagentexte (`{{document.number}}` u. Ä.).
+- `src/lib/crypto/secrets.ts` — AES-256-GCM-Verschlüsselung des SMTP-Passworts; Schlüssel per HKDF-SHA256 aus `AUTH_SECRET` (Info `oig-mail-settings-v1`). Ein Wechsel von `AUTH_SECRET` macht gespeicherte Passwörter unlesbar (siehe `docs/LIMITATIONEN.md`).
+- `src/domain/email/` — reine Domain-Logik: `settings.ts` (Laden/Speichern `MailSettings`, Testmail), `context.ts` (Platzhalter-Kontext aus dem Beleg bauen, wirft bei Fremd-Org/falschem Typ), `attachments.ts` (Standardanhänge, u. a. PDF/XRechnung), `compose.ts` (Vorbelegung aus Vorlage), `send.ts` (eigentlicher Versand).
+
+### Ablauf (`sendDocumentEmail`, `src/domain/email/send.ts`)
+1. Mail-Einstellungen laden (`MailNotConfiguredError`, falls keine SMTP-Konfiguration hinterlegt ist).
+2. Mandanten-Gate: Beleg über `buildTemplateContext` laden — wirft bei Fremd-Org, falschem Belegtyp oder Nichtexistenz, **bevor** ein Log-Eintrag entsteht.
+3. `EmailLog` mit Status `QUEUED` anlegen (persistiert, bevor der SMTP-Aufruf startet, damit bei einem Prozessabbruch ein Log existiert).
+4. SMTP-Versand außerhalb jeder Prisma-Transaktion (kein Netzwerkaufruf innerhalb einer SQLite-Transaktion).
+5. Ergebnis in EINER Transaktion verbuchen: `EmailLog` auf `SENT`/`FAILED` aktualisieren **und** `ChangeLog`-Eintrag (`entity: "EMAIL"`) anhängen — damit der Versand Teil der Hash-Chain ist wie jede andere belegrelevante Aktion.
+
+`EmailLog` speichert Betreff/Text/Empfänger/CC/BCC/Zeitpunkt vollständig; Zusatzanhänge nur als Name/Größe/SHA-256 (Betreiberentscheidung, kein Dateiinhalt im Log).
+
+### Snapshot-Regel
+Der Mailkontext (Platzhalter wie Kundenname/-adresse) wird aus dem **Beleg-Snapshot** (Phase 0) gebaut, nicht live aus dem Kundenstamm — Rechtskonformität mit den übrigen Belegausgaben (PDF, XRechnung). Der XRechnung-Anhang wird deterministisch aus denselben Belegdaten erzeugt wie beim Festschreiben, nicht neu berechnet.
+
+### Historisch
+Frühere Planungsnotizen zu einem Resend-basierten Mailversand (falls in älteren Entwürfen erwähnt) sind überholt — umgesetzt ist ausschließlich SMTP über das `MailProvider`-Interface.
+
+---
+
+## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.
 
@@ -120,16 +148,19 @@ Begründung:
 
 ---
 
-## 4. Ordner-/Modulstruktur
+## 5. Ordner-/Modulstruktur
 
 ```
 src/
   app/                    # Next.js App Router: Routen + api/ + actions/
-    api/                  # auth/, cron/, documents/, dunnings/, invoices/, recurring/
-    actions/              # invoices.ts, masterdata.ts, result.ts (Server Actions)
+    api/                  # auth/, cron/, documents/, dunnings/, invoices/, recurring/,
+                           # emails/ (send, preview, prefill, [id])
+    actions/              # invoices.ts, masterdata.ts, email.ts, templates.ts, result.ts (Server Actions)
     rechnungen/ dokumente/ kunden/ produkte/ abos/ einstellungen/ setup/ login/
-  components/             # UI-Komponenten (12 Dateien), inkl. forms/ (CustomerForm.tsx,
-                           # OrganizationForm.tsx, ProductForm.tsx, fields.tsx)
+                           # einstellungen/email (MailSettings + Testmail), einstellungen/vorlagen (EmailTemplate)
+  components/             # UI-Komponenten, inkl. forms/ (CustomerForm.tsx, OrganizationForm.tsx,
+                           # ProductForm.tsx, MailSettingsForm.tsx, EmailTemplateForm.tsx,
+                           # TemplateRowActions.tsx, TestMailForm.tsx, fields.tsx)
   proxy.ts                # Next.js Middleware: Session-Prüfung, öffentliche Pfade (/login, /api/cron, …)
   domain/                 # framework-frei, testbar
     audit.ts
@@ -140,6 +171,7 @@ src/
     dunning/                # create.ts
     invoice/                # cancel.ts, create.ts, credit.ts, finalize.ts, mandatory.ts, payment.ts
     recurring/              # create.ts, run.ts
+    email/                  # settings.ts, context.ts, attachments.ts, compose.ts, send.ts (siehe Abschnitt 3)
   lib/
     db.ts                 # Prisma-Client
     org.ts
@@ -150,6 +182,9 @@ src/
     auth/                  # password.ts, server.ts, session.ts
     einvoice/               # xrechnung.ts, cii.ts, zugferd.ts, en16931-core.ts, mapper.ts, load.ts, types.ts
     pdf/                    # invoice-pdf.ts, dunning-pdf.ts
+    mail/                   # provider.ts (Interface), smtp.ts (Produktiv), memory.ts (Tests)
+    template/               # placeholders.ts, render.ts, format.ts (Mailvorlagen-Platzhalter)
+    crypto/                 # secrets.ts (AES-256-GCM, Schluessel per HKDF aus AUTH_SECRET)
   schemas/
     index.ts               # Zod — DTOs, EN-16931-Mapping, API-Boundaries
   mcp/                     # bootstrap.ts, server.ts
@@ -171,7 +206,7 @@ docker-compose.yml       # db + app für Docker-Betrieb; enthält einen auskomme
 
 ---
 
-## 5. Roadmap (historisch)
+## 6. Roadmap (historisch)
 
 Die verbindliche Planung ist das Lastenheft; dieser Abschnitt bleibt als ursprüngliche Stufenidee erhalten.
 
