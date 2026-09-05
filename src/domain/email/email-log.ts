@@ -12,6 +12,8 @@
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeEmailLog } from "@/api/serializers/email-log";
 import { onEmailBounced } from "@/domain/notifications/hooks";
 
 /**
@@ -93,7 +95,7 @@ export interface FinishEmailLogInput {
 export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> {
   const at = input.at ?? new Date();
   await dbInternal.$transaction(async (tx) => {
-    await tx.emailLog.update({
+    const updated = await tx.emailLog.update({
       where: { id: input.logId },
       data: {
         status: input.status,
@@ -139,6 +141,18 @@ export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> 
         });
       }
     }
+
+    // Webhook-Outbox (Phase 10, Task 5): "email.sent"/"email.failed" — IN DERSELBEN Tx
+    // wie ChangeLog. Deckt sowohl sendDocumentEmail als auch sendInternalNotification
+    // (beide rufen finishEmailLog) ab — ein Emit-Call-Site.
+    await emitEvent(tx, {
+      orgId: input.orgId,
+      type: input.status === "SENT" ? "email.sent" : "email.failed",
+      objectName: "EmailLog",
+      objectId: input.logId,
+      data: serializeEmailLog(updated),
+      now: at,
+    });
   });
 }
 

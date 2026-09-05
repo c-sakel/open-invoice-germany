@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { recordPaymentSchema } from "@/schemas";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
+import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
+    }
+    // Fix-Runde (Koordinator-Ruling a, Task 3): recordPayment wirft fuer eine voellig
+    // unbekannte invoiceId jetzt NotFoundError (404) statt PaymentError (422) — in der
+    // Praxis unerreichbar (der Vorab-Check oben faengt das schon ab), aber als
+    // Verteidigung in der Tiefe explizit gemappt.
+    if (e instanceof NotFoundError) {
+      return NextResponse.json({ error: e.message }, { status: 404 });
     }
     const status = e instanceof PaymentError ? 422 : 500;
     return NextResponse.json({ error: (e as Error).message }, { status });

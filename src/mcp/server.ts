@@ -35,6 +35,8 @@ import { registerAttachmentTools } from "./tools/attachments";
 import { registerSettingsTools } from "./tools/settings";
 import { registerRecurringTools } from "./tools/recurring";
 import { registerSchedulerTools } from "./tools/scheduler";
+import { registerApiKeyTools } from "./tools/api-keys";
+import { registerWebhookTools } from "./tools/webhooks";
 
 // Exportiert fuer Integrationstests (test/integration/mcp-*.test.ts): erlaubt,
 // registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
@@ -61,6 +63,8 @@ registerAttachmentTools(server, mcpContext);
 registerSettingsTools(server, mcpContext);
 registerRecurringTools(server, mcpContext);
 registerSchedulerTools(server, mcpContext);
+registerApiKeyTools(server, mcpContext);
+registerWebhookTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function main() {

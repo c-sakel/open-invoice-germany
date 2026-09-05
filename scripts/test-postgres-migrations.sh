@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "39" ] || fail "erwartet 39 Tabellen, gefunden $COUNT"
-echo "    ok — 39 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings)"
+[ "$COUNT" = "43" ] || fail "erwartet 43 Tabellen, gefunden $COUNT"
+echo "    ok — 43 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings; Phase 10: ApiKey, ApiIdempotency, WebhookEndpoint, WebhookDelivery)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -494,5 +494,78 @@ CROSSORGCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from \"Notification\" where \"dedupeKey\"='DEDUPE:shared'")
 [ "$CROSSORGCOUNT" = "2" ] || fail "erwartet 2 Notifications mit gleichem dedupeKey ueber zwei Orgs hinweg (org-gescopter Unique-Index), gefunden $CROSSORGCOUNT"
 echo "    ok — Fix-Welle-Migration angewendet, showPeriodText-Bestandszeile korrekt aus DocumentSettings.recurringInsertPeriodText befuellt, Notification.dedupeKey jetzt (orgId, dedupeKey)-eindeutig statt global"
+
+echo "==> Fall 14 (Phase 10): REST-API/OpenAPI/Webhooks — Migrationen, +4 Tabellen, Unique-Constraints"
+# Diese DB (aus Fall 13) hat bereits ALLE Migrationen angewendet (die Fall-9/13-Schleifen
+# klammern jeweils nur EINE Migration aus, die per anschliessendem "migrate deploy"
+# nachgezogen wird) — inkl. aller drei Phase-10-Migrationen. Hier wird nur noch verifiziert.
+PHASE10MIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name in ('20260904174316_phase10_api','20260904180004_phase10_api_idem','20260904205901_phase10_webhooks') and finished_at is not null")
+[ "$PHASE10MIG" = "3" ] || fail "erwartet alle drei Phase-10-Migrationen als angewendet in _prisma_migrations, gefunden $PHASE10MIG"
+for TBL in ApiKey ApiIdempotency WebhookEndpoint WebhookDelivery; do
+  EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"$TBL\"') is not null")
+  [ "$EXISTS" = "t" ] || fail "Tabelle $TBL fehlt nach den Phase-10-Migrationen"
+done
+COUNT10=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT10" = "43" ] || fail "erwartet 43 Tabellen nach allen Migrationen (inkl. Phase 10), gefunden $COUNT10"
+# ApiKey.keyHash unique.
+APIKEYUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='ApiKey_keyHash_key'")
+[ "$APIKEYUNIQUE" = "1" ] || fail "Unique-Index ApiKey_keyHash_key fehlt"
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "ApiKey" ("id","orgId","name","keyHash","prefix","scopesJson")
+  VALUES ('key1','org10','Buchhaltung','HASH_DUPLICATE_TEST','abcdefgh','["read"]');
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "ApiKey" ("id","orgId","name","keyHash","prefix","scopesJson")
+  VALUES ('key2','org10','Zweitschluessel','HASH_DUPLICATE_TEST','ijklmnop','["write"]');
+SQL
+then
+  fail "zweiter ApiKey mit gleichem keyHash haette am Unique-Constraint scheitern muessen"
+fi
+# ApiIdempotency Unique (orgId, key).
+APIIDEMUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='ApiIdempotency_orgId_key_key'")
+[ "$APIIDEMUNIQUE" = "1" ] || fail "Unique-Index ApiIdempotency_orgId_key_key fehlt"
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "ApiIdempotency" ("id","orgId","key","requestHash","status")
+  VALUES ('idem1','org10','idem-key-1','hash1','DONE');
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "ApiIdempotency" ("id","orgId","key","requestHash","status")
+  VALUES ('idem2','org10','idem-key-1','hash2','DONE');
+SQL
+then
+  fail "zweite ApiIdempotency-Zeile mit gleichem (orgId, key) haette am Unique-Constraint scheitern muessen"
+fi
+# Gleicher key, ANDERE Org -> erlaubt (org-gescopt).
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "ApiIdempotency" ("id","orgId","key","requestHash","status")
+  VALUES ('idem3','org11','idem-key-1','hash1','DONE');
+SQL
+CROSSORGIDEM=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"ApiIdempotency\" where \"key\"='idem-key-1'")
+[ "$CROSSORGIDEM" = "2" ] || fail "erwartet 2 ApiIdempotency-Zeilen mit gleichem key ueber zwei Orgs hinweg (org-gescopter Unique-Index), gefunden $CROSSORGIDEM"
+# WebhookEndpoint + WebhookDelivery: Indizes vorhanden, FK onDelete Cascade, Zustellprotokoll.
+WHIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='WebhookEndpoint_orgId_idx'")
+[ "$WHIDX" = "1" ] || fail "Index WebhookEndpoint_orgId_idx fehlt"
+WHDELIDX1=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='WebhookDelivery_orgId_status_nextAttemptAt_idx'")
+[ "$WHDELIDX1" = "1" ] || fail "Index WebhookDelivery_orgId_status_nextAttemptAt_idx fehlt"
+WHDELIDX2=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='WebhookDelivery_endpointId_createdAt_idx'")
+[ "$WHDELIDX2" = "1" ] || fail "Index WebhookDelivery_endpointId_createdAt_idx fehlt"
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "WebhookEndpoint" ("id","orgId","url","secretEnc","eventsJson","updatedAt")
+  VALUES ('wh1','org10','https://example.invalid/hook','enc:test','["invoice.finalized"]',NOW());
+INSERT INTO "WebhookDelivery" ("id","orgId","endpointId","event","objectName","objectId","dataJson")
+  VALUES ('whd1','org10','wh1','invoice.finalized','Invoice','inv-x','{}');
+DELETE FROM "WebhookEndpoint" WHERE id = 'wh1';
+SQL
+WHDELROWS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"WebhookDelivery\" where id='whd1'")
+[ "$WHDELROWS" = "0" ] || fail "WebhookDelivery-Zeile haette per ON DELETE CASCADE mit dem Endpunkt geloescht werden muessen"
+echo "    ok — alle drei Phase-10-Migrationen angewendet, 43 Tabellen, ApiKey.keyHash-Unique erzwungen, ApiIdempotency(orgId,key)-Unique org-gescopt erzwungen, WebhookEndpoint-/WebhookDelivery-Indizes vorhanden, WebhookDelivery folgt WebhookEndpoint per ON DELETE CASCADE"
 
 echo "ALLE TESTS BESTANDEN"

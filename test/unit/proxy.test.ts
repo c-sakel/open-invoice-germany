@@ -44,6 +44,37 @@ describe("proxy", () => {
     expect(res.headers.get("cache-control")).toBe("private, no-store");
   });
 
+  // Fix-Welle (Should-fix 9): /api/v1/ (Rechnungs-/Kundendaten per Bearer-Token) und
+  // /api/docs (Swagger UI mit Beispieldaten) reichten bisher OHNE cache-control-Header
+  // bis zu Cloudflare durch.
+  it("/api/v1/Invoice setzt cache-control: private, no-store explizit", async () => {
+    const req = new NextRequest("http://localhost/api/v1/Invoice");
+    const res = await proxy(req);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("/api/docs setzt cache-control: private, no-store explizit", async () => {
+    const req = new NextRequest("http://localhost/api/docs");
+    const res = await proxy(req);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("/api/docs/assets/swagger-ui.css setzt cache-control: private, no-store explizit", async () => {
+    const req = new NextRequest("http://localhost/api/docs/assets/swagger-ui.css");
+    const res = await proxy(req);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  // Fix-Welle (Nit 11): "/api/docs" ohne trailing slash durfte bisher auch einen
+  // unverwandten Pfad mit demselben Textanfang durchlassen (startsWith-Bug).
+  it("Nit 11: /api/docsomething ist NICHT oeffentlich (kein blosser Textpraefix-Treffer)", async () => {
+    const req = new NextRequest("http://localhost/api/docsomething");
+    const res = await proxy(req);
+    // Kein Session-Cookie -> geschuetzter /api/-Pfad haette 401 geliefert, WAERE er
+    // faelschlich als oeffentlich behandelt worden waere es stattdessen next() gewesen.
+    expect(res.status).toBe(401);
+  });
+
   it("G1: /rechnungen mit vom Client gesetztem x-oig-public: 1 -> Header wird entfernt (kein Bypass)", async () => {
     const req = new NextRequest("http://localhost/rechnungen", {
       headers: { cookie: "oig_session=valid-token", [PUBLIC_NO_NAV_HEADER]: "1" },
