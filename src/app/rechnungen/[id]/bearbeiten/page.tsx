@@ -4,6 +4,9 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { NewInvoiceForm, type InvoiceInitial } from "@/components/NewInvoiceForm";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
+import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
+import { printOptionsOverrideSchema } from "@/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +85,15 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     })),
   };
 
+  const printSettings = await loadPrintSettings(org.id);
+  const effectivePrint = effectivePrintOptions(printSettings, inv.printOptionsJson);
+  let printOverride: ReturnType<typeof printOptionsOverrideSchema.parse> = {};
+  try {
+    printOverride = printOptionsOverrideSchema.parse(inv.printOptionsJson ? JSON.parse(inv.printOptionsJson) : {});
+  } catch {
+    printOverride = {};
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -91,6 +103,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         <h1 className="text-2xl font-bold tracking-tight">Rechnungsentwurf bearbeiten</h1>
       </div>
       <NewInvoiceForm customers={customers} products={products} paymentMethods={paymentMethodOptions} contacts={contacts} addresses={addresses} initial={initial} />
+      <PrintOptionsPanel docId={inv.id} apiKind="invoices" effective={effectivePrint} initialOverride={printOverride} />
     </div>
   );
 }

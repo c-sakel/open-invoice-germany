@@ -147,6 +147,11 @@ export interface EInvoiceData {
   // gehen NICHT ins XRechnung-/ZUGFeRD-XML.
   headerText?: string | null;
   footerText?: string | null;
+  /** Phase 7 (§37) — offener Betrag zum Renderzeitpunkt (`payableBaseCents(invoice) -
+   * invoice.paidAmountCents`), NUR fürs GiroCode-PDF-Layout, nicht ins XML. Nur von
+   * `loadEInvoiceData` gesetzt (Rechnungen); Geschäftsdokumente (Angebot/AB/Proforma)
+   * zeigen ohnehin nie einen GiroCode. */
+  giroAmountCents?: number | null;
 }
 
 /** Phase 5 (§14 Abs. 5 Satz 2 UStG) — Snapshot einer auf einer Schlussrechnung

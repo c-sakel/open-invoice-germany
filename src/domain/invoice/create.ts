@@ -13,7 +13,10 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { normalizeLines } from "@/domain/document/lines";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import type { CreateInvoiceInput } from "@/schemas";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface CreateOptions {
   actor?: string;
@@ -66,15 +69,38 @@ export async function createDraftInvoiceWithinTx(
   );
 
   // Kunde muss zur Organisation gehören (kein Cross-Tenant-Bezug).
-  const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultPaymentMethodId: true } });
+  const customer = await tx.customer.findFirst({
+    where: { id: input.customerId, orgId },
+    select: { id: true, defaultPaymentMethodId: true, defaultPaymentTermsDays: true },
+  });
   if (!customer) throw new Error("Kunde nicht gefunden.");
 
-  // Fehlt die Zahlungsmethode, greift die Standard-Zahlungsmethode des Kunden (Selbstheilung).
-  const paymentMethodId = input.paymentMethodId ?? customer.defaultPaymentMethodId ?? undefined;
+  const settings = await loadDocumentSettings(orgId);
+
+  // Fehlt die Zahlungsmethode, greift zuerst die Standard-Zahlungsmethode des Kunden
+  // (Selbstheilung), danach die Org-weite Standard-Zahlungsmethode aus den Einstellungen
+  // (Phase 7, `defaultPaymentMethodId`).
+  const paymentMethodId = input.paymentMethodId ?? customer.defaultPaymentMethodId ?? settings.defaultPaymentMethodId ?? undefined;
+  let method: { id: string; paymentTermsDays: number | null } | null = null;
   if (paymentMethodId) {
-    const method = await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { id: true } });
+    method = await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { id: true, paymentTermsDays: true } });
     if (!method) throw new Error("Zahlungsmethode nicht gefunden.");
   }
+
+  const issueDate = input.issueDate ?? now;
+  // Faelligkeit (Phase 7, §33; S1 Fix-Welle): explizite Eingabe schlaegt alles; sonst
+  // Customer.defaultPaymentTermsDays (der Kunde ist die spezifischste Zusage — z.B. ein
+  // vertraglich vereinbartes 30-Tage-Ziel), danach die Zahlungsfrist der Zahlungsmethode,
+  // danach DocumentSettings.invoiceDueDays, danach 14 Tage. Faelligkeit liegt
+  // konstruktionsbedingt nie vor dem Rechnungsdatum, da sie stets als issueDate + Tage
+  // berechnet wird.
+  const paymentTermsDays = customer.defaultPaymentTermsDays ?? method?.paymentTermsDays ?? settings.invoiceDueDays ?? 14;
+  const dueDate = input.dueDate ?? new Date(issueDate.getTime() + paymentTermsDays * DAY_MS);
+
+  // autoDeliveryDate (Phase 7, §33): fehlt jedes der drei Leistungsdatum-Felder, wird das
+  // Rechnungsdatum als Leistungsdatum uebernommen, wenn die Einstellung aktiv ist.
+  const hasDeliveryInfo = input.deliveryDate != null || input.deliveryStart != null || input.deliveryEnd != null;
+  const deliveryDate = hasDeliveryInfo ? input.deliveryDate : settings.autoDeliveryDate ? issueDate : input.deliveryDate;
 
   // Kopffelder (Phase 4b) — org- UND kundengeprueft (Fix-Runde 1): Ansprechpartner/
   // Rechnungs-/Lieferadresse muessen zur Organisation UND zum ausgewaehlten Kunden
@@ -99,12 +125,15 @@ export async function createDraftInvoiceWithinTx(
       customerId: input.customerId,
       type: input.type,
       taxScheme: input.taxScheme,
-      currency: input.currency,
-      issueDate: input.issueDate ?? now,
-      deliveryDate: input.deliveryDate,
+      // Phase 7 Fix-Runde 1: ohne explizite Angabe DocumentSettings.defaultCurrency
+      // (selbstheilend geladen, Default darin bereits "EUR" — letzter Rueckfall trotzdem
+      // explizit, falls die Settings-Zeile jemals einen leeren Wert traegt).
+      currency: input.currency ?? settings.defaultCurrency ?? "EUR",
+      issueDate,
+      deliveryDate,
       deliveryStart: input.deliveryStart,
       deliveryEnd: input.deliveryEnd,
-      dueDate: input.dueDate,
+      dueDate,
       buyerReference: input.buyerReference,
       subject: input.subject,
       orderNumber: input.orderNumber,

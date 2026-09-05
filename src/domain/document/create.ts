@@ -17,13 +17,16 @@ import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
-import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { appendChangeLog } from "@/domain/audit";
 import { normalizeLines } from "@/domain/document/lines";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { createDocumentSchema, type SnapshotSource } from "@/schemas";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface CreateDocumentOptions {
   actor?: string;
@@ -86,21 +89,9 @@ export async function createBusinessDocumentWithinTx(
     if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
   }
 
-  const year = now.getFullYear();
   const docType = input.kind;
-  const range = await tx.numberRange.upsert({
-    where: { orgId_docType_year: { orgId, docType, year } },
-    create: { orgId, docType, year, currentValue: 1, prefix: defaultPrefix(docType) },
-    update: { currentValue: { increment: 1 } },
-  });
-  const number = formatDocumentNumber(range.pattern, {
-    prefix: range.prefix || defaultPrefix(docType),
-    seq: range.currentValue,
-    padding: range.seqPadding,
-    year,
-    month: now.getMonth() + 1,
-    day: now.getDate(),
-  });
+  // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
+  const number = await assignDocumentNumber(tx, orgId, docType, now);
 
   // Fehlende Texte/Bedingungen aus den Textvorlagen der Organisation vorbelegen
   // (Selbstheilung) — der Beleg speichert den Text, kein Live-Bezug auf die Vorlage.
@@ -111,6 +102,18 @@ export async function createBusinessDocumentWithinTx(
 
   const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, input.contactPersonId, input.billingAddressId);
 
+  const settings = await loadDocumentSettings(orgId);
+
+  // quoteValidityDays (Phase 7, §33): fehlt `validUntil` bei einem Angebot, wird es aus
+  // Ausstellungsdatum + Org-Einstellung vorbelegt.
+  let validUntil = input.validUntil;
+  if (!validUntil && input.kind === "ANGEBOT") {
+    validUntil = new Date(now.getTime() + settings.quoteValidityDays * DAY_MS);
+  }
+
+  // defaultCurrency (Phase 7 Fix-Runde 1): ohne explizite Angabe DocumentSettings.defaultCurrency.
+  const currency = input.currency ?? settings.defaultCurrency ?? "EUR";
+
   const snapshotSource: SnapshotSource = "CREATE";
   const doc = await tx.quote.create({
     data: {
@@ -120,8 +123,8 @@ export async function createBusinessDocumentWithinTx(
       number,
       status: "DRAFT",
       issueDate: now,
-      validUntil: input.validUntil,
-      currency: input.currency,
+      validUntil,
+      currency,
       taxScheme: input.taxScheme,
       subject: input.subject,
       notes: input.notes,

@@ -11,6 +11,9 @@ import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
+import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
+import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
+import { printOptionsOverrideSchema } from "@/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +38,14 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
 
   const archived = dn.archivedAt !== null;
   const attachments = await listAttachments(org.id, "DELIVERY_NOTE", dn.id);
+  const printSettings = await loadPrintSettings(org.id);
+  const effectivePrint = effectivePrintOptions(printSettings, dn.printOptionsJson);
+  let printOverride: ReturnType<typeof printOptionsOverrideSchema.parse> = {};
+  try {
+    printOverride = printOptionsOverrideSchema.parse(dn.printOptionsJson ? JSON.parse(dn.printOptionsJson) : {});
+  } catch {
+    printOverride = {};
+  }
   // B11 (Fix-Welle): Teilrechnung-Einstieg nur in einem abrechenbaren Status; Anteils-
   // Modi (PERCENT/NET_AMOUNT/GROSS_AMOUNT) nur, wenn ALLE Positionen einen Preis tragen
   // (preisloser Lieferschein ist der Normalfall, `showPrices` defaultet auf false).
@@ -165,6 +176,8 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
       </div>
 
       <AttachmentPanel docType="DELIVERY_NOTE" docId={dn.id} initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))} />
+
+      {dn.status === "DRAFT" && <PrintOptionsPanel docId={dn.id} apiKind="delivery-notes" effective={effectivePrint} initialOverride={printOverride} />}
 
       <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
 

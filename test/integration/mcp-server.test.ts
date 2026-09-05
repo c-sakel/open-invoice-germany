@@ -293,3 +293,60 @@ describe("MCP-Tools: create_partial_invoice, create_downpayment_invoice, create_
     expect(parsed.billedPercent).toBe(40);
   });
 });
+
+describe("MCP-Tool: set_print_options (S9, Fix-Welle) — Pendant zu PUT .../print-options", () => {
+  const FIX_DATE = new Date("2038-04-01T10:00:00.000Z");
+  let orgId: string;
+  let customerId: string;
+
+  beforeAll(async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "MCP-PrintOptions GmbH", addressLine1: "Hauptstr. 3", postalCode: "21339", city: "Lüneburg", vatId: "DE987654321", taxNumber: "33/987/65432" },
+    });
+    orgId = org.id;
+    orgStore.id = orgId;
+    await ensureOrgMasterdata(dbInternal, orgId);
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde S9 AG", addressLine1: "Marktplatz 3", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    customerId = customer.id;
+  });
+
+  it("setzt die Ueberschreibung auf einem Rechnungsentwurf (dieselbe Domain-Funktion wie die REST-Route)", async () => {
+    const invoice = await createDraftInvoice(
+      orgId,
+      createInvoiceSchema.parse({ customerId, lines: [{ description: "Beratung", quantityMilli: 1000, unitNetPriceCents: 10000, taxRate: 19 }] }),
+      { now: FIX_DATE },
+    );
+
+    const result = await callTool("set_print_options", { kind: "INVOICE", id: invoice.id, options: { showGiroCode: false } });
+    expect(result.isError).toBeFalsy();
+
+    const updated = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(JSON.parse(updated.printOptionsJson!)).toEqual({ showGiroCode: false });
+  });
+
+  it("lehnt eine festgeschriebene Rechnung ab (kein GoBD-Bypass ueber MCP)", async () => {
+    const invoice = await createDraftInvoice(
+      orgId,
+      createInvoiceSchema.parse({ customerId, lines: [{ description: "Beratung", quantityMilli: 1000, unitNetPriceCents: 10000, taxRate: 19 }] }),
+      { now: FIX_DATE },
+    );
+    await finalizeInvoice(invoice.id, { now: FIX_DATE });
+    // S6 (Fix-Welle): finalizeInvoice friert die effektiven Druckoptionen bereits ein —
+    // hier interessiert nur, dass set_print_options diesen eingefrorenen Stand danach
+    // NICHT mehr aendert (kein GoBD-Bypass ueber MCP).
+    const beforeAttempt = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+
+    const result = await callTool("set_print_options", { kind: "INVOICE", id: invoice.id, options: { showGiroCode: false } });
+    expect(result.isError).toBe(true);
+
+    const unchanged = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(unchanged.printOptionsJson).toBe(beforeAttempt.printOptionsJson);
+  });
+
+  it("lehnt ein unbekanntes Beleg-Objekt ab (NotFoundError)", async () => {
+    const result = await callTool("set_print_options", { kind: "DELIVERY_NOTE", id: "does-not-exist", options: { showFooter: false } });
+    expect(result.isError).toBe(true);
+  });
+});

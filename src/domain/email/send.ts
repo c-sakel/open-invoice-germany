@@ -13,6 +13,8 @@ import { buildStandardAttachments, attachmentDocTypeFor, type Attachment } from 
 import { loadAttachmentForSend } from "@/domain/attachment/manage";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
@@ -48,6 +50,28 @@ export async function sendDocumentEmail(
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
   const prov = provider ?? createSmtpProvider(settings);
+
+  // autoFinalizeOnSend (Phase 7, §33): ein Rechnungsentwurf (INVOICE-Familie:
+  // INVOICE/CORRECTION/PARTIAL/DOWNPAYMENT/FINAL/CREDIT_NOTE) wird vor dem Versand
+  // automatisch festgeschrieben, wenn die Org-Einstellung aktiv ist. Ein Fehler beim
+  // Festschreiben (z. B. fehlende Pflichtangaben) bricht den Versand mit derselben
+  // Fehlerklasse ab — VOR jeder Log-Anlage, also ohne Eintrag im EmailLog.
+  if (input.docType === "INVOICE" || input.docType === "CREDIT_NOTE") {
+    const okTypes = input.docType === "CREDIT_NOTE" ? ["CREDIT_NOTE"] : ["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"];
+    const inv = await dbInternal.invoice.findFirst({ where: { id: input.docId, orgId, type: { in: okTypes } }, select: { id: true, status: true } });
+    if (inv && inv.status === "DRAFT") {
+      const docSettings = await loadDocumentSettings(orgId);
+      if (docSettings.autoFinalizeOnSend) {
+        await finalizeInvoice(input.docId, { actor });
+      }
+    }
+  }
+
+  // shareLinkDefaultOn (Phase 7, §33): Linkerzeugung fuer Angebote wurde nach
+  // `resolveOfferLink` (src/domain/email/compose.ts, `prefillEmail`) verschoben — dort
+  // entsteht der Text der Mail, ein hier nachtraeglich geminteter Link wuerde den
+  // bereits gerenderten {{offer.link}}-Platzhalter (leer oder Zeile entfernt) nicht mehr
+  // rueckwirkend befuellen (Fix-Runde 1).
 
   // Mandanten-Gate: wirft DocumentNotFoundError bei Fremd-Org, falschem Belegtyp oder
   // Nichtexistenz — VOR jeder Log-Anlage. buildStandardAttachments allein reicht nicht,

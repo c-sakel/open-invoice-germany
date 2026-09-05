@@ -19,7 +19,8 @@ export interface CustomerFormData {
   phone: string | null;
   vatId: string | null;
   leitwegId: string | null;
-  defaultPaymentTermsDays: number;
+  customerNumber: string | null;
+  defaultPaymentTermsDays: number | null;
   defaultPaymentMethodId: string | null;
   notes: string | null;
 }
@@ -64,7 +65,21 @@ export function CustomerForm({
         <TextField label="E-Mail" name="email" type="email" defaultValue={customer?.email} />
         <TextField label="Telefon" name="phone" defaultValue={customer?.phone} />
         <TextField label="Leitweg-ID (B2G)" name="leitwegId" defaultValue={customer?.leitwegId} hint="Nur für Rechnungen an öffentliche Auftraggeber." />
-        <TextField label="Zahlungsziel (Tage)" name="defaultPaymentTermsDays" type="number" defaultValue={customer ? String(customer.defaultPaymentTermsDays) : "14"} />
+        <TextField
+          label="Kundennummer"
+          name="customerNumber"
+          defaultValue={customer?.customerNumber}
+          placeholder="wird automatisch vergeben"
+          hint="Leer lassen für automatische Vergabe aus dem Nummernkreis."
+        />
+        <TextField
+          label="Zahlungsziel (Tage)"
+          name="defaultPaymentTermsDays"
+          type="number"
+          defaultValue={customer?.defaultPaymentTermsDays != null ? String(customer.defaultPaymentTermsDays) : ""}
+          placeholder="Standard (Zahlungsmethode/Einstellungen)"
+          hint="Leer lassen, um die Frist der Zahlungsmethode bzw. der Voreinstellung zu übernehmen."
+        />
         <SelectField
           label="Standard-Zahlungsmethode"
           name="defaultPaymentMethodId"

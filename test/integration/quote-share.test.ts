@@ -88,12 +88,14 @@ describe("DocumentSettings", () => {
     const org2 = await dbInternal.organization.create({
       data: { legalName: "Ohne Einstellungen GmbH", addressLine1: "Weg 1", postalCode: "10115", city: "Berlin" },
     });
+    // Phase 7, Task 1 erweitert DocumentSettings um weitere Felder — hier weiterhin nur
+    // die urspruenglichen drei Felder als Teilmenge geprueft (toMatchObject statt toEqual).
     const defaults = await loadDocumentSettings(org2.id);
-    expect(defaults).toEqual({ onQuoteAccept: "NONE", shareLinkDays: 30, storeAcceptIp: false });
+    expect(defaults).toMatchObject({ onQuoteAccept: "NONE", shareLinkDays: 30, storeAcceptIp: false });
 
     await saveDocumentSettings(org2.id, { onQuoteAccept: "ORDER_CONFIRMATION", shareLinkDays: 14, storeAcceptIp: true });
     const loaded = await loadDocumentSettings(org2.id);
-    expect(loaded).toEqual({ onQuoteAccept: "ORDER_CONFIRMATION", shareLinkDays: 14, storeAcceptIp: true });
+    expect(loaded).toMatchObject({ onQuoteAccept: "ORDER_CONFIRMATION", shareLinkDays: 14, storeAcceptIp: true });
   });
 });
 

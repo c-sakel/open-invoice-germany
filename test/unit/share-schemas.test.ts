@@ -17,8 +17,11 @@ describe("OnQuoteAccept", () => {
 
 describe("documentSettingsInputSchema", () => {
   it("setzt Defaults bei leerem Objekt", () => {
+    // Phase 7, Task 1 erweitert documentSettingsInputSchema um weitere Felder (siehe
+    // test/unit/settings-schemas.test.ts fuer die vollstaendige Default-Pruefung) —
+    // hier bleibt nur die urspruengliche Drei-Felder-Pruefung (Teilmenge).
     const parsed = documentSettingsInputSchema.parse({});
-    expect(parsed).toEqual({ onQuoteAccept: "NONE", shareLinkDays: 30, storeAcceptIp: false });
+    expect(parsed).toMatchObject({ onQuoteAccept: "NONE", shareLinkDays: 30, storeAcceptIp: false });
   });
 
   it("lehnt shareLinkDays ausserhalb 1..365 ab", () => {

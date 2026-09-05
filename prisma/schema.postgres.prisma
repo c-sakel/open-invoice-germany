@@ -62,6 +62,8 @@ model Organization {
   mailSettings        MailSettings?
   documentSettings    DocumentSettings?
   documentAttachments DocumentAttachment[]
+  brandingSettings    BrandingSettings?
+  printSettings       PrintSettings?
 }
 
 /// Kunde / Leistungsempfänger.
@@ -83,9 +85,14 @@ model Customer {
   vatIdValidatedAt        DateTime? // §18e / VIES qualifizierte Bestätigung
   leitwegId               String? // B2G, BT-10
   peppolId                String?
-  defaultPaymentTermsDays Int          @default(14)
+  // S1 (Fix-Welle Phase 7): NULL = kein Kunden-Override (kaskadiert auf Zahlungsmethode ->
+  // DocumentSettings.invoiceDueDays -> 14 Tage, siehe invoice/create.ts). War vorher
+  // `Int @default(14)` — dadurch hatte JEDER Kunde immer einen Wert und die Zahlungsmethode
+  // wurde nie erreicht ("Setting a 30-day term on a customer has zero effect").
+  defaultPaymentTermsDays Int?
   notes                   String?
   isArchived              Boolean      @default(false) // Soft-Delete; kein Hard-Delete bei Belegbezug (DSGVO vs. §147 AO)
+  customerNumber          String? // Phase 7, Task 1 (§34) — Nummernkreis CUSTOMER, formatiert wie Belegnummern
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
@@ -100,6 +107,7 @@ model Customer {
   defaultPaymentMethod   PaymentMethod?    @relation(fields: [defaultPaymentMethodId], references: [id])
 
   @@index([orgId])
+  @@index([orgId, customerNumber])
 }
 
 /// Produkt/Leistung im Katalog (kein Beleg, frei editierbar).
@@ -134,6 +142,11 @@ model NumberRange {
   seqPadding   Int          @default(4)
   year         Int          @default(0) // 0 = jahresunabhängig
   currentValue Int          @default(0)
+  // Fix-Welle Phase 7 (B3): welche Zeile (year 0 vs. year <Jahr>) je docType tatsaechlich
+  // vergibt. updateNumberRange() setzt beim Umschalten die Zielzeile aktiv und die andere
+  // Modus-Zeile inaktiv; loadActiveRange() liest anhand dieser Spalte (nicht mehr
+  // "zuletzt aktualisiert").
+  isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -164,6 +177,7 @@ model Quote {
   deliveryTerms            String?
   paymentTerms             String?
   customerReference        String? // Kundenreferenz/Bestellnummer des Kunden
+  printOptionsJson         String? // Phase 7, Task 1 (§36) — Ueberschreibung der globalen PrintSettings (printOptionsOverrideSchema), nur bei status DRAFT aenderbar
   contactPersonId          String?
   contactPerson            ContactPerson?   @relation(fields: [contactPersonId], references: [id], onDelete: SetNull)
   billingAddressId         String?
@@ -252,6 +266,7 @@ model Invoice {
   internalNotes             String? // Nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails
   headerText                String?
   footerText                String?
+  printOptionsJson          String? // Phase 7, Task 1 (§36) — Ueberschreibung der globalen PrintSettings (printOptionsOverrideSchema); Invoice-Guard (db.ts) erlaubt Aenderung nur bei status DRAFT
   // Beleg-Rabatt/-Aufschlag (Phase 4a) — Promille 0..1000, Cents Festbetrag; proportional
   // je Steuersatz-Bucket verteilt (src/lib/pricing/allocate.ts).
   documentDiscountPermille  Int               @default(0)
@@ -456,6 +471,7 @@ model RecurringInvoice {
   paymentTermsDays Int          @default(14)
   notes            String?
   autoFinalize     Boolean      @default(false) // true = erzeugte Rechnung sofort festschreiben
+  autoSend         Boolean      @default(false) // Phase 7, Task 1 — true = erzeugte Rechnung nach Festschreibung automatisch versenden
   lastRunAt        DateTime?
   issuedCount      Int          @default(0)
   createdAt        DateTime     @default(now())
@@ -508,35 +524,37 @@ model DocumentRelation {
 
 /// Lieferschein — mengenfuehrend, kein GoBD-Beleg, belegt den Leistungszeitpunkt.
 model DeliveryNote {
-  id                 String       @id @default(cuid())
-  orgId              String
-  org                Organization @relation(fields: [orgId], references: [id])
-  customerId         String
-  customer           Customer     @relation(fields: [customerId], references: [id])
-  number             String?
-  status             String       @default("DRAFT") // DRAFT | CREATED | SENT | DELIVERED | CANCELLED
-  issueDate          DateTime     @default(now())
-  deliveryDate       DateTime?
-  shippingDate       DateTime?
-  showPrices         Boolean      @default(false)
-  showTax            Boolean      @default(false)
-  showArticleNumber  Boolean      @default(true)
-  showDescription    Boolean      @default(true)
-  notes              String?
-  internalNotes      String?
-  headerText         String?
-  footerText         String?
-  sourceType         String? // QUOTE | INVOICE — Hauptquelle des Belegs
-  sourceId           String?
-  sellerSnapshotJson String?
-  buyerSnapshotJson  String?
-  snapshotSource     String?
-  snapshotAt         DateTime?
-  sentAt             DateTime?
-  deliveredAt        DateTime?
-  archivedAt         DateTime?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  id                  String       @id @default(cuid())
+  orgId               String
+  org                 Organization @relation(fields: [orgId], references: [id])
+  customerId          String
+  customer            Customer     @relation(fields: [customerId], references: [id])
+  number              String?
+  status              String       @default("DRAFT") // DRAFT | CREATED | SENT | DELIVERED | CANCELLED
+  issueDate           DateTime     @default(now())
+  deliveryDate        DateTime?
+  shippingDate        DateTime?
+  showPrices          Boolean      @default(false)
+  showTax             Boolean      @default(false)
+  showArticleNumber   Boolean      @default(true)
+  showDescription     Boolean      @default(true)
+  showDeliveryAddress Boolean      @default(true) // Phase 7, Task 1 (§36)
+  printOptionsJson    String? // Phase 7, Task 1 — Ueberschreibung der globalen PrintSettings (printOptionsOverrideSchema), nur bei status DRAFT aenderbar
+  notes               String?
+  internalNotes       String?
+  headerText          String?
+  footerText          String?
+  sourceType          String? // QUOTE | INVOICE — Hauptquelle des Belegs
+  sourceId            String?
+  sellerSnapshotJson  String?
+  buyerSnapshotJson   String?
+  snapshotSource      String?
+  snapshotAt          DateTime?
+  sentAt              DateTime?
+  deliveredAt         DateTime?
+  archivedAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   lines DeliveryNoteLine[]
 
@@ -856,13 +874,76 @@ model QuoteShareLink {
 
 /// Org-weite Einstellungen fuer Angebotsannahme und Dokumentverhalten (Phase 3b).
 model DocumentSettings {
-  id            String       @id @default(cuid())
-  orgId         String       @unique
-  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  onQuoteAccept String       @default("NONE") // NONE | ORDER_CONFIRMATION | INVOICE
-  shareLinkDays Int          @default(30)
-  storeAcceptIp Boolean      @default(false)
-  updatedAt     DateTime     @updatedAt
+  id                           String       @id @default(cuid())
+  orgId                        String       @unique
+  org                          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  onQuoteAccept                String       @default("NONE") // NONE | ORDER_CONFIRMATION | INVOICE
+  shareLinkDays                Int          @default(30)
+  storeAcceptIp                Boolean      @default(false)
+  // Phase 7, Task 1 — weitere org-weite Dokument-Defaults (Belegeinstellungen, §33).
+  autoFinalizeOnSend           Boolean      @default(false)
+  defaultCurrency              String       @default("EUR")
+  quoteValidityDays            Int          @default(30)
+  shareLinkDefaultOn           Boolean      @default(true)
+  dnShowPrices                 Boolean      @default(false)
+  dnShowArticleNumber          Boolean      @default(true)
+  dnShowDeliveryAddress        Boolean      @default(true)
+  invoiceDueDays               Int          @default(14)
+  showPaymentTermsText         Boolean      @default(true)
+  autoDeliveryDate             Boolean      @default(true)
+  refreshIssueDateOnFinalize   Boolean      @default(true)
+  offerLastDocument            Boolean      @default(true)
+  eInvoiceDefault              Boolean      @default(true)
+  defaultPaymentMethodId       String?
+  recurringInsertPeriodText    Boolean      @default(true)
+  recurringAutoFinalizeDefault Boolean      @default(false)
+  recurringAutoSendDefault     Boolean      @default(false)
+  updatedAt                    DateTime     @updatedAt
+}
+
+/// Briefpapier/Branding einer Organisation (Phase 7, Task 1, §35) — Logo, Farbe,
+/// Fusszeilen, Ränder, Hintergrundbild. Selbstheilung analog DocumentSettings
+/// (In-Memory-Default, solange keine Zeile existiert).
+model BrandingSettings {
+  id             String       @id @default(cuid())
+  orgId          String       @unique
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  logoPath       String?
+  logoWidthMm    Int          @default(40)
+  primaryColor   String       @default("#111111")
+  senderLine     String?
+  footerLeft     String?
+  footerCenter   String?
+  footerRight    String?
+  marginTopMm    Int          @default(20)
+  marginRightMm  Int          @default(18)
+  marginBottomMm Int          @default(20)
+  marginLeftMm   Int          @default(18)
+  fontSizePt     Int          @default(10)
+  backgroundPath String?
+  showBackground Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+/// Globale Druckoptionen einer Organisation (Phase 7, Task 1, §36) — je Beleg per
+/// `printOptionsJson` (Invoice/Quote/DeliveryNote) ueberschreibbar (effectivePrintOptions).
+model PrintSettings {
+  id                 String       @id @default(cuid())
+  orgId              String       @unique
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  showFooter         Boolean      @default(true)
+  showPageNumbers    Boolean      @default(true)
+  foldMarks          Boolean      @default(false)
+  punchMarks         Boolean      @default(false)
+  showArticleNumber  Boolean      @default(true)
+  showDescription    Boolean      @default(true)
+  showTaxRatePerLine Boolean      @default(true)
+  showLineTotals     Boolean      @default(true)
+  showSenderLine     Boolean      @default(true)
+  showGiroCode       Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 }
 
 /// Beleganhang (Phase 4b) — Datei ausserhalb des Web-Roots (§38), Zugriff nur org-geprueft.
