@@ -42,6 +42,7 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 - **Documents**: quotes, order confirmations, pro-forma — convertible into an invoice.
 - **Discounts, surcharges & Skonto**: per-line discount (percent + fixed amount) and document-level discount/surcharge (allocated proportionally per tax rate), correctly mapped to `AllowanceCharge` in XRechnung/ZUGFeRD (BG-20/21/27/28); early-payment discount (Skonto, up to two terms) as BT-20 text incl. the `#SKONTO#TAGE=n#PROZENT=x.xx#` convention, with a payment-recording suggestion.
 - **Payment methods**: per-organisation catalogue (system codes + custom), optional customer default, snapshotted on finalisation, mapped to UNTDID 4461 `PaymentMeansCode`.
+- **Partial, down-payment & final invoices** (§ 14 Abs. 5 UStG): bill a percentage/amount/selected lines of a quote or delivery note (**partial invoice**), invoice a deposit before delivery (**down-payment invoice**, e-invoice type code 386), then close out with a **final invoice** that automatically deducts the down payments and their tax (immutable deduction snapshot, BT-113/BT-115/BG-3 in the e-invoice, matching PDF breakdown).
 - **Line editor**: drag-and-drop reordering, duplicate lines, headings/text blocks/computed subtotals alongside regular item lines (only item lines go into the e-invoice XML), rich text (restricted markdown — bold/italic/underline, one list level, links) in line descriptions, article numbers, and header fields (subject, order number, internal reference, contact, delivery/billing address).
 - **Attachments**: upload files to any document (invoice, quote, delivery note, dunning, subscription) — 10 MB per file, 50 MB per document, MIME whitelist + magic-byte check, content-addressed storage with dedup, selectable as extra attachments when sending email.
 - **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate) + €40 flat fee (B2B), each as a PDF.
@@ -64,8 +65,9 @@ Quote → order confirmation → delivery note → invoice, all linked:
 3. **Convert** it into a **delivery note** (quantities from the quote/order, over-delivery blocked) and/or into an **invoice draft**.
 4. Every conversion is recorded as a document relation; the **document chain** (visible on every quote/invoice/delivery-note page) shows the full lineage — quote → order confirmation → delivery note → invoice → payments/dunnings.
 5. Billing status (none/partial/full) is derived from those relations, not stored.
+6. Instead of (or alongside) a full invoice, bill a **partial invoice** (percentage/amount/selected lines) or a **down-payment invoice** from a quote/order confirmation, then close out with a **final invoice** — deposits and their tax are deducted automatically (§ 14 Abs. 5 UStG).
 
-Same tools via MCP: `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`. Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md), limitations: [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
+Same tools via MCP: `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`, `create_partial_invoice`, `create_downpayment_invoice`, `create_final_invoice`, `get_billing_state`. Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md), limitations: [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
 
 ### Let customers accept quotes online
 

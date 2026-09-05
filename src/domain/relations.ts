@@ -42,8 +42,18 @@ export async function linkDocuments(
   });
 }
 
-export function listRelations(orgId: string, docType: RefType, docId: string) {
-  return dbInternal.documentRelation.findMany({
+/**
+ * B13 (Fix-Welle): optionaler Transaktions-Client, damit ein Aufrufer innerhalb einer
+ * laufenden `$transaction` (partial.ts, downpayment.ts, final.ts) tatsaechlich auf
+ * demselben Snapshot liest, auf dem er auch schreibt — vorher griff `listRelations`
+ * unbedingt auf `dbInternal` zu, selbst wenn der Aufruf innerhalb einer Transaktion
+ * stand, sodass die Mischverbots-/100-%-/Schlussrechnungs-Guards ausserhalb ihrer
+ * eigenen Transaktion lasen (Race unter Postgres READ COMMITTED, siehe
+ * docs/LIMITATIONEN.md). Default bleibt `dbInternal` fuer Aufrufer ohne eigene
+ * Transaktion (z. B. `billingStateFor`).
+ */
+export function listRelations(orgId: string, docType: RefType, docId: string, db: Tx | typeof dbInternal = dbInternal) {
+  return db.documentRelation.findMany({
     where: { orgId, OR: [{ fromType: docType, fromId: docId }, { toType: docType, toId: docId }] },
     orderBy: { createdAt: "asc" },
   });

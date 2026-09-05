@@ -26,8 +26,15 @@ const BILLING_STATE_MAP: Record<string, { label: string; cls: string }> = {
 };
 
 /** Abrechnungsstand eines Angebots/einer AB (src/domain/document/billing-state.ts) — bewusst
- *  ein eigenes Badge, da er kein Beleg-Status ist, sondern aus den Relationen abgeleitet wird. */
-export function BillingStateBadge({ state }: { state: string }) {
+ *  ein eigenes Badge, da er kein Beleg-Status ist, sondern aus den Relationen abgeleitet wird.
+ *  Task 4: optional mit Prozent (billedPermille aus BillingStateResult) — bei FULL immer 100 %. */
+export function BillingStateBadge({ state, billedPermille }: { state: string; billedPermille?: number }) {
   const s = BILLING_STATE_MAP[state] ?? { label: state, cls: "bg-slate-100 text-slate-600" };
-  return <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>;
+  const percentSuffix = billedPermille != null && state !== "NONE" ? ` (${(billedPermille / 10).toString().replace(".", ",")} %)` : "";
+  return (
+    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>
+      {s.label}
+      {percentSuffix}
+    </span>
+  );
 }

@@ -8,7 +8,7 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
@@ -143,10 +143,19 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
  * des Koordinators. `dueDate` wird bewusst NICHT uebernommen — sie wird beim Festschreiben
  * neu berechnet. Erstellung, Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
  */
+// Phase 5: Teil-, Abschlags- und Schlussrechnungen haengen an einer Quelle (sourceType/
+// sourceId, Relation PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR) und duerfen nicht dupliziert
+// werden — ein Duplikat waere weder eine neue Teilleistung noch ein neuer Abschlag/Schluss
+// und wuerde die Mengen-/100-%-Pruefungen der Quelle umgehen (Task-2-Brief).
+const NOT_DUPLICATABLE_INVOICE_TYPES = new Set(["PARTIAL", "DOWNPAYMENT", "FINAL"]);
+
 async function duplicateInvoice(orgId: string, id: string, actor: string, now: Date) {
   return dbInternal.$transaction(async (tx) => {
     const src = await tx.invoice.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!src) throw new NotFoundError(`Rechnung ${id} nicht gefunden.`);
+    if (NOT_DUPLICATABLE_INVOICE_TYPES.has(src.type)) {
+      throw new InvalidOperationError(`Rechnungen vom Typ "${src.type}" (Teil-/Abschlags-/Schlussrechnung) koennen nicht dupliziert werden.`);
+    }
 
     const input: CreateInvoiceInput = {
       customerId: src.customerId,

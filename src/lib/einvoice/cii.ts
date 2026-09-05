@@ -7,6 +7,7 @@
  */
 import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
+import { deductionsNoteText } from "./deduction-note";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -15,6 +16,7 @@ const NS = {
   rsm: "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100",
   ram: "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
   udt: "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+  qdt: "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
 };
 
 function money(cents: number): string {
@@ -31,7 +33,11 @@ function ciiDate(date: Date): string {
   return `${y}${m}${d}`;
 }
 function typeCode(type: string): string {
-  return type === "CREDIT_NOTE" ? "381" : type === "CORRECTION" ? "384" : "380";
+  // Phase 5 — UNTDID 1001: Abschlagsrechnung 386, PARTIAL/FINAL bleiben 380.
+  if (type === "CREDIT_NOTE") return "381";
+  if (type === "CORRECTION") return "384";
+  if (type === "DOWNPAYMENT") return "386";
+  return "380";
 }
 function exemptionReason(category: string): string | null {
   switch (category) {
@@ -112,6 +118,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
     "xmlns:rsm": NS.rsm,
     "xmlns:ram": NS.ram,
     "xmlns:udt": NS.udt,
+    "xmlns:qdt": NS.qdt,
   });
 
   // Kontext / Profil
@@ -130,6 +137,9 @@ export function buildFacturXCII(data: EInvoiceData): string {
   doc.ele("ram:TypeCode").txt(typeCode(data.type)).up();
   doc.ele("ram:IssueDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.issueDate)).up().up();
   if (data.notes) doc.ele("ram:IncludedNote").ele("ram:Content").txt(data.notes).up().up();
+  // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
+  // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
+  if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();
   doc.up();
 
   const tx = root.ele("rsm:SupplyChainTradeTransaction");
@@ -293,14 +303,36 @@ export function buildFacturXCII(data: EInvoiceData): string {
   sum.ele("ram:LineTotalAmount").txt(amt(lineTotal)).up();
   // Fix-Runde 1 (Befund A): Gutschrift-Buckets sind vorzeichen-gespiegelt (negativ) —
   // Gate auf !== 0 und Math.abs() statt amt()/isCredit.
-  if (allowanceTotal !== 0) sum.ele("ram:AllowanceTotalAmount").txt(money(Math.abs(allowanceTotal))).up();
+  // XSD-Reihenfolge (CII D16B): ChargeTotalAmount VOR AllowanceTotalAmount (umgekehrt zu UBL).
   if (chargeTotal !== 0) sum.ele("ram:ChargeTotalAmount").txt(money(Math.abs(chargeTotal))).up();
+  if (allowanceTotal !== 0) sum.ele("ram:AllowanceTotalAmount").txt(money(Math.abs(allowanceTotal))).up();
   sum.ele("ram:TaxBasisTotalAmount").txt(amt(data.netTotalCents)).up();
   sum.ele("ram:TaxTotalAmount", { currencyID: cur }).txt(amt(data.taxTotalCents)).up();
   sum.ele("ram:GrandTotalAmount").txt(amt(data.grossTotalCents)).up();
   if (data.paidCents) sum.ele("ram:TotalPrepaidAmount").txt(amt(data.paidCents)).up();
   sum.ele("ram:DuePayableAmount").txt(amt(data.payableCents)).up();
   sum.up();
+
+  // BG-3 — Bezug zur Originalrechnung (Gutschrift/Korrektur) bzw. Phase 5: je abgesetzter
+  // Abschlagsrechnung EIN ram:InvoiceReferencedDocument (mehrfach zulaessig). Reihenfolge
+  // laut CII-XSD (HeaderTradeSettlementType): NACH SpecifiedTradeSettlementHeaderMonetary-
+  // Summation, VOR ReceivableSpecifiedTradeAccountingAccount. precedingInvoices hat
+  // Vorrang, wenn gesetzt (nicht leer) — ohne dieses Feld (Alt-/Nicht-FINAL-Belege) bleibt
+  // das Einzelverhalten (precedingInvoiceNumber/-Date) unveraendert.
+  const precedingInvoices = data.precedingInvoices?.length
+    ? data.precedingInvoices
+    : data.precedingInvoiceNumber
+      ? [{ number: data.precedingInvoiceNumber, issueDate: data.precedingInvoiceDate ?? undefined }]
+      : [];
+  for (const preceding of precedingInvoices) {
+    const ref = set.ele("ram:InvoiceReferencedDocument");
+    ref.ele("ram:IssuerAssignedID").txt(preceding.number).up();
+    if (preceding.issueDate) {
+      ref.ele("ram:FormattedIssueDateTime").ele("qdt:DateTimeString", { format: "102" }).txt(ciiDate(preceding.issueDate)).up().up();
+    }
+    ref.up();
+  }
+
   set.up();
   tx.up();
 
