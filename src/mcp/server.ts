@@ -33,13 +33,35 @@ import { createRecurring, RecurringError } from "@/domain/recurring/create";
 import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
 import { intervalLabel } from "@/lib/recurring";
 import { createBusinessDocument } from "@/domain/document/create";
-import { convertDocumentToInvoice, ConvertError } from "@/domain/document/convert";
+import { convertDocument, ConvertError } from "@/domain/document/convert";
+import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/create";
+import { setQuoteStatus, setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/domain/document/status";
+import { createShareLink, revokeShareLink, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
+import { saveDocumentSettings } from "@/domain/document/settings";
+import { SecretsUnavailableError } from "@/lib/crypto/secrets";
+import { appBaseUrlFromEnv } from "@/lib/http/base-url";
+import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
-import { organizationSchema, customerSchema, createInvoiceSchema, createDocumentSchema, recordPaymentSchema, createRecurringSchema, TaxScheme, PaymentMethod } from "@/schemas";
+import {
+  organizationSchema,
+  customerSchema,
+  createInvoiceSchema,
+  createDocumentSchema,
+  recordPaymentSchema,
+  createRecurringSchema,
+  createDeliveryNoteSchema,
+  documentStatusActionSchema,
+  convertDocumentBodySchema,
+  documentSettingsInputSchema,
+  OnQuoteAccept,
+  TaxScheme,
+  PaymentMethod,
+} from "@/schemas";
+import { NotFoundError } from "@/domain/errors";
 
 // ── Helfer ────────────────────────────────────────────────────────────────
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -85,6 +107,12 @@ async function resolveDocument(orgId: string, ref: string) {
   const q = await dbInternal.quote.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
   if (!q) throw new Error(`Kein Dokument "${ref}" gefunden.`);
   return q;
+}
+
+async function resolveDeliveryNote(orgId: string, ref: string) {
+  const n = await dbInternal.deliveryNote.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
+  if (!n) throw new Error(`Kein Lieferschein "${ref}" gefunden.`);
+  return n;
 }
 
 /** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). */
@@ -689,10 +717,163 @@ server.registerTool(
     try {
       const org = await requireOrg();
       const doc = await resolveDocument(org.id, document);
-      const invoice = await convertDocumentToInvoice(doc.id);
-      return ok(`Umgewandelt: ${doc.number} → Rechnungs-Entwurf ${invoice.id}. Mit finalize_invoice festschreiben.`);
+      const result = await convertDocument(org.id, { fromType: "QUOTE", fromId: doc.id, toKind: "INVOICE" });
+      return ok(`Umgewandelt: ${doc.number} → Rechnungs-Entwurf ${result.id}. Mit finalize_invoice festschreiben.`);
     } catch (e) {
       if (e instanceof ConvertError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── convert_document (generisch: AB, Rechnung, Lieferschein) ─────────────────
+server.registerTool(
+  "convert_document",
+  {
+    title: "Dokument umwandeln (generisch)",
+    description:
+      "Wandelt ein Angebot in eine Auftragsbestaetigung um, ein Angebot/AB/Proforma in eine Rechnung, oder ein Angebot/AB/Rechnung in einen Lieferschein (mit optionalen Teilmengen). Fuer Rechnung -> Lieferschein 'fromType' auf INVOICE setzen.",
+    inputSchema: {
+      fromType: z.enum(["QUOTE", "INVOICE"]).default("QUOTE").describe("QUOTE fuer Angebot/AB/Proforma, INVOICE fuer eine Rechnung"),
+      document: z.string().describe("Dokument- oder Rechnungs-Nummer bzw. -ID der Quelle"),
+      // toKind/quantities wiederverwenden aus dem Routen-Schema (Fix-Runde 1, Befund 2) —
+      // deliveryDate bleibt ein eigener String-Typ, da hier natuerlichsprachliche Eingaben
+      // (z. B. "heute") ueber parseDateInput geparst werden, nicht Zod-coerce.
+      toKind: convertDocumentBodySchema.shape.toKind,
+      quantities: convertDocumentBodySchema.shape.quantities.describe(
+        "Nur fuer DELIVERY_NOTE: Mengen je Quellposition (in Milliunits). Ohne Angabe = volle Restmenge.",
+      ),
+      deliveryDate: z.string().optional().describe("Nur fuer DELIVERY_NOTE, YYYY-MM-DD"),
+    },
+  },
+  async ({ fromType, document, toKind, quantities, deliveryDate }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const src = fromType === "INVOICE" ? await resolveInvoice(org.id, document) : await resolveDocument(org.id, document);
+      const result = await convertDocument(org.id, {
+        fromType,
+        fromId: src.id,
+        toKind,
+        quantities,
+        deliveryDate: parseDateInput(deliveryDate),
+      });
+      return ok(`Umgewandelt zu ${toKind}: ${result.type} ${result.id}.`);
+    } catch (e) {
+      if (e instanceof ConvertError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── create_delivery_note (manuell) ────────────────────────────────────────────
+server.registerTool(
+  "create_delivery_note",
+  {
+    title: "Lieferschein anlegen (manuell)",
+    description: "Legt einen Lieferschein ohne Quelldokument an, z. B. fuer eine Direktlieferung ohne vorheriges Angebot.",
+    inputSchema: {
+      customer: z.string().describe("Kundenname oder -ID"),
+      lines: z.array(docLineSchema).min(1),
+      deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
+      notes: z.string().optional(),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const customer = await resolveCustomer(org.id, args.customer);
+      const lines = await buildSimpleLines(org.id, args.lines);
+      const input = createDeliveryNoteSchema.parse({
+        customerId: customer.id,
+        deliveryDate: parseDateInput(args.deliveryDate),
+        notes: args.notes,
+        lines: lines.map((l) => ({
+          description: l.description,
+          quantityMilli: l.quantityMilli,
+          unit: l.unit,
+          unitNetPriceCents: l.unitNetPriceCents,
+          taxRate: l.taxRate,
+        })),
+      });
+      const note = await createDeliveryNote(org.id, input);
+      return ok(`Lieferschein angelegt: ${note.number} für ${customer.name}.`);
+    } catch (e) {
+      if (e instanceof DeliveryNoteError) return fail(e.message);
+      return fail(`Konnte Lieferschein nicht anlegen: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── set_document_status ───────────────────────────────────────────────────────
+server.registerTool(
+  "set_document_status",
+  {
+    title: "Dokument-/Lieferscheinstatus setzen",
+    description:
+      "Setzt den Status eines Angebots/einer Auftragsbestaetigung (QUOTE) oder eines Lieferscheins (DELIVERY_NOTE): MARK_SENT, MARK_ACCEPTED, MARK_REJECTED (nur QUOTE), MARK_CREATED, MARK_DELIVERED (nur DELIVERY_NOTE), CANCEL, ARCHIVE, UNARCHIVE. MARK_CREATED vergibt bei einem DRAFT-Lieferschein (z. B. einem Duplikat) die Belegnummer.",
+    inputSchema: {
+      type: z.enum(["QUOTE", "DELIVERY_NOTE"]),
+      document: z.string().describe("Nummer oder ID des Angebots/Lieferscheins"),
+      action: documentStatusActionSchema.shape.action,
+      note: z.string().optional(),
+    },
+  },
+  async ({ type, document, action, note }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = type === "QUOTE" ? await resolveDocument(org.id, document) : await resolveDeliveryNote(org.id, document);
+
+      if (action === "ARCHIVE" || action === "UNARCHIVE") {
+        await setArchived(org.id, type, doc.id, action === "ARCHIVE", "mcp");
+        return ok(`Status gesetzt: ${action}.`);
+      }
+
+      if (type === "QUOTE") {
+        if (action !== "MARK_SENT" && action !== "MARK_ACCEPTED" && action !== "MARK_REJECTED" && action !== "CANCEL") {
+          return fail(`${action} ist fuer QUOTE nicht gueltig.`);
+        }
+        const target = { MARK_SENT: "SENT", MARK_ACCEPTED: "ACCEPTED", MARK_REJECTED: "REJECTED", CANCEL: "CANCELLED" } as const;
+        const updated = await setQuoteStatus(org.id, doc.id, target[action], { actor: "mcp", note });
+        return ok(`Status gesetzt: ${updated.status}.`);
+      }
+
+      if (action !== "MARK_CREATED" && action !== "MARK_SENT" && action !== "MARK_DELIVERED" && action !== "CANCEL") {
+        return fail(`${action} ist fuer DELIVERY_NOTE nicht gueltig.`);
+      }
+      const target = { MARK_CREATED: "CREATED", MARK_SENT: "SENT", MARK_DELIVERED: "DELIVERED", CANCEL: "CANCELLED" } as const;
+      const updated = await setDeliveryNoteStatus(org.id, doc.id, target[action], { actor: "mcp", note });
+      return ok(`Status gesetzt: ${updated.status}${updated.number ? ` (Nummer ${updated.number})` : ""}.`);
+    } catch (e) {
+      if (e instanceof StatusTransitionError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── duplicate_document ────────────────────────────────────────────────────────
+server.registerTool(
+  "duplicate_document",
+  {
+    title: "Beleg duplizieren",
+    description: "Dupliziert ein Angebot/AB/Proforma (QUOTE), einen Lieferschein (DELIVERY_NOTE) oder eine Rechnung (INVOICE) als neuen Entwurf.",
+    inputSchema: {
+      type: z.enum(["QUOTE", "DELIVERY_NOTE", "INVOICE"]),
+      document: z.string().describe("Nummer oder ID der Quelle"),
+    },
+  },
+  async ({ type, document }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const src: DuplicatableType = type;
+      const doc =
+        type === "QUOTE"
+          ? await resolveDocument(org.id, document)
+          : type === "INVOICE"
+            ? await resolveInvoice(org.id, document)
+            : await resolveDeliveryNote(org.id, document);
+      const copy = await duplicateDocument(org.id, src, doc.id, "mcp");
+      return ok(`Dupliziert als neuer Entwurf: ${copy.type} ${copy.id}.`);
+    } catch (e) {
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
@@ -913,6 +1094,115 @@ server.registerTool(
       return ok(`${total} Rechnung(en) aus ${summaries.length} Abo(s) erzeugt:\n${lines.join("\n")}`);
     } catch (e) {
       if (e instanceof RecurringError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── create_share_link ─────────────────────────────────────────────────────────
+server.registerTool(
+  "create_share_link",
+  {
+    title: "Angebots-Annahmelink erzeugen",
+    description:
+      "Erzeugt einen oeffentlichen Annahme-Link (ohne Login) fuer ein Angebot (kind=ANGEBOT, Status DRAFT/SENT/EXPIRED). Der Kunde kann darueber das Angebot ansehen, als PDF herunterladen und annehmen/ablehnen. expiresInDays ueberschreibt die Standard-Gueltigkeitsdauer aus den Dokument-Einstellungen.",
+    inputSchema: {
+      documentId: z.string().describe("Nummer oder ID des Angebots"),
+      expiresInDays: z.number().int().min(1).max(365).optional(),
+    },
+  },
+  async ({ documentId, expiresInDays }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocument(org.id, documentId);
+      const { link, token } = await createShareLink(org.id, doc.id, { expiresInDays });
+      const baseUrl = appBaseUrlFromEnv();
+      const url = baseUrl ? `${baseUrl}/angebot/${token}` : `(APP_BASE_URL nicht gesetzt) /angebot/${token}`;
+      return ok(`Annahme-Link erzeugt fuer ${doc.number ?? doc.id} · gueltig bis ${link.expiresAt.toISOString().slice(0, 10)} · ${url}`);
+    } catch (e) {
+      if (e instanceof ShareLinkError) return fail(e.message);
+      if (e instanceof SecretsUnavailableError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── revoke_share_link ─────────────────────────────────────────────────────────
+server.registerTool(
+  "revoke_share_link",
+  {
+    title: "Angebots-Annahmelink widerrufen",
+    description: "Widerruft einen Angebots-Annahmelink (linkId). Der Link liefert danach 404, eine Entscheidung ist nicht mehr moeglich.",
+    inputSchema: {
+      linkId: z.string(),
+    },
+  },
+  async ({ linkId }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      await revokeShareLink(org.id, linkId);
+      return ok(`Link ${linkId} widerrufen.`);
+    } catch (e) {
+      if (e instanceof NotFoundError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_share_links ──────────────────────────────────────────────────────────
+server.registerTool(
+  "list_share_links",
+  {
+    title: "Angebots-Annahmelinks auflisten",
+    description:
+      "Listet alle Annahme-Links eines Angebots mit Status/Aufrufen/Entscheidung — NIE den Klartext-Token (der ist ueber diesen Weg nicht abrufbar; siehe Betreiber-UI fuer 'Link anzeigen').",
+    inputSchema: {
+      documentId: z.string().describe("Nummer oder ID des Angebots"),
+    },
+  },
+  async ({ documentId }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const doc = await resolveDocument(org.id, documentId);
+      const links = await listShareLinks(org.id, doc.id);
+      if (links.length === 0) return ok(`Keine Annahme-Links fuer ${doc.number ?? doc.id}.`);
+      const lines = links.map((l) => {
+        const status = l.revokedAt
+          ? "widerrufen"
+          : l.decidedAt
+            ? `entschieden (${l.decision})`
+            : l.expiresAt.getTime() < Date.now()
+              ? "abgelaufen"
+              : "aktiv";
+        return `• ${l.id} · ${status} · erzeugt ${l.createdAt.toISOString().slice(0, 10)} · laeuft ab ${l.expiresAt.toISOString().slice(0, 10)} · ${l.viewCount} Aufruf(e)`;
+      });
+      return ok(lines.join("\n"));
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── save_document_settings ────────────────────────────────────────────────────
+server.registerTool(
+  "save_document_settings",
+  {
+    title: "Dokument-Einstellungen speichern",
+    description:
+      "Speichert die org-weiten Einstellungen fuer Angebotsannahme: onQuoteAccept (Automatik nach Online-Annahme: NONE/ORDER_CONFIRMATION/INVOICE), shareLinkDays (Standard-Gueltigkeitsdauer neuer Links in Tagen), storeAcceptIp (ob die IP-Adresse des Entscheiders gespeichert wird).",
+    inputSchema: {
+      onQuoteAccept: OnQuoteAccept.optional(),
+      shareLinkDays: z.number().int().min(1).max(365).optional(),
+      storeAcceptIp: z.boolean().optional(),
+    },
+  },
+  async (args): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const saved = await saveDocumentSettings(org.id, documentSettingsInputSchema.parse(args));
+      return ok(`Dokument-Einstellungen gespeichert: onQuoteAccept=${saved.onQuoteAccept}, shareLinkDays=${saved.shareLinkDays}, storeAcceptIp=${saved.storeAcceptIp}.`);
+    } catch (e) {
+      if (e instanceof z.ZodError) return fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },

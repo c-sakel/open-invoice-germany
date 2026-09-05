@@ -9,10 +9,11 @@
  */
 import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
-import { appendChangeLog } from "@/domain/audit";
 import { buildStandardAttachments, type Attachment } from "@/domain/email/attachments";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
+import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
+import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
@@ -66,25 +67,22 @@ export async function sendDocumentEmail(
     sha256: createHash("sha256").update(a.content).digest("hex"),
   }));
 
-  const log = await dbInternal.emailLog.create({
-    data: {
-      orgId,
-      docType: input.docType,
-      docId: input.docId,
-      templateId: input.templateId ?? null,
-      resendOfId: input.resendOfId ?? null,
-      fromEmail: settings.fromEmail,
-      replyTo: settings.replyTo ?? null,
-      toJson: JSON.stringify(input.to),
-      ccJson: JSON.stringify(input.cc),
-      bccJson: JSON.stringify(bcc),
-      subject: input.subject,
-      bodySnapshot: text,
-      attachmentsJson: JSON.stringify(attachmentsMeta),
-      status: "QUEUED",
-      warningsJson: JSON.stringify(input.warnings),
-      sentByUserId: actor,
-    },
+  const log = await createQueuedEmailLog({
+    orgId,
+    docType: input.docType,
+    docId: input.docId,
+    templateId: input.templateId ?? null,
+    resendOfId: input.resendOfId ?? null,
+    fromEmail: settings.fromEmail,
+    replyTo: settings.replyTo ?? null,
+    to: input.to,
+    cc: input.cc,
+    bcc,
+    subject: input.subject,
+    bodySnapshot: text,
+    attachmentsJson: JSON.stringify(attachmentsMeta),
+    warningsJson: JSON.stringify(input.warnings),
+    sentByUserId: actor,
   });
 
   let status: "SENT" | "FAILED" = "SENT";
@@ -107,21 +105,44 @@ export async function sendDocumentEmail(
     error = e instanceof Error ? e.message.slice(0, 500) : "Unbekannter Fehler";
   }
 
-  await dbInternal.$transaction(async (tx) => {
-    await tx.emailLog.update({
-      where: { id: log.id },
-      data: { status, providerId, error: error ?? null, sentAt: status === "SENT" ? new Date() : null },
-    });
-    await appendChangeLog(tx, {
-      orgId,
-      entity: "EMAIL",
-      entityId: log.id,
-      action: status,
-      actor,
-      at: new Date(),
-      diff: { docType: input.docType, docId: input.docId, docNumber, to: input.to, cc: input.cc, bcc, subject: input.subject, attachments: attachmentsMeta, error: error ?? null },
-    });
+  await finishEmailLog({
+    orgId,
+    logId: log.id,
+    status,
+    providerId,
+    error: error ?? null,
+    actor,
+    docType: input.docType,
+    docId: input.docId,
+    docNumber,
+    to: input.to,
+    cc: input.cc,
+    bcc,
+    subject: input.subject,
+    attachmentsMeta,
   });
+
+  // SENT-Hook (Addendum Task 4): erfolgreicher Versand setzt bei Angebot/AB/Proforma
+  // (Status DRAFT/EXPIRED) bzw. Lieferschein (Status CREATED) automatisch SENT. Laeuft
+  // BEWUSST nach der obigen Transaktion und darf den bereits protokollierten Mailversand
+  // nie rueckabwickeln — ein Fehler hier wird nur geloggt, nie geworfen.
+  if (status === "SENT") {
+    try {
+      if (input.docType === "ANGEBOT" || input.docType === "AUFTRAGSBESTAETIGUNG" || input.docType === "PROFORMA") {
+        const q = await dbInternal.quote.findFirst({ where: { id: input.docId, orgId }, select: { status: true } });
+        if (q && (q.status === "DRAFT" || q.status === "EXPIRED")) {
+          await setQuoteStatus(orgId, input.docId, "SENT", { actor });
+        }
+      } else if (input.docType === "DELIVERY_NOTE") {
+        const dn = await dbInternal.deliveryNote.findFirst({ where: { id: input.docId, orgId }, select: { status: true } });
+        if (dn && dn.status === "CREATED") {
+          await setDeliveryNoteStatus(orgId, input.docId, "SENT", { actor });
+        }
+      }
+    } catch (e) {
+      console.warn("sendDocumentEmail: SENT-Statuswechsel nach Versand fehlgeschlagen", e);
+    }
+  }
 
   return { logId: log.id, status, error };
 }

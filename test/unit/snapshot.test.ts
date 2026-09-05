@@ -50,4 +50,27 @@ describe("Snapshot-Builder und -Schemas", () => {
     });
     expect(JSON.stringify(data)).not.toContain("GEHEIM");
   });
+
+  it("Kopf-/Fusstext wird gerendert, geht aber nicht ins XRechnung-/ZUGFeRD-XML (Ruling)", async () => {
+    const { buildEInvoiceData } = await import("@/lib/einvoice/mapper");
+    const { buildXRechnungUBL } = await import("@/lib/einvoice/xrechnung");
+    const { buildFacturXCII } = await import("@/lib/einvoice/cii");
+    const data = buildEInvoiceData({
+      number: "RE-1", type: "INVOICE", issueDate: new Date(), dueDate: null, deliveryDate: null, currency: "EUR",
+      buyerReference: null, paymentTerms: null, notes: "sichtbar",
+      headerText: "KOPFTEXT-MARKER {{document.number}}", footerText: "FUSSTEXT-MARKER",
+      netTotalCents: 0, taxTotalCents: 0, grossTotalCents: 0, paidAmountCents: 0, taxBreakdownJson: "[]",
+      org, customer, lines: [],
+    });
+    expect(data.headerText).toBe("KOPFTEXT-MARKER RE-1");
+    expect(data.footerText).toBe("FUSSTEXT-MARKER");
+
+    const ubl = buildXRechnungUBL(data);
+    expect(ubl).not.toContain("KOPFTEXT-MARKER");
+    expect(ubl).not.toContain("FUSSTEXT-MARKER");
+
+    const cii = buildFacturXCII(data);
+    expect(cii).not.toContain("KOPFTEXT-MARKER");
+    expect(cii).not.toContain("FUSSTEXT-MARKER");
+  });
 });
