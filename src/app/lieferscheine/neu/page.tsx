@@ -14,14 +14,33 @@ export default async function NeuerLieferscheinPage() {
     return <NeedOrgNotice />;
   }
 
-  const [customers, products] = await Promise.all([
+  const [customers, products, contactRows, addressRows] = await Promise.all([
     dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
       orderBy: { name: "asc" },
     }),
+    dbInternal.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
+    dbInternal.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
   ]);
+
+  const contacts = contactRows.map((c) => ({
+    id: c.id,
+    customerId: c.customerId,
+    label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
+    isDefault: c.isDefault,
+  }));
+  // Nit (Fix-Welle): eine Lieferadresse ist SHIPPING oder OTHER — BILLING-Adressen
+  // gehoeren nicht in die Lieferadress-Auswahl (create.ts lehnt sie serverseitig ab).
+  const addresses = addressRows
+    .filter((a) => a.type === "SHIPPING" || a.type === "OTHER")
+    .map((a) => ({
+      id: a.id,
+      customerId: a.customerId,
+      isDefault: a.isDefault,
+      label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
+    }));
 
   if (customers.length === 0) {
     return (
@@ -43,7 +62,7 @@ export default async function NeuerLieferscheinPage() {
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Neuer Lieferschein</h1>
       </div>
-      <DeliveryNoteForm customers={customers} products={products} />
+      <DeliveryNoteForm customers={customers} products={products} contacts={contacts} addresses={addresses} />
     </div>
   );
 }

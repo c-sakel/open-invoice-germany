@@ -9,6 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
@@ -226,6 +227,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       at: now,
       diff: { changedFields, lineCount: input.lines?.length ?? null },
     });
+    await logActivity(tx, { orgId, entityType: "INVOICE", entityId: id, type: "UPDATED", actor, at: now, data: { changedFields } });
 
     return updated;
   });

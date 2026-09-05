@@ -32,6 +32,11 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
   // Rechnung mit Nummer "ENTWURF" und GiroCode-Verwendungszweck "ENTWURF" an den Kunden.
   // Versand setzt Festschreibung voraus — autoSend erzwingt autoFinalize.
   const autoFinalize = autoSend ? true : (input.autoFinalize ?? docSettings.recurringAutoFinalizeDefault);
+  // showPeriodText (Phase 8b, §43): ohne explizite Angabe uebernimmt das Abo den
+  // Settings-Default (recurringInsertPeriodText) zum Anlagezeitpunkt — spaetere
+  // Aenderungen der Org-Einstellung wirken danach NICHT mehr rueckwirkend auf dieses
+  // Abo (Task-1-Facts: "je Abo ueberstimmt den Settings-Default").
+  const showPeriodText = input.showPeriodText ?? docSettings.recurringInsertPeriodText;
 
   const lines = input.lines.map((l, i) => ({
     position: i + 1,
@@ -56,12 +61,15 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       startDate,
       nextRunDate: startDate,
       endDate,
+      maxRuns: input.maxRuns ?? null,
       taxScheme: input.taxScheme,
       // defaultCurrency (Phase 7 Fix-Runde 1): ohne explizite Angabe DocumentSettings.defaultCurrency.
       currency: input.currency ?? docSettings.defaultCurrency ?? "EUR",
       paymentTermsDays: input.paymentTermsDays,
       autoFinalize,
       autoSend,
+      emailTemplateId: input.emailTemplateId ?? null,
+      showPeriodText,
       notes: input.notes ?? null,
       lines: { create: lines },
     },

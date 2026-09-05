@@ -24,7 +24,14 @@ export interface TextTemplateFormData {
   isDefault: boolean;
 }
 
-export function TextTemplateForm({ template }: { template?: TextTemplateFormData | null }) {
+export function TextTemplateForm({
+  template,
+  customFieldPlaceholders = [],
+}: {
+  template?: TextTemplateFormData | null;
+  /** Fix-Welle B1: dynamische {{customField.<key>}}-Platzhalter (§31), vom Aufrufer geladen. */
+  customFieldPlaceholders?: { path: string; label: string }[];
+}) {
   const [state, action] = useActionState<ActionResult, FormData>(saveTextTemplateAction, { ok: false });
   const [docType, setDocType] = useState<EmailDocType>(template?.docType ?? "ANGEBOT");
   const [body, setBody] = useState(template?.body ?? "");
@@ -138,6 +145,11 @@ export function TextTemplateForm({ template }: { template?: TextTemplateFormData
           <li>
             <code className="rounded bg-slate-100 px-1.5 py-0.5">{"{{company.name}}"}</code> Eigene Firma
           </li>
+          {customFieldPlaceholders.map((p) => (
+            <li key={p.path}>
+              <code className="rounded bg-slate-100 px-1.5 py-0.5">{`{{${p.path}}}`}</code> {p.label}
+            </li>
+          ))}
         </ul>
       </aside>
     </div>

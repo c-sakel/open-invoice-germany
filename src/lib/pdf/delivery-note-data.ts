@@ -5,7 +5,7 @@
  * bereits erstellten Lieferschein nicht rueckwirkend veraendern.
  */
 import type { Prisma } from "@/generated/prisma/client";
-import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { DeliveryNotePdfData } from "./delivery-note-pdf";
@@ -23,13 +23,21 @@ export function buildDeliveryNotePdfData(
   org: OrgRow,
   customer: CustomerRow,
   sourceNumber: string | null = null,
-  /** S7 (Fix-Welle): Standard-SHIPPING-CustomerAddress des Kunden, falls vorhanden — der
-   *  Aufrufer laedt sie (siehe Routen/attachments.ts), diese Funktion bleibt DB-frei. */
-  shippingAddress: ShippingAddressRow | null = null,
+  /**
+   * S7 (Fix-Welle)/B5 (Fix-Welle Phase 8a): Live-Fallback-Adresse (Standard-SHIPPING-
+   * CustomerAddress des Kunden), NUR genutzt, wenn der Buyer-Snapshot selbst keine
+   * `shippingAddress` traegt (Alt-Belege vor Phase 8a ohne diesen Snapshot-Schluessel).
+   * Traegt der Snapshot bereits eine Lieferadresse (siehe unten), hat sie IMMER Vorrang —
+   * sonst wuerde ein spaeterer Default-Adress-Wechsel den Nachdruck eines bereits
+   * erstellten Lieferscheins rueckwirkend veraendern. Der Aufrufer laedt diesen
+   * Live-Fallback (siehe Routen/attachments.ts), diese Funktion bleibt selbst DB-frei.
+   */
+  shippingAddressFallback: ShippingAddressRow | null = null,
 ): DeliveryNotePdfData {
   const ctx = dn.id;
   const seller = parseSellerSnapshot(dn.sellerSnapshotJson, buildSellerSnapshot(org), ctx);
   const buyer = parseBuyerSnapshot(dn.buyerSnapshotJson, buildBuyerSnapshot(customer), ctx);
+  const contact = parseContactSnapshot(dn.contactSnapshotJson, null, ctx);
 
   // Kopf-/Fusstext: Platzhalter mit einem DB-freien Kontext aus den bereits aufgeloesten
   // Snapshot-Werten aufloesen (kein Beleg-Betrag am Lieferschein -> totals: null).
@@ -42,6 +50,7 @@ export function buildDeliveryNotePdfData(
     currency: "EUR",
     seller,
     buyer,
+    contact,
   });
   const headerText = dn.headerText ? renderTemplate(dn.headerText, textCtx).text : null;
   const footerText = dn.footerText ? renderTemplate(dn.footerText, textCtx).text : null;
@@ -88,14 +97,24 @@ export function buildDeliveryNotePdfData(
     showArticleNumber: dn.showArticleNumber,
     showDescription: dn.showDescription,
     showDeliveryAddress: dn.showDeliveryAddress,
-    deliveryAddress: shippingAddress
+    // B5 (Fix-Welle): Snapshot zuerst (bleibt beim Nachdruck stabil, auch wenn sich der
+    // Default der Lieferadresse spaeter aendert oder verschiebt); Live-Fallback nur fuer
+    // Alt-Belege ohne diesen Snapshot-Schluessel.
+    deliveryAddress: buyer.shippingAddress
       ? {
-          addressLine1: shippingAddress.addressLine1,
-          addressLine2: shippingAddress.addressLine2,
-          postalCode: shippingAddress.postalCode,
-          city: shippingAddress.city,
+          addressLine1: buyer.shippingAddress.addressLine1,
+          addressLine2: buyer.shippingAddress.addressLine2,
+          postalCode: buyer.shippingAddress.postalCode,
+          city: buyer.shippingAddress.city,
         }
-      : null,
+      : shippingAddressFallback
+        ? {
+            addressLine1: shippingAddressFallback.addressLine1,
+            addressLine2: shippingAddressFallback.addressLine2,
+            postalCode: shippingAddressFallback.postalCode,
+            city: shippingAddressFallback.city,
+          }
+        : null,
     headerText,
     footerText,
     sourceNumber,

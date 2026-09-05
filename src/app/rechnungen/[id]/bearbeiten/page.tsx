@@ -23,7 +23,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (inv.status !== "DRAFT") redirect(`/rechnungen/${id}`);
 
   const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultPaymentMethodId: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultPaymentMethodId: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
@@ -35,10 +35,12 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   ]);
 
   const paymentMethodOptions = paymentMethods.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays }));
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}` }));
+  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
+    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
+    isDefault: a.isDefault,
     label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
   }));
 

@@ -65,6 +65,16 @@ export const sellerSnapshotSchema = z.object({
 });
 export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
 
+const snapshotAddressSchema = z.object({
+  type: z.enum(["BILLING", "SHIPPING", "OTHER"]),
+  label: z.string().nullable(),
+  addressLine1: z.string(),
+  addressLine2: z.string().nullable(),
+  postalCode: z.string(),
+  city: z.string(),
+  countryCode: z.string(),
+});
+
 export const buyerSnapshotSchema = z.object({
   name: z.string(),
   contactName: z.string().nullable(),
@@ -76,8 +86,35 @@ export const buyerSnapshotSchema = z.object({
   vatId: z.string().nullable(),
   email: z.string().nullable(),
   leitwegId: z.string().nullable(),
+  // Phase 8a (§29): die AM BELEG gewaehlte Rechnungs-/Lieferadresse (CustomerAddress),
+  // strukturiert zusaetzlich zu den flachen addressLine1-Feldern oben (die weiterhin die
+  // fuer PDF/XML massgebliche Adresse tragen). Optional/ohne Default, damit buildBuyerSnapshot
+  // dieses Feld nur setzt, wenn der Aufrufer eine Adresse mitgibt — Alt-Snapshots (Phase 0-7)
+  // und Aufrufer ohne Adressauswahl bleiben unveraendert (Object.keys-Kompatibilitaet,
+  // siehe test/unit/snapshot.test.ts "Schluesselmengen").
+  address: snapshotAddressSchema.nullable().optional(),
+  // Fix-Welle B2: die am Lieferschein gewaehlte Lieferadresse — EIGENER Schluessel, damit
+  // die flachen addressLine1-Felder oben (BG-8, Rechnungsadresse des Kaeufers) auf dem
+  // Kundenstamm/Default-BILLING bleiben, statt (wie zuvor faelschlich) die Lieferadresse
+  // zu tragen. Nur bei Lieferscheinen mit gewaehlter Lieferadresse gesetzt.
+  shippingAddress: snapshotAddressSchema.nullable().optional(),
+  // Phase 8a (§31): Werte der Kunden-Zusatzfelder zum Snapshot-Zeitpunkt. Optional aus
+  // demselben Grund wie `address`.
+  customFields: z.record(z.string(), z.unknown()).optional(),
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
+
+// Phase 8a (§30): Snapshot des am Beleg gewaehlten Ansprechpartners (ContactPerson).
+// NULL/kein Objekt = kein Ansprechpartner gewaehlt — anders als Seller/Buyer bewusst kein
+// Pflichtfeld auf dem Beleg.
+export const contactSnapshotSchema = z.object({
+  firstName: z.string(),
+  lastName: z.string(),
+  role: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+});
+export type ContactSnapshot = z.infer<typeof contactSnapshotSchema>;
 
 // Feldgenau identisch mit dem JSON aus src/domain/invoice/finalize.ts (paymentMethodSnapshotJson).
 export const paymentMethodSnapshotSchema = z.object({
@@ -223,9 +260,16 @@ export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
 // Skonto-Ziel 2 ist nur zusammen mit Ziel 1 und mit laengerer Frist zulaessig
 // (sonst ergibt "2. Skonto" keinen Sinn — Ziel 1 muesste immer die kuerzere,
 // hoehere Skontostufe sein).
+// Phase 8a (§28): documentDiscountPermille/documentDiscountCents bewusst OHNE `.default(0)`
+// (wie `currency` oben) — Customer.defaultDiscountPermille soll bei CREATE greifen, wenn
+// BEIDE Rabattfelder fehlen (Task-2-Facts). Mit `.default(0)` koennte die Domain "nicht
+// gesetzt" nie von "explizit 0" unterscheiden. documentChargePermille/-Cents kennen keine
+// Kundenvorgabe und behalten `.default(0)`. `.partial()` (updateInvoiceSchema/
+// updateDocumentSchema) macht ohnehin alle Felder optional — dieser Wechsel aendert dort
+// nichts am beobachtbaren Verhalten (input.xyz !== undefined wird bereits so ausgewertet).
 const documentAdjustmentFields = {
-  documentDiscountPermille: z.number().int().min(0).max(1000).default(0),
-  documentDiscountCents: z.number().int().nonnegative().default(0),
+  documentDiscountPermille: z.number().int().min(0).max(1000).optional(),
+  documentDiscountCents: z.number().int().nonnegative().optional(),
   documentChargePermille: z.number().int().min(0).max(1000).default(0),
   documentChargeCents: z.number().int().nonnegative().default(0),
   documentChargeReason: z.string().max(500).optional(),
@@ -487,6 +531,8 @@ export const recordPaymentSchema = z.object({
   isSkonto: z.boolean().default(false),
   // true: erkannter Skontoabzug wird sofort als zweite Zahlung gebucht (recordPayment).
   applySkonto: z.boolean().default(false),
+  // Phase 8b (§42): freie Notiz zur Zahlung (z. B. "per Scheck, Kunde meldete sich").
+  note: z.string().max(500).optional(),
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
@@ -497,8 +543,35 @@ export const skontoCheckQuerySchema = z.object({
 });
 export type SkontoCheckQuery = z.infer<typeof skontoCheckQuerySchema>;
 
+// ── Rechnungsliste: Filter/Suche (Phase 8b, §40) ─────────────────────────────
+export const InvoiceListStatusFilter = z.enum(["all", "draft", "open", "due", "overdue", "partial", "paid", "cancelled"]);
+export type InvoiceListStatusFilter = z.infer<typeof InvoiceListStatusFilter>;
+
+export const invoiceListFilterSchema = z.object({
+  status: InvoiceListStatusFilter.default("all"),
+  // Ruling (Task-1-Facts): zusaetzlich `type`, damit T4 eine eigene Gutschriften-
+  // Navigation (CREDIT_NOTE) ohne separate Domain-Funktion bauen kann.
+  type: InvoiceType.optional(),
+  customerId: z.string().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  minCents: z.coerce.number().int().optional(),
+  maxCents: z.coerce.number().int().optional(),
+  number: z.string().optional(),
+  paymentMethodId: z.string().min(1).optional(),
+  eInvoice: z.boolean().optional(),
+  currency: z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Grossbuchstaben (ISO 4217)").optional(),
+  q: z.string().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  sort: z.enum(["issueDate_desc", "issueDate_asc", "dueDate_asc", "gross_desc", "number_desc"]).default("issueDate_desc"),
+});
+export type InvoiceListFilter = z.infer<typeof invoiceListFilterSchema>;
+
 // ── Wiederkehrende Rechnungen / Abos ─────────────────────────────────────────
-export const RecurInterval = z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
+// Phase 8b (§43): DAY ergaenzt WEEKLY/MONTHLY/QUARTERLY/YEARLY — advanceDate() rechnet
+// DAY als "+intervalCount Tage" (src/lib/recurring.ts).
+export const RecurInterval = z.enum(["DAY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
 export type RecurInterval = z.infer<typeof RecurInterval>;
 
 export const createRecurringSchema = z.object({
@@ -509,6 +582,9 @@ export const createRecurringSchema = z.object({
   anchorDay: z.number().int().min(1).max(28).optional(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
+  // Phase 8b (§43): harte Obergrenze der Laeufe zusaetzlich/alternativ zu endDate — nach
+  // `issuedCount >= maxRuns` (nach dem jeweiligen Lauf) wechselt das Abo auf ENDED.
+  maxRuns: z.number().int().positive().optional(),
   taxScheme: TaxScheme.default("REGULAR"),
   // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
   currency: z.string().length(3).optional(),
@@ -518,6 +594,13 @@ export const createRecurringSchema = z.object({
   // unterscheiden, ob der Aufrufer bewusst false gewaehlt hat.
   autoFinalize: z.boolean().optional(),
   autoSend: z.boolean().optional(),
+  // Phase 8b (§43): Vorlage fuer den automatischen Versand (autoSend) — ohne Angabe
+  // greift weiterhin die Standardvorlage INVOICE (prefillEmail-Default).
+  emailTemplateId: z.string().min(1).optional(),
+  // Phase 8b (§43): ueberstimmt je Abo den Settings-Default (recurringInsertPeriodText).
+  // Bewusst KEIN `.default()` — createRecurring() setzt den Settings-Default nur, wenn
+  // der Aufrufer das Feld nicht selbst gesetzt hat (Task-1-Facts).
+  showPeriodText: z.boolean().optional(),
   notes: z.string().optional(),
   lines: z.array(invoiceLineInputSchema).min(1),
 });
@@ -527,6 +610,33 @@ export const updateRecurringStatusSchema = z.object({
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]),
 });
 export type UpdateRecurringStatusInput = z.infer<typeof updateRecurringStatusSchema>;
+
+// Phase 8b (Task 4, §43): Bearbeiten eines bestehenden Abos — alle Kopf-/Ablauffelder
+// optional aendbar (Teil-Update), `customerId` bewusst NICHT enthalten (Kundenwechsel ist
+// kein Anwendungsfall dieses Tasks — ein neues Abo anlegen statt den Kunden zu tauschen).
+// `status` zusaetzlich enthalten, damit ein einzelner Aufruf Kopf+Status aendern kann
+// (die bestehende `updateRecurringStatusSchema`-Route bleibt fuer den reinen Statuswechsel
+// aus der Listenansicht erhalten).
+export const updateRecurringSchema = z.object({
+  title: z.string().min(1).optional(),
+  interval: RecurInterval.optional(),
+  intervalCount: z.number().int().min(1).max(48).optional(),
+  anchorDay: z.number().int().min(1).max(28).nullable().optional(),
+  // Fix-Runde 1 (Koordinator, Abo-Bearbeiten-UI): startDate ist nachtraeglich aenderbar —
+  // siehe updateRecurringInvoice() fuer die Ruling-Behandlung von nextRunDate.
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  maxRuns: z.number().int().positive().nullable().optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).optional(),
+  autoFinalize: z.boolean().optional(),
+  autoSend: z.boolean().optional(),
+  emailTemplateId: z.string().min(1).nullable().optional(),
+  showPeriodText: z.boolean().optional(),
+  notes: z.string().nullable().optional(),
+  status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
+  lines: z.array(invoiceLineInputSchema).min(1).optional(),
+});
+export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
 
 // ── Phase 1: Dokumentketten, Lieferschein, Vorlagen, Stammdaten ──────────────
 export const DocRefType = z.enum(["QUOTE", "INVOICE", "RECURRING", "DELIVERY_NOTE", "DUNNING"]);
@@ -539,7 +649,8 @@ export const BillingState = z.enum(["NONE", "PARTIAL", "FULL"]);
 export type BillingState = z.infer<typeof BillingState>;
 export const TextTemplatePosition = z.enum(["HEAD", "FOOT", "TERMS_DELIVERY", "TERMS_PAYMENT"]);
 export const EmailLogStatus = z.enum(["QUEUED", "SENT", "DELIVERED", "BOUNCED", "FAILED"]);
-export const AddressType = z.enum(["BILLING", "SHIPPING", "OTHER"]);
+// AddressType lebt in ./customer (Phase 8a) und wird ueber "export * from './customer'"
+// unten re-exportiert.
 
 export const deliveryNoteLineInputSchema = z.object({
   description: z.string().min(1),
@@ -558,6 +669,11 @@ export const createDeliveryNoteSchema = z.object({
   sourceId: z.string().optional(),
   deliveryDate: z.coerce.date().optional(),
   shippingDate: z.coerce.date().optional(),
+  // Phase 8a (§29/§30): ohne explizite Angabe greift die Default-Lieferadresse/der
+  // Default-Ansprechpartner des Kunden (createDeliveryNoteWithinTx). Explizit `null`
+  // sendbar (Fix-Welle-Muster K2), um eine Auswahl aktiv zu entfernen.
+  shippingAddressId: z.string().nullable().optional(),
+  contactPersonId: z.string().nullable().optional(),
   // Ohne explizite Angabe greifen die dnShow*-Org-Einstellungen (Phase 7, §33) — bewusst
   // KEIN Zod-`.default()` hier, sonst wuerde die Domain nie unterscheiden koennen, ob der
   // Aufrufer den Wert bewusst gesetzt hat.
@@ -574,14 +690,9 @@ export const createDeliveryNoteSchema = z.object({
 });
 export type CreateDeliveryNoteInput = z.infer<typeof createDeliveryNoteSchema>;
 
-export const customerAddressSchema = z.object({
-  type: AddressType, label: z.string().optional(), addressLine1: z.string().min(1), addressLine2: z.string().optional(),
-  postalCode: z.string().min(1), city: z.string().min(1), countryCode: z.string().length(2).default("DE"), isDefault: z.boolean().default(false),
-});
-export const contactPersonSchema = z.object({
-  firstName: z.string().min(1), lastName: z.string().min(1), role: z.string().optional(), phone: z.string().optional(),
-  mobile: z.string().optional(), email: z.email().optional(), isDefault: z.boolean().default(false),
-});
+// customerAddressInputSchema/contactPersonInputSchema (Phase 8a, §29/§30) leben in
+// src/schemas/customer.ts, zusammen mit den uebrigen Kundendomain-Schemas.
+
 // K2 — UNTDID-4461-Codes, die der Zahlungsmethoden-Snapshot annehmen darf: exportierbar
 // ohne Zusatzgruppen (58/30/10/68/97/1/ZZZ) sowie Karte (48/54/55) und Lastschrift (59),
 // die der Mapper mit console.warn auf Code 1 zurueckfallen laesst (kein CardAccount/
@@ -734,6 +845,9 @@ export * from "./quote-share";
 
 // ── Phase 7: Belegeinstellungen, Briefpapier, Druckoptionen, Nummernkreise ──
 export * from "./settings";
+
+// ── Phase 8a: Kundendomain — Adressen, Ansprechpartner, Kundenfelder, Vorgaben ──
+export * from "./customer";
 
 // ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
 // Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung

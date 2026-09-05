@@ -143,6 +143,11 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
       headerText: quote.headerText ?? undefined,
       footerText: quote.footerText ?? undefined,
       paymentTerms: quote.paymentTerms ?? undefined,
+      // Fix-Runde 1 (Koordinator): Ansprechpartner/Rechnungsadresse der Quelle
+      // uebernehmen statt der Kunden-Defaults — Snapshot-Konsistenz Angebot -> Abschlag.
+      // Direkte Uebernahme (kein `?? undefined`) — siehe partial.ts.
+      contactPersonId: quote.contactPersonId,
+      billingAddressId: quote.billingAddressId,
       documentDiscountPermille: 0,
       documentDiscountCents: 0,
       documentChargePermille: 0,
@@ -162,9 +167,22 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
 
     const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now });
 
+    // Fix-Runde 1 (Koordinator): Seller-/Buyer-/Kontakt-Snapshot der Quelle uebernehmen
+    // statt live aus dem (moeglicherweise seither geaenderten) Kundenstamm neu zu bauen —
+    // eine Abschlagsrechnung muss denselben Empfaenger/Verkaeufer/Ansprechpartner nennen
+    // wie das Angebot, aus dem sie abgeleitet ist (Snapshot-Konsistenz Angebot -> Abschlag).
     await tx.invoice.update({
       where: { id: invoice.id },
-      data: { sourceType: "QUOTE", sourceId: input.sourceId, partialPermille: input.mode === "PERCENT" ? input.permille! : null },
+      data: {
+        sourceType: "QUOTE",
+        sourceId: input.sourceId,
+        partialPermille: input.mode === "PERCENT" ? input.permille! : null,
+        sellerSnapshotJson: quote.sellerSnapshotJson,
+        buyerSnapshotJson: quote.buyerSnapshotJson,
+        contactSnapshotJson: quote.contactSnapshotJson,
+        snapshotSource: "INHERITED",
+        snapshotAt: now,
+      },
     });
 
     await linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: invoice.id, toType: "QUOTE", toId: input.sourceId, relationType: "DOWNPAYMENT_OF" });

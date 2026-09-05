@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "35" ] || fail "erwartet 35 Tabellen, gefunden $COUNT"
-echo "    ok — 35 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings)"
+[ "$COUNT" = "39" ] || fail "erwartet 39 Tabellen, gefunden $COUNT"
+echo "    ok — 39 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -218,17 +218,24 @@ echo "==> Fall 9 (Phase 7): DocumentSettings-Defaults fuer Bestandszeile, neue T
 # Eigenes Bestands-Szenario: DB exakt auf dem Stand VOR der Phase-7-Migration bringen
 # (0_init + alle Migrationen bis einschliesslich Phase 6, jede einzeln per db execute
 # angewendet und per "migrate resolve --applied" verbucht — KEIN "migrate deploy", das
-# wuerde alle ausstehenden Migrationen inkl. Phase 7 in einem Rutsch anwenden). Danach
-# eine Organisation + eine DocumentSettings-Zeile im ALTEN Spaltenumfang anlegen und erst
-# dann per "migrate deploy" genau die Phase-7-Migration nachziehen — so laesst sich
-# pruefen, dass ALTER TABLE ... ADD COLUMN ... DEFAULT die neuen Spalten auch auf einer
-# bereits existierenden Zeile korrekt befuellt (nicht nur auf frisch angelegten Zeilen).
+# wuerde alle ausstehenden Migrationen inkl. Phase 7 in einem Rutsch anwenden). Die
+# Fix-Welle-Migration (phase8b_fixwave) wird HIER ebenfalls ausgeklammert (nicht nur
+# Phase 7): ihr Backfill liest DocumentSettings.recurringInsertPeriodText, eine Spalte,
+# die erst Phase 7 anlegt — wuerde die Schleife sie roh anwenden, BEVOR Phase 7 (das hier
+# absichtlich zurueckgehalten wird) die Spalte angelegt hat, schlaegt das UPDATE mit
+# "column does not exist" fehl. Danach eine Organisation + eine DocumentSettings-Zeile im
+# ALTEN Spaltenumfang anlegen und erst dann per "migrate deploy" Phase 7 UND die
+# Fix-Welle-Migration in der richtigen Reihenfolge nachziehen — so laesst sich pruefen,
+# dass ALTER TABLE ... ADD COLUMN ... DEFAULT die neuen Spalten auch auf einer bereits
+# existierenden Zeile korrekt befuellt (nicht nur auf frisch angelegten Zeilen). Die
+# eigentliche Backfill-Pruefung fuer die Fix-Welle-Migration folgt gesondert in Fall 13
+# (eigenes, isoliertes Bestands-Szenario mit einer RecurringInvoice-Zeile).
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
   -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -305,5 +312,187 @@ ACTIVE_YEAR=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select year from \"NumberRange\" where \"orgId\"='org9' and \"docType\"='INVOICE' and \"isActive\"=true")
 [ "$ACTIVE_YEAR" = "2026" ] || fail "aktive Zeile hat year='$ACTIVE_YEAR', erwartet 2026 nach dem Switch"
 echo "    ok — NumberRange.isActive Default true, Customer.defaultPaymentTermsDays nullable ohne Default, aktive-Zeile-Switch (year 0 -> year <Jahr>) funktioniert"
+
+echo "==> Fall 11 (Phase 8a): Kundendomain — Migration angewendet, CustomFieldDefinition-Unique, Customer-Defaults, DeliveryNote-FKs SetNull"
+PHASE8AMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260904091901_phase8a_customer' and finished_at is not null")
+[ "$PHASE8AMIG" = "1" ] || fail "Phase-8a-Migration ist nicht als angewendet verbucht"
+EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"CustomFieldDefinition\"') is not null")
+[ "$EXISTS" = "t" ] || fail "Tabelle CustomFieldDefinition fehlt nach der Phase-8a-Migration"
+CFDUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='CustomFieldDefinition_orgId_key_key'")
+[ "$CFDUNIQUE" = "1" ] || fail "Unique-Index CustomFieldDefinition_orgId_key_key fehlt nach der Phase-8a-Migration"
+# Fall 9 hat das Schema neu aufgesetzt (nur org9 existiert dort noch) — eigener Kunde fuer
+# diesen Block, org9 wiederverwendet.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust9','org9','Acht-A GmbH','Weg 9','99998','Bestadt',NOW());
+INSERT INTO "CustomFieldDefinition" ("id","orgId","key","label","type","updatedAt")
+  VALUES ('cfd1','org9','branche','Branche','TEXT',NOW());
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "CustomFieldDefinition" ("id","orgId","key","label","type","updatedAt")
+  VALUES ('cfd2','org9','branche','Branche (2)','TEXT',NOW());
+SQL
+then
+  fail "zweite CustomFieldDefinition mit gleichem (orgId, key) haette am Unique-Constraint scheitern muessen"
+fi
+# Customer-Spalten-Defaults auf der frisch angelegten Zeile cust9 (Spalten existieren erst
+# seit der Phase-8a-Migration, hier per normalem INSERT ohne die neuen Spalten befuellt —
+# die DB-Defaults muessen greifen).
+CUSTOMERDEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"defaultDiscountPermille\",\"eInvoicePreferred\",\"language\" from \"Customer\" where id='cust9'")
+[ "$CUSTOMERDEFAULTS" = "0|f|de" ] \
+  || fail "Kunde cust9: Customer-Defaults abweichend ('$CUSTOMERDEFAULTS'), erwartet '0|f|de'"
+# DeliveryNote-FKs SetNull: Adresse + Ansprechpartner anlegen, per Lieferschein referenzieren,
+# dann loeschen — die FK-Spalten muessen auf NULL fallen statt die Loeschung zu blockieren.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "CustomerAddress" ("id","orgId","customerId","type","addressLine1","postalCode","city","updatedAt")
+  VALUES ('addr1','org9','cust9','SHIPPING','Lieferweg 3','67890','Bremen',NOW());
+INSERT INTO "ContactPerson" ("id","orgId","customerId","firstName","lastName","updatedAt")
+  VALUES ('cp1','org9','cust9','Erika','Musterfrau',NOW());
+INSERT INTO "DeliveryNote" ("id","orgId","customerId","status","shippingAddressId","contactPersonId","updatedAt")
+  VALUES ('dn1','org9','cust9','DRAFT','addr1','cp1',NOW());
+DELETE FROM "CustomerAddress" WHERE id = 'addr1';
+DELETE FROM "ContactPerson" WHERE id = 'cp1';
+SQL
+DNFKS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select coalesce(\"shippingAddressId\",'NULL')||'|'||coalesce(\"contactPersonId\",'NULL') from \"DeliveryNote\" where id='dn1'")
+[ "$DNFKS" = "NULL|NULL" ] || fail "DeliveryNote dn1 nach Loeschen von Adresse/Kontakt: '$DNFKS', erwartet 'NULL|NULL' (SetNull)"
+echo "    ok — Phase-8a-Migration angewendet, CustomFieldDefinition-Unique (orgId, key) erzwungen, Customer-Defaults auf Bestandszeile korrekt, DeliveryNote.shippingAddressId/contactPersonId per SetNull auf NULL gesetzt"
+
+echo "==> Fall 12 (Phase 8b): ActivityLog/Notification/NotificationSettings, RecurringInvoice-Erweiterungen, Payment.note"
+# Beide Phase-8b-Migrationen liegen bereits im Verzeichnis prisma/migrations-postgres und
+# wurden dadurch schon von der Schleife in Fall 9 (0_init + alle Migrationen bis auf
+# Phase 7 einzeln per db execute + "migrate resolve --applied") mit angewendet — kein
+# weiterer deploy-Schritt hier noetig, analog Fall 11 (Phase 8a). Die Fix-Welle-Migration
+# (phase8b_fixwave, aus demselben Grund wie Phase 7 aus der Schleife ausgeklammert, siehe
+# Kommentar in Fall 9) wurde durch Fall 9s "migrate deploy" ebenfalls schon mit angewendet
+# (leeres Backfill — noch keine RecurringInvoice-Zeile zu diesem Zeitpunkt) — deshalb
+# prueft dieser Block bereits den NEUEN (orgId, dedupeKey)-Index statt des alten globalen.
+# Die eigentliche Backfill-Pruefung (bestehende Zeile wird umgestellt) folgt in Fall 13.
+PHASE8BMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name in ('20260904115512_phase8b_workflow','20260904124324_phase8b_activity_notifications') and finished_at is not null")
+[ "$PHASE8BMIG" = "2" ] || fail "erwartet beide Phase-8b-Migrationen als angewendet in _prisma_migrations, gefunden $PHASE8BMIG"
+for TBL in ActivityLog Notification NotificationSettings; do
+  EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"$TBL\"') is not null")
+  [ "$EXISTS" = "t" ] || fail "Tabelle $TBL fehlt nach den Phase-8b-Migrationen"
+done
+ACTIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='ActivityLog_orgId_entityType_entityId_at_idx'")
+[ "$ACTIDX" = "1" ] || fail "Index ActivityLog_orgId_entityType_entityId_at_idx fehlt"
+DEDUPEUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Notification_orgId_dedupeKey_key'")
+[ "$DEDUPEUNIQUE" = "1" ] || fail "Unique-Index Notification_orgId_dedupeKey_key fehlt (Fix-Welle: schon zu diesem Zeitpunkt org-gescopt statt global, siehe Kommentar oben)"
+NOTIFIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Notification_orgId_readAt_createdAt_idx'")
+[ "$NOTIFIDX" = "1" ] || fail "Index Notification_orgId_readAt_createdAt_idx fehlt"
+NSUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='NotificationSettings_orgId_key'")
+[ "$NSUNIQUE" = "1" ] || fail "Unique-Index NotificationSettings_orgId_key fehlt"
+# Notification.dedupeKey unique tatsaechlich erzwungen: zwei Zeilen mit gleichem dedupeKey
+# muessen scheitern (Dedupe-Mechanismus von createNotification beruht darauf).
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif1','org9','INVOICE_OVERDUE','Test','DEDUPE:test1');
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif2','org9','INVOICE_OVERDUE','Test 2','DEDUPE:test1');
+SQL
+then
+  fail "zweite Notification mit gleichem dedupeKey haette am Unique-Constraint scheitern muessen"
+fi
+# RecurringInvoice-Erweiterungen (maxRuns/emailTemplateId nullable ohne Default,
+# showPeriodText NOT NULL DEFAULT true) auf einer Bestandszeile (org9/cust9 aus Fall 11).
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
+  VALUES ('rec1','org9','cust9','Wartungsvertrag','2026-01-01','2026-02-01',NOW());
+SQL
+RECDEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"maxRuns\",\"emailTemplateId\",\"showPeriodText\" from \"RecurringInvoice\" where id='rec1'")
+[ "$RECDEFAULTS" = "||t" ] \
+  || fail "RecurringInvoice rec1: maxRuns/emailTemplateId/showPeriodText abweichend ('$RECDEFAULTS'), erwartet '||t' (maxRuns/emailTemplateId NULL, showPeriodText true)"
+RECEMAILIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='RecurringInvoice_emailTemplateId_idx'")
+[ "$RECEMAILIDX" = "1" ] || fail "Index RecurringInvoice_emailTemplateId_idx fehlt"
+# Payment.note (nullable, kein Default) — auf einer Bestandszeile befuellen und lesen.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
+  VALUES ('inv9','org9','cust9','RE-2026-00009','FINALIZED',NOW());
+INSERT INTO "Payment" ("id","invoiceId","amountCents","method","note") VALUES ('pay9','inv9',5000,'TRANSFER','Teilzahlung telefonisch avisiert');
+SQL
+PAYNOTE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"note\" from \"Payment\" where id='pay9'")
+[ "$PAYNOTE" = "Teilzahlung telefonisch avisiert" ] || fail "Payment.note ist '$PAYNOTE', erwartet 'Teilzahlung telefonisch avisiert'"
+echo "    ok — beide Phase-8b-Migrationen angewendet, ActivityLog/Notification/NotificationSettings vorhanden, Notification.dedupeKey-Unique erzwungen, ActivityLog-/Notification-Indizes vorhanden, RecurringInvoice-Erweiterungen (maxRuns/emailTemplateId/showPeriodText) und Payment.note korrekt"
+
+echo "==> Fall 13 (Fix-Welle Phase 8b): showPeriodText-Backfill aus DocumentSettings.recurringInsertPeriodText, Notification.dedupeKey org-gescopt"
+# Eigenes Bestands-Szenario (analog Fall 9/Phase 7): DB exakt auf dem Stand VOR der
+# Fix-Welle-Migration bringen (0_init + alle Migrationen bis einschliesslich der zweiten
+# Phase-8b-Migration, jede einzeln per db execute + "migrate resolve --applied"), dann
+# eine Organisation MIT abweichendem DocumentSettings.recurringInsertPeriodText (false)
+# und ein Abo mit dem ALTEN Spalten-Default (showPeriodText=true) anlegen — erst danach
+# per "migrate deploy" genau die Fix-Welle-Migration nachziehen, um zu pruefen, dass der
+# Backfill eine BESTEHENDE Zeile tatsaechlich umstellt (nicht nur frisch angelegte).
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904140030_phase8b_fixwave)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org10','Bestand Zehn GmbH','Zehnweg 10','99910','Bestadt',NOW());
+INSERT INTO "DocumentSettings" ("id","orgId","onQuoteAccept","shareLinkDays","storeAcceptIp","recurringInsertPeriodText","updatedAt")
+  VALUES ('ds10','org10','NONE',30,false,false,NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust10','org10','Zehn-A GmbH','Weg 10','99911','Bestadt',NOW());
+INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
+  VALUES ('rec10','org10','cust10','Bestands-Abo','2026-01-01','2026-02-01',NOW());
+SQL
+RECSHOWBEFORE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"showPeriodText\" from \"RecurringInvoice\" where id='rec10'")
+[ "$RECSHOWBEFORE" = "t" ] || fail "Bestandszeile rec10 vor der Fix-Welle-Migration: showPeriodText ist '$RECSHOWBEFORE', erwartet Spalten-Default true"
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Fix-Welle-Migration ist auf der Bestands-DB fehlgeschlagen"
+FIXWAVEMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260904140030_phase8b_fixwave' and finished_at is not null")
+[ "$FIXWAVEMIG" = "1" ] || fail "Fix-Welle-Migration ist nicht als angewendet verbucht"
+RECSHOWAFTER=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"showPeriodText\" from \"RecurringInvoice\" where id='rec10'")
+[ "$RECSHOWAFTER" = "f" ] || fail "Bestandszeile rec10 nach dem Backfill: showPeriodText ist '$RECSHOWAFTER', erwartet false (uebernommen aus DocumentSettings.recurringInsertPeriodText der Org)"
+# Notification.dedupeKey: alter globaler Unique-Index weg, neuer org-gescopter Index da.
+OLDIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Notification_dedupeKey_key'")
+[ "$OLDIDX" = "0" ] || fail "alter globaler Unique-Index Notification_dedupeKey_key haette entfernt werden muessen"
+NEWIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Notification_orgId_dedupeKey_key'")
+[ "$NEWIDX" = "1" ] || fail "neuer Unique-Index Notification_orgId_dedupeKey_key fehlt"
+# Gleicher dedupeKey, gleiche Org -> weiterhin Unique-Verstoss.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif10a','org10','INVOICE_OVERDUE','Test','DEDUPE:shared');
+SQL
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif10b','org10','INVOICE_OVERDUE','Test 2','DEDUPE:shared');
+SQL
+then
+  fail "zweite Notification mit gleichem (orgId, dedupeKey) haette am Unique-Constraint scheitern muessen"
+fi
+# Gleicher dedupeKey, ANDERE Org -> jetzt erlaubt (Nit: vorher Cross-Tenant-Kopplung ueber
+# einen global unique dedupeKey).
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org11','Elf GmbH','Elfweg 11','99912','Bestadt',NOW());
+INSERT INTO "Notification" ("id","orgId","type","title","dedupeKey")
+  VALUES ('notif11a','org11','INVOICE_OVERDUE','Test','DEDUPE:shared');
+SQL
+CROSSORGCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"Notification\" where \"dedupeKey\"='DEDUPE:shared'")
+[ "$CROSSORGCOUNT" = "2" ] || fail "erwartet 2 Notifications mit gleichem dedupeKey ueber zwei Orgs hinweg (org-gescopter Unique-Index), gefunden $CROSSORGCOUNT"
+echo "    ok — Fix-Welle-Migration angewendet, showPeriodText-Bestandszeile korrekt aus DocumentSettings.recurringInsertPeriodText befuellt, Notification.dedupeKey jetzt (orgId, dedupeKey)-eindeutig statt global"
 
 echo "ALLE TESTS BESTANDEN"

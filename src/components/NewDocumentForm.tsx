@@ -8,20 +8,27 @@ import { PricingError } from "@/lib/pricing/errors";
 import { computeSubtotals } from "@/domain/document/lines";
 import { RichTextField } from "@/components/editor/RichTextField";
 import { ProductPicker, type ProductOption } from "@/components/editor/ProductPicker";
+import { TakeOverPrompt, type TakeOverPrefillDTO, type TakeOverLineDTO } from "@/components/TakeOverPrompt";
+import { optionalSelectValue, emptyOptionLabel } from "@/lib/forms/optional-select";
+import { nextDiscountOnCustomerChange } from "@/lib/forms/discount-prefill";
 
 interface CustomerOption {
   id: string;
   name: string;
+  defaultDiscountPermille?: number;
 }
 interface ContactOption {
   id: string;
   customerId: string;
   label: string;
+  isDefault?: boolean;
 }
 interface AddressOption {
   id: string;
   customerId: string;
   label: string;
+  type?: "BILLING" | "SHIPPING" | "OTHER";
+  isDefault?: boolean;
 }
 type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
 interface LineState {
@@ -96,6 +103,11 @@ function toMilli(s: string): number {
 function toPermille(s: string): number {
   return Math.max(0, Math.min(1000, Math.round((parseFloat(s.replace(",", ".")) || 0) * 10)));
 }
+// Fix-Runde (Task 3, Kundenkomfort-Facts): permille -> Prozent-String fuer die
+// Vorbelegung des Rabattfelds aus der Kundenvorgabe (defaultDiscountPermille).
+function discountPercentOf(c: { defaultDiscountPermille?: number } | undefined): string {
+  return c?.defaultDiscountPermille ? String(c.defaultDiscountPermille / 10) : "";
+}
 
 export function NewDocumentForm({
   customers,
@@ -103,12 +115,15 @@ export function NewDocumentForm({
   contacts = [],
   addresses = [],
   initial,
+  offerLastDocument = false,
 }: {
   customers: CustomerOption[];
   products: ProductOption[];
   contacts?: ContactOption[];
   addresses?: AddressOption[];
   initial?: DocumentInitial;
+  /** §32/Task 3: DocumentSettings.offerLastDocument — zeigt TakeOverPrompt nur bei Neuanlage. */
+  offerLastDocument?: boolean;
 }) {
   const router = useRouter();
   const isEdit = Boolean(initial);
@@ -128,8 +143,10 @@ export function NewDocumentForm({
   const [scheme, setScheme] = useState(initial?.taxScheme ?? "REGULAR");
   const [currency, setCurrency] = useState(initial?.currency ?? "EUR");
   const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
-  const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? "0");
-  const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "0");
+  const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? discountPercentOf(customers[0]));
+  // Fix-Welle B6: der zuletzt AUTOMATISCH angewendete Default — siehe NewInvoiceForm.tsx.
+  const [appliedDefaultDiscount, setAppliedDefaultDiscount] = useState(initial ? "" : discountPercentOf(customers[0]));
+  const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "");
   const [documentChargePercent, setDocumentChargePercent] = useState(initial?.documentChargePercent ?? "0");
   const [documentChargeAmount, setDocumentChargeAmount] = useState(initial?.documentChargeAmount ?? "0");
   const [documentChargeReason, setDocumentChargeReason] = useState(initial?.documentChargeReason ?? "");
@@ -155,6 +172,33 @@ export function NewDocumentForm({
     void loadDefault("TERMS_PAYMENT", setPaymentTerms, paymentTerms);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, isEdit]);
+
+  // §32/Task 3: Prefill aus "Letztes Dokument uebernehmen" in Editor-State abbilden.
+  function toLineState(l: TakeOverLineDTO): LineState {
+    return {
+      lineType: l.lineType,
+      description: l.description,
+      descriptionLong: l.descriptionLong ?? "",
+      articleNumber: l.articleNumber ?? "",
+      quantity: (l.quantityMilli / 1000).toString(),
+      unit: l.unit,
+      price: (l.unitNetPriceCents / 100).toFixed(2),
+      taxRate: l.taxRate,
+      discountPercent: (l.discountPermille / 10).toString(),
+      discountAmount: (l.discountCents / 100).toFixed(2),
+    };
+  }
+  function applyTakeOver(prefill: TakeOverPrefillDTO) {
+    if (prefill.lines?.length) setLines(prefill.lines.map(toLineState));
+    if (prefill.headerText != null) setHeaderText(prefill.headerText);
+    if (prefill.footerText != null) setFooterText(prefill.footerText);
+    if (prefill.paymentTerms != null) setPaymentTerms(prefill.paymentTerms);
+    if (prefill.deliveryTerms != null) setDeliveryTerms(prefill.deliveryTerms);
+    if (prefill.documentDiscount) {
+      setDocumentDiscountPercent((prefill.documentDiscount.permille / 10).toString());
+      setDocumentDiscountAmount((prefill.documentDiscount.cents / 100).toFixed(2));
+    }
+  }
 
   const totals = useMemo(() => {
     try {
@@ -230,6 +274,9 @@ export function NewDocumentForm({
 
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
+  // Fix-Welle B3: leere Option nennt die Kundenvorgabe explizit, wenn sie existiert.
+  const hasDefaultContact = customerContacts.some((c) => c.isDefault);
+  const hasDefaultBillingAddress = customerAddresses.some((a) => a.type === "BILLING" && a.isDefault);
 
   // Fix-Runde 1: Ansprechpartner/Rechnungsadresse gehoeren zum ALTEN Kunden — beim
   // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen (sonst
@@ -242,6 +289,16 @@ export function NewDocumentForm({
     }
     if (billingAddressId && !addresses.some((a) => a.id === billingAddressId && a.customerId === id)) {
       setBillingAddressId("");
+    }
+    // Fix-Welle B6: Rabattfeld beim Kundenwechsel aus der Kundenvorgabe vorbelegen — nur
+    // wenn der Nutzer es nicht selbst befuellt hat ODER es noch dem zuletzt automatisch
+    // angewendeten Default entspricht (siehe NewInvoiceForm.tsx).
+    if (!isEdit) {
+      const nextDiscount = nextDiscountOnCustomerChange(documentDiscountPercent, appliedDefaultDiscount, discountPercentOf(customers.find((c) => c.id === id)));
+      if (nextDiscount.apply) {
+        setDocumentDiscountPercent(nextDiscount.value);
+        setAppliedDefaultDiscount(nextDiscount.value);
+      }
     }
   }
 
@@ -307,15 +364,23 @@ export function NewDocumentForm({
       // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde (siehe
       // NewInvoiceForm.tsx) — sonst bleibt die alte Referenz beim Bearbeiten (PATCH)
       // serverseitig unveraendert stehen.
-      contactPersonId: contactPersonId || null,
-      billingAddressId: billingAddressId || null,
+      // Fix-Welle B3: siehe NewInvoiceForm.tsx (optionalSelectValue) — undefined bei
+      // leerem Feld waehrend der Anlage, damit die Kundenvorgabe greift; null beim
+      // Bearbeiten.
+      contactPersonId: optionalSelectValue(contactPersonId, isEdit),
+      billingAddressId: optionalSelectValue(billingAddressId, isEdit),
       validUntil: validUntil || undefined,
       headerText: headerText || undefined,
       footerText: footerText || undefined,
       deliveryTerms: deliveryTerms || undefined,
       paymentTerms: paymentTerms || undefined,
-      documentDiscountPermille: toPermille(documentDiscountPercent),
-      documentDiscountCents: toCents(documentDiscountAmount),
+      // Kundenkomfort-Facts: bei der ANLAGE leer -> undefined (sonst greift die
+      // Kundenvorgabe defaultDiscountPermille serverseitig nie); beim BEARBEITEN
+      // (PATCH) bleibt ein geleertes Feld explizit 0 (wie bisher), sonst liesse sich ein
+      // gesetzter Rabatt beim Editieren nie mehr entfernen (Defaults gelten ohnehin nur
+      // bei der Anlage, nicht beim Update).
+      documentDiscountPermille: documentDiscountPercent.trim() ? toPermille(documentDiscountPercent) : isEdit ? 0 : undefined,
+      documentDiscountCents: documentDiscountAmount.trim() ? toCents(documentDiscountAmount) : isEdit ? 0 : undefined,
       documentChargePermille: toPermille(documentChargePercent),
       documentChargeCents: toCents(documentChargeAmount),
       documentChargeReason: documentChargeReason || undefined,
@@ -352,6 +417,16 @@ export function NewDocumentForm({
   return (
     <form onSubmit={submit} className="space-y-6">
       {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+
+      {!isEdit && customerId && (
+        <TakeOverPrompt
+          enabled={offerLastDocument}
+          customerId={customerId}
+          kind={kind === "AUFTRAGSBESTAETIGUNG" ? "ORDER_CONFIRMATION" : "QUOTE"}
+          documentDetailBasePath="/dokumente"
+          onApply={applyTakeOver}
+        />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
@@ -390,7 +465,7 @@ export function NewDocumentForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Ansprechpartner</span>
           <select className={input} value={contactPersonId} onChange={(e) => setContactPersonId(e.target.value)}>
-            <option value="">— keiner —</option>
+            <option value="">{emptyOptionLabel(hasDefaultContact)}</option>
             {customerContacts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
@@ -401,7 +476,7 @@ export function NewDocumentForm({
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rechnungsadresse</span>
           <select className={input} value={billingAddressId} onChange={(e) => setBillingAddressId(e.target.value)}>
-            <option value="">— Standardadresse —</option>
+            <option value="">{emptyOptionLabel(hasDefaultBillingAddress)}</option>
             {customerAddresses.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}
@@ -549,7 +624,7 @@ export function NewDocumentForm({
         <h2 className="col-span-full font-semibold text-slate-900">Beleg-Rabatt / -Aufschlag</h2>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rabatt %</span>
-          <input className={input} value={documentDiscountPercent} onChange={(e) => setDocumentDiscountPercent(e.target.value)} />
+          <input className={input} value={documentDiscountPercent} onChange={(e) => setDocumentDiscountPercent(e.target.value)} placeholder="leer = Kundenvorgabe" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rabatt € (zusätzlich)</span>
@@ -594,13 +669,22 @@ export function NewDocumentForm({
         {SCHEME_NOTICE_DOC[scheme] && <span className="text-xs text-slate-500">Pflichthinweis „{SCHEME_NOTICE_DOC[scheme]}“ wird automatisch ergänzt.</span>}
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">
-          Interne Notiz
-          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
-        </span>
-        <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
-      </label>
+      {/* Task 4 (Brief): "Weitere Optionen" — Angebote/AB/Proforma fuehren kein
+         Bestellreferenz-/Leitweg-ID-/Lieferzeitraum-Feld (nur Rechnungen, siehe
+         invoiceHeaderFields), daher hier nur interne Notizen + Druckoptionen-Hinweis. */}
+      <details className="rounded-lg border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer select-none font-semibold text-slate-900">Weitere Optionen</summary>
+        <div className="mt-4 space-y-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">
+              Interne Notiz
+              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar</span>
+            </span>
+            <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
+          </label>
+          <p className="text-xs text-slate-500">Druckoptionen (Logo/Layout-Overrides je Beleg) lassen sich erst nach dem Speichern auf der Belegseite einstellen.</p>
+        </div>
+      </details>
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-4">
         <div className="text-sm text-slate-500">

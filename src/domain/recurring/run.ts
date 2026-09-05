@@ -15,10 +15,11 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
+import { onRecurringFailed } from "@/domain/notifications/hooks";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { advanceDate, type RecurInterval } from "@/lib/recurring";
-import { loadDocumentSettings } from "@/domain/document/settings";
 import { formatDateDe } from "@/lib/template/format";
 import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
@@ -54,9 +55,12 @@ async function sendRecurringInvoiceEmail(
   orgId: string,
   invoiceId: string,
   provider: MailProvider | undefined,
+  emailTemplateId: string | null,
 ): Promise<{ status: "SENT" | "FAILED" | "SKIPPED"; error?: string }> {
   try {
-    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    // emailTemplateId (Phase 8b, §43): ohne Angabe greift weiterhin die Standardvorlage
+    // INVOICE (prefillEmail waehlt sie selbst, wenn templateId undefined ist).
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId, templateId: emailTemplateId ?? undefined });
     if (pre.to.length === 0) return { status: "SKIPPED" };
     const result = await sendDocumentEmail(
       orgId,
@@ -90,7 +94,7 @@ async function emitOne(
   now: Date,
   actor: string,
   provider?: MailProvider,
-): Promise<{ result: EmittedInvoice; ended: boolean; autoSend: boolean; orgId: string }> {
+): Promise<{ result: EmittedInvoice; ended: boolean; autoSend: boolean; orgId: string; emailTemplateId: string | null }> {
   const created = await dbInternal.$transaction(async (tx) => {
     const rec = await tx.recurringInvoice.findUnique({
       where: { id: recurringId },
@@ -128,9 +132,11 @@ async function emitOne(
     // dd.mm.yyyy", nur wenn die Org-Einstellung aktiv ist. Periodenstart = ein Intervall
     // vor dem aktuellen Stichtag (negativer advanceDate-Aufruf, dieselbe Monats-/
     // Wochenklemmung wie beim Vorwaertsschieben).
-    const docSettings = await loadDocumentSettings(rec.orgId);
     let headerText: string | undefined;
-    if (docSettings.recurringInsertPeriodText) {
+    // showPeriodText (Phase 8b, §43): das Abo-Feld ist ab jetzt allein massgeblich — der
+    // Settings-Default (recurringInsertPeriodText) wird nur noch beim Anlegen des Abos
+    // uebernommen (createRecurring), nicht mehr live bei jedem Lauf gelesen.
+    if (rec.showPeriodText) {
       const periodStart = advanceDate(periodDate, rec.interval as RecurInterval, -rec.intervalCount, rec.anchorDay);
       headerText = `Abrechnungszeitraum ${formatDateDe(periodStart)} – ${formatDateDe(periodDate)}`;
     }
@@ -167,6 +173,7 @@ async function emitOne(
       at: now,
       diff: { recurring: rec.id, period: periodDate.toISOString(), grossTotalCents: totals.grossTotalCents },
     });
+    await logActivity(tx, { orgId: rec.orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now, data: { recurring: rec.id } });
 
     let number: string | null = invoice.number;
     let finalized = false;
@@ -177,7 +184,13 @@ async function emitOne(
     }
 
     const next = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
-    const ended = rec.endDate ? next > rec.endDate : false;
+    // issuedCount VOR dem Erhoehen im naechsten Schritt ist die Anzahl der bereits
+    // vorherigen Laeufe — nach DIESEM Lauf steht die Anzahl bei issuedCount + 1
+    // (Task-1-Brief: "maxRuns -> ENDED wenn issuedCount >= maxRuns NACH Lauf").
+    const issuedCountAfter = rec.issuedCount + 1;
+    const endedByDate = rec.endDate ? next > rec.endDate : false;
+    const endedByMaxRuns = rec.maxRuns != null && issuedCountAfter >= rec.maxRuns;
+    const ended = endedByDate || endedByMaxRuns;
     await tx.recurringInvoice.update({
       where: { id: rec.id },
       data: {
@@ -189,7 +202,7 @@ async function emitOne(
     });
 
     const result: EmittedInvoice = { invoiceId: invoice.id, number, periodDate, finalized };
-    return { result, ended, autoSend: rec.autoSend, orgId: rec.orgId };
+    return { result, ended, autoSend: rec.autoSend, orgId: rec.orgId, emailTemplateId: rec.emailTemplateId };
   });
 
   // autoSend (Phase 7, §33): erst NACH der Transaktion versenden (Modulkommentar: kein
@@ -201,7 +214,7 @@ async function emitOne(
   // ein Bestandsdatensatz aus der Zeit vor diesem Fix koennte autoSend=true/autoFinalize=false
   // noch kombiniert haben) — sonst ginge eine Rechnung mit Nummer/GiroCode "ENTWURF" raus.
   if (created.autoSend && created.result.finalized) {
-    const sent = await sendRecurringInvoiceEmail(created.orgId, created.result.invoiceId, provider);
+    const sent = await sendRecurringInvoiceEmail(created.orgId, created.result.invoiceId, provider, created.emailTemplateId);
     created.result.emailStatus = sent.status;
     created.result.emailError = sent.error;
   }
@@ -221,11 +234,22 @@ export interface RecurringRunSummary {
   recurringId: string;
   title: string;
   emitted: EmittedInvoice[];
+  /** Fehlermeldung, falls der Lauf dieses Abos abgebrochen ist (Task-3-Ergaenzung: Fehler-
+   *  Summary). Bereits erzeugte `emitted`-Eintraege bleiben gueltig — nur der naechste
+   *  (fehlgeschlagene) Versuch dieses Abos wurde abgebrochen. */
+  error?: string;
 }
 
 /**
  * Batch-Lauf (Cron): erzeugt für alle ACTIVE-Abos mit `nextRunDate <= now` die
  * fälligen Rechnungen — bei Rückstand mehrere, gedeckelt durch `maxPerAbo`.
+ *
+ * Fehler-Summary (Phase 8b, Task 3): ein Fehler beim Erzeugen EINES Abo-Laufs (z. B.
+ * fehlende Pflichtangaben beim `autoFinalize`) brach frueher den GESAMTEN Batch ab — kein
+ * try/catch um `emitOne`, ein einziges kaputtes Abo verhinderte die Rechnungen ALLER
+ * anderen faelligen Abos in diesem Lauf. Jetzt: Fehler landen in `RecurringRunSummary.error`,
+ * die Schleife faehrt mit dem naechsten Abo fort; `onRecurringFailed`
+ * (`src/domain/notifications/hooks.ts`) benachrichtigt zusaetzlich die Organisation.
  */
 export async function runDueRecurring(
   opts: RunOptions & { orgId?: string; maxPerAbo?: number } = {},
@@ -236,24 +260,30 @@ export async function runDueRecurring(
 
   const due = await dbInternal.recurringInvoice.findMany({
     where: { status: "ACTIVE", nextRunDate: { lte: now }, ...(opts.orgId ? { orgId: opts.orgId } : {}) },
-    select: { id: true, title: true },
+    select: { id: true, title: true, orgId: true },
     orderBy: { nextRunDate: "asc" },
   });
 
   const summaries: RecurringRunSummary[] = [];
   for (const rec of due) {
     const emitted: EmittedInvoice[] = [];
-    for (let i = 0; i < max; i++) {
-      const cur = await dbInternal.recurringInvoice.findUnique({
-        where: { id: rec.id },
-        select: { status: true, nextRunDate: true },
-      });
-      if (!cur || cur.status !== "ACTIVE" || cur.nextRunDate > now) break;
-      const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
-      emitted.push(result);
-      if (ended) break;
+    let error: string | undefined;
+    try {
+      for (let i = 0; i < max; i++) {
+        const cur = await dbInternal.recurringInvoice.findUnique({
+          where: { id: rec.id },
+          select: { status: true, nextRunDate: true },
+        });
+        if (!cur || cur.status !== "ACTIVE" || cur.nextRunDate > now) break;
+        const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
+        emitted.push(result);
+        if (ended) break;
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      await onRecurringFailed(rec.orgId, { recurringId: rec.id, title: rec.title, message: error, at: now });
     }
-    summaries.push({ recurringId: rec.id, title: rec.title, emitted });
+    summaries.push({ recurringId: rec.id, title: rec.title, emitted, ...(error ? { error } : {}) });
   }
   return summaries;
 }

@@ -13,6 +13,7 @@
 import type { Prisma, Payment, Invoice } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
 import { payableBaseCents } from "@/domain/invoice/amounts";
@@ -98,6 +99,8 @@ export async function recordPayment(
         method: input.method,
         reference: input.reference ?? null,
         isSkonto: input.isSkonto,
+        // Phase 8b (§42): freie Notiz zur Zahlung.
+        note: input.note ?? null,
       },
     });
 
@@ -116,6 +119,15 @@ export async function recordPayment(
       actor,
       at: now,
       diff: { paymentCents: input.amountCents, paidAmountCents: newPaid, status },
+    });
+    await logActivity(tx, {
+      orgId: inv.orgId,
+      entityType: "INVOICE",
+      entityId: invoiceId,
+      type: "PAYMENT_RECORDED",
+      actor,
+      at: now,
+      data: { paymentCents: input.amountCents, status },
     });
 
     // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —

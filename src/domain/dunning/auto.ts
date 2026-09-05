@@ -19,6 +19,7 @@ import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import type { MailProvider } from "@/lib/mail/provider";
+import type { Prisma } from "@/generated/prisma/client";
 
 const DUNNABLE_STATUSES = ["FINALIZED", "SENT", "PARTIALLY_PAID"] as const;
 
@@ -51,7 +52,7 @@ function bump(skipped: Record<string, number>, key: string): void {
   skipped[key] = (skipped[key] ?? 0) + 1;
 }
 
-interface DunningCandidate {
+export interface DunningCandidate {
   id: string;
   dueDate: Date | null;
   issueDate: Date;
@@ -65,6 +66,51 @@ interface DunningCandidate {
 interface AutoStage extends StageLike {
   id: string;
   autoSend: boolean;
+}
+
+/**
+ * Fix-Welle (S5): geteilter Where-Builder fuer die mahnbare, offene, bereits faellige
+ * Auswahl — `dunningCandidates` (volle Zeilen inkl. `dunnings`-Relation, fuer den
+ * tatsaechlichen Mahnlauf) UND `dashboardSummary.dunningRequired` (nur die Anzahl,
+ * `dbInternal.invoice.count`, KEINE `dunnings`-Relation) nutzen dasselbe `where` statt
+ * zweier Parallel-Definitionen, die auseinanderlaufen koennten (CLAUDE.md "Nichts
+ * doppelt bauen"). `dueDate <= now` bzw. (bei fehlendem Zahlungsziel) `issueDate <= now`
+ * ist sicher: jede Mahnstufe traegt `daysAfterDue >= 0` (Schema), die naechste faellige
+ * Mahnung liegt also NIE vor dem Zahlungsziel — Rechnungen, die noch nicht faellig sind,
+ * waeren ohnehin nie `isDue` in `dunningScheduleFor`.
+ */
+export function dunningCandidateWhere(orgId: string, now: Date = new Date()): Prisma.InvoiceWhereInput {
+  return {
+    orgId,
+    type: { in: Array.from(DUNNABLE_TYPES) },
+    status: { in: [...DUNNABLE_STATUSES] },
+    dunningState: { not: "STOPPED" },
+    OR: [{ dueDate: { lte: now } }, { dueDate: null, issueDate: { lte: now } }],
+  };
+}
+
+/**
+ * Rein lesende Auswahl der mahnbaren, offenen, bereits faelligen Rechnungen einer
+ * Organisation (Phase 8b, Task 4 — extrahiert aus `runDunningJob`, damit
+ * `dashboardSummary` dieselbe Auswahl ohne Parallelcode wiederverwenden kann). Kein
+ * Schreibzugriff, keine Settings-Abfrage.
+ */
+export async function dunningCandidates(orgId: string, now: Date = new Date()): Promise<DunningCandidate[]> {
+  return dbInternal.invoice.findMany({
+    where: dunningCandidateWhere(orgId, now),
+    select: {
+      id: true,
+      dueDate: true,
+      issueDate: true,
+      grossTotalCents: true,
+      paidAmountCents: true,
+      payableCents: true,
+      customer: { select: { email: true } },
+      dunnings: {
+        select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
+      },
+    },
+  });
 }
 
 async function processCandidate(
@@ -162,28 +208,7 @@ export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobO
       select: { id: true, order: true, enabled: true, daysAfterDue: true, autoSend: true },
     });
 
-    const candidates = await dbInternal.invoice.findMany({
-      where: {
-        orgId: org.id,
-        type: { in: Array.from(DUNNABLE_TYPES) },
-        status: { in: [...DUNNABLE_STATUSES] },
-        dunningState: { not: "STOPPED" },
-      },
-      select: {
-        id: true,
-        dueDate: true,
-        issueDate: true,
-        grossTotalCents: true,
-        paidAmountCents: true,
-        payableCents: true,
-        customer: { select: { email: true } },
-        // Nit (Fix-Welle): kein orderBy+take:1 mehr — `latestDunning` bestimmt die "letzte
-        // Mahnung" einheitlich (siehe create.ts, rechnungen/[id]/page.tsx).
-        dunnings: {
-          select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
-        },
-      },
-    });
+    const candidates = await dunningCandidates(org.id, now);
 
     for (const candidate of candidates) {
       result.checked += 1;

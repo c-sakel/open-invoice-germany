@@ -11,7 +11,7 @@ import { runScheduledJobs, type SchedulerJob } from "@/domain/scheduler/runner";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const VALID_JOBS: SchedulerJob[] = ["dunning", "recurring"];
+const VALID_JOBS: SchedulerJob[] = ["dunning", "recurring", "notifications"];
 
 function parseJobs(value: unknown): SchedulerJob[] | undefined {
   if (!Array.isArray(value)) return undefined;

@@ -78,6 +78,11 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
       headerText: quote.headerText ?? undefined,
       footerText: quote.footerText ?? undefined,
       paymentTerms: quote.paymentTerms ?? undefined,
+      // Fix-Runde 1 (Koordinator): Ansprechpartner/Rechnungsadresse der Quelle
+      // uebernehmen statt der Kunden-Defaults — Snapshot-Konsistenz Angebot -> Schluss.
+      // Direkte Uebernahme (kein `?? undefined`) — siehe partial.ts.
+      contactPersonId: quote.contactPersonId,
+      billingAddressId: quote.billingAddressId,
       documentDiscountPermille: quote.documentDiscountPermille,
       documentDiscountCents: quote.documentDiscountCents,
       documentChargePermille: quote.documentChargePermille,
@@ -100,7 +105,20 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
 
     const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now });
 
-    await tx.invoice.update({ where: { id: invoice.id }, data: { sourceType: "QUOTE", sourceId: input.sourceId } });
+    // Fix-Runde 1 (Koordinator): Seller-/Buyer-/Kontakt-Snapshot der Quelle uebernehmen —
+    // Snapshot-Konsistenz Angebot -> Schluss (siehe downpayment.ts).
+    await tx.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        sourceType: "QUOTE",
+        sourceId: input.sourceId,
+        sellerSnapshotJson: quote.sellerSnapshotJson,
+        buyerSnapshotJson: quote.buyerSnapshotJson,
+        contactSnapshotJson: quote.contactSnapshotJson,
+        snapshotSource: "INHERITED",
+        snapshotAt: now,
+      },
+    });
 
     await linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: invoice.id, toType: "QUOTE", toId: input.sourceId, relationType: "FINAL_FOR" });
 

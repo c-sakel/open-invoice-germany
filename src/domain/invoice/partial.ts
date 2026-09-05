@@ -73,6 +73,15 @@ interface PartialSource {
   headerText: string | null;
   footerText: string | null;
   paymentTerms: string | null;
+  // Fix-Runde 1 (Koordinator): Kopf-Felder der Quelle fuer Snapshot-Konsistenz
+  // Angebot/Lieferschein -> Teilrechnung — billingAddressId nur bei QUOTE, shippingAddressId
+  // nur bei DELIVERY_NOTE gesetzt (siehe loadPartialSource, "wenn vorhanden").
+  contactPersonId: string | null;
+  billingAddressId: string | null;
+  shippingAddressId: string | null;
+  sellerSnapshotJson: string | null;
+  buyerSnapshotJson: string | null;
+  contactSnapshotJson: string | null;
   // Fix-Runde 2: Anteilsbasis fuer PERCENT/NET_AMOUNT/GROSS_AMOUNT ist die
   // Gesamtleistung NACH Beleg-Rabatt/-Aufschlag der Quelle (Ruling Koordinator) —
   // ohne diese Felder wuerde eine 100 %-Teilrechnung mehr als grossTotalCents
@@ -117,6 +126,12 @@ async function loadPartialSource(
       headerText: q.headerText,
       footerText: q.footerText,
       paymentTerms: q.paymentTerms,
+      contactPersonId: q.contactPersonId,
+      billingAddressId: q.billingAddressId,
+      shippingAddressId: null, // Quote kennt keine eigene Lieferadresse
+      sellerSnapshotJson: q.sellerSnapshotJson,
+      buyerSnapshotJson: q.buyerSnapshotJson,
+      contactSnapshotJson: q.contactSnapshotJson,
       documentDiscountPermille: q.documentDiscountPermille,
       documentDiscountCents: q.documentDiscountCents,
       documentChargePermille: q.documentChargePermille,
@@ -172,6 +187,12 @@ async function loadPartialSource(
     headerText: n.headerText,
     footerText: n.footerText,
     paymentTerms: null,
+    contactPersonId: n.contactPersonId,
+    billingAddressId: null, // DeliveryNote kennt keine eigene Rechnungsadresse
+    shippingAddressId: n.shippingAddressId,
+    sellerSnapshotJson: n.sellerSnapshotJson,
+    buyerSnapshotJson: n.buyerSnapshotJson,
+    contactSnapshotJson: n.contactSnapshotJson,
     // DeliveryNote kennt keinen Beleg-Rabatt/-Aufschlag (Abgrenzung Task 1-Schema).
     documentDiscountPermille: 0,
     documentDiscountCents: 0,
@@ -466,6 +487,15 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
       headerText: source.headerText ?? undefined,
       footerText: source.footerText ?? undefined,
       paymentTerms: source.paymentTerms ?? undefined,
+      // Fix-Runde 1 (Koordinator): Ansprechpartner/Rechnungs-/Lieferadresse der Quelle
+      // uebernehmen statt der Kunden-Defaults — Snapshot-Konsistenz Angebot/Lieferschein ->
+      // Teilrechnung (nur das je Quelltyp vorhandene Feld ist gesetzt, siehe PartialSource).
+      // Direkte Uebernahme (kein `?? undefined`): `null` an der Quelle bedeutet "kein
+      // Ansprechpartner/keine Adresse gewaehlt" und soll NICHT den Default-Lookup in
+      // createDraftInvoiceWithinTx ausloesen (der greift nur bei `undefined`).
+      contactPersonId: source.contactPersonId,
+      billingAddressId: source.billingAddressId,
+      shippingAddressId: source.shippingAddressId,
       // B1 (Fix-Welle): bei POSITIONS/QUANTITIES anteiliger Beleg-Rabatt/-Aufschlag der
       // Quelle (documentAdjustmentForBilledLines); bei den Anteils-Modi 0 (bereits in
       // den Bucket-Nettobetraegen eingepreist, siehe splitLinesForShareMode).
@@ -503,9 +533,21 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
       );
     }
 
+    // Fix-Runde 1 (Koordinator): Seller-/Buyer-/Kontakt-Snapshot der Quelle uebernehmen
+    // statt live aus dem (moeglicherweise seither geaenderten) Kundenstamm neu zu bauen —
+    // Snapshot-Konsistenz Angebot/Lieferschein -> Teilrechnung.
     await tx.invoice.update({
       where: { id: invoice.id },
-      data: { sourceType: input.sourceType, sourceId: input.sourceId, partialPermille: built.partialPermille },
+      data: {
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        partialPermille: built.partialPermille,
+        sellerSnapshotJson: source.sellerSnapshotJson,
+        buyerSnapshotJson: source.buyerSnapshotJson,
+        contactSnapshotJson: source.contactSnapshotJson,
+        snapshotSource: "INHERITED",
+        snapshotAt: now,
+      },
     });
 
     if (built.lines.some((l) => l.sourceLineId)) {

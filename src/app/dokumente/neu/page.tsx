@@ -3,6 +3,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { NewDocumentForm } from "@/components/NewDocumentForm";
 import { NeedOrgNotice } from "@/components/NeedOrgNotice";
+import { loadDocumentSettings } from "@/domain/document/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export default async function NeuesDokumentPage() {
   }
 
   const [customers, products, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
@@ -24,15 +25,19 @@ export default async function NeuesDokumentPage() {
     dbInternal.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
     dbInternal.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
   ]);
+  const documentSettings = await loadDocumentSettings(orgId);
 
   const contacts = contactRows.map((c) => ({
     id: c.id,
     customerId: c.customerId,
     label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
+    isDefault: c.isDefault,
   }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
+    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
+    isDefault: a.isDefault,
     label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
   }));
 
@@ -56,7 +61,7 @@ export default async function NeuesDokumentPage() {
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Neues Dokument</h1>
       </div>
-      <NewDocumentForm customers={customers} products={products} contacts={contacts} addresses={addresses} />
+      <NewDocumentForm customers={customers} products={products} contacts={contacts} addresses={addresses} offerLastDocument={documentSettings.offerLastDocument} />
     </div>
   );
 }

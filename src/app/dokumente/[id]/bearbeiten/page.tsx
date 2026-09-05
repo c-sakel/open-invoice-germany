@@ -21,7 +21,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (q.status !== "DRAFT") redirect(`/dokumente/${id}`);
 
   const [customers, products, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
@@ -31,10 +31,12 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
   ]);
 
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}` }));
+  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
+    type: a.type as "BILLING" | "SHIPPING" | "OTHER",
+    isDefault: a.isDefault,
     label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
   }));
 
