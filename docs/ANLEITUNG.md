@@ -196,7 +196,33 @@ Die Glocke im Kopfbereich zeigt die Anzahl ungelesener Benachrichtigungen und ei
 
 ---
 
-## 7. Problembehebung
+## 7. Per Sprache mit Claude Code (MCP)
+
+Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — z. B. mit Claude Code oder Claude Desktop. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.
+
+Alle wichtigen Funktionen aus dieser Anleitung sind auch als MCP-Tool erreichbar — Claude ruft dieselben, gleich validierten Funktionen auf wie UI und API (§55 des Lastenhefts, keine Bypass-Pfade). Beispielsätze:
+
+> **„Erstelle für Müller GmbH ein Angebot über 10 Stunden Beratung zu 95 Euro."** → `create_document`
+
+> **„Erzeuge aus Angebot ANG-2026-00123 eine Auftragsbestätigung."** → `convert_document`
+
+> **„Erstelle aus dem Auftrag einen Lieferschein."** → `create_delivery_note`
+
+> **„Erstelle eine Abschlagsrechnung über 30 Prozent."** → `create_downpayment_invoice`
+
+> **„Welche Rechnungen sind überfällig?"** → `list_overdue_invoices`
+
+> **„Sende für RE-2026-00342 eine Zahlungserinnerung."** → `send_dunning`
+
+> **„Buche auf RE-2026-00342 eine Zahlung von 500 Euro."** → `record_payment`
+
+> **„Erstelle die nächste Mahnstufe."** → `create_dunning`
+
+Vollständige Tool-Referenz (alle 80 Tools, nach Bereichen gruppiert, je ein Beispielkommando): [docs/MCP.md](MCP.md#3-verfügbare-tools).
+
+---
+
+## 8. Problembehebung
 
 | Problem | Lösung |
 |---|---|

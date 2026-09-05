@@ -83,7 +83,7 @@ Angebot/Auftragsbestätigung (`Quote`) und Lieferschein (`DeliveryNote`) sind �
 
 **Duplizieren** (Relation `DUPLICATED_FROM`) und **Standard-Dokumenttexte**: `TextTemplate` (Positionen `HEAD`/`FOOT`/`TERMS_DELIVERY`/`TERMS_PAYMENT`, `@@unique([orgId, docType, position, name])`) liefert per `pickTextTemplate` (`src/domain/text-template/pick.ts`) die als Standard markierte oder älteste passende Vorlage; neue Belege übernehmen den Text als Snapshot (Selbstheilung — fehlt eine Vorlage, bleibt das Feld leer statt einen Fehler zu werfen). Kopf-/Fußtexte erscheinen im PDF, **nicht** im XRechnung-/ZUGFeRD-XML.
 
-**MCP-Tools** (`src/mcp/server.ts`, Lastenheft 55, gleiche Zod-Validierung wie die UI/API-Pfade — keine Bypass-Pfade): `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`, ergänzend zu `convert_document_to_invoice`. Fehlt ein Beleg, wirft die Domain `NotFoundError` (`src/domain/errors.ts`), das API-/MCP-Boundary mappt das auf HTTP 404.
+**MCP-Tools** (`src/mcp/tools/documents.ts`, Lastenheft 55, gleiche Zod-Validierung wie die UI/API-Pfade — keine Bypass-Pfade): `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`, ergänzend zu `convert_document_to_invoice`. Fehlt ein Beleg, wirft die Domain `NotFoundError` (`src/domain/errors.ts`), das API-/MCP-Boundary mappt das auf HTTP 404.
 
 ### Online-Angebotsannahme (Phase 3b): öffentlicher Pfad, Token-Hashing, Rate-Limit
 
@@ -177,7 +177,7 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **UI**: `ConvertMenu` auf der Angebots-/AB-Seite bietet „Teilrechnung…"/„Abschlagsrechnung…"/„Schlussrechnung erzeugen"; die Lieferschein-Detailseite bietet seit der Fix-Welle (B11) ebenfalls „Teilrechnung…" (`GET /api/delivery-notes/[id]/billing`, Anteils-Modi PERCENT/NET_AMOUNT/GROSS_AMOUNT nur, wenn alle Positionen einen Preis tragen — sonst nur POSITIONS/QUANTITIES). Die Rechnungsseite zeigt bei `FINAL` einen Abzugsblock (je Abschlag eine Zeile, danach fett der Restbetrag) und einen Bezug-Link zur Quelle.
 
-**MCP**: `create_partial_invoice`, `create_downpayment_invoice`, `create_final_invoice`, `get_billing_state` (`src/mcp/server.ts`) — dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade (siehe `docs/MCP.md`).
+**MCP**: `create_partial_invoice`, `create_downpayment_invoice`, `create_final_invoice`, `get_billing_state` (`src/mcp/tools/invoices.ts`) — dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade (siehe `docs/MCP.md`).
 
 ### Mahnwesen & Scheduler (Phase 6)
 
@@ -404,7 +404,12 @@ src/
     index.ts               # Zod — DTOs, EN-16931-Mapping, API-Boundaries
     settings.ts             # Zod — DocumentSettings/PrintSettings/BrandingSettings/NumberRange (Phase 7)
     customer.ts             # Zod — Adressen/Ansprechpartner/Kundenfelder/Vorgaben (Phase 8a)
-  mcp/                     # bootstrap.ts, server.ts
+  mcp/                     # bootstrap.ts, server.ts (~65 Zeilen Composition Root, baut mcpContext
+                           # und registriert die 12 Bereichsmodule)
+    tools/                 # context.ts (McpToolsContext, createDefaultContext()), system.ts,
+                           # customers.ts, products.ts, invoices.ts, documents.ts, payments.ts,
+                           # dunning.ts, email.ts, attachments.ts, settings.ts, recurring.ts,
+                           # scheduler.ts — 80 Tools insgesamt, siehe docs/MCP.md
   generated/prisma/        # generierter Prisma-Client (nicht im Repo versioniert editieren)
 prisma/
   schema.prisma            # SQLite (Solo/Dev)
