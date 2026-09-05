@@ -10,6 +10,7 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { computeSubtotals } from "@/domain/document/lines";
+import { testPdfTheme } from "../helpers/pdf-theme";
 
 const ORG: MapInput["org"] = {
   legalName: "Test GmbH", addressLine1: "Hauptstr. 1", addressLine2: null, postalCode: "21339", city: "Lüneburg",
@@ -261,7 +262,7 @@ describe("renderInvoicePdf — Positionsblöcke + Rich-Text (Phase 4b)", () => {
   it("rendert HEADING/TEXT/SUBTOTAL/ITEM inkl. Rich-Text-Langtext und Artikelnummer-Spalte ohne Fehler", async () => {
     const { renderInvoicePdf } = await import("@/lib/pdf/invoice-pdf");
     const data = buildEInvoiceData(buildSectionsInput());
-    const pdf = await renderInvoicePdf(data);
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 
@@ -270,7 +271,7 @@ describe("renderInvoicePdf — Positionsblöcke + Rich-Text (Phase 4b)", () => {
     const input = buildSectionsInput();
     input.lines = input.lines.map((l) => ({ ...l, articleNumber: undefined }));
     const data = buildEInvoiceData(input);
-    const pdf = await renderInvoicePdf(data);
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 });

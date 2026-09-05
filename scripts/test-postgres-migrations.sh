@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "33" ] || fail "erwartet 33 Tabellen, gefunden $COUNT"
-echo "    ok — 33 Tabellen angelegt (inkl. _prisma_migrations)"
+[ "$COUNT" = "35" ] || fail "erwartet 35 Tabellen, gefunden $COUNT"
+echo "    ok — 35 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -213,5 +213,97 @@ then
   fail "zweite Dunning-Zeile mit gleichem (invoiceId, stageId) haette am Unique-Constraint scheitern muessen"
 fi
 echo "    ok — beide Phase-6-Migrationen angewendet, DunningStage/DunningSettings/SchedulerRun/SchedulerLock vorhanden, Unique-Index Dunning(invoiceId,stageId) erzwungen, autoSend-Defaults korrekt (Stufe false, Settings-Spalten autoCreate=true/autoSend=false/baseInterestRateBp=127)"
+
+echo "==> Fall 9 (Phase 7): DocumentSettings-Defaults fuer Bestandszeile, neue Tabellen, Customer-Index"
+# Eigenes Bestands-Szenario: DB exakt auf dem Stand VOR der Phase-7-Migration bringen
+# (0_init + alle Migrationen bis einschliesslich Phase 6, jede einzeln per db execute
+# angewendet und per "migrate resolve --applied" verbucht — KEIN "migrate deploy", das
+# wuerde alle ausstehenden Migrationen inkl. Phase 7 in einem Rutsch anwenden). Danach
+# eine Organisation + eine DocumentSettings-Zeile im ALTEN Spaltenumfang anlegen und erst
+# dann per "migrate deploy" genau die Phase-7-Migration nachziehen — so laesst sich
+# pruefen, dass ALTER TABLE ... ADD COLUMN ... DEFAULT die neuen Spalten auch auf einer
+# bereits existierenden Zeile korrekt befuellt (nicht nur auf frisch angelegten Zeilen).
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org9','Bestand GmbH','Altweg 9','99999','Bestadt',NOW());
+INSERT INTO "DocumentSettings" ("id","orgId","onQuoteAccept","shareLinkDays","storeAcceptIp","updatedAt")
+  VALUES ('ds9','org9','NONE',30,false,NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-7-Migration ist auf der Bestands-DB fehlgeschlagen"
+PHASE7MIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260904044136_phase7_settings' and finished_at is not null")
+[ "$PHASE7MIG" = "1" ] || fail "Phase-7-Migration ist nicht als angewendet verbucht"
+DUEDAYS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"invoiceDueDays\" from \"DocumentSettings\" where id='ds9'")
+[ "$DUEDAYS" = "14" ] || fail "Bestandszeile ds9: invoiceDueDays ist '$DUEDAYS', erwartet Default 14"
+CURRENCY=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"defaultCurrency\" from \"DocumentSettings\" where id='ds9'")
+[ "$CURRENCY" = "EUR" ] || fail "Bestandszeile ds9: defaultCurrency ist '$CURRENCY', erwartet Default EUR"
+QVALID=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"quoteValidityDays\" from \"DocumentSettings\" where id='ds9'")
+[ "$QVALID" = "30" ] || fail "Bestandszeile ds9: quoteValidityDays ist '$QVALID', erwartet Default 30"
+BOOLDEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"autoFinalizeOnSend\",\"shareLinkDefaultOn\",\"dnShowPrices\",\"dnShowArticleNumber\",\"dnShowDeliveryAddress\",\"showPaymentTermsText\",\"autoDeliveryDate\",\"refreshIssueDateOnFinalize\",\"offerLastDocument\",\"eInvoiceDefault\",\"recurringAutoFinalizeDefault\",\"recurringAutoSendDefault\",\"recurringInsertPeriodText\" from \"DocumentSettings\" where id='ds9'")
+[ "$BOOLDEFAULTS" = "f|t|f|t|t|t|t|t|t|t|f|f|t" ] \
+  || fail "Bestandszeile ds9: Bool-Defaults abweichend ('$BOOLDEFAULTS')"
+PMID=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select \"defaultPaymentMethodId\" from \"DocumentSettings\" where id='ds9'")
+[ -z "$PMID" ] || fail "Bestandszeile ds9: defaultPaymentMethodId ist '$PMID', erwartet NULL"
+for TBL in BrandingSettings PrintSettings; do
+  EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"$TBL\"') is not null")
+  [ "$EXISTS" = "t" ] || fail "Tabelle $TBL fehlt nach der Phase-7-Migration"
+done
+ROWS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select (select count(*) from \"BrandingSettings\") + (select count(*) from \"PrintSettings\")")
+[ "$ROWS" = "0" ] || fail "BrandingSettings/PrintSettings haben bereits Zeilen ($ROWS) — diese entstehen erst per Selbstheilung zur Laufzeit, nicht per Migration"
+CUSTIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Customer_orgId_customerNumber_idx'")
+[ "$CUSTIDX" = "1" ] || fail "Index Customer_orgId_customerNumber_idx fehlt nach der Phase-7-Migration"
+for COL in Invoice:printOptionsJson Quote:printOptionsJson DeliveryNote:printOptionsJson; do
+  TBL=${COL%%:*}; CNAME=${COL##*:}
+  PRESENT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+    "select count(*) from information_schema.columns where table_name='$TBL' and column_name='$CNAME'")
+  [ "$PRESENT" = "1" ] || fail "Spalte $TBL.$CNAME fehlt nach der Phase-7-Migration"
+done
+echo "    ok — Phase-7-Migration auf einer Bestands-DB angewendet, DocumentSettings-Bestandszeile hat alle neuen Defaults, BrandingSettings/PrintSettings existieren (leer), Customer-Index und printOptionsJson-Spalten vorhanden"
+
+echo "==> Fall 10 (Fix-Welle B3/S1): NumberRange.isActive-Default, Customer.defaultPaymentTermsDays nullable, aktive-Zeile-Switch"
+ISACTIVE_DEFAULT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='NumberRange' and column_name='isActive'")
+echo "$ISACTIVE_DEFAULT" | grep -q "^true" || fail "NumberRange.isActive hat Default '$ISACTIVE_DEFAULT', erwartet true"
+PTD_NULLABLE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select is_nullable from information_schema.columns where table_name='Customer' and column_name='defaultPaymentTermsDays'")
+[ "$PTD_NULLABLE" = "YES" ] || fail "Customer.defaultPaymentTermsDays ist NOT NULL, erwartet nullable (B3-Fix-Welle S1)"
+PTD_DEFAULT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='Customer' and column_name='defaultPaymentTermsDays'")
+[ -z "$PTD_DEFAULT" ] || fail "Customer.defaultPaymentTermsDays hat noch einen DB-Default ('$PTD_DEFAULT'), erwartet keinen (NULL = kein Kunden-Override)"
+# Aktive-Zeile-Switch (wie updateNumberRange ihn erzeugt): zwei Zeilen desselben docType
+# (year 0 und year <Jahr>) — nur eine darf gleichzeitig aktiv sein, isActive schaltet um.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO "NumberRange" ("id","orgId","docType","year","currentValue","isActive","updatedAt")
+  VALUES ('nr1','org9','INVOICE',0,4999,true,NOW());
+INSERT INTO "NumberRange" ("id","orgId","docType","year","currentValue","isActive","updatedAt")
+  VALUES ('nr2','org9','INVOICE',2026,0,false,NOW());
+UPDATE "NumberRange" SET "isActive" = false WHERE id = 'nr1';
+UPDATE "NumberRange" SET "isActive" = true WHERE id = 'nr2';
+SQL
+ACTIVE_COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"NumberRange\" where \"orgId\"='org9' and \"docType\"='INVOICE' and \"isActive\"=true")
+[ "$ACTIVE_COUNT" = "1" ] || fail "erwartet genau 1 aktive NumberRange-Zeile nach dem Switch, gefunden $ACTIVE_COUNT"
+ACTIVE_YEAR=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select year from \"NumberRange\" where \"orgId\"='org9' and \"docType\"='INVOICE' and \"isActive\"=true")
+[ "$ACTIVE_YEAR" = "2026" ] || fail "aktive Zeile hat year='$ACTIVE_YEAR', erwartet 2026 nach dem Switch"
+echo "    ok — NumberRange.isActive Default true, Customer.defaultPaymentTermsDays nullable ohne Default, aktive-Zeile-Switch (year 0 -> year <Jahr>) funktioniert"
 
 echo "ALLE TESTS BESTANDEN"

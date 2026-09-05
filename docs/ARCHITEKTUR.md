@@ -198,6 +198,26 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **Übersicht** (`src/domain/dunning/overview.ts`, `loadDunningOverview`) aggregiert für `/mahnwesen` (server-gerendet) und `list_overdue_invoices` (MCP) alle offenen, fälligen Rechnungen einer Organisation: Widgets (`overdueCount`, `openTotalCents`, Aging-Buckets `1–7`/`8–30`/`31–60`/`>60 Tage`, `openCents` auf Basis `payableBaseCents`) + sortierte Zeilenliste (aktuelle/nächste Stufe über `dunningScheduleFor`, letzter Kontakt aus `EmailLog`). Der letzte-Kontakt-Zeitpunkt wird **in einem Batch** ermittelt (ein `emailLog.groupBy` über alle betroffenen Rechnungs-/Mahnungs-IDs, danach in-memory je Rechnung reduziert) statt einer `aggregate`-Abfrage je Zeile (Task-4-Review, N+1 behoben) — bei kleinen/mittleren Organisationen ist das unkritisch, bleibt aber eine bewusste Grenze: keine Paginierung der zugrundeliegenden Rechnungsliste.
 
+### Einstellungen, Nummernkreise, Briefpapier, Druckoptionen & GiroCode (Phase 7)
+
+**Settings-Modelle** (je `orgId @unique`, Selbstheilung analog `DunningSettings`: erster Lesezugriff legt eine Zeile mit den Schema-Defaults an, kein manuelles Anlegen nötig):
+- `DocumentSettings` (bereits aus Phase 3b, um 17 Felder erweitert — u. a. `invoiceDueDays`, `defaultCurrency`, `quoteValidityDays`, `autoFinalizeOnSend`, `dnShowPrices`/`dnShowArticleNumber`/`dnShowDeliveryAddress`, `autoDeliveryDate`, `refreshIssueDateOnFinalize`, `offerLastDocument`, `eInvoiceDefault`, `shareLinkDefaultOn`, `showPaymentTermsText`, `defaultPaymentMethodId`, `recurringInsertPeriodText`/`recurringAutoFinalizeDefault`/`recurringAutoSendDefault`) — `src/domain/document/settings.ts` (`loadDocumentSettings`/`saveDocumentSettings`), `DEFAULT_DOCUMENT_SETTINGS` aus dem Zod-Schema abgeleitet (`documentSettingsInputSchema.parse({})`), keine zweite Quelle der Wahrheit für Defaults.
+- `PrintSettings` (neu, `src/domain/settings/print.ts`) — zehn globale Druck-Schalter (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Artikelnummer-/Beschreibungs-/Steuersatz-/Zeilensummen-Spalte, Absenderzeile, GiroCode). `effectivePrintOptions(global, overrideJson)` ist eine reine Merge-Funktion: das gespeicherte `printOptionsJson` eines einzelnen Belegs (Invoice/Quote/DeliveryNote) überschreibt gezielt einzelne globale Werte. `setPrintOptions(orgId, {kind, id}, rawInput)` prüft selbst `status === "DRAFT"` (409 sonst) — für Invoice zusätzlich hinter dem bestehenden GoBD-Guard (`src/lib/db.ts`), für Quote/DeliveryNote reicht die Domain-Prüfung, da diese Modelle keinen eigenen DB-Guard haben.
+- `BrandingSettings` (neu, `src/domain/settings/branding.ts`) — Logo (`logoPath`, `logoWidthMm`), Hintergrund (`backgroundPath`, `showBackground`), Primärfarbe, vier Ränder (mm), Schriftgröße, Absenderzeile, dreispaltige Fußzeile. **Ein Satz je Organisation** (kein Layout je Belegtyp/Kunde, siehe `docs/LIMITATIONEN.md`).
+- `Customer.customerNumber` / `Product.articleNumber` — eigene, rein organisatorische Nummernkreise ohne Beleg-/Gesetzesbezug (siehe `COMPLIANCE.md` Abschnitt 6), Vergabe über dieselben Nummernkreis-Bausteine wie Belegnummern.
+
+**Nummernkreise über Rechnungen hinaus** (`src/domain/numbering/ranges.ts`): erweitert die bestehende `NumberRange`-Tabelle/Formatierung (siehe „GoBD-Unveränderbarkeit + lückenloser Nummernkreis" oben) auf **neun** Typen (`NUMBER_RANGE_DOC_TYPES`: CUSTOMER, PRODUCT, ANGEBOT, AUFTRAGSBESTAETIGUNG, PROFORMA, DELIVERY_NOTE, INVOICE, CREDIT_NOTE, DUNNING). `listNumberRanges(orgId, year)` liefert je Typ Muster/Präfix/Padding/`yearlyReset`/aktuellen Zähler + eine Vorschau der nächsten Nummer; `updateNumberRange` schreibt Änderungen ins `ChangeLog` (`entity: "SETTINGS"`, `entityId: "NUMBER_RANGE:<docType>"`) und lehnt ein Zurückdrehen der nächsten Nummer unterhalb bereits vergebener Nummern ab (geprüft über **beide** möglichen Zeilen desselben Typs — `year=0` und `year=<Jahr>` —, damit ein Wechsel von/zu `yearlyReset` keine bereits vergebene Nummer erneut ausgibt). `yearlyReset` ist **kein eigenes DB-Feld**, sondern aus `year` abgeleitet (`year === 0` → nicht jahresgebunden); ein Wechsel legt eine neue Zeile an, ohne die alte zu löschen. Kunden-/Artikelnummern (`assignCustomerNumber`/`assignArticleNumber`) laufen über denselben Mechanismus, aber ohne Jahresbezug (`KD-{SEQ:5}`/`ART-{SEQ:5}`) und ohne GoBD-Rückdreh-Sperre (keine Beleg-Nummer).
+
+**PDF-Theme** (`src/lib/pdf/theme.ts`, `src/domain/settings/theme.ts#loadPdfTheme`): `PdfTheme { brand, options, showPaymentTermsText, logoBuffer?, backgroundBuffer?, compress? }` bündelt `BrandingSettings` + effektive `PrintSettings` (inkl. Beleg-Override) + `DocumentSettings.showPaymentTermsText` + optional geladene Logo-/Hintergrunddatei (fehlende Datei → PDF ohne Bild, kein Fehler). Alle drei PDF-Renderer (`renderInvoicePdf`, `renderDeliveryNotePdf`, `renderDunningPdf`, sowie `renderZugferdPdf`) haben seit Phase 7 die Pflicht-Signatur `(data, theme)` — Aufrufer laden das Theme **selbst** (kein impliziter Default), damit jede Stelle (Routen, `src/domain/email/attachments.ts`, MCP `export_invoice`) explizit das passende Theme (inkl. Beleg-Override) mitgibt. `compress` ist standardmäßig `undefined` → Renderer nutzen `theme.compress ?? true` (komprimierter Produktionspfad); nur Tests setzen `compress:false` (Kompatibilität mit dem im Test-Tooling verwendeten `pdf-parse`).
+
+**Falz-/Lochmarken, Seitenzahlen, GiroCode** (`src/lib/pdf/marks.ts`, `src/lib/pdf/giro.ts`, `src/lib/pdf/epc.ts`): Falzmarken bei 105/210 mm, Lochmarke bei 148,5 mm (DIN 5008), Seitenzahlen über `doc.bufferedPageRange()` (muss nach dem gesamten Seiteninhalt gezeichnet werden). Der EPC-GiroCode (`buildEpcPayload`, Format nach **EPC069-12 Version 002**, siehe `COMPLIANCE.md` Abschnitt 6) wird nur gerendert, wenn `PrintSettings.showGiroCode`, eine IBAN vorhanden, der Belegtyp zahlungsrelevant ist (INVOICE/PARTIAL/DOWNPAYMENT/FINAL/CORRECTION) und ein offener Betrag > 0 besteht (`giroAmountCents`, aus `openAmountCents(invoice)`, `src/domain/invoice/amounts.ts` — bewusst **nicht** `payableCents`, das bei `FINAL` einen anderen Wert ausweist). Ein `EpcError` beim Payload-Bau (z. B. Empfängername > 70 Zeichen) lässt das PDF ohne GiroCode weiterlaufen, statt die PDF-Erzeugung abzubrechen — reine Zahlungserleichterung, keine Pflichtangabe.
+
+**Vorschau** (`src/domain/settings/preview.ts`, `GET /api/settings/branding/preview`): rendert eine feste Musterrechnung/-lieferschein mit echten Org-Stammdaten und dem **gespeicherten** Theme (`loadPdfTheme(orgId)`, kein DB-Beleg nötig) — für die Live-Ansicht beim Einrichten von Briefpapier/Druckoptionen.
+
+**UI**: vier Settings-Seiten (`/einstellungen/belege`, `/nummernkreise`, `/briefpapier`, `/druckoptionen`) sowie ein `PrintOptionsPanel` im Beleg-Editor (nur `DRAFT`), das die effektiven Werte mit „abweichend"-Checkboxen zeigt — nur tatsächlich abgehakte Felder gehen als Override in `PUT .../print-options`.
+
+**MCP**: `get_settings`, `update_document_settings`, `update_print_settings`, `update_branding_settings` (verwirft `logoPath`/`backgroundPath` — Upload läuft ausschließlich über die HTTP-Upload-Route), `update_number_range`, `update_dunning_settings`, `list_dunning_stages`, `update_dunning_stage` (dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade) — siehe `docs/MCP.md`.
+
 ---
 
 ## 2. E-Rechnung: Erzeugung & Validierung
@@ -282,6 +302,7 @@ src/
     actions/              # invoices.ts, masterdata.ts, email.ts, templates.ts, result.ts (Server Actions)
     rechnungen/ dokumente/ lieferscheine/ kunden/ produkte/ abos/ einstellungen/ setup/ login/
                            # einstellungen/email (MailSettings + Testmail), einstellungen/vorlagen (EmailTemplate)
+                           # einstellungen/belege, /nummernkreise, /briefpapier, /druckoptionen (Phase 7)
   components/             # UI-Komponenten, inkl. forms/ (CustomerForm.tsx, OrganizationForm.tsx,
                            # ProductForm.tsx, MailSettingsForm.tsx, EmailTemplateForm.tsx,
                            # TemplateRowActions.tsx, TestMailForm.tsx, fields.tsx)
@@ -291,6 +312,8 @@ src/
     audit.ts
     changelog.ts          # Hash-Chain
     numbering.ts
+    numbering/             # ranges.ts (Nummernkreise ueber Rechnungen hinaus, Kunden-/Artikelnummern, Phase 7)
+    settings/               # print.ts, branding.ts, theme.ts, preview.ts (Phase 7)
     snapshot.ts           # Käufer-/Verkäufer-Snapshot (Phase 0)
     document/              # convert.ts, create.ts, update.ts, duplicate.ts, status.ts, chain.ts,
                            # billing-state.ts, pdf-data.ts, snapshot-input.ts
@@ -312,12 +335,14 @@ src/
     recurring.ts
     auth/                  # password.ts, server.ts, session.ts
     einvoice/               # xrechnung.ts, cii.ts, zugferd.ts, en16931-core.ts, mapper.ts, load.ts, types.ts
-    pdf/                    # invoice-pdf.ts, dunning-pdf.ts
+    pdf/                    # invoice-pdf.ts, dunning-pdf.ts, delivery-note-pdf.ts, theme.ts, layout.ts,
+                           # marks.ts, giro.ts, epc.ts (Phase 7)
     mail/                   # provider.ts (Interface), smtp.ts (Produktiv), memory.ts (Tests)
     template/               # placeholders.ts, render.ts, format.ts (Mailvorlagen-Platzhalter)
     crypto/                 # secrets.ts (AES-256-GCM, Schluessel per HKDF aus AUTH_SECRET)
   schemas/
     index.ts               # Zod — DTOs, EN-16931-Mapping, API-Boundaries
+    settings.ts             # Zod — DocumentSettings/PrintSettings/BrandingSettings/NumberRange (Phase 7)
   mcp/                     # bootstrap.ts, server.ts
   generated/prisma/        # generierter Prisma-Client (nicht im Repo versioniert editieren)
 prisma/

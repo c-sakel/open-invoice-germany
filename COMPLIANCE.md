@@ -337,9 +337,28 @@ Bei E-Rechnungen ist der **strukturierte XML-Teil** das **aufbewahrungspflichtig
 
 Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11). Cloud außerhalb DE → Bewilligungs-/Mitteilungspflicht: EU-Mitgliedstaat ohne Bewilligung aber mit Mitteilung (§ 146 Abs. 2a AO), Drittstaat nur mit Bewilligung (§ 146 Abs. 2b AO).
 
+### Nummernkreise über die Rechnung hinaus (§ 33, Phase 7)
+
+- Die gesetzliche Pflicht zur **fortlaufenden, einmalig vergebenen Nummer** (§ 14 Abs. 4 Nr. 4 UStG, siehe Abschnitt 1) gilt ausdrücklich nur für **Rechnungen** (inkl. Gutschrift, Korrektur, Abschlags-/Schlussrechnung — alles, was `§ 14 Abs. 1 UStG` als Rechnung definiert). Für Angebote, Auftragsbestätigungen, Proforma-Rechnungen und Lieferscheine gibt es **keine** vergleichbare gesetzliche Nummernkreis-Pflicht.
+- **Betreiber-Ruling (Lastenheft, Phase 7):** Angebots-, Auftragsbestätigungs- und Lieferschein-Nummern werden dennoch **bei Erstellung** (nicht erst beim Versand/Festschreiben) vergeben, analog zur bisherigen Rechnungsnummern-Logik der Software. Lücken in diesen Nummernkreisen (verworfene Entwürfe, gelöschte Datensätze) sind **unschädlich**, da für diese Belegarten keine Einmaligkeits-/Lückenlosigkeits-Pflicht besteht — anders als bei der Rechnungsnummer, wo Lücken zwar ebenfalls zulässig sind (siehe „Zwei verschiedene Lückenlosigkeits-Begriffe" oben), aber stets nachvollziehbar bleiben müssen (GoBD Rz 32).
+- Kunden- und Artikelnummern (`assignCustomerNumber`/`assignArticleNumber`, Phase 7) sind **rein organisatorische** Nummernkreise ohne eigene gesetzliche Grundlage — vergleichbar mit den in Abschnitt 6 oben beschriebenen mehreren zulässigen Nummernkreisen (zeitlich/geografisch/organisatorisch), hier nur auf Stammdaten statt Belege angewendet.
+- Nummernkreis-**Änderungen** (Muster, Präfix, nächste Nummer) protokolliert die Software im `ChangeLog` (`entity: "SETTINGS"`, `entityId: "NUMBER_RANGE:<docType>"`) und lehnt ein **Zurückdrehen** der nächsten Nummer unterhalb bereits vergebener Nummern ab — Konsequenz aus der Einmaligkeits-Pflicht bei Rechnungen (§ 14 Abs. 4 Nr. 4 UStG) sowie aus der allgemeinen GoBD-Nachvollziehbarkeit (Rz 32) für alle übrigen Belegarten.
+
+### Layoutänderungen vs. Beleginhalt (Briefpapier/Druckoptionen, Phase 7)
+
+- Briefpapier (Logo, Farben, Ränder, Fußzeile) und Druckoptionen (welche Spalten/Marken/Seitenzahlen erscheinen) sind **reine Darstellung** eines Belegs, kein Bestandteil des rechtlich maßgeblichen **Beleginhalts** (Pflichtangaben nach § 14 Abs. 4 UStG, EN-16931-Kernfelder). Eine spätere Änderung des Briefpapiers/der globalen Druckoptionen wirkt sich deshalb auf **Nachdrucke bereits festgeschriebener Belege** aus (das PDF wird bei jedem Abruf/Nachdruck aus dem aktuellen Theme neu gerendert) — das ist mit der GoBD-Unveränderbarkeit (§ 146 Abs. 4 AO, Abschnitt 6 oben) vereinbar, **solange** die inhaltstragenden Daten (Positionen, Beträge, Steuersätze, Nummer, Datum) unverändert aus dem festgeschriebenen Datensatz bzw. Snapshot stammen und die maschinenlesbare E-Rechnung (XRechnung-XML/ZUGFeRD-Datenteil) vom Layout vollständig unberührt bleibt.
+- Je-Beleg-Druckoptionen (`printOptionsJson` auf Invoice/Quote/DeliveryNote) sind deshalb — wie jeder andere Beleginhalt — nach Festschreibung **nicht mehr änderbar** (Domain-Guard, Status muss `DRAFT` sein); das betrifft ausschließlich die Anzeige-Auswahl (z.B. „Artikelnummer-Spalte anzeigen"), nicht die zugrunde liegenden Daten.
+- Der EPC-GiroCode (siehe unten) wird aus **denselben** bereits im Beleg vorhandenen Zahlungsdaten (IBAN, offener Betrag, Empfängername) gerendert — er fügt keine neue inhaltliche Information hinzu, sondern stellt vorhandene Pflichtangaben (§ 14 Abs. 4 Nr. 7/8 i.V.m. den Zahlungsbedingungen) zusätzlich maschinenlesbar für Banking-Apps dar.
+
+### GiroCode / EPC-QR-Code (§ 37, Phase 7)
+
+- Der GiroCode folgt dem **EPC069-12** „Quick Response Code Guidelines to Enable the Data Capture for the Initiation of a SEPA Credit Transfer", Version **002** (European Payments Council) — dem Industriestandard für QR-gestützte SEPA-Überweisungen, den u.a. die deutsche Kreditwirtschaft als „GiroCode" vermarktet.
+- Kein eigenständiges Gesetz/keine UStG-Pflichtangabe — der GiroCode ist eine **freiwillige Zahlungserleichterung**, keine Rechnungsangabe. Software-seitig deshalb bewusst **fail-soft**: fehlt eine Voraussetzung (keine IBAN, kein SEPA-tauglicher Betrag, Name > 70 Zeichen, Zahlungsart ohne offenen Betrag), entfällt der Code **ersatzlos** — er darf den restlichen Beleg (insb. die Pflichtangaben) nie blockieren.
+- Nur **EUR** wird unterstützt (EPC069-12 beschränkt den Standard-QR-Code faktisch auf SEPA/EUR-Überweisungen); Fremdwährungsrechnungen bleiben ohne GiroCode (siehe `docs/LIMITATIONEN.md`).
+
 > **[ungesichert]** Die zitierten Randziffern (Rz 32, 34, 47, 50, 58–60, 77, 107–112, 151–153) stammen überwiegend aus Sekundärquellen (Haufe/IHK/Steuerberater-Merkblätter Stand 2026); vor produktiver Nutzung gegen das BMF-GoBD-Volltext-PDF gegenprüfen. Die konkrete BStBl-Fundstelle „2025 I S. 1502" konnte nicht verifiziert werden; das 2025er Aktenzeichen lautet **IV D 2 - S 0316/00128/005/088**.
 
-**Quellen:** [§ 146 AO](https://www.gesetze-im-internet.de/ao_1977/__146.html) · [§ 147 AO](https://www.gesetze-im-internet.de/ao_1977/__147.html) · [BMF GoBD 2. Änderung 14.07.2025](https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Weitere_Steuerthemen/Abgabenordnung/2025-07-14-GoBD-2-aenderung.html) · [§ 14 UStG / UStAE 14.5](https://datenbank.nwb.de/Dokument/378652_14___5/) · [BStBK GoBD-Praxisleitfaden](https://www.bstbk.de/downloads/bstbk/steuerrecht-und-rechnungslegung/fachinfos/BStBK_GoBD_Ein-Praxisleitfaden-fuer-Unternehmen.pdf)
+**Quellen:** [§ 146 AO](https://www.gesetze-im-internet.de/ao_1977/__146.html) · [§ 147 AO](https://www.gesetze-im-internet.de/ao_1977/__147.html) · [BMF GoBD 2. Änderung 14.07.2025](https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Weitere_Steuerthemen/Abgabenordnung/2025-07-14-GoBD-2-aenderung.html) · [§ 14 UStG / UStAE 14.5](https://datenbank.nwb.de/Dokument/378652_14___5/) · [BStBK GoBD-Praxisleitfaden](https://www.bstbk.de/downloads/bstbk/steuerrecht-und-rechnungslegung/fachinfos/BStBK_GoBD_Ein-Praxisleitfaden-fuer-Unternehmen.pdf) · [EPC069-12 „Quick Response Code Guidelines" (European Payments Council)](https://www.europeanpaymentscouncil.eu/document-library/guidance-documents/quick-response-code-guidelines-enable-data-capture-initiation)
 **Stand:** 2026-01-01 / GoBD 2025-07-14
 
 ---
@@ -661,6 +680,10 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 | Drittland | bei US-/Drittland-Subdienstleistern zusätzlich Transfer-Mechanismus | Art. 44 ff. DSGVO |
 
 → **Datenmodell-Konsequenz:** Jedes `delete` auf rechnungsrelevante Tabellen (Invoice, Lead) muss **Sperren/Archivieren erzwingen**, nicht Hard-Delete — sonst Verstoß gegen Aufbewahrungspflicht.
+
+### Briefpapier-Assets (Logo/Hintergrund, Phase 7)
+
+Logo- und Hintergrunddatei (`BrandingSettings.logoPath`/`backgroundPath`) liegen im selben **Dateispeicher** wie die übrigen Beleg-Anhänge (Phase 4b, `src/lib/attachments/storage.ts`) — kein separates, öffentlich erreichbares Verzeichnis. In der Regel enthalten diese Dateien **keine personenbezogenen Daten** (Firmenlogo, Hintergrundgrafik); enthält ein hochgeladenes Bild dennoch personenbezogene Inhalte (z.B. ein Foto als Hintergrund), gelten dieselben Zugriffs-/Löschregeln wie für andere im Dateispeicher abgelegte Anhänge — kein Sonderfall.
 
 ### OSS-/E-Rechnung-Tooling (Node/JS/JVM)
 

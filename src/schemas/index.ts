@@ -148,8 +148,12 @@ export const customerSchema = z.object({
   vatId: z.string().optional(),
   leitwegId: z.string().optional(),
   peppolId: z.string().optional(),
-  defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
+  // S1 (Fix-Welle Phase 7): null/fehlend = kein Kunden-Override (kaskadiert auf
+  // Zahlungsmethode -> DocumentSettings.invoiceDueDays -> 14, siehe invoice/create.ts).
+  defaultPaymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
   defaultPaymentMethodId: z.string().optional(),
+  // Phase 7, §34 — frei editierbar; bleibt leer -> assignCustomerNumber bei der Anlage.
+  customerNumber: z.string().max(30).optional(),
   notes: z.string().optional(),
 });
 export type CustomerInput = z.infer<typeof customerSchema>;
@@ -279,7 +283,10 @@ const invoiceHeaderFields = {
   customerId: z.string().min(1),
   type: InvoiceType.default("INVOICE"),
   taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
+  // Phase 7 Fix-Runde 1: ohne explizite Angabe greift DocumentSettings.defaultCurrency
+  // (Selbstheilung), zuletzt "EUR" — bewusst KEIN `.default()`, sonst koennte die
+  // Domain "nicht gesetzt" nicht von "EUR" unterscheiden.
+  currency: z.string().length(3).optional(),
   issueDate: z.coerce.date().optional(),
   deliveryDate: z.coerce.date().optional(),
   deliveryStart: z.coerce.date().optional(),
@@ -417,7 +424,8 @@ export const createDocumentSchema = z.object({
   kind: DocumentKind,
   customerId: z.string().min(1),
   taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
+  // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
+  currency: z.string().length(3).optional(),
   validUntil: z.coerce.date().optional(),
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
@@ -502,9 +510,14 @@ export const createRecurringSchema = z.object({
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
   taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
+  // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
+  currency: z.string().length(3).optional(),
   paymentTermsDays: z.number().int().min(0).max(365).default(14),
-  autoFinalize: z.boolean().default(false),
+  // Ohne explizite Angabe greifen recurringAutoFinalizeDefault/recurringAutoSendDefault
+  // (Phase 7, §33) — bewusst KEIN `.default()`, sonst koennte die Domain nicht mehr
+  // unterscheiden, ob der Aufrufer bewusst false gewaehlt hat.
+  autoFinalize: z.boolean().optional(),
+  autoSend: z.boolean().optional(),
   notes: z.string().optional(),
   lines: z.array(invoiceLineInputSchema).min(1),
 });
@@ -545,10 +558,14 @@ export const createDeliveryNoteSchema = z.object({
   sourceId: z.string().optional(),
   deliveryDate: z.coerce.date().optional(),
   shippingDate: z.coerce.date().optional(),
-  showPrices: z.boolean().default(false),
-  showTax: z.boolean().default(false),
-  showArticleNumber: z.boolean().default(true),
-  showDescription: z.boolean().default(true),
+  // Ohne explizite Angabe greifen die dnShow*-Org-Einstellungen (Phase 7, §33) — bewusst
+  // KEIN Zod-`.default()` hier, sonst wuerde die Domain nie unterscheiden koennen, ob der
+  // Aufrufer den Wert bewusst gesetzt hat.
+  showPrices: z.boolean().optional(),
+  showTax: z.boolean().optional(),
+  showArticleNumber: z.boolean().optional(),
+  showDescription: z.boolean().optional(),
+  showDeliveryAddress: z.boolean().optional(),
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   notes: z.string().optional(),
@@ -714,6 +731,9 @@ export * from "./email";
 // importiert); hier nur Re-Export fuer Aufrufer, die ueber den Sammelindex importieren
 // (Task-2-Review, Auflage: quote-share.ts war zuvor nicht re-exportiert).
 export * from "./quote-share";
+
+// ── Phase 7: Belegeinstellungen, Briefpapier, Druckoptionen, Nummernkreise ──
+export * from "./settings";
 
 // ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
 // Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung

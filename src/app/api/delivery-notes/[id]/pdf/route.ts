@@ -2,6 +2,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
+import { loadPdfTheme } from "@/domain/settings/theme";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     sourceNumber = inv?.number ?? null;
   }
 
-  const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber));
+  const shippingAddress = dn.showDeliveryAddress
+    ? await dbInternal.customerAddress.findFirst({
+        where: { orgId: org.id, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
+        select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
+      })
+    : null;
+
+  const theme = await loadPdfTheme(org.id, dn.printOptionsJson);
+  const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
   const safe = (dn.number ?? "lieferschein").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {
     headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${safe}.pdf"` },

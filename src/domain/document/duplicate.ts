@@ -140,8 +140,10 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
 
 /**
  * INVOICE-Duplikat ueber createDraftInvoiceWithinTx (bereits ohne Snapshot/Nummer) — Ruling
- * des Koordinators. `dueDate` wird bewusst NICHT uebernommen — sie wird beim Festschreiben
- * neu berechnet. Erstellung, Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
+ * des Koordinators. `dueDate` wird bewusst NICHT von der Quelle uebernommen — sie wird bei
+ * der Anlage des Duplikats aus DocumentSettings.invoiceDueDays (bzw. der Zahlungsmethode)
+ * neu berechnet (Phase 7, §33), nicht erst beim Festschreiben. Erstellung, Relation und
+ * ChangeLog laufen in EINER Transaktion (Lastenheft 50).
  */
 // Phase 5: Teil-, Abschlags- und Schlussrechnungen haengen an einer Quelle (sourceType/
 // sourceId, Relation PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR) und duerfen nicht dupliziert

@@ -48,6 +48,8 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 - **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate) + €40 flat fee (B2B), each as a PDF.
 - **Recurring invoices / subscriptions**: weekly–yearly templates, optional auto-finalisation, run via UI/MCP or cron (`npm run recurring:run`).
 - **Credit notes**: full cancellation **or** partial credit, original stays finalised.
+- **Letterhead, print options & number ranges**: per-organisation branding (logo, colour, margins, sender line, footer) with a live preview; ten global print switches (footer, page numbers, fold/punch marks, which columns show) with per-document overrides while still a draft; nine configurable number ranges (quotes, order confirmations, pro-forma, delivery notes, invoices, credit notes, dunnings, plus customer and article numbers) with pattern/prefix/reset and a rewind guard.
+- **EPC QR code ("GiroCode")** on invoices — scan-to-pay in any German banking app, built from the same IBAN/amount already on the invoice; fails soft (no code, no error) if a prerequisite is missing (foreign currency, no IBAN, nothing outstanding).
 - **PDF export** ("other invoice") with all mandatory fields.
 - **Self-hosted**: SQLite solo without a server **or** PostgreSQL via Docker.
 - **Sign-in**: built-in admin account (scrypt hash + signed session cookie) — app and API protected.

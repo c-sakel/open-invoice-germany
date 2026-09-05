@@ -8,11 +8,7 @@
 import { dbInternal } from "@/lib/db";
 import { documentSettingsInputSchema, type DocumentSettingsInput } from "@/schemas/quote-share";
 
-export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettingsInput = {
-  onQuoteAccept: "NONE",
-  shareLinkDays: 30,
-  storeAcceptIp: false,
-};
+export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettingsInput = documentSettingsInputSchema.parse({});
 
 /** Laedt die Dokument-Einstellungen einer Organisation; Defaults, wenn noch keine Zeile existiert. */
 export async function loadDocumentSettings(orgId: string): Promise<DocumentSettingsInput> {
@@ -22,6 +18,23 @@ export async function loadDocumentSettings(orgId: string): Promise<DocumentSetti
     onQuoteAccept: row.onQuoteAccept,
     shareLinkDays: row.shareLinkDays,
     storeAcceptIp: row.storeAcceptIp,
+    autoFinalizeOnSend: row.autoFinalizeOnSend,
+    defaultCurrency: row.defaultCurrency,
+    quoteValidityDays: row.quoteValidityDays,
+    shareLinkDefaultOn: row.shareLinkDefaultOn,
+    dnShowPrices: row.dnShowPrices,
+    dnShowArticleNumber: row.dnShowArticleNumber,
+    dnShowDeliveryAddress: row.dnShowDeliveryAddress,
+    invoiceDueDays: row.invoiceDueDays,
+    showPaymentTermsText: row.showPaymentTermsText,
+    autoDeliveryDate: row.autoDeliveryDate,
+    refreshIssueDateOnFinalize: row.refreshIssueDateOnFinalize,
+    offerLastDocument: row.offerLastDocument,
+    eInvoiceDefault: row.eInvoiceDefault,
+    defaultPaymentMethodId: row.defaultPaymentMethodId,
+    recurringInsertPeriodText: row.recurringInsertPeriodText,
+    recurringAutoFinalizeDefault: row.recurringAutoFinalizeDefault,
+    recurringAutoSendDefault: row.recurringAutoSendDefault,
   });
 }
 

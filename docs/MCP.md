@@ -100,8 +100,15 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `create_share_link` | Angebots-Annahmelink (ohne Login) erzeugen — liefert die URL einmalig in der Antwort |
 | `revoke_share_link` | Angebots-Annahmelink widerrufen |
 | `list_share_links` | Annahme-Links eines Angebots auflisten (Status/Aufrufe/Entscheidung, nie der Klartext-Token) |
-| `save_document_settings` | Angebotsannahme-Einstellungen speichern (Automatik nach Annahme, Link-Gültigkeitsdauer, IP-Speicherung) |
 | `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType` (ITEM/HEADING/TEXT/SUBTOTAL); Rechnungstyp bleibt unveränderbar |
+| `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) |
+| `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand) — Merge mit dem aktuellen Stand, nicht angegebene Felder bleiben unverändert; ersetzt das frühere `save_document_settings` vollständig |
+| `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode) — Merge |
+| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) — Merge; `logoPath`/`backgroundPath` werden verworfen, Datei-Upload läuft ausschließlich über die HTTP-Route `/api/settings/branding/upload` |
+| `update_number_range` | Einen Nummernkreis aktualisieren (`docType`, Muster/Präfix/Padding/`yearlyReset`/nächste Nummer) — Merge mit dem laufenden Jahr; lehnt ein Zurückdrehen unterhalb bereits vergebener Nummern ab |
+| `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Basiszins) — Merge |
+| `list_dunning_stages` | Konfigurierte Mahnstufen einer Organisation auflisten |
+| `update_dunning_stage` | Eine Mahnstufe teilweise aktualisieren (`id` + Felder) — Merge mit dem aktuellen Stand |
 | `add_attachment` / `list_attachments` / `remove_attachment` | Beleganhänge verwalten (Rechnung/Angebot/Lieferschein/Abo/Mahnung) — Upload als Base64, dieselben Grenzen wie im UI (10 MB je Datei, 50 MB je Beleg) |
 | `create_partial_invoice` | Teilrechnung aus einem Angebot/einer AB oder einem Lieferschein — Prozent, Netto-/Bruttobetrag, oder einzelne Positionen/Mengen |
 | `create_downpayment_invoice` | Abschlagsrechnung vor Leistungserbringung (nur aus Angebot/AB) — Prozent oder Betrag, netto oder brutto; löst § 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG aus |

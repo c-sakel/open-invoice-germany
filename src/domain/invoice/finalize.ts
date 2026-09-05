@@ -13,14 +13,24 @@
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
-import { defaultPrefix, formatDocumentNumber } from "@/domain/numbering";
+import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { deductionsFor, type DeductionInput } from "@/lib/pricing/partial";
 import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
 import type { SnapshotSource } from "@/schemas";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { loadPrintSettings, freezePrintOptionsJson } from "@/domain/settings/print";
 import { validateMandatoryFields } from "./mandatory";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Nur das UTC-Kalenderdatum (ohne Uhrzeit) als Millisekunden-Zeitstempel — fuer den
+ *  tagesgenauen Vergleich "Entwurf-issueDate liegt in der Vergangenheit" (refreshIssueDateOnFinalize). */
+function utcDateOnly(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
 
 const FINALIZED_DOWNPAYMENT_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
 
@@ -44,6 +54,12 @@ export interface FinalizeOptions {
    * wenn BEIDE Werte gesetzt sind; sonst greift der bisherige Live-Pfad (Herkunft FINALIZE).
    */
   inheritSnapshotFrom?: { sellerSnapshotJson: string | null; buyerSnapshotJson: string | null };
+  /**
+   * Explizites Rechnungsdatum fuer diese Festschreibung (Phase 7, §33). Ist es gesetzt,
+   * greift `refreshIssueDateOnFinalize` NICHT (Ruling Task-2-Facts) — der Aufrufer hat
+   * das Datum bewusst gewaehlt.
+   */
+  issueDate?: Date;
 }
 
 export async function finalizeWithinTx(
@@ -62,11 +78,37 @@ export async function finalizeWithinTx(
   if (invoice.status !== "DRAFT")
     throw new FinalizeError(`Nur Entwürfe können festgeschrieben werden (Status: ${invoice.status}).`);
 
+  // 1b) refreshIssueDateOnFinalize (Phase 7, §33): ein Entwurf-Rechnungsdatum, das
+  // gegenueber dem TATSAECHLICHEN Kalendertag ("heute", Systemuhr — bewusst NICHT
+  // `opts.now`, siehe unten) in der Vergangenheit liegt, wird beim Festschreiben auf
+  // `now` nachgezogen — Faelligkeit um dieselbe Tagesdifferenz verschoben. Greift NICHT
+  // bei explizit uebergebenem `opts.issueDate` (Ruling) und NICHT auf das Leistungsdatum.
+  //
+  // "heute" ist die Systemuhr (`new Date()`), nicht `opts.now`: `opts.now` ist ein
+  // deterministischer Zeitpunkt-Override fuer Tests/Backdating (ueberall im Repo, z. B.
+  // Mahnlauf-Fixtures mit Jahren weit in der Zukunft) — ein Entwurf, dessen issueDate rein
+  // durch einen solchen Override "in der Vergangenheit" gegenueber `opts.now` erscheint,
+  // ist kein echter stehen gebliebener Entwurf und darf nicht faelschlich nachgezogen
+  // werden (sonst wuerden rueckdatierte Testfixtures ihre Faelligkeit verlieren).
+  const today = new Date();
+  let issueDateBefore: Date | null = null;
+  let issueDate = opts.issueDate ?? invoice.issueDate ?? now;
+  let dueDate = invoice.dueDate;
+  if (!opts.issueDate) {
+    const settings = await loadDocumentSettings(invoice.orgId);
+    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && utcDateOnly(invoice.issueDate) < utcDateOnly(today)) {
+      issueDateBefore = invoice.issueDate;
+      const diffDays = Math.round((utcDateOnly(now) - utcDateOnly(invoice.issueDate)) / DAY_MS);
+      issueDate = now;
+      if (invoice.dueDate) dueDate = new Date(invoice.dueDate.getTime() + diffDays * DAY_MS);
+    }
+  }
+
   // 1) Pflichtangaben
   const problems = validateMandatoryFields({
     type: invoice.type,
     taxScheme: invoice.taxScheme,
-    issueDate: invoice.issueDate ?? now,
+    issueDate,
     deliveryDate: invoice.deliveryDate,
     deliveryStart: invoice.deliveryStart,
     deliveryEnd: invoice.deliveryEnd,
@@ -124,6 +166,13 @@ export async function finalizeWithinTx(
   const sellerSnapshotJson = canInherit ? inherited!.sellerSnapshotJson : JSON.stringify(buildSellerSnapshot(invoice.org));
   const buyerSnapshotJson = canInherit ? inherited!.buyerSnapshotJson : JSON.stringify(buildBuyerSnapshot(invoice.customer));
   const snapshotSource: SnapshotSource = canInherit ? "INHERITED" : "FINALIZE";
+
+  // S6 (Fix-Welle Final-Review): die effektiven Druckoptionen bei Festschreibung
+  // einfrieren (vollstaendig gemergter Satz), damit eine spaetere globale Aenderung
+  // (z. B. showTaxRatePerLine org-weit deaktiviert) den Reprint einer bereits
+  // festgeschriebenen Rechnung nicht mehr veraendert.
+  const globalPrintSettings = await loadPrintSettings(invoice.orgId);
+  const frozenPrintOptionsJson = freezePrintOptionsJson(globalPrintSettings, invoice.printOptionsJson);
 
   // 2b) Phase 5 (§14 Abs.5 S.2 UStG): Schlussrechnung -> Abzugs-Snapshot je Abschlagsrechnung/
   // Steuersatz. Laeuft VOR dem Claim, damit eine unzulaessige Ueberdeckung (Abschlaege >
@@ -210,7 +259,8 @@ export async function finalizeWithinTx(
     data: {
       status: "FINALIZED",
       finalizedAt: now,
-      issueDate: invoice.issueDate ?? now,
+      issueDate,
+      dueDate,
       netTotalCents: totals.netTotalCents,
       taxTotalCents: totals.taxTotalCents,
       grossTotalCents: totals.grossTotalCents,
@@ -220,6 +270,7 @@ export async function finalizeWithinTx(
       snapshotSource,
       snapshotAt: now,
       paymentMethodSnapshotJson,
+      printOptionsJson: frozenPrintOptionsJson,
       ...(invoice.type === "FINAL" ? { prepaidCents, payableCents } : {}),
     },
   });
@@ -235,20 +286,10 @@ export async function finalizeWithinTx(
 
   // 4) Nummer ERST nach gewonnenem Claim vergeben -> der Verlierer verbraucht keine Nummer (kein Loch).
   const docType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
-  const year = now.getFullYear();
-  const range = await tx.numberRange.upsert({
-    where: { orgId_docType_year: { orgId: invoice.orgId, docType, year } },
-    create: { orgId: invoice.orgId, docType, year, currentValue: 1, prefix: defaultPrefix(docType) },
-    update: { currentValue: { increment: 1 } },
-  });
-  const number = formatDocumentNumber(range.pattern, {
-    prefix: range.prefix || defaultPrefix(docType),
-    seq: range.currentValue,
-    padding: range.seqPadding,
-    year,
-    month: now.getMonth() + 1,
-    day: now.getDate(),
-  });
+  // B3 (Final-Review): ueber assignDocumentNumber() vergeben — liest/schreibt die AKTIVE
+  // Zeile (year 0 bei yearlyReset:false), statt hart auf `year: now.getFullYear()` zu
+  // vergeben (das ignorierte "jaehrlich zuruecksetzen = aus" komplett).
+  const number = await assignDocumentNumber(tx, invoice.orgId, docType, now);
   await tx.invoice.update({ where: { id: invoiceId }, data: { number } });
 
   // 5) Audit
@@ -264,6 +305,9 @@ export async function finalizeWithinTx(
       status: "FINALIZED",
       grossTotalCents: totals.grossTotalCents,
       snapshotSource,
+      ...(issueDateBefore
+        ? { issueDateBefore: issueDateBefore.toISOString(), issueDateAfter: issueDate.toISOString() }
+        : {}),
       // B9 (Fix-Welle): der Abzugs-Snapshot ist der rechtlich entscheidende Teil einer
       // Schlussrechnung (Abschn. 14.8 UStAE) — er gehoert in die Hash-Kette, nicht nur
       // in die (davon unabhaengige) `FinalInvoiceDeduction`-Tabelle. Nur bei type FINAL
