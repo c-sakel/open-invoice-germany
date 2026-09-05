@@ -21,6 +21,8 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import type { DocumentAdjustments } from "@/lib/pricing/allocate";
 import type { EInvoiceData } from "@/lib/einvoice/types";
 
+type SampleDeduction = { number: string; issueDate: Date; netCents: number; taxCents: number; grossCents: number };
+
 // Reine "base"-Regression: EXAKT das bisherige Literal (keine Rabatte/Skonto/
 // Zahlungsmethode) — bleibt byte-identisch zum Verhalten vor Phase 4a.
 const base: EInvoiceData = {
@@ -145,6 +147,16 @@ function buildSample(opts: {
   precedingInvoiceDate?: Date;
   // Phase 4b — Bestellnummer (BT-13).
   orderNumber?: string;
+  // Phase 5 — Schlussrechnung: Abzugs-Snapshot (Σ Abschläge brutto = prepaidCents) und
+  // die aggregierten Abzugszeilen (BG-3/BT-22/PDF-Block); Quellbeleg fürs PDF.
+  prepaidCents?: number;
+  deductions?: SampleDeduction[];
+  sourceNumber?: string;
+  sourceLabel?: string;
+  // Phase 5 — Testjahr 2040 (Plan-Vorgabe), Default bleibt 2034 (Bestandsfixtures).
+  issueDate?: Date;
+  dueDate?: Date;
+  deliveryDate?: Date;
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -168,9 +180,9 @@ function buildSample(opts: {
   const mapInput: MapInput = {
     number: opts.number,
     type: opts.type ?? "INVOICE",
-    issueDate: new Date("2034-06-09"),
-    dueDate: new Date("2034-07-09"),
-    deliveryDate: new Date("2034-06-01"),
+    issueDate: opts.issueDate ?? new Date("2034-06-09"),
+    dueDate: opts.dueDate ?? new Date("2034-07-09"),
+    deliveryDate: opts.deliveryDate ?? new Date("2034-06-01"),
     currency: "EUR",
     buyerReference: "04011000-12345-86",
     orderNumber: opts.orderNumber ?? null,
@@ -187,6 +199,10 @@ function buildSample(opts: {
     skonto2Permille: opts.skonto2?.permille ?? null,
     skonto2Days: opts.skonto2?.days ?? null,
     paymentMethodSnapshotJson: opts.paymentMethod ? JSON.stringify(opts.paymentMethod) : null,
+    prepaidCents: opts.prepaidCents ?? 0,
+    deductions: opts.deductions,
+    sourceNumber: opts.sourceNumber ?? null,
+    sourceLabel: opts.sourceLabel ?? null,
     org: opts.org ?? ORG,
     customer: CUSTOMER,
     lines: lines.map((l, i) => ({
@@ -383,6 +399,61 @@ const creditNoteSections = () =>
     precedingInvoiceDate: new Date("2034-06-09"),
   });
 
+// ── Phase 5 (§13-15 UStG) — Teil-, Abschlags- und Schlussrechnungen. Testjahr 2040
+// (Plan-Vorgabe), damit die Fixtures nicht mit den 2026er-/2034er-Beispielen kollidieren.
+
+// 12) Abschlagsrechnung (DOWNPAYMENT, UNTDID 1001 386): 30 % Anzahlung auf ein Angebot
+// über 10.000,00 € netto (19 %) — netto 3.000,00 / USt 570,00 / brutto 3.570,00
+// (Lastenheft-Beispiel 10.10). InvoiceTypeCode MUSS 386 sein (kein 380).
+const downpayment386 = () =>
+  buildSample({
+    number: "AR-2040-0001",
+    type: "DOWNPAYMENT",
+    issueDate: new Date("2040-02-01"),
+    dueDate: new Date("2040-02-15"),
+    deliveryDate: new Date("2040-02-01"),
+    lines: [{ description: "Abschlag 30 % auf AN-2040-0003", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 300000, taxRate: 19, taxCategory: "S" }],
+    sourceNumber: "AN-2040-0003",
+    sourceLabel: "Angebot",
+  });
+
+// 13) Teilrechnung (PARTIAL, InvoiceTypeCode bleibt 380 — eine Teilrechnung ist rechtlich
+// eine normale Rechnung): 40 % Teilleistung zu einem Angebot über 10.000,00 € netto (19 %).
+const partialPercent = () =>
+  buildSample({
+    number: "RE-2040-0002",
+    type: "PARTIAL",
+    issueDate: new Date("2040-03-01"),
+    dueDate: new Date("2040-03-15"),
+    deliveryDate: new Date("2040-03-01"),
+    lines: [{ description: "Teilleistung 40 % zu AN-2040-0004", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 400000, taxRate: 19, taxCategory: "S" }],
+    sourceNumber: "AN-2040-0004",
+    sourceLabel: "Angebot",
+  });
+
+// 14) Schlussrechnung (FINAL, 380) mit ZWEI abgesetzten Abschlagsrechnungen: Gesamtleistung
+// 10.000,00 € netto (19 %) = 11.900,00 € brutto, je Abschlag 3.000,00 netto/570,00 USt/
+// 3.570,00 brutto -> Σ Abzug 7.140,00, Restbetrag 4.760,00 (Lastenheft-Beispiel 10.10).
+// BT-113 (PrepaidAmount) = 7.140,00, BT-115 (PayableAmount) = 4.760,00 (BR-CO-16), BG-3
+// zweimal (je Abschlag ein cac:BillingReference/ram:InvoiceReferencedDocument), BT-22 mit
+// der Abzugsaufstellung.
+const finalTwoDownpayments = () =>
+  buildSample({
+    number: "RE-2040-0003",
+    type: "FINAL",
+    issueDate: new Date("2040-04-01"),
+    dueDate: new Date("2040-04-15"),
+    deliveryDate: new Date("2040-04-01"),
+    lines: [{ description: "Beratung vor Ort (Gesamtleistung)", quantityMilli: 100000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+    prepaidCents: 714000,
+    deductions: [
+      { number: "AR-2040-0001", issueDate: new Date("2040-02-01"), netCents: 300000, taxCents: 57000, grossCents: 357000 },
+      { number: "AR-2040-0002", issueDate: new Date("2040-03-01"), netCents: 300000, taxCents: 57000, grossCents: 357000 },
+    ],
+    sourceNumber: "AN-2040-0003",
+    sourceLabel: "Angebot",
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -397,6 +468,9 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "sepa-59": sepaFallback,
   sections,
   "credit-note-sections": creditNoteSections,
+  "downpayment-386": downpayment386,
+  "partial-percent": partialPercent,
+  "final-two-downpayments": finalTwoDownpayments,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

@@ -15,6 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
+import { payableBaseCents } from "@/domain/invoice/amounts";
 import type { RecordPaymentInput } from "@/schemas";
 
 export class PaymentError extends Error {
@@ -58,7 +59,7 @@ export async function recordPayment(
       where: { id: invoiceId },
       select: {
         id: true, status: true, type: true, orgId: true, number: true,
-        issueDate: true, grossTotalCents: true, paidAmountCents: true,
+        issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true,
         skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
       },
     });
@@ -70,7 +71,11 @@ export async function recordPayment(
     await resolvePaymentMethodId(tx, inv.orgId, input.method);
 
     const paidAt = input.paidAt ?? now;
-    const openBeforeCents = inv.grossTotalCents - inv.paidAmountCents;
+    // Phase 5: bei einer Schlussrechnung (type FINAL) ist payableCents gesetzt
+    // (grossTotalCents - prepaidCents) und ist die Bemessungsgrundlage fuer Zahlung/
+    // PAID-Grenze/Skonto — sonst COALESCE auf grossTotalCents (src/domain/invoice/amounts.ts).
+    const baseCents = payableBaseCents(inv);
+    const openBeforeCents = baseCents - inv.paidAmountCents;
 
     // Ueberzahlung verhindern (Fix-Runde 1, Low-Befund): eine bereits vollstaendig
     // bezahlte Rechnung (offener Rest <= 0) nimmt keine weitere Zahlung mehr an, und eine
@@ -97,7 +102,7 @@ export async function recordPayment(
     });
 
     const newPaid = inv.paidAmountCents + input.amountCents;
-    const status = newPaid >= inv.grossTotalCents ? "PAID" : "PARTIALLY_PAID";
+    const status = newPaid >= baseCents ? "PAID" : "PARTIALLY_PAID";
     let updated = await tx.invoice.update({
       where: { id: invoiceId },
       data: { paidAmountCents: newPaid, status },
@@ -116,12 +121,12 @@ export async function recordPayment(
     // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —
     // ein exakt/vollstaendig bezahlter Betrag hat keinen Skontoabzug mehr zu buchen.
     const result: RecordPaymentResult = { payment: updated };
-    const restCents = inv.grossTotalCents - newPaid;
+    const restCents = baseCents - newPaid;
 
     if (restCents > 0) {
       const terms = skontoTerms({
         issueDate: inv.issueDate,
-        grossTotalCents: inv.grossTotalCents,
+        grossTotalCents: baseCents,
         skonto1Permille: inv.skonto1Permille,
         skonto1Days: inv.skonto1Days,
         skonto2Permille: inv.skonto2Permille,
@@ -150,7 +155,7 @@ export async function recordPayment(
 
           updated = await tx.invoice.update({
             where: { id: invoiceId },
-            data: { paidAmountCents: inv.grossTotalCents, status: "PAID" },
+            data: { paidAmountCents: baseCents, status: "PAID" },
           });
 
           await appendChangeLog(tx, {
@@ -160,7 +165,7 @@ export async function recordPayment(
             action: "SKONTO",
             actor,
             at: now,
-            diff: { skontoCents: restCents, skontoForPaymentId: payment.id, paidAmountCents: inv.grossTotalCents, status: "PAID" },
+            diff: { skontoCents: restCents, skontoForPaymentId: payment.id, paidAmountCents: baseCents, status: "PAID" },
           });
 
           result.payment = updated;

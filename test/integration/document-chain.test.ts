@@ -12,6 +12,9 @@ import { linkDocuments } from "@/domain/relations";
 import { duplicateDocument } from "@/domain/document/duplicate";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { buildDocumentChain } from "@/domain/document/chain";
+import { createPartialInvoice } from "@/domain/invoice/partial";
+import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
+import { createFinalInvoice } from "@/domain/invoice/final";
 import type { CreateInvoiceInput } from "@/schemas";
 
 let orgId: string;
@@ -199,5 +202,67 @@ describe("buildDocumentChain", () => {
 
     const invoiceNode = root.children.find((c) => c.type === "INVOICE");
     expect(invoiceNode?.id).toBe(invoice.id);
+  });
+
+  // Task 4: PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR laufen umgekehrt zu CONVERTED_TO
+  // (from Rechnung, to Quelle) — Kette muss trotzdem die Quelle als Wurzel und die
+  // Rechnungen als deren Kinder anzeigen, egal von welcher Seite man startet.
+  //
+  // Eigenes Datum/Jahr (2043) statt des Datei-weiten FIX_DATE (2031): Invoice.number ist
+  // global @unique (nicht je Organisation) — 2031 wird bereits von mehreren Test-Dateien
+  // (z. B. document-flow.test.ts) fuer eigene Organisationen verwendet, ein zusaetzlicher
+  // Verbrauch von Sequenznummern hier koennte mit deren Zaehlerstand kollidieren.
+  const PHASE5_CHAIN_DATE = new Date("2043-07-01T10:00:00.000Z");
+
+  it("Angebot oeffnen -> Abschlags- und Schlussrechnung erscheinen als Kinder (DOWNPAYMENT_OF/FINAL_FOR)", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] } as Parameters<typeof createBusinessDocument>[1], { now: PHASE5_CHAIN_DATE });
+    const dp = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: PHASE5_CHAIN_DATE });
+    await finalizeInvoice(dp.id, { now: PHASE5_CHAIN_DATE });
+    const fin = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: PHASE5_CHAIN_DATE });
+
+    const { root, currentId } = await buildDocumentChain(orgId, "QUOTE", quote.id);
+    expect(currentId).toBe(quote.id);
+    expect(root.type).toBe("QUOTE");
+    expect(root.id).toBe(quote.id);
+
+    const dpNode = root.children.find((c) => c.id === dp.id);
+    expect(dpNode).toBeDefined();
+    expect(dpNode!.relation).toBe("DOWNPAYMENT_OF");
+
+    const finNode = root.children.find((c) => c.id === fin.id);
+    expect(finNode).toBeDefined();
+    expect(finNode!.relation).toBe("FINAL_FOR");
+  });
+
+  it("Abschlagsrechnung direkt oeffnen -> Wurzel ist das Angebot (Root-Suche ueber DOWNPAYMENT_OF)", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] } as Parameters<typeof createBusinessDocument>[1], { now: PHASE5_CHAIN_DATE });
+    const dp = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: PHASE5_CHAIN_DATE });
+
+    const { root, currentId } = await buildDocumentChain(orgId, "INVOICE", dp.id);
+    expect(currentId).toBe(dp.id);
+    expect(root.type).toBe("QUOTE");
+    expect(root.id).toBe(quote.id);
+
+    const dpNode = root.children.find((c) => c.id === dp.id);
+    expect(dpNode).toBeDefined();
+    expect(dpNode!.children).toHaveLength(0); // keine erneute Ruecklaeufigkeit zur Quelle
+  });
+
+  it("Teilrechnung aus einem Lieferschein -> Wurzel ist der Lieferschein (PARTIAL_OF)", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] } as Parameters<typeof createBusinessDocument>[1], { now: PHASE5_CHAIN_DATE });
+    const note = await createDeliveryNote(orgId, {
+      customerId,
+      sourceType: "QUOTE",
+      sourceId: quote.id,
+      lines: quote.lines.map((l) => ({ description: l.description, quantityMilli: l.quantityMilli, unit: l.unit, sourceType: "QUOTE", sourceId: quote.id, sourceLineId: l.id, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+    } as Parameters<typeof createDeliveryNote>[1]);
+    const partial = await createPartialInvoice(orgId, { sourceType: "DELIVERY_NOTE", sourceId: note.id, mode: "PERCENT", permille: 500 }, { now: PHASE5_CHAIN_DATE });
+
+    const { root } = await buildDocumentChain(orgId, "DELIVERY_NOTE", note.id);
+    expect(root.type).toBe("DELIVERY_NOTE");
+    expect(root.id).toBe(note.id);
+    const partialNode = root.children.find((c) => c.id === partial.id);
+    expect(partialNode).toBeDefined();
+    expect(partialNode!.relation).toBe("PARTIAL_OF");
   });
 });

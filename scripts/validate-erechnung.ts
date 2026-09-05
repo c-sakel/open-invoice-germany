@@ -114,6 +114,9 @@ const SAMPLE_NAMES = [
   "sepa-59", // K2: SEPA-Lastschrift faellt trotz IBAN auf PaymentMeans-Code 1 zurueck
   "sections", // Phase 4b (Task 4): Positionsbloecke (HEADING/TEXT/SUBTOTAL) + Artikelnummer/Langtext/Bestellnummer
   "credit-note-sections", // Fix-Welle (K1): Storno einer Rechnung mit Positionsbloecken
+  "downpayment-386", // Phase 5 (Task 3): Abschlagsrechnung, InvoiceTypeCode 386
+  "partial-percent", // Phase 5 (Task 3): Teilrechnung (PERCENT), InvoiceTypeCode 380
+  "final-two-downpayments", // Phase 5 (Task 3): Schlussrechnung mit zwei abgesetzten Abschlaegen (BT-113/BT-115/BG-3 x2/BT-22)
 ];
 
 async function main(): Promise<void> {

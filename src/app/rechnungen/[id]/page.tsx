@@ -17,14 +17,31 @@ import type { EmailDocType } from "@/schemas/email";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
+import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
+import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 
 export const dynamic = "force-dynamic";
 
+// Task 4: PARTIAL/DOWNPAYMENT/FINAL sind rechtlich ebenfalls Rechnungen (§13-15 UStG).
 const TYPE_TITLE: Record<string, string> = {
   INVOICE: "Rechnung",
   CREDIT_NOTE: "Gutschrift / Storno",
   CORRECTION: "Korrekturrechnung",
+  PARTIAL: "Teilrechnung",
+  DOWNPAYMENT: "Abschlagsrechnung",
+  FINAL: "Schlussrechnung",
 };
+
+// §16-Aktionsblock: Rechnungen aller Art (ausser Gutschrift/Storno selbst) koennen
+// storniert oder (teil-)gutgeschrieben werden (Task-2-Domain: cancelInvoice/
+// createPartialCreditNote pruefen nur `type !== "CREDIT_NOTE"`, nicht auf INVOICE
+// eingeschraenkt) — PARTIAL/DOWNPAYMENT/FINAL eingeschlossen.
+const CANCELLABLE_TYPES = new Set(["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
+const CREDITABLE_TYPES = CANCELLABLE_TYPES;
+// Duplizieren ist fuer PARTIAL/DOWNPAYMENT/FINAL verboten (InvalidOperationError, Task 2)
+// — haengen an einer Quelle (sourceType/sourceId), ein Duplikat waere weder eine neue
+// Teilleistung noch ein neuer Abschlag/Schluss.
+const NOT_DUPLICATABLE_TYPES = new Set(["PARTIAL", "DOWNPAYMENT", "FINAL"]);
 
 function deDate(d: Date | null) {
   return d ? new Intl.DateTimeFormat("de-DE").format(d) : "—";
@@ -52,9 +69,25 @@ export default async function InvoiceDetail({
       payments: { orderBy: { paidAt: "asc" } },
       dunnings: { orderBy: { level: "asc" } },
       paymentMethod: true,
+      // Task 4: Abzugs-Snapshot einer Schlussrechnung (Task 2, FinalInvoiceDeduction) —
+      // NIE live aus den Abschlagsrechnungen, nur dieser unveraenderliche Snapshot.
+      finalDeductions: { orderBy: { issueDate: "asc" } },
     },
   });
   if (!invoice) notFound();
+
+  // Task 4: Bezug zur Quelle (Angebot/AB bzw. Lieferschein) bei PARTIAL/DOWNPAYMENT/FINAL.
+  let sourceLabel: { href: string; text: string } | null = null;
+  if (invoice.sourceType === "QUOTE" && invoice.sourceId) {
+    const src = await prisma.quote.findFirst({ where: { id: invoice.sourceId, orgId: org.id }, select: { number: true, kind: true } });
+    if (src) {
+      const kindLabel = src.kind === "AUFTRAGSBESTAETIGUNG" ? "Auftragsbestätigung" : src.kind === "PROFORMA" ? "Proforma-Rechnung" : "Angebot";
+      sourceLabel = { href: `/dokumente/${invoice.sourceId}`, text: `${kindLabel} ${src.number ?? ""}`.trim() };
+    }
+  } else if (invoice.sourceType === "DELIVERY_NOTE" && invoice.sourceId) {
+    const src = await prisma.deliveryNote.findFirst({ where: { id: invoice.sourceId, orgId: org.id }, select: { number: true } });
+    if (src) sourceLabel = { href: `/lieferscheine/${invoice.sourceId}`, text: `Lieferschein ${src.number ?? ""}`.trim() };
+  }
 
   const isDraft = invoice.status === "DRAFT";
   const isCancelled = invoice.status === "CANCELLED";
@@ -76,12 +109,31 @@ export default async function InvoiceDetail({
   const paymentMethodName = invoice.paymentMethodSnapshotJson
     ? (JSON.parse(invoice.paymentMethodSnapshotJson) as { name: string }).name
     : (invoice.paymentMethod?.name ?? null);
-  const isInvoiceType = invoice.type === "INVOICE" || invoice.type === "CORRECTION";
-  const openCents = invoice.grossTotalCents - invoice.paidAmountCents;
+  // Task 4: PARTIAL/DOWNPAYMENT sind wie INVOICE/CORRECTION regulaer zahlbar; FINAL
+  // ebenso, aber auf Basis von `payableCents` (Rest nach Abzug der Abschlaege) statt
+  // `grossTotalCents` — payableBaseCents/openAmountCents (Task 2) kapseln das.
+  const isInvoiceType = invoice.type === "INVOICE" || invoice.type === "CORRECTION" || invoice.type === "PARTIAL" || invoice.type === "DOWNPAYMENT" || invoice.type === "FINAL";
+  const payableBase = payableBaseCents(invoice);
+  const openCents = openAmountCents(invoice);
   const dueDate = invoice.dueDate ?? invoice.issueDate;
   const isOverdue = !isDraft && !isCancelled && openCents > 0 && new Date() > dueDate;
   const canPay = !isDraft && !isCancelled && isInvoiceType && openCents > 0;
   const emailDocType: EmailDocType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+
+  // Task 4: Abzugsblock einer Schlussrechnung — je Abschlagsrechnung EINE Zeile (ueber
+  // alle Steuersaetze aggregiert), aus dem unveraenderlichen FinalInvoiceDeduction-
+  // Snapshot (Task 2), niemals live aus den Abschlagsrechnungen selbst.
+  const deductionsByInvoice = new Map<string, { number: string; issueDate: Date; netCents: number; taxCents: number; grossCents: number }>();
+  for (const d of invoice.finalDeductions) {
+    const existing = deductionsByInvoice.get(d.downpaymentInvoiceId);
+    if (existing) {
+      existing.netCents += d.netCents;
+      existing.taxCents += d.taxCents;
+      existing.grossCents += d.grossCents;
+    } else {
+      deductionsByInvoice.set(d.downpaymentInvoiceId, { number: d.number, issueDate: d.issueDate, netCents: d.netCents, taxCents: d.taxCents, grossCents: d.grossCents });
+    }
+  }
 
   // Zahlungsmethoden-Auswahl im Zahlungsformular: aktive Methoden OHNE den Systemcode
   // SKONTO (der wird ausschliesslich automatisch bei detectSkonto gebucht, nie manuell
@@ -103,6 +155,11 @@ export default async function InvoiceDetail({
             {TYPE_TITLE[invoice.type] ?? "Beleg"} {invoice.number ?? "(Entwurf)"}
           </h1>
           <StatusBadge status={invoice.status} />
+          {sourceLabel && (
+            <Link href={sourceLabel.href} className="text-sm text-indigo-600 hover:underline">
+              zu {sourceLabel.text}
+            </Link>
+          )}
           {invoice.snapshotSource === "MIGRATION" && (
             <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
               Adressstand per Migration eingefroren
@@ -149,22 +206,6 @@ export default async function InvoiceDetail({
               <input type="hidden" name="id" value={invoice.id} />
               <button className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
                 Festschreiben
-              </button>
-            </form>
-          )}
-          {!isDraft && !isCancelled && invoice.type === "INVOICE" && (
-            <Link
-              href={`/rechnungen/${invoice.id}/teilgutschrift`}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Teilgutschrift
-            </Link>
-          )}
-          {!isDraft && !isCancelled && invoice.type === "INVOICE" && (
-            <form action={cancelAction}>
-              <input type="hidden" name="id" value={invoice.id} />
-              <button className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">
-                Stornieren
               </button>
             </form>
           )}
@@ -248,9 +289,27 @@ export default async function InvoiceDetail({
             </div>
           ))}
         <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
-          <span>Gesamt</span>
+          <span>{invoice.type === "FINAL" ? "Gesamtleistung" : "Gesamt"}</span>
           <span className="tabular">{formatCents(invoice.grossTotalCents, invoice.currency)}</span>
         </div>
+        {invoice.type === "FINAL" && deductionsByInvoice.size > 0 && (
+          <>
+            {[...deductionsByInvoice.values()].map((d) => (
+              <div key={d.number} className="flex justify-between text-slate-600">
+                <span>
+                  abzüglich Abschlagsrechnung {d.number} vom {deDate(d.issueDate)}
+                </span>
+                <span className="tabular">
+                  −{formatCents(d.grossCents, invoice.currency)} (enthaltene USt {formatCents(d.taxCents, invoice.currency)})
+                </span>
+              </div>
+            ))}
+            <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
+              <span>Restbetrag</span>
+              <span className="tabular">{formatCents(payableBase, invoice.currency)}</span>
+            </div>
+          </>
+        )}
       </div>
 
       {hasSkonto && (
@@ -337,6 +396,63 @@ export default async function InvoiceDetail({
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {!isDraft && !isCancelled && (
+        <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 text-sm">
+          <h2 className="font-semibold text-slate-900">Korrektur &amp; Vervielfältigung (§14c, §17 UStG)</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <p className="font-medium text-slate-800">Stornieren</p>
+              <p className="text-slate-600">
+                Storniert die Rechnung vollständig durch eine Gutschrift in gleicher Höhe (bei einer Schlussrechnung nur in Höhe des Restbetrags nach Abzug der Abschläge). Das Original bleibt unverändert erhalten (GoBD).
+              </p>
+              {CANCELLABLE_TYPES.has(invoice.type) ? (
+                <form action={cancelAction}>
+                  <input type="hidden" name="id" value={invoice.id} />
+                  <button className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">Stornieren</button>
+                </form>
+              ) : (
+                <span className="text-xs text-slate-400">Nicht möglich für {TYPE_TITLE[invoice.type] ?? invoice.type}.</span>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <p className="font-medium text-slate-800">Teilgutschrift</p>
+              <p className="text-slate-600">
+                Reduziert die Rechnung um frei wählbare Positionen (z. B. eine nachträgliche Preis- oder Mengenkorrektur), ohne sie vollständig zu stornieren.
+              </p>
+              {CREDITABLE_TYPES.has(invoice.type) ? (
+                <Link
+                  href={`/rechnungen/${invoice.id}/teilgutschrift`}
+                  className="inline-block rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Teilgutschrift
+                </Link>
+              ) : (
+                <span className="text-xs text-slate-400">Nicht möglich für {TYPE_TITLE[invoice.type] ?? invoice.type}.</span>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <p className="font-medium text-slate-800">Korrekturrechnung</p>
+              <p className="text-slate-600">
+                Für die Berichtigung von § 14 Abs. 4 UStG-Pflichtangaben (z. B. Anschrift, Steuernummer) ohne Änderung der Beträge.
+              </p>
+              <span className="text-xs text-slate-400">Noch nicht als eigener Beleg-Workflow verfügbar.</span>
+            </div>
+
+            <div className="space-y-1">
+              <p className="font-medium text-slate-800">Duplizieren</p>
+              <p className="text-slate-600">Legt einen neuen Rechnungsentwurf mit denselben Positionen/Konditionen an (z. B. für eine Folgerechnung an denselben Kunden).</p>
+              <DuplicateInvoiceButton
+                invoiceId={invoice.id}
+                disabled={NOT_DUPLICATABLE_TYPES.has(invoice.type)}
+                disabledReason={NOT_DUPLICATABLE_TYPES.has(invoice.type) ? "Teil-/Abschlags-/Schlussrechnungen hängen an einer Quelle" : undefined}
+              />
+            </div>
+          </div>
         </section>
       )}
 

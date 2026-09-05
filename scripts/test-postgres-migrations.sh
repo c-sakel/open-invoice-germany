@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "29" ] || fail "erwartet 29 Tabellen, gefunden $COUNT"
-echo "    ok — 29 Tabellen angelegt"
+[ "$COUNT" = "30" ] || fail "erwartet 30 Tabellen, gefunden $COUNT"
+echo "    ok — 30 Tabellen angelegt"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -91,7 +91,21 @@ MAILSETTINGS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 IDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from pg_indexes where indexname='EmailTemplate_orgId_docType_name_key'")
 [ "$IDX" = "1" ] || fail "Index EmailTemplate_orgId_docType_name_key fehlt nach deploy"
-echo "    ok — Baseline verbucht, Folgemigrationen angewendet, deploy idempotent, MailSettings/EmailTemplate-Index vorhanden"
+# Phase 5: zwei Migrationen (phase5_partial_invoices + invoice_line_source_line_id) muessen
+# beide angewendet sein (FinalInvoiceDeduction-Tabelle + InvoiceLine.sourceLineId-Spalte).
+FID=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select to_regclass('\"FinalInvoiceDeduction\"') is not null")
+[ "$FID" = "t" ] || fail "Tabelle FinalInvoiceDeduction fehlt nach deploy"
+FIDUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='FinalInvoiceDeduction_finalInvoiceId_downpaymentInvoiceId_t_key'")
+[ "$FIDUNIQUE" = "1" ] || fail "Unique-Index auf FinalInvoiceDeduction fehlt nach deploy"
+SRCLINE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.columns where table_name='InvoiceLine' and column_name='sourceLineId'")
+[ "$SRCLINE" = "1" ] || fail "InvoiceLine.sourceLineId fehlt nach deploy"
+PHASE5MIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name in ('20260903223413_phase5_partial_invoices','20260903225405_invoice_line_source_line_id') and finished_at is not null")
+[ "$PHASE5MIG" = "2" ] || fail "erwartet beide Phase-5-Migrationen als angewendet in _prisma_migrations, gefunden $PHASE5MIG"
+echo "    ok — Baseline verbucht, Folgemigrationen angewendet (inkl. beider Phase-5-Migrationen), deploy idempotent, MailSettings/EmailTemplate-Index/FinalInvoiceDeduction vorhanden"
 
 echo "==> Fall 4: db-prepare.sh nach Baseline ist wirkungslos"
 OUT=$(run_with_timeout 120 ./scripts/db-prepare.sh 2>&1) \
@@ -139,5 +153,28 @@ ST=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"stageId\
 EXP=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select id from \"DunningStage\" where \"orgId\"='org1' and \"order\"=1")
 [ -n "$ST" ] && [ "$ST" = "$EXP" ] || fail "Dunning dun1 hat stageId '$ST', erwartet Stufe order=1 ('$EXP')"
 echo "    ok — Backfill vollstaendig, Legacy-Quotes q1/q2 (CONVERTED) nach ACCEPTED migriert, q3 (SENT) unveraendert"
+
+echo "==> Fall 7 (Phase 5): FinalInvoiceDeduction — Insert + Unique-Constraint"
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","type","prepaidCents","payableCents","updatedAt")
+  VALUES ('dp1','org1','cust1','RE-2026-00002','FINALIZED','DOWNPAYMENT',0,NULL,NOW());
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","type","prepaidCents","payableCents","updatedAt")
+  VALUES ('fin1','org1','cust1','RE-2026-00003','FINALIZED','FINAL',357000,833000,NOW());
+INSERT INTO "FinalInvoiceDeduction"
+  ("id","finalInvoiceId","downpaymentInvoiceId","number","issueDate","netCents","taxCents","grossCents","taxRate","taxCategory")
+  VALUES ('fid1','fin1','dp1','RE-2026-00002',NOW(),300000,57000,357000,19,'S');
+SQL
+FIDCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from \"FinalInvoiceDeduction\" where id='fid1'")
+[ "$FIDCOUNT" = "1" ] || fail "FinalInvoiceDeduction-Zeile wurde nicht angelegt"
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null 2>&1
+INSERT INTO "FinalInvoiceDeduction"
+  ("id","finalInvoiceId","downpaymentInvoiceId","number","issueDate","netCents","taxCents","grossCents","taxRate","taxCategory")
+  VALUES ('fid2','fin1','dp1','RE-2026-00002',NOW(),300000,57000,357000,19,'S');
+SQL
+then
+  fail "zweite FinalInvoiceDeduction-Zeile mit gleichem (finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory) haette am Unique-Constraint scheitern muessen"
+fi
+echo "    ok — FinalInvoiceDeduction angelegt, Duplikat (finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory) vom Unique-Constraint abgewiesen"
 
 echo "ALLE TESTS BESTANDEN"

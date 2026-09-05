@@ -9,7 +9,13 @@ import { roundHalfUp } from "@/lib/money";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
-import type { EInvoiceData, EInvoiceDocumentAllowanceCharge, EInvoiceLine, EInvoicePaymentMeans } from "./types";
+import type {
+  EInvoiceData,
+  EInvoiceDeduction,
+  EInvoiceDocumentAllowanceCharge,
+  EInvoiceLine,
+  EInvoicePaymentMeans,
+} from "./types";
 
 const LINE_TYPES = new Set<NonNullable<EInvoiceLine["lineType"]>>(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
 
@@ -47,6 +53,16 @@ export interface MapInput {
   grossTotalCents: number;
   paidAmountCents: number;
   taxBreakdownJson: string;
+  // Phase 5 (§14 Abs.5 S.2 UStG) — Snapshot der Schlussrechnung: Σ bereits vereinnahmter
+  // Abschlaege (brutto). Nur bei type FINAL relevant (sonst 0 per Schema-Default).
+  prepaidCents?: number;
+  // Phase 5 — Abzugs-Snapshot je Abschlagsrechnung (bereits ueber alle Steuersaetze
+  // aggregiert, siehe load.ts). Nur bei type FINAL gesetzt; NIE live nachgeladen.
+  deductions?: Array<{ number: string; issueDate: Date; netCents: number; taxCents: number; grossCents: number }>;
+  // Phase 5 — Quellbeleg (Angebot/Auftragsbestaetigung/Lieferschein) bei
+  // type PARTIAL/DOWNPAYMENT/FINAL. NUR fuers PDF, geht NICHT ins XML.
+  sourceNumber?: string | null;
+  sourceLabel?: string | null;
   // Phase 4a — Beleg-Aufschlagsgrund (Freitext) und Skonto-Konditionen.
   documentChargeReason?: string | null;
   skonto1Permille?: number | null;
@@ -145,6 +161,22 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   const lineTotalCents = invoice.lines.reduce((s, l) => s + l.lineNetCents, 0);
   const allowanceTotalCents = breakdown.reduce((s, b) => s + b.allowanceCents, 0);
   const chargeTotalCents = breakdown.reduce((s, b) => s + b.chargeCents, 0);
+
+  // Phase 5 — Schlussrechnung: BT-113 (PrepaidAmount) ist die Σ der beim Festschreiben
+  // vereinnahmten Abschlaege (brutto, invoice.prepaidCents), NICHT die tatsaechlich seither
+  // eingegangenen Zahlungen (paidAmountCents) — das bleibt der Normalfall fuer alle anderen
+  // Typen (INVOICE/CREDIT_NOTE/CORRECTION/PARTIAL/DOWNPAYMENT), byte-identisch zum Bestand.
+  // BR-CO-16 (Payable = TaxInclusive − Prepaid) gilt fuer beide Faelle gleichermassen.
+  const isFinal = invoice.type === "FINAL";
+  const paidCents = isFinal ? (invoice.prepaidCents ?? 0) : invoice.paidAmountCents;
+  const deductions: EInvoiceDeduction[] | undefined =
+    isFinal && invoice.deductions?.length
+      ? invoice.deductions.map((d) => ({ number: d.number, issueDate: d.issueDate, netCents: d.netCents, taxCents: d.taxCents, grossCents: d.grossCents }))
+      : undefined;
+  // BG-3 (mehrfach) — je abgesetzter Abschlagsrechnung ein Vorgaenger-Eintrag.
+  const precedingInvoices = deductions?.length
+    ? deductions.map((d) => ({ number: d.number, issueDate: d.issueDate }))
+    : undefined;
 
   // Phase 4a — Skonto (BT-20): #SKONTO#-Syntax vor dem Menschentext, sofern Skonto-
   // Konditionen gesetzt sind. Ohne Skonto ist paymentTermsNote === paymentTerms
@@ -297,8 +329,8 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     netTotalCents: invoice.netTotalCents,
     taxTotalCents: invoice.taxTotalCents,
     grossTotalCents: invoice.grossTotalCents,
-    payableCents: invoice.grossTotalCents - invoice.paidAmountCents,
-    paidCents: invoice.paidAmountCents,
+    payableCents: invoice.grossTotalCents - paidCents,
+    paidCents,
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
@@ -309,6 +341,10 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     chargeTotalCents,
     paymentMeans,
     paymentMethodText,
+    deductions,
+    precedingInvoices,
+    sourceNumber: invoice.sourceNumber ?? null,
+    sourceLabel: invoice.sourceLabel ?? null,
     headerText,
     footerText,
   };

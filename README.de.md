@@ -42,6 +42,7 @@ npm run mcp   # MCP-Server (stdio) starten / in Claude Code via .mcp.json einbin
 - **PDF-Export** ("sonstige Rechnung") mit allen Pflichtangaben.
 - **Positions-Editor**: Drag-and-Drop zum Umordnen, Positionen duplizieren, Überschriften/Textblöcke/berechnete Zwischensummen neben regulären Positionen (nur reguläre Positionen landen im E-Rechnung-XML), Rich-Text (eingeschränktes Markdown — fett/kursiv/unterstrichen, eine Listenebene, Links) in Positionsbeschreibungen, Artikelnummern sowie Kopffelder (Betreff, Bestellnummer, interne Referenz, Ansprechpartner, Liefer-/Rechnungsadresse).
 - **Beleganhänge**: Dateien an jeden Beleg (Rechnung, Angebot, Lieferschein, Mahnung, Abo) anhängen — 10 MB je Datei, 50 MB je Beleg, MIME-Whitelist + Magic-Bytes-Prüfung, hash-adressierte Ablage mit Dedup, auswählbar als Zusatzanhang beim Mailversand.
+- **Teil-, Abschlags- und Schlussrechnungen** (§ 14 Abs. 5 UStG): Teilrechnung über Prozent/Betrag/einzelne Positionen aus Angebot oder Lieferschein, Abschlagsrechnung vor Leistungserbringung (E-Rechnung-Typcode 386), abschließende Schlussrechnung, die die Abschläge samt Steuer automatisch absetzt (unveränderlicher Abzugs-Snapshot, BT-113/BT-115/BG-3 in der E-Rechnung, passender PDF-Abzugsblock).
 - **Self-hosted**: SQLite-Solo ohne Server **oder** PostgreSQL via Docker.
 - **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie) — App und API geschützt.
 
@@ -58,8 +59,9 @@ Angebot → Auftragsbestätigung → Lieferschein → Rechnung, alles verknüpft
 3. In einen **Lieferschein** umwandeln (Mengen aus Angebot/AB, Überlieferung blockiert) und/oder in einen **Rechnungsentwurf**.
 4. Jede Umwandlung wird als Dokumentverknüpfung gespeichert; die **Dokumentkette** (auf jeder Angebots-/Rechnungs-/Lieferschein-Seite sichtbar) zeigt die volle Historie — Angebot → AB → Lieferschein → Rechnung → Zahlungen/Mahnungen.
 5. Der Abrechnungsstand (keine/teilweise/voll) wird aus diesen Verknüpfungen abgeleitet, nicht gespeichert.
+6. Statt (oder zusätzlich zu) einer vollen Rechnung: **Teilrechnung** (Prozent/Betrag/einzelne Positionen) oder **Abschlagsrechnung** aus Angebot/AB, danach **Schlussrechnung** — Abschläge samt Steuer werden automatisch abgesetzt (§ 14 Abs. 5 UStG).
 
-Dieselben Aktionen auch per MCP: `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`. Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md), Einschränkungen: [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
+Dieselben Aktionen auch per MCP: `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`, `create_partial_invoice`, `create_downpayment_invoice`, `create_final_invoice`, `get_billing_state`. Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md), Einschränkungen: [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
 
 ### Angebot online annehmen lassen
 

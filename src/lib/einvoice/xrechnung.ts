@@ -9,6 +9,7 @@
 import { create } from "xmlbuilder2";
 import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
+import { deductionsNoteText } from "./deduction-note";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -43,6 +44,10 @@ function invoiceTypeCode(type: string): string {
       return "381";
     case "CORRECTION":
       return "384";
+    // Phase 5 — UNTDID 1001: Abschlagsrechnung (Anzahlungsrechnung). PARTIAL/FINAL
+    // bleiben 380 (Teil- bzw. Schlussrechnung sind rechtlich "normale" Rechnungen).
+    case "DOWNPAYMENT":
+      return "386";
     default:
       return "380";
   }
@@ -183,6 +188,10 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   if (data.dueDate) root.ele("cbc:DueDate").txt(isoDate(data.dueDate)).up();
   root.ele(isCredit ? "cbc:CreditNoteTypeCode" : "cbc:InvoiceTypeCode").txt(invoiceTypeCode(data.type)).up();
   if (data.notes) root.ele("cbc:Note").txt(data.notes).up();
+  // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES Note-Element
+  // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
+  // Freitext-Hinweis, statt ihn zu ersetzen.
+  if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions)).up();
   root.ele("cbc:DocumentCurrencyCode").txt(cur).up();
   // XRechnung: BT-10 Buyer reference Pflicht (Leitweg-ID im B2G); Fallback Belegnummer
   root.ele("cbc:BuyerReference").txt(data.buyerReference || data.number).up();
@@ -193,11 +202,19 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     root.ele("cac:OrderReference").ele("cbc:ID").txt(data.orderNumber).up().up();
   }
 
-  // BG-3 — Bezug zur Originalrechnung (Gutschrift/Korrektur, § 31 Abs. 5 UStDV)
-  if (data.precedingInvoiceNumber) {
+  // BG-3 — Bezug zur Originalrechnung (Gutschrift/Korrektur, § 31 Abs. 5 UStDV) bzw.
+  // Phase 5: je abgesetzter Abschlagsrechnung EIN cac:BillingReference (XSD erlaubt
+  // Mehrfachvorkommen). precedingInvoices hat Vorrang, wenn gesetzt (nicht leer) — ohne
+  // dieses Feld (Alt-/Nicht-FINAL-Belege) bleibt das Einzelverhalten byte-identisch.
+  const precedingInvoices = data.precedingInvoices?.length
+    ? data.precedingInvoices
+    : data.precedingInvoiceNumber
+      ? [{ number: data.precedingInvoiceNumber, issueDate: data.precedingInvoiceDate ?? undefined }]
+      : [];
+  for (const preceding of precedingInvoices) {
     const idr = root.ele("cac:BillingReference").ele("cac:InvoiceDocumentReference");
-    idr.ele("cbc:ID").txt(data.precedingInvoiceNumber).up();
-    if (data.precedingInvoiceDate) idr.ele("cbc:IssueDate").txt(isoDate(data.precedingInvoiceDate)).up();
+    idr.ele("cbc:ID").txt(preceding.number).up();
+    if (preceding.issueDate) idr.ele("cbc:IssueDate").txt(isoDate(preceding.issueDate)).up();
     idr.up().up();
   }
 

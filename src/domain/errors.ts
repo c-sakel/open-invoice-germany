@@ -10,3 +10,15 @@ export class NotFoundError extends Error {
     this.name = "NotFoundError";
   }
 }
+
+/**
+ * Gemeinsame Domain-Fehlerklasse fuer eine an sich gueltige, aber im aktuellen Zustand
+ * des Belegs verbotene Operation (z. B. Duplizieren einer Teil-/Abschlags-/
+ * Schlussrechnung) — Routen mappen sie auf 409 Conflict (Fix-Runde 1, Befund 3).
+ */
+export class InvalidOperationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidOperationError";
+  }
+}
