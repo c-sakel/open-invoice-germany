@@ -30,6 +30,11 @@ import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { createDunning, DunningError } from "@/domain/dunning/create";
+import { sendDunning } from "@/domain/dunning/send";
+import { setDunningState } from "@/domain/dunning/state";
+import { loadDunningOverview } from "@/domain/dunning/overview";
+import { runScheduledJobs, type SchedulerJob } from "@/domain/scheduler/runner";
+import { MailNotConfiguredError } from "@/domain/email/settings";
 import { createRecurring, RecurringError } from "@/domain/recurring/create";
 import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
 import { intervalLabel } from "@/lib/recurring";
@@ -126,6 +131,17 @@ async function resolveInvoice(orgId: string, ref: string) {
   const inv = await dbInternal.invoice.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
   if (!inv) throw new Error(`Keine Rechnung "${ref}" gefunden (weder als ID noch als Nummer).`);
   return inv;
+}
+
+async function resolveDunning(orgId: string, ref: string) {
+  // Nit (Fix-Welle): explizites select statt vollem Row-Load — der einzige Aufrufer
+  // (send_dunning) braucht nur id/number.
+  const d = await dbInternal.dunning.findFirst({
+    where: { invoice: { orgId }, OR: [{ id: ref }, { number: ref }] },
+    select: { id: true, number: true },
+  });
+  if (!d) throw new Error(`Keine Mahnung "${ref}" gefunden (weder als ID noch als Nummer).`);
+  return d;
 }
 
 async function resolveDocument(orgId: string, ref: string) {
@@ -1306,18 +1322,130 @@ server.registerTool(
   {
     title: "Mahnung / Zahlungserinnerung erstellen",
     description:
-      "Erstellt die nächste Mahnstufe (Zahlungserinnerung → 1./2. Mahnung) zu einer überfälligen, offenen Rechnung. Ab Stufe 1 mit Verzugszins (§ 288 BGB) und 40-€-Pauschale (nur B2B).",
-    inputSchema: { invoice: z.string().describe("Rechnungs-ID oder -Nummer") },
+      "Erstellt die nächste konfigurierte Mahnstufe (Zahlungserinnerung → 1./2./…​ Mahnung) zu einer überfälligen, offenen Rechnung. Ab Stufe ≥ 2 mit Mahnkosten, je nach Stufe mit Verzugszins (§ 288 BGB) und 40-€-Pauschale (nur B2B). Ist die Stufe noch nicht fällig, schlägt der Aufruf fehl — mit force=true trotzdem erzwingen.",
+    inputSchema: {
+      invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
+      force: z.boolean().optional().describe("Erstellung vor Fälligkeit der nächsten Stufe erzwingen"),
+    },
   },
-  async ({ invoice }): Promise<Result> => {
+  async ({ invoice, force }): Promise<Result> => {
     try {
       const org = await requireOrg();
       const inv = await resolveInvoice(org.id, invoice);
-      const res = await createDunning(inv.id);
-      const title = ["Zahlungserinnerung", "1. Mahnung", "2. Mahnung"][res.level] ?? `${res.level}. Mahnung`;
-      return ok(`${title} ${res.dunning.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}.`);
+      const res = await createDunning(inv.id, { force, createdBy: "mcp" });
+      return ok(`${res.stage.name} ${res.dunning.number} erstellt · offen ${formatCents(res.openAmountCents)} · Gesamtforderung ${formatCents(res.totalCents)}.`);
     } catch (e) {
       if (e instanceof DunningError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── send_dunning ──────────────────────────────────────────────────────────────
+server.registerTool(
+  "send_dunning",
+  {
+    title: "Mahnung per E-Mail versenden",
+    description: "Versendet eine bereits erstellte Mahnung per E-Mail an den Kunden (Vorlage der zugehörigen Mahnstufe).",
+    inputSchema: {
+      dunning: z.string().describe("Mahnungs-ID oder -Nummer"),
+      to: z.email().optional().describe("Empfänger ueberschreiben (sonst Kundenstamm/Snapshot)"),
+    },
+  },
+  async ({ dunning, to }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const d = await resolveDunning(org.id, dunning);
+      const result = await sendDunning(org.id, d.id, { actor: "mcp", to });
+      if (result.status === "FAILED") return fail(result.error ?? "Versand fehlgeschlagen.");
+      return ok(`Mahnung ${d.number ?? d.id} versendet.`);
+    } catch (e) {
+      if (e instanceof MailNotConfiguredError) return fail(e.message);
+      if (e instanceof DunningError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── set_dunning_state ─────────────────────────────────────────────────────────
+server.registerTool(
+  "set_dunning_state",
+  {
+    title: "Mahnprozess-Status setzen",
+    description: "Setzt den Mahnprozess einer Rechnung auf ACTIVE (normal), PAUSED (bis pausedUntil ausgesetzt, z.B. Ratenzahlung) oder STOPPED (dauerhaft angehalten, z.B. Inkasso).",
+    inputSchema: {
+      invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
+      state: z.enum(["ACTIVE", "PAUSED", "STOPPED"]),
+      pausedUntil: z.iso.date().optional().describe("Nur bei state=PAUSED"),
+      note: z.string().max(500).optional(),
+    },
+  },
+  async ({ invoice, state, pausedUntil, note }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const inv = await resolveInvoice(org.id, invoice);
+      const res = await setDunningState(org.id, inv.id, { state, pausedUntil, note }, "mcp");
+      return ok(`Mahnprozess-Status: ${res.state}${res.pausedUntil ? ` bis ${res.pausedUntil.toISOString().slice(0, 10)}` : ""}.`);
+    } catch (e) {
+      if (e instanceof DunningError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_overdue_invoices ──────────────────────────────────────────────────────
+server.registerTool(
+  "list_overdue_invoices",
+  {
+    title: "Überfällige Rechnungen auflisten (Mahnwesen-Übersicht)",
+    description: "Listet überfällige, offene Rechnungen mit Mahnstatus (aktuelle/nächste Mahnstufe, fällig ab, pausiert bis, letzter Kontakt) — dieselben Daten wie /mahnwesen.",
+    inputSchema: { state: z.enum(["ACTIVE", "PAUSED", "STOPPED"]).optional() },
+  },
+  async ({ state }): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const overview = await loadDunningOverview(org.id, new Date(), { state });
+      return ok(
+        JSON.stringify(
+          {
+            widgets: overview.widgets,
+            rows: overview.rows.map((r) => ({
+              invoice: r.number ?? r.invoiceId,
+              customer: r.customerName,
+              openAmount: formatCents(r.openCents),
+              daysOverdue: r.daysOverdue,
+              currentStage: r.currentStage?.name ?? null,
+              nextStage: r.nextStage?.name ?? null,
+              nextDunningAt: r.nextDunningAt ? r.nextDunningAt.toISOString().slice(0, 10) : null,
+              dunningState: r.dunningState,
+              pausedUntil: r.pausedUntil ? r.pausedUntil.toISOString().slice(0, 10) : null,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── run_scheduler_job ─────────────────────────────────────────────────────────
+server.registerTool(
+  "run_scheduler_job",
+  {
+    title: "Scheduler-Job manuell anstoßen",
+    description: "Stößt den Mahn-Scheduler ('dunning', automatischer Mahnlauf) und/oder den Abo-Scheduler ('recurring') sofort an, statt auf den nächsten Intervall-Lauf zu warten.",
+    inputSchema: { job: z.enum(["dunning", "recurring"]).optional().describe("Nur diesen Job ausführen (sonst beide, Reihenfolge recurring → dunning)") },
+  },
+  async ({ job }): Promise<Result> => {
+    try {
+      const jobs: SchedulerJob[] | undefined = job ? [job] : undefined;
+      const results = await runScheduledJobs({ jobs, trigger: "MANUAL" });
+      const lines = results.map((r) => `${r.job}: ${r.ok ? "OK" : `FEHLER (${r.error})`} · ${JSON.stringify(r.summary)}`);
+      return ok(lines.join("\n"));
+    } catch (e) {
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },

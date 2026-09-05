@@ -8,7 +8,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const d = await dbInternal.dunning.findUnique({
     where: { id },
-    include: { invoice: { include: { org: true, customer: true } } },
+    include: { invoice: { include: { org: true, customer: true } }, stage: true },
   });
   if (!d) return new Response("Mahnung nicht gefunden", { status: 404 });
 

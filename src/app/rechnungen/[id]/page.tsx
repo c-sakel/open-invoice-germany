@@ -7,7 +7,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction, cancelAction } from "@/app/actions/invoices";
 import { PaymentForm } from "@/components/PaymentForm";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
-import { DunningButton } from "@/components/DunningButton";
+import { DunningActions } from "@/components/dunning/DunningActions";
+import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
+import { loadDunningSettings } from "@/domain/dunning/settings";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { ConvertMenu } from "@/components/ConvertMenu";
@@ -67,7 +69,7 @@ export default async function InvoiceDetail({
       customer: { include: { defaultPaymentMethod: true } },
       org: true,
       payments: { orderBy: { paidAt: "asc" } },
-      dunnings: { orderBy: { level: "asc" } },
+      dunnings: { orderBy: { level: "asc" }, include: { stage: { select: { order: true, name: true } } } },
       paymentMethod: true,
       // Task 4: Abzugs-Snapshot einer Schlussrechnung (Task 2, FinalInvoiceDeduction) —
       // NIE live aus den Abschlagsrechnungen, nur dieser unveraenderliche Snapshot.
@@ -119,6 +121,27 @@ export default async function InvoiceDetail({
   const isOverdue = !isDraft && !isCancelled && openCents > 0 && new Date() > dueDate;
   const canPay = !isDraft && !isCancelled && isInvoiceType && openCents > 0;
   const emailDocType: EmailDocType = invoice.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+
+  // Task 4: Mahnblock — naechste Stufe/Faelligkeit ueber dieselbe reine Zeitplan-Logik
+  // wie createDunning (dunningScheduleFor), damit die Anzeige exakt dem entspricht, was
+  // die naechste Erstellung tatsaechlich anwenden wuerde.
+  let dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null = null;
+  if (openCents > 0 && !isDraft && !isCancelled) {
+    const dunningStages = await prisma.dunningStage.findMany({ where: { orgId: org.id }, select: { order: true, enabled: true, daysAfterDue: true, name: true } });
+    const dunningSettings = await loadDunningSettings(org.id);
+    // Nit (Fix-Welle): `latestDunning` statt "letztes Element nach orderBy level asc" —
+    // nach einem Umsortieren der Mahnstufen (S3) ist `level`/`stage.order` nicht mehr
+    // zuverlaessig die zeitliche Reihenfolge; einheitlich mit create.ts/auto.ts.
+    const lastDunning = latestDunning(invoice.dunnings);
+    const schedule = dunningScheduleFor({
+      invoiceDueDate: dueDate,
+      lastDunning: lastDunning ? { order: lastDunning.stage?.order ?? lastDunning.level, dueDate: lastDunning.dueDate, sentAt: lastDunning.sentAt } : null,
+      stages: dunningStages,
+      gracePeriodDays: dunningSettings.gracePeriodDays,
+      now: new Date(),
+    });
+    dunningSchedule = { nextStage: schedule.nextStage ? { name: schedule.nextStage.name, order: schedule.nextStage.order } : null, dueAt: schedule.dueAt, isDue: schedule.isDue };
+  }
 
   // Task 4: Abzugsblock einer Schlussrechnung — je Abschlagsrechnung EINE Zeile (ueber
   // alle Steuersaetze aggregiert), aus dem unveraenderlichen FinalInvoiceDeduction-
@@ -370,10 +393,24 @@ export default async function InvoiceDetail({
             </div>
           )}
 
-          {openCents > 0 && (
-            <div className="flex flex-wrap items-center gap-3">
-              <DunningButton invoiceId={invoice.id} />
-              {!isOverdue && <span className="text-xs text-slate-400">Fällig am {deDate(dueDate)}</span>}
+          {openCents > 0 && dunningSchedule && (
+            <div className="space-y-2 rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-medium text-slate-800">
+                  Mahnprozess:{" "}
+                  {invoice.dunningState === "ACTIVE" ? "Aktiv" : invoice.dunningState === "PAUSED" ? `Pausiert${invoice.dunningPausedUntil ? ` bis ${deDate(invoice.dunningPausedUntil)}` : ""}` : "Beendet"}
+                </span>
+                {dunningSchedule.nextStage ? (
+                  <span className="text-slate-600">
+                    Nächste Stufe: {dunningSchedule.nextStage.name}
+                    {dunningSchedule.dueAt && ` · fällig ab ${deDate(dunningSchedule.dueAt)}`}
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Keine weitere Mahnstufe konfiguriert.</span>
+                )}
+                {!isOverdue && <span className="text-xs text-slate-400">Fällig am {deDate(dueDate)}</span>}
+              </div>
+              <DunningActions invoiceId={invoice.id} dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"} hasNextStage={dunningSchedule.nextStage != null} />
             </div>
           )}
 
@@ -382,7 +419,8 @@ export default async function InvoiceDetail({
               {invoice.dunnings.map((d) => (
                 <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
                   <span>
-                    {DUNNING_LEVEL_TITLE[d.level] ?? `${d.level}. Mahnung`} · {d.number} · {deDate(d.sentAt)}
+                    {d.stage?.name ?? DUNNING_LEVEL_TITLE[d.level] ?? `${d.level}. Mahnung`} · {d.number} · {deDate(d.sentAt)}
+                    {d.feeCents > 0 ? ` · Mahnkosten ${formatCents(d.feeCents, invoice.currency)}` : ""}
                     {d.interestAmountCents > 0 ? ` · Zinsen ${formatCents(d.interestAmountCents, invoice.currency)}` : ""}
                     {d.flatFee40Cents > 0 ? ` · Pauschale ${formatCents(d.flatFee40Cents, invoice.currency)}` : ""}
                   </span>

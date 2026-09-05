@@ -584,6 +584,110 @@ export const dunningStageSchema = z.object({
   feeCents: z.number().int().min(0).default(0), calculateInterest: z.boolean(), includeB2BFlatFee: z.boolean(),
   emailTemplateId: z.string().optional(), documentTemplateId: z.string().optional(), enabled: z.boolean().default(true),
 });
+
+// ── Phase 6: Mahnwesen — Stufen, Einstellungen, Prozessstatus ───────────────────
+// Nur die Felder, die der Client bei Create/Update mitschickt — OHNE `order`: das
+// bestimmt die Domain (create: naechste freie Nummer; update: kennt die bestehende).
+// COMPLIANCE §12: Mahnkosten (feeCents) sind erst ab der zweiten Mahnstufe zulaessig
+// (Stufe 0 = Zahlungserinnerung, Stufe 1 = 1. Mahnung sind kostenfrei) — das kann diese
+// Feldschema-Stufe allein nicht pruefen, weil sie `order` nicht kennt. Die Pruefung
+// erfolgt in dunningStageInputSchema (order bekannt) bzw. in stages.ts (Domain).
+export const dunningStageFieldsSchema = z.object({
+  name: z.string().min(1).max(80),
+  daysAfterDue: z.number().int().min(0),
+  newDueDays: z.number().int().min(1).max(365),
+  feeCents: z.number().int().min(0),
+  calculateInterest: z.boolean(),
+  includeB2BFlatFee: z.boolean(),
+  emailTemplateId: z.string().nullable().optional(),
+  autoSend: z.boolean().default(false),
+  enabled: z.boolean().default(true),
+});
+export type DunningStageFieldsInput = z.infer<typeof dunningStageFieldsSchema>;
+
+// Vollstaendige Eingabe inkl. `order` — von der Domain (stages.ts) nach Ermittlung/
+// Kenntnis der Stufennummer erneut geparst, damit die feeCents/order-Regel greift.
+export const dunningStageInputSchema = dunningStageFieldsSchema
+  .extend({ order: z.number().int().min(0) })
+  .superRefine((v, ctx) => {
+    if (v.feeCents > 0 && v.order < 2) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["feeCents"],
+        message: "Mahnkosten (feeCents) sind erst ab der 2. Mahnstufe zulässig (order ≥ 2, COMPLIANCE §12).",
+      });
+    }
+  });
+export type DunningStageInput = z.infer<typeof dunningStageInputSchema>;
+
+export const dunningStagesReorderSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
+});
+export type DunningStagesReorderInput = z.infer<typeof dunningStagesReorderSchema>;
+
+export const dunningSettingsInputSchema = z.object({
+  autoCreate: z.boolean().default(true),
+  autoSend: z.boolean().default(false),
+  baseInterestRateBp: z.number().int().min(0).max(2000).default(127),
+  baseRateValidFrom: z.iso.date().nullable().optional(),
+  gracePeriodDays: z.number().int().min(0).max(90).default(0),
+});
+export type DunningSettingsInput = z.infer<typeof dunningSettingsInputSchema>;
+
+export const DunningState = z.enum(["ACTIVE", "PAUSED", "STOPPED"]);
+export type DunningState = z.infer<typeof DunningState>;
+
+// pausedUntil ist nur bei state === PAUSED erlaubt (sonst muss es fehlen/NULL sein) —
+// das Feld beschreibt, bis wann der Prozess pausiert; bei ACTIVE/STOPPED ergibt es
+// keinen Sinn und würde beim naechsten Read veraltete Information vorspiegeln.
+// S1 (Fix-Welle): bei state=PAUSED ist pausedUntil PFLICHT und muss in der Zukunft
+// liegen — vorher war "PAUSED ohne Datum" gueltig, create.ts las das als SOFORT
+// abgelaufen und erstellte die naechste Mahnung trotzdem (stiller No-Op genau im
+// dokumentierten Anwendungsfall "Ratenzahlung vereinbart").
+export const dunningStateInputSchema = z
+  .object({
+    state: DunningState,
+    pausedUntil: z.iso.date().nullable().optional(),
+    note: z.string().max(500).nullable().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.state !== "PAUSED" && v.pausedUntil) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pausedUntil"],
+        message: "pausedUntil ist nur bei state=PAUSED zulässig.",
+      });
+    }
+    if (v.state === "PAUSED") {
+      if (!v.pausedUntil) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["pausedUntil"],
+          message: "pausedUntil ist bei state=PAUSED Pflicht.",
+        });
+      } else {
+        const today = new Date();
+        const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+        if (new Date(v.pausedUntil).getTime() <= todayUtc) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["pausedUntil"],
+            message: "pausedUntil muss in der Zukunft liegen (nach heute).",
+          });
+        }
+      }
+    }
+  });
+export type DunningStateInput = z.infer<typeof dunningStateInputSchema>;
+
+// Task 4: Filter fuer GET /api/dunning/overview (Query-String, daher alle Felder als
+// String/optional — coerce fuer stageOrder).
+export const dunningOverviewFilterSchema = z.object({
+  customerId: z.string().min(1).optional(),
+  state: DunningState.optional(),
+  stageOrder: z.coerce.number().int().min(0).optional(),
+});
+export type DunningOverviewFilterInput = z.infer<typeof dunningOverviewFilterSchema>;
 export const textTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, position: TextTemplatePosition, body: z.string(), isDefault: z.boolean().default(false) });
 export const emailTemplateSchema = z.object({ name: z.string().min(1), docType: DocType, subject: z.string().min(1), body: z.string(), signature: z.string().optional(), isDefault: z.boolean().default(false) });
 
