@@ -3,7 +3,13 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Wie in der CI (.github/workflows/ci.yml) npm install statt npm ci: die
+# committete package-lock.json ist nicht deckungsgleich mit package.json
+# (fehlend: @emnapi/core, @emnapi/runtime, magicast).
+# --ignore-scripts, weil postinstall "prisma generate" aufruft — das Schema
+# liegt in dieser Stage noch nicht vor. Die build-Stage generiert den Client
+# ohnehin explizit.
+RUN npm install --no-audit --no-fund --ignore-scripts
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
