@@ -4,6 +4,8 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { EmailTemplateForm } from "@/components/forms/EmailTemplateForm";
+import { listCustomFieldDefinitions } from "@/domain/customer/custom-fields";
+import { customFieldPlaceholders } from "@/lib/template/placeholders";
 import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +20,11 @@ export default async function EmailTemplateEditPage({ params }: { params: Promis
       : await dbInternal.emailTemplate.findFirst({ where: { id, orgId: org.id } });
   if (id !== "neu" && !template) notFound();
 
+  // Fix-Welle B1: benutzerdefinierte Kundenfelder (§31) zusaetzlich zu den statischen
+  // Platzhaltern anzeigen — {{customField.<key>}} war sonst ein toter Platzhalter.
+  const customFieldDefs = await listCustomFieldDefinitions(org.id, { activeOnly: true });
+  const customFieldPlaceholderList = customFieldPlaceholders(customFieldDefs);
+
   return (
     <div className="space-y-6">
       <SettingsTabs active="vorlagen" />
@@ -28,7 +35,10 @@ export default async function EmailTemplateEditPage({ params }: { params: Promis
         <h1 className="text-2xl font-bold tracking-tight">{template ? "Vorlage bearbeiten" : "Neue Vorlage"}</h1>
       </div>
 
-      <EmailTemplateForm template={template ? { ...template, docType: template.docType as EmailDocType } : null} />
+      <EmailTemplateForm
+        template={template ? { ...template, docType: template.docType as EmailDocType } : null}
+        customFieldPlaceholders={customFieldPlaceholderList}
+      />
     </div>
   );
 }

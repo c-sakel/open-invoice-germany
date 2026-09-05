@@ -4,7 +4,7 @@
  * gebotene Hinweis ergänzt.
  */
 import { computeTaxBreakdown } from "@/lib/tax";
-import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
+import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
@@ -33,6 +33,8 @@ interface DocInput {
   id?: string;
   sellerSnapshotJson?: string | null;
   buyerSnapshotJson?: string | null;
+  // Phase 8a (§30): Snapshot des gewaehlten Ansprechpartners; NULL/fehlend -> {{contact.*}} leer.
+  contactSnapshotJson?: string | null;
   // K1 — Beleg-Rabatt/-Aufschlag (Phase 4a), analog zum Rechnungs-Mapper.
   documentDiscountPermille?: number;
   documentDiscountCents?: number;
@@ -120,6 +122,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
   const ctx = q.id ?? q.number ?? "unbekannt";
   const org = parseSellerSnapshot(q.sellerSnapshotJson, q.org, ctx);
   const customer = parseBuyerSnapshot(q.buyerSnapshotJson, q.customer, ctx);
+  const contact = parseContactSnapshot(q.contactSnapshotJson, null, ctx);
 
   // Kopf-/Fusstext: siehe buildEInvoiceData (mapper.ts) — gleiches Vorgehen, gleiches
   // Ruling (nicht ins XML, da Geschaeftsdokumente ohnehin keine E-Rechnung sind, aber
@@ -134,6 +137,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
     currency: q.currency,
     seller: org,
     buyer: customer,
+    contact,
   });
   const headerText = q.headerText ? renderTemplate(q.headerText, textCtx).text : null;
   const footerText = q.footerText ? renderTemplate(q.footerText, textCtx).text : null;

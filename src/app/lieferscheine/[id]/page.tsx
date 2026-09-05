@@ -14,6 +14,8 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
+import { PdfPreview } from "@/components/PdfPreview";
+import { DocumentTimeline } from "@/components/DocumentTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -182,6 +184,17 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
       <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
 
       <EmailHistory docType="DELIVERY_NOTE" docId={dn.id} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="space-y-3">
+          <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+          <DocumentTimeline kind="DELIVERY_NOTE" docId={dn.id} />
+        </section>
+        <section className="space-y-3">
+          <h2 className="font-semibold text-slate-900">PDF-Vorschau</h2>
+          <PdfPreview src={`/api/delivery-notes/${dn.id}/pdf`} title={`Lieferschein ${dn.number ?? dn.id}`} />
+        </section>
+      </div>
     </div>
   );
 }

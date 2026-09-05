@@ -16,6 +16,8 @@ import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
 import type { EmailDocType } from "@/schemas/email";
+import { PdfPreview } from "@/components/PdfPreview";
+import { DocumentTimeline } from "@/components/DocumentTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -218,6 +220,17 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
       <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
 
       <EmailHistory docType={q.kind as EmailDocType} docId={q.id} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="space-y-3">
+          <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+          <DocumentTimeline kind="QUOTE" docId={q.id} />
+        </section>
+        <section className="space-y-3">
+          <h2 className="font-semibold text-slate-900">PDF-Vorschau</h2>
+          <PdfPreview src={`/api/documents/${q.id}/pdf`} title={`${KIND_TITLE[q.kind] ?? q.kind} ${q.number ?? q.id}`} />
+        </section>
+      </div>
     </div>
   );
 }

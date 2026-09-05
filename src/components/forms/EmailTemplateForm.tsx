@@ -18,7 +18,14 @@ export interface EmailTemplateFormData {
   isDefault: boolean;
 }
 
-export function EmailTemplateForm({ template }: { template?: EmailTemplateFormData | null }) {
+export function EmailTemplateForm({
+  template,
+  customFieldPlaceholders = [],
+}: {
+  template?: EmailTemplateFormData | null;
+  /** Fix-Welle B1: dynamische {{customField.<key>}}-Platzhalter (§31), vom Aufrufer geladen. */
+  customFieldPlaceholders?: { path: string; label: string }[];
+}) {
   const [state, action] = useActionState<ActionResult, FormData>(saveEmailTemplateAction, { ok: false });
   const [docType, setDocType] = useState<EmailDocType>(template?.docType ?? "INVOICE");
   const [subject, setSubject] = useState(template?.subject ?? "");
@@ -129,7 +136,7 @@ export function EmailTemplateForm({ template }: { template?: EmailTemplateFormDa
       <aside className="space-y-2 rounded-lg border border-slate-200 bg-white p-5 text-sm">
         <h3 className="font-semibold text-slate-900">Platzhalter</h3>
         <ul className="space-y-1">
-          {TEMPLATE_PLACEHOLDERS.map((p) => (
+          {[...TEMPLATE_PLACEHOLDERS, ...customFieldPlaceholders].map((p) => (
             <li key={p.path} className="flex items-center justify-between gap-2">
               <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{`{{${p.path}}}`}</code>
               <span className="text-xs text-slate-500">{p.label}</span>

@@ -6,6 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
@@ -82,6 +83,7 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
 
     await linkDocuments(tx, { orgId, fromType: "QUOTE", fromId: copy.id, toType: "QUOTE", toId: id, relationType: "DUPLICATED_FROM" });
     await appendChangeLog(tx, { orgId, entity: "QUOTE", entityId: copy.id, action: "CREATE", actor, at: now, diff: { duplicatedFrom: id } });
+    await logActivity(tx, { orgId, entityType: "QUOTE", entityId: copy.id, type: "DUPLICATED", actor, at: now, data: { duplicatedFrom: id } });
 
     return { type: "QUOTE" as const, id: copy.id };
   });
@@ -133,6 +135,7 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
 
     await linkDocuments(tx, { orgId, fromType: "DELIVERY_NOTE", fromId: copy.id, toType: "DELIVERY_NOTE", toId: id, relationType: "DUPLICATED_FROM" });
     await appendChangeLog(tx, { orgId, entity: "DELIVERY_NOTE", entityId: copy.id, action: "CREATE", actor, at: now, diff: { duplicatedFrom: id } });
+    await logActivity(tx, { orgId, entityType: "DELIVERY_NOTE", entityId: copy.id, type: "DUPLICATED", actor, at: now, data: { duplicatedFrom: id } });
 
     return { type: "DELIVERY_NOTE" as const, id: copy.id };
   });
@@ -202,6 +205,7 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
     const copy = await createDraftInvoiceWithinTx(tx, orgId, input, { actor, now });
 
     await linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: copy.id, toType: "INVOICE", toId: id, relationType: "DUPLICATED_FROM" });
+    await logActivity(tx, { orgId, entityType: "INVOICE", entityId: copy.id, type: "DUPLICATED", actor, at: now, data: { duplicatedFrom: id } });
 
     return { type: "INVOICE" as const, id: copy.id };
   });

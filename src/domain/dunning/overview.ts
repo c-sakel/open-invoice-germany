@@ -11,6 +11,8 @@ import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { DUNNABLE_TYPES } from "@/domain/dunning/create";
+import { agingBuckets } from "@/domain/dashboard/summary";
+import { utcDateOnly } from "@/lib/date-only";
 
 export interface DunningOverviewFilter {
   customerId?: string;
@@ -20,9 +22,17 @@ export interface DunningOverviewFilter {
   stageOrder?: number;
 }
 
-interface AgingBucket {
+/** Feste Vier-Bucket-Form (Phase 6, unveraendert nach aussen) — wird lokal aus dem
+ *  generalisierten `agingBuckets`-Array (Fix-Runde 1, Task 4) zusammengesetzt. */
+export interface AgingBucket {
   count: number;
   cents: number;
+}
+export interface AgingBuckets {
+  d1_7: AgingBucket;
+  d8_30: AgingBucket;
+  d31_60: AgingBucket;
+  d60plus: AgingBucket;
 }
 
 export interface DunningOverviewRow {
@@ -46,23 +56,9 @@ export interface DunningOverview {
   widgets: {
     overdueCount: number;
     openTotalCents: number;
-    aging: { d1_7: AgingBucket; d8_30: AgingBucket; d31_60: AgingBucket; d60plus: AgingBucket };
+    aging: AgingBuckets;
   };
   rows: DunningOverviewRow[];
-}
-
-function emptyBucket(): AgingBucket {
-  return { count: 0, cents: 0 };
-}
-
-// Nit (Fix-Welle): daysOverdue === 0 (heute faellig, noch nicht wirklich ueberfaellig)
-// fiel bisher in den "1-7 Tage"-Bucket (<= 7 schliesst 0 ein). Faellt jetzt aus den
-// Aging-Buckets heraus (zaehlt weiterhin in overdueCount/openTotalCents, s. Aufrufer).
-function addToBucket(aging: DunningOverview["widgets"]["aging"], daysOverdue: number, cents: number) {
-  if (daysOverdue < 1) return;
-  const bucket = daysOverdue <= 7 ? aging.d1_7 : daysOverdue <= 30 ? aging.d8_30 : daysOverdue <= 60 ? aging.d31_60 : aging.d60plus;
-  bucket.count += 1;
-  bucket.cents += cents;
 }
 
 export async function loadDunningOverview(orgId: string, now: Date = new Date(), filter: DunningOverviewFilter = {}): Promise<DunningOverview> {
@@ -129,7 +125,11 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     // Fallback issueDate <= now) — hier nur noch fuer daysOverdue gebraucht.
     const dueDate = inv.dueDate ?? inv.issueDate;
 
-    const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Fix-Welle (S7, Nit): kalendertaggenau (UTC) statt rohem Millisekunden-Elapsed —
+    // vorher konnte eine Zeile gleichzeitig daysOverdue=0 anzeigen UND bereits im
+    // "1-7 Tage"-Bucket von agingBuckets() (unten) auftauchen, weil agingBuckets bereits
+    // kalendertaggenau rechnete, dieses Feld aber nicht (Uhrzeit-Anteil floss mit ein).
+    const daysOverdue = Math.round((utcDateOnly(now) - utcDateOnly(dueDate)) / (1000 * 60 * 60 * 24));
 
     const last = inv.dunnings[0] ?? null;
     const currentStage = last ? { name: last.stage?.name ?? `Stufe ${last.level}`, order: last.stage?.order ?? last.level } : null;
@@ -180,7 +180,6 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
   }
 
   const rows: DunningOverviewRow[] = [];
-  const aging = { d1_7: emptyBucket(), d8_30: emptyBucket(), d31_60: emptyBucket(), d60plus: emptyBucket() };
   let openTotalCents = 0;
 
   for (const { inv, openCents, dueDate, daysOverdue, last, currentStage } of candidates) {
@@ -210,8 +209,25 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
     });
 
     openTotalCents += openCents;
-    addToBucket(aging, daysOverdue, openCents);
   }
+
+  // Aging-Buckets ueber den geteilten, generalisierten Helfer (Task-4-Brief, Fix-Runde 1):
+  // dieselbe Grenzwahl (7/30/60 Tage, minDays: 1 -> daysOverdue===0 zaehlt nicht, §25) wie
+  // bisher; das Array-Ergebnis wird hier in die feste Vier-Schluessel-Form zurueckgebaut,
+  // damit sich am oeffentlichen `DunningOverview`-Vertrag (Route/OverviewWidgets/Tests)
+  // nichts aendert.
+  const agingArray = agingBuckets(
+    rows.map((r) => ({ dueDate: r.dueDate, cents: r.openCents })),
+    now,
+    [7, 30, 60],
+    { minDays: 1 },
+  );
+  const aging: AgingBuckets = {
+    d1_7: { count: agingArray[0].count, cents: agingArray[0].cents },
+    d8_30: { count: agingArray[1].count, cents: agingArray[1].cents },
+    d31_60: { count: agingArray[2].count, cents: agingArray[2].cents },
+    d60plus: { count: agingArray[3].count, cents: agingArray[3].cents },
+  };
 
   rows.sort((a, b) => b.daysOverdue - a.daysOverdue);
 

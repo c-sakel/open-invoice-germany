@@ -6,6 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { dunningStateInputSchema } from "@/schemas";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity } from "@/domain/activity/log";
 import { DunningError } from "@/domain/dunning/create";
 
 export async function setDunningState(orgId: string, invoiceId: string, raw: unknown, actor: string) {
@@ -35,6 +36,15 @@ export async function setDunningState(orgId: string, invoiceId: string, raw: unk
       actor,
       at: now,
       diff: { state: input.state, pausedUntil: pausedUntil ? pausedUntil.toISOString() : null, note: input.note ?? null },
+    });
+    await logActivity(tx, {
+      orgId,
+      entityType: "INVOICE",
+      entityId: invoiceId,
+      type: "DUNNING_STATE",
+      actor,
+      at: now,
+      data: { state: input.state, pausedUntil: pausedUntil ? pausedUntil.toISOString() : null },
     });
 
     return { state: input.state, pausedUntil };

@@ -12,6 +12,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
 import { assertDocExists } from "@/domain/relations";
 import { NotFoundError } from "@/domain/errors";
 import { attachmentUploadSchema, DocRefType } from "@/schemas";
@@ -21,6 +22,12 @@ import type { z } from "zod";
 import type { DocumentAttachment } from "@/generated/prisma/client";
 
 export type AttachmentDocType = z.infer<typeof DocRefType>;
+
+/** DUNNING ist kein ActivityLog-Entitaetstyp (INVOICE|QUOTE|DELIVERY_NOTE|CUSTOMER|
+ *  RECURRING) — Anhang-Aktivitaet an einer Mahnung wird deshalb nicht protokolliert. */
+function activityEntityTypeFor(docType: AttachmentDocType): ActivityEntityType | null {
+  return docType === "DUNNING" ? null : docType;
+}
 
 export interface AddAttachmentFile {
   filename: string;
@@ -95,6 +102,10 @@ export async function addAttachment(
         at: now,
         diff: { filename: row.filename, sizeBytes: row.sizeBytes, sha256: row.sha256, docType, docId },
       });
+      const entityType = activityEntityTypeFor(docType);
+      if (entityType) {
+        await logActivity(tx, { orgId, entityType, entityId: docId, type: "ATTACHMENT_ADDED", actor, at: now, data: { filename: row.filename } });
+      }
       return row;
     });
   } catch (e) {
@@ -127,6 +138,10 @@ export async function removeAttachment(orgId: string, docType: AttachmentDocType
       at: now,
       diff: { filename: row.filename, sizeBytes: row.sizeBytes, sha256: row.sha256, docType, docId },
     });
+    const entityType = activityEntityTypeFor(docType);
+    if (entityType) {
+      await logActivity(tx, { orgId, entityType, entityId: docId, type: "ATTACHMENT_REMOVED", actor, at: now, data: { filename: row.filename } });
+    }
   });
 
   await deleteFileIfUnreferenced(row.storagePath, async (storagePath) => {

@@ -7,7 +7,14 @@
  * Reine Funktionen — kein DB-Zugriff. Die Objekte entsprechen feldgenau den
  * Eingaben von buildEInvoiceData (src/lib/einvoice/mapper.ts).
  */
-import { sellerSnapshotSchema, buyerSnapshotSchema, type SellerSnapshot, type BuyerSnapshot } from "@/schemas";
+import {
+  sellerSnapshotSchema,
+  buyerSnapshotSchema,
+  contactSnapshotSchema,
+  type SellerSnapshot,
+  type BuyerSnapshot,
+  type ContactSnapshot,
+} from "@/schemas";
 
 export function buildSellerSnapshot(org: SellerSnapshot): SellerSnapshot {
   return {
@@ -28,6 +35,13 @@ export function buildSellerSnapshot(org: SellerSnapshot): SellerSnapshot {
   };
 }
 
+/**
+ * `address`/`shippingAddress`/`customFields` werden nur in die Ausgabe uebernommen, wenn
+ * der Aufrufer sie mitgibt (`!== undefined`) — sonst bliebe der bestehende exakte Schluesselmengen-Vergleich
+ * gegen den Alt-Customer-Fixture (test/unit/snapshot.test.ts) nicht mehr bestehen. Aufrufer
+ * ohne Adress-/Custom-Field-Kontext (z. B. Alt-Aufrufe vor Phase 8a) erhalten weiterhin
+ * exakt die zehn urspruenglichen Schluessel.
+ */
 export function buildBuyerSnapshot(customer: BuyerSnapshot): BuyerSnapshot {
   return {
     name: customer.name,
@@ -40,6 +54,20 @@ export function buildBuyerSnapshot(customer: BuyerSnapshot): BuyerSnapshot {
     vatId: customer.vatId,
     email: customer.email,
     leitwegId: customer.leitwegId,
+    ...(customer.address !== undefined ? { address: customer.address } : {}),
+    ...(customer.shippingAddress !== undefined ? { shippingAddress: customer.shippingAddress } : {}),
+    ...(customer.customFields !== undefined ? { customFields: customer.customFields } : {}),
+  };
+}
+
+/** Snapshot des am Beleg gewaehlten Ansprechpartners (Phase 8a, §30). Reine Funktion. */
+export function buildContactSnapshot(contact: ContactSnapshot): ContactSnapshot {
+  return {
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    role: contact.role,
+    email: contact.email,
+    phone: contact.phone,
   };
 }
 
@@ -69,5 +97,21 @@ export function parseBuyerSnapshot(json: string | null | undefined, fallback: Bu
   const parsed = buyerSnapshotSchema.safeParse(tryParse(json));
   if (parsed.success) return parsed.data;
   console.warn(`snapshot: Kaeufer-Snapshot von ${ctx} ungueltig, nutze Live-Daten`);
+  return fallback;
+}
+
+/**
+ * Liefert den Ansprechpartner-Snapshot, wenn vorhanden und gueltig — sonst den Fallback
+ * (z. B. Legacy-Ableitung aus `contactName`, oder `null`, wenn keiner gewaehlt war).
+ */
+export function parseContactSnapshot(
+  json: string | null | undefined,
+  fallback: ContactSnapshot | null,
+  ctx: string,
+): ContactSnapshot | null {
+  if (!json) return fallback;
+  const parsed = contactSnapshotSchema.safeParse(tryParse(json));
+  if (parsed.success) return parsed.data;
+  console.warn(`snapshot: Ansprechpartner-Snapshot von ${ctx} ungueltig, nutze Fallback`);
   return fallback;
 }

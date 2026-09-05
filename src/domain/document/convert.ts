@@ -7,6 +7,7 @@
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { createBusinessDocumentWithinTx } from "@/domain/document/create";
 import { createDeliveryNoteWithinTx } from "@/domain/delivery-note/create";
@@ -165,6 +166,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
       at: now,
       diff: { fromDocument: q.number, kind: q.kind },
     });
+    await logActivity(tx, { orgId: q.orgId, entityType: "QUOTE", entityId: documentId, type: "CONVERTED", actor, at: now, data: { toInvoice: invoice.id } });
 
     return invoice;
   });
@@ -234,6 +236,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
     );
 
     await linkDocuments(tx, { orgId, fromType: "QUOTE", fromId, toType: "QUOTE", toId: ab.id, relationType: "CONVERTED_TO" });
+    await logActivity(tx, { orgId, entityType: "QUOTE", entityId: fromId, type: "CONVERTED", actor, at: now, data: { toOrderConfirmation: ab.id } });
 
     return ab;
   });
@@ -310,6 +313,8 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
     );
 
     await linkDocuments(tx, { orgId, fromType, fromId, toType: "DELIVERY_NOTE", toId: note.id, relationType: "DELIVERED_BY" });
+    const sourceEntityType: ActivityEntityType = fromType === "QUOTE" ? "QUOTE" : "INVOICE";
+    await logActivity(tx, { orgId, entityType: sourceEntityType, entityId: fromId, type: "CONVERTED", actor: opts.actor, at: opts.now, data: { toDeliveryNote: note.id } });
 
     return note;
   });

@@ -36,7 +36,14 @@ export async function proxy(req: NextRequest) {
       res.headers.set("cache-control", "private, no-store");
       return res;
     }
-    return NextResponse.next({ request: { headers } });
+    const res = NextResponse.next({ request: { headers } });
+    // Fix-Welle (Nit): "/" ist der einzige PUBLIC_EXACT-Pfad, rendert aber fuer
+    // angemeldete Nutzer das Dashboard (Umsatz, Kundennamen) statt der Marketing-Seite.
+    // `force-dynamic` liefert dafuer zwar bereits regulaer "private, no-store", aber mit
+    // Cloudflare vor der Produktivinstanz wird der Header hier explizit gesetzt statt sich
+    // auf Next.js' implizites Verhalten zu verlassen (analog /angebot/ oben, G3).
+    if (pathname === "/") res.headers.set("cache-control", "private, no-store");
+    return res;
   }
 
   const userId = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);

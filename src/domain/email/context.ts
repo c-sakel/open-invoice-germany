@@ -8,11 +8,12 @@
  */
 import { dbInternal } from "@/lib/db";
 import { payableBaseCents } from "@/domain/invoice/amounts";
-import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { parseCustomerCustomFields } from "@/domain/customer/custom-fields";
 import { formatDateDe, formatMoneyDe } from "@/lib/template/format";
 import type { TemplateContext } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
-import type { BuyerSnapshot, SellerSnapshot } from "@/schemas";
+import type { BuyerSnapshot, SellerSnapshot, ContactSnapshot } from "@/schemas";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 
 export { DOC_TYPE_LABEL };
@@ -20,6 +21,10 @@ export { DOC_TYPE_LABEL };
 export interface TemplateContextResult {
   ctx: TemplateContext;
   customerEmail: string | null;
+  /** Phase 8a (§28): `Customer.invoiceCc` — nur bei INVOICE/CREDIT_NOTE/DUNNING gesetzt
+   *  (Quote/DeliveryNote kennen kein eigenes CC-Kundenfeld). `null` = keine Kundenvorgabe,
+   *  Aufrufer (prefillEmail) faellt dann auf MailSettings.defaultCc zurueck. */
+  customerCc: string | null;
   docNumber: string;
 }
 
@@ -37,9 +42,13 @@ function splitContactName(contactName: string | null | undefined): { firstName: 
  * Kundenkontext aus Snapshot (Name/Ansprechpartner) und Live-Kunde (E-Mail — die
  * aktuell hinterlegte Adresse, nicht Teil der rechtlich relevanten Snapshot-Betrachtung).
  * `number` ist ein reservierter, aktuell leerer Pfad (Lastenheft 28, kein Kundennummernfeld
- * im Schema). `customField` ebenso reserviert (Lastenheft 31).
+ * im Schema). `customField` (Lastenheft 31): Werte aus dem Buyer-Snapshot (`customFields`,
+ * Phase 8a), falls vorhanden — sonst live vom Aufrufer nachgeladen (parseCustomerCustomFields).
+ * Fix-Welle B1: dieselben Werte stehen ZUSAETZLICH unter dem Top-Level-Pfad `customField.*`
+ * im Kontext (siehe buildContextObject unten) — die Doku/der Vorlagen-Editor nennen
+ * `{{customField.<key>}}`, nicht `{{customer.customField.<key>}}`.
  */
-function customerCtx(buyer: BuyerSnapshot, customer: { email: string | null }) {
+function customerCtx(buyer: BuyerSnapshot, customer: { email: string | null }, customFields: Record<string, unknown> = {}) {
   const { firstName, lastName } = splitContactName(buyer.contactName);
   return {
     name: buyer.name,
@@ -47,8 +56,38 @@ function customerCtx(buyer: BuyerSnapshot, customer: { email: string | null }) {
     lastName,
     number: "",
     email: customer.email ?? "",
-    customField: {},
+    customField: customFields,
   };
+}
+
+/**
+ * Ansprechpartner-Kontext (Lastenheft §30, Phase 8a): `contact.firstName/lastName/email/
+ * role/phone` aus dem am Beleg gewaehlten Ansprechpartner (Snapshot). Ohne Snapshot
+ * (Legacy-Belege, kein Ansprechpartner gewaehlt) faellt `name` auf `buyer.contactName`
+ * zurueck, die Einzelfelder bleiben leer — es gibt keine strukturierte Legacy-Quelle
+ * fuer Vor-/Nachname/E-Mail/Funktion/Telefon (nur den zusammengesetzten Namen).
+ */
+function contactCtx(contact: ContactSnapshot | null, buyer: BuyerSnapshot) {
+  return {
+    name: contact ? `${contact.firstName} ${contact.lastName}`.trim() : (buyer.contactName ?? ""),
+    firstName: contact?.firstName ?? "",
+    lastName: contact?.lastName ?? "",
+    email: contact?.email ?? "",
+    role: contact?.role ?? "",
+    phone: contact?.phone ?? "",
+  };
+}
+
+/**
+ * Empfaenger-Prioritaet (Lastenheft §28, Phase 8a): Ansprechpartner-E-Mail (Snapshot) >
+ * `invoiceEmail`/`quoteEmail` des Kunden (je nach Belegtyp) > `Customer.email`. Reine
+ * Funktion — der Aufrufer (buildTemplateContext) uebergibt bereits die passende
+ * Kundenvorgabe fuer den jeweiligen Belegtyp.
+ */
+function resolveRecipientEmail(contact: ContactSnapshot | null, docTypeOverride: string | null, customerEmail: string | null): string | null {
+  if (contact?.email) return contact.email;
+  if (docTypeOverride) return docTypeOverride;
+  return customerEmail;
 }
 
 /** Belegkontext. Betraege sind optional (`null` = kein Betrag am Belegtyp, z. B. Lieferschein). */
@@ -83,6 +122,8 @@ export interface DocumentTextContextInput {
   currency: string;
   seller: SellerSnapshot;
   buyer: BuyerSnapshot;
+  /** Ansprechpartner-Snapshot (Phase 8a, §30) — optional, Aufrufer ohne Kontaktbezug lassen es weg. */
+  contact?: ContactSnapshot | null;
 }
 
 /**
@@ -104,7 +145,8 @@ export function buildDocumentTextContext(input: DocumentTextContextInput): Templ
   const dueOrValid = input.dueDate ?? input.validUntil ?? null;
 
   return {
-    customer: customerCtx(input.buyer, { email: input.buyer.email }),
+    customer: customerCtx(input.buyer, { email: input.buyer.email }, input.buyer.customFields),
+    customField: input.buyer.customFields ?? {},
     company,
     payment,
     document: docCtx(
@@ -117,7 +159,7 @@ export function buildDocumentTextContext(input: DocumentTextContextInput): Templ
       input.totals?.taxCents ?? null,
       input.currency,
     ),
-    contact: { name: input.buyer.contactName ?? "" },
+    contact: contactCtx(input.contact ?? null, input.buyer),
   };
 }
 
@@ -159,9 +201,12 @@ export async function buildTemplateContext(
     // des Rests nach Abzug der Abschlaege (der Kunde wuerde zur erneuten Zahlung der
     // bereits geleisteten Abschlaege aufgefordert).
     const open = payableBaseCents(inv) - inv.paidAmountCents;
+    const contact = parseContactSnapshot(inv.contactSnapshotJson, null, snapshotCtx);
+    const customFields = buyer.customFields ?? (await parseCustomerCustomFields(orgId, inv.customer.customFieldsJson));
     return {
       ctx: {
-        customer: customerCtx(buyer, inv.customer),
+        customer: customerCtx(buyer, inv.customer, customFields),
+        customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
         document: docCtx(docType, inv.number, inv.issueDate, inv.dueDate, inv.grossTotalCents, inv.netTotalCents, inv.taxTotalCents, inv.currency),
@@ -172,9 +217,11 @@ export async function buildTemplateContext(
           dueDate: formatDateDe(inv.dueDate),
           openAmount: formatMoneyDe(open, inv.currency),
         },
-        contact: { name: inv.customer.contactName ?? "" },
+        contact: contactCtx(contact, buyer),
       },
-      customerEmail: inv.customer.email ?? null,
+      // Empfaenger-Prioritaet (§28): Ansprechpartner-E-Mail > Customer.invoiceEmail > Customer.email.
+      customerEmail: resolveRecipientEmail(contact, inv.customer.invoiceEmail, inv.customer.email),
+      customerCc: inv.customer.invoiceCc,
       docNumber: inv.number ?? "ENTWURF",
     };
   }
@@ -201,9 +248,12 @@ export async function buildTemplateContext(
     const open = d.snapshotSource === "CREATE" ? d.claimBaseCents : inv.grossTotalCents - inv.paidAmountCents;
     const fees = d.lateFeeCents + d.flatFee40Cents + d.feeCents;
     const total = open + d.interestAmountCents + fees;
+    const contact = parseContactSnapshot(inv.contactSnapshotJson, null, snapshotCtx);
+    const customFields = buyer.customFields ?? (await parseCustomerCustomFields(orgId, inv.customer.customFieldsJson));
     return {
       ctx: {
-        customer: customerCtx(buyer, inv.customer),
+        customer: customerCtx(buyer, inv.customer, customFields),
+        customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
         document: docCtx("DUNNING", d.number, d.sentAt, d.dueDate, total, null, null, inv.currency),
@@ -223,9 +273,10 @@ export async function buildTemplateContext(
           interest: formatMoneyDe(d.interestAmountCents, inv.currency),
           total: formatMoneyDe(total, inv.currency),
         },
-        contact: { name: inv.customer.contactName ?? "" },
+        contact: contactCtx(contact, buyer),
       },
-      customerEmail: inv.customer.email ?? null,
+      customerEmail: resolveRecipientEmail(contact, inv.customer.invoiceEmail, inv.customer.email),
+      customerCc: inv.customer.invoiceCc,
       docNumber: d.number ?? "ENTWURF",
     };
   }
@@ -236,15 +287,20 @@ export async function buildTemplateContext(
     const snapshotCtx = `email:DELIVERY_NOTE:${docId}`;
     const buyer = parseBuyerSnapshot(dn.buyerSnapshotJson, buildBuyerSnapshot(dn.customer), snapshotCtx);
     const seller = parseSellerSnapshot(dn.sellerSnapshotJson, buildSellerSnapshot(org), snapshotCtx);
+    const contact = parseContactSnapshot(dn.contactSnapshotJson, null, snapshotCtx);
+    const customFields = buyer.customFields ?? (await parseCustomerCustomFields(orgId, dn.customer.customFieldsJson));
     return {
       ctx: {
-        customer: customerCtx(buyer, dn.customer),
+        customer: customerCtx(buyer, dn.customer, customFields),
+        customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
         document: docCtx("DELIVERY_NOTE", dn.number, dn.issueDate, dn.deliveryDate, null, null, null, "EUR"),
-        contact: { name: dn.customer.contactName ?? "" },
+        contact: contactCtx(contact, buyer),
       },
-      customerEmail: dn.customer.email ?? null,
+      // Lieferschein kennt keine eigene invoiceEmail/quoteEmail-Kundenvorgabe.
+      customerEmail: resolveRecipientEmail(contact, null, dn.customer.email),
+      customerCc: null,
       docNumber: dn.number ?? "ENTWURF",
     };
   }
@@ -255,16 +311,21 @@ export async function buildTemplateContext(
   const snapshotCtx = `email:${docType}:${docId}`;
   const buyer = parseBuyerSnapshot(q.buyerSnapshotJson, buildBuyerSnapshot(q.customer), snapshotCtx);
   const seller = parseSellerSnapshot(q.sellerSnapshotJson, buildSellerSnapshot(org), snapshotCtx);
+  const contact = parseContactSnapshot(q.contactSnapshotJson, null, snapshotCtx);
+  const customFields = buyer.customFields ?? (await parseCustomerCustomFields(orgId, q.customer.customFieldsJson));
   return {
     ctx: {
-      customer: customerCtx(buyer, q.customer),
+      customer: customerCtx(buyer, q.customer, customFields),
+      customField: customFields,
       company: { ...company, name: seller.legalName },
       payment,
       document: docCtx(docType, q.number, q.issueDate, q.validUntil, q.grossTotalCents, q.netTotalCents, q.taxTotalCents, q.currency),
       offer: { number: q.number ?? "", validUntil: formatDateDe(q.validUntil), link: docType === "ANGEBOT" ? (opts.offerLink ?? "") : "" },
-      contact: { name: q.customer.contactName ?? "" },
+      contact: contactCtx(contact, buyer),
     },
-    customerEmail: q.customer.email ?? null,
+    // Empfaenger-Prioritaet (§28): Ansprechpartner-E-Mail > Customer.quoteEmail > Customer.email.
+    customerEmail: resolveRecipientEmail(contact, q.customer.quoteEmail, q.customer.email),
+    customerCc: null,
     docNumber: q.number ?? "ENTWURF",
   };
 }
@@ -295,6 +356,7 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
 
   return {
     customer,
+    customField: {},
     company,
     payment,
     document: documentByType[docType],
@@ -309,6 +371,6 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
       interest: formatMoneyDe(1200, "EUR"),
       total: formatMoneyDe(120700, "EUR"),
     },
-    contact: { name: "Max Mustermann" },
+    contact: { name: "Max Mustermann", firstName: "Max", lastName: "Mustermann", email: "max.mustermann@beispiel-ag.de", role: "Einkauf", phone: "+49 30 7654321" },
   };
 }

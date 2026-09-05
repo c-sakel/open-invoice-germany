@@ -8,6 +8,13 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "customer.lastName", label: "Ansprechpartner Nachname" },
   { path: "customer.email", label: "Kunden-E-Mail" },
   { path: "contact.name", label: "Ansprechpartner (voller Name)" },
+  // Phase 8a (§30): Einzelfelder des am Beleg gewaehlten Ansprechpartners (Snapshot,
+  // contactSnapshotJson) — Ergaenzung zu `contact.name` (Legacy, aus Customer.contactName).
+  { path: "contact.firstName", label: "Ansprechpartner Vorname (Kontakt)" },
+  { path: "contact.lastName", label: "Ansprechpartner Nachname (Kontakt)" },
+  { path: "contact.email", label: "Ansprechpartner E-Mail (Kontakt)" },
+  { path: "contact.role", label: "Ansprechpartner Funktion" },
+  { path: "contact.phone", label: "Ansprechpartner Telefon" },
   { path: "payment.iban", label: "IBAN" },
   { path: "payment.bic", label: "BIC" },
   { path: "document.type", label: "Belegart" },
@@ -32,3 +39,13 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "dunning.interest", label: "Verzugszinsen" },
   { path: "dunning.total", label: "Gesamtbetrag Mahnung" },
 ];
+
+/**
+ * Dynamische Platzhalter fuer benutzerdefinierte Kundenfelder (§31): je aktiver
+ * CustomFieldDefinition der Organisation ein `customField.<key>`-Eintrag fuer den
+ * Vorlagen-Editor. Reine Funktion (kein DB-Zugriff) — der Aufrufer laedt die
+ * Definitionen (z. B. `listCustomFieldDefinitions`).
+ */
+export function customFieldPlaceholders(definitions: { key: string; label: string }[]): { path: string; label: string }[] {
+  return definitions.map((d) => ({ path: `customField.${d.key}`, label: d.label }));
+}

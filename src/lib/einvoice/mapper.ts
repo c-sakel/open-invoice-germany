@@ -2,7 +2,7 @@
  * Bildet eine festgeschriebene Rechnung (Prisma) auf die framework-freie
  * EInvoiceData-Struktur ab — gemeinsame Quelle für XRechnung- und PDF-Export.
  */
-import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
+import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import { roundHalfUp } from "@/lib/money";
@@ -75,6 +75,9 @@ export interface MapInput {
   // Phase 0: Snapshot der Parteien; bei Entwuerfen null -> Live-Relation.
   sellerSnapshotJson?: string | null;
   buyerSnapshotJson?: string | null;
+  // Phase 8a (§30): Snapshot des gewaehlten Ansprechpartners; NULL = kein Ansprechpartner
+  // gewaehlt (oder Alt-Beleg vor Phase 8a) -> {{contact.*}} bleibt leer.
+  contactSnapshotJson?: string | null;
   id?: string;
   org: {
     legalName: string;
@@ -134,6 +137,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   const breakdown = breakdownParsed.success ? breakdownParsed.data : [];
   const org = parseSellerSnapshot(invoice.sellerSnapshotJson, invoice.org, ctx);
   const customer = parseBuyerSnapshot(invoice.buyerSnapshotJson, invoice.customer, ctx);
+  const contact = parseContactSnapshot(invoice.contactSnapshotJson, null, ctx);
 
   // Phase 4a — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, aus der bereits
   // (bei Festschreibung) proportional aufgeteilten Aufschluesselung.
@@ -258,6 +262,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     currency: invoice.currency,
     seller: org,
     buyer: customer,
+    contact,
   });
   const headerText = invoice.headerText ? renderTemplate(invoice.headerText, textCtx).text : null;
   const footerText = invoice.footerText ? renderTemplate(invoice.footerText, textCtx).text : null;

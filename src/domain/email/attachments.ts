@@ -3,6 +3,8 @@ import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
+import { validateXRechnung } from "@/lib/einvoice/en16931-core";
+import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
@@ -45,6 +47,30 @@ export function defaultStandardAttachmentFilenames(attachments: { filename: stri
   return names.filter((n) => !n.toLowerCase().endsWith(".xml"));
 }
 
+/**
+ * eInvoicePreferred (Phase 8a, §28): der Kunde selbst kann die org-weite Vorbelegung
+ * (DocumentSettings.eInvoiceDefault) UEBERSCHREIBEN, wenn er ausdruecklich die
+ * XRechnung/ZUGFeRD-Vorauswahl wuenscht — nie umgekehrt einschraenken (ein Kunde ohne
+ * Praeferenz aendert an der Org-Vorbelegung nichts). Liefert `null`, wenn kein Kunde zum
+ * Beleg ermittelt werden kann (Aufrufer faellt dann auf `eInvoiceDefault` allein zurueck).
+ */
+export async function customerEInvoicePreferred(orgId: string, docType: EmailDocType, docId: string): Promise<boolean | null> {
+  if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
+    const inv = await dbInternal.invoice.findFirst({ where: { id: docId, orgId }, select: { customer: { select: { eInvoicePreferred: true } } } });
+    return inv?.customer.eInvoicePreferred ?? null;
+  }
+  if (docType === "DUNNING") {
+    const d = await dbInternal.dunning.findFirst({
+      where: { id: docId, invoice: { orgId } },
+      select: { invoice: { select: { customer: { select: { eInvoicePreferred: true } } } } },
+    });
+    return d?.invoice.customer.eInvoicePreferred ?? null;
+  }
+  if (docType === "DELIVERY_NOTE") return null; // kein XML-Anhang moeglich
+  const q = await dbInternal.quote.findFirst({ where: { id: docId, orgId, kind: docType }, select: { customer: { select: { eInvoicePreferred: true } } } });
+  return q?.customer.eInvoicePreferred ?? null;
+}
+
 /** Standardanhaenge je Belegtyp (Spec, Abschnitt 2). */
 export async function buildStandardAttachments(orgId: string, docType: EmailDocType, docId: string): Promise<Attachment[]> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
@@ -67,7 +93,16 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
     // duerfen durch spaetere Stammdatenaenderungen nicht rueckwirkend die Anhaenge aendern.
     const buyer = parseBuyerSnapshot(invoice.buyerSnapshotJson, buildBuyerSnapshot(invoice.customer), `email:${docType}:${docId}`);
     if (buyer.leitwegId) {
-      out.push({ filename: `${base}-xrechnung.xml`, contentType: "application/xml", content: Buffer.from(buildXRechnungUBL(data), "utf8") });
+      const xml = buildXRechnungUBL(data);
+      // onEInvoiceInvalid (Task-3-Brief): EN-16931-Kernvalidierung beim Versand, wie schon
+      // im XRechnung-Export (GET .../xrechnung, ?validate=1). Blockt den Versand NICHT
+      // (die verbindliche Validierung bleibt der KoSIT-Validator im CI) — nur die
+      // Benachrichtigung, damit der Betreiber eine fehlerhafte E-Rechnung bemerkt.
+      const report = validateXRechnung(data, xml);
+      if (!report.valid) {
+        await onEInvoiceInvalid(orgId, { invoiceId: invoice.id, errors: report.errors });
+      }
+      out.push({ filename: `${base}-xrechnung.xml`, contentType: "application/xml", content: Buffer.from(xml, "utf8") });
     }
     return out;
   }
@@ -97,6 +132,8 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
       include: { org: true, customer: true, lines: { orderBy: { position: "asc" } } },
     });
     if (!dn) return [];
+    // B5 (Fix-Welle): nur noch Live-FALLBACK fuer Alt-Belege ohne buyerSnapshotJson.shippingAddress
+    // (buildDeliveryNotePdfData bevorzugt den Snapshot, siehe dort).
     const shippingAddress = dn.showDeliveryAddress
       ? await dbInternal.customerAddress.findFirst({
           where: { orgId, customerId: dn.customerId, type: "SHIPPING", isDefault: true },

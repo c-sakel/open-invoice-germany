@@ -21,6 +21,10 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
 import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
 import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
+import { effectiveInvoiceStatus } from "@/domain/invoice/status";
+import { availableActions } from "@/domain/document/actions";
+import { PdfPreview } from "@/components/PdfPreview";
+import { DocumentTimeline } from "@/components/DocumentTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -33,17 +37,6 @@ const TYPE_TITLE: Record<string, string> = {
   DOWNPAYMENT: "Abschlagsrechnung",
   FINAL: "Schlussrechnung",
 };
-
-// §16-Aktionsblock: Rechnungen aller Art (ausser Gutschrift/Storno selbst) koennen
-// storniert oder (teil-)gutgeschrieben werden (Task-2-Domain: cancelInvoice/
-// createPartialCreditNote pruefen nur `type !== "CREDIT_NOTE"`, nicht auf INVOICE
-// eingeschraenkt) — PARTIAL/DOWNPAYMENT/FINAL eingeschlossen.
-const CANCELLABLE_TYPES = new Set(["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
-const CREDITABLE_TYPES = CANCELLABLE_TYPES;
-// Duplizieren ist fuer PARTIAL/DOWNPAYMENT/FINAL verboten (InvalidOperationError, Task 2)
-// — haengen an einer Quelle (sourceType/sourceId), ein Duplikat waere weder eine neue
-// Teilleistung noch ein neuer Abschlag/Schluss.
-const NOT_DUPLICATABLE_TYPES = new Set(["PARTIAL", "DOWNPAYMENT", "FINAL"]);
 
 function deDate(d: Date | null) {
   return d ? new Intl.DateTimeFormat("de-DE").format(d) : "—";
@@ -93,6 +86,19 @@ export default async function InvoiceDetail({
 
   const isDraft = invoice.status === "DRAFT";
   const isCancelled = invoice.status === "CANCELLED";
+  // Task 2 (Task-2-Facts): Sichtbarkeit der §16-Aktionen (Stornieren/Teilgutschrift/
+  // Duplizieren) ueber availableActions (Task 1) statt eigener CANCELLABLE_TYPES/
+  // CREDITABLE_TYPES/NOT_DUPLICATABLE_TYPES-Sets — `status` ist der WIRKSAME Status
+  // (effectiveInvoiceStatus), wie von availableActions verlangt.
+  const actions = availableActions({
+    kind: "INVOICE",
+    type: invoice.type,
+    status: effectiveInvoiceStatus({ status: invoice.status, dueDate: invoice.dueDate, issueDate: invoice.issueDate }),
+    isDraft,
+    dunningState: invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED" | undefined,
+  });
+  const canCancelOrCredit = actions.includes("CANCEL");
+  const canDuplicate = actions.includes("DUPLICATE");
   const breakdown = JSON.parse(invoice.taxBreakdownJson) as Array<{
     taxRate: number;
     netCents: number;
@@ -446,7 +452,7 @@ export default async function InvoiceDetail({
               <p className="text-slate-600">
                 Storniert die Rechnung vollständig durch eine Gutschrift in gleicher Höhe (bei einer Schlussrechnung nur in Höhe des Restbetrags nach Abzug der Abschläge). Das Original bleibt unverändert erhalten (GoBD).
               </p>
-              {CANCELLABLE_TYPES.has(invoice.type) ? (
+              {canCancelOrCredit ? (
                 <form action={cancelAction}>
                   <input type="hidden" name="id" value={invoice.id} />
                   <button className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">Stornieren</button>
@@ -461,7 +467,7 @@ export default async function InvoiceDetail({
               <p className="text-slate-600">
                 Reduziert die Rechnung um frei wählbare Positionen (z. B. eine nachträgliche Preis- oder Mengenkorrektur), ohne sie vollständig zu stornieren.
               </p>
-              {CREDITABLE_TYPES.has(invoice.type) ? (
+              {canCancelOrCredit ? (
                 <Link
                   href={`/rechnungen/${invoice.id}/teilgutschrift`}
                   className="inline-block rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -486,8 +492,8 @@ export default async function InvoiceDetail({
               <p className="text-slate-600">Legt einen neuen Rechnungsentwurf mit denselben Positionen/Konditionen an (z. B. für eine Folgerechnung an denselben Kunden).</p>
               <DuplicateInvoiceButton
                 invoiceId={invoice.id}
-                disabled={NOT_DUPLICATABLE_TYPES.has(invoice.type)}
-                disabledReason={NOT_DUPLICATABLE_TYPES.has(invoice.type) ? "Teil-/Abschlags-/Schlussrechnungen hängen an einer Quelle" : undefined}
+                disabled={!canDuplicate}
+                disabledReason={!canDuplicate ? "Teil-/Abschlags-/Schlussrechnungen hängen an einer Quelle" : undefined}
               />
             </div>
           </div>
@@ -503,6 +509,19 @@ export default async function InvoiceDetail({
       <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
 
       <EmailHistory docType={emailDocType} docId={invoice.id} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="space-y-3">
+          <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+          <DocumentTimeline kind="INVOICE" docId={invoice.id} />
+        </section>
+        {!isDraft && (
+          <section className="space-y-3">
+            <h2 className="font-semibold text-slate-900">PDF-Vorschau</h2>
+            <PdfPreview src={`/api/invoices/${invoice.id}/pdf`} title={`Rechnung ${invoice.number ?? invoice.id}`} />
+          </section>
+        )}
+      </div>
     </div>
   );
 }
