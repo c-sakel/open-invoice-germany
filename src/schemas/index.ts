@@ -848,6 +848,7 @@ export * from "./settings";
 
 // ── Phase 8a: Kundendomain — Adressen, Ansprechpartner, Kundenfelder, Vorgaben ──
 export * from "./customer";
+export * from "./api-key";
 
 // ── Phase 4b: Beleganhaenge ──────────────────────────────────────────────────
 // Whitelist ohne ausfuehrbare Formate (Global Constraint §38). Magic-Bytes-Pruefung
@@ -889,3 +890,4 @@ export const attachmentUploadSchema = z.object({
   sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_SIZE_BYTES),
 });
 export type AttachmentUploadInput = z.infer<typeof attachmentUploadSchema>;
+export * from "./webhook";

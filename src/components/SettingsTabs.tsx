@@ -14,6 +14,8 @@ const TABS = [
   { href: "/einstellungen/kundenfelder", key: "kundenfelder", label: "Kundenfelder" },
   { href: "/einstellungen/benachrichtigungen", key: "benachrichtigungen", label: "Benachrichtigungen" },
   { href: "/einstellungen/automatisierung", key: "automatisierung", label: "Automatisierung" },
+  { href: "/einstellungen/api", key: "api", label: "API" },
+  { href: "/einstellungen/webhooks", key: "webhooks", label: "Webhooks" },
 ] as const;
 
 export type SettingsTabKey =
@@ -29,7 +31,9 @@ export type SettingsTabKey =
   | "mahnwesen"
   | "kundenfelder"
   | "benachrichtigungen"
-  | "automatisierung";
+  | "automatisierung"
+  | "api"
+  | "webhooks";
 
 export function SettingsTabs({ active }: { active: SettingsTabKey }) {
   return (

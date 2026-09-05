@@ -200,6 +200,23 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Basiszins) — Merge | „Aktiviere automatischen Mahnungsversand." |
 | `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
 
+### API-Schluessel
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `create_api_key` | Neuen API-Schluessel fuer `/api/v1` erzeugen (Name, Scopes read/write/send/admin, optional Ablauf) — das Klartext-Token wird NUR in dieser Antwort angezeigt | „Erzeuge einen API-Schluessel ‚Buchhaltung' mit Lese- und Schreibrechten." |
+| `revoke_api_key` | API-Schluessel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schluessel ‚Buchhaltung'." |
+| `list_api_keys` | API-Schluessel auflisten (Name, Praefix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schluessel gibt es?" |
+
+### Webhooks
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `list_webhooks` | Webhook-Endpunkte auflisten (URL, abonnierte Ereignisse, aktiv) — nie das Secret | „Welche Webhooks sind eingerichtet?" |
+| `upsert_webhook` | Webhook-Endpunkt anlegen oder aendern (URL, Events, aktiv) — Klartext-Secret nur bei Neuanlage/Rotation sichtbar | „Lege einen Webhook auf https://example.com/hook fuer invoice.finalized und payment.recorded an." |
+| `test_webhook` | Synthetische Test-Zustellung an einen Endpunkt senden und Ergebnis melden | „Teste den Webhook ‚https://example.com/hook'." |
+| `replay_webhook_delivery` | Eine bestehende Zustellung als NEUE Zustellung erneut versuchen (Original bleibt unveraendert) | „Wiederhole die fehlgeschlagene Zustellung xyz." |
+
 ### Abos (wiederkehrende Rechnungen)
 
 | Tool | Zweck | Beispiel |

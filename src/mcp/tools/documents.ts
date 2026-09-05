@@ -17,17 +17,8 @@ import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { duplicateDocument, type DuplicatableType } from "@/domain/document/duplicate";
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
-import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
-import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
-import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
-import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
-import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
-import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
-import { loadEInvoiceData } from "@/lib/einvoice/load";
-import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
-import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
-import { loadPdfTheme } from "@/domain/settings/theme";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
+import { getDocumentFile } from "@/api/files";
 import { createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -214,88 +205,13 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         format: z.enum(["pdf", "xrechnung", "zugferd"]).default("pdf"),
       },
     },
+    // Task 3 (Phase 10, task-3-facts.md): Aufloesung + Rendering laufen jetzt ueber den
+    // gemeinsamen Kern src/api/files.ts#getDocumentFile (auch von /api/v1/Invoice/{id}/
+    // {pdf,xrechnung,zugferd} genutzt) — kein zweiter, driftender Renderpfad (§55).
     async ({ kind, document, format }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-
-        if (format !== "pdf" && kind !== "INVOICE") {
-          return ctx.fail(`${format} ist nur fuer kind=INVOICE verfuegbar.`);
-        }
-
-        let buffer: Buffer;
-        let mimeType: string;
-        let filenameBase: string;
-
-        if (kind === "INVOICE") {
-          const ref = await ctx.resolveInvoice(org.id, document);
-          const loaded = await loadEInvoiceData(ref.id);
-          if (!loaded) return ctx.fail("Nicht gefunden.");
-          const { invoice: inv, data } = loaded;
-          filenameBase = (inv.number ?? `entwurf-${inv.id.slice(0, 8)}`).replace(/[^A-Za-z0-9._-]/g, "_");
-          const theme = await loadPdfTheme(org.id, inv.printOptionsJson);
-          if (format === "pdf") {
-            buffer = await renderInvoicePdf(data, theme);
-            mimeType = "application/pdf";
-          } else if (format === "xrechnung") {
-            if (inv.status === "DRAFT") return ctx.fail("XRechnung nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
-            buffer = Buffer.from(buildXRechnungUBL(data), "utf8");
-            mimeType = "application/xml";
-          } else {
-            if (inv.status === "DRAFT") return ctx.fail("ZUGFeRD nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
-            buffer = await renderZugferdPdf(data, theme);
-            mimeType = "application/pdf";
-          }
-        } else if (kind === "QUOTE") {
-          const ref = await ctx.resolveDocument(org.id, document);
-          const q = await dbInternal.quote.findFirst({
-            where: { id: ref.id, orgId: org.id },
-            include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
-          });
-          if (!q) return ctx.fail("Nicht gefunden.");
-          filenameBase = (q.number ?? "dokument").replace(/[^A-Za-z0-9._-]/g, "_");
-          const theme = await loadPdfTheme(org.id, q.printOptionsJson);
-          buffer = await renderInvoicePdf(buildDocEInvoiceData(q), theme);
-          mimeType = "application/pdf";
-        } else if (kind === "DELIVERY_NOTE") {
-          const ref = await ctx.resolveDeliveryNote(org.id, document);
-          const dn = await dbInternal.deliveryNote.findFirst({
-            where: { id: ref.id, orgId: org.id },
-            include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
-          });
-          if (!dn) return ctx.fail("Nicht gefunden.");
-          let sourceNumber: string | null = null;
-          if (dn.sourceType === "QUOTE" && dn.sourceId) {
-            const q = await dbInternal.quote.findFirst({ where: { id: dn.sourceId, orgId: org.id }, select: { number: true } });
-            sourceNumber = q?.number ?? null;
-          } else if (dn.sourceType === "INVOICE" && dn.sourceId) {
-            const src = await dbInternal.invoice.findFirst({ where: { id: dn.sourceId, orgId: org.id }, select: { number: true } });
-            sourceNumber = src?.number ?? null;
-          }
-          const shippingAddress = dn.showDeliveryAddress
-            ? await dbInternal.customerAddress.findFirst({
-                where: { orgId: org.id, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
-                select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
-              })
-            : null;
-          filenameBase = (dn.number ?? "lieferschein").replace(/[^A-Za-z0-9._-]/g, "_");
-          const theme = await loadPdfTheme(org.id, dn.printOptionsJson);
-          buffer = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
-          mimeType = "application/pdf";
-        } else {
-          const d = await dbInternal.dunning.findFirst({
-            where: { id: document, invoice: { orgId: org.id } },
-            include: { invoice: { include: { org: true, customer: true } }, stage: true },
-          });
-          const byNumber = d ?? (await dbInternal.dunning.findFirst({
-            where: { number: document, invoice: { orgId: org.id } },
-            include: { invoice: { include: { org: true, customer: true } }, stage: true },
-          }));
-          if (!byNumber) return ctx.fail(`Keine Mahnung "${document}" gefunden.`);
-          filenameBase = (byNumber.number ?? "mahnung").replace(/[^A-Za-z0-9._-]/g, "_");
-          const theme = await loadPdfTheme(org.id);
-          buffer = await renderDunningPdf(buildDunningPdfData(byNumber, byNumber.invoice), theme);
-          mimeType = "application/pdf";
-        }
+        const { buffer, mimeType, filenameBase } = await getDocumentFile(org.id, kind, document, format);
 
         const base64 = buffer.toString("base64");
         if (Buffer.byteLength(base64, "utf8") > MAX_FILE_BASE64_BYTES) {
@@ -315,6 +231,9 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           ),
         );
       } catch (e) {
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
+        if (e instanceof InvalidOperationError) return ctx.fail(e.message);
+        if (e instanceof EInvoiceInvalidError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

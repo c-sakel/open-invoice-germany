@@ -22,3 +22,20 @@ export class InvalidOperationError extends Error {
     this.name = "InvalidOperationError";
   }
 }
+
+/**
+ * Fix-Runde 1 (Koordinator-Ruling c, Task 3, Phase 10): EN-16931-Kernvalidierung einer
+ * XRechnung/eines ZUGFeRD-Exports ist fehlgeschlagen (§52 — keine nur optisch korrekte
+ * E-Rechnung). `issues` traegt die einzelnen Regelverletzungen (validateXRechnung()).
+ * Wird von src/api/files.ts#getDocumentFile geworfen (v1-Dateirouten UND MCP-Tool
+ * get_document_file, Paritaet — kein optionaler "validate"-Schalter) auf 409 gemappt
+ * (Code EINVOICE_INVALID, src/api/errors.ts).
+ */
+export class EInvoiceInvalidError extends Error {
+  readonly issues: string[];
+  constructor(issues: string[]) {
+    super(`EN-16931-Kernvalidierung fehlgeschlagen: ${issues.join("; ")}`);
+    this.name = "EInvoiceInvalidError";
+    this.issues = issues;
+  }
+}

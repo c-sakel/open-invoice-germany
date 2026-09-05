@@ -23,7 +23,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { jobs } from "./jobs";
 
-export type SchedulerJob = "dunning" | "recurring" | "notifications";
+export type SchedulerJob = "dunning" | "recurring" | "notifications" | "webhooks" | "cleanup";
 
 export interface JobResult {
   job: SchedulerJob;
@@ -34,10 +34,16 @@ export interface JobResult {
   runId?: string;
 }
 
-// Reihenfolge (Task-3-Facts): recurring -> dunning -> notifications — Benachrichtigungen
-// (faellig/ueberfaellig/Mahnstufe) sollen den Stand NACH den beiden vorgelagerten Jobs
-// desselben Laufs widerspiegeln (frisch erzeugte Abo-Rechnungen/Mahnungen).
-const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "notifications"];
+// Reihenfolge (Task-3-Facts, erweitert um Task-5-Facts): recurring -> dunning ->
+// notifications -> webhooks — Benachrichtigungen (faellig/ueberfaellig/Mahnstufe) sollen
+// den Stand NACH den beiden vorgelagerten Jobs desselben Laufs widerspiegeln (frisch
+// erzeugte Abo-Rechnungen/Mahnungen); "webhooks" (Zustellung der Outbox) laeuft zuletzt,
+// damit Ereignisse aus recurring/dunning/notifications noch IM SELBEN Lauf mit ausgeliefert
+// werden koennen (die Ereignisse selbst entstehen bereits transaktional bei ihrer Aktion,
+// "webhooks" liefert hier nur die bereits angelegten Outbox-Zeilen aus). "cleanup" (Fix-
+// Welle, Should-fix 7) laeuft als LETZTER Job — raeumt WebhookDelivery/ApiIdempotency auf,
+// nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
+const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "notifications", "webhooks", "cleanup"];
 const STALE_MS = 30 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {

@@ -7,6 +7,9 @@
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity, type ActivityType } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeQuote } from "@/api/serializers/document";
+import type { WebhookEvent } from "@/schemas/webhook";
 import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
@@ -127,6 +130,29 @@ export async function setQuoteStatusWithinTx(
   const quoteActivityType: ActivityType =
     target === "ACCEPTED" ? "QUOTE_ACCEPTED" : target === "REJECTED" ? "QUOTE_REJECTED" : target === "CANCELLED" ? "CANCELLED" : "SENT";
   await logActivity(tx, { orgId, entityType: "QUOTE", entityId: quoteId, type: quoteActivityType, actor, at: now, data: { from, to: target } });
+
+  // Webhook-Outbox (Phase 10, Task 5, task-5-facts.md "quote-share decide + status
+  // (quote.sent/accepted/rejected)"): EIN Emit-Call-Site deckt sowohl `decideOffer`
+  // (ruft setQuoteStatusWithinTx fuer ACCEPTED/REJECTED) als auch den Versandpfad
+  // (setQuoteStatus fuer SENT, z. B. sendDocumentEmail) ab. Nur fuer echte Angebote
+  // (kind ANGEBOT) — AUFTRAGSBESTAETIGUNG/PROFORMA nutzen dieselbe Statusmaschine, aber
+  // die Events heissen bewusst "quote.*".
+  const QUOTE_STATUS_EVENTS: Partial<Record<string, WebhookEvent>> = {
+    SENT: "quote.sent",
+    ACCEPTED: "quote.accepted",
+    REJECTED: "quote.rejected",
+  };
+  const webhookEvent = updated.kind === "ANGEBOT" ? QUOTE_STATUS_EVENTS[target] : undefined;
+  if (webhookEvent) {
+    await emitEvent(tx, {
+      orgId,
+      type: webhookEvent,
+      objectName: "Quote",
+      objectId: quoteId,
+      data: serializeQuote(updated, "Quote", new Set()),
+      now,
+    });
+  }
 
   return updated;
 }

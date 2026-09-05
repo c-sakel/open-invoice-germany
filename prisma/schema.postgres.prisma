@@ -1080,3 +1080,106 @@ model NotificationSettings {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
+
+/// API-Schluessel je Organisation (Phase 10, Task 1) — Bearer-Auth fuer /api/v1/*.
+/// Nur der SHA-256-Hash wird gespeichert; das Klartext-Token (`oig_<32 Byte base64url>`)
+/// wird ausschliesslich beim Erzeugen einmalig angezeigt (siehe src/domain/api-key/create.ts).
+/// scopesJson: kommagetrennte Liste aus read/write/send/admin, via Zod geparst — kein
+/// Prisma-Enum/Array fuer SQLite/Postgres-Portabilitaet (siehe Kopfkommentar der Datei).
+model ApiKey {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  scopesJson String
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdBy  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+}
+
+/// Idempotenz-Schluessel fuer schreibende API-v1-Aktionen (Phase 10, Fix-Runde 1) — Header
+/// `Idempotency-Key` (nur POST). Reserve-First-Zustandsmaschine gegen Wettlaufsituationen
+/// (S1): `status` startet IN_PROGRESS (durch das @@unique([orgId, key]) gegen Doppel-
+/// Reservierung abgesichert), wechselt nach dem Handler zu DONE (responseJson/statusCode
+/// gefuellt) oder die Zeile wird bei einem Fehler/5xx geloescht (Retry moeglich). Ablauf
+/// 24h fuer BEIDE Zustaende, Aufraeumen lazy beim naechsten Lesen desselben Schluessels
+/// (kein eigener Scheduler-Job). Siehe src/api/idempotency.ts fuer den vollen Ablauf.
+model ApiIdempotency {
+  id           String   @id @default(cuid())
+  orgId        String
+  key          String
+  requestHash  String
+  status       String   @default("IN_PROGRESS") // IN_PROGRESS | DONE
+  responseJson String? // erst bei status=DONE gefuellt
+  statusCode   Int? // erst bei status=DONE gefuellt
+  createdAt    DateTime @default(now())
+
+  @@unique([orgId, key])
+  @@index([orgId, createdAt])
+}
+
+/// Webhook-Endpunkt einer Organisation (Phase 10, Task 5/10b) — URL + verschluesseltes
+/// Secret (AES-GCM, src/lib/crypto/secrets.ts) + abonnierte Ereignisse (eventsJson,
+/// JSON-Array aus src/schemas/webhook.ts#WEBHOOK_EVENTS). Kein Klartext-Secret nach der
+/// Erzeugung/Rotation abrufbar (analog ApiKey). `active=false` deaktiviert Zustellung UND
+/// Anlage neuer Deliveries (emitEvent filtert danach) — kein Hard-Delete, damit
+/// WebhookDelivery-Historie referenzierbar bleibt (siehe WebhookDelivery.onDelete).
+model WebhookEndpoint {
+  id         String            @id @default(cuid())
+  orgId      String
+  url        String
+  secretEnc  String
+  eventsJson String
+  active     Boolean           @default(true)
+  createdBy  String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  deliveries WebhookDelivery[]
+
+  @@index([orgId])
+}
+
+/// Eine Zustellung eines Ereignisses an einen Endpunkt (Outbox-Zeile, Phase 10, Task 5) —
+/// wird von `emitEvent` (src/domain/webhook/emit.ts) IN DERSELBEN Transaktion wie
+/// `appendChangeLog` angelegt (status PENDING), von `runWebhookDeliveries`
+/// (src/domain/webhook/deliver.ts, Scheduler-Job "webhooks") seriell abgearbeitet.
+/// `dataJson` ist der Serializer-Snapshot (Task 2, ohne internalNotes) zum
+/// Emit-Zeitpunkt — die tatsaechlich gesendete Nutzlast (`{id,type,createdAt,data}`)
+/// wird erst bei der Zustellung aus id/event/createdAt/dataJson zusammengesetzt.
+/// `attempts`/`nextAttemptAt` steuern Backoff (1/5/30/120/600 Min., DEAD nach dem 6. fehlgeschlagenen Versuch);
+/// `replayOfId` verweist auf die urspruengliche Zeile, wenn diese Zeile ein manueller
+/// Replay ist (jeder Replay legt eine NEUE Zeile an, aendert nie die alte).
+model WebhookDelivery {
+  id            String          @id @default(cuid())
+  orgId         String
+  endpointId    String
+  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event         String
+  objectName    String
+  objectId      String
+  dataJson      String
+  status        String          @default("PENDING") // PENDING | DELIVERED | FAILED | DEAD
+  attempts      Int             @default(0)
+  nextAttemptAt DateTime        @default(now())
+  lastAttemptAt DateTime?
+  responseCode  Int?
+  responseBody  String?
+  lastError     String?
+  replayOfId    String?
+  createdAt     DateTime        @default(now())
+  deliveredAt   DateTime?
+
+  // Fix-Welle (Should-fix 7): der Scheduler-Job "webhooks" filtert AUSSCHLIESSLICH auf
+  // status + nextAttemptAt (kein orgId-Praedikat, siehe deliver.ts#runWebhookDeliveries) —
+  // der bisherige Index (orgId, status, nextAttemptAt) kann dafuer die fuehrende Spalte
+  // nicht nutzen (sequenzieller Scan bei jedem Tick). Eigener Index ohne orgId zusaetzlich
+  // zum bestehenden (der bleibt fuer org-gescopte Abfragen, z. B. das Zustellprotokoll-UI).
+  @@index([orgId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+}

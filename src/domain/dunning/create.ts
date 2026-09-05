@@ -12,9 +12,12 @@ import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunn
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializeDunning } from "@/api/serializers/dunning";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { formatDateDe } from "@/lib/template/format";
+import { NotFoundError } from "@/domain/errors";
 
 // B7 (Fix-Welle, Ruling Koordinator): Teil-/Abschlags-/Schlussrechnungen sind reguläre,
 // enforceable Forderungen und muessen mahnbar sein wie eine normale Rechnung.
@@ -37,6 +40,11 @@ export interface DunningOptions {
   /** Manuelle Erstellung vor Faelligkeit der naechsten Stufe erzwingen. */
   force?: boolean;
   createdBy?: "user" | "scheduler" | "mcp" | "api";
+  /** Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): wenn gesetzt, muss invoiceId zu
+   *  dieser Organisation gehoeren, sonst NotFoundError — bisher ungeprueft (vorbestehende
+   *  Luecke, siehe frueher src/app/api/invoices/[id]/dunning/route.ts). Optional, damit
+   *  interne Aufrufer ohne Organisationskontext nicht brechen. */
+  orgId?: string;
 }
 
 interface DunningStageRow extends StageLike {
@@ -55,7 +63,10 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
   const createdBy = opts.createdBy ?? "user";
 
   const inv0 = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true } });
-  if (!inv0) throw new DunningError("Rechnung nicht gefunden.");
+  // Fix-Runde (Koordinator-Ruling a, Task 3): eine voellig unbekannte invoiceId ist
+  // "nicht gefunden" (404), kein Zustandskonflikt (409) — vorher DunningError.
+  if (!inv0) throw new NotFoundError("Rechnung nicht gefunden.");
+  if (opts.orgId && inv0.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
   // Basiszinssatz aus den org-weiten Mahnwesen-Einstellungen (Selbstheilung legt sie
   // bei Bedarf an) — AUSSERHALB der Transaktion, da hier nur gelesen wird und der Upsert
   // (Anlegen der Default-Zeile) keine GoBD-relevante Schreibaktion ist.
@@ -75,7 +86,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         },
       },
     });
-    if (!inv) throw new DunningError("Rechnung nicht gefunden.");
+    if (!inv) throw new NotFoundError("Rechnung nicht gefunden.");
     if (!DUNNABLE_TYPES.has(inv.type)) throw new DunningError("Nur Rechnungen können gemahnt werden.");
     if (inv.status === "DRAFT") throw new DunningError("Die Rechnung muss zuerst festgeschrieben werden.");
     if (inv.status === "CANCELLED") throw new DunningError("Die Rechnung ist storniert.");
@@ -213,6 +224,16 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       actor,
       at: now,
       data: { number, stage: stage.name, order: stage.order },
+    });
+
+    // Webhook-Outbox (Phase 10, Task 5): "dunning.created" — IN DERSELBEN Tx.
+    await emitEvent(tx, {
+      orgId: inv.orgId,
+      type: "dunning.created",
+      objectName: "Dunning",
+      objectId: dunning.id,
+      data: serializeDunning(dunning),
+      now,
     });
 
     return {

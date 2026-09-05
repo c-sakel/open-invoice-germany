@@ -43,9 +43,12 @@ const CLEANUP_INTERVAL = 100;
 
 /**
  * Prueft und verbraucht ein Kontingent fuer `key`. Wirft `RateLimitError`, wenn
- * das Kontingent im aktuellen Fenster erschoepft ist.
+ * das Kontingent im aktuellen Fenster erschoepft ist. Gibt sonst die nach diesem
+ * Aufruf verbleibenden Tokens zurueck (Phase 10, Task 1: `X-RateLimit-Remaining`
+ * fuer die API — bisherige Aufrufer ignorierten den Rueckgabewert bereits, kein
+ * Bruch bestehender Nutzung).
  */
-export function rateLimit(key: string, options: RateLimitOptions): void {
+export function rateLimit(key: string, options: RateLimitOptions): number {
   const { limit, windowMs } = options;
   const now = options.now ?? Date.now();
 
@@ -75,6 +78,8 @@ export function rateLimit(key: string, options: RateLimitOptions): void {
     callsSinceCleanup = 0;
     cleanup(now, windowMs);
   }
+
+  return bucket.tokens;
 }
 
 /** Entfernt Eintraege, deren Fenster laengst abgelaufen ist. */

@@ -14,9 +14,13 @@ import type { Prisma, Payment, Invoice } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
+import { emitEvent } from "@/domain/webhook/emit";
+import { serializePayment } from "@/api/serializers/payment";
+import { serializeInvoice } from "@/api/serializers/invoice";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
 import { payableBaseCents } from "@/domain/invoice/amounts";
+import { NotFoundError } from "@/domain/errors";
 import type { RecordPaymentInput } from "@/schemas";
 
 export class PaymentError extends Error {
@@ -50,7 +54,7 @@ async function resolvePaymentMethodId(tx: Prisma.TransactionClient, orgId: strin
 export async function recordPayment(
   invoiceId: string,
   input: RecordPaymentInput,
-  opts: { actor?: string; now?: Date } = {},
+  opts: { actor?: string; now?: Date; orgId?: string } = {},
 ): Promise<RecordPaymentResult> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
@@ -64,7 +68,15 @@ export async function recordPayment(
         skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
       },
     });
-    if (!inv) throw new PaymentError("Rechnung nicht gefunden.");
+    // Fix-Runde (Koordinator-Ruling a, Task 3): eine voellig unbekannte invoiceId ist
+    // "nicht gefunden" (404), kein Zustandskonflikt (409) — vorher PaymentError.
+    if (!inv) throw new NotFoundError("Rechnung nicht gefunden.");
+    // Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): recordPayment pruefte bisher NICHT,
+    // dass invoiceId zur aufrufenden Organisation gehoert — nur wirksam, wenn der
+    // Aufrufer opts.orgId mitgibt (Session-Routen/MCP-Tools, die bereits per getActiveOrg()
+    // scopen, geben es ebenfalls mit; ein fehlendes opts.orgId aendert das bisherige
+    // Verhalten NICHT, um interne Aufrufer ohne Organisationskontext nicht zu brechen).
+    if (opts.orgId && inv.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
     if (inv.status === "DRAFT") throw new PaymentError("Zahlung erst nach dem Festschreiben erfassbar.");
     if (inv.status === "CANCELLED") throw new PaymentError("Die Rechnung ist storniert.");
     if (inv.type === "CREDIT_NOTE") throw new PaymentError("Zahlungen werden nur auf Rechnungen erfasst, nicht auf Gutschriften.");
@@ -130,6 +142,28 @@ export async function recordPayment(
       data: { paymentCents: input.amountCents, status },
     });
 
+    // Webhook-Outbox (Phase 10, Task 5, task-5-facts.md "payment.recorded, invoice.paid
+    // bei Vollzahlung"): payment.recorded IMMER; invoice.paid zusaetzlich, wenn diese
+    // Zahlung die Rechnung vollstaendig ausgleicht (kein Skontoabzug noetig).
+    await emitEvent(tx, {
+      orgId: inv.orgId,
+      type: "payment.recorded",
+      objectName: "Payment",
+      objectId: payment.id,
+      data: serializePayment(payment),
+      now,
+    });
+    if (status === "PAID") {
+      await emitEvent(tx, {
+        orgId: inv.orgId,
+        type: "invoice.paid",
+        objectName: "Invoice",
+        objectId: invoiceId,
+        data: serializeInvoice(updated, new Set()),
+        now,
+      });
+    }
+
     // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —
     // ein exakt/vollstaendig bezahlter Betrag hat keinen Skontoabzug mehr zu buchen.
     const result: RecordPaymentResult = { payment: updated };
@@ -178,6 +212,26 @@ export async function recordPayment(
             actor,
             at: now,
             diff: { skontoCents: restCents, skontoForPaymentId: payment.id, paidAmountCents: baseCents, status: "PAID" },
+          });
+
+          // Webhook-Outbox: die Skonto-Buchung ist selbst eine Zahlung (payment.recorded)
+          // und schliesst die Rechnung ab (invoice.paid) — derselbe Vertrag wie beim
+          // primaeren Zweig oben, nur ueber die zweite Zahlung ausgeloest.
+          await emitEvent(tx, {
+            orgId: inv.orgId,
+            type: "payment.recorded",
+            objectName: "Payment",
+            objectId: skontoPayment.id,
+            data: serializePayment(skontoPayment),
+            now,
+          });
+          await emitEvent(tx, {
+            orgId: inv.orgId,
+            type: "invoice.paid",
+            objectName: "Invoice",
+            objectId: invoiceId,
+            data: serializeInvoice(updated, new Set()),
+            now,
           });
 
           result.payment = updated;
