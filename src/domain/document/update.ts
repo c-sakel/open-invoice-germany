@@ -5,7 +5,7 @@
  * (src/domain/document/status.ts) oder eine neue Version (Duplizieren).
  */
 import { dbInternal } from "@/lib/db";
-import { computeLineNetCents } from "@/lib/money";
+import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
 import { StatusTransitionError } from "@/domain/document/status";
@@ -19,7 +19,7 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
   const now = new Date();
 
   return dbInternal.$transaction(async (tx) => {
-    const quote = await tx.quote.findFirst({ where: { id, orgId } });
+    const quote = await tx.quote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!quote) throw new NotFoundError(`Dokument ${id} nicht gefunden.`);
     if (quote.status !== "DRAFT") {
       throw new StatusTransitionError(`Nur Entwuerfe (DRAFT) koennen bearbeitet werden (aktueller Status "${quote.status}").`);
@@ -56,26 +56,63 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
     if (input.taxScheme !== undefined) { data.taxScheme = input.taxScheme; changedFields.push("taxScheme"); }
     if (input.currency !== undefined) { data.currency = input.currency; changedFields.push("currency"); }
 
-    if (input.lines) {
-      const lines = input.lines.map((l, i) => ({
-        position: i + 1,
-        description: l.description,
-        quantityMilli: l.quantityMilli,
-        unit: l.unit,
-        unitNetPriceCents: l.unitNetPriceCents,
-        taxRate: l.taxRate,
-        taxCategory: l.taxCategory,
-        discountPermille: l.discountPermille,
-        lineNetCents: computeLineNetCents(l.quantityMilli, l.unitNetPriceCents, l.discountPermille),
-      }));
-      const totals = computeTaxBreakdown(lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })));
+    const adjustmentFieldChanged =
+      input.documentDiscountPermille !== undefined ||
+      input.documentDiscountCents !== undefined ||
+      input.documentChargePermille !== undefined ||
+      input.documentChargeCents !== undefined;
+    if (input.documentDiscountPermille !== undefined) { data.documentDiscountPermille = input.documentDiscountPermille; changedFields.push("documentDiscountPermille"); }
+    if (input.documentDiscountCents !== undefined) { data.documentDiscountCents = input.documentDiscountCents; changedFields.push("documentDiscountCents"); }
+    if (input.documentChargePermille !== undefined) { data.documentChargePermille = input.documentChargePermille; changedFields.push("documentChargePermille"); }
+    if (input.documentChargeCents !== undefined) { data.documentChargeCents = input.documentChargeCents; changedFields.push("documentChargeCents"); }
+    if (input.documentChargeReason !== undefined) { data.documentChargeReason = input.documentChargeReason; changedFields.push("documentChargeReason"); }
 
-      await tx.quoteLine.deleteMany({ where: { quoteId: id } });
-      data.lines = { create: lines };
+    // Rabatt/Aufschlag wirken auf ALLE Positionen — deshalb Summen auch neu berechnen,
+    // wenn NUR die Beleg-Anpassung geaendert wurde (ohne neue Positionen).
+    if (input.lines || adjustmentFieldChanged) {
+      const lines = input.lines
+        ? input.lines.map((l, i) => ({
+            position: i + 1,
+            description: l.description,
+            quantityMilli: l.quantityMilli,
+            unit: l.unit,
+            unitNetPriceCents: l.unitNetPriceCents,
+            taxRate: l.taxRate,
+            taxCategory: l.taxCategory,
+            discountPermille: l.discountPermille,
+            discountCents: l.discountCents,
+            lineNetCents: computeLineNet(l).lineNetCents,
+          }))
+        : quote.lines.map((l) => ({
+            position: l.position,
+            description: l.description,
+            quantityMilli: l.quantityMilli,
+            unit: l.unit,
+            unitNetPriceCents: l.unitNetPriceCents,
+            taxRate: l.taxRate,
+            taxCategory: l.taxCategory,
+            discountPermille: l.discountPermille,
+            discountCents: l.discountCents,
+            lineNetCents: l.lineNetCents,
+          }));
+      const totals = computeTaxBreakdown(
+        lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+        {
+          discountPermille: input.documentDiscountPermille ?? quote.documentDiscountPermille,
+          discountCents: input.documentDiscountCents ?? quote.documentDiscountCents,
+          chargePermille: input.documentChargePermille ?? quote.documentChargePermille,
+          chargeCents: input.documentChargeCents ?? quote.documentChargeCents,
+        },
+      );
+
+      if (input.lines) {
+        await tx.quoteLine.deleteMany({ where: { quoteId: id } });
+        data.lines = { create: lines };
+        changedFields.push("lines");
+      }
       data.netTotalCents = totals.netTotalCents;
       data.taxTotalCents = totals.taxTotalCents;
       data.grossTotalCents = totals.grossTotalCents;
-      changedFields.push("lines");
     }
 
     // W3 (Fix-Runde 2): aendert sich Kunde/Ansprechpartner/Rechnungsadresse eines Entwurfs,

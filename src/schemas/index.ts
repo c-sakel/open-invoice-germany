@@ -67,6 +67,34 @@ export const buyerSnapshotSchema = z.object({
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
 
+// Feldgenau identisch mit dem JSON aus src/domain/invoice/finalize.ts (paymentMethodSnapshotJson).
+export const paymentMethodSnapshotSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  invoiceText: z.string().nullable(),
+  untdidCode: z.string(),
+  bankIban: z.string().nullable(),
+  bankBic: z.string().nullable(),
+  bankName: z.string().nullable(),
+});
+export type PaymentMethodSnapshot = z.infer<typeof paymentMethodSnapshotSchema>;
+
+// taxBreakdownJson (Invoice.taxBreakdownJson) — Alt-Belege ohne Beleganpassung (Phase 4a)
+// kennen baseNetCents/allowanceCents/chargeCents noch nicht: Default 0 bzw. netCents.
+export const taxBreakdownEntrySchema = z
+  .object({
+    taxCategory: z.string(),
+    taxRate: z.number(),
+    netCents: z.number(),
+    taxCents: z.number(),
+    baseNetCents: z.number().optional(),
+    allowanceCents: z.number().default(0),
+    chargeCents: z.number().default(0),
+  })
+  .transform((e) => ({ ...e, baseNetCents: e.baseNetCents ?? e.netCents }));
+export const taxBreakdownSchema = z.array(taxBreakdownEntrySchema);
+export type TaxBreakdownEntrySnapshot = z.infer<typeof taxBreakdownEntrySchema>;
+
 // ── Stammdaten ───────────────────────────────────────────────────────────
 export const organizationSchema = z.object({
   legalName: z.string().min(1),
@@ -109,6 +137,7 @@ export const customerSchema = z.object({
   leitwegId: z.string().optional(),
   peppolId: z.string().optional(),
   defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
+  defaultPaymentMethodId: z.string().optional(),
   notes: z.string().optional(),
 });
 export type CustomerInput = z.infer<typeof customerSchema>;
@@ -134,27 +163,90 @@ export const invoiceLineInputSchema = z.object({
   taxRate: TaxRate,
   taxCategory: TaxCategory.default("S"),
   discountPermille: z.number().int().min(0).max(1000).default(0),
+  discountCents: z.number().int().nonnegative().default(0),
 });
 export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
 
-export const createInvoiceSchema = z.object({
-  customerId: z.string().min(1),
-  type: InvoiceType.default("INVOICE"),
-  taxScheme: TaxScheme.default("REGULAR"),
-  currency: z.string().length(3).default("EUR"),
-  issueDate: z.coerce.date().optional(),
-  deliveryDate: z.coerce.date().optional(),
-  deliveryStart: z.coerce.date().optional(),
-  deliveryEnd: z.coerce.date().optional(),
-  dueDate: z.coerce.date().optional(),
-  buyerReference: z.string().optional(),
-  notes: z.string().optional(),
-  paymentTerms: z.string().optional(),
-  headerText: z.string().max(5000).optional(),
-  footerText: z.string().max(5000).optional(),
-  internalNotes: z.string().optional(), // nur intern, nie im Beleg
-  lines: z.array(invoiceLineInputSchema).min(1),
-});
+// ── Beleg-Rabatt/-Aufschlag + Skonto (Phase 4a) ─────────────────────────────
+// Gemeinsame Felder fuer Rechnung, Geschaeftsdokument und deren Update-Varianten.
+// Skonto-Ziel 2 ist nur zusammen mit Ziel 1 und mit laengerer Frist zulaessig
+// (sonst ergibt "2. Skonto" keinen Sinn — Ziel 1 muesste immer die kuerzere,
+// hoehere Skontostufe sein).
+const documentAdjustmentFields = {
+  documentDiscountPermille: z.number().int().min(0).max(1000).default(0),
+  documentDiscountCents: z.number().int().nonnegative().default(0),
+  documentChargePermille: z.number().int().min(0).max(1000).default(0),
+  documentChargeCents: z.number().int().nonnegative().default(0),
+  documentChargeReason: z.string().max(500).optional(),
+};
+
+const skontoFields = {
+  skonto1Permille: z.number().int().min(1).max(1000).optional(),
+  skonto1Days: z.number().int().min(1).max(365).optional(),
+  skonto2Permille: z.number().int().min(1).max(1000).optional(),
+  skonto2Days: z.number().int().min(1).max(365).optional(),
+  paymentMethodId: z.string().optional(),
+};
+
+function refineSkontoTargets<T extends { skonto1Permille?: number; skonto1Days?: number; skonto2Permille?: number; skonto2Days?: number }>(
+  input: T,
+  ctx: z.RefinementCtx<T>,
+): void {
+  const hasSkonto1 = input.skonto1Permille !== undefined || input.skonto1Days !== undefined;
+  const hasSkonto2 = input.skonto2Permille !== undefined || input.skonto2Days !== undefined;
+
+  if (hasSkonto1 && (input.skonto1Permille === undefined || input.skonto1Days === undefined)) {
+    ctx.addIssue({ code: "custom", message: "Skonto 1 benoetigt Prozentsatz UND Tage.", path: ["skonto1Days"] });
+  }
+  if (hasSkonto2) {
+    if (input.skonto2Permille === undefined || input.skonto2Days === undefined) {
+      ctx.addIssue({ code: "custom", message: "Skonto 2 benoetigt Prozentsatz UND Tage.", path: ["skonto2Days"] });
+    }
+    if (!hasSkonto1 || input.skonto1Days === undefined) {
+      ctx.addIssue({ code: "custom", message: "Skonto 2 ist nur zusammen mit Skonto 1 zulaessig.", path: ["skonto2Days"] });
+    } else if (input.skonto2Days !== undefined && input.skonto2Days <= input.skonto1Days) {
+      ctx.addIssue({ code: "custom", message: "Die Frist von Skonto 2 muss laenger sein als die von Skonto 1.", path: ["skonto2Days"] });
+    }
+    // G-Refine: Skonto 2 ist das SPAETERE, GUENSTIGERE Ziel — laengere Frist bei
+    // niedrigerem Satz. Ohne diese Regel liesse sich ein Ziel 2 eintragen, das einen
+    // hoeheren oder gleichen Skontosatz bei laengerer Frist gewaehrt (wirtschaftlich
+    // widersinnig, verwirrt den Zahlungsvorschlag in detectSkonto).
+    if (
+      input.skonto1Permille !== undefined &&
+      input.skonto2Permille !== undefined &&
+      input.skonto2Permille >= input.skonto1Permille
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Der Prozentsatz von Skonto 2 muss niedriger sein als der von Skonto 1.",
+        path: ["skonto2Permille"],
+      });
+    }
+  }
+}
+
+export const createInvoiceSchema = z
+  .object({
+    customerId: z.string().min(1),
+    type: InvoiceType.default("INVOICE"),
+    taxScheme: TaxScheme.default("REGULAR"),
+    currency: z.string().length(3).default("EUR"),
+    issueDate: z.coerce.date().optional(),
+    deliveryDate: z.coerce.date().optional(),
+    deliveryStart: z.coerce.date().optional(),
+    deliveryEnd: z.coerce.date().optional(),
+    dueDate: z.coerce.date().optional(),
+    buyerReference: z.string().optional(),
+    notes: z.string().optional(),
+    paymentTerms: z.string().optional(),
+    headerText: z.string().max(5000).optional(),
+    footerText: z.string().max(5000).optional(),
+    internalNotes: z.string().optional(), // nur intern, nie im Beleg
+    ...documentAdjustmentFields,
+    ...skontoFields,
+    lines: z.array(invoiceLineInputSchema).min(1),
+  })
+  .superRefine(refineSkontoTargets);
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 
 // ── Geschäftsdokumente (Angebot / Auftragsbestätigung / Proforma) ────────────
@@ -187,6 +279,7 @@ export const createDocumentSchema = z.object({
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
   ...documentTextFields,
+  ...documentAdjustmentFields,
   lines: z.array(invoiceLineInputSchema).min(1),
 });
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
@@ -241,8 +334,17 @@ export const recordPaymentSchema = z.object({
   method: PaymentMethod.default("TRANSFER"),
   reference: z.string().optional(),
   isSkonto: z.boolean().default(false),
+  // true: erkannter Skontoabzug wird sofort als zweite Zahlung gebucht (recordPayment).
+  applySkonto: z.boolean().default(false),
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+
+// Query von GET /api/invoices/[id]/skonto-check (Phase 4a) — reine Vorschau ohne Schreiben.
+export const skontoCheckQuerySchema = z.object({
+  amountCents: z.coerce.number().int().positive(),
+  paidAt: z.coerce.date().optional(),
+});
+export type SkontoCheckQuery = z.infer<typeof skontoCheckQuerySchema>;
 
 // ── Wiederkehrende Rechnungen / Abos ─────────────────────────────────────────
 export const RecurInterval = z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
@@ -320,11 +422,20 @@ export const contactPersonSchema = z.object({
   firstName: z.string().min(1), lastName: z.string().min(1), role: z.string().optional(), phone: z.string().optional(),
   mobile: z.string().optional(), email: z.email().optional(), isDefault: z.boolean().default(false),
 });
+// K2 — UNTDID-4461-Codes, die der Zahlungsmethoden-Snapshot annehmen darf: exportierbar
+// ohne Zusatzgruppen (58/30/10/68/97/1/ZZZ) sowie Karte (48/54/55) und Lastschrift (59),
+// die der Mapper mit console.warn auf Code 1 zurueckfallen laesst (kein CardAccount/
+// PaymentMandate-Support). Verhindert, dass der Betreiber beliebige Codes eintraegt.
+export const UNTDID_PAYMENT_MEANS_CODES = [
+  "58", "30", "10", "68", "97", "1", "ZZZ", "48", "54", "55", "59",
+] as const;
 export const paymentMethodSchema = z.object({
   code: z.string().min(1).max(40).regex(/^[A-Z0-9_]+$/), name: z.string().min(1), description: z.string().optional(),
   paymentTermsDays: z.number().int().min(0).optional(), invoiceText: z.string().optional(), bankAccountRef: z.string().optional(),
-  untdidCode: z.string().min(1).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
+  bankIban: z.string().optional(), bankBic: z.string().optional(), bankName: z.string().optional(),
+  untdidCode: z.enum(UNTDID_PAYMENT_MEANS_CODES).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
 });
+export type PaymentMethodInput = z.infer<typeof paymentMethodSchema>;
 export const dunningStageSchema = z.object({
   order: z.number().int().min(0), name: z.string().min(1), daysAfterDue: z.number().int().min(0), newDueDays: z.number().int().min(0).default(14),
   feeCents: z.number().int().min(0).default(0), calculateInterest: z.boolean(), includeB2BFlatFee: z.boolean(),

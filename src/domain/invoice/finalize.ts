@@ -51,7 +51,7 @@ export async function finalizeWithinTx(
 
   const invoice = await tx.invoice.findUnique({
     where: { id: invoiceId },
-    include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
+    include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true, paymentMethod: true },
   });
   if (!invoice) throw new FinalizeError("Rechnung nicht gefunden.");
   if (invoice.status !== "DRAFT")
@@ -83,7 +83,28 @@ export async function finalizeWithinTx(
   // 2) Summen-Snapshot
   const totals = computeTaxBreakdown(
     invoice.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    {
+      discountPermille: invoice.documentDiscountPermille,
+      discountCents: invoice.documentDiscountCents,
+      chargePermille: invoice.documentChargePermille,
+      chargeCents: invoice.documentChargeCents,
+    },
   );
+
+  // Snapshot der Zahlungsmethode (Phase 4a): ab jetzt bleibt der zum Festschreibungs-
+  // zeitpunkt gewaehlte Zahlungsweg unveraendert, auch wenn sich die Stammdaten der
+  // Zahlungsmethode spaeter aendern (gleiches Prinzip wie Seller-/Buyer-Snapshot).
+  const paymentMethodSnapshotJson = invoice.paymentMethod
+    ? JSON.stringify({
+        code: invoice.paymentMethod.code,
+        name: invoice.paymentMethod.name,
+        invoiceText: invoice.paymentMethod.invoiceText,
+        untdidCode: invoice.paymentMethod.untdidCode,
+        bankIban: invoice.paymentMethod.bankIban,
+        bankBic: invoice.paymentMethod.bankBic,
+        bankName: invoice.paymentMethod.bankName,
+      })
+    : null;
 
   // Parteien-Snapshot (Phase 0): ab jetzt rendern PDF/XML aus diesem Stand.
   // Storno/Teilgutschrift erben den Snapshot des Originals (siehe FinalizeOptions.inheritSnapshotFrom),
@@ -110,6 +131,7 @@ export async function finalizeWithinTx(
       buyerSnapshotJson,
       snapshotSource,
       snapshotAt: now,
+      paymentMethodSnapshotJson,
     },
   });
   if (claim.count === 0) {

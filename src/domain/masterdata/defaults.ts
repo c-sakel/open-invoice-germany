@@ -13,6 +13,9 @@ export const SYSTEM_PAYMENT_METHODS = [
   { code: "SEPA", name: "SEPA-Lastschrift", untdidCode: "59", sortOrder: 6 },
   { code: "PREPAID", name: "Bereits bezahlt", untdidCode: "ZZZ", sortOrder: 7 },
   { code: "OTHER", name: "Sonstige", untdidCode: "ZZZ", sortOrder: 8 },
+  // Skonto-Buchung (Phase 4a) — keine echte Zahlungsart, sondern der Systemcode fuer
+  // recordPayment(), wenn ein Skontoabzug als zweite Zahlung verbucht wird.
+  { code: "SKONTO", name: "Skonto", untdidCode: "ZZZ", sortOrder: 9 },
 ] as const;
 
 /** Standard-Mahnstufen (Fristen aus dem Lastenheft, Titel wie DUNNING_LEVEL_TITLE). */

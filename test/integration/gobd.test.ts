@@ -49,7 +49,7 @@ function baseInput(extra: Partial<CreateInvoiceInput> = {}): CreateInvoiceInput 
     currency: "EUR",
     deliveryDate: new Date("2026-06-01"),
     lines: [
-      { description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0 },
+      { description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
     ],
     ...extra,
   } as CreateInvoiceInput;
@@ -71,6 +71,38 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(f1.netTotalCents).toBe(20000);
     expect(f1.taxTotalCents).toBe(3800);
     expect(f1.grossTotalCents).toBe(23800);
+  });
+
+  it("Rechnung mit Positions- und Belegrabatt: Snapshot-Breakdown enthaelt Allowance", async () => {
+    // Position: 2 Std. * 100,00 € = 200,00 € brutto, 10 % Positionsrabatt -> 180,00 € Netto.
+    // Beleg-Rabatt zusaetzlich 10 % auf 180,00 € -> 18,00 € Allowance, Basis 162,00 €.
+    // Steuer 19 % auf 162,00 € = 30,78 €, brutto 192,78 €.
+    const draft = await createDraftInvoice(
+      orgId,
+      baseInput({
+        documentDiscountPermille: 100,
+        lines: [
+          { description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 100, discountCents: 0 },
+        ],
+      }),
+    );
+    expect(draft.lines[0].lineNetCents).toBe(18000);
+
+    const fin = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    expect(fin.netTotalCents).toBe(16200);
+    expect(fin.taxTotalCents).toBe(3078);
+    expect(fin.grossTotalCents).toBe(19278);
+
+    const breakdown = JSON.parse(fin.taxBreakdownJson) as {
+      taxCategory: string; taxRate: number; netCents: number; taxCents: number;
+      baseNetCents: number; allowanceCents: number; chargeCents: number;
+    }[];
+    expect(breakdown).toHaveLength(1);
+    expect(breakdown[0].baseNetCents).toBe(18000);
+    expect(breakdown[0].allowanceCents).toBe(1800);
+    expect(breakdown[0].chargeCents).toBe(0);
+    expect(breakdown[0].netCents).toBe(16200);
+    expect(breakdown[0].taxCents).toBe(3078);
   });
 
   it("verworfene Entwürfe verbrauchen KEINE Nummer (kein Loch)", async () => {
@@ -152,6 +184,52 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(original!.status).toBe("FINALIZED"); // NICHT storniert
   });
 
+  it("Teilgutschrift: Beleg-Festbetrag (Rabatt/Aufschlag) proportional zum Positionsverhaeltnis", async () => {
+    // Original: 2 * 100,00 € = 200,00 € netto, Festrabatt 20,00 € -> 180,00 € Basis.
+    const finDiscount = await finalizeInvoice(
+      (await createDraftInvoice(orgId, baseInput({ documentDiscountCents: 2000 }))).id,
+      { now: FIX_DATE },
+    );
+    // Teilgutschrift ueber 50,00 € (0,5 der Original-Positionsmenge von 2) -> Rabattanteil
+    // round(2000 * 5000 / 20000) = 500 (5,00 €), Netto -4.500 Cent (-45,00 €).
+    const resDiscount = await createPartialCreditNote(
+      finDiscount.id,
+      { lines: [{ description: "Teilerstattung", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
+      { now: FIX_DATE },
+    );
+    expect(resDiscount.creditNote.documentDiscountCents).toBe(500);
+    expect(resDiscount.creditNote.netTotalCents).toBe(-4500);
+
+    // Original: 2 * 100,00 € = 200,00 € netto, Festaufschlag 10,00 € -> 210,00 € Basis.
+    const finCharge = await finalizeInvoice(
+      (await createDraftInvoice(orgId, baseInput({ documentChargeCents: 1000 }))).id,
+      { now: FIX_DATE },
+    );
+    // Teilgutschrift ueber 50,00 € -> Aufschlagsanteil round(1000 * 5000 / 20000) = 250
+    // (2,50 €), Netto -5.250 Cent (-52,50 €).
+    const resCharge = await createPartialCreditNote(
+      finCharge.id,
+      { lines: [{ description: "Teilerstattung", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
+      { now: FIX_DATE },
+    );
+    expect(resCharge.creditNote.documentChargeCents).toBe(250);
+    expect(resCharge.creditNote.netTotalCents).toBe(-5250);
+  });
+
+  it("Teilgutschrift ueber ALLE Positionen: voller Beleg-Festbetrag wird uebernommen", async () => {
+    const fin = await finalizeInvoice(
+      (await createDraftInvoice(orgId, baseInput({ documentDiscountCents: 2000 }))).id,
+      { now: FIX_DATE },
+    );
+    const res = await createPartialCreditNote(
+      fin.id,
+      { lines: [{ description: "Volle Erstattung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
+      { now: FIX_DATE },
+    );
+    expect(res.creditNote.documentDiscountCents).toBe(2000);
+    expect(res.creditNote.netTotalCents).toBe(-18000); // (20.000 - 2.000) Cent, negativ
+  });
+
   it("Dokument: Angebot anlegen + in Rechnung umwandeln", async () => {
     const doc = await createBusinessDocument(
       orgId,
@@ -160,7 +238,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
         customerId,
         taxScheme: "REGULAR",
         currency: "EUR",
-        lines: [{ description: "Pos", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0 }],
+        lines: [{ description: "Pos", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
       }),
     );
     expect(doc.number).toMatch(/^AN-\d{4}-\d{4}$/);
@@ -179,8 +257,8 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const draft = await createDraftInvoice(orgId, baseInput({ dueDate: new Date("2026-06-01") }));
     const fin = await finalizeInvoice(draft.id, { now: FIX_DATE }); // brutto 238,00 €
     const afterPay = await recordPayment(fin.id, recordPaymentSchema.parse({ amountCents: 10000, method: "TRANSFER", paidAt: FIX_DATE }));
-    expect(afterPay.status).toBe("PARTIALLY_PAID");
-    expect(afterPay.paidAmountCents).toBe(10000);
+    expect(afterPay.payment.status).toBe("PARTIALLY_PAID");
+    expect(afterPay.payment.paidAmountCents).toBe(10000);
 
     const r0 = await createDunning(fin.id, { now: FIX_DATE });
     expect(r0.level).toBe(0); // Zahlungserinnerung, ohne Zins/Gebühr
@@ -219,7 +297,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
       paymentTermsDays: 14,
       autoFinalize: true,
       lines: [
-        { description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0 },
+        { description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
       ],
     });
     expect(rec.nextRunDate.toISOString().slice(0, 10)).toBe("2026-06-01");
@@ -269,7 +347,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
       paymentTermsDays: 14,
       autoFinalize: false,
       lines: [
-        { description: "Pos", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0 },
+        { description: "Pos", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 },
       ],
     });
     const summaries = await runDueRecurring({ now: FIX_DATE, orgId, maxPerAbo: 12 });

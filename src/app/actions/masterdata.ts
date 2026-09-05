@@ -98,6 +98,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     leitwegId: str(fd, "leitwegId"),
     peppolId: str(fd, "peppolId"),
     defaultPaymentTermsDays: Number(str(fd, "defaultPaymentTermsDays") ?? "14"),
+    defaultPaymentMethodId: str(fd, "defaultPaymentMethodId"),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
@@ -105,6 +106,18 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
 
   try {
     const org = await getActiveOrg();
+    // G — defaultPaymentMethodId kam ungeprueft aus dem Formular: eine fremde
+    // Organisation haette (per manipuliertem Request) die ID einer Zahlungsmethode
+    // einer ANDEREN Organisation eintragen koennen (Prisma prueft nur, dass die ID
+    // existiert, nicht die orgId). Jetzt Mandanten-Pruefung wie bei allen anderen
+    // Fremdschluessel-Feldern.
+    if (v.defaultPaymentMethodId) {
+      const method = await dbInternal.paymentMethod.findFirst({
+        where: { id: v.defaultPaymentMethodId, orgId: org.id },
+        select: { id: true },
+      });
+      if (!method) return { ok: false, error: "Zahlungsmethode nicht gefunden." };
+    }
     const data = {
       type: v.type,
       name: v.name,
@@ -119,6 +132,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
       vatId: v.vatId ?? null,
       leitwegId: v.leitwegId ?? null,
       defaultPaymentTermsDays: v.defaultPaymentTermsDays,
+      defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
       notes: v.notes ?? null,
     };
     // peppolId wird (mangels Formularfeld) NICHT geschrieben, damit ein bestehender Wert beim Bearbeiten erhalten bleibt.
