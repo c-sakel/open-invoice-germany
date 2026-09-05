@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { getActiveOrg } from "@/lib/org";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction, cancelAction } from "@/app/actions/invoices";
@@ -8,6 +9,8 @@ import { PaymentForm } from "@/components/PaymentForm";
 import { DunningButton } from "@/components/DunningButton";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
+import { ConvertMenu } from "@/components/ConvertMenu";
+import { DocumentChain } from "@/components/DocumentChain";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { EmailDocType } from "@/schemas/email";
 
@@ -33,8 +36,11 @@ export default async function InvoiceDetail({
   const { id } = await params;
   const { error } = await searchParams;
 
-  const invoice = await prisma.invoice.findUnique({
-    where: { id },
+  const org = await getActiveOrg();
+  // G7 (Fix-Runde 2): findUnique(id) ohne orgId erlaubte fremden Organisationen den Zugriff
+  // auf eine Rechnungsseite ueber die reine ID — jetzt mandantengeprueft.
+  const invoice = await prisma.invoice.findFirst({
+    where: { id, orgId: org.id },
     include: {
       lines: { orderBy: { position: "asc" } },
       customer: true,
@@ -123,6 +129,7 @@ export default async function InvoiceDetail({
               </button>
             </form>
           )}
+          {!isDraft && !isCancelled && isInvoiceType && <ConvertMenu sourceType="INVOICE" sourceId={invoice.id} showToDeliveryNote />}
         </div>
       </div>
 
@@ -159,6 +166,8 @@ export default async function InvoiceDetail({
           </dl>
         </div>
       </div>
+
+      {invoice.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.headerText}</p>}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
@@ -206,6 +215,7 @@ export default async function InvoiceDetail({
         </div>
       </div>
 
+      {invoice.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.footerText}</p>}
       {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
 
       {invoice.internalNotes && (
@@ -257,6 +267,8 @@ export default async function InvoiceDetail({
           )}
         </section>
       )}
+
+      <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
 
       <EmailHistory docType={emailDocType} docId={invoice.id} />
     </div>

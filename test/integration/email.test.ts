@@ -2,6 +2,9 @@ import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { createBusinessDocument } from "@/domain/document/create";
+import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { setQuoteStatus } from "@/domain/document/status";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -424,5 +427,83 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     expect(after).toBe(before);
     const settings = await dbInternal.mailSettings.findUniqueOrThrow({ where: { orgId } });
     expect(settings.lastTestOk).toBe(true);
+  });
+
+  it("10) SENT-Hook: Angebot DRAFT -> nach erfolgreichem Versand Status SENT, sentAt gesetzt", async () => {
+    const q = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0 }],
+    });
+    expect(q.status).toBe("DRAFT");
+
+    const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+    const memProvider = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    expect(res.status).toBe("SENT");
+
+    const updated = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
+    expect(updated.status).toBe("SENT");
+    expect(updated.sentAt).not.toBeNull();
+  });
+
+  it("10b) SENT-Hook: Angebot bereits ACCEPTED -> nach Versand bleibt Status ACCEPTED", async () => {
+    const q = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0 }],
+    });
+    await setQuoteStatus(orgId, q.id, "ACCEPTED", { actor: "system" });
+
+    const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+    const memProvider = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    expect(res.status).toBe("SENT");
+
+    const updated = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
+    expect(updated.status).toBe("ACCEPTED");
+  });
+
+  it("11) SENT-Hook: Provider-Fehler (FAILED) -> Quote-Status bleibt unveraendert", async () => {
+    const q = await createBusinessDocument(orgId, {
+      kind: "ANGEBOT",
+      customerId,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0 }],
+    });
+
+    const pre = await prefillEmail(orgId, { docType: "ANGEBOT", docId: q.id });
+    const memProvider = createMemoryProvider();
+    memProvider.failNext("550 Mailbox unavailable");
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    expect(res.status).toBe("FAILED");
+
+    const updated = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
+    expect(updated.status).toBe("DRAFT");
+    expect(updated.sentAt).toBeNull();
+  });
+
+  it("12) SENT-Hook: Lieferschein CREATED -> nach Versand Status SENT, sentAt gesetzt; Anhang ist das PDF", async () => {
+    const dn = await createDeliveryNote(orgId, {
+      customerId,
+      showPrices: true,
+      showTax: true,
+      lines: [{ description: "Warensendung", articleNumber: "ART-1", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19 }],
+    });
+    expect(dn.status).toBe("CREATED");
+
+    const pre = await prefillEmail(orgId, { docType: "DELIVERY_NOTE", docId: dn.id });
+    expect(pre.attachments.map((a) => a.filename)).toContain(`${dn.number}.pdf`);
+
+    const memProvider = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre), [], memProvider);
+    expect(res.status).toBe("SENT");
+
+    const updated = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: dn.id } });
+    expect(updated.status).toBe("SENT");
+    expect(updated.sentAt).not.toBeNull();
+
+    const sentAttachment = memProvider.sent[0]!.attachments.find((a) => a.filename === `${dn.number}.pdf`);
+    expect(sentAttachment).toBeDefined();
+    expect(sentAttachment!.content.subarray(0, 4).toString()).toBe("%PDF");
   });
 });

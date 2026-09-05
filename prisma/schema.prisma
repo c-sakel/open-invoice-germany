@@ -59,6 +59,7 @@ model Organization {
   paymentMethods    PaymentMethod[]
   dunningStages     DunningStage[]
   mailSettings      MailSettings?
+  documentSettings  DocumentSettings?
 }
 
 /// Kunde / Leistungsempfänger.
@@ -139,35 +140,52 @@ model NumberRange {
 /// Geschäftsdokument ohne Beleg-Charakter (Angebot/Auftragsbestätigung/Proforma).
 /// KEIN GoBD-Beleg, frei editier-/löschbar. Tax-Belege sind ausschließlich Invoice.
 model Quote {
-  id                   String       @id @default(cuid())
+  id                   String           @id @default(cuid())
   orgId                String
-  org                  Organization @relation(fields: [orgId], references: [id])
+  org                  Organization     @relation(fields: [orgId], references: [id])
   customerId           String
-  customer             Customer     @relation(fields: [customerId], references: [id])
-  kind                 String       @default("ANGEBOT") // ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
+  customer             Customer         @relation(fields: [customerId], references: [id])
+  kind                 String           @default("ANGEBOT") // ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
   number               String?
-  status               String       @default("DRAFT") // DRAFT | SENT | ACCEPTED | DECLINED | EXPIRED | CONVERTED
-  issueDate            DateTime     @default(now())
+  status               String           @default("DRAFT") // DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED | CANCELLED
+  issueDate            DateTime         @default(now())
   validUntil           DateTime?
-  currency             String       @default("EUR")
-  taxScheme            String       @default("REGULAR")
+  currency             String           @default("EUR")
+  taxScheme            String           @default("REGULAR")
+  subject              String? // Betreffzeile
   notes                String?
   internalNotes        String? // Nur intern sichtbar — nie in PDF oder Mails
+  headerText           String?
+  footerText           String?
+  deliveryTerms        String?
+  paymentTerms         String?
+  customerReference    String? // Kundenreferenz/Bestellnummer des Kunden
+  contactPersonId      String?
+  contactPerson        ContactPerson?   @relation(fields: [contactPersonId], references: [id], onDelete: SetNull)
+  billingAddressId     String?
+  billingAddress       CustomerAddress? @relation(fields: [billingAddressId], references: [id], onDelete: SetNull)
   sellerSnapshotJson   String? // Snapshot zum Erstellungszeitpunkt (Phase 0), siehe Invoice
   buyerSnapshotJson    String?
-  snapshotSource       String? // CREATE | MIGRATION
+  snapshotSource       String? // CREATE | SENT | MIGRATION
   snapshotAt           DateTime?
-  netTotalCents        Int          @default(0)
-  taxTotalCents        Int          @default(0)
-  grossTotalCents      Int          @default(0)
+  netTotalCents        Int              @default(0)
+  taxTotalCents        Int              @default(0)
+  grossTotalCents      Int              @default(0)
   convertedToInvoiceId String?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  sentAt               DateTime?
+  decidedAt            DateTime? // Zeitpunkt von ACCEPTED/DECLINED
+  decisionNote         String?
+  archivedAt           DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
-  lines QuoteLine[]
+  lines      QuoteLine[]
+  shareLinks QuoteShareLink[]
 
   @@index([orgId])
   @@index([customerId])
+  @@index([contactPersonId])
+  @@index([billingAddressId])
 }
 
 model QuoteLine {
@@ -208,6 +226,8 @@ model Invoice {
   notes                 String?
   paymentTerms          String? // Skonto-/Zahlungsbedingungen (Freitext, §14 Abs.4 Nr.7)
   internalNotes         String? // Nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails
+  headerText            String?
+  footerText            String?
   // Snapshot der Parteien zum Festschreibungszeitpunkt (Phase 0). JSON-String, per Zod
   // gelesen (sellerSnapshotSchema/buyerSnapshotSchema). NULL bei Entwuerfen.
   sellerSnapshotJson    String?
@@ -374,18 +394,27 @@ model DeliveryNote {
   customerId         String
   customer           Customer     @relation(fields: [customerId], references: [id])
   number             String?
-  status             String       @default("DRAFT") // DRAFT | CREATED | SENT | DELIVERED | INVOICED | CANCELLED
+  status             String       @default("DRAFT") // DRAFT | CREATED | SENT | DELIVERED | CANCELLED
   issueDate          DateTime     @default(now())
   deliveryDate       DateTime?
   shippingDate       DateTime?
   showPrices         Boolean      @default(false)
   showTax            Boolean      @default(false)
+  showArticleNumber  Boolean      @default(true)
+  showDescription    Boolean      @default(true)
   notes              String?
   internalNotes      String?
+  headerText         String?
+  footerText         String?
+  sourceType         String? // QUOTE | INVOICE — Hauptquelle des Belegs
+  sourceId           String?
   sellerSnapshotJson String?
   buyerSnapshotJson  String?
   snapshotSource     String?
   snapshotAt         DateTime?
+  sentAt             DateTime?
+  deliveredAt        DateTime?
+  archivedAt         DateTime?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -396,16 +425,19 @@ model DeliveryNote {
 }
 
 model DeliveryNoteLine {
-  id             String       @id @default(cuid())
-  deliveryNoteId String
-  deliveryNote   DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
-  position       Int
-  sourceType     String? // QUOTE | INVOICE (Quellposition fuer Teil-Lieferungen)
-  sourceId       String?
-  description    String
-  articleNumber  String?
-  quantityMilli  Int
-  unit           String       @default("C62")
+  id                String       @id @default(cuid())
+  deliveryNoteId    String
+  deliveryNote      DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  position          Int
+  sourceType        String? // QUOTE | INVOICE (Quellposition fuer Teil-Lieferungen)
+  sourceId          String?
+  sourceLineId      String? // Positions-ID der Quellzeile
+  description       String
+  articleNumber     String?
+  quantityMilli     Int
+  unit              String       @default("C62")
+  unitNetPriceCents Int?
+  taxRate           Int?
 
   @@index([deliveryNoteId])
 }
@@ -424,6 +456,7 @@ model TextTemplate {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
+  @@unique([orgId, docType, position, name])
   @@index([orgId, docType])
 }
 
@@ -483,7 +516,7 @@ model MailSettings {
   org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   host        String
   port        Int
-  security    String       // "STARTTLS" | "TLS" | "NONE"
+  security    String // "STARTTLS" | "TLS" | "NONE"
   username    String?
   passwordEnc String?
   fromName    String
@@ -516,6 +549,8 @@ model CustomerAddress {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
+  quotes Quote[]
+
   @@index([orgId])
   @@index([customerId])
 }
@@ -535,6 +570,8 @@ model ContactPerson {
   isDefault  Boolean      @default(false)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
+
+  quotes Quote[]
 
   @@index([orgId])
   @@index([customerId])
@@ -616,4 +653,40 @@ model ChangeLog {
   @@unique([orgId, prevHash])
   @@index([orgId])
   @@index([entity, entityId])
+}
+
+/// Angebotsannahme-Link (Phase 3b). orgId wie EmailLog als reines Feld ohne Relation
+/// (Tenancy-Filter genuegt; kein Cascade-Delete ueber Organization noetig).
+model QuoteShareLink {
+  id             String    @id @default(cuid())
+  orgId          String
+  quoteId        String
+  quote          Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  tokenHash      String    @unique
+  tokenEnc       String? // Task-1-Adjudikation: AES-256-GCM-verschluesselt (AUTH_SECRET), fuer Betreiber-Wiederabruf
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdBy      String
+  createdAt      DateTime  @default(now())
+  viewCount      Int       @default(0)
+  lastViewedAt   DateTime?
+  decidedAt      DateTime?
+  decision       String? // ACCEPTED | REJECTED
+  deciderName    String?
+  deciderEmail   String?
+  deciderComment String?
+  deciderIp      String?
+
+  @@index([orgId, quoteId])
+}
+
+/// Org-weite Einstellungen fuer Angebotsannahme und Dokumentverhalten (Phase 3b).
+model DocumentSettings {
+  id            String       @id @default(cuid())
+  orgId         String       @unique
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  onQuoteAccept String       @default("NONE") // NONE | ORDER_CONFIRMATION | INVOICE
+  shareLinkDays Int          @default(30)
+  storeAcceptIp Boolean      @default(false)
+  updatedAt     DateTime     @updatedAt
 }

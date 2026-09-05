@@ -51,6 +51,22 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 
 MVP. What works: master data/customers/products, quotes & invoices, draft → finalise → cancel, partial credit notes, **payments + dunning (§ 288 BGB)**, **recurring invoices/subscriptions**, PDF + **XRechnung + ZUGFeRD** export, GoBD number range + audit. On the roadmap: DATEV/CSV export, B2G/Leitweg-ID EAS codes, OSS/ZM, multi-user, built-in scheduler. See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / stage 2 / stage 3) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
 
+## Documents workflow
+
+Quote → order confirmation → delivery note → invoice, all linked:
+
+1. Create a **quote** (draft, editable), send it — status moves `DRAFT → SENT`.
+2. Mark it `ACCEPTED` (or convert it straight into an **order confirmation**).
+3. **Convert** it into a **delivery note** (quantities from the quote/order, over-delivery blocked) and/or into an **invoice draft**.
+4. Every conversion is recorded as a document relation; the **document chain** (visible on every quote/invoice/delivery-note page) shows the full lineage — quote → order confirmation → delivery note → invoice → payments/dunnings.
+5. Billing status (none/partial/full) is derived from those relations, not stored.
+
+Same tools via MCP: `convert_document`, `create_delivery_note`, `set_document_status`, `duplicate_document`. Details: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md), limitations: [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
+
+### Let customers accept quotes online
+
+On a quote's detail page (**Documents → quote**), under "Acceptance link", generate a link — the URL is shown **once** (copy button), and can't be retrieved again afterwards. The customer opens it without logging in, sees the quote and a PDF download, and can accept or reject it (name required, email/comment optional). On decision: status `ACCEPTED`/`REJECTED`, an internal notification email, and — depending on the setting under **Settings → Documents** — an automatic order confirmation or invoice draft. The link can be revoked at any time. For the `{{offer.link}}` placeholder in the quote email template, set `APP_BASE_URL` (`.env`) — otherwise it stays empty.
+
 ## Tech stack
 
 Next.js 16 (App Router) · TypeScript (strict) · Prisma 6 · SQLite/PostgreSQL · TailwindCSS · Zod · Vitest.

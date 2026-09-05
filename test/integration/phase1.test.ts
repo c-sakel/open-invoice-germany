@@ -46,7 +46,7 @@ describe("Phase 1 — Verknuepfungen", () => {
 
   it("Angebot -> Rechnung schreibt Altfeld UND DocumentRelation", async () => {
     const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] });
-    const inv = await convertDocumentToInvoice(q.id, { now: FIX });
+    const inv = await convertDocumentToInvoice(orgId, q.id, { now: FIX });
     const rel = await listRelations(orgId, "QUOTE", q.id);
     expect(rel).toEqual([expect.objectContaining({ toType: "INVOICE", toId: inv.id, relationType: "CONVERTED_TO" })]);
     const q2 = await dbInternal.quote.findUniqueOrThrow({ where: { id: q.id } });
@@ -63,7 +63,7 @@ describe("Phase 1 — Verknuepfungen", () => {
 
   it("Backfill-Migration spiegelt Altfelder idempotent", async () => {
     const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [line] });
-    const inv = await convertDocumentToInvoice(q.id, { now: FIX });
+    const inv = await convertDocumentToInvoice(orgId, q.id, { now: FIX });
     await dbInternal.documentRelation.deleteMany({ where: { fromId: q.id } });
     const dir = readdirSync("prisma/migrations").find((d) => d.endsWith("_phase1_backfill"))!;
     const sql = readFileSync(join("prisma/migrations", dir, "migration.sql"), "utf8")
@@ -79,14 +79,14 @@ describe("Phase 1 — Verknuepfungen", () => {
 
   it("Lieferschein bekommt LS-Nummer, Snapshot CREATE und ChangeLog", async () => {
     const { createDeliveryNote } = await import("@/domain/delivery-note/create");
-    const dn = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, lines: [{ description: "Router", quantityMilli: 2000, unit: "C62" }] }, { now: FIX });
+    const dn = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, showArticleNumber: true, showDescription: true, lines: [{ description: "Router", quantityMilli: 2000, unit: "C62" }] }, { now: FIX });
     expect(dn.number).toBe("LS-2028-0001");
     expect(dn.snapshotSource).toBe("CREATE");
     expect(dn.lines).toHaveLength(1);
     const log = await dbInternal.changeLog.findFirst({ where: { entity: "DELIVERY_NOTE", entityId: dn.id } });
     expect(log?.action).toBe("CREATE");
 
-    const dn2 = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, lines: [{ description: "Kabel", quantityMilli: 1000, unit: "C62" }] }, { now: FIX });
+    const dn2 = await createDeliveryNote(orgId, { customerId, showPrices: false, showTax: false, showArticleNumber: true, showDescription: true, lines: [{ description: "Kabel", quantityMilli: 1000, unit: "C62" }] }, { now: FIX });
     expect(dn2.number).toBe("LS-2028-0002");
   });
 

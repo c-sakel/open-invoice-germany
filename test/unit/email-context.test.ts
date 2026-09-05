@@ -3,6 +3,7 @@ import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { buildStandardAttachments } from "@/domain/email/attachments";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -180,5 +181,31 @@ describe("buildTemplateContext / buildStandardAttachments — Rechnung", () => {
     expect(pdf.filename).toBe(`${cancelled.originalNumber}.pdf`);
     expect(pdf.filename).not.toMatch(/ENTWURF/);
     expect(pdf.content.subarray(0, 4).toString()).toBe("%PDF");
+  });
+});
+
+describe("buildStandardAttachments — Lieferschein", () => {
+  it("liefert das Lieferschein-PDF als einzigen Anhang", async () => {
+    const dn = await createDeliveryNote(orgId, {
+      customerId,
+      showPrices: true,
+      showTax: true,
+      lines: [{ description: "Warensendung", articleNumber: "ART-1", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5000, taxRate: 19 }],
+    });
+
+    const attachments = await buildStandardAttachments(orgId, "DELIVERY_NOTE", dn.id);
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!.filename).toBe(`${dn.number}.pdf`);
+    expect(attachments[0]!.content.subarray(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("fremde orgId: leeres Array (Org-Pruefung im Anhang-Builder)", async () => {
+    const dn = await createDeliveryNote(orgId, {
+      customerId,
+      lines: [{ description: "Warensendung", quantityMilli: 1000, unit: "C62" }],
+    });
+
+    const attachments = await buildStandardAttachments(otherOrgId, "DELIVERY_NOTE", dn.id);
+    expect(attachments).toEqual([]);
   });
 });
