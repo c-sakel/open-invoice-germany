@@ -5,7 +5,7 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { recordPayment } from "@/domain/invoice/payment";
-import { createDunning } from "@/domain/dunning/create";
+import { createDunning, DunningError } from "@/domain/dunning/create";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createRecurring } from "@/domain/recurring/create";
 import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
@@ -260,6 +260,9 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(afterPay.payment.status).toBe("PARTIALLY_PAID");
     expect(afterPay.payment.paidAmountCents).toBe(10000);
 
+    // Alle Standardstufen haben unterschiedliche daysAfterDue (3/10/10/7) ab der jeweils
+    // vorherigen Mahnung — der Test ruft mit demselben FIX_DATE mehrfach hintereinander
+    // auf, deshalb `force: true` ab der zweiten Mahnung (nicht mehr taggenau faellig).
     const r0 = await createDunning(fin.id, { now: FIX_DATE });
     expect(r0.level).toBe(0); // Zahlungserinnerung, ohne Zins/Gebühr
     expect(r0.openAmountCents).toBe(13800); // 238 − 100 = 138 €
@@ -269,7 +272,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const stage0 = await dbInternal.dunningStage.findUnique({ where: { id: r0.dunning.stageId! } });
     expect(stage0?.order).toBe(0);
 
-    const r1 = await createDunning(fin.id, { now: FIX_DATE });
+    const r1 = await createDunning(fin.id, { now: FIX_DATE, force: true });
     expect(r1.level).toBe(1); // 1. Mahnung -> Verzugszins + 40-€-Pauschale (B2B)
     expect(r1.dunning.interestAmountCents).toBeGreaterThan(0);
     expect(r1.dunning.flatFee40Cents).toBe(4000);
@@ -277,12 +280,12 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const stage1 = await dbInternal.dunningStage.findUnique({ where: { id: r1.dunning.stageId! } });
     expect(stage1?.order).toBe(1);
 
-    // Es gibt nur vier Standardstufen (order 0-3) -> ab Level 4 keine Stufe mehr, kein Fehler.
-    await createDunning(fin.id, { now: FIX_DATE }); // level 2
-    await createDunning(fin.id, { now: FIX_DATE }); // level 3
-    const r4 = await createDunning(fin.id, { now: FIX_DATE });
-    expect(r4.level).toBe(4);
-    expect(r4.dunning.stageId).toBeNull();
+    // Es gibt nur vier Standardstufen (order 0-3) -> ab der 5. Mahnung keine weitere Stufe
+    // konfiguriert -> DunningError statt einer Mahnung mit stageId null (Phase 6, Task 2).
+    await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 2
+    await createDunning(fin.id, { now: FIX_DATE, force: true }); // order 3
+    await expect(createDunning(fin.id, { now: FIX_DATE, force: true })).rejects.toThrow(DunningError);
+    await expect(createDunning(fin.id, { now: FIX_DATE, force: true })).rejects.toThrow(/Keine weitere Mahnstufe konfiguriert/);
   });
 
   it("Abo: Lauf erzeugt Rechnung, schreibt nextRunDate fort, autoFinalize vergibt Nummer", async () => {

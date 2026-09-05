@@ -45,9 +45,21 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 **Payment (Zahlung)**
 `id` · `invoiceId` · `amountCents` · `paidAt` · `method` (TRANSFER | CASH | CARD | SEPA) · `reference` · `isSkonto` (bool — §17-Fall, **keine** Rechnungsberichtigung nötig) · `createdAt`
 
-**Dunning (Mahnung)**
-`id` · `invoiceId` · `level` (`Int`, kein Enum: 0 = Zahlungserinnerung, 1 = 1. Mahnung, 2 = 2. Mahnung, 3 = 3. Mahnung — Titel in `src/lib/dunning.ts`) · `sentAt` · `dueDate` · `baseInterestRatePermille?` (Snapshot Basiszins zum Verzugsstichtag) · `interestRatePoints?` (5 oder 9 Pp, abhängig `Customer.type`) · `interestAmountCents` · `lateFeeCents` (nur konkrete Porto-/Materialkosten, **nicht** Pauschale) · `flatFee40Cents` (nur `type=BUSINESS`, §288 Abs.5) · `pdfPath?`
-→ Verzugslogik: Level-0-Erinnerung kostenfrei (verzugsbegründend, h.M. nicht ersatzfähig); ab Level-1 Verzugsschaden.
+**Dunning (Mahnung)** — seit Phase 6 stufen-getrieben statt fester Level
+`id` · `invoiceId` · `stageId?` (verweist auf `DunningStage`; `level` bleibt zusätzlich als `Int`-Kompatibilitätsfeld erhalten, `stage.order` bei neuen Mahnungen) · `sentAt` · `dueDate` (neue Zahlungsfrist, `now + stage.newDueDays`) · `baseInterestRatePermille?` · `interestRatePoints?` (5 oder 9 Pp, abhängig `Customer.type`) · `interestAmountCents` (Gesamtzinsen seit Rechnungsfälligkeit, je Mahnung neu ausgewiesen, nicht kumulativ addiert) · `lateFeeCents` (konkrete Porto-/Materialkosten) · `flatFee40Cents` (nur `type=BUSINESS`, §288 Abs.5, höchstens einmal je Rechnung) · `feeCents` (Stufenkosten aus `DunningStage.feeCents`, technisch nur bei `stage.order >= 2`, siehe COMPLIANCE.md §12) · `claimBaseCents` (Snapshot der offenen Forderung zum Erstellungszeitpunkt DIESER Mahnung) · `sellerSnapshotJson?`/`buyerSnapshotJson?`/`snapshotSource?` (CREATE | MIGRATION) · `invoiceNumber?`/`invoiceDueDate?` (eingefroren) · `createdBy` (user | scheduler | mcp | api) · `pdfPath?` · `@@unique([invoiceId, stageId])`
+→ GoBD-Guard (`src/lib/db.ts`): `update`/`updateMany` erlauben ausschließlich `sentAt`/`pdfPath`, `delete`/`deleteMany` sind immer verboten (analog `FinalInvoiceDeduction`).
+
+**DunningStage (Mahnstufe, Organisations-Stammdatum)** — ersetzt die vormals festen Level 1–4
+`id` · `orgId` · `order` (Reihenfolge, `@@unique([orgId, order])`) · `name` · `daysAfterDue` · `newDueDays` · `feeCents` (nur `order >= 2`, per Zod erzwungen) · `calculateInterest` (bool) · `includeB2BFlatFee` (bool, unabhängig von `calculateInterest`) · `autoSend` (bool, Default `false`) · `enabled` (bool) — vier Standardstufen werden je Organisation als Startwerte angelegt (`ensureOrgMasterdata`), sind aber vollständig editierbar/deaktivierbar/erweiterbar (`src/domain/dunning/stages.ts`); eine Stufe mit verknüpften Mahnungen kann nicht gelöscht werden (409, stattdessen `enabled: false`).
+
+**DunningSettings (Organisations-Einstellungen)**
+`id` · `orgId` (`@unique`) · `autoCreate` (bool, Default `true`) · `autoSend` (bool, Default `false`) · `baseInterestRateBp` (Basispunkte, Default `127` = 1,27 %) · `baseRateValidFrom?` · `gracePeriodDays` (nur Stufe `order === 0`) — Selbstheilung (`loadDunningSettings`, `src/domain/dunning/settings.ts`) legt die Zeile bei Bedarf per `upsert` an; `ensureOrgMasterdata` legt sie bereits beim Organisationsanlegen an, damit der Scheduler ohne Seiteneffekt je Lauf lesen kann.
+
+**SchedulerRun (Lauf-Protokoll)** — bewusst ohne `orgId` (der Scheduler verarbeitet alle Organisationen seriell in einem Lauf)
+`id` · `job` (`dunning` | `recurring`) · `trigger` (`SCHEDULER` | `CRON` | `MANUAL`) · `status` (`RUNNING` | `OK` | `FAILED`) · `startedAt` · `finishedAt?` · `summaryJson?` · `error?` · `@@index([job, startedAt])`
+
+**SchedulerLock (atomarer Mutex je Job)**
+`job` (`@id`) · `runId` · `lockedAt` — genau ein Lock je Job kann existieren (Primärschlüssel `job`); Erwerb per `create`, ein Unique-Constraint-Verstoß (Prisma `P2002`) ist die atomare „schon belegt"-Entscheidung. Details siehe „Mahnwesen & Scheduler (Phase 6)" unten.
 
 **ChangeLog (append-only Änderungsprotokoll)** — GoBD-Kern
 `id` · `orgId` · `entity` (INVOICE | PAYMENT | …) · `entityId` · `action` (CREATE | UPDATE | FINALIZE | CANCEL | DELETE_PRE_FINALIZE) · `actorId` · `at` · `diff` (JSON: alte→neue Werte) · `prevHash` · `hash`
@@ -167,6 +179,25 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **MCP**: `create_partial_invoice`, `create_downpayment_invoice`, `create_final_invoice`, `get_billing_state` (`src/mcp/server.ts`) — dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade (siehe `docs/MCP.md`).
 
+### Mahnwesen & Scheduler (Phase 6)
+
+**Mahn-Engine** (`src/domain/dunning/`, rein/transaktional, kein UI-/Routen-Code):
+- `schedule.ts` (`dunningScheduleFor`) — DB-freie Zeitplan-Logik: nächste fällige Stufe ist die erste `enabled`-Stufe mit `order` größer als die der letzten Mahnung (bzw. die erste überhaupt); Basis für die Fälligkeit ist `dueDate` der letzten Mahnung (Fallback `sentAt`), bei der ersten Mahnung die Rechnungsfälligkeit; `gracePeriodDays` (aus `DunningSettings`) zählt nur bei Stufe `order === 0` zusätzlich; Vergleich tagesgenau (UTC-Kalendertag).
+- `create.ts` (`createDunning`) — verbucht eine Mahnung für die per `dunningScheduleFor` ermittelte nächste Stufe: `claimBaseCents` = offene Forderung zum Erstellungszeitpunkt (Snapshot, nicht kumulativ), Zinsen nur wenn `stage.calculateInterest` (Gesamtzinsen seit Rechnungsfälligkeit, ersetzt bei jeder neuen Mahnung den vorherigen Ausweis), 40-€-Pauschale nur wenn `stage.includeB2BFlatFee && !isConsumer` und noch nie erhoben, `feeCents` nur bei `stage.order >= 2`. Respektiert den Mahnprozess-Status der Rechnung (`Invoice.dunningState`): `STOPPED` → Fehler, `PAUSED` mit künftigem `pausedUntil` → Fehler, `PAUSED` mit abgelaufener Frist → wird in derselben Transaktion wieder `ACTIVE` und die Mahnung wird trotzdem erstellt. `force: true` (nur manuell/UI/MCP, der Scheduler setzt es nie) überspringt die Fälligkeitsprüfung, nicht die Statusprüfung. Wirft `DunningError` (u. a. „Keine weitere Mahnstufe konfiguriert.", wenn keine höhere `enabled`-Stufe existiert).
+- `snapshot.ts` (`ensureDunningSnapshots`) — Selbstheilung für Altmahnungen (vor Phase 6, `snapshotSource = null`): trägt Käufer-/Verkäufer-Snapshot mit Herkunft `MIGRATION` nach; `claimBaseCents` bleibt `0` (nicht rekonstruierbar, siehe `docs/LIMITATIONEN.md`). Aufgerufen von `loadDunningOverview` (bei jedem Laden von `/mahnwesen`) und `runDunningJob` (einmal je Organisation und Lauf) — nicht erst „irgendwann beim ersten Zugriff", sondern regelmäßig. PDF (`dunning-data.ts`) und E-Mail-Kontext (`domain/email/context.ts`) nutzen den Betrags-Snapshot (`claimBaseCents`/`invoiceNumber`/`invoiceDueDate`) NUR bei `snapshotSource === "CREATE"`; `MIGRATION`-Zeilen (nur Stammdaten nachgetragen, kein Betrag rekonstruierbar) fallen weiterhin auf die live berechnete Restforderung zurück.
+- `state.ts` (`setDunningState`), `send.ts` (`sendDunning`) — Statuswechsel bzw. Versand (`sendDocumentEmail`, DocType `DUNNING`) mit `EmailLog`/`ChangeLog DUNNING_SEND` in derselben Transaktion wie bei Rechnungen/Angeboten.
+
+**Scheduler-Runner** (`src/domain/scheduler/`):
+- `runner.ts` (`runScheduledJobs`) — feste Jobreihenfolge `recurring → dunning`, seriell (`for…of`, kein `Promise.all`) wegen der ChangeLog-Hashkette (`@@unique([orgId, prevHash])`). Lock ausschließlich über `SchedulerLock` (Primärschlüssel `job`): Erwerb per `create`; ein Prisma-`P2002`-Konflikt ist die atomare „bereits belegt"-Entscheidung (`skipped: "locked"`, kein `SchedulerRun`-Eintrag) — kein Lese-dann-Schreiben-Rennen wie bei einem `findFirst`+`create`-Lock. Ein Lock älter als 30 Minuten gilt als `stale`, wird vor dem nächsten Erwerbsversuch entfernt (zugehöriger `SchedulerRun` auf `FAILED`/`error: "stale"`), danach läuft der Job normal. Freigabe immer in `finally` (`deleteMany({job, runId})`, sowohl bei Erfolg als auch bei fehlgeschlagenem Job). Jeder Lauf wird als `SchedulerRun`-Zeile protokolliert (`RUNNING` → `OK`/`FAILED` + `summaryJson`/`error`); ein Fehler in einem Job bricht die Job-Kette nicht ab.
+- `loop.ts` (`startScheduler`) — HMR-sicherer Singleton (`globalThis.__oigSchedulerLoop`), erster Lauf 60 s nach Prozessstart, danach `setInterval` im konfigurierten Minutenabstand; ein In-Process-Flag verhindert Überlappung, falls ein Lauf länger dauert als das Intervall (zusätzlich zum DB-Lock, der Mehrfachläufe über mehrere Prozesse/Container hinweg verhindert).
+- `jobs.ts` — Job-Registry `{ recurring, dunning }`; `dunning.ts` (`runDunningJob`) läuft je Organisation mit `DunningSettings.autoCreate === true` über alle mahnbaren Rechnungen (`DUNNABLE_TYPES`, Status FINALIZED/SENT/PARTIALLY_PAID, `dunningState !== "STOPPED"`), prüft VORAB per `dunningScheduleFor` (DB-frei) auf Fälligkeit, ruft dann `createDunning(id, {actor: "scheduler", createdBy: "scheduler", now})` **ohne** `force` auf. Versand nur wenn `DunningSettings.autoSend` **und** `DunningStage.autoSend` (je Stufe) beide aktiv sind; fehlende Kunden-E-Mail → `skipped.noRecipient` (kein Fehler); Versandfehler landen in `errors[]`, die bereits erstellte Mahnung bleibt bestehen (Erstellung und Versand sind unabhängige Schritte, der GoBD-Beleg bleibt auch bei gescheitertem Versand erhalten).
+
+**Instrumentation** (`src/instrumentation.ts`, Next-16-Autostart-Hook): ruft `startScheduler(minutes)` nur, wenn `NEXT_RUNTIME === "nodejs"` **und** `SCHEDULER_ENABLED !== "false"` — unter `next build` und unter vitest wird `register()` nicht aufgerufen bzw. `NEXT_RUNTIME` ist nie gesetzt, der Loop startet dort also nie. In Produktion (`next start`, Docker-Image) läuft der Loop im selben Node-Prozess wie der App-Server mit; bei mehreren App-Repliken/Containern startet jede Instanz ihren eigenen Loop, der `SchedulerLock`-Mutex verhindert aber, dass zwei Instanzen denselben Job gleichzeitig ausführen (siehe `docker-compose.yml`-Kommentar) — für unnötige redundante „locked"-Läufe empfiehlt sich trotzdem `SCHEDULER_ENABLED=false` auf allen bis auf eine Instanz, oder ausschließlich Cron zu nutzen.
+
+**Cron-/Manuell-Zugänge** (dieselben Domain-Funktionen, keine Bypass-Pfade): `GET/POST /api/cron/run-dunning` (nur Job `dunning`), `GET/POST /api/cron/run-all` (beide Jobs seriell), beide `CRON_SECRET`-geschützt (`Authorization: Bearer …` oder `?secret=`); `GET/POST /api/cron/run-recurring` (bestehend, läuft seit Phase 6 ebenfalls über `runScheduledJobs`, damit auch dieser Aufruf im `SchedulerRun`-Protokoll landet); `POST /api/scheduler/run` (Session-Auth, manueller Anstoß, optional `{jobs: [...]}`) und `GET /api/scheduler/runs` (Session-Auth, letzte 50 Protokolleinträge) für die UI „Einstellungen → Automatisierung"; CLI `npm run dunning:run` (nur `dunning`) / `npm run scheduler:run` (beide Jobs, `--all`).
+
+**Übersicht** (`src/domain/dunning/overview.ts`, `loadDunningOverview`) aggregiert für `/mahnwesen` (server-gerendet) und `list_overdue_invoices` (MCP) alle offenen, fälligen Rechnungen einer Organisation: Widgets (`overdueCount`, `openTotalCents`, Aging-Buckets `1–7`/`8–30`/`31–60`/`>60 Tage`, `openCents` auf Basis `payableBaseCents`) + sortierte Zeilenliste (aktuelle/nächste Stufe über `dunningScheduleFor`, letzter Kontakt aus `EmailLog`). Der letzte-Kontakt-Zeitpunkt wird **in einem Batch** ermittelt (ein `emailLog.groupBy` über alle betroffenen Rechnungs-/Mahnungs-IDs, danach in-memory je Rechnung reduziert) statt einer `aggregate`-Abfrage je Zeile (Task-4-Review, N+1 behoben) — bei kleinen/mittleren Organisationen ist das unkritisch, bleibt aber eine bewusste Grenze: keine Paginierung der zugrundeliegenden Rechnungsliste.
+
 ---
 
 ## 2. E-Rechnung: Erzeugung & Validierung
@@ -255,6 +286,7 @@ src/
                            # ProductForm.tsx, MailSettingsForm.tsx, EmailTemplateForm.tsx,
                            # TemplateRowActions.tsx, TestMailForm.tsx, fields.tsx)
   proxy.ts                # Next.js Middleware: Session-Prüfung, öffentliche Pfade (/login, /api/cron, …)
+  instrumentation.ts      # Next-16-Autostart-Hook: startet den Scheduler-Loop (Phase 6, nur Node-Runtime)
   domain/                 # framework-frei, testbar
     audit.ts
     changelog.ts          # Hash-Chain
@@ -265,7 +297,9 @@ src/
     delivery-note/          # create.ts, quantities.ts
     text-template/          # pick.ts
     relations.ts            # DocumentRelation (Phase 1), genutzt von convert.ts/chain.ts
-    dunning/                # create.ts
+    dunning/                # create.ts, schedule.ts, send.ts, state.ts, snapshot.ts, stages.ts,
+                           # settings.ts, auto.ts (Scheduler-Job), overview.ts (Phase 6)
+    scheduler/               # runner.ts, jobs.ts, loop.ts (Phase 6)
     invoice/                # cancel.ts, create.ts, credit.ts, finalize.ts, mandatory.ts, payment.ts
     recurring/              # create.ts, run.ts
     email/                  # settings.ts, context.ts, attachments.ts, compose.ts, send.ts (siehe Abschnitt 3)
@@ -292,7 +326,8 @@ prisma/
   migrations/               # SQLite-Migrationen
   migrations-postgres/      # PostgreSQL-Migrationen
 scripts/                  # db-prepare.sh, migrate-postgres.sh, test-postgres-migrations.sh,
-                           # validate-erechnung.ts, generate-sample-xrechnung.ts, run-recurring.ts, …
+                           # validate-erechnung.ts, generate-sample-xrechnung.ts, run-recurring.ts,
+                           # run-dunning.ts (Phase 6, CLI fuer dunning:run/scheduler:run), …
 test/
   unit/
   integration/

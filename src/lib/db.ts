@@ -81,6 +81,33 @@ async function guardLineWhere(where: unknown): Promise<void> {
   if (locked) throw new GobdImmutabilityError(locked.invoice.number ?? locked.invoice.id);
 }
 
+/**
+ * Phase 6: `Dunning` ist ein Geschaeftsbrief (GoBD) — nach Erstellung unveraenderlich,
+ * analog `FinalInvoiceDeduction`. Zwei Ausnahmen bleiben ueber den geschuetzten Client
+ * erlaubt, weil sie keinen inhaltlichen Beleg-Bestandteil aendern: `sentAt` (tatsaechlicher
+ * Versandzeitpunkt, erst nach dem Mailversand bekannt) und `pdfPath` (Ablagepfad des
+ * einmalig erzeugten PDFs, erst nach dessen Erstellung bekannt). Jeder andere Schluessel
+ * in `data` wird verweigert; delete/deleteMany sind — wie bei FinalInvoiceDeduction —
+ * IMMER verboten.
+ */
+const DUNNING_MUTABLE_KEYS = new Set(["sentAt", "pdfPath"]);
+
+class DunningImmutabilityError extends Error {
+  constructor(badKeys: string[]) {
+    super(
+      `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt/pdfPath ` +
+        `duerfen nachtraeglich gesetzt werden, nicht: ${badKeys.join(", ")}.`,
+    );
+    this.name = "DunningImmutabilityError";
+  }
+}
+
+function assertDunningUpdateAllowed(data: unknown): void {
+  const keys = Object.keys((data ?? {}) as Record<string, unknown>);
+  const badKeys = keys.filter((k) => !DUNNING_MUTABLE_KEYS.has(k));
+  if (badKeys.length > 0) throw new DunningImmutabilityError(badKeys);
+}
+
 export const prisma = base.$extends({
   query: {
     invoice: {
@@ -135,6 +162,22 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new FinalInvoiceDeductionImmutabilityError();
+      },
+    },
+    dunning: {
+      async update({ args, query }) {
+        assertDunningUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertDunningUpdateAllowed(args.data);
+        return query(args);
+      },
+      async delete() {
+        throw new DunningImmutabilityError(["delete"]);
+      },
+      async deleteMany() {
+        throw new DunningImmutabilityError(["deleteMany"]);
       },
     },
   },

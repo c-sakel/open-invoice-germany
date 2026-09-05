@@ -61,7 +61,7 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
   if (docType === "DUNNING") {
     const d = await dbInternal.dunning.findFirst({
       where: { id: docId, invoice: { orgId } },
-      include: { invoice: { include: { org: true, customer: true } } },
+      include: { invoice: { include: { org: true, customer: true } }, stage: true },
     });
     if (!d) return [];
     const out: Attachment[] = [

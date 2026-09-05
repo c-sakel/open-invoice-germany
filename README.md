@@ -54,7 +54,7 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 
 ### Status
 
-MVP. What works: master data/customers/products, quotes & invoices, draft → finalise → cancel, partial credit notes, **payments + dunning (§ 288 BGB)**, **recurring invoices/subscriptions**, PDF + **XRechnung + ZUGFeRD** export, GoBD number range + audit. On the roadmap: DATEV/CSV export, B2G/Leitweg-ID EAS codes, OSS/ZM, multi-user, built-in scheduler. See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / stage 2 / stage 3) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
+MVP. What works: master data/customers/products, quotes & invoices, draft → finalise → cancel, partial credit notes, **stage-based dunning with a built-in scheduler (§ 288 BGB)**, **recurring invoices/subscriptions**, PDF + **XRechnung + ZUGFeRD** export, GoBD number range + audit. On the roadmap: DATEV/CSV export, B2G/Leitweg-ID EAS codes, OSS/ZM, multi-user. See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / stage 2 / stage 3) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
 
 ## Documents workflow
 

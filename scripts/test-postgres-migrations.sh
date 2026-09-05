@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "30" ] || fail "erwartet 30 Tabellen, gefunden $COUNT"
-echo "    ok — 30 Tabellen angelegt"
+[ "$COUNT" = "33" ] || fail "erwartet 33 Tabellen, gefunden $COUNT"
+echo "    ok — 33 Tabellen angelegt (inkl. _prisma_migrations)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -176,5 +176,42 @@ then
   fail "zweite FinalInvoiceDeduction-Zeile mit gleichem (finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory) haette am Unique-Constraint scheitern muessen"
 fi
 echo "    ok — FinalInvoiceDeduction angelegt, Duplikat (finalInvoiceId, downpaymentInvoiceId, taxRate, taxCategory) vom Unique-Constraint abgewiesen"
+
+echo "==> Fall 8 (Phase 6): Mahnwesen/Scheduler — Migrationen, Unique-Index, Defaults"
+PHASE6MIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name in ('20260904021504_phase6_dunning','20260904031045_phase6_scheduler_lock') and finished_at is not null")
+[ "$PHASE6MIG" = "2" ] || fail "erwartet beide Phase-6-Migrationen als angewendet in _prisma_migrations, gefunden $PHASE6MIG"
+for TBL in DunningStage DunningSettings SchedulerRun SchedulerLock; do
+  EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"$TBL\"') is not null")
+  [ "$EXISTS" = "t" ] || fail "Tabelle $TBL fehlt nach deploy"
+done
+DUNIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='Dunning_invoiceId_stageId_key'")
+[ "$DUNIDX" = "1" ] || fail "Unique-Index Dunning_invoiceId_stageId_key fehlt nach deploy"
+AUTOSENDDEFAULT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='DunningStage' and column_name='autoSend'")
+[ "$AUTOSENDDEFAULT" = "false" ] || fail "DunningStage.autoSend hat Default '$AUTOSENDDEFAULT', erwartet false"
+# DunningSettings entsteht per Selbstheilung (loadDunningSettings, upsert) — keine SQL-seitige
+# Row hier; geprueft werden Tabellen-Existenz + Spalten-Defaults, nicht ein tatsaechlicher
+# Datensatz (siehe Task-5-Facts).
+DS_AUTOCREATE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='DunningSettings' and column_name='autoCreate'")
+[ "$DS_AUTOCREATE" = "true" ] || fail "DunningSettings.autoCreate hat Default '$DS_AUTOCREATE', erwartet true"
+DS_AUTOSEND=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='DunningSettings' and column_name='autoSend'")
+[ "$DS_AUTOSEND" = "false" ] || fail "DunningSettings.autoSend hat Default '$DS_AUTOSEND', erwartet false"
+DS_BASERATE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select column_default from information_schema.columns where table_name='DunningSettings' and column_name='baseInterestRateBp'")
+[ "$DS_BASERATE" = "127" ] || fail "DunningSettings.baseInterestRateBp hat Default '$DS_BASERATE', erwartet 127"
+# Unique-Index (invoiceId, stageId) tatsaechlich erzwungen: dun1 (Fall 6) hat bereits eine
+# stageId; eine zweite Mahnung derselben Rechnung auf derselbe Stufe muss scheitern.
+DUN1STAGE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"stageId\" from \"Dunning\" where id='dun1'")
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<SQL >/dev/null 2>&1
+INSERT INTO "Dunning" ("id","invoiceId","level","stageId") VALUES ('dun2','inv1',1,'$DUN1STAGE');
+SQL
+then
+  fail "zweite Dunning-Zeile mit gleichem (invoiceId, stageId) haette am Unique-Constraint scheitern muessen"
+fi
+echo "    ok — beide Phase-6-Migrationen angewendet, DunningStage/DunningSettings/SchedulerRun/SchedulerLock vorhanden, Unique-Index Dunning(invoiceId,stageId) erzwungen, autoSend-Defaults korrekt (Stufe false, Settings-Spalten autoCreate=true/autoSend=false/baseInterestRateBp=127)"
 
 echo "ALLE TESTS BESTANDEN"
