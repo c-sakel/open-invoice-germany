@@ -46,6 +46,7 @@ export async function createBusinessDocument(orgId: string, input: CreateDocumen
       padding: range.seqPadding,
       year,
       month: now.getMonth() + 1,
+      day: now.getDate(),
     });
 
     const snapshotSource: SnapshotSource = "CREATE";

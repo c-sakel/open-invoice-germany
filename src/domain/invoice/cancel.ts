@@ -8,6 +8,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
+import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
 
 export class CancelError extends Error {
@@ -81,6 +82,9 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
       where: { id: original.id },
       data: { status: "CANCELLED", reversedByInvoiceId: finalizedCredit.id },
     });
+
+    await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalizedCredit.id, toType: "INVOICE", toId: original.id, relationType: "REVERSES" });
+    await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalizedCredit.id, toType: "INVOICE", toId: original.id, relationType: "CORRECTS" });
 
     await appendChangeLog(tx, {
       orgId: original.orgId,
