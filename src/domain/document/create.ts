@@ -22,6 +22,7 @@ import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { appendChangeLog } from "@/domain/audit";
+import { normalizeLines } from "@/domain/document/lines";
 import { createDocumentSchema, type SnapshotSource } from "@/schemas";
 
 export interface CreateDocumentOptions {
@@ -39,9 +40,15 @@ export async function createBusinessDocumentWithinTx(
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  const lines = input.lines.map((l, i) => ({
-    position: i + 1,
+  // normalizeLines (Lastenheft §8, zweite Verteidigungslinie neben Zod): Positionsnummern +
+  // erzwungene Null-Betraege bei Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL).
+  const normalized = normalizeLines(input.lines);
+  const lines = normalized.map((l) => ({
+    position: l.position,
+    lineType: l.lineType,
     description: l.description,
+    descriptionLong: l.descriptionLong,
+    articleNumber: l.articleNumber,
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
@@ -49,10 +56,12 @@ export async function createBusinessDocumentWithinTx(
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
     discountCents: l.discountCents,
-    lineNetCents: computeLineNet(l).lineNetCents,
+    lineNetCents: l.lineType === "ITEM" ? computeLineNet(l).lineNetCents : 0,
   }));
+  // Nicht-ITEM-Zeilen gehen nie in Summen/Steuerberechnung ein (§8).
+  const itemLines = lines.filter((l) => l.lineType === "ITEM");
   const totals = computeTaxBreakdown(
-    lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     {
       discountPermille: input.documentDiscountPermille,
       discountCents: input.documentDiscountCents,
@@ -65,12 +74,15 @@ export async function createBusinessDocumentWithinTx(
   if (!customer) throw new Error("Kunde nicht gefunden.");
   const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
 
+  // Fix-Runde 1: org- UND kundengeprueft — Ansprechpartner/Rechnungsadresse muessen zum
+  // ausgewaehlten Kunden gehoeren, sonst koennte ein fremder Ansprechpartner/eine fremde
+  // Adresse (anderer Kunde derselben Org) unbemerkt uebernommen werden.
   if (input.contactPersonId) {
-    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId } });
+    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId, customerId: input.customerId } });
     if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
   }
   if (input.billingAddressId) {
-    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId } });
+    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId, customerId: input.customerId } });
     if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
   }
 

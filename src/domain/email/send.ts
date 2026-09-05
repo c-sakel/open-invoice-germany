@@ -9,7 +9,8 @@
  */
 import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
-import { buildStandardAttachments, type Attachment } from "@/domain/email/attachments";
+import { buildStandardAttachments, attachmentDocTypeFor, type Attachment } from "@/domain/email/attachments";
+import { loadAttachmentForSend } from "@/domain/attachment/manage";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
@@ -17,11 +18,19 @@ import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status"
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
+import { MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
 
 export interface SendDocumentEmailResult {
   logId: string;
   status: "SENT" | "FAILED";
   error?: string;
+}
+
+export class EmailAttachmentsTooLargeError extends Error {
+  constructor(totalBytes: number) {
+    super(`Anhaenge ueberschreiten insgesamt ${MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES / (1024 * 1024)} MB (${(totalBytes / (1024 * 1024)).toFixed(1)} MB).`);
+    this.name = "EmailAttachmentsTooLargeError";
+  }
 }
 
 export async function sendDocumentEmail(
@@ -57,7 +66,20 @@ export async function sendDocumentEmail(
   }
 
   const std = await buildStandardAttachments(orgId, input.docType, input.docId);
-  const attachments = [...std.filter((a) => input.standardAttachments.includes(a.filename)), ...extra];
+  // Zusaetzliche Beleganhaenge (Phase 4b, DocumentAttachment) — org- und beleggeprueft
+  // ueber loadAttachmentForSend, damit keine fremde/erfundene id einen Anhang eines
+  // anderen Belegs oder einer anderen Organisation mitversendet (Lastenheft §38).
+  const stored = await loadAttachmentForSend(orgId, attachmentDocTypeFor(input.docType), input.docId, input.attachmentIds);
+  const attachments = [...std.filter((a) => input.standardAttachments.includes(a.filename)), ...stored, ...extra];
+
+  // G3: die Send-Route prueft nur die Zusatzanhaenge (extra) frueh gegen 20 MB — Standard-
+  // (PDF/XML) und Beleganhaenge kommen erst HIER dazu. Massgeblich fuer den tatsaechlichen
+  // Versand ist deshalb die Gesamtgroesse ALLER Anhaenge, VOR dem Anlegen des EmailLog.
+  const attachmentsTotalBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
+  if (attachmentsTotalBytes > MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES) {
+    throw new EmailAttachmentsTooLargeError(attachmentsTotalBytes);
+  }
+
   const bcc = input.copyToSelf && !input.bcc.includes(settings.fromEmail) ? [...input.bcc, settings.fromEmail] : input.bcc;
   const text = input.signature.trim() ? `${input.body}\n\n${input.signature}` : input.body;
 

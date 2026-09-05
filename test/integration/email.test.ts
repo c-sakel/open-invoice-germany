@@ -15,6 +15,10 @@ import { sendDocumentEmail } from "@/domain/email/send";
 import { saveEmailTemplate, deleteEmailTemplate, TemplateNotFoundError, TemplateNameConflictError } from "@/domain/email/templates";
 import { createMemoryProvider } from "@/lib/mail/memory";
 import type { SendEmailRawInput } from "@/schemas/email";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { addAttachment } from "@/domain/attachment/manage";
 
 let orgId: string;
 let customerId: string;
@@ -505,5 +509,100 @@ describe("Mailversand: Einstellungen, Vorbelegung, Versand", () => {
     const sentAttachment = memProvider.sent[0]!.attachments.find((a) => a.filename === `${dn.number}.pdf`);
     expect(sentAttachment).toBeDefined();
     expect(sentAttachment!.content.subarray(0, 4).toString()).toBe("%PDF");
+  });
+});
+
+
+describe("Mailversand: Beleganhaenge (Phase 4b, attachmentIds)", () => {
+  let tmpDir: string;
+  let prevEnv: string | undefined;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oig-email-attachments-"));
+    prevEnv = process.env.ATTACHMENTS_DIR;
+    process.env.ATTACHMENTS_DIR = tmpDir;
+  });
+  afterAll(async () => {
+    if (prevEnv === undefined) delete process.env.ATTACHMENTS_DIR;
+    else process.env.ATTACHMENTS_DIR = prevEnv;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("prefillEmail listet bestehende Beleganhaenge unter documentAttachments", async () => {
+    const row = await addAttachment(
+      orgId,
+      "INVOICE",
+      invoiceId,
+      { filename: "vertrag.pdf", mime: "application/pdf", buffer: Buffer.from("%PDF-1.7\nAnhangsinhalt\n") },
+      "tester",
+    );
+
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    expect(pre.documentAttachments).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: row.id, filename: "vertrag.pdf", sizeBytes: row.sizeBytes })]),
+    );
+  });
+
+  it("sendDocumentEmail haengt attachmentIds an, protokolliert sie im EmailLog", async () => {
+    const row = await addAttachment(
+      orgId,
+      "INVOICE",
+      invoiceId,
+      { filename: "extra-vertrag.pdf", mime: "application/pdf", buffer: Buffer.from("%PDF-1.7\nWeiterer Anhang\n") },
+      "tester",
+    );
+
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const memProvider = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "system", toSendInput(pre, { attachmentIds: [row.id] }), [], memProvider);
+    expect(res.status).toBe("SENT");
+
+    const sent = memProvider.sent.at(-1)!;
+    expect(sent.attachments.map((a) => a.filename)).toContain("extra-vertrag.pdf");
+
+    const log = await dbInternal.emailLog.findUniqueOrThrow({ where: { id: res.logId } });
+    const meta = JSON.parse(log.attachmentsJson) as { filename: string; sha256: string }[];
+    expect(meta.find((m) => m.filename === "extra-vertrag.pdf")?.sha256).toBe(row.sha256);
+  });
+
+  it("sendDocumentEmail lehnt eine attachmentId ab, die zu einem anderen Beleg gehoert", async () => {
+    const otherDraft = await createDraftInvoice(orgId, baseInput());
+    const foreignRow = await addAttachment(
+      orgId,
+      "INVOICE",
+      otherDraft.id,
+      { filename: "fremd.pdf", mime: "application/pdf", buffer: Buffer.from("%PDF-1.7\nFremd\n") },
+      "tester",
+    );
+
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const memProvider = createMemoryProvider();
+    await expect(
+      sendDocumentEmail(orgId, "system", toSendInput(pre, { attachmentIds: [foreignRow.id] }), [], memProvider),
+    ).rejects.toThrow();
+  });
+
+  it("G3: lehnt den Versand ab, wenn Standard- + Beleganhaenge zusammen 20 MB ueberschreiten", async () => {
+    // Drei Beleganhaenge je ~9 MB (< 10-MB-Datei-Limit, zusammen < 50-MB-Beleg-Limit,
+    // aber > 20 MB Mail-Gesamtgrenze).
+    const pdfChunk = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(9 * 1024 * 1024, 0x41)]);
+    const rows = await Promise.all(
+      [1, 2, 3].map((i) =>
+        addAttachment(
+          orgId,
+          "INVOICE",
+          invoiceId,
+          { filename: `gross-${i}.pdf`, mime: "application/pdf", buffer: Buffer.concat([pdfChunk, Buffer.from(`\n% ${i}`)]) },
+          "tester",
+        ),
+      ),
+    );
+
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const memProvider = createMemoryProvider();
+    await expect(
+      sendDocumentEmail(orgId, "system", toSendInput(pre, { attachmentIds: rows.map((r) => r.id) }), [], memProvider),
+    ).rejects.toThrow(/20 MB/);
+    expect(memProvider.sent.length).toBe(0);
   });
 });

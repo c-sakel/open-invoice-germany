@@ -112,6 +112,11 @@ interface SampleLine {
   taxCategory: string;
   discountPermille?: number;
   discountCents?: number;
+  // Phase 4b — Positionsblöcke (§8) + Langtext/Artikelnummer. Fehlt lineType, ist die
+  // Zeile ein ITEM (Bestandsverhalten der uebrigen Beispiele bleibt unveraendert).
+  lineType?: string;
+  descriptionLong?: string | null;
+  articleNumber?: string | null;
 }
 
 function buildSample(opts: {
@@ -138,6 +143,8 @@ function buildSample(opts: {
   sign?: 1 | -1;
   precedingInvoiceNumber?: string;
   precedingInvoiceDate?: Date;
+  // Phase 4b — Bestellnummer (BT-13).
+  orderNumber?: string;
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -149,8 +156,12 @@ function buildSample(opts: {
     }).lineNetCents;
     return { ...l, unitNetPriceCents: l.unitNetPriceCents * sign, lineNetCents: lineNetCents * sign };
   });
+  // Phase 4b (§8): nur ITEM-Zeilen fliessen in die Steuerberechnung — HEADING/TEXT/
+  // SUBTOTAL sind reine PDF-Gliederungszeilen (0-Betraege, kein eigenes Steuersatz-Bucket).
   const totals = computeTaxBreakdown(
-    lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    lines
+      .filter((l) => (l.lineType ?? "ITEM") === "ITEM")
+      .map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     opts.adjustments,
   );
 
@@ -162,6 +173,7 @@ function buildSample(opts: {
     deliveryDate: new Date("2034-06-01"),
     currency: "EUR",
     buyerReference: "04011000-12345-86",
+    orderNumber: opts.orderNumber ?? null,
     paymentTerms: opts.skonto1 ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
     notes: "Vielen Dank für Ihren Auftrag.",
     netTotalCents: totals.netTotalCents,
@@ -188,6 +200,9 @@ function buildSample(opts: {
       taxCategory: l.taxCategory,
       discountPermille: l.discountPermille,
       discountCents: l.discountCents,
+      lineType: l.lineType,
+      descriptionLong: l.descriptionLong,
+      articleNumber: l.articleNumber,
     })),
   };
   const data = buildEInvoiceData(mapInput);
@@ -291,6 +306,83 @@ const sepaFallback = () =>
     },
   });
 
+// 10) Positionsblöcke (Phase 4b, Task 4): HEADING/TEXT/SUBTOTAL bleiben PDF-only — im
+// XML nur die drei ITEM-Zeilen, mit Artikelnummer (BT-155), Langtext (BT-154, als
+// Klartext ohne Markdown-Marker) und Bestellnummer auf Kopfebene (BT-13). Lastenheft-
+// Beispiel: Einrichtung (ITEM), Hosting (HEADING), Hosting 12 Monate + Domainverwaltung
+// (ITEM), Zwischensumme Hosting (SUBTOTAL) — die Zwischensumme selbst geht NICHT ins XML.
+const sections = () =>
+  buildSample({
+    number: "RE-2034-0011",
+    orderNumber: "BEST-2034-4711",
+    lines: [
+      {
+        description: "Einrichtung",
+        descriptionLong: "**Einmalig:** Einrichtung inkl. Grundkonfiguration.",
+        articleNumber: "ART-SETUP",
+        quantityMilli: 1000,
+        unit: "C62",
+        unitNetPriceCents: 50000,
+        taxRate: 19,
+        taxCategory: "S",
+      },
+      { description: "Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "HEADING" },
+      {
+        description: "Hinweis",
+        descriptionLong: "Gilt für die folgenden Hosting-Positionen.",
+        quantityMilli: 0,
+        unit: "C62",
+        unitNetPriceCents: 0,
+        taxRate: 0,
+        taxCategory: "S",
+        lineType: "TEXT",
+      },
+      { description: "Hosting 12 Monate", articleNumber: "ART-HOST", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 24000, taxRate: 19, taxCategory: "S" },
+      { description: "Domainverwaltung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 6000, taxRate: 19, taxCategory: "S" },
+      { description: "Zwischensumme Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "SUBTOTAL" },
+    ],
+  });
+
+// 11) Storno einer Rechnung mit Positionsbloecken (Fix-Welle nach Abschluss-Review, K1):
+// cancelInvoice uebernimmt lineType/descriptionLong/articleNumber unveraendert und
+// negiert nur die ITEM-Betraege — HEADING/TEXT/SUBTOTAL bleiben 0-Betraege und duerfen
+// im XML nicht auftauchen (§8). Gleiche Blockstruktur wie "sections", als Gutschrift.
+const creditNoteSections = () =>
+  buildSample({
+    number: "GS-2034-0012",
+    type: "CREDIT_NOTE",
+    sign: -1,
+    orderNumber: "BEST-2034-4711",
+    lines: [
+      {
+        description: "Einrichtung",
+        descriptionLong: "**Einmalig:** Einrichtung inkl. Grundkonfiguration.",
+        articleNumber: "ART-SETUP",
+        quantityMilli: 1000,
+        unit: "C62",
+        unitNetPriceCents: 50000,
+        taxRate: 19,
+        taxCategory: "S",
+      },
+      { description: "Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "HEADING" },
+      {
+        description: "Hinweis",
+        descriptionLong: "Gilt für die folgenden Hosting-Positionen.",
+        quantityMilli: 0,
+        unit: "C62",
+        unitNetPriceCents: 0,
+        taxRate: 0,
+        taxCategory: "S",
+        lineType: "TEXT",
+      },
+      { description: "Hosting 12 Monate", articleNumber: "ART-HOST", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 24000, taxRate: 19, taxCategory: "S" },
+      { description: "Domainverwaltung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 6000, taxRate: 19, taxCategory: "S" },
+      { description: "Zwischensumme Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "SUBTOTAL" },
+    ],
+    precedingInvoiceNumber: "RE-2034-0011",
+    precedingInvoiceDate: new Date("2034-06-09"),
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -303,6 +395,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "no-iban": noIban,
   "card-48": cardFallback,
   "sepa-59": sepaFallback,
+  sections,
+  "credit-note-sections": creditNoteSections,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

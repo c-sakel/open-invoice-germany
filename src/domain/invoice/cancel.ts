@@ -11,6 +11,9 @@ import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments } from "@/domain/relations";
 import { finalizeWithinTx } from "./finalize";
 
+/** Zeilentypen, die keinen Betrag tragen (§8: HEADING/TEXT/SUBTOTAL nie in Summen/XML). */
+const NON_ITEM_LINE_TYPES = new Set(["HEADING", "TEXT", "SUBTOTAL"]);
+
 export class CancelError extends Error {
   constructor(message: string) {
     super(message);
@@ -62,20 +65,28 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
         documentChargeCents: original.documentChargeCents,
         documentChargeReason: original.documentChargeReason,
         // Betragsspiegelbild: negierte Beträge, damit Original + Storno = 0 ergibt.
+        // Zeilentyp/Langtext/Artikelnummer 1:1 uebernehmen (§8: die Struktur der Rechnung
+        // bleibt im Storno erkennbar). Nicht-ITEM-Zeilen tragen weiterhin keine Betraege.
         lines: {
-          create: original.lines.map((l) => ({
-            position: l.position,
-            productId: l.productId,
-            description: l.description,
-            quantityMilli: l.quantityMilli,
-            unit: l.unit,
-            unitNetPriceCents: -l.unitNetPriceCents,
-            taxRate: l.taxRate,
-            taxCategory: l.taxCategory,
-            discountPermille: l.discountPermille,
-            discountCents: l.discountCents,
-            lineNetCents: -l.lineNetCents,
-          })),
+          create: original.lines.map((l) => {
+            const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
+            return {
+              position: l.position,
+              lineType: l.lineType,
+              productId: l.productId,
+              description: l.description,
+              descriptionLong: l.descriptionLong,
+              articleNumber: l.articleNumber,
+              quantityMilli: l.quantityMilli,
+              unit: l.unit,
+              unitNetPriceCents: isItem ? -l.unitNetPriceCents : 0,
+              taxRate: l.taxRate,
+              taxCategory: l.taxCategory,
+              discountPermille: l.discountPermille,
+              discountCents: l.discountCents,
+              lineNetCents: isItem ? -l.lineNetCents : 0,
+            };
+          }),
         },
       },
     });

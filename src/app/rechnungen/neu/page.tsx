@@ -16,7 +16,7 @@ export default async function NewInvoicePage() {
     return <NeedOrgNotice />;
   }
 
-  const [customers, products, paymentMethods] = await Promise.all([
+  const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
     prisma.customer.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, defaultPaymentMethodId: true },
@@ -24,11 +24,19 @@ export default async function NewInvoicePage() {
     }),
     prisma.product.findMany({
       where: { orgId, isArchived: false },
-      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
+      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
     listPaymentMethods(orgId),
+    prisma.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
+    prisma.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
   ]);
+  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}` }));
+  const addresses = addressRows.map((a) => ({
+    id: a.id,
+    customerId: a.customerId,
+    label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
+  }));
   // SKONTO ist ein reiner Systemcode fuer die automatische Skontobuchung
   // (detectSkonto) — im Rechnungs-Editor nie manuell waehlbar.
   const paymentMethodOptions = paymentMethods
@@ -55,7 +63,7 @@ export default async function NewInvoicePage() {
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Neue Rechnung</h1>
       </div>
-      <NewInvoiceForm customers={customers} products={products} paymentMethods={paymentMethodOptions} />
+      <NewInvoiceForm customers={customers} products={products} paymentMethods={paymentMethodOptions} contacts={contacts} addresses={addresses} />
     </div>
   );
 }

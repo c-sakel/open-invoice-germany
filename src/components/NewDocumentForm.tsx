@@ -5,17 +5,13 @@ import { useRouter } from "next/navigation";
 import { computeLineNet } from "@/lib/pricing/line";
 import { applyDocumentAdjustments, type RateBucket } from "@/lib/pricing/allocate";
 import { PricingError } from "@/lib/pricing/errors";
+import { computeSubtotals } from "@/domain/document/lines";
+import { RichTextField } from "@/components/editor/RichTextField";
+import { ProductPicker, type ProductOption } from "@/components/editor/ProductPicker";
 
 interface CustomerOption {
   id: string;
   name: string;
-}
-interface ProductOption {
-  id: string;
-  name: string;
-  unit: string;
-  netPriceCents: number;
-  taxRate: number;
 }
 interface ContactOption {
   id: string;
@@ -27,8 +23,12 @@ interface AddressOption {
   customerId: string;
   label: string;
 }
+type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
 interface LineState {
+  lineType: LineType;
   description: string;
+  descriptionLong: string;
+  articleNumber: string;
   quantity: string;
   unit: string;
   price: string;
@@ -36,6 +36,12 @@ interface LineState {
   discountPercent: string;
   discountAmount: string;
 }
+const LINE_TYPE_LABEL: Record<LineType, string> = {
+  ITEM: "Position",
+  HEADING: "Überschrift",
+  TEXT: "Textblock",
+  SUBTOTAL: "Zwischensumme",
+};
 
 export interface DocumentInitial {
   id: string;
@@ -78,7 +84,7 @@ const SCHEME_CATEGORY_DOC: Record<string, string> = {
 };
 
 function emptyLine(): LineState {
-  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19, discountPercent: "0", discountAmount: "0" };
+  return { lineType: "ITEM", description: "", descriptionLong: "", articleNumber: "", quantity: "1", unit: "C62", price: "0", taxRate: 19, discountPercent: "0", discountAmount: "0" };
 }
 
 function toCents(s: string): number {
@@ -130,6 +136,7 @@ export function NewDocumentForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isRegular = scheme === "REGULAR";
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   // Kopf-/Fusstext/Bedingungen bei Neuanlage vorbelegen, sobald sich die Art aendert —
   // nur solange der Nutzer noch nichts eingetragen hat und wir nicht bearbeiten.
@@ -151,7 +158,8 @@ export function NewDocumentForm({
 
   const totals = useMemo(() => {
     try {
-      const lineResults = lines.map((l) =>
+      const itemLines = lines.filter((l) => l.lineType === "ITEM");
+      const lineResults = itemLines.map((l) =>
         computeLineNet({
           quantityMilli: toMilli(l.quantity),
           unitNetPriceCents: toCents(l.price),
@@ -163,7 +171,7 @@ export function NewDocumentForm({
 
       const effCategory = SCHEME_CATEGORY_DOC[scheme] ?? "S";
       const byRate = new Map<number, number>();
-      lines.forEach((l, i) => {
+      itemLines.forEach((l, i) => {
         const rate = isRegular ? l.taxRate : 0;
         byRate.set(rate, (byRate.get(rate) ?? 0) + lineResults[i].lineNetCents);
       });
@@ -186,6 +194,16 @@ export function NewDocumentForm({
       const discountTotalCents = adjusted.reduce((s, b) => s + b.allowanceCents, 0);
       const chargeTotalCents = adjusted.reduce((s, b) => s + b.chargeCents, 0);
 
+      let itemIdx = 0;
+      const subtotalInputs = lines.map((l) => {
+        if (l.lineType === "ITEM") {
+          const r = lineResults[itemIdx++];
+          return { lineType: l.lineType, lineNetCents: r.lineNetCents };
+        }
+        return { lineType: l.lineType, lineNetCents: 0 };
+      });
+      const subtotalsPerLine = computeSubtotals(subtotalInputs);
+
       return {
         netBeforeAdjustments,
         netTotalCents,
@@ -193,6 +211,7 @@ export function NewDocumentForm({
         grossTotalCents: netTotalCents + taxTotalCents,
         discountTotalCents,
         chargeTotalCents,
+        subtotalsPerLine,
         error: null as string | null,
       };
     } catch (e) {
@@ -203,6 +222,7 @@ export function NewDocumentForm({
         grossTotalCents: 0,
         discountTotalCents: 0,
         chargeTotalCents: 0,
+        subtotalsPerLine: lines.map(() => 0),
         error: e instanceof PricingError ? e.message : "Berechnung fehlgeschlagen.",
       };
     }
@@ -211,13 +231,52 @@ export function NewDocumentForm({
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
 
+  // Fix-Runde 1: Ansprechpartner/Rechnungsadresse gehoeren zum ALTEN Kunden — beim
+  // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen (sonst
+  // koennte ein fremder Ansprechpartner/Adresse unbemerkt am Dokument haengen bleiben;
+  // serverseitig zusaetzlich in create.ts/update.ts geprueft).
+  function selectCustomer(id: string) {
+    setCustomerId(id);
+    if (contactPersonId && !contacts.some((c) => c.id === contactPersonId && c.customerId === id)) {
+      setContactPersonId("");
+    }
+    if (billingAddressId && !addresses.some((a) => a.id === billingAddressId && a.customerId === id)) {
+      setBillingAddressId("");
+    }
+  }
+
   function patchLine(i: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
-  function applyProduct(i: number, productId: string) {
-    const p = products.find((x) => x.id === productId);
-    if (!p) return;
-    patchLine(i, { description: p.name, unit: p.unit, price: (p.netPriceCents / 100).toFixed(2), taxRate: p.taxRate });
+  function applyProduct(i: number, p: ProductOption) {
+    patchLine(i, { description: p.name, unit: p.unit, price: (p.netPriceCents / 100).toFixed(2), taxRate: p.taxRate, articleNumber: p.articleNumber ?? "" });
+  }
+  function duplicateLine(i: number) {
+    setLines((ls) => {
+      const copy = { ...ls[i] };
+      const next = [...ls];
+      next.splice(i + 1, 0, copy);
+      return next;
+    });
+  }
+  function addLine(lineType: LineType) {
+    setLines((ls) => [...ls, { ...emptyLine(), lineType }]);
+  }
+  function onDragStart(i: number) {
+    setDragIndex(i);
+  }
+  function onDragOver(e: React.DragEvent) {
+    e.preventDefault();
+  }
+  function onDrop(i: number) {
+    setLines((ls) => {
+      if (dragIndex === null || dragIndex === i) return ls;
+      const next = [...ls];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(i, 0, moved);
+      return next;
+    });
+    setDragIndex(null);
   }
 
   async function submit(e: React.FormEvent) {
@@ -225,14 +284,17 @@ export function NewDocumentForm({
     setBusy(true);
     setError(null);
     const linesBody = lines.map((l) => ({
+      lineType: l.lineType,
       description: l.description,
-      quantityMilli: toMilli(l.quantity),
-      unit: l.unit,
-      unitNetPriceCents: toCents(l.price),
-      taxRate: isRegular ? l.taxRate : 0,
+      descriptionLong: l.descriptionLong || undefined,
+      articleNumber: l.articleNumber || undefined,
+      quantityMilli: l.lineType === "ITEM" ? toMilli(l.quantity) : 0,
+      unit: l.unit || "C62",
+      unitNetPriceCents: l.lineType === "ITEM" ? toCents(l.price) : 0,
+      taxRate: l.lineType === "ITEM" && isRegular ? l.taxRate : 0,
       taxCategory: SCHEME_CATEGORY_DOC[scheme] ?? "S",
-      discountPermille: toPermille(l.discountPercent),
-      discountCents: toCents(l.discountAmount),
+      discountPermille: l.lineType === "ITEM" ? toPermille(l.discountPercent) : 0,
+      discountCents: l.lineType === "ITEM" ? toCents(l.discountAmount) : 0,
     }));
     const notice = SCHEME_NOTICE_DOC[scheme];
     const finalNotes = notice ? `${notice}${notes ? " — " + notes : ""}` : notes || undefined;
@@ -242,8 +304,11 @@ export function NewDocumentForm({
       currency: currency,
       subject: subject || undefined,
       customerReference: customerReference || undefined,
-      contactPersonId: contactPersonId || undefined,
-      billingAddressId: billingAddressId || undefined,
+      // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde (siehe
+      // NewInvoiceForm.tsx) — sonst bleibt die alte Referenz beim Bearbeiten (PATCH)
+      // serverseitig unveraendert stehen.
+      contactPersonId: contactPersonId || null,
+      billingAddressId: billingAddressId || null,
       validUntil: validUntil || undefined,
       headerText: headerText || undefined,
       footerText: footerText || undefined,
@@ -299,7 +364,7 @@ export function NewDocumentForm({
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Kunde</span>
-          <select className={input} value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+          <select className={input} value={customerId} onChange={(e) => selectCustomer(e.target.value)} required>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -376,50 +441,106 @@ export function NewDocumentForm({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">Positionen</h2>
-          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])} className="text-sm font-medium text-indigo-600 hover:underline">
-            + Position
-          </button>
+          <div className="flex flex-wrap gap-3 text-sm font-medium text-indigo-600">
+            <button type="button" onClick={() => addLine("ITEM")} className="hover:underline">
+              + Position
+            </button>
+            <button type="button" onClick={() => addLine("HEADING")} className="hover:underline">
+              + Überschrift
+            </button>
+            <button type="button" onClick={() => addLine("TEXT")} className="hover:underline">
+              + Textblock
+            </button>
+            <button type="button" onClick={() => addLine("SUBTOTAL")} className="hover:underline">
+              + Zwischensumme
+            </button>
+          </div>
         </div>
         {lines.map((line, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-white p-3">
-            <div className="col-span-12 flex flex-col gap-1 sm:col-span-4">
-              <input className={input} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
-              {products.length > 0 && (
-                <select className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500" defaultValue="" onChange={(e) => applyProduct(i, e.target.value)}>
-                  <option value="">aus Katalog…</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+          <div
+            key={i}
+            draggable
+            onDragStart={() => onDragStart(i)}
+            onDragOver={onDragOver}
+            onDrop={() => onDrop(i)}
+            className="space-y-2 rounded-lg border border-slate-200 bg-white p-3"
+          >
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="cursor-grab select-none" title="Ziehen zum Sortieren">
+                ⠿
+              </span>
+              <select
+                className="rounded border border-slate-200 px-1.5 py-1 text-xs font-medium text-slate-600"
+                value={line.lineType}
+                onChange={(e) => patchLine(i, { lineType: e.target.value as LineType })}
+              >
+                {(Object.keys(LINE_TYPE_LABEL) as LineType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {LINE_TYPE_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+              {line.lineType === "SUBTOTAL" && (
+                <span className="font-medium text-slate-600">Zwischensumme: {(totals.subtotalsPerLine[i] / 100).toFixed(2)} €</span>
               )}
+              <span className="ml-auto flex gap-3">
+                <button type="button" onClick={() => duplicateLine(i)} className="text-indigo-600 hover:underline">
+                  Duplizieren
+                </button>
+                <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="text-rose-500 hover:underline" disabled={lines.length === 1}>
+                  Entfernen
+                </button>
+              </span>
             </div>
-            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
-            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
-            <input className={`${input} col-span-6 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
-            <select className={`${input} col-span-6 sm:col-span-1`} value={isRegular ? line.taxRate : 0} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })} disabled={!isRegular}>
-              <option value={19}>19%</option>
-              <option value={7}>7%</option>
-              <option value={0}>0%</option>
-            </select>
-            <input
-              className={`${input} col-span-6 sm:col-span-1`}
-              placeholder="Rabatt %"
-              title="Rabatt in Prozent"
-              value={line.discountPercent}
-              onChange={(e) => patchLine(i, { discountPercent: e.target.value })}
-            />
-            <input
-              className={`${input} col-span-6 sm:col-span-1`}
-              placeholder="Rabatt €"
-              title="Rabatt als Festbetrag in €"
-              value={line.discountAmount}
-              onChange={(e) => patchLine(i, { discountAmount: e.target.value })}
-            />
-            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-12 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
-              ✕
-            </button>
+
+            {line.lineType === "SUBTOTAL" ? (
+              <input className={input} placeholder="Bezeichnung (z. B. Zwischensumme Hosting)" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
+            ) : line.lineType === "HEADING" || line.lineType === "TEXT" ? (
+              <div className="space-y-2">
+                <input className={input} placeholder="Überschrift/Text" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
+                {line.lineType === "TEXT" && (
+                  <RichTextField label="Langtext (optional)" value={line.descriptionLong} onChange={(v) => patchLine(i, { descriptionLong: v })} rows={3} />
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-12 flex flex-col gap-1 sm:col-span-4">
+                    <input className={input} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
+                    {products.length > 0 && <ProductPicker products={products} onPick={(p) => applyProduct(i, p)} />}
+                  </div>
+                  <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
+                  <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
+                  <input className={`${input} col-span-6 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
+                  <select className={`${input} col-span-6 sm:col-span-1`} value={isRegular ? line.taxRate : 0} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })} disabled={!isRegular}>
+                    <option value={19}>19%</option>
+                    <option value={7}>7%</option>
+                    <option value={0}>0%</option>
+                  </select>
+                  <input
+                    className={`${input} col-span-6 sm:col-span-1`}
+                    placeholder="Rabatt %"
+                    title="Rabatt in Prozent"
+                    value={line.discountPercent}
+                    onChange={(e) => patchLine(i, { discountPercent: e.target.value })}
+                  />
+                  <input
+                    className={`${input} col-span-6 sm:col-span-1`}
+                    placeholder="Rabatt €"
+                    title="Rabatt als Festbetrag in €"
+                    value={line.discountAmount}
+                    onChange={(e) => patchLine(i, { discountAmount: e.target.value })}
+                  />
+                  <input
+                    className={`${input} col-span-12`}
+                    placeholder="Artikelnummer (optional)"
+                    value={line.articleNumber}
+                    onChange={(e) => patchLine(i, { articleNumber: e.target.value })}
+                  />
+                </div>
+                <RichTextField label="Langbeschreibung (optional)" value={line.descriptionLong} onChange={(v) => patchLine(i, { descriptionLong: v })} rows={3} />
+              </>
+            )}
           </div>
         ))}
       </div>

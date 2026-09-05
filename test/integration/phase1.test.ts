@@ -18,7 +18,7 @@ import { convertDocumentToInvoice } from "@/domain/document/convert";
 import { listRelations } from "@/domain/relations";
 
 const FIX = new Date("2028-03-01T10:00:00.000Z");
-const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const line = { lineType: "ITEM" as const, description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
 async function setup() {
   const org = await dbInternal.organization.create({

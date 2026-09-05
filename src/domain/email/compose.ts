@@ -5,7 +5,8 @@
  */
 import { dbInternal } from "@/lib/db";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
-import { buildStandardAttachments } from "@/domain/email/attachments";
+import { buildStandardAttachments, attachmentDocTypeFor } from "@/domain/email/attachments";
+import { listAttachments } from "@/domain/attachment/manage";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
 import { DEFAULT_DUNNING_STAGES } from "@/domain/masterdata/defaults";
@@ -34,6 +35,9 @@ export interface PrefillResult {
   signature: string;
   copyToSelf: boolean;
   attachments: { filename: string; size: number }[];
+  /** Bestehende Beleganhaenge (Phase 4b, DocumentAttachment) — zusaetzlich zu den
+   *  automatischen Standardanhaenge oben waehlbar (sendEmailInputSchema.attachmentIds). */
+  documentAttachments: { id: string; filename: string; sizeBytes: number }[];
   warnings: string[];
   templateId?: string;
   resendOfId?: string;
@@ -131,6 +135,11 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     if (!log) throw new DocumentNotFoundError("Versandprotokoll nicht gefunden");
     const docType = log.docType as EmailDocType;
     const attachments = await buildStandardAttachments(orgId, docType, log.docId);
+    const documentAttachments = (await listAttachments(orgId, attachmentDocTypeFor(docType), log.docId)).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      sizeBytes: a.sizeBytes,
+    }));
     return {
       docType,
       docId: log.docId,
@@ -143,6 +152,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
       signature: "",
       copyToSelf: settings.copyToSelf,
       attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
+      documentAttachments,
       warnings: [],
       templateId: log.templateId ?? undefined,
       resendOfId: log.id,
@@ -188,6 +198,11 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
   }
 
   const attachments = await buildStandardAttachments(orgId, docType, docId);
+  const documentAttachments = (await listAttachments(orgId, attachmentDocTypeFor(docType), docId)).map((a) => ({
+    id: a.id,
+    filename: a.filename,
+    sizeBytes: a.sizeBytes,
+  }));
 
   return {
     docType,
@@ -201,6 +216,7 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     signature,
     copyToSelf: settings.copyToSelf,
     attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
+    documentAttachments,
     warnings,
     templateId: template?.id,
     templates: await templatesOf(orgId, docType),
