@@ -26,8 +26,8 @@ import { verifyChain, type ChainEntry } from "@/domain/changelog";
 
 const FIX_DATE = new Date("2033-05-01T10:00:00.000Z");
 
-const lineA = { description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0 };
-const lineB = { description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0 };
+const lineA = { description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const lineB = { description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
 let orgId: string;
 let customerId: string;
@@ -118,7 +118,7 @@ describe("W2 (Fix-Runde 2): Statuspruefung bei der Konvertierung", () => {
   });
 
   it("stornierte Rechnung kann nicht in einen Lieferschein umgewandelt werden", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineB] }, { now: FIX_DATE });
     await dbInternal.invoice.update({ where: { id: invoice.id }, data: { status: "CANCELLED" } });
     await expect(convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE })).rejects.toThrow(ConvertError);
   });
@@ -190,7 +190,7 @@ describe("Teillieferung mit Restmengen", () => {
   });
 
   it("Rechnung -> Lieferschein ist ebenfalls moeglich", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineB] }, { now: FIX_DATE });
     const result = await convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE });
     const note = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: result.id }, include: { lines: true } });
     expect(note.sourceType).toBe("INVOICE");
@@ -217,7 +217,7 @@ describe("Duplizieren", () => {
   });
 
   it("Rechnung: neuer DRAFT ohne Nummer, Positionen kopiert", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineA] }, { now: FIX_DATE });
     const result = await duplicateDocument(orgId, "INVOICE", invoice.id, "tester", FIX_DATE);
     const copy = await dbInternal.invoice.findUniqueOrThrow({ where: { id: result.id }, include: { lines: true } });
     expect(copy.number).toBeNull();
@@ -226,7 +226,7 @@ describe("Duplizieren", () => {
   });
 
   it("Lieferschein: neuer DRAFT ohne Nummer, Positionen kopiert", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineB] }, { now: FIX_DATE });
     const { id: noteId } = await convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE });
     const result = await duplicateDocument(orgId, "DELIVERY_NOTE", noteId, "tester", FIX_DATE);
     const copy = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: result.id }, include: { lines: true } });
@@ -236,7 +236,7 @@ describe("Duplizieren", () => {
   });
 
   it("Lieferschein: Kopf-sourceType/sourceId werden mitkopiert (Fix-Runde 1, Befund 3)", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineB] }, { now: FIX_DATE });
     const { id: noteId } = await convertDocument(orgId, { fromType: "INVOICE", fromId: invoice.id, toKind: "DELIVERY_NOTE" }, { now: FIX_DATE });
     const original = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: noteId } });
     expect(original.sourceType).toBe("INVOICE");
@@ -326,7 +326,7 @@ describe("Fix-Runde 1 -- F1: Konvertierung/Duplikat sind transaktional", () => {
   });
 
   it("Rechnung -> Lieferschein: schlaegt linkDocuments fehl, bleibt kein Lieferschein in der DB", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineB] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineB] }, { now: FIX_DATE });
     const noteCountBefore = await dbInternal.deliveryNote.count({ where: { orgId } });
 
     const spy = vi.spyOn(relationsModule, "linkDocuments").mockRejectedValueOnce(new Error("kaputt (Test)"));
@@ -340,7 +340,7 @@ describe("Fix-Runde 1 -- F1: Konvertierung/Duplikat sind transaktional", () => {
   });
 
   it("Rechnungs-Duplikat: schlaegt linkDocuments fehl, bleibt kein Duplikat in der DB", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineA] }, { now: FIX_DATE });
     const invoiceCountBefore = await dbInternal.invoice.count({ where: { orgId } });
 
     const spy = vi.spyOn(relationsModule, "linkDocuments").mockRejectedValueOnce(new Error("kaputt (Test)"));
@@ -354,7 +354,7 @@ describe("Fix-Runde 1 -- F1: Konvertierung/Duplikat sind transaktional", () => {
 
 describe("Fix-Runde 1 -- F2: Restmengen zaehlen nur wirksame Lieferscheine", () => {
   it("DRAFT-Duplikat eines Lieferscheins zaehlt nicht mit; erst nach CREATED sinkt die Restmenge", async () => {
-    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const invoice = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [lineA] }, { now: FIX_DATE });
     const invLine = (await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { lines: true } })).lines[0]!;
 
     // 4 von 10 liefern -> DN1 CREATED, Rest 6
@@ -387,6 +387,10 @@ describe("Fix-Runde 1 -- F3: Rechnungs-Duplikat vollstaendig", () => {
         type: "INVOICE",
         taxScheme: "REGULAR",
         currency: "EUR",
+        documentDiscountPermille: 0,
+        documentDiscountCents: 0,
+        documentChargePermille: 0,
+        documentChargeCents: 0,
         lines: [lineA],
         headerText: "Kopftext Quelle",
         footerText: "Fusstext Quelle",

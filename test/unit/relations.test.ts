@@ -17,7 +17,7 @@ describe("relations", () => {
     let orgBId = "";
     let customerAId = "";
     let customerBId = "";
-    const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0 };
+    const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
     beforeAll(async () => {
       const orgA = await dbInternal.organization.create({
@@ -33,8 +33,8 @@ describe("relations", () => {
     });
 
     it("linkDocuments wirft, wenn der referenzierte Beleg zu einer anderen Org gehoert", async () => {
-      const invA = await createDraftInvoice(orgAId, { customerId: customerAId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [line], deliveryDate: new Date() });
-      const invB = await createDraftInvoice(orgBId, { customerId: customerBId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [line], deliveryDate: new Date() });
+      const invA = await createDraftInvoice(orgAId, { customerId: customerAId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [line], deliveryDate: new Date() });
+      const invB = await createDraftInvoice(orgBId, { customerId: customerBId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [line], deliveryDate: new Date() });
 
       await expect(
         dbInternal.$transaction((tx) =>
@@ -44,8 +44,8 @@ describe("relations", () => {
     });
 
     it("listRelations liefert keine Relation einer fremden Org", async () => {
-      const invA1 = await createDraftInvoice(orgAId, { customerId: customerAId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [line], deliveryDate: new Date() });
-      const invA2 = await createDraftInvoice(orgAId, { customerId: customerAId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", lines: [line], deliveryDate: new Date() });
+      const invA1 = await createDraftInvoice(orgAId, { customerId: customerAId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [line], deliveryDate: new Date() });
+      const invA2 = await createDraftInvoice(orgAId, { customerId: customerAId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [line], deliveryDate: new Date() });
       await dbInternal.$transaction((tx) =>
         linkDocuments(tx, { orgId: orgAId, fromType: "INVOICE", fromId: invA1.id, toType: "INVOICE", toId: invA2.id, relationType: "CORRECTS" }),
       );

@@ -6,9 +6,10 @@ const TABS = [
   { href: "/einstellungen/vorlagen", key: "vorlagen", label: "Textvorlagen" },
   { href: "/einstellungen/textvorlagen", key: "textvorlagen", label: "Dokumenttexte" },
   { href: "/einstellungen/dokumente", key: "dokumente", label: "Dokumente" },
+  { href: "/einstellungen/zahlungsmethoden", key: "zahlungsmethoden", label: "Zahlungsmethoden" },
 ] as const;
 
-export function SettingsTabs({ active }: { active: "stammdaten" | "email" | "vorlagen" | "textvorlagen" | "dokumente" }) {
+export function SettingsTabs({ active }: { active: "stammdaten" | "email" | "vorlagen" | "textvorlagen" | "dokumente" | "zahlungsmethoden" }) {
   return (
     <nav className="flex gap-4 border-b border-slate-200 text-sm">
       {TABS.map((t) => (

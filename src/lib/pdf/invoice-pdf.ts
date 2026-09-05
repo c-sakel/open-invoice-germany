@@ -99,9 +99,19 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
       doc.text(`${line.taxRate}%`, left + 386, y, { width: 35, align: "right" });
       doc.text(formatCents(line.lineNetCents, cur), left + 425, y, { width: 70, align: "right" });
       y += h;
+      // Rabattzeile unter der Position (BG-27), z. B. "abzgl. 10 % Rabatt −12,00 €".
+      if (line.discountCents) {
+        const pct = line.discountPermille ? ` ${(line.discountPermille / 10).toFixed(2).replace(/\.00$/, "")} %` : "";
+        doc.fontSize(8).fillColor("#555");
+        doc.text(`abzgl.${pct} Rabatt`, left + 36, y, { width: 220 });
+        doc.text(`−${formatCents(Math.abs(line.discountCents), cur)}`, left + 425, y, { width: 70, align: "right" });
+        doc.fillColor("#000").fontSize(9);
+        y += 13;
+      }
     });
 
-    // Summen
+    // Summen: Zwischensumme netto / Rabatt / Aufschlag (je vor der Steuer),
+    // dann Steuersätze und Gesamtbetrag.
     y += 10;
     doc.moveTo(left + 300, y).lineTo(right, y).strokeColor("#ccc").stroke();
     y += 6;
@@ -111,6 +121,20 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
       doc.text(value, left + 425, y, { width: 70, align: "right" });
       y += 16;
     };
+    const lineTotal = data.lineTotalCents ?? data.netTotalCents;
+    const allowanceTotal = data.allowanceTotalCents ?? 0;
+    const chargeTotal = data.chargeTotalCents ?? 0;
+    // Gutschriften spiegeln die Betraege (negativ, Bestandskonvention). Der Block wird
+    // vorzeichenrichtig ausgegeben (Zwischensumme -100,00 / Rabatt +10,00 / Netto -90,00),
+    // nur die Sichtbarkeit prueft den Betrag.
+    if (allowanceTotal !== 0 || chargeTotal !== 0) {
+      sumRow("Zwischensumme netto", formatCents(lineTotal, cur));
+      if (allowanceTotal !== 0) sumRow("abzgl. Rabatt", formatCents(-allowanceTotal, cur));
+      if (chargeTotal !== 0) {
+        const chargeReason = data.documentCharges?.[0]?.reason;
+        sumRow(chargeReason ? `zzgl. Aufschlag (${chargeReason})` : "zzgl. Aufschlag", formatCents(chargeTotal, cur));
+      }
+    }
     sumRow("Nettobetrag", formatCents(data.netTotalCents, cur));
     for (const t of data.taxSubtotals) {
       if (t.taxCents > 0) sumRow(`zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
@@ -125,11 +149,17 @@ export function renderInvoicePdf(data: EInvoiceData): Promise<Buffer> {
       y = doc.y;
     }
 
-    // Pflichthinweise / Zahlungsbedingungen
+    // Pflichthinweise / Zahlungsbedingungen (inkl. Skonto-Absatz aus paymentTermsText,
+    // siehe skonto.ts — Menschentext; die #SKONTO#-Syntax bleibt dem XML vorbehalten)
+    // und Zahlungsmethoden-Text (invoiceText) aus dem Snapshot.
     y += 16;
     doc.fontSize(9).fillColor("#333");
     if (data.notes) doc.text(data.notes, left, y, { width: right - left });
-    if (data.paymentTerms) doc.moveDown(0.4).text(data.paymentTerms, { width: right - left });
+    // Fix-Runde 1 (Befund C): paymentTermsHuman traegt bei Skonto den Klartext ohne
+    // #SKONTO#-Tags; ohne Skonto identisch zu paymentTerms (Alt-Belege unveraendert).
+    const paymentTermsHuman = data.paymentTermsHuman ?? data.paymentTerms;
+    if (paymentTermsHuman) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
+    if (data.paymentMethodText) doc.moveDown(0.4).text(data.paymentMethodText, { width: right - left });
 
     // Fußzeile: Aussteller-Pflichtangaben
     const footY = 760;

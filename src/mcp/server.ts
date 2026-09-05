@@ -28,6 +28,7 @@ import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
+import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { createDunning, DunningError } from "@/domain/dunning/create";
 import { createRecurring, RecurringError } from "@/domain/recurring/create";
 import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
@@ -97,6 +98,16 @@ async function resolveCustomer(orgId: string, ref: string) {
   throw new Error(`Kein Kunde "${ref}" gefunden. Lege ihn zuerst mit upsert_customer an (Name + Anschrift).`);
 }
 
+async function resolvePaymentMethod(orgId: string, ref: string) {
+  const byCode = await dbInternal.paymentMethod.findFirst({ where: { orgId, code: ref.trim().toUpperCase() } });
+  if (byCode) return byCode;
+  const all = await dbInternal.paymentMethod.findMany({ where: { orgId } });
+  const lower = ref.trim().toLowerCase();
+  const match = all.find((m) => m.name.toLowerCase() === lower);
+  if (match) return match;
+  throw new Error(`Keine Zahlungsmethode "${ref}" gefunden. Mit list_payment_methods die verfügbaren Codes/Namen anzeigen.`);
+}
+
 async function resolveInvoice(orgId: string, ref: string) {
   const inv = await dbInternal.invoice.findFirst({ where: { orgId, OR: [{ id: ref }, { number: ref }] } });
   if (!inv) throw new Error(`Keine Rechnung "${ref}" gefunden (weder als ID noch als Nummer).`);
@@ -115,10 +126,19 @@ async function resolveDeliveryNote(orgId: string, ref: string) {
   return n;
 }
 
-/** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). */
-async function buildSimpleLines(
+/** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). Exportiert für Unit-Tests. */
+export async function buildSimpleLines(
   orgId: string,
-  inputLines: { description: string; quantity: number; unitPriceEuro?: number; productName?: string; unit?: string; taxRatePercent?: number }[],
+  inputLines: {
+    description: string;
+    quantity: number;
+    unitPriceEuro?: number;
+    productName?: string;
+    unit?: string;
+    taxRatePercent?: number;
+    discountPercent?: number;
+    discountAmount?: number;
+  }[],
 ) {
   const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
   return inputLines.map((l, idx) => {
@@ -142,7 +162,8 @@ async function buildSimpleLines(
       unitNetPriceCents: euroToCents(unitPriceEuro),
       taxRate: taxRate ?? 19,
       taxCategory: "S",
-      discountPermille: 0,
+      discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
+      discountCents: l.discountAmount ? euroToCents(l.discountAmount) : 0,
     };
   });
 }
@@ -278,6 +299,7 @@ server.registerTool(
       contactName: z.string().optional(),
       leitwegId: z.string().optional().describe("Leitweg-ID für Behörden (B2G)"),
       defaultPaymentTermsDays: z.number().int().min(0).max(365).default(14),
+      defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
       notes: z.string().optional(),
     },
   },
@@ -285,6 +307,7 @@ server.registerTool(
     try {
       const org = await requireOrg();
       const v = customerSchema.parse({ ...args, email: args.email ?? "" });
+      const defaultPaymentMethod = args.defaultPaymentMethod ? await resolvePaymentMethod(org.id, args.defaultPaymentMethod) : null;
       const data = {
         type: v.type,
         name: v.name,
@@ -297,6 +320,7 @@ server.registerTool(
         vatId: v.vatId ?? null,
         leitwegId: v.leitwegId ?? null,
         defaultPaymentTermsDays: v.defaultPaymentTermsDays,
+        defaultPaymentMethodId: defaultPaymentMethod?.id,
         notes: v.notes ?? null,
       };
       const existing = (await dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false } })).find(
@@ -390,6 +414,7 @@ server.registerTool(
             unit: z.string().optional(),
             taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
             discountPercent: z.number().min(0).max(100).optional(),
+            discountAmount: z.number().min(0).optional().describe("Zusaetzlicher Festbetragsrabatt je Position in Euro"),
           }),
         )
         .min(1),
@@ -398,6 +423,16 @@ server.registerTool(
       dueDate: z.string().optional(),
       notes: z.string().optional(),
       paymentTerms: z.string().optional(),
+      documentDiscountPercent: z.number().min(0).max(100).optional().describe("Belegrabatt in Prozent (auf alle Steuersaetze proportional verteilt)"),
+      documentDiscountEuro: z.number().min(0).optional().describe("Zusaetzlicher Belegrabatt als Festbetrag in Euro"),
+      documentChargePercent: z.number().min(0).max(100).optional().describe("Belegaufschlag in Prozent (nach Rabatt berechnet)"),
+      documentChargeEuro: z.number().min(0).optional().describe("Zusaetzlicher Belegaufschlag als Festbetrag in Euro"),
+      documentChargeReason: z.string().max(500).optional(),
+      skonto1Percent: z.number().min(0).max(100).optional().describe("1. Skontosatz in Prozent"),
+      skonto1Days: z.number().int().min(1).max(365).optional().describe("1. Skontofrist in Tagen"),
+      skonto2Percent: z.number().min(0).max(100).optional().describe("2. Skontosatz in Prozent (nur zusammen mit Skonto 1, laengere Frist)"),
+      skonto2Days: z.number().int().min(1).max(365).optional(),
+      paymentMethod: z.string().optional().describe("Name oder Code einer Zahlungsmethode (Default: Kunden-Standard)"),
     },
   },
   async (args): Promise<Result> => {
@@ -431,11 +466,13 @@ server.registerTool(
           taxRate: isRegular ? (taxRatePercent ?? 19) : 0,
           taxCategory: category,
           discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
+          discountCents: l.discountAmount ? euroToCents(l.discountAmount) : 0,
         };
       });
 
       const notice = SCHEME_NOTICE[scheme];
       const notes = notice ? `${notice}${args.notes ? " — " + args.notes : ""}` : args.notes;
+      const paymentMethod = args.paymentMethod ? await resolvePaymentMethod(org.id, args.paymentMethod) : null;
 
       const input = createInvoiceSchema.parse({
         customerId: customer.id,
@@ -446,6 +483,16 @@ server.registerTool(
         dueDate: parseDateInput(args.dueDate),
         notes,
         paymentTerms: args.paymentTerms,
+        documentDiscountPermille: args.documentDiscountPercent ? Math.round(args.documentDiscountPercent * 10) : undefined,
+        documentDiscountCents: args.documentDiscountEuro ? euroToCents(args.documentDiscountEuro) : undefined,
+        documentChargePermille: args.documentChargePercent ? Math.round(args.documentChargePercent * 10) : undefined,
+        documentChargeCents: args.documentChargeEuro ? euroToCents(args.documentChargeEuro) : undefined,
+        documentChargeReason: args.documentChargeReason,
+        skonto1Permille: args.skonto1Percent ? Math.round(args.skonto1Percent * 10) : undefined,
+        skonto1Days: args.skonto1Days,
+        skonto2Permille: args.skonto2Percent ? Math.round(args.skonto2Percent * 10) : undefined,
+        skonto2Days: args.skonto2Days,
+        paymentMethodId: paymentMethod?.id,
         lines,
       });
       const invoice = await createDraftInvoice(org.id, input);
@@ -639,6 +686,8 @@ const docLineSchema = z.object({
   productName: z.string().optional(),
   unit: z.string().optional(),
   taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+  discountPercent: z.number().min(0).max(100).optional().describe("Positionsrabatt in Prozent"),
+  discountAmount: z.number().min(0).optional().describe("Zusätzlicher Festbetragsrabatt je Position in Euro"),
 });
 
 // ── create_document ─────────────────────────────────────────────────────────
@@ -654,6 +703,11 @@ server.registerTool(
       lines: z.array(docLineSchema).min(1),
       validUntil: z.string().optional().describe("Gültig bis YYYY-MM-DD (für Angebote)"),
       notes: z.string().optional(),
+      documentDiscountPercent: z.number().min(0).max(100).optional().describe("Belegrabatt in Prozent (auf alle Steuersaetze proportional verteilt)"),
+      documentDiscountEuro: z.number().min(0).optional().describe("Zusaetzlicher Belegrabatt als Festbetrag in Euro"),
+      documentChargePercent: z.number().min(0).max(100).optional().describe("Belegaufschlag in Prozent (nach Rabatt berechnet)"),
+      documentChargeEuro: z.number().min(0).optional().describe("Zusaetzlicher Belegaufschlag als Festbetrag in Euro"),
+      documentChargeReason: z.string().max(500).optional(),
     },
   },
   async (args): Promise<Result> => {
@@ -668,6 +722,11 @@ server.registerTool(
         currency: "EUR",
         validUntil: parseDateInput(args.validUntil),
         notes: args.notes,
+        documentDiscountPermille: args.documentDiscountPercent ? Math.round(args.documentDiscountPercent * 10) : undefined,
+        documentDiscountCents: args.documentDiscountEuro ? euroToCents(args.documentDiscountEuro) : undefined,
+        documentChargePermille: args.documentChargePercent ? Math.round(args.documentChargePercent * 10) : undefined,
+        documentChargeCents: args.documentChargeEuro ? euroToCents(args.documentChargeEuro) : undefined,
+        documentChargeReason: args.documentChargeReason,
         lines,
       });
       const doc = await createBusinessDocument(org.id, input);
@@ -918,26 +977,75 @@ server.registerTool(
   "record_payment",
   {
     title: "Zahlung erfassen",
-    description: "Erfasst einen Zahlungseingang auf eine festgeschriebene Rechnung und aktualisiert offenen Betrag + Status (bezahlt/teilbezahlt).",
+    description:
+      "Erfasst einen Zahlungseingang auf eine festgeschriebene Rechnung und aktualisiert offenen Betrag + Status (bezahlt/teilbezahlt). " +
+      "Faellt die Zahlung in eine Skontofrist der Rechnung, wird ein Vorschlag zurueckgegeben; mit applySkonto=true wird der verbleibende " +
+      "Rest sofort als zweite Zahlung (Skontoabzug) gebucht.",
     inputSchema: {
       invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
       amountEuro: z.number().describe("Gezahlter Betrag in Euro"),
+      paidAt: z.string().optional().describe("Zahlungsdatum YYYY-MM-DD oder 'heute' (Default: heute)"),
       method: PaymentMethod.default("TRANSFER"),
       reference: z.string().optional(),
+      applySkonto: z.boolean().default(false).describe("Erkannten Skontoabzug sofort als zweite Zahlung buchen"),
     },
   },
   async (args): Promise<Result> => {
     try {
       const org = await requireOrg();
       const inv = await resolveInvoice(org.id, args.invoice);
-      const updated = await recordPayment(
+      const result = await recordPayment(
         inv.id,
-        recordPaymentSchema.parse({ amountCents: euroToCents(args.amountEuro), method: args.method, reference: args.reference }),
+        recordPaymentSchema.parse({
+          amountCents: euroToCents(args.amountEuro),
+          paidAt: parseDateInput(args.paidAt),
+          method: args.method,
+          reference: args.reference,
+          applySkonto: args.applySkonto,
+        }),
       );
+      const updated = result.payment;
       const open = updated.grossTotalCents - updated.paidAmountCents;
-      return ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.`);
+      const skontoNote = result.skontoPayment
+        ? ` Skontoabzug ${formatCents(result.skontoPayment.amountCents)} automatisch gebucht — Rechnung vollstaendig bezahlt.`
+        : result.skontoSuggestion
+          ? ` Skonto moeglich bis ${result.skontoSuggestion.dueDate.toISOString().slice(0, 10)} (${formatCents(result.skontoSuggestion.restCents)}) — mit applySkonto=true buchen.`
+          : "";
+      return ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}`);
     } catch (e) {
       if (e instanceof PaymentError) return fail(e.message);
+      return fail(`Fehler: ${(e as Error).message}`);
+    }
+  },
+);
+
+// ── list_payment_methods ────────────────────────────────────────────────────
+server.registerTool(
+  "list_payment_methods",
+  {
+    title: "Zahlungsmethoden auflisten",
+    description: "Listet die Zahlungsmethoden der Organisation (Code, Name, Zahlungsziel, aktiv/System) — nuetzlich, um Codes fuer create_invoice/record_payment nachzuschlagen.",
+    inputSchema: {},
+  },
+  async (): Promise<Result> => {
+    try {
+      const org = await requireOrg();
+      const methods = await listPaymentMethods(org.id);
+      return ok(
+        JSON.stringify(
+          methods.map((m) => ({
+            id: m.id,
+            code: m.code,
+            name: m.name,
+            paymentTermsDays: m.paymentTermsDays,
+            isSystem: m.isSystem,
+            isActive: m.isActive,
+          })),
+          null,
+          2,
+        ),
+      );
+    } catch (e) {
       return fail(`Fehler: ${(e as Error).message}`);
     }
   },
@@ -1216,7 +1324,11 @@ async function main() {
   console.error("[open-invoice-germany] MCP-Server bereit (stdio).");
 }
 
-main().catch((e) => {
-  console.error("[open-invoice-germany] Fehler:", e);
-  process.exit(1);
-});
+// Nur starten, wenn direkt ausgeführt (nicht beim Import in Unit-Tests).
+const isEntrypoint = process.argv[1] && import.meta.url === `file://${path.resolve(process.argv[1])}`;
+if (isEntrypoint) {
+  main().catch((e) => {
+    console.error("[open-invoice-germany] Fehler:", e);
+    process.exit(1);
+  });
+}

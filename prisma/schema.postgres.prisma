@@ -140,44 +140,51 @@ model NumberRange {
 /// Geschäftsdokument ohne Beleg-Charakter (Angebot/Auftragsbestätigung/Proforma).
 /// KEIN GoBD-Beleg, frei editier-/löschbar. Tax-Belege sind ausschließlich Invoice.
 model Quote {
-  id                   String           @id @default(cuid())
-  orgId                String
-  org                  Organization     @relation(fields: [orgId], references: [id])
-  customerId           String
-  customer             Customer         @relation(fields: [customerId], references: [id])
-  kind                 String           @default("ANGEBOT") // ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
-  number               String?
-  status               String           @default("DRAFT") // DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED | CANCELLED
-  issueDate            DateTime         @default(now())
-  validUntil           DateTime?
-  currency             String           @default("EUR")
-  taxScheme            String           @default("REGULAR")
-  subject              String? // Betreffzeile
-  notes                String?
-  internalNotes        String? // Nur intern sichtbar — nie in PDF oder Mails
-  headerText           String?
-  footerText           String?
-  deliveryTerms        String?
-  paymentTerms         String?
-  customerReference    String? // Kundenreferenz/Bestellnummer des Kunden
-  contactPersonId      String?
-  contactPerson        ContactPerson?   @relation(fields: [contactPersonId], references: [id], onDelete: SetNull)
-  billingAddressId     String?
-  billingAddress       CustomerAddress? @relation(fields: [billingAddressId], references: [id], onDelete: SetNull)
-  sellerSnapshotJson   String? // Snapshot zum Erstellungszeitpunkt (Phase 0), siehe Invoice
-  buyerSnapshotJson    String?
-  snapshotSource       String? // CREATE | SENT | MIGRATION
-  snapshotAt           DateTime?
-  netTotalCents        Int              @default(0)
-  taxTotalCents        Int              @default(0)
-  grossTotalCents      Int              @default(0)
-  convertedToInvoiceId String?
-  sentAt               DateTime?
-  decidedAt            DateTime? // Zeitpunkt von ACCEPTED/DECLINED
-  decisionNote         String?
-  archivedAt           DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  id                       String           @id @default(cuid())
+  orgId                    String
+  org                      Organization     @relation(fields: [orgId], references: [id])
+  customerId               String
+  customer                 Customer         @relation(fields: [customerId], references: [id])
+  kind                     String           @default("ANGEBOT") // ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
+  number                   String?
+  status                   String           @default("DRAFT") // DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED | CANCELLED
+  issueDate                DateTime         @default(now())
+  validUntil               DateTime?
+  currency                 String           @default("EUR")
+  taxScheme                String           @default("REGULAR")
+  subject                  String? // Betreffzeile
+  notes                    String?
+  internalNotes            String? // Nur intern sichtbar — nie in PDF oder Mails
+  headerText               String?
+  footerText               String?
+  deliveryTerms            String?
+  paymentTerms             String?
+  customerReference        String? // Kundenreferenz/Bestellnummer des Kunden
+  contactPersonId          String?
+  contactPerson            ContactPerson?   @relation(fields: [contactPersonId], references: [id], onDelete: SetNull)
+  billingAddressId         String?
+  billingAddress           CustomerAddress? @relation(fields: [billingAddressId], references: [id], onDelete: SetNull)
+  // Beleg-Rabatt/-Aufschlag (Phase 4a) — Promille 0..1000, Cents Festbetrag; proportional
+  // je Steuersatz-Bucket verteilt (src/lib/pricing/allocate.ts).
+  documentDiscountPermille Int              @default(0)
+  documentDiscountCents    Int              @default(0)
+  documentChargePermille   Int              @default(0)
+  documentChargeCents      Int              @default(0)
+  documentChargeReason     String?
+  sellerSnapshotJson       String? // Snapshot zum Erstellungszeitpunkt (Phase 0), siehe Invoice
+  buyerSnapshotJson        String?
+  snapshotSource           String? // CREATE | SENT | MIGRATION
+  snapshotAt               DateTime?
+  netTotalCents            Int              @default(0)
+  taxTotalCents            Int              @default(0)
+  grossTotalCents          Int              @default(0)
+  convertedToInvoiceId     String?
+  sentAt                   DateTime?
+  decidedAt                DateTime? // Zeitpunkt von ACCEPTED/DECLINED
+  decisionNote             String?
+  archivedAt               DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
 
   lines      QuoteLine[]
   shareLinks QuoteShareLink[]
@@ -200,6 +207,7 @@ model QuoteLine {
   taxRate           Int
   taxCategory       String @default("S")
   discountPermille  Int    @default(0) // 0..1000 (= 0..100 %)
+  discountCents     Int    @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
   lineNetCents      Int
 
   @@index([quoteId])
@@ -207,49 +215,67 @@ model QuoteLine {
 
 /// Rechnung — GoBD-relevanter Beleg. Nach Festschreibung append-only.
 model Invoice {
-  id                    String            @id @default(cuid())
-  orgId                 String
-  org                   Organization      @relation(fields: [orgId], references: [id])
-  customerId            String
-  customer              Customer          @relation(fields: [customerId], references: [id])
-  number                String?           @unique // NULL bis Festschreibung
-  status                String            @default("DRAFT") // DRAFT | FINALIZED | SENT | PAID | PARTIALLY_PAID | CANCELLED
-  type                  String            @default("INVOICE") // INVOICE | CREDIT_NOTE | CORRECTION
-  taxScheme             String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG
-  currency              String            @default("EUR")
-  issueDate             DateTime          @default(now())
-  deliveryDate          DateTime?
-  deliveryStart         DateTime?
-  deliveryEnd           DateTime?
-  dueDate               DateTime?
-  buyerReference        String? // BT-10 / Leitweg-ID (B2G)
-  notes                 String?
-  paymentTerms          String? // Skonto-/Zahlungsbedingungen (Freitext, §14 Abs.4 Nr.7)
-  internalNotes         String? // Nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails
-  headerText            String?
-  footerText            String?
+  id                        String            @id @default(cuid())
+  orgId                     String
+  org                       Organization      @relation(fields: [orgId], references: [id])
+  customerId                String
+  customer                  Customer          @relation(fields: [customerId], references: [id])
+  number                    String?           @unique // NULL bis Festschreibung
+  status                    String            @default("DRAFT") // DRAFT | FINALIZED | SENT | PAID | PARTIALLY_PAID | CANCELLED
+  type                      String            @default("INVOICE") // INVOICE | CREDIT_NOTE | CORRECTION
+  taxScheme                 String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG
+  currency                  String            @default("EUR")
+  issueDate                 DateTime          @default(now())
+  deliveryDate              DateTime?
+  deliveryStart             DateTime?
+  deliveryEnd               DateTime?
+  dueDate                   DateTime?
+  buyerReference            String? // BT-10 / Leitweg-ID (B2G)
+  notes                     String?
+  paymentTerms              String? // Skonto-/Zahlungsbedingungen (Freitext, §14 Abs.4 Nr.7)
+  internalNotes             String? // Nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails
+  headerText                String?
+  footerText                String?
+  // Beleg-Rabatt/-Aufschlag (Phase 4a) — Promille 0..1000, Cents Festbetrag; proportional
+  // je Steuersatz-Bucket verteilt (src/lib/pricing/allocate.ts).
+  documentDiscountPermille  Int               @default(0)
+  documentDiscountCents     Int               @default(0)
+  documentChargePermille    Int               @default(0)
+  documentChargeCents       Int               @default(0)
+  documentChargeReason      String?
+  // Skonto-Konditionen (Phase 4a) — bis zu zwei Stufen (src/lib/pricing/skonto.ts).
+  skonto1Permille           Int?
+  skonto1Days               Int?
+  skonto2Permille           Int?
+  skonto2Days               Int?
+  paymentMethodId           String?
+  paymentMethod             PaymentMethod?    @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  // Snapshot der gewaehlten Zahlungsmethode zum Festschreibungszeitpunkt (Phase 4a),
+  // { code, name, invoiceText, untdidCode, bankIban, bankBic, bankName }. NULL, wenn
+  // keine Zahlungsmethode gewaehlt war.
+  paymentMethodSnapshotJson String?
   // Snapshot der Parteien zum Festschreibungszeitpunkt (Phase 0). JSON-String, per Zod
   // gelesen (sellerSnapshotSchema/buyerSnapshotSchema). NULL bei Entwuerfen.
-  sellerSnapshotJson    String?
-  buyerSnapshotJson     String?
-  snapshotSource        String? // FINALIZE | CREATE | MIGRATION
-  snapshotAt            DateTime?
-  netTotalCents         Int               @default(0)
-  taxTotalCents         Int               @default(0)
-  grossTotalCents       Int               @default(0)
-  paidAmountCents       Int               @default(0)
-  taxBreakdownJson      String            @default("[]") // [{taxCategory,taxRate,netCents,taxCents}]
-  consumerRetentionHint Boolean           @default(false) // §14 Abs.4 Nr.9 / §14b Abs.1 S.5
-  reversedByInvoiceId   String? // Storno-Verknüpfung
-  correctsInvoiceId     String? // Korrekturrechnung-Verknüpfung (§31 Abs.5 UStDV)
-  recurringInvoiceId    String? // Herkunft: aus Abo/Dauerrechnung erzeugt
-  recurringInvoice      RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
-  xmlFormat             String? // XRECHNUNG | ZUGFERD
-  xmlHash               String?
-  pdfPath               String?
-  finalizedAt           DateTime?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  sellerSnapshotJson        String?
+  buyerSnapshotJson         String?
+  snapshotSource            String? // FINALIZE | CREATE | MIGRATION
+  snapshotAt                DateTime?
+  netTotalCents             Int               @default(0)
+  taxTotalCents             Int               @default(0)
+  grossTotalCents           Int               @default(0)
+  paidAmountCents           Int               @default(0)
+  taxBreakdownJson          String            @default("[]") // [{taxCategory,taxRate,netCents,taxCents}]
+  consumerRetentionHint     Boolean           @default(false) // §14 Abs.4 Nr.9 / §14b Abs.1 S.5
+  reversedByInvoiceId       String? // Storno-Verknüpfung
+  correctsInvoiceId         String? // Korrekturrechnung-Verknüpfung (§31 Abs.5 UStDV)
+  recurringInvoiceId        String? // Herkunft: aus Abo/Dauerrechnung erzeugt
+  recurringInvoice          RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
+  xmlFormat                 String? // XRECHNUNG | ZUGFERD
+  xmlHash                   String?
+  pdfPath                   String?
+  finalizedAt               DateTime?
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   lines    InvoiceLine[]
   payments Payment[]
@@ -258,6 +284,7 @@ model Invoice {
   @@index([orgId])
   @@index([customerId])
   @@index([recurringInvoiceId])
+  @@index([paymentMethodId])
 }
 
 model InvoiceLine {
@@ -273,21 +300,24 @@ model InvoiceLine {
   taxRate           Int
   taxCategory       String  @default("S")
   discountPermille  Int     @default(0)
+  discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
   lineNetCents      Int
 
   @@index([invoiceId])
 }
 
 model Payment {
-  id          String   @id @default(cuid())
-  invoiceId   String
-  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  amountCents Int
-  paidAt      DateTime @default(now())
-  method      String   @default("TRANSFER") // TRANSFER | CASH | CARD | SEPA
-  reference   String?
-  isSkonto    Boolean  @default(false) // §17-Fall: keine Rechnungsberichtigung nötig
-  createdAt   DateTime @default(now())
+  id                 String   @id @default(cuid())
+  invoiceId          String
+  invoice            Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amountCents        Int
+  paidAt             DateTime @default(now())
+  method             String   @default("TRANSFER") // TRANSFER | CASH | CARD | SEPA
+  reference          String?
+  isSkonto           Boolean  @default(false) // §17-Fall: keine Rechnungsberichtigung nötig
+  // Bei isSkonto=true: die Zahlung, deren Skontoabzug hierdurch verbucht wird.
+  skontoForPaymentId String?
+  createdAt          DateTime @default(now())
 
   @@index([invoiceId])
 }
@@ -588,6 +618,9 @@ model PaymentMethod {
   paymentTermsDays Int?
   invoiceText      String?
   bankAccountRef   String?
+  bankIban         String?
+  bankBic          String?
+  bankName         String?
   untdidCode       String       @default("ZZZ") // UNTDID 4461 (BT-81)
   isSystem         Boolean      @default(false)
   isActive         Boolean      @default(true)
@@ -596,6 +629,7 @@ model PaymentMethod {
   updatedAt        DateTime     @updatedAt
 
   customers Customer[]
+  invoices  Invoice[]
 
   @@unique([orgId, code])
   @@index([orgId])

@@ -53,6 +53,14 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
         notes: `Storno zu Rechnung ${original.number}.${original.notes ? " " + original.notes : ""}`,
         paymentTerms: original.paymentTerms,
         correctsInvoiceId: original.id,
+        // Beleg-Rabatt/-Aufschlag unveraendert (positiv) uebernehmen — applyDocumentAdjustments
+        // ist vorzeichen-invariant und rechnet bei ausschliesslich negativen Zeilen-Buckets auf
+        // den negierten (positiven) Betraegen wie im Original (Ruling Task-1-Review).
+        documentDiscountPermille: original.documentDiscountPermille,
+        documentDiscountCents: original.documentDiscountCents,
+        documentChargePermille: original.documentChargePermille,
+        documentChargeCents: original.documentChargeCents,
+        documentChargeReason: original.documentChargeReason,
         // Betragsspiegelbild: negierte Beträge, damit Original + Storno = 0 ergibt.
         lines: {
           create: original.lines.map((l) => ({
@@ -65,6 +73,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
             taxRate: l.taxRate,
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
+            discountCents: l.discountCents,
             lineNetCents: -l.lineNetCents,
           })),
         },

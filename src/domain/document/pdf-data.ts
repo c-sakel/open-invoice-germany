@@ -8,7 +8,7 @@ import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
-import type { EInvoiceData } from "@/lib/einvoice/types";
+import type { EInvoiceData, EInvoiceDocumentAllowanceCharge } from "@/lib/einvoice/types";
 
 const PROFORMA_NOTE = "Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG. Berechtigt nicht zum Vorsteuerabzug.";
 
@@ -24,6 +24,12 @@ interface DocInput {
   id?: string;
   sellerSnapshotJson?: string | null;
   buyerSnapshotJson?: string | null;
+  // K1 — Beleg-Rabatt/-Aufschlag (Phase 4a), analog zum Rechnungs-Mapper.
+  documentDiscountPermille?: number;
+  documentDiscountCents?: number;
+  documentChargePermille?: number;
+  documentChargeCents?: number;
+  documentChargeReason?: string | null;
   org: {
     legalName: string;
     addressLine1: string;
@@ -66,7 +72,32 @@ interface DocInput {
 export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
   const totals = computeTaxBreakdown(
     q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    {
+      discountPermille: q.documentDiscountPermille,
+      discountCents: q.documentDiscountCents,
+      chargePermille: q.documentChargePermille,
+      chargeCents: q.documentChargeCents,
+    },
   );
+  // K1 — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, analog buildEInvoiceData (mapper.ts).
+  const documentAllowances: EInvoiceDocumentAllowanceCharge[] = totals.breakdown
+    .filter((b) => b.allowanceCents !== 0)
+    .map((b) => ({
+      amountCents: Math.abs(b.allowanceCents),
+      baseCents: Math.abs(b.baseNetCents),
+      taxRate: b.taxRate,
+      taxCategory: b.taxCategory,
+      reason: "Rabatt",
+    }));
+  const documentCharges: EInvoiceDocumentAllowanceCharge[] = totals.breakdown
+    .filter((b) => b.chargeCents !== 0)
+    .map((b) => ({
+      amountCents: Math.abs(b.chargeCents),
+      baseCents: Math.abs(b.baseNetCents - b.allowanceCents),
+      taxRate: b.taxRate,
+      taxCategory: b.taxCategory,
+      reason: q.documentChargeReason || "Aufschlag",
+    }));
   const notes = q.kind === "PROFORMA" ? `${PROFORMA_NOTE}${q.notes ? " " + q.notes : ""}` : q.notes;
   const ctx = q.id ?? q.number ?? "unbekannt";
   const org = parseSellerSnapshot(q.sellerSnapshotJson, q.org, ctx);
@@ -143,6 +174,11 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    documentAllowances,
+    documentCharges,
+    lineTotalCents: totals.lineTotalCents,
+    allowanceTotalCents: totals.allowanceTotalCents,
+    chargeTotalCents: totals.chargeTotalCents,
     headerText,
     footerText,
   };

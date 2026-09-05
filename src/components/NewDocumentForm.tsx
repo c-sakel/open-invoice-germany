@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { computeLineNet } from "@/lib/pricing/line";
+import { applyDocumentAdjustments, type RateBucket } from "@/lib/pricing/allocate";
+import { PricingError } from "@/lib/pricing/errors";
 
 interface CustomerOption {
   id: string;
@@ -30,6 +33,8 @@ interface LineState {
   unit: string;
   price: string;
   taxRate: number;
+  discountPercent: string;
+  discountAmount: string;
 }
 
 export interface DocumentInitial {
@@ -49,6 +54,11 @@ export interface DocumentInitial {
   paymentTerms: string;
   notes: string;
   internalNotes: string;
+  documentDiscountPercent: string;
+  documentDiscountAmount: string;
+  documentChargePercent: string;
+  documentChargeAmount: string;
+  documentChargeReason: string;
   lines: LineState[];
 }
 
@@ -68,7 +78,17 @@ const SCHEME_CATEGORY_DOC: Record<string, string> = {
 };
 
 function emptyLine(): LineState {
-  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19 };
+  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19, discountPercent: "0", discountAmount: "0" };
+}
+
+function toCents(s: string): number {
+  return Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
+}
+function toMilli(s: string): number {
+  return Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
+}
+function toPermille(s: string): number {
+  return Math.max(0, Math.min(1000, Math.round((parseFloat(s.replace(",", ".")) || 0) * 10)));
 }
 
 export function NewDocumentForm({
@@ -102,6 +122,11 @@ export function NewDocumentForm({
   const [scheme, setScheme] = useState(initial?.taxScheme ?? "REGULAR");
   const [currency, setCurrency] = useState(initial?.currency ?? "EUR");
   const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
+  const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? "0");
+  const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "0");
+  const [documentChargePercent, setDocumentChargePercent] = useState(initial?.documentChargePercent ?? "0");
+  const [documentChargeAmount, setDocumentChargeAmount] = useState(initial?.documentChargeAmount ?? "0");
+  const [documentChargeReason, setDocumentChargeReason] = useState(initial?.documentChargeReason ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isRegular = scheme === "REGULAR";
@@ -124,9 +149,64 @@ export function NewDocumentForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, isEdit]);
 
-  const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
-  const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
-  const netCents = lines.reduce((sum, l) => sum + Math.round((toMilli(l.quantity) * toCents(l.price)) / 1000), 0);
+  const totals = useMemo(() => {
+    try {
+      const lineResults = lines.map((l) =>
+        computeLineNet({
+          quantityMilli: toMilli(l.quantity),
+          unitNetPriceCents: toCents(l.price),
+          discountPermille: toPermille(l.discountPercent),
+          discountCents: toCents(l.discountAmount),
+        }),
+      );
+      const netBeforeAdjustments = lineResults.reduce((s, r) => s + r.lineNetCents, 0);
+
+      const effCategory = SCHEME_CATEGORY_DOC[scheme] ?? "S";
+      const byRate = new Map<number, number>();
+      lines.forEach((l, i) => {
+        const rate = isRegular ? l.taxRate : 0;
+        byRate.set(rate, (byRate.get(rate) ?? 0) + lineResults[i].lineNetCents);
+      });
+      const buckets: RateBucket[] = [...byRate.entries()].map(([taxRate, netCents]) => ({
+        key: String(taxRate),
+        taxRate,
+        taxCategory: effCategory,
+        netCents,
+      }));
+
+      const adjusted = applyDocumentAdjustments(buckets, {
+        discountPermille: toPermille(documentDiscountPercent),
+        discountCents: toCents(documentDiscountAmount),
+        chargePermille: toPermille(documentChargePercent),
+        chargeCents: toCents(documentChargeAmount),
+      });
+
+      const netTotalCents = adjusted.reduce((s, b) => s + b.adjustedNetCents, 0);
+      const taxTotalCents = adjusted.reduce((s, b) => s + Math.round((b.adjustedNetCents * b.taxRate) / 100), 0);
+      const discountTotalCents = adjusted.reduce((s, b) => s + b.allowanceCents, 0);
+      const chargeTotalCents = adjusted.reduce((s, b) => s + b.chargeCents, 0);
+
+      return {
+        netBeforeAdjustments,
+        netTotalCents,
+        taxTotalCents,
+        grossTotalCents: netTotalCents + taxTotalCents,
+        discountTotalCents,
+        chargeTotalCents,
+        error: null as string | null,
+      };
+    } catch (e) {
+      return {
+        netBeforeAdjustments: 0,
+        netTotalCents: 0,
+        taxTotalCents: 0,
+        grossTotalCents: 0,
+        discountTotalCents: 0,
+        chargeTotalCents: 0,
+        error: e instanceof PricingError ? e.message : "Berechnung fehlgeschlagen.",
+      };
+    }
+  }, [lines, scheme, isRegular, documentDiscountPercent, documentDiscountAmount, documentChargePercent, documentChargeAmount]);
 
   const customerContacts = contacts.filter((c) => c.customerId === customerId);
   const customerAddresses = addresses.filter((a) => a.customerId === customerId);
@@ -151,7 +231,8 @@ export function NewDocumentForm({
       unitNetPriceCents: toCents(l.price),
       taxRate: isRegular ? l.taxRate : 0,
       taxCategory: SCHEME_CATEGORY_DOC[scheme] ?? "S",
-      discountPermille: 0,
+      discountPermille: toPermille(l.discountPercent),
+      discountCents: toCents(l.discountAmount),
     }));
     const notice = SCHEME_NOTICE_DOC[scheme];
     const finalNotes = notice ? `${notice}${notes ? " — " + notes : ""}` : notes || undefined;
@@ -168,6 +249,11 @@ export function NewDocumentForm({
       footerText: footerText || undefined,
       deliveryTerms: deliveryTerms || undefined,
       paymentTerms: paymentTerms || undefined,
+      documentDiscountPermille: toPermille(documentDiscountPercent),
+      documentDiscountCents: toCents(documentDiscountAmount),
+      documentChargePermille: toPermille(documentChargePercent),
+      documentChargeCents: toCents(documentChargeAmount),
+      documentChargeReason: documentChargeReason || undefined,
       notes: finalNotes,
       internalNotes: internalNotes || undefined,
       lines: linesBody,
@@ -296,7 +382,7 @@ export function NewDocumentForm({
         </div>
         {lines.map((line, i) => (
           <div key={i} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-white p-3">
-            <div className="col-span-12 flex flex-col gap-1 sm:col-span-5">
+            <div className="col-span-12 flex flex-col gap-1 sm:col-span-4">
               <input className={input} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
               {products.length > 0 && (
                 <select className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500" defaultValue="" onChange={(e) => applyProduct(i, e.target.value)}>
@@ -309,19 +395,57 @@ export function NewDocumentForm({
                 </select>
               )}
             </div>
-            <input className={`${input} col-span-4 sm:col-span-2`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
+            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
             <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
-            <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
-            <select className={`${input} col-span-8 sm:col-span-1`} value={isRegular ? line.taxRate : 0} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })} disabled={!isRegular}>
+            <input className={`${input} col-span-6 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
+            <select className={`${input} col-span-6 sm:col-span-1`} value={isRegular ? line.taxRate : 0} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })} disabled={!isRegular}>
               <option value={19}>19%</option>
               <option value={7}>7%</option>
               <option value={0}>0%</option>
             </select>
-            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
+            <input
+              className={`${input} col-span-6 sm:col-span-1`}
+              placeholder="Rabatt %"
+              title="Rabatt in Prozent"
+              value={line.discountPercent}
+              onChange={(e) => patchLine(i, { discountPercent: e.target.value })}
+            />
+            <input
+              className={`${input} col-span-6 sm:col-span-1`}
+              placeholder="Rabatt €"
+              title="Rabatt als Festbetrag in €"
+              value={line.discountAmount}
+              onChange={(e) => patchLine(i, { discountAmount: e.target.value })}
+            />
+            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-12 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
               ✕
             </button>
           </div>
         ))}
+      </div>
+
+      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2">
+        <h2 className="col-span-full font-semibold text-slate-900">Beleg-Rabatt / -Aufschlag</h2>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Rabatt %</span>
+          <input className={input} value={documentDiscountPercent} onChange={(e) => setDocumentDiscountPercent(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Rabatt € (zusätzlich)</span>
+          <input className={input} value={documentDiscountAmount} onChange={(e) => setDocumentDiscountAmount(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Aufschlag %</span>
+          <input className={input} value={documentChargePercent} onChange={(e) => setDocumentChargePercent(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Aufschlag € (zusätzlich)</span>
+          <input className={input} value={documentChargeAmount} onChange={(e) => setDocumentChargeAmount(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span className="font-medium text-slate-700">Grund für Aufschlag/Rabatt (optional)</span>
+          <input className={input} value={documentChargeReason} onChange={(e) => setDocumentChargeReason(e.target.value)} placeholder="z. B. Expresszuschlag" />
+        </label>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -357,10 +481,26 @@ export function NewDocumentForm({
         <textarea className={input} rows={2} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} />
       </label>
 
-      <div className="flex items-center justify-between border-t border-slate-200 pt-4">
-        <span className="text-sm text-slate-500">
-          Nettosumme: <span className="tabular font-medium text-slate-800">{(netCents / 100).toFixed(2)} {currency}</span>
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-4">
+        <div className="text-sm text-slate-500">
+          {totals.error ? (
+            <span className="text-rose-600">{totals.error}</span>
+          ) : (
+            <>
+              {(totals.discountTotalCents > 0 || totals.chargeTotalCents > 0) && (
+                <span>
+                  Netto vor Beleganpassung: <span className="tabular">{(totals.netBeforeAdjustments / 100).toFixed(2)} {currency}</span>
+                  {totals.discountTotalCents > 0 && <span> · Rabatt −{(totals.discountTotalCents / 100).toFixed(2)} {currency}</span>}
+                  {totals.chargeTotalCents > 0 && <span> · Aufschlag +{(totals.chargeTotalCents / 100).toFixed(2)} {currency}</span>}
+                  {" · "}
+                </span>
+              )}
+              Netto: <span className="tabular font-medium text-slate-800">{(totals.netTotalCents / 100).toFixed(2)} {currency}</span> · USt:{" "}
+              <span className="tabular font-medium text-slate-800">{(totals.taxTotalCents / 100).toFixed(2)} {currency}</span> · Brutto:{" "}
+              <span className="tabular font-semibold text-slate-900">{(totals.grossTotalCents / 100).toFixed(2)} {currency}</span>
+            </>
+          )}
+        </div>
         <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
           {busy ? "Speichern…" : isEdit ? "Änderungen speichern" : "Dokument anlegen"}
         </button>

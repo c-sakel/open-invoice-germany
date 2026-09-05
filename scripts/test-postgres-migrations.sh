@@ -132,7 +132,7 @@ CONVCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from \"DocumentRelation\" where \"relationType\"='CONVERTED_TO' and \"fromType\"='QUOTE'")
 [ "$CONVCOUNT" = "2" ] || fail "erwartet 2 CONVERTED_TO-Relationen (q1, q2), gefunden $CONVCOUNT"
 PM=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"PaymentMethod\" where \"orgId\"='org1'")
-[ "$PM" = "8" ] || fail "erwartet 8 Zahlungsmethoden, gefunden $PM"
+[ "$PM" = "9" ] || fail "erwartet 9 Zahlungsmethoden (Phase-4a-Backfill legt SKONTO an), gefunden $PM"
 DS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"DunningStage\" where \"orgId\"='org1'")
 [ "$DS" = "4" ] || fail "erwartet 4 Mahnstufen, gefunden $DS"
 ST=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"stageId\" from \"Dunning\" where id='dun1'")
