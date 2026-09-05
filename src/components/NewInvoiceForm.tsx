@@ -5,26 +5,38 @@ import { useRouter } from "next/navigation";
 import { computeLineNet } from "@/lib/pricing/line";
 import { applyDocumentAdjustments, type RateBucket } from "@/lib/pricing/allocate";
 import { PricingError } from "@/lib/pricing/errors";
+import { computeSubtotals } from "@/domain/document/lines";
+import { RichTextField } from "@/components/editor/RichTextField";
+import { ProductPicker, type ProductOption } from "@/components/editor/ProductPicker";
 
 interface CustomerOption {
   id: string;
   name: string;
   defaultPaymentMethodId: string | null;
 }
-interface ProductOption {
-  id: string;
-  name: string;
-  unit: string;
-  netPriceCents: number;
-  taxRate: number;
-}
 interface PaymentMethodOption {
   id: string;
   name: string;
   paymentTermsDays: number | null;
 }
+interface ContactOption {
+  id: string;
+  customerId: string;
+  label: string;
+}
+interface AddressOption {
+  id: string;
+  customerId: string;
+  label: string;
+}
+
+type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
+
 interface LineState {
+  lineType: LineType;
   description: string;
+  descriptionLong: string;
+  articleNumber: string;
   quantity: string;
   unit: string;
   price: string;
@@ -46,9 +58,15 @@ const SCHEME_CATEGORY: Record<string, string> = {
   DIFFERENZ: "S",
   DRITTLAND_LEISTUNG: "O",
 };
+const LINE_TYPE_LABEL: Record<LineType, string> = {
+  ITEM: "Position",
+  HEADING: "Überschrift",
+  TEXT: "Textblock",
+  SUBTOTAL: "Zwischensumme",
+};
 
 function emptyLine(): LineState {
-  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19, discountPercent: "0", discountAmount: "0" };
+  return { lineType: "ITEM", description: "", descriptionLong: "", articleNumber: "", quantity: "1", unit: "C62", price: "0", taxRate: 19, discountPercent: "0", discountAmount: "0" };
 }
 
 function toCents(s: string): number {
@@ -65,50 +83,114 @@ function toDays(s: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+export interface InvoiceInitial {
+  id: string;
+  customerId: string;
+  taxScheme: string;
+  currency: string;
+  subject: string;
+  orderNumber: string;
+  internalReference: string;
+  buyerReference: string;
+  contactPersonId: string;
+  billingAddressId: string;
+  shippingAddressId: string;
+  deliveryStart: string;
+  deliveryEnd: string;
+  deliveryDate: string;
+  dueDate: string;
+  notes: string;
+  internalNotes: string;
+  paymentTerms: string;
+  paymentMethodId: string;
+  documentDiscountPercent: string;
+  documentDiscountAmount: string;
+  documentChargePercent: string;
+  documentChargeAmount: string;
+  documentChargeReason: string;
+  skonto1Percent: string;
+  skonto1Days: string;
+  skonto2Percent: string;
+  skonto2Days: string;
+  lines: LineState[];
+}
+
 export function NewInvoiceForm({
   customers,
   products,
   paymentMethods = [],
+  contacts = [],
+  addresses = [],
+  initial,
 }: {
   customers: CustomerOption[];
   products: ProductOption[];
   paymentMethods?: PaymentMethodOption[];
+  contacts?: ContactOption[];
+  addresses?: AddressOption[];
+  initial?: InvoiceInitial;
 }) {
   const router = useRouter();
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
-  const [scheme, setScheme] = useState("REGULAR");
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [internalNotes, setInternalNotes] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("Zahlbar innerhalb von 14 Tagen ohne Abzug.");
-  const [currency, setCurrency] = useState("EUR");
-  const [paymentMethodId, setPaymentMethodId] = useState(customers[0]?.defaultPaymentMethodId ?? "");
-  const [lines, setLines] = useState<LineState[]>([emptyLine()]);
+  const isEdit = Boolean(initial);
+  const [customerId, setCustomerId] = useState(initial?.customerId ?? customers[0]?.id ?? "");
+  const [scheme, setScheme] = useState(initial?.taxScheme ?? "REGULAR");
+  const [subject, setSubject] = useState(initial?.subject ?? "");
+  const [orderNumber, setOrderNumber] = useState(initial?.orderNumber ?? "");
+  const [internalReference, setInternalReference] = useState(initial?.internalReference ?? "");
+  const [buyerReference, setBuyerReference] = useState(initial?.buyerReference ?? "");
+  const [contactPersonId, setContactPersonId] = useState(initial?.contactPersonId ?? "");
+  const [billingAddressId, setBillingAddressId] = useState(initial?.billingAddressId ?? "");
+  const [shippingAddressId, setShippingAddressId] = useState(initial?.shippingAddressId ?? "");
+  const [deliveryStart, setDeliveryStart] = useState(initial?.deliveryStart ?? "");
+  const [deliveryEnd, setDeliveryEnd] = useState(initial?.deliveryEnd ?? "");
+  const [deliveryDate, setDeliveryDate] = useState(initial?.deliveryDate ?? "");
+  const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [internalNotes, setInternalNotes] = useState(initial?.internalNotes ?? "");
+  const [paymentTerms, setPaymentTerms] = useState(initial?.paymentTerms ?? "Zahlbar innerhalb von 14 Tagen ohne Abzug.");
+  const [currency, setCurrency] = useState(initial?.currency ?? "EUR");
+  const [paymentMethodId, setPaymentMethodId] = useState(initial?.paymentMethodId ?? customers[0]?.defaultPaymentMethodId ?? "");
+  const [lines, setLines] = useState<LineState[]>(initial?.lines?.length ? initial.lines : [emptyLine()]);
 
-  // Belegrabatt/-aufschlag (Phase 4a)
-  const [documentDiscountPercent, setDocumentDiscountPercent] = useState("0");
-  const [documentDiscountAmount, setDocumentDiscountAmount] = useState("0");
-  const [documentChargePercent, setDocumentChargePercent] = useState("0");
-  const [documentChargeAmount, setDocumentChargeAmount] = useState("0");
-  const [documentChargeReason, setDocumentChargeReason] = useState("");
+  const [documentDiscountPercent, setDocumentDiscountPercent] = useState(initial?.documentDiscountPercent ?? "0");
+  const [documentDiscountAmount, setDocumentDiscountAmount] = useState(initial?.documentDiscountAmount ?? "0");
+  const [documentChargePercent, setDocumentChargePercent] = useState(initial?.documentChargePercent ?? "0");
+  const [documentChargeAmount, setDocumentChargeAmount] = useState(initial?.documentChargeAmount ?? "0");
+  const [documentChargeReason, setDocumentChargeReason] = useState(initial?.documentChargeReason ?? "");
 
-  // Skonto (bis zu zwei Ziele)
-  const [skonto1Percent, setSkonto1Percent] = useState("");
-  const [skonto1Days, setSkonto1Days] = useState("");
-  const [skonto2Percent, setSkonto2Percent] = useState("");
-  const [skonto2Days, setSkonto2Days] = useState("");
+  const [skonto1Percent, setSkonto1Percent] = useState(initial?.skonto1Percent ?? "");
+  const [skonto1Days, setSkonto1Days] = useState(initial?.skonto1Days ?? "");
+  const [skonto2Percent, setSkonto2Percent] = useState(initial?.skonto2Percent ?? "");
+  const [skonto2Days, setSkonto2Days] = useState(initial?.skonto2Days ?? "");
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const isRegular = scheme === "REGULAR";
   const selectedMethod = paymentMethods.find((m) => m.id === paymentMethodId);
+  const customerContacts = contacts.filter((c) => c.customerId === customerId);
+  const customerAddresses = addresses.filter((a) => a.customerId === customerId);
 
   function selectCustomer(id: string) {
     setCustomerId(id);
-    const c = customers.find((x) => x.id === id);
-    setPaymentMethodId(c?.defaultPaymentMethodId ?? "");
+    if (!isEdit) {
+      const c = customers.find((x) => x.id === id);
+      setPaymentMethodId(c?.defaultPaymentMethodId ?? "");
+    }
+    // Fix-Runde 1: Ansprechpartner/Adressen gehoeren zum ALTEN Kunden — beim
+    // Kundenwechsel zuruecksetzen, wenn sie nicht (mehr) zum neuen Kunden passen,
+    // sonst koennte ein fremder Ansprechpartner/Adresse unbemerkt an die Rechnung
+    // gehaengt werden (serverseitig zusaetzlich in update.ts/create.ts geprueft).
+    if (contactPersonId && !contacts.some((c) => c.id === contactPersonId && c.customerId === id)) {
+      setContactPersonId("");
+    }
+    if (billingAddressId && !addresses.some((a) => a.id === billingAddressId && a.customerId === id)) {
+      setBillingAddressId("");
+    }
+    if (shippingAddressId && !addresses.some((a) => a.id === shippingAddressId && a.customerId === id)) {
+      setShippingAddressId("");
+    }
   }
 
   function applySuggestedDueDate() {
@@ -121,16 +203,52 @@ export function NewInvoiceForm({
   function patchLine(i: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
-  function applyProduct(i: number, productId: string) {
-    const p = products.find((x) => x.id === productId);
-    if (!p) return;
-    patchLine(i, { description: p.name, unit: p.unit, price: (p.netPriceCents / 100).toFixed(2), taxRate: p.taxRate });
+  function applyProduct(i: number, p: ProductOption) {
+    patchLine(i, {
+      description: p.name,
+      unit: p.unit,
+      price: (p.netPriceCents / 100).toFixed(2),
+      taxRate: p.taxRate,
+      articleNumber: p.articleNumber ?? "",
+    });
+  }
+  function duplicateLine(i: number) {
+    setLines((ls) => {
+      const copy = { ...ls[i] };
+      const next = [...ls];
+      next.splice(i + 1, 0, copy);
+      return next;
+    });
+  }
+  function removeLine(i: number) {
+    setLines((ls) => ls.filter((_, idx) => idx !== i));
+  }
+  function addLine(lineType: LineType) {
+    setLines((ls) => [...ls, { ...emptyLine(), lineType }]);
   }
 
-  // Live-Summen über das Rechenmodul (pure, Client-Import erlaubt).
+  function onDragStart(i: number) {
+    setDragIndex(i);
+  }
+  function onDragOver(e: React.DragEvent) {
+    e.preventDefault();
+  }
+  function onDrop(i: number) {
+    setLines((ls) => {
+      if (dragIndex === null || dragIndex === i) return ls;
+      const next = [...ls];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(i, 0, moved);
+      return next;
+    });
+    setDragIndex(null);
+  }
+
+  // Live-Summen: nur ITEM-Zeilen tragen Betraege (§8, kein Menge-0-Workaround).
   const totals = useMemo(() => {
     try {
-      const lineResults = lines.map((l) =>
+      const itemLines = lines.filter((l) => l.lineType === "ITEM");
+      const lineResults = itemLines.map((l) =>
         computeLineNet({
           quantityMilli: toMilli(l.quantity),
           unitNetPriceCents: toCents(l.price),
@@ -141,7 +259,7 @@ export function NewInvoiceForm({
       const netBeforeAdjustments = lineResults.reduce((s, r) => s + r.lineNetCents, 0);
 
       const byRate = new Map<number, number>();
-      lines.forEach((l, i) => {
+      itemLines.forEach((l, i) => {
         const rate = isRegular ? l.taxRate : 0;
         byRate.set(rate, (byRate.get(rate) ?? 0) + lineResults[i].lineNetCents);
       });
@@ -165,6 +283,17 @@ export function NewInvoiceForm({
       const discountTotalCents = adjusted.reduce((s, b) => s + b.allowanceCents, 0);
       const chargeTotalCents = adjusted.reduce((s, b) => s + b.chargeCents, 0);
 
+      // Subtotal-Zeilen live: Reihenfolge der ITEM-Netto-Ergebnisse deckt sich mit itemLines.
+      let itemIdx = 0;
+      const subtotalInputs = lines.map((l) => {
+        if (l.lineType === "ITEM") {
+          const r = lineResults[itemIdx++];
+          return { lineType: l.lineType, lineNetCents: r.lineNetCents };
+        }
+        return { lineType: l.lineType, lineNetCents: 0 };
+      });
+      const subtotalsPerLine = computeSubtotals(subtotalInputs);
+
       return {
         netBeforeAdjustments,
         netTotalCents,
@@ -172,6 +301,7 @@ export function NewInvoiceForm({
         grossTotalCents: netTotalCents + taxTotalCents,
         discountTotalCents,
         chargeTotalCents,
+        subtotalsPerLine,
         error: null as string | null,
       };
     } catch (e) {
@@ -182,10 +312,27 @@ export function NewInvoiceForm({
         grossTotalCents: 0,
         discountTotalCents: 0,
         chargeTotalCents: 0,
+        subtotalsPerLine: lines.map(() => 0),
         error: e instanceof PricingError ? e.message : "Berechnung fehlgeschlagen.",
       };
     }
   }, [lines, isRegular, scheme, documentDiscountPercent, documentDiscountAmount, documentChargePercent, documentChargeAmount]);
+
+  function buildLinesPayload() {
+    return lines.map((l) => ({
+      lineType: l.lineType,
+      description: l.description,
+      descriptionLong: l.descriptionLong || undefined,
+      articleNumber: l.articleNumber || undefined,
+      quantityMilli: l.lineType === "ITEM" ? toMilli(l.quantity) : 0,
+      unit: l.unit || "C62",
+      unitNetPriceCents: l.lineType === "ITEM" ? toCents(l.price) : 0,
+      taxRate: l.lineType === "ITEM" ? (isRegular ? l.taxRate : 0) : 0,
+      taxCategory: SCHEME_CATEGORY[scheme] ?? "S",
+      discountPermille: l.lineType === "ITEM" ? toPermille(l.discountPercent) : 0,
+      discountCents: l.lineType === "ITEM" ? toCents(l.discountAmount) : 0,
+    }));
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -193,11 +340,23 @@ export function NewInvoiceForm({
     setError(null);
     const notice = SCHEME_NOTICE[scheme];
     const finalNotes = notice ? `${notice}${notes ? " — " + notes : ""}` : notes || undefined;
-    const body = {
+    const shared = {
       customerId,
-      type: "INVOICE",
       taxScheme: scheme,
       currency: currency,
+      subject: subject || undefined,
+      orderNumber: orderNumber || undefined,
+      internalReference: internalReference || undefined,
+      buyerReference: buyerReference || undefined,
+      // Fix-Welle (K2): explizit null statt undefined, wenn das Feld geleert wurde — sonst
+      // wird das leere Feld beim Bearbeiten (PATCH) einfach weggelassen und die alte
+      // Referenz bleibt serverseitig unveraendert stehen (JSON.stringify entfernt
+      // undefined-Properties, null bleibt erhalten).
+      contactPersonId: contactPersonId || null,
+      billingAddressId: billingAddressId || null,
+      shippingAddressId: shippingAddressId || null,
+      deliveryStart: deliveryStart || undefined,
+      deliveryEnd: deliveryEnd || undefined,
       deliveryDate: deliveryDate || undefined,
       dueDate: dueDate || undefined,
       notes: finalNotes,
@@ -213,30 +372,30 @@ export function NewInvoiceForm({
       skonto2Permille: skonto2Percent ? toPermille(skonto2Percent) : undefined,
       skonto2Days: toDays(skonto2Days),
       paymentMethodId: paymentMethodId || undefined,
-      lines: lines.map((l) => ({
-        description: l.description,
-        quantityMilli: toMilli(l.quantity),
-        unit: l.unit,
-        unitNetPriceCents: toCents(l.price),
-        taxRate: isRegular ? l.taxRate : 0,
-        taxCategory: SCHEME_CATEGORY[scheme] ?? "S",
-        discountPermille: toPermille(l.discountPercent),
-        discountCents: toCents(l.discountAmount),
-      })),
+      lines: buildLinesPayload(),
     };
-    const res = await fetch("/api/invoices", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+
+    const res = isEdit
+      ? await fetch(`/api/invoices/${initial!.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(shared),
+        })
+      : await fetch("/api/invoices", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...shared, type: "INVOICE" }),
+        });
+
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(j.error ?? "Anlegen fehlgeschlagen.");
+      setError(j.error ?? "Speichern fehlgeschlagen.");
       setBusy(false);
       return;
     }
     const j = (await res.json()) as { id: string };
-    router.push(`/rechnungen/${j.id}`);
+    router.push(`/rechnungen/${isEdit ? initial!.id : j.id}`);
+    router.refresh();
   }
 
   const input = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none";
@@ -309,59 +468,177 @@ export function NewInvoiceForm({
         </label>
       </div>
 
+      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2">
+        <h2 className="col-span-full font-semibold text-slate-900">Kopfdaten</h2>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Betreff</span>
+          <input className={input} value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Bestellnummer</span>
+          <input className={input} value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Interne Referenz</span>
+          <input className={input} value={internalReference} onChange={(e) => setInternalReference(e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Leitweg-ID (Override)</span>
+          <input className={input} value={buyerReference} onChange={(e) => setBuyerReference(e.target.value)} placeholder="Standard des Kunden, falls leer" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Ansprechpartner</span>
+          <select className={input} value={contactPersonId} onChange={(e) => setContactPersonId(e.target.value)}>
+            <option value="">— keiner —</option>
+            {customerContacts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Rechnungsadresse</span>
+          <select className={input} value={billingAddressId} onChange={(e) => setBillingAddressId(e.target.value)}>
+            <option value="">— Standardadresse —</option>
+            {customerAddresses.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Lieferadresse</span>
+          <select className={input} value={shippingAddressId} onChange={(e) => setShippingAddressId(e.target.value)}>
+            <option value="">— wie Rechnungsadresse —</option>
+            {customerAddresses.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">Leistungszeitraum von</span>
+            <input type="date" className={input} value={deliveryStart} onChange={(e) => setDeliveryStart(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-700">bis</span>
+            <input type="date" className={input} value={deliveryEnd} onChange={(e) => setDeliveryEnd(e.target.value)} />
+          </label>
+        </div>
+      </div>
+
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">Positionen</h2>
-          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])} className="text-sm font-medium text-indigo-600 hover:underline">
-            + Position
-          </button>
+          <div className="flex flex-wrap gap-3 text-sm font-medium text-indigo-600">
+            <button type="button" onClick={() => addLine("ITEM")} className="hover:underline">
+              + Position
+            </button>
+            <button type="button" onClick={() => addLine("HEADING")} className="hover:underline">
+              + Überschrift
+            </button>
+            <button type="button" onClick={() => addLine("TEXT")} className="hover:underline">
+              + Textblock
+            </button>
+            <button type="button" onClick={() => addLine("SUBTOTAL")} className="hover:underline">
+              + Zwischensumme
+            </button>
+          </div>
         </div>
         {lines.map((line, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-white p-3">
-            <div className="col-span-12 flex flex-col gap-1 sm:col-span-4">
-              <input
-                className={input}
-                placeholder="Beschreibung"
-                value={line.description}
-                onChange={(e) => patchLine(i, { description: e.target.value })}
-                required
-              />
-              {products.length > 0 && (
-                <select className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500" defaultValue="" onChange={(e) => applyProduct(i, e.target.value)}>
-                  <option value="">aus Katalog…</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+          <div
+            key={i}
+            draggable
+            onDragStart={() => onDragStart(i)}
+            onDragOver={onDragOver}
+            onDrop={() => onDrop(i)}
+            className="space-y-2 rounded-lg border border-slate-200 bg-white p-3"
+          >
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="cursor-grab select-none" title="Ziehen zum Sortieren">
+                ⠿
+              </span>
+              <select
+                className="rounded border border-slate-200 px-1.5 py-1 text-xs font-medium text-slate-600"
+                value={line.lineType}
+                onChange={(e) => patchLine(i, { lineType: e.target.value as LineType })}
+              >
+                {(Object.keys(LINE_TYPE_LABEL) as LineType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {LINE_TYPE_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+              {line.lineType === "SUBTOTAL" && (
+                <span className="font-medium text-slate-600">Zwischensumme: {(totals.subtotalsPerLine[i] / 100).toFixed(2)} €</span>
               )}
+              <span className="ml-auto flex gap-3">
+                <button type="button" onClick={() => duplicateLine(i)} className="text-indigo-600 hover:underline">
+                  Duplizieren
+                </button>
+                <button type="button" onClick={() => removeLine(i)} className="text-rose-500 hover:underline" disabled={lines.length === 1}>
+                  Entfernen
+                </button>
+              </span>
             </div>
-            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
-            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
-            <input className={`${input} col-span-6 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
-            <select className={`${input} col-span-6 sm:col-span-1`} value={isRegular ? line.taxRate : 0} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })} disabled={!isRegular}>
-              <option value={19}>19%</option>
-              <option value={7}>7%</option>
-              <option value={0}>0%</option>
-            </select>
-            <input
-              className={`${small} col-span-6 sm:col-span-1`}
-              placeholder="Rabatt %"
-              title="Rabatt in Prozent"
-              value={line.discountPercent}
-              onChange={(e) => patchLine(i, { discountPercent: e.target.value })}
-            />
-            <input
-              className={`${small} col-span-6 sm:col-span-1`}
-              placeholder="Rabatt €"
-              title="Rabatt als Festbetrag in €"
-              value={line.discountAmount}
-              onChange={(e) => patchLine(i, { discountAmount: e.target.value })}
-            />
-            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-12 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
-              ✕
-            </button>
+
+            {line.lineType === "SUBTOTAL" ? (
+              <input className={input} placeholder="Bezeichnung (z. B. Zwischensumme Hosting)" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
+            ) : line.lineType === "HEADING" || line.lineType === "TEXT" ? (
+              <div className="space-y-2">
+                <input className={input} placeholder="Überschrift/Text" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
+                {line.lineType === "TEXT" && (
+                  <RichTextField label="Langtext (optional)" value={line.descriptionLong} onChange={(v) => patchLine(i, { descriptionLong: v })} rows={3} />
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-12 flex flex-col gap-1 sm:col-span-4">
+                    <input className={input} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
+                    {products.length > 0 && <ProductPicker products={products} onPick={(p) => applyProduct(i, p)} />}
+                  </div>
+                  <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
+                  <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
+                  <input className={`${input} col-span-6 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
+                  <select
+                    className={`${input} col-span-6 sm:col-span-1`}
+                    value={isRegular ? line.taxRate : 0}
+                    onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })}
+                    disabled={!isRegular}
+                  >
+                    <option value={19}>19%</option>
+                    <option value={7}>7%</option>
+                    <option value={0}>0%</option>
+                  </select>
+                  <input
+                    className={`${small} col-span-6 sm:col-span-1`}
+                    placeholder="Rabatt %"
+                    title="Rabatt in Prozent"
+                    value={line.discountPercent}
+                    onChange={(e) => patchLine(i, { discountPercent: e.target.value })}
+                  />
+                  <input
+                    className={`${small} col-span-6 sm:col-span-1`}
+                    placeholder="Rabatt €"
+                    title="Rabatt als Festbetrag in €"
+                    value={line.discountAmount}
+                    onChange={(e) => patchLine(i, { discountAmount: e.target.value })}
+                  />
+                  <input
+                    className={`${small} col-span-12`}
+                    placeholder="Artikelnummer (optional)"
+                    value={line.articleNumber}
+                    onChange={(e) => patchLine(i, { articleNumber: e.target.value })}
+                  />
+                </div>
+                <RichTextField label="Langbeschreibung (optional)" value={line.descriptionLong} onChange={(v) => patchLine(i, { descriptionLong: v })} rows={3} />
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -451,7 +728,7 @@ export function NewInvoiceForm({
           )}
         </div>
         <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-          {busy ? "Speichern…" : "Als Entwurf anlegen"}
+          {busy ? "Speichern…" : isEdit ? "Änderungen speichern" : "Als Entwurf anlegen"}
         </button>
       </div>
     </form>

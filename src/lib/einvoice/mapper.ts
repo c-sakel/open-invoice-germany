@@ -9,7 +9,16 @@ import { roundHalfUp } from "@/lib/money";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
-import type { EInvoiceData, EInvoiceDocumentAllowanceCharge, EInvoicePaymentMeans } from "./types";
+import type { EInvoiceData, EInvoiceDocumentAllowanceCharge, EInvoiceLine, EInvoicePaymentMeans } from "./types";
+
+const LINE_TYPES = new Set<NonNullable<EInvoiceLine["lineType"]>>(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
+
+/** Engt eine rohe DB-lineType-Zeichenkette auf die bekannte Union ein (Fallback ITEM). */
+function toLineType(value: string | undefined): NonNullable<EInvoiceLine["lineType"]> {
+  return value && LINE_TYPES.has(value as NonNullable<EInvoiceLine["lineType"]>)
+    ? (value as NonNullable<EInvoiceLine["lineType"]>)
+    : "ITEM";
+}
 
 function tryParseJson(json: string): unknown {
   try {
@@ -27,6 +36,8 @@ export interface MapInput {
   deliveryDate: Date | null;
   currency: string;
   buyerReference: string | null;
+  // Phase 4b — Bestellnummer des Kunden (BT-13); optional, da Alt-Belege das Feld nicht kennen.
+  orderNumber?: string | null;
   paymentTerms: string | null;
   notes: string | null;
   headerText?: string | null;
@@ -90,6 +101,11 @@ export interface MapInput {
     // grossLineCents === lineNetCents -> kein Zeilen-AllowanceCharge im XML.
     discountPermille?: number;
     discountCents?: number;
+    // Phase 4b — Positionsblöcke (§8) + Langtext/Artikelnummer. Fehlt lineType (Alt-Belege
+    // vor Phase 4b), wird ITEM angenommen — alle Zeilen bleiben im XML wie bisher.
+    lineType?: string;
+    descriptionLong?: string | null;
+    articleNumber?: string | null;
   }>;
 }
 
@@ -223,6 +239,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     currency: invoice.currency,
     // B2G: Leitweg-ID des Kunden als Buyer reference (BT-10), sonst explizit gesetzter Wert.
     buyerReference: invoice.buyerReference ?? customer.leitwegId,
+    orderNumber: invoice.orderNumber ?? null,
     paymentTerms: invoice.paymentTerms,
     paymentTermsNote,
     paymentTermsHuman,
@@ -271,6 +288,9 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
         grossLineCents,
         discountCents,
         discountPermille,
+        lineType: toLineType(l.lineType),
+        descriptionLong: l.descriptionLong ?? null,
+        articleNumber: l.articleNumber ?? null,
       };
     }),
     taxSubtotals: breakdown,

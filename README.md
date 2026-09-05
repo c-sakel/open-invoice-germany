@@ -42,6 +42,8 @@ npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp
 - **Documents**: quotes, order confirmations, pro-forma — convertible into an invoice.
 - **Discounts, surcharges & Skonto**: per-line discount (percent + fixed amount) and document-level discount/surcharge (allocated proportionally per tax rate), correctly mapped to `AllowanceCharge` in XRechnung/ZUGFeRD (BG-20/21/27/28); early-payment discount (Skonto, up to two terms) as BT-20 text incl. the `#SKONTO#TAGE=n#PROZENT=x.xx#` convention, with a payment-recording suggestion.
 - **Payment methods**: per-organisation catalogue (system codes + custom), optional customer default, snapshotted on finalisation, mapped to UNTDID 4461 `PaymentMeansCode`.
+- **Line editor**: drag-and-drop reordering, duplicate lines, headings/text blocks/computed subtotals alongside regular item lines (only item lines go into the e-invoice XML), rich text (restricted markdown — bold/italic/underline, one list level, links) in line descriptions, article numbers, and header fields (subject, order number, internal reference, contact, delivery/billing address).
+- **Attachments**: upload files to any document (invoice, quote, delivery note, dunning, subscription) — 10 MB per file, 50 MB per document, MIME whitelist + magic-byte check, content-addressed storage with dedup, selectable as extra attachments when sending email.
 - **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate) + €40 flat fee (B2B), each as a PDF.
 - **Recurring invoices / subscriptions**: weekly–yearly templates, optional auto-finalisation, run via UI/MCP or cron (`npm run recurring:run`).
 - **Credit notes**: full cancellation **or** partial credit, original stays finalised.
@@ -96,6 +98,8 @@ The SQLite file lives at `prisma/dev.db` and belongs to you alone. On first star
 cp .env.example .env            # switch DATABASE_URL to the postgresql:// line
 docker compose up --build
 ```
+
+`docker-compose.yml` mounts a named volume (`oig-attachments`) at `/app/data/attachments` for document attachments (`ATTACHMENTS_DIR`); back it up alongside `oig-db` — see the operator's notes if self-hosting on a shared server.
 
 **Upgrading an existing instance.** If the database was created with an older
 version using `prisma db push`, it has no migration history. The container will

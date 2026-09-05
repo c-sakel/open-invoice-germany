@@ -21,7 +21,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
-      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
+      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
     dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
@@ -58,7 +58,10 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     documentChargeAmount: (q.documentChargeCents / 100).toFixed(2),
     documentChargeReason: q.documentChargeReason ?? "",
     lines: q.lines.map((l) => ({
+      lineType: l.lineType as "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL",
       description: l.description,
+      descriptionLong: l.descriptionLong ?? "",
+      articleNumber: l.articleNumber ?? "",
       quantity: (l.quantityMilli / 1000).toString(),
       unit: l.unit,
       price: (l.unitNetPriceCents / 100).toFixed(2),

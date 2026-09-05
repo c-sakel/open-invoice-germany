@@ -23,11 +23,12 @@ import * as relationsModule from "@/domain/relations";
 import { listRelations } from "@/domain/relations";
 import { DEFAULT_TEXT_TEMPLATES } from "@/domain/text-template/defaults";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
+import { NotFoundError } from "@/domain/errors";
 
 const FIX_DATE = new Date("2033-05-01T10:00:00.000Z");
 
-const lineA = { description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
-const lineB = { description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const lineA = { lineType: "ITEM" as const, description: "Beratung", quantityMilli: 10000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const lineB = { lineType: "ITEM" as const, description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 500, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
 let orgId: string;
 let customerId: string;
@@ -293,6 +294,56 @@ describe("Entwurf bearbeiten", () => {
     const buyerAfter = JSON.parse(updated.buyerSnapshotJson!);
     expect(buyerAfter.name).toBe("Neuer Kunde GmbH");
     expect(updated.snapshotSource).toBe("CREATE");
+  });
+});
+
+describe("Entwurf bearbeiten — Fix-Runde 1: Ansprechpartner/Adressen kundengeprueft", () => {
+  it("lehnt einen Ansprechpartner eines ANDEREN Kunden derselben Org ab", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde B GmbH", addressLine1: "Nebenstr. 1", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const contactOfOtherCustomer = await dbInternal.contactPerson.create({
+      data: { orgId, customerId: otherCustomer.id, firstName: "Bea", lastName: "Fremdkunde" },
+    });
+    await expect(updateDraftDocument(orgId, quote.id, { contactPersonId: contactOfOtherCustomer.id }, "tester")).rejects.toThrow(NotFoundError);
+  });
+
+  it("lehnt eine Rechnungsadresse eines ANDEREN Kunden derselben Org ab", async () => {
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde C GmbH", addressLine1: "Nebenstr. 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const addressOfOtherCustomer = await dbInternal.customerAddress.create({
+      data: { orgId, customerId: otherCustomer.id, type: "BILLING", addressLine1: "Fremdweg 1", postalCode: "20095", city: "Hamburg" },
+    });
+    await expect(updateDraftDocument(orgId, quote.id, { billingAddressId: addressOfOtherCustomer.id }, "tester")).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe("Entwurf bearbeiten — Fix-Welle (K2): Referenzen bei Kundenwechsel", () => {
+  it("setzt Ansprechpartner/Rechnungsadresse serverseitig auf null, wenn der Kunde gewechselt wird und die Felder nicht mitgesendet werden", async () => {
+    const contact = await dbInternal.contactPerson.create({ data: { orgId, customerId, firstName: "Anna", lastName: "Muster" } });
+    const billing = await dbInternal.customerAddress.create({ data: { orgId, customerId, type: "BILLING", addressLine1: "Rechnungsweg 1", postalCode: "20095", city: "Hamburg" } });
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    const withRefs = await updateDraftDocument(orgId, quote.id, { contactPersonId: contact.id, billingAddressId: billing.id }, "tester");
+    expect(withRefs.contactPersonId).toBe(contact.id);
+
+    const otherCustomer = await dbInternal.customer.create({
+      data: { orgId, name: "Kunde K2 GmbH", addressLine1: "Nebenstr. 9", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const updated = await updateDraftDocument(orgId, quote.id, { customerId: otherCustomer.id }, "tester");
+    expect(updated.customerId).toBe(otherCustomer.id);
+    expect(updated.contactPersonId).toBeNull();
+    expect(updated.billingAddressId).toBeNull();
+  });
+
+  it("setzt ein Feld explizit auf null, wenn null gesendet wird (ohne Kundenwechsel)", async () => {
+    const contact = await dbInternal.contactPerson.create({ data: { orgId, customerId, firstName: "Bea", lastName: "Muster" } });
+    const quote = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [lineA] }, { now: FIX_DATE });
+    await updateDraftDocument(orgId, quote.id, { contactPersonId: contact.id }, "tester");
+    const cleared = await updateDraftDocument(orgId, quote.id, { contactPersonId: null }, "tester");
+    expect(cleared.contactPersonId).toBeNull();
   });
 });
 

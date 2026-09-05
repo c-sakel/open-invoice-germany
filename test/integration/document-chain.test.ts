@@ -18,7 +18,7 @@ let orgId: string;
 let customerId: string;
 const FIX_DATE = new Date("2031-07-01T10:00:00.000Z");
 
-const line = { description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
+const line = { lineType: "ITEM" as const, description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0 };
 
 beforeAll(async () => {
   const org = await dbInternal.organization.create({

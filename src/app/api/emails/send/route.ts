@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
-import { sendDocumentEmail } from "@/domain/email/send";
+import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import type { Attachment } from "@/domain/email/attachments";
+import { MAX_ATTACHMENT_FILE_BYTES, MAX_EMAIL_EXTRA_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+// Gemeinsame Groessenkonstanten mit den Beleganhaengen (src/lib/attachments/mime.ts,
+// Auftrag Task 3: "nicht doppelt pflegen").
+const MAX_FILE_BYTES = MAX_ATTACHMENT_FILE_BYTES;
+const MAX_TOTAL_BYTES = MAX_EMAIL_EXTRA_ATTACHMENTS_TOTAL_BYTES;
 // Toleranz fuer multipart-Overhead (Boundary, Feldnamen, payload-JSON) oberhalb der
 // eigentlichen Anhangsgroesse.
 const CONTENT_LENGTH_TOLERANCE_BYTES = 64 * 1024;
+// Eigene, absichtlich ANDERE Whitelist als ATTACHMENT_MIME_WHITELIST (src/schemas/index.ts):
+// Zusatzanhaenge zu einer Mail sind spontane Uploads (z. B. eine erzeugte XML-Datei),
+// keine dauerhaften Beleganhaenge — bewusst kein Office-Dokumentenformat hier.
 const MIME_WHITELIST = new Set([
   "application/pdf",
   "image/png",
@@ -94,6 +100,9 @@ export async function POST(req: Request) {
     }
     if (e instanceof MailNotConfiguredError) {
       return NextResponse.json({ error: "MAIL_NOT_CONFIGURED" }, { status: 409 });
+    }
+    if (e instanceof EmailAttachmentsTooLargeError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
     }
     console.error("POST /api/emails/send:", e);
     return NextResponse.json({ error: "Versand fehlgeschlagen." }, { status: 500 });

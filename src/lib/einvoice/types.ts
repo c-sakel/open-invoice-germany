@@ -34,6 +34,17 @@ export interface EInvoiceLine {
   /** Prozentualer Anteil des Rabatts in Promille — nur gesetzt, wenn der Rabatt
    * REIN prozentual ist (kein zusätzlicher Festbetrag), für MultiplierFactorNumeric. */
   discountPermille?: number;
+  /** Phase 4b — Zeilentyp (§8, "kein Menge-0-Workaround"). Fehlt das Feld (Alt-Fixtures/
+   * Tests vor Phase 4b), wird ITEM angenommen. Nur ITEM-Zeilen gehen ins XML (BG-25) und
+   * tragen Beträge; HEADING/TEXT/SUBTOTAL sind reine PDF-Gliederungszeilen. */
+  lineType?: "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
+  /** Phase 4b — Rich-Text-Langbeschreibung (Markdown-Teilmenge, siehe src/lib/richtext).
+   * BT-154 im XML: NUR bei ITEM-Zeilen, als Klartext (plainText(parseRichText(...))) durch
+   * die XML-Builder erzeugt. Das PDF rendert die Markdown-Formatierung direkt. Bei TEXT-
+   * Zeilen trägt dieses Feld den Absatztext (Fallback: description). */
+  descriptionLong?: string | null;
+  /** Phase 4b — Artikelnummer-Snapshot zum Erfassungszeitpunkt. BT-155 im XML (nur ITEM). */
+  articleNumber?: string | null;
 }
 
 export interface EInvoiceTaxSubtotal {
@@ -76,6 +87,10 @@ export interface EInvoiceData {
   deliveryDate?: Date | null; // BT-72
   currency: string; // BT-5
   buyerReference?: string | null; // BT-10 (Leitweg-ID im B2G)
+  /** Phase 4b — Bestellnummer des Kunden (BT-13, cac:OrderReference/cbc:ID bzw.
+   * ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID). Nicht mit buyerReference (BT-10)
+   * zu verwechseln. */
+  orderNumber?: string | null;
   paymentTerms?: string | null; // BT-20 (Menschentext, z. B. aus Zahlungsmethode/Freitext)
   /** BT-20 XML-Fassung inkl. Skonto-Syntax (#SKONTO#...#) — Mapper-Ausgabe von
    * xrechnungSkontoNote(). Fehlt dieses Feld, nutzen die Builder `paymentTerms`. */

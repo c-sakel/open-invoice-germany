@@ -55,7 +55,11 @@ export async function loadSourceLines(
     if (!q) throw new NotFoundError(`Angebot/Auftragsbestaetigung ${sourceId} nicht gefunden.`);
     return {
       customerId: q.customerId,
-      lines: q.lines.map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+      // W3 (Fix-Welle): nur ITEM-Zeilen sind lieferbare Positionen — HEADING/TEXT/
+      // SUBTOTAL tragen keine Menge und duerfen keine Lieferschein-Restmenge erzeugen (§8).
+      lines: q.lines
+        .filter((l) => l.lineType === "ITEM")
+        .map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
     };
   }
   const inv = await db.invoice.findFirst({
@@ -65,7 +69,10 @@ export async function loadSourceLines(
   if (!inv) throw new NotFoundError(`Rechnung ${sourceId} nicht gefunden.`);
   return {
     customerId: inv.customerId,
-    lines: inv.lines.map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+    // W3: siehe oben.
+    lines: inv.lines
+      .filter((l) => l.lineType === "ITEM")
+      .map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
   };
 }
 

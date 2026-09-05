@@ -12,6 +12,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { normalizeLines } from "@/domain/document/lines";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export interface CreateOptions {
@@ -28,10 +29,17 @@ export async function createDraftInvoiceWithinTx(
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
-  const lines = input.lines.map((line, index) => ({
-    position: index + 1,
+  // normalizeLines vergibt Positionsnummern und erzwingt defensiv, dass Nicht-ITEM-Zeilen
+  // (HEADING/TEXT/SUBTOTAL) keine Betraege tragen (Lastenheft §8) — Zod erzwingt das bereits
+  // am Boundary, dies ist die zweite Verteidigungslinie fuer Aufrufer ohne Zod-Lauf.
+  const normalized = normalizeLines(input.lines);
+  const lines = normalized.map((line) => ({
+    position: line.position,
+    lineType: line.lineType,
     productId: line.productId,
     description: line.description,
+    descriptionLong: line.descriptionLong,
+    articleNumber: line.articleNumber,
     quantityMilli: line.quantityMilli,
     unit: line.unit,
     unitNetPriceCents: line.unitNetPriceCents,
@@ -39,11 +47,16 @@ export async function createDraftInvoiceWithinTx(
     taxCategory: line.taxCategory,
     discountPermille: line.discountPermille,
     discountCents: line.discountCents,
-    lineNetCents: computeLineNet(line).lineNetCents,
+    // Nicht-ITEM-Zeilen tragen quantityMilli=0/unitNetPriceCents=0 -> lineNetCents ohnehin 0;
+    // computeLineNet trotzdem nur fuer ITEM aufrufen (gleiche Regel wie bei der
+    // Summenbildung unten, §8: Nicht-ITEM nie in Berechnung).
+    lineNetCents: line.lineType === "ITEM" ? computeLineNet(line).lineNetCents : 0,
   }));
 
+  // Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) gehen nie in Summen/Steuerberechnung ein.
+  const itemLines = lines.filter((l) => l.lineType === "ITEM");
   const totals = computeTaxBreakdown(
-    lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     {
       discountPermille: input.documentDiscountPermille,
       discountCents: input.documentDiscountCents,
@@ -63,6 +76,23 @@ export async function createDraftInvoiceWithinTx(
     if (!method) throw new Error("Zahlungsmethode nicht gefunden.");
   }
 
+  // Kopffelder (Phase 4b) — org- UND kundengeprueft (Fix-Runde 1): Ansprechpartner/
+  // Rechnungs-/Lieferadresse muessen zur Organisation UND zum ausgewaehlten Kunden
+  // gehoeren, sonst koennte ein fremder Ansprechpartner/eine fremde Adresse (anderer
+  // Kunde derselben Org) unbemerkt an die Rechnung gehaengt werden.
+  if (input.contactPersonId) {
+    const contact = await tx.contactPerson.findFirst({ where: { id: input.contactPersonId, orgId, customerId: input.customerId }, select: { id: true } });
+    if (!contact) throw new Error("Ansprechpartner nicht gefunden.");
+  }
+  if (input.billingAddressId) {
+    const address = await tx.customerAddress.findFirst({ where: { id: input.billingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
+    if (!address) throw new Error("Rechnungsadresse nicht gefunden.");
+  }
+  if (input.shippingAddressId) {
+    const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId, customerId: input.customerId }, select: { id: true } });
+    if (!address) throw new Error("Lieferadresse nicht gefunden.");
+  }
+
   const invoice = await tx.invoice.create({
     data: {
       orgId,
@@ -76,6 +106,12 @@ export async function createDraftInvoiceWithinTx(
       deliveryEnd: input.deliveryEnd,
       dueDate: input.dueDate,
       buyerReference: input.buyerReference,
+      subject: input.subject,
+      orderNumber: input.orderNumber,
+      internalReference: input.internalReference,
+      contactPersonId: input.contactPersonId,
+      billingAddressId: input.billingAddressId,
+      shippingAddressId: input.shippingAddressId,
       notes: input.notes,
       paymentTerms: input.paymentTerms,
       internalNotes: input.internalNotes,

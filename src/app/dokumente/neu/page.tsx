@@ -18,7 +18,7 @@ export default async function NeuesDokumentPage() {
     dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
-      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
+      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
     dbInternal.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),

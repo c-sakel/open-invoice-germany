@@ -16,6 +16,9 @@ interface PrefillResult {
   signature: string;
   copyToSelf: boolean;
   attachments: { filename: string; size: number }[];
+  // Beleganhaenge (Phase 4b) — zusaetzlich zu den Standardanhaengen waehlbar, per
+  // attachmentIds im Payload (src/schemas/email.ts, sendEmailInputSchema.attachmentIds).
+  documentAttachments: { id: string; filename: string; sizeBytes: number }[];
   warnings: string[];
   templateId?: string;
   resendOfId?: string;
@@ -47,6 +50,7 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
   const [signature, setSignature] = useState("");
   const [copyToSelf, setCopyToSelf] = useState(false);
   const [selectedStandard, setSelectedStandard] = useState<Set<string>>(new Set());
+  const [selectedDocAttachments, setSelectedDocAttachments] = useState<Set<string>>(new Set());
   const [extraFiles, setExtraFiles] = useState<File[]>([]);
 
   const [preview, setPreview] = useState<{ subject: string; body: string } | null>(null);
@@ -64,6 +68,7 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
     setSignature(pre.signature);
     setCopyToSelf(pre.copyToSelf);
     setSelectedStandard(new Set(pre.attachments.map((a) => a.filename)));
+    setSelectedDocAttachments(new Set());
     setPreview(null);
   }
 
@@ -122,6 +127,15 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
     });
   }
 
+  function toggleDocAttachment(id: string) {
+    setSelectedDocAttachments((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function doPreview() {
     const res = await fetch("/api/emails/preview", {
       method: "POST",
@@ -149,6 +163,7 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
         signature,
         copyToSelf,
         standardAttachments: Array.from(selectedStandard),
+        attachmentIds: Array.from(selectedDocAttachments),
         templateId: templateId || undefined,
         resendOfId: resendLogId,
         // Warnungen aus der Vorbelegung (z. B. unbekannte Platzhalter) mitschicken, damit
@@ -270,6 +285,25 @@ export function SendEmailDialog({ docType, docId, label, resendLogId }: { docTyp
                       <input type="checkbox" checked={selectedStandard.has(a.filename)} onChange={() => toggleStandard(a.filename)} className="h-4 w-4 rounded border-slate-300" />
                       <span>
                         {a.filename} <span className="text-xs text-slate-400">({formatKb(a.size)})</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {data.documentAttachments.length > 0 && (
+                <div className="space-y-1 text-sm">
+                  <span className="font-medium text-slate-700">Beleganhänge</span>
+                  {data.documentAttachments.map((a) => (
+                    <label key={a.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedDocAttachments.has(a.id)}
+                        onChange={() => toggleDocAttachment(a.id)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      <span>
+                        {a.filename} <span className="text-xs text-slate-400">({formatKb(a.sizeBytes)})</span>
                       </span>
                     </label>
                   ))}

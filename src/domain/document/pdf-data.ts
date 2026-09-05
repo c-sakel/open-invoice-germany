@@ -8,7 +8,16 @@ import { parseSellerSnapshot, parseBuyerSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
-import type { EInvoiceData, EInvoiceDocumentAllowanceCharge } from "@/lib/einvoice/types";
+import type { EInvoiceData, EInvoiceDocumentAllowanceCharge, EInvoiceLine } from "@/lib/einvoice/types";
+
+const LINE_TYPES = new Set<NonNullable<EInvoiceLine["lineType"]>>(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
+
+/** Engt eine rohe DB-lineType-Zeichenkette auf die bekannte Union ein (Fallback ITEM). */
+function toLineType(value: string | undefined): NonNullable<EInvoiceLine["lineType"]> {
+  return value && LINE_TYPES.has(value as NonNullable<EInvoiceLine["lineType"]>)
+    ? (value as NonNullable<EInvoiceLine["lineType"]>)
+    : "ITEM";
+}
 
 const PROFORMA_NOTE = "Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG. Berechtigt nicht zum Vorsteuerabzug.";
 
@@ -66,12 +75,21 @@ interface DocInput {
     lineNetCents: number;
     taxRate: number;
     taxCategory: string;
+    // Phase 4b — Positionsblöcke (§8) + Langtext/Artikelnummer, nur fürs PDF (Angebote/
+    // Auftragsbestätigungen/Proforma erzeugen keine E-Rechnung).
+    lineType?: string;
+    descriptionLong?: string | null;
+    articleNumber?: string | null;
   }>;
 }
 
 export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
+  // G1 (Fix-Welle): Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) tragen keinen Betrag und
+  // gehen nie in die Steueraufschluesselung ein (§8) — Fehlt lineType (Alt-Fixtures),
+  // wird ITEM angenommen (gleiche Regel wie isItemLine in xrechnung.ts).
+  const itemLines = q.lines.filter((l) => toLineType(l.lineType) === "ITEM");
   const totals = computeTaxBreakdown(
-    q.lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
+    itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
     {
       discountPermille: q.documentDiscountPermille,
       discountCents: q.documentDiscountCents,
@@ -164,6 +182,9 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
       lineNetCents: l.lineNetCents,
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
+      lineType: toLineType(l.lineType),
+      descriptionLong: l.descriptionLong ?? null,
+      articleNumber: l.articleNumber ?? null,
     })),
     taxSubtotals: totals.breakdown,
     netTotalCents: totals.netTotalCents,

@@ -8,6 +8,8 @@ import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentChain } from "@/components/DocumentChain";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
+import { AttachmentPanel } from "@/components/AttachmentPanel";
+import { listAttachments } from "@/domain/attachment/manage";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,7 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
   if (!dn) notFound();
 
   const archived = dn.archivedAt !== null;
+  const attachments = await listAttachments(org.id, "DELIVERY_NOTE", dn.id);
 
   let sourceLabel: { href: string; text: string } | null = null;
   if (dn.sourceType === "QUOTE" && dn.sourceId) {
@@ -138,6 +141,8 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
           </>
         )}
       </div>
+
+      <AttachmentPanel docType="DELIVERY_NOTE" docId={dn.id} initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))} />
 
       <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
 
