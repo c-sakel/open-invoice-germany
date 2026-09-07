@@ -249,7 +249,10 @@ describe("Phase 7 — S6 (Fix-Welle): effektive Druckoptionen werden bei Festsch
 
   it("ein bereits vollstaendiger Beleg-Override bleibt beim Einfrieren unveraendert", async () => {
     const draft = await createDraftInvoice(orgId, invoiceInput({ issueDate: FIX_DATE }));
-    const fullOverride = { ...DEFAULT_PRINT_SETTINGS, showGiroCode: false };
+    // Phase 11b, Task 6: "vollstaendig" schliesst jetzt layoutId ein — fehlt es, ergaenzt
+    // freezePrintOptionsJson es auch bei zehn vollstaendigen Schaltern (siehe
+    // test/unit/layout-resolve.test.ts). Nur ein Override MIT layoutId bleibt unveraendert.
+    const fullOverride = { ...DEFAULT_PRINT_SETTINGS, showGiroCode: false, layoutId: "standard" as const };
     await dbInternal.invoice.update({ where: { id: draft.id }, data: { printOptionsJson: JSON.stringify(fullOverride) } });
 
     const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });

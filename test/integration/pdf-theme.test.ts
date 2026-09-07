@@ -13,6 +13,11 @@ import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/deliv
 import { renderDunningPdf, type DunningPdfData } from "@/lib/pdf/dunning-pdf";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import { parsePdf } from "../helpers/pdf-theme";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { updateNumberRange } from "@/domain/numbering/ranges";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import type { CreateInvoiceInput } from "@/schemas";
 
 async function makeOrg(overrides: Partial<{ iban: string | null }> = {}) {
   const org = await dbInternal.organization.create({
@@ -487,5 +492,40 @@ describe("PdfTheme — Phase 11b Layout-Aufloesung (Task 1 geschrieben, Task 3 a
     const dun = await parsePdf(await renderDunningPdf(dunningData, { ...theme, compress: false }));
     expect(dun.text).toContain("Inhaber/-in Erika Muster");
     expect(dun.text).toContain("Web muster.example");
+  });
+});
+
+/** Minimaler Rechnungs-Entwurf (analog test/integration/scheduler.test.ts), nur mit
+ *  Kunden-ID — kein explizites Faelligkeitsdatum noetig fuer diesen Test. */
+function invoiceInput(customerId: string): CreateInvoiceInput {
+  return {
+    customerId,
+    type: "INVOICE",
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    lines: [{ description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+  } as CreateInvoiceInput;
+}
+
+describe("PdfTheme — Phase 11b Task 6: Einfrieren des Layouts beim Festschreiben", () => {
+  it("Festschreiben friert das Layout ein; spaetere Organisationsaenderung wirkt nicht mehr", async () => {
+    const orgId = await makeOrg();
+    await ensureOrgMasterdata(dbInternal, orgId);
+    // makeOrg() (Datei-Helfer oben) setzt keine Steuernummer/USt-IdNr. — ohne eine von
+    // beiden bricht validateMandatoryFields das Festschreiben ab (§14 Abs.4 Nr.2).
+    await dbInternal.organization.update({ where: { id: orgId }, data: { vatId: "DE123456789", taxNumber: "33/123/45678" } });
+    // Invoice.number ist GLOBAL eindeutig — eigener Praefix fuer dieses Testjahr (2056).
+    await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "PT56-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", new Date("2056-06-01T12:00:00Z"));
+    await saveBrandingSettings(orgId, { layoutId: "schlicht" });
+    const customer = await dbInternal.customer.create({ data: { orgId, name: "Freeze AG", addressLine1: "A 1", postalCode: "1", city: "B", type: "BUSINESS" } });
+    const draft = await createDraftInvoice(orgId, { ...invoiceInput(customer.id) });
+    const fin = await finalizeInvoice(draft.id, { now: new Date("2056-06-01T12:00:00Z"), actor: "test" });
+    expect(JSON.parse(fin.printOptionsJson!).layoutId).toBe("schlicht");
+    await saveBrandingSettings(orgId, { layoutId: "modern" });
+    const theme = await loadPdfTheme(orgId, fin.printOptionsJson, "INVOICE");
+    expect(theme.layoutId).toBe("schlicht");
+    const draft2 = await createDraftInvoice(orgId, { ...invoiceInput(customer.id) });
+    const theme2 = await loadPdfTheme(orgId, draft2.printOptionsJson, "INVOICE");
+    expect(theme2.layoutId).toBe("modern");
   });
 });
