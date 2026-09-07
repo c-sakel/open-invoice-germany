@@ -65,7 +65,12 @@ export function MetaBlock({
       {mode === "INVOICE" && (
         <EditorField label="Steuerschema">
           {(id) => (
-            <select id={id} className={inputCls} value={draft.taxScheme} onChange={(e) => dispatch({ type: "set", field: "taxScheme", value: e.target.value })}>
+            <select
+              id={id}
+              className={inputCls}
+              value={draft.taxScheme}
+              onChange={(e) => dispatch({ type: "set", field: "taxScheme", value: e.target.value as DraftState["taxScheme"] })}
+            >
               <option value="REGULAR">Regelbesteuerung</option>
               <option value="KLEINUNTERNEHMER">Kleinunternehmer (§ 19)</option>
               <option value="REVERSE_CHARGE">Reverse Charge (§ 13b)</option>

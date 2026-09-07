@@ -8,9 +8,18 @@ import { layoutIdSchema } from "@/schemas/settings";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// M8 (Abschluss-Review): `payload.lines` war bisher unbegrenzt (`createInvoiceSchema.lines`
+// kennt selbst kein `.max()`) — anders als die echte Anlage schreibt eine Vorschau nichts,
+// was auffiele, ist also beliebig oft mit einem sehr grossen `lines`-Array wiederholbar
+// (ein pdfkit-Render pro Request). `.max(500)` bewusst NUR hier auf der Vorschau-Route,
+// nicht an `invoiceLineInputSchema`/`deliveryNoteLineInputSchema` selbst — diese teilen
+// sich viele Aufrufer (Rechnung/Dokument/Lieferschein/Abo-Anlage), eine globale Grenze
+// waere eine groessere, hier nicht beauftragte Verhaltensaenderung. `.passthrough()` laesst
+// alle uebrigen `payload`-Felder unberuehrt durch — die eigentliche, kind-spezifische
+// Validierung bleibt in `buildDraftPreview`/`preview-draft.ts` (`createInvoiceSchema` u. a.).
 const previewBodySchema = z.object({
   kind: z.enum(PREVIEW_KINDS),
-  payload: z.unknown(),
+  payload: z.object({ lines: z.array(z.unknown()).max(500).optional() }).passthrough(),
   layoutId: layoutIdSchema.optional(),
 });
 

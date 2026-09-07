@@ -26,8 +26,11 @@ import { inputCls } from "@/components/forms/fields";
 import { TextTemplatePicker } from "../TextTemplatePicker";
 import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
 
-function set(dispatch: (action: DraftAction) => void, field: keyof DraftState, value: unknown) {
-  dispatch({ type: "set", field, value });
+// M10 (Abschluss-Review): generisch ueber `K`, damit `DraftAction`s Feld/Wert-Korrelation
+// (`draft.ts`, `SetAction`) auch durch diesen Helfer hindurch am Aufrufort geprueft wird —
+// vorher haette z. B. `set(dispatch, "showPrices", "ja")` unbemerkt kompiliert.
+function set<K extends keyof DraftState>(dispatch: (action: DraftAction) => void, field: K, value: DraftState[K]) {
+  dispatch({ type: "set", field, value } as DraftAction);
 }
 
 /**

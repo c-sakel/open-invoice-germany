@@ -13,10 +13,15 @@
  * `open`/`draft`, keine `useState`/`useEffect` noetig) und hat beim Anzeigen Vorrang vor
  * einem evtl. noch gespeicherten alten Fetch-Ergebnis — verhindert, dass ein erneutes
  * "Neu laden" bei inzwischen ungueltigem Entwurf kurz die vorherige (jetzt veraltete)
- * PDF-Vorschau stehen laesst. Da `open` waehrend der Anzeige nicht wechselt und der
- * Editor dahinter durch das Overlay blockiert ist, kann sich `draft` waehrend eines
- * offenen Sheets ohnehin nicht aendern — der Fetch-Effekt darf ihn deshalb gefahrlos als
- * normale Abhaengigkeit fuehren (kein Re-Fetch bei jedem Tastendruck, siehe unten).
+ * PDF-Vorschau stehen laesst. `open` wechselt waehrend der Anzeige nicht und der Editor
+ * dahinter ist durch das Overlay blockiert, daher AENDERT SICH `draft` waehrend eines
+ * offenen Sheets normalerweise nicht durch Nutzereingaben — der Fetch-Effekt darf ihn
+ * deshalb als normale Abhaengigkeit fuehren, ohne bei jedem Tastendruck neu zu laden
+ * (M9, Abschluss-Review: das gilt NICHT absolut — ein noch laufender Textvorlagen-Fetch
+ * aus `DocumentEditor`s Vorbelegungs-Effekten kann waehrend eines offenen Sheets noch
+ * dispatchen und so ein neues `draft`-Objekt erzeugen; Folge ist hoechstens ein zweiter,
+ * harmloser Preview-Request — der erste wird ueber den `AbortController` unten
+ * abgebrochen, siehe Cleanup).
  *
  * Zustand als EIN Discriminated Union (`PreviewState`) statt einzelner `url`/`error`/
  * `loading`-Felder: verhindert inkonsistente Zwischenzustaende UND vermeidet
@@ -57,7 +62,13 @@ interface ZodFlatten {
 type PreviewState = { status: "idle" } | { status: "loading" } | { status: "error"; message: string } | { status: "ready"; url: string };
 
 function buildPreviewBody(mode: EditorMode, draft: DraftState, layoutId?: LayoutId) {
-  const payload = mode === "INVOICE" ? toInvoicePayload(draft, false) : mode === "DOCUMENT" ? toDocumentPayload(draft, false) : toDeliveryNotePayload(draft);
+  const rawPayload = mode === "INVOICE" ? toInvoicePayload(draft, false) : mode === "DOCUMENT" ? toDocumentPayload(draft, false) : toDeliveryNotePayload(draft);
+  // M3 (Abschluss-Review): `internalNotes` NIE im Vorschau-Request-Body — der Renderer
+  // liest das Feld zwar an keiner Stelle (Lastenheft 48, siehe Modulkommentar von
+  // `preview-draft.ts`), aber "nie im Preview-Payload" ist die staerkere Garantie
+  // (defence in depth statt sich allein auf den Server zu verlassen).
+  const { internalNotes: _internalNotes, ...payload } = rawPayload;
+  void _internalNotes;
   return { kind: mode, payload, layoutId };
 }
 
@@ -197,10 +208,12 @@ export function PreviewSheet({
       cancelled = true;
       ctrl.abort();
     };
-    // `draft`/`mode`/`layoutId` sind waehrend eines offenen Sheets stabil (siehe
-    // Modulkommentar: das Overlay blockiert den Editor dahinter) — als echte
-    // Abhaengigkeiten gefuehrt loesen sie deshalb KEINEN Re-Fetch bei jedem
-    // Tastendruck aus, sondern nur bei tatsaechlichem Oeffnen/"Neu laden".
+    // `draft`/`mode`/`layoutId` sind waehrend eines offenen Sheets normalerweise stabil
+    // (siehe Modulkommentar: das Overlay blockiert den Editor dahinter) — als echte
+    // Abhaengigkeiten gefuehrt loesen sie deshalb KEINEN Re-Fetch bei jedem Tastendruck
+    // aus, sondern nur bei tatsaechlichem Oeffnen/"Neu laden" (M9: AUSSER ein noch
+    // laufender Textvorlagen-Fetch dispatcht dazwischen — dann laeuft dieser Effekt ein
+    // zweites Mal, folgenlos dank Abbruch/`cancelled` oben).
   }, [open, reloadKey, validationError, mode, draft, layoutId]);
 
   if (!open) return null;

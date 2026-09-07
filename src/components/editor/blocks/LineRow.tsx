@@ -30,6 +30,12 @@
  * Rabatt) — die Rabatt-Spalte/-Zelle wird deshalb bei DELIVERY_NOTE gar nicht erst
  * gerendert (statt eines interaktiven Felds, dessen Wert beim Speichern still
  * verworfen wuerde), reduzierte Zeilen kollabieren dann auf `colSpan={6}` statt `{7}`.
+ *
+ * M1 (Abschluss-Review): aus demselben Grund bekommt der Langtext-Umschalter
+ * ("Langtext ein-/ausblenden" im `LineRowMenu`, oeffnet den `descriptionLong`-Block
+ * unten) bei DELIVERY_NOTE gar keinen Menuepunkt — `deliveryNoteLineInputSchema` kennt
+ * kein `descriptionLong`-Feld, ein eingegebener Langtext wuerde beim Speichern still
+ * verworfen.
  */
 import type { DraftLine, DraftAction, LineType } from "@/lib/editor/draft";
 import { TAX_RATE_OPTIONS } from "@/lib/editor/constants";
@@ -48,7 +54,9 @@ function toTaxRate(v: string): 19 | 7 | 0 {
   return n === 19 || n === 7 ? n : 0;
 }
 
-export interface LineRowProps {
+// M4 (Abschluss-Review): kein `export` mehr — kein Importer (nur `LineItemsEditor`
+// verwendet die Komponente selbst, der Props-Typ wird nirgends separat referenziert).
+interface LineRowProps {
   line: DraftLine;
   mode: EditorMode;
   /** Fortlaufende ITEM-Position (wie im PDF/`itemPos`, `invoice-pdf.ts` L303) — `null`
@@ -198,6 +206,7 @@ export function LineRow({
             <td className="py-1.5 pr-2">
               <select
                 className={inputCls}
+                aria-label="USt-Satz"
                 value={taxDisabled ? 0 : line.taxRate}
                 disabled={taxDisabled}
                 onChange={(e) => patch({ taxRate: toTaxRate(e.target.value) })}
@@ -223,8 +232,8 @@ export function LineRow({
             canRemove={canRemove}
             onDuplicate={() => dispatch({ type: "duplicateLine", key: line.key })}
             onRemove={() => dispatch({ type: "removeLine", key: line.key })}
-            toggleLabel={line.lineType === "ITEM" ? (line.expanded ? "Langtext ausblenden" : "Langtext einblenden") : undefined}
-            onToggleExpanded={line.lineType === "ITEM" ? () => dispatch({ type: "toggleExpanded", key: line.key }) : undefined}
+            toggleLabel={line.lineType === "ITEM" && mode !== "DELIVERY_NOTE" ? (line.expanded ? "Langtext ausblenden" : "Langtext einblenden") : undefined}
+            onToggleExpanded={line.lineType === "ITEM" && mode !== "DELIVERY_NOTE" ? () => dispatch({ type: "toggleExpanded", key: line.key }) : undefined}
             currentType={allowTypeChange ? line.lineType : undefined}
             onChangeType={allowTypeChange ? onChangeType : undefined}
           />

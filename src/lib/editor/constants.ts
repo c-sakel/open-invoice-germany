@@ -26,12 +26,18 @@ export const TAX_RATE_OPTIONS: readonly { value: 19 | 7 | 0; label: string }[] =
 
 // UN/ECE Rec 20 Einheiten-Codes (Teilmenge, siehe Hinweistext in
 // src/components/forms/ProductForm.tsx) — C62 (Stück) zuerst als Standardwert.
+// M7 (Abschluss-Review): um LTR/MTK/H87 auf die im Plan (docs/superpowers/plans/
+// 2026-09-07-phase-11c-editor.md) vorgesehene Liste erweitert — vorher fehlten drei
+// gaengige Einheiten, die nur ueber "andere…" (Freitext) erreichbar waren.
 export const UNIT_OPTIONS: readonly { code: string; label: string }[] = [
   { code: "C62", label: "Stk" },
   { code: "HUR", label: "Stunde" },
   { code: "DAY", label: "Tag" },
   { code: "KGM", label: "kg" },
   { code: "MTR", label: "m" },
+  { code: "LTR", label: "l" },
+  { code: "MTK", label: "m²" },
+  { code: "H87", label: "Stück-Pauschale" },
 ];
 
 // Vollständiges Record (alle TaxScheme-Werte) für synchrone Lookups je Zeile/Beleg,

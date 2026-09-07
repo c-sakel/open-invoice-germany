@@ -4,6 +4,8 @@ import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { NeedOrgNotice } from "@/components/NeedOrgNotice";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { emptyDraft } from "@/lib/editor/draft";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +17,7 @@ export default async function NeuerLieferscheinPage() {
     return <NeedOrgNotice />;
   }
 
-  const [customers, products, contactRows, addressRows] = await Promise.all([
+  const [customers, products, contactRows, addressRows, docSettings] = await Promise.all([
     dbInternal.customer.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, customerNumber: true, email: true, addressLine1: true, postalCode: true, city: true, countryCode: true },
@@ -28,6 +30,11 @@ export default async function NeuerLieferscheinPage() {
     }),
     dbInternal.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
     dbInternal.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
+    // M14 (Abschluss-Review): dieselbe Quelle wie `createDeliveryNoteWithinTx`/
+    // `buildDeliveryNotePreview` (`preview-draft.ts`) — ohne sie startete jeder neue
+    // Lieferschein-Entwurf hart mit showPrices:false/showArticleNumber:true/
+    // showDeliveryAddress:true, unabhaengig von den Org-Einstellungen (dnShow*).
+    loadDocumentSettings(orgId),
   ]);
 
   const contacts = contactRows.map((c) => ({
@@ -63,6 +70,11 @@ export default async function NeuerLieferscheinPage() {
   return (
     <DocumentEditor
       mode="DELIVERY_NOTE"
+      initial={emptyDraft("DELIVERY_NOTE", {
+        showPrices: docSettings.dnShowPrices,
+        showArticleNumber: docSettings.dnShowArticleNumber,
+        showDeliveryAddress: docSettings.dnShowDeliveryAddress,
+      })}
       customers={customers}
       products={products}
       contacts={contacts}
