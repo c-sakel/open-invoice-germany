@@ -16,7 +16,6 @@ export const schlichtLayout: PdfLayout = {
     const { doc, left, right, margins, base } = frame;
     drawLogoAndSender(frame, input);
     const buyerY = margins.top + 62;
-    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1);
 
     // Infoblock rechts (Breite 200): kleine Beschriftung, darunter die Nummer gross
     // kursiv, darunter Label/Wert-Zeilen. Beide oberen Zeilen bekommen die VOLLE
@@ -26,6 +25,9 @@ export const schlichtLayout: PdfLayout = {
     // "Lieferscheinnummer" wuerde also trotzdem zweizeilig umbrechen und mit der
     // Meta-Tabelle darunter kollidieren.
     const infoX = right - 200;
+    // Follow-up (Reviews, Task 5): Empfaengerblock nicht breiter als bis 10pt vor den
+    // Infoblock — sonst laeuft ein langer Empfaengername in die Meta-Tabelle hinein.
+    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1, infoX - left - 10);
     doc.font("Helvetica").fontSize(base - 1).fillColor("#555");
     doc.text(input.numberLabel, infoX, buyerY - 14, { width: 200, align: "right" });
     doc.font("Helvetica-Oblique").fontSize(base + 3).fillColor("#000");

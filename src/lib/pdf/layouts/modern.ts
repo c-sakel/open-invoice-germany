@@ -27,8 +27,10 @@ export const modernLayout: PdfLayout = {
     const top = margins.top + barH + 18;
     drawSenderLine(doc, theme, left, top, input.senderFallback);
     const buyerY = top + 18;
-    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1);
     const cardX = right - 210;
+    // Follow-up (Reviews, Task 5): Empfaengerblock nicht breiter als bis 10pt vor die
+    // Infoblock-Karte — sonst laeuft ein langer Empfaengername in die Karte hinein.
+    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1, cardX - left - 10);
     const cardH = (input.meta.length + 1) * (base + 3) + 16;
     doc.roundedRect(cardX, buyerY - 8, 210, cardH, 4).fill("#f3f4f6");
     doc.fillColor("#000");
