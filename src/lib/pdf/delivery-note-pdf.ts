@@ -12,7 +12,7 @@ import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import type { PdfTheme } from "./theme";
-import { drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
+import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow, type TableHeaderColumn } from "./layouts/shared";
@@ -316,6 +316,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
       if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
       if (theme.options.foldMarks) drawFoldMarks(doc);
       if (theme.options.punchMarks) drawPunchMark(doc);
+      if (theme.watermark) drawWatermark(doc, theme.watermark);
     }
     if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
 

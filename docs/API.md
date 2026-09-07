@@ -197,3 +197,11 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
   /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
 - Multi-Tenant-Rollen gibt es nicht — ein API-Schlüssel gehört zu genau einer
   Organisation, „Berechtigungen" bedeuten hier ausschließlich Scopes.
+- `POST /api/pdf/preview` (Beleg-Editor, Phase 11c) ist **keine** `/api/v1`-Ressource:
+  eine Session-Route (Browser-Login, kein Bearer-Token) zum Rendern eines
+  ungespeicherten Editor-Entwurfs (`{kind, payload, layoutId?}`) — ohne
+  Nummernkreis/`ChangeLog`/DB-Schreibzugriff, Belegnummer „ENTWURF", Wasserzeichen
+  „VORSCHAU". Für einen bereits gespeicherten Beleg liefert stattdessen `GET
+  /api/v1/Invoice/{id}/pdf` (Scope `read`) das PDF; `Quote`/`DeliveryNote` haben
+  keinen `/pdf`-Endpunkt unter `/api/v1` (nur die Session-Routen
+  `/api/documents/[id]/pdf` bzw. `/api/delivery-notes/[id]/pdf`).

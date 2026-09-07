@@ -362,3 +362,28 @@ describe.each(MATRIX)("Layout %s", (layoutId) => {
     expect(du.text).toMatch(/Mahnung|Zahlungserinnerung/);
   });
 });
+
+// Phase 11c, Task 2 — Wasserzeichen (PdfTheme.watermark/drawWatermark) fuer die
+// Editor-Live-Vorschau ungespeicherter Entwuerfe: muss auf JEDER Seite erscheinen (nicht
+// nur auf der letzten) und alle drei Renderer bedienen; ohne `theme.watermark` (Default
+// aller anderen Tests/bestehender Aufrufer) darf NIRGENDS ein Wasserzeichen auftauchen.
+describe("Wasserzeichen (Phase 11c, Task 2)", () => {
+  it("erscheint auf jeder Seite der Rechnung, mindestens einmal je Seite", async () => {
+    const pdf = await renderInvoicePdf(sampleInvoice(), testPdfTheme({ layoutId: "standard", watermark: "VORSCHAU" }));
+    const { text, numpages } = await parsePdf(pdf);
+    expect(numpages).toBe(2);
+    expect(countOccurrences(text, "VORSCHAU")).toBeGreaterThanOrEqual(numpages);
+  });
+
+  it("erscheint auf Lieferschein- und Mahnungs-PDF", async () => {
+    const dn = await parsePdf(await renderDeliveryNotePdf(sampleDeliveryNote(), testPdfTheme({ watermark: "VORSCHAU" })));
+    expect(dn.text).toContain("VORSCHAU");
+    const du = await parsePdf(await renderDunningPdf(sampleDunning(), testPdfTheme({ watermark: "VORSCHAU" })));
+    expect(du.text).toContain("VORSCHAU");
+  });
+
+  it("bleibt ohne theme.watermark unveraendert weg (bestehende Aufrufer/Tests)", async () => {
+    const pdf = await parsePdf(await renderInvoicePdf(sampleInvoice(), testPdfTheme({ layoutId: "standard" })));
+    expect(pdf.text).not.toContain("VORSCHAU");
+  });
+});

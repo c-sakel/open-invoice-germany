@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
-import { NewDocumentForm } from "@/components/NewDocumentForm";
+import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { NeedOrgNotice } from "@/components/NeedOrgNotice";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,21 @@ export default async function NeuesDokumentPage() {
   }
 
   const [customers, products, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({
+      where: { orgId, isArchived: false },
+      select: {
+        id: true,
+        name: true,
+        customerNumber: true,
+        email: true,
+        defaultDiscountPermille: true,
+        addressLine1: true,
+        postalCode: true,
+        city: true,
+        countryCode: true,
+      },
+      orderBy: { name: "asc" },
+    }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
@@ -30,7 +45,7 @@ export default async function NeuesDokumentPage() {
   const contacts = contactRows.map((c) => ({
     id: c.id,
     customerId: c.customerId,
-    label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
+    name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
     isDefault: c.isDefault,
   }));
   const addresses = addressRows.map((a) => ({
@@ -54,14 +69,16 @@ export default async function NeuesDokumentPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/dokumente" className="text-sm text-slate-500 hover:text-slate-800">
-          ← Dokumente
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Neues Dokument</h1>
-      </div>
-      <NewDocumentForm customers={customers} products={products} contacts={contacts} addresses={addresses} offerLastDocument={documentSettings.offerLastDocument} />
-    </div>
+    <DocumentEditor
+      mode="DOCUMENT"
+      customers={customers}
+      products={products}
+      contacts={contacts}
+      addresses={addresses}
+      layouts={listLayouts()}
+      offerLastDocument={documentSettings.offerLastDocument}
+      backHref="/dokumente"
+      title="Neues Dokument"
+    />
   );
 }
