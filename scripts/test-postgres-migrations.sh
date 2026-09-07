@@ -235,7 +235,10 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave)$' | sort); do
+# Phase 11b: beide Layout-Migrationen aendern BrandingSettings (legt Phase 7 an) — hier
+# ebenfalls ausklammern, der anschliessende "migrate deploy" zieht sie in der richtigen
+# Reihenfolge nach Phase 7 nach.
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -567,5 +570,50 @@ SQL
 WHDELROWS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"WebhookDelivery\" where id='whd1'")
 [ "$WHDELROWS" = "0" ] || fail "WebhookDelivery-Zeile haette per ON DELETE CASCADE mit dem Endpunkt geloescht werden muessen"
 echo "    ok — alle drei Phase-10-Migrationen angewendet, 43 Tabellen, ApiKey.keyHash-Unique erzwungen, ApiIdempotency(orgId,key)-Unique org-gescopt erzwungen, WebhookEndpoint-/WebhookDelivery-Indizes vorhanden, WebhookDelivery folgt WebhookEndpoint per ON DELETE CASCADE"
+
+echo "==> Fall 15 (Phase 11b): Layout-Spalten, footerMode-Backfill auf Bestandszeile, Organization.ownerName"
+# Eigenes Bestands-Szenario (analog Fall 13): alle Migrationen bis VOR Phase 11b einspielen,
+# eine BrandingSettings-Zeile MIT Freitext-Fusszeile anlegen (footerMode existiert noch
+# nicht), dann per "migrate deploy" genau die beiden Phase-11b-Migrationen nachziehen und
+# pruefen, dass der Backfill die Bestandszeile auf CUSTOM stellt, Zeilen OHNE Freitext auf
+# AUTO bleiben und layoutId den Default "standard" traegt.
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org15a','Bestand Fuenfzehn A GmbH','Weg 15','99915','Bestadt',NOW());
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org15b','Bestand Fuenfzehn B GmbH','Weg 16','99916','Bestadt',NOW());
+INSERT INTO "BrandingSettings" ("id","orgId","footerLeft","updatedAt")
+  VALUES ('bs15a','org15a','Alte Fusszeile links',NOW());
+INSERT INTO "BrandingSettings" ("id","orgId","updatedAt")
+  VALUES ('bs15b','org15b',NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-11b-Migrationen sind auf der Bestands-DB fehlgeschlagen"
+P11BMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name in ('20260907075900_phase11b_layouts','20260907090333_phase11b_footermode_backfill') and finished_at is not null")
+[ "$P11BMIG" = "2" ] || fail "erwartet beide Phase-11b-Migrationen als angewendet, gefunden $P11BMIG"
+FM_A=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"footerMode\" from \"BrandingSettings\" where id='bs15a'")
+[ "$FM_A" = "CUSTOM" ] || fail "Bestandszeile bs15a mit Freitext-Fusszeile: footerMode ist '$FM_A', erwartet CUSTOM (Backfill)"
+FM_B=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"footerMode\" from \"BrandingSettings\" where id='bs15b'")
+[ "$FM_B" = "AUTO" ] || fail "Bestandszeile bs15b ohne Freitext: footerMode ist '$FM_B', erwartet AUTO"
+LAYOUT_A=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"layoutId\" from \"BrandingSettings\" where id='bs15a'")
+[ "$LAYOUT_A" = "standard" ] || fail "Bestandszeile bs15a: layoutId ist '$LAYOUT_A', erwartet Default standard"
+OWNERCOL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.columns where table_name='Organization' and column_name='ownerName'")
+[ "$OWNERCOL" = "1" ] || fail "Spalte Organization.ownerName fehlt nach Phase 11b"
+COUNT15=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT15" = "43" ] || fail "erwartet weiterhin 43 Tabellen nach Phase 11b (nur Spalten), gefunden $COUNT15"
+echo "    ok — Phase-11b-Migrationen angewendet, footerMode-Backfill CUSTOM/AUTO korrekt, layoutId-Default standard, Organization.ownerName vorhanden, 43 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"
