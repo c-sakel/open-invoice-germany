@@ -1,7 +1,8 @@
 /**
- * Live-Summen für den Beleg-Editor — reine Übertragung des `useMemo`-Blocks aus
- * `NewInvoiceForm.tsx` (L298-369) in eine pure Funktion. DOCUMENT/DELIVERY_NOTE
- * werden wie REGULAR behandelt (kein Steuerschema-Wechsel für diese Belegarten).
+ * Live-Summen für den Beleg-Editor — reine Funktion (kein `useMemo`, keine
+ * React-Abhängigkeit), damit `DocumentEditor` sie ohne doppelte Berechnung als Prop
+ * weiterreichen kann. DOCUMENT/DELIVERY_NOTE werden wie REGULAR behandelt (kein
+ * Steuerschema-Wechsel für diese Belegarten).
  *
  * Anders als die Formulare heute (die eine ungültige Eingabe stillschweigend als 0
  * behandeln) meldet `computeDraftTotals` eine ungültige Positionsmenge/-preis als

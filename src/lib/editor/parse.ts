@@ -64,10 +64,9 @@ export function fromPermille(p: number): string {
 }
 
 /**
- * "Oder Zero"-Varianten, wie die lokalen toCents/toMilli/toPermille-Helfer der
- * heutigen Formulare (NewInvoiceForm.tsx/NewDocumentForm.tsx): ungültige/leere
- * Eingabe -> 0 statt null, `permilleOrZero` zusätzlich auf 0..1000 geklemmt (wie die
- * alten lokalen `toPermille`-Funktionen dort). Payload-Mapper (draft.ts) UND
+ * "Oder Zero"-Varianten der `toCents`/`toMilli`/`toPermille`-Funktionen oben: ungültige/
+ * leere Eingabe -> 0 statt null, `permilleOrZero` zusätzlich auf 0..1000 geklemmt.
+ * Payload-Mapper (draft.ts) UND
  * Live-Summen (totals.ts) verwenden dieselben Funktionen, damit ein außerhalb des
  * gültigen Bereichs liegender Prozentwert (z. B. "150" %) in beiden konsistent auf
  * 100 % geklemmt wird statt in den Summen einen Fehler zu erzeugen, den das

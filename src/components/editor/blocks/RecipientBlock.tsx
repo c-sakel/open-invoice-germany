@@ -3,15 +3,14 @@
 /**
  * Empfaenger-Block (Phase 11c, Task 4, linke Spalte ab `md`): `CustomerPicker` (Task 3)
  * + schreibgeschuetzte Anschrift-Vorschau des gewaehlten Kunden + Ansprechpartner-/
- * Adress-Selects (gefiltert auf `customerId`, wie heute OHNE Filterung nach
- * `AddressOption.type` — siehe NewInvoiceForm/NewDocumentForm: beide Adress-Selects
- * zeigen alle Adressen des Kunden, `type` dient nur der „Standard des Kunden"-
- * Beschriftung der leeren Option) + `TakeOverPrompt` bei Neuanlage.
+ * Adress-Selects (gefiltert auf `customerId`, OHNE Filterung nach `AddressOption.type` —
+ * beide Adress-Selects zeigen alle Adressen des Kunden, `type` dient nur der „Standard
+ * des Kunden"-Beschriftung der leeren Option) + `TakeOverPrompt` bei Neuanlage.
  *
- * Welche Adress-Selects erscheinen, haengt vom Modus ab (deckungsgleich mit den
- * bestehenden Formularen): INVOICE zeigt Rechnungs- UND Lieferadresse, DOCUMENT nur
- * Rechnungsadresse, DELIVERY_NOTE nur Lieferadresse. `TakeOverPrompt` existiert nur fuer
- * INVOICE/DOCUMENT (DeliveryNoteForm kennt die Funktion heute nicht).
+ * Welche Adress-Selects erscheinen, haengt vom Modus ab: INVOICE zeigt Rechnungs- UND
+ * Lieferadresse, DOCUMENT nur Rechnungsadresse, DELIVERY_NOTE nur Lieferadresse.
+ * `TakeOverPrompt` existiert nur fuer INVOICE/DOCUMENT (Lieferscheine kennen die
+ * Funktion nicht).
  */
 import { useState } from "react";
 import { narrowTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
@@ -92,9 +91,9 @@ export function RecipientBlock({
   addresses?: AddressOption[];
   offerLastDocument?: boolean;
 }) {
-  // Fix-Welle B6-Muster (NewInvoiceForm/NewDocumentForm): der zuletzt AUTOMATISCH
-  // angewendete Rabatt-Default — nur wenn das Feld dem noch entspricht (oder leer ist),
-  // ueberschreibt ein weiterer Kundenwechsel es erneut.
+  // Fix-Welle B6-Muster: der zuletzt AUTOMATISCH angewendete Rabatt-Default — nur wenn
+  // das Feld dem noch entspricht (oder leer ist), ueberschreibt ein weiterer
+  // Kundenwechsel es erneut.
   const [appliedDefaultDiscount, setAppliedDefaultDiscount] = useState("");
 
   const selectedCustomer = customers.find((c) => c.id === draft.customerId);
@@ -103,15 +102,14 @@ export function RecipientBlock({
   const hasDefaultContact = customerContacts.some((c) => c.isDefault);
   const hasDefaultBillingAddress = customerAddresses.some((a) => a.type === "BILLING" && a.isDefault);
   // Nur fuer DELIVERY_NOTE verwendet (INVOICEs Lieferadresse-Select nutzt statt der
-  // Kundenvorgabe-Beschriftung den statischen Text "wie Rechnungsadresse") — wie
-  // DeliveryNoteForm heute ohne Filterung nach `type`.
+  // Kundenvorgabe-Beschriftung den statischen Text "wie Rechnungsadresse") — ohne
+  // Filterung nach `type`.
   const hasDefaultShippingAddress = customerAddresses.some((a) => a.isDefault);
 
   function selectCustomer(id: string, customer: CustomerOption | null) {
     dispatch({ type: "set", field: "customerId", value: id });
     // Ansprechpartner/Adressen gehoeren zum ALTEN Kunden — beim Kundenwechsel
-    // zuruecksetzen, wenn sie nicht (mehr) zum neuen passen (wie NewInvoiceForm/
-    // NewDocumentForm/DeliveryNoteForm heute).
+    // zuruecksetzen, wenn sie nicht (mehr) zum neuen passen.
     if (draft.contactPersonId && !contacts.some((c) => c.id === draft.contactPersonId && c.customerId === id)) {
       dispatch({ type: "set", field: "contactPersonId", value: "" });
     }
@@ -164,7 +162,7 @@ export function RecipientBlock({
       <EditorField label="Kunde" required>
         {/* Kein `disabled={isEdit}`: auch bei Belegen mit Status DRAFT (der einzige
             bearbeitbare Zustand, siehe z. B. rechnungen/[id]/bearbeiten/page.tsx) laesst
-            sich der Kunde heute in NewInvoiceForm/NewDocumentForm aendern. */}
+            sich der Kunde im Editor aendern. */}
         {() => <CustomerPicker customers={customers} value={draft.customerId} onChange={selectCustomer} />}
       </EditorField>
 

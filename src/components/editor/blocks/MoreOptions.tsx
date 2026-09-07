@@ -12,7 +12,7 @@
  * `PrintOptionsPanel` (Phase 7/11b) nur bei Bearbeiten (braucht eine `docId`) — DIESES
  * Panel speichert sofort (eigener PUT-Request), unabhaengig vom uebrigen Editor-`save()`.
  * DELIVERY_NOTE zeigt keine Druckoptionen (Brief nennt sie dort nicht — Lieferscheine
- * haben in der heutigen `DeliveryNoteForm` keine Layout-/Druckoptionen-Bedienung).
+ * haben im Editor keine Layout-/Druckoptionen-Bedienung).
  */
 import { useId } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";

@@ -3,10 +3,9 @@
 /**
  * Positionstabelle (Phase 11c, Task 5): Tabellenkopf Pos. | Beschreibung | Menge |
  * Einheit | Preis | USt. | Rabatt | Betrag | ⋯, eine `LineRow` je `draft.lines`-
- * Eintrag, darunter die Add-Links. Basis: Positions-JSX aus `NewInvoiceForm.tsx`
- * (L600-710, `dragIndex`-Logik L280-292), als echte `<table>` statt Grid-`<div>`s
- * (Brief verlangt eine Kopfzeile mit festen Spalten) — daher `overflow-x-auto` als
- * bewusste Vereinfachung fuer schmale Bildschirme (kein Card-Layout-Fallback, siehe
+ * Eintrag, darunter die Add-Links. Echte `<table>` statt Grid-`<div>`s (Brief verlangt
+ * eine Kopfzeile mit festen Spalten) — daher `overflow-x-auto` als bewusste
+ * Vereinfachung fuer schmale Bildschirme (kein Card-Layout-Fallback, siehe
  * Task-5-Report).
  *
  * `grossDisplay` ist Teil von `DraftState` (nicht lokaler Komponentenzustand) —

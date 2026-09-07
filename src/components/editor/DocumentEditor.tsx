@@ -53,8 +53,8 @@ export interface DocumentEditorProps {
 const PRIMARY_LABEL: Record<EditorMode, { create: string; edit: string }> = {
   INVOICE: { create: "Als Entwurf speichern", edit: "Änderungen speichern" },
   DOCUMENT: { create: "Dokument anlegen", edit: "Änderungen speichern" },
-  // Lieferscheine kennen im Editor keinen Bearbeiten-Fall (wie DeliveryNoteForm heute:
-  // reine Anlage ohne Quelldokument) — dieselbe Beschriftung fuer beide Faelle.
+  // Lieferscheine kennen im Editor keinen Bearbeiten-Fall (reine Anlage ohne
+  // Quelldokument) — dieselbe Beschriftung fuer beide Faelle.
   DELIVERY_NOTE: { create: "Lieferschein anlegen", edit: "Lieferschein anlegen" },
 };
 
@@ -109,7 +109,7 @@ export function DocumentEditor({
 
   // DOCUMENT: Kopf-/Fusstext/Bedingungen bei Neuanlage vorbelegen, sobald sich die Art
   // (draft.kind) aendert — nur solange das jeweilige Feld noch leer ist und kein
-  // Bearbeiten-Fall vorliegt (identisch zu NewDocumentForm.tsx L140-154, Kontext §1).
+  // Bearbeiten-Fall vorliegt (Kontext §1).
   // Bewusst HIER statt in `HeadTextBlock` (das nur `headerText` rendert): deckt
   // zusaetzlich `footerText` (Task 5, FootTextBlock) und `deliveryTerms`/`paymentTerms`
   // (MoreOptions, Task 4) mit ab — ein Effekt nur innerhalb eines einzelnen Blocks
@@ -260,8 +260,7 @@ export function DocumentEditor({
         />
 
         {/* Task-5-Fix 2: DELIVERY_NOTE kennt weder Beleg-Rabatt/-Aufschlag noch eine
-            Summenanzeige (das alte `DeliveryNoteForm.tsx` hatte ebenfalls keinen
-            Summenblock) — ein TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
+            Summenanzeige — ein TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
             Server fuer Lieferscheine gar nicht kennt. */}
         {mode !== "DELIVERY_NOTE" && <TotalsBlock totals={totals} draft={draft} />}
 
