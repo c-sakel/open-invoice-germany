@@ -1,9 +1,10 @@
 /**
  * Layout-Bausteine (Phase 11b), die mehrere PdfLayouts teilen: Empfaengerblock,
- * rechtsbuendige/-zweispaltige Meta-Zeilen, Fusszeilen-Spalten, Logo+Absenderzeile.
- * Reine Zeichenfunktionen auf einem `LayoutFrame` — kein Layout-spezifisches Wissen.
+ * rechtsbuendige/-zweispaltige Meta-Zeilen, Tabellenkopfzeile, Fusszeilen-Spalten,
+ * Logo+Absenderzeile. Reine Zeichenfunktionen auf einem `LayoutFrame` — kein
+ * Layout-spezifisches Wissen (das liefert `layout.table`/`layout.footerHeight`).
  */
-import type { LayoutFrame, KopfInput, FooterColumn } from "./types";
+import type { LayoutFrame, KopfInput, FooterColumn, PdfLayout } from "./types";
 import { drawLogo, drawSenderLine } from "../layout";
 
 /** Empfaengerblock (DIN-5008-Fenster); liefert Unterkante. */
@@ -50,6 +51,41 @@ export function drawMetaTable(frame: LayoutFrame, rows: { label: string; value: 
     cy += size + 4;
   }
   return cy;
+}
+
+export interface TableHeaderColumn {
+  header: string;
+  /** Absolute x-Position (bereits inkl. `tableX`-Offset des Aufrufers). */
+  x: number;
+  width: number;
+  align?: "left" | "right";
+  /** Beschreibungsspalte: Text entfaellt ohne `showDescription`, die Spaltenbreite bleibt
+   *  trotzdem reserviert (Phase 7 — Rechnungs-Tabelle rueckt sonst zusammen). */
+  isDescription?: boolean;
+}
+
+/**
+ * Zeichnet die Tabellenkopfzeile nach `layout.table` (dunkler Balken bei `headerFill`,
+ * sonst eine Linie) und liefert die y-Koordinate, an der die erste Datenzeile beginnt.
+ * Von `invoice-pdf.ts` und `delivery-note-pdf.ts` gemeinsam genutzt (Phase 11b, Task 3
+ * — vorher zwei fast identische Kopien).
+ */
+export function drawTableHeaderRow(frame: LayoutFrame, layout: PdfLayout, columns: TableHeaderColumn[], atY: number, showDescription: boolean): number {
+  const { doc, left, right, base } = frame;
+  const t = layout.table;
+  doc.fontSize(base - 1);
+  if (t.headerFill) {
+    doc.rect(left, atY, right - left, t.headerHeight).fill(t.headerFill);
+  } else {
+    doc.moveTo(left, atY + t.headerHeight).lineTo(right, atY + t.headerHeight).strokeColor(t.rowRule ?? "#999").stroke();
+  }
+  doc.fillColor(t.headerText).font(t.headerFill ? "Helvetica" : "Helvetica-Oblique");
+  for (const col of columns) {
+    if (col.isDescription && !showDescription) continue;
+    doc.text(col.header, col.x, atY + (t.headerFill ? 5 : 3), { width: col.width, align: col.align ?? "left" });
+  }
+  doc.font("Helvetica").fillColor(t.textColor).fontSize(base - 1);
+  return atY + t.headerHeight + 4;
 }
 
 /** Fusszeilen-Spalten gleichmaessig ueber die Breite; liefert nichts. */

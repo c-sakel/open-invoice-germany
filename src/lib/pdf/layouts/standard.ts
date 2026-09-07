@@ -11,11 +11,16 @@ export const standardLayout: PdfLayout = {
     const { doc, left, right, margins, primary } = frame;
     drawLogoAndSender(frame, input);
     const buyerY = margins.top + 60;
-    drawRecipient(frame, input, buyerY);
+    const recipientBottom = drawRecipient(frame, input, buyerY);
     doc.fontSize(18).fillColor(primary).font("Helvetica").text(input.title, left, buyerY, { align: "right", width: right - left });
     const metaTop = margins.top + 90;
-    drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, metaTop);
-    let y = margins.top + 170;
+    const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, metaTop);
+    // Phase 11b, Task 3 — mit einem zusaetzlichen Empfaengerblock (Lieferschein-
+    // Lieferadresse, S7 Fix-Welle) haengt der Tabellenbeginn vom tatsaechlich gedruckten
+    // Empfaenger-/Meta-Block ab (der Lieferadress-Block braucht je nach Inhalt mehr oder
+    // weniger Platz als die feste Rechnungs-Kopfhoehe); ohne ihn bleibt die feste Hoehe aus
+    // Task 2 (byte-kompatibel zu Phase 7).
+    let y = input.extraRecipientBlock ? Math.max(recipientBottom, metaBottom, margins.top + 150) + 20 : margins.top + 170;
     if (input.intro) {
       doc.fontSize(9).fillColor("#333").text(input.intro, left, y, { width: right - left });
       y = doc.y + 10;
@@ -31,5 +36,12 @@ export const standardLayout: PdfLayout = {
     // gleichmaessig verteilt; Text grau 8pt wie bisher.
     drawFooterColumns(frame, columns, y, 8, "#666666");
   },
-  footerHeight: 32,
+  // Phase 11b, Task 3 — vorher 32pt (reichte fuer die zweizeilige Phase-7-Fusszeile).
+  // Die vierspaltige AUTO-Fusszeile traegt bis zu drei Zeilen JE Spalte bei einer bei
+  // vier Spalten entsprechend schmaleren Spaltenbreite; einzelne Zeilen (z. B. die
+  // gruppierte IBAN oder eine laengere E-Mail-Adresse) brechen dadurch innerhalb der
+  // Spalte um. 46pt bietet Reserve fuer eine umgebrochene Zeile, ohne dass pdfkit den
+  // eigenen (durch dieselben `margins.bottom` gesetzten) Seitenumbruch-Schwellenwert
+  // ueberschreitet — sonst haengt eine ueberlaufende Fusszeile eine leere Folgeseite an.
+  footerHeight: 46,
 };

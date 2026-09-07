@@ -1,13 +1,20 @@
 /**
  * PDF einer Mahnung / Zahlungserinnerung.
  * Phase 7, Task 3 (§35-§36): Briefpapier + Druckoptionen kommen aus einem `PdfTheme`.
+ *
+ * Phase 11b, Task 3 — Kopf/Summenlinie/Fusszeile kommen jetzt aus einem `PdfLayout`
+ * (siehe invoice-pdf.ts). Kein Item-Tabellenkopf noetig (die Aufstellung ist eine
+ * einfache zweispaltige Liste, kein `layout.table`).
  */
 import PDFDocument from "pdfkit";
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
+import { pdfMargins, drawBackground } from "./layout";
+import { getLayout } from "./layouts/registry";
+import type { LayoutFrame } from "./layouts/types";
+import { buildFooterColumns } from "./footer";
 
 export interface DunningPdfData {
   number: string;
@@ -77,35 +84,28 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     const cur = data.currency;
     const left = margins.left;
     const right = doc.page.width - margins.right;
-    const titleColor = theme.brand.primaryColor;
     const title = data.stageName || DUNNING_LEVEL_TITLE[data.level] || `${data.level}. Mahnung`;
 
-    drawLogo(doc, theme, right, margins.top);
+    // Phase 11b — Layout-Hooks statt eigener Kopie der Zeichenlogik.
+    const layout = getLayout(theme.layoutId);
+    const base = theme.brand.fontSizePt + layout.fontDelta;
+    const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
 
-    const senderFallback = `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`;
-    drawSenderLine(doc, theme, left, margins.top, senderFallback);
+    let y = layout.drawKopf(frame, {
+      title,
+      numberLabel: "Nr.",
+      number: data.number,
+      meta: [{ label: "Datum", value: deDate(data.sentDate) }],
+      recipient: data.buyer,
+      senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
+    });
 
-    const buyerY = margins.top + 60;
-    doc.fillColor("#000").fontSize(11);
-    doc.text(data.buyer.name, left, buyerY);
-    if (data.buyer.contactName) doc.text(data.buyer.contactName);
-    doc.text(data.buyer.addressLine1);
-    if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
-    doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
-
-    doc.fontSize(18).fillColor(titleColor).text(title, left, buyerY, { align: "right" });
-    doc.fontSize(10).fillColor("#333");
-    const metaTop = margins.top + 90;
-    doc.text(`Nr.: ${data.number}`, left + 250, metaTop, { align: "right" });
-    doc.text(`Datum: ${deDate(data.sentDate)}`, { align: "right" });
-
-    const introY = margins.top + 150;
-    doc.fontSize(11).fillColor("#000").text("Sehr geehrte Damen und Herren,", left, introY);
+    doc.fontSize(11).fillColor("#000").text("Sehr geehrte Damen und Herren,", left, y);
     doc.moveDown(0.5);
     doc.fontSize(10).fillColor("#333").text((INTRO[data.level] ?? INTRO[2])(data.invoiceNumber), { width: right - left });
 
     // Aufstellung
-    let y = margins.top + 240;
+    y = doc.y + 20;
     const row = (label: string, value: string, bold = false) => {
       doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor("#000");
       doc.text(label, left, y, { width: 360 });
@@ -118,7 +118,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     if (data.feeCents > 0) row("Mahnkosten", formatCents(data.feeCents, cur));
     if (data.lateFeeCents > 0) row("Sonstige Auslagen", formatCents(data.lateFeeCents, cur));
     y += 4;
-    doc.moveTo(left, y).lineTo(right, y).strokeColor(titleColor).stroke();
+    layout.drawTotalsRule(frame, left, y);
     y += 6;
     row("Zahlbarer Gesamtbetrag", formatCents(data.totalCents, cur), true);
     doc.font("Helvetica");
@@ -126,31 +126,15 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     y += 16;
     doc.fontSize(10).fillColor("#000").text(`Bitte überweisen Sie den Gesamtbetrag bis spätestens ${deDate(data.newDueDate)}.`, left, y, { width: right - left });
 
-    // Fuß: Bank + Aussteller (nur wenn options.showFooter an ist).
-    const footY = doc.page.height - margins.bottom - 20;
+    // Fußzeile (Phase 11b): AUTO/CUSTOM-Spalten aus footer.ts, gezeichnet vom Layout-Hook
+    // (nur wenn options.showFooter an ist).
+    const footY = doc.page.height - margins.bottom - layout.footerHeight;
     if (theme.options.showFooter) {
-      // S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide (siehe invoice-pdf.ts).
-      const branded = drawBrandedFooter(doc, theme, left, right, footY - 11);
-      if (!branded) {
-        doc.fontSize(8).fillColor("#666");
-        const sellerLine = [
-          data.seller.name,
-          `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-          data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-          data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
-        const bankLine = [
-          data.seller.bankName ? `Bank: ${data.seller.bankName}` : null,
-          data.seller.iban ? `IBAN: ${data.seller.iban}` : null,
-          data.seller.bic ? `BIC: ${data.seller.bic}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        if (bankLine) doc.text(bankLine, left, footY + 11, { width: right - left, align: "center" });
-      }
+      layout.drawFooter(
+        frame,
+        buildFooterColumns({ seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts }, theme.brand),
+        footY,
+      );
     }
 
     // Falz-/Lochmarken + Seitenzahlen.

@@ -7,6 +7,7 @@
 import { dbInternal } from "@/lib/db";
 import { InvalidOperationError, NotFoundError } from "@/domain/errors";
 import { printSettingsInputSchema, printOptionsOverrideSchema, type PrintSettingsInput, type PrintOptionsOverride } from "@/schemas/settings";
+import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 
 export const DEFAULT_PRINT_SETTINGS: PrintSettingsInput = printSettingsInputSchema.parse({});
 
@@ -45,8 +46,13 @@ export async function savePrintSettings(orgId: string, rawInput: unknown): Promi
  * Faellt auch auf `global` zurueck, wenn `overrideJson` zwar gueltiges JSON, aber kein
  * gueltiges PrintOptionsOverride ist (Nit final-review: `.parse()` warf zuvor durch und
  * liess eine kaputte Zeile die PDF-Route mit 500 abbrechen statt sauber zurueckzufallen).
+ *
+ * Phase 11b, Task 3 — Rueckgabetyp ist jetzt `EffectivePrintOptions`
+ * (`PrintSettingsInput & { layoutId?: LayoutId }`): der Spread `{ ...global,
+ * ...parsed.data }` traegt ein in `overrideJson` gesetztes `layoutId` automatisch mit,
+ * `loadPdfTheme` speist es als Beleg-Override in `resolveLayoutId` ein.
  */
-export function effectivePrintOptions(global: PrintSettingsInput, overrideJson: string | null | undefined): PrintSettingsInput {
+export function effectivePrintOptions(global: PrintSettingsInput, overrideJson: string | null | undefined): EffectivePrintOptions {
   if (!overrideJson) return global;
   let raw: unknown;
   try {
