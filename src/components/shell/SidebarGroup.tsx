@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { NavGroup, NavItem } from "@/lib/nav";
 import { itemMatches, SETTINGS_ITEMS } from "@/lib/nav";
 import { NavIcon } from "./NavIcons";
+import { UnreadBadge } from "./UnreadBadge";
 
 interface Props {
   group: NavGroup;
@@ -28,12 +29,7 @@ function ItemLink({ item, active, collapsed, badge, onNavigate, indent }: { item
     >
       {item.icon && <NavIcon name={item.icon} className="h-4 w-4 shrink-0" />}
       {!collapsed && <span className="truncate">{item.label}</span>}
-      {!collapsed && item.badge === "notifications" && badge > 0 && (
-        <span className="ml-auto rounded-full bg-indigo-600 px-1.5 text-[10px] font-semibold text-white">{badge}</span>
-      )}
-      {collapsed && item.badge === "notifications" && badge > 0 && (
-        <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-indigo-600" aria-label={`${badge} ungelesen`} />
-      )}
+      {item.badge === "notifications" && <UnreadBadge collapsed={collapsed} initialCount={badge} />}
     </Link>
   );
 }
