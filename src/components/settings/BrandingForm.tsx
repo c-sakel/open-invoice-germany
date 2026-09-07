@@ -27,21 +27,29 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
     setSaving(true);
     setError(null);
     setSaved(false);
-    const res = await fetch("/api/settings/branding", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
-    if (!res.ok || !j.settings) {
-      setError(j.error ?? "Speichern fehlgeschlagen.");
+    // Fix-Welle (Abschluss-Review, Block 4 "Minor"): try/catch + `finally` — ein
+    // Netzwerkfehler (nicht nur ein Nicht-200-Status) liess den Button vorher bis zum
+    // Neuladen auf "Speichern…" haengen, weil `setSaving(false)` nie erreicht wurde
+    // (siehe dasselbe Muster in LayoutGallery.tsx#save).
+    try {
+      const res = await fetch("/api/settings/branding", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
+      if (!res.ok || !j.settings) {
+        setError(j.error ?? "Speichern fehlgeschlagen.");
+        return;
+      }
+      setValues(j.settings);
+      setSaved(true);
+      router.refresh();
+    } catch {
+      setError("Netzwerkfehler beim Speichern. Bitte erneut versuchen.");
+    } finally {
       setSaving(false);
-      return;
     }
-    setValues(j.settings);
-    setSaving(false);
-    setSaved(true);
-    router.refresh();
   }
 
   async function upload(kind: "logo" | "background", file: File) {
