@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { listRecurring } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
@@ -52,12 +53,15 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Abos / Wiederkehrende Rechnungen</h1>
-        <Link href="/abos/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neues Abo
-        </Link>
-      </div>
+      <PageHeader
+        title="Abos / Wiederkehrende Rechnungen"
+        subtitle={`${result.total} Belege`}
+        actions={
+          <Link href="/abos/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neues Abo
+          </Link>
+        }
+      />
       <p className="text-sm text-slate-500">
         Vorlagen, aus denen automatisch Rechnungen erzeugt werden — wöchentlich bis jährlich. Erzeugte Rechnungen durchlaufen Festschreibung,
         Nummernkreis und Audit wie jede andere Rechnung.

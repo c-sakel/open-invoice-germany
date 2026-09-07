@@ -270,6 +270,10 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **MCP**: `list_invoices` (Filter-basiert, ersetzt die vorherige primitive Version — kein Org-Scoping, roher Status-String), neu `get_dashboard`, `get_customer_overview`, `get_timeline`, `list_notifications`, `mark_notifications_read`, `update_recurring_invoice`; `record_payment` um `note` erweitert. Details siehe `docs/MCP.md`.
 
+### App-Shell, Navigation & Suche (Phase 11a)
+
+Die eingeloggte Ansicht nutzt eine App-Shell mit einklappbarer Sidebar (`src/components/shell/{AppShell,Sidebar,SidebarGroup,Topbar,NavIcons,CommandPalette}.tsx`), deren Gruppen und Einträge aus einer zentralen Navigationsdatenquelle (`src/lib/nav.ts`) stammen. Die globale Suche (Befehlspalette, ⌘K/Strg+K) ruft `GET /api/search` auf, das auf der reinen Domainfunktion `src/domain/search/query.ts` basiert und eine org-gescopte Teilstring-Suche (`ciContains()`) über Belege, Kunden und Produkte liefert — ohne interne Notizen. Die öffentliche Hülle (Angebots-Link, Login/Setup) bleibt davon unberührt und weiterhin ohne Sidebar.
+
 ---
 
 ## 2. E-Rechnung: Erzeugung & Validierung
