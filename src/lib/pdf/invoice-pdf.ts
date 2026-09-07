@@ -130,8 +130,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     doc.on("error", reject);
   });
   // Hintergrundbild zuerst — `pageAdded` feuert nicht für die erste (automatisch von
-  // pdfkit angelegte) Seite, daher hier zusätzlich einmal manuell.
-  doc.on("pageAdded", () => drawBackground(doc, theme));
+  // pdfkit angelegte) Seite, daher hier zusätzlich einmal manuell. Der `pageAdded`-
+  // Handler selbst wird weiter unten registriert (siehe `chromeStartY`), sobald `frame`/
+  // `layout` feststehen.
   drawBackground(doc, theme);
 
   const cur = data.currency;
@@ -166,6 +167,24 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // (rowH = 16) unveraendert: `headingRowH` = round(16 * 1.6) = 26, SUBTOTAL bleibt `rowH`
   // = 16.
   const headingRowH = Math.round(rowH * 1.6); // vorher fest 26
+
+  // Fix-Welle (Abschluss-Review, Block 3 "Minor" — `modern`-Chrome inkonsistent):
+  // `drawPageChrome` (der farbige Balken von `modern` auf Folgeseiten) wurde bisher NUR
+  // von `ensureSpace`/`ensurePlainSpace` direkt nach einem MANUELLEN `doc.addPage()`
+  // aufgerufen. Seiten, die pdfkit SELBST automatisch anlegt (z. B. wenn ein `doc.text()`
+  // im Schlussblock ohne vorherigen `ensurePlainSpace`-Schutz nahe dem Seitenende
+  // umbricht), loesten zwar denselben `pageAdded`-Event aus (der bisher nur den
+  // Hintergrund neu zeichnete), aber NIE das Kopf-Chrome — Seite 2 blieb dann ohne
+  // Farbbalken. Jetzt zeichnet der `pageAdded`-Handler selbst Hintergrund UND Chrome fuer
+  // JEDEN `doc.addPage()` (manuell wie automatisch) und merkt sich die vom Hook
+  // gelieferte Start-y in `chromeStartY`; `ensureSpace`/`ensurePlainSpace` lesen diese
+  // Variable nur noch, statt den Hook selbst (und damit potenziell doppelt) aufzurufen.
+  let chromeStartY: number | undefined;
+  doc.on("pageAdded", () => {
+    drawBackground(doc, theme);
+    const chromeResult = layout.drawPageChrome?.(frame);
+    chromeStartY = typeof chromeResult === "number" ? chromeResult : undefined;
+  });
 
   const meta: KopfMetaRow[] = [{ label: "Rechnungsdatum", value: deDate(data.issueDate) }];
   if (data.deliveryDate) meta.push({ label: "Leistungsdatum", value: deDate(data.deliveryDate) });
@@ -223,8 +242,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     doc.addPage();
     // Phase 11b, Task 4 — Kopf-"Chrome" auf Folgeseiten (z. B. der Balken von `modern`);
     // liefert der Hook eine Zahl, ersetzt sie die bisherige feste Start-y (margins.top).
-    const chromeY = layout.drawPageChrome?.(frame);
-    return drawTableHeader(typeof chromeY === "number" ? chromeY : margins.top);
+    // Fix-Welle: `chromeStartY` wird vom `pageAdded`-Handler gesetzt (siehe oben) — hier
+    // NICHT mehr selbst `drawPageChrome` aufrufen (sonst Doppel-Zeichnung).
+    return drawTableHeader(typeof chromeStartY === "number" ? chromeStartY : margins.top);
   };
 
   y = drawTableHeader(y);
@@ -333,8 +353,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const ensurePlainSpace = (atY: number, needed: number): number => {
     if (atY + needed <= pageBottom) return atY;
     doc.addPage();
-    const chromeY = layout.drawPageChrome?.(frame);
-    return typeof chromeY === "number" ? chromeY : margins.top;
+    // Fix-Welle: siehe `ensureSpace` oben — `chromeStartY` statt eines eigenen
+    // `drawPageChrome`-Aufrufs.
+    return typeof chromeStartY === "number" ? chromeStartY : margins.top;
   };
   y = ensurePlainSpace(y, 40);
   y += 10;
@@ -342,7 +363,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   y += 6;
   const sumRow = (label: string, value: string, bold = false) => {
     y = ensurePlainSpace(y, 16);
-    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+    // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(10)` — bei
+    // `kompakt` (base 9) oder einem hoeheren `fontSizePt` folgte der Summenblock der
+    // Tabellenschrift bisher nicht. `base` = `theme.brand.fontSizePt + layout.fontDelta`
+    // (siehe oben) — bei den Defaults (fontSizePt 10, `standard`/`kompakt`s eigener
+    // fontDelta bereits in `base` eingerechnet) identisch zum bisherigen Wert 10.
+    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(base);
     doc.text(label, sumLabelX, y, { width: sumLabelWidth, align: "right" });
     doc.text(value, sumValueX, y, { width: sumValueWidth, align: "right" });
     y += 16;
@@ -373,7 +399,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // Phase 5 (§14 Abs. 5 S. 2 UStG) — je abgesetzter Abschlagsrechnung eine Abzugszeile,
   // dann fett der Restbetrag (= data.payableCents, aus dem Abzugs-Snapshot berechnet).
   if (isFinal && data.deductions?.length) {
-    doc.font("Helvetica").fontSize(9).fillColor("#333");
+    doc.font("Helvetica").fontSize(base - 1).fillColor("#333");
     for (const d of data.deductions) {
       doc.text(
         // Fix-Runde 1, Punkt 7 — "–" (En-Dash, U+2013) statt "−" (Minuszeichen, U+2212):
@@ -385,15 +411,29 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       );
       y = doc.y + 4;
     }
-    doc.fillColor("#000").fontSize(10);
+    doc.fillColor("#000").fontSize(base);
     sumRow("Restbetrag", formatCents(data.payableCents, cur), true);
   }
   doc.font("Helvetica");
 
   // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen, vor notes/paymentTerms.
+  //
+  // Fix-Welle (Abschluss-Review, Block 2 "Important"): dieser gesamte Schlussblock
+  // (Fusstext/DOWNPAYMENT-Hinweis/notes/paymentTermsHuman/paymentMethodText) wurde bisher
+  // mit reinem `doc.text(...)` OHNE `ensurePlainSpace`-Schutz gezeichnet. `pageBottom`
+  // reserviert seit Fix-Runde 2 zwar `layout.footerHeight + 6` am Seitenende, aber pdfkits
+  // EIGENE automatische Paginierung kennt nur `margins.bottom` (nicht unsere Reservierung)
+  // — ein y-Wert im Band dazwischen (hier 52pt: footerHeight 46 + 6pt Sicherheitsabstand)
+  // loeste bei pdfkit KEINEN Seitenumbruch aus und der Text landete auf der Fusszeile.
+  // Jeder Block bekommt jetzt vorab `y = ensurePlainSpace(y, 30)` (dieselbe 30pt-Schwelle
+  // wie im Pendant `delivery-note-pdf.ts:285-289`) und liest seine tatsaechliche Hoehe
+  // danach explizit aus `doc.y` zurueck — die vorherige Kette aus `doc.moveDown(0.4)`-
+  // Aufrufen verliess sich auf pdfkits internen Cursor, ohne dass die eigene `y`-Variable
+  // je wieder synchronisiert wurde, und war daher fuer eine Paginierungspruefung ungeeignet.
   if (data.footerText) {
+    y = ensurePlainSpace(y, 30);
     y += 10;
-    doc.fontSize(9).fillColor("#333").text(data.footerText, left, y, { width: right - left });
+    doc.fontSize(base - 1).fillColor("#333").text(data.footerText, left, y, { width: right - left });
     y = doc.y;
   }
 
@@ -401,21 +441,36 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // siehe skonto.ts — Menschentext; die #SKONTO#-Syntax bleibt dem XML vorbehalten)
   // und Zahlungsmethoden-Text (invoiceText) aus dem Snapshot.
   y += 16;
-  doc.fontSize(9).fillColor("#333");
+  doc.fontSize(base - 1).fillColor("#333");
   // Phase 5 (§13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG) — Anzahlungs-/Sollversteuerungs-
   // Hinweis auf jeder Abschlagsrechnung, vor den übrigen Hinweisen.
   if (data.type === "DOWNPAYMENT") {
+    y = ensurePlainSpace(y, 30);
     doc.text(DOWNPAYMENT_TAX_HINT, left, y, { width: right - left });
     y = doc.y + 4;
   }
-  if (data.notes) doc.text(data.notes, left, y, { width: right - left });
+  if (data.notes) {
+    y = ensurePlainSpace(y, 30);
+    doc.text(data.notes, left, y, { width: right - left });
+    y = doc.y;
+  }
   // Fix-Runde 1 (Befund C): paymentTermsHuman traegt bei Skonto den Klartext ohne
   // #SKONTO#-Tags; ohne Skonto identisch zu paymentTerms (Alt-Belege unveraendert).
   // Fix-Runde 1 (Koordinator, §33 DocumentSettings.showPaymentTermsText): diese Zeile
   // ("Zahlbar bis ..."/Skonto-Klartext) nur, wenn die Einstellung an ist.
   const paymentTermsHuman = data.paymentTermsHuman ?? data.paymentTerms;
-  if (paymentTermsHuman && theme.showPaymentTermsText) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
-  if (data.paymentMethodText) doc.moveDown(0.4).text(data.paymentMethodText, { width: right - left });
+  if (paymentTermsHuman && theme.showPaymentTermsText) {
+    y = ensurePlainSpace(y, 30);
+    y += 5; // entspricht in etwa dem vorherigen `doc.moveDown(0.4)` bei 9pt Schrift
+    doc.text(paymentTermsHuman, left, y, { width: right - left });
+    y = doc.y;
+  }
+  if (data.paymentMethodText) {
+    y = ensurePlainSpace(y, 30);
+    y += 5;
+    doc.text(data.paymentMethodText, left, y, { width: right - left });
+    y = doc.y;
+  }
 
   // Fix-Runde 1 (Koordinator, Punkt 6): die Fusszeile wird jetzt auf JEDER Seite gezeichnet
   // (vorher nur auf der zuletzt angelegten — `layout.drawFooter` lief vor der Seiten-
@@ -451,7 +506,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       // kollidierte die GiroCode-Bildunterschrift sonst mit der vierten Fusszeilen-Spalte.
       const giroY = footY - giroSize - 22;
       await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: GIRO_SIZE_MM });
-      doc.fontSize(7).fillColor("#666");
+      // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(7)`.
+      doc.fontSize(base - 3).fillColor("#666");
       doc.text("GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
     } catch (e) {
       // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)

@@ -145,7 +145,9 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
-    doc.on("pageAdded", () => drawBackground(doc, theme));
+    // Der `pageAdded`-Handler selbst wird weiter unten registriert (siehe `chromeStartY`),
+    // sobald `frame`/`layout` feststehen — die erste (automatisch von pdfkit angelegte)
+    // Seite bekommt den Hintergrund hier dennoch manuell, da `pageAdded` fuer sie nicht feuert.
     drawBackground(doc, theme);
 
     const cur = data.currency;
@@ -170,6 +172,17 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // die Positionszeilen hatten weiterhin fest 16pt, unabhaengig von `layout.fontDelta`
     // (z. B. `kompakt`). Bei `base = 10` (Default) unveraendert 16.
     const rowH = Math.round((base - 1) * 1.8);
+
+    // Fix-Welle (Abschluss-Review, Block 3 "Minor" — `modern`-Chrome inkonsistent): siehe
+    // invoice-pdf.ts fuer die ausfuehrliche Begruendung. `chromeStartY` wird vom
+    // `pageAdded`-Handler gesetzt (fuer JEDEN `doc.addPage()`, manuell wie pdfkit-eigen)
+    // und von `ensureSpace`/`ensurePlainSpace` unten nur noch GELESEN.
+    let chromeStartY: number | undefined;
+    doc.on("pageAdded", () => {
+      drawBackground(doc, theme);
+      const chromeResult = layout.drawPageChrome?.(frame);
+      chromeStartY = typeof chromeResult === "number" ? chromeResult : undefined;
+    });
 
     const meta: KopfMetaRow[] = [{ label: "Datum", value: deDate(data.issueDate) }];
     if (data.deliveryDate) meta.push({ label: "Lieferdatum", value: deDate(data.deliveryDate) });
@@ -219,8 +232,9 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
       if (atY + needed <= pageBottom) return atY;
       doc.addPage();
       // Phase 11b, Task 4 — Kopf-"Chrome" auf Folgeseiten (z. B. der Balken von `modern`).
-      const chromeY = layout.drawPageChrome?.(frame);
-      return drawTableHeader(typeof chromeY === "number" ? chromeY : margins.top);
+      // Fix-Welle: `chromeStartY` kommt vom `pageAdded`-Handler (siehe oben) — hier NICHT
+      // mehr selbst `drawPageChrome` aufrufen (sonst Doppel-Zeichnung).
+      return drawTableHeader(typeof chromeStartY === "number" ? chromeStartY : margins.top);
     };
 
     // Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock braucht KEINEN Tabellenkopf mehr
@@ -230,8 +244,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     const ensurePlainSpace = (atY: number, needed: number): number => {
       if (atY + needed <= pageBottom) return atY;
       doc.addPage();
-      const chromeY = layout.drawPageChrome?.(frame);
-      return typeof chromeY === "number" ? chromeY : margins.top;
+      return typeof chromeStartY === "number" ? chromeStartY : margins.top;
     };
 
     y = drawTableHeader(y);

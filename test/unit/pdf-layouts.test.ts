@@ -207,6 +207,86 @@ describe("standard — Empfaengerbreite fest 240pt, unabhaengig von den Raendern
   });
 });
 
+/**
+ * Fix-Welle (Abschluss-Review, Block 2 "Important"): reine ITEM-Zeilen + einzeilige
+ * `notes`/`paymentTermsHuman` (kein Textumbruch, siehe Arithmetik unten) — fuer die
+ * deterministische Paginierungs-Handrechnung analog zu `invoiceWithLines()` oben.
+ */
+function invoiceWithLinesAndClosing(n: number): EInvoiceData {
+  const data = invoiceWithLines(n);
+  return {
+    ...data,
+    iban: "DE02120300000000202051",
+    bic: "BYLADEM1001",
+    bankName: "Testbank",
+    notes: "Es gelten unsere allgemeinen Geschäftsbedingungen.",
+    paymentTermsHuman: "Zahlbar bis 16.05.2073 ohne Abzug.",
+  };
+}
+
+describe("standard — Schlussblock (notes/paymentTermsHuman) paginiert statt auf der Fusszeile (Abschluss-Review, Block 2 Important)", () => {
+  // Arithmetik (schwarz auf weiss, per Debug-Sweep verifiziert — siehe Fixwave-Report):
+  //   Konstanten wie in der "Fusszeilen-reservierte Paginierung"-Handrechnung oben:
+  //     margins.top = margins.bottom = 56.6929, standard.footerHeight = 46, rowH = 16.
+  //     pageBottom MIT Fusszeile bF = 841.89 - 56.6929 - 46 - 6 = 733.1971.
+  //     Tabellenbeginn Seite 1 y1 = 248.6929 (Kapazitaet 30), Folgeseiten y2 = 78.6929
+  //     (Kapazitaet 40) — siehe Handrechnung oben.
+  //   Fuer n Positionen (n > 30, alle uebrigen n-30 <= 40 passen auf EINE Folgeseite):
+  //     E(n) := Ende der Positionstabelle auf Seite 2 = y2 + (n-30)*rowH = 78.6929 + 16(n-30).
+  //   Summenblock (kein Rabatt/Aufschlag, kein FINAL — genau 3 sumRow-Zeilen à 16pt):
+  //     y nach Summen = E + 10 (Abstand) + 6 (Linie) + 3*16 (Zeilen) = E + 64.
+  //   Kein `footerText` gesetzt -> das `if (data.footerText)`-Fusstext-Guard entfaellt;
+  //   danach IMMER `y += 16` (Pflichthinweise-Abschnitt) -> y_vor_notes = E + 80.
+  //   `ensurePlainSpace(y, 30)` VOR `notes` bricht um, wenn y_vor_notes + 30 > bF, also
+  //   wenn E > 623.1971, also wenn n - 30 > (623.1971 - 78.6929) / 16 = 34.03, also ab
+  //   n >= 65 (n=65: E=638.6929 > 623.1971 — bricht; n=64: E=622.6929 < 623.1971 — bricht
+  //   NICHT an dieser Stelle, aber siehe unten am `paymentTermsHuman`-Guard).
+  //   Einzeilige Texthoehe bei Helvetica base-1=9pt (empirisch/deterministisch ueber
+  //   pdfkits AFM-Metriken, siehe Debug-Sweep): NOTES_LINE_H = 10.404pt.
+  //   Bricht der `notes`-Guard NICHT um (n <= 64), liegt der `paymentTermsHuman`-Guard bei
+  //   y = E + 80 + NOTES_LINE_H = E + 90.404; er bricht um, wenn E > 612.7931, also ab
+  //   n - 30 > (612.7931 - 78.6929) / 16 = 33.38, also ab n >= 64 (n=64: E=622.6929 >
+  //   612.7931 — bricht am `paymentTermsHuman`-Guard; n=63: E=606.6929 — bricht nicht,
+  //   bleibt bei 2 Seiten).
+  //   Ergebnis: n=65 UND n=66 (beide vom Koordinator vorgegeben, siehe Abschluss-Review
+  //   Reproduktion) brechen am `notes`-Guard auf eine DRITTE Seite um — vor der Fix-Welle
+  //   blieben beide bei 2 Seiten, und `notes`/`paymentTermsHuman` wurden irgendwo im
+  //   52pt-Fusszeilen-Reserveband (bF..bF+52) gezeichnet, wo pdfkits EIGENE automatische
+  //   Paginierung (die nur `margins.bottom`, nicht unsere zusaetzliche Reservierung kennt)
+  //   noch keinen Umbruch ausgeloest haette.
+  it.each([65, 66])("n=%i Positionen: neue (dritte) Seite fuer notes/paymentTermsHuman statt Ueberlapp mit der Fusszeile", async (n) => {
+    const theme = testPdfTheme({ layoutId: "standard" });
+    const pdf = await renderInvoicePdf(invoiceWithLinesAndClosing(n), theme);
+    const { text, numpages } = await parsePdf(pdf);
+    // Deterministische Geometrie: exakt die von der Handrechnung vorhergesagte Seitenzahl.
+    expect(numpages).toBe(3);
+    expect(text).toContain("Seite 3 von 3");
+    // Schlusstext UND Fusszeile muessen beide vorhanden sein — vor der Fix-Welle waeren
+    // beide (auf Seite 2) da gewesen, nur uebereinandergezeichnet; die eigentliche
+    // Regression waere hier NICHT ueber reinen Textinhalt pruefbar (pdf-parse extrahiert
+    // Text unabhaengig von visueller Ueberlappung) — die Seitenzahl-Pruefung oben ist der
+    // eigentliche Beleg, dass der Guard den Umbruch VOR dem Ueberlapp ausgeloest hat.
+    expect(text).toContain("Es gelten unsere allgemeinen Geschäftsbedingungen.");
+    expect(text).toContain("Zahlbar bis 16.05.2073 ohne Abzug.");
+    const stripped = text.replace(/\s+/g, "");
+    expect(stripped).toContain(STRIPPED_IBAN_FOOTER);
+    expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER)).toBeGreaterThanOrEqual(numpages);
+  });
+
+  it("n=64 Positionen: bricht am paymentTermsHuman-Guard (Grenzfall der Handrechnung oben)", async () => {
+    const theme = testPdfTheme({ layoutId: "standard" });
+    const { text, numpages } = await parsePdf(await renderInvoicePdf(invoiceWithLinesAndClosing(64), theme));
+    expect(numpages).toBe(3);
+    expect(text).toContain("Zahlbar bis 16.05.2073 ohne Abzug.");
+  });
+
+  it("n=63 Positionen: bleibt bei 2 Seiten (Summen + Schlussblock passen ohne Guard-Umbruch)", async () => {
+    const theme = testPdfTheme({ layoutId: "standard" });
+    const { numpages } = await parsePdf(await renderInvoicePdf(invoiceWithLinesAndClosing(63), theme));
+    expect(numpages).toBe(2);
+  });
+});
+
 // Phase 11b, Task 4/5 — Matrix ueber alle sieben Layouts. Jedes Layout muss dieselben
 // Kernangaben drucken, egal wie es Kopf/Tabelle/Fusszeile zeichnet — die Renderer
 // selbst bleiben layout-agnostisch.
