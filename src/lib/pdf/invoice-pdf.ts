@@ -280,13 +280,16 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       doc.moveTo(left, y - 3).lineTo(right, y - 3).stroke();
       doc.restore();
     }
-    // Rabattzeile unter der Position (BG-27), z. B. "abzgl. 10 % Rabatt −12,00 €".
+    // Rabattzeile unter der Position (BG-27), z. B. "abzgl. 10 % Rabatt –12,00 €".
+    // Fix-Runde 1 (Koordinator, Punkt 7): "–" ist der Halbgeviertstrich (U+2013,
+    // WinAnsi-Encoding) — das Minuszeichen "−" (U+2212), das hier zuvor stand, fehlt im
+    // Glyphensatz der pdfkit-Standardschrift Helvetica und wird durch `"` ersetzt gerendert.
     if (line.discountCents) {
       y = ensureSpace(y, 13);
       const pct = line.discountPermille ? ` ${(line.discountPermille / 10).toFixed(2).replace(/\.00$/, "")} %` : "";
       doc.fontSize(base - 2).fillColor("#555");
       if (showDescription) doc.text(`abzgl.${pct} Rabatt`, descX, y, { width: descWidth });
-      if (colX.netto != null) doc.text(`−${formatCents(Math.abs(line.discountCents), cur)}`, tableX + colX.netto, y, { width: 70, align: "right" });
+      if (colX.netto != null) doc.text(`–${formatCents(Math.abs(line.discountCents), cur)}`, tableX + colX.netto, y, { width: 70, align: "right" });
       doc.fillColor("#000").fontSize(base - 1);
       y += 13;
     }
@@ -353,7 +356,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     doc.font("Helvetica").fontSize(9).fillColor("#333");
     for (const d of data.deductions) {
       doc.text(
-        `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} −${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`,
+        // Fix-Runde 1, Punkt 7 — "–" (En-Dash, U+2013) statt "−" (Minuszeichen, U+2212):
+        // Letzteres fehlt im Glyphensatz von Helvetica (pdfkit-Standardschrift).
+        `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} –${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`,
         sumLabelX,
         y,
         { width: right - sumLabelX, align: "right" },
@@ -392,18 +397,16 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (paymentTermsHuman && theme.showPaymentTermsText) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
   if (data.paymentMethodText) doc.moveDown(0.4).text(data.paymentMethodText, { width: right - left });
 
-  // Fußzeile (Phase 11b): AUTO/CUSTOM-Spalten aus footer.ts, gezeichnet vom Layout-Hook
-  // (nur wenn options.showFooter an ist).
+  // Fix-Runde 1 (Koordinator, Punkt 6): die Fusszeile wird jetzt auf JEDER Seite gezeichnet
+  // (vorher nur auf der zuletzt angelegten — `layout.drawFooter` lief vor der Seiten-
+  // Schleife unten, statt in ihr). `footY` bleibt trotzdem vor der Schleife berechnet, da
+  // GiroCode (nur letzte Seite) denselben Wert braucht und alle Seiten dieselbe Groesse
+  // haben (kein `doc.page.height`-Unterschied je Seite in diesem Renderer).
   const footY = doc.page.height - margins.bottom - layout.footerHeight;
-  if (theme.options.showFooter) {
-    layout.drawFooter(
-      frame,
-      buildFooterColumns({ seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, ...theme.footerFacts }, theme.brand),
-      footY,
-    );
-  }
 
-  // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, 30 mm Kantenlaenge.
+  // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, 30 mm Kantenlaenge,
+  // NUR auf der zuletzt gerenderten Seite (`doc.page` zeigt hier noch auf sie, vor dem
+  // `switchToPage` in der Schleife unten).
   if (
     theme.options.showGiroCode &&
     data.iban &&
@@ -423,10 +426,13 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       });
       const giroSize = mm(GIRO_SIZE_MM);
       const giroX = right - giroSize;
-      const giroY = footY - giroSize - 14;
+      // Fix-Runde 1 (Koordinator, Punkt 8): 14 -> 22pt Abstand zu `footY` — bei Layouts mit
+      // `footerHeight` > 32 (z. B. `schlicht`/`standard` seit der AUTO-Fusszeile, 44/46pt)
+      // kollidierte die GiroCode-Bildunterschrift sonst mit der vierten Fusszeilen-Spalte.
+      const giroY = footY - giroSize - 22;
       await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: GIRO_SIZE_MM });
       doc.fontSize(7).fillColor("#666");
-      doc.text("GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 2, { width: giroSize, align: "center" });
+      doc.text("GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
     } catch (e) {
       // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
       // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
@@ -434,11 +440,13 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     }
   }
 
-  // Falz-/Lochmarken + Seitenzahlen — erst nach dem gesamten Inhalt (Seitenzahlen
-  // brauchen die fertige Gesamtseitenzahl, `bufferPages: true`).
+  // Fusszeile (jede Seite) + Falz-/Lochmarken + Seitenzahlen — erst nach dem gesamten
+  // Inhalt (Seitenzahlen brauchen die fertige Gesamtseitenzahl, `bufferPages: true`).
+  const footerColumns = buildFooterColumns({ seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, ...theme.footerFacts }, theme.brand);
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(range.start + i);
+    if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
     if (theme.options.foldMarks) drawFoldMarks(doc);
     if (theme.options.punchMarks) drawPunchMark(doc);
   }

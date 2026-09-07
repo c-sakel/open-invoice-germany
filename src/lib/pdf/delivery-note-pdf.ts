@@ -213,6 +213,17 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
       return drawTableHeader(typeof chromeY === "number" ? chromeY : margins.top);
     };
 
+    // Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock braucht KEINEN Tabellenkopf mehr
+    // (kein Item-Tabellenkontext) — `ensureSpace` (das bei jedem Seitenumbruch den Kopf neu
+    // zeichnet) ist dafuer der falsche Helfer; `ensurePlainSpace` bricht nur um, ohne den
+    // Tabellenkopf zu wiederholen (identisch zum Pendant in invoice-pdf.ts).
+    const ensurePlainSpace = (atY: number, needed: number): number => {
+      if (atY + needed <= pageBottom) return atY;
+      doc.addPage();
+      const chromeY = layout.drawPageChrome?.(frame);
+      return typeof chromeY === "number" ? chromeY : margins.top;
+    };
+
     y = drawTableHeader(y);
 
     doc.fillColor("#000").fontSize(base - 1);
@@ -228,13 +239,13 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
 
     // Summen — nur mit Preisen (ohne showPrices gibt es keinen Wert, den man summieren koennte).
     if (data.showPrices) {
-      y = ensureSpace(y, 40);
+      y = ensurePlainSpace(y, 40);
       y += 10;
       layout.drawTotalsRule(frame, sumLabelX, y);
       y += 6;
       const sumRow = (label: string, value: string, bold = false) => {
-        y = ensureSpace(y, 16);
-        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+        y = ensurePlainSpace(y, 16);
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(base);
         doc.text(label, sumLabelX, y, { width: sumLabelWidth, align: "right" });
         doc.text(value, sumValueX, y, { width: sumValueWidth, align: "right" });
         y += 16;
@@ -260,24 +271,22 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen.
     if (data.footerText) {
       y += 10;
-      doc.fontSize(9).fillColor("#333").text(data.footerText, left, y, { width: right - left });
+      doc.fontSize(base - 1).fillColor("#333").text(data.footerText, left, y, { width: right - left });
     }
 
-    // Fußzeile (Phase 11b): AUTO/CUSTOM-Spalten aus footer.ts, gezeichnet vom Layout-Hook
-    // (nur wenn options.showFooter an ist).
+    // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
+    // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
     const footY = doc.page.height - margins.bottom - layout.footerHeight;
-    if (theme.options.showFooter) {
-      layout.drawFooter(
-        frame,
-        buildFooterColumns({ seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts }, theme.brand),
-        footY,
-      );
-    }
+    const footerColumns = buildFooterColumns(
+      { seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts },
+      theme.brand,
+    );
 
-    // Falz-/Lochmarken + Seitenzahlen.
+    // Falz-/Lochmarken + Seitenzahlen + Fusszeile.
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
+      if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
       if (theme.options.foldMarks) drawFoldMarks(doc);
       if (theme.options.punchMarks) drawPunchMark(doc);
     }

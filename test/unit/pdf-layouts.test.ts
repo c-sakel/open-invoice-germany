@@ -11,6 +11,16 @@ import { parsePdf, testPdfTheme } from "../helpers/pdf-theme";
 import { sampleDeliveryNote, sampleDunning } from "../helpers/pdf-fixtures";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 
+/** Zaehlt nicht-ueberlappende Vorkommen von `needle` in `haystack`. */
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
+// Fix-Runde 1 (Koordinator, Punkt 6): die Fusszeile wird jetzt auf JEDER Seite gezeichnet
+// (vorher nur auf der zuletzt angelegten) — "IBAN" + die gruppierte IBAN (leerraum-
+// bereinigt) muss deshalb mindestens `numpages`-mal im PDF-Text auftauchen, EINMAL je Seite.
+const STRIPPED_IBAN_FOOTER = "IBANDE02120300000000202051";
+
 export function sampleInvoice(): EInvoiceData {
   const lines: EInvoiceLine[] = Array.from({ length: 30 }, (_, i) => ({
     id: String(i + 1),
@@ -84,7 +94,10 @@ describe("Layout standard (Kompatibilitaet)", () => {
     // Fusszeile kann eine so lange Zeile innerhalb ihrer Spalte umbrechen (pdf-parse
     // fuegt dafuer einen Zeilenumbruch ein) — Leerraum vor dem Vergleich entfernen, damit
     // die Pruefung unabhaengig von Gruppierung/Umbruch bleibt.
-    expect(text.replace(/\s+/g, "")).toContain("DE02120300000000202051");
+    const stripped = text.replace(/\s+/g, "");
+    expect(stripped).toContain(STRIPPED_IBAN_FOOTER);
+    // Fix-Runde 1, Punkt 6 — die Fusszeile steht jetzt auf JEDER Seite, nicht nur der letzten.
+    expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER)).toBeGreaterThanOrEqual(numpages);
     expect(text).toContain("Gesamtbetrag");
   });
 });
@@ -110,7 +123,10 @@ describe.each(MATRIX)("Layout %s", (layoutId) => {
     // Wie in "Layout standard (Kompatibilitaet)" oben: die vierspaltige AUTO-Fusszeile
     // (drawFooterColumns, gemeinsame Infrastruktur aller Layouts) kann die gruppierte
     // IBAN innerhalb ihrer Spalte umbrechen — Leerraum vor dem Vergleich entfernen.
-    expect(text.replace(/\s+/g, ""), `${layoutId}: IBAN`).toContain("DE02120300000000202051");
+    const stripped = text.replace(/\s+/g, "");
+    expect(stripped, `${layoutId}: IBAN`).toContain(STRIPPED_IBAN_FOOTER);
+    // Fix-Runde 1, Punkt 6 — die Fusszeile steht jetzt auf JEDER Seite, nicht nur der letzten.
+    expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER), `${layoutId}: IBAN je Seite`).toBeGreaterThanOrEqual(numpages);
     expect((text.match(/Beschreibung/g) ?? []).length).toBeGreaterThanOrEqual(2);
     expect(text).not.toContain("GEHEIM");
   });

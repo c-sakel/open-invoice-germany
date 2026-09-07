@@ -41,13 +41,24 @@ export function drawMetaRows(frame: LayoutFrame, rows: { label: string; value: s
   return doc.y;
 }
 
-/** Zweispaltige Meta-Tabelle (Label links grau, Wert rechts) fuer sevDesk-artige Infobloecke; liefert Unterkante. */
+/**
+ * Zweispaltige Meta-Tabelle (Label links grau, Wert rechts) fuer sevDesk-artige Infobloecke;
+ * liefert Unterkante.
+ *
+ * Fix-Runde 1 (Koordinator, Punkt 5 — derselbe Befund wie in `standard.ts` fuer die grosse
+ * Beleg-Nummer, siehe Task 4): `lineBreak: false` wird vom gebuendelten pdfkit ignoriert,
+ * sobald `width` gesetzt ist (der Zeilenumbruch-Wrapper laeuft trotzdem) — ein langes Label
+ * oder ein langer Wert (z. B. `Bezug: zu Auftragsbestaetigung AB-2026-00001-...`) wuerde in
+ * der engen Haelftenspalte umbrechen und mit der naechsten Zeile kollidieren. `height` +
+ * `ellipsis: true` erzwingt stattdessen genau eine Zeile mit "…" am Ende.
+ */
 export function drawMetaTable(frame: LayoutFrame, rows: { label: string; value: string }[], x: number, y: number, width: number, size = 9): number {
   const { doc } = frame;
   let cy = y;
+  const lineHeight = size + 3;
   for (const row of rows) {
-    doc.font("Helvetica").fontSize(size).fillColor("#555").text(row.label, x, cy, { width: width / 2, lineBreak: false });
-    doc.fillColor("#000").text(row.value, x + width / 2, cy, { width: width / 2, align: "right", lineBreak: false });
+    doc.font("Helvetica").fontSize(size).fillColor("#555").text(row.label, x, cy, { width: width / 2, height: lineHeight, ellipsis: true });
+    doc.fillColor("#000").text(row.value, x + width / 2, cy, { width: width / 2, align: "right", height: lineHeight, ellipsis: true });
     cy += size + 4;
   }
   return cy;
