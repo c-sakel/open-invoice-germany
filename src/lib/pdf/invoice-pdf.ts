@@ -160,6 +160,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // ist byte-kompatibel zum bisherigen Wert fuer alle Layouts ohne `fontDelta`.
   const rowH = Math.round((base - 1) * 1.8);
   const discountRowH = Math.round(rowH * 0.8); // vorher fest 13 (= Math.round(16 * 0.8))
+  // Fix-Runde 1 (Task-5-Review, Minor): HEADING- und SUBTOTAL-Zeilen hatten weiterhin
+  // fest 26/16pt reservierten Platz statt proportional zu `rowH` zu skalieren — bei
+  // `kompakt` blieb dadurch mehr Luft als bei den Positionszeilen. Bei `base = 10`
+  // (rowH = 16) unveraendert: `headingRowH` = round(16 * 1.6) = 26, SUBTOTAL bleibt `rowH`
+  // = 16.
+  const headingRowH = Math.round(rowH * 1.6); // vorher fest 26
 
   const meta: KopfMetaRow[] = [{ label: "Rechnungsdatum", value: deDate(data.issueDate) }];
   if (data.deliveryDate) meta.push({ label: "Leistungsdatum", value: deDate(data.deliveryDate) });
@@ -237,7 +243,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     const type = lineType(line);
 
     if (type === "HEADING") {
-      y = ensureSpace(y, 26);
+      y = ensureSpace(y, headingRowH);
       doc.font("Helvetica-Bold").fontSize(base).fillColor("#000");
       doc.text(line.description, left, y, { width: right - left });
       doc.font("Helvetica").fontSize(base - 1);
@@ -257,14 +263,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     }
 
     if (type === "SUBTOTAL") {
-      y = ensureSpace(y, 16);
+      y = ensureSpace(y, rowH);
       doc.font("Helvetica-Bold").fontSize(base - 1).fillColor("#000");
       doc.text(line.description, sumLabelX, y, { width: sumLabelWidth, align: "right" });
       if (theme.options.showLineTotals) {
         doc.text(formatCents(subtotals[i] ?? 0, cur), sumValueX, y, { width: sumValueWidth, align: "right" });
       }
       doc.font("Helvetica").fontSize(base - 1);
-      y += 16;
+      y += rowH;
       return;
     }
 

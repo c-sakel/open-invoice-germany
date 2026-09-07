@@ -87,6 +87,10 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     const layout = getLayout(theme.layoutId);
     const base = theme.brand.fontSizePt + layout.fontDelta;
     const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
+    // Fix-Runde 1 (Task-5-Review, Minor): dieselbe `rowH`-Formel wie invoice-pdf.ts —
+    // die Zeilen der Gebuehrenaufstellung (`row()`) hatten weiterhin fest 16pt. Bei
+    // `base = 10` (Default) unveraendert 16.
+    const rowH = Math.round((base - 1) * 1.8);
 
     // Phase 11b, Task 4 — die Mahnung bricht (anders als Rechnung/Lieferschein) nie
     // manuell um `doc.addPage()`; sie ueberlaesst lange Texte pdfkits eigener
@@ -131,11 +135,11 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // Aufstellung
     y = doc.y + 20;
     const row = (label: string, value: string, bold = false) => {
-      y = ensurePlainSpace(y, 16);
+      y = ensurePlainSpace(y, rowH);
       doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor("#000");
       doc.text(label, left, y, { width: 360 });
       doc.text(value, left + 360, y, { width: right - left - 360, align: "right" });
-      y += 16;
+      y += rowH;
     };
     row(`Rechnung ${data.invoiceNumber} vom ${deDate(data.invoiceDate)} — offener Betrag`, formatCents(data.openAmountCents, cur));
     if (data.interestCents > 0) row(`Verzugszinsen (${data.daysOverdue} Tage)`, formatCents(data.interestCents, cur));

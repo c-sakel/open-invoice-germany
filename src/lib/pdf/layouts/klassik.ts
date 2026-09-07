@@ -18,7 +18,10 @@ export const klassikLayout: PdfLayout = {
     doc.moveTo(left, ruleY + 3).lineTo(right, ruleY + 3).lineWidth(0.4).strokeColor(primary).stroke().lineWidth(1);
     drawSenderLine(doc, theme, left, ruleY + 12, input.senderFallback);
     const buyerY = ruleY + 30;
-    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1);
+    // Fix-Runde 1 (Task-5-Review): Empfaengerbreite explizit auf den festen 240pt-Default
+    // gepinnt (Infoblock steht bei `left + 250`) — nicht auf `drawRecipient`s Default
+    // verlassen, siehe shared.ts#drawRecipient.
+    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1, 240);
     doc.font("Helvetica-Bold").fontSize(base + 6).fillColor("#000").text(input.title, left + 250, buyerY, { width: right - left - 250, align: "right" });
     const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, buyerY + base + 14, base, "#333");
     let y = Math.max(recipientBottom, metaBottom, margins.top + 160) + 20;

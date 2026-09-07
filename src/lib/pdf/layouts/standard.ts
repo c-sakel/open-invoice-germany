@@ -11,7 +11,10 @@ export const standardLayout: PdfLayout = {
     const { doc, left, right, margins, primary } = frame;
     drawLogoAndSender(frame, input);
     const buyerY = margins.top + 60;
-    const recipientBottom = drawRecipient(frame, input, buyerY);
+    // Fix-Runde 1 (Task-5-Review): Empfaengerbreite explizit auf den festen 240pt-Default
+    // gepinnt (Infoblock steht bei `left + 250`) — nicht auf `drawRecipient`s Default
+    // verlassen, siehe shared.ts#drawRecipient.
+    const recipientBottom = drawRecipient(frame, input, buyerY, 11, 240);
     doc.fontSize(18).fillColor(primary).font("Helvetica").text(input.title, left, buyerY, { align: "right", width: right - left });
     const metaTop = margins.top + 90;
     const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, metaTop);
