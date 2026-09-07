@@ -278,12 +278,21 @@ Query-Parameter): rendert dieselbe Musterrechnung/-lieferschein wie die Phase-7-
 ein explizit übergebener `layoutId` überschreibt den aufgelösten Wert (fuer die
 Live-Vorschau in der Layout-Galerie, ohne zu speichern).
 
-**UI** (`/einstellungen/briefpapier`, `BriefpapierTabs.tsx`, Task 7): Reiter „Allgemein" /
-„Layouts"; `LayoutGallery.tsx` zeigt alle sieben Layouts mit `public/layouts/<id>.svg`-
-Vorschaubild, Auswahl je Belegtyp UND Organisationsstandard — Speichern ist explizit
-(kein Sofortumschalten beim Klick), ein Badge zeigt die fuer den jeweiligen Typ aktuell
-wirksame Auswahl (Typ-Map > Organisationsstandard). Je-Beleg-Override im Beleg-Editor
-(`PrintOptionsPanel`, wie die übrigen Druckoptionen) — nur solange der Beleg `DRAFT` ist.
+**UI** (`/einstellungen/briefpapier`, `BriefpapierTabs.tsx`, Task 7): Reiter „Briefpapier" /
+„Layouts" / „Druckoptionen" (Fix-Welle, Abschluss-Review Block 1 "Minor" — die Reiter
+hiessen nie „Allgemein", die Doku hatte den Namen nur falsch uebernommen).
+`LayoutGallery.tsx` zeigt alle sieben Layouts mit `public/layouts/<id>.svg`-Vorschaubild,
+Auswahl je Belegtyp UND Organisationsstandard — Speichern ist explizit (kein
+Sofortumschalten beim Klick). Fix-Welle: ein Kachel-Klick aendert nur noch den lokalen
+Vorschau-Entwurf (`selection`), NICHT sofort die Typ-Zuordnung; „Für <Typ> übernehmen"
+schreibt sie erst, „Organisationsstandard verwenden" entfernt sie gezielt, „Als Standard
+für alle" setzt nur den Organisationsstandard und laesst bestehende Typ-Zuordnungen
+unangetastet (vorher setzte es sie komplett zurueck). Ein Badge zeigt die fuer den
+jeweiligen Typ aktuell WIRKSAME Auswahl ("Standard" oder "Für <Typ>", Typ-Map >
+Organisationsstandard) — unabhaengig vom (moeglicherweise noch nicht uebernommenen)
+Vorschau-Ring. Je-Beleg-Override im Beleg-Editor (`PrintOptionsPanel`, wie die übrigen
+Druckoptionen) — nur solange der Beleg `DRAFT` ist; seit der Fix-Welle auch ueber
+`/api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
 
 **API/MCP** (Task 8; Fix-Welle Phase 11b fuer die Beleg-Ueberschreibung): `GET
 /api/v1/Layout` (Scope `read`, `src/app/api/v1/Layout/route.ts`,

@@ -88,9 +88,31 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   ausschließlich die Typ-Zuordnung (`layoutByType.DUNNING`) bzw. der
   Organisationsstandard, kein `printOptionsJson.layoutId` je Mahnung. **Schriften
   ausschließlich die pdfkit-Standardfonts** (Helvetica-Familie) — kein Custom-Font-
-  Upload, keine Web-/Systemfont-Einbettung. Beim Layout `modern` **überdeckt der
+  Upload, keine Web-/Systemfont-Einbettung; die Referenzbelege des Betreibers (sevDesk,
+  Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
+  eigene Font-Einbettung bliebe ein späterer Schritt. Beim Layout `modern` **überdeckt der
   farbige Kopfbalken ein evtl. hinterlegtes Hintergrundbild** im oberen Bereich der
-  Seite (bewusster Trade-off der Balken-Optik, kein Bug).
+  Seite (bewusster Trade-off der Balken-Optik, kein Bug). **Beträge zeigen das
+  Währungssymbol** (`formatCents`, z. B. „5,88 €"), **nicht den ISO-Code** („EUR") —
+  organisationsweit, nicht je Layout konfigurierbar.
+- **CUSTOM-Fußzeile: gleich breite, linksbündige Spalten statt links/mittig/rechts.**
+  `footerLeft`/`footerCenter`/`footerRight` (Phase 7) wurden vor Phase 11b über die volle
+  Breite links/mittig/rechts ausgerichtet gezeichnet; seit der gemeinsamen
+  Fußzeilen-Infrastruktur aus Phase 11b (`src/lib/pdf/layouts/shared.ts#drawFooterColumns`,
+  von AUTO **und** CUSTOM genutzt) liegen sie stattdessen als N gleich breite,
+  linksbündige Spalten. Für Bestandsorganisationen mit **nur** `footerCenter` gesetzt
+  heißt das: der Text springt beim nächsten Nachdruck von zentriert auf linksbündig —
+  kosmetisch, aber sichtbar (bisher undokumentiert, mit der Fix-Welle nachgetragen).
+- **Alte mehrseitige Rechnungen können beim Nachdruck neu paginieren.** Phase 11b
+  reserviert am Seitenende ein Fußzeilen-Band (`layout.footerHeight + 6pt`), das die
+  nutzbare Höhe je Seite verringert (bereits dokumentiert, siehe „Layoutänderungen wirken
+  auf Nachdrucke" oben) — die Fix-Welle schützt zusätzlich den Schlussblock (Fußtext,
+  Zahlungsbedingungen, Hinweise) mit demselben Band (`ensurePlainSpace`, behebt einen
+  Überlapp mit der Fußzeile bei knapp gefüllten Seiten), was in seltenen Randfällen eine
+  zusätzliche Seite erzwingen kann. Ein bereits festgeschriebener, mehrseitiger Beleg kann
+  dadurch beim nächsten PDF-Abruf eine andere Seitenzahl bekommen als beim vorherigen
+  Abruf — der rechtlich maßgebliche Beleginhalt bleibt unverändert (COMPLIANCE.md
+  Abschnitt 6).
 ## Kundenkomfort (Phase 8a)
 - **`Customer.language` wird nur gespeichert, nicht ausgewertet.** Das Feld existiert (Default `de`) und ist über die Kundenvorgaben pflegbar, steuert aber weder PDF-Sprache noch E-Mail-Vorlagen — analog zur restigen Software ist derzeit alles ausschließlich auf Deutsch (siehe „Briefpapier, Druckoptionen …" oben).
 - **Gelöschte Kundenfeld-Definitionen lassen ihre Werte im JSON zurück.** `deleteCustomFieldDefinition` entfernt nur die Definition (`CustomFieldDefinition`); bereits gespeicherte Werte in `Customer.customFieldsJson` unter dem betroffenen `key` bleiben unverändert stehen (kein Cleanup-Job). `parseCustomerCustomFields` übergeht solche verwaisten Keys beim Lesen still, `{{customField.<key>}}` löst dafür nicht mehr auf (Platzhalter bleibt leer) — Bestellungen können die Definition jederzeit neu mit demselben `key` anlegen, um wieder Zugriff auf die alten Werte zu bekommen.
