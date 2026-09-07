@@ -14,7 +14,7 @@
  * INVOICE/DOCUMENT (DeliveryNoteForm kennt die Funktion heute nicht).
  */
 import { useState } from "react";
-import type { DraftState, DraftAction, DraftLine, LineType } from "@/lib/editor/draft";
+import { narrowTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
 import { CustomerPicker, type CustomerOption } from "../CustomerPicker";
 import { EditorField } from "../EditorField";
@@ -51,10 +51,6 @@ export interface AddressOption {
 
 function discountPercentOf(c: { defaultDiscountPermille?: number | null } | undefined): string {
   return c?.defaultDiscountPermille ? fromPermille(c.defaultDiscountPermille) : "";
-}
-
-function narrowTaxRate(n: number): 19 | 7 | 0 {
-  return n === 19 || n === 7 || n === 0 ? n : 19;
 }
 
 function toDraftLine(l: TakeOverLineDTO): DraftLine {
