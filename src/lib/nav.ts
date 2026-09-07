@@ -6,7 +6,8 @@
  */
 export type NavIconName =
   | "home" | "quote" | "order" | "delivery" | "invoice" | "credit" | "recurring" | "dunning"
-  | "customer" | "product" | "mail" | "bell" | "settings" | "search" | "menu" | "close";
+  | "customer" | "product" | "mail" | "bell" | "settings" | "search" | "menu" | "close"
+  | "logout" | "chevron-left" | "chevron-right";
 
 export interface NavItem {
   href: string;

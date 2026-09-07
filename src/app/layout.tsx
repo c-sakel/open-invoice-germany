@@ -3,9 +3,15 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { AppShell } from "@/components/shell/AppShell";
+import { SlimShell } from "@/components/shell/SlimShell";
 import { getActiveOrg } from "@/lib/org";
 import { unreadCount } from "@/domain/notifications/create";
 import { PUBLIC_NO_NAV_HEADER } from "@/proxy";
+// `resolveJsonModule` ist in tsconfig.json aktiv — der JSON-Import wird beim Build inline
+// gebundelt (kein Laufzeit-Dateizugriff im Docker-Runner noetig). `layout.tsx` ist eine
+// Server-Komponente; die Version wird als Prop an die Client-Komponente `Sidebar` gereicht
+// statt dort erneut importiert zu werden (Abschluss-Review M6).
+import pkg from "@/../package.json";
 
 export const metadata: Metadata = {
   title: "OpenInvoice Germany — kostenlose, rechtssichere Rechnungssoftware",
@@ -23,20 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     return (
       <html lang="de">
         <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-          <header className="border-b border-slate-200 bg-white">
-            <div className="mx-auto flex max-w-3xl items-center px-6 py-4">
-              <span className="flex items-center gap-2 font-semibold tracking-tight">
-                <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-bold text-white">
-                  OI
-                </span>
-                OpenInvoice <span className="text-slate-400">DE</span>
-              </span>
-            </div>
-          </header>
-          <main className="mx-auto max-w-3xl px-6 py-10">{children}</main>
-          <footer className="mx-auto max-w-3xl px-6 py-10 text-xs text-slate-400">
-            OpenInvoice Germany · AGPL-3.0
-          </footer>
+          <SlimShell maxWidth="3xl">{children}</SlimShell>
         </body>
       </html>
     );
@@ -46,11 +39,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const authed = Boolean(userId);
 
   if (!authed) {
-    // Login/Setup: schlanke Huelle ohne Sidebar (wie bisher ohne MainNav)
+    // Login/Setup: schlanke Huelle ohne Sidebar (Abschluss-Review M7: Header/Footer wieder
+    // wie vor der Sidebar-Einfuehrung — dieselbe SlimShell wie die oeffentliche Huelle oben).
     return (
       <html lang="de">
         <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-          <main className="mx-auto max-w-5xl px-6 py-10">{children}</main>
+          <SlimShell>{children}</SlimShell>
         </body>
       </html>
     );
@@ -71,7 +65,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="de">
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-        <AppShell orgName={orgName} unreadCount={unread}>
+        <AppShell orgName={orgName} unreadCount={unread} appVersion={pkg.version}>
           {children}
         </AppShell>
       </body>

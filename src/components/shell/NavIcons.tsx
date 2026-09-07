@@ -18,6 +18,9 @@ const PATHS: Record<NavIconName, string> = {
   search: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4",
   menu: "M4 6h16M4 12h16M4 18h16",
   close: "M6 6l12 12M18 6L6 18",
+  logout: "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9",
+  "chevron-left": "M15 6l-6 6 6 6",
+  "chevron-right": "M9 6l6 6-6 6",
 };
 
 export function NavIcon({ name, className = "h-4 w-4" }: { name: NavIconName; className?: string }) {

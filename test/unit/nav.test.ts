@@ -1,6 +1,6 @@
 // test/unit/nav.test.ts
 import { describe, it, expect } from "vitest";
-import { NAV_GROUPS, activeGroupKey, itemMatches } from "@/lib/nav";
+import { NAV_GROUPS, SETTINGS_ITEMS, activeGroupKey, itemMatches } from "@/lib/nav";
 
 describe("nav — aktive Gruppe/Item aus Pfad", () => {
   it("Übersicht nur bei exakt '/'", () => {
@@ -34,5 +34,9 @@ describe("nav — aktive Gruppe/Item aus Pfad", () => {
   it("jede Gruppe hat eindeutige hrefs", () => {
     const hrefs = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href));
     expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+  it("SETTINGS_ITEMS[0] (Stammdaten) ist exact — matcht nicht auf Unterseiten", () => {
+    expect(itemMatches(SETTINGS_ITEMS[0], "/einstellungen", "")).toBe(true);
+    expect(itemMatches(SETTINGS_ITEMS[0], "/einstellungen/briefpapier", "")).toBe(false);
   });
 });

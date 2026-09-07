@@ -10,10 +10,11 @@ import { Sidebar } from "./Sidebar";
 interface Props {
   orgName: string;
   unreadCount: number;
+  appVersion: string;
 }
 
 /** Schmale Kopfleiste unterhalb `lg`: Burger oeffnet die Sidebar als Drawer. */
-export function Topbar({ orgName, unreadCount }: Props) {
+export function Topbar({ orgName, unreadCount, appVersion }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -32,7 +33,7 @@ export function Topbar({ orgName, unreadCount }: Props) {
         <div className="fixed inset-0 z-40 lg:hidden">
           <button type="button" aria-label="Menü schließen" onClick={() => setOpen(false)} className="absolute inset-0 bg-slate-900/40" />
           <div className="absolute inset-y-0 left-0 shadow-xl">
-            <Sidebar orgName={orgName} unreadCount={unreadCount} drawer onClose={() => setOpen(false)} />
+            <Sidebar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} drawer onClose={() => setOpen(false)} />
           </div>
         </div>
       )}
