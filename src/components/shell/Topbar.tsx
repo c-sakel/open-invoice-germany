@@ -2,18 +2,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { NavIcon } from "./NavIcons";
+import { SearchTrigger } from "./SearchTrigger";
 import { Sidebar } from "./Sidebar";
 
 interface Props {
   orgName: string;
   unreadCount: number;
-  searchSlot?: ReactNode;
 }
 
 /** Schmale Kopfleiste unterhalb `lg`: Burger oeffnet die Sidebar als Drawer. */
-export function Topbar({ orgName, unreadCount, searchSlot }: Props) {
+export function Topbar({ orgName, unreadCount }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -24,13 +24,15 @@ export function Topbar({ orgName, unreadCount, searchSlot }: Props) {
         <Link href="/" className="font-semibold tracking-tight">
           OpenInvoice <span className="text-slate-400">DE</span>
         </Link>
-        <div className="ml-auto">{searchSlot}</div>
+        <div className="ml-auto">
+          <SearchTrigger compact />
+        </div>
       </header>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button type="button" aria-label="Menü schließen" onClick={() => setOpen(false)} className="absolute inset-0 bg-slate-900/40" />
           <div className="absolute inset-y-0 left-0 shadow-xl">
-            <Sidebar orgName={orgName} unreadCount={unreadCount} searchSlot={searchSlot} drawer onClose={() => setOpen(false)} />
+            <Sidebar orgName={orgName} unreadCount={unreadCount} drawer onClose={() => setOpen(false)} />
           </div>
         </div>
       )}

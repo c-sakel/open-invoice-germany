@@ -3,10 +3,11 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { NAV_GROUPS } from "@/lib/nav";
 import { LogoutButton } from "@/components/LogoutButton";
 import { NavIcon } from "./NavIcons";
+import { SearchTrigger } from "./SearchTrigger";
 import { SidebarGroup } from "./SidebarGroup";
 
 const COLLAPSED_KEY = "oig.sidebar.collapsed";
@@ -14,14 +15,12 @@ const COLLAPSED_KEY = "oig.sidebar.collapsed";
 interface Props {
   orgName: string;
   unreadCount: number;
-  /** Suchfeld/Befehlspalette (Task 5); bis dahin ein Link auf /rechnungen?q= */
-  searchSlot?: ReactNode;
   /** Drawer-Modus (mobil): Sidebar liegt als Overlay, Klick auf Link schliesst. */
   drawer?: boolean;
   onClose?: () => void;
 }
 
-export function Sidebar({ orgName, unreadCount, searchSlot, drawer = false, onClose }: Props) {
+export function Sidebar({ orgName, unreadCount, drawer = false, onClose }: Props) {
   const pathname = usePathname();
   const search = useSearchParams().toString();
   const searchStr = search ? `?${search}` : "";
@@ -70,7 +69,11 @@ export function Sidebar({ orgName, unreadCount, searchSlot, drawer = false, onCl
         )}
       </div>
 
-      {!collapsed && <div className="px-3 pb-2">{searchSlot}</div>}
+      {!collapsed && (
+        <div className="px-3 pb-2">
+          <SearchTrigger />
+        </div>
+      )}
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
         {NAV_GROUPS.map((g) => (

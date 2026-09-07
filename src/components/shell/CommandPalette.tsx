@@ -4,6 +4,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavIcon } from "./NavIcons";
+import { useShell } from "./ShellProvider";
 
 interface Hit {
   id: string;
@@ -24,20 +25,21 @@ const QUICK_ACTIONS: Hit[] = [
 ];
 
 /**
- * Befehlspalette (Phase 11a): Suchfeld in der Sidebar oeffnet ein Overlay; Eingabe wird
- * mit 200 ms Verzoegerung an `GET /api/search` geschickt. Pfeiltasten/Enter navigieren,
- * Escape schliesst. Ohne Eingabe stehen die Schnellaktionen bereit.
+ * Befehlspalette (Phase 11a, Task 5 Fix 1): als Singleton einmal in `AppShell` gemountet
+ * (siehe dort und `ShellProvider`) — Oeffnen/Schliessen kommt aus dem Shell-Kontext, die
+ * Trigger-Buttons (Sidebar/Topbar/Drawer) sind `SearchTrigger`. Eingabe wird mit 200 ms
+ * Verzoegerung an `GET /api/search` geschickt. Pfeiltasten/Enter navigieren, Escape schliesst.
+ * Ohne Eingabe stehen die Schnellaktionen bereit.
  */
 export function CommandPalette() {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const { searchOpen, openSearch, closeSearch } = useShell();
   const [q, setQ] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const flat = useMemo<Hit[]>(() => {
     if (q.trim().length < 2) return QUICK_ACTIONS;
@@ -45,37 +47,33 @@ export function CommandPalette() {
   }, [q, groups]);
 
   const close = useCallback(() => {
-    setOpen(false);
+    closeSearch();
     setQ("");
     setGroups([]);
     setCursor(0);
-  }, []);
+  }, [closeSearch]);
 
+  // Genau eine Instanz (siehe AppShell) — kein Sichtbarkeits-Guard mehr noetig.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        // AppShell rendert dieselbe Instanz sowohl in die Sidebar als auch in die Topbar;
-        // beide bleiben ueber `hidden`/`lg:hidden` (CSS) dauerhaft gemountet, nur eine ist
-        // je Breakpoint sichtbar. Ohne diese Pruefung wuerden beide Instanzen gleichzeitig
-        // oeffnen (zwei `role="dialog"`-Knoten). `offsetParent === null` erkennt eine per
-        // `display: none` verborgene Ahnen-Kette zuverlaessig.
-        if (triggerRef.current && triggerRef.current.offsetParent === null) return;
-        setOpen((v) => !v);
+        if (searchOpen) close();
+        else openSearch();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [searchOpen, close, openSearch]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!searchOpen) return;
     const t = setTimeout(() => inputRef.current?.focus(), 0);
     return () => clearTimeout(t);
-  }, [open]);
+  }, [searchOpen]);
 
   useEffect(() => {
-    if (!open || q.trim().length < 2) return;
+    if (!searchOpen || q.trim().length < 2) return;
     const t = setTimeout(async () => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
@@ -95,7 +93,13 @@ export function CommandPalette() {
       }
     }, 200);
     return () => clearTimeout(t);
-  }, [q, open]);
+  }, [q, searchOpen]);
+
+  // Minor (Fix 1): ein noch laufender Request wird auch beim Unmount der Palette abgebrochen
+  // (z.B. Navigation weg von der Shell) — sonst haengt ein Fetch ohne Wirkung nach.
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
 
   // `cursor` kann veralten, wenn sich `flat` aendert (z.B. Ergebnisse treffen ein oder die
   // Eingabe faellt unter 2 Zeichen), ohne dass eine Pfeiltaste gedrueckt wurde. Statt den
@@ -119,64 +123,56 @@ export function CommandPalette() {
       e.preventDefault();
       const hit = flat[safeCursor];
       if (hit) go(hit);
-    } else if (e.key === "Escape") {
-      close();
     }
+    // Escape: siehe onKeyDown am Overlay-Wrapper (schliesst auch, wenn der Fokus das
+    // Eingabefeld verlassen hat, z.B. nach Tab auf einen Treffer-Button).
   }
 
-  const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+  if (!searchOpen) return null;
 
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-sm text-slate-500 hover:bg-white"
-        aria-label="Suchen"
-      >
-        <NavIcon name="search" className="h-4 w-4" />
-        <span className="flex-1">Suchen</span>
-        <kbd className="rounded border border-slate-200 bg-white px-1 text-[10px] text-slate-400">{isMac ? "⌘K" : "Strg K"}</kbd>
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-[12vh]" role="dialog" aria-modal="true" aria-label="Suche">
-          <button type="button" aria-label="Schließen" onClick={close} className="absolute inset-0 cursor-default" />
-          <div className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
-            <div className="flex items-center gap-2 border-b border-slate-200 px-3">
-              <NavIcon name="search" className="h-4 w-4 text-slate-400" />
-              <input
-                ref={inputRef}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={onInputKey}
-                placeholder="Belegnummer, Kunde, Produkt …"
-                className="w-full py-3 text-sm outline-none"
-                aria-label="Suchbegriff"
-              />
-              {loading && <span className="text-xs text-slate-400">…</span>}
-            </div>
-            <div className="max-h-[60vh] overflow-y-auto py-2">
-              {q.trim().length < 2 ? (
-                <Section label="Schnellaktionen" hits={QUICK_ACTIONS} offset={0} cursor={safeCursor} onPick={go} />
-              ) : flat.length === 0 && !loading ? (
-                <div className="px-4 py-6 text-center text-sm text-slate-500">Keine Treffer für „{q}“</div>
-              ) : (
-                groups.reduce<{ nodes: React.ReactNode[]; offset: number }>(
-                  (acc, g) => {
-                    acc.nodes.push(<Section key={g.key} label={g.label} hits={g.hits} offset={acc.offset} cursor={safeCursor} onPick={go} />);
-                    acc.offset += g.hits.length;
-                    return acc;
-                  },
-                  { nodes: [], offset: 0 },
-                ).nodes
-              )}
-            </div>
-          </div>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-[12vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Suche"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close();
+      }}
+    >
+      <button type="button" aria-label="Schließen" onClick={close} className="absolute inset-0 cursor-default" />
+      <div className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-3">
+          <NavIcon name="search" className="h-4 w-4 text-slate-400" />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={onInputKey}
+            placeholder="Belegnummer, Kunde, Produkt …"
+            className="w-full py-3 text-sm outline-none"
+            aria-label="Suchbegriff"
+          />
+          {loading && <span className="text-xs text-slate-400">…</span>}
         </div>
-      )}
-    </>
+        <div className="max-h-[60vh] overflow-y-auto py-2">
+          {q.trim().length < 2 ? (
+            <Section label="Schnellaktionen" hits={QUICK_ACTIONS} offset={0} cursor={safeCursor} onPick={go} />
+          ) : flat.length === 0 && !loading ? (
+            <div className="px-4 py-6 text-center text-sm text-slate-500">Keine Treffer für „{q}“</div>
+          ) : (
+            groups.reduce<{ nodes: React.ReactNode[]; offset: number }>(
+              (acc, g) => {
+                acc.nodes.push(<Section key={g.key} label={g.label} hits={g.hits} offset={acc.offset} cursor={safeCursor} onPick={go} />);
+                acc.offset += g.hits.length;
+                return acc;
+              },
+              { nodes: [], offset: 0 },
+            ).nodes
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
