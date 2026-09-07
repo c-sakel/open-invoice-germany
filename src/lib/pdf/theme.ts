@@ -48,4 +48,12 @@ export interface PdfTheme {
    * setzen dieses Feld NICHT — Produktions-PDFs sind immer komprimiert.
    */
   compress?: boolean;
+  /**
+   * Phase 11c, Task 2 — Text fuer ein diagonales Wasserzeichen auf JEDER Seite (z. B.
+   * "VORSCHAU" bei der Editor-Live-Vorschau ungespeicherter Entwuerfe, `src/domain/
+   * settings/preview-draft.ts`). Optional/`undefined`, damit bestehende Aufrufer/Tests
+   * (`loadPdfTheme`, `testPdfTheme`) unveraendert bleiben — nur wer das Feld explizit
+   * setzt, bekommt ein Wasserzeichen (siehe `drawWatermark`, `marks.ts`).
+   */
+  watermark?: string;
 }

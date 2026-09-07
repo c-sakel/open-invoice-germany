@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
-import { NewInvoiceForm } from "@/components/NewInvoiceForm";
+import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { NeedOrgNotice } from "@/components/NeedOrgNotice";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,18 @@ export default async function NewInvoicePage() {
   const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
     prisma.customer.findMany({
       where: { orgId, isArchived: false },
-      select: { id: true, name: true, defaultPaymentMethodId: true, defaultDiscountPermille: true },
+      select: {
+        id: true,
+        name: true,
+        customerNumber: true,
+        email: true,
+        defaultPaymentMethodId: true,
+        defaultDiscountPermille: true,
+        addressLine1: true,
+        postalCode: true,
+        city: true,
+        countryCode: true,
+      },
       orderBy: { name: "asc" },
     }),
     prisma.product.findMany({
@@ -33,7 +45,7 @@ export default async function NewInvoicePage() {
     prisma.customerAddress.findMany({ where: { orgId }, orderBy: { label: "asc" } }),
   ]);
   const documentSettings = await loadDocumentSettings(orgId);
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
+  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
@@ -60,21 +72,17 @@ export default async function NewInvoicePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/rechnungen" className="text-sm text-slate-500 hover:text-slate-800">
-          ← Rechnungen
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Neue Rechnung</h1>
-      </div>
-      <NewInvoiceForm
-        customers={customers}
-        products={products}
-        paymentMethods={paymentMethodOptions}
-        contacts={contacts}
-        addresses={addresses}
-        offerLastDocument={documentSettings.offerLastDocument}
-      />
-    </div>
+    <DocumentEditor
+      mode="INVOICE"
+      customers={customers}
+      products={products}
+      paymentMethods={paymentMethodOptions}
+      contacts={contacts}
+      addresses={addresses}
+      layouts={listLayouts()}
+      offerLastDocument={documentSettings.offerLastDocument}
+      backHref="/rechnungen"
+      title="Neue Rechnung"
+    />
   );
 }

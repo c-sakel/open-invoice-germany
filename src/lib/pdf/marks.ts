@@ -84,3 +84,27 @@ export function drawPageNumbers(doc: PDFKit.PDFDocument, theme: PdfTheme): void 
     doc.restore();
   }
 }
+
+const WATERMARK_COLOR = "#c8c8c8";
+const WATERMARK_OPACITY = 0.25;
+const WATERMARK_FONT_SIZE = 60;
+const WATERMARK_ROTATE_DEG = -35;
+
+/**
+ * Zeichnet `text` diagonal (grau, 60 pt, 25 % Deckkraft, -35°) ueber die Seitenmitte der
+ * AKTUELL ausgewaehlten Seite (Phase 11c, Task 2 — Editor-Live-Vorschau ungespeicherter
+ * Entwuerfe, `PdfTheme.watermark`). MUSS pro Seite im Seiten-Loop aufgerufen werden (nach
+ * `doc.switchToPage`), analog `drawFoldMarks`/`drawPunchMark` — anders als
+ * `drawPageNumbers` braucht dieser Aufruf keine fertige Gesamtseitenzahl, deshalb kein
+ * eigener `bufferedPageRange`-Loop hier.
+ */
+export function drawWatermark(doc: PDFKit.PDFDocument, text: string): void {
+  const cx = doc.page.width / 2;
+  const cy = doc.page.height / 2;
+  doc.save();
+  doc.rotate(WATERMARK_ROTATE_DEG, { origin: [cx, cy] });
+  doc.fontSize(WATERMARK_FONT_SIZE).fillColor(WATERMARK_COLOR, WATERMARK_OPACITY);
+  const textWidth = doc.widthOfString(text);
+  doc.text(text, cx - textWidth / 2, cy - WATERMARK_FONT_SIZE / 2, { lineBreak: false });
+  doc.restore();
+}
