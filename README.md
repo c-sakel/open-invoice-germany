@@ -89,8 +89,8 @@ Same tools via MCP: `convert_document`, `create_delivery_note`, `set_document_st
 
 On a quote's detail page (**Documents → quote**), under "Acceptance link", generate a link — the URL is shown **once** (copy button), and can't be retrieved again afterwards. The customer opens it without logging in, sees the quote and a PDF download, and can accept or reject it (name required, email/comment optional). On decision: status `ACCEPTED`/`REJECTED`, an internal notification email, and — depending on the setting under **Settings → Documents** — an automatic order confirmation or invoice draft. The link can be revoked at any time. For the `{{offer.link}}` placeholder in the quote email template, set `APP_BASE_URL` (`.env`) — otherwise it stays empty.
 
-### Navigation und Suche
-Die linke Seitenleiste gliedert die App in Übersicht, Verkauf (Angebote, Auftragsbestätigungen, Proforma, Lieferscheine, Rechnungen, Gutschriften, Wiederkehrend, Mahnwesen) und Verwaltung (Kunden, Produkte, Benachrichtigungen, Einstellungen). Die Leiste lässt sich auf Icons einklappen. Das Suchfeld oben (auch ⌘K / Strg+K) findet Belege nach Nummer oder Kunde sowie Kunden und Produkte und bietet Schnellaktionen. Das E-Mail-Protokoll eines Belegs (kein eigener Menüpunkt, da `/emails` ohne Beleg-ID keine Route ist) bleibt über den jeweiligen Beleg sowie unter Einstellungen → E-Mail-Versand erreichbar.
+### Navigation and search
+The left sidebar groups the app into Overview, Sales (quotes, order confirmations, proforma invoices, delivery notes, invoices, credit notes, recurring invoices, dunning) and Administration (customers, products, notifications, settings). The sidebar can be collapsed to icons. The search field at the top (also ⌘K / Ctrl+K) finds documents by number or customer, plus customers and products, and offers quick actions.
 
 ## Tech stack
 

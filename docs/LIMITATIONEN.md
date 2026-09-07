@@ -130,7 +130,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   gelöscht, unabhängig vom Alter.
 
 ## Navigation & Suche (Phase 11a)
-- **Globale Suche ist eine Teilstring-Suche** (`contains`) über Belegnummer, Kundenname, Kundennummer, E-Mail, Produktname und Artikelnummer — kein Volltext, kein Ranking, keine Suche in Positionen, Betreffs oder Notizen (interne Notizen bewusst nie). Maximal 8 Treffer je Gruppe.
+- **Globale Suche ist eine Teilstring-Suche** (`contains`) über Belegnummer, Kundenname, Kundennummer, E-Mail, Produktname und Artikelnummer — kein Volltext, kein Ranking, keine Suche in Positionen, Betreffs oder Notizen (interne Notizen bewusst nie). Maximal 8 Treffer je Gruppe (Standard; per `limit` bis 20).
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.

@@ -14,21 +14,32 @@ import { useShell } from "./ShellProvider";
  * `compact`: Icon-only-Variante fuer die schmale Topbar (mobil); die Sidebar nutzt die volle
  * Breite mit Label und Tastenkuerzel-Hinweis.
  */
+/** `navigator.userAgentData` (User-Agent Client Hints) ist nicht in allen Browsern
+ *  vorhanden — lokal getypt statt `any`, `navigator.platform` bleibt der Fallback
+ *  (Abschluss-Review M15: `navigator.platform` ist deprecated). */
+interface NavigatorWithUserAgentData extends Navigator {
+  userAgentData?: { platform?: string };
+}
+
 export function SearchTrigger({ compact = false }: { compact?: boolean }) {
   const { openSearch } = useShell();
-  // `navigator.platform` ist am Server nicht verfuegbar und wuerde beim ersten Client-Render
-  // vor der Hydration ohnehin nicht zum SSR-Markup passen (Hydration-Mismatch) — deshalb erst
+  // `navigator.*` ist am Server nicht verfuegbar und wuerde beim ersten Client-Render vor
+  // der Hydration ohnehin nicht zum SSR-Markup passen (Hydration-Mismatch) — deshalb erst
   // nach dem Mount lesen; setState per `setTimeout(0)` wie in `Sidebar` (react-hooks/set-
   // state-in-effect vermeiden).
   const [isMac, setIsMac] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setIsMac(/Mac/.test(navigator.platform)), 0);
+    const t = setTimeout(() => {
+      const nav = navigator as NavigatorWithUserAgentData;
+      const platform = nav.userAgentData?.platform ?? nav.platform;
+      setIsMac(/Mac/.test(platform));
+    }, 0);
     return () => clearTimeout(t);
   }, []);
 
   if (compact) {
     return (
-      <button type="button" onClick={openSearch} aria-label="Suchen" className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100">
+      <button type="button" onClick={openSearch} aria-label="Suchen" title="Suchen" className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100">
         <NavIcon name="search" className="h-5 w-5" />
       </button>
     );

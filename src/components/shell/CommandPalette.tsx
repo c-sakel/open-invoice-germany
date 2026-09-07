@@ -89,7 +89,10 @@ export function CommandPalette() {
       } catch {
         // abgebrochen oder Netzfehler — Liste bleibt
       } finally {
-        setLoading(false);
+        // M11 (Abschluss-Review): nur den Ladeindikator der eigenen Anfrage loeschen — ein
+        // abgebrochener aelterer Request darf `loading` nicht faelschlich zuruecksetzen,
+        // waehrend eine neuere Anfrage noch laeuft.
+        if (abortRef.current === ctrl) setLoading(false);
       }
     }, 200);
     return () => clearTimeout(t);
@@ -158,7 +161,9 @@ export function CommandPalette() {
         <div className="max-h-[60vh] overflow-y-auto py-2">
           {q.trim().length < 2 ? (
             <Section label="Schnellaktionen" hits={QUICK_ACTIONS} offset={0} cursor={safeCursor} onPick={go} />
-          ) : flat.length === 0 && !loading ? (
+          ) : flat.length === 0 && loading ? (
+            <div className="px-4 py-6 text-center text-sm text-slate-400">Suche läuft …</div>
+          ) : flat.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-slate-500">Keine Treffer für „{q}“</div>
           ) : (
             groups.reduce<{ nodes: React.ReactNode[]; offset: number }>(

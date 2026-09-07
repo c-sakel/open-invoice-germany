@@ -15,12 +15,13 @@ const COLLAPSED_KEY = "oig.sidebar.collapsed";
 interface Props {
   orgName: string;
   unreadCount: number;
+  appVersion: string;
   /** Drawer-Modus (mobil): Sidebar liegt als Overlay, Klick auf Link schliesst. */
   drawer?: boolean;
   onClose?: () => void;
 }
 
-export function Sidebar({ orgName, unreadCount, drawer = false, onClose }: Props) {
+export function Sidebar({ orgName, unreadCount, appVersion, drawer = false, onClose }: Props) {
   const pathname = usePathname();
   const search = useSearchParams().toString();
   const searchStr = search ? `?${search}` : "";
@@ -69,11 +70,7 @@ export function Sidebar({ orgName, unreadCount, drawer = false, onClose }: Props
         )}
       </div>
 
-      {!collapsed && (
-        <div className="px-3 pb-2">
-          <SearchTrigger />
-        </div>
-      )}
+      <div className="px-3 pb-2">{collapsed ? <SearchTrigger compact /> : <SearchTrigger />}</div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
         {NAV_GROUPS.map((g) => (
@@ -87,11 +84,12 @@ export function Sidebar({ orgName, unreadCount, drawer = false, onClose }: Props
             {orgName}
           </div>
         )}
+        {!collapsed && <div className="mb-2 text-[11px] text-slate-400">v{appVersion}</div>}
         <div className="flex items-center justify-between">
-          {!collapsed && <LogoutButton />}
+          <LogoutButton iconOnly={collapsed} />
           {!drawer && (
-            <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
-              <NavIcon name={collapsed ? "menu" : "close"} />
+            <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} title={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
+              <NavIcon name={collapsed ? "chevron-right" : "chevron-left"} />
             </button>
           )}
         </div>
