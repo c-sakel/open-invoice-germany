@@ -1,0 +1,218 @@
+"use client";
+
+/**
+ * Eine Zeile der Positionstabelle (Phase 11c, Task 5) — `<tr>` je `DraftLine`, Inhalt
+ * abhaengig von `lineType`. ITEM traegt die vollen neun Spalten (siehe
+ * `LineItemsEditor`s Tabellenkopf); HEADING/TEXT/SUBTOTAL kollabieren die mittleren
+ * sieben Spalten (Beschreibung…Betrag) auf EINE `<td colSpan={7}>` — "reduzierte
+ * Zeile" laut Brief, spiegelt `renderInvoicePdf`s Behandlung dieser Zeilentypen
+ * (`src/lib/pdf/invoice-pdf.ts` L276-303: HEADING/TEXT/SUBTOTAL haben kein Menge/
+ * Preis/USt, nur `description`/`descriptionLong`).
+ *
+ * Betrag-Zelle (ITEM, berechnet/readonly) und der Brutto-Hinweis unter dem Preisfeld
+ * nutzen `computeLineNet` direkt (dieselbe Funktion wie `computeDraftTotals`,
+ * `@/lib/pricing/line`) — NICHT die Aggregatwerte aus `DraftTotals` (die liefert nur
+ * Summen je Steuersatz, keine Einzelzeilenbetraege). `grossDisplay` ist reine Anzeige:
+ * die Betrag-Zelle (readonly, daher gefahrlos umschaltbar) zeigt Netto * (1 + Satz) im
+ * Brutto-Modus, das Preisfeld selbst bleibt IMMER an `line.price`
+ * (netto) gebunden — nur ein grauer Hinweistext daneben zeigt den Brutto-Aequivalent.
+ * `effectiveRate` faellt im INVOICE-Modus bei `taxDisabled` (Steuerschema != REGULAR)
+ * auf 0 zurueck, wie `toInvoicePayload`/`computeDraftTotals` es beim Speichern/Rechnen
+ * ohnehin tun — sonst wuerde die Anzeige einen Steuersatz einrechnen, den der
+ * gespeicherte Beleg nie ansetzt.
+ */
+import type { DraftLine, DraftAction } from "@/lib/editor/draft";
+import { TAX_RATE_OPTIONS } from "@/lib/editor/constants";
+import { toCents, toMilli, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
+import { computeLineNet } from "@/lib/pricing/line";
+import { inputCls } from "@/components/forms/fields";
+import { RichTextField } from "../RichTextField";
+import { ProductPicker, type ProductOption } from "../ProductPicker";
+import { UnitSelect } from "./UnitSelect";
+import { LineRowMenu } from "./LineRowMenu";
+import { LineDiscountField } from "./LineDiscountField";
+
+function toTaxRate(v: string): 19 | 7 | 0 {
+  const n = Number(v);
+  return n === 19 || n === 7 ? n : 0;
+}
+
+export interface LineRowProps {
+  line: DraftLine;
+  /** Fortlaufende ITEM-Position (wie im PDF/`itemPos`, `invoice-pdf.ts` L303) — `null`
+   *  fuer HEADING/TEXT/SUBTOTAL-Zeilen (die im PDF ebenfalls nicht mitgezaehlt werden). */
+  itemPos: number | null;
+  isLast: boolean;
+  taxDisabled: boolean;
+  grossDisplay: boolean;
+  products: ProductOption[];
+  dispatch: (action: DraftAction) => void;
+  subtotalCents: number;
+  canRemove: boolean;
+  registerDescRef: (key: string, el: HTMLInputElement | null) => void;
+  onEnterLast: () => void;
+  onDragStart: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: () => void;
+  onRowKeyDown: (e: React.KeyboardEvent) => void;
+  onProductCreated?: (p: ProductOption) => void;
+}
+
+export function LineRow({
+  line,
+  itemPos,
+  isLast,
+  taxDisabled,
+  grossDisplay,
+  products,
+  dispatch,
+  subtotalCents,
+  canRemove,
+  registerDescRef,
+  onEnterLast,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onRowKeyDown,
+  onProductCreated,
+}: LineRowProps) {
+  function patch(p: Partial<DraftLine>) {
+    dispatch({ type: "setLine", key: line.key, patch: p });
+  }
+  function onDescKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (isLast && e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onEnterLast();
+    }
+  }
+
+  const effectiveRate = taxDisabled ? 0 : line.taxRate;
+  const qtyMilli = toMilli(line.quantity);
+  const priceCents = toCents(line.price);
+  let amountLabel = "–";
+  let grossHint: string | null = null;
+  if (line.lineType === "ITEM" && qtyMilli !== null && priceCents !== null) {
+    try {
+      const { lineNetCents } = computeLineNet({
+        quantityMilli: qtyMilli,
+        unitNetPriceCents: priceCents,
+        discountPermille: permilleOrZero(line.discountPercent),
+        discountCents: centsOrZero(line.discountAmount),
+      });
+      const displayCents = grossDisplay ? Math.round(lineNetCents * (1 + effectiveRate / 100)) : lineNetCents;
+      amountLabel = `${fromCents(displayCents)} €`;
+      if (grossDisplay) grossHint = `≈ ${fromCents(Math.round(priceCents * (1 + effectiveRate / 100)))} € brutto`;
+    } catch {
+      amountLabel = "–";
+    }
+  }
+
+  const reduced = line.lineType !== "ITEM";
+
+  return (
+    <>
+      <tr draggable onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onKeyDown={onRowKeyDown} className="border-b border-slate-100 align-top">
+        <td className="py-1.5 pr-2 text-xs text-slate-400">
+          <span className="mr-1 cursor-grab select-none" title="Ziehen zum Sortieren">
+            ⠿
+          </span>
+          {itemPos !== null && <span>{itemPos}</span>}
+        </td>
+
+        {reduced ? (
+          <td colSpan={7} className="py-1.5 pr-2">
+            {line.lineType === "TEXT" ? (
+              <div className="space-y-2">
+                <input
+                  ref={(el) => registerDescRef(line.key, el)}
+                  className={inputCls}
+                  placeholder="Kurztext"
+                  value={line.description}
+                  onChange={(e) => patch({ description: e.target.value })}
+                  onKeyDown={onDescKeyDown}
+                />
+                <RichTextField label="Langtext (optional)" value={line.descriptionLong} onChange={(v) => patch({ descriptionLong: v })} rows={3} />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <input
+                  ref={(el) => registerDescRef(line.key, el)}
+                  className={`${inputCls} flex-1`}
+                  placeholder={line.lineType === "HEADING" ? "Überschrift" : "Bezeichnung (z. B. Zwischensumme Hosting)"}
+                  value={line.description}
+                  onChange={(e) => patch({ description: e.target.value })}
+                  onKeyDown={onDescKeyDown}
+                />
+                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-slate-600">{fromCents(subtotalCents)} €</span>}
+              </div>
+            )}
+          </td>
+        ) : (
+          <>
+            <td className="py-1.5 pr-2">
+              <input
+                ref={(el) => registerDescRef(line.key, el)}
+                className={inputCls}
+                placeholder="Beschreibung"
+                value={line.description}
+                onChange={(e) => patch({ description: e.target.value })}
+                onKeyDown={onDescKeyDown}
+              />
+              {products.length > 0 && (
+                <div className="mt-1">
+                  <ProductPicker products={products} onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })} onCreated={onProductCreated} />
+                </div>
+              )}
+            </td>
+            <td className="py-1.5 pr-2">
+              <input className={inputCls} value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
+            </td>
+            <td className="py-1.5 pr-2">
+              <UnitSelect value={line.unit} onChange={(v) => patch({ unit: v })} />
+            </td>
+            <td className="py-1.5 pr-2">
+              <input className={inputCls} value={line.price} onChange={(e) => patch({ price: e.target.value })} />
+              {grossHint && <div className="mt-0.5 text-[11px] text-slate-400">{grossHint}</div>}
+            </td>
+            <td className="py-1.5 pr-2">
+              <select className={inputCls} value={line.taxRate} disabled={taxDisabled} onChange={(e) => patch({ taxRate: toTaxRate(e.target.value) })}>
+                {TAX_RATE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </td>
+            <td className="py-1.5 pr-2">
+              <LineDiscountField line={line} dispatch={dispatch} />
+            </td>
+            <td className="py-1.5 pr-2 text-right tabular-nums">{amountLabel}</td>
+          </>
+        )}
+
+        <td className="py-1.5 align-top">
+          <LineRowMenu
+            canRemove={canRemove}
+            onDuplicate={() => dispatch({ type: "duplicateLine", key: line.key })}
+            onRemove={() => dispatch({ type: "removeLine", key: line.key })}
+            toggleLabel={line.lineType === "ITEM" ? (line.expanded ? "Langtext ausblenden" : "Langtext einblenden") : undefined}
+            onToggleExpanded={line.lineType === "ITEM" ? () => patch({ expanded: !line.expanded }) : undefined}
+          />
+        </td>
+      </tr>
+
+      {line.lineType === "ITEM" && line.expanded && (
+        <tr className="border-b border-slate-100 bg-slate-50/60">
+          <td />
+          <td colSpan={8} className="space-y-2 py-2 pr-2">
+            <RichTextField label="Langbeschreibung (optional)" value={line.descriptionLong} onChange={(v) => patch({ descriptionLong: v })} rows={3} />
+            <label className="flex max-w-xs flex-col gap-1 text-xs">
+              <span className="font-medium text-slate-600">Artikelnummer (optional)</span>
+              <input className={inputCls} value={line.articleNumber} onChange={(e) => patch({ articleNumber: e.target.value })} />
+            </label>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
