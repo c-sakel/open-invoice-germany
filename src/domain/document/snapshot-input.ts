@@ -27,6 +27,11 @@ interface CustomerLike {
   email: string | null;
   leitwegId: string | null;
   customFieldsJson?: string | null;
+  // Fix-Welle (Abschluss-Review Phase 11b, Block 3): Customer.customerNumber (Phase 7 §34)
+  // fuers PDF-Meta "Ihre Kundennummer" — optional, damit Aufrufer ohne dieses Feld
+  // (z. B. Alt-Fixtures) unveraendert bleiben; alle produktiven Aufrufer laden den
+  // vollstaendigen Customer-Datensatz (kein `select`), das Feld ist dort immer vorhanden.
+  customerNumber?: string | null;
 }
 
 export async function resolveBuyerSnapshot(
@@ -84,5 +89,6 @@ export async function resolveBuyerSnapshot(
     leitwegId: customer.leitwegId,
     ...(address !== undefined ? { address } : {}),
     ...(customFields !== undefined ? { customFields } : {}),
+    ...(customer.customerNumber !== undefined ? { customerNumber: customer.customerNumber } : {}),
   });
 }

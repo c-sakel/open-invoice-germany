@@ -99,6 +99,12 @@ export const buyerSnapshotSchema = z.object({
   // Phase 8a (§31): Werte der Kunden-Zusatzfelder zum Snapshot-Zeitpunkt. Optional aus
   // demselben Grund wie `address`.
   customFields: z.record(z.string(), z.unknown()).optional(),
+  // Fix-Welle (Abschluss-Review Phase 11b, Block 3): Kundennummer (Customer.customerNumber,
+  // Phase 7 §34) fuers PDF-Meta "Ihre Kundennummer" — kein XML-Feld. Optional aus
+  // demselben Grund wie `address`/`shippingAddress`/`customFields` (Object.keys-
+  // Kompatibilitaet, siehe test/unit/snapshot.test.ts "Schluesselmengen": `buildBuyerSnapshot`
+  // setzt das Feld nur, wenn der Aufrufer es mitgibt).
+  customerNumber: z.string().nullable().optional(),
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
 
