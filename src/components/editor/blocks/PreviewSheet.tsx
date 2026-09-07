@@ -52,6 +52,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
+import { getFocusable } from "@/lib/focus";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
 
 interface ZodFlatten {
@@ -135,9 +136,7 @@ export function PreviewSheet({
       if (e.key !== "Tab") return;
       const panel = panelRef.current;
       if (!panel) return;
-      const focusable = Array.from(
-        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, iframe, [tabindex]:not([tabindex="-1"])'),
-      );
+      const focusable = getFocusable(panel);
       if (focusable.length === 0) return;
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;

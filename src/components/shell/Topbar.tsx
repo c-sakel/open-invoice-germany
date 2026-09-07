@@ -3,9 +3,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { getFocusable } from "@/lib/focus";
 import { NavIcon } from "./NavIcons";
 import { SearchTrigger } from "./SearchTrigger";
 import { Sidebar } from "./Sidebar";
+import { useShell } from "./ShellProvider";
 
 interface Props {
   orgName: string;
@@ -15,6 +17,7 @@ interface Props {
 
 /** Schmale Kopfleiste unterhalb `lg`: Burger oeffnet die Sidebar als Drawer. */
 export function Topbar({ orgName, unreadCount, appVersion }: Props) {
+  const { searchOpen } = useShell();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -30,9 +33,7 @@ export function Topbar({ orgName, unreadCount, appVersion }: Props) {
     if (!open) return;
     previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const t = setTimeout(() => {
-      const first = panelRef.current?.querySelector<HTMLElement>(
-        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
-      );
+      const first = panelRef.current ? getFocusable(panelRef.current)[0] : undefined;
       first?.focus();
     }, 0);
     return () => {
@@ -54,10 +55,17 @@ export function Topbar({ orgName, unreadCount, appVersion }: Props) {
 
   // Escape schliesst den Drawer, Tab/Shift+Tab bleibt innerhalb des Panels (Fokusfalle,
   // Muster `PreviewSheet.tsx`) — ein document-Listener, unabhaengig vom aktuellen Fokusziel.
+  // Fix 1 (Task 5, wichtig): die Palette kann ueber dem offenen Drawer geoeffnet werden
+  // (eigener document-Escape-Handler dort, siehe `CommandPalette.tsx`); ohne Guard wuerde
+  // ein Escape dort BEIDE Overlays schliessen. Der Drawer reagiert deshalb nur, wenn entweder
+  // die Palette gerade NICHT offen ist, oder der Fokus (trotzdem) im Drawer-Panel liegt —
+  // `CommandPalette.tsx` ruft zusaetzlich `stopPropagation()` auf (zweite Verteidigungslinie).
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        const focusInPanel = panelRef.current?.contains(document.activeElement) ?? false;
+        if (searchOpen && !focusInPanel) return;
         e.preventDefault();
         close();
         return;
@@ -65,9 +73,7 @@ export function Topbar({ orgName, unreadCount, appVersion }: Props) {
       if (e.key !== "Tab") return;
       const panel = panelRef.current;
       if (!panel) return;
-      const focusable = Array.from(
-        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'),
-      );
+      const focusable = getFocusable(panel);
       if (focusable.length === 0) return;
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
@@ -81,7 +87,7 @@ export function Topbar({ orgName, unreadCount, appVersion }: Props) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, searchOpen]);
 
   return (
     <>

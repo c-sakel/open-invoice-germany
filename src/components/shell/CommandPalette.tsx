@@ -3,6 +3,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getFocusable } from "@/lib/focus";
 import { NavIcon } from "./NavIcons";
 import { useShell } from "./ShellProvider";
 
@@ -98,9 +99,7 @@ export function CommandPalette() {
       if (e.key !== "Tab") return;
       const panel = panelRef.current;
       if (!panel) return;
-      const focusable = Array.from(
-        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'),
-      );
+      const focusable = getFocusable(panel);
       if (focusable.length === 0) return;
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
@@ -184,7 +183,13 @@ export function CommandPalette() {
       aria-modal="true"
       aria-label="Suche"
       onKeyDown={(e) => {
-        if (e.key === "Escape") close();
+        // Fix 1: `stopPropagation` verhindert, dass Escape zusaetzlich den document-Level-
+        // Handler des mobilen Drawers erreicht (Topbar.tsx hat dort einen Guard als zweite
+        // Verteidigungslinie).
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          close();
+        }
       }}
     >
       <button type="button" aria-label="Schließen" onClick={close} className="absolute inset-0 cursor-default" />
