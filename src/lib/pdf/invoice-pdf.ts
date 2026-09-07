@@ -154,6 +154,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const layout = getLayout(theme.layoutId);
   const base = theme.brand.fontSizePt + layout.fontDelta; // Phase 11b: fontSizePt wird erstmals konsumiert
   const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
+  // Phase 11b, Task 5 — Zeilenhoehe der Positionstabelle war bisher fest 16pt (passend
+  // zur Standard-Schriftgroesse 10pt); `kompakt` (fontDelta -1, base 9) braucht engere
+  // Zeilen. `rowH` skaliert proportional zu `base` (16 bei base 10, 14 bei base 9) und
+  // ist byte-kompatibel zum bisherigen Wert fuer alle Layouts ohne `fontDelta`.
+  const rowH = Math.round((base - 1) * 1.8);
+  const discountRowH = Math.round(rowH * 0.8); // vorher fest 13 (= Math.round(16 * 0.8))
 
   const meta: KopfMetaRow[] = [{ label: "Rechnungsdatum", value: deDate(data.issueDate) }];
   if (data.deliveryDate) meta.push({ label: "Leistungsdatum", value: deDate(data.deliveryDate) });
@@ -256,7 +262,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
 
     // ITEM
     itemPos += 1;
-    const h = 16;
+    const h = rowH;
     y = ensureSpace(y, h);
     if (layout.table.zebra && itemPos % 2 === 0) {
       doc.rect(left, y - 2, right - left, h).fill(layout.table.zebra);
@@ -285,13 +291,13 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     // WinAnsi-Encoding) — das Minuszeichen "−" (U+2212), das hier zuvor stand, fehlt im
     // Glyphensatz der pdfkit-Standardschrift Helvetica und wird durch `"` ersetzt gerendert.
     if (line.discountCents) {
-      y = ensureSpace(y, 13);
+      y = ensureSpace(y, discountRowH);
       const pct = line.discountPermille ? ` ${(line.discountPermille / 10).toFixed(2).replace(/\.00$/, "")} %` : "";
       doc.fontSize(base - 2).fillColor("#555");
       if (showDescription) doc.text(`abzgl.${pct} Rabatt`, descX, y, { width: descWidth });
       if (colX.netto != null) doc.text(`–${formatCents(Math.abs(line.discountCents), cur)}`, tableX + colX.netto, y, { width: 70, align: "right" });
       doc.fillColor("#000").fontSize(base - 1);
-      y += 13;
+      y += discountRowH;
     }
     // Langtext (BT-154) als Rich-Text unter der Bezeichnung, kleinere Schrift.
     if (line.descriptionLong && showDescription) {
