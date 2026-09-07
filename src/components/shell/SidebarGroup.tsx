@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NavGroup, NavItem } from "@/lib/nav";
 import { activeGroupKey, itemMatches, SETTINGS_ITEMS } from "@/lib/nav";
 import { NavIcon } from "./NavIcons";
@@ -64,6 +64,23 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
     });
   }
 
+  // Fix 1 (Task 5, kritisch): die aktive Gruppe oeffnet sich nur EINMALIG beim UEBERGANG in
+  // den aktiven Zustand (z.B. Navigieren hinein) — nicht dauerhaft gepinnt, sonst waere das
+  // Chevron auf der eigenen aktiven Gruppe wirkungslos. `prevActiveKeyRef` startet mit dem
+  // beim ersten Rendern bereits aktiven Schluessel, damit ein einfaches Neuladen der Seite
+  // (Gruppe war schon vorher aktiv) NICHT als Uebergang zaehlt und die gespeicherte
+  // Zuklapp-Praeferenz respektiert; nur ein tatsaechlicher Wechsel (andere Gruppe -> diese)
+  // loest das einmalige `setOpen(true)` aus. Danach bestimmt wieder `open`/das Toggle.
+  const activeKey = activeGroupKey(pathname, search);
+  const prevActiveKeyRef = useRef<string | null>(activeKey);
+  useEffect(() => {
+    const becameActive = activeKey === group.key && prevActiveKeyRef.current !== group.key;
+    prevActiveKeyRef.current = activeKey;
+    if (!becameActive) return;
+    const t = setTimeout(() => setOpen(true), 0);
+    return () => clearTimeout(t);
+  }, [activeKey, group.key]);
+
   if (group.href !== undefined && group.items.length === 0) {
     return (
       <ItemLink
@@ -76,11 +93,9 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
     );
   }
 
-  // M4/M5 (Phase-11a-Nachtrag, Task 5): die aktive Gruppe ist immer offen — auch wenn sie
-  // zuvor zugeklappt gespeichert wurde, oeffnet sie sich beim Navigieren hinein. Die
-  // eingeklappte (nur-Icons-)Sidebar zeigt Gruppen ohnehin immer offen (kein Header/Chevron).
-  const isActiveGroup = activeGroupKey(pathname, search) === group.key;
-  const effectiveOpen = collapsed || isActiveGroup || open;
+  // Eingeklappte (nur-Icons-)Sidebar zeigt Gruppen immer offen (kein Header/Chevron);
+  // `aria-expanded` spiegelt den tatsaechlich sichtbaren Zustand.
+  const effectiveOpen = collapsed || open;
   const itemsId = `nav-group-${group.key}-items`;
 
   return (
