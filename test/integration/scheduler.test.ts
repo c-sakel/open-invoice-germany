@@ -30,6 +30,13 @@ beforeAll(async () => {
   });
   orgId = org.id;
   await ensureOrgMasterdata(dbInternal, orgId);
+  // Test-Isolation: der Runner-Job "recurring" laeuft OHNE Org-Filter (wie in Produktion).
+  // ACTIVE-Abos anderer Testdateien (gemeinsame Test-DB, Dateireihenfolge nicht
+  // deterministisch) wuerden zum Stichtag 2051 mit abgearbeitet und ihre Rechnungen im
+  // Nummernkreis 2051 IHRER Org nummeriert — `Invoice.number` ist aber GLOBAL eindeutig
+  // (docs/LIMITATIONEN.md), RE-2051-0001 kollidiert dann mit dieser Org: Job FAILED,
+  // "Lock stale"/"Jobreihenfolge" scheitern (CI-Befund PR #13–#17). Fremde Abos pausieren.
+  await dbInternal.recurringInvoice.updateMany({ where: { orgId: { not: orgId }, status: "ACTIVE" }, data: { status: "PAUSED" } });
   await saveMailSettings(orgId, {
     host: "localhost",
     port: 2525,
@@ -275,7 +282,9 @@ describe("Phase 7 — RecurringInvoice.autoSend (recurring/run.ts)", () => {
     });
 
     const provider = createMemoryProvider();
-    const now = new Date("2051-07-01T10:00:00.000Z");
+    // Zeitzonenfest: `nextRunDate` ist 12:00 ORTSZEIT (normalizeToNoon) — unter UTC (CI)
+    // laege ein festes 10:00Z davor und das Abo waere noch nicht faellig.
+    const now = rec.nextRunDate;
     const summaries = await runDueRecurring({ now, orgId, provider });
     const summary = summaries.find((s) => s.recurringId === rec.id)!;
     expect(summary.emitted).toHaveLength(1);
@@ -304,7 +313,9 @@ describe("Phase 7 — RecurringInvoice.autoSend (recurring/run.ts)", () => {
     });
 
     const provider = createMemoryProvider();
-    const now = new Date("2051-07-02T10:00:00.000Z");
+    // Zeitzonenfest: `nextRunDate` ist 12:00 ORTSZEIT (normalizeToNoon) — unter UTC (CI)
+    // laege ein festes 10:00Z davor und das Abo waere noch nicht faellig.
+    const now = rec.nextRunDate;
     const summaries = await runDueRecurring({ now, orgId, provider });
     const summary = summaries.find((s) => s.recurringId === rec.id)!;
     expect(summary.emitted).toHaveLength(1);
@@ -329,7 +340,9 @@ describe("Phase 7 — RecurringInvoice.autoSend (recurring/run.ts)", () => {
     });
 
     const provider = createMemoryProvider();
-    const now = new Date("2051-07-03T10:00:00.000Z");
+    // Zeitzonenfest: `nextRunDate` ist 12:00 ORTSZEIT (normalizeToNoon) — unter UTC (CI)
+    // laege ein festes 10:00Z davor und das Abo waere noch nicht faellig.
+    const now = rec.nextRunDate;
     const summaries = await runDueRecurring({ now, orgId, provider });
     const summary = summaries.find((s) => s.recurringId === rec.id)!;
     expect(summary.emitted).toHaveLength(1);

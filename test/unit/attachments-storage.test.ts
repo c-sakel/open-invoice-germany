@@ -68,6 +68,16 @@ describe("storeFile — Ablage <ATTACHMENTS_DIR>/<orgId>/<sha256[0:2]>/<sha256>"
     const b = await storeFile("org2", PDF_BYTES, "application/pdf", "a.pdf");
     expect(a.storagePath).not.toBe(b.storagePath);
   });
+
+  it("zehn gleichzeitige Uploads desselben Inhalts liefern alle denselben Pfad, ohne Temp-Reste", async () => {
+    const results = await Promise.all(Array.from({ length: 10 }, (_, i) => storeFile("org1", PDF_BYTES, "application/pdf", `race-${i}.pdf`)));
+    const paths = new Set(results.map((r) => r.storagePath));
+    expect(paths.size).toBe(1);
+    const abs = path.join(tmpDir, ...results[0].storagePath.split("/"));
+    expect((await fs.readFile(abs)).equals(PDF_BYTES)).toBe(true);
+    const leftovers = (await fs.readdir(path.dirname(abs))).filter((f) => f.endsWith(".tmp"));
+    expect(leftovers).toEqual([]);
+  });
 });
 
 describe("readFile / deleteFileIfUnreferenced", () => {
