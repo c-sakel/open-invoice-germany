@@ -51,7 +51,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { href: "/kunden", label: "Kunden", icon: "customer" },
       { href: "/produkte", label: "Produkte", icon: "product" },
-      { href: "/emails", label: "E-Mails", icon: "mail" },
       { href: "/benachrichtigungen", label: "Benachrichtigungen", icon: "bell", badge: "notifications" },
       { href: "/einstellungen", label: "Einstellungen", icon: "settings" },
     ],
