@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { savePrintSettings } from "@/domain/settings/print";
-import { saveBrandingSettings } from "@/domain/settings/branding";
+import { saveBrandingSettings, loadBrandingSettings } from "@/domain/settings/branding";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
@@ -391,5 +391,29 @@ describe("loadPdfTheme — fehlende Logo-/Hintergrunddatei", () => {
     expect(theme.logoBuffer).toBeUndefined();
     const data = baseInvoiceData({ number: "RE-2056-00006", giroAmountCents: 0 });
     await expect(renderInvoicePdf(data, theme)).resolves.toBeInstanceOf(Buffer);
+  });
+});
+
+describe("PdfTheme — Phase 11b Layout-Aufloesung (Task 1 geschrieben, Task 3 aktiviert)", () => {
+  // `loadPdfTheme`s dritter Parameter sowie `theme.layoutId`/`theme.footerFacts` entstehen
+  // erst in Task 3 (Spec Phase 11, PDF-Layouts) — bis dahin it.skip + @ts-expect-error, damit
+  // dieser bereits geschriebene Roundtrip weder laeuft noch den Typecheck bricht.
+  it.skip("Branding speichert layoutId, layoutByType und footerMode; Organization.ownerName landet im Theme", async () => {
+    const orgId = await makeOrg();
+    await dbInternal.organization.update({ where: { id: orgId }, data: { ownerName: "Erika Muster" } });
+    await saveBrandingSettings(orgId, { layoutId: "schlicht", layoutByType: { DELIVERY_NOTE: "kompakt" }, footerMode: "AUTO" });
+    const brand = await loadBrandingSettings(orgId);
+    expect(brand.layoutId).toBe("schlicht");
+    expect(brand.layoutByType).toEqual({ DELIVERY_NOTE: "kompakt" });
+    // @ts-expect-error -- dritter Parameter (docType) kommt erst in Task 3.
+    const theme = await loadPdfTheme(orgId, null, "DELIVERY_NOTE");
+    // @ts-expect-error -- PdfTheme.layoutId kommt erst in Task 3.
+    expect(theme.layoutId).toBe("kompakt");
+    // @ts-expect-error -- PdfTheme.footerFacts kommt erst in Task 3.
+    expect(theme.footerFacts.ownerName).toBe("Erika Muster");
+    // @ts-expect-error -- dritter Parameter (docType) kommt erst in Task 3.
+    const inv = await loadPdfTheme(orgId, null, "INVOICE");
+    // @ts-expect-error -- PdfTheme.layoutId kommt erst in Task 3.
+    expect(inv.layoutId).toBe("schlicht");
   });
 });

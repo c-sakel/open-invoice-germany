@@ -108,6 +108,9 @@ describe("brandingSettingsInputSchema", () => {
       fontSizePt: 10,
       backgroundPath: null,
       showBackground: false,
+      layoutId: "standard",
+      layoutByType: {},
+      footerMode: "AUTO",
     });
   });
 

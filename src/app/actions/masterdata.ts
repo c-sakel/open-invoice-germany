@@ -27,6 +27,7 @@ function firstError(issues: { message: string; path: PropertyKey[] }[]): string 
 export async function saveOrganization(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
   const parsed = organizationSchema.safeParse({
     legalName: str(fd, "legalName"),
+    ownerName: str(fd, "ownerName"),
     addressLine1: str(fd, "addressLine1"),
     addressLine2: str(fd, "addressLine2"),
     postalCode: str(fd, "postalCode"),
@@ -49,6 +50,7 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
   const v = parsed.data;
   const data = {
     legalName: v.legalName,
+    ownerName: v.ownerName ?? null,
     addressLine1: v.addressLine1,
     addressLine2: v.addressLine2 ?? null,
     postalCode: v.postalCode,
