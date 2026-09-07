@@ -53,4 +53,10 @@ describe("freezePrintOptionsJson mit layoutId", () => {
     const existing = JSON.stringify({ ...DEFAULT_PRINT_SETTINGS, layoutId: "blau" });
     expect(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, existing, "schlicht")).toBe(existing);
   });
+  it("ein vollstaendiger, layoutId-loser Override behaelt seine (nicht-default) Schalter und bekommt den uebergebenen layoutId", () => {
+    const complete = JSON.stringify({ ...DEFAULT_PRINT_SETTINGS, showGiroCode: false });
+    const frozen = JSON.parse(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, complete, "blau")) as { showGiroCode: boolean; layoutId: string };
+    expect(frozen.showGiroCode).toBe(false);
+    expect(frozen.layoutId).toBe("blau");
+  });
 });

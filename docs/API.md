@@ -157,8 +157,16 @@ erneut. Nach vollständiger Zahlung wechselt die Rechnung auf Status `PAID`.
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
 `OrderConfirmation`, `DeliveryNote`, `Invoice`, `Payment`, `Dunning`, `Attachment`,
 `EmailLog`, `PaymentMethod`, `TextTemplate`, `EmailTemplate`, `Recurring`,
-`Settings`, `ApiKey`, `Webhook` — vollständige Liste mit Feldern, Filtern (`embed=`,
+`Settings`, `ApiKey`, `Webhook`, `Layout` — vollständige Liste mit Feldern, Filtern (`embed=`,
 Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
+
+`GET /api/v1/Layout` (Scope `read`) liefert die sieben festen PDF-Layouts (`id`,
+`name`, `description`, `thumbnailUrl`) — keine Paginierung, kein POST/PATCH (feste
+Liste, keine DB-Tabelle). Auswahl je Organisation/Belegtyp über `PATCH
+/api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`). Eine Beleg-
+individuelle Layout-Überschreibung gibt es (noch) nur über MCP (`set_print_options
+{options: {layoutId}}`) oder die UI, nicht als eigener `/api/v1`-Aktions-Endpunkt
+(siehe [LIMITATIONEN.md](LIMITATIONEN.md)).
 
 ## Webhooks
 
@@ -178,5 +186,8 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
   `/zugferd`) bleiben binär.
 - `DeliveryNote` hat keinen `PATCH`-Endpunkt (keine `updateDraft`-Domainfunktion
   vorhanden) — siehe [LIMITATIONEN.md](LIMITATIONEN.md).
+- `Layout` (Phase 11b) ist nur lesbar (`GET`, feste Liste); eine Beleg-individuelle
+  Layout-Überschreibung (`printOptionsJson.layoutId`) gibt es bisher nur über MCP
+  (`set_print_options`) oder die UI, nicht als eigener `/api/v1`-Endpunkt.
 - Multi-Tenant-Rollen gibt es nicht — ein API-Schlüssel gehört zu genau einer
   Organisation, „Berechtigungen" bedeuten hier ausschließlich Scopes.

@@ -17,6 +17,7 @@ import {
   NumberRangeDocType,
   dunningSettingsInputSchema,
 } from "@/schemas";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
 /**
@@ -135,7 +136,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Briefpapier-Einstellungen aktualisieren",
       description:
-        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35). OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert.",
+        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35) sowie das PDF-Layout: `layoutId` (Organisationsstandard), `layoutByType` (je Belegtyp INVOICE/CREDIT_NOTE/QUOTE/ORDER_CONFIRMATION/PROFORMA/DELIVERY_NOTE/DUNNING), `footerMode` (AUTO = Stammdaten-Fusszeile, CUSTOM = footerLeft/-Center/-Right). Waehlbare Layout-Ids ueber list_pdf_layouts. OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert.",
       inputSchema: partialInputShape(brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true })),
     },
     async (args): Promise<Result> => {
@@ -210,7 +211,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Beleg-individuelle Druckoptionen setzen",
       description:
-        "Setzt die Beleg-individuelle Ueberschreibung der globalen Druckoptionen (§36) fuer eine Rechnung/Gutschrift (kind=INVOICE), ein Angebot/eine Auftragsbestaetigung (kind=QUOTE) oder einen Lieferschein (kind=DELIVERY_NOTE). Nur erlaubt, solange der Beleg im Entwurf (DRAFT) ist. Nur die uebergebenen Felder werden gesetzt (Ersatz der bisherigen Ueberschreibung, kein Merge).",
+        "Setzt die Beleg-individuelle Ueberschreibung der globalen Druckoptionen (§36) UND optional des PDF-Layouts (layoutId, Phase 11b) fuer eine Rechnung/Gutschrift (kind=INVOICE), ein Angebot/eine Auftragsbestaetigung (kind=QUOTE) oder einen Lieferschein (kind=DELIVERY_NOTE). Nur erlaubt, solange der Beleg im Entwurf (DRAFT) ist. Nur die uebergebenen Felder werden gesetzt (Ersatz der bisherigen Ueberschreibung, kein Merge). Waehlbare Layout-Ids ueber list_pdf_layouts.",
       inputSchema: {
         kind: z.enum(["INVOICE", "QUOTE", "DELIVERY_NOTE"]),
         id: z.string().min(1),
@@ -229,6 +230,21 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.failUnknown(e);
       }
     },
+  );
+
+  // ── list_pdf_layouts ─────────────────────────────────────────────────────────
+  // Phase 11b, Task 8: feste Liste der sieben PDF-Layouts (kein Input) — dieselbe
+  // Funktion, die auch /api/v1/Layout (src/app/api/v1/Layout/route.ts) und die
+  // Briefpapier-Galerie (Task 7) nutzen.
+  server.registerTool(
+    "list_pdf_layouts",
+    {
+      title: "PDF-Layouts auflisten",
+      description:
+        "Liste der waehlbaren PDF-Layouts (id, name, description). Auswahl je Belegtyp ueber update_branding_settings {layoutId, layoutByType}, je Beleg ueber set_print_options {options: {layoutId}}.",
+      inputSchema: {},
+    },
+    async (): Promise<Result> => ctx.ok(JSON.stringify(listLayouts(), null, 2)),
   );
 
   // ── update_dunning_settings ────────────────────────────────────────────────────
