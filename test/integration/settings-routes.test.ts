@@ -223,6 +223,35 @@ describe("Vorschau-PDF (/api/settings/branding/preview)", () => {
     const res = await previewGet(new Request("http://x/api/settings/branding/preview?docType=SONSTWAS"));
     expect(res.status).toBe(400);
   });
+
+  // Phase 11b, Task 6: layoutId-Parameter (expliziter Layout-Override, ohne zu speichern),
+  // 400 bei unbekanntem Layout, DUNNING-Vorschau rendert ueber renderDunningPdf.
+  it("Vorschau: layoutId-Parameter, 400 bei unbekanntem Layout, DUNNING-Vorschau rendert", async () => {
+    const ok = await previewGet(new Request("http://x/api/settings/branding/preview?docType=INVOICE&layoutId=schlicht"));
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("content-type")).toBe("application/pdf");
+    expect(ok.headers.get("cache-control")).toBe("no-store");
+
+    const bad = await previewGet(new Request("http://x/api/settings/branding/preview?layoutId=premium"));
+    expect(bad.status).toBe(400);
+
+    const du = await previewGet(new Request("http://x/api/settings/branding/preview?docType=DUNNING"));
+    expect(du.status).toBe(200);
+    const duBuf = Buffer.from(await du.arrayBuffer());
+    expect(duBuf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("GET liefert ein PDF fuer CREDIT_NOTE und ANGEBOT", async () => {
+    const gs = await previewGet(new Request("http://x/api/settings/branding/preview?docType=CREDIT_NOTE"));
+    expect(gs.status).toBe(200);
+    const gsBuf = Buffer.from(await gs.arrayBuffer());
+    expect(gsBuf.subarray(0, 4).toString()).toBe("%PDF");
+
+    const an = await previewGet(new Request("http://x/api/settings/branding/preview?docType=ANGEBOT"));
+    expect(an.status).toBe(200);
+    const anBuf = Buffer.from(await an.arrayBuffer());
+    expect(anBuf.subarray(0, 4).toString()).toBe("%PDF");
+  });
 });
 
 describe("Nummernkreise (/api/settings/number-ranges)", () => {

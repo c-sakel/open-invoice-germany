@@ -34,7 +34,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       })
     : null;
 
-  const theme = await loadPdfTheme(org.id, dn.printOptionsJson);
+  const theme = await loadPdfTheme(org.id, dn.printOptionsJson, "DELIVERY_NOTE");
   const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
   const safe = (dn.number ?? "lieferschein").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {

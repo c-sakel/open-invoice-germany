@@ -8,6 +8,7 @@ import { dbInternal } from "@/lib/db";
 import { InvalidOperationError, NotFoundError } from "@/domain/errors";
 import { printSettingsInputSchema, printOptionsOverrideSchema, type PrintSettingsInput, type PrintOptionsOverride } from "@/schemas/settings";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
+import type { LayoutId } from "@/lib/pdf/layouts/ids";
 
 export const DEFAULT_PRINT_SETTINGS: PrintSettingsInput = printSettingsInputSchema.parse({});
 
@@ -74,8 +75,15 @@ const PRINT_OPTION_KEYS = Object.keys(DEFAULT_PRINT_SETTINGS) as (keyof PrintSet
  * fehlt oder unvollstaendig ist (nicht alle Schalter gesetzt) — ein bereits vollstaendiger
  * Override ist schon "eingefroren" (globale Aenderungen wirken sich wegen des Spreads in
  * `effectivePrintOptions` ohnehin nicht mehr aus) und wird unveraendert uebernommen.
+ *
+ * Phase 11b, Task 6: zusaetzlich wird `layoutId` eingefroren — der Aufrufer (finalize.ts)
+ * loest ihn VOR dem Festschreiben ueber `resolveLayoutId` auf und uebergibt ihn hier. Fehlt
+ * `layoutId` im (ggf. bereits vollstaendigen) Override, wird der uebergebene Wert ergaenzt —
+ * auch wenn die zehn Schalter bereits vollstaendig sind (sonst wuerde ein aeltere,
+ * layoutId-loser Override beim Festschreiben nie ein Layout einfrieren und weiterhin die
+ * organisationsweite Aufloesung durchreichen).
  */
-export function freezePrintOptionsJson(global: PrintSettingsInput, existingOverrideJson: string | null | undefined): string {
+export function freezePrintOptionsJson(global: PrintSettingsInput, existingOverrideJson: string | null | undefined, layoutId: LayoutId): string {
   let override: PrintOptionsOverride = {};
   if (existingOverrideJson) {
     try {
@@ -86,8 +94,8 @@ export function freezePrintOptionsJson(global: PrintSettingsInput, existingOverr
     }
   }
   const isComplete = PRINT_OPTION_KEYS.every((key) => key in override);
-  if (isComplete) return existingOverrideJson as string;
-  const merged: PrintSettingsInput = { ...global, ...override };
+  if (isComplete && override.layoutId) return existingOverrideJson as string;
+  const merged = { ...global, ...override, layoutId: override.layoutId ?? layoutId };
   return JSON.stringify(merged);
 }
 

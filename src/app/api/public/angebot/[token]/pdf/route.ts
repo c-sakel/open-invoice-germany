@@ -5,6 +5,7 @@ import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   if (!resolved) return new Response("Nicht gefunden", { status: 404, headers: { "cache-control": "private, no-store" } });
 
   const { quote } = resolved;
-  const theme = await loadPdfTheme(quote.orgId, quote.printOptionsJson);
+  const theme = await loadPdfTheme(quote.orgId, quote.printOptionsJson, invoiceTypeToLayoutDocType(quote.kind));
   const pdf = await renderInvoicePdf(buildDocEInvoiceData(quote), theme);
   const safe = (quote.number ?? "angebot").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {

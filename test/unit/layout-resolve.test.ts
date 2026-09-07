@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveLayoutId, parseLayoutByType, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
+import { freezePrintOptionsJson, DEFAULT_PRINT_SETTINGS } from "@/domain/settings/print";
 import { brandingSettingsInputSchema, printOptionsOverrideSchema } from "@/schemas/settings";
 
 describe("resolveLayoutId", () => {
@@ -39,5 +40,17 @@ describe("Zod: Branding + Override", () => {
     expect(brandingSettingsInputSchema.safeParse({ footerMode: "BOTH" }).success).toBe(false);
     expect(printOptionsOverrideSchema.safeParse({ layoutId: "kompakt" }).success).toBe(true);
     expect(printOptionsOverrideSchema.safeParse({ layoutId: "x" }).success).toBe(false);
+  });
+});
+
+describe("freezePrintOptionsJson mit layoutId", () => {
+  it("ergaenzt layoutId, wenn er fehlt — auch bei vollstaendigen Schaltern", () => {
+    const full = JSON.stringify(DEFAULT_PRINT_SETTINGS);
+    const frozen = JSON.parse(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, full, "schlicht")) as { layoutId?: string };
+    expect(frozen.layoutId).toBe("schlicht");
+  });
+  it("laesst einen vorhandenen layoutId unveraendert", () => {
+    const existing = JSON.stringify({ ...DEFAULT_PRINT_SETTINGS, layoutId: "blau" });
+    expect(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, existing, "schlicht")).toBe(existing);
   });
 });
