@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PrintSettingsInput, PrintOptionsOverride } from "@/schemas";
+import type { LayoutId } from "@/lib/pdf/layouts/ids";
 
 const LABELS: Record<keyof PrintSettingsInput, string> = {
   showFooter: "Fußzeile",
@@ -31,11 +32,18 @@ export function PrintOptionsPanel({
   apiKind,
   effective,
   initialOverride,
+  layouts,
 }: {
   docId: string;
   apiKind: ApiKind;
-  effective: PrintSettingsInput;
+  /** Phase 11b: `effectivePrintOptions()` (src/domain/settings/print.ts) traegt zusaetzlich
+   *  ein optionales `layoutId`, sobald der Beleg (oder die Organisation/der Typ) ein
+   *  Layout aufgeloest hat — hier nur gelesen, nie geschrieben. */
+  effective: PrintSettingsInput & { layoutId?: LayoutId };
   initialOverride: PrintOptionsOverride;
+  /** Die sieben Layouts (Registry, `listLayouts()`) — vom Server uebergeben, damit diese
+   *  Client-Komponente die PDF-Renderer nicht mitbuendeln muss. */
+  layouts: { id: LayoutId; name: string }[];
 }) {
   const router = useRouter();
   const [overrides, setOverrides] = useState<PrintOptionsOverride>(initialOverride);
@@ -58,6 +66,18 @@ export function PrintOptionsPanel({
 
   function setOverrideValue(key: keyof PrintSettingsInput, value: boolean) {
     setOverrides((o) => ({ ...o, [key]: value }));
+  }
+
+  function setLayoutOverride(value: string) {
+    setOverrides((o) => {
+      const next = { ...o };
+      if (value) {
+        next.layoutId = value as LayoutId;
+      } else {
+        delete next.layoutId;
+      }
+      return next;
+    });
   }
 
   async function save() {
@@ -90,6 +110,21 @@ export function PrintOptionsPanel({
         <div className="space-y-3 border-t border-slate-100 p-4">
           {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
           {saved && <p className="text-xs text-emerald-700">Gespeichert.</p>}
+          <label className="flex max-w-xs flex-col gap-1 text-xs text-slate-600">
+            <span>Layout</span>
+            <select
+              value={overrides.layoutId ?? ""}
+              onChange={(e) => setLayoutOverride(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+            >
+              <option value="">Organisationsstandard</option>
+              {layouts.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="grid gap-2 sm:grid-cols-2">
             {FIELDS.map((key) => {
               const isOverridden = key in overrides;

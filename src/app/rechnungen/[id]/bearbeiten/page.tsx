@@ -7,6 +7,7 @@ import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         <h1 className="text-2xl font-bold tracking-tight">Rechnungsentwurf bearbeiten</h1>
       </div>
       <NewInvoiceForm customers={customers} products={products} paymentMethods={paymentMethodOptions} contacts={contacts} addresses={addresses} initial={initial} />
-      <PrintOptionsPanel docId={inv.id} apiKind="invoices" effective={effectivePrint} initialOverride={printOverride} />
+      <PrintOptionsPanel docId={inv.id} apiKind="invoices" effective={effectivePrint} initialOverride={printOverride} layouts={listLayouts()} />
     </div>
   );
 }

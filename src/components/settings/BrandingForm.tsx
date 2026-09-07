@@ -2,15 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { BrandingSettingsInput } from "@/schemas";
 
-const PREVIEW_DOC_TYPES: { value: string; label: string }[] = [
-  { value: "INVOICE", label: "Rechnung" },
-  { value: "ANGEBOT", label: "Angebot" },
-  { value: "DELIVERY_NOTE", label: "Lieferschein" },
-];
-
-/** Briefpapier-Einstellungen (§35): Logo-/Hintergrund-Upload, Farbe, Ränder, Fußzeilen, Live-Vorschau als PDF. */
+/** Briefpapier-Einstellungen (§35): Logo-/Hintergrund-Upload, Farbe, Ränder, Fußzeilen.
+ *  Die Live-Vorschau (vormals eine feste PDF-Vorschau hier im Formular) lebt seit Phase 11b,
+ *  Task 7 im Reiter "Layouts" (Galerie mit iframe-Vorschau je Belegtyp) — kein doppelter
+ *  Vorschau-Mechanismus mehr. */
 export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
@@ -20,7 +18,6 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
   const [saved, setSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
-  const [previewDocType, setPreviewDocType] = useState("INVOICE");
 
   function setField<K extends keyof BrandingSettingsInput>(key: K, value: BrandingSettingsInput[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -182,11 +179,40 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
             placeholder="Firma · Straße · PLZ Ort"
           />
         </label>
+        <fieldset className="flex flex-col gap-2 text-sm">
+          <legend className="font-medium text-slate-700">Fußzeile</legend>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="footerMode"
+              checked={values.footerMode === "AUTO"}
+              onChange={() => setField("footerMode", "AUTO")}
+              className="h-4 w-4 border-slate-300"
+            />
+            <span className="text-slate-700">automatisch aus den Stammdaten (vierspaltig)</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="footerMode"
+              checked={values.footerMode === "CUSTOM"}
+              onChange={() => setField("footerMode", "CUSTOM")}
+              className="h-4 w-4 border-slate-300"
+            />
+            <span className="text-slate-700">eigene Texte (drei Spalten)</span>
+          </label>
+        </fieldset>
         <div className="grid gap-4 sm:grid-cols-3">
           {(["footerLeft", "footerCenter", "footerRight"] as const).map((k) => (
             <label key={k} className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">{{ footerLeft: "Fußzeile links", footerCenter: "Fußzeile Mitte", footerRight: "Fußzeile rechts" }[k]}</span>
-              <textarea value={values[k] ?? ""} onChange={(e) => setField(k, e.target.value || null)} rows={2} className="rounded border border-slate-300 px-2 py-1" />
+              <textarea
+                value={values[k] ?? ""}
+                onChange={(e) => setField(k, e.target.value || null)}
+                rows={2}
+                disabled={values.footerMode !== "CUSTOM"}
+                className="rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-400"
+              />
             </label>
           ))}
         </div>
@@ -197,26 +223,15 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
           {saving ? "Speichern…" : "Einstellungen speichern"}
         </button>
 
-        <div className="flex items-center gap-2">
-          <select value={previewDocType} onChange={(e) => setPreviewDocType(e.target.value)} className="rounded-md border border-slate-300 px-2 py-2 text-sm">
-            {PREVIEW_DOC_TYPES.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <a
-            href={`/api/settings/branding/preview?docType=${previewDocType}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            PDF-Vorschau öffnen
-          </a>
-        </div>
+        <Link
+          href="/einstellungen/briefpapier?tab=layouts"
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Layout &amp; Live-Vorschau →
+        </Link>
       </div>
       <p className="text-xs text-slate-400">
-        Die Vorschau nutzt eine feste Musterrechnung mit den echten Absender-Stammdaten und dem zuletzt GESPEICHERTEN Briefpapier — zuerst speichern, dann öffnen.
+        Layout-Auswahl je Belegtyp und eine Live-Vorschau finden Sie im Reiter „Layouts“.
       </p>
     </div>
   );

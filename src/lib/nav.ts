@@ -28,6 +28,31 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+/** Stabiler Schluessel je Einstellungen-Unterseite — Grundlage fuer `SettingsTabs`/`SettingsTabKey`
+ *  (Phase 11b, Task 7): `SettingsTabs` leitet seine Reiter aus `SETTINGS_ITEMS` ab statt eine
+ *  eigene, parallel gepflegte Liste zu fuehren. */
+export const SETTINGS_KEYS = [
+  "stammdaten",
+  "belege",
+  "nummernkreise",
+  "briefpapier",
+  "email",
+  "vorlagen",
+  "textvorlagen",
+  "zahlungsmethoden",
+  "mahnwesen",
+  "kundenfelder",
+  "benachrichtigungen",
+  "automatisierung",
+  "api",
+  "webhooks",
+] as const;
+export type SettingsKey = (typeof SETTINGS_KEYS)[number];
+
+export interface SettingsNavItem extends NavItem {
+  key: SettingsKey;
+}
+
 export const NAV_GROUPS: readonly NavGroup[] = [
   { key: "home", label: "Übersicht", icon: "home", href: "/", items: [] },
   {
@@ -58,23 +83,32 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   },
 ];
 
-/** Unterpunkte der Einstellungen (werden unter "Einstellungen" eingeblendet, wenn aktiv). */
-export const SETTINGS_ITEMS: readonly NavItem[] = [
-  { href: "/einstellungen", label: "Stammdaten", exact: true },
-  { href: "/einstellungen/belege", label: "Belege" },
-  { href: "/einstellungen/nummernkreise", label: "Nummernkreise" },
-  { href: "/einstellungen/briefpapier", label: "Briefpapier" },
-  { href: "/einstellungen/druckoptionen", label: "Druckoptionen" },
-  { href: "/einstellungen/email", label: "E-Mail-Versand" },
-  { href: "/einstellungen/vorlagen", label: "Textvorlagen" },
-  { href: "/einstellungen/textvorlagen", label: "Dokumenttexte" },
-  { href: "/einstellungen/zahlungsmethoden", label: "Zahlungsmethoden" },
-  { href: "/einstellungen/mahnwesen", label: "Mahnwesen" },
-  { href: "/einstellungen/kundenfelder", label: "Kundenfelder" },
-  { href: "/einstellungen/benachrichtigungen", label: "Benachrichtigungen" },
-  { href: "/einstellungen/automatisierung", label: "Automatisierung" },
-  { href: "/einstellungen/api", label: "API" },
-  { href: "/einstellungen/webhooks", label: "Webhooks" },
+/**
+ * Unterpunkte der Einstellungen (werden unter "Einstellungen" eingeblendet, wenn aktiv,
+ * und liefern die Reiter der Briefpapier-/Einstellungen-Seiten via `SettingsTabs`).
+ *
+ * `/einstellungen/druckoptionen` ist seit Phase 11b Task 7 kein eigener Reiter mehr —
+ * die Seite leitet auf `/einstellungen/briefpapier?tab=druckoptionen` um (Reiter dort).
+ * `/einstellungen/dokumente` war schon seit Phase 7 (§33) kein eigener Reiter: die Seite
+ * ist dort bereits zu einem reinen Redirect auf `/einstellungen/belege` geworden (die
+ * Funktion ging im Tab "Belege" auf) und hat seither keinen eigenen Titel/Inhalt mehr —
+ * sie bleibt bewusst aussen vor, um keinen zweiten, sofort weiterleitenden Reiter zu zeigen.
+ */
+export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
+  { href: "/einstellungen", label: "Stammdaten", key: "stammdaten", exact: true },
+  { href: "/einstellungen/belege", label: "Belege", key: "belege" },
+  { href: "/einstellungen/nummernkreise", label: "Nummernkreise", key: "nummernkreise" },
+  { href: "/einstellungen/briefpapier", label: "Briefpapier", key: "briefpapier" },
+  { href: "/einstellungen/email", label: "E-Mail-Versand", key: "email" },
+  { href: "/einstellungen/vorlagen", label: "Textvorlagen", key: "vorlagen" },
+  { href: "/einstellungen/textvorlagen", label: "Dokumenttexte", key: "textvorlagen" },
+  { href: "/einstellungen/zahlungsmethoden", label: "Zahlungsmethoden", key: "zahlungsmethoden" },
+  { href: "/einstellungen/mahnwesen", label: "Mahnwesen", key: "mahnwesen" },
+  { href: "/einstellungen/kundenfelder", label: "Kundenfelder", key: "kundenfelder" },
+  { href: "/einstellungen/benachrichtigungen", label: "Benachrichtigungen", key: "benachrichtigungen" },
+  { href: "/einstellungen/automatisierung", label: "Automatisierung", key: "automatisierung" },
+  { href: "/einstellungen/api", label: "API", key: "api" },
+  { href: "/einstellungen/webhooks", label: "Webhooks", key: "webhooks" },
 ];
 
 function splitHref(href: string): { path: string; params: URLSearchParams } {
