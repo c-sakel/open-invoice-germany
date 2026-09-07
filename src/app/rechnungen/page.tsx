@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listInvoices } from "@/domain/invoice/list";
@@ -104,12 +105,15 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Rechnungen</h1>
-        <Link href="/rechnungen/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neue Rechnung
-        </Link>
-      </div>
+      <PageHeader
+        title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
+        subtitle={`${result.total} Belege`}
+        actions={
+          <Link href="/rechnungen/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neue Rechnung
+          </Link>
+        }
+      />
 
       <FilterBar basePath="/rechnungen" fields={fields} values={values} />
 
