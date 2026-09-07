@@ -9,6 +9,7 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { loadListPage } from "@/lib/list-page";
+import { buildListeParam } from "@/domain/document/neighbors";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,10 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    offset: firstOf(sp.offset),
   };
+  const liste = buildListeParam(values);
+  const detailHref = (id: string) => `/dokumente/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
   // Fix-Welle (B1): siehe rechnungen/page.tsx.
@@ -111,7 +115,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                 return (
                   <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/dokumente/${d.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(d.id)} className="font-medium text-indigo-600 hover:underline">
                         {d.number ?? "—"}
                       </Link>
                     </td>

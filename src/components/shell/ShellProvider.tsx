@@ -7,6 +7,12 @@ interface ShellContextValue {
   searchOpen: boolean;
   openSearch: () => void;
   closeSearch: () => void;
+  /** Von `NavHint` gesetzter Listen-Link (Phase 11d, 11a-M12): Detailseiten ohne eigenen
+   *  Listen-Pfad (z. B. `/dokumente/<id>` einer Auftragsbestaetigung) ueberstimmen damit
+   *  den echten `pathname`/`search` in der `Sidebar`, damit dort der passende Listen-Link
+   *  aktiv markiert wird. `null` = kein Hint, `Sidebar` nutzt den echten Pfad. */
+  navHint: string | null;
+  setNavHint: (href: string | null) => void;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -22,7 +28,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const openSearch = useCallback(() => setSearchOpen(true), []);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
-  const value = useMemo<ShellContextValue>(() => ({ searchOpen, openSearch, closeSearch }), [searchOpen, openSearch, closeSearch]);
+  const [navHint, setNavHint] = useState<string | null>(null);
+  const value = useMemo<ShellContextValue>(
+    () => ({ searchOpen, openSearch, closeSearch, navHint, setNavHint }),
+    [searchOpen, openSearch, closeSearch, navHint],
+  );
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
 }
 
