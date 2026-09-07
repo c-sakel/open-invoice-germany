@@ -6,6 +6,7 @@ import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
+import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { ShareLinkPanel } from "@/components/ShareLinkPanel";
@@ -18,6 +19,8 @@ import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
+import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
+import { ActionMenu } from "@/components/detail/ActionMenu";
 import { NavHint } from "@/components/shell/NavHint";
 import { loadNeighbors } from "@/domain/document/neighbors";
 import type { EmailDocType } from "@/schemas/email";
@@ -52,10 +55,10 @@ export default async function DokumentDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ liste?: string }>;
+  searchParams: Promise<{ liste?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { liste } = await searchParams;
+  const liste = firstOf((await searchParams).liste);
   const org = await getActiveOrg();
   const q = await dbInternal.quote.findFirst({
     where: { id, orgId: org.id },
@@ -105,7 +108,9 @@ export default async function DokumentDetail({
         }
         actions={
           <>
-            <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} />
+            {/* Fix-Welle I2: kompakte Kopfzeile — nur Bearbeiten + der erste verfuegbare
+                Statusuebergang; der Rest wandert per DocumentActionsMenuItems ins "Mehr"-Menue. */}
+            <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} variant="compact" />
             <a
               href={`/api/documents/${q.id}/pdf`}
               target="_blank"
@@ -117,23 +122,26 @@ export default async function DokumentDetail({
           </>
         }
         more={
-          <DocumentMoreMenu
-            quoteId={q.id}
-            convertedToInvoiceId={q.convertedToInvoiceId}
-            showToOrderConfirmation={q.kind === "ANGEBOT" && !q.convertedToInvoiceId && ANGEBOT_TO_AB_STATUSES.has(status)}
-            showToInvoice={
-              !q.convertedToInvoiceId &&
-              ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) ||
-                (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
-            }
-            showToDeliveryNote={QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status)}
-            // Task 4 (Phase 5, §13-15 UStG): nur solange die Gesamtleistung noch nicht voll
-            // abgerechnet ist; hasDownpayments/hasPartialInvoices blenden hier nur die
-            // jeweils andere Art aus, die endgueltige Pruefung bleibt serverseitig (409).
-            showPartialInvoice={canBillQuote && !hasDownpayments}
-            showDownpaymentInvoice={canBillQuote && !hasPartialInvoices}
-            showFinalInvoice={billing != null && hasDownpayments && !billing.hasActiveFinal}
-          />
+          <ActionMenu>
+            <DocumentActionsMenuItems type="QUOTE" id={q.id} status={status} archived={archived} />
+            <DocumentMoreMenu
+              quoteId={q.id}
+              convertedToInvoiceId={q.convertedToInvoiceId}
+              showToOrderConfirmation={q.kind === "ANGEBOT" && !q.convertedToInvoiceId && ANGEBOT_TO_AB_STATUSES.has(status)}
+              showToInvoice={
+                !q.convertedToInvoiceId &&
+                ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) ||
+                  (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
+              }
+              showToDeliveryNote={QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status)}
+              // Task 4 (Phase 5, §13-15 UStG): nur solange die Gesamtleistung noch nicht voll
+              // abgerechnet ist; hasDownpayments/hasPartialInvoices blenden hier nur die
+              // jeweils andere Art aus, die endgueltige Pruefung bleibt serverseitig (409).
+              showPartialInvoice={canBillQuote && !hasDownpayments}
+              showDownpaymentInvoice={canBillQuote && !hasPartialInvoices}
+              showFinalInvoice={billing != null && hasDownpayments && !billing.hasActiveFinal}
+            />
+          </ActionMenu>
         }
         notice={
           q.kind === "PROFORMA" ? (
@@ -155,7 +163,12 @@ export default async function DokumentDetail({
           </DocumentStatusCard>
         }
       >
-        <CollapsibleSection title="Positionen" summary={`${q.lines.length} Positionen · Netto ${formatCents(q.netTotalCents, q.currency)}`}>
+        <InternalNotesBox notes={q.internalNotes} />
+
+        <CollapsibleSection
+          title="Positionen"
+          summary={`${q.lines.length} ${q.lines.length === 1 ? "Position" : "Positionen"} · Netto ${formatCents(q.netTotalCents, q.currency)}`}
+        >
           <div className="space-y-4">
             {q.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.headerText}</p>}
             <LineItemsTable lines={q.lines} currency={q.currency} />
@@ -175,13 +188,6 @@ export default async function DokumentDetail({
             </div>
             {q.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.footerText}</p>}
             {q.notes && <p className="text-sm text-slate-600">{q.notes}</p>}
-            {q.internalNotes && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <span className="mr-2 font-medium">Interne Notiz</span>
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
-                <p className="mt-1 whitespace-pre-line">{q.internalNotes}</p>
-              </div>
-            )}
           </div>
         </CollapsibleSection>
 
@@ -194,4 +200,10 @@ export default async function DokumentDetail({
       </DocumentDetailLayout>
     </>
   );
+}
+
+// M11 (Fix-Welle): Next liefert bei doppeltem `?liste=`-Query-Parameter ein `string[]` statt
+// `string` — dieselbe Ableitung wie auf den Listenseiten (z. B. `rechnungen/page.tsx`).
+function firstOf(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }

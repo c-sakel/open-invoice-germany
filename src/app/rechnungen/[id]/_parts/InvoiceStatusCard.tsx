@@ -19,10 +19,11 @@ function skontoText(invoice: Pick<InvoiceDetail, "skonto1Permille" | "skonto1Day
 
 /**
  * Statuskarte der Rechnungsdetailseite (Phase 11d, Task 3, `aside`-Slot) — buendelt die
- * frueheren "Empfänger"/"Eckdaten"-Karten (Z. 254-283) als kompakte Zeilen (Kunde nur noch
- * als Link, volle Anschrift steht im PDF), das "Zahlung & Mahnwesen"-Bezahlt/Offen (Z.
- * 370-377) als Zeilen sowie unveraendert PaymentForm/Zahlungsliste/Mahnblock (Z. 379-421)
- * und die uebergebenen `children` (AttachmentPanel, DocumentChain).
+ * frueheren "Empfänger"/"Eckdaten"-Karten (Z. 254-283) als kompakte Zeilen (Kunde als Link
+ * plus Anschrift/USt-IdNr., M2 Fix-Welle — direkt aus `customer`, kein Snapshot auf
+ * `Invoice`), das "Zahlung & Mahnwesen"-Bezahlt/Offen (Z. 370-377) als Zeilen sowie
+ * unveraendert PaymentForm/Zahlungsliste/Mahnblock (Z. 379-421) und die uebergebenen
+ * `children` (AttachmentPanel, DocumentChain).
  *
  * `id="zahlung"` sitzt auf einem umschliessenden Wrapper statt auf CollapsibleSection
  * selbst (kein neues Prop auf dem Task-2-Baustein noetig) — die Primaeraktion "Zahlung
@@ -57,10 +58,12 @@ export function InvoiceStatusCard({
   dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null;
   children?: ReactNode;
 }) {
-  // Fix 1 (Review): Bezahlt/Offen/Zahlungsmethode gehoerten frueher zum guarded "Zahlung &
-  // Mahnwesen"-Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe,
-  // Gutschriften und stornierte Rechnungen gibt es keine sinnvolle Bezahlt/Offen-Aussage.
-  // Brutto bleibt als einzige Betragszeile davon ausgenommen immer sichtbar.
+  // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
+  // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
+  // stornierte Rechnungen gibt es keine sinnvolle Bezahlt/Offen-Aussage. Zahlungsmethode
+  // gehoerte dagegen in der alten "Eckdaten"-Karte NICHT zu diesem Abschnitt und stand dort
+  // unbedingt (nur an `paymentMethodName` geknuepft) — I4 (Fix-Welle) nimmt das zurueck, nachdem
+  // eine fruehere Fassung sie faelschlich mitguardete.
   const rows: StatusRow[] = [
     {
       label: "Kunde",
@@ -68,6 +71,17 @@ export function InvoiceStatusCard({
         <Link href={`/kunden/${invoice.customer.id}`} className="text-indigo-600 hover:underline">
           {invoice.customer.name}
         </Link>
+      ),
+    },
+    {
+      label: "Anschrift",
+      value: (
+        <span className="block text-right">
+          <span className="block">{invoice.customer.addressLine1}</span>
+          <span className="block">
+            {invoice.customer.postalCode} {invoice.customer.city}
+          </span>
+        </span>
       ),
     },
     { label: "Rechnungsdatum", value: deDate(invoice.issueDate) },
@@ -82,7 +96,8 @@ export function InvoiceStatusCard({
     );
   }
   rows.push({ label: "Steuerschema", value: invoice.taxScheme });
-  if (showPaymentBlock && paymentMethodName) rows.push({ label: "Zahlungsmethode", value: paymentMethodName });
+  if (invoice.customer.vatId) rows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });
+  if (paymentMethodName) rows.push({ label: "Zahlungsmethode", value: paymentMethodName });
   if (hasSkonto) rows.push({ label: "Skonto", value: skontoText(invoice) });
 
   return (

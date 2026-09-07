@@ -19,6 +19,7 @@ import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
+import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
 import { buildInvoiceViewModel, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
@@ -33,10 +34,11 @@ export default async function InvoiceDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; liste?: string }>;
+  searchParams: Promise<{ error?: string; liste?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { error, liste } = await searchParams;
+  const { error, liste: listeParam } = await searchParams;
+  const liste = firstOf(listeParam);
 
   const org = await getActiveOrg();
   // G7 (Fix-Runde 2): findUnique(id) ohne orgId erlaubte fremden Organisationen den Zugriff
@@ -136,12 +138,13 @@ export default async function InvoiceDetail({
       }
       actions={
         <>
+          {/* I1 (Fix-Welle): PDF-Knopf wie auf Dokument-/Lieferscheinseite — rendert auch Entwuerfe. */}
+          <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            PDF
+          </a>
           <SendEmailDialog docType={vm.emailDocType} docId={invoice.id} label={vm.isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} />
           {vm.isDraft && (
-            <Link
-              href={`/rechnungen/${invoice.id}/bearbeiten`}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
+            <Link href={`/rechnungen/${invoice.id}/bearbeiten`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Bearbeiten
             </Link>
           )}
@@ -202,7 +205,9 @@ export default async function InvoiceDetail({
         </InvoiceStatusCard>
       }
     >
-      <CollapsibleSection title="Positionen" summary={`${invoice.lines.length} Positionen · Netto ${formatCents(invoice.netTotalCents, invoice.currency)}`}>
+      <InternalNotesBox notes={invoice.internalNotes} />
+
+      <CollapsibleSection title="Positionen" summary={`${invoice.lines.length} ${invoice.lines.length === 1 ? "Position" : "Positionen"} · Netto ${formatCents(invoice.netTotalCents, invoice.currency)}`}>
         <div className="space-y-4">
           {invoice.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.headerText}</p>}
           <LineItemsTable lines={invoice.lines} currency={invoice.currency} />
@@ -221,13 +226,6 @@ export default async function InvoiceDetail({
           />
           {invoice.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.footerText}</p>}
           {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
-          {invoice.internalNotes && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <span className="mr-2 font-medium">Interne Notiz</span>
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
-              <p className="mt-1 whitespace-pre-line">{invoice.internalNotes}</p>
-            </div>
-          )}
         </div>
       </CollapsibleSection>
 
@@ -243,4 +241,9 @@ export default async function InvoiceDetail({
       </section>
     </DocumentDetailLayout>
   );
+}
+
+// M11 (Fix-Welle): `?liste=a&liste=b` liefert `string[]` — Ableitung wie auf den Listenseiten.
+function firstOf(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }
