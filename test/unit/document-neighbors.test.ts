@@ -27,6 +27,10 @@ describe("parseListeQuery", () => {
     expect(parseListeQuery("q=" + "a".repeat(600))).toBeNull();
     expect(parseListeQuery("q=<script>")).toBeNull();
   });
+  it("erlaubt * (Task-1-Review-Nachtrag: URLSearchParams laesst es unescaped)", () => {
+    const p = parseListeQuery("q=Foo*Bar&status=open")!;
+    expect(p.get("q")).toBe("Foo*Bar");
+  });
   it("buildListeParam laesst leere Werte weg und ist per parseListeQuery lesbar", () => {
     const s = buildListeParam({ q: "Meier", status: undefined, kind: "ANGEBOT", offset: "" });
     expect(s).toBe("q=Meier&kind=ANGEBOT");
