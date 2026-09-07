@@ -9,7 +9,7 @@
  * Container `/app/data/attachments`) wird bei jedem Aufruf frisch aus `process.env`
  * gelesen — Storage-Tests setzen die Variable je Testlauf auf ein `fs.mkdtemp`-Verzeichnis.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { extensionMatchesMime, sniffMime, MAX_ATTACHMENT_FILE_BYTES, validateFileContent } from "@/lib/attachments/mime";
@@ -73,9 +73,23 @@ export async function storeFile(orgId: string, buffer: Buffer, mime: string, fil
     await fs.mkdir(path.dirname(abs), { recursive: true });
     // Erst in eine temporaere Datei im selben Verzeichnis schreiben, dann atomar umbenennen
     // — verhindert einen halb geschriebenen Anhang bei einem Absturz waehrend des Schreibens.
-    const tmp = `${abs}.${process.pid}.${Date.now()}.tmp`;
+    // Der Temp-Name traegt einen Zufallsanteil: zwei gleichzeitige Uploads desselben
+    // Inhalts (gleicher Prozess, gleiche Millisekunde) duerfen sich nicht dieselbe
+    // Temp-Datei teilen — sonst verliert der zweite `rename` mit ENOENT.
+    const tmp = `${abs}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
     await fs.writeFile(tmp, buffer);
-    await fs.rename(tmp, abs);
+    try {
+      await fs.rename(tmp, abs);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      // Hat ein paralleler Upload die Zieldatei inzwischen angelegt, ist der Inhalt
+      // (Hash-Adressierung) identisch — Dedup-Treffer, kein Fehler.
+      const nowExists = await fs
+        .access(abs)
+        .then(() => true)
+        .catch(() => false);
+      if (!nowExists) throw err;
+    }
   }
 
   return { storagePath, sha256, sizeBytes: buffer.length };

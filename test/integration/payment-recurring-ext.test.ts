@@ -240,7 +240,7 @@ describe("Recurring: autoSend nutzt emailTemplateId", () => {
     });
 
     const provider = createMemoryProvider();
-    const now = new Date("2064-09-01T10:00:00.000Z");
+    const now = rec.nextRunDate; // zeitzonenfest (12:00 Ortszeit, s. scheduler.test.ts)
     const summaries = await runDueRecurring({ now, orgId, provider });
     const summary = summaries.find((s) => s.recurringId === rec.id)!;
     expect(summary.emitted).toHaveLength(1);
