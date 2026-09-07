@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { loadDunningOverview } from "@/domain/dunning/overview";
 import { loadDunningSettings } from "@/domain/dunning/settings";
@@ -35,9 +36,7 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Mahnwesen</h1>
-      </div>
+      <PageHeader title="Mahnwesen" />
 
       {!settings.autoCreate && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

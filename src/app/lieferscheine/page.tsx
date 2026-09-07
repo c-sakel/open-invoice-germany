@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { listDeliveryNotes } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
@@ -49,12 +50,15 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Lieferscheine</h1>
-        <Link href="/lieferscheine/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neuer Lieferschein
-        </Link>
-      </div>
+      <PageHeader
+        title="Lieferscheine"
+        subtitle={`${result.total} Belege`}
+        actions={
+          <Link href="/lieferscheine/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neuer Lieferschein
+          </Link>
+        }
+      />
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">Kein Steuerbeleg — Nachweis des Leistungszeitpunkts.</p>
         <Link href={showArchived ? "/lieferscheine" : "/lieferscheine?archiviert=1"} className="text-sm font-medium text-indigo-600 hover:underline">
