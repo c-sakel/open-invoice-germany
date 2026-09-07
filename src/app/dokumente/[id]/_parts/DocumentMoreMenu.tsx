@@ -52,8 +52,8 @@ export function DocumentMoreMenu({
         <>
           {convertedToInvoiceId && <ActionMenuSeparator />}
           <ActionMenuItem>
-            <div className="px-3 py-1.5">
-              <ConvertMenu
+            <ConvertMenu
+                asMenuItem
                 sourceType="QUOTE"
                 sourceId={quoteId}
                 showToOrderConfirmation={showToOrderConfirmation}
@@ -63,7 +63,6 @@ export function DocumentMoreMenu({
                 showDownpaymentInvoice={showDownpaymentInvoice}
                 showFinalInvoice={showFinalInvoice}
               />
-            </div>
           </ActionMenuItem>
         </>
       )}

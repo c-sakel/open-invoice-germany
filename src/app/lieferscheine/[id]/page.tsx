@@ -123,17 +123,16 @@ export default async function LieferscheinDetail({
           {(canBillDeliveryNote || dn.status === "DRAFT") && <ActionMenuSeparator />}
           {canBillDeliveryNote && (
             <ActionMenuItem>
-              <div className="px-3 py-1.5">
-                {/* B11 (Fix-Welle): Teilrechnung aus Lieferschein — Share-Modi nur, wenn
+              {/* B11 (Fix-Welle): Teilrechnung aus Lieferschein — Share-Modi nur, wenn
                     alle Positionen einen Preis tragen. */}
                 <ConvertMenu
+                  asMenuItem
                   sourceType="DELIVERY_NOTE"
                   sourceId={dn.id}
                   showToDeliveryNote={false}
                   showPartialInvoice={canBillDeliveryNote}
                   allowShareModesInPartialInvoice={allowShareModes}
                 />
-              </div>
             </ActionMenuItem>
           )}
           {dn.status === "DRAFT" && (
