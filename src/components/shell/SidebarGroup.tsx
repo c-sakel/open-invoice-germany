@@ -10,7 +10,6 @@ interface Props {
   group: NavGroup;
   pathname: string;
   search: string;
-  active: boolean;
   collapsed: boolean;
   unreadCount: number;
   onNavigate?: () => void;
@@ -23,7 +22,7 @@ function ItemLink({ item, active, collapsed, badge, onNavigate, indent }: { item
       onClick={onNavigate}
       title={collapsed ? item.label : undefined}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-2.5 rounded-md py-1.5 text-sm ${indent ? "pl-9 pr-2" : "px-2"} ${
+      className={`relative flex items-center gap-2.5 rounded-md py-1.5 text-sm ${indent ? "pl-9 pr-2" : "px-2"} ${
         active ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
@@ -31,6 +30,9 @@ function ItemLink({ item, active, collapsed, badge, onNavigate, indent }: { item
       {!collapsed && <span className="truncate">{item.label}</span>}
       {!collapsed && item.badge === "notifications" && badge > 0 && (
         <span className="ml-auto rounded-full bg-indigo-600 px-1.5 text-[10px] font-semibold text-white">{badge}</span>
+      )}
+      {collapsed && item.badge === "notifications" && badge > 0 && (
+        <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-indigo-600" aria-label={`${badge} ungelesen`} />
       )}
     </Link>
   );

@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { NAV_GROUPS, activeGroupKey } from "@/lib/nav";
+import { NAV_GROUPS } from "@/lib/nav";
 import { LogoutButton } from "@/components/LogoutButton";
 import { NavIcon } from "./NavIcons";
 import { SidebarGroup } from "./SidebarGroup";
@@ -50,7 +50,6 @@ export function Sidebar({ orgName, unreadCount, searchSlot, drawer = false, onCl
     });
   }
 
-  const activeKey = activeGroupKey(pathname, searchStr);
   const width = collapsed ? "w-14" : "w-60";
 
   return (
@@ -75,7 +74,7 @@ export function Sidebar({ orgName, unreadCount, searchSlot, drawer = false, onCl
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
         {NAV_GROUPS.map((g) => (
-          <SidebarGroup key={g.key} group={g} pathname={pathname} search={searchStr} active={activeKey === g.key} collapsed={collapsed} unreadCount={unreadCount} onNavigate={onClose} />
+          <SidebarGroup key={g.key} group={g} pathname={pathname} search={searchStr} collapsed={collapsed} unreadCount={unreadCount} onNavigate={onClose} />
         ))}
       </nav>
 
