@@ -182,6 +182,31 @@ describe("standard — Fusszeilen-reservierte Paginierung (Fix-Runde 2, Critical
   });
 });
 
+describe("standard — Empfaengerbreite fest 240pt, unabhaengig von den Raendern (Fix-Runde 1, Task-5-Review)", () => {
+  it("ein langer Empfaengername bricht bei 5mm-Raendern trotzdem innerhalb der linken Spalte um", async () => {
+    // Vorher war der Default in shared.ts#drawRecipient `frame.width - 220` —
+    // margin-abhaengig, obwohl `standard`s Infoblock an einem FESTEN `left + 250` haengt.
+    // Bei 5mm-Raendern (statt der 18mm-Defaults) waere `frame.width` deutlich groesser
+    // gewesen (~347pt statt ~273pt), sodass ein 60-Zeichen-Name NICHT mehr umgebrochen
+    // haette (und in den Infoblock haetten hineinlaufen koennen). Mit dem jetzt festen
+    // `maxWidth = 240` (unabhaengig von den Raendern) bricht der Name deterministisch um:
+    // volle Breite bei Helvetica 11pt ≈ 319pt > 240pt, kein Einzelwort ist selbst breiter
+    // als 240pt (laengstes Wort "Beteiligungsverwaltung" ≈ 113pt) — pdfkit bricht also am
+    // Wortzwischenraum, nicht mitten im Wort.
+    const LONG_NAME = "Handelsgesellschaft Nordwest-Sued Beteiligungsverwaltung mbH"; // 60 Zeichen
+    const data = invoiceWithLines(1);
+    data.buyer = { ...data.buyer, name: LONG_NAME };
+    const theme = testPdfTheme({ layoutId: "standard", brand: { ...testPdfTheme().brand, marginLeftMm: 5, marginRightMm: 5 } });
+    const { text } = await parsePdf(await renderInvoicePdf(data, theme));
+    // Der Name ist NICHT mehr als zusammenhaengende Zeile im extrahierten Text vorhanden
+    // (pdf-parse fuegt beim Zeilenumbruch einen Zeilenumbruch statt eines einfachen
+    // Leerzeichens ein) — waehrend erstes und letztes Wort beide vorkommen.
+    expect(text).not.toContain(LONG_NAME);
+    expect(text).toContain("Handelsgesellschaft");
+    expect(text).toContain("mbH");
+  });
+});
+
 // Phase 11b, Task 4/5 — Matrix ueber alle sieben Layouts. Jedes Layout muss dieselben
 // Kernangaben drucken, egal wie es Kopf/Tabelle/Fusszeile zeichnet — die Renderer
 // selbst bleiben layout-agnostisch.

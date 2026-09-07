@@ -12,13 +12,19 @@ import { drawLogo, drawSenderLine } from "../layout";
  *
  * Follow-up (Reviews, Task 5): bisher ohne `width` — ein langer Empfaengername lief in
  * den rechten Infoblock (Meta-Zeilen/-Tabelle) hinein, weil pdfkit ohne `width` bis zum
- * Seitenrand umbricht. `maxWidth` begrenzt jede Zeile des Blocks auf die linke Spalte;
- * der Default (`frame.width - 220`) passt zu `standard`/`klassik` (Infoblock ab
- * `left + 250`). Layouts mit einem schmaleren, weiter links beginnenden Infoblock
- * (`schlicht`, `modern`) reichen ihre eigene Breite (Infoblock-x minus 10pt Abstand
- * minus `left`) durch.
+ * Seitenrand umbricht. `maxWidth` begrenzt jede Zeile des Blocks auf die linke Spalte.
+ *
+ * Fix-Runde 1 (Task-5-Review): der urspruengliche Default `frame.width - 220` war
+ * margin-abhaengig, obwohl `standard`/`klassik` (und via Delegation blau/schwarz/kompakt)
+ * ihren Infoblock an einem FESTEN `left + 250` verankern — bei den Standard-18mm-Raendern
+ * ergab das ~273pt (23pt zu weit, ueberlappt bereits leicht die Meta-Spalte), bei den
+ * schema-erlaubten 5mm-Raendern sogar ~347pt. Der Default ist jetzt der feste Wert `240`
+ * (= 250 − 10pt Abstand), unabhaengig von `frame.width`/den Raendern; `standard` und
+ * `klassik` reichen ihn zusaetzlich explizit durch (statt sich auf den Default zu
+ * verlassen), analog zu `schlicht`/`modern`, die ihre eigene (schmalere, weiter links
+ * beginnende) Infoblock-Breite durchreichen (Infoblock-x minus 10pt Abstand minus `left`).
  */
-export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11, maxWidth = frame.width - 220): number {
+export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11, maxWidth = 240): number {
   const { doc, left } = frame;
   const r = input.recipient;
   doc.fillColor("#000").font("Helvetica").fontSize(size);
