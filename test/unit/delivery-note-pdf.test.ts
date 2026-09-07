@@ -224,9 +224,9 @@ describe("renderDeliveryNotePdf", () => {
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 
-  it("Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock bricht bei 75 Positionen auf eine eigene Seite um, OHNE den Tabellenkopf zu wiederholen", async () => {
+  it("Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock bricht bei 70 Positionen auf eine eigene Seite um, OHNE den Tabellenkopf zu wiederholen", async () => {
     // Empirisch ermittelt (Testkommentar statt Magiezahl-Erklaerung): bei den Default-
-    // Raendern fuellen 75 Zeilen (16pt/Zeile) die ersten beiden Seiten bis knapp vor den
+    // Raendern fuellen 70 Zeilen (16pt/Zeile) die ersten beiden Seiten bis knapp vor den
     // unteren Rand, sodass der Summenblock (Linie + bis zu drei Summenzeilen) auf eine
     // DRITTE, ansonsten leere Seite ausweicht. Vorher nutzte der Summenblock denselben
     // `ensureSpace`-Helfer wie die Positionszeilen — der zeichnet bei jedem Seitenumbruch
@@ -234,7 +234,14 @@ describe("renderDeliveryNotePdf", () => {
     // Positionszeile mehr traegt. "Beschreibung" darf daher NUR auf den beiden
     // positionstragenden Seiten stehen (numpages - 1 bei einer summen-only letzten Seite),
     // nicht ein drittes Mal auf der reinen Summenseite.
-    const lineCount = 75;
+    // Fix-Runde 2 (Koordinator, Critical): `pageBottom` reserviert jetzt zusaetzlich
+    // `layout.footerHeight + 6pt` fuer die auf jeder Seite gezeichnete Fusszeile (Fix-
+    // Runde 1, Punkt 6) — die Zeilenkapazitaet je Seite sank dadurch, der Schwellenwert
+    // (Debug-Sweep n=55..75) verschob sich von 75 auf 70 Zeilen (bei n=72/75 tragen jetzt
+    // bereits beide Positionsseiten VOLL, sodass "nur" numpages=3 UND beschCount=numpages-1
+    // erst wieder bei sehr viel groesseren n gilt — 70 bleibt der naechste stabile Wert
+    // mit derselben "zwei Positionsseiten + eine reine Summenseite"-Form).
+    const lineCount = 70;
     const lines: DeliveryNotePdfData["lines"] = Array.from({ length: lineCount }, (_, i) => ({
       pos: i + 1,
       description: `Testartikel ${i + 1}`,

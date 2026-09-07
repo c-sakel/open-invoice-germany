@@ -191,7 +191,13 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // Positions-Tabelle
     const columns = buildColumns(data);
     const tableX = left + 4;
-    const pageBottom = doc.page.height - margins.bottom;
+    // Fix-Runde 2 (Koordinator, Critical): seit Fix-Runde 1 (Punkt 6) zeichnet
+    // `layout.drawFooter` die Fusszeile auf JEDER Seite — `pageBottom` reservierte diesen
+    // Bereich bisher NICHT, sodass Positions-/Summenzeilen in das Fusszeilen-Band
+    // hineinragen konnten (verifiziert: 75 Positionen ueberlappten auf Seite 1). Bei
+    // aktiver Fusszeile reserviert `pageBottom` jetzt zusaetzlich `layout.footerHeight`
+    // plus 6pt Sicherheitsabstand; `footY` selbst bleibt unveraendert.
+    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
 
     const drawTableHeader = (atY: number): number => {
       let cursor = 0;
@@ -269,7 +275,11 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     }
 
     // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen.
+    // Fix-Runde 2 (Koordinator, Guard a): `ensurePlainSpace` VOR dem Text, damit ein
+    // knapp vor dem (jetzt fusszeilen-reservierten) Seitenende endender Summenblock den
+    // Fusstext nicht ins Fusszeilen-Band schreibt.
     if (data.footerText) {
+      y = ensurePlainSpace(y, 30);
       y += 10;
       doc.fontSize(base - 1).fillColor("#333").text(data.footerText, left, y, { width: right - left });
     }
