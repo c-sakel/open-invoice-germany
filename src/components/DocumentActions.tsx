@@ -3,8 +3,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type DocType = "QUOTE" | "DELIVERY_NOTE";
-type Action = "MARK_SENT" | "MARK_ACCEPTED" | "MARK_REJECTED" | "MARK_DELIVERED" | "MARK_CREATED" | "CANCEL" | "ARCHIVE" | "UNARCHIVE";
+export type DocType = "QUOTE" | "DELIVERY_NOTE";
+export type Action = "MARK_SENT" | "MARK_ACCEPTED" | "MARK_REJECTED" | "MARK_DELIVERED" | "MARK_CREATED" | "CANCEL" | "ARCHIVE" | "UNARCHIVE";
 
 // Client-seitige Kopie der Uebergangstabellen aus src/domain/document/status.ts (dort
 // nicht importierbar, weil die Datei dbInternal laedt) — steuert nur, welche Aktionen
@@ -25,7 +25,7 @@ const DELIVERY_ACTIONS: Record<string, Action[]> = {
   CANCELLED: [],
 };
 
-const ACTION_LABEL: Record<Action, string> = {
+export const ACTION_LABEL: Record<Action, string> = {
   MARK_SENT: "Als versendet markieren",
   MARK_ACCEPTED: "Annehmen",
   MARK_REJECTED: "Ablehnen",
@@ -37,23 +37,18 @@ const ACTION_LABEL: Record<Action, string> = {
 };
 
 const btnCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60";
+/** Menuezeile, optisch deckungsgleich mit `ActionMenuItem` (`src/components/detail/ActionMenu.tsx`) — auch von `DocumentActionsMenu.tsx` genutzt. */
+export const documentActionItemCls = "block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-60";
 
-export function DocumentActions({
-  type,
-  id,
-  status,
-  archived,
-  editHref,
-  onDuplicate,
-}: {
-  type: DocType;
-  id: string;
-  status: string;
-  archived: boolean;
-  editHref?: string;
-  /** DELIVERY_NOTE ist eigenstaendig routbar (/lieferscheine/[id]); QUOTE bleibt auf /dokumente/[id]. */
-  onDuplicate?: (newId: string) => void;
-}) {
+/**
+ * Gemeinsame Zustands-/Netzwerklogik von `DocumentActions` und `DocumentActionsMenuItems`
+ * (`DocumentActionsMenu.tsx`, Phase 11d, Fix-Welle I2) — beide rendern disjunkte Teilmengen
+ * der Statusuebergaenge (compact: nur der erste; Menuezeile: der Rest + Archiv/Duplizieren),
+ * daher genuegt je Aufrufer eine eigene Hook-Instanz statt geteiltem React-State ueber zwei
+ * Baumaeste hinweg; jede Stelle rendert bei Bedarf ihren eigenen Notiz-Dialog (`NoteDialog`)
+ * fuer die Aktionen, die sie selbst anzeigt.
+ */
+export function useDocumentActions({ type, id, status, onDuplicate }: { type: DocType; id: string; status: string; onDuplicate?: (newId: string) => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState<Action | "DUPLICATE" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +117,81 @@ export function DocumentActions({
     void runAction(action);
   }
 
+  return { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog };
+}
+
+export function NoteDialog({
+  dialogRef,
+  pendingNoteAction,
+  note,
+  setNote,
+  onConfirm,
+}: {
+  dialogRef: React.RefObject<HTMLDialogElement | null>;
+  pendingNoteAction: Action | null;
+  note: string;
+  setNote: (v: string) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <dialog ref={dialogRef} className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <div className="p-5">
+        <h2 className="mb-3 text-base font-semibold text-slate-900">
+          {pendingNoteAction === "MARK_REJECTED" ? "Ablehnen" : "Annehmen"} — Notiz (optional)
+        </h2>
+        <textarea
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          rows={3}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="z. B. telefonisch zugesagt am ..."
+        />
+        <div className="mt-4 flex items-center gap-3">
+          <button type="button" onClick={onConfirm} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Bestätigen
+          </button>
+          <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+/**
+ * Statusaktionen einer Dokument-/Lieferscheindetailseite. `variant="compact"` (Fix-Welle
+ * I2) zeigt nur "Bearbeiten" (DRAFT + `editHref`) und den ERSTEN verfuegbaren Statusuebergang
+ * als Knopf — der Rest (weitere Uebergaenge, Archivieren/Aus Archiv, Duplizieren) wandert in
+ * `DocumentActionsMenuItems` im "Mehr"-Menue. Der Default bleibt unveraendert (alle Knoepfe in
+ * einer Zeile) fuer Aufrufer, die keine Kopfzeilen-Verdichtung brauchen.
+ */
+export function DocumentActions({
+  type,
+  id,
+  status,
+  archived,
+  editHref,
+  onDuplicate,
+  variant = "default",
+}: {
+  type: DocType;
+  id: string;
+  status: string;
+  archived: boolean;
+  editHref?: string;
+  /** DELIVERY_NOTE ist eigenstaendig routbar (/lieferscheine/[id]); QUOTE bleibt auf /dokumente/[id]. */
+  onDuplicate?: (newId: string) => void;
+  variant?: "default" | "compact";
+}) {
+  const { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog } = useDocumentActions({
+    type,
+    id,
+    status,
+    onDuplicate,
+  });
+  const shown = variant === "compact" ? available.slice(0, 1) : available;
+
   return (
     <span className="inline-flex flex-col items-end gap-1">
       <span className="flex flex-wrap items-center gap-2">
@@ -130,48 +200,30 @@ export function DocumentActions({
             Bearbeiten
           </a>
         )}
-        {available.map((a) => (
+        {shown.map((a) => (
           <button key={a} type="button" onClick={() => click(a)} disabled={busy !== null} className={btnCls}>
             {busy === a ? "…" : ACTION_LABEL[a]}
           </button>
         ))}
-        {!archived ? (
-          <button type="button" onClick={() => click("ARCHIVE")} disabled={busy !== null} className={btnCls}>
-            {busy === "ARCHIVE" ? "…" : ACTION_LABEL.ARCHIVE}
-          </button>
-        ) : (
-          <button type="button" onClick={() => click("UNARCHIVE")} disabled={busy !== null} className={btnCls}>
-            {busy === "UNARCHIVE" ? "…" : ACTION_LABEL.UNARCHIVE}
-          </button>
+        {variant === "default" && (
+          <>
+            {!archived ? (
+              <button type="button" onClick={() => click("ARCHIVE")} disabled={busy !== null} className={btnCls}>
+                {busy === "ARCHIVE" ? "…" : ACTION_LABEL.ARCHIVE}
+              </button>
+            ) : (
+              <button type="button" onClick={() => click("UNARCHIVE")} disabled={busy !== null} className={btnCls}>
+                {busy === "UNARCHIVE" ? "…" : ACTION_LABEL.UNARCHIVE}
+              </button>
+            )}
+            <button type="button" onClick={duplicate} disabled={busy !== null} className={btnCls}>
+              {busy === "DUPLICATE" ? "…" : "Duplizieren"}
+            </button>
+          </>
         )}
-        <button type="button" onClick={duplicate} disabled={busy !== null} className={btnCls}>
-          {busy === "DUPLICATE" ? "…" : "Duplizieren"}
-        </button>
       </span>
       {error && <span className="text-xs text-rose-600">{error}</span>}
-
-      <dialog ref={noteDialogRef} className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
-        <div className="p-5">
-          <h2 className="mb-3 text-base font-semibold text-slate-900">
-            {pendingNoteAction === "MARK_REJECTED" ? "Ablehnen" : "Annehmen"} — Notiz (optional)
-          </h2>
-          <textarea
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            rows={3}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="z. B. telefonisch zugesagt am ..."
-          />
-          <div className="mt-4 flex items-center gap-3">
-            <button type="button" onClick={confirmNoteDialog} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-              Bestätigen
-            </button>
-            <button type="button" onClick={() => noteDialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
-              Abbrechen
-            </button>
-          </div>
-        </div>
-      </dialog>
+      <NoteDialog dialogRef={noteDialogRef} pendingNoteAction={pendingNoteAction} note={note} setNote={setNote} onConfirm={confirmNoteDialog} />
     </span>
   );
 }

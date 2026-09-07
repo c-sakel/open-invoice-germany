@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { StatusBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
+import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
 import { ConvertMenu } from "@/components/ConvertMenu";
 import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from "@/components/detail/ActionMenu";
 import { DocumentChain } from "@/components/DocumentChain";
@@ -20,6 +21,7 @@ import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
+import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
 import { DeliveryNoteStatusCard } from "./_parts/DeliveryNoteStatusCard";
 import { DeliveryNoteLines } from "./_parts/DeliveryNoteLines";
@@ -37,10 +39,10 @@ export default async function LieferscheinDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ liste?: string }>;
+  searchParams: Promise<{ liste?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { liste } = await searchParams;
+  const liste = firstOf((await searchParams).liste);
   const org = await getActiveOrg();
   const dn = await dbInternal.deliveryNote.findFirst({
     where: { id, orgId: org.id },
@@ -77,7 +79,6 @@ export default async function LieferscheinDetail({
   const navHref = (targetId: string) => `/lieferscheine/${targetId}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const title = `Lieferschein ${dn.number ?? "(Entwurf)"}`;
-  const showMore = canBillDeliveryNote || dn.status === "DRAFT";
 
   return (
     <DocumentDetailLayout
@@ -98,7 +99,9 @@ export default async function LieferscheinDetail({
       }
       actions={
         <>
-          <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} />
+          {/* Fix-Welle I2: kompakte Kopfzeile — nur der erste verfuegbare Statusuebergang;
+              der Rest wandert per DocumentActionsMenuItems ins "Mehr"-Menue. */}
+          <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} variant="compact" />
           {dn.number && (
             <a
               href={`/api/delivery-notes/${dn.id}/pdf`}
@@ -112,31 +115,33 @@ export default async function LieferscheinDetail({
         </>
       }
       more={
-        showMore ? (
-          <ActionMenu>
-            {canBillDeliveryNote && (
-              <ActionMenuItem>
-                <div className="px-3 py-1.5">
-                  {/* B11 (Fix-Welle): Teilrechnung aus Lieferschein — Share-Modi nur, wenn
-                      alle Positionen einen Preis tragen. */}
-                  <ConvertMenu
-                    sourceType="DELIVERY_NOTE"
-                    sourceId={dn.id}
-                    showToDeliveryNote={false}
-                    showPartialInvoice={canBillDeliveryNote}
-                    allowShareModesInPartialInvoice={allowShareModes}
-                  />
-                </div>
-              </ActionMenuItem>
-            )}
-            {canBillDeliveryNote && dn.status === "DRAFT" && <ActionMenuSeparator />}
-            {dn.status === "DRAFT" && (
-              <ActionMenuItem>
-                <a href="#druckoptionen">Druckoptionen</a>
-              </ActionMenuItem>
-            )}
-          </ActionMenu>
-        ) : undefined
+        <ActionMenu>
+          <DocumentActionsMenuItems type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} />
+          {/* canBillDeliveryNote (CREATED/SENT/DELIVERED) und status === DRAFT schliessen sich
+              gegenseitig aus — hoechstens einer der beiden folgenden Eintraege erscheint,
+              der Trenner davor gilt fuer beide gleichermassen. */}
+          {(canBillDeliveryNote || dn.status === "DRAFT") && <ActionMenuSeparator />}
+          {canBillDeliveryNote && (
+            <ActionMenuItem>
+              <div className="px-3 py-1.5">
+                {/* B11 (Fix-Welle): Teilrechnung aus Lieferschein — Share-Modi nur, wenn
+                    alle Positionen einen Preis tragen. */}
+                <ConvertMenu
+                  sourceType="DELIVERY_NOTE"
+                  sourceId={dn.id}
+                  showToDeliveryNote={false}
+                  showPartialInvoice={canBillDeliveryNote}
+                  allowShareModesInPartialInvoice={allowShareModes}
+                />
+              </div>
+            </ActionMenuItem>
+          )}
+          {dn.status === "DRAFT" && (
+            <ActionMenuItem>
+              <a href="#druckoptionen">Druckoptionen</a>
+            </ActionMenuItem>
+          )}
+        </ActionMenu>
       }
       notice={
         <>
@@ -173,7 +178,9 @@ export default async function LieferscheinDetail({
         </DeliveryNoteStatusCard>
       }
     >
-      <CollapsibleSection title="Positionen" summary={`${dn.lines.length} Positionen`}>
+      <InternalNotesBox notes={dn.internalNotes} />
+
+      <CollapsibleSection title="Positionen" summary={`${dn.lines.length} ${dn.lines.length === 1 ? "Position" : "Positionen"}`}>
         <div className="space-y-4">
           {dn.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{dn.headerText}</p>}
           <DeliveryNoteLines
@@ -185,13 +192,6 @@ export default async function LieferscheinDetail({
           />
           {dn.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{dn.footerText}</p>}
           {dn.notes && <p className="text-sm text-slate-600">{dn.notes}</p>}
-          {dn.internalNotes && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <span className="mr-2 font-medium">Interne Notiz</span>
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
-              <p className="mt-1 whitespace-pre-line">{dn.internalNotes}</p>
-            </div>
-          )}
         </div>
       </CollapsibleSection>
 
@@ -209,4 +209,10 @@ export default async function LieferscheinDetail({
       </section>
     </DocumentDetailLayout>
   );
+}
+
+// M11 (Fix-Welle): Next liefert bei doppeltem `?liste=`-Query-Parameter ein `string[]` statt
+// `string` — dieselbe Ableitung wie auf den Listenseiten (z. B. `rechnungen/page.tsx`).
+function firstOf(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }
