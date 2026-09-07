@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { listNotifications } from "@/domain/notifications/create";
 import { NotificationsList } from "@/components/NotificationsList";
@@ -11,7 +12,7 @@ export default async function BenachrichtigungenPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Benachrichtigungen</h1>
+      <PageHeader title="Benachrichtigungen" />
       <NotificationsList
         initial={notifications.map((n) => ({
           id: n.id,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureArticleNumbers } from "@/domain/numbering/ranges";
@@ -25,12 +26,15 @@ export default async function ProduktePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Produkte & Leistungen</h1>
-        <Link href="/produkte/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neues Produkt
-        </Link>
-      </div>
+      <PageHeader
+        title="Produkte & Leistungen"
+        subtitle={`${products.length} Produkte`}
+        actions={
+          <Link href="/produkte/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neues Produkt
+          </Link>
+        }
+      />
 
       {products.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">

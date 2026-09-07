@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
@@ -38,12 +39,15 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Kunden</h1>
-        <Link href="/kunden/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neuer Kunde
-        </Link>
-      </div>
+      <PageHeader
+        title="Kunden"
+        subtitle={`${customers.length} Kunden`}
+        actions={
+          <Link href="/kunden/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neuer Kunde
+          </Link>
+        }
+      />
 
       <form method="get" className="flex gap-2">
         <input
