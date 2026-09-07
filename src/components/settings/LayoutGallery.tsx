@@ -32,65 +32,115 @@ const PREVIEW_DOC_TYPE_MAP: Record<LayoutDocType, PreviewDocType> = {
  * es KEIN sofortiges Speichern beim Klicken (Ruling der Spec); erst „Speichern“ sendet das
  * vollstaendige Branding-Objekt an `PUT /api/settings/branding` (bestehender Vertrag, wie
  * `BrandingForm.save()`).
+ *
+ * Fix-Welle (Abschluss-Review, Block 4 "Important"): ein Kachel-Klick schrieb bisher SOFORT
+ * in `values.layoutByType[docType]` — "Als Standard für alle" setzte danach `layoutByType`
+ * komplett zurueck (`{}`) und loeschte damit STILLSCHWEIGEND jede zuvor gesetzte Typ-
+ * Zuordnung, auch fuer andere Belegtypen als den gerade angezeigten. Ein Kachel-Klick
+ * aendert jetzt nur noch den lokalen `selection`-Entwurf (Vorschau-Ring); erst „Für <Typ>
+ * übernehmen“ schreibt ihn in `layoutByType`. „Als Standard für alle“ setzt NUR `layoutId`
+ * und laesst `layoutByType` unangetastet. Ein neuer Link „Organisationsstandard verwenden“
+ * entfernt die Zuordnung fuer den aktuell gewaehlten Belegtyp gezielt (vorher gab es dafuer
+ * keinen Weg — `applyForType()` war ein reiner No-op, weil der Kachel-Klick den Wert schon
+ * geschrieben hatte).
  */
 export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsInput; layouts: LayoutInfo[] }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [docType, setDocType] = useState<LayoutDocType>("INVOICE");
+  // `selection` ist der lokale Entwurf (welche Kachel gerade als Vorschau angezeigt wird) —
+  // getrennt vom tatsaechlich WIRKSAMEN Layout (`effective` unten), das erst durch „Für
+  // <Typ> übernehmen“/„Als Standard für alle“ + „Speichern“ uebernommen wird.
+  const [selection, setSelection] = useState<LayoutId>(initial.layoutByType[docType] ?? initial.layoutId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const selected: LayoutId = values.layoutByType[docType] ?? values.layoutId;
   const docLabel = LAYOUT_DOC_TYPE_LABEL[docType];
+  const typeOverride = values.layoutByType[docType];
+  const effective: LayoutId = typeOverride ?? values.layoutId;
 
-  function chooseForType(layoutId: LayoutId) {
+  function changeDocType(next: LayoutDocType) {
+    setDocType(next);
+    setSelection(values.layoutByType[next] ?? values.layoutId);
+    setError(null);
     setSaved(false);
-    setValues((v) => ({ ...v, layoutByType: { ...v.layoutByType, [docType]: layoutId } }));
+  }
+
+  function selectTile(layoutId: LayoutId) {
+    setSelection(layoutId);
+    setError(null);
+    setSaved(false);
   }
 
   function applyForType() {
-    chooseForType(selected);
+    setSaved(false);
+    setValues((v) => ({ ...v, layoutByType: { ...v.layoutByType, [docType]: selection } }));
+  }
+
+  /** Entfernt die Typ-Zuordnung fuer den aktuell gewaehlten Belegtyp — der Beleg faellt
+   *  danach auf den Organisationsstandard (`layoutId`) zurueck. */
+  function useOrgDefaultForType() {
+    setSaved(false);
+    setValues((v) => {
+      if (!(docType in v.layoutByType)) return v;
+      const rest = { ...v.layoutByType };
+      delete rest[docType];
+      return { ...v, layoutByType: rest };
+    });
+    setSelection(values.layoutId);
   }
 
   function applyAsDefault() {
     setSaved(false);
-    setValues((v) => ({ ...v, layoutId: selected, layoutByType: {} }));
+    // Fix-Welle: NUR `layoutId` — `layoutByType` bleibt unangetastet (siehe Kommentar oben).
+    setValues((v) => ({ ...v, layoutId: selection }));
   }
 
   async function save() {
     setSaving(true);
     setError(null);
     setSaved(false);
-    const res = await fetch("/api/settings/branding", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
-    if (!res.ok || !j.settings) {
-      setError(j.error ?? "Speichern fehlgeschlagen.");
+    try {
+      const res = await fetch("/api/settings/branding", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
+      if (!res.ok || !j.settings) {
+        setError(j.error ?? "Speichern fehlgeschlagen.");
+        return;
+      }
+      setValues(j.settings);
+      setSaved(true);
+      router.refresh();
+    } catch {
+      // Fix-Welle (Abschluss-Review, Block 4 "Minor"): `fetch` kann bei einem Netzwerkfehler
+      // werfen (nicht nur ein Nicht-200-Status) — ohne try/catch blieb der Button dann bis
+      // zum Neuladen auf "Speichern…" haengen, weil `setSaving(false)` nie erreicht wurde.
+      setError("Netzwerkfehler beim Speichern. Bitte erneut versuchen.");
+    } finally {
       setSaving(false);
-      return;
     }
-    setValues(j.settings);
-    setSaving(false);
-    setSaved(true);
-    router.refresh();
   }
 
   const previewDocType = PREVIEW_DOC_TYPE_MAP[docType];
 
   return (
     <div className="space-y-4">
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+      {error && (
+        <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          {error}
+        </div>
+      )}
       {saved && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
 
       <label className="flex max-w-xs flex-col gap-1 text-sm">
         <span className="text-slate-700">Belegtyp</span>
         <select
           value={docType}
-          onChange={(e) => setDocType(e.target.value as LayoutDocType)}
+          onChange={(e) => changeDocType(e.target.value as LayoutDocType)}
           className="rounded-md border border-slate-300 px-2 py-2"
         >
           {LAYOUT_DOC_TYPES.map((t) => (
@@ -104,20 +154,24 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {layouts.map((l) => {
-            const isActive = l.id === selected;
+            // Ring/Rahmen: welche Kachel gerade als Vorschau ausgewaehlt ist (`selection`).
+            const isSelected = l.id === selection;
+            // Badge: welche Kachel TATSAECHLICH wirksam ist (`effective`) — kann von
+            // `selection` abweichen, solange die Auswahl noch nicht uebernommen wurde.
+            const isEffective = l.id === effective;
             return (
               <button
                 key={l.id}
                 type="button"
-                onClick={() => chooseForType(l.id)}
-                aria-pressed={isActive}
+                onClick={() => selectTile(l.id)}
+                aria-pressed={isSelected}
                 className={`relative flex flex-col gap-2 rounded-lg border p-3 text-left transition ${
-                  isActive ? "border-indigo-600 ring-2 ring-indigo-600" : "border-slate-200 hover:border-slate-300"
+                  isSelected ? "border-indigo-600 ring-2 ring-indigo-600" : "border-slate-200 hover:border-slate-300"
                 }`}
               >
-                {isActive && (
+                {isEffective && (
                   <span className="absolute right-2 top-2 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white">
-                    Standard
+                    {typeOverride ? `Für ${docLabel}` : "Standard"}
                   </span>
                 )}
                 <img src={`/layouts/${l.id}.svg`} alt="" className="w-full rounded border border-slate-100" />
@@ -132,8 +186,8 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
 
         <div className="flex flex-col gap-3">
           <iframe
-            key={`${docType}-${selected}`}
-            src={`/api/settings/branding/preview?docType=${previewDocType}&layoutId=${selected}`}
+            key={`${docType}-${selection}`}
+            src={`/api/settings/branding/preview?docType=${previewDocType}&layoutId=${selection}`}
             title="Layout-Vorschau"
             className="aspect-[1/1.414] w-full rounded border border-slate-200 bg-white"
           />
@@ -145,6 +199,15 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
             >
               Für {docLabel} übernehmen
             </button>
+            {typeOverride && (
+              <button
+                type="button"
+                onClick={useOrgDefaultForType}
+                className="rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50"
+              >
+                Organisationsstandard verwenden
+              </button>
+            )}
             <button
               type="button"
               onClick={applyAsDefault}
@@ -152,6 +215,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
             >
               Als Standard für alle
             </button>
+            <p className="text-[11px] text-slate-500">Typ-Zuordnungen bleiben erhalten.</p>
           </div>
         </div>
       </div>
