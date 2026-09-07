@@ -31,6 +31,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    offset: firstOf(sp.offset),
   };
   const liste = buildListeParam(values);
   const detailHref = (id: string) => `/lieferscheine/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;

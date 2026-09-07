@@ -23,7 +23,10 @@ const ALLOWED_KEYS = new Set(["q", "status", "type", "kind", "from", "to", "offs
 /** Maximal 200 Zeilen je Listenabfrage (Schema-Maximum der Listenfilter). */
 const NEIGHBOR_LIMIT = 200;
 
-export const listeQuerySchema = z.string().min(1).max(500).regex(/^[A-Za-z0-9=&%._+-]*$/);
+// Task-1-Review-Nachtrag (Task 4): `*` ergaenzt — URLSearchParams.toString() (buildListeParam)
+// und encodeURIComponent (Zeilen-Link) lassen `*` unescaped, es kommt also literal in der
+// liste-Query an (z. B. aus einer Freitextsuche "Foo*"), nicht nur als "%2A".
+export const listeQuerySchema = z.string().min(1).max(500).regex(/^[A-Za-z0-9=&%._+*-]*$/);
 
 export function neighborIds(ids: readonly string[], currentId: string): { prevId: string | null; nextId: string | null } {
   const i = ids.indexOf(currentId);

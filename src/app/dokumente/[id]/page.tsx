@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
@@ -7,17 +6,23 @@ import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateFor } from "@/domain/document/billing-state";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
-import { ConvertMenu } from "@/components/ConvertMenu";
-import { DocumentChain } from "@/components/DocumentChain";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { ShareLinkPanel } from "@/components/ShareLinkPanel";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
-import type { EmailDocType } from "@/schemas/email";
-import { PdfPreview } from "@/components/PdfPreview";
+import { DocumentChain } from "@/components/DocumentChain";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
+import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
+import { DetailNav } from "@/components/detail/DetailNav";
+import { PdfStack } from "@/components/detail/PdfStack";
+import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
+import { NavHint } from "@/components/shell/NavHint";
+import { loadNeighbors } from "@/domain/document/neighbors";
+import type { EmailDocType } from "@/schemas/email";
+import { DocumentStatusCard } from "./_parts/DocumentStatusCard";
+import { DocumentMoreMenu } from "./_parts/DocumentMoreMenu";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +30,12 @@ const KIND_TITLE: Record<string, string> = {
   ANGEBOT: "Angebot",
   AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
   PROFORMA: "Proforma-Rechnung",
+};
+// Plural fuers Zurueck-Label der DetailNav (11a-M12-Nachbar, Task-4-Ruling).
+const KIND_TITLE_PLURAL: Record<string, string> = {
+  ANGEBOT: "Angebote",
+  AUFTRAGSBESTAETIGUNG: "Auftragsbestätigungen",
+  PROFORMA: "Proforma",
 };
 
 // Client-seitige Kopie der Statuslisten aus src/domain/document/convert.ts (dort nicht
@@ -36,8 +47,15 @@ const ANGEBOT_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIR
 const AB_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT"]);
 const QUOTE_TO_DELIVERY_NOTE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
 
-export default async function DokumentDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function DokumentDetail({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ liste?: string }>;
+}) {
   const { id } = await params;
+  const { liste } = await searchParams;
   const org = await getActiveOrg();
   const q = await dbInternal.quote.findFirst({
     where: { id, orgId: org.id },
@@ -55,182 +73,125 @@ export default async function DokumentDetail({ params }: { params: Promise<{ id:
   const archived = q.archivedAt !== null;
   const attachments = await listAttachments(org.id, "QUOTE", q.id);
 
+  const { prevId, nextId, backQuery } = await loadNeighbors("QUOTE", org.id, id, liste);
+  const navHref = (targetId: string) => `/dokumente/${targetId}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
+
+  const title = `${KIND_TITLE[q.kind] ?? "Dokument"} ${q.number ?? "(Entwurf)"}`;
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <Link href="/dokumente" className="text-sm text-slate-500 hover:text-slate-800">
-            ← Dokumente
-          </Link>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {KIND_TITLE[q.kind] ?? "Dokument"} {q.number ?? "(Entwurf)"}
-          </h1>
-          <StatusBadge status={status} />
-          {billing && <BillingStateBadge state={billing.state} billedPermille={billing.billedPermille} />}
-          {archived && <span className="inline-block rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Archiviert</span>}
-          {q.snapshotSource === "MIGRATION" && (
-            <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-              Adressstand per Migration eingefroren
-            </span>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <a
-            href={`/api/documents/${q.id}/pdf`}
-            target="_blank"
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            PDF
-          </a>
-          <SendEmailDialog docType={q.kind as EmailDocType} docId={q.id} />
-          {q.convertedToInvoiceId && (
-            <Link href={`/rechnungen/${q.convertedToInvoiceId}`} className="text-sm font-medium text-indigo-600 hover:underline">
-              → zur Rechnung
-            </Link>
-          )}
-          {/* G8 (Fix-Runde 2): ConvertMenu bleibt auch nach Umwandlung in eine Rechnung
-              sichtbar — ein Lieferschein (Teilmengen) kann weiterhin erzeugt werden, nur
-              die Rechnungs-/AB-Optionen ergeben nach der Umwandlung keinen Sinn mehr.
-              W2: jede Option nur bei einem fuer die Konvertierung zulaessigen Status. */}
-          <ConvertMenu
-            sourceType="QUOTE"
-            sourceId={q.id}
+    <>
+      <NavHint href={`/dokumente?kind=${q.kind}`} />
+      <DocumentDetailLayout
+        nav={
+          <DetailNav
+            backHref={`/dokumente${backQuery ? `?${backQuery}` : ""}`}
+            backLabel={KIND_TITLE_PLURAL[q.kind] ?? "Dokumente"}
+            prevHref={prevId ? navHref(prevId) : null}
+            nextHref={nextId ? navHref(nextId) : null}
+          />
+        }
+        title={title}
+        badges={
+          <>
+            <StatusBadge status={status} />
+            {billing && <BillingStateBadge state={billing.state} billedPermille={billing.billedPermille} />}
+            {archived && <span className="inline-block rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Archiviert</span>}
+            {q.snapshotSource === "MIGRATION" && (
+              <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                Adressstand per Migration eingefroren
+              </span>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} />
+            <a
+              href={`/api/documents/${q.id}/pdf`}
+              target="_blank"
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              PDF
+            </a>
+            <SendEmailDialog docType={q.kind as EmailDocType} docId={q.id} />
+          </>
+        }
+        more={
+          <DocumentMoreMenu
+            quoteId={q.id}
+            convertedToInvoiceId={q.convertedToInvoiceId}
             showToOrderConfirmation={q.kind === "ANGEBOT" && !q.convertedToInvoiceId && ANGEBOT_TO_AB_STATUSES.has(status)}
             showToInvoice={
               !q.convertedToInvoiceId &&
-              ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) || (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
+              ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) ||
+                (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
             }
             showToDeliveryNote={QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status)}
-            // Task 4 (Phase 5, §13-15 UStG): nur solange die Gesamtleistung noch nicht
-            // voll abgerechnet ist (billing.state !== FULL); Teil- und Abschlagsrechnungen
-            // werden nie gemischt (Task-2-Ruling) — hasDownpayments/hasPartialInvoices
-            // blenden hier nur die jeweils andere Art aus, die endgueltige Pruefung bleibt
-            // serverseitig (409). Schlussrechnung nur, wenn bereits (mind. ein) Abschlag
-            // vorliegt.
+            // Task 4 (Phase 5, §13-15 UStG): nur solange die Gesamtleistung noch nicht voll
+            // abgerechnet ist; hasDownpayments/hasPartialInvoices blenden hier nur die
+            // jeweils andere Art aus, die endgueltige Pruefung bleibt serverseitig (409).
             showPartialInvoice={canBillQuote && !hasDownpayments}
             showDownpaymentInvoice={canBillQuote && !hasPartialInvoices}
-            // B8 (Fix-Welle): unabhaengig von FULL/PARTIAL — 100 % Abschlagsdeckung
-            // (mit `downpaymentGrossCents === grossTotalCents`) haebt den
-            // Abrechnungsstand bereits auf FULL, obwohl §14 Abs. 5 UStG weiterhin eine
-            // Schlussrechnung verlangt. Einzige harte Grenze: keine zweite Schlussrechnung
-            // anbieten, wenn bereits eine festgeschriebene, nicht stornierte existiert.
             showFinalInvoice={billing != null && hasDownpayments && !billing.hasActiveFinal}
           />
-        </div>
-      </div>
-
-      <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} />
-
-      {q.kind === "PROFORMA" && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG, berechtigt nicht zum Vorsteuerabzug.
-        </div>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Empfänger</h2>
-          <p className="text-slate-700">{q.customer.name}</p>
-          {q.contactPerson && (
-            <p className="text-slate-600">
-              {q.contactPerson.firstName} {q.contactPerson.lastName}
-            </p>
-          )}
-          {q.billingAddress ? (
-            <>
-              <p className="text-slate-600">{q.billingAddress.addressLine1}</p>
-              <p className="text-slate-600">
-                {q.billingAddress.postalCode} {q.billingAddress.city}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-slate-600">{q.customer.addressLine1}</p>
-              <p className="text-slate-600">
-                {q.customer.postalCode} {q.customer.city}
-              </p>
-            </>
-          )}
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Eckdaten</h2>
-          <dl className="grid grid-cols-2 gap-y-1 text-slate-600">
-            {q.subject && (
-              <>
-                <dt>Betreff</dt>
-                <dd className="text-right">{q.subject}</dd>
-              </>
+        }
+        notice={
+          q.kind === "PROFORMA" ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG, berechtigt nicht zum Vorsteuerabzug.
+            </div>
+          ) : undefined
+        }
+        pdf={<PdfStack src={`/api/documents/${q.id}/pdf`} title={`${title} — PDF`} />}
+        aside={
+          <DocumentStatusCard q={q}>
+            {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
+            <AttachmentPanel
+              docType="QUOTE"
+              docId={q.id}
+              initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+            />
+            <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
+          </DocumentStatusCard>
+        }
+      >
+        <CollapsibleSection title="Positionen" summary={`${q.lines.length} Positionen · Netto ${formatCents(q.netTotalCents, q.currency)}`}>
+          <div className="space-y-4">
+            {q.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.headerText}</p>}
+            <LineItemsTable lines={q.lines} currency={q.currency} />
+            <div className="ml-auto max-w-xs space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Netto</span>
+                <span className="tabular font-medium">{formatCents(q.netTotalCents, q.currency)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>zzgl. USt</span>
+                <span className="tabular">{formatCents(q.taxTotalCents, q.currency)}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
+                <span>Gesamt</span>
+                <span className="tabular">{formatCents(q.grossTotalCents, q.currency)}</span>
+              </div>
+            </div>
+            {q.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.footerText}</p>}
+            {q.notes && <p className="text-sm text-slate-600">{q.notes}</p>}
+            {q.internalNotes && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <span className="mr-2 font-medium">Interne Notiz</span>
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
+                <p className="mt-1 whitespace-pre-line">{q.internalNotes}</p>
+              </div>
             )}
-            {q.customerReference && (
-              <>
-                <dt>Kundenreferenz</dt>
-                <dd className="text-right">{q.customerReference}</dd>
-              </>
-            )}
-            {q.deliveryTerms && (
-              <>
-                <dt>Lieferbedingungen</dt>
-                <dd className="text-right">{q.deliveryTerms}</dd>
-              </>
-            )}
-            {q.paymentTerms && (
-              <>
-                <dt>Zahlungsbedingungen</dt>
-                <dd className="text-right">{q.paymentTerms}</dd>
-              </>
-            )}
-          </dl>
-        </div>
-      </div>
+          </div>
+        </CollapsibleSection>
 
-      {q.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.headerText}</p>}
+        <EmailHistory docType={q.kind as EmailDocType} docId={q.id} />
 
-      <LineItemsTable lines={q.lines} currency={q.currency} />
-
-      <div className="ml-auto max-w-xs space-y-1 text-sm">
-        <div className="flex justify-between">
-          <span className="text-slate-600">Netto</span>
-          <span className="tabular font-medium">{formatCents(q.netTotalCents, q.currency)}</span>
-        </div>
-        <div className="flex justify-between text-slate-600">
-          <span>zzgl. USt</span>
-          <span className="tabular">{formatCents(q.taxTotalCents, q.currency)}</span>
-        </div>
-        <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
-          <span>Gesamt</span>
-          <span className="tabular">{formatCents(q.grossTotalCents, q.currency)}</span>
-        </div>
-      </div>
-
-      {q.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.footerText}</p>}
-      {q.notes && <p className="text-sm text-slate-600">{q.notes}</p>}
-
-      {q.internalNotes && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <span className="mr-2 font-medium">Interne Notiz</span>
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
-          <p className="mt-1 whitespace-pre-line">{q.internalNotes}</p>
-        </div>
-      )}
-
-      {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
-
-      <AttachmentPanel docType="QUOTE" docId={q.id} initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))} />
-
-      <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
-
-      <EmailHistory docType={q.kind as EmailDocType} docId={q.id} />
-
-      <div className="grid gap-6 lg:grid-cols-2">
         <section className="space-y-3">
           <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
           <DocumentTimeline kind="QUOTE" docId={q.id} />
         </section>
-        <section className="space-y-3">
-          <h2 className="font-semibold text-slate-900">PDF-Vorschau</h2>
-          <PdfPreview src={`/api/documents/${q.id}/pdf`} title={`${KIND_TITLE[q.kind] ?? q.kind} ${q.number ?? q.id}`} />
-        </section>
-      </div>
-    </div>
+      </DocumentDetailLayout>
+    </>
   );
 }

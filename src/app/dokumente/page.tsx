@@ -35,6 +35,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    offset: firstOf(sp.offset),
   };
   const liste = buildListeParam(values);
   const detailHref = (id: string) => `/dokumente/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
