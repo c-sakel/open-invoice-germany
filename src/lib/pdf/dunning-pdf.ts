@@ -10,7 +10,7 @@ import PDFDocument from "pdfkit";
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { PdfTheme } from "./theme";
-import { drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
+import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
 import type { LayoutFrame } from "./layouts/types";
@@ -185,6 +185,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
       if (theme.options.foldMarks) drawFoldMarks(doc);
       if (theme.options.punchMarks) drawPunchMark(doc);
+      if (theme.watermark) drawWatermark(doc, theme.watermark);
     }
     if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
 

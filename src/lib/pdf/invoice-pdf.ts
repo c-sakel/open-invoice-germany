@@ -18,7 +18,7 @@ import { parseRichText, renderRichTextPdf } from "@/lib/richtext";
 import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import type { PdfTheme } from "./theme";
-import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
+import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
@@ -578,6 +578,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
     if (theme.options.foldMarks) drawFoldMarks(doc);
     if (theme.options.punchMarks) drawPunchMark(doc);
+    if (theme.watermark) drawWatermark(doc, theme.watermark);
   }
   if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
 
