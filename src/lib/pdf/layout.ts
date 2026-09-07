@@ -1,7 +1,8 @@
 /**
  * Layout-Bausteine, die von allen drei PDF-Renderern (Rechnung/Angebot, Lieferschein,
- * Mahnung) geteilt werden: mm→pt, Ränder aus dem Theme, Absenderzeile, dreispaltige
- * Fusszeile, Logo oben rechts, Hintergrundbild vollflächig (Phase 7, Task 3, §35/§36).
+ * Mahnung) geteilt werden: mm→pt, Ränder aus dem Theme, Absenderzeile, Logo oben rechts,
+ * Hintergrundbild vollflächig (Phase 7, Task 3, §35/§36). Die Fusszeile lebt seit Phase
+ * 11b in `footer.ts` (Spalten-Fakten) + `layouts/shared.ts#drawFooterColumns` (Zeichnen).
  */
 import type { PdfTheme } from "./theme";
 
@@ -52,23 +53,4 @@ export function drawSenderLine(doc: PDFKit.PDFDocument, theme: PdfTheme, left: n
   if (!theme.options.showSenderLine) return;
   const text = theme.brand.senderLine || fallback;
   doc.fontSize(9).fillColor("#555555").text(text, left, y);
-}
-
-/**
- * Dreispaltige Fusszeile (footerLeft/-Center/-Right) aus dem Briefpapier. Zeichnet nichts
- * und liefert `false`, wenn `options.showFooter` aus ist oder keine der drei Spalten Text
- * trägt — der Aufrufer zeichnet dann seinen bisherigen Fallback-Fusstext
- * (Aussteller-Pflichtangaben) selbst weiter.
- */
-export function drawBrandedFooter(doc: PDFKit.PDFDocument, theme: PdfTheme, left: number, right: number, y: number): boolean {
-  if (!theme.options.showFooter) return false;
-  const { footerLeft, footerCenter, footerRight } = theme.brand;
-  if (!footerLeft && !footerCenter && !footerRight) return false;
-  const width = right - left;
-  const colWidth = width / 3;
-  doc.fontSize(8).fillColor("#666666");
-  if (footerLeft) doc.text(footerLeft, left, y, { width: colWidth, align: "left" });
-  if (footerCenter) doc.text(footerCenter, left, y, { width, align: "center" });
-  if (footerRight) doc.text(footerRight, left + width - colWidth, y, { width: colWidth, align: "right" });
-  return true;
 }

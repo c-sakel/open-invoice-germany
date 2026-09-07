@@ -13,7 +13,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   });
   if (!d) return new Response("Mahnung nicht gefunden", { status: 404 });
 
-  const theme = await loadPdfTheme(d.invoice.orgId);
+  const theme = await loadPdfTheme(d.invoice.orgId, null, "DUNNING");
   const pdf = await renderDunningPdf(buildDunningPdfData(d, d.invoice), theme);
 
   const safe = (d.number ?? "mahnung").replace(/[^A-Za-z0-9._-]/g, "_");

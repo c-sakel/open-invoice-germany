@@ -68,6 +68,8 @@ interface DocInput {
     vatId: string | null;
     email: string | null;
     leitwegId: string | null;
+    // Fix-Welle (Abschluss-Review Phase 11b, Block 3): siehe mapper.ts#MapInput.customer.
+    customerNumber?: string | null;
   };
   lines: Array<{
     description: string;
@@ -176,6 +178,8 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
       countryCode: customer.countryCode,
       vatId: customer.vatId,
       email: customer.email,
+      // Fix-Welle (Abschluss-Review Phase 11b, Block 3): fuers PDF-Meta "Ihre Kundennummer".
+      customerNumber: customer.customerNumber ?? null,
     },
     lines: q.lines.map((l, i) => ({
       id: String(i + 1),

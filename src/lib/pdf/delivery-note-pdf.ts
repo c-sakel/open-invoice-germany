@@ -1,13 +1,23 @@
 /**
  * PDF eines Lieferscheins. Layout an invoice-pdf.ts angelehnt.
  * Phase 7, Task 3 (§35-§36): Briefpapier + Druckoptionen kommen aus einem `PdfTheme`.
+ *
+ * Phase 11b, Task 3 — Kopf/Tabellenkopf/Summenlinie/Fusszeile kommen jetzt aus einem
+ * `PdfLayout` (siehe invoice-pdf.ts), statt aus einer eigenen, fast identischen Kopie der
+ * Zeichenlogik. Neu (Nachtrag aus der Erhebung): `ensureSpace`-Paginierungsschutz je
+ * Positionszeile (vorher konnte pdfkit bei vielen Positionen unkontrolliert mitten in
+ * einer Zeile umbrechen).
  */
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
+import { pdfMargins, drawBackground } from "./layout";
+import { getLayout } from "./layouts/registry";
+import { drawTableHeaderRow, type TableHeaderColumn } from "./layouts/shared";
+import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
+import { buildFooterColumns } from "./footer";
 
 export interface DeliveryNotePdfLine {
   pos: number;
@@ -120,6 +130,8 @@ function buildColumns(data: DeliveryNotePdfData): Column[] {
   return columns;
 }
 
+const COLUMN_GAP = 8;
+
 export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const margins = pdfMargins(theme);
@@ -133,13 +145,14 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
-    doc.on("pageAdded", () => drawBackground(doc, theme));
+    // Der `pageAdded`-Handler selbst wird weiter unten registriert (siehe `chromeStartY`),
+    // sobald `frame`/`layout` feststehen — die erste (automatisch von pdfkit angelegte)
+    // Seite bekommt den Hintergrund hier dennoch manuell, da `pageAdded` fuer sie nicht feuert.
     drawBackground(doc, theme);
 
     const cur = data.currency;
     const left = margins.left;
     const right = doc.page.width - margins.right;
-    const titleColor = theme.brand.primaryColor;
 
     // S2 (Fix-Welle, Final-Review): Summenblock aus `right` statt `left + 300` ableiten
     // (siehe invoice-pdf.ts) — sonst wandern die Betraege bei grossen Raendern aus dem
@@ -150,86 +163,112 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     const sumValueX = right - sumValueWidth;
     const sumLabelX = sumValueX - sumColGap - sumLabelWidth;
 
-    drawLogo(doc, theme, right, margins.top);
+    // Phase 11b — Layout-Hooks (Kopf/Tabellenstil/Summenlinie/Fusszeile) statt eigener
+    // Kopie der Zeichenlogik; `standard` reproduziert das bisherige Layout.
+    const layout = getLayout(theme.layoutId);
+    const base = theme.brand.fontSizePt + layout.fontDelta;
+    const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
+    // Fix-Runde 1 (Task-5-Review, Minor): dieselbe `rowH`-Formel wie invoice-pdf.ts —
+    // die Positionszeilen hatten weiterhin fest 16pt, unabhaengig von `layout.fontDelta`
+    // (z. B. `kompakt`). Bei `base = 10` (Default) unveraendert 16.
+    const rowH = Math.round((base - 1) * 1.8);
 
-    // Kopf: Absender
-    const senderFallback = `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`;
-    drawSenderLine(doc, theme, left, margins.top, senderFallback);
+    // Fix-Welle (Abschluss-Review, Block 3 "Minor" — `modern`-Chrome inkonsistent): siehe
+    // invoice-pdf.ts fuer die ausfuehrliche Begruendung. `chromeStartY` wird vom
+    // `pageAdded`-Handler gesetzt (fuer JEDEN `doc.addPage()`, manuell wie pdfkit-eigen)
+    // und von `ensureSpace`/`ensurePlainSpace` unten nur noch GELESEN.
+    let chromeStartY: number | undefined;
+    doc.on("pageAdded", () => {
+      drawBackground(doc, theme);
+      const chromeResult = layout.drawPageChrome?.(frame);
+      chromeStartY = typeof chromeResult === "number" ? chromeResult : undefined;
+    });
 
-    // Empfänger — S7 (Fix-Welle): IMMER gedruckt, unabhaengig von showDeliveryAddress
-    // (ein Lieferschein ohne Empfaengerblock waere an niemanden adressiert).
-    const buyerY = margins.top + 60;
-    doc.fillColor("#000").fontSize(11);
-    doc.text(data.buyer.name, left, buyerY);
-    if (data.buyer.contactName) doc.text(data.buyer.contactName);
-    doc.text(data.buyer.addressLine1);
-    if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
-    doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
-    let leftColumnBottom = doc.y;
+    const meta: KopfMetaRow[] = [{ label: "Datum", value: deDate(data.issueDate) }];
+    if (data.deliveryDate) meta.push({ label: "Lieferdatum", value: deDate(data.deliveryDate) });
+    if (data.shippingDate) meta.push({ label: "Versanddatum", value: deDate(data.shippingDate) });
+    if (data.sourceNumber) meta.push({ label: "Bezugsbeleg", value: data.sourceNumber });
 
     // Lieferadresse — S7 (Fix-Welle, §36): zusaetzlicher Block aus der Standard-SHIPPING-
     // Adresse des Kunden, NUR wenn showDeliveryAddress an ist UND eine solche Adresse
-    // existiert (ohne sie kein Block, kein leeres "Lieferadresse:").
-    if (data.showDeliveryAddress && data.deliveryAddress) {
-      const da = data.deliveryAddress;
-      doc.fontSize(9).fillColor("#555").text("Lieferadresse:", left, doc.y + 8);
-      doc.fontSize(11).fillColor("#000");
-      doc.text(da.addressLine1);
-      if (da.addressLine2) doc.text(da.addressLine2);
-      doc.text(`${da.postalCode} ${da.city}`);
-      leftColumnBottom = doc.y;
-    }
-
-    // Titel + Meta (rechts)
-    doc.fontSize(18).fillColor(titleColor).text("Lieferschein", left, buyerY, { align: "right" });
-    doc.fontSize(10).fillColor("#333");
-    const metaTop = margins.top + 90;
-    doc.text(`Lieferscheinnummer: ${data.number}`, left + 250, metaTop, { align: "right" });
-    doc.text(`Datum: ${deDate(data.issueDate)}`, { align: "right" });
-    if (data.deliveryDate) doc.text(`Lieferdatum: ${deDate(data.deliveryDate)}`, { align: "right" });
-    if (data.shippingDate) doc.text(`Versanddatum: ${deDate(data.shippingDate)}`, { align: "right" });
-    if (data.sourceNumber) doc.text(`Bezugsbeleg: ${data.sourceNumber}`, { align: "right" });
-    const rightColumnBottom = doc.y;
-
-    // Kopftext (Platzhalter bereits aufgeloest) — vor der Positions-Tabelle, y danach dynamisch.
-    // y wird jetzt aus dem tatsaechlich gedruckten Empfaenger-/Lieferadress-/Meta-Block
-    // abgeleitet statt fest auf margins.top+170 — der optionale Lieferadress-Block braucht
-    // je nach Inhalt mehr oder weniger Platz.
-    let y = Math.max(leftColumnBottom, rightColumnBottom, margins.top + 150) + 20;
-    if (data.headerText) {
-      doc.fontSize(9).fillColor("#333").text(data.headerText, left, y, { width: right - left });
-      y = doc.y + 10;
-    }
+    // existiert (ohne sie kein Block, kein leeres "Lieferadresse:"). Der Empfaengerblock
+    // (`recipient`) wird davon unabhaengig IMMER gedruckt (siehe `KopfInput`).
+    const da = data.showDeliveryAddress ? data.deliveryAddress : null;
+    let y = layout.drawKopf(frame, {
+      title: "Lieferschein",
+      numberLabel: "Lieferscheinnummer",
+      number: data.number,
+      meta,
+      recipient: data.buyer,
+      extraRecipientBlock: da ? { heading: "Lieferadresse:", lines: [da.addressLine1, ...(da.addressLine2 ? [da.addressLine2] : []), `${da.postalCode} ${da.city}`] } : undefined,
+      senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
+      intro: data.headerText,
+    });
 
     // Positions-Tabelle
     const columns = buildColumns(data);
-    doc.fontSize(9).fillColor("#fff");
-    doc.rect(left, y, right - left, 18).fill("#1f2937");
-    doc.fillColor("#fff");
-    let x = left + 4;
-    for (const col of columns) {
-      doc.text(col.header, x, y + 5, { width: col.width, align: col.align ?? "left" });
-      x += col.width + 8;
-    }
-    y += 22;
+    const tableX = left + 4;
+    // Fix-Runde 2 (Koordinator, Critical): seit Fix-Runde 1 (Punkt 6) zeichnet
+    // `layout.drawFooter` die Fusszeile auf JEDER Seite — `pageBottom` reservierte diesen
+    // Bereich bisher NICHT, sodass Positions-/Summenzeilen in das Fusszeilen-Band
+    // hineinragen konnten (verifiziert: 75 Positionen ueberlappten auf Seite 1). Bei
+    // aktiver Fusszeile reserviert `pageBottom` jetzt zusaetzlich `layout.footerHeight`
+    // plus 6pt Sicherheitsabstand; `footY` selbst bleibt unveraendert.
+    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
 
-    doc.fillColor("#000").fontSize(9);
+    const drawTableHeader = (atY: number): number => {
+      let cursor = 0;
+      const headerColumns: TableHeaderColumn[] = columns.map((col) => {
+        const x = tableX + cursor;
+        cursor += col.width + COLUMN_GAP;
+        return { header: col.header, x, width: col.width, align: col.align };
+      });
+      return drawTableHeaderRow(frame, layout, headerColumns, atY, data.showDescription);
+    };
+
+    // Nachtrag (Erhebung): bisher ohne Paginierungsschutz je Zeile — dieselbe Logik wie
+    // in invoice-pdf.ts (VOR jeder Zeile pruefen und bei Bedarf explizit umbrechen).
+    const ensureSpace = (atY: number, needed: number): number => {
+      if (atY + needed <= pageBottom) return atY;
+      doc.addPage();
+      // Phase 11b, Task 4 — Kopf-"Chrome" auf Folgeseiten (z. B. der Balken von `modern`).
+      // Fix-Welle: `chromeStartY` kommt vom `pageAdded`-Handler (siehe oben) — hier NICHT
+      // mehr selbst `drawPageChrome` aufrufen (sonst Doppel-Zeichnung).
+      return drawTableHeader(typeof chromeStartY === "number" ? chromeStartY : margins.top);
+    };
+
+    // Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock braucht KEINEN Tabellenkopf mehr
+    // (kein Item-Tabellenkontext) — `ensureSpace` (das bei jedem Seitenumbruch den Kopf neu
+    // zeichnet) ist dafuer der falsche Helfer; `ensurePlainSpace` bricht nur um, ohne den
+    // Tabellenkopf zu wiederholen (identisch zum Pendant in invoice-pdf.ts).
+    const ensurePlainSpace = (atY: number, needed: number): number => {
+      if (atY + needed <= pageBottom) return atY;
+      doc.addPage();
+      return typeof chromeStartY === "number" ? chromeStartY : margins.top;
+    };
+
+    y = drawTableHeader(y);
+
+    doc.fillColor("#000").fontSize(base - 1);
     for (const line of data.lines) {
-      x = left + 4;
+      y = ensureSpace(y, rowH);
+      let x = tableX;
       for (const col of columns) {
         doc.text(col.render(line), x, y, { width: col.width, align: col.align ?? "left" });
-        x += col.width + 8;
+        x += col.width + COLUMN_GAP;
       }
-      y += 16;
+      y += rowH;
     }
 
     // Summen — nur mit Preisen (ohne showPrices gibt es keinen Wert, den man summieren koennte).
     if (data.showPrices) {
+      y = ensurePlainSpace(y, 40);
       y += 10;
-      doc.moveTo(sumLabelX, y).lineTo(right, y).strokeColor(titleColor).stroke();
+      layout.drawTotalsRule(frame, sumLabelX, y);
       y += 6;
       const sumRow = (label: string, value: string, bold = false) => {
-        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10);
+        y = ensurePlainSpace(y, 16);
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(base);
         doc.text(label, sumLabelX, y, { width: sumLabelWidth, align: "right" });
         doc.text(value, sumValueX, y, { width: sumValueWidth, align: "right" });
         y += 16;
@@ -253,34 +292,28 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     }
 
     // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen.
+    // Fix-Runde 2 (Koordinator, Guard a): `ensurePlainSpace` VOR dem Text, damit ein
+    // knapp vor dem (jetzt fusszeilen-reservierten) Seitenende endender Summenblock den
+    // Fusstext nicht ins Fusszeilen-Band schreibt.
     if (data.footerText) {
+      y = ensurePlainSpace(y, 30);
       y += 10;
-      doc.fontSize(9).fillColor("#333").text(data.footerText, left, y, { width: right - left });
+      doc.fontSize(base - 1).fillColor("#333").text(data.footerText, left, y, { width: right - left });
     }
 
-    // Fußzeile: Aussteller-Pflichtangaben (nur wenn options.showFooter an ist).
-    const footY = doc.page.height - margins.bottom - 20;
-    if (theme.options.showFooter) {
-      // S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide (siehe invoice-pdf.ts).
-      const branded = drawBrandedFooter(doc, theme, left, right, footY - 11);
-      if (!branded) {
-        doc.fontSize(8).fillColor("#666");
-        const sellerLine = [
-          data.seller.name,
-          `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-          data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-          data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
-      }
-    }
+    // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
+    // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
+    const footY = doc.page.height - margins.bottom - layout.footerHeight;
+    const footerColumns = buildFooterColumns(
+      { seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts },
+      theme.brand,
+    );
 
-    // Falz-/Lochmarken + Seitenzahlen.
+    // Falz-/Lochmarken + Seitenzahlen + Fusszeile.
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
+      if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
       if (theme.options.foldMarks) drawFoldMarks(doc);
       if (theme.options.punchMarks) drawPunchMark(doc);
     }

@@ -13,6 +13,7 @@ import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { dbInternal } from "@/lib/db";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { loadPdfTheme } from "@/domain/settings/theme";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import type { EmailDocType } from "@/schemas/email";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
 
@@ -80,7 +81,7 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
     const loaded = await loadEInvoiceData(docId);
     if (!loaded || loaded.invoice.orgId !== orgId || !okTypes.includes(loaded.invoice.type)) return [];
     const { invoice, data } = loaded;
-    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson);
+    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
     const base = safe(invoice.number ?? "Entwurf");
     // Festgeschrieben ODER storniert -> das rechtsverbindliche ZUGFeRD-PDF; nur echte
     // Entwuerfe bekommen den Entwurfs-Hinweis (Feldwert siehe finalize.ts/cancel.ts).
@@ -113,13 +114,13 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
       include: { invoice: { include: { org: true, customer: true } }, stage: true },
     });
     if (!d) return [];
-    const dunningTheme = await loadPdfTheme(orgId);
+    const dunningTheme = await loadPdfTheme(orgId, null, "DUNNING");
     const out: Attachment[] = [
       { filename: `${safe(d.number ?? "Mahnung")}.pdf`, contentType: "application/pdf", content: await renderDunningPdf(buildDunningPdfData(d, d.invoice), dunningTheme) },
     ];
     const inv = await loadEInvoiceData(d.invoiceId);
     if (inv) {
-      const invoiceTheme = await loadPdfTheme(orgId, inv.invoice.printOptionsJson);
+      const invoiceTheme = await loadPdfTheme(orgId, inv.invoice.printOptionsJson, invoiceTypeToLayoutDocType(inv.invoice.type));
       out.push({ filename: `${safe(inv.invoice.number ?? "Rechnung")}.pdf`, contentType: "application/pdf", content: await renderInvoicePdf(inv.data, invoiceTheme) });
     }
     return out;
@@ -140,7 +141,7 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
           select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
         })
       : null;
-    const theme = await loadPdfTheme(orgId, dn.printOptionsJson);
+    const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE");
     const pdf = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, null, shippingAddress), theme);
     return [{ filename: `${safe(dn.number ?? "Lieferschein")}.pdf`, contentType: "application/pdf", content: pdf }];
   }
@@ -150,6 +151,6 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
     include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
   });
   if (!q) return [];
-  const theme = await loadPdfTheme(orgId, q.printOptionsJson);
+  const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind));
   return [{ filename: `${safe(q.number ?? "Dokument")}.pdf`, contentType: "application/pdf", content: await renderInvoicePdf(buildDocEInvoiceData(q), theme) }];
 }

@@ -57,6 +57,9 @@ export function buildBuyerSnapshot(customer: BuyerSnapshot): BuyerSnapshot {
     ...(customer.address !== undefined ? { address: customer.address } : {}),
     ...(customer.shippingAddress !== undefined ? { shippingAddress: customer.shippingAddress } : {}),
     ...(customer.customFields !== undefined ? { customFields: customer.customFields } : {}),
+    // Fix-Welle (Abschluss-Review Phase 11b, Block 3): gleiches Muster wie `address` oben —
+    // nur setzen, wenn der Aufrufer es mitgibt (Object.keys-Kompatibilitaet).
+    ...(customer.customerNumber !== undefined ? { customerNumber: customer.customerNumber } : {}),
   };
 }
 

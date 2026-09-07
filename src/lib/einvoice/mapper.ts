@@ -106,6 +106,9 @@ export interface MapInput {
     vatId: string | null;
     email: string | null;
     leitwegId: string | null;
+    // Fix-Welle (Abschluss-Review Phase 11b, Block 3): optional, damit bestehende Aufrufer
+    // (Alt-Snapshots ohne dieses Feld) unveraendert bleiben — siehe BuyerSnapshot/EInvoiceParty.
+    customerNumber?: string | null;
   };
   lines: Array<{
     id: string;
@@ -305,6 +308,8 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       countryCode: customer.countryCode,
       vatId: customer.vatId,
       email: customer.email,
+      // Fix-Welle (Abschluss-Review Phase 11b, Block 3): fuers PDF-Meta "Ihre Kundennummer".
+      customerNumber: customer.customerNumber ?? null,
     },
     lines: invoice.lines.map((l) => {
       const grossLineCents = roundHalfUp((l.quantityMilli * l.unitNetPriceCents) / 1000);
