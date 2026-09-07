@@ -16,15 +16,21 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { createBusinessDocument } from "@/domain/document/create";
+import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { globalSearch } from "@/domain/search/query";
 import { searchQuerySchema } from "@/schemas/search";
 import { GET as searchGet } from "@/app/api/search/route";
-import type { CreateInvoiceInput } from "@/schemas";
+import type { CreateInvoiceInput, CreateDocumentInput, CreateDeliveryNoteInput } from "@/schemas";
 
 let orgId: string;
 let otherOrgId: string;
 let customerId: string;
 let invoiceNumber: string;
+let quoteId: string;
+let quoteNumber: string;
+let deliveryNoteId: string;
+let deliveryNoteNumber: string;
 
 beforeAll(async () => {
   const org = await dbInternal.organization.create({
@@ -63,6 +69,31 @@ beforeAll(async () => {
   const draft = await createDraftInvoice(orgId, input);
   const fin = await finalizeInvoice(draft.id, { now: new Date("2071-03-01T12:00:00.000Z"), actor: "test" });
   invoiceNumber = fin.number!;
+
+  // Fix Round 1 (Task-2-Review): Angebot + Lieferschein fuer denselben Kunden — `documents`
+  // und `deliveryNotes` hatten bisher keine Datentests. Beide Belege bekommen ihre Nummer
+  // bereits bei Anlage (anders als Invoice, wo `number` erst bei Festschreibung gesetzt wird).
+  const quote = await createBusinessDocument(orgId, {
+    kind: "ANGEBOT",
+    customerId,
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    lines: [{ description: "Suchtest Angebot", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 5000, taxRate: 19, taxCategory: "S", discountPermille: 0 }],
+  } as CreateDocumentInput);
+  quoteId = quote.id;
+  quoteNumber = quote.number!;
+
+  const dn = await createDeliveryNote(
+    orgId,
+    {
+      customerId,
+      deliveryDate: new Date("2071-03-01T12:00:00.000Z"),
+      lines: [{ description: "Suchtest Lieferschein", quantityMilli: 1000, unit: "C62" }],
+    } as CreateDeliveryNoteInput,
+    { actor: "test" },
+  );
+  deliveryNoteId = dn.id;
+  deliveryNoteNumber = dn.number!;
 });
 
 describe("searchQuerySchema", () => {
@@ -97,6 +128,9 @@ describe("globalSearch", () => {
     const products = r.groups.find((g) => g.key === "products")!;
     expect(products.hits[0]!.title).toBe("Zebra-Etikettendrucker");
     expect(products.hits[0]!.href).toMatch(/^\/produkte\//);
+
+    const foreign = await globalSearch(otherOrgId, { q: "ZEB-5", limit: 8 });
+    expect(foreign.groups.find((g) => g.key === "products")!.hits).toHaveLength(0);
   });
 
   it("findet Rechnung nach Nummer und nach Kundenname, Treffer verlinkt die Detailseite", async () => {
@@ -109,6 +143,37 @@ describe("globalSearch", () => {
 
     const byCustomer = await globalSearch(orgId, { q: "Zebra Logistik", limit: 8 });
     expect(byCustomer.groups.find((g) => g.key === "invoices")!.hits.length).toBeGreaterThanOrEqual(1);
+
+    // Minor (Task-2-Review): Negativ-Assertion fuer eine Nicht-Kunden-Gruppe — Fremd-Org
+    // findet die Rechnungsnummer der eigenen Org nicht.
+    const foreign = await globalSearch(otherOrgId, { q: invoiceNumber, limit: 8 });
+    expect(foreign.groups.find((g) => g.key === "invoices")!.hits).toHaveLength(0);
+  });
+
+  it("findet Angebot und Lieferschein nach Nummer, Treffer verlinken die Detailseite — nur in der eigenen Org", async () => {
+    const byQuoteNumber = await globalSearch(orgId, { q: quoteNumber, limit: 8 });
+    const documents = byQuoteNumber.groups.find((g) => g.key === "documents")!;
+    expect(documents.hits).toHaveLength(1);
+    expect(documents.hits[0]!.title).toBe(quoteNumber);
+    expect(documents.hits[0]!.subtitle).toContain("Zebra Logistik AG");
+    expect(documents.hits[0]!.href).toBe(`/dokumente/${quoteId}`);
+
+    const byDeliveryNoteNumber = await globalSearch(orgId, { q: deliveryNoteNumber, limit: 8 });
+    const deliveryNotes = byDeliveryNoteNumber.groups.find((g) => g.key === "deliveryNotes")!;
+    expect(deliveryNotes.hits).toHaveLength(1);
+    expect(deliveryNotes.hits[0]!.title).toBe(deliveryNoteNumber);
+    expect(deliveryNotes.hits[0]!.subtitle).toContain("Zebra Logistik AG");
+    expect(deliveryNotes.hits[0]!.href).toBe(`/lieferscheine/${deliveryNoteId}`);
+
+    const byCustomer = await globalSearch(orgId, { q: "Zebra Logistik", limit: 8 });
+    expect(byCustomer.groups.find((g) => g.key === "invoices")!.hits.length).toBeGreaterThanOrEqual(1);
+    expect(byCustomer.groups.find((g) => g.key === "documents")!.hits.length).toBeGreaterThanOrEqual(1);
+    expect(byCustomer.groups.find((g) => g.key === "deliveryNotes")!.hits.length).toBeGreaterThanOrEqual(1);
+
+    const foreignQuote = await globalSearch(otherOrgId, { q: quoteNumber, limit: 8 });
+    expect(foreignQuote.groups.find((g) => g.key === "documents")!.hits).toHaveLength(0);
+    const foreignDeliveryNote = await globalSearch(otherOrgId, { q: deliveryNoteNumber, limit: 8 });
+    expect(foreignDeliveryNote.groups.find((g) => g.key === "deliveryNotes")!.hits).toHaveLength(0);
   });
 
   it("liefert leere Gruppen bei Nicht-Treffer und respektiert limit", async () => {
