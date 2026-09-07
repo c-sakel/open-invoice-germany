@@ -18,6 +18,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { globalSearch } from "@/domain/search/query";
 import { searchQuerySchema } from "@/schemas/search";
+import { GET as searchGet } from "@/app/api/search/route";
 import type { CreateInvoiceInput } from "@/schemas";
 
 let orgId: string;
@@ -126,5 +127,18 @@ describe("globalSearch", () => {
     const r = await globalSearch(orgId, { q: "GEHEIM", limit: 8 });
     expect(r.groups.every((g) => g.hits.length === 0)).toBe(true);
     expect(JSON.stringify(r)).not.toContain("GEHEIM");
+  });
+});
+
+describe("GET /api/search", () => {
+  it("400 bei zu kurzem q, 200 mit Gruppen sonst", async () => {
+    const bad = await searchGet(new Request("http://localhost/api/search?q=a"));
+    expect(bad.status).toBe(400);
+    const ok = await searchGet(new Request(`http://localhost/api/search?q=${encodeURIComponent("Zebra")}&limit=3`));
+    expect(ok.status).toBe(200);
+    const json = (await ok.json()) as { groups: { key: string; hits: unknown[] }[] };
+    expect(json.groups.map((g) => g.key)).toEqual(["invoices", "documents", "deliveryNotes", "customers", "products"]);
+    expect(json.groups.find((g) => g.key === "customers")!.hits.length).toBeGreaterThanOrEqual(1);
+    expect(ok.headers.get("cache-control")).toBe("no-store");
   });
 });
