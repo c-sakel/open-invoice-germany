@@ -47,6 +47,8 @@ const PREVIEW_DOC_TYPE_MAP: Record<LayoutDocType, PreviewDocType> = {
 export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsInput; layouts: LayoutInfo[] }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
+  // Referenz fuer "ungespeichert": nach dem Speichern auf den Server-Stand gesetzt.
+  const [baseline, setBaseline] = useState(initial);
   const [docType, setDocType] = useState<LayoutDocType>("INVOICE");
   // `selection` ist der lokale Entwurf (welche Kachel gerade als Vorschau angezeigt wird) —
   // getrennt vom tatsaechlich WIRKSAMEN Layout (`effective` unten), das erst durch „Für
@@ -67,15 +69,15 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
     setSaved(false);
   }
 
+  // Betreiber-Befund (2026-09-07): Kachel-Klick UEBERNIMMT das Layout fuer den gewaehlten
+  // Belegtyp direkt (wie in sevDesk) — die Zwischenstufe "Fuer <Typ> uebernehmen" wurde als
+  // reine Auswahl missverstanden, der Speicher-Aufruf blieb aus. Persistiert wird weiterhin
+  // erst mit "Einstellungen speichern" (Hinweis auf ungespeicherte Aenderungen unten).
   function selectTile(layoutId: LayoutId) {
     setSelection(layoutId);
     setError(null);
     setSaved(false);
-  }
-
-  function applyForType() {
-    setSaved(false);
-    setValues((v) => ({ ...v, layoutByType: { ...v.layoutByType, [docType]: selection } }));
+    setValues((v) => ({ ...v, layoutByType: { ...v.layoutByType, [docType]: layoutId } }));
   }
 
   /** Entfernt die Typ-Zuordnung fuer den aktuell gewaehlten Belegtyp — der Beleg faellt
@@ -113,6 +115,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
         return;
       }
       setValues(j.settings);
+      setBaseline(j.settings);
       setSaved(true);
       router.refresh();
     } catch {
@@ -126,6 +129,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   }
 
   const previewDocType = PREVIEW_DOC_TYPE_MAP[docType];
+  const dirty = JSON.stringify({ l: values.layoutId, t: values.layoutByType }) !== JSON.stringify({ l: baseline.layoutId, t: baseline.layoutByType });
 
   return (
     <div className="space-y-4">
@@ -192,13 +196,9 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
             className="aspect-[1/1.414] w-full rounded border border-slate-200 bg-white"
           />
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={applyForType}
-              className="rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Für {docLabel} übernehmen
-            </button>
+            <p className="text-xs text-slate-600">
+              Kachel anklicken = Layout für <span className="font-medium">{docLabel}</span> übernehmen.
+            </p>
             {typeOverride && (
               <button
                 type="button"
@@ -220,14 +220,18 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={save}
-        disabled={saving}
-        className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-      >
-        {saving ? "Speichern…" : "Einstellungen speichern"}
-      </button>
+      <div className={`flex flex-wrap items-center gap-3 rounded-md border p-3 ${dirty ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty}
+          className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+        >
+          {saving ? "Speichern…" : "Einstellungen speichern"}
+        </button>
+        {dirty && <span className="text-sm text-amber-800">Ungespeicherte Änderungen — erst nach dem Speichern wirken sie auf neue PDFs.</span>}
+        {!dirty && saved && <span className="text-sm text-emerald-700">Gespeichert.</span>}
+      </div>
     </div>
   );
 }
