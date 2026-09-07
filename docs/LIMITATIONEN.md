@@ -127,11 +127,16 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   nicht; Statusänderungen laufen ausschließlich über `POST .../status`. Backlog:
   `updateDraft`-Domainfunktion für Lieferscheine nachrüsten, sobald benötigt.
 - **`Layout` (Phase 11b) ist nur lesbar.** `GET /api/v1/Layout` liefert die feste
-  Liste der sieben PDF-Layouts; eine Beleg-individuelle Layout-Überschreibung
-  (`printOptionsJson.layoutId`) lässt sich über `/api/v1` (noch) nicht setzen — nur
-  über MCP (`set_print_options {options: {layoutId}}`) oder die UI (Beleg-Editor).
-  Der Organisationsstandard/die Typ-Zuordnung sind dagegen ganz normal über `PATCH
-  /api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`) erreichbar.
+  Liste der sieben PDF-Layouts (keine DB-Tabelle, kein POST/PATCH auf dieser
+  Ressource). Der Organisationsstandard/die Typ-Zuordnung sind über `PATCH
+  /api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`) erreichbar; eine
+  Beleg-individuelle Layout-Überschreibung seit der Fix-Welle (Phase 11b) über
+  `PATCH /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options`
+  (`printOptionsOverrideSchema.layoutId`, nur solange der Beleg `DRAFT` ist) —
+  dieselbe Domain-Funktion wie MCP (`set_print_options`) und die UI. `Quote/{id}/
+  print-options` gilt nur für `kind=ANGEBOT`; Auftragsbestätigung und Proforma haben
+  keinen eigenen `print-options`-Endpunkt (Lastenheft-Abgrenzung: kein separates
+  REST-Objekt je Quote-`kind`).
 - **Webhook-Secrets sind nie im Klartext abrufbar** (analog API-Schlüssel) — nur bei
   Anlage/Rotation einmalig in der Antwort. Zustellung ist streng seriell (ein
   Scheduler-Job je Lauf, kein `Promise.all`) — bei sehr vielen fälligen Zustellungen

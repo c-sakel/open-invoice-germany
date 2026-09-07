@@ -285,13 +285,16 @@ Vorschaubild, Auswahl je Belegtyp UND Organisationsstandard — Speichern ist ex
 wirksame Auswahl (Typ-Map > Organisationsstandard). Je-Beleg-Override im Beleg-Editor
 (`PrintOptionsPanel`, wie die übrigen Druckoptionen) — nur solange der Beleg `DRAFT` ist.
 
-**API/MCP** (Task 8): `GET /api/v1/Layout` (Scope `read`, `src/app/api/v1/Layout/route.ts`,
+**API/MCP** (Task 8; Fix-Welle Phase 11b fuer die Beleg-Ueberschreibung): `GET
+/api/v1/Layout` (Scope `read`, `src/app/api/v1/Layout/route.ts`,
 `src/api/serializers/layout.ts`) liefert dieselbe feste Liste wie `listLayouts()` — keine
 Paginierung, kein POST/PATCH. MCP `list_pdf_layouts` (kein Input) liefert sie roh als
 JSON; `update_branding_settings` akzeptiert `layoutId`/`layoutByType`/`footerMode` (Schema
-aus Task 1), `set_print_options` den Beleg-Override `options.layoutId`. Eine
-Beleg-individuelle Layout-Überschreibung gibt es (noch) nur über MCP/UI, nicht als eigener
-`/api/v1`-Aktions-Endpunkt (siehe `docs/LIMITATIONEN.md`).
+aus Task 1), `set_print_options` den Beleg-Override `options.layoutId`. Die Beleg-
+individuelle Layout-Ueberschreibung ist zusaetzlich ueber `GET`/`PATCH
+/api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` erreichbar (dieselbe
+Domain-Funktion `setPrintOptions`/`effectivePrintOptions`, `Quote` nur fuer
+`kind=ANGEBOT`) — siehe `docs/API.md`/`docs/LIMITATIONEN.md`.
 
 ### Kundendomain: Adressen, Ansprechpartner, Kundenfelder, Vorgaben, Letztes Dokument übernehmen (Phase 8a)
 
