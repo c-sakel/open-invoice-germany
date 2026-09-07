@@ -112,9 +112,26 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     doc.moveDown(0.5);
     doc.fontSize(10).fillColor("#333").text((INTRO[data.level] ?? INTRO[2])(data.invoiceNumber), { width: right - left });
 
+    // Fix-Runde 2 (Koordinator, Guard b): die Mahnung ueberlaesst Seitenumbrueche sonst
+    // vollstaendig pdfkits eigener Logik (siehe Kommentar zu `pageAdded` oben) — bei vielen
+    // Gebuehrenzeilen (Zinsen/Pauschale/Mahnkosten/Auslagen) haette das zu derselben
+    // kaskadierenden Leerseiten-Gefahr wie in invoice-pdf.ts fuehren koennen, plus dem in
+    // dieser Runde behobenen Fusszeilen-Ueberlapp. `ensurePlainSpace` bricht VOR einer
+    // Zeile, die nicht mehr in den (bei aktiver Fusszeile reservierten) Rest der Seite
+    // passt, manuell um. Der `pageAdded`-Handler oben zeichnet Hintergrund + Kopf-Chrome
+    // bereits automatisch fuer JEDEN `doc.addPage()` (auch diesen) — ein zusaetzlicher
+    // expliziter `drawPageChrome`-Aufruf hier wuerde ihn doppelt zeichnen.
+    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
+    const ensurePlainSpace = (atY: number, needed: number): number => {
+      if (atY + needed <= pageBottom) return atY;
+      doc.addPage();
+      return margins.top;
+    };
+
     // Aufstellung
     y = doc.y + 20;
     const row = (label: string, value: string, bold = false) => {
+      y = ensurePlainSpace(y, 16);
       doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor("#000");
       doc.text(label, left, y, { width: 360 });
       doc.text(value, left + 360, y, { width: right - left - 360, align: "right" });

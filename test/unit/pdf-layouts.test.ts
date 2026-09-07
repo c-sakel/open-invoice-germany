@@ -71,6 +71,41 @@ export function sampleInvoice(): EInvoiceData {
   return data;
 }
 
+/** Reine ITEM-Zeilen, keine Kopf-/Fusstexte/Rabatte — fuer die deterministische
+ *  Paginierungs-Handrechnung unten (jede Abweichung waere sonst durch Textumbruch statt
+ *  durch die Fusszeilen-Reservierung selbst verursacht). */
+function invoiceWithLines(n: number): EInvoiceData {
+  const lines: EInvoiceLine[] = Array.from({ length: n }, (_, i) => ({
+    id: String(i + 1),
+    description: `Position ${i + 1}`,
+    quantityMilli: 1000,
+    unit: "C62",
+    unitNetPriceCents: 1000,
+    lineNetCents: 1000,
+    taxRate: 19,
+    taxCategory: "S",
+    lineType: "ITEM" as const,
+  }));
+  const net = n * 1000;
+  const tax = Math.round(net * 0.19);
+  return {
+    number: "RE-2073-00002",
+    type: "INVOICE",
+    issueDate: new Date("2073-05-02"),
+    currency: "EUR",
+    seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin", countryCode: "DE" },
+    buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt", countryCode: "DE" },
+    lines,
+    taxSubtotals: [{ taxRate: 19, taxCategory: "S", netCents: net, taxCents: tax }],
+    netTotalCents: net,
+    taxTotalCents: tax,
+    grossTotalCents: net + tax,
+    payableCents: net + tax,
+    giroAmountCents: 0,
+    iban: null,
+  };
+}
+
 describe("Layout-Register", () => {
   it("kennt 'standard', das der Fallback ist", () => {
     expect(listLayouts()[0]!.id).toBe("standard");
@@ -107,6 +142,43 @@ describe("Layout standard (Kompatibilitaet)", () => {
     // Fix-Runde 1, Punkt 6 — die Fusszeile steht jetzt auf JEDER Seite, nicht nur der letzten.
     expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER)).toBeGreaterThanOrEqual(numpages);
     expect(text).toContain("Gesamtbetrag");
+  });
+});
+
+describe("standard — Fusszeilen-reservierte Paginierung (Fix-Runde 2, Critical)", () => {
+  it("mit Fusszeile passen weniger Positionen auf eine Seite als ohne (pageBottom reserviert layout.footerHeight + 6pt)", async () => {
+    // Handrechnung (schwarz auf weiss, statt eine interne itemRowsPerPage()-Hilfsfunktion
+    // zu exportieren — der Test bleibt black-box und prueft nur renderInvoicePdf/parsePdf):
+    //   A4 = 595.28 x 841.89pt (pdfkit-Seitengroessentabelle).
+    //   MM_TO_PT = 2.834645 (src/lib/pdf/marks.ts).
+    //   Defaults (DEFAULT_BRANDING_SETTINGS): marginTopMm = marginBottomMm = 20mm
+    //     -> marginTop = marginBottom = 20 * 2.834645 = 56.6929pt.
+    //   standard.footerHeight = 46; rowH = Math.round((base-1)*1.8) mit base=10 (Default
+    //     fontSizePt) = Math.round(9*1.8) = 16.
+    //   Tabellenbeginn Seite 1 (invoiceWithLines() setzt KEINEN Kopftext/keine
+    //     Lieferadresse): standard.drawKopf liefert margins.top + 170 = 226.6929;
+    //     + Tabellenkopf (headerHeight 18 + 4 Abstand) = 248.6929 =: y1.
+    //   Folgeseiten beginnen bei margins.top (kein drawPageChrome fuer `standard`) + 22
+    //     Tabellenkopf = 78.6929 =: y2.
+    //   pageBottom MIT Fusszeile  = 841.89 - 56.6929 - 46 - 6 = 733.1971 =: bF
+    //   pageBottom OHNE Fusszeile = 841.89 - 56.6929            = 785.1971 =: bO
+    //   Kapazitaet je Seite = floor((pageBottom - startY) / rowH):
+    //     Seite 1 MIT:  floor((733.1971 - 248.6929) / 16) = floor(30.28) = 30
+    //     Seite 1 OHNE: floor((785.1971 - 248.6929) / 16) = floor(33.53) = 33
+    //     Folgeseite MIT:  floor((733.1971 - 78.6929) / 16) = floor(40.90) = 40
+    //     Folgeseite OHNE: floor((785.1971 - 78.6929) / 16) = floor(44.16) = 44
+    //   Kapazitaet ueber 2 Seiten: MIT 30+40=70, OHNE 33+44=77 Positionen. Bei den vom
+    //   Koordinator vorgeschlagenen 60 Zeilen liegt WEDER 60 > 70 NOCH 60 > 77 — beide
+    //   Faelle bleiben bei 2 Seiten, kein numerischer Unterschied messbar (per Debug-Sweep
+    //   n=55..77 verifiziert, siehe Fix-Runde-2-Report). 70 ist der kleinste Wert, bei dem
+    //   MIT Fusszeile bereits eine dritte Seite noetig ist, OHNE Fusszeile aber noch nicht.
+    const withFooterTheme = testPdfTheme({ layoutId: "standard" });
+    const withoutFooterTheme = testPdfTheme({ layoutId: "standard", options: { ...testPdfTheme().options, showFooter: false } });
+    const withFooter = await parsePdf(await renderInvoicePdf(invoiceWithLines(70), withFooterTheme));
+    const withoutFooter = await parsePdf(await renderInvoicePdf(invoiceWithLines(70), withoutFooterTheme));
+    expect(withFooter.numpages).toBe(3);
+    expect(withoutFooter.numpages).toBe(2);
+    expect(withFooter.numpages).toBeGreaterThan(withoutFooter.numpages);
   });
 });
 

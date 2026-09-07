@@ -193,7 +193,15 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // "zu großen" y erneut (und erneut) eine Seite anbrechen (kaskadierende Leerseiten bei
   // langen Belegen). Daher VOR jeder Zeile selbst prüfen und bei Bedarf explizit
   // umbrechen (inkl. wiederholter Tabellenkopf), statt pdfkit entscheiden zu lassen.
-  const pageBottom = doc.page.height - margins.bottom;
+  //
+  // Fix-Runde 2 (Koordinator, Critical): seit Fix-Runde 1 (Punkt 6) zeichnet
+  // `layout.drawFooter` die Fusszeile auf JEDER Seite (footY = Seitenunterkante -
+  // `layout.footerHeight`) — `pageBottom` reservierte diesen Bereich bisher NICHT, sodass
+  // Positions-/Summenzeilen in das Fusszeilen-Band hineinragen konnten (verifiziert: 60
+  // Positionen ueberlappten auf Seite 1). Bei aktiver Fusszeile reserviert `pageBottom`
+  // jetzt zusaetzlich `layout.footerHeight` plus 6pt Sicherheitsabstand; `footY` selbst
+  // bleibt unveraendert (Fusszeile/GiroCode-Position aendern sich nicht).
+  const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
 
   const drawTableHeader = (atY: number): number =>
     drawTableHeaderRow(
