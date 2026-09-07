@@ -145,6 +145,7 @@ export type TaxBreakdownEntrySnapshot = z.infer<typeof taxBreakdownEntrySchema>;
 // ── Stammdaten ───────────────────────────────────────────────────────────
 export const organizationSchema = z.object({
   legalName: z.string().min(1),
+  ownerName: z.string().trim().max(120).optional(),
   addressLine1: z.string().min(1),
   addressLine2: z.string().optional(),
   postalCode: z.string().min(1),

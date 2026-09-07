@@ -36,6 +36,7 @@ model Organization {
   iban              String?
   bic               String?
   bankName          String?
+  ownerName         String? // Phase 11b — Inhaber/-in fuer die automatische Fusszeile
   logoPath          String?
   electronicAddress String? // Peppol-Adresse des Ausstellers
   createdAt         DateTime @default(now())
@@ -968,25 +969,29 @@ model DocumentSettings {
 /// Fusszeilen, Ränder, Hintergrundbild. Selbstheilung analog DocumentSettings
 /// (In-Memory-Default, solange keine Zeile existiert).
 model BrandingSettings {
-  id             String       @id @default(cuid())
-  orgId          String       @unique
-  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  logoPath       String?
-  logoWidthMm    Int          @default(40)
-  primaryColor   String       @default("#111111")
-  senderLine     String?
-  footerLeft     String?
-  footerCenter   String?
-  footerRight    String?
-  marginTopMm    Int          @default(20)
-  marginRightMm  Int          @default(18)
-  marginBottomMm Int          @default(20)
-  marginLeftMm   Int          @default(18)
-  fontSizePt     Int          @default(10)
-  backgroundPath String?
-  showBackground Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id               String       @id @default(cuid())
+  orgId            String       @unique
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  logoPath         String?
+  logoWidthMm      Int          @default(40)
+  primaryColor     String       @default("#111111")
+  senderLine       String?
+  footerLeft       String?
+  footerCenter     String?
+  footerRight      String?
+  marginTopMm      Int          @default(20)
+  marginRightMm    Int          @default(18)
+  marginBottomMm   Int          @default(20)
+  marginLeftMm     Int          @default(18)
+  fontSizePt       Int          @default(10)
+  backgroundPath   String?
+  showBackground   Boolean      @default(false)
+  // Phase 11b — PDF-Layouts (Spec Phase 11): Organisationsstandard, Map je Belegtyp (JSON), Fusszeilenmodus.
+  layoutId         String       @default("standard")
+  layoutByTypeJson String?
+  footerMode       String       @default("AUTO") // AUTO (vierspaltig aus Stammdaten) | CUSTOM (footerLeft/Center/Right)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 }
 
 /// Globale Druckoptionen einer Organisation (Phase 7, Task 1, §36) — je Beleg per
