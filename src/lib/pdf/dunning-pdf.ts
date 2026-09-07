@@ -95,11 +95,19 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // Phase 11b, Task 4 — die Mahnung bricht (anders als Rechnung/Lieferschein) nie
     // manuell um `doc.addPage()`; sie ueberlaesst lange Texte pdfkits eigener
     // Seitenumbruch-Logik. `pageAdded` feuert dabei genauso wie bei einem expliziten
-    // `doc.addPage()` (siehe drawBackground oben) — daher hier derselbe Hook, nur ohne
-    // Rueckgabewert-Auswertung (keine manuell gefuehrte y-Fortsetzung vorhanden).
+    // `doc.addPage()` (siehe drawBackground oben) — daher hier derselbe Hook.
+    //
+    // Fix-Welle (Abschluss-Review, Block 3 "Minor"): der Hook wertete `drawPageChrome`s
+    // Rueckgabewert (die neue Start-y fuer den Seiteninhalt, z. B. unterhalb des `modern`-
+    // Balkens) bisher NICHT aus — `ensurePlainSpace` unten gab bei einem Seitenumbruch
+    // immer `margins.top` zurueck, sodass eine mehrseitige Mahnung im `modern`-Layout ihre
+    // erste Zeile auf Folgeseiten ueber den Balken haette drucken koennen. `chromeStartY`
+    // merkt sich die Rueckgabe fuer `ensurePlainSpace`.
+    let chromeStartY: number | undefined;
     doc.on("pageAdded", () => {
       drawBackground(doc, theme);
-      layout.drawPageChrome?.(frame);
+      const chromeResult = layout.drawPageChrome?.(frame);
+      chromeStartY = typeof chromeResult === "number" ? chromeResult : undefined;
     });
     drawBackground(doc, theme);
 
@@ -129,7 +137,8 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     const ensurePlainSpace = (atY: number, needed: number): number => {
       if (atY + needed <= pageBottom) return atY;
       doc.addPage();
-      return margins.top;
+      // Fix-Welle: `chromeStartY` statt hart `margins.top` — siehe Kommentar oben.
+      return typeof chromeStartY === "number" ? chromeStartY : margins.top;
     };
 
     // Aufstellung
@@ -153,6 +162,12 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     doc.font("Helvetica");
 
     y += 16;
+    // Fix-Welle (Abschluss-Review, Block 2 "Important"): derselbe Fusszeilen-Ueberlapp wie
+    // in invoice-pdf.ts — dieser Schlusssatz wurde bisher ohne `ensurePlainSpace`-Schutz
+    // gezeichnet und konnte auf der Fusszeile landen (pdfkits eigene automatische
+    // Paginierung kennt nur `margins.bottom`, nicht die zusaetzlichen `footerHeight + 6`
+    // Reservierung von `pageBottom`).
+    y = ensurePlainSpace(y, 30);
     doc.fontSize(10).fillColor("#000").text(`Bitte überweisen Sie den Gesamtbetrag bis spätestens ${deDate(data.newDueDate)}.`, left, y, { width: right - left });
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
