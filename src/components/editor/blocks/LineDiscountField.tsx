@@ -9,18 +9,29 @@
  * erhalten und wird nur als kleiner Hinweis angezeigt statt stillschweigend verdeckt
  * (sonst koennte ein Nutzer einen bereits bestehenden zweiten Rabattwert unbemerkt
  * "vergessen").
+ *
+ * Task-5-Fix 3: der anfaengliche %/€-Modus (und der "versteckter Wert"-Hinweis) werden
+ * ueber die geklemmten Parse-Helfer (`centsOrZero`/`permilleOrZero`, `@/lib/editor/
+ * parse.ts`) entschieden statt ueber einen rohen String-Vergleich mit `"0"` — ein
+ * echter Nullwert kommt z. B. nach `draftFromInvoice`/`roundTrip` als `"0,00"`
+ * (`fromCents`) bzw. `"0,0"` (`fromPermille`) an, nie als literales `"0"`.
  */
 import { useState } from "react";
 import type { DraftLine, DraftAction } from "@/lib/editor/draft";
 import { inputCls } from "@/components/forms/fields";
+import { centsOrZero, permilleOrZero } from "@/lib/editor/parse";
+
+/** Reine Heuristik, exportiert fuer den Unit-Test (test/unit/editor-discount-mode.test.ts). */
+export function initialDiscountMode(line: Pick<DraftLine, "discountPercent" | "discountAmount">): "percent" | "amount" {
+  return centsOrZero(line.discountAmount) > 0 && permilleOrZero(line.discountPercent) === 0 ? "amount" : "percent";
+}
 
 export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatch: (a: DraftAction) => void }) {
-  const [mode, setMode] = useState<"percent" | "amount">(() =>
-    line.discountAmount !== "0" && line.discountAmount !== "" && (line.discountPercent === "0" || line.discountPercent === "") ? "amount" : "percent",
-  );
+  const [mode, setMode] = useState<"percent" | "amount">(() => initialDiscountMode(line));
   const value = mode === "percent" ? line.discountPercent : line.discountAmount;
   const hidden = mode === "percent" ? line.discountAmount : line.discountPercent;
-  const hiddenHint = hidden && hidden !== "0" ? `+ ${hidden} ${mode === "percent" ? "€" : "%"}` : null;
+  const hiddenIsSet = mode === "percent" ? centsOrZero(hidden) > 0 : permilleOrZero(hidden) > 0;
+  const hiddenHint = hiddenIsSet ? `+ ${hidden} ${mode === "percent" ? "€" : "%"}` : null;
 
   return (
     <div>
@@ -28,6 +39,7 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
         <input
           className={`${inputCls} w-16`}
           value={value}
+          aria-label={mode === "percent" ? "Rabatt in Prozent" : "Rabatt in Euro"}
           onChange={(e) =>
             dispatch({
               type: "setLine",

@@ -7,9 +7,15 @@
  * Standardliste — `UNIT_OPTIONS` ist bewusst nur eine Teilmenge, siehe Kommentar in
  * `constants.ts`). `otherMode` ist lokaler Zustand (kein `DraftLine`-Feld) — er
  * steuert NUR, ob das Freitextfeld sichtbar ist, nicht den gespeicherten Wert selbst.
- * Faellt `value` (wieder) auf einen bekannten Code zurueck (z. B. nach `applyProduct`),
- * schaltet ein `prevKnown`-Vergleich WAEHREND DES RENDERNS automatisch auf die
- * Auswahlliste zurueck — das React-sanktionierte "State waehrend des Renderns
+ * Aendert sich, ob `value` ein bekannter Code ist (z. B. nach `applyProduct` mit einer
+ * Einheit ausserhalb `UNIT_OPTIONS`, etwa "LTR"), schaltet ein `prevKnown`-Vergleich
+ * WAEHREND DES RENDERNS `otherMode` in BEIDE Richtungen automatisch mit: wird der Code
+ * bekannt, zurueck auf die Auswahlliste; wird er unbekannt, auf das Freitextfeld (Task-
+ * 5-Fix 4 — vorher schaltete dieser Vergleich nur in eine Richtung um, sodass das
+ * `<select>` nach einem Produkt mit unbekannter Einheit einen Wert ohne passende
+ * `<option>` zeigte). Waehlt der Nutzer dagegen bewusst "andere…", OHNE dass sich der
+ * zugrunde liegende Code aendert (`known` bleibt gleich), greift dieser Vergleich nicht
+ * — die Auswahl bleibt erhalten. Das React-sanktionierte "State waehrend des Renderns
  * anpassen"-Muster (react.dev, "You Might Not Need an Effect") statt eines
  * `useEffect`, der hierfuer sowohl einen unnoetigen zusaetzlichen Renderdurchlauf als
  * auch den Lint-Fehler `react-hooks/set-state-in-effect` ausloesen wuerde.
@@ -26,7 +32,7 @@ export function UnitSelect({ value, onChange }: { value: string; onChange: (v: s
   const [prevKnown, setPrevKnown] = useState(known);
   if (known !== prevKnown) {
     setPrevKnown(known);
-    if (known) setOtherMode(false);
+    setOtherMode(!known);
   }
 
   return (

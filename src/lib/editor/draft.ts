@@ -88,6 +88,9 @@ export type DraftAction =
   | { type: "removeLine"; key: string }
   | { type: "moveLine"; key: string; to: number }
   | { type: "duplicateLine"; key: string }
+  // Task-5-Fix (Minor): eigene Aktion statt `setLine`, damit das Ein-/Ausblenden des
+  // Langtexts (reine Anzeige, keine inhaltliche Aenderung) NICHT `dirty: true` setzt.
+  | { type: "toggleExpanded"; key: string }
   | {
       type: "applyProduct";
       key: string;
@@ -182,6 +185,12 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
         ...state,
         lines: state.lines.map((l) => (l.key === action.key ? { ...l, ...action.patch } : l)),
         dirty: true,
+      };
+    case "toggleExpanded":
+      return {
+        ...state,
+        lines: state.lines.map((l) => (l.key === action.key ? { ...l, expanded: !l.expanded } : l)),
+        // bewusst OHNE dirty: true — siehe Kommentar bei DraftAction["toggleExpanded"].
       };
     case "addLine": {
       const idx = action.after ? state.lines.findIndex((l) => l.key === action.after) : state.lines.length - 1;

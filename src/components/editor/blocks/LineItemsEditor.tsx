@@ -18,7 +18,14 @@
  * DELIVERY_NOTE kennt serverseitig keinen `lineType` (`toDeliveryNotePayload`,
  * `draft.ts`, filtert ausschliesslich ITEM-Zeilen) — die Add-Links "+ Überschrift"/
  * "+ Textblock"/"+ Zwischensumme" erscheinen deshalb NUR bei INVOICE/DOCUMENT
- * (Lastenheft 59: keine Buttons ohne Backend-Wirkung).
+ * (Lastenheft 59: keine Buttons ohne Backend-Wirkung). Aus demselben Grund fehlt die
+ * Rabatt-Spalte bei DELIVERY_NOTE komplett (Task-5-Fix 2, `deliveryNoteLineInputSchema`
+ * kennt keinen Rabatt) — siehe `LineRow`s Modulkommentar (`showDiscount`).
+ *
+ * `totals` kommt als Prop von `DocumentEditor` (`useMemo`, Task-5-Fix Minor) statt
+ * hier ein zweites Mal ueber `computeDraftTotals(draft)` berechnet zu werden — beide
+ * Aufrufer haetten sonst bei jedem Tastendruck dieselbe (nicht ganz billige) Berechnung
+ * doppelt ausgefuehrt.
  *
  * Drag & Drop: `dragKey` (lokaler State) haelt den `key` der gezogenen Zeile;
  * `onDrop` dispatcht `moveLine` mit dem (Vor-Entfernen-)Index der Zielzeile — gleiches
@@ -36,7 +43,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
-import { computeDraftTotals } from "@/lib/editor/totals";
+import type { DraftTotals } from "@/lib/editor/totals";
 import type { ProductOption } from "../ProductPicker";
 import { LineRow } from "./LineRow";
 
@@ -45,17 +52,19 @@ export function LineItemsEditor({
   dispatch,
   products,
   mode,
+  totals,
   onProductCreated,
 }: {
   draft: DraftState;
   dispatch: (action: DraftAction) => void;
   products: ProductOption[];
   mode: EditorMode;
+  totals: DraftTotals;
   onProductCreated?: (p: ProductOption) => void;
 }) {
-  const totals = computeDraftTotals(draft);
   const taxDisabled = mode === "INVOICE" && draft.taxScheme !== "REGULAR";
   const allowOtherTypes = mode !== "DELIVERY_NOTE";
+  const showDiscount = mode !== "DELIVERY_NOTE";
 
   let itemCounter = 0;
   const itemPositions = draft.lines.map((l) => (l.lineType === "ITEM" ? ++itemCounter : null));
@@ -115,15 +124,17 @@ export function LineItemsEditor({
         <table className="w-full min-w-[880px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
-              <th className="w-10 py-1.5 pr-2">Pos.</th>
-              <th className="py-1.5 pr-2">Beschreibung</th>
-              <th className="w-20 py-1.5 pr-2">Menge</th>
-              <th className="w-28 py-1.5 pr-2">Einheit</th>
-              <th className="w-28 py-1.5 pr-2">{draft.grossDisplay ? "Preis (brutto)" : "Preis (netto)"}</th>
-              <th className="w-16 py-1.5 pr-2">USt.</th>
-              <th className="w-28 py-1.5 pr-2">Rabatt</th>
-              <th className="w-28 py-1.5 pr-2 text-right">Betrag</th>
-              <th className="w-8 py-1.5" />
+              <th scope="col" className="w-10 py-1.5 pr-2">Pos.</th>
+              <th scope="col" className="py-1.5 pr-2">Beschreibung</th>
+              <th scope="col" className="w-20 py-1.5 pr-2">Menge</th>
+              <th scope="col" className="w-28 py-1.5 pr-2">Einheit</th>
+              <th scope="col" className="w-28 py-1.5 pr-2">{draft.grossDisplay ? "Preis (brutto)" : "Preis (netto)"}</th>
+              <th scope="col" className="w-16 py-1.5 pr-2">USt.</th>
+              {showDiscount && (
+                <th scope="col" className="w-28 py-1.5 pr-2">Rabatt</th>
+              )}
+              <th scope="col" className="w-28 py-1.5 pr-2 text-right">Betrag</th>
+              <th scope="col" className="w-8 py-1.5" />
             </tr>
           </thead>
           <tbody>
@@ -131,6 +142,7 @@ export function LineItemsEditor({
               <LineRow
                 key={line.key}
                 line={line}
+                mode={mode}
                 itemPos={itemPositions[index] ?? null}
                 isLast={index === draft.lines.length - 1}
                 taxDisabled={taxDisabled}

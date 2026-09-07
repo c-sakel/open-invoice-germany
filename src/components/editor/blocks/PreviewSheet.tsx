@@ -30,6 +30,19 @@
  * Bearbeiten-Fall vorhanden) — bei einer neuen Rechnung/einem neuen Dokument ist er
  * `undefined` und `buildDraftPreview` faellt auf den Standard-Layout der Organisation
  * zurueck (siehe Route-Kommentar in `src/app/api/pdf/preview/route.ts`).
+ *
+ * Fokus/Tastatur (Task-5-Fix 1): oeffnet das Sheet, ohne den Fokus zu bewegen, faengt
+ * Escape (im Overlay-`onKeyDown`) nur ab, solange der Fokus INNERHALB des Dialogs
+ * liegt — beim Oeffnen bleibt der Fokus aber meist auf dem ausloesenden "Vorschau"-
+ * Button dahinter, Escape landet also nirgends. Fix wie `CommandPalette.tsx` (dort der
+ * Suche-Eingabe): ein `useEffect` verschiebt den Fokus beim Oeffnen auf den
+ * "Schließen"-Button, merkt sich das zuvor fokussierte Element und stellt es beim
+ * Schliessen wieder her. Ein zusaetzlicher DOCUMENT-Level-`keydown`-Listener (statt nur
+ * des Overlay-`onKeyDown`) faengt Escape UNABHAENGIG vom aktuellen Fokusziel ab und
+ * implementiert gleichzeitig einen einfachen Fokus-Trap (Tab/Shift+Tab zirkuliert
+ * innerhalb des Panels) — das native `<iframe>` mit der PDF-Vorschau ist als EIN
+ * fokussierbares Element im Trap enthalten, sein Innenleben (die PDF-Anzeige des
+ * Browsers) ist ueber `document`-Listener ohnehin nicht erreichbar.
  */
 import { useEffect, useRef, useState } from "react";
 import { toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
@@ -70,6 +83,9 @@ export function PreviewSheet({
   const [state, setState] = useState<PreviewState>({ status: "idle" });
   const [reloadKey, setReloadKey] = useState(0);
   const urlRef = useRef<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   function revoke() {
     if (urlRef.current) {
@@ -77,6 +93,54 @@ export function PreviewSheet({
       urlRef.current = null;
     }
   }
+
+  // Fokus beim Oeffnen in den Dialog verschieben (Modulkommentar) und beim Schliessen
+  // auf das zuvor fokussierte Element zurueckstellen — ein `setTimeout(0)` wie
+  // `CommandPalette.tsx` L69-72, damit der Browser das gerade gemountete Panel schon
+  // im DOM hat, bevor `focus()` greift.
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const t = setTimeout(() => closeBtnRef.current?.focus(), 0);
+    return () => {
+      clearTimeout(t);
+      previouslyFocusedRef.current?.focus();
+      previouslyFocusedRef.current = null;
+    };
+  }, [open]);
+
+  // Escape unabhaengig vom aktuellen Fokusziel + einfacher Fokus-Trap (Tab/Shift+Tab
+  // zirkuliert innerhalb des Panels) — ueber einen document-Listener statt nur des
+  // Overlay-`onKeyDown` (das nur greift, wenn der Fokus bereits innerhalb des Dialogs
+  // liegt, siehe Modulkommentar).
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, iframe, [tabindex]:not([tabindex="-1"])'),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   // Adjust state during render (siehe Modulkommentar) statt eines Effekts: setzt das
   // Fetch-Ergebnis zurueck, sobald `open` von true auf false wechselt — verhindert einen
@@ -146,9 +210,11 @@ export function PreviewSheet({
   const showIframe = !displayError && state.status === "ready";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Vorschau" onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <button type="button" aria-label="Schließen" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <div className="relative flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl">
+    // Escape faengt der document-Listener oben ab (unabhaengig vom Fokusziel) — das
+    // Overlay-`onKeyDown` bleibt bewusst weg, um `onClose` nicht doppelt auszuloesen.
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Vorschau">
+      <button type="button" aria-label="Schließen" tabIndex={-1} className="absolute inset-0 cursor-default" onClick={onClose} />
+      <div ref={panelRef} className="relative flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">Vorschau</h2>
           <div className="flex items-center gap-2">
@@ -160,7 +226,7 @@ export function PreviewSheet({
             >
               Neu laden
             </button>
-            <button type="button" onClick={onClose} aria-label="Schließen" className="rounded-md px-2 py-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <button ref={closeBtnRef} type="button" onClick={onClose} aria-label="Schließen" className="rounded-md px-2 py-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
               ✕
             </button>
           </div>
