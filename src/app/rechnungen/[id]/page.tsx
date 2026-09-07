@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
+import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction } from "@/app/actions/invoices";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
@@ -120,6 +121,7 @@ export default async function InvoiceDetail({
       title={title}
       badges={
         <>
+          <StatusBadge status={invoice.status} />
           {sourceLabel && (
             <Link href={sourceLabel.href} className="text-sm text-indigo-600 hover:underline">
               zu {sourceLabel.text}
