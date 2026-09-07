@@ -151,6 +151,23 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **MCP**: `update_invoice_draft` (Kopffelder + Positionen inkl. `lineType`, nur `DRAFT`), `add_attachment` / `list_attachments` / `remove_attachment` (Datei als Base64, dieselben Validierungen/Grenzen wie das UI — kein Bypass-Pfad) — siehe `docs/MCP.md`.
 
+### DocumentEditor (Phase 11c): gemeinsamer Beleg-Editor
+
+**Ein** Editor (`DocumentEditor`, `src/components/editor/DocumentEditor.tsx`) für Rechnung/Geschäftsdokument (Angebot/AB/Proforma)/Lieferschein-Neuanlage ersetzt die vormals drei getrennten Formulare (Rechnungs-, Dokument- und Lieferschein-Formular) — eingebunden in `rechnungen/neu`, `rechnungen/[id]/bearbeiten`, `dokumente/neu`, `dokumente/[id]/bearbeiten`, `lieferscheine/neu` (Task 6). `mode: "INVOICE" | "DOCUMENT" | "DELIVERY_NOTE"` (`EditorMode`, `src/lib/editor/constants.ts`) steuert, welche Blöcke/Felder erscheinen — DELIVERY_NOTE zeigt z. B. weder Beleg-Rabatt/-Aufschlag noch einen Summenblock, und kennt (Stand 11c) nur Anlage, kein Bearbeiten.
+
+**Entwurfsmodell** (`src/lib/editor/`, reine Funktionen ohne React-/DB-Abhängigkeit):
+- `draft.ts` — `draftReducer`/`DraftState` (ein `useReducer` je Editor-Instanz) sowie die Payload-Mapper `toInvoicePayload`/`toDocumentPayload`/`toDeliveryNotePayload`, die aus dem Entwurf exakt das Objekt bauen, das die jeweilige Anlage-/Update-Domainfunktion erwartet (inkl. `optionalSelectValue`-Semantik: leer → `undefined` bei Neuanlage, leer → `null` beim Bearbeiten, damit eine Referenz aktiv entfernt werden kann). `draftFromInvoice`/`draftFromDocument` bauen umgekehrt einen Entwurf aus einem bestehenden Beleg fürs Bearbeiten.
+- `totals.ts` — `computeDraftTotals`, dieselbe Live-Summenlogik wie beim tatsächlichen Speichern (`computeLineNet`/`applyDocumentAdjustments`/`computeSubtotals`), meldet eine ungültige Positionsmenge/-preis als `error` statt stillschweigend mit 0 zu rechnen.
+- `parse.ts` — Anzeige-String ↔ Integer-Cent/-Milliunit/-Promille-Helfer fürs Tippen (liefern `null` statt zu werfen) sowie „…OrZero"-Varianten für Rabatt-/Aufschlagfelder (auf den gültigen Bereich geklemmt).
+
+**Blöcke** (`src/components/editor/blocks/`): `EditorHeader` (Titel, Zurück mit Ungespeichert-Bestätigung, Speichern-Button), `RecipientBlock` (Kundensuche über `CustomerPicker`, Ansprechpartner-/Adress-Selects, `TakeOverPrompt`-Einbindung), `MetaBlock` (Nummer/Datum/Zahlungsmethode je nach Modus), `HeadTextBlock`/`FootTextBlock` (Rich-Text, `TextTemplatePicker`-Anbindung), `LineItemsEditor` (Positionstabelle, siehe unten), `TotalsBlock` (Summen je Steuersatz, nicht bei DELIVERY_NOTE), `MoreOptions` (Hinweis/Notiz, interne Notizen, `PrintOptionsPanel`, Skonto), `AttachmentsBlock` und `PreviewSheet` (PDF-Vorschau-Dialog, siehe unten). `CustomerPicker`/`ProductPicker`/`TextTemplatePicker` erlauben Inline-Anlage über `NewCustomerDialog`/`NewProductDialog`, ohne den Editor zu verlassen.
+
+**Positionstabelle** (`LineItemsEditor`/`LineRow`/`LineRowMenu`/`LineDiscountField`/`UnitSelect`): Zeilenmenü „Typ ändern" wechselt zwischen Position/Überschrift/Textblock/Zwischensumme über dieselbe `setLine`-Aktion wie jede andere Feldänderung (ausgeblendet bei DELIVERY_NOTE, das keinen `lineType` kennt); ein Umschalter „Brutto anzeigen" ist reine Darstellung (`draft.grossDisplay`, Teil des Entwurfs) — das Preisfeld selbst bleibt immer netto gebunden, gespeichert wird ausschließlich netto. Zeilen lassen sich per Drag-and-Drop **oder** `Alt+↑`/`Alt+↓` auf einer Zeile umsortieren; `Enter` im Beschreibungs-/Bezeichnungsfeld der letzten Zeile legt eine neue Zeile an und fokussiert sie.
+
+**Live-Vorschau** (`POST /api/pdf/preview`, `src/app/api/pdf/preview/route.ts`, session-geschützt über `src/proxy.ts` — kein `/api/v1`): rendert den aktuellen, **ungespeicherten** Entwurf (`{kind, payload, layoutId?}`) mit denselben Renderern wie ein echter Beleg (`src/domain/settings/preview-draft.ts#buildDraftPreview`), aber **ohne** DB-Schreibzugriff (kein Nummernkreis, kein `ChangeLog`, kein Prisma-`create`) — Belegnummer immer „ENTWURF", Wasserzeichen „VORSCHAU" auf jeder Seite. `internalNotes` werden dabei nie gelesen/übergeben (Lastenheft 48); Kopf-/Fußtext-Platzhalter werden **nicht** aufgelöst (ein Entwurf hat i. d. R. noch keine gespeicherten Stammdaten-Bezüge).
+
+**Kunde inline anlegen** (`createCustomerInline`, `src/app/actions/masterdata.ts`): Server Action für `NewCustomerDialog` — legt einen Kunden über dieselbe `customerSchema`-Validierung/`createCustomer`-Domainfunktion wie das reguläre Kundenformular an und liefert die Kerndaten (`id`, `name`, `customerNumber`, `email`, `defaultPaymentMethodId`) zurück, damit der neue Kunde sofort im Editor auswählbar ist, ohne die Seite zu verlassen.
+
 ### Teil-, Abschlags- und Schlussrechnungen (Phase 5)
 
 **Drei neue Rechnungstypen** (`Invoice.type`: `PARTIAL`, `DOWNPAYMENT`, `FINAL`), alle regulär GoBD-Rechnungen (Entwurf → `finalizeWithinTx` → Storno/Gutschrift, kein Sonderpfad):
@@ -214,7 +231,7 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **Vorschau** (`src/domain/settings/preview.ts`, `GET /api/settings/branding/preview`): rendert eine feste Musterrechnung/-lieferschein mit echten Org-Stammdaten und dem **gespeicherten** Theme (`loadPdfTheme(orgId)`, kein DB-Beleg nötig) — für die Live-Ansicht beim Einrichten von Briefpapier/Druckoptionen.
 
-**UI**: vier Settings-Seiten (`/einstellungen/belege`, `/nummernkreise`, `/briefpapier`, `/druckoptionen`) sowie ein `PrintOptionsPanel` im Beleg-Editor (nur `DRAFT`), das die effektiven Werte mit „abweichend"-Checkboxen zeigt — nur tatsächlich abgehakte Felder gehen als Override in `PUT .../print-options`.
+**UI**: vier Settings-Seiten (`/einstellungen/belege`, `/nummernkreise`, `/briefpapier`, `/druckoptionen`) sowie ein `PrintOptionsPanel` im Beleg-Editor (`DocumentEditor`, Phase 11c, siehe unten — Block `MoreOptions`, nur `DRAFT`), das die effektiven Werte mit „abweichend"-Checkboxen zeigt — nur tatsächlich abgehakte Felder gehen als Override in `PUT .../print-options`.
 
 **MCP**: `get_settings`, `update_document_settings`, `update_print_settings`, `update_branding_settings` (verwirft `logoPath`/`backgroundPath` — Upload läuft ausschließlich über die HTTP-Upload-Route), `update_number_range`, `update_dunning_settings`, `list_dunning_stages`, `update_dunning_stage`, `list_pdf_layouts` (Phase 11b, Task 8, siehe unten) (dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade) — siehe `docs/MCP.md`.
 
@@ -290,8 +307,9 @@ für alle" setzt nur den Organisationsstandard und laesst bestehende Typ-Zuordnu
 unangetastet (vorher setzte es sie komplett zurueck). Ein Badge zeigt die fuer den
 jeweiligen Typ aktuell WIRKSAME Auswahl ("Standard" oder "Für <Typ>", Typ-Map >
 Organisationsstandard) — unabhaengig vom (moeglicherweise noch nicht uebernommenen)
-Vorschau-Ring. Je-Beleg-Override im Beleg-Editor (`PrintOptionsPanel`, wie die übrigen
-Druckoptionen) — nur solange der Beleg `DRAFT` ist; seit der Fix-Welle auch ueber
+Vorschau-Ring. Je-Beleg-Override im Beleg-Editor (`DocumentEditor`, Phase 11c —
+`PrintOptionsPanel`, wie die übrigen Druckoptionen) — nur solange der Beleg `DRAFT`
+ist; seit der Fix-Welle auch ueber
 `/api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
 
 **API/MCP** (Task 8; Fix-Welle Phase 11b fuer die Beleg-Ueberschreibung): `GET
@@ -319,7 +337,7 @@ Domain-Funktion `setPrintOptions`/`effectivePrintOptions`, `Quote` nur fuer
 
 **Platzhalter** (`src/lib/template/placeholders.ts`): `contact.firstName/lastName/email/role/phone` (aus dem Beleg-Snapshot) sowie dynamisch `customField.<key>` je `CustomFieldDefinition` (`customFieldPlaceholders(definitions)`), gerendert sowohl in PDF-Kopf-/Fußtexten (`buildDocumentTextContext`) als auch in E-Mail-Vorlagen (`buildTemplateContext`).
 
-**Letztes Dokument übernehmen** (`src/domain/document/take-over.ts`, rein lesend, kein Schreibzugriff): `findLastDocumentForCustomer(orgId, customerId, kind)` (INVOICE | QUOTE | ORDER_CONFIRMATION, ignoriert Entwürfe, sortiert nach `issueDate`/`createdAt` absteigend) + `buildTakeOverPrefill(orgId, docId, {lines, texts, terms, prices})` (Positionen, Kopf-/Fußtext, Zahlungs-/Lieferbedingungen, Beleg-Rabatt; `prices: false` nullt nur bei ITEM-Zeilen; `internalNotes` wird nie gelesen). UI: `TakeOverPrompt` erscheint einmal je Kundenwahl bei Neuanlage, nur wenn `DocumentSettings.offerLastDocument` aktiv ist; „Übernehmen" befüllt den Editor-State clientseitig, „Dokument duplizieren" verlinkt auf die bestehende Duplizierfunktion.
+**Letztes Dokument übernehmen** (`src/domain/document/take-over.ts`, rein lesend, kein Schreibzugriff): `findLastDocumentForCustomer(orgId, customerId, kind)` (INVOICE | QUOTE | ORDER_CONFIRMATION, ignoriert Entwürfe, sortiert nach `issueDate`/`createdAt` absteigend) + `buildTakeOverPrefill(orgId, docId, {lines, texts, terms, prices})` (Positionen, Kopf-/Fußtext, Zahlungs-/Lieferbedingungen, Beleg-Rabatt; `prices: false` nullt nur bei ITEM-Zeilen; `internalNotes` wird nie gelesen). UI: `TakeOverPrompt` erscheint einmal je Kundenwahl bei Neuanlage, nur wenn `DocumentSettings.offerLastDocument` aktiv ist; „Übernehmen" dispatcht das Ergebnis direkt in den `DocumentEditor`-Draft-Reducer (Phase 11c, siehe unten — `RecipientBlock`), „Dokument duplizieren" verlinkt auf die bestehende Duplizierfunktion.
 
 **Routen**: `/api/customers/[id]/addresses(/[addressId](/default))`, `/api/customers/[id]/contacts(/[contactId](/default))`, `/api/customers/[id]/defaults`, `/api/customers/[id]/custom-fields`, `/api/custom-fields(/[id]|/reorder)`, `/api/customers/[id]/last-document`, `/api/documents/[id]/take-over-prefill` — Session+Org-gescoped, dieselbe Fehlerabbildung wie Phase 5–7 (`ZodError`→400, `NotFoundError`→404, `InvalidOperationError`→409).
 
