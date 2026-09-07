@@ -66,10 +66,10 @@ export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) 
         + Neues Produkt
       </button>
       {/* Bewusst KEIN <form> hier: der Dialog haengt (ueber ProductPicker) im DOM-Baum
-          des umschliessenden Editor-<form> (NewInvoiceForm/NewDocumentForm) — ein
-          verschachteltes <form> ist ungueltiges HTML und fuehrt zu einem
-          Hydration-Mismatch, der den GESAMTEN Editor-Zustand zuruecksetzt. Speichern
-          laeuft daher ueber einen normalen Button-Klick, nicht ueber form-Submit. */}
+          des umschliessenden `DocumentEditor`-<form> — ein verschachteltes <form> ist
+          ungueltiges HTML und fuehrt zu einem Hydration-Mismatch, der den GESAMTEN
+          Editor-Zustand zuruecksetzt. Speichern laeuft daher ueber einen normalen
+          Button-Klick, nicht ueber form-Submit. */}
       <dialog
         ref={dialogRef}
         className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"

@@ -8,9 +8,8 @@
  * `MoreOptions` zeigt die Skonto-Felder ebenfalls nur bei INVOICE), Fehlertext aus
  * `totals.error` (ungueltige Positionsmenge/-preis, siehe `computeDraftTotals`).
  *
- * Anders als der alte Summen-Footer in `NewInvoiceForm.tsx` (L768-792, EINE
- * kombinierte USt-Zeile) zeigt dieser Block die USt AUFGESCHLUESSELT je Steuersatz
- * (`totals.taxRows`) — Brief verlangt "USt je Satz".
+ * Zeigt die USt AUFGESCHLUESSELT je Steuersatz (`totals.taxRows`, nicht EINE
+ * kombinierte USt-Zeile) — Brief verlangt "USt je Satz".
  */
 import type { DraftState } from "@/lib/editor/draft";
 import type { DraftTotals } from "@/lib/editor/totals";

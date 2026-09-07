@@ -4,12 +4,12 @@
  * für die Anbindung in Task 6).
  *
  * Die Payload-Mapper (`toInvoicePayload`/`toDocumentPayload`/`toDeliveryNotePayload`)
- * reproduzieren bewusst exakt das Feld-für-Feld-Verhalten der heutigen `submit`-
- * Funktionen aus `NewInvoiceForm.tsx` (L387-457), `NewDocumentForm.tsx` (L315-387) und
- * `DeliveryNoteForm.tsx` — inklusive `optionalSelectValue`-Semantik (Anlage: leer ->
- * `undefined`, damit Kundenvorgaben greifen; Bearbeiten: leer -> `null`, damit eine
- * Referenz aktiv entfernt werden kann) und dem "leer -> 0 bei Bearbeiten, sonst
- * undefined"-Muster bei Beleg-Rabatt (Kundenkomfort-Facts).
+ * erzeugen bewusst exakt dieselben Objekte, die die vor Phase 11c bestehenden
+ * Einzelformulare fuer Rechnung/Dokument/Lieferschein an die Domain-Aktionen
+ * schickten — inklusive `optionalSelectValue`-Semantik (Anlage: leer -> `undefined`,
+ * damit Kundenvorgaben greifen; Bearbeiten: leer -> `null`, damit eine Referenz aktiv
+ * entfernt werden kann) und dem "leer -> 0 bei Bearbeiten, sonst undefined"-Muster bei
+ * Beleg-Rabatt (Kundenkomfort-Facts).
  */
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, SCHEME_NOTICE, type EditorMode } from "./constants";
@@ -365,7 +365,7 @@ export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
     shippingAddressId: optionalSelectValue(d.shippingAddressId, false),
     deliveryDate: d.deliveryDate || undefined,
     // Fix 2 (Task-1-Review): shippingDate/internalNotes sind in createDeliveryNoteSchema
-    // vorhanden, das heutige DeliveryNoteForm.tsx exponiert sie nur nicht.
+    // vorhanden, der Editor exponiert sie hier zusaetzlich.
     shippingDate: d.shippingDate || undefined,
     internalNotes: d.internalNotes || undefined,
     showPrices: d.showPrices,
@@ -373,7 +373,7 @@ export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
     showArticleNumber: d.showArticleNumber,
     showDescription: d.showDescription,
     notes: d.notes || undefined,
-    // DeliveryNoteForm kennt keinen lineType — nur ITEM-Zeilen ergeben eine gueltige
+    // Lieferscheine kennen keinen lineType — nur ITEM-Zeilen ergeben eine gueltige
     // Lieferschein-Position (deliveryNoteLineInputSchema verlangt quantityMilli > 0).
     lines: d.lines
       .filter((l) => l.lineType === "ITEM")
@@ -412,7 +412,7 @@ export function validateDraft(d: DraftState): string[] {
 
 // ── initial -> Draft (Bearbeiten bestehender Belege) ─────────────────────────
 
-/** Zeilenform der heutigen `InvoiceInitial`/`DocumentInitial`-Seiten (LineState in NewInvoiceForm.tsx/NewDocumentForm.tsx). */
+/** Zeilenform der Bearbeiten-Seiten (`InvoiceInitialLike`/`DocumentInitialLike` unten). */
 export interface InitialLineLike {
   lineType: LineType;
   description: string;
@@ -426,7 +426,7 @@ export interface InitialLineLike {
   discountAmount: string;
 }
 
-/** Deckungsgleich mit `InvoiceInitial` (src/components/NewInvoiceForm.tsx) — die Seiten (Task 6) bauen dieses Objekt unveraendert weiter. */
+/** Shape, das `src/app/rechnungen/[id]/bearbeiten/page.tsx` aus der geladenen Rechnung baut und an `draftFromInvoice` uebergibt. */
 export interface InvoiceInitialLike {
   id: string;
   customerId: string;
@@ -447,9 +447,8 @@ export interface InvoiceInitialLike {
   paymentTerms: string;
   paymentMethodId: string;
   // Fix 2 (Task-1-Review, Ruling nach Task 4): headerText/footerText existieren im
-  // Schema/`createDraftInvoice`/`updateDraftInvoice` bereits, das heutige
-  // `InvoiceInitial` (NewInvoiceForm.tsx) exponiert sie nur noch nicht — die Seiten
-  // (Task 6) ergaenzen das Feld bei der Uebernahme in `InvoiceInitial`.
+  // Schema/`createDraftInvoice`/`updateDraftInvoice` bereits und werden hier mit
+  // uebernommen.
   headerText: string;
   footerText: string;
   documentDiscountPercent: string;
@@ -464,7 +463,7 @@ export interface InvoiceInitialLike {
   lines: InitialLineLike[];
 }
 
-/** Deckungsgleich mit `DocumentInitial` (src/components/NewDocumentForm.tsx). */
+/** Shape, das `src/app/dokumente/[id]/bearbeiten/page.tsx` aus dem geladenen Dokument baut und an `draftFromDocument` uebergibt. */
 export interface DocumentInitialLike {
   id: string;
   kind: string;

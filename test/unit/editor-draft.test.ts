@@ -67,8 +67,7 @@ describe("editor/draft", () => {
     expect(createDeliveryNoteSchema.safeParse(toDeliveryNotePayload(n)).success).toBe(true);
   });
   // Fix 2 (Task-1-Review, Ruling nach Task 4): shippingDate/internalNotes sind in
-  // createDeliveryNoteSchema vorhanden, das heutige DeliveryNoteForm.tsx exponiert sie
-  // nur nicht — der Editor sendet sie jetzt mit.
+  // createDeliveryNoteSchema vorhanden — der Editor sendet sie mit.
   it("toDeliveryNotePayload sendet shippingDate und internalNotes", () => {
     let n = emptyDraft("DELIVERY_NOTE"); n = draftReducer(n, { type: "set", field: "customerId", value: "c1" });
     n = draftReducer(n, { type: "setLine", key: n.lines[0]!.key, patch: { description: "Ware", quantity: "3" } });

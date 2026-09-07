@@ -1,6 +1,6 @@
 /**
- * Fix-Welle B6: Rabattfeld-Vorbelegung beim Kundenwechsel im Beleg-Editor
- * (NewInvoiceForm/NewDocumentForm). Vorher wurde das Feld nur beim ERSTEN Kundenwechsel
+ * Fix-Welle B6: Rabattfeld-Vorbelegung beim Kundenwechsel im Beleg-Editor. Vorher wurde
+ * das Feld nur beim ERSTEN Kundenwechsel
  * aus der Kundenvorgabe befuellt (Init aus customers[0], danach Overwrite nur wenn das
  * Feld komplett leer war) — wechselte man ein zweites Mal den Kunden, blieb der Rabatt
  * des vorigen Kunden stehen, obwohl der Nutzer ihn nie selbst editiert hatte (Geldfehler).

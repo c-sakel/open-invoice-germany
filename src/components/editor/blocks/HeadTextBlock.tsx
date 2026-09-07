@@ -29,10 +29,10 @@
  * `"DELIVERY_NOTE"` (deckungsgleich mit den oben zitierten Domain-Aufrufen).
  *
  * Fuer DOCUMENT bleibt die Autovorbelegung bei Neuanlage (Kopftext + Fusstext +
- * Lieferbedingungen + Zahlungsbedingungen aus den Text-Vorlagen-Defaults, siehe
- * `NewDocumentForm.tsx` L140-154) erhalten — als EIN gemeinsamer Effekt in
- * `DocumentEditor.tsx` (deckt auch das footerText-Feld ab, das erst Task 5 rendert; ein
- * Effekt an dieser Stelle koennte footerText nicht sinnvoll mit abdecken).
+ * Lieferbedingungen + Zahlungsbedingungen aus den Text-Vorlagen-Defaults) erhalten —
+ * als EIN gemeinsamer Effekt in `DocumentEditor.tsx` (deckt auch das footerText-Feld
+ * ab, das erst Task 5 rendert; ein Effekt an dieser Stelle koennte footerText nicht
+ * sinnvoll mit abdecken).
  */
 import { useId } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
