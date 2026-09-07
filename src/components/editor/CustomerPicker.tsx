@@ -5,9 +5,18 @@
  * Kundenliste (Name, Kundennummer, E-Mail), Tastaturbedienung Pfeil/Enter/Escape wie
  * `CommandPalette`, plus „+ Neuen Kunden anlegen" (Inline-Anlage ueber
  * `NewCustomerDialog`). Gewaehlter Kunde wird als Chip mit „aendern" angezeigt.
+ *
+ * Fix 1 (Task-3-Review): `NewCustomerDialog` haengt IMMER neben dem Suchfeld (wie
+ * `ProductPicker`/`NewProductDialog`), nicht innerhalb der `open`-gegateten
+ * Dropdown-`<ul>` — sonst unmountet das Schliessen der Dropdown im selben Handler den
+ * gerade offenen/gerade geschlossenen Dialog und der Fokus faellt auf `<body>`. Nach der
+ * Inline-Anlage wird der Fokus stattdessen explizit auf den „aendern"-Button des neuen
+ * Chips gesetzt (Ref + `requestAnimationFrame`, da der Chip erst im naechsten Render
+ * existiert).
  */
 import { useMemo, useRef, useState } from "react";
 import { NewCustomerDialog, type InlineCustomer } from "./NewCustomerDialog";
+import { inputCls } from "@/components/forms/fields";
 
 export interface CustomerOption {
   id: string;
@@ -42,6 +51,7 @@ export function CustomerPicker({
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const changeButtonRef = useRef<HTMLButtonElement>(null);
 
   const selected = useMemo(() => customers.find((c) => c.id === value) ?? null, [customers, value]);
 
@@ -70,6 +80,24 @@ export function CustomerPicker({
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
+  function handleCreated(c: InlineCustomer) {
+    const option: CustomerOption = {
+      id: c.id,
+      name: c.name,
+      customerNumber: c.customerNumber,
+      email: c.email,
+      defaultPaymentMethodId: c.defaultPaymentMethodId,
+    };
+    onCreated?.(option);
+    onChange(option.id, option);
+    setQuery("");
+    setOpen(false);
+    // Der Chip mit dem "aendern"-Button existiert erst im naechsten Render (selected
+    // wechselt erst, wenn `value` beim Aufrufer aktualisiert wurde) — requestAnimationFrame
+    // statt eines synchronen Fokus-Aufrufs.
+    requestAnimationFrame(() => changeButtonRef.current?.focus());
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -83,8 +111,11 @@ export function CustomerPicker({
       if (hit) pick(hit);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (selected) setOpen(false);
-      else inputRef.current?.blur();
+      // CommandPalette-Verhalten: Escape schliesst immer die Dropdown, unabhaengig davon,
+      // ob bereits ein Kunde gewaehlt ist. Der Fokus bleibt auf dem Eingabefeld (kein
+      // blur() mehr) — nur wenn bereits ein Kunde gewaehlt ist, wechselt die Ansicht beim
+      // naechsten Render zurueck zum Chip.
+      setOpen(false);
     }
   }
 
@@ -97,7 +128,7 @@ export function CustomerPicker({
           {sub && <div className="truncate text-xs text-slate-500">{sub}</div>}
         </div>
         {!disabled && (
-          <button type="button" className="shrink-0 text-xs font-medium text-indigo-600 hover:underline" onClick={startSearch}>
+          <button ref={changeButtonRef} type="button" className="shrink-0 text-xs font-medium text-indigo-600 hover:underline" onClick={startSearch}>
             ändern
           </button>
         )}
@@ -107,20 +138,23 @@ export function CustomerPicker({
 
   return (
     <div className="relative">
-      <input
-        ref={inputRef}
-        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-100"
-        placeholder="Kunde suchen…"
-        value={query}
-        disabled={disabled}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-          setCursor(0);
-        }}
-        onKeyDown={onKeyDown}
-      />
+      <div className="flex items-center gap-2">
+        <input
+          ref={inputRef}
+          className={`${inputCls} w-full`}
+          placeholder="Kunde suchen…"
+          value={query}
+          disabled={disabled}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+            setCursor(0);
+          }}
+          onKeyDown={onKeyDown}
+        />
+        {!disabled && <NewCustomerDialog onCreated={handleCreated} />}
+      </div>
       {open && !disabled && (
         <ul className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-slate-200 bg-white text-sm shadow-lg">
           {filtered.length === 0 ? (
@@ -140,25 +174,6 @@ export function CustomerPicker({
               </li>
             ))
           )}
-          <li className="border-t border-slate-100">
-            <div className="px-3 py-1.5" onMouseDown={(e) => e.preventDefault()}>
-              <NewCustomerDialog
-                onCreated={(c: InlineCustomer) => {
-                  const option: CustomerOption = {
-                    id: c.id,
-                    name: c.name,
-                    customerNumber: c.customerNumber,
-                    email: c.email,
-                    defaultPaymentMethodId: c.defaultPaymentMethodId,
-                  };
-                  onCreated?.(option);
-                  onChange(option.id, option);
-                  setQuery("");
-                  setOpen(false);
-                }}
-              />
-            </div>
-          </li>
         </ul>
       )}
       {open && !disabled && <button type="button" aria-hidden className="fixed inset-0 z-0 cursor-default" onClick={() => setOpen(false)} tabIndex={-1} />}

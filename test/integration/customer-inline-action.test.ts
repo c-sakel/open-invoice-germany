@@ -49,6 +49,18 @@ describe("createCustomerInline", () => {
     const r = await createCustomerInline({ name: "", addressLine1: "", postalCode: "", city: "" });
     expect(r.ok).toBe(false);
   });
+
+  // Fix 1 (Task-3-Review): CustomerType ist "BUSINESS" | "CONSUMER" (nicht "PRIVATE",
+  // wie der urspruengliche Brief faelschlich annahm) — CONSUMER muss ebenfalls anlegbar
+  // sein.
+  it("legt einen Privatkunden (CONSUMER) an", async () => {
+    const r = await createCustomerInline({ name: "Erika Mustermann", type: "CONSUMER", addressLine1: "Weg 2", postalCode: "54321", city: "Dorf" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const row = await dbInternal.customer.findUnique({ where: { id: r.customer.id } });
+      expect(row?.type).toBe("CONSUMER");
+    }
+  });
 });
 
 describe("GET /api/text-templates", () => {
