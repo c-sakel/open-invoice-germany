@@ -8,8 +8,10 @@ import type { BrandingSettingsInput, PrintSettingsInput } from "@/schemas/settin
 import type { LayoutId } from "./layouts/ids";
 
 /** Die effektiven (Global + Beleg-Override verschmolzenen) Druckoptionen, siehe
- *  `effectivePrintOptions` in `src/domain/settings/print.ts`. */
-export type EffectivePrintOptions = PrintSettingsInput;
+ *  `effectivePrintOptions` in `src/domain/settings/print.ts`. Phase 11b — `layoutId` ist
+ *  der optionale Beleg-Override (`printOptionsOverrideSchema.layoutId`), den
+ *  `loadPdfTheme` in `resolveLayoutId` einspeist; ohne Override bleibt er `undefined`. */
+export type EffectivePrintOptions = PrintSettingsInput & { layoutId?: LayoutId };
 
 /** Phase 11b — Zusatzfakten fuer die automatische Fusszeile (`footer.ts#buildFooterColumns`),
  *  die nicht Teil von `EInvoiceData`/`DeliveryNotePdfData`/`DunningPdfData` sind, sondern aus

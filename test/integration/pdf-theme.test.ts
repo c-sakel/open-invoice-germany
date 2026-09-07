@@ -319,7 +319,13 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
     theme.compress = false;
     const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00009", giroAmountCents: 0 }), theme);
     const parsed = await parsePdf(pdf);
-    expect(parsed.text).toContain("Muster GmbH · Hauptstr. 1, 12345 Berlin");
+    // Phase 11b, Task 3 — der Aussteller-Fallback ist jetzt die AUTO-Fusszeile
+    // (footer.ts#buildFooterColumns): Firma/Adresse stehen als eigene Spalte mit
+    // eigenen Zeilen statt als ein Komma-getrennter Fliesstext; die Kernangaben bleiben
+    // (nur die Formatierung aendert sich absichtlich, siehe test/unit/pdf-footer.test.ts).
+    expect(parsed.text).toContain("Muster GmbH");
+    expect(parsed.text).toContain("Hauptstr. 1");
+    expect(parsed.text).toContain("12345 Berlin");
   });
 
   it("Rechnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
@@ -395,25 +401,65 @@ describe("loadPdfTheme — fehlende Logo-/Hintergrunddatei", () => {
 });
 
 describe("PdfTheme — Phase 11b Layout-Aufloesung (Task 1 geschrieben, Task 3 aktiviert)", () => {
-  // `loadPdfTheme`s dritter Parameter sowie `theme.layoutId`/`theme.footerFacts` entstehen
-  // erst in Task 3 (Spec Phase 11, PDF-Layouts) — bis dahin it.skip + @ts-expect-error, damit
-  // dieser bereits geschriebene Roundtrip weder laeuft noch den Typecheck bricht.
-  it.skip("Branding speichert layoutId, layoutByType und footerMode; Organization.ownerName landet im Theme", async () => {
+  it("Branding speichert layoutId, layoutByType und footerMode; Organization.ownerName landet im Theme", async () => {
     const orgId = await makeOrg();
     await dbInternal.organization.update({ where: { id: orgId }, data: { ownerName: "Erika Muster" } });
     await saveBrandingSettings(orgId, { layoutId: "schlicht", layoutByType: { DELIVERY_NOTE: "kompakt" }, footerMode: "AUTO" });
     const brand = await loadBrandingSettings(orgId);
     expect(brand.layoutId).toBe("schlicht");
     expect(brand.layoutByType).toEqual({ DELIVERY_NOTE: "kompakt" });
-    // @ts-expect-error -- dritter Parameter (docType) kommt erst in Task 3.
     const theme = await loadPdfTheme(orgId, null, "DELIVERY_NOTE");
-    // PdfTheme.layoutId/.footerFacts entstehen bereits in Task 2 (kein @ts-expect-error mehr
-    // noetig) — nur der dritte loadPdfTheme-Parameter (docType) fehlt noch bis Task 3, daher
-    // bleiben diese Werte bis dahin auf dem Organisationsstandard statt der Typ-Map.
     expect(theme.layoutId).toBe("kompakt");
     expect(theme.footerFacts.ownerName).toBe("Erika Muster");
-    // @ts-expect-error -- dritter Parameter (docType) kommt erst in Task 3.
     const inv = await loadPdfTheme(orgId, null, "INVOICE");
     expect(inv.layoutId).toBe("schlicht");
+  });
+
+  it("AUTO-Fusszeile: Inhaber und Website stehen im Rechnungs-, Lieferschein- und Mahnungs-PDF", async () => {
+    const orgId = await makeOrg();
+    await dbInternal.organization.update({ where: { id: orgId }, data: { ownerName: "Erika Muster", website: "muster.example" } });
+    const theme = await loadPdfTheme(orgId);
+    const inv = await parsePdf(await renderInvoicePdf(baseInvoiceData(), { ...theme, compress: false }));
+    expect(inv.text).toContain("Inhaber/-in Erika Muster");
+    expect(inv.text).toContain("Web muster.example");
+
+    const dnData: DeliveryNotePdfData = {
+      number: "LS-2056-00099",
+      issueDate: new Date("2056-03-10"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      lines: [{ pos: 1, description: "Testartikel", quantityMilli: 1000, unit: "C62" }],
+      showPrices: false,
+      showTax: false,
+      showArticleNumber: false,
+      showDescription: true,
+      showDeliveryAddress: false,
+    };
+    const dn = await parsePdf(await renderDeliveryNotePdf(dnData, { ...theme, compress: false }));
+    expect(dn.text).toContain("Inhaber/-in Erika Muster");
+    expect(dn.text).toContain("Web muster.example");
+
+    const dunningData: DunningPdfData = {
+      number: "M-2056-00099",
+      level: 1,
+      sentDate: new Date("2056-05-01"),
+      newDueDate: new Date("2056-05-15"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      invoiceNumber: "RE-2056-00001",
+      invoiceDate: new Date("2056-03-10"),
+      openAmountCents: 11900,
+      interestCents: 100,
+      flatFee40Cents: 4000,
+      feeCents: 0,
+      lateFeeCents: 4100,
+      totalCents: 16000,
+      daysOverdue: 20,
+    };
+    const dun = await parsePdf(await renderDunningPdf(dunningData, { ...theme, compress: false }));
+    expect(dun.text).toContain("Inhaber/-in Erika Muster");
+    expect(dun.text).toContain("Web muster.example");
   });
 });

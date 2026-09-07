@@ -23,6 +23,7 @@ import { pdfMargins, drawBackground } from "./layout";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
 import { getLayout } from "./layouts/registry";
+import { drawTableHeaderRow } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
 
@@ -188,22 +189,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // umbrechen (inkl. wiederholter Tabellenkopf), statt pdfkit entscheiden zu lassen.
   const pageBottom = doc.page.height - margins.bottom;
 
-  const drawTableHeader = (atY: number): number => {
-    const t = layout.table;
-    doc.fontSize(base - 1);
-    if (t.headerFill) {
-      doc.rect(left, atY, right - left, t.headerHeight).fill(t.headerFill);
-    } else {
-      doc.moveTo(left, atY + t.headerHeight).lineTo(right, atY + t.headerHeight).strokeColor(t.rowRule ?? "#999").stroke();
-    }
-    doc.fillColor(t.headerText).font(t.headerFill ? "Helvetica" : "Helvetica-Oblique");
-    for (const col of columns) {
-      if (col.key === "desc" && !theme.options.showDescription) continue;
-      doc.text(col.header, tableX + colX[col.key]!, atY + (t.headerFill ? 5 : 3), { width: col.width, align: col.align ?? "left" });
-    }
-    doc.font("Helvetica").fillColor(t.textColor).fontSize(base - 1);
-    return atY + t.headerHeight + 4;
-  };
+  const drawTableHeader = (atY: number): number =>
+    drawTableHeaderRow(
+      frame,
+      layout,
+      columns.map((col) => ({ header: col.header, x: tableX + colX[col.key]!, width: col.width, align: col.align, isDescription: col.key === "desc" })),
+      atY,
+      theme.options.showDescription,
+    );
 
   const ensureSpace = (atY: number, needed: number): number => {
     if (atY + needed <= pageBottom) return atY;

@@ -70,7 +70,12 @@ describe("Layout standard (Kompatibilitaet)", () => {
     expect(text).toContain("Seite 1 von 2");
     expect(text).toContain("Seite 2 von 2");
     expect((text.match(/Beschreibung/g) ?? []).length).toBeGreaterThanOrEqual(2); // Tabellenkopf auf Seite 2 wiederholt
-    expect(text).toContain("DE02120300000000202051");
+    // Phase 11b, Task 3 — die AUTO-Fusszeile gruppiert die IBAN in 4er-Bloecke
+    // (footer.ts#groupIban, siehe test/unit/pdf-footer.test.ts) und die vierspaltige
+    // Fusszeile kann eine so lange Zeile innerhalb ihrer Spalte umbrechen (pdf-parse
+    // fuegt dafuer einen Zeilenumbruch ein) — Leerraum vor dem Vergleich entfernen, damit
+    // die Pruefung unabhaengig von Gruppierung/Umbruch bleibt.
+    expect(text.replace(/\s+/g, "")).toContain("DE02120300000000202051");
     expect(text).toContain("Gesamtbetrag");
   });
 });
