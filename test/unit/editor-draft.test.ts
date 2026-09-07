@@ -66,9 +66,52 @@ describe("editor/draft", () => {
     n = draftReducer(n, { type: "setLine", key: n.lines[0]!.key, patch: { description: "Ware", quantity: "3" } });
     expect(createDeliveryNoteSchema.safeParse(toDeliveryNotePayload(n)).success).toBe(true);
   });
+  // Fix 2 (Task-1-Review, Ruling nach Task 4): shippingDate/internalNotes sind in
+  // createDeliveryNoteSchema vorhanden, das heutige DeliveryNoteForm.tsx exponiert sie
+  // nur nicht — der Editor sendet sie jetzt mit.
+  it("toDeliveryNotePayload sendet shippingDate und internalNotes", () => {
+    let n = emptyDraft("DELIVERY_NOTE"); n = draftReducer(n, { type: "set", field: "customerId", value: "c1" });
+    n = draftReducer(n, { type: "setLine", key: n.lines[0]!.key, patch: { description: "Ware", quantity: "3" } });
+    n = draftReducer(n, { type: "set", field: "shippingDate", value: "2026-09-10" });
+    n = draftReducer(n, { type: "set", field: "internalNotes", value: "Nur intern" });
+    const payload = toDeliveryNotePayload(n) as { shippingDate?: string; internalNotes?: string };
+    expect(payload.shippingDate).toBe("2026-09-10");
+    expect(payload.internalNotes).toBe("Nur intern");
+    expect(createDeliveryNoteSchema.safeParse(payload).success).toBe(true);
+  });
+  // Fix 2 (Task-1-Review, Ruling nach Task 4): createDraftInvoice waehlt die
+  // INVOICE-HEAD/FOOT-Textvorlage nur, wenn headerText/footerText UNDEFINED ist
+  // (`input.headerText ?? pickTextTemplate(...)`) — bei Neuanlage darf ein leeres Feld
+  // also nicht als "" gesendet werden. updateDraftInvoice liest dagegen jeden Wert
+  // !== undefined (auch ""), beim Bearbeiten wird der String daher immer gesendet.
+  it("headerText/footerText: bei Neuanlage nur wenn gesetzt (sonst greift die Textvorlagen-Auswahl), beim Bearbeiten immer", () => {
+    const s = invoiceDraft();
+    const createEmpty = toInvoicePayload(s, false) as { headerText?: string; footerText?: string };
+    expect(createEmpty.headerText).toBeUndefined();
+    expect(createEmpty.footerText).toBeUndefined();
+    expect(createInvoiceSchema.safeParse(createEmpty).success).toBe(true);
+
+    let withText = draftReducer(s, { type: "set", field: "headerText", value: "Kopftext" });
+    withText = draftReducer(withText, { type: "set", field: "footerText", value: "Fusstext" });
+    const createWithText = createInvoiceSchema.parse(toInvoicePayload(withText, false));
+    expect(createWithText.headerText).toBe("Kopftext");
+    expect(createWithText.footerText).toBe("Fusstext");
+
+    const edit = updateInvoiceSchema.parse(toInvoicePayload(s, true));
+    expect(edit.headerText).toBe("");
+    expect(edit.footerText).toBe("");
+  });
   it("draftFromInvoice rundet Cent/Milli/Permille in Anzeige-Strings und zurueck", () => {
-    const s = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", subject: "S", lines: [{ lineType: "ITEM", description: "A", descriptionLong: "", articleNumber: "", quantity: "1,5", unit: "C62", price: "12,34", taxRate: 19, discountPercent: "10", discountAmount: "" }] } as never);
+    const s = draftFromInvoice({
+      id: "i1",
+      customerId: "c1",
+      taxScheme: "REGULAR",
+      subject: "S",
+      headerText: "Kopftext",
+      lines: [{ lineType: "ITEM", description: "A", descriptionLong: "", articleNumber: "", quantity: "1,5", unit: "C62", price: "12,34", taxRate: 19, discountPercent: "10", discountAmount: "" }],
+    } as never);
     expect(s.id).toBe("i1"); expect(s.lines[0]!.price).toBe("12,34"); expect(s.dirty).toBe(false);
+    expect(s.headerText).toBe("Kopftext");
     const p = updateInvoiceSchema.parse(toInvoicePayload(s, true));
     expect(p.lines?.[0]).toMatchObject({ quantityMilli: 1500, unitNetPriceCents: 1234, discountPermille: 100 });
   });
