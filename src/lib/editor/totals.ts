@@ -4,15 +4,19 @@
  * werden wie REGULAR behandelt (kein Steuerschema-Wechsel für diese Belegarten).
  *
  * Anders als die Formulare heute (die eine ungültige Eingabe stillschweigend als 0
- * behandeln) meldet `computeDraftTotals` eine ungültige Positions-/Beleganpassungs-
- * Eingabe als `error` statt zu rechnen — Positionsmenge und -preis sind Pflichtfelder,
- * ein nicht parsebarer Wert darf keine (falsche) Summe vortäuschen.
+ * behandeln) meldet `computeDraftTotals` eine ungültige Positionsmenge/-preis als
+ * `error` statt zu rechnen — beide sind Pflichtfelder, ein nicht parsebarer Wert darf
+ * keine (falsche) Summe vortäuschen. Rabatt-/Aufschlag-Prozentsätze und -Beträge
+ * (Position und Beleg) werden dagegen wie im Payload-Mapper (draft.ts) über die
+ * `…OrZero`-Helfer aus parse.ts geklemmt/defaultet (Fix 1) — sonst würde z. B. "150"
+ * bei den Positionsrabatt die Live-Summe in einen Fehler laufen lassen, den das
+ * eigentliche Speichern (dort auf 100 % geklemmt) gar nicht widerspiegelt.
  */
 import { computeLineNet } from "@/lib/pricing/line";
 import { applyDocumentAdjustments, type RateBucket } from "@/lib/pricing/allocate";
 import { PricingError } from "@/lib/pricing/errors";
 import { computeSubtotals } from "@/domain/document/lines";
-import { toCents, toMilli, toPermille } from "./parse";
+import { toCents, toMilli, centsOrZero, permilleOrZero } from "./parse";
 import { SCHEME_CATEGORY } from "./constants";
 import type { DraftState } from "./draft";
 
@@ -50,11 +54,15 @@ export function computeDraftTotals(d: DraftState): DraftTotals {
     const lineResults = itemLines.map((l) => {
       const quantityMilli = toMilli(l.quantity);
       const unitNetPriceCents = toCents(l.price);
-      const discountPermille = l.discountPercent.trim() ? toPermille(l.discountPercent) : 0;
-      const discountCents = l.discountAmount.trim() ? toCents(l.discountAmount) : 0;
-      if (quantityMilli === null || unitNetPriceCents === null || discountPermille === null || discountCents === null) {
+      if (quantityMilli === null || unitNetPriceCents === null) {
         throw new Error(`Ungültige Eingabe in Position "${l.description || "(ohne Bezeichnung)"}".`);
       }
+      // Fix 1: Rabatt-Prozent/-Betrag wie im Payload-Mapper (draft.ts) geklemmt statt
+      // strikt geparst — ein Wert außerhalb 0..100 % darf die Live-Summe nicht in einen
+      // Fehler laufen lassen, den das eigentliche Speichern (dort ebenfalls geklemmt)
+      // gar nicht widerspiegelt.
+      const discountPermille = permilleOrZero(l.discountPercent);
+      const discountCents = centsOrZero(l.discountAmount);
       return computeLineNet({ quantityMilli, unitNetPriceCents, discountPermille, discountCents });
     });
 
@@ -73,18 +81,11 @@ export function computeDraftTotals(d: DraftState): DraftTotals {
       netCents,
     }));
 
-    const documentDiscountPermille = d.documentDiscountPercent.trim() ? toPermille(d.documentDiscountPercent) : 0;
-    const documentDiscountCents = d.documentDiscountAmount.trim() ? toCents(d.documentDiscountAmount) : 0;
-    const documentChargePermille = d.documentChargePercent.trim() ? toPermille(d.documentChargePercent) : 0;
-    const documentChargeCents = d.documentChargeAmount.trim() ? toCents(d.documentChargeAmount) : 0;
-    if (
-      documentDiscountPermille === null ||
-      documentDiscountCents === null ||
-      documentChargePermille === null ||
-      documentChargeCents === null
-    ) {
-      throw new Error("Ungültige Eingabe bei Beleg-Rabatt/-Aufschlag.");
-    }
+    // Fix 1: wie oben — geklemmt statt strikt, konsistent mit dem Payload-Mapper.
+    const documentDiscountPermille = permilleOrZero(d.documentDiscountPercent);
+    const documentDiscountCents = centsOrZero(d.documentDiscountAmount);
+    const documentChargePermille = permilleOrZero(d.documentChargePercent);
+    const documentChargeCents = centsOrZero(d.documentChargeAmount);
 
     const adjusted = applyDocumentAdjustments(buckets, {
       discountPermille: documentDiscountPermille,

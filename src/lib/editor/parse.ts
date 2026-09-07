@@ -62,3 +62,25 @@ export function fromMilli(milli: number): string {
 export function fromPermille(p: number): string {
   return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(p / 10);
 }
+
+/**
+ * "Oder Zero"-Varianten, wie die lokalen toCents/toMilli/toPermille-Helfer der
+ * heutigen Formulare (NewInvoiceForm.tsx/NewDocumentForm.tsx): ungültige/leere
+ * Eingabe -> 0 statt null, `permilleOrZero` zusätzlich auf 0..1000 geklemmt (wie die
+ * alten lokalen `toPermille`-Funktionen dort). Payload-Mapper (draft.ts) UND
+ * Live-Summen (totals.ts) verwenden dieselben Funktionen, damit ein außerhalb des
+ * gültigen Bereichs liegender Prozentwert (z. B. "150" %) in beiden konsistent auf
+ * 100 % geklemmt wird statt in den Summen einen Fehler zu erzeugen, den das
+ * eigentliche Speichern gar nicht widerspiegelt.
+ */
+export function centsOrZero(s: string): number {
+  return toCents(s) ?? 0;
+}
+export function milliOrZero(s: string): number {
+  return toMilli(s) ?? 0;
+}
+export function permilleOrZero(s: string): number {
+  const p = toPermille(s);
+  if (p === null) return 0;
+  return Math.max(0, Math.min(1000, p));
+}

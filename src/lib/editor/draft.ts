@@ -13,7 +13,7 @@
  */
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, SCHEME_NOTICE, type EditorMode } from "./constants";
-import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille } from "./parse";
+import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import type { TaxScheme } from "@/schemas";
 
 export type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
@@ -240,19 +240,9 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
 }
 
 // ── Payload-Mapper ──────────────────────────────────────────────────────────
+// centsOrZero/milliOrZero/permilleOrZero leben in parse.ts (Fix 1: dieselben
+// geklemmten Helfer wie totals.ts, damit Live-Summen und Payload nie auseinanderlaufen).
 
-/** Wie die lokalen toCents/toMilli/toPermille-Helfer der heutigen Formulare: ungueltige/leere Eingabe -> 0 statt null. */
-function centsOrZero(s: string): number {
-  return toCents(s) ?? 0;
-}
-function milliOrZero(s: string): number {
-  return toMilli(s) ?? 0;
-}
-function permilleOrZero(s: string): number {
-  const p = toPermille(s);
-  if (p === null) return 0;
-  return Math.max(0, Math.min(1000, p));
-}
 function daysOrUndefined(s: string): number | undefined {
   const n = parseInt(s, 10);
   return Number.isFinite(n) && n > 0 ? n : undefined;
