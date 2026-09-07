@@ -100,16 +100,22 @@ describe("get_settings", () => {
 
 describe("update_document_settings", () => {
   it("aktualisiert nur die angegebenen Felder (Merge)", async () => {
+    // Fix-Welle (Abschluss-Review, Block 1 "Minor"): `eInvoiceDefault === true` allein ist
+    // KEIN diskriminierender Beleg — das ist zugleich der Zod-Default, der Test waere auch
+    // beim vorbestehenden Fehler (siehe update_print_settings-Kommentar oben) gruen
+    // geblieben. `storeAcceptIp` (Default `false`) wird deshalb zuerst explizit auf sein
+    // GEGENTEIL gesetzt, bevor das eigentliche Teil-Update geprueft wird.
+    await callTool("update_document_settings", { storeAcceptIp: true });
     const before = JSON.parse(text(await callTool("get_settings", { area: "documents" })));
-    expect(before.eInvoiceDefault).toBe(true);
+    expect(before.storeAcceptIp).toBe(true);
 
     const res = await callTool("update_document_settings", { invoiceDueDays: 30 });
     expect(res.isError).toBeFalsy();
 
     const after = JSON.parse(text(await callTool("get_settings", { area: "documents" })));
     expect(after.invoiceDueDays).toBe(30);
-    // Nicht angegebene Felder bleiben unveraendert.
-    expect(after.eInvoiceDefault).toBe(true);
+    // Nicht angegebenes, bereits vom Default abweichendes Feld bleibt unveraendert.
+    expect(after.storeAcceptIp).toBe(true);
   });
 
   it("liefert einen Fehler bei ungueltiger Eingabe", async () => {
@@ -229,10 +235,19 @@ describe("update_number_range", () => {
 
 describe("update_dunning_settings (Nachtrag §55)", () => {
   it("aktualisiert nur die angegebenen Felder (Merge)", async () => {
+    // Fix-Welle (Abschluss-Review, Block 1 "Minor"): dieselbe Luecke wie bei
+    // update_document_settings oben — `autoCreate` (Default `true`) wird zuerst auf sein
+    // Gegenteil gesetzt, damit das nachfolgende Teil-Update tatsaechlich diskriminiert.
+    await callTool("update_dunning_settings", { autoCreate: false });
+    const before = JSON.parse(text(await callTool("get_settings", { area: "dunning" })));
+    expect(before.autoCreate).toBe(false);
+
     const res = await callTool("update_dunning_settings", { gracePeriodDays: 5 });
     expect(res.isError).toBeFalsy();
     const after = JSON.parse(text(await callTool("get_settings", { area: "dunning" })));
     expect(after.gracePeriodDays).toBe(5);
+    // Nicht angegebenes, bereits vom Default abweichendes Feld bleibt unveraendert.
+    expect(after.autoCreate).toBe(false);
   });
 });
 
@@ -260,5 +275,36 @@ describe("update_dunning_stage (Nachtrag §55)", () => {
   it("meldet eine unbekannte Mahnstufen-ID als Fehler", async () => {
     const res = await callTool("update_dunning_stage", { id: "unbekannt", name: "x" });
     expect(res.isError).toBe(true);
+  });
+
+  // Fix-Welle (Abschluss-Review Phase 11b, Block 5b "Important"): `update_dunning_stage`
+  // nutzte bisher `dunningStageFieldsSchema.partial().shape` direkt statt
+  // `partialInputShape(...)` (siehe Kommentar bei update_print_settings oben) —
+  // `autoSend` (default false) und `enabled` (default true) wurden bei jedem Teil-Update
+  // stillschweigend auf ihren Default zurueckgesetzt. Auf der Produktivinstanz mit aktivem
+  // Scheduler haette das eine vom Betreiber deaktivierte Stufe (enabled: false)
+  // unbeabsichtigt re-aktiviert.
+  it("enabled:false und autoSend:true (beide vom Default abweichend) ueberleben ein Update, das nur den Namen aendert", async () => {
+    const stages = JSON.parse(text(await callTool("list_dunning_stages"))) as { id: string }[];
+    const [stage] = stages;
+    if (!stage) throw new Error("keine Mahnstufe gefunden");
+
+    // Setup: beide Felder auf das GEGENTEIL ihres Defaults bringen — nur so ist ein
+    // spaeteres stillschweigendes Zuruecksetzen auf den Default ueberhaupt von
+    // "unveraendert geblieben" unterscheidbar.
+    const setup = await callTool("update_dunning_stage", { id: stage.id, enabled: false, autoSend: true });
+    expect(setup.isError).toBeFalsy();
+    const afterSetup = JSON.parse(text(await callTool("list_dunning_stages"))).find((s: { id: string }) => s.id === stage.id);
+    expect(afterSetup.enabled).toBe(false);
+    expect(afterSetup.autoSend).toBe(true);
+
+    // Diskriminierender Aufruf: NUR `name` mitschicken.
+    const res = await callTool("update_dunning_stage", { id: stage.id, name: "Umbenannt (Fix-Welle Test)" });
+    expect(res.isError).toBeFalsy();
+
+    const after = JSON.parse(text(await callTool("list_dunning_stages"))).find((s: { id: string }) => s.id === stage.id);
+    expect(after.name).toBe("Umbenannt (Fix-Welle Test)");
+    expect(after.enabled).toBe(false);
+    expect(after.autoSend).toBe(true);
   });
 });

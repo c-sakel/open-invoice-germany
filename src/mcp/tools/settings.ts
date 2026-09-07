@@ -19,36 +19,11 @@ import {
 } from "@/schemas";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { ToolError, type McpToolsContext, type Result } from "./context";
-
-/**
- * Fix (Task 8, vorbestehender Fehler): `<schema>.partial().shape` reicht als MCP-
- * `inputSchema` NICHT — die MCP-SDK validiert eingehende Tool-Argumente ueber genau
- * dieses Schema (server/mcp.js#validateToolInput), BEVOR der Handler sie sieht. Jedes
- * Feld der vier Settings-Input-Schemas traegt `.default(...)` (dieselben Schemas
- * erzeugen auch die `DEFAULT_*_SETTINGS`, siehe `src/app/api/v1/Settings/route.ts`);
- * `.partial()` macht ein Feld zwar `optional`, das darunterliegende `ZodDefault`
- * greift beim Parsen aber weiterhin fuer einen FEHLENDEN Schluessel (siehe
- * `printOptionsOverrideSchema`-Kommentar in `src/schemas/settings.ts`). Ein Aufruf mit
- * nur EINEM geaenderten Feld liefert an den Handler deshalb trotzdem ALLE Felder (die
- * uebrigen mit ihrem Default) — `{ ...current, ...args }` setzt dadurch jedes nicht
- * genannte Feld stillschweigend auf seinen Default zurueck, statt es unveraendert zu
- * lassen (Regressionstest: "Teil-Updates setzen nicht genannte Felder nicht zurueck",
- * test/integration/mcp-settings.test.ts).
- *
- * `partialInputShape` baut stattdessen eine Form OHNE Defaults: jedes Feld verliert
- * seinen `.default(...)`-Wrapper (`ZodDefault#removeDefault()`, Zod 4) und wird
- * `.optional()`. Ein fehlender Schluessel bleibt dadurch im geparsten Ergebnis schlicht
- * abwesend — der Handler sieht nur, was der Aufrufer tatsaechlich mitgeschickt hat.
- */
-function partialInputShape(schema: z.ZodObject<z.ZodRawShape>): z.ZodRawShape {
-  const shape = schema.shape as unknown as Record<string, z.ZodTypeAny>;
-  const out: Record<string, z.ZodTypeAny> = {};
-  for (const [key, field] of Object.entries(shape)) {
-    const withoutDefault: z.ZodTypeAny = field instanceof z.ZodDefault ? (field as z.ZodDefault<z.ZodTypeAny>).removeDefault() : field;
-    out[key] = withoutDefault.optional();
-  }
-  return out;
-}
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5b): `partialInputShape` lebt jetzt in
+// einem eigenen Modul, damit `dunning.ts#update_dunning_stage` (dieselbe Teil-Update-
+// Problematik, siehe dort) sie ebenfalls nutzen kann — siehe partial-input.ts fuer die
+// ausfuehrliche Begruendung.
+import { partialInputShape } from "./partial-input";
 
 export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): void {
   // ── get_settings ─────────────────────────────────────────────────────────────
@@ -136,7 +111,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Briefpapier-Einstellungen aktualisieren",
       description:
-        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35) sowie das PDF-Layout: `layoutId` (Organisationsstandard), `layoutByType` (je Belegtyp INVOICE/CREDIT_NOTE/QUOTE/ORDER_CONFIRMATION/PROFORMA/DELIVERY_NOTE/DUNNING), `footerMode` (AUTO = Stammdaten-Fusszeile, CUSTOM = footerLeft/-Center/-Right). Waehlbare Layout-Ids ueber list_pdf_layouts. OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert.",
+        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35) sowie das PDF-Layout: `layoutId` (Organisationsstandard), `layoutByType` (je Belegtyp INVOICE/CREDIT_NOTE/QUOTE/ORDER_CONFIRMATION/PROFORMA/DELIVERY_NOTE/DUNNING), `footerMode` (AUTO = Stammdaten-Fusszeile, CUSTOM = footerLeft/-Center/-Right). Waehlbare Layout-Ids ueber list_pdf_layouts. OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert — Ausnahme: wird `layoutByType` mitgeschickt, ersetzt es die gesamte bisherige Zuordnung (nicht nur die genannten Belegtypen); um einen einzelnen Belegtyp zu aendern, vorher den aktuellen Stand per get_settings lesen und zusammenfuehren.",
       inputSchema: partialInputShape(brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true })),
     },
     async (args): Promise<Result> => {
