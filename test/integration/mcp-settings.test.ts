@@ -24,13 +24,30 @@ interface ToolResult {
   content: { type: string; text: string }[];
   isError?: boolean;
 }
+interface ZodLikeSchema {
+  safeParseAsync: (data: unknown) => Promise<{ success: true; data: unknown } | { success: false; error: { message: string } }>;
+}
 interface RegisteredTool {
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
+  /** Vom MCP-SDK aus der `inputSchema`-Konfiguration gebautes Zod-Objekt (server/mcp.js
+   *  #getZodSchemaObject) — echte Clients rufen NIE `handler` direkt auf, sondern lassen
+   *  zuerst dieses Schema ueber die Argumente laufen (#validateToolInput). Ein direkter
+   *  `tool.handler(args)`-Aufruf haette den vorbestehenden Defaults-Fehler (Task 8: Zod
+   *  fuellt bei `<schema>.partial().shape` fehlende, aber defaultete Felder trotzdem auf)
+   *  NIE reproduziert — `args` haette nur die tatsaechlich uebergebenen Testschluessel
+   *  enthalten, nie die vom SDK ergaenzten Defaults der uebrigen Felder. */
+  inputSchema?: ZodLikeSchema;
 }
-function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+/** Ruft ein MCP-Tool wie ein echter Client auf — inkl. Schema-Validierung, siehe RegisteredTool oben. */
+async function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
   const tools = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
   const tool = tools[name];
   if (!tool) throw new Error(`MCP-Tool "${name}" ist nicht registriert.`);
+  if (tool.inputSchema) {
+    const parsed = await tool.inputSchema.safeParseAsync(args);
+    if (!parsed.success) return { content: [{ type: "text", text: `Validierung fehlgeschlagen: ${parsed.error.message}` }], isError: true };
+    return tool.handler(parsed.data as Record<string, unknown>);
+  }
   return tool.handler(args);
 }
 function text(result: ToolResult): string {
@@ -108,6 +125,28 @@ describe("update_print_settings", () => {
     expect(after.foldMarks).toBe(true);
     expect(after.showFooter).toBe(true); // unveraendert
   });
+
+  // Fix (Task 8, vorbestehender Fehler): `<schema>.partial().shape` als MCP-inputSchema
+  // liess Zod fehlende, aber defaultete Felder trotzdem auffuellen — ein Teil-Update mit
+  // nur EINEM Schalter setzte dadurch jeden nicht genannten Schalter auf seinen Default
+  // zurueck. Reproduziert nur ueber die echte SDK-Validierung (callTool routet jetzt
+  // durch tool.inputSchema, siehe oben) — ein direkter Handler-Aufruf haette das nie
+  // sichtbar gemacht.
+  it("Teil-Update mit nur einem Schalter setzt andere Schalter nicht auf Default zurueck", async () => {
+    await callTool("update_print_settings", { showGiroCode: false, punchMarks: true });
+    const before = JSON.parse(text(await callTool("get_settings", { area: "print" })));
+    expect(before.showGiroCode).toBe(false);
+    expect(before.punchMarks).toBe(true);
+
+    const res = await callTool("update_print_settings", { showPageNumbers: false });
+    expect(res.isError).toBeFalsy();
+
+    const after = JSON.parse(text(await callTool("get_settings", { area: "print" })));
+    expect(after.showPageNumbers).toBe(false);
+    // Nicht genannte Schalter (bereits von den defaults abweichend) bleiben unveraendert.
+    expect(after.showGiroCode).toBe(false);
+    expect(after.punchMarks).toBe(true);
+  });
 });
 
 describe("update_branding_settings", () => {
@@ -125,6 +164,24 @@ describe("update_branding_settings", () => {
     const after = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
     expect(after.logoPath).toBe(before.logoPath);
     expect(after.fontSizePt).toBe(11);
+  });
+
+  // Fix (Task 8, vorbestehender Fehler): siehe Kommentar bei update_print_settings oben —
+  // `brandingSettingsInputSchema.omit(...).partial().shape` hatte dieselbe Schwaeche.
+  it("Teil-Update mit nur einem Feld setzt andere Felder nicht auf Default zurueck", async () => {
+    await callTool("update_branding_settings", { layoutId: "schlicht", primaryColor: "#123456" });
+    const before = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
+    expect(before.layoutId).toBe("schlicht");
+    expect(before.primaryColor).toBe("#123456");
+
+    const res = await callTool("update_branding_settings", { logoWidthMm: 55 });
+    expect(res.isError).toBeFalsy();
+
+    const after = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
+    expect(after.logoWidthMm).toBe(55);
+    // Nicht genannte Felder (bereits von den Defaults abweichend) bleiben unveraendert.
+    expect(after.layoutId).toBe("schlicht");
+    expect(after.primaryColor).toBe("#123456");
   });
 });
 
