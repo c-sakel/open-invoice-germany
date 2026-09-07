@@ -407,13 +407,13 @@ describe("PdfTheme — Phase 11b Layout-Aufloesung (Task 1 geschrieben, Task 3 a
     expect(brand.layoutByType).toEqual({ DELIVERY_NOTE: "kompakt" });
     // @ts-expect-error -- dritter Parameter (docType) kommt erst in Task 3.
     const theme = await loadPdfTheme(orgId, null, "DELIVERY_NOTE");
-    // @ts-expect-error -- PdfTheme.layoutId kommt erst in Task 3.
+    // PdfTheme.layoutId/.footerFacts entstehen bereits in Task 2 (kein @ts-expect-error mehr
+    // noetig) — nur der dritte loadPdfTheme-Parameter (docType) fehlt noch bis Task 3, daher
+    // bleiben diese Werte bis dahin auf dem Organisationsstandard statt der Typ-Map.
     expect(theme.layoutId).toBe("kompakt");
-    // @ts-expect-error -- PdfTheme.footerFacts kommt erst in Task 3.
     expect(theme.footerFacts.ownerName).toBe("Erika Muster");
     // @ts-expect-error -- dritter Parameter (docType) kommt erst in Task 3.
     const inv = await loadPdfTheme(orgId, null, "INVOICE");
-    // @ts-expect-error -- PdfTheme.layoutId kommt erst in Task 3.
     expect(inv.layoutId).toBe("schlicht");
   });
 });

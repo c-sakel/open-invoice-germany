@@ -41,5 +41,16 @@ export async function loadPdfTheme(orgId: string, overrideJson?: string | null):
     brand.showBackground ? readOptionalFile(brand.backgroundPath) : Promise.resolve(undefined),
   ]);
 
-  return { brand, options, logoBuffer, backgroundBuffer, showPaymentTermsText: documentSettings.showPaymentTermsText };
+  // Phase 11b, Task 2 (Zwischenstand): nur der Organisationsstandard, ohne Beleg-Override/
+  // Typ-Map-Aufloesung und ohne Organization.website/.ownerName — Task 3 vervollstaendigt
+  // dies ueber `resolveLayoutId` und einen `docType`-Parameter.
+  return {
+    brand,
+    options,
+    layoutId: brand.layoutId,
+    footerFacts: {},
+    logoBuffer,
+    backgroundBuffer,
+    showPaymentTermsText: documentSettings.showPaymentTermsText,
+  };
 }
