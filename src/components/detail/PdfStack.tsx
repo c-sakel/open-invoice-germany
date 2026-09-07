@@ -5,12 +5,10 @@
 export function PdfStack({
   src,
   title,
-  downloadHref,
   emptyText,
 }: {
   src: string | null;
   title: string;
-  downloadHref?: string;
   emptyText?: string;
 }) {
   if (!src) {
@@ -27,7 +25,7 @@ export function PdfStack({
       </div>
       <p className="text-right text-xs text-slate-500">
         Wird das PDF nicht angezeigt:{" "}
-        <a href={downloadHref ?? src} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+        <a href={src} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
           PDF öffnen
         </a>
       </p>

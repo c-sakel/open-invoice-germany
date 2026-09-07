@@ -59,9 +59,7 @@ export function InvoiceMoreMenu({
 
       {showDuplicate && (
         <ActionMenuItem>
-          <div className="block w-full px-3 py-1.5 text-left hover:bg-slate-50">
-            <DuplicateInvoiceButton invoiceId={invoiceId} />
-          </div>
+          <DuplicateInvoiceButton invoiceId={invoiceId} asMenuItem />
         </ActionMenuItem>
       )}
 
@@ -86,9 +84,7 @@ export function InvoiceMoreMenu({
         <>
           <ActionMenuSeparator />
           <ActionMenuItem>
-            <div className="block w-full px-3 py-1.5 text-left hover:bg-slate-50">
-              <ConvertMenu sourceType="INVOICE" sourceId={invoiceId} showToDeliveryNote />
-            </div>
+            <ConvertMenu sourceType="INVOICE" sourceId={invoiceId} showToDeliveryNote asMenuItem />
           </ActionMenuItem>
         </>
       )}

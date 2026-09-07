@@ -26,11 +26,9 @@ const QUICK_ACTIONS: Hit[] = [
 ];
 
 /**
- * Befehlspalette (Phase 11a, Task 5 Fix 1): als Singleton einmal in `AppShell` gemountet
- * (siehe dort und `ShellProvider`) — Oeffnen/Schliessen kommt aus dem Shell-Kontext, die
- * Trigger-Buttons (Sidebar/Topbar/Drawer) sind `SearchTrigger`. Eingabe wird mit 200 ms
- * Verzoegerung an `GET /api/search` geschickt. Pfeiltasten/Enter navigieren, Escape schliesst.
- * Ohne Eingabe stehen die Schnellaktionen bereit.
+ * Befehlspalette (Phase 11a, Task 5 Fix 1): Singleton in `AppShell` (Oeffnen/Schliessen ueber
+ * `ShellProvider`, Trigger `SearchTrigger`). Eingabe geht mit 200 ms Verzoegerung an `GET
+ * /api/search`; Pfeiltasten/Enter navigieren, Escape schliesst, ohne Eingabe Schnellaktionen.
  */
 export function CommandPalette() {
   const router = useRouter();
@@ -69,8 +67,7 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen, close, openSearch]);
 
-  // M10: Fokus beim Oeffnen auf die Eingabe, beim Schliessen zurueck auf das zuvor
-  // fokussierte Element (Muster `PreviewSheet.tsx`).
+  // M10: Fokus beim Oeffnen auf die Eingabe, beim Schliessen zurueck aufs vorher fokussierte Element (Muster `PreviewSheet.tsx`).
   useEffect(() => {
     if (!searchOpen) return;
     previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -133,24 +130,20 @@ export function CommandPalette() {
         // abgebrochen oder Netzfehler — Liste bleibt
       } finally {
         // M11 (Abschluss-Review): nur den Ladeindikator der eigenen Anfrage loeschen — ein
-        // abgebrochener aelterer Request darf `loading` nicht faelschlich zuruecksetzen,
-        // waehrend eine neuere Anfrage noch laeuft.
+        // abgebrochener aelterer Request darf `loading` nicht faelschlich zuruecksetzen, waehrend eine neuere Anfrage laeuft.
         if (abortRef.current === ctrl) setLoading(false);
       }
     }, 200);
     return () => clearTimeout(t);
   }, [q, searchOpen]);
 
-  // Minor (Fix 1): ein noch laufender Request wird auch beim Unmount der Palette abgebrochen
-  // (z.B. Navigation weg von der Shell) — sonst haengt ein Fetch ohne Wirkung nach.
+  // Minor (Fix 1): ein noch laufender Request wird auch beim Unmount abgebrochen (z.B. Navigation weg von der Shell) — sonst haengt ein wirkungsloser Fetch nach.
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
 
-  // `cursor` kann veralten, wenn sich `flat` aendert (z.B. Ergebnisse treffen ein oder die
-  // Eingabe faellt unter 2 Zeichen), ohne dass eine Pfeiltaste gedrueckt wurde. Statt den
-  // Zustand per Effekt nachzuziehen, wird die tatsaechlich gueltige Position bei jedem
-  // Render abgeleitet — so bleiben Hervorhebung und Enter immer synchron mit `flat`.
+  // `cursor` kann veralten, wenn sich `flat` aendert, ohne dass eine Pfeiltaste gedrueckt wurde —
+  // die gueltige Position wird deshalb bei jedem Render abgeleitet, nicht per Effekt nachgezogen.
   const safeCursor = flat.length === 0 ? 0 : Math.min(cursor, flat.length - 1);
 
   function go(hit: Hit) {
@@ -170,8 +163,7 @@ export function CommandPalette() {
       const hit = flat[safeCursor];
       if (hit) go(hit);
     }
-    // Escape: siehe onKeyDown am Overlay-Wrapper (schliesst auch, wenn der Fokus das
-    // Eingabefeld verlassen hat, z.B. nach Tab auf einen Treffer-Button).
+    // Escape: siehe onKeyDown am Overlay-Wrapper (schliesst auch bei Fokus ausserhalb des Eingabefelds, z.B. nach Tab auf einen Treffer-Button).
   }
 
   if (!searchOpen) return null;
@@ -183,9 +175,7 @@ export function CommandPalette() {
       aria-modal="true"
       aria-label="Suche"
       onKeyDown={(e) => {
-        // Fix 1: `stopPropagation` verhindert, dass Escape zusaetzlich den document-Level-
-        // Handler des mobilen Drawers erreicht (Topbar.tsx hat dort einen Guard als zweite
-        // Verteidigungslinie).
+        // Fix 1: `stopPropagation` verhindert, dass Escape zusaetzlich den document-Level-Handler des mobilen Drawers erreicht (zweite Verteidigungslinie, siehe Topbar.tsx).
         if (e.key === "Escape") {
           e.stopPropagation();
           close();
