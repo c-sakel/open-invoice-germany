@@ -6,6 +6,11 @@
  * Phase 7, Task 3 (§35-§37): Briefpapier (Logo/Farbe/Ränder/Fusszeilen), Druckoptionen
  * (Spalten/Marken/Seitenzahlen/GiroCode) kommen aus einem `PdfTheme` (siehe
  * `src/domain/settings/theme.ts#loadPdfTheme`) statt aus Konstanten.
+ *
+ * Phase 11b (PDF-Layouts): Kopf/Tabellenstil/Summenlinie/Fusszeile kommen jetzt aus einem
+ * `PdfLayout` (`layouts/registry.ts#getLayout`, aufgeloest über `theme.layoutId`) statt aus
+ * fest verdrahteter Zeichenlogik — `standard` ist die byte-fuer-byte-aequivalente Extraktion
+ * des bisherigen (Phase-7-)Layouts.
  */
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
@@ -14,9 +19,12 @@ import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import type { PdfTheme } from "./theme";
 import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground, drawLogo, drawSenderLine, drawBrandedFooter } from "./layout";
+import { pdfMargins, drawBackground } from "./layout";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
+import { getLayout } from "./layouts/registry";
+import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
+import { buildFooterColumns } from "./footer";
 
 function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" {
   return line.lineType ?? "ITEM";
@@ -128,7 +136,6 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const cur = data.currency;
   const left = margins.left;
   const right = doc.page.width - margins.right;
-  const titleColor = theme.brand.primaryColor;
 
   // S2 (Fix-Welle, Final-Review): der Summenblock (SUBTOTAL-Zeilen + sumRow) wird jetzt
   // aus `right` abgeleitet statt aus `left + 300`/`left + 425` — bei den schema-erlaubten
@@ -141,42 +148,33 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const sumValueX = right - sumValueWidth;
   const sumLabelX = sumValueX - sumColGap - sumLabelWidth;
 
-  drawLogo(doc, theme, right, margins.top);
+  // Phase 11b — Layout-Hooks (Kopf/Tabellenstil/Summenlinie/Fusszeile) statt fest
+  // verdrahteter Zeichenlogik; `standard` reproduziert das bisherige Layout exakt.
+  const layout = getLayout(theme.layoutId);
+  const base = theme.brand.fontSizePt + layout.fontDelta; // Phase 11b: fontSizePt wird erstmals konsumiert
+  const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
 
-  // Kopf: Absender (Briefpapier-Absenderzeile, sonst der bisherige Fallback-Text)
-  const senderFallback = `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`;
-  drawSenderLine(doc, theme, left, margins.top, senderFallback);
-
-  // Empfänger
-  const buyerY = margins.top + 60;
-  doc.fillColor("#000").fontSize(11);
-  doc.text(data.buyer.name, left, buyerY);
-  if (data.buyer.contactName) doc.text(data.buyer.contactName);
-  doc.text(data.buyer.addressLine1);
-  if (data.buyer.addressLine2) doc.text(data.buyer.addressLine2);
-  doc.text(`${data.buyer.postalCode} ${data.buyer.city}`);
-
-  // Titel + Meta (rechts)
-  doc.fontSize(18).fillColor(titleColor).text(TYPE_TITLE[data.type] ?? "Rechnung", left, buyerY, { align: "right" });
-  doc.fontSize(10).fillColor("#333");
-  const metaTop = margins.top + 90;
-  doc.text(`${NUMBER_LABEL[data.type] ?? "Nummer"}: ${data.number}`, left + 250, metaTop, { align: "right" });
-  doc.text(`Rechnungsdatum: ${deDate(data.issueDate)}`, { align: "right" });
-  if (data.deliveryDate) doc.text(`Leistungsdatum: ${deDate(data.deliveryDate)}`, { align: "right" });
-  if (data.dueDate) doc.text(`Fällig am: ${deDate(data.dueDate)}`, { align: "right" });
-  if (data.buyer.vatId) doc.text(`USt-IdNr. Empfänger: ${data.buyer.vatId}`, { align: "right" });
+  const meta: KopfMetaRow[] = [{ label: "Rechnungsdatum", value: deDate(data.issueDate) }];
+  if (data.deliveryDate) meta.push({ label: "Leistungsdatum", value: deDate(data.deliveryDate) });
+  if (data.dueDate) meta.push({ label: "Fällig am", value: deDate(data.dueDate) });
+  if (data.buyer.vatId) meta.push({ label: "USt-IdNr. Empfänger", value: data.buyer.vatId });
   // Phase 5 — Bezug zur Quelle (Angebot/Auftrag/Lieferschein) bei Teil-/Abschlags-/
   // Schlussrechnung, NUR fürs PDF-Layout (kein XML-Feld).
-  if (data.sourceNumber) doc.text(`Bezug: zu ${data.sourceLabel ?? "Beleg"} ${data.sourceNumber}`, { align: "right" });
+  if (data.sourceNumber) meta.push({ label: "Bezug", value: `zu ${data.sourceLabel ?? "Beleg"} ${data.sourceNumber}` });
 
-  // Kopftext (Platzhalter bereits aufgeloest, siehe buildEInvoiceData/buildDocEInvoiceData).
-  // Nach dem Meta-Block, vor der Positions-Tabelle — y danach dynamisch (doc.y), kein
-  // hartes Ueberschreiben, da pdfkit bei langem Text automatisch umbricht/seitenwechselt.
-  let y = margins.top + 170;
-  if (data.headerText) {
-    doc.fontSize(9).fillColor("#333").text(data.headerText, left, y, { width: right - left });
-    y = doc.y + 10;
-  }
+  // Kopf: Logo, Absenderzeile, Empfänger, Titel, Meta, Kopftext (Platzhalter bereits
+  // aufgeloest, siehe buildEInvoiceData/buildDocEInvoiceData) — y danach dynamisch
+  // (Rueckgabewert des Hooks), kein hartes Ueberschreiben, da pdfkit bei langem Text
+  // automatisch umbricht/seitenwechselt.
+  let y = layout.drawKopf(frame, {
+    title: TYPE_TITLE[data.type] ?? "Rechnung",
+    numberLabel: NUMBER_LABEL[data.type] ?? "Nummer",
+    number: data.number,
+    meta,
+    recipient: data.buyer,
+    senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
+    intro: data.headerText,
+  });
 
   // Positions-Tabelle — Spalten nach Druckoptionen (§36).
   const { columns, x: colX } = buildItemColumns(data, theme.options, right - left - 4);
@@ -191,15 +189,20 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const pageBottom = doc.page.height - margins.bottom;
 
   const drawTableHeader = (atY: number): number => {
-    doc.fontSize(9).fillColor("#fff");
-    doc.rect(left, atY, right - left, 18).fill("#1f2937");
-    doc.fillColor("#fff");
+    const t = layout.table;
+    doc.fontSize(base - 1);
+    if (t.headerFill) {
+      doc.rect(left, atY, right - left, t.headerHeight).fill(t.headerFill);
+    } else {
+      doc.moveTo(left, atY + t.headerHeight).lineTo(right, atY + t.headerHeight).strokeColor(t.rowRule ?? "#999").stroke();
+    }
+    doc.fillColor(t.headerText).font(t.headerFill ? "Helvetica" : "Helvetica-Oblique");
     for (const col of columns) {
       if (col.key === "desc" && !theme.options.showDescription) continue;
-      doc.text(col.header, tableX + colX[col.key]!, atY + 5, { width: col.width, align: col.align ?? "left" });
+      doc.text(col.header, tableX + colX[col.key]!, atY + (t.headerFill ? 5 : 3), { width: col.width, align: col.align ?? "left" });
     }
-    doc.fillColor("#000").fontSize(9);
-    return atY + 22;
+    doc.font("Helvetica").fillColor(t.textColor).fontSize(base - 1);
+    return atY + t.headerHeight + 4;
   };
 
   const ensureSpace = (atY: number, needed: number): number => {
@@ -218,16 +221,16 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const descWidth = columns.find((c) => c.key === "desc")!.width;
   const showDescription = theme.options.showDescription;
 
-  doc.fillColor("#000").fontSize(9);
+  doc.fillColor("#000").fontSize(base - 1);
   let itemPos = 0;
   data.lines.forEach((line, i) => {
     const type = lineType(line);
 
     if (type === "HEADING") {
       y = ensureSpace(y, 26);
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#000");
+      doc.font("Helvetica-Bold").fontSize(base).fillColor("#000");
       doc.text(line.description, left, y, { width: right - left });
-      doc.font("Helvetica").fontSize(9);
+      doc.font("Helvetica").fontSize(base - 1);
       y = doc.y + 6;
       return;
     }
@@ -238,19 +241,19 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       // renderRichTextPdf schreibt ab doc.y (pdfkit-Cursor) — mit der eigenen
       // Layout-Variablen y synchronisieren, bevor gerendert wird.
       doc.y = y;
-      renderRichTextPdf(doc, blocks, { x: left, width: right - left, fontSize: 9 });
+      renderRichTextPdf(doc, blocks, { x: left, width: right - left, fontSize: base - 1 });
       y = doc.y + 4;
       return;
     }
 
     if (type === "SUBTOTAL") {
       y = ensureSpace(y, 16);
-      doc.font("Helvetica-Bold").fontSize(9).fillColor("#000");
+      doc.font("Helvetica-Bold").fontSize(base - 1).fillColor("#000");
       doc.text(line.description, sumLabelX, y, { width: sumLabelWidth, align: "right" });
       if (theme.options.showLineTotals) {
         doc.text(formatCents(subtotals[i] ?? 0, cur), sumValueX, y, { width: sumValueWidth, align: "right" });
       }
-      doc.font("Helvetica").fontSize(9);
+      doc.font("Helvetica").fontSize(base - 1);
       y += 16;
       return;
     }
@@ -259,22 +262,36 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     itemPos += 1;
     const h = 16;
     y = ensureSpace(y, h);
+    if (layout.table.zebra && itemPos % 2 === 0) {
+      doc.rect(left, y - 2, right - left, h).fill(layout.table.zebra);
+      doc.fillColor(layout.table.textColor);
+    }
     doc.text(String(itemPos), tableX + colX.pos!, y, { width: 28 });
     if (colX.artNr != null) doc.text(line.articleNumber ?? "", tableX + colX.artNr, y, { width: 55 });
-    if (showDescription) doc.text(line.description, descX, y, { width: descWidth });
+    if (showDescription) {
+      if (layout.table.boldTitle) doc.font("Helvetica-Bold");
+      doc.text(line.description, descX, y, { width: descWidth });
+      if (layout.table.boldTitle) doc.font("Helvetica");
+    }
     doc.text(`${formatQuantity(line.quantityMilli)} ${line.unit}`, tableX + colX.menge!, y, { width: 50, align: "right" });
     doc.text(formatCents(line.unitNetPriceCents, cur), tableX + colX.einzel!, y, { width: 70, align: "right" });
     if (colX.ust != null) doc.text(`${line.taxRate}%`, tableX + colX.ust, y, { width: 35, align: "right" });
     if (colX.netto != null) doc.text(formatCents(line.lineNetCents, cur), tableX + colX.netto, y, { width: 70, align: "right" });
     y += h;
+    if (layout.table.rowRule) {
+      doc.save();
+      doc.lineWidth(0.3).strokeColor(layout.table.rowRule);
+      doc.moveTo(left, y - 3).lineTo(right, y - 3).stroke();
+      doc.restore();
+    }
     // Rabattzeile unter der Position (BG-27), z. B. "abzgl. 10 % Rabatt −12,00 €".
     if (line.discountCents) {
       y = ensureSpace(y, 13);
       const pct = line.discountPermille ? ` ${(line.discountPermille / 10).toFixed(2).replace(/\.00$/, "")} %` : "";
-      doc.fontSize(8).fillColor("#555");
+      doc.fontSize(base - 2).fillColor("#555");
       if (showDescription) doc.text(`abzgl.${pct} Rabatt`, descX, y, { width: descWidth });
       if (colX.netto != null) doc.text(`−${formatCents(Math.abs(line.discountCents), cur)}`, tableX + colX.netto, y, { width: 70, align: "right" });
-      doc.fillColor("#000").fontSize(9);
+      doc.fillColor("#000").fontSize(base - 1);
       y += 13;
     }
     // Langtext (BT-154) als Rich-Text unter der Bezeichnung, kleinere Schrift.
@@ -283,8 +300,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       if (blocks.length > 0) {
         doc.fillColor("#333");
         doc.y = y;
-        renderRichTextPdf(doc, blocks, { x: descX, width: right - descX, fontSize: 8 });
-        doc.fillColor("#000").fontSize(9);
+        renderRichTextPdf(doc, blocks, { x: descX, width: right - descX, fontSize: base - 2 });
+        doc.fillColor("#000").fontSize(base - 1);
         y = doc.y + 2;
       }
     }
@@ -301,7 +318,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   };
   y = ensurePlainSpace(y, 40);
   y += 10;
-  doc.moveTo(sumLabelX, y).lineTo(right, y).strokeColor(titleColor).stroke();
+  layout.drawTotalsRule(frame, sumLabelX, y);
   y += 6;
   const sumRow = (label: string, value: string, bold = false) => {
     y = ensurePlainSpace(y, 16);
@@ -378,36 +395,15 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (paymentTermsHuman && theme.showPaymentTermsText) doc.moveDown(0.4).text(paymentTermsHuman, { width: right - left });
   if (data.paymentMethodText) doc.moveDown(0.4).text(data.paymentMethodText, { width: right - left });
 
-  // Fußzeile: Aussteller-Pflichtangaben (nur wenn options.showFooter an ist).
-  const footY = doc.page.height - margins.bottom - 32;
+  // Fußzeile (Phase 11b): AUTO/CUSTOM-Spalten aus footer.ts, gezeichnet vom Layout-Hook
+  // (nur wenn options.showFooter an ist).
+  const footY = doc.page.height - margins.bottom - layout.footerHeight;
   if (theme.options.showFooter) {
-    // S3 (Fix-Welle): drawBrandedFooter() liefert `true`, wenn es die Briefpapier-
-    // Fusszeile (footerLeft/-Center/-Right) tatsaechlich gezeichnet hat — dann NICHT
-    // zusaetzlich den hartcodierten Aussteller-/Bank-Fallback zeichnen (vorher standen
-    // beide Bloecke uebereinander, 11pt Abstand bei 8pt Schrift ueberschrieb die
-    // Marken-Fusszeile bei einer zweizeiligen Spalte). Ohne Briefpapier-Fusszeile bleibt
-    // der bisherige Fallback (Aussteller-Pflichtangaben) erhalten.
-    const branded = drawBrandedFooter(doc, theme, left, right, footY - 11);
-    if (!branded) {
-      doc.fontSize(8).fillColor("#666");
-      const sellerLine = [
-        data.seller.name,
-        `${data.seller.addressLine1}, ${data.seller.postalCode} ${data.seller.city}`,
-        data.seller.taxNumber ? `Steuernr.: ${data.seller.taxNumber}` : null,
-        data.seller.vatId ? `USt-IdNr.: ${data.seller.vatId}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      doc.text(sellerLine, left, footY, { width: right - left, align: "center" });
-      const bankLine = [
-        data.bankName ? `Bank: ${data.bankName}` : null,
-        data.iban ? `IBAN: ${data.iban}` : null,
-        data.bic ? `BIC: ${data.bic}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      if (bankLine) doc.text(bankLine, left, footY + 11, { width: right - left, align: "center" });
-    }
+    layout.drawFooter(
+      frame,
+      buildFooterColumns({ seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, ...theme.footerFacts }, theme.brand),
+      footY,
+    );
   }
 
   // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, 30 mm Kantenlaenge.

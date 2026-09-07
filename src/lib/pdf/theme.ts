@@ -5,14 +5,27 @@
  * bleibt und in den Renderern ohne Zyklen importiert werden kann.
  */
 import type { BrandingSettingsInput, PrintSettingsInput } from "@/schemas/settings";
+import type { LayoutId } from "./layouts/ids";
 
 /** Die effektiven (Global + Beleg-Override verschmolzenen) Druckoptionen, siehe
  *  `effectivePrintOptions` in `src/domain/settings/print.ts`. */
 export type EffectivePrintOptions = PrintSettingsInput;
 
+/** Phase 11b — Zusatzfakten fuer die automatische Fusszeile (`footer.ts#buildFooterColumns`),
+ *  die nicht Teil von `EInvoiceData`/`DeliveryNotePdfData`/`DunningPdfData` sind, sondern aus
+ *  `Organization` kommen. */
+export interface PdfFooterFacts {
+  website?: string | null;
+  ownerName?: string | null;
+}
+
 export interface PdfTheme {
   brand: BrandingSettingsInput;
   options: EffectivePrintOptions;
+  /** Phase 11b — aufgeloeste Layout-Kennung (Beleg-Override > Typ-Map > Organisation). */
+  layoutId: LayoutId;
+  /** Phase 11b — Zusatzfakten fuer die AUTO-Fusszeile, die nicht in EInvoiceData stehen. */
+  footerFacts: PdfFooterFacts;
   /** Logo-Bilddaten, wenn `brand.logoPath` gesetzt ist UND die Datei lesbar war. */
   logoBuffer?: Buffer;
   /** Hintergrundbild-Daten, wenn `brand.showBackground` an ist UND die Datei lesbar war. */
