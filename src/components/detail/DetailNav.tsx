@@ -44,10 +44,10 @@ export function DetailNav({
         ← {backLabel}
       </Link>
       <span className="ml-2 inline-flex gap-1">
-        <Link href={prevHref ?? "#"} aria-disabled={!prevHref} aria-label="Vorheriger Beleg" title="Vorheriger Beleg (Alt+←)" className={arrow}>
+        <Link href={prevHref ?? "#"} aria-disabled={!prevHref} tabIndex={prevHref ? undefined : -1} onClick={(e) => { if (!prevHref) e.preventDefault(); }} aria-label="Vorheriger Beleg" title="Vorheriger Beleg (Alt+←)" className={arrow}>
           ‹
         </Link>
-        <Link href={nextHref ?? "#"} aria-disabled={!nextHref} aria-label="Nächster Beleg" title="Nächster Beleg (Alt+→)" className={arrow}>
+        <Link href={nextHref ?? "#"} aria-disabled={!nextHref} tabIndex={nextHref ? undefined : -1} onClick={(e) => { if (!nextHref) e.preventDefault(); }} aria-label="Nächster Beleg" title="Nächster Beleg (Alt+→)" className={arrow}>
           ›
         </Link>
       </span>

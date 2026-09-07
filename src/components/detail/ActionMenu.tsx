@@ -9,7 +9,7 @@ export function ActionMenu({ label = "Mehr", children }: { label?: string; child
       <summary className="cursor-pointer list-none rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
         {label} ▾
       </summary>
-      <ul className="absolute right-0 z-20 mt-1 min-w-56 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">{children}</ul>
+      <ul className="absolute right-0 z-30 mt-1 min-w-56 rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg">{children}</ul>
     </details>
   );
 }
