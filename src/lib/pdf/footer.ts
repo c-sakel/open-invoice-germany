@@ -4,19 +4,15 @@
  * Freitextfelder aus Phase 7 (footerLeft/-Center/-Right). Reine Funktion, die Layouts
  * zeichnen nur noch die fertigen Spalten (`PdfLayout#drawFooter`).
  *
- * Abweichung vom `footerMode`-Feld (bewusst): die Freitextspalten erscheinen, SOBALD
- * footerLeft/-Center/-Right befuellt sind — nicht erst, wenn `footerMode === "CUSTOM"`
- * explizit gesetzt ist. `saveBrandingSettings` ersetzt beim Speichern IMMER den
- * gesamten Datensatz (kein Merge, siehe `brandingSettingsInputSchema`); ein Aufruf, der
- * nur `footerLeft` setzt, laesst `footerMode` also unbemerkt auf seinem Default "AUTO"
- * stehen. Vor Phase 11b (Task 1) gab es dieses Feld nicht — der bisherige
- * `drawBrandedFooter` pruefte nur, ob footerLeft/-Center/-Right ueberhaupt Text
- * trugen. Ein striktes Gate auf `footerMode === "CUSTOM"` wuerde die bestehenden, als
- * gruen vorausgesetzten S3-Fix-Welle-Tests (`test/integration/pdf-theme.test.ts`)
- * brechen, die genau dieses Alt-Verhalten pruefen, ohne `footerMode` zu setzen — die
- * Praesenz der Freitextfelder ist daher die alleinige Weiche, `footerMode` steuert nur
- * (ueber die Einstellungen-UI, ausserhalb dieser Datei) das "CUSTOM, aber leer ⇒ AUTO"-
- * Verhalten, das unten ohnehin greift.
+ * Fix-Runde 1 (Koordinator-Ruling): striktes Gate auf `footerMode` — CUSTOM zeigt die
+ * Freitextspalten (fallen alle drei leer aus, AUTO als Fallback), AUTO zeigt IMMER die
+ * Stammdaten-Fusszeile, auch wenn footerLeft/-Center/-Right noch (Alt-)Text tragen.
+ * `saveBrandingSettings` schaltet den Modus NICHT automatisch um (das macht erst die
+ * Einstellungen-UI aus Task 7, ein Radio-Feld) — Bestandsorganisationen, die vor Phase
+ * 11b bereits eine Freitext-Fusszeile gepflegt hatten, werden per Backfill-Migration
+ * (`prisma/migrations/20260907090303_phase11b_footermode_backfill`,
+ * `prisma/migrations-postgres/20260907090333_phase11b_footermode_backfill`) einmalig auf
+ * footerMode = 'CUSTOM' gesetzt, damit ihre Fusszeile beim Umstieg unveraendert bleibt.
  */
 import type { BrandingSettingsInput } from "@/schemas/settings";
 import type { FooterColumn } from "./layouts/types";
@@ -50,8 +46,10 @@ function compact(lines: (string | null | undefined | false)[]): string[] {
 }
 
 export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsInput): FooterColumn[] {
-  const custom = compact([brand.footerLeft, brand.footerCenter, brand.footerRight]).map((t) => ({ lines: [t] }));
-  if (custom.length > 0) return custom;
+  if (brand.footerMode === "CUSTOM") {
+    const custom = compact([brand.footerLeft, brand.footerCenter, brand.footerRight]).map((t) => ({ lines: [t] }));
+    if (custom.length > 0) return custom;
+  }
 
   const s = facts.seller;
   const columns: FooterColumn[] = [

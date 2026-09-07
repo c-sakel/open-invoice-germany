@@ -23,4 +23,10 @@ describe("buildFooterColumns", () => {
     const empty = brandingSettingsInputSchema.parse({ footerMode: "CUSTOM" });
     expect(buildFooterColumns({ seller }, empty)[0]!.lines[0]).toBe("Muster GmbH");
   });
+  it("Fix-Runde 1 (Koordinator-Ruling): AUTO bleibt AUTO, auch wenn footerLeft/-Center/-Right noch (Alt-)Text tragen — footerMode ist die alleinige Weiche, nicht die Praesenz der Freitextfelder", () => {
+    const autoWithLegacyText = brandingSettingsInputSchema.parse({ footerMode: "AUTO", footerLeft: "Alter Freitext aus Phase 7" });
+    const cols = buildFooterColumns({ seller }, autoWithLegacyText);
+    expect(cols[0]!.lines).toEqual(["Muster GmbH", "Hauptstr. 1", "12345 Berlin"]);
+    expect(cols.map((c) => c.lines).flat()).not.toContain("Alter Freitext aus Phase 7");
+  });
 });

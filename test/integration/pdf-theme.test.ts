@@ -313,24 +313,50 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
     };
   }
 
-  it("Rechnung: ohne Briefpapier-Fusszeile steht der Aussteller-Fallback im PDF", async () => {
+  // Fix-Runde 1 (Koordinator, Punkt 3): der Seller-Snapshot bekommt hier vatId/taxNumber,
+  // damit die AUTO-Fusszeile auch die Steuer/Inhaber-Spalte fuellt — nur so beweist der
+  // Test wirklich, dass die FUSSZEILE gerendert wurde (Firma/Adresse allein stehen auch
+  // im Absenderblock am Kopf, "Muster GmbH"/"Hauptstr. 1" haetten also selbst bei einer
+  // KOMPLETT FEHLENDEN Fusszeile gruen bestanden).
+  function sellerWithTaxFacts() {
+    return { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin", countryCode: "DE", vatId: "DE123456789", taxNumber: "12/345/67890" };
+  }
+
+  it("Rechnung: ohne Briefpapier-Fusszeile steht der Aussteller-Fallback (AUTO-Fusszeile) im PDF", async () => {
     const orgId = await makeOrg();
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
-    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00009", giroAmountCents: 0 }), theme);
+    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00009", giroAmountCents: 0, seller: sellerWithTaxFacts() }), theme);
     const parsed = await parsePdf(pdf);
     // Phase 11b, Task 3 — der Aussteller-Fallback ist jetzt die AUTO-Fusszeile
     // (footer.ts#buildFooterColumns): Firma/Adresse stehen als eigene Spalte mit
     // eigenen Zeilen statt als ein Komma-getrennter Fliesstext; die Kernangaben bleiben
     // (nur die Formatierung aendert sich absichtlich, siehe test/unit/pdf-footer.test.ts).
-    expect(parsed.text).toContain("Muster GmbH");
-    expect(parsed.text).toContain("Hauptstr. 1");
-    expect(parsed.text).toContain("12345 Berlin");
+    // Fusszeilen-EXKLUSIVE Angaben (stehen nirgends sonst im Beleg) beweisen, dass die
+    // Fusszeile tatsaechlich gezeichnet wurde — nicht nur der Absenderblock am Kopf.
+    expect(parsed.text).toContain("Steuer-Nr. 12/345/67890");
+    expect(parsed.text).toContain("USt-IdNr. DE123456789");
+    // Die gruppierte IBAN kann in der schmalen vierten Fusszeilen-Spalte umbrechen
+    // (pdf-parse fuegt dafuer einen Zeilenumbruch ein) — Leerraum vor dem Vergleich
+    // entfernen, siehe dieselbe Behandlung in test/unit/pdf-layouts.test.ts.
+    expect(parsed.text.replace(/\s+/g, "")).toContain("IBANDE02120300000000202051");
+  });
+
+  it("Rechnung: showFooter aus — die Fusszeilen-exklusiven Angaben (IBAN/Steuer-Nr./USt-IdNr.) fehlen im PDF", async () => {
+    const orgId = await makeOrg();
+    await savePrintSettings(orgId, { showFooter: false });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00091", giroAmountCents: 0, seller: sellerWithTaxFacts() }), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).not.toContain("Steuer-Nr. 12/345/67890");
+    expect(parsed.text).not.toContain("USt-IdNr. DE123456789");
+    expect(parsed.text.replace(/\s+/g, "")).not.toContain("IBANDE02120300000000202051");
   });
 
   it("Rechnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
     const orgId = await makeOrg();
-    await saveBrandingSettings(orgId, { footerLeft: "Marken-Fusszeile-Links" });
+    await saveBrandingSettings(orgId, { footerMode: "CUSTOM", footerLeft: "Marken-Fusszeile-Links" });
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
     const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00010", giroAmountCents: 0 }), theme);
@@ -341,7 +367,7 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
 
   it("Lieferschein: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
     const orgId = await makeOrg();
-    await saveBrandingSettings(orgId, { footerCenter: "Marken-Fusszeile-Mitte" });
+    await saveBrandingSettings(orgId, { footerMode: "CUSTOM", footerCenter: "Marken-Fusszeile-Mitte" });
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
     const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData(), theme);
@@ -352,7 +378,7 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
 
   it("Mahnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
     const orgId = await makeOrg();
-    await saveBrandingSettings(orgId, { footerRight: "Marken-Fusszeile-Rechts" });
+    await saveBrandingSettings(orgId, { footerMode: "CUSTOM", footerRight: "Marken-Fusszeile-Rechts" });
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
     const pdf = await renderDunningPdf(baseDunningData(), theme);

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildDeliveryNotePdfData, type DeliveryNoteRow, type OrgRow, type CustomerRow } from "@/lib/pdf/delivery-note-data";
-import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
-import { testPdfTheme } from "../helpers/pdf-theme";
+import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
+import { testPdfTheme, parsePdf } from "../helpers/pdf-theme";
 
 const org: OrgRow = {
   id: "org-1",
@@ -222,5 +222,46 @@ describe("renderDeliveryNotePdf", () => {
     );
     const pdf = await renderDeliveryNotePdf(data, testPdfTheme());
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock bricht bei 75 Positionen auf eine eigene Seite um, OHNE den Tabellenkopf zu wiederholen", async () => {
+    // Empirisch ermittelt (Testkommentar statt Magiezahl-Erklaerung): bei den Default-
+    // Raendern fuellen 75 Zeilen (16pt/Zeile) die ersten beiden Seiten bis knapp vor den
+    // unteren Rand, sodass der Summenblock (Linie + bis zu drei Summenzeilen) auf eine
+    // DRITTE, ansonsten leere Seite ausweicht. Vorher nutzte der Summenblock denselben
+    // `ensureSpace`-Helfer wie die Positionszeilen — der zeichnet bei jedem Seitenumbruch
+    // den Tabellenkopf ("Beschreibung" etc.) neu, auch wenn die neue Seite gar keine
+    // Positionszeile mehr traegt. "Beschreibung" darf daher NUR auf den beiden
+    // positionstragenden Seiten stehen (numpages - 1 bei einer summen-only letzten Seite),
+    // nicht ein drittes Mal auf der reinen Summenseite.
+    const lineCount = 75;
+    const lines: DeliveryNotePdfData["lines"] = Array.from({ length: lineCount }, (_, i) => ({
+      pos: i + 1,
+      description: `Testartikel ${i + 1}`,
+      quantityMilli: 1000,
+      unit: "C62",
+      unitNetPriceCents: 1000,
+      taxRate: 19,
+    }));
+    const data: DeliveryNotePdfData = {
+      number: "LS-2026-0099",
+      issueDate: new Date("2026-06-01"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      lines,
+      showPrices: true,
+      showTax: true,
+      showArticleNumber: false,
+      showDescription: true,
+      showDeliveryAddress: false,
+    };
+    const pdf = await renderDeliveryNotePdf(data, testPdfTheme());
+    const { text, numpages } = await parsePdf(pdf);
+    expect(numpages).toBe(3);
+    expect(text).toContain(`Testartikel ${lineCount}`);
+    expect(text).toContain("Gesamtbetrag");
+    const beschreibungCount = (text.match(/Beschreibung/g) ?? []).length;
+    expect(beschreibungCount).toBe(numpages - 1);
   });
 });

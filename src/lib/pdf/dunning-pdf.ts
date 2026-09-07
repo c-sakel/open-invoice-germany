@@ -134,21 +134,19 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     y += 16;
     doc.fontSize(10).fillColor("#000").text(`Bitte überweisen Sie den Gesamtbetrag bis spätestens ${deDate(data.newDueDate)}.`, left, y, { width: right - left });
 
-    // Fußzeile (Phase 11b): AUTO/CUSTOM-Spalten aus footer.ts, gezeichnet vom Layout-Hook
-    // (nur wenn options.showFooter an ist).
+    // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
+    // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
     const footY = doc.page.height - margins.bottom - layout.footerHeight;
-    if (theme.options.showFooter) {
-      layout.drawFooter(
-        frame,
-        buildFooterColumns({ seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts }, theme.brand),
-        footY,
-      );
-    }
+    const footerColumns = buildFooterColumns(
+      { seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts },
+      theme.brand,
+    );
 
-    // Falz-/Lochmarken + Seitenzahlen.
+    // Falz-/Lochmarken + Seitenzahlen + Fusszeile.
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
+      if (theme.options.showFooter) layout.drawFooter(frame, footerColumns, footY);
       if (theme.options.foldMarks) drawFoldMarks(doc);
       if (theme.options.punchMarks) drawPunchMark(doc);
     }
