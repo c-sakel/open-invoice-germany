@@ -14,6 +14,7 @@
  */
 import { useState } from "react";
 import { narrowTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
+import { newLineKey } from "@/lib/editor/ids";
 import type { EditorMode } from "@/lib/editor/constants";
 import { CustomerPicker, type CustomerOption } from "../CustomerPicker";
 import { EditorField } from "../EditorField";
@@ -54,7 +55,7 @@ function discountPercentOf(c: { defaultDiscountPermille?: number | null } | unde
 
 function toDraftLine(l: TakeOverLineDTO): DraftLine {
   return {
-    key: crypto.randomUUID(),
+    key: newLineKey(),
     lineType: l.lineType as LineType,
     description: l.description,
     descriptionLong: l.descriptionLong ?? "",

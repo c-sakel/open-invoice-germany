@@ -20,9 +20,29 @@
  * "ausbluten" — abgestimmt auf `AppShell`s `<main className="... px-6 py-8">` (Task 6
  * bindet den Editor dort ein); bei einem abweichenden Seiten-Container muesste Task 6
  * diesen Wert anpassen.
+ *
+ * I5 (Abschluss-Review): der bisherige Guard schuetzte nur den eigenen Zurueck-Link —
+ * ein Klick auf einen Sidebar-/Topbar-Link (die App-Shell liegt dauerhaft NEBEN dem
+ * Editor) verwarf einen ungespeicherten Entwurf kommentarlos. Solange `dirty`, faengt
+ * ein `document`-Listener in der CAPTURING-Phase jeden Klick auf ein `<a href>` ab, bevor
+ * Next.js' `Link`-eigener Klick-Handler (der die Navigation ausloest) ihn sieht — dessen
+ * Implementierung bricht bereits bei `e.defaultPrevented` ab (`next/dist/client/link.js`),
+ * ein `preventDefault()` hier reicht also aus, kein `stopPropagation()` noetig. Ausnahmen:
+ * modifizierte Klicks (Strg/Cmd/Shift/Alt, Mittelklick — neuer Tab/Fenster, soll normal
+ * funktionieren), Ziele in einem `target != _self`/`download`-Link, fremde Origins (externe
+ * Links) und Klicks INNERHALB eines `<dialog>` — das deckt sowohl den eigenen
+ * Bestaetigungs-Dialog unten (dessen "Verlassen"-Link darf nicht sich selbst abfangen) als
+ * auch `NewCustomerDialog`/`NewProductDialog` ab (beide natives `<dialog>`, siehe dort).
+ * Abgefangene Klicks oeffnen denselben Dialog wie der Zurueck-Link, mit `pendingHref` statt
+ * `backHref` als Ziel — bestaetigt der Nutzer, navigiert der "Verlassen"-Link dorthin (kein
+ * `router.push` noetig, der Klick auf den `Link` reicht).
  */
 import Link from "next/link";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+
+function isModifiedClick(e: MouseEvent): boolean {
+  return e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
+}
 
 export function EditorHeader({
   backHref,
@@ -44,13 +64,53 @@ export function EditorHeader({
   previewDisabled?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  // Ziel-Href eines abgefangenen In-App-Navigationsklicks (Sidebar/Topbar/Breadcrumb) —
+  // `null` bedeutet "der eigene Zurueck-Link hat den Dialog geoeffnet", dann greift
+  // `backHref` als Fallback (siehe `Link href` im Dialog unten).
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function onDocumentClick(e: MouseEvent) {
+      if (e.defaultPrevented || isModifiedClick(e)) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      // Klicks innerhalb eines nativen <dialog> nicht abfangen — deckt sowohl den
+      // eigenen Bestaetigungs-Dialog (dessen "Verlassen"-Link) als auch
+      // NewCustomerDialog/NewProductDialog ab (siehe Modulkommentar).
+      if (target.closest("dialog")) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+      if (url.origin !== window.location.origin) return;
+      e.preventDefault();
+      setPendingHref(`${url.pathname}${url.search}${url.hash}`);
+      dialogRef.current?.showModal();
+    }
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
+  }, [dirty]);
 
   return (
     <div className="sticky top-0 z-20 -mx-6 mb-6 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {dirty ? (
-            <button type="button" onClick={() => dialogRef.current?.showModal()} className="shrink-0 text-sm text-slate-500 hover:text-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setPendingHref(null);
+                dialogRef.current?.showModal();
+              }}
+              className="shrink-0 text-sm text-slate-500 hover:text-slate-800"
+            >
               ← Zurück
             </button>
           ) : (
@@ -87,13 +147,23 @@ export function EditorHeader({
         <div className="space-y-3 p-5">
           <p className="text-sm text-slate-700">Es gibt ungespeicherte Änderungen. Trotzdem verlassen?</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                dialogRef.current?.close();
+                setPendingHref(null);
+              }}
+              className="text-sm text-slate-500 hover:text-slate-800"
+            >
               Abbrechen
             </button>
             <Link
-              href={backHref}
+              href={pendingHref ?? backHref}
               className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700"
-              onClick={() => dialogRef.current?.close()}
+              onClick={() => {
+                dialogRef.current?.close();
+                setPendingHref(null);
+              }}
             >
               Verlassen
             </Link>
