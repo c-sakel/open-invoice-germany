@@ -60,4 +60,12 @@ export interface PdfLayout {
   drawTotalsRule(frame: LayoutFrame, x: number, y: number): void;
   drawFooter(frame: LayoutFrame, columns: FooterColumn[], y: number): void;
   footerHeight: number;
+  /**
+   * Optionaler Hook (Phase 11b, Task 4) fuer Kopf-"Chrome" auf Folgeseiten (z. B. der
+   * farbige Balken von `modern`) — wird von den drei Renderern direkt nach `doc.addPage()`
+   * aufgerufen. Liefert er eine Zahl, ist das die neue Start-y-Position fuer den
+   * Seiteninhalt (statt `margins.top`); bei `void` bleibt der bisherige Standard
+   * (`margins.top`) unveraendert. Layouts ohne eigenes Kopf-Chrome lassen den Hook weg.
+   */
+  drawPageChrome?(frame: LayoutFrame): number | void;
 }

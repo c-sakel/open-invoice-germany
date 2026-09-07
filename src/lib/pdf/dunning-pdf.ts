@@ -78,9 +78,6 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
-    doc.on("pageAdded", () => drawBackground(doc, theme));
-    drawBackground(doc, theme);
-
     const cur = data.currency;
     const left = margins.left;
     const right = doc.page.width - margins.right;
@@ -90,6 +87,17 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     const layout = getLayout(theme.layoutId);
     const base = theme.brand.fontSizePt + layout.fontDelta;
     const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
+
+    // Phase 11b, Task 4 — die Mahnung bricht (anders als Rechnung/Lieferschein) nie
+    // manuell um `doc.addPage()`; sie ueberlaesst lange Texte pdfkits eigener
+    // Seitenumbruch-Logik. `pageAdded` feuert dabei genauso wie bei einem expliziten
+    // `doc.addPage()` (siehe drawBackground oben) — daher hier derselbe Hook, nur ohne
+    // Rueckgabewert-Auswertung (keine manuell gefuehrte y-Fortsetzung vorhanden).
+    doc.on("pageAdded", () => {
+      drawBackground(doc, theme);
+      layout.drawPageChrome?.(frame);
+    });
+    drawBackground(doc, theme);
 
     let y = layout.drawKopf(frame, {
       title,

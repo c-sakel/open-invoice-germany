@@ -208,7 +208,9 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     const ensureSpace = (atY: number, needed: number): number => {
       if (atY + needed <= pageBottom) return atY;
       doc.addPage();
-      return drawTableHeader(margins.top);
+      // Phase 11b, Task 4 — Kopf-"Chrome" auf Folgeseiten (z. B. der Balken von `modern`).
+      const chromeY = layout.drawPageChrome?.(frame);
+      return drawTableHeader(typeof chromeY === "number" ? chromeY : margins.top);
     };
 
     y = drawTableHeader(y);

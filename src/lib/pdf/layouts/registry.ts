@@ -7,8 +7,16 @@
 import { DEFAULT_LAYOUT_ID, LAYOUT_IDS, isLayoutId, type LayoutId } from "./ids";
 import type { PdfLayout } from "./types";
 import { standardLayout } from "./standard";
+import { schlichtLayout } from "./schlicht";
+import { klassikLayout } from "./klassik";
+import { modernLayout } from "./modern";
 
-const LAYOUTS: Partial<Record<LayoutId, PdfLayout>> = { standard: standardLayout };
+const LAYOUTS: Partial<Record<LayoutId, PdfLayout>> = {
+  standard: standardLayout,
+  schlicht: schlichtLayout,
+  klassik: klassikLayout,
+  modern: modernLayout,
+};
 
 export function registerLayout(layout: PdfLayout): void {
   LAYOUTS[layout.id] = layout;
