@@ -58,7 +58,11 @@ export async function POST(req: Request) {
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
+    // Fix Round 1, Minor — nur Zod-/NotFoundError sind "der Client hat etwas falsch
+    // gemacht" (400/404); alles andere (Renderer-Absturz, DB-Fehler etc.) ist ein
+    // interner Fehler und gehoert auf 500 (analog `/api/search`, `mapError` in
+    // customers/[id]/last-document/route.ts).
     console.error("POST /api/pdf/preview:", e);
-    return NextResponse.json({ error: "Vorschau konnte nicht erzeugt werden." }, { status: 400 });
+    return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }
 }

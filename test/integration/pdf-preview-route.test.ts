@@ -35,6 +35,7 @@ vi.mock("@/lib/org", () => ({
 
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { saveDocumentSettings } from "@/domain/document/settings";
 import { POST as previewPost } from "@/app/api/pdf/preview/route";
 import { parsePdf } from "../helpers/pdf-theme";
 
@@ -101,11 +102,38 @@ describe("POST /api/pdf/preview", () => {
   it("Angebot und Lieferschein rendern; 400 bei Zod-Fehler; 404 bei fremdem Kunden", async () => {
     const doc = await previewPost(req({ kind: "DOCUMENT", payload: { kind: "ANGEBOT", customerId, currency: "EUR", lines: [line] } }));
     expect(doc.status).toBe(200);
+    const docParsed = await parsePdf(Buffer.from(await doc.arrayBuffer()));
+    expect(docParsed.text).toContain("ENTWURF");
+    expect((docParsed.text.match(/VORSCHAU/g) ?? []).length).toBeGreaterThanOrEqual(docParsed.numpages);
+
     const dn = await previewPost(req({ kind: "DELIVERY_NOTE", payload: { customerId, lines: [{ description: "Ware", quantityMilli: 3000, unit: "C62" }] } }));
     expect(dn.status).toBe(200);
+    const dnParsed = await parsePdf(Buffer.from(await dn.arrayBuffer()));
+    expect(dnParsed.text).toContain("ENTWURF");
+    expect((dnParsed.text.match(/VORSCHAU/g) ?? []).length).toBeGreaterThanOrEqual(dnParsed.numpages);
+
     const bad = await previewPost(req({ kind: "INVOICE", payload: { customerId, lines: [] } }));
     expect(bad.status).toBe(400);
     const foreign = await previewPost(req({ kind: "INVOICE", payload: { customerId: "gibtsnicht", type: "INVOICE", currency: "EUR", lines: [line] } }));
     expect(foreign.status).toBe(404);
+  });
+
+  // Fix Round 1, Wichtig — die Lieferschein-Vorschau muss dieselben Anzeige-Defaults wie
+  // die echte Anlage (`createDeliveryNoteWithinTx`) verwenden: ohne Payload-Flag greift
+  // `DocumentSettings.dnShowPrices`, nicht ein hart codiertes `true`. Bewusst als LETZTER
+  // Test dieser Datei (mutiert die Org-weiten DocumentSettings dauerhaft).
+  it("Lieferschein-Vorschau: dnShowPrices=false unterdrueckt die Netto-Spalte, ein explizites showPrices:true gewinnt trotzdem", async () => {
+    await saveDocumentSettings(orgId, { dnShowPrices: false });
+    const dnLine = { description: "Ware", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 500 };
+
+    const withoutFlag = await previewPost(req({ kind: "DELIVERY_NOTE", payload: { customerId, lines: [dnLine] } }));
+    expect(withoutFlag.status).toBe(200);
+    const { text: textWithoutFlag } = await parsePdf(Buffer.from(await withoutFlag.arrayBuffer()));
+    expect(textWithoutFlag).not.toContain("Netto");
+
+    const withFlag = await previewPost(req({ kind: "DELIVERY_NOTE", payload: { customerId, showPrices: true, lines: [dnLine] } }));
+    expect(withFlag.status).toBe(200);
+    const { text: textWithFlag } = await parsePdf(Buffer.from(await withFlag.arrayBuffer()));
+    expect(textWithFlag).toContain("Netto");
   });
 });
