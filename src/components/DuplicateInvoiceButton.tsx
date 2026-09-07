@@ -10,14 +10,26 @@ import { useRouter } from "next/navigation";
  * per `disabled` mit Begruendung aus, statt einen Button zu zeigen, der serverseitig
  * ohnehin scheitert.
  */
-export function DuplicateInvoiceButton({ invoiceId, disabled, disabledReason }: { invoiceId: string; disabled?: boolean; disabledReason?: string }) {
+export function DuplicateInvoiceButton({
+  invoiceId,
+  disabled,
+  disabledReason,
+  asMenuItem = false,
+}: {
+  invoiceId: string;
+  disabled?: boolean;
+  disabledReason?: string;
+  /** M13 (Fix-Welle): borderloser volle-Breite-Menuepunkt statt gerahmtem Knopf, fuer die
+   *  Verwendung innerhalb eines `<ActionMenu>` (z. B. `InvoiceMoreMenu`). */
+  asMenuItem?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (disabled) {
     return (
-      <span className="text-xs text-slate-400" title={disabledReason}>
+      <span className={asMenuItem ? "block px-3 py-1.5 text-xs text-slate-400" : "text-xs text-slate-400"} title={disabledReason}>
         Duplizieren nicht möglich{disabledReason ? ` (${disabledReason})` : ""}
       </span>
     );
@@ -40,16 +52,20 @@ export function DuplicateInvoiceButton({ invoiceId, disabled, disabledReason }: 
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1">
+    <span className={asMenuItem ? "block w-full" : "inline-flex flex-col items-start gap-1"}>
       <button
         type="button"
         onClick={onClick}
         disabled={busy}
-        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+        className={
+          asMenuItem
+            ? "block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-60"
+            : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+        }
       >
         {busy ? "…" : "Duplizieren"}
       </button>
-      {error && <span className="text-xs text-rose-600">{error}</span>}
+      {error && <span className={asMenuItem ? "block px-3 py-1 text-xs text-rose-600" : "text-xs text-rose-600"}>{error}</span>}
     </span>
   );
 }

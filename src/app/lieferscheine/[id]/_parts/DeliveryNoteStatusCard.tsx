@@ -16,13 +16,17 @@ interface DeliveryNoteForStatusCard {
   showPrices: boolean;
   showArticleNumber: boolean;
   showDeliveryAddress: boolean;
-  customer: { id: string; name: string };
+  customer: { id: string; name: string; addressLine1: string; postalCode: string; city: string };
 }
 
 /**
  * Statuskarte der Lieferscheindetailseite (Phase 11d, Task 4, `aside`-Slot) — buendelt die
  * frueheren Datumszeilen (Z. 168-179) und die alte "Empfänger"-Karte (Z. 119-126) als
  * kompakte Zeilen, ergaenzt um die drei anzeigerelevanten Belegoptionen als Chips.
+ *
+ * M2 (Fix-Welle): Kundenanschrift wieder ergaenzt (direkt aus `customer`, wie in der
+ * urspruenglichen "Empfänger"-Karte vor 11d — kein Snapshot auf `DeliveryNote`, anders als
+ * bei Rechnung/Dokument gab es hier auch vorher keinen).
  */
 export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForStatusCard; children?: ReactNode }) {
   const rows: StatusRow[] = [
@@ -32,6 +36,17 @@ export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForSt
         <Link href={`/kunden/${dn.customer.id}`} className="text-indigo-600 hover:underline">
           {dn.customer.name}
         </Link>
+      ),
+    },
+    {
+      label: "Anschrift",
+      value: (
+        <span className="block text-right">
+          <span className="block">{dn.customer.addressLine1}</span>
+          <span className="block">
+            {dn.customer.postalCode} {dn.customer.city}
+          </span>
+        </span>
       ),
     },
     { label: "Ausstellungsdatum", value: deDate(dn.issueDate) },
