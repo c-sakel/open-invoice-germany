@@ -14,6 +14,7 @@ vi.mock("@/lib/org", () => ({
 
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { updateNumberRange } from "@/domain/numbering/ranges";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
@@ -53,6 +54,13 @@ beforeAll(async () => {
     data: { orgId: otherOrgId, name: "Zebra Fremd GmbH", addressLine1: "x", postalCode: "1", city: "y", type: "BUSINESS" },
   });
   await dbInternal.product.create({ data: { orgId, name: "Zebra-Etikettendrucker", articleNumber: "ZEB-500", netPriceCents: 19900 } });
+
+  // Fix Round 1 (Task-5-Review, Testflake): Invoice.number ist GLOBAL eindeutig — ohne
+  // eigenen Praefix kollidiert die im Jahr 2071 finalisierte Rechnung je nach Dateireihenfolge
+  // mit test/integration/mcp-payments-recurring.test.ts (nutzt fuer den echten aktuellen Jahr
+  // einen eigenen Praefix, faellt aber fuer 2071 mangels eigener NumberRange-Zeile auf denselben
+  // Default zurueck wie hier). Muster wie test/integration/customer-routes.test.ts:71.
+  await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "SRCH-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", new Date("2071-03-01T12:00:00.000Z"));
 
   // Objekt-Literal ohne strikte Typannotation + Cast: `CreateInvoiceInput` ist der
   // Zod-OUTPUT-Typ (macht documentChargePermille/-Cents ueber `.default(0)` nicht-optional),
