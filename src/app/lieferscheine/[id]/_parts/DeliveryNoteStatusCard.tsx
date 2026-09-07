@@ -1,6 +1,7 @@
 // src/app/lieferscheine/[id]/_parts/DeliveryNoteStatusCard.tsx
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
 
 function deDate(d: Date | null): string {
@@ -8,6 +9,7 @@ function deDate(d: Date | null): string {
 }
 
 interface DeliveryNoteForStatusCard {
+  status: string;
   issueDate: Date;
   deliveryDate: Date | null;
   shippingDate: Date | null;
@@ -58,7 +60,7 @@ export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForSt
   }
 
   return (
-    <StatusCard status={null} rows={rows}>
+    <StatusCard status={<StatusBadge status={dn.status} />} rows={rows}>
       <div className="space-y-4">{children}</div>
     </StatusCard>
   );
