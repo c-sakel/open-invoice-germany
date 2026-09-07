@@ -24,13 +24,30 @@ interface ToolResult {
   content: { type: string; text: string }[];
   isError?: boolean;
 }
+interface ZodLikeSchema {
+  safeParseAsync: (data: unknown) => Promise<{ success: true; data: unknown } | { success: false; error: { message: string } }>;
+}
 interface RegisteredTool {
   handler: (args: Record<string, unknown>) => Promise<ToolResult>;
+  /** Vom MCP-SDK aus der `inputSchema`-Konfiguration gebautes Zod-Objekt (server/mcp.js
+   *  #getZodSchemaObject) — echte Clients rufen NIE `handler` direkt auf, sondern lassen
+   *  zuerst dieses Schema ueber die Argumente laufen (#validateToolInput). Ein direkter
+   *  `tool.handler(args)`-Aufruf haette den vorbestehenden Defaults-Fehler (Task 8: Zod
+   *  fuellt bei `<schema>.partial().shape` fehlende, aber defaultete Felder trotzdem auf)
+   *  NIE reproduziert — `args` haette nur die tatsaechlich uebergebenen Testschluessel
+   *  enthalten, nie die vom SDK ergaenzten Defaults der uebrigen Felder. */
+  inputSchema?: ZodLikeSchema;
 }
-function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+/** Ruft ein MCP-Tool wie ein echter Client auf — inkl. Schema-Validierung, siehe RegisteredTool oben. */
+async function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
   const tools = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
   const tool = tools[name];
   if (!tool) throw new Error(`MCP-Tool "${name}" ist nicht registriert.`);
+  if (tool.inputSchema) {
+    const parsed = await tool.inputSchema.safeParseAsync(args);
+    if (!parsed.success) return { content: [{ type: "text", text: `Validierung fehlgeschlagen: ${parsed.error.message}` }], isError: true };
+    return tool.handler(parsed.data as Record<string, unknown>);
+  }
   return tool.handler(args);
 }
 function text(result: ToolResult): string {
@@ -83,16 +100,22 @@ describe("get_settings", () => {
 
 describe("update_document_settings", () => {
   it("aktualisiert nur die angegebenen Felder (Merge)", async () => {
+    // Fix-Welle (Abschluss-Review, Block 1 "Minor"): `eInvoiceDefault === true` allein ist
+    // KEIN diskriminierender Beleg — das ist zugleich der Zod-Default, der Test waere auch
+    // beim vorbestehenden Fehler (siehe update_print_settings-Kommentar oben) gruen
+    // geblieben. `storeAcceptIp` (Default `false`) wird deshalb zuerst explizit auf sein
+    // GEGENTEIL gesetzt, bevor das eigentliche Teil-Update geprueft wird.
+    await callTool("update_document_settings", { storeAcceptIp: true });
     const before = JSON.parse(text(await callTool("get_settings", { area: "documents" })));
-    expect(before.eInvoiceDefault).toBe(true);
+    expect(before.storeAcceptIp).toBe(true);
 
     const res = await callTool("update_document_settings", { invoiceDueDays: 30 });
     expect(res.isError).toBeFalsy();
 
     const after = JSON.parse(text(await callTool("get_settings", { area: "documents" })));
     expect(after.invoiceDueDays).toBe(30);
-    // Nicht angegebene Felder bleiben unveraendert.
-    expect(after.eInvoiceDefault).toBe(true);
+    // Nicht angegebenes, bereits vom Default abweichendes Feld bleibt unveraendert.
+    expect(after.storeAcceptIp).toBe(true);
   });
 
   it("liefert einen Fehler bei ungueltiger Eingabe", async () => {
@@ -107,6 +130,28 @@ describe("update_print_settings", () => {
     const after = JSON.parse(text(await callTool("get_settings", { area: "print" })));
     expect(after.foldMarks).toBe(true);
     expect(after.showFooter).toBe(true); // unveraendert
+  });
+
+  // Fix (Task 8, vorbestehender Fehler): `<schema>.partial().shape` als MCP-inputSchema
+  // liess Zod fehlende, aber defaultete Felder trotzdem auffuellen — ein Teil-Update mit
+  // nur EINEM Schalter setzte dadurch jeden nicht genannten Schalter auf seinen Default
+  // zurueck. Reproduziert nur ueber die echte SDK-Validierung (callTool routet jetzt
+  // durch tool.inputSchema, siehe oben) — ein direkter Handler-Aufruf haette das nie
+  // sichtbar gemacht.
+  it("Teil-Update mit nur einem Schalter setzt andere Schalter nicht auf Default zurueck", async () => {
+    await callTool("update_print_settings", { showGiroCode: false, punchMarks: true });
+    const before = JSON.parse(text(await callTool("get_settings", { area: "print" })));
+    expect(before.showGiroCode).toBe(false);
+    expect(before.punchMarks).toBe(true);
+
+    const res = await callTool("update_print_settings", { showPageNumbers: false });
+    expect(res.isError).toBeFalsy();
+
+    const after = JSON.parse(text(await callTool("get_settings", { area: "print" })));
+    expect(after.showPageNumbers).toBe(false);
+    // Nicht genannte Schalter (bereits von den defaults abweichend) bleiben unveraendert.
+    expect(after.showGiroCode).toBe(false);
+    expect(after.punchMarks).toBe(true);
   });
 });
 
@@ -125,6 +170,44 @@ describe("update_branding_settings", () => {
     const after = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
     expect(after.logoPath).toBe(before.logoPath);
     expect(after.fontSizePt).toBe(11);
+  });
+
+  // Fix (Task 8, vorbestehender Fehler): siehe Kommentar bei update_print_settings oben —
+  // `brandingSettingsInputSchema.omit(...).partial().shape` hatte dieselbe Schwaeche.
+  it("Teil-Update mit nur einem Feld setzt andere Felder nicht auf Default zurueck", async () => {
+    await callTool("update_branding_settings", { layoutId: "schlicht", primaryColor: "#123456" });
+    const before = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
+    expect(before.layoutId).toBe("schlicht");
+    expect(before.primaryColor).toBe("#123456");
+
+    const res = await callTool("update_branding_settings", { logoWidthMm: 55 });
+    expect(res.isError).toBeFalsy();
+
+    const after = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
+    expect(after.logoWidthMm).toBe(55);
+    // Nicht genannte Felder (bereits von den Defaults abweichend) bleiben unveraendert.
+    expect(after.layoutId).toBe("schlicht");
+    expect(after.primaryColor).toBe("#123456");
+  });
+});
+
+describe("list_pdf_layouts (Phase 11b, Task 8)", () => {
+  it("list_pdf_layouts und Branding-Layoutfelder ueber MCP", async () => {
+    const list = JSON.parse(text(await callTool("list_pdf_layouts", {}))) as { id: string }[];
+    expect(list.map((l) => l.id)).toContain("schlicht");
+
+    await callTool("update_branding_settings", { layoutId: "schlicht", layoutByType: { DUNNING: "kompakt" }, footerMode: "CUSTOM" });
+    const branding = JSON.parse(text(await callTool("get_settings", { area: "branding" }))) as {
+      layoutId: string;
+      layoutByType: Record<string, string>;
+      footerMode: string;
+    };
+    expect(branding.layoutId).toBe("schlicht");
+    expect(branding.layoutByType).toEqual({ DUNNING: "kompakt" });
+    expect(branding.footerMode).toBe("CUSTOM");
+
+    const bad = await callTool("update_branding_settings", { layoutId: "premium" });
+    expect(bad.isError).toBe(true);
   });
 });
 
@@ -152,10 +235,19 @@ describe("update_number_range", () => {
 
 describe("update_dunning_settings (Nachtrag §55)", () => {
   it("aktualisiert nur die angegebenen Felder (Merge)", async () => {
+    // Fix-Welle (Abschluss-Review, Block 1 "Minor"): dieselbe Luecke wie bei
+    // update_document_settings oben — `autoCreate` (Default `true`) wird zuerst auf sein
+    // Gegenteil gesetzt, damit das nachfolgende Teil-Update tatsaechlich diskriminiert.
+    await callTool("update_dunning_settings", { autoCreate: false });
+    const before = JSON.parse(text(await callTool("get_settings", { area: "dunning" })));
+    expect(before.autoCreate).toBe(false);
+
     const res = await callTool("update_dunning_settings", { gracePeriodDays: 5 });
     expect(res.isError).toBeFalsy();
     const after = JSON.parse(text(await callTool("get_settings", { area: "dunning" })));
     expect(after.gracePeriodDays).toBe(5);
+    // Nicht angegebenes, bereits vom Default abweichendes Feld bleibt unveraendert.
+    expect(after.autoCreate).toBe(false);
   });
 });
 
@@ -183,5 +275,36 @@ describe("update_dunning_stage (Nachtrag §55)", () => {
   it("meldet eine unbekannte Mahnstufen-ID als Fehler", async () => {
     const res = await callTool("update_dunning_stage", { id: "unbekannt", name: "x" });
     expect(res.isError).toBe(true);
+  });
+
+  // Fix-Welle (Abschluss-Review Phase 11b, Block 5b "Important"): `update_dunning_stage`
+  // nutzte bisher `dunningStageFieldsSchema.partial().shape` direkt statt
+  // `partialInputShape(...)` (siehe Kommentar bei update_print_settings oben) —
+  // `autoSend` (default false) und `enabled` (default true) wurden bei jedem Teil-Update
+  // stillschweigend auf ihren Default zurueckgesetzt. Auf der Produktivinstanz mit aktivem
+  // Scheduler haette das eine vom Betreiber deaktivierte Stufe (enabled: false)
+  // unbeabsichtigt re-aktiviert.
+  it("enabled:false und autoSend:true (beide vom Default abweichend) ueberleben ein Update, das nur den Namen aendert", async () => {
+    const stages = JSON.parse(text(await callTool("list_dunning_stages"))) as { id: string }[];
+    const [stage] = stages;
+    if (!stage) throw new Error("keine Mahnstufe gefunden");
+
+    // Setup: beide Felder auf das GEGENTEIL ihres Defaults bringen — nur so ist ein
+    // spaeteres stillschweigendes Zuruecksetzen auf den Default ueberhaupt von
+    // "unveraendert geblieben" unterscheidbar.
+    const setup = await callTool("update_dunning_stage", { id: stage.id, enabled: false, autoSend: true });
+    expect(setup.isError).toBeFalsy();
+    const afterSetup = JSON.parse(text(await callTool("list_dunning_stages"))).find((s: { id: string }) => s.id === stage.id);
+    expect(afterSetup.enabled).toBe(false);
+    expect(afterSetup.autoSend).toBe(true);
+
+    // Diskriminierender Aufruf: NUR `name` mitschicken.
+    const res = await callTool("update_dunning_stage", { id: stage.id, name: "Umbenannt (Fix-Welle Test)" });
+    expect(res.isError).toBeFalsy();
+
+    const after = JSON.parse(text(await callTool("list_dunning_stages"))).find((s: { id: string }) => s.id === stage.id);
+    expect(after.name).toBe("Umbenannt (Fix-Welle Test)");
+    expect(after.enabled).toBe(false);
+    expect(after.autoSend).toBe(true);
   });
 });

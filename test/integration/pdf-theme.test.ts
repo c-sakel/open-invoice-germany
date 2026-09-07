@@ -6,13 +6,18 @@ import { describe, it, expect } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { savePrintSettings } from "@/domain/settings/print";
-import { saveBrandingSettings } from "@/domain/settings/branding";
+import { saveBrandingSettings, loadBrandingSettings } from "@/domain/settings/branding";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
 import { renderDunningPdf, type DunningPdfData } from "@/lib/pdf/dunning-pdf";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import { parsePdf } from "../helpers/pdf-theme";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { updateNumberRange } from "@/domain/numbering/ranges";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import type { CreateInvoiceInput } from "@/schemas";
 
 async function makeOrg(overrides: Partial<{ iban: string | null }> = {}) {
   const org = await dbInternal.organization.create({
@@ -313,18 +318,50 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
     };
   }
 
-  it("Rechnung: ohne Briefpapier-Fusszeile steht der Aussteller-Fallback im PDF", async () => {
+  // Fix-Runde 1 (Koordinator, Punkt 3): der Seller-Snapshot bekommt hier vatId/taxNumber,
+  // damit die AUTO-Fusszeile auch die Steuer/Inhaber-Spalte fuellt — nur so beweist der
+  // Test wirklich, dass die FUSSZEILE gerendert wurde (Firma/Adresse allein stehen auch
+  // im Absenderblock am Kopf, "Muster GmbH"/"Hauptstr. 1" haetten also selbst bei einer
+  // KOMPLETT FEHLENDEN Fusszeile gruen bestanden).
+  function sellerWithTaxFacts() {
+    return { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin", countryCode: "DE", vatId: "DE123456789", taxNumber: "12/345/67890" };
+  }
+
+  it("Rechnung: ohne Briefpapier-Fusszeile steht der Aussteller-Fallback (AUTO-Fusszeile) im PDF", async () => {
     const orgId = await makeOrg();
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
-    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00009", giroAmountCents: 0 }), theme);
+    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00009", giroAmountCents: 0, seller: sellerWithTaxFacts() }), theme);
     const parsed = await parsePdf(pdf);
-    expect(parsed.text).toContain("Muster GmbH · Hauptstr. 1, 12345 Berlin");
+    // Phase 11b, Task 3 — der Aussteller-Fallback ist jetzt die AUTO-Fusszeile
+    // (footer.ts#buildFooterColumns): Firma/Adresse stehen als eigene Spalte mit
+    // eigenen Zeilen statt als ein Komma-getrennter Fliesstext; die Kernangaben bleiben
+    // (nur die Formatierung aendert sich absichtlich, siehe test/unit/pdf-footer.test.ts).
+    // Fusszeilen-EXKLUSIVE Angaben (stehen nirgends sonst im Beleg) beweisen, dass die
+    // Fusszeile tatsaechlich gezeichnet wurde — nicht nur der Absenderblock am Kopf.
+    expect(parsed.text).toContain("Steuer-Nr. 12/345/67890");
+    expect(parsed.text).toContain("USt-IdNr. DE123456789");
+    // Die gruppierte IBAN kann in der schmalen vierten Fusszeilen-Spalte umbrechen
+    // (pdf-parse fuegt dafuer einen Zeilenumbruch ein) — Leerraum vor dem Vergleich
+    // entfernen, siehe dieselbe Behandlung in test/unit/pdf-layouts.test.ts.
+    expect(parsed.text.replace(/\s+/g, "")).toContain("IBANDE02120300000000202051");
+  });
+
+  it("Rechnung: showFooter aus — die Fusszeilen-exklusiven Angaben (IBAN/Steuer-Nr./USt-IdNr.) fehlen im PDF", async () => {
+    const orgId = await makeOrg();
+    await savePrintSettings(orgId, { showFooter: false });
+    const theme = await loadPdfTheme(orgId);
+    theme.compress = false;
+    const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00091", giroAmountCents: 0, seller: sellerWithTaxFacts() }), theme);
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).not.toContain("Steuer-Nr. 12/345/67890");
+    expect(parsed.text).not.toContain("USt-IdNr. DE123456789");
+    expect(parsed.text.replace(/\s+/g, "")).not.toContain("IBANDE02120300000000202051");
   });
 
   it("Rechnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
     const orgId = await makeOrg();
-    await saveBrandingSettings(orgId, { footerLeft: "Marken-Fusszeile-Links" });
+    await saveBrandingSettings(orgId, { footerMode: "CUSTOM", footerLeft: "Marken-Fusszeile-Links" });
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
     const pdf = await renderInvoicePdf(baseInvoiceData({ number: "RE-2056-00010", giroAmountCents: 0 }), theme);
@@ -335,7 +372,7 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
 
   it("Lieferschein: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
     const orgId = await makeOrg();
-    await saveBrandingSettings(orgId, { footerCenter: "Marken-Fusszeile-Mitte" });
+    await saveBrandingSettings(orgId, { footerMode: "CUSTOM", footerCenter: "Marken-Fusszeile-Mitte" });
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
     const pdf = await renderDeliveryNotePdf(baseDeliveryNoteData(), theme);
@@ -346,7 +383,7 @@ describe("PdfTheme — S3 (Fix-Welle): Branded-Footer ODER Fallback, nie beide",
 
   it("Mahnung: MIT Briefpapier-Fusszeile steht NUR die Marken-Fusszeile im PDF, nicht der Fallback", async () => {
     const orgId = await makeOrg();
-    await saveBrandingSettings(orgId, { footerRight: "Marken-Fusszeile-Rechts" });
+    await saveBrandingSettings(orgId, { footerMode: "CUSTOM", footerRight: "Marken-Fusszeile-Rechts" });
     const theme = await loadPdfTheme(orgId);
     theme.compress = false;
     const pdf = await renderDunningPdf(baseDunningData(), theme);
@@ -391,5 +428,104 @@ describe("loadPdfTheme — fehlende Logo-/Hintergrunddatei", () => {
     expect(theme.logoBuffer).toBeUndefined();
     const data = baseInvoiceData({ number: "RE-2056-00006", giroAmountCents: 0 });
     await expect(renderInvoicePdf(data, theme)).resolves.toBeInstanceOf(Buffer);
+  });
+});
+
+describe("PdfTheme — Phase 11b Layout-Aufloesung (Task 1 geschrieben, Task 3 aktiviert)", () => {
+  it("Branding speichert layoutId, layoutByType und footerMode; Organization.ownerName landet im Theme", async () => {
+    const orgId = await makeOrg();
+    await dbInternal.organization.update({ where: { id: orgId }, data: { ownerName: "Erika Muster" } });
+    await saveBrandingSettings(orgId, { layoutId: "schlicht", layoutByType: { DELIVERY_NOTE: "kompakt" }, footerMode: "AUTO" });
+    const brand = await loadBrandingSettings(orgId);
+    expect(brand.layoutId).toBe("schlicht");
+    expect(brand.layoutByType).toEqual({ DELIVERY_NOTE: "kompakt" });
+    const theme = await loadPdfTheme(orgId, null, "DELIVERY_NOTE");
+    expect(theme.layoutId).toBe("kompakt");
+    expect(theme.footerFacts.ownerName).toBe("Erika Muster");
+    const inv = await loadPdfTheme(orgId, null, "INVOICE");
+    expect(inv.layoutId).toBe("schlicht");
+  });
+
+  it("AUTO-Fusszeile: Inhaber und Website stehen im Rechnungs-, Lieferschein- und Mahnungs-PDF", async () => {
+    const orgId = await makeOrg();
+    await dbInternal.organization.update({ where: { id: orgId }, data: { ownerName: "Erika Muster", website: "muster.example" } });
+    const theme = await loadPdfTheme(orgId);
+    const inv = await parsePdf(await renderInvoicePdf(baseInvoiceData(), { ...theme, compress: false }));
+    expect(inv.text).toContain("Inhaber/-in Erika Muster");
+    expect(inv.text).toContain("Web muster.example");
+
+    const dnData: DeliveryNotePdfData = {
+      number: "LS-2056-00099",
+      issueDate: new Date("2056-03-10"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      lines: [{ pos: 1, description: "Testartikel", quantityMilli: 1000, unit: "C62" }],
+      showPrices: false,
+      showTax: false,
+      showArticleNumber: false,
+      showDescription: true,
+      showDeliveryAddress: false,
+    };
+    const dn = await parsePdf(await renderDeliveryNotePdf(dnData, { ...theme, compress: false }));
+    expect(dn.text).toContain("Inhaber/-in Erika Muster");
+    expect(dn.text).toContain("Web muster.example");
+
+    const dunningData: DunningPdfData = {
+      number: "M-2056-00099",
+      level: 1,
+      sentDate: new Date("2056-05-01"),
+      newDueDate: new Date("2056-05-15"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      invoiceNumber: "RE-2056-00001",
+      invoiceDate: new Date("2056-03-10"),
+      openAmountCents: 11900,
+      interestCents: 100,
+      flatFee40Cents: 4000,
+      feeCents: 0,
+      lateFeeCents: 4100,
+      totalCents: 16000,
+      daysOverdue: 20,
+    };
+    const dun = await parsePdf(await renderDunningPdf(dunningData, { ...theme, compress: false }));
+    expect(dun.text).toContain("Inhaber/-in Erika Muster");
+    expect(dun.text).toContain("Web muster.example");
+  });
+});
+
+/** Minimaler Rechnungs-Entwurf (analog test/integration/scheduler.test.ts), nur mit
+ *  Kunden-ID — kein explizites Faelligkeitsdatum noetig fuer diesen Test. */
+function invoiceInput(customerId: string): CreateInvoiceInput {
+  return {
+    customerId,
+    type: "INVOICE",
+    taxScheme: "REGULAR",
+    currency: "EUR",
+    lines: [{ description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+  } as CreateInvoiceInput;
+}
+
+describe("PdfTheme — Phase 11b Task 6: Einfrieren des Layouts beim Festschreiben", () => {
+  it("Festschreiben friert das Layout ein; spaetere Organisationsaenderung wirkt nicht mehr", async () => {
+    const orgId = await makeOrg();
+    await ensureOrgMasterdata(dbInternal, orgId);
+    // makeOrg() (Datei-Helfer oben) setzt keine Steuernummer/USt-IdNr. — ohne eine von
+    // beiden bricht validateMandatoryFields das Festschreiben ab (§14 Abs.4 Nr.2).
+    await dbInternal.organization.update({ where: { id: orgId }, data: { vatId: "DE123456789", taxNumber: "33/123/45678" } });
+    // Invoice.number ist GLOBAL eindeutig — eigener Praefix fuer dieses Testjahr (2056).
+    await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "PT56-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", new Date("2056-06-01T12:00:00Z"));
+    await saveBrandingSettings(orgId, { layoutId: "schlicht" });
+    const customer = await dbInternal.customer.create({ data: { orgId, name: "Freeze AG", addressLine1: "A 1", postalCode: "1", city: "B", type: "BUSINESS" } });
+    const draft = await createDraftInvoice(orgId, { ...invoiceInput(customer.id) });
+    const fin = await finalizeInvoice(draft.id, { now: new Date("2056-06-01T12:00:00Z"), actor: "test" });
+    expect(JSON.parse(fin.printOptionsJson!).layoutId).toBe("schlicht");
+    await saveBrandingSettings(orgId, { layoutId: "modern" });
+    const theme = await loadPdfTheme(orgId, fin.printOptionsJson, "INVOICE");
+    expect(theme.layoutId).toBe("schlicht");
+    const draft2 = await createDraftInvoice(orgId, { ...invoiceInput(customer.id) });
+    const theme2 = await loadPdfTheme(orgId, draft2.printOptionsJson, "INVOICE");
+    expect(theme2.layoutId).toBe("modern");
   });
 });

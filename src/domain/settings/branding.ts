@@ -8,6 +8,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { brandingSettingsInputSchema, type BrandingSettingsInput } from "@/schemas/settings";
+import { parseLayoutByType } from "@/domain/settings/layout";
 
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettingsInput = brandingSettingsInputSchema.parse({});
 
@@ -30,16 +31,21 @@ export async function loadBrandingSettings(orgId: string): Promise<BrandingSetti
     fontSizePt: row.fontSizePt,
     backgroundPath: row.backgroundPath,
     showBackground: row.showBackground,
+    layoutId: row.layoutId,
+    layoutByType: parseLayoutByType(row.layoutByTypeJson),
+    footerMode: row.footerMode,
   });
 }
 
 /** Speichert die Briefpapier-Einstellungen (Upsert, da anfangs keine Zeile existiert). */
 export async function saveBrandingSettings(orgId: string, rawInput: unknown): Promise<BrandingSettingsInput> {
   const input = brandingSettingsInputSchema.parse(rawInput);
+  const { layoutByType, ...rest } = input;
+  const data = { ...rest, layoutByTypeJson: JSON.stringify(layoutByType) };
   await dbInternal.brandingSettings.upsert({
     where: { orgId },
-    create: { orgId, ...input },
-    update: { ...input },
+    create: { orgId, ...data },
+    update: { ...data },
   });
   return input;
 }

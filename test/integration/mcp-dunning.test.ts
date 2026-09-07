@@ -161,3 +161,10 @@ describe("MCP: run_scheduler_job", () => {
     expect(text(res)).toMatch(/dunning: OK/);
   });
 });
+
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5b "Important") — Regressionstest fuer
+// `update_dunning_stage`s Teil-Update-Verhalten (autoSend/enabled-Defaults) lebt bewusst
+// in test/integration/mcp-settings.test.ts, NICHT hier: dieses Files `callTool` ruft
+// `tool.handler(args)` direkt auf, OHNE die SDK-Schema-Validierung davor (siehe
+// mcp-settings.test.ts#callTool-Kommentar) — der Bug (und damit auch die Fix-Verifikation)
+// ist darueber nicht reproduzierbar.

@@ -28,6 +28,7 @@ import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { NotFoundError } from "@/domain/errors";
 import {
@@ -324,7 +325,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const base = (inv.number ?? `entwurf-${inv.id.slice(0, 8)}`).replace(/[^A-Za-z0-9._-]/g, "_");
         const written: string[] = [];
         let validation: { valid: boolean; errors: string[] } | null = null;
-        const theme = await loadPdfTheme(org.id, inv.printOptionsJson);
+        const theme = await loadPdfTheme(org.id, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
 
         if (format === "both" || format === "pdf") {
           const pdf = await renderInvoicePdf(data, theme);

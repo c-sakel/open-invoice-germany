@@ -6,6 +6,7 @@ import { NewDocumentForm, type DocumentInitial } from "@/components/NewDocumentF
 import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         <h1 className="text-2xl font-bold tracking-tight">Entwurf bearbeiten</h1>
       </div>
       <NewDocumentForm customers={customers} products={products} contacts={contacts} addresses={addresses} initial={initial} />
-      <PrintOptionsPanel docId={q.id} apiKind="documents" effective={effectivePrint} initialOverride={printOverride} />
+      <PrintOptionsPanel docId={q.id} apiKind="documents" effective={effectivePrint} initialOverride={printOverride} layouts={listLayouts()} />
     </div>
   );
 }

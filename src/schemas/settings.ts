@@ -4,6 +4,17 @@
  * — kein Bypass ueber Route, UI oder MCP.
  */
 import { z } from "zod";
+import { LAYOUT_IDS, LAYOUT_DOC_TYPES, type LayoutDocType } from "@/lib/pdf/layouts/ids";
+
+// ── Layouts (Phase 11b) ──────────────────────────────────────────────────────
+
+export const layoutIdSchema = z.enum(LAYOUT_IDS);
+export type LayoutIdInput = z.infer<typeof layoutIdSchema>;
+export const layoutByTypeSchema = z
+  .object(Object.fromEntries(LAYOUT_DOC_TYPES.map((t) => [t, layoutIdSchema.optional()])) as Record<LayoutDocType, z.ZodOptional<typeof layoutIdSchema>>)
+  .strict();
+export type LayoutByType = z.infer<typeof layoutByTypeSchema>;
+export const footerModeSchema = z.enum(["AUTO", "CUSTOM"]);
 
 // ── Druckoptionen (§36) ─────────────────────────────────────────────────────
 
@@ -58,7 +69,7 @@ export type PrintSettingsInput = z.infer<typeof printSettingsInputSchema>;
  * DeliveryNote.printOptionsJson) — dieselben zehn Schalter, aber alle optional und
  * OHNE Default (nur tatsaechlich gesetzte Felder ueberschreiben effectivePrintOptions).
  */
-export const printOptionsOverrideSchema = z.object(printOptionFields).partial();
+export const printOptionsOverrideSchema = z.object({ ...printOptionFields, layoutId: layoutIdSchema.optional() }).partial();
 export type PrintOptionsOverride = z.infer<typeof printOptionsOverrideSchema>;
 
 // ── Briefpapier / Branding (§35) ─────────────────────────────────────────────
@@ -84,6 +95,9 @@ export const brandingSettingsInputSchema = z.object({
   fontSizePt: z.coerce.number().int().min(8).max(14).default(10),
   backgroundPath: z.string().nullable().default(null),
   showBackground: z.boolean().default(false),
+  layoutId: layoutIdSchema.default("standard"),
+  layoutByType: layoutByTypeSchema.default({}),
+  footerMode: footerModeSchema.default("AUTO"),
 });
 export type BrandingSettingsInput = z.infer<typeof brandingSettingsInputSchema>;
 

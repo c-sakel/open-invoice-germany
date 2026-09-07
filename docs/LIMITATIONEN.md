@@ -79,6 +79,40 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **GiroCode nur in EUR und nur mit hinterlegter IBAN.** Der EPC-QR-Code (EPC069-12, COMPLIANCE.md Abschnitt 6) wird ausschließlich für Rechnungen in Euro mit einer gültigen IBAN gerendert; Fremdwährungsrechnungen und Rechnungen ohne IBAN erscheinen ohne GiroCode — ohne Fehler, der Beleg bleibt vollständig.
 - **Nummer erst beim Versand ist nicht umgesetzt.** Angebots-/AB-/Lieferschein-Nummern werden weiterhin **bei Erstellung** vergeben (Betreiber-Ruling, COMPLIANCE.md Abschnitt 6), nicht erst beim Versand — eine Option dafür existiert (noch) nicht.
 - **Layoutänderungen wirken auf Nachdrucke bereits festgeschriebener Belege.** Eine spätere Änderung an Briefpapier oder globalen Druckoptionen ändert das Aussehen jedes künftigen PDF-Abrufs eines bereits festgeschriebenen Belegs (das PDF wird bei jedem Abruf aus dem aktuellen Theme neu gerendert) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Steuern, Nummer) bleibt davon unberührt, siehe COMPLIANCE.md Abschnitt 6 „Layoutänderungen vs. Beleginhalt". Je-Beleg-Druckoptionen lassen sich dagegen nach Festschreibung nicht mehr ändern.
+- **Nachtrag Phase 11b (PDF-Layouts):** sieben fest verdrahtete Layouts
+  (`src/lib/pdf/layouts/registry.ts`) — **kein Baukasten**, d. h. keine eigenen
+  Farben/Blockanordnungen jenseits der bereits vorhandenen Briefpapier-Felder
+  (Logo, Primärfarbe, Ränder) lassen sich pro Layout zusätzlich konfigurieren.
+  **Mahnungen (`DUNNING`) haben keinen Beleg-Override** — anders als Rechnung/
+  Gutschrift, Angebot/Auftragsbestätigung und Lieferschein greift bei Mahnungen
+  ausschließlich die Typ-Zuordnung (`layoutByType.DUNNING`) bzw. der
+  Organisationsstandard, kein `printOptionsJson.layoutId` je Mahnung. **Schriften
+  ausschließlich die pdfkit-Standardfonts** (Helvetica-Familie) — kein Custom-Font-
+  Upload, keine Web-/Systemfont-Einbettung; die Referenzbelege des Betreibers (sevDesk,
+  Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
+  eigene Font-Einbettung bliebe ein späterer Schritt. Beim Layout `modern` **überdeckt der
+  farbige Kopfbalken ein evtl. hinterlegtes Hintergrundbild** im oberen Bereich der
+  Seite (bewusster Trade-off der Balken-Optik, kein Bug). **Beträge zeigen das
+  Währungssymbol** (`formatCents`, z. B. „5,88 €"), **nicht den ISO-Code** („EUR") —
+  organisationsweit, nicht je Layout konfigurierbar.
+- **CUSTOM-Fußzeile: gleich breite, linksbündige Spalten statt links/mittig/rechts.**
+  `footerLeft`/`footerCenter`/`footerRight` (Phase 7) wurden vor Phase 11b über die volle
+  Breite links/mittig/rechts ausgerichtet gezeichnet; seit der gemeinsamen
+  Fußzeilen-Infrastruktur aus Phase 11b (`src/lib/pdf/layouts/shared.ts#drawFooterColumns`,
+  von AUTO **und** CUSTOM genutzt) liegen sie stattdessen als N gleich breite,
+  linksbündige Spalten. Für Bestandsorganisationen mit **nur** `footerCenter` gesetzt
+  heißt das: der Text springt beim nächsten Nachdruck von zentriert auf linksbündig —
+  kosmetisch, aber sichtbar (bisher undokumentiert, mit der Fix-Welle nachgetragen).
+- **Alte mehrseitige Rechnungen können beim Nachdruck neu paginieren.** Phase 11b
+  reserviert am Seitenende ein Fußzeilen-Band (`layout.footerHeight + 6pt`), das die
+  nutzbare Höhe je Seite verringert (bereits dokumentiert, siehe „Layoutänderungen wirken
+  auf Nachdrucke" oben) — die Fix-Welle schützt zusätzlich den Schlussblock (Fußtext,
+  Zahlungsbedingungen, Hinweise) mit demselben Band (`ensurePlainSpace`, behebt einen
+  Überlapp mit der Fußzeile bei knapp gefüllten Seiten), was in seltenen Randfällen eine
+  zusätzliche Seite erzwingen kann. Ein bereits festgeschriebener, mehrseitiger Beleg kann
+  dadurch beim nächsten PDF-Abruf eine andere Seitenzahl bekommen als beim vorherigen
+  Abruf — der rechtlich maßgebliche Beleginhalt bleibt unverändert (COMPLIANCE.md
+  Abschnitt 6).
 ## Kundenkomfort (Phase 8a)
 - **`Customer.language` wird nur gespeichert, nicht ausgewertet.** Das Feld existiert (Default `de`) und ist über die Kundenvorgaben pflegbar, steuert aber weder PDF-Sprache noch E-Mail-Vorlagen — analog zur restigen Software ist derzeit alles ausschließlich auf Deutsch (siehe „Briefpapier, Druckoptionen …" oben).
 - **Gelöschte Kundenfeld-Definitionen lassen ihre Werte im JSON zurück.** `deleteCustomFieldDefinition` entfernt nur die Definition (`CustomFieldDefinition`); bereits gespeicherte Werte in `Customer.customFieldsJson` unter dem betroffenen `key` bleiben unverändert stehen (kein Cleanup-Job). `parseCustomerCustomFields` übergeht solche verwaisten Keys beim Lesen still, `{{customField.<key>}}` löst dafür nicht mehr auf (Platzhalter bleibt leer) — Bestellungen können die Definition jederzeit neu mit demselben `key` anlegen, um wieder Zugriff auf die alten Werte zu bekommen.
@@ -114,6 +148,17 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   OrderConfirmation/Invoice) — `PATCH /api/v1/DeliveryNote/{id}` existiert daher
   nicht; Statusänderungen laufen ausschließlich über `POST .../status`. Backlog:
   `updateDraft`-Domainfunktion für Lieferscheine nachrüsten, sobald benötigt.
+- **`Layout` (Phase 11b) ist nur lesbar.** `GET /api/v1/Layout` liefert die feste
+  Liste der sieben PDF-Layouts (keine DB-Tabelle, kein POST/PATCH auf dieser
+  Ressource). Der Organisationsstandard/die Typ-Zuordnung sind über `PATCH
+  /api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`) erreichbar; eine
+  Beleg-individuelle Layout-Überschreibung seit der Fix-Welle (Phase 11b) über
+  `PATCH /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options`
+  (`printOptionsOverrideSchema.layoutId`, nur solange der Beleg `DRAFT` ist) —
+  dieselbe Domain-Funktion wie MCP (`set_print_options`) und die UI. `Quote/{id}/
+  print-options` gilt nur für `kind=ANGEBOT`; Auftragsbestätigung und Proforma haben
+  keinen eigenen `print-options`-Endpunkt (Lastenheft-Abgrenzung: kein separates
+  REST-Objekt je Quote-`kind`).
 - **Webhook-Secrets sind nie im Klartext abrufbar** (analog API-Schlüssel) — nur bei
   Anlage/Rotation einmalig in der Antwort. Zustellung ist streng seriell (ein
   Scheduler-Job je Lauf, kein `Promise.all`) — bei sehr vielen fälligen Zustellungen

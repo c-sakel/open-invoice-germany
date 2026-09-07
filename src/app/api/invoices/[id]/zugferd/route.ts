@@ -3,6 +3,7 @@ import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { loadPdfTheme } from "@/domain/settings/theme";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     await onEInvoiceInvalid(loaded.invoice.orgId, { invoiceId: loaded.invoice.id, errors: report.errors });
   }
 
-  const theme = await loadPdfTheme(loaded.invoice.orgId, loaded.invoice.printOptionsJson);
+  const theme = await loadPdfTheme(loaded.invoice.orgId, loaded.invoice.printOptionsJson, invoiceTypeToLayoutDocType(loaded.invoice.type));
   const pdf = await renderZugferdPdf(loaded.data, theme);
   const safe = (loaded.invoice.number ?? "rechnung").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {

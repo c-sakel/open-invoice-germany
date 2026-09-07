@@ -34,6 +34,8 @@ export function testPdfTheme(overrides: Partial<PdfTheme> = {}): PdfTheme {
   return {
     brand: structuredClone(DEFAULT_BRANDING_SETTINGS),
     options: structuredClone(DEFAULT_PRINT_SETTINGS),
+    layoutId: "standard",
+    footerFacts: {},
     showPaymentTermsText: true,
     compress: false,
     ...overrides,

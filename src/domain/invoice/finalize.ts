@@ -25,7 +25,9 @@ import { PricingError } from "@/lib/pricing/errors";
 import type { RateBucket } from "@/lib/pricing/allocate";
 import type { SnapshotSource } from "@/schemas";
 import { loadDocumentSettings } from "@/domain/document/settings";
-import { loadPrintSettings, freezePrintOptionsJson } from "@/domain/settings/print";
+import { loadPrintSettings, freezePrintOptionsJson, effectivePrintOptions } from "@/domain/settings/print";
+import { loadBrandingSettings } from "@/domain/settings/branding";
+import { resolveLayoutId, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { validateMandatoryFields } from "./mandatory";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -214,8 +216,22 @@ export async function finalizeWithinTx(
   // einfrieren (vollstaendig gemergter Satz), damit eine spaetere globale Aenderung
   // (z. B. showTaxRatePerLine org-weit deaktiviert) den Reprint einer bereits
   // festgeschriebenen Rechnung nicht mehr veraendert.
+  //
+  // Phase 11b, Task 6: dasselbe gilt fuer das PDF-Layout — vor dem Einfrieren wird es
+  // GENAU EINMAL ueber `resolveLayoutId` aufgeloest (Beleg-Override aus einem evtl.
+  // bereits gesetzten `printOptionsJson.layoutId` > Typ-Map > Organisationsstandard >
+  // "standard") und dann in `frozenPrintOptionsJson` eingefroren — eine spaetere Aenderung
+  // des Organisations-/Typ-Layouts darf das Layout eines bereits festgeschriebenen Belegs
+  // nicht mehr veraendern (analog den zehn Druckoptions-Schaltern oben).
   const globalPrintSettings = await loadPrintSettings(invoice.orgId);
-  const frozenPrintOptionsJson = freezePrintOptionsJson(globalPrintSettings, invoice.printOptionsJson);
+  const brand = await loadBrandingSettings(invoice.orgId);
+  const layoutId = resolveLayoutId({
+    overrideLayoutId: effectivePrintOptions(globalPrintSettings, invoice.printOptionsJson).layoutId ?? null,
+    layoutByType: brand.layoutByType,
+    orgDefault: brand.layoutId,
+    docType: invoiceTypeToLayoutDocType(invoice.type),
+  });
+  const frozenPrintOptionsJson = freezePrintOptionsJson(globalPrintSettings, invoice.printOptionsJson, layoutId);
 
   // 2b) Phase 5 (§14 Abs.5 S.2 UStG): Schlussrechnung -> Abzugs-Snapshot je Abschlagsrechnung/
   // Steuersatz. Laeuft VOR dem Claim, damit eine unzulaessige Ueberdeckung (Abschlaege >
