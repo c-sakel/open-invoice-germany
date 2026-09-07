@@ -19,6 +19,36 @@ import {
 } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
+/**
+ * Fix (Task 8, vorbestehender Fehler): `<schema>.partial().shape` reicht als MCP-
+ * `inputSchema` NICHT — die MCP-SDK validiert eingehende Tool-Argumente ueber genau
+ * dieses Schema (server/mcp.js#validateToolInput), BEVOR der Handler sie sieht. Jedes
+ * Feld der vier Settings-Input-Schemas traegt `.default(...)` (dieselben Schemas
+ * erzeugen auch die `DEFAULT_*_SETTINGS`, siehe `src/app/api/v1/Settings/route.ts`);
+ * `.partial()` macht ein Feld zwar `optional`, das darunterliegende `ZodDefault`
+ * greift beim Parsen aber weiterhin fuer einen FEHLENDEN Schluessel (siehe
+ * `printOptionsOverrideSchema`-Kommentar in `src/schemas/settings.ts`). Ein Aufruf mit
+ * nur EINEM geaenderten Feld liefert an den Handler deshalb trotzdem ALLE Felder (die
+ * uebrigen mit ihrem Default) — `{ ...current, ...args }` setzt dadurch jedes nicht
+ * genannte Feld stillschweigend auf seinen Default zurueck, statt es unveraendert zu
+ * lassen (Regressionstest: "Teil-Updates setzen nicht genannte Felder nicht zurueck",
+ * test/integration/mcp-settings.test.ts).
+ *
+ * `partialInputShape` baut stattdessen eine Form OHNE Defaults: jedes Feld verliert
+ * seinen `.default(...)`-Wrapper (`ZodDefault#removeDefault()`, Zod 4) und wird
+ * `.optional()`. Ein fehlender Schluessel bleibt dadurch im geparsten Ergebnis schlicht
+ * abwesend — der Handler sieht nur, was der Aufrufer tatsaechlich mitgeschickt hat.
+ */
+function partialInputShape(schema: z.ZodObject<z.ZodRawShape>): z.ZodRawShape {
+  const shape = schema.shape as unknown as Record<string, z.ZodTypeAny>;
+  const out: Record<string, z.ZodTypeAny> = {};
+  for (const [key, field] of Object.entries(shape)) {
+    const withoutDefault: z.ZodTypeAny = field instanceof z.ZodDefault ? (field as z.ZodDefault<z.ZodTypeAny>).removeDefault() : field;
+    out[key] = withoutDefault.optional();
+  }
+  return out;
+}
+
 export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): void {
   // ── get_settings ─────────────────────────────────────────────────────────────
   server.registerTool(
@@ -61,7 +91,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
       title: "Beleg-Einstellungen aktualisieren",
       description:
         "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
-      inputSchema: documentSettingsInputSchema.partial().shape,
+      inputSchema: partialInputShape(documentSettingsInputSchema),
     },
     async (args): Promise<Result> => {
       try {
@@ -83,7 +113,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Globale Druckoptionen aktualisieren",
       description: "Aktualisiert die zehn globalen Druckoptionen-Schalter (§36). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
-      inputSchema: printSettingsInputSchema.partial().shape,
+      inputSchema: partialInputShape(printSettingsInputSchema),
     },
     async (args): Promise<Result> => {
       try {
@@ -106,7 +136,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
       title: "Briefpapier-Einstellungen aktualisieren",
       description:
         "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35). OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert.",
-      inputSchema: brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true }).partial().shape,
+      inputSchema: partialInputShape(brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true })),
     },
     async (args): Promise<Result> => {
       try {
@@ -208,7 +238,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
       title: "Mahnwesen-Einstellungen aktualisieren",
       description:
         "Aktualisiert die org-weiten Mahnwesen-Einstellungen (§26, Nachtrag Phase 7/§55: autoCreate, autoSend, Basiszinssatz, Karenztage). Nicht angegebene Felder bleiben unveraendert.",
-      inputSchema: dunningSettingsInputSchema.partial().shape,
+      inputSchema: partialInputShape(dunningSettingsInputSchema),
     },
     async (args): Promise<Result> => {
       try {
