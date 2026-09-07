@@ -39,6 +39,7 @@ export function UnitSelect({ value, onChange }: { value: string; onChange: (v: s
     <div className="flex flex-col gap-1">
       <select
         className={inputCls}
+        aria-label="Einheit"
         value={otherMode ? OTHER : value}
         onChange={(e) => {
           if (e.target.value === OTHER) {

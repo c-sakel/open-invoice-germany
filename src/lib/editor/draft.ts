@@ -82,8 +82,26 @@ export interface DraftState {
   dirty: boolean;
 }
 
+// M10 (Abschluss-Review): "set" war bisher `{ field: keyof DraftState; value: unknown }` —
+// `dispatch({ type: "set", field: "showPrices", value: "ja" })` kompilierte trotz
+// Typfehlers (String statt Boolean). Die Mapped-Type-Union unten koppelt `field`/`value`
+// je Schluessel `K` — ein falsch typisierter `value` schlaegt jetzt am Aufrufort fehl.
+// Der Reducer (`case "set"`) braucht weiterhin einen `as DraftState`-Cast fuer den
+// eigentlichen Spread (bekannte TS-Grenze bei generischen Computed Properties), aber
+// DIESER eine, bewusste Cast ist jetzt der einzige Ort, an dem die Korrelation nicht mehr
+// geprueft wird — nicht mehr jede Aufrufstelle.
+// `-?` ist notwendig, nicht nur Stil: `DraftState.id` ist optional (`id?: string`) — ohne
+// `-?` bleibt die gemappte Eigenschaft fuer `K = "id"` selbst optional, und die
+// anschliessende Indexzugriff-Vereinigung `[keyof DraftState]` schleust dadurch `undefined`
+// in die GESAMTE `SetAction`-Union ein (nicht nur in `value` fuer "id", was korrekt waere,
+// sondern strukturell in jedes Union-Mitglied) — Symptom war ein voellig unnarrowbares
+// `DraftAction` im Reducer unten ("action is possibly undefined" auf einem Pflichtparameter).
+// `-?` entfernt nur den Optional-Modifier der gemappten Huelle; `DraftState[K]` bleibt fuer
+// "id" weiterhin korrekt `string | undefined`.
+type SetAction = { [K in keyof DraftState]-?: { type: "set"; field: K; value: DraftState[K] } }[keyof DraftState];
+
 export type DraftAction =
-  | { type: "set"; field: keyof DraftState; value: unknown }
+  | SetAction
   | { type: "setLine"; key: string; patch: Partial<DraftLine> }
   | { type: "addLine"; lineType: DraftLine["lineType"]; after?: string }
   | { type: "removeLine"; key: string }
@@ -435,8 +453,10 @@ export function validateDraft(d: DraftState): string[] {
 
 // ── initial -> Draft (Bearbeiten bestehender Belege) ─────────────────────────
 
-/** Zeilenform der Bearbeiten-Seiten (`InvoiceInitialLike`/`DocumentInitialLike` unten). */
-export interface InitialLineLike {
+/** Zeilenform der Bearbeiten-Seiten (`InvoiceInitialLike`/`DocumentInitialLike` unten).
+ *  M4 (Abschluss-Review): kein `export` mehr — kein Importer, die Seiten bauen ihre
+ *  Zeilenobjekte inline innerhalb von `InvoiceInitialLike["lines"]`/`DocumentInitialLike["lines"]`. */
+interface InitialLineLike {
   lineType: LineType;
   description: string;
   descriptionLong: string;

@@ -40,7 +40,13 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
   }
 
   async function submit() {
-    if (!name.trim() || !addressLine1.trim() || !postalCode.trim() || !city.trim()) return;
+    // M12 (Abschluss-Review): vorher stille Rueckkehr — ohne <form> greifen die
+    // `required`-Attribute nicht, der Nutzer bekam also gar keine Rueckmeldung, warum
+    // "Anlegen und übernehmen" nichts tut.
+    if (!name.trim() || !addressLine1.trim() || !postalCode.trim() || !city.trim()) {
+      setError("Bitte Name, Straße und Hausnummer, PLZ und Ort ausfüllen.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const result: CreateCustomerInlineResult = await createCustomerInline({
@@ -72,19 +78,24 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
       <button type="button" onClick={open} className="text-xs font-medium text-indigo-600 hover:underline">
         + Neuen Kunden anlegen
       </button>
-      {/* Bewusst KEIN <form> hier: der Dialog haengt (ueber CustomerPicker) im DOM-Baum
-          des umschliessenden Editor-<form> (DocumentEditor) — ein verschachteltes <form>
-          ist ungueltiges HTML und fuehrt zu einem Hydration-Mismatch, der den GESAMTEN
-          Editor-Zustand zuruecksetzt. Speichern laeuft daher ueber einen normalen
-          Button-Klick, nicht ueber form-Submit. */}
+      {/* M5 (Abschluss-Review): `DocumentEditor` rendert seit Task 6 gar kein `<form>`
+          mehr (`grep -rn "<form" src/components/editor` findet ausser diesem Kommentar
+          keinen Treffer) — der urspruengliche Grund ("verschachteltes <form> waere
+          ungueltiges HTML") besteht also nicht mehr, der Verzicht auf ein eigenes
+          `<form>` bleibt trotzdem richtig: ohne `<form>` gibt es kein `type="submit"`,
+          das versehentlich den ganzen Editor abschicken koennte — Speichern laeuft
+          bewusst ueber einen normalen Button-Klick. */}
       <dialog
         ref={dialogRef}
         className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !busy) {
-            e.preventDefault();
-            void submit();
-          }
+          // M12 (Abschluss-Review): vorher fing der Dialog JEDES Enter ab, auch mit Fokus
+          // auf „Abbrechen"/„✕" — `preventDefault()` unterdrueckte dort die native
+          // Button-Aktivierung und loeste stattdessen `submit()` aus. Jetzt nur noch, wenn
+          // der Fokus tatsaechlich in einem Eingabefeld liegt.
+          if (e.key !== "Enter" || busy || !(e.target instanceof HTMLInputElement)) return;
+          e.preventDefault();
+          void submit();
         }}
       >
         <div className="space-y-3 p-5">
@@ -135,7 +146,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
               Abbrechen
             </button>
             <button type="button" onClick={() => void submit()} disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-              {busy ? "Speichern…" : "Anlegen und uebernehmen"}
+              {busy ? "Speichern…" : "Anlegen und übernehmen"}
             </button>
           </div>
         </div>

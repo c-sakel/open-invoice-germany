@@ -29,9 +29,16 @@ import { PreviewSheet } from "./blocks/PreviewSheet";
 import { MoreOptions } from "./blocks/MoreOptions";
 import { AttachmentsBlock } from "./blocks/AttachmentsBlock";
 
-export interface DocumentEditorProps {
+// M4 (Abschluss-Review): kein `export` mehr — kein Importer (die Seiten importieren nur
+// `DocumentEditor` selbst, der Props-Typ wird nirgends separat referenziert).
+interface DocumentEditorProps {
   mode: EditorMode;
-  /** aus `draftFromInvoice`/`draftFromDocument` (Bearbeiten) oder `undefined` (Neu, dann `emptyDraft(mode)`). */
+  /** aus `draftFromInvoice`/`draftFromDocument` (Bearbeiten) oder `undefined` (Neu, dann
+   *  `emptyDraft(mode)`). M14 (Abschluss-Review): fuer DELIVERY_NOTE bei Neuanlage
+   *  ausnahmsweise auch gesetzt — `emptyDraft("DELIVERY_NOTE", { showPrices, ... })` mit
+   *  den Org-Anzeigedefaults (siehe `lieferscheine/neu/page.tsx`); `isEdit` bleibt dabei
+   *  `false` (kein `id` im Draft), die beiden Textvorlagen-Vorbelegungs-Effekte unten
+   *  betreffen ohnehin nur INVOICE/DOCUMENT. */
   initial?: DraftState;
   customers: RecipientCustomerOption[];
   products: ProductOption[];
@@ -123,6 +130,16 @@ export function DocumentEditor({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [draft.dirty]);
 
+  // Beide Vorbelegungs-Effekte unten (DOCUMENT/INVOICE) nutzen `replace` auf Basis des
+  // jeweils AKTUELLEN Entwurfs (`draftRef`, hier bei jedem Render synchron gehalten —
+  // NICHT die Closure-Variable `draft`, die beim Mount eingefroren waere), damit weder
+  // zwischenzeitliche Nutzereingaben noch ein zwischenzeitlich bereits gesetztes `dirty`
+  // ueberschrieben werden.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
   // DOCUMENT: Kopf-/Fusstext/Bedingungen bei Neuanlage vorbelegen, sobald sich die Art
   // (draft.kind) aendert — nur solange das jeweilige Feld noch leer ist und kein
   // Bearbeiten-Fall vorliegt (Kontext §1).
@@ -130,24 +147,37 @@ export function DocumentEditor({
   // zusaetzlich `footerText` (Task 5, FootTextBlock) und `deliveryTerms`/`paymentTerms`
   // (MoreOptions, Task 4) mit ab — ein Effekt nur innerhalb eines einzelnen Blocks
   // koennte die anderen drei Felder nicht mit vorbelegen.
+  //
+  // Fix-Welle M2 (Abschluss-Review): nutzt jetzt — wie der INVOICE-Effekt unten — `replace`
+  // auf `draftRef.current` statt der "set"-Aktion (die IMMER `dirty: true` setzt). Vorher
+  // zeigte `/dokumente/neu` sofort das "ungespeichert"-Badge samt Verlassen-Bestaetigung,
+  // ohne dass der Nutzer etwas getan hatte — reine Vorbelegung leerer Felder darf das nicht
+  // ausloesen. Die vier Ladevorgaenge laufen sequenziell (nicht parallel per `void`), damit
+  // `draftRef` zwischen den Dispatches aktuell ist — sonst koennte ein spaeterer Dispatch
+  // einen frueheren mit einem veralteten Snapshot ueberschreiben (identische Begruendung wie
+  // beim INVOICE-Effekt).
   useEffect(() => {
     if (mode !== "DOCUMENT" || initial) return;
     let cancelled = false;
-    async function loadDefault(position: "HEAD" | "FOOT" | "TERMS_DELIVERY" | "TERMS_PAYMENT", field: keyof DraftState, current: string) {
-      if (current.trim() !== "") return;
-      const res = await fetch(`/api/text-templates/pick?docType=${draft.kind}&position=${position}`);
+    async function loadDefault(
+      position: "HEAD" | "FOOT" | "TERMS_DELIVERY" | "TERMS_PAYMENT",
+      field: "headerText" | "footerText" | "deliveryTerms" | "paymentTerms",
+    ) {
+      if (draftRef.current[field].trim() !== "") return;
+      const res = await fetch(`/api/text-templates/pick?docType=${draftRef.current.kind}&position=${position}`);
       if (!res.ok || cancelled) return;
       const j = (await res.json()) as { body: string | null };
-      if (j.body) dispatch({ type: "set", field, value: j.body });
+      if (j.body && !cancelled) dispatch({ type: "replace", state: { ...draftRef.current, [field]: j.body } });
     }
-    void loadDefault("HEAD", "headerText", draft.headerText);
-    void loadDefault("FOOT", "footerText", draft.footerText);
-    void loadDefault("TERMS_DELIVERY", "deliveryTerms", draft.deliveryTerms);
-    void loadDefault("TERMS_PAYMENT", "paymentTerms", draft.paymentTerms);
+    void (async () => {
+      await loadDefault("HEAD", "headerText");
+      await loadDefault("FOOT", "footerText");
+      await loadDefault("TERMS_DELIVERY", "deliveryTerms");
+      await loadDefault("TERMS_PAYMENT", "paymentTerms");
+    })();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, initial, draft.kind]);
 
   // INVOICE: Kopf-/Fusstext bei Neuanlage EBENSO vorbelegen (Koordinator-Ruling, Task 5
@@ -157,24 +187,6 @@ export function DocumentEditor({
   // Payload fehlen — dieser Effekt macht den Text nur schon VOR dem Speichern sichtbar).
   // Nur Kopf-/Fusstext (kein `deliveryTerms`/`paymentTerms`-Vorlagenpaar wie DOCUMENT)
   // und nur einmalig bei Neuanlage (kein `draft.kind`-Wechsel wie bei DOCUMENT).
-  //
-  // Nutzt bewusst NICHT die "set"-Aktion (die markiert IMMER `dirty: true`) — laut
-  // Vorgabe darf eine reine Vorbelegung leerer Felder NICHT als ungespeicherte
-  // Aenderung erscheinen. Stattdessen `replace` auf Basis des jeweils AKTUELLEN Entwurfs
-  // (`draftRef`, per Effekt bei jedem Render synchron gehalten — NICHT die
-  // Closure-Variable `draft`, die beim Mount eingefroren waere), damit weder
-  // zwischenzeitliche Nutzereingaben noch ein zwischenzeitlich bereits gesetztes
-  // `dirty` ueberschrieben werden. Die beiden Ladevorgaenge laufen sequenziell (nicht
-  // parallel per `void`), damit `draftRef` zwischen beiden Dispatches aktuell ist —
-  // sonst koennte der zweite Dispatch (FOOT) den ersten (HEAD) mit einem veralteten
-  // Snapshot ueberschreiben. Verbleibendes (harmloses) Restrisiko: tippt der Nutzer
-  // exakt in der Millisekunden-Luecke zwischen Dispatch und Ref-Sync, koennte diese
-  // Einzeleingabe theoretisch verloren gehen — bei zwei schnellen Requests an eine
-  // lokale API-Route vernachlaessigbar (siehe Task-5-Report).
-  const draftRef = useRef(draft);
-  useEffect(() => {
-    draftRef.current = draft;
-  }, [draft]);
   useEffect(() => {
     if (mode !== "INVOICE" || initial) return;
     let cancelled = false;

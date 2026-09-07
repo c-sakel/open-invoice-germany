@@ -54,6 +54,7 @@ export function TextTemplatePicker({
   return (
     <select
       className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 focus:border-indigo-500 focus:outline-none"
+      aria-label="Textvorlage einfügen"
       value={selected}
       onChange={(e) => {
         const id = e.target.value;

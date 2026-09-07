@@ -53,7 +53,10 @@ export function LineRowMenu({
       </button>
       {open && (
         <>
-          <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-0 cursor-default" onClick={() => setOpen(false)} />
+          {/* M11 (Abschluss-Review): kein `aria-hidden` mehr auf einem per `tabIndex={-1}`
+              zwar aus der Tab-Reihenfolge genommenen, aber weiterhin fokussierbaren
+              Element — axe meldet `aria-hidden` dort unabhaengig vom `tabIndex`. */}
+          <button type="button" tabIndex={-1} className="fixed inset-0 z-0 cursor-default" onClick={() => setOpen(false)} />
           <div className="absolute right-0 z-10 mt-1 w-48 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg">
             <button
               type="button"
