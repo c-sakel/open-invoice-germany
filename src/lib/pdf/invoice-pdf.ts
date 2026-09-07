@@ -201,7 +201,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const ensureSpace = (atY: number, needed: number): number => {
     if (atY + needed <= pageBottom) return atY;
     doc.addPage();
-    return drawTableHeader(margins.top);
+    // Phase 11b, Task 4 — Kopf-"Chrome" auf Folgeseiten (z. B. der Balken von `modern`);
+    // liefert der Hook eine Zahl, ersetzt sie die bisherige feste Start-y (margins.top).
+    const chromeY = layout.drawPageChrome?.(frame);
+    return drawTableHeader(typeof chromeY === "number" ? chromeY : margins.top);
   };
 
   y = drawTableHeader(y);
@@ -307,7 +310,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const ensurePlainSpace = (atY: number, needed: number): number => {
     if (atY + needed <= pageBottom) return atY;
     doc.addPage();
-    return margins.top;
+    const chromeY = layout.drawPageChrome?.(frame);
+    return typeof chromeY === "number" ? chromeY : margins.top;
   };
   y = ensurePlainSpace(y, 40);
   y += 10;
