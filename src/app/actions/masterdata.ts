@@ -142,6 +142,62 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
   redirect("/kunden");
 }
 
+export interface CreateCustomerInlineInput {
+  name: string;
+  type?: "BUSINESS" | "PRIVATE";
+  addressLine1: string;
+  postalCode: string;
+  city: string;
+  email?: string;
+  vatId?: string;
+}
+export type CreateCustomerInlineResult =
+  | {
+      ok: true;
+      customer: { id: string; name: string; customerNumber: string | null; email: string | null; defaultPaymentMethodId?: string | null };
+    }
+  | { ok: false; error: string };
+
+/**
+ * Inline-Anlage eines Kunden aus dem Beleg-Editor (Phase 11c, CustomerPicker „+ Neuen
+ * Kunden anlegen"). Nutzt dieselbe Domain/Zod wie saveCustomer (createCustomer) — anders
+ * als saveCustomer jedoch KEIN redirect, sondern Rueckgabe des angelegten Kunden, damit
+ * der Aufrufer ihn sofort in den gerade bearbeiteten Beleg uebernehmen kann.
+ */
+export async function createCustomerInline(input: CreateCustomerInlineInput): Promise<CreateCustomerInlineResult> {
+  const parsed = customerSchema.safeParse({
+    type: input.type ?? "BUSINESS",
+    name: input.name,
+    addressLine1: input.addressLine1,
+    postalCode: input.postalCode,
+    city: input.city,
+    email: input.email ?? "",
+    vatId: input.vatId,
+  });
+  if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
+  const v = parsed.data;
+
+  try {
+    const org = await getActiveOrg();
+    const customer = await createCustomer(org.id, v);
+    revalidatePath("/kunden");
+    return {
+      ok: true,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        customerNumber: customer.customerNumber,
+        email: customer.email,
+        defaultPaymentMethodId: customer.defaultPaymentMethodId,
+      },
+    };
+  } catch (e) {
+    if (e instanceof CustomerValidationError) return { ok: false, error: e.message };
+    console.error("createCustomerInline:", e);
+    return { ok: false, error: "Speichern fehlgeschlagen." };
+  }
+}
+
 export async function archiveCustomer(fd: FormData): Promise<void> {
   const id = str(fd, "id");
   if (!id) return;
