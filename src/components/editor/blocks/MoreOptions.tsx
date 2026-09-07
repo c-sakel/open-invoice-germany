@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * "Weitere Optionen"-Block (Phase 11c, Task 4): eingeklappte `<details>`, Inhalt je
- * Modus. INVOICE: Bestellnummer/interne Referenz/Leitweg-ID/Leistungszeitraum,
- * Beleg-Rabatt/-Aufschlag, Skonto 1/2, interne Notizen, Druckoptionen. DOCUMENT:
+ * "Weitere Optionen"-Block (Phase 11c, Task 4; Fix 1 ergaenzt "Hinweis / Notiz"):
+ * eingeklappte `<details>`, Inhalt je Modus. INVOICE: Bestellnummer/interne Referenz/
+ * Leitweg-ID/Leistungszeitraum, Beleg-Rabatt/-Aufschlag, Skonto 1/2. DOCUMENT:
  * Lieferbedingungen/Zahlungsbedingungen (mit `TextTemplatePicker` TERMS_*),
- * Beleg-Rabatt/-Aufschlag, interne Notizen, Druckoptionen. DELIVERY_NOTE:
- * Darstellungs-Schalter, interne Notizen.
+ * Beleg-Rabatt/-Aufschlag. DELIVERY_NOTE: Darstellungs-Schalter. ALLE DREI zusaetzlich:
+ * "Hinweis / Notiz" (`notes` — eigenstaendig, unabhaengig vom `headerText`-Kopftext aus
+ * `HeadTextBlock`, siehe dort), interne Notizen, Druckoptionen (ausser DELIVERY_NOTE).
  *
  * `PrintOptionsPanel` (Phase 7/11b) nur bei Bearbeiten (braucht eine `docId`) — DIESES
  * Panel speichert sofort (eigener PUT-Request), unabhaengig vom uebrigen Editor-`save()`.
@@ -16,6 +17,7 @@
 import { useId } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
+import { SCHEME_NOTICE } from "@/lib/editor/constants";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 import type { PrintOptionsOverride } from "@/schemas";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
@@ -79,6 +81,11 @@ export function MoreOptions({
 }) {
   const printApiKind = mode === "INVOICE" ? "invoices" : "documents";
   const showPrintOptions = mode !== "DELIVERY_NOTE";
+  // Fix 1 (Koordinator-Ruling): "Hinweis / Notiz" bindet an `notes` — ein von
+  // `headerText` (jetzt `HeadTextBlock`) unabhaengiges Feld. Bei INVOICE zusaetzlich der
+  // bestehende Pflichthinweis-Automatismus (Kleinunternehmer/Reverse-Charge/
+  // Differenzbesteuerung, `toInvoicePayload` haengt ihn vor `notes`).
+  const notice = mode === "INVOICE" ? SCHEME_NOTICE[draft.taxScheme] : undefined;
 
   return (
     <details className="rounded-lg border border-slate-200 bg-white p-4">
@@ -197,6 +204,10 @@ export function MoreOptions({
             </label>
           </div>
         )}
+
+        <EditorField label="Hinweis / Notiz" hint={notice ? `Pflichthinweis „${notice}“ wird automatisch ergänzt.` : undefined}>
+          {(id) => <textarea id={id} className={inputCls} rows={2} value={draft.notes} onChange={(e) => set(dispatch, "notes", e.target.value)} />}
+        </EditorField>
 
         <EditorField
           label="Interne Notiz"

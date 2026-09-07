@@ -140,11 +140,16 @@ export function RecipientBlock({
   function applyTakeOver(prefill: TakeOverPrefillDTO) {
     const next: DraftState = { ...draft, dirty: true };
     if (prefill.lines?.length) next.lines = prefill.lines.map(toDraftLine);
-    if (mode === "DOCUMENT") {
+    // Fix 1 (Koordinator-Ruling): `buildTakeOverPrefill` (src/domain/document/take-over.ts)
+    // liest `headerText`/`footerText` bereits fuer BEIDE Quellbelege (Invoice UND Quote,
+    // L127-129/147-149) — seit HeadTextBlock Kopftext an `headerText` bindet (statt vorher
+    // an `notes`), gilt das jetzt auch fuer INVOICE, nicht mehr nur DOCUMENT.
+    // `deliveryTerms` bleibt DOCUMENT-only (Invoice kennt kein eigenes Feld dafuer).
+    if (mode === "INVOICE" || mode === "DOCUMENT") {
       if (prefill.headerText != null) next.headerText = prefill.headerText;
       if (prefill.footerText != null) next.footerText = prefill.footerText;
-      if (prefill.deliveryTerms != null) next.deliveryTerms = prefill.deliveryTerms;
     }
+    if (mode === "DOCUMENT" && prefill.deliveryTerms != null) next.deliveryTerms = prefill.deliveryTerms;
     if (prefill.paymentTerms != null) next.paymentTerms = prefill.paymentTerms;
     if (prefill.documentDiscount) {
       next.documentDiscountPercent = fromPermille(prefill.documentDiscount.permille);
