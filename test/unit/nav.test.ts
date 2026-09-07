@@ -39,4 +39,10 @@ describe("nav — aktive Gruppe/Item aus Pfad", () => {
     expect(itemMatches(SETTINGS_ITEMS[0], "/einstellungen", "")).toBe(true);
     expect(itemMatches(SETTINGS_ITEMS[0], "/einstellungen/briefpapier", "")).toBe(false);
   });
+  it("SETTINGS_ITEMS enthält kein /einstellungen/druckoptionen mehr (Phase 11b, Task 7: Reiter der Briefpapier-Seite, Route leitet um) und keine Duplikate/leeren Keys", () => {
+    expect(SETTINGS_ITEMS.some((i) => i.href === "/einstellungen/druckoptionen")).toBe(false);
+    const keys = SETTINGS_ITEMS.map((i) => i.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.every((k) => k.length > 0)).toBe(true);
+  });
 });

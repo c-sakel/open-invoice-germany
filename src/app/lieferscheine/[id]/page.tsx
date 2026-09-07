@@ -14,6 +14,7 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { PdfPreview } from "@/components/PdfPreview";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
 
@@ -179,7 +180,9 @@ export default async function LieferscheinDetail({ params }: { params: Promise<{
 
       <AttachmentPanel docType="DELIVERY_NOTE" docId={dn.id} initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))} />
 
-      {dn.status === "DRAFT" && <PrintOptionsPanel docId={dn.id} apiKind="delivery-notes" effective={effectivePrint} initialOverride={printOverride} />}
+      {dn.status === "DRAFT" && (
+        <PrintOptionsPanel docId={dn.id} apiKind="delivery-notes" effective={effectivePrint} initialOverride={printOverride} layouts={listLayouts()} />
+      )}
 
       <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
 
