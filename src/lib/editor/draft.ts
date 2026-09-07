@@ -285,6 +285,13 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     notes: finalNotes,
     internalNotes: d.internalNotes || undefined,
     paymentTerms: d.paymentTerms || undefined,
+    // Fix 2 (Task-1-Review): createDraftInvoice waehlt bei Neuanlage die INVOICE-HEAD/
+    // FOOT-Textvorlage nur, wenn headerText/footerText UNDEFINED ist (`input.headerText
+    // ?? pickTextTemplate(...)`) — ein leerer, aber gesetzter String wuerde die
+    // Vorlagenauswahl unterdruecken. Beim Bearbeiten liest updateDraftInvoice dagegen
+    // jeden Wert !== undefined (auch ""), um das Feld gezielt leeren zu koennen.
+    headerText: isEdit ? d.headerText : d.headerText || undefined,
+    footerText: isEdit ? d.footerText : d.footerText || undefined,
     documentDiscountPermille: d.documentDiscountPercent.trim() ? permilleOrZero(d.documentDiscountPercent) : isEdit ? 0 : undefined,
     documentDiscountCents: d.documentDiscountAmount.trim() ? centsOrZero(d.documentDiscountAmount) : isEdit ? 0 : undefined,
     documentChargePermille: permilleOrZero(d.documentChargePercent),
@@ -348,6 +355,10 @@ export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
     contactPersonId: optionalSelectValue(d.contactPersonId, false),
     shippingAddressId: optionalSelectValue(d.shippingAddressId, false),
     deliveryDate: d.deliveryDate || undefined,
+    // Fix 2 (Task-1-Review): shippingDate/internalNotes sind in createDeliveryNoteSchema
+    // vorhanden, das heutige DeliveryNoteForm.tsx exponiert sie nur nicht.
+    shippingDate: d.shippingDate || undefined,
+    internalNotes: d.internalNotes || undefined,
     showPrices: d.showPrices,
     showTax: d.showTax,
     showArticleNumber: d.showArticleNumber,
@@ -426,6 +437,12 @@ export interface InvoiceInitialLike {
   internalNotes: string;
   paymentTerms: string;
   paymentMethodId: string;
+  // Fix 2 (Task-1-Review, Ruling nach Task 4): headerText/footerText existieren im
+  // Schema/`createDraftInvoice`/`updateDraftInvoice` bereits, das heutige
+  // `InvoiceInitial` (NewInvoiceForm.tsx) exponiert sie nur noch nicht — die Seiten
+  // (Task 6) ergaenzen das Feld bei der Uebernahme in `InvoiceInitial`.
+  headerText: string;
+  footerText: string;
   documentDiscountPercent: string;
   documentDiscountAmount: string;
   documentChargePercent: string;
@@ -513,6 +530,8 @@ export function draftFromInvoice(initial: InvoiceInitialLike): DraftState {
     internalNotes: initial.internalNotes ?? "",
     paymentTerms: initial.paymentTerms ?? "",
     paymentMethodId: initial.paymentMethodId ?? "",
+    headerText: initial.headerText ?? "",
+    footerText: initial.footerText ?? "",
     documentDiscountPercent: roundTrip(initial.documentDiscountPercent, toPermille, fromPermille),
     documentDiscountAmount: roundTrip(initial.documentDiscountAmount, toCents, fromCents),
     documentChargePercent: roundTrip(initial.documentChargePercent, toPermille, fromPermille),
