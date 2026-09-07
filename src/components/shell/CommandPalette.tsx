@@ -39,6 +39,8 @@ export function CommandPalette() {
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const flat = useMemo<Hit[]>(() => {
@@ -66,10 +68,52 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen, close, openSearch]);
 
+  // M10: Fokus beim Oeffnen auf die Eingabe, beim Schliessen zurueck auf das zuvor
+  // fokussierte Element (Muster `PreviewSheet.tsx`).
   useEffect(() => {
     if (!searchOpen) return;
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const t = setTimeout(() => inputRef.current?.focus(), 0);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      previouslyFocusedRef.current?.focus();
+      previouslyFocusedRef.current = null;
+    };
+  }, [searchOpen]);
+
+  // Scroll-Sperre waehrend die Palette offen ist; vorherigen Wert im Cleanup wiederherstellen.
+  useEffect(() => {
+    if (!searchOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [searchOpen]);
+
+  // Fokusfalle: Tab/Shift+Tab zirkuliert innerhalb der Palette (Muster `PreviewSheet.tsx`).
+  useEffect(() => {
+    if (!searchOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [searchOpen]);
 
   useEffect(() => {
@@ -144,7 +188,7 @@ export function CommandPalette() {
       }}
     >
       <button type="button" aria-label="Schließen" onClick={close} className="absolute inset-0 cursor-default" />
-      <div className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
+      <div ref={panelRef} className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
         <div className="flex items-center gap-2 border-b border-slate-200 px-3">
           <NavIcon name="search" className="h-4 w-4 text-slate-400" />
           <input
