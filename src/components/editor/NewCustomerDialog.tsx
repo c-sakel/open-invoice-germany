@@ -9,6 +9,7 @@
 import { useRef, useState } from "react";
 import { createCustomerInline, type CreateCustomerInlineResult } from "@/app/actions/masterdata";
 import { inputCls } from "@/components/forms/fields";
+import type { CustomerInput } from "@/schemas";
 
 export interface InlineCustomer {
   id: string;
@@ -20,7 +21,7 @@ export interface InlineCustomer {
 
 export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer) => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [type, setType] = useState<"BUSINESS" | "PRIVATE">("BUSINESS");
+  const [type, setType] = useState<CustomerInput["type"]>("BUSINESS");
   const [name, setName] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
   const [postalCode, setPostalCode] = useState("");
@@ -97,9 +98,9 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-700">Typ</span>
-              <select className={inputCls} value={type} onChange={(e) => setType(e.target.value as "BUSINESS" | "PRIVATE")}>
+              <select className={inputCls} value={type} onChange={(e) => setType(e.target.value as CustomerInput["type"])}>
                 <option value="BUSINESS">Firma</option>
-                <option value="PRIVATE">Privatperson</option>
+                <option value="CONSUMER">Privatperson</option>
               </select>
             </label>
             <label className="flex flex-col gap-1 text-sm">

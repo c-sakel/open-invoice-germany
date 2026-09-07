@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
-import { organizationSchema, customerSchema, productSchema } from "@/schemas";
+import { organizationSchema, customerSchema, productSchema, type CustomerInput } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
 import { archiveCustomer as archiveCustomerDomain } from "@/domain/customer/archive";
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
@@ -144,7 +144,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
 
 export interface CreateCustomerInlineInput {
   name: string;
-  type?: "BUSINESS" | "PRIVATE";
+  type?: CustomerInput["type"];
   addressLine1: string;
   postalCode: string;
   city: string;
