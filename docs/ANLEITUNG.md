@@ -42,7 +42,7 @@ Name, Anschrift, Typ (B2B/B2C). Die USt-IdNr. ist nur bei innergemeinschaftliche
 Ein Katalog spart Tipparbeit — du kannst Positionen aber auch direkt in der Rechnung eintippen.
 
 ### Schritt 4 — Rechnung erstellen (`Neue Rechnung`)
-Kunde wählen, Steuerschema, Leistungsdatum, Positionen erfassen. Die Summe wird live berechnet. „**Als Entwurf anlegen**" speichert die Rechnung als **Entwurf** — frei änder- und löschbar, noch **ohne Rechnungsnummer**.
+Der Editor ist derselbe für Rechnung, Angebot/AB/Proforma und Lieferschein: Kunde per Suche wählen (oder direkt im Editor über „+ Neuer Kunde" anlegen, ohne die Seite zu verlassen), Steuerschema, Leistungsdatum, Positionen per Produktsuche oder frei erfassen. Über das Zeilenmenü (⋯) lässt sich der Zeilentyp jederzeit zwischen Position, Überschrift, Textblock und Zwischensumme wechseln, Zeilen per Drag-and-Drop oder `Alt+↑`/`Alt+↓` umsortieren; `Enter` in der letzten Zeile legt eine neue an. Ein Schalter „Brutto anzeigen" zeigt zusätzlich den Bruttopreis je Position an — gespeichert wird immer netto. Die Summe wird live berechnet; über „**Vorschau**" lässt sich das PDF des aktuellen, noch ungespeicherten Entwurfs jederzeit ansehen (mit dem Hinweis „ENTWURF"/Wasserzeichen „VORSCHAU", schreibt nichts in die Datenbank). „**Als Entwurf anlegen**" speichert die Rechnung als **Entwurf** — frei änder- und löschbar, noch **ohne Rechnungsnummer**.
 
 ### Schritt 5 — Festschreiben
 Auf der Rechnungs-Detailseite: „**Festschreiben**". Dabei passiert (GoBD-konform):
@@ -116,18 +116,20 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 
 ---
 
-## 6. Briefpapier, Nummernkreise, Druckoptionen & GiroCode
+## 6. Briefpapier, Layouts, Nummernkreise, Druckoptionen & GiroCode
 
-Unter **„Einstellungen"** findest du seit Phase 7 vier zusätzliche Seiten für das Erscheinungsbild und die Nummerierung deiner Belege.
+Unter **„Einstellungen"** findest du seit Phase 7 zusätzliche Seiten für das Erscheinungsbild und die Nummerierung deiner Belege; seit Phase 11b ist das Erscheinungsbild in die Reiter „Briefpapier" / „Layouts" / „Druckoptionen" unter `Einstellungen → Briefpapier` aufgeteilt.
 
-### Briefpapier einrichten (`Einstellungen → Briefpapier`)
+### Briefpapier einrichten (Reiter „Briefpapier")
 - **Logo hochladen**: PNG oder JPEG, max. **2 MB**. Wird oben rechts auf jedem Beleg-PDF angezeigt, Breite über **„Logo-Breite (mm)"** einstellbar (10–100 mm).
 - **Hintergrundbild** (optional): PNG oder JPEG, max. **5 MB**, ganzseitig hinter dem Beleginhalt — nur sichtbar, wenn „Hintergrund anzeigen" aktiv ist.
-- **Primärfarbe**, **Ränder** (oben/rechts/unten/links, mm) und **Schriftgröße** (pt) bestimmen Layout und Optik.
-- **Absenderzeile** und dreispaltige **Fußzeile** (links/mittig/rechts) — freier Text, z. B. Bankverbindung/Handelsregister links, Kontakt mittig, USt-IdNr. rechts.
-- Es gibt **ein** Briefpapier je Organisation (kein separates Layout je Belegtyp/Kunde).
+- **Primärfarbe**, **Ränder** (oben/rechts/unten/links, mm) und **Schriftgröße** (pt) bestimmen Optik.
+- **Absenderzeile** und Fußzeile (automatisch aus den Stammdaten in vier Spalten, oder drei freie Textfelder links/mittig/rechts).
 - **Vorschau**: Link auf der Seite öffnet eine Musterrechnung/-lieferschein mit dem aktuell gespeicherten Layout.
 - Änderungen wirken sofort auf **alle** künftigen PDF-Abrufe, auch bei bereits festgeschriebenen Belegen (Nachdruck) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Nummer) bleibt davon unberührt (siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 6).
+
+### Layouts (Reiter „Layouts", Phase 11b)
+Sieben fest vorgegebene PDF-Layouts (u. a. **schlicht**, **standard**, **klassik**, **modern** sowie drei Varianten von **styled**) — je eine Vorschaukachel. Die Auswahl gilt **je Belegtyp** (Rechnung, Angebot, Auftragsbestätigung, Proforma, Gutschrift, Lieferschein, Mahnung) und zusätzlich als **Organisationsstandard** (Fallback für Belegtypen ohne eigene Zuordnung) — es ist also **kein** einziges Layout mehr org-weit fest, sondern eine Auflösungsreihenfolge: Beleg-Override (im Editor gesetzt) **>** Typ-Zuordnung **>** Organisationsstandard **>** „standard". Ein Kachel-Klick ändert zunächst nur eine lokale Vorschau; „Für <Typ> übernehmen" bzw. „Als Standard für alle" speichert die Auswahl erst explizit. Zusätzlich lässt sich auf einem einzelnen **Entwurf** im Editor unter „Weitere Optionen" ein abweichendes Layout nur für diesen einen Beleg wählen — beim Festschreiben wird diese Wahl eingefroren und ändert sich danach nicht mehr, auch wenn du später den Organisationsstandard/die Typ-Zuordnung änderst (Nachdrucke bleiben stabil).
 
 ### Nummernkreise (`Einstellungen → Nummernkreise`)
 Tabelle mit **neun** Nummernkreisen: Angebote, Auftragsbestätigungen, Proforma-Rechnungen, Lieferscheine, Rechnungen, Gutschriften, Mahnungen sowie **Kundennummern** und **Artikelnummern**. Je Zeile editierbar:
@@ -137,8 +139,8 @@ Tabelle mit **neun** Nummernkreisen: Angebote, Auftragsbestätigungen, Proforma-
 - **Zurückdrehen ist gesperrt**: eine bereits vergebene Nummer kann nicht erneut ausgegeben werden (GoBD/§ 14 Abs. 4 Nr. 4 UStG für Rechnungen; bei den übrigen Nummernkreisen aus Nachvollziehbarkeitsgründen ebenso gesperrt). Jede Änderung wird protokolliert.
 - Rechnungs-/Gutschriftnummern bleiben weiterhin **erst beim Festschreiben** vergeben; Angebots-/AB-/Lieferschein- sowie Kunden-/Artikelnummern **bei Erstellung** — siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 6.
 
-### Druckoptionen (`Einstellungen → Druckoptionen`)
-Zehn globale Schalter für Beleg-PDFs: Fußzeile, Seitenzahlen, Falz-/Lochmarken (DIN 5008), Artikelnummer-/Beschreibungs-/Steuersatz-/Zeilensummen-Spalte, Absenderzeile, **GiroCode**. Auf einem einzelnen **Entwurf** (Rechnung/Angebot/Lieferschein) lässt sich im Editor unter „Druckoptionen" gezielt von den globalen Werten abweichen — nur die tatsächlich angehakten Felder werden je Beleg überschrieben. Nach dem Festschreiben ist diese Beleg-Auswahl nicht mehr änderbar.
+### Druckoptionen (Reiter „Druckoptionen")
+Zehn globale Schalter für Beleg-PDFs: Fußzeile, Seitenzahlen, Falz-/Lochmarken (DIN 5008), Artikelnummer-/Beschreibungs-/Steuersatz-/Zeilensummen-Spalte, Absenderzeile, **GiroCode**. Auf einem einzelnen **Entwurf** (Rechnung/Angebot/Lieferschein) lässt sich im Editor unter „Weitere Optionen" gezielt von den globalen Werten abweichen — nur die tatsächlich angehakten Felder werden je Beleg überschrieben. Nach dem Festschreiben ist diese Beleg-Auswahl nicht mehr änderbar.
 
 ### GiroCode-Voraussetzungen
 Der GiroCode (QR-Code für „Scannen & Bezahlen" in Banking-Apps, Standard EPC069-12) erscheint auf einer Rechnung nur, wenn **alle** Punkte erfüllt sind:
