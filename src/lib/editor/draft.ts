@@ -14,6 +14,7 @@
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, SCHEME_NOTICE, type EditorMode } from "./constants";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
+import { newLineKey } from "./ids";
 import type { TaxScheme } from "@/schemas";
 
 export type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
@@ -106,7 +107,7 @@ export function narrowTaxRate(n: number): 19 | 7 | 0 {
 
 function emptyLine(lineType: LineType = "ITEM"): DraftLine {
   return {
-    key: crypto.randomUUID(),
+    key: newLineKey(),
     lineType,
     description: "",
     descriptionLong: "",
@@ -216,7 +217,7 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "duplicateLine": {
       const idx = state.lines.findIndex((l) => l.key === action.key);
       if (idx === -1) return state;
-      const copy: DraftLine = { ...state.lines[idx]!, key: crypto.randomUUID() };
+      const copy: DraftLine = { ...state.lines[idx]!, key: newLineKey() };
       const lines = [...state.lines];
       lines.splice(idx + 1, 0, copy);
       return { ...state, lines, dirty: true };
@@ -368,10 +369,18 @@ export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
     // vorhanden, der Editor exponiert sie hier zusaetzlich.
     shippingDate: d.shippingDate || undefined,
     internalNotes: d.internalNotes || undefined,
+    // Fix-Welle I1/I2 (Abschluss-Review): headerText/footerText/showDeliveryAddress werden
+    // im Editor angezeigt (HeadTextBlock/FootTextBlock/MoreOptions fuer ALLE drei Modi,
+    // siehe dortige Kommentare) und von createDeliveryNoteSchema/createDeliveryNoteWithinTx
+    // verarbeitet — vorher fielen sie hier still unter den Tisch, obwohl der Nutzer sie
+    // sichtbar bedienen konnte (Lastenheft 59, "keine Buttons ohne Backend").
+    headerText: d.headerText || undefined,
+    footerText: d.footerText || undefined,
     showPrices: d.showPrices,
     showTax: d.showTax,
     showArticleNumber: d.showArticleNumber,
     showDescription: d.showDescription,
+    showDeliveryAddress: d.showDeliveryAddress,
     notes: d.notes || undefined,
     // Lieferscheine kennen keinen lineType — nur ITEM-Zeilen ergeben eine gueltige
     // Lieferschein-Position (deliveryNoteLineInputSchema verlangt quantityMilli > 0).
@@ -404,6 +413,20 @@ export function validateDraft(d: DraftState): string[] {
     const unitNetPriceCents = toCents(l.price);
     if (unitNetPriceCents === null) {
       problems.push(`Position ${idx + 1}: Preis ist ungültig.`);
+    }
+  });
+
+  // I4 (Abschluss-Review): ITEM/HEADING/TEXT verlangen serverseitig eine Beschreibung
+  // (invoiceLineInputSchema/deliveryNoteLineInputSchema: description z.string().min(1)) —
+  // ohne diese Pruefung landet z. B. eine durch "Enter" in der letzten Zeile versehentlich
+  // angelegte leere ITEM-Zeile erst als feldloses "Validierung fehlgeschlagen"-Banner beim
+  // Server (siehe DocumentEditor.save()). SUBTOTAL bewusst ausgenommen (Koordinator-Ruling):
+  // eine leere Zwischensummen-Bezeichnung faengt der Server ab (jetzt mit lesbarer Meldung,
+  // siehe save()), soll den Editor aber nicht zusaetzlich vorab blockieren.
+  d.lines.forEach((l, idx) => {
+    if (l.lineType === "SUBTOTAL") return;
+    if (l.description.trim() === "") {
+      problems.push(`Zeile ${idx + 1}: Beschreibung fehlt.`);
     }
   });
 
@@ -496,7 +519,7 @@ function roundTrip(s: string | undefined, parse: (s: string) => number | null, f
 
 function initialLineToDraftLine(l: InitialLineLike): DraftLine {
   return {
-    key: crypto.randomUUID(),
+    key: newLineKey(),
     lineType: l.lineType,
     description: l.description ?? "",
     descriptionLong: l.descriptionLong ?? "",

@@ -64,6 +64,22 @@ const DETAIL_BASE_PATH: Record<EditorMode, string> = {
   DELIVERY_NOTE: "/lieferscheine",
 };
 
+/** Rohe Zod-`issues` (nicht `.flatten()`), wie sie `/api/invoices`, `/api/documents` und
+ *  `/api/delivery-notes` bei einem 400 zurueckgeben (`{ error, issues: e.issues }`). */
+interface SaveErrorIssue {
+  path: (string | number)[];
+  message: string;
+}
+
+/** I4 (Abschluss-Review): dieselbe Idee wie `PreviewSheet`s `flattenDetails` — Zod-Issues
+ *  mit Feldbezug auflisten statt nur "Validierung fehlgeschlagen" ohne jeden Hinweis zu
+ *  zeigen. Andere Response-Form als PreviewSheet (rohe `issues`, kein `.flatten()`), daher
+ *  ein eigener kleiner Helfer statt Wiederverwendung von `flattenDetails`. */
+function flattenIssues(issues: SaveErrorIssue[] | undefined): string[] {
+  if (!issues) return [];
+  return issues.map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message));
+}
+
 export function DocumentEditor({
   mode,
   initial,
@@ -203,8 +219,8 @@ export function DocumentEditor({
         res = await fetch("/api/delivery-notes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       }
       if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(j.error ?? "Speichern fehlgeschlagen.");
+        const j = (await res.json().catch(() => ({}))) as { error?: string; issues?: SaveErrorIssue[] };
+        setError([j.error ?? "Speichern fehlgeschlagen.", ...flattenIssues(j.issues)].join("\n"));
         setSaving(false);
         return;
       }

@@ -146,4 +146,53 @@ describe("editor/draft", () => {
     s = draftReducer(s, { type: "setLine", key: s.lines[0]!.key, patch: { description: "x", quantity: "1", price: "abc" } });
     expect(validateDraft(s).join(" ")).toContain("Preis");
   });
+  // I4 (Abschluss-Review): serverseitig verlangt invoiceLineInputSchema/
+  // deliveryNoteLineInputSchema description: z.string().min(1) fuer JEDE Zeile —
+  // validateDraft prueft das jetzt vorab fuer ITEM/HEADING/TEXT, damit z. B. eine durch
+  // "Enter" versehentlich angelegte leere ITEM-Zeile nicht erst als feldloses
+  // "Validierung fehlgeschlagen"-Banner vom Server zurueckkommt.
+  it("validateDraft nennt fehlende Beschreibung bei ITEM/HEADING/TEXT", () => {
+    let s = emptyDraft("INVOICE");
+    s = draftReducer(s, { type: "set", field: "customerId", value: "c1" });
+    // ITEM-Zeile ohne Beschreibung, aber mit gueltiger Menge/Preis (damit nur die
+    // Beschreibungspruefung anschlaegt).
+    s = draftReducer(s, { type: "setLine", key: s.lines[0]!.key, patch: { quantity: "1", price: "10" } });
+    expect(validateDraft(s).join(" ")).toContain("Beschreibung");
+
+    let h = emptyDraft("INVOICE");
+    h = draftReducer(h, { type: "set", field: "customerId", value: "c1" });
+    h = draftReducer(h, { type: "setLine", key: h.lines[0]!.key, patch: { description: "x", quantity: "1", price: "10" } });
+    h = draftReducer(h, { type: "addLine", lineType: "HEADING" });
+    expect(validateDraft(h).join(" ")).toContain("Beschreibung");
+
+    let t = emptyDraft("INVOICE");
+    t = draftReducer(t, { type: "set", field: "customerId", value: "c1" });
+    t = draftReducer(t, { type: "setLine", key: t.lines[0]!.key, patch: { description: "x", quantity: "1", price: "10" } });
+    t = draftReducer(t, { type: "addLine", lineType: "TEXT" });
+    expect(validateDraft(t).join(" ")).toContain("Beschreibung");
+  });
+  it("validateDraft lehnt eine SUBTOTAL-Zeile ohne Beschreibung NICHT ab (Koordinator-Ruling)", () => {
+    let s = emptyDraft("INVOICE");
+    s = draftReducer(s, { type: "set", field: "customerId", value: "c1" });
+    s = draftReducer(s, { type: "setLine", key: s.lines[0]!.key, patch: { description: "x", quantity: "1", price: "10" } });
+    s = draftReducer(s, { type: "addLine", lineType: "SUBTOTAL" });
+    expect(validateDraft(s)).toEqual([]);
+  });
+  // I1/I2 (Abschluss-Review): der Editor zeigt Kopf-/Fusstext und den
+  // "Lieferadresse anzeigen"-Schalter auch fuer Lieferscheine (HeadTextBlock/
+  // FootTextBlock/MoreOptions rendern sie fuer ALLE drei Modi) — toDeliveryNotePayload
+  // sendete sie vorher nicht, obwohl createDeliveryNoteSchema beide Felder kennt.
+  it("toDeliveryNotePayload sendet headerText/footerText/showDeliveryAddress", () => {
+    let n = emptyDraft("DELIVERY_NOTE");
+    n = draftReducer(n, { type: "set", field: "customerId", value: "c1" });
+    n = draftReducer(n, { type: "setLine", key: n.lines[0]!.key, patch: { description: "Ware", quantity: "3" } });
+    n = draftReducer(n, { type: "set", field: "headerText", value: "Kopftext" });
+    n = draftReducer(n, { type: "set", field: "footerText", value: "Fusstext" });
+    n = draftReducer(n, { type: "set", field: "showDeliveryAddress", value: false });
+    const payload = toDeliveryNotePayload(n) as { headerText?: string; footerText?: string; showDeliveryAddress?: boolean };
+    expect(payload.headerText).toBe("Kopftext");
+    expect(payload.footerText).toBe("Fusstext");
+    expect(payload.showDeliveryAddress).toBe(false);
+    expect(createDeliveryNoteSchema.safeParse(payload).success).toBe(true);
+  });
 });
