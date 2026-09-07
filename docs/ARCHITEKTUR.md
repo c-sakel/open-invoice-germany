@@ -216,7 +216,82 @@ Ein **Angebotslink** (`QuoteShareLink`, `src/domain/quote-share/link.ts`) erlaub
 
 **UI**: vier Settings-Seiten (`/einstellungen/belege`, `/nummernkreise`, `/briefpapier`, `/druckoptionen`) sowie ein `PrintOptionsPanel` im Beleg-Editor (nur `DRAFT`), das die effektiven Werte mit „abweichend"-Checkboxen zeigt — nur tatsächlich abgehakte Felder gehen als Override in `PUT .../print-options`.
 
-**MCP**: `get_settings`, `update_document_settings`, `update_print_settings`, `update_branding_settings` (verwirft `logoPath`/`backgroundPath` — Upload läuft ausschließlich über die HTTP-Upload-Route), `update_number_range`, `update_dunning_settings`, `list_dunning_stages`, `update_dunning_stage` (dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade) — siehe `docs/MCP.md`.
+**MCP**: `get_settings`, `update_document_settings`, `update_print_settings`, `update_branding_settings` (verwirft `logoPath`/`backgroundPath` — Upload läuft ausschließlich über die HTTP-Upload-Route), `update_number_range`, `update_dunning_settings`, `list_dunning_stages`, `update_dunning_stage`, `list_pdf_layouts` (Phase 11b, Task 8, siehe unten) (dieselben Domain-Funktionen/Zod-Schemas wie die Routen, keine Bypass-Pfade) — siehe `docs/MCP.md`.
+
+### PDF-Layouts (Phase 11b)
+
+**Engine** (`src/lib/pdf/layouts/`): ein `PdfLayout` (`types.ts`) kapselt fünf Hooks, mit
+denen die drei Renderer (`invoice-pdf.ts` fuer Rechnung/Gutschrift/Angebot/AB/Proforma,
+`delivery-note-pdf.ts`, `dunning-pdf.ts`) Kopf, Tabellenstil, Summenlinie und Fußzeile
+zeichnen — die Renderer selbst bleiben layout-agnostisch (kein `if (layoutId === ...)` in
+den Renderern):
+- `drawKopf(frame, input) => number` — Titel/Nummer/Empfänger/Meta auf Seite 1, liefert die
+  Start-y-Position fuer den restlichen Seiteninhalt.
+- `table: TableStyle` — Kopfzeilenfarbe/-höhe, Zebrastreifen/Zeilenregeln, Fettung des Titels.
+- `drawTotalsRule(frame, x, y)` — Trennlinie ueber der Summenzeile.
+- `drawFooter(frame, columns, y)` + `footerHeight` — zeichnet die (bereits fertigen)
+  Fußzeilenspalten; die Paginierung reserviert `footerHeight` auf jeder Seite.
+- `drawPageChrome?(frame) => number | void` (optional) — Kopf-„Chrome" auf Folgeseiten
+  (z. B. der farbige Balken von `modern`), direkt nach `doc.addPage()` aufgerufen; liefert
+  er eine Zahl, ersetzt sie `margins.top` als neue Start-y.
+
+Sieben fest verdrahtete Layouts (`registry.ts#LAYOUTS`, kein `registerLayout`, keine
+DB-Tabelle): `standard.ts`, `schlicht.ts`, `klassik.ts`, `modern.ts` sowie `styled.ts`
+(`blau`/`schwarz`/`kompakt`, dieselbe Grundstruktur mit Farb-/Dichte-Parametern), plus
+gemeinsame Hilfsfunktionen in `shared.ts`. `ids.ts` definiert `LAYOUT_IDS` (sieben Werte)
+und `LAYOUT_DOC_TYPES` (sieben Belegtypen: INVOICE, CREDIT_NOTE, QUOTE,
+ORDER_CONFIRMATION, PROFORMA, DELIVERY_NOTE, DUNNING) — beide auch fuer Zod importierbar
+(`layoutIdSchema`/`layoutByTypeSchema`, `src/schemas/settings.ts`). `getLayout(id)` fällt
+bei unbekannter/fehlender Id auf `standard` zurück; `listLayouts()` liefert die Liste fuer
+API/MCP/UI (`{id, name, description}[]`).
+
+**Fußzeile** (`src/lib/pdf/footer.ts#buildFooterColumns`): `BrandingSettings.footerMode`
+(Phase 11b) steuert AUTO (vier Spalten aus den Stammdaten — Firma/Adresse | Kontakt |
+Steuer-Nr./USt-IdNr./Inhaber | Bank) vs. CUSTOM (die drei Freitextfelder `footerLeft`/
+`-Center`/`-Right` aus Phase 7, AUTO als Fallback bei drei leeren Feldern). Layouts
+zeichnen nur die bereits fertigen `FooterColumn[]`, keine eigene Stammdaten-Logik.
+
+**Auflösung** (`src/domain/settings/layout.ts#resolveLayoutId`): Beleg-Override
+(`printOptionsJson.layoutId` auf Invoice/Quote/DeliveryNote) **>** Typ-Map
+(`BrandingSettings.layoutByType[docType]`, `layoutByTypeJson` in der DB) **>**
+Organisationsstandard (`BrandingSettings.layoutId`) **>** `"standard"`. `docType` kommt
+bei Rechnungen aus `invoiceTypeToLayoutDocType` (PARTIAL/DOWNPAYMENT/FINAL/CORRECTION →
+INVOICE; CREDIT_NOTE/ANGEBOT/AUFTRAGSBESTAETIGUNG/PROFORMA je eigener Typ). Mahnungen
+(`DUNNING`) haben **keinen** eigenen `printOptionsJson`-Beleg-Override (kein Feld auf dem
+`Dunning`-Modell) — dort wirkt ausschließlich Typ-Map/Organisationsstandard (siehe
+`docs/LIMITATIONEN.md`). `loadPdfTheme(orgId, overrideJson?, docType?)`
+(`src/domain/settings/theme.ts`) ruft `resolveLayoutId` auf und reicht das aufgelöste
+`PdfTheme.layoutId` an die Renderer durch (`getLayout(theme.layoutId)`).
+
+**Einfrieren beim Festschreiben** (`src/domain/settings/print.ts#freezePrintOptionsJson`,
+aufgerufen aus `src/domain/invoice/finalize.ts`): beim Festschreiben wird `layoutId` GENAU
+EINMAL über `resolveLayoutId` aufgelöst und zusätzlich zu den zehn Druckoptionen-Schaltern
+in `Invoice.printOptionsJson` eingefroren — ein bereits vollständiger Override ohne
+`layoutId` bekommt den aufgelösten Wert ergänzt, ein noch unvollständiger Override wird
+mit den globalen Druckoptionen gemergt. Eine spätere Änderung des
+Organisationsstandards/der Typ-Zuordnung ändert dadurch das PDF eines bereits
+festgeschriebenen Belegs nicht mehr (Nachdrucke bleiben stabil, siehe `COMPLIANCE.md`
+Abschnitt 6); ein Entwurf ohne eigenen Override folgt der Auflösung weiterhin live.
+
+**Vorschau** (`GET /api/settings/branding/preview`, `docType`/optional `layoutId`
+Query-Parameter): rendert dieselbe Musterrechnung/-lieferschein wie die Phase-7-Vorschau,
+ein explizit übergebener `layoutId` überschreibt den aufgelösten Wert (fuer die
+Live-Vorschau in der Layout-Galerie, ohne zu speichern).
+
+**UI** (`/einstellungen/briefpapier`, `BriefpapierTabs.tsx`, Task 7): Reiter „Allgemein" /
+„Layouts"; `LayoutGallery.tsx` zeigt alle sieben Layouts mit `public/layouts/<id>.svg`-
+Vorschaubild, Auswahl je Belegtyp UND Organisationsstandard — Speichern ist explizit
+(kein Sofortumschalten beim Klick), ein Badge zeigt die fuer den jeweiligen Typ aktuell
+wirksame Auswahl (Typ-Map > Organisationsstandard). Je-Beleg-Override im Beleg-Editor
+(`PrintOptionsPanel`, wie die übrigen Druckoptionen) — nur solange der Beleg `DRAFT` ist.
+
+**API/MCP** (Task 8): `GET /api/v1/Layout` (Scope `read`, `src/app/api/v1/Layout/route.ts`,
+`src/api/serializers/layout.ts`) liefert dieselbe feste Liste wie `listLayouts()` — keine
+Paginierung, kein POST/PATCH. MCP `list_pdf_layouts` (kein Input) liefert sie roh als
+JSON; `update_branding_settings` akzeptiert `layoutId`/`layoutByType`/`footerMode` (Schema
+aus Task 1), `set_print_options` den Beleg-Override `options.layoutId`. Eine
+Beleg-individuelle Layout-Überschreibung gibt es (noch) nur über MCP/UI, nicht als eigener
+`/api/v1`-Aktions-Endpunkt (siehe `docs/LIMITATIONEN.md`).
 
 ### Kundendomain: Adressen, Ansprechpartner, Kundenfelder, Vorgaben, Letztes Dokument übernehmen (Phase 8a)
 

@@ -195,10 +195,11 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) | „Zeig mir meine Beleg-Einstellungen." |
 | `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand) — Merge | „Setze die Fälligkeitstage für Rechnungen auf 14." |
 | `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode) — Merge | „Aktiviere den GiroCode auf Rechnungen." |
-| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) — Merge; Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
+| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) sowie das PDF-Layout (`layoutId`, `layoutByType` je Belegtyp, `footerMode` AUTO/CUSTOM, Phase 11b) — Merge; Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
+| `list_pdf_layouts` | Die sieben wählbaren PDF-Layouts auflisten (id, name, description) — ohne Eingabe | „Welche PDF-Layouts gibt es?" |
 | `update_number_range` | Einen Nummernkreis aktualisieren (`docType`, Muster/Präfix/Padding/`yearlyReset`/nächste Nummer) — Merge mit dem laufenden Jahr; lehnt ein Zurückdrehen unterhalb bereits vergebener Nummern ab | „Setze das Rechnungspräfix auf RE-2026-." |
 | `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Basiszins) — Merge | „Aktiviere automatischen Mahnungsversand." |
-| `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
+| `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) sowie optional des PDF-Layouts (`layoutId`, Phase 11b) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
 
 ### API-Schluessel
 

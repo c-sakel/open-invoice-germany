@@ -185,6 +185,26 @@ describe("update_branding_settings", () => {
   });
 });
 
+describe("list_pdf_layouts (Phase 11b, Task 8)", () => {
+  it("list_pdf_layouts und Branding-Layoutfelder ueber MCP", async () => {
+    const list = JSON.parse(text(await callTool("list_pdf_layouts", {}))) as { id: string }[];
+    expect(list.map((l) => l.id)).toContain("schlicht");
+
+    await callTool("update_branding_settings", { layoutId: "schlicht", layoutByType: { DUNNING: "kompakt" }, footerMode: "CUSTOM" });
+    const branding = JSON.parse(text(await callTool("get_settings", { area: "branding" }))) as {
+      layoutId: string;
+      layoutByType: Record<string, string>;
+      footerMode: string;
+    };
+    expect(branding.layoutId).toBe("schlicht");
+    expect(branding.layoutByType).toEqual({ DUNNING: "kompakt" });
+    expect(branding.footerMode).toBe("CUSTOM");
+
+    const bad = await callTool("update_branding_settings", { layoutId: "premium" });
+    expect(bad.isError).toBe(true);
+  });
+});
+
 describe("update_number_range", () => {
   it("aktualisiert Praefix/Muster eines Nummernkreises", async () => {
     const res = await callTool("update_number_range", { docType: "PRODUCT", prefix: "ART-X-", pattern: "{PREFIX}{SEQ:5}" });

@@ -52,6 +52,7 @@ import { GET as EmailTemplateGet, PATCH as EmailTemplateUpdate } from "@/app/api
 import { GET as SettingsGet, PATCH as SettingsUpdate } from "@/app/api/v1/Settings/route";
 import { GET as ApiKeyList, POST as ApiKeyCreate } from "@/app/api/v1/ApiKey/route";
 import { GET as ApiKeyGet, PATCH as ApiKeyUpdate } from "@/app/api/v1/ApiKey/[id]/route";
+import { GET as LayoutList } from "@/app/api/v1/Layout/route";
 
 let orgId: string;
 let otherOrgId: string;
@@ -658,5 +659,25 @@ describe("/api/v1/ApiKey", () => {
     const created = (await json(res)).data;
     const getRes = await ApiKeyGet(req(`http://x/api/v1/ApiKey/${created.id}`, { token: otherToken }), ctxFor(created.id));
     expect(getRes.status).toBe(404);
+  });
+});
+
+// ── Layout (Phase 11b, Task 8) ───────────────────────────────────────────────
+describe("/api/v1/Layout", () => {
+  it("GET /api/v1/Layout listet sieben Layouts", async () => {
+    const res = await LayoutList(req("http://x/api/v1/Layout", { token }));
+    expect(res.status).toBe(200);
+    const j = (await json(res)) as { data: { id: string; objectName: string; thumbnailUrl: string }[]; total: number; limit: number; offset: number };
+    expect(j.data.map((l) => l.id)).toEqual(["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"]);
+    expect(j.data[0]!.objectName).toBe("Layout");
+    expect(j.data[1]!.thumbnailUrl).toBe("/layouts/schlicht.svg");
+    expect(j.total).toBe(7);
+    expect(j.limit).toBe(7);
+    expect(j.offset).toBe(0);
+  });
+
+  it("ohne Token -> 401", async () => {
+    const res = await LayoutList(req("http://x/api/v1/Layout"));
+    expect(res.status).toBe(401);
   });
 });
