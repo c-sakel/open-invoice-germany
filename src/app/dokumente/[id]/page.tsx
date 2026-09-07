@@ -144,7 +144,7 @@ export default async function DokumentDetail({
         }
         pdf={<PdfStack src={`/api/documents/${q.id}/pdf`} title={`${title} — PDF`} />}
         aside={
-          <DocumentStatusCard q={q}>
+          <DocumentStatusCard q={q} status={status}>
             {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
             <AttachmentPanel
               docType="QUOTE"

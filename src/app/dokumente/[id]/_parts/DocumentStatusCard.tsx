@@ -1,6 +1,7 @@
 // src/app/dokumente/[id]/_parts/DocumentStatusCard.tsx
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
 import { formatCents } from "@/lib/money";
 import { parseBuyerSnapshot, parseContactSnapshot } from "@/domain/snapshot";
@@ -48,8 +49,21 @@ interface QuoteForStatusCard {
  * Stammdaten-Aenderungen duerfen alte Belege nicht ruecktwirkend veraendern) mit Fallback
  * auf die am Beleg gewaehlte/lebende Adresse bzw. den lebenden Kontakt fuer Alt-Belege ohne
  * Snapshot (z. B. MIGRATION-Bestand vor Phase 0).
+ *
+ * Fallback-Abweichung zum PDF: ohne Snapshot faellt diese Karte auf `billingAddress`/
+ * `contactPerson` zurueck, das PDF (`src/domain/document/pdf-data.ts`) dagegen auf
+ * `customer`/keinen Kontakt — beide Faelle betreffen nur Alt-Belege ohne Snapshot.
  */
-export function DocumentStatusCard({ q, children }: { q: QuoteForStatusCard; children?: ReactNode }) {
+export function DocumentStatusCard({
+  q,
+  status,
+  children,
+}: {
+  q: QuoteForStatusCard;
+  /** Wirksamer Status (aus `effectiveQuoteStatus`, page.tsx) fuer das StatusBadge. */
+  status: string;
+  children?: ReactNode;
+}) {
   const buyerFallback: BuyerSnapshot = {
     name: q.customer.name,
     contactName: q.customer.contactName,
@@ -110,7 +124,7 @@ export function DocumentStatusCard({ q, children }: { q: QuoteForStatusCard; chi
   rows.push({ label: "Brutto", value: <strong>{formatCents(q.grossTotalCents, q.currency)}</strong> });
 
   return (
-    <StatusCard status={null} rows={rows}>
+    <StatusCard status={<StatusBadge status={status} />} rows={rows}>
       <div className="space-y-4">{children}</div>
     </StatusCard>
   );
