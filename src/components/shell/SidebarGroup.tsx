@@ -2,8 +2,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { NavGroup, NavItem } from "@/lib/nav";
-import { itemMatches, SETTINGS_ITEMS } from "@/lib/nav";
+import { activeGroupKey, itemMatches, SETTINGS_ITEMS } from "@/lib/nav";
 import { NavIcon } from "./NavIcons";
 import { UnreadBadge } from "./UnreadBadge";
 
@@ -35,6 +36,34 @@ function ItemLink({ item, active, collapsed, badge, onNavigate, indent }: { item
 }
 
 export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, onNavigate }: Props) {
+  const storageKey = `oig.nav.open.${group.key}`;
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    // localStorage nur im Effekt (SSR-sicher); setState per setTimeout(0) wie Sidebar.tsx
+    // (COLLAPSED_KEY) — Default offen, wenn nichts (oder ein privater Modus ohne Storage)
+    // gespeichert ist.
+    const t = setTimeout(() => {
+      try {
+        setOpen(localStorage.getItem(storageKey) !== "0");
+      } catch {
+        // kein Storage (privater Modus) — offen bleiben
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [storageKey]);
+
+  function toggleOpen() {
+    setOpen((v) => {
+      try {
+        localStorage.setItem(storageKey, v ? "0" : "1");
+      } catch {
+        // ignorieren
+      }
+      return !v;
+    });
+  }
+
   if (group.href !== undefined && group.items.length === 0) {
     return (
       <ItemLink
@@ -46,26 +75,49 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
       />
     );
   }
+
+  // M4/M5 (Phase-11a-Nachtrag, Task 5): die aktive Gruppe ist immer offen — auch wenn sie
+  // zuvor zugeklappt gespeichert wurde, oeffnet sie sich beim Navigieren hinein. Die
+  // eingeklappte (nur-Icons-)Sidebar zeigt Gruppen ohnehin immer offen (kein Header/Chevron).
+  const isActiveGroup = activeGroupKey(pathname, search) === group.key;
+  const effectiveOpen = collapsed || isActiveGroup || open;
+  const itemsId = `nav-group-${group.key}-items`;
+
   return (
     <div className="space-y-0.5">
-      {!collapsed && <div className="px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.label}</div>}
+      {!collapsed && (
+        <button
+          type="button"
+          onClick={toggleOpen}
+          aria-expanded={effectiveOpen}
+          aria-controls={itemsId}
+          className="flex w-full items-center justify-between rounded-md px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600"
+        >
+          <span>{group.label}</span>
+          <NavIcon name="chevron-right" className={`h-3 w-3 shrink-0 transition-transform ${effectiveOpen ? "rotate-90" : ""}`} />
+        </button>
+      )}
       {collapsed && <div className="my-2 border-t border-slate-200" />}
-      {group.items.map((item) => {
-        const isActive = itemMatches(item, pathname, search);
-        const showSettings = item.href === "/einstellungen" && isActive && !collapsed;
-        return (
-          <div key={item.href}>
-            <ItemLink item={item} active={isActive} collapsed={collapsed} badge={unreadCount} onNavigate={onNavigate} />
-            {showSettings && (
-              <div className="mt-0.5 space-y-0.5">
-                {SETTINGS_ITEMS.map((s) => (
-                  <ItemLink key={s.href} item={s} active={itemMatches(s, pathname, search)} collapsed={false} badge={0} onNavigate={onNavigate} indent />
-                ))}
+      {effectiveOpen && (
+        <div id={itemsId} className="space-y-0.5">
+          {group.items.map((item) => {
+            const isActive = itemMatches(item, pathname, search);
+            const showSettings = item.href === "/einstellungen" && isActive && !collapsed;
+            return (
+              <div key={item.href}>
+                <ItemLink item={item} active={isActive} collapsed={collapsed} badge={unreadCount} onNavigate={onNavigate} />
+                {showSettings && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {SETTINGS_ITEMS.map((s) => (
+                      <ItemLink key={s.href} item={s} active={itemMatches(s, pathname, search)} collapsed={false} badge={0} onNavigate={onNavigate} indent />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
