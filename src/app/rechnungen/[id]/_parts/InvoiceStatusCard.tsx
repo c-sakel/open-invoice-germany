@@ -57,6 +57,10 @@ export function InvoiceStatusCard({
   dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null;
   children?: ReactNode;
 }) {
+  // Fix 1 (Review): Bezahlt/Offen/Zahlungsmethode gehoerten frueher zum guarded "Zahlung &
+  // Mahnwesen"-Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe,
+  // Gutschriften und stornierte Rechnungen gibt es keine sinnvolle Bezahlt/Offen-Aussage.
+  // Brutto bleibt als einzige Betragszeile davon ausgenommen immer sichtbar.
   const rows: StatusRow[] = [
     {
       label: "Kunde",
@@ -70,11 +74,15 @@ export function InvoiceStatusCard({
     { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
     { label: "Fällig", value: deDate(invoice.dueDate) },
     { label: "Brutto", value: formatCents(invoice.grossTotalCents, invoice.currency) },
-    { label: "Bezahlt", value: formatCents(invoice.paidAmountCents, invoice.currency) },
-    { label: "Offen", value: <strong>{formatCents(openCents, invoice.currency)}</strong> },
-    { label: "Steuerschema", value: invoice.taxScheme },
   ];
-  if (paymentMethodName) rows.push({ label: "Zahlungsmethode", value: paymentMethodName });
+  if (showPaymentBlock) {
+    rows.push(
+      { label: "Bezahlt", value: formatCents(invoice.paidAmountCents, invoice.currency) },
+      { label: "Offen", value: <strong>{formatCents(openCents, invoice.currency)}</strong> },
+    );
+  }
+  rows.push({ label: "Steuerschema", value: invoice.taxScheme });
+  if (showPaymentBlock && paymentMethodName) rows.push({ label: "Zahlungsmethode", value: paymentMethodName });
   if (hasSkonto) rows.push({ label: "Skonto", value: skontoText(invoice) });
 
   return (

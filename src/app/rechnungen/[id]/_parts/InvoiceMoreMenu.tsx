@@ -13,6 +13,12 @@ import { cancelAction } from "@/app/actions/invoices";
  * eigenstaendig nach derselben Bedingung ein wie zuvor — bei fehlender Berechtigung wird
  * der Eintrag nicht gezeigt (statt wie frueher deaktiviert dargestellt); die ausfuehrliche,
  * immer sichtbare Erklaerung mit deaktivierten Zustaenden bleibt in CorrectionSection.
+ *
+ * Fix 1 (Review): "Duplizieren" zusaetzlich an `!isDraft && !isCancelled` gebunden (altes
+ * Verhalten — der Korrekturbereich, der DuplicateInvoiceButton frueher enthielt, war fuer
+ * Entwuerfe/Stornos komplett ausgeblendet). Damit sind alle vier Bedingungen fuer einen
+ * Entwurf false, `hasAnyItem` also false, und das "Mehr"-Menue rendert wie frueher gar
+ * nicht erst (kein leerer/duplizierender Knopf neben "Bearbeiten"+"Festschreiben").
  */
 export function InvoiceMoreMenu({
   invoiceId,
@@ -30,7 +36,8 @@ export function InvoiceMoreMenu({
   canDuplicate: boolean;
 }) {
   const showConvert = !isDraft && !isCancelled && isInvoiceType;
-  const hasAnyItem = !isDraft || canDuplicate || canCancelOrCredit || showConvert;
+  const showDuplicate = canDuplicate && !isDraft && !isCancelled;
+  const hasAnyItem = !isDraft || showDuplicate || canCancelOrCredit || showConvert;
   if (!hasAnyItem) return null;
 
   return (
@@ -50,9 +57,9 @@ export function InvoiceMoreMenu({
         </>
       )}
 
-      {canDuplicate && (
+      {showDuplicate && (
         <ActionMenuItem>
-          <div className="px-3 py-1.5">
+          <div className="block w-full px-3 py-1.5 text-left hover:bg-slate-50">
             <DuplicateInvoiceButton invoiceId={invoiceId} />
           </div>
         </ActionMenuItem>
@@ -79,7 +86,7 @@ export function InvoiceMoreMenu({
         <>
           <ActionMenuSeparator />
           <ActionMenuItem>
-            <div className="px-3 py-1.5">
+            <div className="block w-full px-3 py-1.5 text-left hover:bg-slate-50">
               <ConvertMenu sourceType="INVOICE" sourceId={invoiceId} showToDeliveryNote />
             </div>
           </ActionMenuItem>
