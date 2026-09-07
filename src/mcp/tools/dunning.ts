@@ -14,6 +14,13 @@ import { MailNotConfiguredError } from "@/domain/email/settings";
 import { NotFoundError } from "@/domain/errors";
 import { dunningStageFieldsSchema } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5b "Important"): siehe partial-input.ts —
+// `dunningStageFieldsSchema.partial().shape` (das direkte Vorgehen unten VORHER) liess die
+// MCP-SDK-Validierung `autoSend`/`enabled` (beide mit `.default(...)`) bei jedem Teil-
+// Update stillschweigend auf ihren Default zuruecksetzen, selbst wenn der Aufrufer sie
+// nicht mitschickte — auf der Produktivinstanz mit aktivem Scheduler haette das eine vom
+// Betreiber deaktivierte Mahnstufe unbeabsichtigt wieder aktiviert.
+import { partialInputShape } from "./partial-input";
 
 export function registerDunningTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_dunning ───────────────────────────────────────────────────────────
@@ -165,7 +172,7 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
         "Aktualisiert eine bestehende Mahnstufe (Name/Fristen/Mahnkosten/Zinsen/Pauschale/Auto-Versand/aktiv). Mahnkosten sind erst ab der 3. Stufe zulaessig (order >= 2, COMPLIANCE §12). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand). Nachtrag Phase 7/§55.",
       inputSchema: {
         id: z.string().describe("Mahnstufen-ID"),
-        ...dunningStageFieldsSchema.partial().shape,
+        ...partialInputShape(dunningStageFieldsSchema),
       },
     },
     async ({ id, ...args }): Promise<Result> => {
