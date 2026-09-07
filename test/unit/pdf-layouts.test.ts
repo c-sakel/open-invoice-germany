@@ -7,6 +7,7 @@ import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { getLayout, listLayouts } from "@/lib/pdf/layouts/registry";
+import { LAYOUT_IDS } from "@/lib/pdf/layouts/ids";
 import { parsePdf, testPdfTheme } from "../helpers/pdf-theme";
 import { sampleDeliveryNote, sampleDunning } from "../helpers/pdf-fixtures";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
@@ -71,10 +72,17 @@ export function sampleInvoice(): EInvoiceData {
 }
 
 describe("Layout-Register", () => {
-  it("kennt 'standard', das der Fallback ist (Register waechst bis Task 5)", () => {
+  it("kennt 'standard', das der Fallback ist", () => {
     expect(listLayouts()[0]!.id).toBe("standard");
     expect(getLayout("gibtsnicht").id).toBe("standard");
     expect(getLayout(undefined).id).toBe("standard");
+  });
+
+  // Task 5: die Registry ist jetzt ein vollstaendiges `Record<LayoutId, PdfLayout>`
+  // (kein `Partial` mehr) — `listLayouts()` muss deshalb exakt `LAYOUT_IDS` in
+  // derselben Reihenfolge liefern, kein Layout fehlt.
+  it("liefert alle sieben Layouts in der Reihenfolge von LAYOUT_IDS", () => {
+    expect(listLayouts().map((l) => l.id)).toEqual([...LAYOUT_IDS]);
   });
 });
 
@@ -102,10 +110,10 @@ describe("Layout standard (Kompatibilitaet)", () => {
   });
 });
 
-// Phase 11b, Task 4 — Matrix ueber alle bisher registrierten Layouts (Task 5 ergaenzt
-// blau/schwarz/kompakt). Jedes Layout muss dieselben Kernangaben drucken, egal wie es
-// Kopf/Tabelle/Fusszeile zeichnet — die Renderer selbst bleiben layout-agnostisch.
-const MATRIX = ["standard", "schlicht", "klassik", "modern"] as const; // Task 5: + blau, schwarz, kompakt
+// Phase 11b, Task 4/5 — Matrix ueber alle sieben Layouts. Jedes Layout muss dieselben
+// Kernangaben drucken, egal wie es Kopf/Tabelle/Fusszeile zeichnet — die Renderer
+// selbst bleiben layout-agnostisch.
+const MATRIX = ["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"] as const;
 
 describe.each(MATRIX)("Layout %s", (layoutId) => {
   it("Register enthaelt %s", () => {
@@ -127,7 +135,13 @@ describe.each(MATRIX)("Layout %s", (layoutId) => {
     expect(stripped, `${layoutId}: IBAN`).toContain(STRIPPED_IBAN_FOOTER);
     // Fix-Runde 1, Punkt 6 — die Fusszeile steht jetzt auf JEDER Seite, nicht nur der letzten.
     expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER), `${layoutId}: IBAN je Seite`).toBeGreaterThanOrEqual(numpages);
-    expect((text.match(/Beschreibung/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // `kompakt` (Task 5: kleinere Zeilenhoehe, siehe invoice-pdf.ts#rowH) passt alle 30
+    // Positionen inkl. Zwischenueberschrift auf die erste Tabellenseite — der Tabellenkopf
+    // "Beschreibung" erscheint deshalb nur EINMAL (Seite 2 traegt nur noch Summen/Fusszeile,
+    // keine weitere Tabellenseite); das ist der numerische Beleg fuer die kleinere Zeilenhoehe.
+    // Alle anderen Layouts behalten die Zwei-Tabellenseiten-Erwartung aus Task 4.
+    const minHeaderRepeats = layoutId === "kompakt" ? 1 : 2;
+    expect((text.match(/Beschreibung/g) ?? []).length, `${layoutId}: Tabellenkopf-Wiederholungen`).toBeGreaterThanOrEqual(minHeaderRepeats);
     expect(text).not.toContain("GEHEIM");
   });
 
