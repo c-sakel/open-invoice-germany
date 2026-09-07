@@ -55,6 +55,7 @@ export function ConvertMenu({
   allowShareModesInPartialInvoice = true,
   showDownpaymentInvoice,
   showFinalInvoice,
+  asMenuItem = false,
 }: {
   // B11 (Fix-Welle): "DELIVERY_NOTE" ergaenzt fuer den Teilrechnung-Einstieg auf der
   // Lieferschein-Detailseite — dort sind ausschliesslich showPartialInvoice und
@@ -76,6 +77,9 @@ export function ConvertMenu({
   /** Task 4 (nur sourceType QUOTE): Schlussrechnung erzeugen (nur wenn Abschlaege
    *  festgeschrieben sind — die Bedingung prueft der Aufrufer, siehe Dokumentseite). */
   showFinalInvoice?: boolean;
+  /** M13 (Fix-Welle): borderlose volle-Breite-Menuepunkte statt gerahmter Knoepfe, fuer die
+   *  Verwendung innerhalb eines `<ActionMenu>` (z. B. `InvoiceMoreMenu`). */
+  asMenuItem?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -299,42 +303,45 @@ export function ConvertMenu({
   }
 
   const selectableLinesForPositions = (billed ?? []).filter((l) => l.billedMilli === 0);
+  // M13 (Fix-Welle): als Menuepunkte alle Trigger auf dieselbe borderlose volle-Breite-Zeile
+  // ziehen (deckungsgleich mit `ActionMenuItem`), statt der gerahmten/gefuellten Knoepfe.
+  const triggerCls = asMenuItem ? "block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-60" : undefined;
 
   return (
-    <span className="inline-flex flex-col items-end gap-1">
-      <span className="flex flex-wrap items-center gap-2">
+    <span className={asMenuItem ? "block w-full" : "inline-flex flex-col items-end gap-1"}>
+      <span className={asMenuItem ? "flex flex-col" : "flex flex-wrap items-center gap-2"}>
         {showToOrderConfirmation && (
-          <button type="button" onClick={() => convertTo("AUFTRAGSBESTAETIGUNG")} disabled={busy !== null} className={btnOutlineCls}>
+          <button type="button" onClick={() => convertTo("AUFTRAGSBESTAETIGUNG")} disabled={busy !== null} className={triggerCls ?? btnOutlineCls}>
             {busy === "AUFTRAGSBESTAETIGUNG" ? "…" : "AB erzeugen"}
           </button>
         )}
         {showToInvoice && (
-          <button type="button" onClick={() => convertTo("INVOICE")} disabled={busy !== null} className={btnCls}>
+          <button type="button" onClick={() => convertTo("INVOICE")} disabled={busy !== null} className={triggerCls ?? btnCls}>
             {busy === "INVOICE" ? "…" : "Rechnung erzeugen"}
           </button>
         )}
         {showToDeliveryNote && (
-          <button type="button" onClick={openDeliveryNoteDialog} disabled={busy !== null} className={btnOutlineCls}>
+          <button type="button" onClick={openDeliveryNoteDialog} disabled={busy !== null} className={triggerCls ?? btnOutlineCls}>
             Lieferschein erzeugen
           </button>
         )}
         {showPartialInvoice && (
-          <button type="button" onClick={openPartialDialog} disabled={busy !== null} className={btnOutlineCls}>
+          <button type="button" onClick={openPartialDialog} disabled={busy !== null} className={triggerCls ?? btnOutlineCls}>
             Teilrechnung…
           </button>
         )}
         {showDownpaymentInvoice && (
-          <button type="button" onClick={openDownpaymentDialog} disabled={busy !== null} className={btnOutlineCls}>
+          <button type="button" onClick={openDownpaymentDialog} disabled={busy !== null} className={triggerCls ?? btnOutlineCls}>
             Abschlagsrechnung…
           </button>
         )}
         {showFinalInvoice && (
-          <button type="button" onClick={createFinalInvoice} disabled={busy !== null} className={btnCls}>
+          <button type="button" onClick={createFinalInvoice} disabled={busy !== null} className={triggerCls ?? btnCls}>
             {busy === "FINAL_INVOICE" ? "…" : "Schlussrechnung erzeugen"}
           </button>
         )}
       </span>
-      {error && <span className="text-xs text-rose-600">{error}</span>}
+      {error && <span className={asMenuItem ? "block px-3 py-1 text-xs text-rose-600" : "text-xs text-rose-600"}>{error}</span>}
 
       <dialog ref={dialogRef} className="w-full max-w-2xl rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
         <div className="max-h-[85vh] overflow-y-auto p-5">

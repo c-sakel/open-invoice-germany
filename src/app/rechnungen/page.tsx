@@ -13,6 +13,7 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { loadListPage } from "@/lib/list-page";
+import { buildListeParam } from "@/domain/document/neighbors";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,8 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     to: firstOf(sp.to),
     offset: firstOf(sp.offset),
   };
+  const liste = buildListeParam(values);
+  const detailHref = (id: string) => `/rechnungen/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
   // Fix-Welle (B1): rohe searchParams enthalten bei jedem FilterBar-Submit leere Strings
@@ -163,7 +166,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                 return (
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      <Link href={`/rechnungen/${inv.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(inv.id)} className="font-medium text-indigo-600 hover:underline">
                         {inv.number ?? "Entwurf"}
                       </Link>
                     </td>

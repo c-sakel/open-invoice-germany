@@ -45,4 +45,11 @@ describe("nav — aktive Gruppe/Item aus Pfad", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys.every((k) => k.length > 0)).toBe(true);
   });
+  it("Hint einer Detailseite ueberstimmt Pfad/Query (11a-M12: /dokumente/<id> als AB)", () => {
+    const verkauf = NAV_GROUPS.find((g) => g.key === "verkauf")!;
+    const ab = verkauf.items.find((i) => i.label === "Auftragsbestätigungen")!;
+    const angebote = verkauf.items.find((i) => i.label === "Angebote")!;
+    expect(itemMatches(ab, "/dokumente", "?kind=AUFTRAGSBESTAETIGUNG")).toBe(true);
+    expect(itemMatches(angebote, "/dokumente", "?kind=AUFTRAGSBESTAETIGUNG")).toBe(false);
+  });
 });

@@ -27,6 +27,8 @@ Deine Daten liegen in `prisma/dev.db` — eine einzige Datei, die nur dir gehör
 
 ## 2. Erste Schritte in der App
 
+Die linke Seitenleiste gliedert sich in drei Gruppen — **Übersicht** (Dashboard, ohne eigene Überschrift/Klappfunktion — ein einfacher Link), **Verkauf** (Angebote, Auftragsbestätigungen, Proforma, Lieferscheine, Rechnungen, Gutschriften, Wiederkehrend, Mahnwesen) und **Verwaltung** (Kunden, Produkte, Benachrichtigungen, Einstellungen). Die Gruppen *Verkauf* und *Verwaltung* lassen sich per Klick auf die Überschrift auf-/zuklappen; der Zustand wird je Gruppe im Browser gemerkt (übersteht ein Neuladen). Navigierst du in eine zugeklappte Gruppe hinein, öffnet sie sich einmalig automatisch. Über den Pfeil unten links lässt sich die gesamte Seitenleiste zusätzlich auf reine Icons einklappen.
+
 ### Schritt 1 — Unternehmen einrichten (`Einstellungen`)
 Beim ersten Start wirst du hierher geführt. Trage deine Firmendaten ein. Pflicht für rechtskonforme Rechnungen (§ 14 UStG):
 - **Firmenname + vollständige Anschrift**
@@ -51,13 +53,17 @@ Auf der Rechnungs-Detailseite: „**Festschreiben**". Dabei passiert (GoBD-konfo
 - Die Rechnung wird **unveränderbar**. Änderungen sind ab jetzt gesperrt.
 
 ### Schritt 6 — Exportieren
-- **PDF** — die klassische „sonstige Rechnung" für E-Mail/Druck.
+Die Rechnungs-Detailseite zeigt das **PDF direkt eingebettet** in der Seitenmitte (PDF-Ansicht deines Browsers im A4-Format; ohne eingebauten Viewer ein Link „PDF öffnen" als Download-Fallback). Rechts daneben fasst die **Statuskarte** Status, Kunde, Rechnungs-/Leistungsdatum, Fälligkeit und Brutto kompakt zusammen. Mit den Pfeilen `‹`/`›` neben dem Zurück-Link (oder `Alt+←`/`Alt+→` auf der Tastatur — unter Windows/Linux überlagert das den Browser-Zurück/Vor-Shortcut, siehe [LIMITATIONEN.md](LIMITATIONEN.md)) blätterst du zum vorherigen/nächsten Beleg der zuletzt geöffneten Liste, ohne zurückzuspringen. Eine interne Notiz (falls vorhanden) steht direkt darunter, immer sichtbar; die **Positionen** darunter sind ein einklappbarer Abschnitt (Kopfzeile zeigt Anzahl + Nettosumme, auch ohne Aufklappen).
+
+Der Knopf **PDF** in der Kopfzeile (auch bei Entwürfen aktiv) öffnet die klassische „sonstige Rechnung" für E-Mail/Druck in einem neuen Tab — dasselbe PDF steht zusätzlich direkt eingebettet auf der Seite, s. o. Die E-Rechnungs-Exporte liegen im „**Mehr**"-Menü oben rechts:
 - **XRechnung (XML)** — die strukturierte E-Rechnung nach EN 16931 für B2B/Behörden.
 - **ZUGFeRD (PDF)** — Hybrid: lesbares PDF mit eingebettetem E-Rechnungs-XML.
 
+Dasselbe „Mehr"-Menü bündelt außerdem Duplizieren, Teilgutschrift, Stornieren und die Lieferschein-Konvertierung — nur die im aktuellen Status tatsächlich erlaubten Einträge erscheinen.
+
 ### Schritt 7 — Zahlung & Mahnwesen (Rechnungs-Detailseite, `/mahnwesen`)
-Unter „**Zahlung & Mahnwesen**" auf der Rechnungs-Detailseite:
-- **Zahlung buchen** — Teil- oder Vollzahlung; der Status springt auf *teilbezahlt* bzw. *bezahlt*.
+Zahlung und Mahnwesen sind Teil der Statuskarte auf der Rechnungs-Detailseite (kein eigener Reiter):
+- **Zahlung buchen** — der Button „Zahlung erfassen" oben springt zum gleichnamigen, einklappbaren Abschnitt innerhalb der Statuskarte (bei offenem Betrag automatisch aufgeklappt); Teil- oder Vollzahlung, der Status springt auf *teilbezahlt* bzw. *bezahlt*.
 - **Nächste Mahnstufe** — erzeugt die nächste fällige Mahnung nach den unter „Einstellungen → Mahnwesen" konfigurierten **Mahnstufen** (frei editierbar: Name, Tage nach Fälligkeit, neue Zahlungsfrist, Mahnkosten, Zinsberechnung an/aus, 40-€-Pauschale an/aus — vier Standardstufen sind vorbelegt, entsprechen aber keiner gesetzlichen Vorgabe). Mahnkosten sind erst ab der 2. Stufe zulässig (§ 288 Abs. 5 BGB, siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 12); **Verzugszins** (taggenau, 5 Pp B2C/9 Pp B2B über dem unter „Einstellungen → Mahnwesen" gepflegten Basiszins) und **40-€-Pauschale** (nur B2B, einmalig je Rechnung) greifen, wenn die jeweilige Stufe das vorsieht. Jede Mahnung gibt es als PDF. Über **Mahnprozess pausieren/beenden** lässt sich eine Rechnung vorübergehend (mit Datum) oder dauerhaft von weiteren automatischen Mahnungen ausnehmen.
 - Die Seite **`/mahnwesen`** zeigt eine Übersicht aller überfälligen, offenen Rechnungen (Fälligkeits-„Aging" in Tagesgruppen, Summe offener Beträge, nächste fällige Stufe je Rechnung) über alle Kunden hinweg.
 - **Automatisierung:** Unter „Einstellungen → Mahnwesen" steuerst du **Auto-Erstellung** (Default an) und **Auto-Versand** (Default **aus** — bewusst konservativ, erst nach Prüfung der Vorlagen/Mahnstufen aktivieren) global sowie je Stufe (`Auto-Versand` als Schalter an der einzelnen Mahnstufe). Ist beides aktiv, verschickt der eingebaute Scheduler (siehe Schritt 8) fällige Mahnungen ohne manuelles Zutun per E-Mail.

@@ -3,6 +3,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getFocusable } from "@/lib/focus";
 import { NavIcon } from "./NavIcons";
 import { useShell } from "./ShellProvider";
 
@@ -25,11 +26,9 @@ const QUICK_ACTIONS: Hit[] = [
 ];
 
 /**
- * Befehlspalette (Phase 11a, Task 5 Fix 1): als Singleton einmal in `AppShell` gemountet
- * (siehe dort und `ShellProvider`) — Oeffnen/Schliessen kommt aus dem Shell-Kontext, die
- * Trigger-Buttons (Sidebar/Topbar/Drawer) sind `SearchTrigger`. Eingabe wird mit 200 ms
- * Verzoegerung an `GET /api/search` geschickt. Pfeiltasten/Enter navigieren, Escape schliesst.
- * Ohne Eingabe stehen die Schnellaktionen bereit.
+ * Befehlspalette (Phase 11a, Task 5 Fix 1): Singleton in `AppShell` (Oeffnen/Schliessen ueber
+ * `ShellProvider`, Trigger `SearchTrigger`). Eingabe geht mit 200 ms Verzoegerung an `GET
+ * /api/search`; Pfeiltasten/Enter navigieren, Escape schliesst, ohne Eingabe Schnellaktionen.
  */
 export function CommandPalette() {
   const router = useRouter();
@@ -39,6 +38,8 @@ export function CommandPalette() {
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const flat = useMemo<Hit[]>(() => {
@@ -66,10 +67,49 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen, close, openSearch]);
 
+  // M10: Fokus beim Oeffnen auf die Eingabe, beim Schliessen zurueck aufs vorher fokussierte Element (Muster `PreviewSheet.tsx`).
   useEffect(() => {
     if (!searchOpen) return;
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const t = setTimeout(() => inputRef.current?.focus(), 0);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      previouslyFocusedRef.current?.focus();
+      previouslyFocusedRef.current = null;
+    };
+  }, [searchOpen]);
+
+  // Scroll-Sperre waehrend die Palette offen ist; vorherigen Wert im Cleanup wiederherstellen.
+  useEffect(() => {
+    if (!searchOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [searchOpen]);
+
+  // Fokusfalle: Tab/Shift+Tab zirkuliert innerhalb der Palette (Muster `PreviewSheet.tsx`).
+  useEffect(() => {
+    if (!searchOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = getFocusable(panel);
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [searchOpen]);
 
   useEffect(() => {
@@ -90,24 +130,20 @@ export function CommandPalette() {
         // abgebrochen oder Netzfehler — Liste bleibt
       } finally {
         // M11 (Abschluss-Review): nur den Ladeindikator der eigenen Anfrage loeschen — ein
-        // abgebrochener aelterer Request darf `loading` nicht faelschlich zuruecksetzen,
-        // waehrend eine neuere Anfrage noch laeuft.
+        // abgebrochener aelterer Request darf `loading` nicht faelschlich zuruecksetzen, waehrend eine neuere Anfrage laeuft.
         if (abortRef.current === ctrl) setLoading(false);
       }
     }, 200);
     return () => clearTimeout(t);
   }, [q, searchOpen]);
 
-  // Minor (Fix 1): ein noch laufender Request wird auch beim Unmount der Palette abgebrochen
-  // (z.B. Navigation weg von der Shell) — sonst haengt ein Fetch ohne Wirkung nach.
+  // Minor (Fix 1): ein noch laufender Request wird auch beim Unmount abgebrochen (z.B. Navigation weg von der Shell) — sonst haengt ein wirkungsloser Fetch nach.
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
 
-  // `cursor` kann veralten, wenn sich `flat` aendert (z.B. Ergebnisse treffen ein oder die
-  // Eingabe faellt unter 2 Zeichen), ohne dass eine Pfeiltaste gedrueckt wurde. Statt den
-  // Zustand per Effekt nachzuziehen, wird die tatsaechlich gueltige Position bei jedem
-  // Render abgeleitet — so bleiben Hervorhebung und Enter immer synchron mit `flat`.
+  // `cursor` kann veralten, wenn sich `flat` aendert, ohne dass eine Pfeiltaste gedrueckt wurde —
+  // die gueltige Position wird deshalb bei jedem Render abgeleitet, nicht per Effekt nachgezogen.
   const safeCursor = flat.length === 0 ? 0 : Math.min(cursor, flat.length - 1);
 
   function go(hit: Hit) {
@@ -127,8 +163,7 @@ export function CommandPalette() {
       const hit = flat[safeCursor];
       if (hit) go(hit);
     }
-    // Escape: siehe onKeyDown am Overlay-Wrapper (schliesst auch, wenn der Fokus das
-    // Eingabefeld verlassen hat, z.B. nach Tab auf einen Treffer-Button).
+    // Escape: siehe onKeyDown am Overlay-Wrapper (schliesst auch bei Fokus ausserhalb des Eingabefelds, z.B. nach Tab auf einen Treffer-Button).
   }
 
   if (!searchOpen) return null;
@@ -140,11 +175,15 @@ export function CommandPalette() {
       aria-modal="true"
       aria-label="Suche"
       onKeyDown={(e) => {
-        if (e.key === "Escape") close();
+        // Fix 1: `stopPropagation` verhindert, dass Escape zusaetzlich den document-Level-Handler des mobilen Drawers erreicht (zweite Verteidigungslinie, siehe Topbar.tsx).
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          close();
+        }
       }}
     >
       <button type="button" aria-label="Schließen" onClick={close} className="absolute inset-0 cursor-default" />
-      <div className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
+      <div ref={panelRef} className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
         <div className="flex items-center gap-2 border-b border-slate-200 px-3">
           <NavIcon name="search" className="h-4 w-4 text-slate-400" />
           <input
