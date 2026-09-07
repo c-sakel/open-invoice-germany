@@ -51,7 +51,9 @@ export function sampleInvoice(): EInvoiceData {
     footerText: "Wir bedanken uns für Ihr Vertrauen.",
     notes: "Sichtbare Notiz",
     seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin", countryCode: "DE", vatId: "DE123456789", taxNumber: "12/345/67890", email: "info@muster.example", phone: "030 123456" },
-    buyer: { name: "Kunde AG", contactName: "Frau Beispiel", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt", countryCode: "DE", vatId: "DE987654321" },
+    // Fix-Welle (Abschluss-Review Phase 11b, Block 3): Kundennummer fuers PDF-Meta "Ihre
+    // Kundennummer" (siehe Test unten).
+    buyer: { name: "Kunde AG", contactName: "Frau Beispiel", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt", countryCode: "DE", vatId: "DE987654321", customerNumber: "K-7100" },
     lines,
     taxSubtotals: [{ taxRate: 19, taxCategory: "S", netCents: net, taxCents: tax }],
     netTotalCents: net,
@@ -142,6 +144,37 @@ describe("Layout standard (Kompatibilitaet)", () => {
     // Fix-Runde 1, Punkt 6 — die Fusszeile steht jetzt auf JEDER Seite, nicht nur der letzten.
     expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER)).toBeGreaterThanOrEqual(numpages);
     expect(text).toContain("Gesamtbetrag");
+    // Fix-Welle (Abschluss-Review, Block 3 — Referenzbeleg RE-41362): Kundennummer-Zeile
+    // im Kopf-Meta, fuer ALLE Layouts (siehe eigener Test unten fuer `schlicht`).
+    expect(text).toContain("Ihre Kundennummer");
+    expect(text).toContain("K-7100");
+  });
+});
+
+describe("Layout schlicht — naeher an der Referenz RE-41362 (Abschluss-Review, Block 3)", () => {
+  it("nutzt eigene Beschriftungen, Positionssuffix und Kundennummer-Zeile", async () => {
+    const pdf = await renderInvoicePdf(sampleInvoice(), testPdfTheme({ layoutId: "schlicht" }));
+    const { text } = await parsePdf(pdf);
+    expect(text).toContain("Einzelpreis");
+    expect(text).toContain("Gesamtpreis");
+    expect(text).toContain("1."); // Positionssuffix (colPosSuffix)
+    expect(text).toContain("Gesamtbetrag netto");
+    expect(text).toMatch(/zzgl\. Umsatzsteuer 19%/);
+    expect(text).toContain("Gesamtbetrag brutto");
+    expect(text).toContain("Ihre Kundennummer");
+    expect(text).toContain("K-7100");
+  });
+
+  it("zeichnet den GiroCode unter dem Summenblock statt rechts oberhalb der Fusszeile", async () => {
+    // Geometrischer Beleg (wie beim Paginierungs-Guard oben): `giroPlacement: "below-totals"`
+    // zeichnet den Code VOR notes/paymentTermsHuman — ein Beleg mit vielen Positionen UND
+    // GiroCode darf deshalb nicht mit dem `bottom-right`-Verhalten anderer Layouts
+    // kollidieren (kein zweiter GiroCode, keine doppelte Bildunterschrift).
+    const data = sampleInvoice();
+    const pdf = await renderInvoicePdf(data, testPdfTheme({ layoutId: "schlicht" }));
+    const { text } = await parsePdf(pdf);
+    expect((text.match(/GiroCode/g) ?? []).length).toBe(1); // eigene Bildunterschrift "GiroCode" (labels.giroCaption), nicht "GiroCode – mit Banking-App scannen"
+    expect(text).not.toContain("mit Banking-App scannen");
   });
 });
 

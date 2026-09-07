@@ -13,6 +13,13 @@ export interface EInvoiceParty {
   phone?: string | null;
   contactName?: string | null;
   electronicAddress?: string | null; // Peppol/Leitweg-Endpoint
+  /**
+   * Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-41362): Kundennummer
+   * (BEIM KAEUFER; Customer.customerNumber, Phase 7 §34) fuers PDF-Meta ("Ihre
+   * Kundennummer") — kein XML-Feld. Optional, damit bestehende Aufrufer/Fixtures ohne
+   * dieses Feld unveraendert bleiben.
+   */
+  customerNumber?: string | null;
 }
 
 export interface EInvoiceLine {

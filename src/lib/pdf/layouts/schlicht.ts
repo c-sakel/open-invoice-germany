@@ -44,11 +44,27 @@ export const schlichtLayout: PdfLayout = {
     return y;
   },
   table: { headerFill: null, headerText: "#333", headerHeight: 16, rowRule: "#dddddd", zebra: null, boldTitle: true, textColor: "#000" },
-  drawTotalsRule(frame, x, y) {
-    frame.doc.moveTo(x, y).lineTo(frame.right, y).lineWidth(0.5).strokeColor("#999999").stroke().lineWidth(1);
+  // Fix-Welle (Abschluss-Review, Block 3 — Referenzbeleg RE-41362): die Summenlinie spannt
+  // jetzt die VOLLE Inhaltsbreite (`frame.left`…`frame.right`) statt nur die Summenspalten
+  // (der uebergebene `x` ist `sumLabelX`, siehe invoice-pdf.ts) — Referenz zieht die Linie
+  // ueber die gesamte Seitenbreite.
+  drawTotalsRule(frame, _x, y) {
+    frame.doc.moveTo(frame.left, y).lineTo(frame.right, y).lineWidth(0.5).strokeColor("#999999").stroke().lineWidth(1);
   },
   drawFooter(frame, columns, y) {
     drawFooterColumns(frame, columns, y, 7.5, frame.primary);
   },
   footerHeight: 44,
+  // Fix-Welle: GiroCode links unter dem Summenblock (Referenz RE-41362) statt rechts
+  // oberhalb der Fusszeile.
+  giroPlacement: "below-totals",
+  labels: {
+    colEinzel: "Einzelpreis",
+    colNetto: "Gesamtpreis",
+    colPosSuffix: ".",
+    net: "Gesamtbetrag netto",
+    taxRow: (rate) => `zzgl. Umsatzsteuer ${rate}%`,
+    gross: "Gesamtbetrag brutto",
+    giroCaption: "GiroCode",
+  },
 };

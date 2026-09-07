@@ -91,3 +91,69 @@ describe("PDF-Kopf-/Fusstext: {{contact.*}} rendert aus dem Ansprechpartner-Snap
     expect(parsed.text).toContain("Angebotskontakt");
   });
 });
+
+// Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-41362): Kundennummer
+// fliesst jetzt vom (echten, DB-basierten) Kundendatensatz ueber MapInput.customer/
+// DocInput.customer -> buildBuyerSnapshot -> BuyerSnapshot -> EInvoiceData.buyer.customerNumber
+// ins PDF-Meta "Ihre Kundennummer" — end-to-end statt nur ueber die reine Unit-Fixture
+// (sampleInvoice() in pdf-layouts.test.ts) geprueft.
+describe("PDF-Meta 'Ihre Kundennummer': fliesst vom echten Customer-Datensatz bis ins gerenderte PDF", () => {
+  it("Rechnung (festgeschrieben, ueber loadEInvoiceData)", async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "PDF-Kundennummer Test GmbH", addressLine1: "Testweg 3", postalCode: "13401", city: "Berlin", vatId: "DE111222333" },
+    });
+    await ensureOrgMasterdata(dbInternal, org.id);
+    await updateNumberRange(org.id, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "PDFK-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", ISSUE);
+
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "PDF-Kundennummer-Kunde AG", addressLine1: "Kundenweg 9", postalCode: "54321", city: "Hamburg", type: "BUSINESS", customerNumber: "K-9001" },
+    });
+
+    const draft = await createDraftInvoice(org.id, {
+      customerId: customer.id,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      issueDate: ISSUE,
+      deliveryDate: ISSUE,
+      lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput);
+    const finalized = await finalizeInvoice(draft.id, { now: ISSUE });
+    expect(finalized.buyerSnapshotJson).toBeTruthy();
+
+    const loaded = await loadEInvoiceData(finalized.id);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.data.buyer.customerNumber).toBe("K-9001");
+
+    const pdf = await renderInvoicePdf(loaded!.data, testPdfTheme());
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Ihre Kundennummer");
+    expect(parsed.text).toContain("K-9001");
+  });
+
+  it("Angebot (ueber buildDocEInvoiceData)", async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "PDF-Kundennummer Angebot GmbH", addressLine1: "Testweg 4", postalCode: "13402", city: "Berlin", vatId: "DE222333444" },
+    });
+    await ensureOrgMasterdata(dbInternal, org.id);
+
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "PDF-Kundennummer-Angebotskunde AG", addressLine1: "Kundenweg 9", postalCode: "54321", city: "Hamburg", type: "BUSINESS", customerNumber: "K-9002" },
+    });
+
+    const quote = await createBusinessDocument(org.id, {
+      kind: "ANGEBOT",
+      customerId: customer.id,
+      taxScheme: "REGULAR",
+      lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    });
+
+    const fullQuote = await dbInternal.quote.findUniqueOrThrow({ where: { id: quote.id }, include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true } });
+    const data = buildDocEInvoiceData(fullQuote);
+    expect(data.buyer.customerNumber).toBe("K-9002");
+
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
+    const parsed = await parsePdf(pdf);
+    expect(parsed.text).toContain("Ihre Kundennummer");
+    expect(parsed.text).toContain("K-9002");
+  });
+});

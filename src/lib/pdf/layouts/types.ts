@@ -68,4 +68,29 @@ export interface PdfLayout {
    * (`margins.top`) unveraendert. Layouts ohne eigenes Kopf-Chrome lassen den Hook weg.
    */
   drawPageChrome?(frame: LayoutFrame): number | void;
+  /**
+   * Fix-Welle (Abschluss-Review, Block 3 — `schlicht` vs. Referenzbeleg): Position des
+   * GiroCode. `"bottom-right"` (Default, wenn weggelassen) ist das bisherige Verhalten
+   * (rechts oberhalb der Fusszeile). `"below-totals"` zeichnet ihn stattdessen links
+   * direkt unter dem Summenblock (sevDesk-Referenz `RE-41362`) — der Engine-Code in
+   * `invoice-pdf.ts` haelt beide Zweige vor, Layouts ohne dieses Feld bekommen den
+   * bisherigen Default.
+   */
+  giroPlacement?: "bottom-right" | "below-totals";
+  /**
+   * Fix-Welle: layout-spezifische Beschriftungen fuer Spaltenkoepfe/Positionssuffix/
+   * Summenzeilen/GiroCode-Bildunterschrift — alle optional, die Engine faellt pro Feld auf
+   * die bisherige feste Beschriftung zurueck (`labels?.net ?? "Nettobetrag"` usw.). FINAL-
+   * Wortlaut ("Gesamtleistung netto/brutto") bleibt unveraendert, wird NICHT durch `labels`
+   * ueberschrieben.
+   */
+  labels?: Partial<{
+    colEinzel: string;
+    colNetto: string;
+    colPosSuffix: string;
+    net: string;
+    taxRow: (rate: number) => string;
+    gross: string;
+    giroCaption: string;
+  }>;
 }

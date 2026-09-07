@@ -24,7 +24,7 @@ import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow } from "./layouts/shared";
-import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
+import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
 
 function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" {
@@ -87,6 +87,7 @@ function buildItemColumns(
   data: EInvoiceData,
   options: PdfTheme["options"],
   contentWidth: number,
+  labels: PdfLayout["labels"],
 ): { columns: ItemColumn[]; x: Partial<Record<ItemColumn["key"], number>> } {
   const showArticleNumber = options.showArticleNumber && data.lines.some((l) => lineType(l) === "ITEM" && l.articleNumber);
   const showTax = options.showTaxRatePerLine;
@@ -96,9 +97,12 @@ function buildItemColumns(
   if (showArticleNumber) columns.push({ key: "artNr", header: "Art.-Nr.", width: 55 });
   columns.push({ key: "desc", header: "Beschreibung", width: 0 }); // Breite unten aufgefüllt
   columns.push({ key: "menge", header: "Menge", width: 50, align: "right" });
-  columns.push({ key: "einzel", header: "Einzel", width: 70, align: "right" });
+  // Fix-Welle (Abschluss-Review, Block 3 — `schlicht` vs. Referenzbeleg): Spaltenkoepfe
+  // "Einzel"/"Netto" sind jetzt ueber `layout.labels` ueberschreibbar (`schlicht` nutzt
+  // "Einzelpreis"/"Gesamtpreis", siehe schlicht.ts).
+  columns.push({ key: "einzel", header: labels?.colEinzel ?? "Einzel", width: 70, align: "right" });
   if (showTax) columns.push({ key: "ust", header: "USt", width: 35, align: "right" });
-  if (showNetto) columns.push({ key: "netto", header: "Netto", width: 70, align: "right" });
+  if (showNetto) columns.push({ key: "netto", header: labels?.colNetto ?? "Netto", width: 70, align: "right" });
 
   const GAP = 8;
   const fixedSum = columns.reduce((sum, c) => sum + (c.key === "desc" ? 0 : c.width), 0);
@@ -189,6 +193,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   const meta: KopfMetaRow[] = [{ label: "Rechnungsdatum", value: deDate(data.issueDate) }];
   if (data.deliveryDate) meta.push({ label: "Leistungsdatum", value: deDate(data.deliveryDate) });
   if (data.dueDate) meta.push({ label: "Fällig am", value: deDate(data.dueDate) });
+  // Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-41362): nach den
+  // Nummer-/Datumszeilen, fuer ALLE Layouts (die `meta`-Zeilen werden von jedem
+  // `layout.drawKopf` gemeinsam genutzt) — "Ihre Kundennummer" nur, wenn der Kaeufer eine
+  // hat (Customer.customerNumber, Phase 7 §34); "Ihr Ansprechpartner" nur, wenn der
+  // Verkaeufer-Snapshot einen Kontaktnamen traegt (`data.seller.contactName`, aktuell ohne
+  // eigene Datenquelle in den Buildern — siehe mapper.ts/pdf-data.ts).
+  if (data.buyer.customerNumber) meta.push({ label: "Ihre Kundennummer", value: data.buyer.customerNumber });
+  if (data.seller.contactName) meta.push({ label: "Ihr Ansprechpartner", value: data.seller.contactName });
   if (data.buyer.vatId) meta.push({ label: "USt-IdNr. Empfänger", value: data.buyer.vatId });
   // Phase 5 — Bezug zur Quelle (Angebot/Auftrag/Lieferschein) bei Teil-/Abschlags-/
   // Schlussrechnung, NUR fürs PDF-Layout (kein XML-Feld).
@@ -209,7 +221,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   });
 
   // Positions-Tabelle — Spalten nach Druckoptionen (§36).
-  const { columns, x: colX } = buildItemColumns(data, theme.options, right - left - 4);
+  const { columns, x: colX } = buildItemColumns(data, theme.options, right - left - 4, layout.labels);
   const tableX = left + 4;
 
   // Manuelle Paginierung: pdfkit bricht bei einem `doc.text(...)` nahe dem unteren Rand
@@ -302,7 +314,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       doc.rect(left, y - 2, right - left, h).fill(layout.table.zebra);
       doc.fillColor(layout.table.textColor);
     }
-    doc.text(String(itemPos), tableX + colX.pos!, y, { width: 28 });
+    // Fix-Welle (Abschluss-Review, Block 3): `schlicht` nummeriert die Referenz-Positionen
+    // "1." statt "1" — `labels.colPosSuffix` haengt ein optionales Suffix an.
+    doc.text(`${itemPos}${layout.labels?.colPosSuffix ?? ""}`, tableX + colX.pos!, y, { width: 28 });
     if (colX.artNr != null) doc.text(line.articleNumber ?? "", tableX + colX.artNr, y, { width: 55 });
     if (showDescription) {
       if (layout.table.boldTitle) doc.font("Helvetica-Bold");
@@ -388,13 +402,16 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     }
   }
   // Phase 5 — Schlussrechnung: der Summenblock weist die GESAMTLEISTUNG aus (alle
-  // Positionen der Quelle), nicht nur den Restbetrag — daher eigene Beschriftung.
+  // Positionen der Quelle), nicht nur den Restbetrag — daher eigene Beschriftung, die
+  // (Fix-Welle, Abschluss-Review Block 3) unveraendert bleibt, auch bei einem Layout mit
+  // eigenen `labels` (z. B. `schlicht`) — nur der Nicht-FINAL-Wortlaut ist ueberschreibbar.
   const isFinal = data.type === "FINAL";
-  sumRow(isFinal ? "Gesamtleistung netto" : "Nettobetrag", formatCents(data.netTotalCents, cur));
+  const labels = layout.labels;
+  sumRow(isFinal ? "Gesamtleistung netto" : (labels?.net ?? "Nettobetrag"), formatCents(data.netTotalCents, cur));
   for (const t of data.taxSubtotals) {
-    if (t.taxCents > 0) sumRow(`zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
+    if (t.taxCents > 0) sumRow(labels?.taxRow?.(t.taxRate) ?? `zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
   }
-  sumRow(isFinal ? "Gesamtleistung brutto" : "Gesamtbetrag", formatCents(data.grossTotalCents, cur), true);
+  sumRow(isFinal ? "Gesamtleistung brutto" : (labels?.gross ?? "Gesamtbetrag"), formatCents(data.grossTotalCents, cur), true);
 
   // Phase 5 (§14 Abs. 5 S. 2 UStG) — je abgesetzter Abschlagsrechnung eine Abzugszeile,
   // dann fett der Restbetrag (= data.payableCents, aus dem Abzugs-Snapshot berechnet).
@@ -415,6 +432,48 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     sumRow("Restbetrag", formatCents(data.payableCents, cur), true);
   }
   doc.font("Helvetica");
+
+  // GiroCode (§37) — Eligibilitaet EINMAL geprueft, fuer beide Platzierungen (siehe unten
+  // und der `bottom-right`-Block kurz vor der Fusszeilen-Schleife) wiederverwendet.
+  const giroEligible = Boolean(
+    theme.options.showGiroCode &&
+      data.iban &&
+      data.currency === "EUR" && // B2 (Final-Review): EPC-QR-Codes tragen "EUR<Betrag>" fest kodiert (epc.ts) —
+      // ohne diese Pruefung wuerde eine Fremdwaehrungsrechnung einen GiroCode mit falscher
+      // Waehrungsangabe drucken (Kunde zahlt EUR-Betrag statt z. B. USD-Betrag).
+      GIRO_ELIGIBLE_TYPES.has(data.type) &&
+      (data.giroAmountCents ?? 0) > 0,
+  );
+  // Fix-Welle (Abschluss-Review, Block 3 — `schlicht` vs. Referenzbeleg "RE-41362"):
+  // `giroPlacement === "below-totals"` zeichnet den GiroCode links DIREKT unter dem
+  // Summenblock statt (wie bisher, siehe der `bottom-right`-Block unten) rechts oberhalb
+  // der Fusszeile auf der letzten Seite. Das muss HIER passieren (vor Fusstext/notes/
+  // paymentTermsHuman), weil `y` danach fuer diese Bloecke weiterlaeuft — der
+  // `bottom-right`-Zweig bleibt dagegen bewusst am Ende der Funktion (er braucht die
+  // tatsaechlich LETZTE Seite, die erst nach Fusstext/notes/paymentTermsHuman feststeht).
+  if (giroEligible && layout.giroPlacement === "below-totals") {
+    try {
+      const payload = buildEpcPayload({
+        name: data.seller.name,
+        iban: data.iban!,
+        bic: data.bic,
+        amountCents: data.giroAmountCents!,
+        remittance: data.number,
+      });
+      const giroSize = mm(GIRO_SIZE_MM);
+      const captionH = base - 3 + 6;
+      y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH);
+      const giroY = y + 8;
+      await renderGiroCode(doc, payload, { x: left, y: giroY, sizeMm: GIRO_SIZE_MM });
+      doc.fontSize(base - 3).fillColor("#666");
+      doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", left, giroY + giroSize + 3, { width: giroSize, align: "center" });
+      y = giroY + giroSize + 3 + captionH;
+    } catch (e) {
+      // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
+      // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
+      if (!(e instanceof EpcError)) throw e;
+    }
+  }
 
   // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen, vor notes/paymentTerms.
   //
@@ -481,20 +540,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
 
   // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, 30 mm Kantenlaenge,
   // NUR auf der zuletzt gerenderten Seite (`doc.page` zeigt hier noch auf sie, vor dem
-  // `switchToPage` in der Schleife unten).
-  if (
-    theme.options.showGiroCode &&
-    data.iban &&
-    data.currency === "EUR" && // B2 (Final-Review): EPC-QR-Codes tragen "EUR<Betrag>" fest kodiert (epc.ts) —
-    // ohne diese Pruefung wuerde eine Fremdwaehrungsrechnung einen GiroCode mit falscher
-    // Waehrungsangabe drucken (Kunde zahlt EUR-Betrag statt z. B. USD-Betrag).
-    GIRO_ELIGIBLE_TYPES.has(data.type) &&
-    (data.giroAmountCents ?? 0) > 0
-  ) {
+  // `switchToPage` in der Schleife unten). Fix-Welle: NUR fuer `giroPlacement !==
+  // "below-totals"` — der `below-totals`-Zweig hat weiter oben (vor Fusstext/notes/
+  // paymentTermsHuman) bereits gezeichnet, `giroEligible` wird von dort wiederverwendet.
+  if (giroEligible && layout.giroPlacement !== "below-totals") {
     try {
       const payload = buildEpcPayload({
         name: data.seller.name,
-        iban: data.iban,
+        iban: data.iban!,
         bic: data.bic,
         amountCents: data.giroAmountCents!,
         remittance: data.number,
@@ -508,7 +561,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: GIRO_SIZE_MM });
       // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(7)`.
       doc.fontSize(base - 3).fillColor("#666");
-      doc.text("GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
+      doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
     } catch (e) {
       // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
       // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
