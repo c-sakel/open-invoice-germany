@@ -6,8 +6,20 @@
  * aussen-schliesst-Muster wie `ProductPicker`/`CustomerPicker` (`fixed inset-0`-
  * Button statt `onBlur`, damit ein Klick auf einen Menuepunkt nicht durch ein
  * vorzeitiges Blur verloren geht).
+ *
+ * "Typ ändern" (Task-5-Fix, Ruling): vier Eintraege (Position/Ueberschrift/
+ * Textblock/Zwischensumme statt eines echten Submenues — reicht fuer vier Optionen),
+ * der aktuelle Typ ist deaktiviert. Nur sichtbar, wenn `currentType`/`onChangeType`
+ * gesetzt sind — `LineRow` laesst beide bei DELIVERY_NOTE weg (der Server kennt dort
+ * keinen `lineType`, siehe `toDeliveryNotePayload`). Labels aus `LINE_TYPE_LABEL`
+ * (`@/lib/editor/constants`) — dieselbe Quelle wie die "+ Position/…"-Links in
+ * `LineItemsEditor`, nicht erneut definiert (Lastenheft 1.4/61.5).
  */
 import { useState } from "react";
+import type { LineType } from "@/lib/editor/draft";
+import { LINE_TYPE_LABEL } from "@/lib/editor/constants";
+
+const TYPE_ORDER: readonly LineType[] = ["ITEM", "HEADING", "TEXT", "SUBTOTAL"];
 
 export function LineRowMenu({
   onDuplicate,
@@ -15,12 +27,16 @@ export function LineRowMenu({
   canRemove,
   toggleLabel,
   onToggleExpanded,
+  currentType,
+  onChangeType,
 }: {
   onDuplicate: () => void;
   onRemove: () => void;
   canRemove: boolean;
   toggleLabel?: string;
   onToggleExpanded?: () => void;
+  currentType?: LineType;
+  onChangeType?: (lineType: LineType) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -38,7 +54,7 @@ export function LineRowMenu({
       {open && (
         <>
           <button type="button" aria-hidden tabIndex={-1} className="fixed inset-0 z-0 cursor-default" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-10 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg">
+          <div className="absolute right-0 z-10 mt-1 w-48 rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg">
             <button
               type="button"
               className="block w-full px-3 py-1.5 text-left hover:bg-slate-50"
@@ -60,6 +76,25 @@ export function LineRowMenu({
               >
                 {toggleLabel}
               </button>
+            )}
+            {currentType && onChangeType && (
+              <>
+                <div className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Typ ändern</div>
+                {TYPE_ORDER.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    disabled={t === currentType}
+                    className="block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                    onClick={() => {
+                      onChangeType(t);
+                      setOpen(false);
+                    }}
+                  >
+                    {LINE_TYPE_LABEL[t]}
+                  </button>
+                ))}
+              </>
             )}
             <button
               type="button"

@@ -7,7 +7,7 @@
  * PDF-Vorschau-Sheet (Task 5). Noch NICHT in eine Seite eingebunden — das uebernimmt
  * Task 6.
  */
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
 import { computeDraftTotals } from "@/lib/editor/totals";
@@ -90,7 +90,9 @@ export function DocumentEditor({
   // ohne einen Seiten-Reload — die `products`-Prop selbst ist unveraendert vom Server.
   const [productList, setProductList] = useState<ProductOption[]>(products);
   const isEdit = Boolean(draft.id);
-  const totals = computeDraftTotals(draft);
+  // Task-5-Fix (Minor): einmal pro `draft`-Aenderung berechnet statt zusaetzlich ein
+  // zweites Mal in `LineItemsEditor` — `totals` wandert als Prop weiter.
+  const totals = useMemo(() => computeDraftTotals(draft), [draft]);
 
   // Unsaved-Guard (Verhalten laut Brief): natives `beforeunload` bei ungespeicherten
   // Aenderungen (Browser-Standarddialog) — fuer den Zurueck-LINK uebernimmt
@@ -253,10 +255,15 @@ export function DocumentEditor({
           dispatch={dispatch}
           products={productList}
           mode={mode}
+          totals={totals}
           onProductCreated={(p) => setProductList((list) => [...list, p])}
         />
 
-        <TotalsBlock totals={totals} draft={draft} />
+        {/* Task-5-Fix 2: DELIVERY_NOTE kennt weder Beleg-Rabatt/-Aufschlag noch eine
+            Summenanzeige (das alte `DeliveryNoteForm.tsx` hatte ebenfalls keinen
+            Summenblock) — ein TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
+            Server fuer Lieferscheine gar nicht kennt. */}
+        {mode !== "DELIVERY_NOTE" && <TotalsBlock totals={totals} draft={draft} />}
 
         <FootTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 

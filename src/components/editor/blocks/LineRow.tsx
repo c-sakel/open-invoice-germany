@@ -2,12 +2,13 @@
 
 /**
  * Eine Zeile der Positionstabelle (Phase 11c, Task 5) — `<tr>` je `DraftLine`, Inhalt
- * abhaengig von `lineType`. ITEM traegt die vollen neun Spalten (siehe
- * `LineItemsEditor`s Tabellenkopf); HEADING/TEXT/SUBTOTAL kollabieren die mittleren
- * sieben Spalten (Beschreibung…Betrag) auf EINE `<td colSpan={7}>` — "reduzierte
- * Zeile" laut Brief, spiegelt `renderInvoicePdf`s Behandlung dieser Zeilentypen
- * (`src/lib/pdf/invoice-pdf.ts` L276-303: HEADING/TEXT/SUBTOTAL haben kein Menge/
- * Preis/USt, nur `description`/`descriptionLong`).
+ * abhaengig von `lineType`. ITEM traegt die vollen Spalten (siehe `LineItemsEditor`s
+ * Tabellenkopf); HEADING/TEXT/SUBTOTAL kollabieren die mittleren Spalten
+ * (Beschreibung…Betrag) auf EINE `<td colSpan={middleColSpan}>` (sieben, bzw. sechs
+ * ohne Rabatt-Spalte bei DELIVERY_NOTE, siehe unten) — "reduzierte Zeile" laut Brief,
+ * spiegelt `renderInvoicePdf`s Behandlung dieser Zeilentypen (`src/lib/pdf/
+ * invoice-pdf.ts` L276-303: HEADING/TEXT/SUBTOTAL haben kein Menge/Preis/USt, nur
+ * `description`/`descriptionLong`).
  *
  * Betrag-Zelle (ITEM, berechnet/readonly) und der Brutto-Hinweis unter dem Preisfeld
  * nutzen `computeLineNet` direkt (dieselbe Funktion wie `computeDraftTotals`,
@@ -19,10 +20,20 @@
  * `effectiveRate` faellt im INVOICE-Modus bei `taxDisabled` (Steuerschema != REGULAR)
  * auf 0 zurueck, wie `toInvoicePayload`/`computeDraftTotals` es beim Speichern/Rechnen
  * ohnehin tun — sonst wuerde die Anzeige einen Steuersatz einrechnen, den der
+ * gespeicherte Beleg nie ansetzt. Aus demselben Grund zeigt das USt-`<select>` bei
+ * `taxDisabled` selbst 0 % an statt des (dann irrelevanten) `line.taxRate` (Task-5-
+ * Fix, Minor) — sonst wuerde die deaktivierte Anzeige einen Satz behaupten, den der
  * gespeicherte Beleg nie ansetzt.
+ *
+ * `showDiscount` (Task-5-Fix 2): DELIVERY_NOTE kennt serverseitig kein Rabattfeld
+ * (`deliveryNoteLineInputSchema`, `toDeliveryNotePayload` in `draft.ts` sendet keinen
+ * Rabatt) — die Rabatt-Spalte/-Zelle wird deshalb bei DELIVERY_NOTE gar nicht erst
+ * gerendert (statt eines interaktiven Felds, dessen Wert beim Speichern still
+ * verworfen wuerde), reduzierte Zeilen kollabieren dann auf `colSpan={6}` statt `{7}`.
  */
-import type { DraftLine, DraftAction } from "@/lib/editor/draft";
+import type { DraftLine, DraftAction, LineType } from "@/lib/editor/draft";
 import { TAX_RATE_OPTIONS } from "@/lib/editor/constants";
+import type { EditorMode } from "@/lib/editor/constants";
 import { toCents, toMilli, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
 import { computeLineNet } from "@/lib/pricing/line";
 import { inputCls } from "@/components/forms/fields";
@@ -39,6 +50,7 @@ function toTaxRate(v: string): 19 | 7 | 0 {
 
 export interface LineRowProps {
   line: DraftLine;
+  mode: EditorMode;
   /** Fortlaufende ITEM-Position (wie im PDF/`itemPos`, `invoice-pdf.ts` L303) — `null`
    *  fuer HEADING/TEXT/SUBTOTAL-Zeilen (die im PDF ebenfalls nicht mitgezaehlt werden). */
   itemPos: number | null;
@@ -60,6 +72,7 @@ export interface LineRowProps {
 
 export function LineRow({
   line,
+  mode,
   itemPos,
   isLast,
   taxDisabled,
@@ -76,6 +89,9 @@ export function LineRow({
   onRowKeyDown,
   onProductCreated,
 }: LineRowProps) {
+  const showDiscount = mode !== "DELIVERY_NOTE";
+  const allowTypeChange = mode !== "DELIVERY_NOTE";
+
   function patch(p: Partial<DraftLine>) {
     dispatch({ type: "setLine", key: line.key, patch: p });
   }
@@ -84,6 +100,9 @@ export function LineRow({
       e.preventDefault();
       onEnterLast();
     }
+  }
+  function onChangeType(lineType: LineType) {
+    dispatch({ type: "setLine", key: line.key, patch: { lineType } });
   }
 
   const effectiveRate = taxDisabled ? 0 : line.taxRate;
@@ -108,6 +127,8 @@ export function LineRow({
   }
 
   const reduced = line.lineType !== "ITEM";
+  // Beschreibung…Betrag (ohne Rabatt bei DELIVERY_NOTE, siehe Modulkommentar).
+  const middleColSpan = showDiscount ? 7 : 6;
 
   return (
     <>
@@ -120,7 +141,7 @@ export function LineRow({
         </td>
 
         {reduced ? (
-          <td colSpan={7} className="py-1.5 pr-2">
+          <td colSpan={middleColSpan} className="py-1.5 pr-2">
             {line.lineType === "TEXT" ? (
               <div className="space-y-2">
                 <input
@@ -165,17 +186,22 @@ export function LineRow({
               )}
             </td>
             <td className="py-1.5 pr-2">
-              <input className={inputCls} value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
+              <input className={inputCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
             </td>
             <td className="py-1.5 pr-2">
               <UnitSelect value={line.unit} onChange={(v) => patch({ unit: v })} />
             </td>
             <td className="py-1.5 pr-2">
-              <input className={inputCls} value={line.price} onChange={(e) => patch({ price: e.target.value })} />
+              <input className={inputCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
               {grossHint && <div className="mt-0.5 text-[11px] text-slate-400">{grossHint}</div>}
             </td>
             <td className="py-1.5 pr-2">
-              <select className={inputCls} value={line.taxRate} disabled={taxDisabled} onChange={(e) => patch({ taxRate: toTaxRate(e.target.value) })}>
+              <select
+                className={inputCls}
+                value={taxDisabled ? 0 : line.taxRate}
+                disabled={taxDisabled}
+                onChange={(e) => patch({ taxRate: toTaxRate(e.target.value) })}
+              >
                 {TAX_RATE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -183,9 +209,11 @@ export function LineRow({
                 ))}
               </select>
             </td>
-            <td className="py-1.5 pr-2">
-              <LineDiscountField line={line} dispatch={dispatch} />
-            </td>
+            {showDiscount && (
+              <td className="py-1.5 pr-2">
+                <LineDiscountField line={line} dispatch={dispatch} />
+              </td>
+            )}
             <td className="py-1.5 pr-2 text-right tabular-nums">{amountLabel}</td>
           </>
         )}
@@ -196,7 +224,9 @@ export function LineRow({
             onDuplicate={() => dispatch({ type: "duplicateLine", key: line.key })}
             onRemove={() => dispatch({ type: "removeLine", key: line.key })}
             toggleLabel={line.lineType === "ITEM" ? (line.expanded ? "Langtext ausblenden" : "Langtext einblenden") : undefined}
-            onToggleExpanded={line.lineType === "ITEM" ? () => patch({ expanded: !line.expanded }) : undefined}
+            onToggleExpanded={line.lineType === "ITEM" ? () => dispatch({ type: "toggleExpanded", key: line.key }) : undefined}
+            currentType={allowTypeChange ? line.lineType : undefined}
+            onChangeType={allowTypeChange ? onChangeType : undefined}
           />
         </td>
       </tr>
@@ -204,7 +234,7 @@ export function LineRow({
       {line.lineType === "ITEM" && line.expanded && (
         <tr className="border-b border-slate-100 bg-slate-50/60">
           <td />
-          <td colSpan={8} className="space-y-2 py-2 pr-2">
+          <td colSpan={middleColSpan + 1} className="space-y-2 py-2 pr-2">
             <RichTextField label="Langbeschreibung (optional)" value={line.descriptionLong} onChange={(v) => patch({ descriptionLong: v })} rows={3} />
             <label className="flex max-w-xs flex-col gap-1 text-xs">
               <span className="font-medium text-slate-600">Artikelnummer (optional)</span>
