@@ -1,18 +1,16 @@
 "use client";
 
 /**
- * Gemeinsamer Beleg-Editor-Rahmen (Phase 11c, Task 4) fuer Rechnung/Dokument/
+ * Gemeinsamer Beleg-Editor-Rahmen (Phase 11c, Task 4 + Task 5) fuer Rechnung/Dokument/
  * Lieferschein: `useReducer(draftReducer, ...)` (Task 1) + Kopfbloecke (Task 4) +
- * Platzhalter fuer Positionen/Summen/Fusstext (Task 5) + Weitere Optionen/Anhaenge
- * (Task 4). Noch NICHT in eine Seite eingebunden — das uebernimmt Task 6.
- *
- * `products` ist Teil der Schnittstelle (fuer den `LineItemsEditor`/`ProductPicker` aus
- * Task 5), wird in Task 4 aber bewusst NICHT destrukturiert/verwendet — der aktuelle
- * Platzhalter braucht keine Produktliste; Task 5 ergaenzt sie beim Ausbau dieser Datei.
+ * Positionen/Summen/Fusstext (Task 5) + Weitere Optionen/Anhaenge (Task 4) +
+ * PDF-Vorschau-Sheet (Task 5). Noch NICHT in eine Seite eingebunden — das uebernimmt
+ * Task 6.
  */
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
+import { computeDraftTotals } from "@/lib/editor/totals";
 import type { EditorMode } from "@/lib/editor/constants";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 import type { PrintOptionsOverride } from "@/schemas";
@@ -24,6 +22,10 @@ import { EditorHeader } from "./blocks/EditorHeader";
 import { RecipientBlock, type RecipientCustomerOption, type ContactOption, type AddressOption } from "./blocks/RecipientBlock";
 import { MetaBlock, type PaymentMethodOption } from "./blocks/MetaBlock";
 import { HeadTextBlock } from "./blocks/HeadTextBlock";
+import { LineItemsEditor } from "./blocks/LineItemsEditor";
+import { TotalsBlock } from "./blocks/TotalsBlock";
+import { FootTextBlock } from "./blocks/FootTextBlock";
+import { PreviewSheet } from "./blocks/PreviewSheet";
 import { MoreOptions } from "./blocks/MoreOptions";
 import { AttachmentsBlock } from "./blocks/AttachmentsBlock";
 
@@ -66,6 +68,7 @@ export function DocumentEditor({
   mode,
   initial,
   customers,
+  products,
   paymentMethods = [],
   contacts = [],
   addresses = [],
@@ -81,7 +84,13 @@ export function DocumentEditor({
   const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // Neu angelegte Produkte (`ProductPicker.onCreated`, in `LineItemsEditor`) landen hier,
+  // damit sie noch IN DERSELBEN Sitzung ueber die Produktsuche wiederverwendbar sind,
+  // ohne einen Seiten-Reload — die `products`-Prop selbst ist unveraendert vom Server.
+  const [productList, setProductList] = useState<ProductOption[]>(products);
   const isEdit = Boolean(draft.id);
+  const totals = computeDraftTotals(draft);
 
   // Unsaved-Guard (Verhalten laut Brief): natives `beforeunload` bei ungespeicherten
   // Aenderungen (Browser-Standarddialog) — fuer den Zurueck-LINK uebernimmt
@@ -122,6 +131,50 @@ export function DocumentEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, initial, draft.kind]);
+
+  // INVOICE: Kopf-/Fusstext bei Neuanlage EBENSO vorbelegen (Koordinator-Ruling, Task 5
+  // — vorher zeigte nur DOCUMENT eine Client-Vorschau des Vorlagentexts vor dem ersten
+  // Speichern, siehe Task-4-Report "offene Punkte"; serverseitig belegt
+  // `createDraftInvoice` `headerText`/`footerText` ohnehin automatisch, wenn sie im
+  // Payload fehlen — dieser Effekt macht den Text nur schon VOR dem Speichern sichtbar).
+  // Nur Kopf-/Fusstext (kein `deliveryTerms`/`paymentTerms`-Vorlagenpaar wie DOCUMENT)
+  // und nur einmalig bei Neuanlage (kein `draft.kind`-Wechsel wie bei DOCUMENT).
+  //
+  // Nutzt bewusst NICHT die "set"-Aktion (die markiert IMMER `dirty: true`) — laut
+  // Vorgabe darf eine reine Vorbelegung leerer Felder NICHT als ungespeicherte
+  // Aenderung erscheinen. Stattdessen `replace` auf Basis des jeweils AKTUELLEN Entwurfs
+  // (`draftRef`, per Effekt bei jedem Render synchron gehalten — NICHT die
+  // Closure-Variable `draft`, die beim Mount eingefroren waere), damit weder
+  // zwischenzeitliche Nutzereingaben noch ein zwischenzeitlich bereits gesetztes
+  // `dirty` ueberschrieben werden. Die beiden Ladevorgaenge laufen sequenziell (nicht
+  // parallel per `void`), damit `draftRef` zwischen beiden Dispatches aktuell ist —
+  // sonst koennte der zweite Dispatch (FOOT) den ersten (HEAD) mit einem veralteten
+  // Snapshot ueberschreiben. Verbleibendes (harmloses) Restrisiko: tippt der Nutzer
+  // exakt in der Millisekunden-Luecke zwischen Dispatch und Ref-Sync, koennte diese
+  // Einzeleingabe theoretisch verloren gehen — bei zwei schnellen Requests an eine
+  // lokale API-Route vernachlaessigbar (siehe Task-5-Report).
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  useEffect(() => {
+    if (mode !== "INVOICE" || initial) return;
+    let cancelled = false;
+    async function loadDefault(position: "HEAD" | "FOOT", field: "headerText" | "footerText") {
+      if (draftRef.current[field].trim() !== "") return;
+      const res = await fetch(`/api/text-templates/pick?docType=INVOICE&position=${position}`);
+      if (!res.ok || cancelled) return;
+      const j = (await res.json()) as { body: string | null };
+      if (j.body && !cancelled) dispatch({ type: "replace", state: { ...draftRef.current, [field]: j.body } });
+    }
+    void (async () => {
+      await loadDefault("HEAD", "headerText");
+      await loadDefault("FOOT", "footerText");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, initial]);
 
   async function save() {
     const problems = validateDraft(draft);
@@ -164,49 +217,55 @@ export function DocumentEditor({
     }
   }
 
-  // Task 5 vervollstaendigt die Vorschau (PreviewSheet + POST /api/pdf/preview, Task 2)
-  // — bis dahin ein deaktivierter Platzhalter (Brief: no-op, Titel "Vorschau folgt").
-  function preview() {
-    // no-op — siehe Kommentar oben.
-  }
-
   return (
-    <div className="space-y-6 pb-10">
-      <EditorHeader
-        backHref={backHref}
-        title={title}
-        dirty={draft.dirty}
-        saving={saving}
-        primaryLabel={isEdit ? PRIMARY_LABEL[mode].edit : PRIMARY_LABEL[mode].create}
-        onSave={() => void save()}
-        onPreview={preview}
-        previewDisabled
-      />
+    <>
+      <div className="space-y-6 pb-10">
+        <EditorHeader
+          backHref={backHref}
+          title={title}
+          dirty={draft.dirty}
+          saving={saving}
+          primaryLabel={isEdit ? PRIMARY_LABEL[mode].edit : PRIMARY_LABEL[mode].create}
+          onSave={() => void save()}
+          onPreview={() => setPreviewOpen(true)}
+        />
 
-      <ErrorBanner message={error ?? undefined} />
+        <ErrorBanner message={error ?? undefined} />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <RecipientBlock
-          mode={mode}
-          isEdit={isEdit}
+        <div className="grid gap-4 md:grid-cols-2">
+          <RecipientBlock
+            mode={mode}
+            isEdit={isEdit}
+            draft={draft}
+            dispatch={dispatch}
+            customers={customers}
+            contacts={contacts}
+            addresses={addresses}
+            offerLastDocument={offerLastDocument}
+          />
+          <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} paymentMethods={paymentMethods} />
+        </div>
+
+        <HeadTextBlock mode={mode} draft={draft} dispatch={dispatch} />
+
+        <LineItemsEditor
           draft={draft}
           dispatch={dispatch}
-          customers={customers}
-          contacts={contacts}
-          addresses={addresses}
-          offerLastDocument={offerLastDocument}
+          products={productList}
+          mode={mode}
+          onProductCreated={(p) => setProductList((list) => [...list, p])}
         />
-        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} paymentMethods={paymentMethods} />
+
+        <TotalsBlock totals={totals} draft={draft} />
+
+        <FootTextBlock mode={mode} draft={draft} dispatch={dispatch} />
+
+        <MoreOptions mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} effectivePrintOptions={effectivePrintOptions} printOverride={printOverride} layouts={layouts} />
+
+        <AttachmentsBlock mode={mode} isEdit={isEdit} docId={draft.id} attachments={attachments} />
       </div>
 
-      <HeadTextBlock mode={mode} draft={draft} dispatch={dispatch} />
-
-      {/* Task 5: LineItemsEditor + TotalsBlock + FootTextBlock ersetzen diesen Platzhalter. */}
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-400">Positionen (Task 5)</div>
-
-      <MoreOptions mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} effectivePrintOptions={effectivePrintOptions} printOverride={printOverride} layouts={layouts} />
-
-      <AttachmentsBlock mode={mode} isEdit={isEdit} docId={draft.id} attachments={attachments} />
-    </div>
+      <PreviewSheet open={previewOpen} onClose={() => setPreviewOpen(false)} mode={mode} draft={draft} layoutId={printOverride?.layoutId} />
+    </>
   );
 }
