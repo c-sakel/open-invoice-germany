@@ -12,17 +12,22 @@
  * Bewusst EINFACHER als die echte Anlage (`invoice/create.ts`/`document/create.ts`):
  * keine Aufloesung von Kunden-/Zahlungsmethoden-/Textvorlagen-Defaults, keine Adress-/
  * Ansprechpartner-Pruefung — nur Organisation + Kunde (mandantengeprueft) + die vom
- * Formular gesendeten Werte. `internalNotes` werden NIE gelesen/uebergeben (Lastenheft
- * 48 — interne Notizen erscheinen nie im Beleg). Kopf-/Fusstext kommen ROH aus dem
- * Payload (Platzhalter werden bewusst NICHT aufgeloest — ein Entwurf hat i. d. R. noch
- * keine gespeicherten Stammdaten-Bezuege, die `renderTemplate` zuverlaessig aufloesen
- * koennte; LIMITATION, kein Bug).
+ * Formular gesendeten Werte. Ausnahme: die Lieferschein-Anzeigeflags (showPrices/
+ * showTax/showArticleNumber/showDescription/showDeliveryAddress) spiegeln exakt
+ * `createDeliveryNoteWithinTx` (Org-Einstellung `DocumentSettings.dnShow*` als Fallback,
+ * Fix Round 1) — sonst wuerde die Vorschau z. B. Preise zeigen, die der echte Lieferschein
+ * nie zeigen wuerde. `internalNotes` werden NIE gelesen/uebergeben (Lastenheft 48 —
+ * interne Notizen erscheinen nie im Beleg). Kopf-/Fusstext kommen ROH aus dem Payload
+ * (Platzhalter werden bewusst NICHT aufgeloest — ein Entwurf hat i. d. R. noch keine
+ * gespeicherten Stammdaten-Bezuege, die `renderTemplate` zuverlaessig aufloesen koennte;
+ * LIMITATION, kein Bug).
  */
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 import { computeLineNet } from "@/lib/pricing/line";
 import { normalizeLines } from "@/domain/document/lines";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
@@ -190,6 +195,13 @@ async function buildDeliveryNotePreview(orgId: string, org: Awaited<ReturnType<t
   const payload = createDeliveryNoteSchema.parse(body.payload);
   const customer = await loadPreviewCustomer(orgId, payload.customerId);
   const theme = await loadPreviewTheme(orgId, "DELIVERY_NOTE", body.layoutId, compress);
+  // Fix Round 1, Wichtig — dieselben Anzeige-Defaults wie die echte Anlage
+  // (`createDeliveryNoteWithinTx`, src/domain/delivery-note/create.ts ~L95-105): fehlt
+  // ein Flag im Payload, greift die Org-Einstellung (dnShowPrices/dnShowArticleNumber/
+  // dnShowDeliveryAddress) statt eines hart codierten Vorschau-Defaults; showTax/
+  // showDescription kennen keine eigene Org-Einstellung und behalten denselben
+  // Zod-Schema-Default wie dort (false/true).
+  const docSettings = await loadDocumentSettings(orgId);
 
   const data: DeliveryNotePdfData = {
     number: DRAFT_NUMBER,
@@ -225,14 +237,11 @@ async function buildDeliveryNotePreview(orgId: string, org: Awaited<ReturnType<t
       unitNetPriceCents: l.unitNetPriceCents ?? null,
       taxRate: l.taxRate ?? null,
     })),
-    // Analog `buildSampleDeliveryNoteData` (src/domain/settings/preview.ts) — die Vorschau
-    // zeigt standardmaessig ALLES, ohne die org-weiten dnShow*-Einstellungen zu laden;
-    // eine explizite Angabe im Payload (Editor-Anzeigeoptionen) gewinnt trotzdem.
-    showPrices: payload.showPrices ?? true,
-    showTax: payload.showTax ?? true,
-    showArticleNumber: payload.showArticleNumber ?? true,
+    showPrices: payload.showPrices ?? docSettings.dnShowPrices,
+    showTax: payload.showTax ?? false,
+    showArticleNumber: payload.showArticleNumber ?? docSettings.dnShowArticleNumber,
     showDescription: payload.showDescription ?? true,
-    showDeliveryAddress: payload.showDeliveryAddress ?? true,
+    showDeliveryAddress: payload.showDeliveryAddress ?? docSettings.dnShowDeliveryAddress,
     deliveryAddress: null,
     // Roh aus dem Payload — KEINE Platzhalteraufloesung (siehe Datei-Kommentar).
     headerText: payload.headerText ?? null,
