@@ -9,6 +9,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { NavIcon } from "./NavIcons";
 import { SearchTrigger } from "./SearchTrigger";
 import { SidebarGroup } from "./SidebarGroup";
+import { useShell } from "./ShellProvider";
 
 const COLLAPSED_KEY = "oig.sidebar.collapsed";
 
@@ -22,9 +23,15 @@ interface Props {
 }
 
 export function Sidebar({ orgName, unreadCount, appVersion, drawer = false, onClose }: Props) {
-  const pathname = usePathname();
-  const search = useSearchParams().toString();
-  const searchStr = search ? `?${search}` : "";
+  const { navHint } = useShell();
+  const routePathname = usePathname();
+  const routeSearch = useSearchParams().toString();
+  // 11a-M12: eine Detailseite ohne eigenen Listen-Pfad (z. B. /dokumente/<id> einer AB)
+  // meldet ueber `NavHint` den Listen-Link, der hier statt des echten Pfads/Query fuer
+  // die Aktiv-Markierung gilt (siehe ShellProvider/NavHint).
+  const [hintPath, hintQuery = ""] = (navHint ?? "").split("?");
+  const pathname = navHint ? hintPath : routePathname;
+  const searchStr = navHint ? (hintQuery ? `?${hintQuery}` : "") : routeSearch ? `?${routeSearch}` : "";
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
