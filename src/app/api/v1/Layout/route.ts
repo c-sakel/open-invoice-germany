@@ -1,8 +1,7 @@
-import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiList } from "@/api/response";
 import { apiListResponseSchema, type RouteSpec } from "@/api/spec";
-import { serializeLayout } from "@/api/serializers/layout";
+import { serializeLayout, layoutSchema } from "@/api/serializers/layout";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const runtime = "nodejs";
@@ -17,10 +16,14 @@ export const GET = withApi(async () => {
 export const spec = {
   list: {
     path: "/api/v1/Layout",
+    // Fix-Welle (Abschluss-Review, Block 1 "Minor"): `layoutSchema` statt `z.unknown()` —
+    // war nur deshalb bereits korrekt in openapi.json, weil `RESOURCE_SCHEMAS.Layout` +
+    // `baseResourceName()` es namentlich ueberschreiben; mit dem echten Schema hier ist die
+    // Route selbstdokumentierend.
     method: "GET",
-    summary: "PDF-Layouts auflisten",
+    summary: "PDF-Layouts auflisten (feste Liste, keine Paginierung — `limit`/`offset` werden ignoriert, alle sieben Layouts kommen immer zurueck)",
     scope: "read",
-    response: apiListResponseSchema(z.unknown()),
+    response: apiListResponseSchema(layoutSchema),
     errors: [401, 403, 429],
   },
 } satisfies Record<string, RouteSpec>;

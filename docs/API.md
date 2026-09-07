@@ -164,9 +164,15 @@ Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
 `name`, `description`, `thumbnailUrl`) — keine Paginierung, kein POST/PATCH (feste
 Liste, keine DB-Tabelle). Auswahl je Organisation/Belegtyp über `PATCH
 /api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`). Eine Beleg-
-individuelle Layout-Überschreibung gibt es (noch) nur über MCP (`set_print_options
-{options: {layoutId}}`) oder die UI, nicht als eigener `/api/v1`-Aktions-Endpunkt
-(siehe [LIMITATIONEN.md](LIMITATIONEN.md)).
+individuelle Layout-Überschreibung ist seit der Fix-Welle (Phase 11b) auch über
+`/api/v1` erreichbar: `GET`/`PATCH /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-
+options` (Scope `read`/`write`) liefert die effektiven Druckoptionen (globale
+Einstellungen verschmolzen mit einer etwaigen Beleg-Überschreibung) bzw. setzt die
+Überschreibung als Ganzes (`printOptionsOverrideSchema`, inkl. optionalem
+`layoutId`) — dieselbe Domain-Funktion (`setPrintOptions`) wie MCP
+(`set_print_options`) und UI, nur solange der Beleg im Entwurf (`DRAFT`) ist (409
+sonst). `Quote/{id}/print-options` gilt nur für `kind=ANGEBOT` — Auftragsbestätigung/
+Proforma haben keinen eigenen `print-options`-Endpunkt.
 
 ## Webhooks
 
@@ -186,8 +192,8 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
   `/zugferd`) bleiben binär.
 - `DeliveryNote` hat keinen `PATCH`-Endpunkt (keine `updateDraft`-Domainfunktion
   vorhanden) — siehe [LIMITATIONEN.md](LIMITATIONEN.md).
-- `Layout` (Phase 11b) ist nur lesbar (`GET`, feste Liste); eine Beleg-individuelle
-  Layout-Überschreibung (`printOptionsJson.layoutId`) gibt es bisher nur über MCP
-  (`set_print_options`) oder die UI, nicht als eigener `/api/v1`-Endpunkt.
+- `Layout` (Phase 11b) selbst ist nur lesbar (`GET`, feste Liste, keine DB-Tabelle) —
+  eine Beleg-individuelle Layout-Überschreibung setzt sich stattdessen über `PATCH
+  /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
 - Multi-Tenant-Rollen gibt es nicht — ein API-Schlüssel gehört zu genau einer
   Organisation, „Berechtigungen" bedeuten hier ausschließlich Scopes.
