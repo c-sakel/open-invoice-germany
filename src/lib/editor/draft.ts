@@ -97,7 +97,7 @@ export type DraftAction =
   | { type: "markSaved" };
 
 /** Positionszeilen tragen im Zahlungs-/Steuersinn nur 19/7/0 — alles andere faellt auf 19 zurueck. */
-function narrowTaxRate(n: number): 19 | 7 | 0 {
+export function narrowTaxRate(n: number): 19 | 7 | 0 {
   return n === 19 || n === 7 || n === 0 ? n : 19;
 }
 

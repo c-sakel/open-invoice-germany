@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
-import { DeliveryNoteForm } from "@/components/DeliveryNoteForm";
+import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { NeedOrgNotice } from "@/components/NeedOrgNotice";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +16,14 @@ export default async function NeuerLieferscheinPage() {
   }
 
   const [customers, products, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({
+      where: { orgId, isArchived: false },
+      select: { id: true, name: true, customerNumber: true, email: true, addressLine1: true, postalCode: true, city: true, countryCode: true },
+      orderBy: { name: "asc" },
+    }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
-      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
+      select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
     dbInternal.contactPerson.findMany({ where: { orgId }, orderBy: { lastName: "asc" } }),
@@ -28,7 +33,7 @@ export default async function NeuerLieferscheinPage() {
   const contacts = contactRows.map((c) => ({
     id: c.id,
     customerId: c.customerId,
-    label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
+    name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`,
     isDefault: c.isDefault,
   }));
   // Nit (Fix-Welle): eine Lieferadresse ist SHIPPING oder OTHER — BILLING-Adressen
@@ -38,6 +43,7 @@ export default async function NeuerLieferscheinPage() {
     .map((a) => ({
       id: a.id,
       customerId: a.customerId,
+      type: a.type as "BILLING" | "SHIPPING" | "OTHER",
       isDefault: a.isDefault,
       label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
     }));
@@ -55,14 +61,15 @@ export default async function NeuerLieferscheinPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/lieferscheine" className="text-sm text-slate-500 hover:text-slate-800">
-          ← Lieferscheine
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Neuer Lieferschein</h1>
-      </div>
-      <DeliveryNoteForm customers={customers} products={products} contacts={contacts} addresses={addresses} />
-    </div>
+    <DocumentEditor
+      mode="DELIVERY_NOTE"
+      customers={customers}
+      products={products}
+      contacts={contacts}
+      addresses={addresses}
+      layouts={listLayouts()}
+      backHref="/lieferscheine"
+      title="Neuer Lieferschein"
+    />
   );
 }

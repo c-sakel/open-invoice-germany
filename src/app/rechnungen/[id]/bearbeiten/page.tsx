@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
-import { NewInvoiceForm, type InvoiceInitial } from "@/components/NewInvoiceForm";
+import { DocumentEditor } from "@/components/editor/DocumentEditor";
+import { draftFromInvoice, type InvoiceInitialLike } from "@/lib/editor/draft";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
-import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
+import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
@@ -23,8 +23,23 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   // Nur Entwuerfe sind bearbeitbar (GoBD, Lastenheft 51).
   if (inv.status !== "DRAFT") redirect(`/rechnungen/${id}`);
 
-  const [customers, products, paymentMethods, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultPaymentMethodId: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
+  const [customers, products, paymentMethods, contactRows, addressRows, attachments] = await Promise.all([
+    dbInternal.customer.findMany({
+      where: { orgId: org.id, isArchived: false },
+      select: {
+        id: true,
+        name: true,
+        customerNumber: true,
+        email: true,
+        defaultPaymentMethodId: true,
+        defaultDiscountPermille: true,
+        addressLine1: true,
+        postalCode: true,
+        city: true,
+        countryCode: true,
+      },
+      orderBy: { name: "asc" },
+    }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
@@ -33,10 +48,11 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     listPaymentMethods(org.id),
     dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
     dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
+    listAttachments(org.id, "INVOICE", inv.id),
   ]);
 
   const paymentMethodOptions = paymentMethods.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays }));
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
+  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
@@ -45,7 +61,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
   }));
 
-  const initial: InvoiceInitial = {
+  const invoiceInitial: InvoiceInitialLike = {
     id: inv.id,
     customerId: inv.customerId,
     taxScheme: inv.taxScheme,
@@ -64,6 +80,8 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     internalNotes: inv.internalNotes ?? "",
     paymentTerms: inv.paymentTerms ?? "",
     paymentMethodId: inv.paymentMethodId ?? "",
+    headerText: inv.headerText ?? "",
+    footerText: inv.footerText ?? "",
     documentDiscountPercent: (inv.documentDiscountPermille / 10).toString(),
     documentDiscountAmount: (inv.documentDiscountCents / 100).toFixed(2),
     documentChargePercent: (inv.documentChargePermille / 10).toString(),
@@ -97,15 +115,20 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href={`/rechnungen/${id}`} className="text-sm text-slate-500 hover:text-slate-800">
-          ← Zurück
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Rechnungsentwurf bearbeiten</h1>
-      </div>
-      <NewInvoiceForm customers={customers} products={products} paymentMethods={paymentMethodOptions} contacts={contacts} addresses={addresses} initial={initial} />
-      <PrintOptionsPanel docId={inv.id} apiKind="invoices" effective={effectivePrint} initialOverride={printOverride} layouts={listLayouts()} />
-    </div>
+    <DocumentEditor
+      mode="INVOICE"
+      initial={draftFromInvoice(invoiceInitial)}
+      customers={customers}
+      products={products}
+      paymentMethods={paymentMethodOptions}
+      contacts={contacts}
+      addresses={addresses}
+      layouts={listLayouts()}
+      effectivePrintOptions={effectivePrint}
+      printOverride={printOverride}
+      attachments={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+      backHref={`/rechnungen/${id}`}
+      title="Rechnungsentwurf bearbeiten"
+    />
   );
 }
