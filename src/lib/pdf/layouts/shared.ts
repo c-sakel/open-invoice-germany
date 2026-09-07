@@ -7,20 +7,30 @@
 import type { LayoutFrame, KopfInput, FooterColumn, PdfLayout } from "./types";
 import { drawLogo, drawSenderLine } from "../layout";
 
-/** Empfaengerblock (DIN-5008-Fenster); liefert Unterkante. */
-export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11): number {
+/**
+ * Empfaengerblock (DIN-5008-Fenster); liefert Unterkante.
+ *
+ * Follow-up (Reviews, Task 5): bisher ohne `width` — ein langer Empfaengername lief in
+ * den rechten Infoblock (Meta-Zeilen/-Tabelle) hinein, weil pdfkit ohne `width` bis zum
+ * Seitenrand umbricht. `maxWidth` begrenzt jede Zeile des Blocks auf die linke Spalte;
+ * der Default (`frame.width - 220`) passt zu `standard`/`klassik` (Infoblock ab
+ * `left + 250`). Layouts mit einem schmaleren, weiter links beginnenden Infoblock
+ * (`schlicht`, `modern`) reichen ihre eigene Breite (Infoblock-x minus 10pt Abstand
+ * minus `left`) durch.
+ */
+export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11, maxWidth = frame.width - 220): number {
   const { doc, left } = frame;
   const r = input.recipient;
   doc.fillColor("#000").font("Helvetica").fontSize(size);
-  doc.text(r.name, left, y);
-  if (r.contactName) doc.text(r.contactName);
-  doc.text(r.addressLine1);
-  if (r.addressLine2) doc.text(r.addressLine2);
-  doc.text(`${r.postalCode} ${r.city}`);
+  doc.text(r.name, left, y, { width: maxWidth });
+  if (r.contactName) doc.text(r.contactName, { width: maxWidth });
+  doc.text(r.addressLine1, { width: maxWidth });
+  if (r.addressLine2) doc.text(r.addressLine2, { width: maxWidth });
+  doc.text(`${r.postalCode} ${r.city}`, { width: maxWidth });
   if (input.extraRecipientBlock) {
-    doc.fontSize(size - 2).fillColor("#555").text(input.extraRecipientBlock.heading, left, doc.y + 8);
+    doc.fontSize(size - 2).fillColor("#555").text(input.extraRecipientBlock.heading, left, doc.y + 8, { width: maxWidth });
     doc.fontSize(size).fillColor("#000");
-    for (const l of input.extraRecipientBlock.lines) doc.text(l);
+    for (const l of input.extraRecipientBlock.lines) doc.text(l, { width: maxWidth });
   }
   return doc.y;
 }
@@ -99,6 +109,24 @@ export function drawTableHeaderRow(frame: LayoutFrame, layout: PdfLayout, column
   return atY + t.headerHeight + 4;
 }
 
+// Follow-up (Reviews, Task 5): die gruppierte IBAN ("IBAN DE02 1203 ...", siehe
+// footer.ts#groupIban) kann in der schmalen vierspaltigen AUTO-Fusszeile innerhalb
+// ihrer Spalte umbrechen — die Gruppierungs-Leerzeichen machen die Zeile breiter als
+// noetig. Alternative waere eine fixe 7pt-Fusszeilenschrift gewesen; bei den Standard-
+// Raendern bleiben davon aber nur ~0,2pt Reserve, und je nach Randkonfiguration/IBAN-
+// Laenge waere das nicht zuverlaessig. `doc.widthOfString` misst stattdessen
+// deterministisch bei der gerade gesetzten Schriftgroesse — passt die gruppierte Zeile
+// nicht in `maxWidth`, wird sie ungruppiert (nur die Leerzeichen der Ziffernfolge
+// entfernt, das Label "IBAN " bleibt durch ein Leerzeichen getrennt) gezeichnet, damit
+// sie garantiert einzeilig bleibt.
+const IBAN_FOOTER_LINE = /^(IBAN )([A-Z0-9 ]+)$/;
+
+function fitFooterLine(doc: PDFKit.PDFDocument, line: string, maxWidth: number): string {
+  const m = IBAN_FOOTER_LINE.exec(line);
+  if (!m || doc.widthOfString(line) <= maxWidth) return line;
+  return m[1] + m[2]!.replace(/\s+/g, "");
+}
+
 /** Fusszeilen-Spalten gleichmaessig ueber die Breite; liefert nichts. */
 export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y: number, size = 7.5, color = "#666666"): void {
   const { doc, left, width } = frame;
@@ -108,7 +136,8 @@ export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y
   const colWidth = (width - gap * (visible.length - 1)) / visible.length;
   doc.font("Helvetica").fontSize(size).fillColor(color);
   visible.forEach((col, i) => {
-    doc.text(col.lines.join("\n"), left + i * (colWidth + gap), y, { width: colWidth, lineGap: 1 });
+    const lines = col.lines.map((line) => fitFooterLine(doc, line, colWidth));
+    doc.text(lines.join("\n"), left + i * (colWidth + gap), y, { width: colWidth, lineGap: 1 });
   });
 }
 
