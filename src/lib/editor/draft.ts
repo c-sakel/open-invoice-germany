@@ -13,6 +13,7 @@
  */
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, SCHEME_NOTICE, type EditorMode } from "./constants";
+import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
 import type { TaxScheme } from "@/schemas";
@@ -282,7 +283,14 @@ function daysOrUndefined(s: string): number | undefined {
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {
   const isRegular = d.taxScheme === "REGULAR";
   const notice = SCHEME_NOTICE[d.taxScheme];
-  const finalNotes = notice ? `${notice}${d.notes ? " — " + d.notes : ""}` : d.notes || undefined;
+  // Fix 1 (Koordinator, Task 5): notice nur voranstellen, wenn `notes` noch KEINE fuer das
+  // Schema zulaessige Formulierung enthaelt (SCHEME_NOTICE_ACCEPTED, dieselbe Pruefung wie
+  // validateMandatoryFields und der "Pflichthinweis einfuegen"-Knopf in MoreOptions.tsx) —
+  // sonst wuerde jeder Speicher-Durchlauf (inkl. Bearbeiten eines bereits gespeicherten
+  // Entwurfs) den Hinweis erneut voranstellen und `notes` bei jedem Save verdoppeln.
+  const accepted = SCHEME_NOTICE_ACCEPTED[d.taxScheme] ?? [];
+  const hasAcceptedNotice = accepted.some((re) => re.test(normalizeNotice(d.notes)));
+  const finalNotes = notice && !hasAcceptedNotice ? `${notice}${d.notes ? " — " + d.notes : ""}` : d.notes || undefined;
 
   const lines = d.lines.map((l) => ({
     lineType: l.lineType,
