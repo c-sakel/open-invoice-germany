@@ -14,6 +14,11 @@
  * `payment-behaviour` liefert genau EIN Ergebnisobjekt (keine Liste über die Zeit) —
  * verpackt trotzdem als `rows: [behaviour]`, damit Konsumenten nicht zwischen
  * "rows ist ein Array" und "rows ist ein Objekt" unterscheiden muessen.
+ *
+ * Fix M7 (Abschluss-Review): jedes Feld traegt jetzt `.describe()` — REST ignoriert das
+ * (Zod-Metadaten ohne Wirkung auf `.parse()`), das MCP-Tool `get_report`
+ * (`src/mcp/tools/system.ts`) baut sein `inputSchema` aus `reportQuerySchema.shape` (single
+ * source, kein zweites, redundant getipptes Feld-Set) und uebernimmt die Beschreibungen.
  */
 import { z } from "zod";
 import { monthlyRevenue } from "./revenue";
@@ -22,12 +27,11 @@ import { statusCounts } from "./status";
 import { paymentBehaviour } from "./payment-behaviour";
 
 export const reportQuerySchema = z.object({
-  type: z.enum(["revenue", "top-customers", "status", "payment-behaviour"]),
-  months: z.coerce.number().int().min(1).max(36).default(12),
-  limit: z.coerce.number().int().min(1).max(50).default(5),
-  customerId: z.string().min(1).optional(),
+  type: z.enum(["revenue", "top-customers", "status", "payment-behaviour"]).describe("Art der Auswertung."),
+  months: z.coerce.number().int().min(1).max(36).default(12).describe("Anzahl Kalendermonate rückwirkend (1–36) — bei status und payment-behaviour ohne Wirkung."),
+  limit: z.coerce.number().int().min(1).max(50).default(5).describe("Maximale Anzahl Zeilen (1–50) — nur bei top-customers wirksam."),
+  customerId: z.string().min(1).optional().describe("Auf einen Kunden einschränken (revenue, payment-behaviour)."),
 });
-export type ReportQuery = z.infer<typeof reportQuerySchema>;
 
 /**
  * Parst `raw` mit `reportQuerySchema` (wirft `ZodError` bei ungueltigem `type`/`months`/

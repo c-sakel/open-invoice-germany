@@ -80,16 +80,42 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
           <div className="text-xs uppercase tracking-wide text-slate-500">Pünktlich bezahlt</div>
           <div
             className={`mt-1 text-xl font-semibold ${
-              behaviour.onTimeShare !== null && behaviour.onTimeShare >= 0.8 ? "text-emerald-700" : "text-amber-700"
+              behaviour.onTimeShare === null
+                ? "text-slate-900"
+                : behaviour.onTimeShare >= 0.8
+                  ? "text-emerald-700"
+                  : "text-amber-700"
             }`}
           >
             {behaviour.onTimeShare === null ? "—" : `${Math.round(behaviour.onTimeShare * 100)} %`}
           </div>
+          {/* Fix M12 (Abschluss-Review): null neutral statt amber (sah wie ein schlechter Wert
+              aus) + Stichprobengroesse als Unterzeile — "100 %" aus einer einzigen bezahlten
+              Rechnung ist sonst nicht von "100 % aus 50 Rechnungen" zu unterscheiden. */}
+          <div className="text-xs text-slate-400">
+            {behaviour.paidCount === 0 ? "keine bezahlten Rechnungen" : `${behaviour.paidCount} bezahlte Rechnung(en)`}
+          </div>
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5">
-        <LineChart title="Umsatz je Monat (netto, 12 Monate)" data={revenueChartData(revenue)} />
+      {/* Fix I6 (Nachtrag, Screenshot-Review): zwei Varianten wie beim Dashboard-Balken —
+          volle viewBoxWidth (640) ab `sm`, reduziert (340) darunter (siehe
+          DashboardWidgets.tsx fuer die vollstaendige Begruendung: SVG font-size laesst
+          sich ohne Client-JS nicht per Breakpoint responsiv machen). */}
+      <div className="hidden rounded-lg border border-slate-200 bg-white p-5 sm:block">
+        <LineChart
+          title="Umsatz je Monat (netto, 12 Monate)"
+          data={revenueChartData(revenue)}
+          emptyMessage="Noch keine Umsätze im Zeitraum."
+        />
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white p-5 sm:hidden">
+        <LineChart
+          title="Umsatz je Monat (netto, 12 Monate)"
+          data={revenueChartData(revenue)}
+          emptyMessage="Noch keine Umsätze im Zeitraum."
+          viewBoxWidth={340}
+        />
       </div>
 
       <CustomerTabs

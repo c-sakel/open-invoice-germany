@@ -86,16 +86,20 @@ function expectRectsWithinBounds(html: string, width: number, height: number, mi
 }
 
 describe("BarChart", () => {
-  it("rendert Balken mit <title>, role=img, aria-label, svg-title/desc und sr-only-Wertetabelle", () => {
+  it("rendert Balken mit <title>, role=img, aria-labelledby/-describedby, svg-title/desc und sr-only-Wertetabelle", () => {
     const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
     expect(html.match(/<rect/g)?.length).toBeGreaterThanOrEqual(3);
     expect(html).toContain("<title>Feb 26: 2.500,00 €</title>");
     expect(html).toContain('role="img"');
-    expect(html).toContain('aria-label="Umsatz je Monat"');
+    // Fix M6 (a11y): aria-label entfaellt (redundant neben aria-labelledby); aria-labelledby
+    // referenziert nur noch den Namen (<title>), aria-describedby die Beschreibung (<desc>).
+    expect(html).not.toContain("aria-label=");
     expect(html).toMatch(/aria-labelledby="[^"]+"/);
+    expect(html).toMatch(/aria-describedby="[^"]+"/);
     expect(html).toMatch(/<title id="[^"]+">Umsatz je Monat<\/title>/);
     expect(html).toMatch(/<desc id="[^"]+">/);
     expect(html).toContain("sr-only");
+    expect(html).toContain("<th scope=\"col\">Bezeichnung</th>");
     expect(html).toContain("<td>Jan 26</td>");
     expectNoNaN(html);
   });
@@ -147,6 +151,69 @@ describe("BarChart", () => {
     const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
     expect(html).toContain('fill="#475569"');
     expect(html).not.toContain('fill="#94a3b8"');
+  });
+
+  it("Fix I5: die senkrechte Ansicht zeigt eine y-Achse mit 3 formatierten Ticks (formatCentsShort)", () => {
+    const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
+    // DATA-Werte 0/100000/250000 -> domainMax 250000 ("2,5 k€"), domainMin 0 ("0,00 €"),
+    // Mitte 125000 ("1,3 k€", kaufmaennisch gerundet).
+    expect(html).toContain("2,5 k€");
+    expect(html).toContain("0,00 €");
+    expect(html.match(/font-size="12"/g)?.length).toBeGreaterThanOrEqual(3);
+    expectNoNaN(html);
+  });
+
+  it("Fix I6: viewBoxWidth macht die Koordinatenbreite konfigurierbar (halbe Dashboard-Karte)", () => {
+    const html = renderToStaticMarkup(<BarChart title="Top 5" data={DATA} viewBoxWidth={320} />);
+    expect(html).toContain('viewBox="0 0 320 240"');
+    expectRectsWithinBounds(html, 320, 240, 3);
+    expectNoNaN(html);
+  });
+
+  it("Fix I6: waagerecht bleibt ein 24-stelliger Name auch bei reduzierter viewBoxWidth (320) innerhalb der viewBox", () => {
+    const longName = "Beispiel GmbH & Co. KG12"; // 24 Zeichen
+    const data: ChartDatum[] = [{ label: longName, value: 100000, valueLabel: "1.000,00 €" }];
+    const html = renderToStaticMarkup(<BarChart title="Top 5" data={data} orientation="horizontal" viewBoxWidth={320} />);
+    expect(html).toContain('viewBox="0 0 320');
+    expectRectsWithinBounds(html, 320, data.length * 34 + 20, 1);
+    const groups = [...html.matchAll(/<g[^>]*>([\s\S]*?)<\/g>/g)];
+    for (const group of groups) {
+      const labelText = /<text\b([^>]*)>/.exec(group[1]);
+      expect(labelText).not.toBeNull();
+      const x = Number(/\bx="(-?[\d.]+)"/.exec(labelText![1])?.[1]);
+      expect(Number.isNaN(x)).toBe(false);
+      expect(x).toBeGreaterThanOrEqual(0);
+    }
+    expectNoNaN(html);
+  });
+
+  it("Regression (Screenshot-Review): eine gestauchte Beschriftungsspalte schrumpft die Schrift mit, statt ueber den linken Rand hinauszuragen", () => {
+    // Nachgebaut aus dem echten Dashboard-Screenshot (12e-fix-01): ein sehr langer,
+    // getrennter Kundenname bei viewBoxWidth=320 liess "Smoke Test Kunde 178879…" als
+    // abgeschnittenes "š" statt "S" rendern, weil die Spalte gestaucht wurde, die Schrift
+    // aber bei fontSize 12 blieb.
+    const CHAR_WIDTH_FACTOR = 0.6; // dieselbe Naeherung wie in BarChart.tsx
+    const longLabel = "Smoke Test Kunde 178879364".slice(0, 24); // truncateName-Laenge
+    const data: ChartDatum[] = [
+      { label: "Beispiel AG", value: 229900, valueLabel: "2.299,00 €" },
+      { label: longLabel, value: 28500, valueLabel: "285,00 €" },
+    ];
+    const html = renderToStaticMarkup(<BarChart title="Top 5" data={data} orientation="horizontal" viewBoxWidth={320} />);
+    const groups = [...html.matchAll(/<g[^>]*>([\s\S]*?)<\/g>/g)];
+    for (const group of groups) {
+      const labelText = /<text\b([^>]*)>/.exec(group[1]);
+      expect(labelText).not.toBeNull();
+      const attrs = labelText![1];
+      const x = Number(/\bx="(-?[\d.]+)"/.exec(attrs)?.[1]);
+      const fontSizeAttr = Number(/\bfont-size="([\d.]+)"/.exec(attrs)?.[1]);
+      expect(Number.isNaN(x)).toBe(false);
+      expect(Number.isNaN(fontSizeAttr)).toBe(false);
+      // textAnchor="end": das Label wächst von x aus NACH LINKS um ungefähr
+      // Zeichenzahl * fontSize * CHAR_WIDTH_FACTOR — das darf nicht unter 0 fallen.
+      const estimatedLeftEdge = x - longLabel.length * fontSizeAttr * CHAR_WIDTH_FACTOR;
+      expect(estimatedLeftEdge).toBeGreaterThanOrEqual(-1);
+    }
+    expectNoNaN(html);
   });
 
   it("waagerechte Kundenbeschriftung bleibt bei einem 24-stelligen Namen im positiven Bereich (Fix 2)", () => {
@@ -211,6 +278,27 @@ describe("LineChart", () => {
     // Der negative Monat muss unterhalb der Nulllinie liegen, nicht ausserhalb der viewBox.
     expect(circles[1].cy).toBeGreaterThan(circles[0].cy);
     expectNoNaN(html);
+  });
+
+  it("Regression (Screenshot-Review): bei reduzierter viewBoxWidth (340) zeigt LineChart seltener Labels, damit sie nicht kollidieren", () => {
+    // Nachgebaut aus dem Screenshot 12e-fix-04 (Kundenseite, 400 px): bei fester
+    // "jedes zweite Label"-Regel liefen "Okt 25"/"Dez 25" bei viewBoxWidth=340 ineinander.
+    const twelveMonths: ChartDatum[] = Array.from({ length: 12 }, (_, i) => ({
+      label: `Mon ${i}`,
+      value: i * 1000,
+      valueLabel: `${i * 1000}`,
+    }));
+    const wide = renderToStaticMarkup(<LineChart title="Umsatz" data={twelveMonths} viewBoxWidth={640} />);
+    const narrow = renderToStaticMarkup(<LineChart title="Umsatz" data={twelveMonths} viewBoxWidth={340} />);
+    const countLabels = (html: string) => (html.match(/<text\b/g) ?? []).length;
+    // Bei der schmaleren viewBox muessen STRIKT weniger (oder gleich viele) Labels stehen,
+    // nie mehr — sonst waere die Kollisionsgefahr gestiegen statt gesunken.
+    expect(countLabels(narrow)).toBeLessThanOrEqual(countLabels(wide));
+    // Der letzte Punkt behaelt in jedem Fall sein Label.
+    expect(narrow).toContain(">Mon 11<");
+    expect(wide).toContain(">Mon 11<");
+    expectNoNaN(narrow);
+    expectNoNaN(wide);
   });
 
   it("Fix I1: eine komplett negative Reihe bleibt innerhalb der viewBox", () => {

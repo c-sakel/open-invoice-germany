@@ -25,8 +25,19 @@ function monthLabel(month: string): string {
     .replace(/\./g, "");
 }
 
-/** Umsatzreihe (`monthlyRevenue`) als Balken — negative Monate (Gutschrift-Ueberhang) bleiben negativ. */
+/**
+ * Umsatzreihe (`monthlyRevenue`) als Balken — negative Monate (Gutschrift-Ueberhang) bleiben
+ * negativ.
+ *
+ * Fix M1 (Abschluss-Review): `monthlyRevenue` fuellt IMMER alle Monats-Buckets (auch ohne
+ * Beleg als 0-Eintrag, siehe dortiger Modulkommentar) — `ChartFrame`s Leerzustand
+ * (`data.length === 0`) trat dadurch nie ein; ein frisch angelegter Kunde/eine frische Org
+ * bekam stattdessen eine nichtssagende Nulllinie direkt auf der unteren Kante. Liefert jetzt
+ * `[]`, wenn KEIN Bucket einen Beleg traegt (`count === 0`), damit `BarChart`/`LineChart`
+ * ueber ihr `emptyMessage`-Prop den Leerzustand zeigen statt der Nulllinie.
+ */
 export function revenueChartData(points: MonthlyRevenuePoint[]): ChartDatum[] {
+  if (points.every((p) => p.count === 0)) return [];
   return points.map((p) => ({
     label: monthLabel(p.month),
     value: p.netCents,

@@ -23,6 +23,22 @@ describe("Aufbereitung", () => {
     expect(data[0].valueLabel).toContain("1.234,56");
     expect(data[0].value).toBe(123456);
   });
+
+  it("Fix M1: revenueChartData liefert [] wenn KEIN Monat einen Beleg traegt (Leerzustand statt Nulllinie)", () => {
+    const empty = revenueChartData([
+      { month: "2086-01", netCents: 0, count: 0 },
+      { month: "2086-02", netCents: 0, count: 0 },
+    ]);
+    expect(empty).toEqual([]);
+  });
+
+  it("Fix M1: ein einzelner Monat mit netCents 0 aber count > 0 (z. B. Storno gleicht Original aus) bleibt KEIN Leerzustand", () => {
+    const data = revenueChartData([
+      { month: "2086-01", netCents: 0, count: 2 },
+      { month: "2086-02", netCents: 0, count: 0 },
+    ]);
+    expect(data).toHaveLength(2);
+  });
   it("statusDonutData buendelt Offen/Ueberfaellig/Bezahlt mit festen Farben", () => {
     const data = statusDonutData([
       { status: "OPEN", label: "Offen", count: 3, openCents: 1000 },

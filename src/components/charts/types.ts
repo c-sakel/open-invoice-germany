@@ -15,6 +15,13 @@ export interface ChartDatum {
   color?: string;
 }
 
+/**
+ * Grobe mittlere Zeichenbreite in viewBox-Einheiten je `fontSize`-Einheit (Erfahrungswert
+ * fuer Systemschriften) — gemeinsame Konstante fuer `BarChart` (Beschriftungsspalten,
+ * waagerecht) und `LineChart` (x-Achsen-Label-Abstand), Fix I6, kein zweiter Naeherungswert.
+ */
+export const CHAR_WIDTH_FACTOR = 0.6;
+
 export const CHART_COLORS = {
   primary: "#4f46e5", // indigo-600
   second: "#0d9488", // teal-600
@@ -23,4 +30,5 @@ export const CHART_COLORS = {
   grid: "#e2e8f0", // slate-200 — Rasterlinien (dekorativ, keine Text-Kontrastpflicht)
   axis: "#94a3b8", // slate-400 — Achsenlinien (dekorativ), NICHT fuer Text (Fix 1: WCAG AA)
   label: "#475569", // slate-600 — Achsen-/Wertebeschriftung (Text): faellt auf Weiss unter AA (Fix 1)
+  centerText: "#1e293b", // slate-800 — Fix M10: DonutChart-Mittelwert, war hartkodiert statt Konstante
 } as const;
