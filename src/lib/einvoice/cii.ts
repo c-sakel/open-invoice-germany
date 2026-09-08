@@ -187,6 +187,13 @@ export function buildFacturXCII(data: EInvoiceData): string {
   agr.ele("ram:BuyerReference").txt(data.buyerReference || data.number).up();
 
   const seller = agr.ele("ram:SellerTradeParty");
+  // BT-29 — Verkäuferkennung (ram:ID, unqualifiziert). Phase 12b: BR-CO-26 verlangt BT-29,
+  // BT-30 ODER BT-31 — BT-32 (Steuernummer, s.u.) genügt der Kernregel NICHT (nur BR-DE).
+  // Ohne USt-IdNr. (Kleinunternehmer) wird daher die Steuernummer zusätzlich als
+  // generische Verkäuferkennung ausgewiesen, damit BR-CO-26 erfüllt ist.
+  if (!data.seller.vatId && data.seller.taxNumber) {
+    seller.ele("ram:ID").txt(data.seller.taxNumber).up();
+  }
   seller.ele("ram:Name").txt(data.seller.name).up();
   appendAddress(seller, data.seller);
   if (data.seller.vatId) {
