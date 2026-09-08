@@ -7,6 +7,7 @@
  */
 import { useRef, useState } from "react";
 import { createProductInline, type CreateProductInlineResult } from "@/app/actions/masterdata";
+import { taxRateOptions } from "@/lib/editor/constants";
 
 export interface InlineProduct {
   id: string;
@@ -16,13 +17,14 @@ export interface InlineProduct {
   taxRate: number;
 }
 
-export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) => void }) {
+export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: InlineProduct) => void; taxRates: readonly number[] }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
   const [articleNumber, setArticleNumber] = useState("");
   const [unit, setUnit] = useState("C62");
   const [netPrice, setNetPrice] = useState("");
-  const [taxRate, setTaxRate] = useState(19);
+  // Phase 12c — startet auf dem hoechsten org-eigenen Satz statt dem festen Regelsatz 19.
+  const [taxRate, setTaxRate] = useState(() => taxRateOptions(taxRates)[0]?.value ?? 19);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,9 +112,11 @@ export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) 
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-700">USt-Satz</span>
               <select className={input} value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))}>
-                <option value={19}>19 %</option>
-                <option value={7}>7 %</option>
-                <option value={0}>0 %</option>
+                {taxRateOptions(taxRates).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>

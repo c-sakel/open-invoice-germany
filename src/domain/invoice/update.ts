@@ -13,6 +13,7 @@ import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { updateInvoiceSchema } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -182,6 +183,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       );
 
       if (input.lines) {
+        await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: ratesOfLines(invoice.lines) });
         await tx.invoiceLine.deleteMany({ where: { invoiceId: id } });
         data.lines = { create: lines };
         changedFields.push("lines");

@@ -37,8 +37,8 @@
  * kein `descriptionLong`-Feld, ein eingegebener Langtext wuerde beim Speichern still
  * verworfen.
  */
-import type { DraftLine, DraftAction, LineType } from "@/lib/editor/draft";
-import { TAX_RATE_OPTIONS } from "@/lib/editor/constants";
+import { clampTaxRate, type DraftLine, type DraftAction, type LineType } from "@/lib/editor/draft";
+import { taxRateOptions } from "@/lib/editor/constants";
 import type { EditorMode } from "@/lib/editor/constants";
 import { toCents, toMilli, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
 import { computeLineNet } from "@/lib/pricing/line";
@@ -49,16 +49,14 @@ import { UnitSelect } from "./UnitSelect";
 import { LineRowMenu } from "./LineRowMenu";
 import { LineDiscountField } from "./LineDiscountField";
 
-function toTaxRate(v: string): 19 | 7 | 0 {
-  const n = Number(v);
-  return n === 19 || n === 7 ? n : 0;
-}
-
 // M4 (Abschluss-Review): kein `export` mehr — kein Importer (nur `LineItemsEditor`
 // verwendet die Komponente selbst, der Props-Typ wird nirgends separat referenziert).
 interface LineRowProps {
   line: DraftLine;
   mode: EditorMode;
+  /** Phase 12c — org-eigene Steuersatz-Liste (`DocumentSettings.taxRates`), von
+   *  `DocumentEditor` bis hierher durchgereicht. */
+  taxRates: readonly number[];
   /** Fortlaufende ITEM-Position (wie im PDF/`itemPos`, `invoice-pdf.ts` L303) — `null`
    *  fuer HEADING/TEXT/SUBTOTAL-Zeilen (die im PDF ebenfalls nicht mitgezaehlt werden). */
   itemPos: number | null;
@@ -81,6 +79,7 @@ interface LineRowProps {
 export function LineRow({
   line,
   mode,
+  taxRates,
   itemPos,
   isLast,
   taxDisabled,
@@ -114,6 +113,14 @@ export function LineRow({
   }
 
   const effectiveRate = taxDisabled ? 0 : line.taxRate;
+  // Phase 12c — eine bereits gespeicherte Zeile kann einen Satz tragen, der (inzwischen)
+  // nicht mehr in der Org-Liste steht (`initialLineToDraftLine` klemmt ihn bewusst NICHT,
+  // siehe draft.ts); die Auswahl bleibt dann trotzdem sichtbar/waehlbar, zusaetzlich als
+  // "nicht mehr zulässig" markiert, statt sie stillschweigend zu verlieren.
+  const baseTaxOptions = taxRateOptions(taxRates);
+  const taxOptions = baseTaxOptions.some((o) => o.value === line.taxRate)
+    ? baseTaxOptions
+    : [...baseTaxOptions, { value: line.taxRate, label: `${line.taxRate}% (nicht mehr zulässig)` }];
   const qtyMilli = toMilli(line.quantity);
   const priceCents = toCents(line.price);
   let amountLabel = "–";
@@ -189,7 +196,7 @@ export function LineRow({
               />
               {products.length > 0 && (
                 <div className="mt-1">
-                  <ProductPicker products={products} onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })} onCreated={onProductCreated} />
+                  <ProductPicker products={products} taxRates={taxRates} onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })} onCreated={onProductCreated} />
                 </div>
               )}
             </td>
@@ -209,9 +216,9 @@ export function LineRow({
                 aria-label="USt-Satz"
                 value={taxDisabled ? 0 : line.taxRate}
                 disabled={taxDisabled}
-                onChange={(e) => patch({ taxRate: toTaxRate(e.target.value) })}
+                onChange={(e) => patch({ taxRate: clampTaxRate(Number(e.target.value), taxRates) })}
               >
-                {TAX_RATE_OPTIONS.map((o) => (
+                {taxOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>

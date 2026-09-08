@@ -19,7 +19,9 @@ const PUBLIC_EXACT = new Set(["/"]);
 // exakte Route selbst hat keinen) — `isPublic` unten prueft dafuer EXAKTE Gleichheit ODER
 // "/api/docs/"-Praefix, nicht mehr ein blosses `startsWith("/api/docs")`, das faelschlich
 // auch einen hypothetischen Pfad wie "/api/docsomething" mit durchgelassen haette.
-const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/", "/api/docs"];
+// /api/branding (Phase 12c, Task 2): liefert nur Favicon/Logo der Instanz — keine
+// personenbezogenen Daten, wird aber vor der Session gebraucht (Login-/Setup-Seite).
+const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/", "/api/docs", "/api/branding"];
 
 /** true, wenn `pathname` GENAU `prefix` ist ODER mit `prefix + "/"` beginnt — verhindert,
  *  dass ein Praefix ohne trailing slash (z. B. "/api/docs") auch einen unverwandten

@@ -13,7 +13,7 @@
  * Funktion nicht).
  */
 import { useState } from "react";
-import { narrowTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
+import { clampTaxRate, type DraftState, type DraftAction, type DraftLine, type LineType } from "@/lib/editor/draft";
 import { newLineKey } from "@/lib/editor/ids";
 import type { EditorMode } from "@/lib/editor/constants";
 import { CustomerPicker, type CustomerOption } from "../CustomerPicker";
@@ -53,7 +53,11 @@ function discountPercentOf(c: { defaultDiscountPermille?: number | null } | unde
   return c?.defaultDiscountPermille ? fromPermille(c.defaultDiscountPermille) : "";
 }
 
-function toDraftLine(l: TakeOverLineDTO): DraftLine {
+// Phase 12c — hier WIRD geklemmt (anders als beim Laden eines bestehenden Belegs, siehe
+// `initialLineToDraftLine`): `toDraftLine` liefert Zeilen fuer die Uebernahme in einen
+// NEUEN Beleg (`applyTakeOver`, nur `!isEdit`) — ein inzwischen aus der Org-Liste
+// entfernter Satz soll dort nicht unbemerkt wieder auftauchen.
+function toDraftLine(l: TakeOverLineDTO, allowedTaxRates: readonly number[]): DraftLine {
   return {
     key: newLineKey(),
     lineType: l.lineType as LineType,
@@ -63,7 +67,7 @@ function toDraftLine(l: TakeOverLineDTO): DraftLine {
     quantity: fromMilli(l.quantityMilli),
     unit: l.unit,
     price: fromCents(l.unitNetPriceCents),
-    taxRate: narrowTaxRate(l.taxRate),
+    taxRate: clampTaxRate(l.taxRate, allowedTaxRates),
     discountPercent: fromPermille(l.discountPermille),
     discountAmount: fromCents(l.discountCents),
     productId: null,
@@ -134,7 +138,7 @@ export function RecipientBlock({
 
   function applyTakeOver(prefill: TakeOverPrefillDTO) {
     const next: DraftState = { ...draft, dirty: true };
-    if (prefill.lines?.length) next.lines = prefill.lines.map(toDraftLine);
+    if (prefill.lines?.length) next.lines = prefill.lines.map((l) => toDraftLine(l, draft.allowedTaxRates));
     // Fix 1 (Koordinator-Ruling): `buildTakeOverPrefill` (src/domain/document/take-over.ts)
     // liest `headerText`/`footerText` bereits fuer BEIDE Quellbelege (Invoice UND Quote,
     // L127-129/147-149) — seit HeadTextBlock Kopftext an `headerText` bindet (statt vorher

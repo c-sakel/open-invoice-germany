@@ -492,8 +492,12 @@ describe("/api/v1/Invoice", () => {
   });
 
   it("Create mit ungueltiger taxRate -> 400", async () => {
+    // Phase 12c: TaxRate ist keine Literal-Union mehr (z.number().int().min(0).max(100)) —
+    // 101 bleibt am Zod-Boundary ungueltig (400); ein syntaktisch gueltiger, aber fuer die
+    // Org nicht freigegebener Satz (z. B. 5) wird jetzt von assertAllowedTaxRates im
+    // Domain-Kern abgelehnt (409 CONFLICT, siehe test/integration/tax-rates-enforcement.test.ts).
     const res = await InvoiceCreate(
-      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, lines: [{ description: "x", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 5 }] } }),
+      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, lines: [{ description: "x", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 101 }] } }),
     );
     expect(res.status).toBe(400);
   });
@@ -827,6 +831,45 @@ describe("/api/v1/Settings", () => {
     expect(branding.senderLine).toBe("Musterfirma GmbH");
     expect(branding.footerLeft).toBe("USt-IdNr. DE123");
     expect(branding.marginTopMm).toBe(30);
+  });
+
+  // Fix-Welle (Fix 1): faviconPath/appLogoPath (wie logoPath/backgroundPath) sind NIE
+  // per API schreibbar — nur die Upload-Route setzt sie. `.omit(...)` im Patch-Schema
+  // (src/app/api/v1/Settings/route.ts) verwirft den Wert bereits beim Parsen.
+  it("Patch ignoriert mitgeschickte Datei-Pfade (favicon/appLogo/logo/background)", async () => {
+    const before = (await json(await SettingsGet(req("http://x/api/v1/Settings", { token })))).data.branding;
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", {
+        method: "PATCH",
+        token,
+        body: {
+          branding: {
+            faviconPath: "boesartig/pfad.png",
+            appLogoPath: "boesartig/pfad2.png",
+            logoPath: "boesartig/pfad3.png",
+            backgroundPath: "boesartig/pfad4.png",
+            fontSizePt: 12,
+          },
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const branding = (await json(res)).data.branding;
+    expect(branding.faviconPath).toBe(before.faviconPath);
+    expect(branding.appLogoPath).toBe(before.appLogoPath);
+    expect(branding.logoPath).toBe(before.logoPath);
+    expect(branding.backgroundPath).toBe(before.backgroundPath);
+    expect(branding.fontSizePt).toBe(12);
+  });
+
+  // M9 (Abschluss-Review Phase 12c, Fix-Welle): die Kanten von taxRatesSchema (leer,
+  // >10 Eintraege, ausserhalb 0..100, Nicht-Ganzzahl) sind in test/unit/tax-rates.test.ts
+  // abgedeckt, aber nie ueber einen tatsaechlichen Schreibpfad — hier auf Routen-Ebene.
+  it("Patch mit documents.taxRates: [] -> 400 (taxRatesSchema.min(1))", async () => {
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", { method: "PATCH", token, body: { documents: { taxRates: [] } } }),
+    );
+    expect(res.status).toBe(400);
   });
 });
 

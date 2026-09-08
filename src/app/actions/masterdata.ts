@@ -11,6 +11,7 @@ import { archiveCustomer as archiveCustomerDomain } from "@/domain/customer/arch
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
 import { archiveProduct as archiveProductDomain } from "@/domain/product/archive";
 import { createProduct, updateProduct } from "@/domain/product/save";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import type { ActionResult } from "./result";
 
 function str(fd: FormData, key: string): string | undefined {
@@ -247,6 +248,10 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
       await createProduct(org.id, v);
     }
   } catch (e) {
+    // Fix-Welle 12c (I2): TaxRateNotAllowedError trug eine praezise, fuer den Nutzer
+    // verwertbare Meldung ("Steuersatz X % ist ... nicht freigegeben") — die ging vorher
+    // im generischen "Speichern fehlgeschlagen." unter.
+    if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
     console.error("saveProduct:", e);
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
@@ -299,6 +304,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
     revalidatePath("/produkte");
     return { ok: true, product: { id: product.id, name: product.name, unit: product.unit, netPriceCents: product.netPriceCents, taxRate: product.taxRate } };
   } catch (e) {
+    if (e instanceof TaxRateNotAllowedError) return { ok: false, error: e.message };
     console.error("createProductInline:", e);
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }

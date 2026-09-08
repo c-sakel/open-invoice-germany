@@ -29,6 +29,7 @@ import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { setQuoteStatusWithinTx } from "@/domain/document/status";
 import { billedQuantities, type PartialSourceType } from "@/domain/invoice/billed-quantities";
 import { NotFoundError } from "@/domain/errors";
+import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { createPartialInvoiceSchema, type CreatePartialInvoiceInput } from "@/schemas";
 import type { CreateInvoiceInput } from "@/schemas";
 
@@ -516,7 +517,7 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
       })),
     };
 
-    const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now });
+    const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now, inheritedTaxRates: ratesOfLines(built.lines) });
 
     // B3 (Fix-Welle): kumulativer Ueberbuchungs-Guard fuer ALLE Modi (vorher nur
     // PERCENT/NET_AMOUNT/GROSS_AMOUNT) — ohne ihn liess sich dieselbe Quelle per

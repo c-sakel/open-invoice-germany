@@ -21,6 +21,7 @@ import { serializeDeliveryNote } from "@/api/serializers/delivery-note";
 import { assertDocExists } from "@/domain/relations";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { createDeliveryNoteSchema, type SnapshotSource } from "@/schemas";
 
 export class DeliveryNoteError extends Error {
@@ -44,7 +45,9 @@ export async function createDeliveryNoteWithinTx(
   tx: Prisma.TransactionClient,
   orgId: string,
   rawInput: unknown,
-  opts: { actor?: string; now?: Date } = {},
+  // inheritedTaxRates (Phase 12c): Saetze eines Quellbelegs (Konvertierung zu Lieferschein)
+  // — gelten als zusaetzlich erlaubt (GoBD, kein Bypass, siehe src/domain/settings/tax-rates.ts).
+  opts: { actor?: string; now?: Date; inheritedTaxRates?: readonly number[] } = {},
 ) {
   const input = createDeliveryNoteSchema.parse(rawInput);
   const now = opts.now ?? new Date();
@@ -136,6 +139,8 @@ export async function createDeliveryNoteWithinTx(
     }
   }
 
+  await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: opts.inheritedTaxRates });
+
   const source: SnapshotSource = "CREATE";
   const note = await tx.deliveryNote.create({
     data: {
@@ -209,7 +214,7 @@ export async function createDeliveryNoteWithinTx(
 export async function createDeliveryNote(
   orgId: string,
   rawInput: unknown,
-  opts: { actor?: string; now?: Date } = {},
+  opts: { actor?: string; now?: Date; inheritedTaxRates?: readonly number[] } = {},
 ) {
   return dbInternal.$transaction((tx) => createDeliveryNoteWithinTx(tx, orgId, rawInput, opts));
 }

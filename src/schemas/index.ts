@@ -26,7 +26,9 @@ export type TaxScheme = z.infer<typeof TaxScheme>;
 export const TaxCategory = z.enum(["S", "AE", "K", "G", "E", "Z", "O"]);
 export type TaxCategory = z.infer<typeof TaxCategory>;
 
-export const TaxRate = z.union([z.literal(19), z.literal(7), z.literal(0)]);
+// Phase 12c: keine Literal-Union mehr — die zulaessige Menge ist org-abhaengig und wird
+// von assertAllowedTaxRates geprueft, nicht von Zod.
+export const TaxRate = z.number().int().min(0).max(100);
 
 // Positionstyp (Phase 4b) — HEADING/TEXT/SUBTOTAL tragen nie Betraege, gehen nie in
 // Summen, XML oder Steuerberechnung (Lastenheft §8: kein Menge-0-Workaround).

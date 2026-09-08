@@ -26,9 +26,23 @@ export const GET = withApi(async (_req, ctx) => {
   return apiData(await loadAll(ctx.orgId));
 }, { scope: "admin" });
 
+// Fix-Welle (Fix 1): logoPath/backgroundPath/faviconPath/appLogoPath sind NIE per API
+// schreibbar — dieselbe Regel wie im MCP-Tool update_branding_settings
+// (src/mcp/tools/settings.ts). `.omit(...)` entfernt sie bereits aus dem Zod-Schema, ein
+// mitgeschickter Wert wird beim `.parse()` unten stillschweigend verworfen (kein
+// Passthrough) — `mergeSentFields` uebernimmt danach ohnehin nur Schluessel, die im
+// GEPARSTEN Ergebnis vorkommen, also nie diese vier. Nur die Upload-Route
+// (POST /api/settings/branding/upload) setzt sie.
+const brandingPatchSchema = brandingSettingsInputSchema.omit({
+  logoPath: true,
+  backgroundPath: true,
+  faviconPath: true,
+  appLogoPath: true,
+});
+
 const patchBodySchema = z.object({
   documents: documentSettingsInputSchema.partial().optional(),
-  branding: brandingSettingsInputSchema.partial().optional(),
+  branding: brandingPatchSchema.partial().optional(),
   print: printSettingsInputSchema.partial().optional(),
 });
 

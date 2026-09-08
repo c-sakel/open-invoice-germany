@@ -18,11 +18,19 @@ export const LINE_TYPE_LABEL: Record<"ITEM" | "HEADING" | "TEXT" | "SUBTOTAL", s
   SUBTOTAL: "Zwischensumme",
 };
 
-export const TAX_RATE_OPTIONS: readonly { value: 19 | 7 | 0; label: string }[] = [
-  { value: 19, label: "19%" },
-  { value: 7, label: "7%" },
-  { value: 0, label: "0%" },
-];
+/** Phase 12c — die Auswahl kommt aus DocumentSettings.taxRates (Server-Prop bis in die
+ *  Zeile), nicht mehr aus einer festen Union. `FALLBACK_TAX_RATES` deckt nur den Fall ab,
+ *  dass eine Seite die Liste (noch) nicht durchreicht. */
+export const FALLBACK_TAX_RATES: readonly number[] = [19, 7, 0];
+
+export function taxRateOptions(rates: readonly number[]): { value: number; label: string }[] {
+  const source = rates.length > 0 ? rates : FALLBACK_TAX_RATES;
+  // M4 (Fix-Welle 12c): `assertAllowedTaxRates` laesst 0 % IMMER zu (Gliederungszeilen,
+  // Nullsatz-Schemata — tax-rates.ts:41) und `LineRow` setzt bei `taxDisabled` den Wert
+  // hart auf 0. Nimmt eine Organisation 0 aus ihrer eigenen Liste heraus, fehlte bislang
+  // die passende <option>, der Browser zeigte dann die erste Option statt 0 an.
+  return [...new Set([...source, 0])].sort((a, b) => b - a).map((value) => ({ value, label: `${value}%` }));
+}
 
 // UN/ECE Rec 20 Einheiten-Codes (Teilmenge, siehe Hinweistext in
 // src/components/forms/ProductForm.tsx) — C62 (Stück) zuerst als Standardwert.

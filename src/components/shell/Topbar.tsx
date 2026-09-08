@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { getFocusable } from "@/lib/focus";
+import type { Brand } from "@/domain/settings/brand";
 import { NavIcon } from "./NavIcons";
 import { SearchTrigger } from "./SearchTrigger";
 import { Sidebar } from "./Sidebar";
@@ -13,10 +14,11 @@ interface Props {
   orgName: string;
   unreadCount: number;
   appVersion: string;
+  brand: Brand;
 }
 
 /** Schmale Kopfleiste unterhalb `lg`: Burger oeffnet die Sidebar als Drawer. */
-export function Topbar({ orgName, unreadCount, appVersion }: Props) {
+export function Topbar({ orgName, unreadCount, appVersion, brand }: Props) {
   const { searchOpen } = useShell();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -96,7 +98,7 @@ export function Topbar({ orgName, unreadCount, appVersion }: Props) {
           <NavIcon name="menu" className="h-5 w-5" />
         </button>
         <Link href="/" className="font-semibold tracking-tight">
-          OpenInvoice <span className="text-slate-400">DE</span>
+          {brand.appName}
         </Link>
         <div className="ml-auto">
           <SearchTrigger compact />
@@ -106,7 +108,7 @@ export function Topbar({ orgName, unreadCount, appVersion }: Props) {
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <button type="button" aria-label="Menü schließen" onClick={close} className="absolute inset-0 bg-slate-900/40" />
           <div ref={panelRef} className="absolute inset-y-0 left-0 shadow-xl">
-            <Sidebar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} drawer onClose={close} />
+            <Sidebar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} brand={brand} drawer onClose={close} />
           </div>
         </div>
       )}

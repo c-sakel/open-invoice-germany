@@ -11,6 +11,7 @@ import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { roundHalfUp } from "@/lib/money";
+import { TaxRate } from "@/schemas";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
 import type { MailProvider } from "@/lib/mail/provider";
 
@@ -174,6 +175,7 @@ export async function buildSimpleLines(
       quantityMilli: qtyToMilli(l.quantity),
       unit: unit ?? "C62",
       unitNetPriceCents: euroToCents(unitPriceEuro),
+      // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
       taxRate: taxRate ?? 19,
       taxCategory: "S",
       discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
@@ -240,6 +242,7 @@ export async function buildEditorLines(
       quantityMilli: qtyToMilli(l.quantity),
       unit: unit ?? "C62",
       unitNetPriceCents: euroToCents(unitPriceEuro),
+      // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
       taxRate: taxRate ?? 19,
       taxCategory: "S",
       discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
@@ -255,7 +258,7 @@ export const docLineSchema = z.object({
   unitPriceEuro: z.number().optional(),
   productName: z.string().optional(),
   unit: z.string().optional(),
-  taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+  taxRatePercent: TaxRate.optional(),
   discountPercent: z.number().min(0).max(100).optional().describe("Positionsrabatt in Prozent"),
   discountAmount: z.number().min(0).optional().describe("Zusätzlicher Festbetragsrabatt je Position in Euro"),
 });
