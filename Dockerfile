@@ -33,6 +33,13 @@ COPY --from=build /app/prisma ./prisma
 # — ohne diese Zeile fehlte das Verzeichnis in der runner-Stage komplett, /api/docs und
 # GET /api/v1/openapi.json warfen ENOENT -> 500 auf jeder Produktivinstanz.
 COPY --from=build /app/openapi ./openapi
+# Fix-Welle 12c (C1): src/app/api/branding/icon/route.ts liest den Fallback bei fehlendem
+# Upload zur Laufzeit relativ zu process.cwd() (`src/app/favicon.ico`) — ohne diese Zeile
+# fehlte die Datei in der runner-Stage, jede Anfrage ohne eigenes Favicon warf ENOENT.
+# Die Route faengt den Fehler inzwischen ab (redirect statt 500), aber nur diese Zeile
+# liefert das gebrandete Icon tatsaechlich aus, statt auf /favicon.ico umzuleiten. Nur die
+# eine Datei, kein ganzes Verzeichnis, um die Schicht klein zu halten.
+COPY --from=build /app/src/app/favicon.ico ./src/app/favicon.ico
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/tsconfig.json ./tsconfig.json
