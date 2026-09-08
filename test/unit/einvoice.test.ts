@@ -153,3 +153,32 @@ describe("ZUGFeRD / Factur-X (CII)", () => {
     expect(pdf.toString("latin1")).toContain("factur-x.xml");
   });
 });
+
+describe("BG-14 / BT-80 (Phase 12b)", () => {
+  const period = { deliveryStart: new Date("2026-05-01"), deliveryEnd: new Date("2026-05-31") };
+  it("UBL: InvoicePeriod nur mit Zeitraum, nach BuyerReference und vor den Parteien", () => {
+    const xml = buildXRechnungUBL({ ...data, ...period });
+    expect(xml).toContain("<cbc:StartDate>2026-05-01</cbc:StartDate>");
+    expect(xml).toContain("<cbc:EndDate>2026-05-31</cbc:EndDate>");
+    expect(xml.indexOf("<cbc:BuyerReference>")).toBeLessThan(xml.indexOf("<cac:InvoicePeriod>"));
+    expect(xml.indexOf("<cac:InvoicePeriod>")).toBeLessThan(xml.indexOf("<cac:AccountingSupplierParty>"));
+    expect(buildXRechnungUBL(data)).not.toContain("<cac:InvoicePeriod>");
+  });
+  it("UBL: BT-80 aus dem Kaeuferland, nach ActualDeliveryDate; ueberschreibbar", () => {
+    const xml = buildXRechnungUBL(data);
+    // Hinweis (Abweichung vom Brief): root.end({ prettyPrint: true }) fuegt zwischen Country
+    // und seinem einzigen Kindelement stets Zeilenumbruch/Einrueckung ein — \s* toleriert das,
+    // die Verschachtelung (DeliveryLocation > ... > Country > IdentificationCode = DE) bleibt geprueft.
+    expect(xml).toMatch(/<cac:DeliveryLocation>[\s\S]*<cac:Country>\s*<cbc:IdentificationCode>DE<\/cbc:IdentificationCode>\s*<\/cac:Country>/);
+    expect(xml.indexOf("<cbc:ActualDeliveryDate>")).toBeLessThan(xml.indexOf("<cac:DeliveryLocation>"));
+    expect(buildXRechnungUBL({ ...data, deliverToCountryCode: "AT" }))
+      .toMatch(/<cac:DeliveryLocation>[\s\S]*<cbc:IdentificationCode>AT<\/cbc:IdentificationCode>/);
+  });
+  it("CII: ShipToTradeParty vor ActualDeliverySupplyChainEvent, BillingSpecifiedPeriod an der richtigen Stelle", () => {
+    const xml = buildFacturXCII({ ...data, ...period });
+    expect(xml.indexOf("<ram:ShipToTradeParty>")).toBeLessThan(xml.indexOf("<ram:ActualDeliverySupplyChainEvent>"));
+    expect(xml).toMatch(/<ram:ShipToTradeParty>[\s\S]*<ram:CountryID>DE<\/ram:CountryID>/);
+    expect(xml.indexOf("<ram:ApplicableTradeTax>")).toBeLessThan(xml.indexOf("<ram:BillingSpecifiedPeriod>"));
+    expect(xml.indexOf("<ram:BillingSpecifiedPeriod>")).toBeLessThan(xml.indexOf("<ram:SpecifiedTradePaymentTerms>"));
+  });
+});

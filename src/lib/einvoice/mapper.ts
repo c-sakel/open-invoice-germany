@@ -40,6 +40,9 @@ export interface MapInput {
   issueDate: Date;
   dueDate: Date | null;
   deliveryDate: Date | null;
+  deliveryStart?: Date | null;         // BT-73 (BG-14)
+  deliveryEnd?: Date | null;           // BT-74 (BG-14)
+  deliverToCountryCode?: string | null; // BT-80 (BG-15), Default: Land des Kaeufers
   currency: string;
   buyerReference: string | null;
   // Phase 4b — Bestellnummer des Kunden (BT-13); optional, da Alt-Belege das Feld nicht kennen.
@@ -276,6 +279,13 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     issueDate: invoice.issueDate,
     dueDate: invoice.dueDate,
     deliveryDate: invoice.deliveryDate,
+    // BG-14 (BT-73/BT-74) — bisher erreichten diese Felder den Mapper gar nicht,
+    // obwohl Invoice sie seit Phase 1 fuehrt.
+    deliveryStart: invoice.deliveryStart ?? null,
+    deliveryEnd: invoice.deliveryEnd ?? null,
+    // BT-80 (BG-15) — Land der Rechnungsanschrift aus dem Kaeufer-Snapshot; eine
+    // eigene Lieferanschrift bildet die E-Rechnung hier nicht ab.
+    deliverToCountryCode: customer.countryCode,
     currency: invoice.currency,
     // B2G: Leitweg-ID des Kunden als Buyer reference (BT-10), sonst explizit gesetzter Wert.
     buyerReference: invoice.buyerReference ?? customer.leitwegId,
