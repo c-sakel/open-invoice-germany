@@ -153,6 +153,19 @@ describe("get_report", () => {
     const res = await callTool("get_report", { type: "nichtvorhanden" });
     expect(res.isError).toBe(true);
   });
+
+  it("Fix M7: `customer` (Name statt customerId) wird ueber resolveCustomer aufgeloest", async () => {
+    const res = await callTool("get_report", { type: "revenue", customer: customerName });
+    expect(res.isError).toBeFalsy();
+    const j = JSON.parse(text(res)) as { type: string; rows: unknown[] };
+    expect(j.type).toBe("revenue");
+    expect(j.rows).toHaveLength(12);
+  });
+
+  it("Fix M7: unbekannter `customer` liefert eine Fehlermeldung statt eines generischen Fehlers", async () => {
+    const res = await callTool("get_report", { type: "revenue", customer: "Nicht existent XYZ" });
+    expect(res.isError).toBe(true);
+  });
 });
 
 describe("get_customer_overview", () => {

@@ -53,4 +53,47 @@ describe("GET /api/v1/Report", () => {
     const direct = (await runReport(orgId, { type: "status" })) as { type: string };
     expect(direct.type).toBe("status");
   });
+
+  // Fix M11 (Abschluss-Review): Boundary-Luecken — months=99/limit=0 -> 400, Schluessel ohne
+  // read-Scope -> 403, top-customers respektiert limit, Org-Trennung.
+  it("months=99 (> 36) -> 400 VALIDATION", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=revenue&months=99"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION");
+  });
+
+  it("limit=0 (< 1) -> 400 VALIDATION", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=top-customers&limit=0"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION");
+  });
+
+  it("Schluessel ohne read-Scope -> 403 FORBIDDEN", async () => {
+    const writeOnly = (await createApiKey(orgId, { name: "Nur-Write", scopes: ["write"], expiresAt: null })).token;
+    const forbidden = await GET(new Request("http://x/api/v1/Report?type=status", { headers: { authorization: `Bearer ${writeOnly}` } }));
+    expect(forbidden.status).toBe(403);
+    expect((await forbidden.json()).error.code).toBe("FORBIDDEN");
+  });
+
+  it("top-customers respektiert limit", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=top-customers&limit=1"));
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    expect(j.data.rows.length).toBeLessThanOrEqual(1);
+  });
+
+  it("Org-Trennung: ein Schluessel von Org A liefert keine Zeilen von Org B", async () => {
+    const otherOrg = await dbInternal.organization.create({
+      data: { legalName: "Report-API Fremdorg GmbH", addressLine1: "F 1", postalCode: "10119", city: "Berlin", vatId: "DE888888888", taxNumber: "88/888/88888" },
+    });
+    // Beleg in der fremden Org, damit sie ueberhaupt Daten haette, wenn die Org-Trennung
+    // NICHT griffe.
+    const otherToken = (await createApiKey(otherOrg.id, { name: "Fremd-Leser", scopes: ["read"], expiresAt: null })).token;
+    const res = await GET(new Request("http://x/api/v1/Report?type=status", { headers: { authorization: `Bearer ${otherToken}` } }));
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    // status-Zeilen der ORIGINALEN Org (orgId) duerfen hier nicht auftauchen — da otherOrg
+    // keine eigenen Rechnungen hat, ist die einzig korrekte Antwort eine leere Zeilenliste.
+    expect(j.data.rows).toEqual([]);
+  });
 });

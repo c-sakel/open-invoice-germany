@@ -25,6 +25,28 @@ const DOC_HREF: Record<string, (id: string) => string> = {
  * Aging und letzte Belege. `revenue`/`statuses`/`top` kommen aus src/domain/reporting/* —
  * dieselbe Aufteilung wie `summary` (dashboardSummary bleibt fuer die Kennzahlkacheln
  * zustaendig, kein Doppelbau, §1.4).
+ *
+ * Fix I5 (Abschluss-Review): `items-start` statt des Grid-Defaults `items-stretch` — die
+ * vier Karten im unteren Raster haben unterschiedlich viel Inhalt (Donut ~240 px, Aging/
+ * Top-5 je nach Zeilenzahl, "Letzte Belege" bis zu 5 Zeilen); vorher streckte das Grid jede
+ * Karte auf die Hoehe der hoechsten, wodurch der Donut auf voller Spaltenbreite (~430 px)
+ * rendern konnte und seine Mittelzahl effektiv ~50 px gross wurde. `min-h-*` je Karte haelt
+ * das Layout trotzdem stabil (kein Sprung zwischen leerem und gefuelltem Zustand). Die
+ * Donut-Karte bekommt zusaetzlich `max-w-[220px] mx-auto`, damit das SVG (`w-full`) nicht
+ * ueber seine native 240er-viewBox hinaus gestreckt wird. Aging/Top-5 (`BarChart`,
+ * waagerecht) bekommen `viewBoxWidth={320}` (Fix I6) — die halbe Spaltenbreite entspricht
+ * ungefaehr dieser Koordinatenbreite, wodurch `fontSize`-Angaben dort nahe an ihrer
+ * nominalen Pixelgroesse rendern statt auf ~7 px herunterskaliert zu werden.
+ *
+ * Fix I6 (Nachtrag, Screenshot-Review bei 400 px): die Umsatzreihe ganz oben ist IMMER
+ * volle Kartenbreite (kein halbes Grid) — bei ~1100 px (Desktop) passt `viewBoxWidth`
+ * 640 gut, bei ~370 px (Mobile, Karte unterhalb `sm`) skaliert dieselbe viewBox die Schrift
+ * auf ~7 px herunter. Da SVG `font-size` (Attribut UND CSS) IMMER im lokalen, durch
+ * `viewBox` skalierten Koordinatensystem gilt (keine per-Breakpoint-Ausnahme, empirisch
+ * geprueft), gibt es dafuer ohne Client-JS nur einen Ausweg: zwei serverseitig gerenderte
+ * Varianten, per `hidden`/`sm:hidden` (reines CSS) umgeschaltet — die unterhalb `sm`
+ * ausgeblendete Variante ist ueber `display:none` bereits vollstaendig aus dem
+ * Accessibility-Baum entfernt (keine doppelte sr-only-Tabelle fuer Screenreader).
  */
 export function DashboardWidgets({
   summary,
@@ -82,33 +104,51 @@ export function DashboardWidgets({
         </Link>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5">
-        <BarChart title="Umsatz je Monat (netto, 12 Monate)" data={revenueChartData(revenue)} />
+      <div className="hidden min-h-[280px] rounded-lg border border-slate-200 bg-white p-5 sm:block">
+        <BarChart
+          title="Umsatz je Monat (netto, 12 Monate)"
+          data={revenueChartData(revenue)}
+          emptyMessage="Noch keine Umsätze im Zeitraum."
+        />
+      </div>
+      <div className="min-h-[280px] rounded-lg border border-slate-200 bg-white p-5 sm:hidden">
+        <BarChart
+          title="Umsatz je Monat (netto, 12 Monate)"
+          data={revenueChartData(revenue)}
+          emptyMessage="Noch keine Umsätze im Zeitraum."
+          viewBoxWidth={340}
+        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <AgingChart aging={summary.aging} />
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div className="min-h-[280px] rounded-lg border border-slate-200 bg-white p-5">
+          <AgingChart aging={summary.aging} viewBoxWidth={320} />
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <DonutChart title="Rechnungsstatus (Anzahl)" data={statusDonutData(statuses)} />
+        <div className="min-h-[280px] rounded-lg border border-slate-200 bg-white p-5">
+          <div className="mx-auto max-w-[220px]">
+            <DonutChart title="Rechnungsstatus (Anzahl)" data={statusDonutData(statuses)} />
+          </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <BarChart title="Top 5 Kunden (netto, 12 Monate)" data={topCustomerChartData(top)} orientation="horizontal" />
+        <div className="min-h-[280px] rounded-lg border border-slate-200 bg-white p-5">
+          <BarChart title="Top 5 Kunden (netto, 12 Monate)" data={topCustomerChartData(top)} orientation="horizontal" viewBoxWidth={320} />
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="min-h-[280px] rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Letzte Belege</h2>
           <ul className="divide-y divide-slate-100">
             {summary.recentDocuments.map((d) => (
-              <li key={`${d.kind}-${d.id}`} className="flex items-center justify-between py-2 text-sm">
+              /* Fix M2 (Minor, nicht von 12e verursacht — Vorbefund aus Task 4/Phase 8b):
+                 flex-wrap + min-w-0/truncate auf der Kundenspalte, sonst brechen lange
+                 Belegnummern/Kundennamen bei 400 px Viewport auf zwei Zeilen und
+                 ueberlappen Datum/Badge. */
+              <li key={`${d.kind}-${d.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
                 <a href={DOC_HREF[d.kind](d.id)} className="font-medium text-indigo-600 hover:underline">
                   {d.number ?? "Entwurf"}
                 </a>
-                <span className="text-slate-500">{d.customerName}</span>
-                <span className="text-slate-400">{deDate(d.date)}</span>
+                <span className="min-w-0 flex-1 truncate text-slate-500">{d.customerName}</span>
+                <span className="shrink-0 text-slate-400">{deDate(d.date)}</span>
                 <StatusBadge status={d.status} />
               </li>
             ))}

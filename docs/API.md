@@ -203,7 +203,7 @@ Parameter (Query):
 | Parameter | Pflicht | Bedeutung |
 |---|---|---|
 | `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` |
-| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — bei `status` ohne Wirkung |
+| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — bei `status` und `payment-behaviour` ohne Wirkung (Fix M13a) |
 | `limit` | nein | nur `top-customers`: Anzahl Kunden (1–50, Default 5) |
 | `customerId` | nein | auf einen Kunden einschränken (`revenue`, `payment-behaviour`) |
 

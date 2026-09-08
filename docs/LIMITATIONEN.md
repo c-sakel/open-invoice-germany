@@ -252,6 +252,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Es gibt keinen Export der Auswertungen als CSV oder PDF.**
 - **Der Umsatz ist eine Netto-Auswertung nach Rechnungsdatum, keine Einnahmen-Überschuss-Rechnung und keine Buchhaltung (Lastenheft §60).**
 - **Rechnungen ohne erfasste Zahlung, die manuell auf PAID gesetzt wurden, gehen nicht in die Ø Zahlungsdauer ein.**
+- **Monatsgrenzen der Auswertungen laufen in UTC, nicht in Berlin-Ortszeit** (Fix M13b). `monthlyRevenue`/`dashboardSummary`/`customerOverview` gruppieren nach `Date.UTC`-Kalendermonaten — für einen Betreiber in Europe/Berlin fällt eine Rechnung vom Monatsersten nach 00:00, aber vor 01:00 (Winterzeit) bzw. vor 02:00 (Sommerzeit) Ortszeit noch in den **Vormonat** (sie liegt zu diesem Zeitpunkt UTC noch im letzten Tag des Vormonats). Betrifft nur Belege in der ersten/letzten Stunde eines Monats; über den vollen Monat gesehen bleibt die Summe korrekt.
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.

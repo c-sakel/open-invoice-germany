@@ -6,7 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { dashboardSummary } from "@/domain/dashboard/summary";
-import { runReport } from "@/domain/reporting/query";
+import { runReport, reportQuerySchema } from "@/domain/reporting/query";
 import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
 import { listApiRequestLogs } from "@/domain/api-log/list";
@@ -185,18 +185,22 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Auswertung abrufen",
       description:
-        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status) oder payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil). Optional je Kunde (customerId) und ueber n Monate (months, Default 12).",
+        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status) oder payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil). Optional je Kunde (customer) und ueber n Monate (months, Default 12).",
+      // Fix M7 (Abschluss-Review): `reportQuerySchema.shape` als einzige Quelle fuer
+      // type/months/limit (kein zweites, redundant getipptes Feld-Set mehr) — nur
+      // `customerId` wird durch `customer` ersetzt: jedes andere Tool nimmt eine Kunden-ID
+      // ODER einen -namen entgegen und loest ueber `ctx.resolveCustomer` auf (siehe
+      // src/mcp/tools/customers.ts), `get_report` tat das bisher nicht.
       inputSchema: {
-        type: z.enum(["revenue", "top-customers", "status", "payment-behaviour"]),
-        months: z.number().int().min(1).max(36).optional(),
-        limit: z.number().int().min(1).max(50).optional(),
-        customerId: z.string().optional(),
+        ...reportQuerySchema.omit({ customerId: true }).shape,
+        customer: z.string().min(1).optional().describe("Kunden-ID oder -Name (nur bei revenue, payment-behaviour wirksam)."),
       },
     },
-    async (args): Promise<Result> => {
+    async ({ customer, ...rest }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return ctx.ok(JSON.stringify(await runReport(org.id, args), null, 2));
+        const customerId = customer ? (await ctx.resolveCustomer(org.id, customer)).id : undefined;
+        return ctx.ok(JSON.stringify(await runReport(org.id, { ...rest, customerId }), null, 2));
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

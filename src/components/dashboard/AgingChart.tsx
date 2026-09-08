@@ -13,7 +13,17 @@ import { agingChartData } from "@/components/dashboard/chart-data";
  * BRUTTObetrag (`AgingBucket.cents` = `openAmountCents`, dashboard/summary.ts), damit auf
  * demselben Bildschirm nicht zwei unterschiedliche, aber gleich aussehende Bemessungs-
  * grundlagen nebeneinanderstehen, ohne dass es aus dem Titel hervorgeht.
+ *
+ * Fix I6 (Abschluss-Review): `viewBoxWidth` durchgereicht an `BarChart` — DashboardWidgets
+ * uebergibt fuer die halbe Dashboard-Kartenbreite einen kleineren Wert.
  */
-export function AgingChart({ aging }: { aging: AgingBucket[] }) {
-  return <BarChart title="Überfällig nach Alter (offen, brutto)" data={agingChartData(aging)} orientation="horizontal" />;
+export function AgingChart({ aging, viewBoxWidth }: { aging: AgingBucket[]; viewBoxWidth?: number }) {
+  return (
+    <BarChart
+      title="Überfällig nach Alter (offen, brutto)"
+      data={agingChartData(aging)}
+      orientation="horizontal"
+      viewBoxWidth={viewBoxWidth}
+    />
+  );
 }
