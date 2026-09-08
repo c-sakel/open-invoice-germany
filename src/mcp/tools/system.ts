@@ -164,7 +164,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Dashboard-Kennzahlen abrufen",
       description:
-        "Liefert die Dashboard-Kennzahlen der Organisation (offene/faellige/ueberfaellige Rechnungen, Aging, Umsatz laufender Monat, letzte Belege, offene Angebote).",
+        "Liefert die Dashboard-Kennzahlen der Organisation (offene/faellige/ueberfaellige Rechnungen, Aging, Nettoumsatz laufender Monat, letzte Belege, offene Angebote).",
       inputSchema: {},
     },
     async (): Promise<Result> => {

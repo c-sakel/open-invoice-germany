@@ -17,7 +17,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { cancelInvoice } from "@/domain/invoice/cancel";
-import { monthlyRevenue, netShareCents, monthKey } from "@/domain/reporting/revenue";
+import { monthlyRevenue, netShareCents, signedRevenueShareCents, monthKey } from "@/domain/reporting/revenue";
 import { topCustomers } from "@/domain/reporting/customers";
 import type { CreateInvoiceInput } from "@/schemas";
 
@@ -43,6 +43,22 @@ async function invoice(customerId: string, netCents: number, issueDate: Date, fi
     { now: issueDate },
   );
   if (finalize) await finalizeInvoice(inv.id, { now: issueDate });
+  return inv;
+}
+
+/**
+ * Fix I2 (Abschluss-Review): freistehende Gutschrift ueber den normalen Pfad (kein
+ * `createPartialCreditNote`) — `createDraftInvoice`/`finalizeInvoice` mit `type:
+ * "CREDIT_NOTE"` und POSITIVEN Positionsbetraegen, exakt die naheliegende Eingabe im Editor
+ * (`createInvoiceSchema.unitNetPriceCents` erzwingt kein Vorzeichen).
+ */
+async function creditNote(targetOrgId: string, customerId: string, netCents: number, issueDate: Date) {
+  const inv = await createDraftInvoice(
+    targetOrgId,
+    { customerId, type: "CREDIT_NOTE", taxScheme: "REGULAR", currency: "EUR", issueDate, lines: [line(netCents)] } as CreateInvoiceInput,
+    { now: issueDate },
+  );
+  await finalizeInvoice(inv.id, { now: issueDate });
   return inv;
 }
 
@@ -130,5 +146,56 @@ describe("topCustomers", () => {
   it("liefert eine leere Liste ohne Belege", async () => {
     const other = await dbInternal.organization.create({ data: { legalName: "Leer GmbH", addressLine1: "L 1", postalCode: "10115", city: "Berlin" } });
     expect(await topCustomers(other.id, { now: NOW })).toEqual([]);
+  });
+});
+
+describe("Fix I2 — Vorzeichen-Normalisierung bei manuell angelegten Gutschriften", () => {
+  // Eigenes Jahr 2091 (Testjahr-Konvention): Belegnummern sind instanzweit @unique, nicht je
+  // Org (siehe CLAUDE.md) — der Nummernkreis jeder neuen Org startet wieder bei 1, ein
+  // geteiltes Jahr mit dem Hauptszenario (2085, oben) wuerde bei der ersten Rechnung
+  // kollidieren.
+  const NOW91 = new Date(Date.UTC(2091, 5, 15, 10, 0, 0));
+  const MAY91 = new Date(Date.UTC(2091, 4, 20, 10, 0, 0));
+
+  it("eine freistehende Gutschrift mit POSITIVEN Positionsbetraegen mindert den Umsatz, statt ihn zu erhoehen", async () => {
+    // Eigene Org: die Fixture-Daten des Hauptszenarios (oben) bleiben unberuehrt.
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Signum Test GmbH", addressLine1: "S 1", postalCode: "10115", city: "Berlin", vatId: "DE866666666", taxNumber: "86/666/66666" },
+    });
+    await ensureOrgMasterdata(dbInternal, org.id);
+    const customer = (
+      await dbInternal.customer.create({ data: { orgId: org.id, name: "Delta AG", addressLine1: "D 1", postalCode: "10117", city: "Berlin", type: "BUSINESS" } })
+    ).id;
+
+    const inv = await createDraftInvoice(
+      org.id,
+      { customerId: customer, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: MAY91, lines: [line(50000)] } as CreateInvoiceInput,
+      { now: MAY91 },
+    );
+    await finalizeInvoice(inv.id, { now: MAY91 }); // 500 € netto
+
+    // Gutschrift ueber den NORMALEN Pfad (createDraftInvoice/finalizeInvoice, nicht
+    // createPartialCreditNote) mit positiven Betraegen — die naheliegende Eingabe im Editor.
+    await creditNote(org.id, customer, 20000, MAY91); // 200 € netto, POSITIV eingegeben
+
+    const rows = await monthlyRevenue(org.id, { now: NOW91 });
+    const may = rows.find((r) => r.month === "2091-05");
+    // Vorher (Bug): 50000 + 20000 = 70000 (Gutschrift erhoehte den Umsatz). Richtig: mindert.
+    expect(may?.netCents).toBe(50000 - 20000);
+    expect(may?.count).toBe(2);
+
+    const top = await topCustomers(org.id, { now: NOW91 });
+    expect(top.find((t) => t.customerId === customer)).toMatchObject({ netCents: 50000 - 20000, invoiceCount: 2 });
+  });
+
+  it("signedRevenueShareCents ist idempotent fuer bereits negative Domain-Gutschriften", () => {
+    // Eine echte Domain-Gutschrift (createPartialCreditNote/cancelInvoice) traegt bereits
+    // negative Betraege -- -Math.abs(share) darf daran nichts aendern.
+    const negative = { netTotalCents: -20000, grossTotalCents: -23800, payableCents: null, type: "CREDIT_NOTE" };
+    expect(signedRevenueShareCents(negative)).toBe(-20000);
+    const positive = { netTotalCents: 20000, grossTotalCents: 23800, payableCents: null, type: "CREDIT_NOTE" };
+    expect(signedRevenueShareCents(positive)).toBe(-20000);
+    const normalInvoice = { netTotalCents: 20000, grossTotalCents: 23800, payableCents: null, type: "INVOICE" };
+    expect(signedRevenueShareCents(normalInvoice)).toBe(20000);
   });
 });

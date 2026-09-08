@@ -56,7 +56,7 @@ export function DashboardWidgets({
           <div className="text-xs text-slate-400">{summary.overdueInvoices.count} Rechnung(en)</div>
         </Link>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Umsatz laufender Monat</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Nettoumsatz (laufender Monat)</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(summary.revenueThisMonthCents)}</div>
         </div>
         <Link href="/dokumente?status=SENT" className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300">
@@ -92,7 +92,7 @@ export function DashboardWidgets({
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <DonutChart title="Offen / Überfällig / Bezahlt" data={statusDonutData(statuses)} />
+          <DonutChart title="Rechnungsstatus (Anzahl)" data={statusDonutData(statuses)} />
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-5">

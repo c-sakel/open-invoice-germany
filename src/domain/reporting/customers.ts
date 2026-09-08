@@ -4,16 +4,16 @@
  * Aggregation in JS statt DB-spezifischer Funktionen). Nutzt `netShareCents` aus
  * revenue.ts fuer die Netto-Bemessungsgrundlage (Abschlagsketten-Ruling).
  *
- * KEIN manuelles Vorzeichen nach `type` und KEIN Ausschluss von `status: CANCELLED` — aus
- * denselben Gruenden wie in revenue.ts (siehe dortiger Modulkommentar, Fix 1): Gutschriften/
- * Stornos tragen bereits negative Betraege, ein Original bleibt nach Stornierung mit vollem
- * Betrag in seinem eigenen Monat gezaehlt, die Storno-Gutschrift mindert separat den
- * Stornierungsmonat — ueber alle Monate hinweg gleicht sich das fuer den Kunden exakt aus.
- * Kein zweites, eigenes Vorzeichen-/Anteilsverfahren — `topCustomers` summiert `netShareCents`
- * unveraendert, identisch zu `monthlyRevenue`.
+ * KEIN Ausschluss von `status: CANCELLED` — aus denselben Gruenden wie in revenue.ts (siehe
+ * dortiger Modulkommentar): ein Original bleibt nach Stornierung mit vollem Betrag in seinem
+ * eigenen Monat gezaehlt, die Storno-Gutschrift mindert separat den Stornierungsmonat — ueber
+ * alle Monate hinweg gleicht sich das fuer den Kunden exakt aus. Vorzeichen laufen durch
+ * `signedRevenueShareCents` (Fix I2: Normalisierung bei `type === "CREDIT_NOTE"`, siehe
+ * revenue.ts). Kein zweites, eigenes Vorzeichen-/Anteilsverfahren — `topCustomers` summiert
+ * `signedRevenueShareCents` unveraendert, identisch zu `monthlyRevenue`.
  */
 import { dbInternal } from "@/lib/db";
-import { netShareCents } from "./revenue";
+import { signedRevenueShareCents } from "./revenue";
 
 export interface TopCustomer {
   customerId: string;
@@ -53,6 +53,7 @@ export async function topCustomers(orgId: string, opts: TopCustomersOptions = {}
       netTotalCents: true,
       grossTotalCents: true,
       payableCents: true,
+      type: true,
       customer: { select: { name: true } },
     },
   });
@@ -60,7 +61,7 @@ export async function topCustomers(orgId: string, opts: TopCustomersOptions = {}
   const buckets = new Map<string, TopCustomer>();
   for (const r of rows) {
     const existing = buckets.get(r.customerId) ?? { customerId: r.customerId, name: r.customer.name, netCents: 0, invoiceCount: 0 };
-    existing.netCents += netShareCents(r);
+    existing.netCents += signedRevenueShareCents(r);
     existing.invoiceCount += 1;
     buckets.set(r.customerId, existing);
   }

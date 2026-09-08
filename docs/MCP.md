@@ -89,7 +89,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `upsert_customer` | Kunde anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter); gezieltes Ändern per ID: `update_customer` | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
 | `update_customer` | Kunde gezielt per ID/Name patchen (anders als `upsert_customer` **kein** Anlegen; nur angegebene Felder ändern sich) | „Ändere bei Müller GmbH die E-Mail auf buchhaltung@mueller.de." |
 | `archive_customer` | Kunde archivieren (verschwindet aus `list_customers`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere den Kunden Alt-Kunde GmbH." |
-| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Gesamtumsatz/letzte Aktivität) eines einzelnen Kunden | „Wie ist der Kontostand von Müller GmbH?" |
+| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Nettoumsatz/letzte Aktivität) eines einzelnen Kunden | „Wie ist der Kontostand von Müller GmbH?" |
 | `list_customer_addresses` | Alle Adressen eines Kunden auflisten (Typ Rechnung/Lieferung/Sonstige, Standard-Kennzeichen) | „Welche Adressen hat Müller GmbH hinterlegt?" |
 | `upsert_customer_address` | Adresse anlegen (`id` weglassen) oder ändern (`id` angeben); `isDefault: true` setzt sie zum Standard des Typs | „Leg für Müller GmbH eine Lieferadresse an: Hafenstr. 2, 21335 Lüneburg." |
 | `delete_customer_address` | Adresse löschen (bestehende Beleg-Snapshots bleiben unverändert) | „Lösche die alte Lieferadresse von Müller GmbH." |
@@ -239,7 +239,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Umsatz laufender Monat, letzte Belege, offene Angebote | „Wie ist die Lage — was ist offen und überfällig?" |
+| `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Nettoumsatz laufender Monat, letzte Belege, offene Angebote | „Wie ist die Lage — was ist offen und überfällig?" |
 | `get_report` | Auswertung (Phase 12e): `revenue` (Netto-Umsatz je Monat), `top-customers` (nach Netto), `status` (Rechnungen je effektivem Status) oder `payment-behaviour` (Ø Zahlungsdauer, Pünktlichkeitsanteil) — optional je Kunde (`customerId`) und über `months` Monate (Default 12) | „Wie war der Umsatz der letzten sechs Monate, und wer sind meine Top-5-Kunden?" |
 | `get_timeline` | Chronologische Historie eines Belegs (`kind`: Rechnung/Angebot/Lieferschein + `doc`-ID) — Anlage, Änderungen, Festschreibung, Versand, Zahlungen, Mahnungen, Statuswechsel | „Zeig mir die Historie von RE-2026-00342." |
 | `list_notifications` | Benachrichtigungen auflisten (optional nur ungelesen, `limit`) | „Welche ungelesenen Benachrichtigungen habe ich?" |

@@ -12,12 +12,17 @@
  * skaliert `netShareCents` proportional zum Anteil von `payableCents` an `grossTotalCents`
  * (Ruling Task-2, dokumentiert in docs/ARCHITEKTUR.md).
  *
- * KEIN manuelles Vorzeichen nach `type`: Gutschriften/Stornos, die über die Domain-Funktionen
- * entstehen (`createPartialCreditNote`, `cancelInvoice` — src/domain/invoice/credit.ts bzw.
- * cancel.ts), tragen bereits NEGATIVE `netTotalCents`/`grossTotalCents` (betragsspiegelbildlich
- * zum Original). `netShareCents` wird deshalb unverändert (ohne Vorzeichenkorrektur) aufsummiert
- * — ein zusätzliches `type === "CREDIT_NOTE" ? -1 : 1"` würde eine echte Gutschrift zweimal
- * negieren und den Umsatz erhöhen statt mindern (Fix 1, Review-Befund).
+ * Vorzeichen-NORMALISIERUNG statt -DREHUNG (Fix I2, Abschluss-Review): Gutschriften/Stornos,
+ * die über die Domain-Funktionen entstehen (`createPartialCreditNote`, `cancelInvoice` —
+ * src/domain/invoice/credit.ts bzw. cancel.ts), tragen bereits NEGATIVE `netTotalCents`/
+ * `grossTotalCents` (betragsspiegelbildlich zum Original). Der Editor erlaubt aber auch eine
+ * FREISTEHENDE Gutschrift (`type: "CREDIT_NOTE"` in `createDraftInvoice`, kein Vorzeichenzwang
+ * in `createInvoiceSchema.unitNetPriceCents`) — mit der naheliegenden Eingabe positiver
+ * Positionsbeträge. `signedRevenueShareCents` normalisiert deshalb: bei `type === "CREDIT_NOTE"`
+ * wird der Betrag per `-Math.abs(...)` auf negativ gezwungen (idempotent für die bereits
+ * negativen Domain-Gutschriften — `-Math.abs` einer negativen Zahl ändert nichts), NICHT per
+ * `-1`-Multiplikation (das hätte eine echte Gutschrift ein zweites Mal negiert und den
+ * ausgewiesenen Umsatz erhöht statt gemindert — der ursprüngliche Fehler vor Fix 1).
  *
  * Statusfilter schließt NUR `DRAFT` aus (nicht `CANCELLED`): das stornierte Original bleibt
  * unverändert (GoBD) und zählt weiterhin mit vollem Betrag in seinem Ausstellungsmonat; die
@@ -61,10 +66,27 @@ export function netShareCents(inv: { netTotalCents: number; grossTotalCents: num
 }
 
 /**
+ * `netShareCents` plus Vorzeichen-Normalisierung (Fix I2): bei `type === "CREDIT_NOTE"` wird
+ * der Anteil per `-Math.abs(...)` auf negativ gezwungen statt gedreht — idempotent für
+ * Domain-Gutschriften (bereits negativ), korrigiert aber eine freistehend mit positiven
+ * Beträgen angelegte Gutschrift. Gemeinsam genutzt von `monthlyRevenue` und `topCustomers`
+ * (kein zweites Vorzeichenverfahren, §1.4).
+ */
+export function signedRevenueShareCents(inv: {
+  netTotalCents: number;
+  grossTotalCents: number;
+  payableCents: number | null;
+  type: string;
+}): number {
+  const share = netShareCents(inv);
+  return inv.type === "CREDIT_NOTE" ? -Math.abs(share) : share;
+}
+
+/**
  * Umsatzreihe der letzten `months` Kalendermonate (Default 12, inklusive des Monats von
  * `now`), luecklos (auch Monate ohne Beleg als 0-Eintrag). Nur `status !== "DRAFT"` (siehe
- * Modulkommentar zu CANCELLED); Beträge werden sign-korrekt wie gespeichert aufsummiert
- * (kein manuelles Vorzeichen nach `type` — siehe Modulkommentar).
+ * Modulkommentar zu CANCELLED); Beträge laufen durch `signedRevenueShareCents` (Fix I2:
+ * Vorzeichen-Normalisierung bei `type === "CREDIT_NOTE"`, siehe Modulkommentar).
  */
 export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions = {}): Promise<MonthlyRevenuePoint[]> {
   const months = opts.months ?? 12;
@@ -79,7 +101,7 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
       issueDate: { gte: start, lt: end },
       ...(opts.customerId ? { customerId: opts.customerId } : {}),
     },
-    select: { issueDate: true, netTotalCents: true, grossTotalCents: true, payableCents: true },
+    select: { issueDate: true, netTotalCents: true, grossTotalCents: true, payableCents: true, type: true },
   });
 
   const buckets = new Map<string, MonthlyRevenuePoint>();
@@ -90,7 +112,7 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
   for (const r of rows) {
     const bucket = buckets.get(monthKey(r.issueDate));
     if (!bucket) continue;
-    bucket.netCents += netShareCents(r);
+    bucket.netCents += signedRevenueShareCents(r);
     bucket.count += 1;
   }
   return [...buckets.values()];
