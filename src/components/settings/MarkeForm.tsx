@@ -171,8 +171,13 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
               className="text-sm"
             />
             {values.faviconPath && (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>Aktuell: {values.faviconPath.split("/").pop()}</span>
+              // M2 (Fix-Welle 12c): der gespeicherte Pfad ist der SHA-256 des Inhalts,
+              // kein Dateiname (bewusst — der Originalname wird nicht gespeichert); ihn
+              // trotzdem anzuzeigen ueberlief die Spalte. "min-w-0" + "flex-wrap" statt
+              // "truncate", damit "entfernen" auf schmalen Spalten in die naechste Zeile
+              // faellt, statt vom Text verdraengt zu werden.
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="min-w-0">Favicon hinterlegt</span>
                 <button type="button" onClick={() => removeFile("favicon")} className="text-rose-600 hover:underline">
                   entfernen
                 </button>
@@ -197,8 +202,8 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
               className="text-sm"
             />
             {values.appLogoPath && (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>Aktuell: {values.appLogoPath.split("/").pop()}</span>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="min-w-0">Logo hinterlegt</span>
                 <button type="button" onClick={() => removeFile("applogo")} className="text-rose-600 hover:underline">
                   entfernen
                 </button>

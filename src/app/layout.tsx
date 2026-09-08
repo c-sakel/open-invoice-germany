@@ -1,45 +1,24 @@
 import type { Metadata } from "next";
-import { cache } from "react";
 import { headers } from "next/headers";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { AppShell } from "@/components/shell/AppShell";
 import { SlimShell } from "@/components/shell/SlimShell";
-import { getActiveOrg } from "@/lib/org";
 import { unreadCount } from "@/domain/notifications/create";
 import { PUBLIC_NO_NAV_HEADER } from "@/proxy";
 import { dbInternal } from "@/lib/db";
-import { loadBrand, DEFAULT_APP_NAME, DEFAULT_BRAND, type Brand } from "@/domain/settings/brand";
+import { DEFAULT_APP_NAME, DEFAULT_BRAND, getOrgAndBrand, safeBrand } from "@/domain/settings/brand";
 // `resolveJsonModule` ist in tsconfig.json aktiv — der JSON-Import wird beim Build inline
 // gebundelt (kein Laufzeit-Dateizugriff im Docker-Runner noetig). `layout.tsx` ist eine
 // Server-Komponente; die Version wird als Prop an die Client-Komponente `Sidebar` gereicht
 // statt dort erneut importiert zu werden (Abschluss-Review M6).
 import pkg from "@/../package.json";
 
-/**
- * `generateMetadata` und der Layout-Rumpf laufen beide serverseitig fuer JEDE Anfrage —
- * ohne Dedupe laedt `getActiveOrg()` + `loadBrand()` (zwei Prisma-Queries) doppelt.
- * `cache()` dedupliziert pro Request-Renderdurchlauf (React-Doku: "Data Fetching with
- * cache und Server Components") — beide Aufrufer erhalten dasselbe Promise/Ergebnis.
- * `null` statt Wurf im Setup-Zustand (keine Organisation), damit beide Aufrufer denselben
- * try/catch-freien Pfad nutzen koennen.
- */
-const getOrgAndBrand = cache(async (): Promise<{ org: Awaited<ReturnType<typeof getActiveOrg>>; brand: Brand } | null> => {
-  try {
-    const org = await getActiveOrg();
-    const brand = await loadBrand(org.id);
-    return { org, brand };
-  } catch {
-    return null;
-  }
-});
-
-/** Fuer AuthForm (Login-Seite) — dieselbe Selbstheilung wie unten im Rumpf: ohne
- *  Organisation (Setup-Zustand) gelten die Produktvorgaben. */
-export async function safeBrand(): Promise<Brand> {
-  const result = await getOrgAndBrand();
-  return result?.brand ?? DEFAULT_BRAND;
-}
+// M7 (Fix-Welle 12c): `getOrgAndBrand`/`safeBrand` lebten vorher hier und wurden von
+// `login/page.tsx` als Nicht-Next-Export aus einem Layout-Modul importiert (zerbrechlicher
+// Kopplungspunkt, zog `package.json` + die halbe Huellenkette in die Login-Seite). Jetzt in
+// `src/domain/settings/brand.ts` (dort steht bereits `loadBrand`); hier nur re-importiert,
+// damit `generateMetadata`/`RootLayout` unveraendert bleiben.
 
 export async function generateMetadata(): Promise<Metadata> {
   // Phase 12c: der Produktname ist ueberschreibbar (Einstellungen -> Marke). Ohne

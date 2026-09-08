@@ -20,7 +20,7 @@ export type TaxCategory =
 
 export interface TaxLineInput {
   lineNetCents: number;
-  taxRate: number; // Prozent: 19 | 7 | 0
+  taxRate: number; // Prozent, ganzzahlig 0–100 (org-eigene Liste, siehe domain/settings/tax-rates.ts)
   taxCategory: TaxCategory | string;
 }
 

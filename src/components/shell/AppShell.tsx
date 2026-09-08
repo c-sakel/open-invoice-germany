@@ -2,6 +2,7 @@
 import { Suspense, type ReactNode } from "react";
 import type { Brand } from "@/domain/settings/brand";
 import { SOURCE_URL } from "@/domain/settings/brand";
+import { DEFAULT_APP_NAME } from "@/lib/brand-defaults";
 import { CommandPalette } from "./CommandPalette";
 import { ShellProvider } from "./ShellProvider";
 import { Sidebar } from "./Sidebar";
@@ -38,7 +39,11 @@ export function AppShell({ orgName, unreadCount, appVersion, brand, children }: 
           </Suspense>
           <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
           <footer className="mx-auto w-full max-w-6xl px-6 py-6 text-xs text-slate-400">
-            {brand.appName} · powered by OpenInvoice Germany · AGPL-3.0 ·{" "}
+            {/* M1 (Fix-Welle 12c): ohne eigenen Instanznamen zeigte die Fusszeile den
+                Produktnamen doppelt ("OpenInvoice Germany · powered by OpenInvoice
+                Germany · AGPL-3.0") — der fuehrende Teil erscheint nur bei einer
+                tatsaechlich abweichenden Marke. */}
+            {brand.appName !== DEFAULT_APP_NAME && `${brand.appName} · `}powered by OpenInvoice Germany · AGPL-3.0 ·{" "}
             <a href={SOURCE_URL} className="underline hover:text-slate-600">Quellcode</a> · Keine Steuer-/Rechtsberatung — siehe COMPLIANCE.md
           </footer>
         </div>

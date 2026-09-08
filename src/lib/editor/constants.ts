@@ -25,7 +25,11 @@ export const FALLBACK_TAX_RATES: readonly number[] = [19, 7, 0];
 
 export function taxRateOptions(rates: readonly number[]): { value: number; label: string }[] {
   const source = rates.length > 0 ? rates : FALLBACK_TAX_RATES;
-  return [...new Set(source)].sort((a, b) => b - a).map((value) => ({ value, label: `${value}%` }));
+  // M4 (Fix-Welle 12c): `assertAllowedTaxRates` laesst 0 % IMMER zu (Gliederungszeilen,
+  // Nullsatz-Schemata — tax-rates.ts:41) und `LineRow` setzt bei `taxDisabled` den Wert
+  // hart auf 0. Nimmt eine Organisation 0 aus ihrer eigenen Liste heraus, fehlte bislang
+  // die passende <option>, der Browser zeigte dann die erste Option statt 0 an.
+  return [...new Set([...source, 0])].sort((a, b) => b - a).map((value) => ({ value, label: `${value}%` }));
 }
 
 // UN/ECE Rec 20 Einheiten-Codes (Teilmenge, siehe Hinweistext in
