@@ -137,6 +137,13 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   ARCHITEKTUR.md); höhere Logos werden proportional verkleinert. Die Vorschau-Breite
   (Breit/Schmal) liegt im `localStorage` des Browsers und gilt nicht
   geräteübergreifend.
+
+## Marke & Steuersätze (Phase 12c)
+- **Steuersätze sind auf ganze Prozentwerte 0–100 beschränkt; Dezimalsätze (z. B. 5,5 % FR) sind nicht abbildbar, weil alle `taxRate`-Spalten `Int` sind.**
+- **Kundenspezifische Steuersätze gibt es nicht — die Liste gilt org-weit.**
+- **Das Favicon muss ein quadratisches PNG sein; SVG ist bewusst nicht erlaubt (same-origin ausgeliefertes SVG ist ein XSS-Vektor).**
+- **Die AGPL-Herkunftszeile ist nicht abschaltbar.**
+
 ## Kundenkomfort (Phase 8a)
 - **`Customer.language` wird nur gespeichert, nicht ausgewertet.** Das Feld existiert (Default `de`) und ist über die Kundenvorgaben pflegbar, steuert aber weder PDF-Sprache noch E-Mail-Vorlagen — analog zur restigen Software ist derzeit alles ausschließlich auf Deutsch (siehe „Briefpapier, Druckoptionen …" oben).
 - **Gelöschte Kundenfeld-Definitionen lassen ihre Werte im JSON zurück.** `deleteCustomFieldDefinition` entfernt nur die Definition (`CustomFieldDefinition`); bereits gespeicherte Werte in `Customer.customFieldsJson` unter dem betroffenen `key` bleiben unverändert stehen (kein Cleanup-Job). `parseCustomerCustomFields` übergeht solche verwaisten Keys beim Lesen still, `{{customField.<key>}}` löst dafür nicht mehr auf (Platzhalter bleibt leer) — Bestellungen können die Definition jederzeit neu mit demselben `key` anlegen, um wieder Zugriff auf die alten Werte zu bekommen.

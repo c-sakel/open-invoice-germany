@@ -174,6 +174,19 @@ Einstellungen verschmolzen mit einer etwaigen Beleg-Überschreibung) bzw. setzt 
 sonst). `Quote/{id}/print-options` gilt nur für `kind=ANGEBOT` — Auftragsbestätigung/
 Proforma haben keinen eigenen `print-options`-Endpunkt.
 
+`GET`/`PATCH /api/v1/Settings` (Scope `admin`) bündelt drei Fragmente unter je
+einem Schlüssel: `documents` (u. a. `taxRates` — die org-eigene Liste
+freigegebener Steuersätze, 1–10 ganze Prozentwerte 0–100, Default `[19, 7, 0]`,
+Phase 12c), `branding` (u. a. `appName`/`appShortName`/`faviconPath`/
+`appLogoPath` — Marke/White-Label, Phase 12c; `appName`/`appShortName` sind per
+`PATCH` schreibbar, `faviconPath`/`appLogoPath` nur lesbar — Datei-Upload läuft
+ausschließlich über die Session-Route `/api/settings/branding/upload`, nicht
+über `/api/v1`) und `print`. Ein Versuch, eine Rechnung/ein Angebot/einen
+Lieferschein/ein Produkt mit einem Steuersatz zu speichern, der **nicht** in
+`documents.taxRates` steht (und auch nicht bereits auf dem betroffenen Beleg
+gespeichert war), liefert `409 CONFLICT` — dieselbe Regel wie in UI und MCP,
+durchgesetzt in den Domain-Kernen, kein API-eigener Bypass.
+
 ## Webhooks
 
 Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
