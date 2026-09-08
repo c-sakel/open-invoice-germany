@@ -11,6 +11,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { NotFoundError } from "@/domain/errors";
+import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { createFinalInvoiceSchema, type CreateFinalInvoiceInput, type CreateInvoiceInput } from "@/schemas";
 
 export class FinalInvoiceError extends Error {
@@ -103,7 +104,7 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
       })),
     };
 
-    const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now });
+    const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now, inheritedTaxRates: ratesOfLines(quote.lines) });
 
     // Fix-Runde 1 (Koordinator): Seller-/Buyer-/Kontakt-Snapshot der Quelle uebernehmen —
     // Snapshot-Konsistenz Angebot -> Schluss (siehe downpayment.ts).

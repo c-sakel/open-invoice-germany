@@ -32,6 +32,7 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
       recurringInsertPeriodText: true,
       recurringAutoFinalizeDefault: false,
       recurringAutoSendDefault: false,
+      taxRates: [19, 7, 0],
     });
   });
 
