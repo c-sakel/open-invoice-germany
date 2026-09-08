@@ -19,6 +19,10 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
   const [saved, setSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
+  // Fix-Welle 12a, Fix 2: Rohtext waehrend des Tippens, getrennt von `values.logoWidthMm`
+  // (siehe clamped-number-input.ts). `null` = kein aktiver Draft, Feld + Regler zeigen
+  // den committeten Wert.
+  const [logoWidthDraft, setLogoWidthDraft] = useState<string | null>(null);
 
   function setField<K extends keyof BrandingSettingsInput>(key: K, value: BrandingSettingsInput[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -28,6 +32,14 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
     setSaving(true);
     setError(null);
     setSaved(false);
+    // Fix-Welle 12a, Fix 2: vor dem Speichern einen noch nicht per onBlur committeten
+    // Draft nachziehen (z. B. wenn der Button ohne vorherigen Fokuswechsel ausgeloest wird).
+    const payload: BrandingSettingsInput =
+      logoWidthDraft !== null ? { ...values, logoWidthMm: parseClampedNumberInput(logoWidthDraft, 10, 140, values.logoWidthMm) } : values;
+    if (logoWidthDraft !== null) {
+      setValues(payload);
+      setLogoWidthDraft(null);
+    }
     // Fix-Welle (Abschluss-Review, Block 4 "Minor"): try/catch + `finally` — ein
     // Netzwerkfehler (nicht nur ein Nicht-200-Status) liess den Button vorher bis zum
     // Neuladen auf "Speichern…" haengen, weil `setSaving(false)` nie erreicht wurde
@@ -36,7 +48,7 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
       const res = await fetch("/api/settings/branding", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
       const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
       if (!res.ok || !j.settings) {
@@ -120,7 +132,13 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
                   max={140}
                   step={1}
                   value={values.logoWidthMm}
-                  onChange={(e) => setField("logoWidthMm", Number(e.target.value))}
+                  onChange={(e) => {
+                    // Regler liefert immer einen gueltigen Wert (kein Draft noetig) —
+                    // ein evtl. noch offener Draft im Zahlenfeld wird verworfen, damit
+                    // beide Steuerelemente synchron bleiben.
+                    setField("logoWidthMm", Number(e.target.value));
+                    setLogoWidthDraft(null);
+                  }}
                   className="w-56"
                   aria-label="Logobreite in Millimeter"
                 />
@@ -128,8 +146,12 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
                   type="number"
                   min={10}
                   max={140}
-                  value={values.logoWidthMm}
-                  onChange={(e) => setField("logoWidthMm", parseClampedNumberInput(e.target.value, 10, 140))}
+                  value={logoWidthDraft ?? String(values.logoWidthMm)}
+                  onChange={(e) => setLogoWidthDraft(e.target.value)}
+                  onBlur={() => {
+                    setValues((v) => ({ ...v, logoWidthMm: parseClampedNumberInput(logoWidthDraft ?? String(v.logoWidthMm), 10, 140, v.logoWidthMm) }));
+                    setLogoWidthDraft(null);
+                  }}
                   className="w-24 rounded border border-slate-300 px-2 py-1"
                 />
               </div>
