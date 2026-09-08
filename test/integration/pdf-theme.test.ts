@@ -12,12 +12,14 @@ import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
 import { renderDunningPdf, type DunningPdfData } from "@/lib/pdf/dunning-pdf";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
-import { parsePdf } from "../helpers/pdf-theme";
+import { parsePdf, testPdfTheme, testPngBuffer } from "../helpers/pdf-theme";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { updateNumberRange } from "@/domain/numbering/ranges";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import type { CreateInvoiceInput } from "@/schemas";
+import { DEFAULT_PRINT_SETTINGS } from "@/domain/settings/print";
+import { DEFAULT_BRANDING_SETTINGS } from "@/domain/settings/branding";
 
 async function makeOrg(overrides: Partial<{ iban: string | null }> = {}) {
   const org = await dbInternal.organization.create({
@@ -527,5 +529,30 @@ describe("PdfTheme — Phase 11b Task 6: Einfrieren des Layouts beim Festschreib
     const draft2 = await createDraftInvoice(orgId, { ...invoiceInput(customer.id) });
     const theme2 = await loadPdfTheme(orgId, draft2.printOptionsJson, "INVOICE");
     expect(theme2.layoutId).toBe("modern");
+  });
+});
+
+describe("PdfTheme — Phase 12a Task 3: GiroCode-Groesse + Logo-Hoehenbegrenzung", () => {
+  it("GiroCode folgt giroSizeMm (Phase 12a): 40 mm rendert auf einer Seite", async () => {
+    const theme = testPdfTheme({ options: { ...DEFAULT_PRINT_SETTINGS, giroSizeMm: 40 } });
+    const parsed = await parsePdf(await renderInvoicePdf(baseInvoiceData(), theme));
+    expect(parsed.text).toContain("GiroCode");
+    expect(parsed.numpages).toBe(1);
+  });
+
+  it("hohes Logo bei logoWidthMm=140 sprengt die Seite nicht (fit auf 35 mm Hoehe)", async () => {
+    const theme = testPdfTheme({ brand: { ...DEFAULT_BRANDING_SETTINGS, logoWidthMm: 140 }, logoBuffer: testPngBuffer(60, 180) });
+    const parsed = await parsePdf(await renderInvoicePdf(baseInvoiceData(), theme));
+    expect(parsed.numpages).toBe(1);
+    expect(parsed.text).toContain("Kunde AG"); // Adressblock nicht vom Logo verdeckt
+  });
+
+  it("modern und klassik skalieren das Logo mit logoWidthMm", async () => {
+    for (const layoutId of ["modern", "klassik"] as const) {
+      const theme = testPdfTheme({ brand: { ...DEFAULT_BRANDING_SETTINGS, logoWidthMm: 120 }, logoBuffer: testPngBuffer(300, 100), layoutId });
+      const parsed = await parsePdf(await renderInvoicePdf(baseInvoiceData(), theme));
+      expect(parsed.numpages).toBe(1);
+      expect(parsed.text).toContain("Kunde AG");
+    }
   });
 });

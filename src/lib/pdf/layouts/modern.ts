@@ -19,7 +19,9 @@ export const modernLayout: PdfLayout = {
     const barH = HEADER_BAR_H;
     doc.rect(0, 0, doc.page.width, margins.top + barH).fill(primary);
     if (theme.logoBuffer) {
-      doc.image(theme.logoBuffer, left, (margins.top + barH - mm(12)) / 2, { height: mm(12) });
+      const logoW = mm(theme.brand.logoWidthMm);
+      const logoH = barH - mm(4);
+      doc.image(theme.logoBuffer, left, (margins.top + barH - logoH) / 2, { fit: [logoW, logoH] });
     } else {
       doc.font("Helvetica-Bold").fontSize(base + 6).fillColor("#fff").text(input.senderFallback.split(" · ")[0] ?? "", left, margins.top + 16);
     }

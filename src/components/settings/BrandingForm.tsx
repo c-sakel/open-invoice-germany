@@ -112,12 +112,27 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
             {uploading === "logo" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-600">Breite im PDF (mm)</span>
-              <input
-                type="number"
-                value={values.logoWidthMm}
-                onChange={(e) => setField("logoWidthMm", Number(e.target.value))}
-                className="w-24 rounded border border-slate-300 px-2 py-1"
-              />
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={10}
+                  max={140}
+                  step={1}
+                  value={values.logoWidthMm}
+                  onChange={(e) => setField("logoWidthMm", Number(e.target.value))}
+                  className="w-56"
+                  aria-label="Logobreite in Millimeter"
+                />
+                <input
+                  type="number"
+                  min={10}
+                  max={140}
+                  value={values.logoWidthMm}
+                  onChange={(e) => setField("logoWidthMm", Number(e.target.value))}
+                  className="w-24 rounded border border-slate-300 px-2 py-1"
+                />
+              </div>
+              <span className="text-xs text-slate-400">10–140 mm; die Höhe wird auf 35 mm begrenzt, damit hohe Logos nicht in den Adressblock laufen.</span>
             </label>
           </div>
 

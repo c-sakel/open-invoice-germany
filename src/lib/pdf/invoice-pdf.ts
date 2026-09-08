@@ -65,7 +65,6 @@ const DOWNPAYMENT_TAX_HINT =
 // Phase 7 (§37) — GiroCode nur für die Rechnungs-Familie, nie für Gutschrift oder
 // Geschäftsdokumente (Angebot/AB/Proforma erzeugen ohnehin kein giroAmountCents).
 const GIRO_ELIGIBLE_TYPES = new Set(["INVOICE", "PARTIAL", "DOWNPAYMENT", "FINAL", "CORRECTION"]);
-const GIRO_SIZE_MM = 30;
 
 function deDate(date: Date | null | undefined): string {
   if (!date) return "—";
@@ -460,11 +459,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
         amountCents: data.giroAmountCents!,
         remittance: data.number,
       });
-      const giroSize = mm(GIRO_SIZE_MM);
+      const giroSizeMm = theme.options.giroSizeMm;
+      const giroSize = mm(giroSizeMm);
       const captionH = base - 3 + 6;
       y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH);
       const giroY = y + 8;
-      await renderGiroCode(doc, payload, { x: left, y: giroY, sizeMm: GIRO_SIZE_MM });
+      await renderGiroCode(doc, payload, { x: left, y: giroY, sizeMm: giroSizeMm });
       doc.fontSize(base - 3).fillColor("#666");
       doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", left, giroY + giroSize + 3, { width: giroSize, align: "center" });
       y = giroY + giroSize + 3 + captionH;
@@ -538,7 +538,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // haben (kein `doc.page.height`-Unterschied je Seite in diesem Renderer).
   const footY = doc.page.height - margins.bottom - layout.footerHeight;
 
-  // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, 30 mm Kantenlaenge,
+  // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, Kantenlaenge aus
+  // `theme.options.giroSizeMm` (Phase 12a, vorher fest 30 mm),
   // NUR auf der zuletzt gerenderten Seite (`doc.page` zeigt hier noch auf sie, vor dem
   // `switchToPage` in der Schleife unten). Fix-Welle: NUR fuer `giroPlacement !==
   // "below-totals"` — der `below-totals`-Zweig hat weiter oben (vor Fusstext/notes/
@@ -552,13 +553,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
         amountCents: data.giroAmountCents!,
         remittance: data.number,
       });
-      const giroSize = mm(GIRO_SIZE_MM);
+      const giroSizeMm = theme.options.giroSizeMm;
+      const giroSize = mm(giroSizeMm);
       const giroX = right - giroSize;
       // Fix-Runde 1 (Koordinator, Punkt 8): 14 -> 22pt Abstand zu `footY` — bei Layouts mit
       // `footerHeight` > 32 (z. B. `schlicht`/`standard` seit der AUTO-Fusszeile, 44/46pt)
       // kollidierte die GiroCode-Bildunterschrift sonst mit der vierten Fusszeilen-Spalte.
       const giroY = footY - giroSize - 22;
-      await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: GIRO_SIZE_MM });
+      await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: giroSizeMm });
       // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(7)`.
       doc.fontSize(base - 3).fillColor("#666");
       doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });

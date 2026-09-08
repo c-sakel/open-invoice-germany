@@ -18,7 +18,7 @@ export const footerModeSchema = z.enum(["AUTO", "CUSTOM"]);
 
 // ── Druckoptionen (§36) ─────────────────────────────────────────────────────
 
-// Die zehn Druckoptionen-Schalter OHNE Default — Basis fuer printSettingsInputSchema
+// Die zehn Schalter + die GiroCode-Groesse OHNE Default — Basis fuer printSettingsInputSchema
 // (globale Einstellungen, jedes Feld bekommt unten einen Default) UND
 // printOptionsOverrideSchema (Beleg-Ueberschreibung, jedes Feld bleibt optional OHNE
 // Default — `.partial()` auf einem Schema mit `.default()` wuerde die Defaults beim
@@ -34,6 +34,8 @@ const printOptionFields = {
   showLineTotals: z.boolean(),
   showSenderLine: z.boolean(),
   showGiroCode: z.boolean(),
+  // Phase 12a — unter 15 mm ist der EPC-QR nicht mehr zuverlaessig scanbar.
+  giroSizeMm: z.coerce.number().int().min(15).max(40),
 };
 
 const PRINT_OPTION_DEFAULTS = {
@@ -47,9 +49,10 @@ const PRINT_OPTION_DEFAULTS = {
   showLineTotals: true,
   showSenderLine: true,
   showGiroCode: true,
+  giroSizeMm: 22,
 } as const;
 
-/** Die zehn globalen Druckoptionen-Schalter, mit Defaults (PrintSettings-Modell). */
+/** Die zehn globalen Druckoptionen-Schalter plus GiroCode-Groesse, mit Defaults (PrintSettings-Modell). */
 export const printSettingsInputSchema = z.object({
   showFooter: printOptionFields.showFooter.default(PRINT_OPTION_DEFAULTS.showFooter),
   showPageNumbers: printOptionFields.showPageNumbers.default(PRINT_OPTION_DEFAULTS.showPageNumbers),
@@ -61,8 +64,12 @@ export const printSettingsInputSchema = z.object({
   showLineTotals: printOptionFields.showLineTotals.default(PRINT_OPTION_DEFAULTS.showLineTotals),
   showSenderLine: printOptionFields.showSenderLine.default(PRINT_OPTION_DEFAULTS.showSenderLine),
   showGiroCode: printOptionFields.showGiroCode.default(PRINT_OPTION_DEFAULTS.showGiroCode),
+  giroSizeMm: printOptionFields.giroSizeMm.default(PRINT_OPTION_DEFAULTS.giroSizeMm),
 });
 export type PrintSettingsInput = z.infer<typeof printSettingsInputSchema>;
+/** Die zehn booleschen Druckoptionen-Schalter ohne giroSizeMm — fuer Formulare, deren
+ *  Raster (LABELS/FIELDS) nur Checkboxen rendert (PrintSettingsForm, PrintOptionsPanel). */
+export type PrintBooleanKey = Exclude<keyof PrintSettingsInput, "giroSizeMm">;
 
 /**
  * Beleg-individuelle Ueberschreibung der globalen PrintSettings (Invoice/Quote/
@@ -79,7 +86,7 @@ const brandingText500 = z.string().trim().max(500);
 
 export const brandingSettingsInputSchema = z.object({
   logoPath: z.string().nullable().default(null),
-  logoWidthMm: z.coerce.number().int().min(10).max(100).default(40),
+  logoWidthMm: z.coerce.number().int().min(10).max(140).default(40),
   primaryColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "Farbe muss ein Hex-Code im Format #RRGGBB sein")
