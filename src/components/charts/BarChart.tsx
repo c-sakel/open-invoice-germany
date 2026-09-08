@@ -104,7 +104,12 @@ function renderVertical(
 function renderHorizontal(data: ChartDatum[], domainMin: number, domainMax: number, width: number, color?: string) {
   const rowHeight = 34;
   const padTop = 10;
-  const labelWidth = 110;
+  // Fix 2 (Task-5-Review-Vorlauf): 150 statt 110 — bei 110 ragte die Beschriftung eines
+  // langen Firmennamens ("Beispiel GmbH & Co. KG", 22 Zeichen) bei textAnchor="end" ueber
+  // den linken SVG-Rand (x < 0) hinaus. `truncateName` (chart-data.ts, max 24 Zeichen)
+  // bleibt unveraendert, damit genau dieser Name lesbar bleibt statt weiter gekuerzt zu
+  // werden — siehe die Geometrie-Regression in test/unit/charts.test.tsx.
+  const labelWidth = 150;
   const valueWidth = 90;
   const plotLeft = labelWidth + 10;
   const plotRight = width - valueWidth;

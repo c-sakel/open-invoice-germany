@@ -10,6 +10,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { utcDateOnly } from "@/lib/date-only";
+import { roundHalfUp } from "@/lib/money";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -19,11 +20,6 @@ export interface PaymentBehaviour {
   /** Anteil der bis zum Faelligkeitstag bezahlten Rechnungen (0..1); null ohne Faelligkeitsdatum. */
   onTimeShare: number | null;
   paidCount: number;
-}
-
-/** Kaufmaennisches Runden (0,5 aufwaerts) — hier stets auf nicht-negative Werte angewendet. */
-function roundHalfUp(n: number): number {
-  return Math.round(n);
 }
 
 /**
