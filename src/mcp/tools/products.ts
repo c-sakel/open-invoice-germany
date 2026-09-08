@@ -119,7 +119,7 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         product: z.string().describe("Produkt-ID oder -Name"),
         ...productSchema.partial().omit({ netPriceCents: true, taxRate: true, taxCategory: true }).shape,
         netPriceEuro: z.number().optional(),
-        taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+        taxRatePercent: TaxRate.optional(),
       },
     },
     async (args): Promise<Result> => {

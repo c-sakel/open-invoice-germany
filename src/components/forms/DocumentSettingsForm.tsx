@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { saveDocumentSettingsAction } from "@/app/actions/document-settings";
 import type { ActionResult } from "@/app/actions/result";
 import { SelectField, TextField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
+import { TaxRatesField } from "@/components/settings/TaxRatesField";
 import type { DocumentSettingsInput } from "@/schemas";
 
 export interface PaymentMethodOption {
@@ -88,6 +89,11 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         />
         <CheckboxField label="Zahlungsbedingungs-Text auf dem Beleg anzeigen" name="showPaymentTermsText" defaultChecked={settings.showPaymentTermsText} />
         <CheckboxField label="Neue Rechnungen standardmäßig als E-Rechnung markieren" name="eInvoiceDefault" defaultChecked={settings.eInvoiceDefault} />
+      </section>
+
+      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold text-slate-900">Steuersätze</h2>
+        <TaxRatesField initial={settings.taxRates} />
       </section>
 
       <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">

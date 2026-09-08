@@ -12,7 +12,7 @@
  * Beleg-Rabatt (Kundenkomfort-Facts).
  */
 import { optionalSelectValue } from "@/lib/forms/optional-select";
-import { SCHEME_CATEGORY, SCHEME_NOTICE, type EditorMode } from "./constants";
+import { SCHEME_CATEGORY, SCHEME_NOTICE, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
 import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
@@ -29,7 +29,7 @@ export interface DraftLine {
   quantity: string;
   unit: string;
   price: string;
-  taxRate: 19 | 7 | 0;
+  taxRate: number;
   discountPercent: string;
   discountAmount: string;
   productId?: string | null;
@@ -83,6 +83,14 @@ export interface DraftState {
   lines: DraftLine[];
   grossDisplay: boolean;
   dirty: boolean;
+  /** Phase 12c — die org-eigene Steuersatz-Liste (`DocumentSettings.taxRates`), zum
+   *  Draft-Aufbau eingefroren: `applyProduct` (Reducer kennt die Liste nicht anders) und
+   *  `RecipientBlock`s Uebernahme-Vorschlag (`toDraftLine`, Neuanlage) klemmen neue Werte
+   *  darauf. Bereits gespeicherte Zeilen (`draftFrom…`) werden NICHT geklemmt — ihr Satz
+   *  bleibt sichtbar/aenderbar, auch wenn die Liste ihn inzwischen nicht mehr enthaelt
+   *  (GoBD, §51: ein Beleg verliert seinen Satz nicht, weil die Organisation die Liste
+   *  aendert — spiegelt `assertAllowedTaxRates`s `existing`-Ausnahme). */
+  allowedTaxRates: number[];
 }
 
 // M10 (Abschluss-Review): "set" war bisher `{ field: keyof DraftState; value: unknown }` —
@@ -121,12 +129,15 @@ export type DraftAction =
   | { type: "replace"; state: DraftState }
   | { type: "markSaved" };
 
-/** Positionszeilen tragen im Zahlungs-/Steuersinn nur 19/7/0 — alles andere faellt auf 19 zurueck. */
-export function narrowTaxRate(n: number): 19 | 7 | 0 {
-  return n === 19 || n === 7 || n === 0 ? n : 19;
+/** Phase 12c — haelt einen Satz in der org-eigenen Liste. Unbekannte Werte (z. B. aus einem
+ *  Produktstamm, dessen Satz inzwischen entfernt wurde) fallen auf den hoechsten
+ *  freigegebenen Satz zurueck; Zod/assertAllowedTaxRates entscheiden beim Speichern. */
+export function clampTaxRate(n: number, allowed: readonly number[]): number {
+  const list = allowed.length > 0 ? allowed : FALLBACK_TAX_RATES;
+  return list.includes(n) ? n : Math.max(...list);
 }
 
-function emptyLine(lineType: LineType = "ITEM"): DraftLine {
+function emptyLine(lineType: LineType = "ITEM", allowed: readonly number[] = FALLBACK_TAX_RATES): DraftLine {
   return {
     key: newLineKey(),
     lineType,
@@ -136,7 +147,7 @@ function emptyLine(lineType: LineType = "ITEM"): DraftLine {
     quantity: "1",
     unit: "C62",
     price: "0",
-    taxRate: 19,
+    taxRate: clampTaxRate(19, allowed),
     discountPercent: "0",
     discountAmount: "0",
     productId: null,
@@ -145,6 +156,7 @@ function emptyLine(lineType: LineType = "ITEM"): DraftLine {
 }
 
 export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): DraftState {
+  const allowedTaxRates = defaults?.allowedTaxRates ?? [...FALLBACK_TAX_RATES];
   const base: DraftState = {
     mode,
     id: undefined,
@@ -188,9 +200,10 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     showArticleNumber: true,
     showDescription: true,
     showDeliveryAddress: true,
-    lines: [emptyLine("ITEM")],
+    lines: [emptyLine("ITEM", allowedTaxRates)],
     grossDisplay: false,
     dirty: false,
+    allowedTaxRates,
   };
   return defaults ? { ...base, ...defaults } : base;
 }
@@ -219,13 +232,13 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       const idx = action.after ? state.lines.findIndex((l) => l.key === action.after) : state.lines.length - 1;
       const insertAt = idx === -1 ? state.lines.length : idx + 1;
       const lines = [...state.lines];
-      lines.splice(insertAt, 0, emptyLine(action.lineType));
+      lines.splice(insertAt, 0, emptyLine(action.lineType, state.allowedTaxRates));
       return { ...state, lines, dirty: true };
     }
     case "removeLine": {
       const lines = state.lines.filter((l) => l.key !== action.key);
       // Nie leer: die letzte verbleibende Zeile wird durch eine leere ITEM-Zeile ersetzt.
-      return { ...state, lines: lines.length ? lines : [emptyLine("ITEM")], dirty: true };
+      return { ...state, lines: lines.length ? lines : [emptyLine("ITEM", state.allowedTaxRates)], dirty: true };
     }
     case "moveLine": {
       const from = state.lines.findIndex((l) => l.key === action.key);
@@ -258,7 +271,7 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
             description: takeOverDescription ? action.product.name : l.description,
             price: fromCents(action.product.netPriceCents),
             unit: action.product.unit,
-            taxRate: narrowTaxRate(action.product.taxRate),
+            taxRate: clampTaxRate(action.product.taxRate, state.allowedTaxRates),
             articleNumber: action.product.articleNumber ?? "",
             productId: action.product.id,
           };
@@ -551,6 +564,13 @@ function roundTrip(s: string | undefined, parse: (s: string) => number | null, f
   return n === null ? s : format(n);
 }
 
+// Phase 12c — BEWUSST kein `clampTaxRate` hier: eine bereits gespeicherte Zeile behaelt
+// ihren Satz beim Oeffnen im Editor, auch wenn er nicht (mehr) in der Org-Liste steht
+// (GoBD, §51 — spiegelt `assertAllowedTaxRates`s `existing`-Ausnahme, siehe
+// `DraftState.allowedTaxRates`-Kommentar). `LineRow` zeigt einen solchen Satz als
+// zusaetzliche, als "nicht mehr zulaessig" markierte Option, statt ihn hier stillschweigend
+// auf den hoechsten freigegebenen Satz zu aendern — Speichern ohne Aenderung an der Zeile
+// darf den Satz nicht verschieben.
 function initialLineToDraftLine(l: InitialLineLike): DraftLine {
   return {
     key: newLineKey(),
@@ -561,7 +581,7 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
     quantity: roundTrip(l.quantity, toMilli, fromMilli),
     unit: l.unit || "C62",
     price: roundTrip(l.price, toCents, fromCents),
-    taxRate: narrowTaxRate(l.taxRate),
+    taxRate: l.taxRate,
     discountPercent: roundTrip(l.discountPercent, toPermille, fromPermille),
     discountAmount: roundTrip(l.discountAmount, toCents, fromCents),
     productId: null,
@@ -569,12 +589,13 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
   };
 }
 
-function initialLines(lines: InitialLineLike[] | undefined): DraftLine[] {
-  return lines && lines.length ? lines.map(initialLineToDraftLine) : [emptyLine("ITEM")];
+function initialLines(lines: InitialLineLike[] | undefined, allowedTaxRates: readonly number[]): DraftLine[] {
+  return lines && lines.length ? lines.map(initialLineToDraftLine) : [emptyLine("ITEM", allowedTaxRates)];
 }
 
-export function draftFromInvoice(initial: InvoiceInitialLike): DraftState {
-  const base = emptyDraft("INVOICE");
+export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly number[] = FALLBACK_TAX_RATES): DraftState {
+  const allowedTaxRates = [...taxRates];
+  const base = emptyDraft("INVOICE", { allowedTaxRates });
   return {
     ...base,
     id: initial.id,
@@ -607,13 +628,14 @@ export function draftFromInvoice(initial: InvoiceInitialLike): DraftState {
     skonto1Days: initial.skonto1Days ?? "",
     skonto2Percent: roundTrip(initial.skonto2Percent, toPermille, fromPermille),
     skonto2Days: initial.skonto2Days ?? "",
-    lines: initialLines(initial.lines),
+    lines: initialLines(initial.lines, allowedTaxRates),
     dirty: false,
   };
 }
 
-export function draftFromDocument(initial: DocumentInitialLike): DraftState {
-  const base = emptyDraft("DOCUMENT");
+export function draftFromDocument(initial: DocumentInitialLike, taxRates: readonly number[] = FALLBACK_TAX_RATES): DraftState {
+  const allowedTaxRates = [...taxRates];
+  const base = emptyDraft("DOCUMENT", { allowedTaxRates });
   const kind: DraftState["kind"] =
     initial.kind === "AUFTRAGSBESTAETIGUNG" || initial.kind === "PROFORMA" || initial.kind === "ANGEBOT" ? initial.kind : "ANGEBOT";
   return {
@@ -637,7 +659,7 @@ export function draftFromDocument(initial: DocumentInitialLike): DraftState {
     documentChargePercent: roundTrip(initial.documentChargePercent, toPermille, fromPermille),
     documentChargeAmount: roundTrip(initial.documentChargeAmount, toCents, fromCents),
     documentChargeReason: initial.documentChargeReason ?? "",
-    lines: initialLines(initial.lines),
+    lines: initialLines(initial.lines, allowedTaxRates),
     dirty: false,
   };
 }
