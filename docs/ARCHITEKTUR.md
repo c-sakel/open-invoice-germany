@@ -598,6 +598,9 @@ src/
     email/                  # settings.ts, context.ts, attachments.ts, compose.ts, send.ts (siehe Abschnitt 3)
     api-key/                # create.ts, verify.ts, revoke.ts, list.ts (Phase 10)
     webhook/                # emit.ts, deliver.ts, sign.ts, ssrf.ts, endpoints.ts, actions.ts (Phase 10)
+    api-log/                # settings.ts, write.ts, list.ts, purge.ts, redact.ts — Anfrageprotokoll
+                           # der REST-API (Phase 12d); KEIN ChangeLog-Eintrag (Audit-Ruling K5),
+                           # eigene ApiRequestLog/ApiSettings-Tabellen, Retention im Cleanup-Job
   api/                    # auth.ts (withApi), errors.ts, response.ts, rate-limit.ts, idempotency.ts,
                            # openapi.ts/openapi-zod-init.ts/spec.ts, docs-auth.ts, serializers/ (Phase 10,
                            # siehe Abschnitt 3b)
