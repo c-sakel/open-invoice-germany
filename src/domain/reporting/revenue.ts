@@ -11,6 +11,20 @@
  * S2 fuer `grossTotalCents` behoben hat, siehe src/domain/dashboard/summary.ts). Deshalb
  * skaliert `netShareCents` proportional zum Anteil von `payableCents` an `grossTotalCents`
  * (Ruling Task-2, dokumentiert in docs/ARCHITEKTUR.md).
+ *
+ * KEIN manuelles Vorzeichen nach `type`: Gutschriften/Stornos, die über die Domain-Funktionen
+ * entstehen (`createPartialCreditNote`, `cancelInvoice` — src/domain/invoice/credit.ts bzw.
+ * cancel.ts), tragen bereits NEGATIVE `netTotalCents`/`grossTotalCents` (betragsspiegelbildlich
+ * zum Original). `netShareCents` wird deshalb unverändert (ohne Vorzeichenkorrektur) aufsummiert
+ * — ein zusätzliches `type === "CREDIT_NOTE" ? -1 : 1"` würde eine echte Gutschrift zweimal
+ * negieren und den Umsatz erhöhen statt mindern (Fix 1, Review-Befund).
+ *
+ * Statusfilter schließt NUR `DRAFT` aus (nicht `CANCELLED`): das stornierte Original bleibt
+ * unverändert (GoBD) und zählt weiterhin mit vollem Betrag in seinem Ausstellungsmonat; die
+ * Storno-Gutschrift mindert separat den Monat der Stornierung (`issueDate` der Gutschrift =
+ * Stornozeitpunkt). Über die Zeit gesehen gleichen sich beide genau aus — eine periodengerechte
+ * (accrual) Sicht, kein "Original raus, Storno rein" mit potenziell negativem Netto in einem
+ * einzelnen Monat, falls Original und Storno in unterschiedliche Monate fallen.
  */
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
@@ -48,9 +62,9 @@ export function netShareCents(inv: { netTotalCents: number; grossTotalCents: num
 
 /**
  * Umsatzreihe der letzten `months` Kalendermonate (Default 12, inklusive des Monats von
- * `now`), luecklos (auch Monate ohne Beleg als 0-Eintrag). Nur festgeschriebene Belege
- * (`status` weder DRAFT noch CANCELLED); Gutschriften (`type: CREDIT_NOTE`) gehen mit
- * negativem Vorzeichen ein.
+ * `now`), luecklos (auch Monate ohne Beleg als 0-Eintrag). Nur `status !== "DRAFT"` (siehe
+ * Modulkommentar zu CANCELLED); Beträge werden sign-korrekt wie gespeichert aufsummiert
+ * (kein manuelles Vorzeichen nach `type` — siehe Modulkommentar).
  */
 export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions = {}): Promise<MonthlyRevenuePoint[]> {
   const months = opts.months ?? 12;
@@ -61,11 +75,11 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
   const rows = await dbInternal.invoice.findMany({
     where: {
       orgId,
-      status: { notIn: ["DRAFT", "CANCELLED"] },
+      status: { not: "DRAFT" },
       issueDate: { gte: start, lt: end },
       ...(opts.customerId ? { customerId: opts.customerId } : {}),
     },
-    select: { issueDate: true, type: true, netTotalCents: true, grossTotalCents: true, payableCents: true },
+    select: { issueDate: true, netTotalCents: true, grossTotalCents: true, payableCents: true },
   });
 
   const buckets = new Map<string, MonthlyRevenuePoint>();
@@ -76,8 +90,7 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
   for (const r of rows) {
     const bucket = buckets.get(monthKey(r.issueDate));
     if (!bucket) continue;
-    const sign = r.type === "CREDIT_NOTE" ? -1 : 1;
-    bucket.netCents += sign * netShareCents(r);
+    bucket.netCents += netShareCents(r);
     bucket.count += 1;
   }
   return [...buckets.values()];
