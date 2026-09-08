@@ -182,3 +182,12 @@ describe("BG-14 / BT-80 (Phase 12b)", () => {
     expect(xml.indexOf("<ram:BillingSpecifiedPeriod>")).toBeLessThan(xml.indexOf("<ram:SpecifiedTradePaymentTerms>"));
   });
 });
+
+describe("§ 14b-Aufbewahrungshinweis (Phase 12b, Task 5)", () => {
+  it("§ 14b-Hinweis erscheint als eigener Note in UBL und CII, sonst nicht", () => {
+    const hint = "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).";
+    expect(buildXRechnungUBL({ ...data, consumerRetentionHint: true })).toContain(hint);
+    expect(buildFacturXCII({ ...data, consumerRetentionHint: true })).toContain(hint);
+    expect(buildXRechnungUBL(data)).not.toContain("§ 14b Abs. 1 Satz 5");
+  });
+});

@@ -14,7 +14,7 @@
  * Gebundenes Feld: `headerText` fuer ALLE DREI Modi (Koordinator-Ruling, Fix 1 — ersetzt
  * die urspruengliche Task-4-Annahme, INVOICE/DELIVERY_NOTE kennten kein `headerText` im
  * Payload). Rechnungen unterstuetzen Kopf-/Fusstext tatsaechlich Ende-zu-Ende: Schema
- * (`createInvoiceInputSchema`/`updateInvoiceInputSchema`, `headerText`/`footerText`,
+ * (`createInvoiceSchema`/`updateInvoiceSchema`, `headerText`/`footerText`,
  * max. 5000 Zeichen), `createDraftInvoice` (`src/domain/invoice/create.ts` L159, Auto-
  * Vorbelegung ueber `pickTextTemplate(tx, orgId, "INVOICE", "HEAD")`),
  * `updateDraftInvoice` (`src/domain/invoice/update.ts` L113) sowie der PDF-Mapper.

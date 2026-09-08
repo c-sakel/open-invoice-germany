@@ -18,6 +18,7 @@ import { useId } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
 import { SCHEME_NOTICE } from "@/lib/editor/constants";
+import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 import type { PrintOptionsOverride } from "@/schemas";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
@@ -208,9 +209,33 @@ export function MoreOptions({
           </div>
         )}
 
+        {mode === "INVOICE" && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.consumerRetentionHint}
+              onChange={(e) => set(dispatch, "consumerRetentionHint", e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              <span className="font-medium text-slate-700">Hinweis auf Aufbewahrungspflicht (§ 14b)</span>
+              <span className="block text-xs text-slate-400">Bauleistung an eine Privatperson: „Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren.“</span>
+            </span>
+          </label>
+        )}
+
         <EditorField label="Hinweis / Notiz" hint={notice ? `Pflichthinweis „${notice}“ wird automatisch ergänzt.` : undefined}>
           {(id) => <textarea id={id} className={inputCls} rows={2} value={draft.notes} onChange={(e) => set(dispatch, "notes", e.target.value)} />}
         </EditorField>
+        {notice && !SCHEME_NOTICE_ACCEPTED[draft.taxScheme]?.some((re) => re.test(normalizeNotice(draft.notes))) && (
+          <button
+            type="button"
+            onClick={() => set(dispatch, "notes", draft.notes ? `${notice} — ${draft.notes}` : notice)}
+            className="text-xs text-indigo-600 hover:underline"
+          >
+            Pflichthinweis einfügen
+          </button>
+        )}
 
         <EditorField
           label="Interne Notiz"

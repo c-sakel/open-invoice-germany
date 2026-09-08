@@ -357,6 +357,9 @@ const invoiceHeaderFields = {
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   internalNotes: z.string().optional(), // nur intern, nie im Beleg
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
+   *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
+  consumerRetentionHint: z.boolean().optional(),
   ...documentAdjustmentFields,
   ...skontoFields,
 };

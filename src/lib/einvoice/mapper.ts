@@ -81,6 +81,9 @@ export interface MapInput {
   // Phase 8a (§30): Snapshot des gewaehlten Ansprechpartners; NULL = kein Ansprechpartner
   // gewaehlt (oder Alt-Beleg vor Phase 8a) -> {{contact.*}} bleibt leer.
   contactSnapshotJson?: string | null;
+  // Phase 12b — § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG. Fehlt das Feld (Alt-Belege
+  // vor Phase 12b), wird false angenommen -> kein Hinweis, byte-identisch zum Bestand.
+  consumerRetentionHint?: boolean;
   id?: string;
   org: {
     legalName: string;
@@ -367,5 +370,6 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     sourceLabel: invoice.sourceLabel ?? null,
     headerText,
     footerText,
+    consumerRetentionHint: invoice.consumerRetentionHint ?? false,
   };
 }

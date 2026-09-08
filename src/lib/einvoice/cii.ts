@@ -9,6 +9,7 @@ import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText } from "./exemption";
+import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -122,6 +123,9 @@ export function buildFacturXCII(data: EInvoiceData): string {
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
   // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
   if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();
+  // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
+  // IncludedNote-Element (mehrfach zulaessig), Phase 12b Task 5.
+  if (data.consumerRetentionHint) doc.ele("ram:IncludedNote").ele("ram:Content").txt(CONSUMER_RETENTION_HINT).up().up();
   doc.up();
 
   const tx = root.ele("rsm:SupplyChainTradeTransaction");

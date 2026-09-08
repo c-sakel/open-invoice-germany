@@ -162,6 +162,16 @@ export interface EInvoiceData {
    * `loadEInvoiceData` gesetzt (Rechnungen); Geschäftsdokumente (Angebot/AB/Proforma)
    * zeigen ohnehin nie einen GiroCode. */
   giroAmountCents?: number | null;
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Hinweis auf die zweijaehrige
+   * Aufbewahrungspflicht des privaten Leistungsempfaengers bei Bauleistungen am
+   * Grundstueck (Phase 12b, Task 5). Geht als eigener Note/IncludedNote ins XML UND
+   * ins PDF, wenn gesetzt. */
+  consumerRetentionHint?: boolean;
+  /** Phase 12b (COMPLIANCE.md § 11) — unterscheidet die zwei Wege, auf denen ein
+   * CREDIT_NOTE entsteht: Vollstorno (`cancel.ts`) vs. Teilgutschrift/Korrektur
+   * (`credit.ts`). Nur von `loadEInvoiceData` gesetzt, wenn ein Original aufloesbar
+   * ist; steuert ausschliesslich den PDF-Titel ("Stornorechnung"/"Rechnungskorrektur"). */
+  creditNoteKind?: "STORNO" | "KORREKTUR";
 }
 
 /** Phase 5 (§14 Abs. 5 Satz 2 UStG) — Snapshot einer auf einer Schlussrechnung

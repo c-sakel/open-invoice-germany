@@ -11,6 +11,7 @@ import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText } from "./exemption";
+import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -174,6 +175,9 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
   // Freitext-Hinweis, statt ihn zu ersetzen.
   if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions)).up();
+  // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
+  // Note-Element (mehrere cbc:Note sind laut UBL-XSD zulaessig), Phase 12b Task 5.
+  if (data.consumerRetentionHint) root.ele("cbc:Note").txt(CONSUMER_RETENTION_HINT).up();
   root.ele("cbc:DocumentCurrencyCode").txt(cur).up();
   // XRechnung: BT-10 Buyer reference Pflicht (Leitweg-ID im B2G); Fallback Belegnummer
   root.ele("cbc:BuyerReference").txt(data.buyerReference || data.number).up();
