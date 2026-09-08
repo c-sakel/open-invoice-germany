@@ -24,7 +24,7 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 `id` · `orgId` · `type` (BUSINESS | CONSUMER) — steuert §286-Verzugslogik, 40-€-Pauschale, B2B-E-Rechnungspflicht · `name` · `address` · `vatId?` · `vatIdValidatedAt?` (VIES/§18e) · `countryCode` · `leitwegId?` (B2G, BT-10) · `peppolId?` · `defaultPaymentTermsDays` (Default 14) · `isArchived` (Soft-Delete, **kein** Hard-Delete bei Belegbezug)
 
 **Product (Produkt/Leistung)** — Katalog, frei editierbar (kein Beleg)
-`id` · `orgId` · `name` · `description` · `unit` (EN-16931 UN/ECE Rec 20, z.B. `C62`, `HUR`) · `netPriceCents` (Integer-Cent, kein Decimal) · `taxRate` (Integer-Prozent: 19/7/0) · `taxCategory` (S | AE | K | G | E | Z — EN-16931 UNTDID 5305) · `differential` (bool, §25a)
+`id` · `orgId` · `name` · `description` · `unit` (EN-16931 UN/ECE Rec 20, z.B. `C62`, `HUR`) · `netPriceCents` (Integer-Cent, kein Decimal) · `taxRate` (Integer-Prozent 0–100 — Phase 12c: keine feste `19|7|0`-Union mehr, sondern die org-eigene Steuersatz-Liste aus `Einstellungen → Belege`, siehe „Steuersätze" unten) · `taxCategory` (S | AE | K | G | E | Z — EN-16931 UNTDID 5305) · `differential` (bool, §25a)
 
 **NumberRange (Nummernkreis)** — eigene Tabelle, transaktionaler Zähler
 `id` · `orgId` · `docType` (QUOTE | INVOICE | CREDIT_NOTE | DUNNING) · `prefix` · `pattern` (z.B. `RE-{YYYY}-{SEQ:5}`) · `year?` (für jahresbasierte Kreise) · `currentValue` (Int) · `@@unique([orgId, docType, year])`
@@ -572,7 +572,10 @@ src/
     changelog.ts          # Hash-Chain
     numbering.ts
     numbering/             # ranges.ts (Nummernkreise ueber Rechnungen hinaus, Kunden-/Artikelnummern, Phase 7)
-    settings/               # print.ts, branding.ts, theme.ts, preview.ts (Phase 7)
+    settings/               # print.ts, branding.ts, theme.ts, preview.ts (Phase 7), brand.ts
+                           # (aufgeloeste Marke appName/appShortName/hasAppLogo + SOURCE_URL,
+                           # Phase 12c), tax-rates.ts (assertAllowedTaxRates — Durchsetzung der
+                           # org-eigenen Steuersatz-Liste in den Domain-Kernen, Phase 12c)
     snapshot.ts           # Käufer-/Verkäufer-Snapshot (Phase 0), + Kontakt-Snapshot (Phase 8a)
     customer/               # addresses.ts, contacts.ts, custom-fields.ts, defaults.ts (Phase 8a),
                            # overview.ts (Kundendetailseite, Phase 8b)

@@ -36,6 +36,8 @@
 15. [UMSETZUNGS-MATRIX (Software-Pflichten)](#15-umsetzungs-matrix--software-pflichten)
 16. [Offene rechtliche Fragen (mit Steuerberater klären)](#16-offene-rechtliche-fragen--vor-produktivnutzung-mit-steuerberater-klären)
 17. [Quellenverzeichnis](#17-quellenverzeichnis)
+18. [REST-API & Webhooks — Audit-Actor, GoBD-Bindung, Datenschutz](#18-rest-api--webhooks-phase-10--audit-actor-gobd-bindung-datenschutz)
+19. [AGPL-3.0 — Lizenzpflichten dieser Software](#19-agpl-30--lizenzpflichten-dieser-software-13-agpl-30-phase-12c)
 
 ---
 
@@ -1017,4 +1019,49 @@ Wiederherstellung gültiger Bearer-Token. Widerruf ist unveränderlich
 
 ---
 
-*Ende COMPLIANCE.md — Stand 2026-09-04. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
+## 19. AGPL-3.0 — Lizenzpflichten dieser Software (§13 AGPL-3.0, Phase 12c)
+
+### § 13 AGPL-3.0 — Remote Network Interaction
+Diese Software ist unter der **GNU Affero General Public License v3.0**
+lizenziert (`LICENSE`, siehe auch `docs/ARCHITEKTUR.md` Abschnitt 4). Deren
+**§ 13 "Remote Network Interaction; Use with the GNU General Public
+License"** verpflichtet jeden, der eine modifizierte Version dieser Software
+per Netzwerk betreibt (z. B. als gehostete SaaS), jedem darüber
+interagierenden Nutzer eine Möglichkeit zu bieten, den zugehörigen
+(modifizierten) Quellcode kostenlos über einen Netzwerkserver zu beziehen —
+üblicherweise ein sichtbarer Link im Produkt selbst. Genau das ist der Hebel,
+mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
+
+### Umsetzung dieser Software
+- **Produktname überschreibbar**: Der angezeigte Instanzname (`appName`) und
+  das Kürzel (`appShortName`), sichtbar in Seitenleiste, Kopfzeile und
+  Browser-Tab, sind unter `Einstellungen → Marke` je Organisation
+  überschreibbar (Phase 12c, White-Label — `src/domain/settings/brand.ts`,
+  `BrandingSettings.appName`/`.appShortName`). Ohne eigenen Eintrag gilt die
+  Produktvorgabe „OpenInvoice Germany" (Kürzel „OI",
+  `src/lib/brand-defaults.ts`).
+- **Herkunftsangabe + Quellcode-Link bleiben fest**: Unabhängig vom
+  eingestellten `appName` zeigt die Fußzeile beider App-Hüllen
+  (`AppShell`/`SlimShell`, `src/components/shell/`) zusätzlich **immer** die
+  Zeile „*<Instanzname> · powered by OpenInvoice Germany · AGPL-3.0 ·
+  Quellcode*" mit einem funktionierenden Link auf den Quellcode. Diese Zeile
+  ist **nicht** Teil von `BrandingSettings`/`Brand` und daher über keine
+  Einstellung, kein API-Feld und kein MCP-Tool abschaltbar — sie ist in
+  beiden Hüllen fest verdrahtet (Testfall:
+  `test/integration/brand-shell.test.tsx`, „die AGPL-Herkunftszeile bleibt
+  auch bei gesetztem appName sichtbar"). Ein White-Label-Produktname macht
+  die Software also **nicht** anonym — die Herkunft und der Lizenztext
+  bleiben für jeden Nutzer sichtbar.
+- **Quelle konfigurierbar über `SOURCE_URL`**: Der Quellcode-Link zeigt per
+  Vorgabe auf das öffentliche Upstream-Repository
+  (`https://github.com/automationsmanufaktur-labs/open-invoice-germany`).
+  Wer diese Software **modifiziert** und per Netzwerk betreibt, muss nach
+  § 13 AGPL-3.0 den **eigenen, modifizierten** Quellcode anbieten — dafür ist
+  die Umgebungsvariable `SOURCE_URL` (`.env`, siehe `.env.example`) gedacht:
+  sie muss auf das öffentlich erreichbare Repository mit dem tatsächlich
+  laufenden (Fork-)Stand zeigen, nicht auf das unveränderte Upstream-Original,
+  sobald eigene Änderungen live sind.
+
+---
+
+*Ende COMPLIANCE.md — Stand 2026-09-08. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
