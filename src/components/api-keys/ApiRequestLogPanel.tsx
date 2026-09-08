@@ -23,7 +23,7 @@ interface ApiSettings {
 }
 
 const PRIVACY_NOTE =
-  'Standardmäßig aus. Schon im Kopfdaten-Modus werden Pfad (inkl. Query-String), IP-Adresse und User-Agent gespeichert — verdächtige Query-Parameter werden dabei geschwärzt. "Bodies mitschreiben" kürzt zusätzlich auf 2 KB; Felder mit Namen wie token, secret, password, apiKey, iban, bic oder email werden vor dem Speichern geschwärzt. Antwort-Bodies werden nur bei Fehlern (Status ≥ 400) gespeichert. Der Authorization-Header wird nie gespeichert.';
+  'Standardmäßig aus. Schon im Kopfdaten-Modus werden Pfad (inkl. Query-String), IP-Adresse und User-Agent gespeichert — Query-Parameter mit Namen wie token, secret, password, apiKey, iban, bic oder email werden dabei geschwärzt. "Bodies mitschreiben" kürzt zusätzlich auf 2 KB; in Bodies werden Felder mit Namen wie token, secret, password, apiKey, iban oder bic geschwärzt (E-Mail-Adressen in Bodies bleiben lesbar). Antwort-Bodies werden nur bei Fehlern (Status ≥ 400) gespeichert. Der Authorization-Header wird nie gespeichert.';
 
 interface NumberFieldProps {
   label: string;
