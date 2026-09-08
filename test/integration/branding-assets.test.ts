@@ -48,11 +48,13 @@ describe("Branding-Upload: favicon/applogo", () => {
 });
 
 describe("Oeffentliche Auslieferung", () => {
-  it("GET /api/branding/icon liefert das hochgeladene Favicon mit Cache-Header", async () => {
+  it("GET /api/branding/icon liefert das hochgeladene Favicon mit Cache-Header und ETag", async () => {
     const res = await iconGet();
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
     expect(res.headers.get("cache-control")).toContain("max-age=300");
+    expect(res.headers.get("cache-control")).toContain("must-revalidate");
+    expect(res.headers.get("etag")).toBeTruthy();
   });
 
   it("GET /api/branding/appLogo ohne Upload -> 404 (Huelle zeigt dann das Kuerzel)", async () => {
@@ -62,5 +64,28 @@ describe("Oeffentliche Auslieferung", () => {
 
   it("/api/branding ist proxy-oeffentlich", () => {
     expect(PUBLIC_PREFIXES).toContain("/api/branding");
+  });
+});
+
+describe("Pfad-Containment (Fix-Welle Fix 1 — Verteidigung in der Tiefe)", () => {
+  // Ueber die drei Schreibpfade (PUT, PATCH, MCP) ist ein solcher Wert seit Fix 1 nicht
+  // mehr erreichbar — dieser Test schreibt ihn deshalb DIREKT in die DB, um zu pruefen,
+  // dass die Ausliefer-Routen selbst bei einem manipulierten storagePath niemals eine
+  // Datei ausserhalb von ATTACHMENTS_DIR lesen.
+  const TRAVERSAL = "../../../../../../etc/passwd";
+
+  it("faviconPath mit Pfad-Traversal -> Fallback-Icon, KEIN Dateizugriff ausserhalb ATTACHMENTS_DIR", async () => {
+    await dbInternal.brandingSettings.update({ where: { orgId }, data: { faviconPath: TRAVERSAL } });
+    const res = await iconGet();
+    expect(res.status).toBe(200);
+    // "image/x-icon" ist der Fallback-Typ (mitgeliefertes favicon.ico) — ein Treffer
+    // beweist, dass die Route den traversierten Pfad verworfen und NICHT gelesen hat.
+    expect(res.headers.get("content-type")).toBe("image/x-icon");
+  });
+
+  it("appLogoPath mit Pfad-Traversal -> 404, KEIN Dateizugriff ausserhalb ATTACHMENTS_DIR", async () => {
+    await dbInternal.brandingSettings.update({ where: { orgId }, data: { appLogoPath: TRAVERSAL } });
+    const res = await logoGet();
+    expect(res.status).toBe(404);
   });
 });

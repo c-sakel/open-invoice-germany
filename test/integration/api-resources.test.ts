@@ -828,6 +828,35 @@ describe("/api/v1/Settings", () => {
     expect(branding.footerLeft).toBe("USt-IdNr. DE123");
     expect(branding.marginTopMm).toBe(30);
   });
+
+  // Fix-Welle (Fix 1): faviconPath/appLogoPath (wie logoPath/backgroundPath) sind NIE
+  // per API schreibbar — nur die Upload-Route setzt sie. `.omit(...)` im Patch-Schema
+  // (src/app/api/v1/Settings/route.ts) verwirft den Wert bereits beim Parsen.
+  it("Patch ignoriert mitgeschickte Datei-Pfade (favicon/appLogo/logo/background)", async () => {
+    const before = (await json(await SettingsGet(req("http://x/api/v1/Settings", { token })))).data.branding;
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", {
+        method: "PATCH",
+        token,
+        body: {
+          branding: {
+            faviconPath: "boesartig/pfad.png",
+            appLogoPath: "boesartig/pfad2.png",
+            logoPath: "boesartig/pfad3.png",
+            backgroundPath: "boesartig/pfad4.png",
+            fontSizePt: 12,
+          },
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const branding = (await json(res)).data.branding;
+    expect(branding.faviconPath).toBe(before.faviconPath);
+    expect(branding.appLogoPath).toBe(before.appLogoPath);
+    expect(branding.logoPath).toBe(before.logoPath);
+    expect(branding.backgroundPath).toBe(before.backgroundPath);
+    expect(branding.fontSizePt).toBe(12);
+  });
 });
 
 // ── ApiKey ────────────────────────────────────────────────────────────────────
