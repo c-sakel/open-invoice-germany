@@ -8,7 +8,8 @@ import { NotFoundError } from "@/domain/errors";
 import { listInvoices, type InvoiceListRow } from "@/domain/invoice/list";
 import { listQuotes, listDeliveryNotes, listRecurring, type QuoteListRow, type DeliveryNoteListRow, type RecurringListRow } from "@/domain/document/list";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
-import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
+import { openAmountCents } from "@/domain/invoice/amounts";
+import { signedRevenueShareCents } from "@/domain/reporting/revenue";
 
 export interface CustomerOverviewKpis {
   openCents: number;
@@ -51,7 +52,17 @@ export async function customerOverview(orgId: string, customerId: string, now: D
   // schlanke Aggregations-Query statt listInvoices ohne limit zu missbrauchen.
   const allInvoices = await dbInternal.invoice.findMany({
     where: { orgId, customerId },
-    select: { status: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true, updatedAt: true },
+    select: {
+      status: true,
+      dueDate: true,
+      issueDate: true,
+      grossTotalCents: true,
+      netTotalCents: true,
+      paidAmountCents: true,
+      payableCents: true,
+      type: true,
+      updatedAt: true,
+    },
   });
 
   let openCents = 0;
@@ -60,10 +71,15 @@ export async function customerOverview(orgId: string, customerId: string, now: D
   let lastActivityAt: Date | null = null;
 
   for (const inv of allInvoices) {
-    // Fix-Welle (S2): payableBaseCents statt grossTotalCents — sonst zaehlt eine
-    // Abschlagskette (§14) den Abschlag doppelt (siehe dashboard/summary.ts).
-    if (inv.status !== "DRAFT" && inv.status !== "CANCELLED") {
-      totalRevenueCents += payableBaseCents(inv);
+    // Fix I3 (Abschluss-Review): "Nettoumsatz" — dieselbe Definition wie die Umsatzreihe/
+    // -diagramme (src/domain/reporting/revenue.ts), reuse statt Parallel-Summe (§1.4):
+    // `signedRevenueShareCents` (netto, Vorzeichen-normalisiert) statt `payableBaseCents`
+    // (brutto), nur `status !== "DRAFT"` statt zusaetzlich `CANCELLED` auszuschliessen —
+    // vorher warf der Filter das stornierte Original raus, behielt aber die Storno-
+    // Gutschrift (status FINALIZED) mit ihrem negativen Betrag, was die Kachel zu niedrig
+    // auswies (Review-Befund, Screenshot 12e-03).
+    if (inv.status !== "DRAFT") {
+      totalRevenueCents += signedRevenueShareCents(inv);
     }
     if (["FINALIZED", "SENT", "PARTIALLY_PAID"].includes(inv.status)) {
       const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);

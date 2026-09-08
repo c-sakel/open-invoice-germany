@@ -139,6 +139,53 @@ describe("get_dashboard", () => {
   });
 });
 
+describe("get_report", () => {
+  it("liefert dieselbe Form wie runReport/REST — revenue mit 12 Monatspunkten", async () => {
+    const res = await callTool("get_report", { type: "revenue" });
+    expect(res.isError).toBeFalsy();
+    const j = JSON.parse(text(res)) as { objectName: string; type: string; rows: unknown[] };
+    expect(j.objectName).toBe("Report");
+    expect(j.type).toBe("revenue");
+    expect(j.rows).toHaveLength(12);
+  });
+
+  it("liefert eine Fehlermeldung bei ungueltigem type", async () => {
+    const res = await callTool("get_report", { type: "nichtvorhanden" });
+    expect(res.isError).toBe(true);
+  });
+
+  it("Fix M7: `customer` (Name statt customerId) wird ueber resolveCustomer aufgeloest", async () => {
+    const res = await callTool("get_report", { type: "revenue", customer: customerName });
+    expect(res.isError).toBeFalsy();
+    const j = JSON.parse(text(res)) as { type: string; rows: unknown[] };
+    expect(j.type).toBe("revenue");
+    expect(j.rows).toHaveLength(12);
+  });
+
+  it("Fix M7: unbekannter `customer` liefert eine Fehlermeldung statt eines generischen Fehlers", async () => {
+    const res = await callTool("get_report", { type: "revenue", customer: "Nicht existent XYZ" });
+    expect(res.isError).toBe(true);
+  });
+
+  // Fix M8 (Fix 2, Koordinator-Ruling): ein beim gewaehlten type nicht anwendbarer
+  // Parameter wird abgelehnt — mit lesbarem Fehlertext (nicht dem generischen
+  // failUnknown-Fallback "Unerwarteter Fehler — Details im Serverlog.").
+  it("Fix M8 (Fix 2): months bei type=status wird abgelehnt, mit lesbarer Fehlermeldung", async () => {
+    const res = await callTool("get_report", { type: "status", months: 6 });
+    expect(res.isError).toBe(true);
+    const msg = text(res);
+    expect(msg).toContain("Validierung fehlgeschlagen");
+    expect(msg).toContain("months");
+    expect(msg).not.toContain("Unerwarteter Fehler");
+  });
+
+  it("Fix M8 (Fix 2): limit bei type=revenue wird abgelehnt, mit lesbarer Fehlermeldung", async () => {
+    const res = await callTool("get_report", { type: "revenue", limit: 5 });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("limit");
+  });
+});
+
 describe("get_customer_overview", () => {
   it("liefert KPIs + Belegtabs des Kunden", async () => {
     const res = await callTool("get_customer_overview", { customer: customerName });

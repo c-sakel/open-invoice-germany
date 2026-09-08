@@ -19,6 +19,18 @@ export function formatCents(cents: number, currency = "EUR", locale = "de-DE"): 
   return new Intl.NumberFormat(locale, { style: "currency", currency }).format(cents / CENTS_PER_EURO);
 }
 
+/**
+ * Kompakte Kurzform fuer schmale Achsenbeschriftungen (Fix I5, Abschluss-Review, BarChart-
+ * y-Achse): ab 1.000 € "x,y k€" (eine Nachkommastelle), darunter der volle `formatCents`-
+ * String — eine vierstellige Beschriftung ("1.234,56 €") sprengt sonst die schmale y-Achse.
+ * Vorzeichen bleibt erhalten ("-1,2 k€").
+ */
+export function formatCentsShort(cents: number, locale = "de-DE"): string {
+  if (Math.abs(cents) < CENTS_PER_EURO * 1000) return formatCents(cents);
+  const thousandEuros = cents / (CENTS_PER_EURO * 1000);
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(thousandEuros)} k€`;
+}
+
 /** Parst eine deutsche/englische Geldeingabe ("1.234,56" oder "1234.56") nach Cent. */
 export function parseEuroToCents(input: string): number {
   const cleaned = input.trim().replace(/\s|€/g, "");
