@@ -19,6 +19,7 @@ import { openAmountCents } from "@/domain/invoice/amounts";
 import { loadMailSettings } from "@/domain/email/settings";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
+import { loadBrand } from "@/domain/settings/brand";
 
 const DUNNABLE_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID"]);
 const QUOTE_EXPIRING_WINDOW_DAYS = 3;
@@ -180,6 +181,7 @@ async function sendDigestIfDue(orgId: string, now: Date, provider: MailProvider 
     const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { email: true } });
     const to = org?.email || mailSettings.fromEmail;
     const prov = provider ?? createSmtpProvider(mailSettings);
+    const brand = await loadBrand(orgId);
 
     const lines = unread.map((n) => `- ${n.title}${n.body ? `: ${n.body}` : ""}`);
     await prov.send({
@@ -188,7 +190,7 @@ async function sendDigestIfDue(orgId: string, now: Date, provider: MailProvider 
       cc: [],
       bcc: [],
       replyTo: mailSettings.replyTo ?? undefined,
-      subject: "Tagesuebersicht OpenInvoice",
+      subject: `Tagesuebersicht ${brand.appName}`,
       text: `${unread.length} neue Benachrichtigung(en):\n\n${lines.join("\n")}`,
       attachments: [],
     });

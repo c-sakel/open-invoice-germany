@@ -3,7 +3,24 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function AuthForm({ mode, redirectTo }: { mode: "login" | "setup"; redirectTo: string }) {
+// Literal statt Import aus "@/domain/settings/brand": diese Datei ist "use client" und
+// jener Pfad zieht ueber branding.ts -> lib/db.ts den Prisma-Client (node:module) in den
+// Client-Bundle — der Turbopack-Build bricht dann mit "chunking context does not support
+// external modules" ab. Der echte Wert kommt server-seitig ohnehin ueber die Prop
+// (login/page.tsx ruft safeBrand()); dieser Default ist nur eine Typ-Absicherung fuer
+// Aufrufer ohne Marke und muss mit DEFAULT_APP_NAME (brand.ts) uebereinstimmen.
+const DEFAULT_APP_NAME = "OpenInvoice Germany";
+
+export function AuthForm({
+  mode,
+  redirectTo,
+  appName = DEFAULT_APP_NAME,
+}: {
+  mode: "login" | "setup";
+  redirectTo: string;
+  /** Marke fuer den Login-Text; Default fuer den Setup-Zweig (dort gibt es noch keine Organisation). */
+  appName?: string;
+}) {
   const router = useRouter();
   const isSetup = mode === "setup";
   const [email, setEmail] = useState("");
@@ -37,7 +54,7 @@ export function AuthForm({ mode, redirectTo }: { mode: "login" | "setup"; redire
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold tracking-tight">{isSetup ? "Konto einrichten" : "Anmelden"}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {isSetup ? "Lege dein Admin-Konto an. Es ist der einzige Zugang zu deiner Instanz." : "Melde dich an deiner OpenInvoice-Instanz an."}
+          {isSetup ? "Lege dein Admin-Konto an. Es ist der einzige Zugang zu deiner Instanz." : `Melde dich an deiner ${appName}-Instanz an.`}
         </p>
       </div>
       <form onSubmit={submit} className="space-y-4 rounded-lg border border-slate-200 bg-white p-6">

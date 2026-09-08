@@ -244,7 +244,7 @@ describe("Digest-Mail", () => {
     expect(result.digestsSent).toContain(orgId);
     expect(provider.sent.length).toBeGreaterThanOrEqual(1);
     const mail = provider.sent[provider.sent.length - 1];
-    expect(mail.subject).toBe("Tagesuebersicht OpenInvoice");
+    expect(mail.subject).toBe("Tagesuebersicht OpenInvoice Germany");
     expect(mail.to).toEqual(["org@example.org"]);
 
     const settings = await loadNotificationSettings(orgId);
