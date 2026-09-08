@@ -6,7 +6,6 @@ const customer = { name: "Kunde", addressLine1: "Y 2", postalCode: "54321", city
 
 function inv(extra: Partial<MandatoryInvoice> = {}): MandatoryInvoice {
   return {
-    type: "INVOICE",
     taxScheme: "REGULAR",
     issueDate: new Date("2026-06-09"),
     deliveryDate: new Date("2026-06-01"),
@@ -92,9 +91,13 @@ describe("Neue Blocker (Phase 12b)", () => {
     const p = validateMandatoryFields(inv({ taxScheme: "IG_LIEFERUNG", customer: { ...euCustomer, vatId: "CHE-123.456.789" }, notes: igNotes, lines: [{ ...zeroLine, taxCategory: "K" }] }));
     expect(p.join(" ")).toMatch(/aus einem anderen EU-Mitgliedstaat/);
   });
-  it("REVERSE_CHARGE ohne Empfaenger-USt-IdNr. blockt (BR-AE-3)", () => {
+  it("REVERSE_CHARGE ohne Empfaenger-USt-IdNr. blockt (BR-AE-02)", () => {
     const p = validateMandatoryFields(inv({ taxScheme: "REVERSE_CHARGE", notes: "Steuerschuldnerschaft des Leistungsempfängers", lines: [{ ...zeroLine, taxCategory: "AE" }] }));
     expect(p.join(" ")).toMatch(/USt-IdNr. des Empfängers erforderlich/);
+    // I1 (Fix-Welle): keine falsche § 13b-Rechtsgrundlage mehr behaupten — die Kennungspflicht
+    // kommt ausschliesslich aus EN 16931 BR-AE-02, nicht aus § 13b UStG selbst.
+    expect(p.join(" ")).not.toMatch(/§ 13b/);
+    expect(p.join(" ")).toMatch(/BR-AE-02/);
   });
   it("AUSFUHR mit EU-Empfaenger blockt, mit Drittland ist ok, mit Satz > 0 blockt", () => {
     const notes = "Steuerfreie Ausfuhrlieferung";
@@ -103,5 +106,45 @@ describe("Neue Blocker (Phase 12b)", () => {
     expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, notes, lines: [{ ...zeroLine, taxCategory: "G" }] }))).toEqual([]);
     expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, notes, lines: [{ description: "L", quantityMilli: 1000, taxRate: 19, taxCategory: "G" }] })).join(" "))
       .toMatch(/USt-Satz > 0/);
+  });
+  it("AUSFUHR ohne Aussteller-USt-IdNr. blockt (I3/M8, BR-G-02/BR-G-03)", () => {
+    const p = validateMandatoryFields(
+      inv({ taxScheme: "AUSFUHR", org: { ...org, vatId: undefined, taxNumber: "12/345/67890" }, customer: chCustomer, notes: "Steuerfreie Ausfuhrlieferung", lines: [{ ...zeroLine, taxCategory: "G" }] }),
+    );
+    expect(p.join(" ")).toMatch(/USt-IdNr. des Ausstellers erforderlich/);
+    expect(p.join(" ")).toMatch(/BR-G-02\/BR-G-03/);
+  });
+});
+
+describe("Korrekturbelege sind von den neuen Blockern befreit (C1, Fix-Welle)", () => {
+  // Simuliert einen Bestandsbeleg, der VOR den Phase-12b-Verschaerfungen wirksam
+  // festgeschrieben wurde: Alt-Hinweistext (Erst-Wort-Heuristik), kein Leistungsdatum,
+  // keine Empfaenger-USt-IdNr., EU-Empfaenger ohne Ausstellerland-Bezug. isCorrection:true
+  // (von finalize.ts aus Invoice.correctsInvoiceId abgeleitet) muss den Storno/die
+  // Teilgutschrift trotzdem durchlassen; isCorrection:false (Default, frischer Beleg mit
+  // denselben Luecken) muss weiterhin blocken.
+  it("REVERSE_CHARGE: Storno ohne Empfaenger-USt-IdNr. ist ok, frischer Beleg bleibt blockiert", () => {
+    const data = inv({ taxScheme: "REVERSE_CHARGE", notes: "Steuerschuldnerschaft des Leistungsempfängers", lines: [{ ...zeroLine, taxCategory: "AE" }] });
+    expect(validateMandatoryFields(data, { isCorrection: true })).toEqual([]);
+    expect(validateMandatoryFields(data)).not.toEqual([]);
+  });
+  it("IG_LIEFERUNG: Storno mit Alt-Hinweistext und ohne Leistungsdatum ist ok, frischer Beleg bleibt blockiert", () => {
+    const data = inv({ taxScheme: "IG_LIEFERUNG", customer: euCustomer, notes: "Steuerfreie Lieferung nach Absprache", deliveryDate: null, lines: [{ ...zeroLine, taxCategory: "K" }] });
+    expect(validateMandatoryFields(data, { isCorrection: true })).toEqual([]);
+    expect(validateMandatoryFields(data)).not.toEqual([]);
+  });
+  it("KLEINUNTERNEHMER: Storno mit Alt-Hinweistext (ohne '19') ist ok, frischer Beleg bleibt blockiert", () => {
+    const data = inv({ taxScheme: "KLEINUNTERNEHMER", org: { ...org, vatId: undefined, taxNumber: "12/345/67890" }, notes: "Kleinunternehmer, kein Ausweis von Umsatzsteuer", lines: [zeroLine] });
+    expect(validateMandatoryFields(data, { isCorrection: true })).toEqual([]);
+    expect(validateMandatoryFields(data)).not.toEqual([]);
+  });
+  it("AUSFUHR: Storno mit EU-Empfaenger und ohne Aussteller-USt-IdNr. ist ok, frischer Beleg bleibt blockiert", () => {
+    const data = inv({ taxScheme: "AUSFUHR", org: { ...org, vatId: undefined, taxNumber: "12/345/67890" }, customer: euCustomer, notes: "Steuerfreie Ausfuhrlieferung", lines: [{ ...zeroLine, taxCategory: "G" }] });
+    expect(validateMandatoryFields(data, { isCorrection: true })).toEqual([]);
+    expect(validateMandatoryFields(data)).not.toEqual([]);
+  });
+  it("isCorrection lockert die unveraenderten Pruefungen NICHT (§ 14c-Risiko bleibt scharf)", () => {
+    const data = inv({ taxScheme: "REVERSE_CHARGE", notes: "Steuerschuldnerschaft des Leistungsempfängers", lines: [{ description: "L", quantityMilli: 1000, taxRate: 19, taxCategory: "AE" }] });
+    expect(validateMandatoryFields(data, { isCorrection: true }).join(" ")).toMatch(/USt-Satz > 0/);
   });
 });
