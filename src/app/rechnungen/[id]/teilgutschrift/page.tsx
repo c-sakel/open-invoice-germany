@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { PartialCreditForm } from "@/components/PartialCreditForm";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
     include: { lines: { orderBy: { position: "asc" } } },
   });
   if (!inv) notFound();
+  const { taxRates } = await loadDocumentSettings(org.id);
 
   if (inv.status === "DRAFT") {
     return (
@@ -43,7 +45,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Teilgutschrift</h1>
       </div>
-      <PartialCreditForm invoiceId={id} initialLines={initialLines} />
+      <PartialCreditForm invoiceId={id} initialLines={initialLines} taxRates={taxRates} />
     </div>
   );
 }

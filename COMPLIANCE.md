@@ -36,6 +36,8 @@
 15. [UMSETZUNGS-MATRIX (Software-Pflichten)](#15-umsetzungs-matrix--software-pflichten)
 16. [Offene rechtliche Fragen (mit Steuerberater klären)](#16-offene-rechtliche-fragen--vor-produktivnutzung-mit-steuerberater-klären)
 17. [Quellenverzeichnis](#17-quellenverzeichnis)
+18. [REST-API & Webhooks — Audit-Actor, GoBD-Bindung, Datenschutz](#18-rest-api--webhooks-phase-10--audit-actor-gobd-bindung-datenschutz)
+19. [AGPL-3.0 — Lizenzpflichten dieser Software](#19-agpl-30--lizenzpflichten-dieser-software-13-agpl-30-phase-12c)
 
 ---
 
@@ -78,8 +80,23 @@
 
 - **Rechnungsstellung:** spätestens **6 Monate** nach Leistungsausführung — bei Leistungen an Unternehmer/jur. Personen sowie bei grundstücksbezogenen Werk-/sonstigen Leistungen (auch ggü. Privatpersonen). (§ 14 Abs. 2 S. 1–2 UStG)
 
+### Pflichthinweis-Prüfung je Steuerschema (Phase 12b)
+
+Die Software kennt sieben wählbare Steuerschemata; sechs davon verlangen nach § 14 Abs. 4 Nr. 8 / § 14a UStG einen **wortgleichen oder inhaltsgleich zugelassenen** Hinweistext im Rechnungstext (BT-22/`notes`). Das siebte (`REGULAR`, Normalfall 19 %/7 %) verlangt keinen Hinweis.
+
+| Schema | Gedruckter Satz (Default) | Norm |
+|--------|----------------------------|------|
+| `REVERSE_CHARGE` | „Steuerschuldnerschaft des Leistungsempfängers" | § 14a Abs. 5 S. 1 UStG |
+| `IG_LEISTUNG` (ig. sonstige Leistung) | „Steuerschuldnerschaft des Leistungsempfängers" | § 3a Abs. 2 i. V. m. § 14a Abs. 1 UStG |
+| `IG_LIEFERUNG` | „Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1 Buchst. b i. V. m. § 6a UStG)" | § 4 Nr. 1 Buchst. b, § 6a UStG |
+| `AUSFUHR` | „Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)" | § 4 Nr. 1 Buchst. a, § 6 UStG |
+| `KLEINUNTERNEHMER` | „Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer" | § 19 UStG i. V. m. § 34a UStDV (Fassung ab 1.1.2025) |
+| `DIFFERENZ` | „Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)" (austauschbar gegen „Kunstgegenstände/Sonderregelung" bzw. „Sammlungsstücke und Antiquitäten/Sonderregelung") | § 14a Abs. 6 S. 1 UStG i. V. m. § 25a UStG |
+
+**Umsetzung dieser Software:** Die sechs Texte sind **einmal** definiert (`SCHEME_NOTICE`, `src/domain/invoice/mandatory.ts`) — `src/lib/editor/constants.ts` (Editor-UI) und `src/mcp/tools/invoices.ts` (MCP) importieren von dort, es gibt keine zweite Kopie. Beim Festschreiben prüft `validateMandatoryFields` den Hinweistext gegen `SCHEME_NOTICE_ACCEPTED` — je Schema eine Liste regulärer Ausdrücke auf einer normalisierten Form (`normalizeNotice`: klein geschrieben, Umlaute/ß gefaltet, Whitespace vereinheitlicht). Das ersetzt eine frühere Heuristik ("kommt das erste Wort des Pflichttextes irgendwo im Hinweistext vor"), die z. B. „Steuerfreie Lieferung nach Absprache" fälschlich als ig.-Lieferung-Hinweis akzeptiert hätte. Bestandsentwürfe mit dem alten (nun nicht mehr exakt passenden) IG_LIEFERUNG-Text bleiben unverändert festschreibbar, sofern ihr Text weiterhin einem der zugelassenen Muster entspricht — die Prüfung greift nur beim tatsächlichen Festschreiben, nicht rückwirkend auf bereits festgeschriebene Belege.
+
 **Quellen:** [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html) · [§ 31 UStDV](https://www.gesetze-im-internet.de/ustdv_1980/__31.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [HK Hamburg — Pflichtangaben](https://www.handelskammer-hamburg.de/recht-steuern/steuerrecht/umsatzsteuer-mehrwertsteuer/umsatzsteuer-mehrwertsteuer-national/umsatzsteuer-pflichtangaben-rechnungen-6680494)
-**Stand:** 2026-06-09 (Wortlaut primärquellen-verifiziert gegen gesetze-im-internet.de)
+**Stand:** 2026-09-08 (Pflichthinweis-Prüfung Phase 12b ergänzt; übriger Abschnitt primärquellen-verifiziert gegen gesetze-im-internet.de, Stand 2026-06-09)
 
 ---
 
@@ -149,6 +166,7 @@
 
 - **Ausstellung:** Kleinunternehmer **befreit** (§ 34a S. 2 UStDV) — dürfen stets „sonstige Rechnung" (Papier/PDF) ausstellen.
 - **Empfang:** **Pflicht** seit 1.1.2025 für ALLE, auch Kleinunternehmer (E-Mail-Postfach genügt).
+- **Stellt ein Kleinunternehmer dennoch eine XRechnung/ZUGFeRD aus** (z. B. weil ein Geschäftskunde es verlangt) und hat **keine** USt-IdNr.: **BR-CO-26** (EN 16931) verlangt zwingend eine der drei Kennungen BT-29 (Verkäuferkennung), BT-30 (Handelsregisternummer) oder BT-31 (USt-IdNr.) — die Steuernummer (BT-32) allein erfüllt diese **Kern**regel **nicht** (wohl aber die zusätzliche XRechnung-CIUS-Regel BR-DE, die BT-31 **oder** BT-32 genügen lässt). **Umsetzung dieser Software** (Fix-Welle Phase 12b, `appendParty` in `src/lib/einvoice/xrechnung.ts` / `buildFacturXCII` in `src/lib/einvoice/cii.ts`): fehlt die USt-IdNr., wird die Steuernummer **zusätzlich** als generische Verkäuferkennung (BT-29: `cac:PartyIdentification` in UBL, unqualifiziertes `ram:ID` in CII) ausgegeben — ausschließlich in diesem Fall, alle übrigen Belege bleiben unverändert. Ohne diesen Zusatz wäre jede Kleinunternehmer-E-Rechnung ohne USt-IdNr. amtlich ungültig (siehe Fixture `kleinunternehmer-e`, `npm run validate:erechnung`).
 
 ### Risiko § 14c
 
@@ -160,7 +178,7 @@ Weist ein Kleinunternehmer dennoch USt gesondert aus, schuldet er den Betrag gru
 Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonderes Meldeverfahren beim BZSt, quartalsweise Umsatzmeldungen). Für rein inländisch tätige Kleinunternehmer **nicht zwingend**; verwendbar als IdNr. in der Rechnung.
 
 **Quellen:** [§ 19 UStG](https://www.gesetze-im-internet.de/ustg_1980/__19.html) · [§ 19a UStG](https://www.gesetze-im-internet.de/ustg_1980/__19a.html) · [§ 34a UStDV](https://www.gesetze-im-internet.de/ustdv_1980/__34a.html) · [BMF-Schreiben 18.03.2025 Kleinunternehmer](https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Umsatzsteuer/Umsatzsteuer-Anwendungserlass/2025-03-18-sonderregelung-kleinunternehmer.pdf) · [§ 14c UStG](https://www.gesetze-im-internet.de/ustg_1980/__14c.html)
-**Stand:** 2025-01-01 / BMF 2025-03-18
+**Stand:** 2026-09-08 (BR-CO-26-Fix Phase 12b ergänzt; übriger Abschnitt Stand 2025-01-01 / BMF 2025-03-18)
 
 ---
 
@@ -349,6 +367,7 @@ Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11).
 - Briefpapier (Logo, Farben, Ränder, Fußzeile) und Druckoptionen (welche Spalten/Marken/Seitenzahlen erscheinen) sind **reine Darstellung** eines Belegs, kein Bestandteil des rechtlich maßgeblichen **Beleginhalts** (Pflichtangaben nach § 14 Abs. 4 UStG, EN-16931-Kernfelder). Eine spätere Änderung des Briefpapiers/der globalen Druckoptionen wirkt sich deshalb auf **Nachdrucke bereits festgeschriebener Belege** aus (das PDF wird bei jedem Abruf/Nachdruck aus dem aktuellen Theme neu gerendert) — das ist mit der GoBD-Unveränderbarkeit (§ 146 Abs. 4 AO, Abschnitt 6 oben) vereinbar, **solange** die inhaltstragenden Daten (Positionen, Beträge, Steuersätze, Nummer, Datum) unverändert aus dem festgeschriebenen Datensatz bzw. Snapshot stammen und die maschinenlesbare E-Rechnung (XRechnung-XML/ZUGFeRD-Datenteil) vom Layout vollständig unberührt bleibt.
 - Je-Beleg-Druckoptionen (`printOptionsJson` auf Invoice/Quote/DeliveryNote) sind deshalb — wie jeder andere Beleginhalt — nach Festschreibung **nicht mehr änderbar** (Domain-Guard, Status muss `DRAFT` sein); das betrifft ausschließlich die Anzeige-Auswahl (z.B. „Artikelnummer-Spalte anzeigen"), nicht die zugrunde liegenden Daten.
 - Der EPC-GiroCode (siehe unten) wird aus **denselben** bereits im Beleg vorhandenen Zahlungsdaten (IBAN, offener Betrag, Empfängername) gerendert — er fügt keine neue inhaltliche Information hinzu, sondern stellt vorhandene Pflichtangaben (§ 14 Abs. 4 Nr. 7/8 i.V.m. den Zahlungsbedingungen) zusätzlich maschinenlesbar für Banking-Apps dar.
+- **Nachtrag Phase 11b (PDF-Layouts).** Dieselbe Einordnung gilt für die sieben wählbaren PDF-Layouts (Kopf-/Tabellenstil, Summenlinie, Fußzeilenaufbau, `src/lib/pdf/layouts/`): **PDF-Layouts sind Darstellung** — der festgeschriebene Beleginhalt (Positionen, Beträge, Steuersätze, Nummer, Datum) bleibt davon unverändert, und die maschinenlesbare E-Rechnung (XRechnung-XML/ZUGFeRD-Datenteil) ist vom gewählten Layout vollständig unberührt (alle sieben Layouts rendern denselben `InvoicePdfData`/`einvoice`-Datensatz, nur unterschiedlich gesetzt). Anders als die übrigen Druckoptionen wird die **Layout-Kennung (`layoutId`) beim Festschreiben zusätzlich in den Druckoptionen eingefroren** (`freezePrintOptionsJson`, `src/domain/settings/print.ts`, aufgerufen aus `finalizeWithinTx`/`finalizeInvoice`, `src/domain/invoice/finalize.ts`) — eine spätere Änderung des Organisationsstandards oder der Typ-Zuordnung ändert dadurch NICHT mehr, mit welchem Layout ein bereits festgeschriebener Beleg nachgedruckt wird (Nachvollziehbarkeit des Reprints, GoBD Rz 32); ein Entwurf ohne eigene Layout-Wahl folgt dagegen weiterhin live der aktuellen Auflösung (Beleg-Override > Typ-Map > Organisationsstandard > „standard").
 
 ### GiroCode / EPC-QR-Code (§ 37, Phase 7)
 
@@ -414,8 +433,14 @@ Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11).
 - **Ausnahme HGB:** Eröffnungsbilanzen und (Konzern-)Abschlüsse im **Original** aufbewahren.
 - **E-Rechnung:** mindestens der **strukturierte XML-Teil** unversehrt in ursprünglicher Form (BMF-FAQ).
 
-**Quellen:** [§ 147 AO](https://www.gesetze-im-internet.de/ao_1977/__147.html) · [§ 14b UStG](https://www.gesetze-im-internet.de/ustg_1980/__14b.html) · [§ 257 HGB](https://www.gesetze-im-internet.de/hgb/__257.html) · [§ 27 UStG](https://www.gesetze-im-internet.de/ustg_1980/__27.html) · [BGBl. 2024 I Nr. 323 (BEG IV)](https://www.recht.bund.de/bgbl/1/2024/323/regelungstext.pdf?__blob=publicationFile&v=3) · [EY — Aufbewahrungsfristen Banken/Versicherungen](https://www.ey.com/de_de/technical/steuernachrichten/laengere-aufbewahrungsfristen-bei-banken-versicherungen-und-wertpapierinstituten)
-**Stand:** 2026-06-09
+### Hinweis auf die Aufbewahrungspflicht des Empfängers (§ 14 Abs. 4 Nr. 9, Phase 12b)
+
+Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nichtunternehmer bzw. Unternehmer ohne unternehmerischen Zweck) muss der Leistende auf die **zweijährige** Aufbewahrungspflicht des Empfängers **hinweisen** (§ 14b Abs. 1 S. 5 UStG, referenziert über § 14 Abs. 4 Nr. 9). Die Rechnungsangabe selbst besteht aus dem Hinweis — die zwei Jahre laufen beim Empfänger, unabhängig von der eigenen (8-Jahres-)Frist des Leistenden aus der Fristen-Matrix oben.
+
+**Umsetzung dieser Software:** „Bauleistung" bzw. „Privatperson" ist aus den vorhandenen Rechnungsdaten **nicht zuverlässig erkennbar** (keine Leistungsart-Klassifizierung, kein Unternehmer-/Privatstatus beim Kunden) — es gibt daher **keinen Automatismus**. Stattdessen ist `consumerRetentionHint` ein Schalter je Rechnung (Editor: weitere Optionen im `DocumentEditor`; Datenfeld auf `Invoice`, gleichlautend als `z.boolean().optional()` in den gemeinsamen Kopffeldern von `createInvoiceSchema`/`updateInvoiceSchema`, API v1 `POST`/`PATCH /api/v1/Invoice`, sowie im MCP-Tool `update_invoice_draft`). Ist der Schalter gesetzt, wird **eine** Textkonstante (`CONSUMER_RETENTION_HINT`, `src/domain/invoice/mandatory.ts`) sowohl ins PDF (`src/lib/pdf/invoice-pdf.ts`) als auch in beide E-Rechnungsformate geschrieben (`cbc:Note` in UBL/`src/lib/einvoice/xrechnung.ts`, `ram:IncludedNote` in CII/`src/lib/einvoice/cii.ts`) — keine Heuristik, keine automatische Erkennung, der Aussteller entscheidet.
+
+**Quellen:** [§ 147 AO](https://www.gesetze-im-internet.de/ao_1977/__147.html) · [§ 14b UStG](https://www.gesetze-im-internet.de/ustg_1980/__14b.html) · [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html) · [§ 257 HGB](https://www.gesetze-im-internet.de/hgb/__257.html) · [§ 27 UStG](https://www.gesetze-im-internet.de/ustg_1980/__27.html) · [BGBl. 2024 I Nr. 323 (BEG IV)](https://www.recht.bund.de/bgbl/1/2024/323/regelungstext.pdf?__blob=publicationFile&v=3) · [EY — Aufbewahrungsfristen Banken/Versicherungen](https://www.ey.com/de_de/technical/steuernachrichten/laengere-aufbewahrungsfristen-bei-banken-versicherungen-und-wertpapierinstituten)
+**Stand:** 2026-09-08 (§ 14b-Schalter Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09)
 
 ---
 
@@ -439,17 +464,6 @@ Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11).
 ### (3) ig. sonstige Leistung (§ 3a Abs. 2)
 
 - Reverse Charge beim Empfänger im Bestimmungsland; Rechnung bis 15. Tag des Folgemonats, USt-IdNr. beider Parteien + „Steuerschuldnerschaft des Leistungsempfängers" (§ 14a Abs. 1).
-
-### (3a) Drittland-Leistung (§ 3a Abs. 2 UStG — Nicht-EU)
-
-- **Ort der Leistung** beim Empfänger im Drittland (außerhalb EU) → **nicht im Inland steuerbar** (kein USt-Ausweis, kein Steuersatz).
-- **Keine USt-IdNr.-Pflicht** für den Empfänger (Drittland), keine ZM-Meldung.
-- **EN 16931 Steuerkategorie:** `O` (Out of scope) — nicht `G` (Export/Waren), nicht `AE` (Reverse Charge/EU), nicht `Z` (Nullsatz).
-- **Pflichthinweis:** „Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG" (§ 14 Abs. 4 Nr. 8 — bei Steuerfreiheit/nicht-Steuerbarkeit Hinweis erforderlich).
-- **Abgrenzung zu `G` (Ausfuhrlieferung):** `G` = Warenexport § 4 Nr. 1 i.V.m. § 6 UStG (Gegenstand geht ins Drittland). `O` = sonstige Leistung, bei der der Ort nach § 3a Abs. 2 im Ausland liegt — kein Warenexport.
-- **Währung:** Fremdwährung (z.B. USD) zulässig; GoBD-Belegfunktion (Rz 77) erfordert Währung/Wechselkurs-Angabe.
-- **Quellen:** [§ 3a UStG](https://www.gesetze-im-internet.de/ustg_1980/__3a.html) · [§ 14 Abs. 4 Nr. 8 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html)
-**Stand:** 2026-08-17
 
 ### USt-IdNr.-Prüfung (§ 18e UStG / VIES)
 
@@ -480,8 +494,29 @@ Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11).
 | ig. sonstige Leistung (§ 3a Abs. 2) | USt-IdNr. beider + „Steuerschuldnerschaft des Leistungsempfängers" |
 | ig. Dreiecksgeschäft (§ 25b) | Hinweis auf Dreiecksgeschäft + Steuerschuldnerschaft des letzten Abnehmers (§ 14a Abs. 7) |
 
-**Quellen:** [§ 13b UStG](https://www.gesetze-im-internet.de/ustg_1980/__13b.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [§ 4 UStG](https://www.gesetze-im-internet.de/ustg_1980/__4.html) · [§ 6a UStG](https://www.gesetze-im-internet.de/ustg_1980/__6a.html) · [§ 18a UStG](https://www.gesetze-im-internet.de/ustg_1980/__18a.html) · [BZSt — Bestätigung ausländischer USt-IdNr.](https://www.bzst.de/DE/Unternehmen/Identifikationsnummern/Umsatzsteuer-Identifikationsnummer/AuslaendischeUSt-IdNr/auslaendische_ust_idnr_node.html)
-**Stand:** 2026-06-09 (Wortlaut primärquellen-verifiziert)
+### Materielle Zusatzprüfungen beim Festschreiben (Phase 12b)
+
+Bis Phase 12b prüfte das Festschreiben (`finalize`) nur, ob der **Hinweistext** je Schema vorhanden ist (§ 1) — nicht, ob die materiellen Tatbestandsvoraussetzungen der Steuerbefreiung/Steuerschuldverlagerung selbst erfüllt sind. `validateMandatoryFields` (`src/domain/invoice/mandatory.ts`) blockt seither zusätzlich in mehreren neuen Fällen:
+
+| Schema | Blocker | Norm / EN-16931-Regel |
+|--------|---------|------------------------|
+| `IG_LIEFERUNG` | Leistungsdatum **oder** -zeitraum (BT-72 bzw. BG-14/BT-73+BT-74) muss gesetzt sein — ein reiner Freitext-Hinweis genügt der EN-16931-Kernregel nicht | § 14 Abs. 4 Nr. 6 UStG; **BR-IC-11** |
+| `IG_LIEFERUNG` | Empfänger-USt-IdNr. muss aus einem **anderen** EU-Mitgliedstaat stammen (Präfix ≠ „DE" **und** Präfix in der EU-Präfixliste, s. § 4 unten) | § 6a Abs. 1 Nr. 4 UStG |
+| `REVERSE_CHARGE` | Empfänger-USt-IdNr. ist Pflicht — **keine** UStG-Rechtsgrundlage (§ 13b UStG selbst verlangt beim inländischen Reverse Charge keine Empfänger-Kennung), sondern eine reine E-Rechnungs-Anforderung. Die Kernregel lässt BT-48 (USt-IdNr.) **oder** BT-47 (Handelsregisternummer) genügen; BT-47 bildet das Datenmodell dieser Software nicht ab (kein eigenes Kundenfeld) — geprüft wird deshalb ausschließlich BT-48 | **EN 16931 BR-AE-02** |
+| `AUSFUHR` | Empfänger-Länderkennzeichen fehlt oder liegt innerhalb der EU (eine Ausfuhrlieferung setzt einen Bestimmungsort außerhalb der EU voraus) | § 6 Abs. 1 UStG |
+| `AUSFUHR` | Aussteller-USt-IdNr. ist Pflicht (Fix-Welle Final-Review, I3/M8) — ohne sie ist die Kategorie **G** (Ausfuhr) EN-16931-ungültig; der BT-29-Zusatz aus Task 6 (Steuernummer als generische Verkäuferkennung, s. § 3) genügt hier **nicht**, weil die Regel ausdrücklich eine USt-IdNr. verlangt | **EN 16931 BR-G-02 / BR-G-03** |
+
+Und für alle sechs Schemata mit Pflichthinweis gilt weiterhin: `ZERO_TAX_SCHEMES` (`src/lib/tax.ts`) verbietet jeden Positions-Steuersatz > 0 % (§ 14c-Risiko) — vorher eine implizite, ungenannte Bedingung, jetzt eine benannte, von `validateMandatoryFields` ausgewertete Liste.
+
+**Korrekturbelege sind ausgenommen (Fix-Welle Final-Review, C1).** Ein Storno (`cancel.ts`) oder eine Teilgutschrift (`credit.ts`) berichtigt ein bereits **festgeschriebenes** Original — die Tabelle oben sowie die exakte Hinweis-Regexprüfung (§ 1) gelten dafür **nicht** (`validateMandatoryFields(inv, { isCorrection: true })`, von `finalize.ts` aus `Invoice.correctsInvoiceId` abgeleitet). Sonst wäre für Bestandsbelege — mit Alt-Hinweistext, ohne Leistungsdatum/-zeitraum oder ohne Empfänger-/Aussteller-USt-IdNr. bereits vor dieser Prüfung wirksam festgeschrieben — der Storno/die Gutschrift nicht mehr möglich, obwohl das der nach Lastenheft § 51/GoBD **einzige** zulässige Korrekturweg für eine festgeschriebene Rechnung ist. Die übrigen § 14-Pflichtangaben (u. a. die § 14c-Nullsatz-Prüfung und die USt-IdNr.-Pflicht beider Parteien bei ig. Lieferung/Leistung, § 14a Abs. 1/3) bleiben auch für Korrekturbelege scharf.
+
+**Ausdrücklich NICHT umgesetzt (Lastenheft § 60, Abgrenzung):**
+- **Keine VIES-Online-Gültigkeitsprüfung.** Die Empfänger-USt-IdNr. wird nur auf das zweistellige Länder-Präfix geprüft (Format/Plausibilität), nicht gegen die tatsächlich beim BZSt/VIES hinterlegten Daten (siehe „USt-IdNr.-Prüfung" oben — dort bleibt es bei der manuellen Einzel-/Qualifizierten Abfrage).
+- **Keine automatische Zusammenfassende Meldung (ZM, § 18a UStG).** Die Software erzeugt keine ZM-Daten; das bleibt eine manuelle Aufgabe außerhalb dieser Software.
+- **Kein BT-47 (Buyer legal registration identifier).** Siehe REVERSE_CHARGE-Zeile oben — nur BT-48 (USt-IdNr.) wird geprüft/erzeugt.
+
+**Quellen:** [§ 13b UStG](https://www.gesetze-im-internet.de/ustg_1980/__13b.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [§ 4 UStG](https://www.gesetze-im-internet.de/ustg_1980/__4.html) · [§ 6 UStG](https://www.gesetze-im-internet.de/ustg_1980/__6.html) · [§ 6a UStG](https://www.gesetze-im-internet.de/ustg_1980/__6a.html) · [§ 18a UStG](https://www.gesetze-im-internet.de/ustg_1980/__18a.html) · [BZSt — Bestätigung ausländischer USt-IdNr.](https://www.bzst.de/DE/Unternehmen/Identifikationsnummern/Umsatzsteuer-Identifikationsnummer/AuslaendischeUSt-IdNr/auslaendische_ust_idnr_node.html)
+**Stand:** 2026-09-08 (Fix-Welle Final-Review: C1-Korrekturausnahme, I1 BR-AE-02-Korrektur, I3/M8 AUSFUHR-Aussteller-USt-IdNr.-Blocker ergänzt; materielle Zusatzprüfungen Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, primärquellen-verifiziert)
 
 ---
 
@@ -522,8 +557,28 @@ Wird trotz Differenzbesteuerung **USt offen ausgewiesen** (z.B. durch ein Shop-S
 
 Die B2B-E-Rechnungspflicht gilt **auch** für § 25a-Umsätze; § 25a-Hinweis + Steuerausweis-Verbot müssen im strukturierten EN-16931-Datensatz korrekt abgebildet werden. B2C-Endkundenverkäufe (typischer Refurb-Fall) fallen **nicht** unter die Pflicht; Kleinbeträge ≤ 250 € ausgenommen.
 
-**Quellen:** [§ 25a UStG](https://www.gesetze-im-internet.de/ustg_1980/__25a.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [HK Hamburg — Differenzbesteuerung](https://www.handelskammer-hamburg.de/recht-steuern/steuerrecht/umsatzsteuer-mehrwertsteuer/umsatzsteuer-mehrwertsteuer-national/differenzbesteuerung-gebrauchtwarenhandel-6680498) · [BMF-FAQ E-Rechnung](https://www.bundesfinanzministerium.de/Content/DE/FAQ/e-rechnung.html)
-**Stand:** 2026-06-09 (§ 25a/§ 14a primärquellen-verifiziert)
+### Zulässige Hinweistexte (§ 14a Abs. 6 S. 1 UStG)
+
+§ 14a Abs. 6 S. 1 lässt genau **drei** Wortlaute zu — jeder abhängig davon, welche Warengruppe der § 25a-Umsatz betrifft:
+
+| Wortlaut | Warengruppe |
+|----------|-------------|
+| „Gebrauchtgegenstände/Sonderregelung" | Gebrauchtwaren allgemein (Standardfall dieser Software, z. B. Refurb-Elektronik) |
+| „Kunstgegenstände/Sonderregelung" | Kunstgegenstände (§ 25a Abs. 2 Nr. 2) |
+| „Sammlungsstücke und Antiquitäten/Sonderregelung" | Sammlungsstücke und Antiquitäten (§ 25a Abs. 2 Nr. 3) |
+
+**Umsetzung dieser Software:** `SCHEME_NOTICE.DIFFERENZ` (`src/domain/invoice/mandatory.ts`) druckt standardmäßig den ersten Wortlaut vor; alle drei sind über `SCHEME_NOTICE_ACCEPTED.DIFFERENZ` als gültig hinterlegt (Regex je Formulierung). Betrifft eine Rechnung Kunstgegenstände oder Sammlungsstücke/Antiquitäten, überschreibt man im Editor den vorbelegten Hinweistext mit dem passenden Wortlaut (siehe `docs/ANLEITUNG.md` § 4) — die Festschreibungsprüfung akzeptiert alle drei gleichwertig.
+
+### Warum UNTDID-5305-Kategorie `E` statt `S` (Phase 12b, BR-S-05-Fix)
+
+Vor Phase 12b fiel `DIFFERENZ` in `defaultCategoryForScheme` (`src/lib/tax.ts`) auf die Standardkategorie `S` (steuerpflichtiger Regelsatz) zurück, kombiniert mit einem Steuersatz von 0 % — das verletzt **EN-16931 BR-S-05** („bei Kategorie S muss der Steuersatz > 0 sein") und machte jede § 25a-Rechnung als XRechnung ungültig. `DIFFERENZ` mappt seither auf Kategorie **`E`** (VAT exempt), die auch bei Steuersatz 0 % zulässig ist. Das ist fachlich korrekt: die UNTDID-5305-Liste kennt **keine** eigene Kategorie für die Differenzbesteuerung, § 25a ist umsatzsteuerlich eine Steuerbefreiung mit Sonderregel zur Bemessungsgrundlage (Marge statt Entgelt) — `E` (allgemein steuerbefreit) bildet das ab.
+
+### Kein VATEX-Code für BT-121
+
+`E` hat für **Kleinunternehmer (§ 19)** und **Differenzbesteuerung (§ 25a)** zwar dieselbe UNTDID-Kategorie, aber unterschiedliche Befreiungsgründe — für keinen von beiden kennt die amtliche VATEX-Codeliste einen passenden Code. Die vier Codes, die formal zur Kategorie E passen würden (VATEX-EU-D/F/I/J), betreffen laut CEN-Definition ausschließlich **innergemeinschaftliche Erwerbe** bestimmter Warengruppen (u. a. Kunstgegenstände/Sammlungsstücke/Antiquitäten) durch den **Käufer** — nicht den hier vorliegenden **Verkauf** unter der Margenregelung des Verkäufers. Ein erfundener oder falsch angewendeter Code wäre ein größerer Fehler als gar keiner. Für `DIFFERENZ` (wie für `KLEINUNTERNEHMER`) erfüllt daher **BT-120** (`exemptionReasonText`, Klartext) allein BR-E-10 (`src/lib/einvoice/exemption.ts`); BT-121 bleibt leer. Siehe auch `docs/LIMITATIONEN.md`.
+
+**Quellen:** [§ 25a UStG](https://www.gesetze-im-internet.de/ustg_1980/__25a.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [HK Hamburg — Differenzbesteuerung](https://www.handelskammer-hamburg.de/recht-steuern/steuerrecht/umsatzsteuer-mehrwertsteuer/umsatzsteuer-mehrwertsteuer-national/differenzbesteuerung-gebrauchtwarenhandel-6680498) · [BMF-FAQ E-Rechnung](https://www.bundesfinanzministerium.de/Content/DE/FAQ/e-rechnung.html) · [EN 16931 / CEN — VATEX-Codeliste](https://ec.europa.eu/digital-building-blocks/sites/display/DIGITAL/Registry+of+supporting+artefacts+to+implement+EN16931)
+**Stand:** 2026-09-08 (Kategorie-E-Fix + VATEX-Begründung Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, § 25a/§ 14a primärquellen-verifiziert)
 
 ---
 
@@ -580,6 +635,15 @@ Bei OSS-Teilnahme **entfällt** die Rechnungsausstellungspflicht für die betrof
 | **Echte (umsatzsteuerliche) Gutschrift** | Abrechnung durch den **Leistungsempfänger** (§ 14 Abs. 2 S. 5) | **vorherige Vereinbarung** nötig; zwingend Angabe „Gutschrift" (§ 14 Abs. 4 Nr. 10); B2B-Inland **E-Rechnungspflicht**; Widerspruch (Satz 6) beseitigt Rechnungswirkung; bei E-Rechnung Kennzeichnung über Rechnungstyp |
 | **Kaufmännische Gutschrift** | umgangssprachlich für Storno/Korrektur | **keine** § 14c-Schuld allein durch die Bezeichnung. **[ungesichert]** (BMF 25.10.2013, BStBl I 2013, 1305 nur sekundär belegt). Besser „Korrekturrechnung"/„Storno-Rechnung" |
 
+### PDF-Titel "Stornorechnung"/"Rechnungskorrektur" (Phase 12b)
+
+Diese Software erzeugt bei Storno (`cancelInvoice`) und Teil-/Vollgutschrift (`createPartialCreditNote`/`credit.ts`) intern immer ein Dokument vom Typ `CREDIT_NOTE`. Umsatzsteuerlich ist „Gutschrift" (Tabellenzeile oben) aber die **Selbstabrechnung durch den Leistungsempfänger** (§ 14 Abs. 2 S. 5) — ein Vorgang, den diese Software **nicht** abbildet (kein Empfänger-initiierter Abrechnungs-Workflow, keine Widerspruchslogik). Um diese Verwechslung zu vermeiden, druckt das PDF **seit Phase 12b nicht mehr** „Gutschrift", sondern:
+
+- **„Stornorechnung"** — Regelfall: vollständige Rückgängigmachung einer Rechnung.
+- **„Rechnungskorrektur"** — wenn das Dokument eine Korrektur (nicht volle Stornierung) einer bereits festgeschriebenen Rechnung darstellt.
+
+**Umsetzung dieser Software:** `documentTitle`/`documentNumberLabel` (`src/lib/pdf/invoice-pdf.ts`) leiten den Titel aus `creditNoteKind` ab, das **ausschließlich** aus `original.reversedByInvoiceId === invoice.id` bestimmt wird — dem einzigen zuverlässigen Unterschied zwischen `cancel.ts` (setzt `reversedByInvoiceId` auf dem Original) und `credit.ts` (setzt es **nicht**, nur `correctsInvoiceId`). Ohne auflösbares Original (z. B. Original gelöscht/nicht verknüpfbar) fällt der Titel auf „Stornorechnung" zurück, den weitaus häufigeren Fall. **`InvoiceTypeCode` bleibt 381** (Credit Note) in beiden Fällen — die UNTDID-1001-Codeliste kennt für „Rechnungskorrektur" keinen eigenen Code, 381 ist strukturell korrekt (negative/spiegelverkehrte Beträge). Der Nummernkreis `CREDIT_NOTE` und alle übrigen Datenfelder bleiben unverändert; nur der **gedruckte Titel** (PDF, nicht das XML) hat sich geändert. **Echte Selbstabrechnung (`InvoiceTypeCode` 389) ist NICHT umgesetzt** — dafür fehlt der komplette Empfänger-initiierte Workflow (Vereinbarung, Erstellung durch den Empfänger, Widerspruchsrecht); siehe `docs/LIMITATIONEN.md`.
+
 ### § 14c UStG (JStG 2024, ab 06.12.2024)
 
 | Fall | Regel | Berichtigung |
@@ -601,7 +665,7 @@ Bei OSS-Teilnahme **entfällt** die Rechnungsausstellungspflicht für die betrof
 Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnete Leistung · Rückgängigmachung (§ 17 Abs. 2 Nr. 3). **Abgrenzung (Rn. 51b):** Leistungsänderung (z.B. relevante Aufmaßänderung) ist **keine** bloße Bemessungsgrundlagen-Änderung → Berichtigung der Leistungsbeschreibung (ggf. per Gutschrift mit eindeutigem Bezug).
 
 **Quellen:** [§ 14c UStG](https://www.gesetze-im-internet.de/ustg_1980/__14c.html) · [§ 14 UStG](https://dejure.org/gesetze/UStG/14.html) · [§ 31 UStDV](https://dejure.org/gesetze/UStDV/31.html) · [BMF-Schreiben 15.10.2025 (PDF)](https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Umsatzsteuer/Umsatzsteuer-Anwendungserlass/2025-10-15-einfuehrung-obligatorische-e-rechnung.pdf)
-**Stand:** 2026-06-09 (BMF-PDF seitenweise als Primärquelle ausgewertet)
+**Stand:** 2026-09-08 (PDF-Titel Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, BMF-PDF seitenweise als Primärquelle ausgewertet)
 
 ---
 
@@ -702,6 +766,35 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 ### Briefpapier-Assets (Logo/Hintergrund, Phase 7)
 
 Logo- und Hintergrunddatei (`BrandingSettings.logoPath`/`backgroundPath`) liegen im selben **Dateispeicher** wie die übrigen Beleg-Anhänge (Phase 4b, `src/lib/attachments/storage.ts`) — kein separates, öffentlich erreichbares Verzeichnis. In der Regel enthalten diese Dateien **keine personenbezogenen Daten** (Firmenlogo, Hintergrundgrafik); enthält ein hochgeladenes Bild dennoch personenbezogene Inhalte (z.B. ein Foto als Hintergrund), gelten dieselben Zugriffs-/Löschregeln wie für andere im Dateispeicher abgelegte Anhänge — kein Sonderfall.
+
+### Anfrageprotokoll (Phase 12d)
+
+**Umsetzung dieser Software:** Das REST-API-Anfrageprotokoll (`ApiRequestLog`,
+`src/domain/api-log/`) ist von Beginn an auf Datenminimierung ausgelegt —
+standardmäßig **AUS** (`ApiSettings.logRequests`, kein Eintrag ohne bewusstes
+Einschalten in `Einstellungen → API`), zwei getrennte Schalter: `logRequests`
+protokolliert **Kopfdaten** — Methode, Pfad **inklusive Query-String**,
+Status, Dauer, `apiKeyId`, Request-ID sowie **IP-Adresse und User-Agent** des
+Aufrufers; `logBodies` schaltet zusätzlich Request-/Response-Bodies dazu —
+Response-Bodies NUR bei Fehlerantworten, Status ≥ 400. Bodies werden auf
+**2 KB** gekürzt (Bodies über 256 KB werden aus Performance-/DoS-Gründen gar
+nicht erst geparst, sondern durch einen Platzhalter ersetzt) und vor dem
+Speichern JSON-Schlüssel mit sicherheitsrelevanten Namen (`token`, `secret`,
+`password`, `apiKey`, `iban`, `bic`, `authorization`, …) geschwärzt; Query-
+Parameter mit demselben Muster **sowie** `email` werden ebenso vor dem
+Speichern geschwärzt — auch im „nur Kopfdaten"-Modus, der Schalter `logBodies`
+betrifft ausschließlich die Bodies (`src/domain/api-log/redact.ts`). Scheitert
+die Schwärzung eines Bodies oder Query-Strings ausnahmsweise (kein valides
+JSON, oder ein interner Fehler bei der Verarbeitung), wird NIE auf den
+Rohtext zurückgefallen — stattdessen ein Platzhalter (Body) bzw. der Pfad ohne
+Query (Query-String) gespeichert. Es entsteht **keine neue Datenkategorie**:
+protokollierte Bodies gehören derselben Organisation, die sie selbst über ihren
+eigenen API-Schlüssel gesendet bzw. empfangen hat (`orgId`-Scope wie jede
+andere Ressource, kein Zugriff auf fremde Organisationen). Aufbewahrung ist
+zeit- **und** mengenbegrenzt (Default **7 Tage** / **2000 Zeilen** je
+Organisation, in `Einstellungen → API` anpassbar), zusätzlich existiert im UI
+ein sofortiger Löschknopf („Protokoll leeren") für das gesamte Protokoll der
+eigenen Organisation.
 
 ### OSS-/E-Rechnung-Tooling (Node/JS/JVM)
 
@@ -938,6 +1031,20 @@ Kunden-/externen Kanal). Verifiziert per Test
 (`test/integration/webhooks.test.ts`, `finalizeInvoice` mit gesetztem
 `internalNotes` → `dataJson` enthält weder den Text noch den Schlüssel).
 
+### Anfrageprotokoll ist kein Audit-/GoBD-Ereignis (Phase 12d)
+**Umsetzung dieser Software:** Das REST-API-Anfrageprotokoll (`ApiRequestLog`,
+Datenschutz-Einzelheiten in §13) protokolliert — sofern eingeschaltet — JEDE
+authentifizierte `/api/v1/*`-Anfrage zur technischen Fehlersuche, unabhängig
+davon, ob sie einen GoBD-relevanten Beleg verändert. Es ist bewusst **keine**
+`ChangeLog`-Hash-Kette (Betreiber-Ruling K5, `grep -rn "appendChangeLog"
+src/domain/api-log/` bleibt leer): ein Protokolleintrag ersetzt nicht den
+`ChangeLog`-Eintrag einer schreibenden Aktion (der weiterhin wie oben
+beschrieben mit `actor = "api:<Schluesselname>"` entsteht) und wird beim
+„Protokoll leeren" oder durch die Retention gelöscht, ohne die Hash-Kette zu
+berühren. Anfragen, die die Authentifizierung nicht bestehen (unbekannter/
+ungültiger Bearer-Token, Vor-Auth-Rate-Limit), werden nicht protokolliert — es
+gibt keine Organisation, der sie zuzuordnen wären.
+
 ### Webhook-Secrets
 Endpunkt-Secrets werden AES-GCM-verschlüsselt gespeichert
 (`src/lib/crypto/secrets.ts`, dieselbe Verschlüsselung wie SMTP-Passwort und
@@ -955,4 +1062,49 @@ Wiederherstellung gültiger Bearer-Token. Widerruf ist unveränderlich
 
 ---
 
-*Ende COMPLIANCE.md — Stand 2026-09-04. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
+## 19. AGPL-3.0 — Lizenzpflichten dieser Software (§13 AGPL-3.0, Phase 12c)
+
+### § 13 AGPL-3.0 — Remote Network Interaction
+Diese Software ist unter der **GNU Affero General Public License v3.0**
+lizenziert (`LICENSE`, siehe auch `docs/ARCHITEKTUR.md` Abschnitt 4). Deren
+**§ 13 "Remote Network Interaction; Use with the GNU General Public
+License"** verpflichtet jeden, der eine modifizierte Version dieser Software
+per Netzwerk betreibt (z. B. als gehostete SaaS), jedem darüber
+interagierenden Nutzer eine Möglichkeit zu bieten, den zugehörigen
+(modifizierten) Quellcode kostenlos über einen Netzwerkserver zu beziehen —
+üblicherweise ein sichtbarer Link im Produkt selbst. Genau das ist der Hebel,
+mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
+
+### Umsetzung dieser Software
+- **Produktname überschreibbar**: Der angezeigte Instanzname (`appName`) und
+  das Kürzel (`appShortName`), sichtbar in Seitenleiste, Kopfzeile und
+  Browser-Tab, sind unter `Einstellungen → Marke` je Organisation
+  überschreibbar (Phase 12c, White-Label — `src/domain/settings/brand.ts`,
+  `BrandingSettings.appName`/`.appShortName`). Ohne eigenen Eintrag gilt die
+  Produktvorgabe „OpenInvoice Germany" (Kürzel „OI",
+  `src/lib/brand-defaults.ts`).
+- **Herkunftsangabe + Quellcode-Link bleiben fest**: Unabhängig vom
+  eingestellten `appName` zeigt die Fußzeile beider App-Hüllen
+  (`AppShell`/`SlimShell`, `src/components/shell/`) zusätzlich **immer** die
+  Zeile „*<Instanzname> · powered by OpenInvoice Germany · AGPL-3.0 ·
+  Quellcode*" mit einem funktionierenden Link auf den Quellcode. Diese Zeile
+  ist **nicht** Teil von `BrandingSettings`/`Brand` und daher über keine
+  Einstellung, kein API-Feld und kein MCP-Tool abschaltbar — sie ist in
+  beiden Hüllen fest verdrahtet (Testfall:
+  `test/integration/brand-shell.test.tsx`, „die AGPL-Herkunftszeile bleibt
+  auch bei gesetztem appName sichtbar"). Ein White-Label-Produktname macht
+  die Software also **nicht** anonym — die Herkunft und der Lizenztext
+  bleiben für jeden Nutzer sichtbar.
+- **Quelle konfigurierbar über `SOURCE_URL`**: Der Quellcode-Link zeigt per
+  Vorgabe auf das öffentliche Upstream-Repository
+  (`https://github.com/automationsmanufaktur-labs/open-invoice-germany`).
+  Wer diese Software **modifiziert** und per Netzwerk betreibt, muss nach
+  § 13 AGPL-3.0 den **eigenen, modifizierten** Quellcode anbieten — dafür ist
+  die Umgebungsvariable `SOURCE_URL` (`.env`, siehe `.env.example`) gedacht:
+  sie muss auf das öffentlich erreichbare Repository mit dem tatsächlich
+  laufenden (Fork-)Stand zeigen, nicht auf das unveränderte Upstream-Original,
+  sobald eigene Änderungen live sind.
+
+---
+
+*Ende COMPLIANCE.md — Stand 2026-09-08. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*

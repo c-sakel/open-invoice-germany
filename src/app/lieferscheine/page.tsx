@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { listDeliveryNotes } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
@@ -7,6 +8,7 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { loadListPage } from "@/lib/list-page";
+import { buildListeParam } from "@/domain/document/neighbors";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,10 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    offset: firstOf(sp.offset),
   };
+  const liste = buildListeParam(values);
+  const detailHref = (id: string) => `/lieferscheine/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
   // Fix-Welle (B1): siehe rechnungen/page.tsx.
@@ -49,12 +54,15 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Lieferscheine</h1>
-        <Link href="/lieferscheine/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neuer Lieferschein
-        </Link>
-      </div>
+      <PageHeader
+        title="Lieferscheine"
+        subtitle={`${result.total} Belege`}
+        actions={
+          <Link href="/lieferscheine/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neuer Lieferschein
+          </Link>
+        }
+      />
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">Kein Steuerbeleg — Nachweis des Leistungszeitpunkts.</p>
         <Link href={showArchived ? "/lieferscheine" : "/lieferscheine?archiviert=1"} className="text-sm font-medium text-indigo-600 hover:underline">
@@ -95,7 +103,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                 return (
                   <tr key={n.id} className={`hover:bg-slate-50 ${n.archivedAt ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/lieferscheine/${n.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(n.id)} className="font-medium text-indigo-600 hover:underline">
                         {n.number ?? "(Entwurf)"}
                       </Link>
                     </td>

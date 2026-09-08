@@ -1,6 +1,6 @@
 # Bekannte Einschränkungen (MVP)
 
-Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-04.
+Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-08.
 
 ## Betrieb & Sicherheit
 - **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Mehrbenutzer, Rollen, Passwort-Reset und 2FA sind Roadmap. In Produktion `AUTH_SECRET` setzen + hinter HTTPS betreiben.
@@ -13,9 +13,19 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **EndpointID** wird als E-Mail (`EM`) ausgegeben. Leitweg-/Peppol-Schemacodes (EAS) werden noch nicht differenziert.
 - **PaymentMeans** wird nur bei hinterlegter IBAN ausgegeben.
 - **Rabatte/Aufschläge und Skonto (Phase 4a):** Positionsrabatt (Prozent + Festbetrag) und Belegrabatt/-aufschlag (proportional je Steuersatz, Largest-Remainder) werden als `AllowanceCharge` auf Zeilen- **und** Dokumentebene (BG-27/28, BG-20/21) erzeugt, inkl. BT-107/108-Summenfeldern. Übersteigt ein Positionsrabatt den Netto-Zeilenwert, wird die Position still auf 0 gekappt (kein Fehler). Bei einer Teilgutschrift werden Festbetragsrabatte proportional zur erstatteten Menge herunterskaliert, nicht 1:1 übernommen. **Skonto** wird nur als **BT-20-Freitext** ausgewiesen (Klartext + `#SKONTO#TAGE=n#PROZENT=x.xx#`-Syntax je Ziel, bis zu zwei Ziele) — es gibt **keine** strukturierte `PaymentDiscountTerms`-Angabe (EXTENDED-Profil) und **keine** Fremdwährungs-Skonto-Unterstützung (BT-20 gilt nur in der Rechnungswährung). Die Skonto-Frist endet auf **UTC-Tagesende**, nicht Berlin-Lokalzeit — in der Praxis zaehlt ein Zahlungseingang bis 01:00/02:00 Uhr nachts (je nach Sommer-/Winterzeit) des Folgetags noch fristgerecht. Details + Quellen: `COMPLIANCE.md` Abschnitt 11, `docs/ARCHITEKTUR.md` „Pricing-Modul (Phase 4a)".
-- **Validator-Fixtures:** `npm run validate:erechnung` erzeugt und prüft die Bestandsregression („base", nur UBL) sowie neun weitere Beispiele (Positionsrabatt, Belegrabatt über zwei Steuersätze, Aufschlag, Skonto mit zwei Zielen, Barzahlung, Gutschrift mit Belegrabatt, Rechnung ohne IBAN, Kartenzahlung- und Lastschrift-Fallback) jeweils als UBL **und** CII — macht die genannten Fixture-Zahlen widerspiegelbar in CI-Logs, nicht nur im Testcode.
+- **Validator-Fixtures:** `npm run validate:erechnung` erzeugt und prüft die Bestandsregression („base", nur UBL) sowie **19** weitere Beispiele (Positionsrabatt, Belegrabatt über zwei Steuersätze, Aufschlag, Skonto mit zwei Zielen, Barzahlung, Gutschrift mit Belegrabatt, Rechnung ohne IBAN, Kartenzahlung- und Lastschrift-Fallback, Positionsblöcke, Storno mit Positionsblöcken, Abschlags-/Teil-/Schlussrechnung, sowie — Phase 12b — je eine Fixture für Reverse Charge/AE, ig. Lieferung/K, Ausfuhr/G, Kleinunternehmer/E und Differenzbesteuerung/E) jeweils als UBL **und** CII — insgesamt **20 Fixtures / 39 XML-Dateien**, macht die genannten Fixture-Zahlen widerspiegelbar in CI-Logs, nicht nur im Testcode.
 - **PaymentMeans ohne IBAN:** Verlangt die gewählte Zahlungsmethode ein Konto (z. B. Überweisung), aber weder die Zahlungsmethode noch die Organisation haben eine hinterlegte IBAN, fällt der Export auf UNTDID-4461-Code `1` („Instrument not defined") zurück, statt eine ungültige/leere `PaymentMeans`-Angabe zu erzeugen.
 - **Karten- und Lastschrift-Methoden** (UNTDID-4461-Codes `48`/`54`/`55` Karte, `59` Lastschrift) erscheinen in der E-Rechnung als Code `1` — die dafür nötigen Zusatzgruppen (`CardAccount` bzw. `PaymentMandate`) sind nicht abgebildet. Betrifft nur den XML-Export; PDF und Zahlungsmethoden-Verwaltung zeigen weiterhin den echten Code/Text.
+- **Keine VIES-Onlineprüfung (Phase 12b):** Die USt-IdNr. von Kunden (z. B. für ig. Lieferung/Reverse Charge) wird nur auf das zweistellige Länder-Präfix geprüft, **nicht** auf tatsächliche Gültigkeit beim BZSt/VIES. Eine ungültige, aber formal korrekt präfigierte USt-IdNr. wird nicht erkannt.
+- **Keine Zusammenfassende Meldung (ZM) und kein OSS-Verfahren:** Die Software erzeugt weder ZM-Daten (§ 18a UStG) noch OSS-Meldungen (§ 18j UStG) — beides bleibt außerhalb dieser Software zu erledigen (Lastenheft § 60, FiBu-Abgrenzung).
+- **Keine echte Selbstabrechnung (Gutschrift, `InvoiceTypeCode` 389):** Eine „Gutschrift" im umsatzsteuerlichen Sinn (§ 14 Abs. 2 S. 5 UStG, Abrechnung durch den Leistungsempfänger) kann diese Software nicht ausstellen. Storno und Korrektur (PDF-Titel „Stornorechnung"/„Rechnungskorrektur", Phase 12b) bleiben `InvoiceTypeCode` 381.
+- **Teilgutschrift (`credit.ts`) übernimmt den Notiztext des Originals nicht, Vollstorno (`cancel.ts`) schon:** `cancelInvoice` setzt `notes` als „Storno zu Rechnung … " + Original-`notes`; `createPartialCreditNote` setzt nur „Teilgutschrift zu Rechnung … " + den mitgegebenen Teilgutschrift-Text, ohne den Original-Hinweistext anzuhängen (Fix-Welle Final-Review, C1 Punkt 3). Da Korrekturbelege seit derselben Fix-Welle von der exakten Hinweis-Regexprüfung ausgenommen sind (`isCorrection`), blockiert das das Festschreiben nicht mehr — es bleibt ein rein redaktioneller Unterschied: eine Teilgutschrift zu einem Nicht-REGULAR-Schema (z. B. Reverse Charge) trägt den schema-spezifischen Pflichthinweis nicht automatisch im eigenen Notiztext, sofern ihn niemand manuell ergänzt.
+- **BT-121 (VATEX-Code) fehlt für § 19 und § 25a:** Für die Kategorie `E` gibt es zwei unterschiedliche Befreiungsgründe (Kleinunternehmer bzw. Differenzbesteuerung), aber keinen passenden amtlichen VATEX-Code — BT-120 (Klartext) allein erfüllt die Pflicht (BR-E-10). Nur bei Reverse Charge (`AE`), ig. Lieferung (`K`) und Ausfuhr (`G`) wird ein VATEX-Code gesetzt.
+- **BT-77/BT-78/BT-80 (Lieferanschrift/-land) kommen immer aus der Rechnungsanschrift:** Eine vom Rechnungsempfänger abweichende Lieferanschrift wird im XML nicht abgebildet. Sobald BG-15 (Lieferung) übermittelt wird — also ein Lieferland gesetzt ist —, behauptet der Beleg zusätzlich Ort (BT-77) und PLZ (BT-78) der **Rechnungsanschrift** als Lieferanschrift (Pflicht für BR-DE-10/BR-DE-11, sonst KoSIT-invalid); eine eigene Straße/Lieferadresse wird nicht ausgegeben. UBL und CII sind hier seit der Fix-Welle Final-Review (I2) deckungsgleich — zuvor fehlten BT-77/BT-78 in der CII-Datei, was sie als eigenständige XRechnung (nicht nur im ZUGFeRD-EN16931-Profil) KoSIT-invalid gemacht hätte.
+- **AUSFUHR ohne Aussteller-USt-IdNr. ergibt eine ungültige XRechnung, wenn nicht blockiert:** EN 16931 BR-G-02/BR-G-03 verlangen für Kategorie `G` (Ausfuhr) zwingend die Aussteller-USt-IdNr. (BT-31) oder eine Vertreter-USt-IdNr. (BT-63, hier nicht abgebildet). Seit der Fix-Welle Final-Review (I3/M8) blockt `validateMandatoryFields` das Festschreiben einer **neuen** AUSFUHR-Rechnung ohne Aussteller-USt-IdNr. deshalb zusätzlich (COMPLIANCE.md § 8) — dieser Blocker gilt **nicht** für Storno/Teilgutschrift eines bereits festgeschriebenen Bestandsbelegs (C1-Korrekturausnahme), dort bliebe eine fehlende USt-IdNr. des Ausstellers weiterhin eine ungültige XRechnung, falls sie tatsächlich exportiert wird.
+- **AUSFUHR-Länderprüfung nutzt die Rechnungsanschrift, nicht die Warenbewegung:** § 6 Abs. 1 UStG stellt auf den Bestimmungsort der Ware ab, nicht auf die Anschrift des Kunden. Das Datenmodell kennt keine eigene Lieferanschrift für Rechnungen (s. o.) — der AUSFUHR-Blocker (COMPLIANCE.md § 8) prüft daher notwendigerweise `customer.countryCode` als Näherung. Das kann sowohl falsch-positiv (deutsche Rechnungsanschrift, aber Warenversand in ein Drittland) als auch falsch-negativ (Drittland-Rechnungsanschrift, aber Lieferung im Inland) sein.
+- **BR-AE-02 (Reverse Charge) prüft nur die Empfänger-USt-IdNr. (BT-48), nicht BT-47:** Die EN-16931-Kernregel lässt alternativ die Handelsregisternummer des Empfängers (BT-47) genügen — dafür gibt es im Datenmodell kein eigenes Kundenfeld, es wird also ausschließlich BT-48 geprüft/erzeugt (COMPLIANCE.md § 8).
+- **Kategorie `O` (nicht steuerbar):** Ist im Mapper/E-Rechnungs-Export vorbereitet (`exemptionReasonText`/`-Code`, `TaxCategory`-Typ), aber von **keinem** der sieben wählbaren Steuerschemata erreichbar — kein Schema setzt sie als Default, und der Editor bietet keine manuelle Kategoriewahl je Position (die Kategorie folgt immer dem gewählten Schema). Nur über einen direkten `taxCategory: "O"`-Wert im Zeilen-Payload von API v1/MCP (am Editor vorbei) ließe sie sich überhaupt erzeugen.
 
 ## Zahlung, Mahnwesen & Abos (Scheduler, Phase 6)
 - **Mahnwesen** ist stufen-getrieben (`DunningStage`, frei konfigurierbar je Organisation: Name, Tage nach Fälligkeit, neue Zahlungsfrist, Mahnkosten, Zins-/Pauschale-/Auto-Versand-Schalter, Reihenfolge) statt fester Level 1–4, inkl. Verzugszins (§ 288 BGB, taggenau) + 40-€-Pauschale (nur B2B, einmal je Rechnung) — Details COMPLIANCE.md §12. Ein **eingebauter Scheduler** (Intervall-Loop im Node-Prozess, `src/instrumentation.ts`, per `SCHEDULER_ENABLED` an/aus) erzeugt und versendet fällige Mahnungen automatisch, zusätzlich per Cron (`npm run dunning:run`, `GET/POST /api/cron/run-dunning`, `/api/cron/run-all` mit `CRON_SECRET`) oder manuell (UI „Einstellungen → Automatisierung", MCP `run_scheduler_job`). Ein DB-Mutex (`SchedulerLock`, Primärschlüssel je Job) macht parallele Läufe desselben Jobs über mehrere App-Instanzen hinweg sicher (kein Doppellauf, auch nicht bei mehreren Repliken mit je eigenem Loop) — der Scheduler ist damit für den Lock multi-instance-sicher; für den Lock, nicht für alles: siehe Residuen unten.
@@ -65,13 +75,18 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **FINAL-Storno (Fix-Welle, B6) trifft `-payableCents` aus demselben Grund nicht immer exakt.** Die Storno-Zeilen je Steuersatz nutzen denselben `reconcileNetsForGross`-Mechanismus wie GROSS_AMOUNT (oben) — bei mehreren Steuersätzen wird die Summe fast immer exakt erreicht, bei **genau einem** Steuersatz kann eine Restdifferenz von ±1 Cent zwischen dem Storno-Betrag und `payableCents` bestehen bleiben (Konkretes Beispiel: 50 % Abschlag auf 2.469,00 € netto/19 % ergibt `payableCents` 146.905, das Storno lässt sich nur auf 146.904 oder 146.906 abbilden). `docs/ARCHITEKTUR.md` formuliert die Garantie entsprechend als "in Summe exakt `-payableCents`, bis auf einen Rundungscent bei genau einem Steuersatz" statt uneingeschränkter Exaktheit.
 - **`listRelations` liest seit der Fix-Welle (B13) innerhalb von `partial.ts`/`downpayment.ts`/`final.ts` auf dem Transaktions-Client (`tx`)**, nicht mehr auf dem globalen `dbInternal` — das verkleinert das Zeitfenster fuer die Mischverbots-/100-%-/"keine zweite Schlussrechnung"-Guards, schliesst es unter Postgres (READ COMMITTED) aber **nicht vollstaendig**: zwei parallele Anfragen (z. B. ein Doppelklick auf "Schlussrechnung erzeugen") koennen weiterhin zwei aktive Belege erzeugen, weil es keine harte Unique-Constraint auf `(sourceId, type)` gibt (analog `assertNoOverDelivery`, siehe oben). SQLite serialisiert Schreibtransaktionen und ist davon nicht betroffen.
 
-## Editor & Beleganhaenge (Phase 4b)
+## Editor & Beleganhaenge (Phase 4b, Editor-Oberflaeche erweitert in Phase 11c)
 - **Rich-Text ist eine eingeschraenkte Markdown-Teilmenge**, kein vollwertiger Editor: Absaetze, `\n`-Umbrueche, fett/kursiv/unterstrichen (auch verschachtelt), **eine** Listenebene (ungeordnet/geordnet) und Links (`https://`/`mailto:`). Keine Bilder, keine Tabellen, keine verschachtelten Listen. Es wird nie rohes HTML gespeichert oder durchgereicht.
 - **Positionsbloecke (HEADING/TEXT/SUBTOTAL) gibt es nur bei Angebot/AB/Proforma und Rechnung.** `RecurringInvoiceLine` (Abo-Vorlage) hat kein `lineType`/`descriptionLong`/`articleNumber` — jeder Lauf erzeugt ausschliesslich reguläre ITEM-Positionen, keine Ueberschriften/Textbloecke/Zwischensummen.
 - **Beleganhaenge sind unabhaengig vom Belegstatus** — auch an einer bereits festgeschriebenen Rechnung (FINALIZED/CANCELLED) koennen weiterhin Anhaenge hinzugefuegt/entfernt werden (`assertDocExists` prueft nur Org-/Belegzugehoerigkeit, keinen Status). Das ist GoBD-konform: der Beleg selbst (Zahlen, Positionen, Hash-Kette) bleibt unveraendert, Hinzufuegen/Entfernen eines Anhangs wird separat im `ChangeLog` protokolliert (Aktion ADD/REMOVE), ohne die Hash-Kette des Belegs zu beruehren.
 - **Beleganhaenge werden nicht in ZUGFeRD eingebettet.** Der Hybrid-PDF-Container enthaelt weiterhin nur `factur-x.xml`; hochgeladene Beleganhaenge (z. B. Lieferschein-Scan) bleiben separate Dateien, die ueber die App/den Mailversand abrufbar sind, nicht Teil des PDF/A-3-Anhangs.
 - **Dedup ist je Organisation**, nicht global — derselbe Dateiinhalt wird pro Org einmal gespeichert, aber nicht organisationsuebergreifend erkannt.
 - **Loeschen entfernt die Datei nur, wenn keine weitere `DocumentAttachment`-Zeile mehr auf denselben Hash verweist** (Dedup-Referenzzaehlung ueber den Speicherpfad) — ein einzelnes Entfernen loescht also nicht zwangslaeufig sofort die physische Datei.
+- **Die Editor-Vorschau (`POST /api/pdf/preview`, Phase 11c) loest Platzhalter im Kopf-/Fusstext nicht auf** (z. B. `{{contact.firstName}}`) und traegt immer die Belegnummer „ENTWURF" plus ein „VORSCHAU"-Wasserzeichen auf jeder Seite — sie ist eine Layout-/Rechenkontrolle, kein 1:1-Vorabdruck des spaeter tatsaechlich gespeicherten Belegs.
+- **„Brutto anzeigen" im Editor ist reine Darstellung.** Der Umschalter zeigt neben dem Positionspreis zusaetzlich den Bruttowert an — das Preisfeld selbst bleibt immer netto gebunden, gespeichert (und an den Server gesendet) wird ausschliesslich der Nettopreis.
+- **Lieferscheine lassen sich im Editor (Phase 11c) nur anlegen, nicht bearbeiten.** Ein bestehender Lieferschein hat keine „Bearbeiten"-Seite; Aenderungen erfordern das Loeschen/Neuanlegen bzw. bleiben auf Statuswechsel beschraenkt (siehe auch „`DeliveryNote` hat keinen `PATCH`-Endpunkt" unten).
+- **Die Teilgutschrift hat weiterhin ein eigenes Formular** (`PartialCreditForm`, `/rechnungen/[id]/teilgutschrift`) und ist **nicht** in den gemeinsamen `DocumentEditor` uebernommen worden.
+- **Keine Live-PDF beim Tippen.** Die Vorschau wird nur auf Klick auf „Vorschau" neu gerendert (ein serverseitiger PDF-Bau je Aufruf) — es gibt kein automatisches Neu-Rendern waehrend der Eingabe.
 
 ## Briefpapier, Druckoptionen, Nummernkreise & GiroCode (Phase 7)
 - **Nur Deutsch.** Briefpapier, Druckoptionen, Nummernkreise (§ 33–37) sowie die erzeugten PDFs/GiroCode-Beschriftungen sind ausschließlich auf Deutsch — keine Mehrsprachigkeit, analog zur öffentlichen Angebotsseite (siehe „Dokumentworkflow" oben).
@@ -79,6 +94,55 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **GiroCode nur in EUR und nur mit hinterlegter IBAN.** Der EPC-QR-Code (EPC069-12, COMPLIANCE.md Abschnitt 6) wird ausschließlich für Rechnungen in Euro mit einer gültigen IBAN gerendert; Fremdwährungsrechnungen und Rechnungen ohne IBAN erscheinen ohne GiroCode — ohne Fehler, der Beleg bleibt vollständig.
 - **Nummer erst beim Versand ist nicht umgesetzt.** Angebots-/AB-/Lieferschein-Nummern werden weiterhin **bei Erstellung** vergeben (Betreiber-Ruling, COMPLIANCE.md Abschnitt 6), nicht erst beim Versand — eine Option dafür existiert (noch) nicht.
 - **Layoutänderungen wirken auf Nachdrucke bereits festgeschriebener Belege.** Eine spätere Änderung an Briefpapier oder globalen Druckoptionen ändert das Aussehen jedes künftigen PDF-Abrufs eines bereits festgeschriebenen Belegs (das PDF wird bei jedem Abruf aus dem aktuellen Theme neu gerendert) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Steuern, Nummer) bleibt davon unberührt, siehe COMPLIANCE.md Abschnitt 6 „Layoutänderungen vs. Beleginhalt". Je-Beleg-Druckoptionen lassen sich dagegen nach Festschreibung nicht mehr ändern.
+- **Nachtrag Phase 11b (PDF-Layouts):** sieben fest verdrahtete Layouts
+  (`src/lib/pdf/layouts/registry.ts`) — **kein Baukasten**, d. h. keine eigenen
+  Farben/Blockanordnungen jenseits der bereits vorhandenen Briefpapier-Felder
+  (Logo, Primärfarbe, Ränder) lassen sich pro Layout zusätzlich konfigurieren.
+  **Mahnungen (`DUNNING`) haben keinen Beleg-Override** — anders als Rechnung/
+  Gutschrift, Angebot/Auftragsbestätigung und Lieferschein greift bei Mahnungen
+  ausschließlich die Typ-Zuordnung (`layoutByType.DUNNING`) bzw. der
+  Organisationsstandard, kein `printOptionsJson.layoutId` je Mahnung. **Schriften
+  ausschließlich die pdfkit-Standardfonts** (Helvetica-Familie) — kein Custom-Font-
+  Upload, keine Web-/Systemfont-Einbettung; die Referenzbelege des Betreibers (externe Referenzbelege, Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
+  eigene Font-Einbettung bliebe ein späterer Schritt. Beim Layout `modern` **überdeckt der
+  farbige Kopfbalken ein evtl. hinterlegtes Hintergrundbild** im oberen Bereich der
+  Seite (bewusster Trade-off der Balken-Optik, kein Bug). **Beträge zeigen das
+  Währungssymbol** (`formatCents`, z. B. „5,88 €"), **nicht den ISO-Code** („EUR") —
+  organisationsweit, nicht je Layout konfigurierbar.
+- **CUSTOM-Fußzeile: gleich breite, linksbündige Spalten statt links/mittig/rechts.**
+  `footerLeft`/`footerCenter`/`footerRight` (Phase 7) wurden vor Phase 11b über die volle
+  Breite links/mittig/rechts ausgerichtet gezeichnet; seit der gemeinsamen
+  Fußzeilen-Infrastruktur aus Phase 11b (`src/lib/pdf/layouts/shared.ts#drawFooterColumns`,
+  von AUTO **und** CUSTOM genutzt) liegen sie stattdessen als N gleich breite,
+  linksbündige Spalten. Für Bestandsorganisationen mit **nur** `footerCenter` gesetzt
+  heißt das: der Text springt beim nächsten Nachdruck von zentriert auf linksbündig —
+  kosmetisch, aber sichtbar (bisher undokumentiert, mit der Fix-Welle nachgetragen).
+- **Alte mehrseitige Rechnungen können beim Nachdruck neu paginieren.** Phase 11b
+  reserviert am Seitenende ein Fußzeilen-Band (`layout.footerHeight + 6pt`), das die
+  nutzbare Höhe je Seite verringert (bereits dokumentiert, siehe „Layoutänderungen wirken
+  auf Nachdrucke" oben) — die Fix-Welle schützt zusätzlich den Schlussblock (Fußtext,
+  Zahlungsbedingungen, Hinweise) mit demselben Band (`ensurePlainSpace`, behebt einen
+  Überlapp mit der Fußzeile bei knapp gefüllten Seiten), was in seltenen Randfällen eine
+  zusätzliche Seite erzwingen kann. Ein bereits festgeschriebener, mehrseitiger Beleg kann
+  dadurch beim nächsten PDF-Abruf eine andere Seitenzahl bekommen als beim vorherigen
+  Abruf — der rechtlich maßgebliche Beleginhalt bleibt unverändert (COMPLIANCE.md
+  Abschnitt 6).
+- **Nachtrag Phase 12a (GiroCode-Größe, Logohöhe, Vorschau-Breite):** Bereits
+  festgeschriebene Belege ohne eingefrorenen `giroSizeMm`-Wert rendern mit dem
+  aktuellen globalen Wert der Organisation (Schema-Default 22 mm, aber vom Betreiber
+  in den Druckoptionen jederzeit auf 15–40 mm änderbar — Druckoptionen sind
+  Darstellung, Phase-7-Ruling); vor Phase 12a gedruckte Belege hatten fest 30 mm. Die
+  Logohöhe ist auf 35 mm begrenzt (Layout `modern`: ~15 mm, Höhe des Kopfbalkens, siehe
+  ARCHITEKTUR.md); höhere Logos werden proportional verkleinert. Die Vorschau-Breite
+  (Breit/Schmal) liegt im `localStorage` des Browsers und gilt nicht
+  geräteübergreifend.
+
+## Marke & Steuersätze (Phase 12c)
+- **Steuersätze sind auf ganze Prozentwerte 0–100 beschränkt; Dezimalsätze (z. B. 5,5 % FR) sind nicht abbildbar, weil alle `taxRate`-Spalten `Int` sind.**
+- **Kundenspezifische Steuersätze gibt es nicht — die Liste gilt org-weit.**
+- **Das Favicon muss ein quadratisches PNG sein; SVG ist bewusst nicht erlaubt (same-origin ausgeliefertes SVG ist ein XSS-Vektor).**
+- **Die AGPL-Herkunftszeile ist nicht abschaltbar.**
+
 ## Kundenkomfort (Phase 8a)
 - **`Customer.language` wird nur gespeichert, nicht ausgewertet.** Das Feld existiert (Default `de`) und ist über die Kundenvorgaben pflegbar, steuert aber weder PDF-Sprache noch E-Mail-Vorlagen — analog zur restigen Software ist derzeit alles ausschließlich auf Deutsch (siehe „Briefpapier, Druckoptionen …" oben).
 - **Gelöschte Kundenfeld-Definitionen lassen ihre Werte im JSON zurück.** `deleteCustomFieldDefinition` entfernt nur die Definition (`CustomFieldDefinition`); bereits gespeicherte Werte in `Customer.customFieldsJson` unter dem betroffenen `key` bleiben unverändert stehen (kein Cleanup-Job). `parseCustomerCustomFields` übergeht solche verwaisten Keys beim Lesen still, `{{customField.<key>}}` löst dafür nicht mehr auf (Platzhalter bleibt leer) — Bestellungen können die Definition jederzeit neu mit demselben `key` anlegen, um wieder Zugriff auf die alten Werte zu bekommen.
@@ -114,6 +178,17 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   OrderConfirmation/Invoice) — `PATCH /api/v1/DeliveryNote/{id}` existiert daher
   nicht; Statusänderungen laufen ausschließlich über `POST .../status`. Backlog:
   `updateDraft`-Domainfunktion für Lieferscheine nachrüsten, sobald benötigt.
+- **`Layout` (Phase 11b) ist nur lesbar.** `GET /api/v1/Layout` liefert die feste
+  Liste der sieben PDF-Layouts (keine DB-Tabelle, kein POST/PATCH auf dieser
+  Ressource). Der Organisationsstandard/die Typ-Zuordnung sind über `PATCH
+  /api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`) erreichbar; eine
+  Beleg-individuelle Layout-Überschreibung seit der Fix-Welle (Phase 11b) über
+  `PATCH /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options`
+  (`printOptionsOverrideSchema.layoutId`, nur solange der Beleg `DRAFT` ist) —
+  dieselbe Domain-Funktion wie MCP (`set_print_options`) und die UI. `Quote/{id}/
+  print-options` gilt nur für `kind=ANGEBOT`; Auftragsbestätigung und Proforma haben
+  keinen eigenen `print-options`-Endpunkt (Lastenheft-Abgrenzung: kein separates
+  REST-Objekt je Quote-`kind`).
 - **Webhook-Secrets sind nie im Klartext abrufbar** (analog API-Schlüssel) — nur bei
   Anlage/Rotation einmalig in der Antwort. Zustellung ist streng seriell (ein
   Scheduler-Job je Lauf, kein `Promise.all`) — bei sehr vielen fälligen Zustellungen
@@ -128,6 +203,55 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   wüchsen beide Tabellen unbegrenzt (`WebhookDelivery` trägt je Zeile einen vollen
   Serializer-Schnappschuss in `dataJson`). `PENDING`/`FAILED`-Zustellungen werden nie
   gelöscht, unabhängig vom Alter.
+
+## Anfrageprotokoll (Phase 12d)
+- **Was im „nur Kopfdaten"-Modus (`logRequests` an, `logBodies` aus) gespeichert
+  wird:** Methode, Pfad inklusive Query-String (verdächtige Parameter — Geheimnis-
+  Muster wie `token`/`secret`/`password`/`apiKey`/`iban`/`bic` sowie `email` —
+  werden vor dem Speichern geschwärzt), Status, Dauer, `apiKeyId`, Request-ID
+  sowie **IP-Adresse und User-Agent** des Aufrufers — unabhängig vom Schalter
+  `logBodies`, der ausschließlich die Bodies betrifft.
+- **Redaktion ohne Rückfall auf den Rohtext.** Scheitert die Schwärzung eines
+  Bodies (kein valides JSON, oder ein interner Fehler bei der Verarbeitung) oder
+  eines Query-Strings, wird NIE der Rohtext gespeichert — stattdessen ein
+  Platzhalter (Body) bzw. der Pfad ohne Query (Query-String).
+- **Bodies über 256 KB werden nicht geparst.** Ein Request-/Response-Body über
+  dieser Größe wird aus Performance-/DoS-Gründen gar nicht erst versucht zu
+  schwärzen oder zu kürzen — es landet nur ein Platzhalter in der Zeile.
+- **Vor-Auth-Fehler werden nicht protokolliert.** Ein unbekannter/ungültiger
+  API-Schlüssel (`401`) oder das Vor-Auth-Rate-Limit (`429`, vor jedem
+  Token-Lookup) hinterlassen keine `ApiRequestLog`-Zeile — es gibt keine
+  Organisation, der sie zuzuordnen wären.
+- **Nur `/api/v1/*` wird protokolliert.** Session-Routen des UI (`/api/settings/
+  ...`, `/api/invoices/...` usw.) laufen außerhalb dieses Protokolls.
+- **Die Retention läuft im Scheduler-Cleanup.** Ohne aktiven Scheduler wächst die
+  Tabelle bis zum nächsten Lauf weiter (analog zur Webhook-Retention oben).
+- **API-Einstellungen sind bis zu 8 Sekunden zwischengespeichert.** `loadApiSettings`
+  cacht je Organisation im Prozessspeicher (winziger TTL-Cache, Fix-Welle m1) —
+  eine Änderung über `Einstellungen → API` invalidiert den Cache sofort, ein
+  Speichervorgang wirkt also immer ab dem nächsten Aufruf; ohne eigenen
+  Speichervorgang (z. B. bei einem direkten DB-Zugriff außerhalb der Software)
+  könnte ein bereits gecachter Wert bis zu 8 Sekunden weiterleben.
+
+## Navigation & Suche (Phase 11a)
+- **Globale Suche ist eine Teilstring-Suche** (`contains`) über Belegnummer, Kundenname, Kundennummer, E-Mail, Produktname und Artikelnummer — kein Volltext, kein Ranking, keine Suche in Positionen, Betreffs oder Notizen (interne Notizen bewusst nie). Maximal 8 Treffer je Gruppe (Standard; per `limit` bis 20).
+
+## Belegansicht (Phase 11d)
+- **Vor/Zurück wirkt nur innerhalb der ersten 200 Treffer des Listenfilters.** Die Pfeile auf der Detailseite (bzw. `Alt+←`/`Alt+→`) laden dieselbe Listenfunktion wie die zuletzt geöffnete Liste **ohne Paginierung** bis zu 200 Zeilen (`NEIGHBOR_LIMIT`, `src/domain/document/neighbors.ts`) und suchen darin nach der aktuellen Id. Bei einer Liste mit mehr als 200 Treffern sind Belege außerhalb dieses Fensters über die Pfeile nicht erreichbar (die Pfeile werden dann ausgegraut/inaktiv dargestellt, `aria-disabled`, kein Fehler) — nur direktes Aufrufen der Liste mit engeren Filtern behebt das.
+- **`loadNeighbors` kostet drei Datenbankabfragen je Detailaufruf mit `liste`-Parameter.** Vor/Zurück laedt ueber dieselbe Listenfunktion einen `count` **und** ein `findMany` ueber bis zu 200 Zeilen (mit Kunden-Join und Zaehl-Unterabfragen) sowie — bei Rechnungen — zusaetzlich einen `emailLog.findMany` (`src/domain/invoice/list.ts`), nur um daraus Vorgaenger/Nachfolger-Id zu bestimmen; ohne `liste`-Parameter (Direktaufruf einer Detailseite ohne Listenkontext) entfaellt das komplett. Fuer die typische Beleganzahl einer Solo-/KMU-Instanz nicht spuerbar; eine schlankere `neighborIdsQuery` mit `select: { id: true }` waere die spaetere Optimierung.
+- **PDF-Ansicht nutzt den Browser-Viewer.** Die Detailseite bettet das PDF über ein `<iframe>` ein — ob es angezeigt wird (statt eines leeren Rahmens oder eines Downloads), hängt vom eingebauten PDF-Viewer des jeweiligen Browsers ab. Browser/Umgebungen ohne PDF-Viewer (manche mobile Browser, eingebettete WebViews, `Content-Disposition`-Konfigurationen) zeigen nur den Rahmen; der Link „PDF öffnen" darunter funktioniert in diesem Fall trotzdem immer (Download).
+- **Vor/Zurück folgt der Listenreihenfolge, nicht der Belegnummer.** Die Reihenfolge stammt aus der Sortierung der jeweiligen Listenfunktion (Standard: neueste zuerst, je nach aktivem Filter der Liste — ein eigener Sortierparameter existiert in keiner der drei Listen) — „vorheriger/nächster Beleg" ist also relativ zur zuletzt angezeigten Liste zu verstehen, nicht zur fortlaufenden Belegnummer.
+- **`Alt+←`/`Alt+→` überlagert unter Windows/Linux den Browser-Zurück/Vor-Shortcut**, solange ein Nachbarbeleg existiert (`DetailNav.tsx` ruft dafuer `preventDefault()` auf) — auf macOS (Browser-Zurück ist `Cmd+←`) unkritisch. Eingabefelder sind davon ausgenommen. Ausweichmoeglichkeit: die Pfeilsymbole `‹`/`›` neben dem Zurück-Link per Maus/Tastatur-Fokus statt des Shortcuts.
+- **Menüs per `<details>` schließen nicht bei Klick außerhalb.** Das „Mehr"-Menü (`ActionMenu`) sowie jeder einklappbare Positionsblock (`CollapsibleSection`) nutzen bewusst natives `<details>`/`<summary>` statt eines eigenen Overlay-Mechanismus (funktioniert ohne Client-JS, ist per Tastatur bedienbar) — ein Klick außerhalb des geöffneten Menüs schließt es dadurch **nicht** automatisch, nur ein erneuter Klick auf `summary` schließt es wieder. Anders als die Befehlspalette/der mobile Drawer (dort mit eigenem Fokusfalle+Escape-Handling, siehe `docs/ARCHITEKTUR.md` „App-Shell, Navigation & Suche") gibt es hier keinen Outside-Click- oder Escape-Handler.
+- **Zwei `Sidebar`-Instanzen (Desktop + mobiler Drawer) koennen beim Auf-/Zuklappen einer Gruppe auseinanderdriften.** Beide lesen/schreiben denselben `localStorage`-Schluessel `oig.nav.open.<Gruppenschluessel>`, aber ohne `storage`-Event-Abgleich zwischen den beiden gleichzeitig gemounteten Instanzen (`AppShell.tsx`/`Topbar.tsx`) — ein Toggle im Drawer aktualisiert nicht sofort den React-State der Desktop-Sidebar (und umgekehrt), erst ein Neuladen gleicht beide wieder an. Praktisch selten, da Drawer nur unterhalb `lg` sichtbar ist.
+- **Lieferschein-Entwurfsstatus (DRAFT) ist ueber keinen heutigen Weg erreichbar.** `createDeliveryNoteWithinTx` (`src/domain/delivery-note/create.ts`) setzt bei jeder Anlage immer sofort `status="CREATED"` mit Nummernvergabe — weder UI (`/lieferscheine/neu`), noch API (`POST /api/delivery-notes`), noch MCP kennen einen Parameter für DRAFT. Die dafür vorbereitete Detailseiten-Darstellung (PDF-Platzhalter, „Lieferschein erstellen (Nummer vergeben)", der `#druckoptionen`-Anker) ist damit toter Code, bis eine künftige Editor-Funktion „Formular zwischenspeichern" (im Code-Kommentar als Reservierung erwähnt) das DRAFT-Anlegen tatsächlich anbietet.
+
+## Grafiken & Auswertungen (Phase 12e)
+- **Die Diagramme sind statisch (SVG, serverseitig gerendert): kein Zoom, kein Filtern im Bild.**
+- **Es gibt keinen Export der Auswertungen als CSV oder PDF.**
+- **Der Umsatz ist eine Netto-Auswertung nach Rechnungsdatum, keine Einnahmen-Überschuss-Rechnung und keine Buchhaltung (Lastenheft §60).**
+- **Rechnungen ohne erfasste Zahlung, die manuell auf PAID gesetzt wurden, gehen nicht in die Ø Zahlungsdauer ein.**
+- **Monatsgrenzen der Auswertungen laufen in UTC, nicht in Berlin-Ortszeit** (Fix M13b). `monthlyRevenue`/`dashboardSummary`/`customerOverview` gruppieren nach `Date.UTC`-Kalendermonaten — für einen Betreiber in Europe/Berlin fällt eine Rechnung vom Monatsersten nach 00:00, aber vor 01:00 (Winterzeit) bzw. vor 02:00 (Sommerzeit) Ortszeit noch in den **Vormonat** (sie liegt zu diesem Zeitpunkt UTC noch im letzten Tag des Vormonats). Betrifft nur Belege in der ersten/letzten Stunde eines Monats; über den vollen Monat gesehen bleibt die Summe korrekt.
 
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.

@@ -13,6 +13,13 @@ export interface EInvoiceParty {
   phone?: string | null;
   contactName?: string | null;
   electronicAddress?: string | null; // Peppol/Leitweg-Endpoint
+  /**
+   * Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-41362): Kundennummer
+   * (BEIM KAEUFER; Customer.customerNumber, Phase 7 §34) fuers PDF-Meta ("Ihre
+   * Kundennummer") — kein XML-Feld. Optional, damit bestehende Aufrufer/Fixtures ohne
+   * dieses Feld unveraendert bleiben.
+   */
+  customerNumber?: string | null;
 }
 
 export interface EInvoiceLine {
@@ -85,6 +92,9 @@ export interface EInvoiceData {
   issueDate: Date; // BT-2
   dueDate?: Date | null; // BT-9
   deliveryDate?: Date | null; // BT-72
+  deliveryStart?: Date | null;         // BT-73 (BG-14)
+  deliveryEnd?: Date | null;           // BT-74 (BG-14)
+  deliverToCountryCode?: string | null; // BT-80 (BG-15), Default: Land des Kaeufers
   currency: string; // BT-5
   buyerReference?: string | null; // BT-10 (Leitweg-ID im B2G)
   /** Phase 4b — Bestellnummer des Kunden (BT-13, cac:OrderReference/cbc:ID bzw.
@@ -152,6 +162,16 @@ export interface EInvoiceData {
    * `loadEInvoiceData` gesetzt (Rechnungen); Geschäftsdokumente (Angebot/AB/Proforma)
    * zeigen ohnehin nie einen GiroCode. */
   giroAmountCents?: number | null;
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Hinweis auf die zweijaehrige
+   * Aufbewahrungspflicht des privaten Leistungsempfaengers bei Bauleistungen am
+   * Grundstueck (Phase 12b, Task 5). Geht als eigener Note/IncludedNote ins XML UND
+   * ins PDF, wenn gesetzt. */
+  consumerRetentionHint?: boolean;
+  /** Phase 12b (COMPLIANCE.md § 11) — unterscheidet die zwei Wege, auf denen ein
+   * CREDIT_NOTE entsteht: Vollstorno (`cancel.ts`) vs. Teilgutschrift/Korrektur
+   * (`credit.ts`). Nur von `loadEInvoiceData` gesetzt, wenn ein Original aufloesbar
+   * ist; steuert ausschliesslich den PDF-Titel ("Stornorechnung"/"Rechnungskorrektur"). */
+  creditNoteKind?: "STORNO" | "KORREKTUR";
 }
 
 /** Phase 5 (§14 Abs. 5 Satz 2 UStG) — Snapshot einer auf einer Schlussrechnung

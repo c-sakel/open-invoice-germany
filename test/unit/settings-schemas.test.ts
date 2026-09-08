@@ -32,6 +32,7 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
       recurringInsertPeriodText: true,
       recurringAutoFinalizeDefault: false,
       recurringAutoSendDefault: false,
+      taxRates: [19, 7, 0],
     });
   });
 
@@ -64,7 +65,7 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
 });
 
 describe("printSettingsInputSchema", () => {
-  it("setzt die zehn Default-Schalter", () => {
+  it("setzt die zehn Default-Schalter plus die GiroCode-Groesse (Phase 12a)", () => {
     expect(printSettingsInputSchema.parse({})).toEqual({
       showFooter: true,
       showPageNumbers: true,
@@ -76,6 +77,7 @@ describe("printSettingsInputSchema", () => {
       showLineTotals: true,
       showSenderLine: true,
       showGiroCode: true,
+      giroSizeMm: 22,
     });
   });
 
@@ -108,6 +110,13 @@ describe("brandingSettingsInputSchema", () => {
       fontSizePt: 10,
       backgroundPath: null,
       showBackground: false,
+      layoutId: "standard",
+      layoutByType: {},
+      footerMode: "AUTO",
+      appName: null,
+      appShortName: null,
+      faviconPath: null,
+      appLogoPath: null,
     });
   });
 
@@ -117,11 +126,11 @@ describe("brandingSettingsInputSchema", () => {
     expect(brandingSettingsInputSchema.safeParse({ primaryColor: "111111" }).success).toBe(false);
   });
 
-  it("begrenzt logoWidthMm auf 10..100", () => {
+  it("begrenzt logoWidthMm auf 10..140 (Phase 12a: vorher 10..100)", () => {
     expect(brandingSettingsInputSchema.safeParse({ logoWidthMm: 9 }).success).toBe(false);
     expect(brandingSettingsInputSchema.safeParse({ logoWidthMm: 10 }).success).toBe(true);
-    expect(brandingSettingsInputSchema.safeParse({ logoWidthMm: 100 }).success).toBe(true);
-    expect(brandingSettingsInputSchema.safeParse({ logoWidthMm: 101 }).success).toBe(false);
+    expect(brandingSettingsInputSchema.safeParse({ logoWidthMm: 140 }).success).toBe(true);
+    expect(brandingSettingsInputSchema.safeParse({ logoWidthMm: 141 }).success).toBe(false);
   });
 
   it("begrenzt die Raender auf 5..40", () => {

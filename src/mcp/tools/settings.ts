@@ -17,7 +17,13 @@ import {
   NumberRangeDocType,
   dunningSettingsInputSchema,
 } from "@/schemas";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { ToolError, type McpToolsContext, type Result } from "./context";
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5b): `partialInputShape` lebt jetzt in
+// einem eigenen Modul, damit `dunning.ts#update_dunning_stage` (dieselbe Teil-Update-
+// Problematik, siehe dort) sie ebenfalls nutzen kann — siehe partial-input.ts fuer die
+// ausfuehrliche Begruendung.
+import { partialInputShape } from "./partial-input";
 
 export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): void {
   // ── get_settings ─────────────────────────────────────────────────────────────
@@ -60,8 +66,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Beleg-Einstellungen aktualisieren",
       description:
-        "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
-      inputSchema: documentSettingsInputSchema.partial().shape,
+        "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen), freigegebene Steuersaetze (taxRates, ganze Prozentwerte 0-100, 1-10 Eintraege). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+      inputSchema: partialInputShape(documentSettingsInputSchema),
     },
     async (args): Promise<Result> => {
       try {
@@ -82,8 +88,9 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     "update_print_settings",
     {
       title: "Globale Druckoptionen aktualisieren",
-      description: "Aktualisiert die zehn globalen Druckoptionen-Schalter (§36). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
-      inputSchema: printSettingsInputSchema.partial().shape,
+      description:
+        "Aktualisiert die globalen Druckoptionen (§36): zehn Schalter plus die GiroCode-Groesse giroSizeMm (15-40 mm). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+      inputSchema: partialInputShape(printSettingsInputSchema),
     },
     async (args): Promise<Result> => {
       try {
@@ -105,22 +112,41 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Briefpapier-Einstellungen aktualisieren",
       description:
-        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35). OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert.",
-      inputSchema: brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true }).partial().shape,
+        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35) sowie das PDF-Layout: `layoutId` (Organisationsstandard), `layoutByType` (je Belegtyp INVOICE/CREDIT_NOTE/QUOTE/ORDER_CONFIRMATION/PROFORMA/DELIVERY_NOTE/DUNNING), `footerMode` (AUTO = Stammdaten-Fusszeile, CUSTOM = footerLeft/-Center/-Right). Waehlbare Layout-Ids ueber list_pdf_layouts. OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert — Ausnahme: wird `layoutByType` mitgeschickt, ersetzt es die gesamte bisherige Zuordnung (nicht nur die genannten Belegtypen); um einen einzelnen Belegtyp zu aendern, vorher den aktuellen Stand per get_settings lesen und zusammenfuehren.",
+      inputSchema: partialInputShape(
+        brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true, faviconPath: true, appLogoPath: true }),
+      ),
     },
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const current = await loadBrandingSettings(org.id);
-        // Verteidigung in der Tiefe: logoPath/backgroundPath NIE aus `args` uebernehmen,
-        // selbst wenn ein Aufrufer sie mitschickt — die inputSchema-Validierung des
-        // McpServer-Dispatchers wuerde sie zwar bereits herausfiltern (Zod-Objekt ohne
-        // .passthrough), aber ein direkter Handler-Aufruf (z. B. in Tests) umgeht diese
-        // Schicht. Datei-Uploads laufen ausschliesslich ueber die UI-Route.
-        const { logoPath: _ignoredLogoPath, backgroundPath: _ignoredBackgroundPath, ...safeArgs } = args as Record<string, unknown>;
+        // Verteidigung in der Tiefe: logoPath/backgroundPath/faviconPath/appLogoPath NIE
+        // aus `args` uebernehmen, selbst wenn ein Aufrufer sie mitschickt — die
+        // inputSchema-Validierung des McpServer-Dispatchers wuerde sie zwar bereits
+        // herausfiltern (Zod-Objekt ohne .passthrough), aber ein direkter Handler-Aufruf
+        // (z. B. in Tests) umgeht diese Schicht. Datei-Uploads laufen ausschliesslich
+        // ueber die UI-Route (Fix-Welle 12c Fix 1: faviconPath/appLogoPath ergaenzt,
+        // dieselbe Regel wie logoPath/backgroundPath).
+        const {
+          logoPath: _ignoredLogoPath,
+          backgroundPath: _ignoredBackgroundPath,
+          faviconPath: _ignoredFaviconPath,
+          appLogoPath: _ignoredAppLogoPath,
+          ...safeArgs
+        } = args as Record<string, unknown>;
         void _ignoredLogoPath;
         void _ignoredBackgroundPath;
-        const saved = await saveBrandingSettings(org.id, { ...current, ...safeArgs, logoPath: current.logoPath, backgroundPath: current.backgroundPath });
+        void _ignoredFaviconPath;
+        void _ignoredAppLogoPath;
+        const saved = await saveBrandingSettings(org.id, {
+          ...current,
+          ...safeArgs,
+          logoPath: current.logoPath,
+          backgroundPath: current.backgroundPath,
+          faviconPath: current.faviconPath,
+          appLogoPath: current.appLogoPath,
+        });
         return ctx.ok(`Briefpapier-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
@@ -180,7 +206,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Beleg-individuelle Druckoptionen setzen",
       description:
-        "Setzt die Beleg-individuelle Ueberschreibung der globalen Druckoptionen (§36) fuer eine Rechnung/Gutschrift (kind=INVOICE), ein Angebot/eine Auftragsbestaetigung (kind=QUOTE) oder einen Lieferschein (kind=DELIVERY_NOTE). Nur erlaubt, solange der Beleg im Entwurf (DRAFT) ist. Nur die uebergebenen Felder werden gesetzt (Ersatz der bisherigen Ueberschreibung, kein Merge).",
+        "Setzt die Beleg-individuelle Ueberschreibung der globalen Druckoptionen (§36) UND optional des PDF-Layouts (layoutId, Phase 11b) fuer eine Rechnung/Gutschrift (kind=INVOICE), ein Angebot/eine Auftragsbestaetigung (kind=QUOTE) oder einen Lieferschein (kind=DELIVERY_NOTE). Nur erlaubt, solange der Beleg im Entwurf (DRAFT) ist. Nur die uebergebenen Felder werden gesetzt (Ersatz der bisherigen Ueberschreibung, kein Merge). Waehlbare Layout-Ids ueber list_pdf_layouts.",
       inputSchema: {
         kind: z.enum(["INVOICE", "QUOTE", "DELIVERY_NOTE"]),
         id: z.string().min(1),
@@ -201,6 +227,21 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     },
   );
 
+  // ── list_pdf_layouts ─────────────────────────────────────────────────────────
+  // Phase 11b, Task 8: feste Liste der sieben PDF-Layouts (kein Input) — dieselbe
+  // Funktion, die auch /api/v1/Layout (src/app/api/v1/Layout/route.ts) und die
+  // Briefpapier-Galerie (Task 7) nutzen.
+  server.registerTool(
+    "list_pdf_layouts",
+    {
+      title: "PDF-Layouts auflisten",
+      description:
+        "Liste der waehlbaren PDF-Layouts (id, name, description). Auswahl je Belegtyp ueber update_branding_settings {layoutId, layoutByType}, je Beleg ueber set_print_options {options: {layoutId}}.",
+      inputSchema: {},
+    },
+    async (): Promise<Result> => ctx.ok(JSON.stringify(listLayouts(), null, 2)),
+  );
+
   // ── update_dunning_settings ────────────────────────────────────────────────────
   server.registerTool(
     "update_dunning_settings",
@@ -208,7 +249,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
       title: "Mahnwesen-Einstellungen aktualisieren",
       description:
         "Aktualisiert die org-weiten Mahnwesen-Einstellungen (§26, Nachtrag Phase 7/§55: autoCreate, autoSend, Basiszinssatz, Karenztage). Nicht angegebene Felder bleiben unveraendert.",
-      inputSchema: dunningSettingsInputSchema.partial().shape,
+      inputSchema: partialInputShape(dunningSettingsInputSchema),
     },
     async (args): Promise<Result> => {
       try {

@@ -1,7 +1,8 @@
 /**
  * Layout-Bausteine, die von allen drei PDF-Renderern (Rechnung/Angebot, Lieferschein,
- * Mahnung) geteilt werden: mm→pt, Ränder aus dem Theme, Absenderzeile, dreispaltige
- * Fusszeile, Logo oben rechts, Hintergrundbild vollflächig (Phase 7, Task 3, §35/§36).
+ * Mahnung) geteilt werden: mm→pt, Ränder aus dem Theme, Absenderzeile, Logo oben rechts,
+ * Hintergrundbild vollflächig (Phase 7, Task 3, §35/§36). Die Fusszeile lebt seit Phase
+ * 11b in `footer.ts` (Spalten-Fakten) + `layouts/shared.ts#drawFooterColumns` (Zeichnen).
  */
 import type { PdfTheme } from "./theme";
 
@@ -36,11 +37,17 @@ export function drawBackground(doc: PDFKit.PDFDocument, theme: PdfTheme): void {
   doc.image(theme.backgroundBuffer, 0, 0, { width: doc.page.width, height: doc.page.height });
 }
 
+/** Maximale Logo-Hoehe in mm (Phase 12a). `drawLogo` zeichnete bisher nur mit `{ width }`
+ *  — ein hohes, schmales Logo wuchs unbegrenzt nach unten und lief in den Adressblock.
+ *  `fit` skaliert proportional in die Box [Breite x LOGO_MAX_HEIGHT_MM]; breite/flache
+ *  Logos (der Normalfall) rendern unveraendert. */
+export const LOGO_MAX_HEIGHT_MM = 35;
+
 /** Zeichnet das Logo oben rechts (Breite `brand.logoWidthMm`); ohne Logo-Buffer no-op. */
 export function drawLogo(doc: PDFKit.PDFDocument, theme: PdfTheme, right: number, top: number): void {
   if (!theme.logoBuffer) return;
   const width = mm(theme.brand.logoWidthMm);
-  doc.image(theme.logoBuffer, right - width, top, { width });
+  doc.image(theme.logoBuffer, right - width, top, { fit: [width, mm(LOGO_MAX_HEIGHT_MM)], align: "right" });
 }
 
 /**
@@ -52,23 +59,4 @@ export function drawSenderLine(doc: PDFKit.PDFDocument, theme: PdfTheme, left: n
   if (!theme.options.showSenderLine) return;
   const text = theme.brand.senderLine || fallback;
   doc.fontSize(9).fillColor("#555555").text(text, left, y);
-}
-
-/**
- * Dreispaltige Fusszeile (footerLeft/-Center/-Right) aus dem Briefpapier. Zeichnet nichts
- * und liefert `false`, wenn `options.showFooter` aus ist oder keine der drei Spalten Text
- * trägt — der Aufrufer zeichnet dann seinen bisherigen Fallback-Fusstext
- * (Aussteller-Pflichtangaben) selbst weiter.
- */
-export function drawBrandedFooter(doc: PDFKit.PDFDocument, theme: PdfTheme, left: number, right: number, y: number): boolean {
-  if (!theme.options.showFooter) return false;
-  const { footerLeft, footerCenter, footerRight } = theme.brand;
-  if (!footerLeft && !footerCenter && !footerRight) return false;
-  const width = right - left;
-  const colWidth = width / 3;
-  doc.fontSize(8).fillColor("#666666");
-  if (footerLeft) doc.text(footerLeft, left, y, { width: colWidth, align: "left" });
-  if (footerCenter) doc.text(footerCenter, left, y, { width, align: "center" });
-  if (footerRight) doc.text(footerRight, left + width - colWidth, y, { width: colWidth, align: "right" });
-  return true;
 }

@@ -3,7 +3,6 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
-import { isValidIban, normalizeIban } from "@/lib/iban";
 // Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
@@ -16,14 +15,20 @@ export const TaxScheme = z.enum([
   "REVERSE_CHARGE",
   "IG_LIEFERUNG",
   "IG_LEISTUNG",
-  "DRITTLAND_LEISTUNG",
+  // Phase 12b — steuerfreie Ausfuhrlieferung ins Drittland
+  // (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG), Kategorie G.
+  "AUSFUHR",
 ]);
 export type TaxScheme = z.infer<typeof TaxScheme>;
 
+// UNTDID 5305. "O" (nicht steuerbar) ist in Phase 12b nur fuer den Mapper vorgesehen —
+// kein Schema waehlt sie (siehe defaultCategoryForScheme).
 export const TaxCategory = z.enum(["S", "AE", "K", "G", "E", "Z", "O"]);
 export type TaxCategory = z.infer<typeof TaxCategory>;
 
-export const TaxRate = z.union([z.literal(19), z.literal(7), z.literal(0)]);
+// Phase 12c: keine Literal-Union mehr — die zulaessige Menge ist org-abhaengig und wird
+// von assertAllowedTaxRates geprueft, nicht von Zod.
+export const TaxRate = z.number().int().min(0).max(100);
 
 // Positionstyp (Phase 4b) — HEADING/TEXT/SUBTOTAL tragen nie Betraege, gehen nie in
 // Summen, XML oder Steuerberechnung (Lastenheft §8: kein Menge-0-Workaround).
@@ -101,6 +106,12 @@ export const buyerSnapshotSchema = z.object({
   // Phase 8a (§31): Werte der Kunden-Zusatzfelder zum Snapshot-Zeitpunkt. Optional aus
   // demselben Grund wie `address`.
   customFields: z.record(z.string(), z.unknown()).optional(),
+  // Fix-Welle (Abschluss-Review Phase 11b, Block 3): Kundennummer (Customer.customerNumber,
+  // Phase 7 §34) fuers PDF-Meta "Ihre Kundennummer" — kein XML-Feld. Optional aus
+  // demselben Grund wie `address`/`shippingAddress`/`customFields` (Object.keys-
+  // Kompatibilitaet, siehe test/unit/snapshot.test.ts "Schluesselmengen": `buildBuyerSnapshot`
+  // setzt das Feld nur, wenn der Aufrufer es mitgibt).
+  customerNumber: z.string().nullable().optional(),
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
 
@@ -147,6 +158,7 @@ export type TaxBreakdownEntrySnapshot = z.infer<typeof taxBreakdownEntrySchema>;
 // ── Stammdaten ───────────────────────────────────────────────────────────
 export const organizationSchema = z.object({
   legalName: z.string().min(1),
+  ownerName: z.string().trim().max(120).optional(),
   addressLine1: z.string().min(1),
   addressLine2: z.string().optional(),
   postalCode: z.string().min(1),
@@ -160,11 +172,7 @@ export const organizationSchema = z.object({
   kuIdNr: z.string().optional(),
   smallBusiness: z.boolean().default(false),
   defaultTaxScheme: TaxScheme.default("REGULAR"),
-  iban: z
-    .string()
-    .optional()
-    .transform((s) => (s ? normalizeIban(s) : s))
-    .refine((s) => !s || isValidIban(s), "Ungültige IBAN"),
+  iban: z.string().optional(),
   bic: z.string().optional(),
   bankName: z.string().optional(),
   electronicAddress: z.string().optional(),
@@ -351,6 +359,9 @@ const invoiceHeaderFields = {
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   internalNotes: z.string().optional(), // nur intern, nie im Beleg
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
+   *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
+  consumerRetentionHint: z.boolean().optional(),
   ...documentAdjustmentFields,
   ...skontoFields,
 };
@@ -891,3 +902,6 @@ export const attachmentUploadSchema = z.object({
 });
 export type AttachmentUploadInput = z.infer<typeof attachmentUploadSchema>;
 export * from "./webhook";
+
+// ── Phase 12d: Anfrageprotokoll der REST-API ────────────────────────────────
+export * from "./api-log";

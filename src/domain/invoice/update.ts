@@ -13,6 +13,7 @@ import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { updateInvoiceSchema } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -113,6 +114,8 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     if (input.headerText !== undefined) { data.headerText = input.headerText; changedFields.push("headerText"); }
     if (input.footerText !== undefined) { data.footerText = input.footerText; changedFields.push("footerText"); }
     if (input.internalNotes !== undefined) { data.internalNotes = input.internalNotes; changedFields.push("internalNotes"); }
+    // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
+    if (input.consumerRetentionHint !== undefined) { data.consumerRetentionHint = input.consumerRetentionHint; changedFields.push("consumerRetentionHint"); }
 
     if (input.skonto1Permille !== undefined) { data.skonto1Permille = input.skonto1Permille; changedFields.push("skonto1Permille"); }
     if (input.skonto1Days !== undefined) { data.skonto1Days = input.skonto1Days; changedFields.push("skonto1Days"); }
@@ -180,6 +183,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       );
 
       if (input.lines) {
+        await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: ratesOfLines(invoice.lines) });
         await tx.invoiceLine.deleteMany({ where: { invoiceId: id } });
         data.lines = { create: lines };
         changedFields.push("lines");

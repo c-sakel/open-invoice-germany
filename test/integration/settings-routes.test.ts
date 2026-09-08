@@ -152,6 +152,30 @@ describe("Briefpapier (/api/settings/branding)", () => {
     const res = await brandingPut(jsonRequest("http://x/api/settings/branding", { primaryColor: "blau" }));
     expect(res.status).toBe(400);
   });
+
+  // Fix-Welle (Fix 1): logoPath/backgroundPath/faviconPath/appLogoPath sind NIE per PUT
+  // client-schreibbar — nur die Upload-Route setzt sie (dieselbe Regel wie MCP
+  // update_branding_settings und PATCH /api/v1/Settings).
+  it("PUT ignoriert mitgeschickte Datei-Pfade (favicon/appLogo/logo/background)", async () => {
+    const before = await (await brandingGet()).json();
+    const res = await brandingPut(
+      jsonRequest("http://x/api/settings/branding", {
+        ...before.settings,
+        faviconPath: "boesartig/icon.png",
+        appLogoPath: "boesartig/logo.png",
+        logoPath: "boesartig/pfad.png",
+        backgroundPath: "boesartig/bg.png",
+        fontSizePt: 14,
+      }),
+    );
+    const j = await res.json();
+    expect(res.status).toBe(200);
+    expect(j.settings.faviconPath).toBe(before.settings.faviconPath);
+    expect(j.settings.appLogoPath).toBe(before.settings.appLogoPath);
+    expect(j.settings.logoPath).toBe(before.settings.logoPath);
+    expect(j.settings.backgroundPath).toBe(before.settings.backgroundPath);
+    expect(j.settings.fontSizePt).toBe(14);
+  });
 });
 
 describe("Logo-/Hintergrund-Upload (/api/settings/branding/upload)", () => {
@@ -222,6 +246,35 @@ describe("Vorschau-PDF (/api/settings/branding/preview)", () => {
   it("GET 400: ungueltiger docType", async () => {
     const res = await previewGet(new Request("http://x/api/settings/branding/preview?docType=SONSTWAS"));
     expect(res.status).toBe(400);
+  });
+
+  // Phase 11b, Task 6: layoutId-Parameter (expliziter Layout-Override, ohne zu speichern),
+  // 400 bei unbekanntem Layout, DUNNING-Vorschau rendert ueber renderDunningPdf.
+  it("Vorschau: layoutId-Parameter, 400 bei unbekanntem Layout, DUNNING-Vorschau rendert", async () => {
+    const ok = await previewGet(new Request("http://x/api/settings/branding/preview?docType=INVOICE&layoutId=schlicht"));
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("content-type")).toBe("application/pdf");
+    expect(ok.headers.get("cache-control")).toBe("no-store");
+
+    const bad = await previewGet(new Request("http://x/api/settings/branding/preview?layoutId=premium"));
+    expect(bad.status).toBe(400);
+
+    const du = await previewGet(new Request("http://x/api/settings/branding/preview?docType=DUNNING"));
+    expect(du.status).toBe(200);
+    const duBuf = Buffer.from(await du.arrayBuffer());
+    expect(duBuf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("GET liefert ein PDF fuer CREDIT_NOTE und ANGEBOT", async () => {
+    const gs = await previewGet(new Request("http://x/api/settings/branding/preview?docType=CREDIT_NOTE"));
+    expect(gs.status).toBe(200);
+    const gsBuf = Buffer.from(await gs.arrayBuffer());
+    expect(gsBuf.subarray(0, 4).toString()).toBe("%PDF");
+
+    const an = await previewGet(new Request("http://x/api/settings/branding/preview?docType=ANGEBOT"));
+    expect(an.status).toBe(200);
+    const anBuf = Buffer.from(await an.arrayBuffer());
+    expect(anBuf.subarray(0, 4).toString()).toBe("%PDF");
   });
 });
 

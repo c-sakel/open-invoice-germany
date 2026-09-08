@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { NOTIFICATIONS_CHANGED_EVENT } from "@/components/shell/UnreadBadge";
 
 interface Notification {
   id: string;
@@ -24,13 +25,19 @@ export function NotificationsList({ initial }: { initial: Notification[] }) {
 
   async function markRead(ids?: string[]) {
     setBusy(true);
-    await fetch("/api/notifications/read", {
+    const res = await fetch("/api/notifications/read", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(ids ? { ids } : { all: true }),
     });
-    const now = new Date().toISOString();
-    setItems((prev) => prev.map((n) => (ids ? (ids.includes(n.id) ? { ...n, readAt: n.readAt ?? now } : n) : { ...n, readAt: n.readAt ?? now })));
+    if (res.ok) {
+      const now = new Date().toISOString();
+      setItems((prev) => prev.map((n) => (ids ? (ids.includes(n.id) ? { ...n, readAt: n.readAt ?? now } : n) : { ...n, readAt: n.readAt ?? now })));
+      // Sidebar-Badge (`UnreadBadge`) rendert server-seitig einen Startwert und aktualisiert
+      // sich sonst nur per 60s-Poll/Fokus — dieses Event macht "Alle als gelesen markieren"
+      // sofort sichtbar (Abschluss-Review, Important).
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
+    }
     setBusy(false);
   }
 

@@ -6,8 +6,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { dashboardSummary } from "@/domain/dashboard/summary";
+import { runReport, reportQueryFieldsSchema } from "@/domain/reporting/query";
 import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
+import { listApiRequestLogs } from "@/domain/api-log/list";
+import { apiRequestLogFilterSchema } from "@/schemas/api-log";
 import { organizationSchema, TaxScheme } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -61,6 +64,27 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           2,
         ),
       );
+    },
+  );
+
+  // ── list_api_requests ────────────────────────────────────────────────────────
+  server.registerTool(
+    "list_api_requests",
+    {
+      title: "API-Anfrageprotokoll",
+      description:
+        "Listet protokollierte REST-API-Anfragen (Phase 12d) zur Fehlersuche: Zeit, Methode, Pfad, Status, Dauer, Schluessel. Das Protokoll ist standardmaessig AUS (Einstellungen -> API); ohne Einschaltung ist die Liste leer. Bodies erscheinen nur, wenn zusaetzlich 'Bodies mitschreiben' aktiv ist — gekuerzt auf 2 KB und mit geschwaerzten Geheimnissen.",
+      inputSchema: { ...apiRequestLogFilterSchema.shape },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const result = await listApiRequestLogs(org.id, args);
+        return ctx.ok(JSON.stringify(result, null, 2));
+      } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
     },
   );
 
@@ -140,7 +164,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Dashboard-Kennzahlen abrufen",
       description:
-        "Liefert die Dashboard-Kennzahlen der Organisation (offene/faellige/ueberfaellige Rechnungen, Aging, Umsatz laufender Monat, letzte Belege, offene Angebote).",
+        "Liefert die Dashboard-Kennzahlen der Organisation (offene/faellige/ueberfaellige Rechnungen, Aging, Nettoumsatz laufender Monat, letzte Belege, offene Angebote).",
       inputSchema: {},
     },
     async (): Promise<Result> => {
@@ -150,6 +174,46 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         return ctx.ok(JSON.stringify(summary, null, 2));
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── get_report ───────────────────────────────────────────────────────────────
+  server.registerTool(
+    "get_report",
+    {
+      title: "Auswertung abrufen",
+      description:
+        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status) oder payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil). Optional je Kunde (customer) und ueber n Monate (months, Default 12).",
+      // Fix M7 (Abschluss-Review): `reportQueryFieldsSchema.shape` als einzige Quelle fuer
+      // type/months/limit (kein zweites, redundant getipptes Feld-Set mehr) — nur
+      // `customerId` wird durch `customer` ersetzt: jedes andere Tool nimmt eine Kunden-ID
+      // ODER einen -namen entgegen und loest ueber `ctx.resolveCustomer` auf (siehe
+      // src/mcp/tools/customers.ts), `get_report` tat das bisher nicht.
+      // Fix M8 (Fix 2): `reportQueryFieldsSchema` ist bewusst das UNREFINIERTE Basisschema
+      // (nicht `reportQuerySchema`) — ein Zod-Objektschema mit `.superRefine()` (die
+      // eigentliche Validierung passiert unveraendert in `runReport`) erlaubt kein
+      // `.omit()` mehr.
+      inputSchema: {
+        ...reportQueryFieldsSchema.omit({ customerId: true }).shape,
+        customer: z.string().min(1).optional().describe("Kunden-ID oder -Name (nur bei revenue, payment-behaviour zulässig)."),
+      },
+    },
+    async ({ customer, ...rest }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const customerId = customer ? (await ctx.resolveCustomer(org.id, customer)).id : undefined;
+        return ctx.ok(JSON.stringify(await runReport(org.id, { ...rest, customerId }), null, 2));
+      } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        // Fix M8 (Fix 2): reportQuerySchema.parse() in runReport wirft bei unbekanntem
+        // type, months/limit ausserhalb der Grenzen ODER einem beim gewaehlten type nicht
+        // anwendbaren Parameter einen ZodError — derselbe Umgang wie in jedem anderen
+        // MCP-Tool (z. B. src/mcp/tools/customers.ts), NICHT der generische failUnknown-
+        // Fallback (der wuerde die konkrete, fuer den Aufrufer harmlose Validierungs-
+        // meldung verschlucken).
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         return ctx.failUnknown(e);
       }
     },

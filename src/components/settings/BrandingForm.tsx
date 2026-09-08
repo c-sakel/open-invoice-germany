@@ -2,15 +2,14 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { BrandingSettingsInput } from "@/schemas";
+import { parseClampedNumberInput } from "@/lib/forms/clamped-number-input";
 
-const PREVIEW_DOC_TYPES: { value: string; label: string }[] = [
-  { value: "INVOICE", label: "Rechnung" },
-  { value: "ANGEBOT", label: "Angebot" },
-  { value: "DELIVERY_NOTE", label: "Lieferschein" },
-];
-
-/** Briefpapier-Einstellungen (§35): Logo-/Hintergrund-Upload, Farbe, Ränder, Fußzeilen, Live-Vorschau als PDF. */
+/** Briefpapier-Einstellungen (§35): Logo-/Hintergrund-Upload, Farbe, Ränder, Fußzeilen.
+ *  Die Live-Vorschau (vormals eine feste PDF-Vorschau hier im Formular) lebt seit Phase 11b,
+ *  Task 7 im Reiter "Layouts" (Galerie mit iframe-Vorschau je Belegtyp) — kein doppelter
+ *  Vorschau-Mechanismus mehr. */
 export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
@@ -20,7 +19,10 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
   const [saved, setSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
-  const [previewDocType, setPreviewDocType] = useState("INVOICE");
+  // Fix-Welle 12a, Fix 2: Rohtext waehrend des Tippens, getrennt von `values.logoWidthMm`
+  // (siehe clamped-number-input.ts). `null` = kein aktiver Draft, Feld + Regler zeigen
+  // den committeten Wert.
+  const [logoWidthDraft, setLogoWidthDraft] = useState<string | null>(null);
 
   function setField<K extends keyof BrandingSettingsInput>(key: K, value: BrandingSettingsInput[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -30,21 +32,37 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
     setSaving(true);
     setError(null);
     setSaved(false);
-    const res = await fetch("/api/settings/branding", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
-    if (!res.ok || !j.settings) {
-      setError(j.error ?? "Speichern fehlgeschlagen.");
-      setSaving(false);
-      return;
+    // Fix-Welle 12a, Fix 2: vor dem Speichern einen noch nicht per onBlur committeten
+    // Draft nachziehen (z. B. wenn der Button ohne vorherigen Fokuswechsel ausgeloest wird).
+    const payload: BrandingSettingsInput =
+      logoWidthDraft !== null ? { ...values, logoWidthMm: parseClampedNumberInput(logoWidthDraft, 10, 140, values.logoWidthMm) } : values;
+    if (logoWidthDraft !== null) {
+      setValues(payload);
+      setLogoWidthDraft(null);
     }
-    setValues(j.settings);
-    setSaving(false);
-    setSaved(true);
-    router.refresh();
+    // Fix-Welle (Abschluss-Review, Block 4 "Minor"): try/catch + `finally` — ein
+    // Netzwerkfehler (nicht nur ein Nicht-200-Status) liess den Button vorher bis zum
+    // Neuladen auf "Speichern…" haengen, weil `setSaving(false)` nie erreicht wurde
+    // (siehe dasselbe Muster in LayoutGallery.tsx#save).
+    try {
+      const res = await fetch("/api/settings/branding", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
+      if (!res.ok || !j.settings) {
+        setError(j.error ?? "Speichern fehlgeschlagen.");
+        return;
+      }
+      setValues(j.settings);
+      setSaved(true);
+      router.refresh();
+    } catch {
+      setError("Netzwerkfehler beim Speichern. Bitte erneut versuchen.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function upload(kind: "logo" | "background", file: File) {
@@ -107,12 +125,37 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
             {uploading === "logo" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-600">Breite im PDF (mm)</span>
-              <input
-                type="number"
-                value={values.logoWidthMm}
-                onChange={(e) => setField("logoWidthMm", Number(e.target.value))}
-                className="w-24 rounded border border-slate-300 px-2 py-1"
-              />
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={10}
+                  max={140}
+                  step={1}
+                  value={values.logoWidthMm}
+                  onChange={(e) => {
+                    // Regler liefert immer einen gueltigen Wert (kein Draft noetig) —
+                    // ein evtl. noch offener Draft im Zahlenfeld wird verworfen, damit
+                    // beide Steuerelemente synchron bleiben.
+                    setField("logoWidthMm", Number(e.target.value));
+                    setLogoWidthDraft(null);
+                  }}
+                  className="w-56"
+                  aria-label="Logobreite in Millimeter"
+                />
+                <input
+                  type="number"
+                  min={10}
+                  max={140}
+                  value={logoWidthDraft ?? String(values.logoWidthMm)}
+                  onChange={(e) => setLogoWidthDraft(e.target.value)}
+                  onBlur={() => {
+                    setValues((v) => ({ ...v, logoWidthMm: parseClampedNumberInput(logoWidthDraft ?? String(v.logoWidthMm), 10, 140, v.logoWidthMm) }));
+                    setLogoWidthDraft(null);
+                  }}
+                  className="w-24 rounded border border-slate-300 px-2 py-1"
+                />
+              </div>
+              <span className="text-xs text-slate-400">10–140 mm; die Höhe wird auf 35 mm begrenzt, damit hohe Logos nicht in den Adressblock laufen.</span>
             </label>
           </div>
 
@@ -182,11 +225,40 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
             placeholder="Firma · Straße · PLZ Ort"
           />
         </label>
+        <fieldset className="flex flex-col gap-2 text-sm">
+          <legend className="font-medium text-slate-700">Fußzeile</legend>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="footerMode"
+              checked={values.footerMode === "AUTO"}
+              onChange={() => setField("footerMode", "AUTO")}
+              className="h-4 w-4 border-slate-300"
+            />
+            <span className="text-slate-700">automatisch aus den Stammdaten (vierspaltig)</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="footerMode"
+              checked={values.footerMode === "CUSTOM"}
+              onChange={() => setField("footerMode", "CUSTOM")}
+              className="h-4 w-4 border-slate-300"
+            />
+            <span className="text-slate-700">eigene Texte (drei Spalten)</span>
+          </label>
+        </fieldset>
         <div className="grid gap-4 sm:grid-cols-3">
           {(["footerLeft", "footerCenter", "footerRight"] as const).map((k) => (
             <label key={k} className="flex flex-col gap-1 text-sm">
               <span className="text-slate-700">{{ footerLeft: "Fußzeile links", footerCenter: "Fußzeile Mitte", footerRight: "Fußzeile rechts" }[k]}</span>
-              <textarea value={values[k] ?? ""} onChange={(e) => setField(k, e.target.value || null)} rows={2} className="rounded border border-slate-300 px-2 py-1" />
+              <textarea
+                value={values[k] ?? ""}
+                onChange={(e) => setField(k, e.target.value || null)}
+                rows={2}
+                disabled={values.footerMode !== "CUSTOM"}
+                className="rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-400"
+              />
             </label>
           ))}
         </div>
@@ -197,26 +269,15 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
           {saving ? "Speichern…" : "Einstellungen speichern"}
         </button>
 
-        <div className="flex items-center gap-2">
-          <select value={previewDocType} onChange={(e) => setPreviewDocType(e.target.value)} className="rounded-md border border-slate-300 px-2 py-2 text-sm">
-            {PREVIEW_DOC_TYPES.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <a
-            href={`/api/settings/branding/preview?docType=${previewDocType}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            PDF-Vorschau öffnen
-          </a>
-        </div>
+        <Link
+          href="/einstellungen/briefpapier?tab=layouts"
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Layout &amp; Live-Vorschau →
+        </Link>
       </div>
       <p className="text-xs text-slate-400">
-        Die Vorschau nutzt eine feste Musterrechnung mit den echten Absender-Stammdaten und dem zuletzt GESPEICHERTEN Briefpapier — zuerst speichern, dann öffnen.
+        Layout-Auswahl je Belegtyp und eine Live-Vorschau finden Sie im Reiter „Layouts“.
       </p>
     </div>
   );

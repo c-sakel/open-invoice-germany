@@ -152,13 +152,138 @@ Der `Idempotency-Key` sorgt dafür, dass ein wiederholter Request (z. B. Timeout
 Client) nicht zweimal gebucht wird — derselbe Schlüssel liefert dieselbe Antwort
 erneut. Nach vollständiger Zahlung wechselt die Rechnung auf Status `PAID`.
 
+## Anfrageprotokoll
+
+Jede Antwort von `/api/v1/*` — Erfolg **und** Fehler — trägt den Header
+`X-Request-Id` (UUID), **mit Ausnahme von** `GET /api/v1/openapi.json` (läuft
+bewusst ohne den `withApi`-Wrapper, siehe „Was NICHT protokolliert wird"
+unten). Ist das Anfrageprotokoll für die Organisation eingeschaltet
+(**standardmäßig AUS**, `Einstellungen → API → Anfrageprotokoll`), landet zu
+jeder protokollierten Anfrage eine Zeile mit **derselben** Kennung in
+`ApiRequestLog.requestId` — der Header eignet sich damit als Suchschlüssel beim
+Support/Debugging.
+
+`GET /api/v1/ApiRequestLog` (Filter: `apiKeyId`, `errorsOnly`, `path`, `from`/
+`to`, `limit`/`offset`) und `GET /api/v1/ApiRequestLog/{id}` — Scope `read`,
+**ausschließlich lesend**: kein `POST`/`PATCH`/`DELETE` über die API, Löschen
+("Protokoll leeren") und die Einstellungen (`logRequests`/`logBodies`/
+`retentionDays`/`maxRows`) sind ausschließlich über die Session-Route der UI
+erreichbar (`Einstellungen → API`), nicht über `/api/v1`. Die Listenantwort
+enthält aus Datenminimierungsgründen **keine** Request-/Response-Bodies (immer
+`null`) — volle Bodies (sofern gespeichert) liefert nur der Einzelabruf
+`GET /api/v1/ApiRequestLog/{id}`.
+
+**Was im „nur Kopfdaten"-Modus (`logRequests` an, `logBodies` aus) gespeichert
+wird:** Methode, Pfad **inklusive Query-String** (Parameter mit verdächtigem
+Namen — Geheimnis-Muster wie `token`/`secret`/`password`/`apiKey`/`iban`/`bic`
+sowie `email` — werden vor dem Speichern geschwärzt; scheitert die Schwärzung
+ausnahmsweise, wird der Pfad **ohne** Query gespeichert), Status, Dauer,
+`apiKeyId`, Request-ID sowie **IP-Adresse und User-Agent** des Aufrufers. Nur
+Request-/Response-Bodies hängen zusätzlich am separaten Schalter `logBodies`.
+
+**Was NICHT protokolliert wird:**
+- Anfragen, die die Authentifizierung nicht passieren — ein `401` mit
+  unbekanntem/ungültigem Schlüssel oder ein Vor-Auth-`429` — es gibt in diesem
+  Fall keine Organisation, der die Zeile zuzuordnen wäre.
+- `GET /api/docs`, `GET /api/v1/openapi.json`, `GET /api/v1/ping` sowie
+  `/api/v1/ApiRequestLog` selbst (Rekursionsschutz) — diese Pfade tragen nichts
+  zur Fehlersuche bei.
+
+## Auswertungen (Phase 12e)
+
+`GET /api/v1/Report` (Scope `read`) liefert dieselben Auswertungen wie die Diagramme
+auf Dashboard und Kundenseite — **keine eigene Aggregation** für die API, sondern
+derselbe Kern (`runReport`, `src/domain/reporting/query.ts`), den auch das MCP-Tool
+`get_report` aufruft. Kein Eintrag in der CRUD-Ressourcenliste unten: `Report` ist
+rein lesend und keine Tabelle, die Antwortform ist bewusst `{ data: <typabhängig> }`
+ohne festes Ressourcenschema (wie bei den Aktions-Endpunkten).
+
+Parameter (Query):
+
+| Parameter | Pflicht | Bedeutung |
+|---|---|---|
+| `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` |
+| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue` und `top-customers` zulässig** (Fix 2, ehem. M8) |
+| `limit` | nein | Anzahl Kunden (1–50, Default 5) — **nur bei `top-customers` zulässig** |
+| `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
+
+Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
+gewählten `type` **nicht zulässiger** Parameter (z. B. `limit` bei
+`type=revenue`, `months` bei `type=status`) liefert `400 VALIDATION` — die
+Meldung (`error.details.issues`) nennt den betroffenen Parameter. Vor Fix 2
+wurde ein nicht zutreffender Parameter still ignoriert; das ist seither ein
+Fehler, kein No-op mehr.
+
+- **`revenue`** — Netto-Umsatz je Kalendermonat, lückenlos (auch Monate ohne Beleg
+  als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
+  (negativen) Vorzeichen enthalten.
+- **`top-customers`** — die `limit` umsatzstärksten Kunden (netto) im Zeitraum,
+  absteigend sortiert.
+- **`status`** — Anzahl Rechnungen je effektivem Status (inkl. fällig/überfällig-
+  Ableitung) sowie der offene Betrag je Status.
+- **`payment-behaviour`** — Ø Tage bis zur Zahlung und Pünktlichkeitsanteil (0–1)
+  über als `PAID` abgeschlossene Rechnungen; beide Felder sind `null` ohne
+  auswertbare Datengrundlage (keine bezahlte Rechnung bzw. keine mit
+  Fälligkeitsdatum).
+
+Beispiel:
+
+```bash
+curl -s "$BASE/api/v1/Report?type=revenue&months=6" -H "$AUTH"
+```
+
+```json
+{
+  "data": {
+    "objectName": "Report",
+    "type": "revenue",
+    "rows": [
+      { "month": "2026-03", "netCents": 0, "count": 0 },
+      { "month": "2026-04", "netCents": 150000, "count": 2 }
+    ]
+  }
+}
+```
+
+`type=payment-behaviour` liefert `rows` stets als Ein-Elemente-Array
+(`[{ avgDaysToPay, onTimeShare, paidCount }]`) — dieselbe Form wie die anderen drei
+Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden müssen.
+
 ## Weitere Ressourcen
 
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
 `OrderConfirmation`, `DeliveryNote`, `Invoice`, `Payment`, `Dunning`, `Attachment`,
 `EmailLog`, `PaymentMethod`, `TextTemplate`, `EmailTemplate`, `Recurring`,
-`Settings`, `ApiKey`, `Webhook` — vollständige Liste mit Feldern, Filtern (`embed=`,
-Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
+`Settings`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog` — vollständige Liste mit
+Feldern, Filtern (`embed=`, Statusfilter, Datumsbereiche) und Beispielen:
+`GET /api/docs`.
+
+`GET /api/v1/Layout` (Scope `read`) liefert die sieben festen PDF-Layouts (`id`,
+`name`, `description`, `thumbnailUrl`) — keine Paginierung, kein POST/PATCH (feste
+Liste, keine DB-Tabelle). Auswahl je Organisation/Belegtyp über `PATCH
+/api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`). Eine Beleg-
+individuelle Layout-Überschreibung ist seit der Fix-Welle (Phase 11b) auch über
+`/api/v1` erreichbar: `GET`/`PATCH /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-
+options` (Scope `read`/`write`) liefert die effektiven Druckoptionen (globale
+Einstellungen verschmolzen mit einer etwaigen Beleg-Überschreibung) bzw. setzt die
+Überschreibung als Ganzes (`printOptionsOverrideSchema`, inkl. optionalem
+`layoutId`) — dieselbe Domain-Funktion (`setPrintOptions`) wie MCP
+(`set_print_options`) und UI, nur solange der Beleg im Entwurf (`DRAFT`) ist (409
+sonst). `Quote/{id}/print-options` gilt nur für `kind=ANGEBOT` — Auftragsbestätigung/
+Proforma haben keinen eigenen `print-options`-Endpunkt.
+
+`GET`/`PATCH /api/v1/Settings` (Scope `admin`) bündelt drei Fragmente unter je
+einem Schlüssel: `documents` (u. a. `taxRates` — die org-eigene Liste
+freigegebener Steuersätze, 1–10 ganze Prozentwerte 0–100, Default `[19, 7, 0]`,
+Phase 12c), `branding` (u. a. `appName`/`appShortName`/`faviconPath`/
+`appLogoPath` — Marke/White-Label, Phase 12c; `appName`/`appShortName` sind per
+`PATCH` schreibbar, `faviconPath`/`appLogoPath` nur lesbar — Datei-Upload läuft
+ausschließlich über die Session-Route `/api/settings/branding/upload`, nicht
+über `/api/v1`) und `print`. Ein Versuch, eine Rechnung/ein Angebot/einen
+Lieferschein/ein Produkt mit einem Steuersatz zu speichern, der **nicht** in
+`documents.taxRates` steht (und auch nicht bereits auf dem betroffenen Beleg
+gespeichert war), liefert `409 CONFLICT` — dieselbe Regel wie in UI und MCP,
+durchgesetzt in den Domain-Kernen, kein API-eigener Bypass.
 
 ## Webhooks
 
@@ -178,5 +303,16 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
   `/zugferd`) bleiben binär.
 - `DeliveryNote` hat keinen `PATCH`-Endpunkt (keine `updateDraft`-Domainfunktion
   vorhanden) — siehe [LIMITATIONEN.md](LIMITATIONEN.md).
+- `Layout` (Phase 11b) selbst ist nur lesbar (`GET`, feste Liste, keine DB-Tabelle) —
+  eine Beleg-individuelle Layout-Überschreibung setzt sich stattdessen über `PATCH
+  /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
 - Multi-Tenant-Rollen gibt es nicht — ein API-Schlüssel gehört zu genau einer
   Organisation, „Berechtigungen" bedeuten hier ausschließlich Scopes.
+- `POST /api/pdf/preview` (Beleg-Editor, Phase 11c) ist **keine** `/api/v1`-Ressource:
+  eine Session-Route (Browser-Login, kein Bearer-Token) zum Rendern eines
+  ungespeicherten Editor-Entwurfs (`{kind, payload, layoutId?}`) — ohne
+  Nummernkreis/`ChangeLog`/DB-Schreibzugriff, Belegnummer „ENTWURF", Wasserzeichen
+  „VORSCHAU". Für einen bereits gespeicherten Beleg liefert stattdessen `GET
+  /api/v1/Invoice/{id}/pdf` (Scope `read`) das PDF; `Quote`/`DeliveryNote` haben
+  keinen `/pdf`-Endpunkt unter `/api/v1` (nur die Session-Routen
+  `/api/documents/[id]/pdf` bzw. `/api/delivery-notes/[id]/pdf`).

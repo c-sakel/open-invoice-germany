@@ -10,11 +10,12 @@ import { PROJECT_ROOT } from "../bootstrap";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { defaultCategoryForScheme } from "@/lib/tax";
-import { SCHEME_NOTICE } from "@/domain/invoice/mandatory";
+import { SCHEME_NOTICE, SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { createPartialInvoice, PartialInvoiceError } from "@/domain/invoice/partial";
 import { createDownpaymentInvoice, DownpaymentInvoiceError } from "@/domain/invoice/downpayment";
 import { createFinalInvoice, FinalInvoiceError } from "@/domain/invoice/final";
@@ -28,10 +29,12 @@ import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { NotFoundError } from "@/domain/errors";
 import {
   TaxScheme,
+  TaxRate,
   createInvoiceSchema,
   createPartialInvoiceSchema,
   createDownpaymentInvoiceSchema,
@@ -59,7 +62,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               unitPriceEuro: z.number().optional().describe("Nettopreis je Einheit in Euro (oder productName nutzen)"),
               productName: z.string().optional().describe("Name einer gespeicherten Leistung — Preis/Einheit/Steuersatz werden übernommen"),
               unit: z.string().optional(),
-              taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+              taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional().describe("Zusaetzlicher Festbetragsrabatt je Position in Euro"),
             }),
@@ -80,6 +83,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         skonto2Percent: z.number().min(0).max(100).optional().describe("2. Skontosatz in Prozent (nur zusammen mit Skonto 1, laengere Frist)"),
         skonto2Days: z.number().int().min(1).max(365).optional(),
         paymentMethod: z.string().optional().describe("Name oder Code einer Zahlungsmethode (Default: Kunden-Standard)"),
+        consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
       },
     },
     async (args): Promise<Result> => {
@@ -110,6 +114,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             quantityMilli: ctx.qtyToMilli(l.quantity),
             unit: unit ?? "C62",
             unitNetPriceCents: ctx.euroToCents(unitPriceEuro),
+            // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
             taxRate: isRegular ? (taxRatePercent ?? 19) : 0,
             taxCategory: category,
             discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
@@ -117,8 +122,13 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           };
         });
 
+        // M6 (Fix-Welle Final-Review): denselben SCHEME_NOTICE_ACCEPTED-Check wie
+        // src/lib/editor/draft.ts#toInvoicePayload (Fix 1, Task 5) — nur voranstellen, wenn
+        // `args.notes` noch KEINE fuer das Schema zulaessige Formulierung enthaelt, sonst
+        // wuerde ein MCP-Aufruf mit bereits korrektem Hinweistext ihn verdoppeln.
         const notice = SCHEME_NOTICE[scheme];
-        const notes = notice ? `${notice}${args.notes ? " — " + args.notes : ""}` : args.notes;
+        const noticeAccepted = (SCHEME_NOTICE_ACCEPTED[scheme] ?? []).some((re) => re.test(normalizeNotice(args.notes ?? "")));
+        const notes = notice && !noticeAccepted ? `${notice}${args.notes ? " — " + args.notes : ""}` : args.notes;
         const paymentMethod = args.paymentMethod ? await ctx.resolvePaymentMethod(org.id, args.paymentMethod) : null;
 
         const input = createInvoiceSchema.parse({
@@ -140,6 +150,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           skonto2Permille: args.skonto2Percent ? Math.round(args.skonto2Percent * 10) : undefined,
           skonto2Days: args.skonto2Days,
           paymentMethodId: paymentMethod?.id,
+          consumerRetentionHint: args.consumerRetentionHint,
           lines,
         });
         const invoice = await createDraftInvoice(org.id, input);
@@ -324,7 +335,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const base = (inv.number ?? `entwurf-${inv.id.slice(0, 8)}`).replace(/[^A-Za-z0-9._-]/g, "_");
         const written: string[] = [];
         let validation: { valid: boolean; errors: string[] } | null = null;
-        const theme = await loadPdfTheme(org.id, inv.printOptionsJson);
+        const theme = await loadPdfTheme(org.id, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
 
         if (format === "both" || format === "pdf") {
           const pdf = await renderInvoicePdf(data, theme);
@@ -539,6 +550,10 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes });
         return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}.`);
       } catch (e) {
+        // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
+        // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,
+        // domain/settings/tax-rates.ts).
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof CreditError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
@@ -564,6 +579,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         paymentTerms: z.string().optional(),
         dueDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
+        consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
         lines: z
           .array(
             z.object({
@@ -575,7 +591,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               unitPriceEuro: z.number().optional(),
               productName: z.string().optional(),
               unit: z.string().optional(),
-              taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+              taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional(),
             }),
@@ -597,6 +613,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.paymentTerms !== undefined) patch.paymentTerms = args.paymentTerms;
         if (args.dueDate !== undefined) patch.dueDate = ctx.parseDateInput(args.dueDate);
         if (args.deliveryDate !== undefined) patch.deliveryDate = ctx.parseDateInput(args.deliveryDate);
+        if (args.consumerRetentionHint !== undefined) patch.consumerRetentionHint = args.consumerRetentionHint;
         if (args.lines) patch.lines = await ctx.buildEditorLines(org.id, args.lines);
 
         const updated = await updateDraftInvoice(org.id, inv.id, patch, "mcp");

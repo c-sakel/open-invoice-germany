@@ -15,7 +15,8 @@ import { remainingQuantities, assertNoOverDelivery, loadSourceLines, type Delive
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { setQuoteStatusWithinTx, effectiveQuoteStatus } from "@/domain/document/status";
 import { loadDocumentSettings } from "@/domain/document/settings";
-import { convertDocumentSchema, type ConvertDocumentInput } from "@/schemas";
+import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { convertDocumentSchema, type ConvertDocumentInput, type TaxCategory } from "@/schemas";
 import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -226,13 +227,13 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
           quantityMilli: l.quantityMilli,
           unit: l.unit,
           unitNetPriceCents: l.unitNetPriceCents,
-          taxRate: l.taxRate as 19 | 7 | 0,
-          taxCategory: l.taxCategory as "S" | "AE" | "K" | "G" | "E" | "Z",
+          taxRate: l.taxRate,
+          taxCategory: l.taxCategory as TaxCategory,
           discountPermille: l.discountPermille,
           discountCents: l.discountCents,
         })),
       },
-      { actor, now },
+      { actor, now, inheritedTaxRates: ratesOfLines(src.lines) },
     );
 
     await linkDocuments(tx, { orgId, fromType: "QUOTE", fromId, toType: "QUOTE", toId: ab.id, relationType: "CONVERTED_TO" });
@@ -309,7 +310,7 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
         // den dnShow*-Org-Einstellungen vor.
         lines,
       },
-      opts,
+      { ...opts, inheritedTaxRates: ratesOfLines(lines) },
     );
 
     await linkDocuments(tx, { orgId, fromType, fromId, toType: "DELIVERY_NOTE", toId: note.id, relationType: "DELIVERED_BY" });

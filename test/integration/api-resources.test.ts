@@ -10,7 +10,7 @@
  * Muster fuer Route-Aufrufe: test/integration/api-auth.test.ts (echte API-Keys ueber
  * createApiKey, Route-Handler direkt aufgerufen statt echtem HTTP-Server).
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createApiKey } from "@/domain/api-key/create";
@@ -33,8 +33,11 @@ import { GET as OrderConfirmationList, POST as OrderConfirmationCreate } from "@
 import { GET as OrderConfirmationGet } from "@/app/api/v1/OrderConfirmation/[id]/route";
 import { GET as DeliveryNoteList, POST as DeliveryNoteCreate } from "@/app/api/v1/DeliveryNote/route";
 import { GET as DeliveryNoteGet } from "@/app/api/v1/DeliveryNote/[id]/route";
+import { GET as DeliveryNotePrintOptionsGet, PATCH as DeliveryNotePrintOptionsUpdate } from "@/app/api/v1/DeliveryNote/[id]/print-options/route";
 import { GET as InvoiceList, POST as InvoiceCreate } from "@/app/api/v1/Invoice/route";
 import { GET as InvoiceGet, PATCH as InvoiceUpdate } from "@/app/api/v1/Invoice/[id]/route";
+import { GET as InvoicePrintOptionsGet, PATCH as InvoicePrintOptionsUpdate } from "@/app/api/v1/Invoice/[id]/print-options/route";
+import { GET as QuotePrintOptionsGet, PATCH as QuotePrintOptionsUpdate } from "@/app/api/v1/Quote/[id]/print-options/route";
 import { GET as PaymentList, POST as PaymentCreate } from "@/app/api/v1/Payment/route";
 import { GET as PaymentGet } from "@/app/api/v1/Payment/[id]/route";
 import { GET as DunningList, POST as DunningCreate } from "@/app/api/v1/Dunning/route";
@@ -52,6 +55,7 @@ import { GET as EmailTemplateGet, PATCH as EmailTemplateUpdate } from "@/app/api
 import { GET as SettingsGet, PATCH as SettingsUpdate } from "@/app/api/v1/Settings/route";
 import { GET as ApiKeyList, POST as ApiKeyCreate } from "@/app/api/v1/ApiKey/route";
 import { GET as ApiKeyGet, PATCH as ApiKeyUpdate } from "@/app/api/v1/ApiKey/[id]/route";
+import { GET as LayoutList } from "@/app/api/v1/Layout/route";
 
 let orgId: string;
 let otherOrgId: string;
@@ -102,6 +106,17 @@ beforeAll(async () => {
   token = key.token;
   const otherKey = await createApiKey(otherOrgId, { name: "Other-Key", scopes: ["read", "write", "admin"] });
   otherToken = otherKey.token;
+  resetRateLimits();
+});
+
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5, "Known gap (a)"): mit den neuen
+// print-options-Tests unten waechst die Gesamtzahl der Requests in dieser Datei ueber das
+// IP-gekeytes Pre-Auth-Kontingent (120/min, `preauth:unknown` — alle Testanfragen teilen
+// sich denselben Bucket, da kein `x-forwarded-for`/`cf-connecting-ip`-Header gesetzt wird)
+// — spaeter im File laufende Tests (Settings/ApiKey/Layout) schlugen dadurch mit 429 fehl,
+// obwohl sie selbst nichts falsch machten. Kein Test in dieser Datei prueft absichtlich
+// ein 429 — ein Reset VOR jedem einzelnen Test ist deshalb unbedenklich.
+beforeEach(() => {
   resetRateLimits();
 });
 
@@ -271,6 +286,59 @@ describe("/api/v1/Quote", () => {
   });
 });
 
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5, "Known gap (a)").
+describe("/api/v1/Quote/{id}/print-options", () => {
+  it("GET liefert die globalen Defaults, PATCH setzt einen Override, GET zeigt ihn danach", async () => {
+    const created = await createQuote(QuoteCreate, "http://x/api/v1/Quote");
+
+    const before = await QuotePrintOptionsGet(req(`http://x/api/v1/Quote/${created.id}/print-options`, { token }), ctxFor(created.id));
+    expect(before.status).toBe(200);
+    expect((await json(before)).data.showGiroCode).toBe(true);
+
+    const patchRes = await QuotePrintOptionsUpdate(
+      req(`http://x/api/v1/Quote/${created.id}/print-options`, { method: "PATCH", token, body: { showGiroCode: false } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(200);
+    expect((await json(patchRes)).data).toEqual({ showGiroCode: false });
+
+    const after = await QuotePrintOptionsGet(req(`http://x/api/v1/Quote/${created.id}/print-options`, { token }), ctxFor(created.id));
+    expect((await json(after)).data.showGiroCode).toBe(false);
+  });
+
+  it("PATCH mit ungueltigem Feldwert -> 400", async () => {
+    const created = await createQuote(QuoteCreate, "http://x/api/v1/Quote");
+    const patchRes = await QuotePrintOptionsUpdate(
+      req(`http://x/api/v1/Quote/${created.id}/print-options`, { method: "PATCH", token, body: { showGiroCode: "ja" } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(400);
+  });
+
+  it("PATCH auf ein nicht-DRAFT-Angebot -> 409 CONFLICT", async () => {
+    const created = await createQuote(QuoteCreate, "http://x/api/v1/Quote");
+    await dbInternal.quote.update({ where: { id: created.id }, data: { status: "SENT" } });
+    const patchRes = await QuotePrintOptionsUpdate(
+      req(`http://x/api/v1/Quote/${created.id}/print-options`, { method: "PATCH", token, body: { showGiroCode: false } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(409);
+    expect((await json(patchRes)).error.code).toBe("CONFLICT");
+  });
+
+  it("eine Auftragsbestaetigung ist ueber /Quote/{id}/print-options nicht erreichbar -> 404", async () => {
+    const orderConfirmation = await createQuote(OrderConfirmationCreate, "http://x/api/v1/OrderConfirmation");
+    const res = await QuotePrintOptionsGet(req(`http://x/api/v1/Quote/${orderConfirmation.id}/print-options`, { token }), ctxFor(orderConfirmation.id));
+    expect(res.status).toBe(404);
+  });
+
+  it("GET fuer ein fremdes Angebot -> 404", async () => {
+    const created = await createQuote(QuoteCreate, "http://x/api/v1/Quote");
+    const res = await QuotePrintOptionsGet(req(`http://x/api/v1/Quote/${created.id}/print-options`, { token: otherToken }), ctxFor(created.id));
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("/api/v1/OrderConfirmation", () => {
   it("Create -> objectName OrderConfirmation, kind AUFTRAGSBESTAETIGUNG erzwungen", async () => {
     const created = await createQuote(OrderConfirmationCreate, "http://x/api/v1/OrderConfirmation");
@@ -319,6 +387,79 @@ describe("/api/v1/DeliveryNote", () => {
   });
 });
 
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5, "Known gap (a)"): PATCH-Endpunkte fuer
+// die Beleg-individuellen Druckoptionen — vorher nur ueber MCP/UI erreichbar.
+// `POST /api/v1/DeliveryNote` legt den Lieferschein IMMER direkt im Status `CREATED` an
+// (createDeliveryNoteWithinTx, src/domain/delivery-note/create.ts:145 — anders als
+// Invoice/Quote gibt es fuer Lieferscheine keine eigentliche Entwurfsphase; die Nummer
+// wird sofort vergeben). `setPrintOptions` erlaubt Aenderungen aber nur bei `DRAFT` (siehe
+// test/integration/settings-domain.test.ts: "setzt die Ueberschreibung auf einem
+// Lieferschein im Entwurf, lehnt CREATED ab") — ein `DRAFT`-Lieferschein ist ueber die
+// normale Erzeugung also gar nicht erreichbar, nur direkt in der DB (wie dort). Die
+// beiden Erfolgstests hier legen den Lieferschein deshalb bewusst per `dbInternal` statt
+// ueber die Create-Route an.
+async function createDraftDeliveryNoteRow() {
+  return dbInternal.deliveryNote.create({ data: { orgId, customerId, status: "DRAFT" } });
+}
+
+describe("/api/v1/DeliveryNote/{id}/print-options", () => {
+  it("GET liefert die globalen Defaults ohne Override, PATCH setzt einen Override, GET zeigt ihn danach", async () => {
+    const dn = await createDraftDeliveryNoteRow();
+
+    const before = await DeliveryNotePrintOptionsGet(req(`http://x/api/v1/DeliveryNote/${dn.id}/print-options`, { token }), ctxFor(dn.id));
+    expect(before.status).toBe(200);
+    const beforeJson = await json(before);
+    expect(beforeJson.data.showFooter).toBe(true);
+    expect(beforeJson.data.layoutId).toBeUndefined();
+
+    const patchRes = await DeliveryNotePrintOptionsUpdate(
+      req(`http://x/api/v1/DeliveryNote/${dn.id}/print-options`, { method: "PATCH", token, body: { showFooter: false, layoutId: "schlicht" } }),
+      ctxFor(dn.id),
+    );
+    expect(patchRes.status).toBe(200);
+    expect((await json(patchRes)).data).toEqual({ showFooter: false, layoutId: "schlicht" });
+
+    const after = await DeliveryNotePrintOptionsGet(req(`http://x/api/v1/DeliveryNote/${dn.id}/print-options`, { token }), ctxFor(dn.id));
+    const afterJson = await json(after);
+    expect(afterJson.data.showFooter).toBe(false);
+    expect(afterJson.data.layoutId).toBe("schlicht");
+    // Nicht ueberschriebene Felder bleiben die globalen Defaults.
+    expect(afterJson.data.showPageNumbers).toBe(true);
+  });
+
+  it("PATCH mit ungueltigem layoutId -> 400", async () => {
+    const dn = await createDraftDeliveryNoteRow();
+    const patchRes = await DeliveryNotePrintOptionsUpdate(
+      req(`http://x/api/v1/DeliveryNote/${dn.id}/print-options`, { method: "PATCH", token, body: { layoutId: "premium" } }),
+      ctxFor(dn.id),
+    );
+    expect(patchRes.status).toBe(400);
+  });
+
+  it("PATCH auf einen normal angelegten Lieferschein (Status CREATED, keine Entwurfsphase) -> 409 CONFLICT", async () => {
+    const res = await DeliveryNoteCreate(
+      req("http://x/api/v1/DeliveryNote", { method: "POST", token, body: { customerId, lines: [{ description: "Paket", quantityMilli: 1000 }] } }),
+    );
+    const created = (await json(res)).data;
+    expect(created.status).toBe("CREATED");
+    const patchRes = await DeliveryNotePrintOptionsUpdate(
+      req(`http://x/api/v1/DeliveryNote/${created.id}/print-options`, { method: "PATCH", token, body: { showFooter: false } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(409);
+    expect((await json(patchRes)).error.code).toBe("CONFLICT");
+  });
+
+  it("GET fuer einen fremden Lieferschein -> 404", async () => {
+    const res = await DeliveryNoteCreate(
+      req("http://x/api/v1/DeliveryNote", { method: "POST", token, body: { customerId, lines: [{ description: "Paket", quantityMilli: 1000 }] } }),
+    );
+    const created = (await json(res)).data;
+    const getRes = await DeliveryNotePrintOptionsGet(req(`http://x/api/v1/DeliveryNote/${created.id}/print-options`, { token: otherToken }), ctxFor(created.id));
+    expect(getRes.status).toBe(404);
+  });
+});
+
 // ── Invoice ──────────────────────────────────────────────────────────────────
 async function createInvoice() {
   const res = await InvoiceCreate(
@@ -351,8 +492,12 @@ describe("/api/v1/Invoice", () => {
   });
 
   it("Create mit ungueltiger taxRate -> 400", async () => {
+    // Phase 12c: TaxRate ist keine Literal-Union mehr (z.number().int().min(0).max(100)) —
+    // 101 bleibt am Zod-Boundary ungueltig (400); ein syntaktisch gueltiger, aber fuer die
+    // Org nicht freigegebener Satz (z. B. 5) wird jetzt von assertAllowedTaxRates im
+    // Domain-Kern abgelehnt (409 CONFLICT, siehe test/integration/tax-rates-enforcement.test.ts).
     const res = await InvoiceCreate(
-      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, lines: [{ description: "x", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 5 }] } }),
+      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, lines: [{ description: "x", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 101 }] } }),
     );
     expect(res.status).toBe(400);
   });
@@ -369,6 +514,63 @@ describe("/api/v1/Invoice", () => {
     const created = await createInvoice();
     const res = await InvoiceGet(req(`http://x/api/v1/Invoice/${created.id}`, { token: otherToken }), ctxFor(created.id));
     expect(res.status).toBe(404);
+  });
+});
+
+// Fix-Welle (Abschluss-Review Phase 11b, Block 5, "Known gap (a)").
+describe("/api/v1/Invoice/{id}/print-options", () => {
+  it("GET liefert die globalen Defaults, PATCH setzt einen Override, GET zeigt ihn danach", async () => {
+    const created = await createInvoice();
+
+    const before = await InvoicePrintOptionsGet(req(`http://x/api/v1/Invoice/${created.id}/print-options`, { token }), ctxFor(created.id));
+    expect(before.status).toBe(200);
+    const beforeJson = await json(before);
+    expect(beforeJson.data.showPageNumbers).toBe(true);
+    expect(beforeJson.data.layoutId).toBeUndefined();
+
+    const patchRes = await InvoicePrintOptionsUpdate(
+      req(`http://x/api/v1/Invoice/${created.id}/print-options`, { method: "PATCH", token, body: { showPageNumbers: false, layoutId: "blau" } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(200);
+    expect((await json(patchRes)).data).toEqual({ showPageNumbers: false, layoutId: "blau" });
+
+    const after = await InvoicePrintOptionsGet(req(`http://x/api/v1/Invoice/${created.id}/print-options`, { token }), ctxFor(created.id));
+    const afterJson = await json(after);
+    expect(afterJson.data.showPageNumbers).toBe(false);
+    expect(afterJson.data.layoutId).toBe("blau");
+  });
+
+  it("PATCH mit ungueltigem layoutId -> 400", async () => {
+    const created = await createInvoice();
+    const patchRes = await InvoicePrintOptionsUpdate(
+      req(`http://x/api/v1/Invoice/${created.id}/print-options`, { method: "PATCH", token, body: { layoutId: "premium" } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(400);
+  });
+
+  it("PATCH einer festgeschriebenen Rechnung -> 409 CONFLICT", async () => {
+    const created = await createInvoice();
+    await dbInternal.invoice.update({ where: { id: created.id }, data: { status: "FINALIZED", number: `TEST-PRINT-${created.id}` } });
+    const patchRes = await InvoicePrintOptionsUpdate(
+      req(`http://x/api/v1/Invoice/${created.id}/print-options`, { method: "PATCH", token, body: { showFooter: false } }),
+      ctxFor(created.id),
+    );
+    expect(patchRes.status).toBe(409);
+    expect((await json(patchRes)).error.code).toBe("CONFLICT");
+  });
+
+  it("GET fuer eine fremde Rechnung -> 404", async () => {
+    const created = await createInvoice();
+    const res = await InvoicePrintOptionsGet(req(`http://x/api/v1/Invoice/${created.id}/print-options`, { token: otherToken }), ctxFor(created.id));
+    expect(res.status).toBe(404);
+  });
+
+  it("ohne Token -> 401", async () => {
+    const created = await createInvoice();
+    const res = await InvoicePrintOptionsGet(req(`http://x/api/v1/Invoice/${created.id}/print-options`), ctxFor(created.id));
+    expect(res.status).toBe(401);
   });
 });
 
@@ -630,6 +832,45 @@ describe("/api/v1/Settings", () => {
     expect(branding.footerLeft).toBe("USt-IdNr. DE123");
     expect(branding.marginTopMm).toBe(30);
   });
+
+  // Fix-Welle (Fix 1): faviconPath/appLogoPath (wie logoPath/backgroundPath) sind NIE
+  // per API schreibbar — nur die Upload-Route setzt sie. `.omit(...)` im Patch-Schema
+  // (src/app/api/v1/Settings/route.ts) verwirft den Wert bereits beim Parsen.
+  it("Patch ignoriert mitgeschickte Datei-Pfade (favicon/appLogo/logo/background)", async () => {
+    const before = (await json(await SettingsGet(req("http://x/api/v1/Settings", { token })))).data.branding;
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", {
+        method: "PATCH",
+        token,
+        body: {
+          branding: {
+            faviconPath: "boesartig/pfad.png",
+            appLogoPath: "boesartig/pfad2.png",
+            logoPath: "boesartig/pfad3.png",
+            backgroundPath: "boesartig/pfad4.png",
+            fontSizePt: 12,
+          },
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const branding = (await json(res)).data.branding;
+    expect(branding.faviconPath).toBe(before.faviconPath);
+    expect(branding.appLogoPath).toBe(before.appLogoPath);
+    expect(branding.logoPath).toBe(before.logoPath);
+    expect(branding.backgroundPath).toBe(before.backgroundPath);
+    expect(branding.fontSizePt).toBe(12);
+  });
+
+  // M9 (Abschluss-Review Phase 12c, Fix-Welle): die Kanten von taxRatesSchema (leer,
+  // >10 Eintraege, ausserhalb 0..100, Nicht-Ganzzahl) sind in test/unit/tax-rates.test.ts
+  // abgedeckt, aber nie ueber einen tatsaechlichen Schreibpfad — hier auf Routen-Ebene.
+  it("Patch mit documents.taxRates: [] -> 400 (taxRatesSchema.min(1))", async () => {
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", { method: "PATCH", token, body: { documents: { taxRates: [] } } }),
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 // ── ApiKey ────────────────────────────────────────────────────────────────────
@@ -658,5 +899,25 @@ describe("/api/v1/ApiKey", () => {
     const created = (await json(res)).data;
     const getRes = await ApiKeyGet(req(`http://x/api/v1/ApiKey/${created.id}`, { token: otherToken }), ctxFor(created.id));
     expect(getRes.status).toBe(404);
+  });
+});
+
+// ── Layout (Phase 11b, Task 8) ───────────────────────────────────────────────
+describe("/api/v1/Layout", () => {
+  it("GET /api/v1/Layout listet sieben Layouts", async () => {
+    const res = await LayoutList(req("http://x/api/v1/Layout", { token }));
+    expect(res.status).toBe(200);
+    const j = (await json(res)) as { data: { id: string; objectName: string; thumbnailUrl: string }[]; total: number; limit: number; offset: number };
+    expect(j.data.map((l) => l.id)).toEqual(["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"]);
+    expect(j.data[0]!.objectName).toBe("Layout");
+    expect(j.data[1]!.thumbnailUrl).toBe("/layouts/schlicht.svg");
+    expect(j.total).toBe(7);
+    expect(j.limit).toBe(7);
+    expect(j.offset).toBe(0);
+  });
+
+  it("ohne Token -> 401", async () => {
+    const res = await LayoutList(req("http://x/api/v1/Layout"));
+    expect(res.status).toBe(401);
   });
 });

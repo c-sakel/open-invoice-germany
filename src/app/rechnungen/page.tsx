@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listInvoices } from "@/domain/invoice/list";
@@ -12,13 +13,15 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { loadListPage } from "@/lib/list-page";
+import { buildListeParam } from "@/domain/document/neighbors";
 
 export const dynamic = "force-dynamic";
 
+// Smoke-Bug-Fix (Fix-Welle Final-Review, Phase 12b) — analog invoice-view-model.ts TYPE_TITLE.
 const TYPE_LABEL: Record<string, string> = {
   INVOICE: "Rechnung",
-  CREDIT_NOTE: "Gutschrift",
-  CORRECTION: "Korrektur",
+  CREDIT_NOTE: "Stornorechnung",
+  CORRECTION: "Rechnungskorrektur",
   PARTIAL: "Teilrechnung",
   DOWNPAYMENT: "Abschlagsrechnung",
   FINAL: "Schlussrechnung",
@@ -55,6 +58,8 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     to: firstOf(sp.to),
     offset: firstOf(sp.offset),
   };
+  const liste = buildListeParam(values);
+  const detailHref = (id: string) => `/rechnungen/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
   // Fix-Welle (B1): rohe searchParams enthalten bei jedem FilterBar-Submit leere Strings
@@ -104,12 +109,15 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Rechnungen</h1>
-        <Link href="/rechnungen/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neue Rechnung
-        </Link>
-      </div>
+      <PageHeader
+        title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
+        subtitle={`${result.total} Belege`}
+        actions={
+          <Link href="/rechnungen/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neue Rechnung
+          </Link>
+        }
+      />
 
       <FilterBar basePath="/rechnungen" fields={fields} values={values} />
 
@@ -159,7 +167,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                 return (
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      <Link href={`/rechnungen/${inv.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(inv.id)} className="font-medium text-indigo-600 hover:underline">
                         {inv.number ?? "Entwurf"}
                       </Link>
                     </td>

@@ -71,13 +71,14 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ## 3. Verfügbare Tools
 
-80 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
+90 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
 
 ### System
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `get_status` | Zustand der aktiven Organisation (Unternehmen eingerichtet? Kunden-/Produkt-/Rechnungszähler) | „Wie ist der Status meiner Instanz?" |
+| `list_api_requests` | Protokollierte REST-API-Anfragen auflisten (Phase 12d) — Zeit, Methode, Pfad, Status, Dauer, Schlüssel; standardmäßig leer, bis „Einstellungen → API → Anfrageprotokoll" eingeschaltet ist | „Zeig mir die letzten fehlgeschlagenen API-Aufrufe." |
 | `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
 
 ### Kunden
@@ -88,7 +89,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `upsert_customer` | Kunde anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter); gezieltes Ändern per ID: `update_customer` | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
 | `update_customer` | Kunde gezielt per ID/Name patchen (anders als `upsert_customer` **kein** Anlegen; nur angegebene Felder ändern sich) | „Ändere bei Müller GmbH die E-Mail auf buchhaltung@mueller.de." |
 | `archive_customer` | Kunde archivieren (verschwindet aus `list_customers`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere den Kunden Alt-Kunde GmbH." |
-| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Gesamtumsatz/letzte Aktivität) eines einzelnen Kunden | „Wie ist der Kontostand von Müller GmbH?" |
+| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Nettoumsatz/letzte Aktivität) eines einzelnen Kunden | „Wie ist der Kontostand von Müller GmbH?" |
 | `list_customer_addresses` | Alle Adressen eines Kunden auflisten (Typ Rechnung/Lieferung/Sonstige, Standard-Kennzeichen) | „Welche Adressen hat Müller GmbH hinterlegt?" |
 | `upsert_customer_address` | Adresse anlegen (`id` weglassen) oder ändern (`id` angeben); `isDefault: true` setzt sie zum Standard des Typs | „Leg für Müller GmbH eine Lieferadresse an: Hafenstr. 2, 21335 Lüneburg." |
 | `delete_customer_address` | Adresse löschen (bestehende Beleg-Snapshots bleiben unverändert) | „Lösche die alte Lieferadresse von Müller GmbH." |
@@ -192,13 +193,14 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) | „Zeig mir meine Beleg-Einstellungen." |
-| `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand) — Merge | „Setze die Fälligkeitstage für Rechnungen auf 14." |
-| `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode) — Merge | „Aktiviere den GiroCode auf Rechnungen." |
-| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) — Merge; Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
+| `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) — `documents` enthält `taxRates`, `branding` die vier Marke-Felder `appName`/`appShortName`/`faviconPath`/`appLogoPath` (Phase 12c) | „Zeig mir meine Beleg-Einstellungen." |
+| `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand, `taxRates` — freigegebene Steuersätze der Organisation, 1–10 ganze Prozentwerte 0–100, Phase 12c) — Merge; ein nicht freigegebener Satz auf einem bestehenden Beleg/Produkt wird abgelehnt, nicht die Einstellung selbst | „Setze die Fälligkeitstage für Rechnungen auf 14." |
+| `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode, GiroCode-Größe 15–40 mm) — Merge | „Aktiviere den GiroCode auf Rechnungen." |
+| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) sowie das PDF-Layout (`layoutId`, `layoutByType` je Belegtyp, `footerMode` AUTO/CUSTOM, Phase 11b) **und** die Marke (`appName` max. 40 Zeichen, `appShortName` max. 12 Zeichen, Phase 12c) — Merge; Favicon-/Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
+| `list_pdf_layouts` | Die sieben wählbaren PDF-Layouts auflisten (id, name, description) — ohne Eingabe | „Welche PDF-Layouts gibt es?" |
 | `update_number_range` | Einen Nummernkreis aktualisieren (`docType`, Muster/Präfix/Padding/`yearlyReset`/nächste Nummer) — Merge mit dem laufenden Jahr; lehnt ein Zurückdrehen unterhalb bereits vergebener Nummern ab | „Setze das Rechnungspräfix auf RE-2026-." |
 | `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Basiszins) — Merge | „Aktiviere automatischen Mahnungsversand." |
-| `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
+| `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) sowie optional des PDF-Layouts (`layoutId`, Phase 11b) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
 
 ### API-Schluessel
 
@@ -237,7 +239,8 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Umsatz laufender Monat, letzte Belege, offene Angebote | „Wie ist die Lage — was ist offen und überfällig?" |
+| `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Nettoumsatz laufender Monat, letzte Belege, offene Angebote | „Wie ist die Lage — was ist offen und überfällig?" |
+| `get_report` | Auswertung (Phase 12e): `revenue` (Netto-Umsatz je Monat), `top-customers` (nach Netto), `status` (Rechnungen je effektivem Status) oder `payment-behaviour` (Ø Zahlungsdauer, Pünktlichkeitsanteil) — `customer` (ID oder Name) nur bei `revenue`/`payment-behaviour`, `months` nur bei `revenue`/`top-customers`, `limit` nur bei `top-customers`; ein beim gewählten `type` nicht zulässiger Parameter wird mit einer Fehlermeldung abgelehnt (Fix 2, ehem. M8) | „Wie war der Umsatz der letzten sechs Monate, und wer sind meine Top-5-Kunden?" |
 | `get_timeline` | Chronologische Historie eines Belegs (`kind`: Rechnung/Angebot/Lieferschein + `doc`-ID) — Anlage, Änderungen, Festschreibung, Versand, Zahlungen, Mahnungen, Statuswechsel | „Zeig mir die Historie von RE-2026-00342." |
 | `list_notifications` | Benachrichtigungen auflisten (optional nur ungelesen, `limit`) | „Welche ungelesenen Benachrichtigungen habe ich?" |
 | `mark_notifications_read` | Benachrichtigungen als gelesen markieren (einzelne IDs oder alle) | „Markiere alle Benachrichtigungen als gelesen." |

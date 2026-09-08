@@ -16,6 +16,7 @@ import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import type { CreateInvoiceInput } from "@/schemas";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -23,6 +24,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface CreateOptions {
   actor?: string;
   now?: Date;
+  // Phase 12c: Saetze eines Quellbelegs (Duplikat/Konvertierung/Teil-/Abschlags-/
+  // Schlussrechnung) — gelten als zusaetzlich erlaubt (GoBD, kein Bypass, siehe
+  // src/domain/settings/tax-rates.ts).
+  inheritedTaxRates?: readonly number[];
 }
 
 export async function createDraftInvoiceWithinTx(
@@ -38,6 +43,7 @@ export async function createDraftInvoiceWithinTx(
   // (HEADING/TEXT/SUBTOTAL) keine Betraege tragen (Lastenheft §8) — Zod erzwingt das bereits
   // am Boundary, dies ist die zweite Verteidigungslinie fuer Aufrufer ohne Zod-Lauf.
   const normalized = normalizeLines(input.lines);
+  await assertAllowedTaxRates(tx, orgId, ratesOfLines(normalized), { existing: opts.inheritedTaxRates });
   const lines = normalized.map((line) => ({
     position: line.position,
     lineType: line.lineType,
@@ -192,6 +198,8 @@ export async function createDraftInvoiceWithinTx(
       notes: input.notes,
       paymentTerms,
       internalNotes: input.internalNotes,
+      // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
+      consumerRetentionHint: input.consumerRetentionHint ?? false,
       headerText,
       footerText,
       documentDiscountPermille,

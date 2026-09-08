@@ -1,44 +1,15 @@
 import Link from "next/link";
+import { SETTINGS_ITEMS, type SettingsKey } from "@/lib/nav";
 
-const TABS = [
-  { href: "/einstellungen", key: "stammdaten", label: "Stammdaten" },
-  { href: "/einstellungen/belege", key: "belege", label: "Belege" },
-  { href: "/einstellungen/nummernkreise", key: "nummernkreise", label: "Nummernkreise" },
-  { href: "/einstellungen/briefpapier", key: "briefpapier", label: "Briefpapier" },
-  { href: "/einstellungen/druckoptionen", key: "druckoptionen", label: "Druckoptionen" },
-  { href: "/einstellungen/email", key: "email", label: "E-Mail-Versand" },
-  { href: "/einstellungen/vorlagen", key: "vorlagen", label: "Textvorlagen" },
-  { href: "/einstellungen/textvorlagen", key: "textvorlagen", label: "Dokumenttexte" },
-  { href: "/einstellungen/zahlungsmethoden", key: "zahlungsmethoden", label: "Zahlungsmethoden" },
-  { href: "/einstellungen/mahnwesen", key: "mahnwesen", label: "Mahnwesen" },
-  { href: "/einstellungen/kundenfelder", key: "kundenfelder", label: "Kundenfelder" },
-  { href: "/einstellungen/benachrichtigungen", key: "benachrichtigungen", label: "Benachrichtigungen" },
-  { href: "/einstellungen/automatisierung", key: "automatisierung", label: "Automatisierung" },
-  { href: "/einstellungen/api", key: "api", label: "API" },
-  { href: "/einstellungen/webhooks", key: "webhooks", label: "Webhooks" },
-] as const;
-
-export type SettingsTabKey =
-  | "stammdaten"
-  | "belege"
-  | "nummernkreise"
-  | "briefpapier"
-  | "druckoptionen"
-  | "email"
-  | "vorlagen"
-  | "textvorlagen"
-  | "zahlungsmethoden"
-  | "mahnwesen"
-  | "kundenfelder"
-  | "benachrichtigungen"
-  | "automatisierung"
-  | "api"
-  | "webhooks";
+/** Phase 11b, Task 7: Reiter werden aus `SETTINGS_ITEMS` (src/lib/nav.ts) abgeleitet
+ *  statt eine eigene, parallel gepflegte Liste zu fuehren — ein neuer Einstellungen-
+ *  Unterpunkt braucht nur noch einen Eintrag dort. */
+export type SettingsTabKey = SettingsKey;
 
 export function SettingsTabs({ active }: { active: SettingsTabKey }) {
   return (
     <nav className="flex flex-wrap gap-4 border-b border-slate-200 text-sm">
-      {TABS.map((t) => (
+      {SETTINGS_ITEMS.map((t) => (
         <Link
           key={t.key}
           href={t.href}

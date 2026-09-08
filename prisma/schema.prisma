@@ -32,10 +32,11 @@ model Organization {
   vatId             String? // USt-IdNr. (§14 Abs.4 Nr.2)
   kuIdNr            String? // §19a Kleinunternehmer-IdNr.
   smallBusiness     Boolean  @default(false) // §19 UStG
-  defaultTaxScheme  String   @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ
+  defaultTaxScheme  String   @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
   iban              String?
   bic               String?
   bankName          String?
+  ownerName         String? // Phase 11b — Inhaber/-in fuer die automatische Fusszeile
   logoPath          String?
   electronicAddress String? // Peppol-Adresse des Ausstellers
   createdAt         DateTime @default(now())
@@ -283,7 +284,7 @@ model Invoice {
   number                    String?           @unique // NULL bis Festschreibung
   status                    String            @default("DRAFT") // DRAFT | FINALIZED | SENT | PAID | PARTIALLY_PAID | CANCELLED
   type                      String            @default("INVOICE") // INVOICE | CREDIT_NOTE | CORRECTION
-  taxScheme                 String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG
+  taxScheme                 String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
   currency                  String            @default("EUR")
   issueDate                 DateTime          @default(now())
   deliveryDate              DateTime?
@@ -961,6 +962,10 @@ model DocumentSettings {
   recurringInsertPeriodText    Boolean      @default(true)
   recurringAutoFinalizeDefault Boolean      @default(false)
   recurringAutoSendDefault     Boolean      @default(false)
+  /// Phase 12c — freigegebene Steuersaetze der Organisation als JSON-Array ganzer
+  /// Prozentwerte (taxRatesSchema, 1..10 Eintraege, 0..100). Wirkt nur auf neue/geaenderte
+  /// Entwuerfe: ein festgeschriebener Beleg behaelt seinen Satz (GoBD, §51).
+  taxRatesJson                 String       @default("[19,7,0]")
   updatedAt                    DateTime     @updatedAt
 }
 
@@ -968,25 +973,36 @@ model DocumentSettings {
 /// Fusszeilen, Ränder, Hintergrundbild. Selbstheilung analog DocumentSettings
 /// (In-Memory-Default, solange keine Zeile existiert).
 model BrandingSettings {
-  id             String       @id @default(cuid())
-  orgId          String       @unique
-  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  logoPath       String?
-  logoWidthMm    Int          @default(40)
-  primaryColor   String       @default("#111111")
-  senderLine     String?
-  footerLeft     String?
-  footerCenter   String?
-  footerRight    String?
-  marginTopMm    Int          @default(20)
-  marginRightMm  Int          @default(18)
-  marginBottomMm Int          @default(20)
-  marginLeftMm   Int          @default(18)
-  fontSizePt     Int          @default(10)
-  backgroundPath String?
-  showBackground Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id               String       @id @default(cuid())
+  orgId            String       @unique
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  logoPath         String?
+  logoWidthMm      Int          @default(40)
+  primaryColor     String       @default("#111111")
+  senderLine       String?
+  footerLeft       String?
+  footerCenter     String?
+  footerRight      String?
+  marginTopMm      Int          @default(20)
+  marginRightMm    Int          @default(18)
+  marginBottomMm   Int          @default(20)
+  marginLeftMm     Int          @default(18)
+  fontSizePt       Int          @default(10)
+  backgroundPath   String?
+  showBackground   Boolean      @default(false)
+  // Phase 11b — PDF-Layouts (Spec Phase 11): Organisationsstandard, Map je Belegtyp (JSON), Fusszeilenmodus.
+  layoutId         String       @default("standard")
+  layoutByTypeJson String?
+  footerMode       String       @default("AUTO") // AUTO (vierspaltig aus Stammdaten) | CUSTOM (footerLeft/Center/Right)
+  /// Phase 12c — White-Label. NULL bedeutet ueberall "Produktvorgabe" (appName
+  /// "OpenInvoice Germany", appShortName "OI", src/app/favicon.ico, kein Sidebar-Logo).
+  /// Die AGPL-Herkunftszeile in AppShell/SlimShell ist davon NICHT betroffen (§13 AGPL).
+  appName          String?
+  appShortName     String?
+  faviconPath      String?
+  appLogoPath      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 }
 
 /// Globale Druckoptionen einer Organisation (Phase 7, Task 1, §36) — je Beleg per
@@ -1005,6 +1021,9 @@ model PrintSettings {
   showLineTotals     Boolean      @default(true)
   showSenderLine     Boolean      @default(true)
   showGiroCode       Boolean      @default(true)
+  /// Phase 12a — Kantenlaenge des GiroCode in mm (15..40, Zod). Teil der Druckoptionen,
+  /// wird beim Festschreiben mit eingefroren (freezePrintOptionsJson).
+  giroSizeMm         Int          @default(22)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 }
@@ -1121,6 +1140,47 @@ model ApiIdempotency {
 
   @@unique([orgId, key])
   @@index([orgId, createdAt])
+}
+
+/// Anfrageprotokoll der REST-API (Phase 12d, §18 COMPLIANCE.md). Standardmaessig AUS
+/// (ApiSettings.logRequests). Bodies nur bei zusaetzlich eingeschaltetem logBodies,
+/// Antwort-Bodies nur bei status >= 400, beide auf 2048 Byte gekuerzt und geschwaerzt.
+/// KEIN Belegereignis -> geht NICHT in den ChangeLog (Audit-Ruling K5).
+/// `orgId` ohne Relationsfeld — wie ApiIdempotency/WebhookDelivery (Infrastrukturtabelle).
+model ApiRequestLog {
+  id             String   @id @default(cuid())
+  orgId          String
+  apiKeyId       String?
+  requestId      String
+  method         String
+  path           String
+  query          String?
+  status         Int
+  durationMs     Int
+  errorCode      String?
+  ip             String?
+  userAgent      String?
+  requestBody    String?
+  responseBody   String?
+  bodyTruncated  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([orgId, status, createdAt])
+  // Ohne orgId-Praefix: der Aufraeumjob scannt ueber alle Organisationen
+  // (gleiches Muster wie WebhookDelivery.@@index([status, nextAttemptAt])).
+  @@index([createdAt])
+}
+
+/// Schalter und Retention des Anfrageprotokolls je Organisation (Phase 12d).
+model ApiSettings {
+  id            String   @id @default(cuid())
+  orgId         String   @unique
+  logRequests   Boolean  @default(false)
+  logBodies     Boolean  @default(false)
+  retentionDays Int      @default(7)
+  maxRows       Int      @default(2000)
+  updatedAt     DateTime @updatedAt
 }
 
 /// Webhook-Endpunkt einer Organisation (Phase 10, Task 5/10b) — URL + verschluesseltes

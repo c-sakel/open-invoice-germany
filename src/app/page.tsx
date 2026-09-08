@@ -2,6 +2,9 @@ import Link from "next/link";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { getActiveOrg } from "@/lib/org";
 import { dashboardSummary } from "@/domain/dashboard/summary";
+import { monthlyRevenue } from "@/domain/reporting/revenue";
+import { statusCounts } from "@/domain/reporting/status";
+import { topCustomers } from "@/domain/reporting/customers";
 import { DashboardWidgets } from "@/components/dashboard/DashboardWidgets";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +87,12 @@ export default async function Home() {
   if (!userId) return <MarketingPage />;
 
   const org = await getActiveOrg();
-  const summary = await dashboardSummary(org.id);
+  const [summary, revenue, statuses, top] = await Promise.all([
+    dashboardSummary(org.id),
+    monthlyRevenue(org.id),
+    statusCounts(org.id),
+    topCustomers(org.id),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -94,7 +102,7 @@ export default async function Home() {
           Neue Rechnung
         </Link>
       </div>
-      <DashboardWidgets summary={summary} />
+      <DashboardWidgets summary={summary} revenue={revenue} statuses={statuses} top={top} />
     </div>
   );
 }

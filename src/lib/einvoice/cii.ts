@@ -8,6 +8,8 @@
 import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
+import { exemptionReasonCode, exemptionReasonText } from "./exemption";
+import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -39,25 +41,6 @@ function typeCode(type: string): string {
   if (type === "DOWNPAYMENT") return "386";
   return "380";
 }
-function exemptionReason(category: string): string | null {
-  switch (category) {
-    case "AE":
-      return "Steuerschuldnerschaft des Leistungsempfängers";
-    case "K":
-      return "Innergemeinschaftliche Lieferung";
-    case "G":
-      return "Ausfuhrlieferung";
-    case "E":
-      return "Steuerbefreit";
-    case "Z":
-      return "Nullsatz";
-    case "O":
-      return "Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG";
-    default:
-      return null;
-  }
-}
-
 // BR-DE-23: PayeePartyCreditorFinancialAccount nur bei Überweisung/Lastschrift.
 const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
 
@@ -140,6 +123,9 @@ export function buildFacturXCII(data: EInvoiceData): string {
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
   // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
   if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();
+  // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
+  // IncludedNote-Element (mehrfach zulaessig), Phase 12b Task 5.
+  if (data.consumerRetentionHint) doc.ele("ram:IncludedNote").ele("ram:Content").txt(CONSUMER_RETENTION_HINT).up().up();
   doc.up();
 
   const tx = root.ele("rsm:SupplyChainTradeTransaction");
@@ -201,6 +187,13 @@ export function buildFacturXCII(data: EInvoiceData): string {
   agr.ele("ram:BuyerReference").txt(data.buyerReference || data.number).up();
 
   const seller = agr.ele("ram:SellerTradeParty");
+  // BT-29 — Verkäuferkennung (ram:ID, unqualifiziert). Phase 12b: BR-CO-26 verlangt BT-29,
+  // BT-30 ODER BT-31 — BT-32 (Steuernummer, s.u.) genügt der Kernregel NICHT (nur BR-DE).
+  // Ohne USt-IdNr. (Kleinunternehmer) wird daher die Steuernummer zusätzlich als
+  // generische Verkäuferkennung ausgewiesen, damit BR-CO-26 erfüllt ist.
+  if (!data.seller.vatId && data.seller.taxNumber) {
+    seller.ele("ram:ID").txt(data.seller.taxNumber).up();
+  }
   seller.ele("ram:Name").txt(data.seller.name).up();
   appendAddress(seller, data.seller);
   if (data.seller.vatId) {
@@ -226,17 +219,28 @@ export function buildFacturXCII(data: EInvoiceData): string {
   }
   agr.up();
 
-  // Lieferung
+  // Lieferung (BG-13/BG-15). CII-Reihenfolge: ShipToTradeParty VOR ActualDeliverySupplyChainEvent.
   const del = tx.ele("ram:ApplicableHeaderTradeDelivery");
+  const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
+  if (deliverToCountry) {
+    // I2 (Fix-Welle Final-Review): BR-DE-10/BR-DE-11 verlangen PLZ/Ort in
+    // ShipToTradeParty/PostalTradeAddress, sobald BG-15 uebermittelt wird — bislang nur in
+    // der UBL-Delivery ergaenzt (xrechnung.ts), hier fehlte das Gegenstueck (die CII-Datei
+    // war als eigenstaendige XRechnung damit KoSIT-invalid, im EN16931-ZUGFeRD-Profil
+    // folgenlos, weil dort nur die EN-Kernregeln pruefen). Ohne eigene Lieferanschrift
+    // (Ruling) aus der Kaeuferadresse ergaenzt, identisch zu appendAddress/UBL. XSD-
+    // Reihenfolge TradeAddressType: PostcodeCode, ... LineOne, ... CityName, ... CountryID
+    // (siehe appendAddress oben) — LineOne bleibt hier bewusst weg (keine eigene
+    // Lieferstrasse erfasst, s. LIMITATIONEN.md).
+    const shipToAddr = del.ele("ram:ShipToTradeParty").ele("ram:PostalTradeAddress");
+    shipToAddr.ele("ram:PostcodeCode").txt(data.buyer.postalCode).up();
+    shipToAddr.ele("ram:CityName").txt(data.buyer.city).up();
+    shipToAddr.ele("ram:CountryID").txt(deliverToCountry).up();
+    shipToAddr.up().up();
+  }
   if (data.deliveryDate) {
-    del
-      .ele("ram:ActualDeliverySupplyChainEvent")
-      .ele("ram:OccurrenceDateTime")
-      .ele("udt:DateTimeString", { format: "102" })
-      .txt(ciiDate(data.deliveryDate))
-      .up()
-      .up()
-      .up();
+    del.ele("ram:ActualDeliverySupplyChainEvent").ele("ram:OccurrenceDateTime")
+      .ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.deliveryDate)).up().up().up();
   }
   del.up();
 
@@ -263,12 +267,22 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const t = set.ele("ram:ApplicableTradeTax");
     t.ele("ram:CalculatedAmount").txt(amt(sub.taxCents)).up();
     t.ele("ram:TypeCode").txt("VAT").up();
-    const reason = exemptionReason(sub.taxCategory);
+    const reason = exemptionReasonText(sub.taxCategory);
     if (reason) t.ele("ram:ExemptionReason").txt(reason).up();
     t.ele("ram:BasisAmount").txt(amt(sub.netCents)).up();
     t.ele("ram:CategoryCode").txt(sub.taxCategory).up();
+    // CII-XSD (TradeTaxType): ExemptionReasonCode NACH CategoryCode, VOR RateApplicablePercent.
+    const reasonCode = exemptionReasonCode(sub.taxCategory);
+    if (reasonCode) t.ele("ram:ExemptionReasonCode").txt(reasonCode).up();
     t.ele("ram:RateApplicablePercent").txt(String(sub.taxRate)).up();
     t.up();
+  }
+  // BG-14 (BT-73/BT-74). CII-XSD: nach ApplicableTradeTax, vor SpecifiedTradeAllowanceCharge.
+  if (data.deliveryStart && data.deliveryEnd) {
+    const period = set.ele("ram:BillingSpecifiedPeriod");
+    period.ele("ram:StartDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.deliveryStart)).up().up();
+    period.ele("ram:EndDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.deliveryEnd)).up().up();
+    period.up();
   }
   // BG-20/BG-21 — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, NACH ApplicableTradeTax
   // und VOR SpecifiedTradePaymentTerms (CII-XSD-Reihenfolge).

@@ -54,8 +54,8 @@ export default async function NeuesAboPage() {
         emailTemplates={emailTemplates}
         defaultAutoFinalize={docSettings.recurringAutoFinalizeDefault}
         defaultAutoSend={docSettings.recurringAutoSendDefault}
-        defaultCurrency={docSettings.defaultCurrency}
         defaultShowPeriodText={docSettings.recurringInsertPeriodText}
+        taxRates={docSettings.taxRates}
       />
     </div>
   );

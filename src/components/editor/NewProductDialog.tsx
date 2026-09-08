@@ -7,6 +7,7 @@
  */
 import { useRef, useState } from "react";
 import { createProductInline, type CreateProductInlineResult } from "@/app/actions/masterdata";
+import { taxRateOptions } from "@/lib/editor/constants";
 
 export interface InlineProduct {
   id: string;
@@ -16,13 +17,14 @@ export interface InlineProduct {
   taxRate: number;
 }
 
-export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) => void }) {
+export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: InlineProduct) => void; taxRates: readonly number[] }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("");
   const [articleNumber, setArticleNumber] = useState("");
   const [unit, setUnit] = useState("C62");
   const [netPrice, setNetPrice] = useState("");
-  const [taxRate, setTaxRate] = useState(19);
+  // Phase 12c — startet auf dem hoechsten org-eigenen Satz statt dem festen Regelsatz 19.
+  const [taxRate, setTaxRate] = useState(() => taxRateOptions(taxRates)[0]?.value ?? 19);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,11 +67,13 @@ export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) 
       <button type="button" onClick={open} className="text-xs font-medium text-indigo-600 hover:underline">
         + Neues Produkt
       </button>
-      {/* Bewusst KEIN <form> hier: der Dialog haengt (ueber ProductPicker) im DOM-Baum
-          des umschliessenden Editor-<form> (NewInvoiceForm/NewDocumentForm) — ein
-          verschachteltes <form> ist ungueltiges HTML und fuehrt zu einem
-          Hydration-Mismatch, der den GESAMTEN Editor-Zustand zuruecksetzt. Speichern
-          laeuft daher ueber einen normalen Button-Klick, nicht ueber form-Submit. */}
+      {/* M5 (Abschluss-Review): `DocumentEditor` rendert seit Task 6 gar kein `<form>`
+          mehr (`grep -rn "<form" src/components/editor` findet ausser diesem Kommentar
+          keinen Treffer) — der urspruengliche Grund ("verschachteltes <form> waere
+          ungueltiges HTML") besteht also nicht mehr, der Verzicht auf ein eigenes
+          `<form>` bleibt trotzdem richtig: ohne `<form>` gibt es kein `type="submit"`,
+          das versehentlich den ganzen Editor abschicken koennte — Speichern laeuft
+          bewusst ueber einen normalen Button-Klick. */}
       <dialog
         ref={dialogRef}
         className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
@@ -108,9 +112,11 @@ export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) 
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-700">USt-Satz</span>
               <select className={input} value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))}>
-                <option value={19}>19 %</option>
-                <option value={7}>7 %</option>
-                <option value={0}>0 %</option>
+                {taxRateOptions(taxRates).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -119,7 +125,7 @@ export function NewProductDialog({ onCreated }: { onCreated: (p: InlineProduct) 
               Abbrechen
             </button>
             <button type="button" onClick={() => void submit()} disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-              {busy ? "Speichern…" : "Anlegen und uebernehmen"}
+              {busy ? "Speichern…" : "Anlegen und übernehmen"}
             </button>
           </div>
         </div>

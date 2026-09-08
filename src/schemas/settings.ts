@@ -4,10 +4,21 @@
  * — kein Bypass ueber Route, UI oder MCP.
  */
 import { z } from "zod";
+import { LAYOUT_IDS, LAYOUT_DOC_TYPES, type LayoutDocType } from "@/lib/pdf/layouts/ids";
+
+// ── Layouts (Phase 11b) ──────────────────────────────────────────────────────
+
+export const layoutIdSchema = z.enum(LAYOUT_IDS);
+export type LayoutIdInput = z.infer<typeof layoutIdSchema>;
+export const layoutByTypeSchema = z
+  .object(Object.fromEntries(LAYOUT_DOC_TYPES.map((t) => [t, layoutIdSchema.optional()])) as Record<LayoutDocType, z.ZodOptional<typeof layoutIdSchema>>)
+  .strict();
+export type LayoutByType = z.infer<typeof layoutByTypeSchema>;
+export const footerModeSchema = z.enum(["AUTO", "CUSTOM"]);
 
 // ── Druckoptionen (§36) ─────────────────────────────────────────────────────
 
-// Die zehn Druckoptionen-Schalter OHNE Default — Basis fuer printSettingsInputSchema
+// Die zehn Schalter + die GiroCode-Groesse OHNE Default — Basis fuer printSettingsInputSchema
 // (globale Einstellungen, jedes Feld bekommt unten einen Default) UND
 // printOptionsOverrideSchema (Beleg-Ueberschreibung, jedes Feld bleibt optional OHNE
 // Default — `.partial()` auf einem Schema mit `.default()` wuerde die Defaults beim
@@ -23,6 +34,8 @@ const printOptionFields = {
   showLineTotals: z.boolean(),
   showSenderLine: z.boolean(),
   showGiroCode: z.boolean(),
+  // Phase 12a — unter 15 mm ist der EPC-QR nicht mehr zuverlaessig scanbar.
+  giroSizeMm: z.coerce.number().int().min(15).max(40),
 };
 
 const PRINT_OPTION_DEFAULTS = {
@@ -36,9 +49,10 @@ const PRINT_OPTION_DEFAULTS = {
   showLineTotals: true,
   showSenderLine: true,
   showGiroCode: true,
+  giroSizeMm: 22,
 } as const;
 
-/** Die zehn globalen Druckoptionen-Schalter, mit Defaults (PrintSettings-Modell). */
+/** Die zehn globalen Druckoptionen-Schalter plus GiroCode-Groesse, mit Defaults (PrintSettings-Modell). */
 export const printSettingsInputSchema = z.object({
   showFooter: printOptionFields.showFooter.default(PRINT_OPTION_DEFAULTS.showFooter),
   showPageNumbers: printOptionFields.showPageNumbers.default(PRINT_OPTION_DEFAULTS.showPageNumbers),
@@ -50,15 +64,19 @@ export const printSettingsInputSchema = z.object({
   showLineTotals: printOptionFields.showLineTotals.default(PRINT_OPTION_DEFAULTS.showLineTotals),
   showSenderLine: printOptionFields.showSenderLine.default(PRINT_OPTION_DEFAULTS.showSenderLine),
   showGiroCode: printOptionFields.showGiroCode.default(PRINT_OPTION_DEFAULTS.showGiroCode),
+  giroSizeMm: printOptionFields.giroSizeMm.default(PRINT_OPTION_DEFAULTS.giroSizeMm),
 });
 export type PrintSettingsInput = z.infer<typeof printSettingsInputSchema>;
+/** Die zehn booleschen Druckoptionen-Schalter ohne giroSizeMm — fuer Formulare, deren
+ *  Raster (LABELS/FIELDS) nur Checkboxen rendert (PrintSettingsForm, PrintOptionsPanel). */
+export type PrintBooleanKey = Exclude<keyof PrintSettingsInput, "giroSizeMm">;
 
 /**
  * Beleg-individuelle Ueberschreibung der globalen PrintSettings (Invoice/Quote/
  * DeliveryNote.printOptionsJson) — dieselben zehn Schalter, aber alle optional und
  * OHNE Default (nur tatsaechlich gesetzte Felder ueberschreiben effectivePrintOptions).
  */
-export const printOptionsOverrideSchema = z.object(printOptionFields).partial();
+export const printOptionsOverrideSchema = z.object({ ...printOptionFields, layoutId: layoutIdSchema.optional() }).partial();
 export type PrintOptionsOverride = z.infer<typeof printOptionsOverrideSchema>;
 
 // ── Briefpapier / Branding (§35) ─────────────────────────────────────────────
@@ -68,7 +86,7 @@ const brandingText500 = z.string().trim().max(500);
 
 export const brandingSettingsInputSchema = z.object({
   logoPath: z.string().nullable().default(null),
-  logoWidthMm: z.coerce.number().int().min(10).max(100).default(40),
+  logoWidthMm: z.coerce.number().int().min(10).max(140).default(40),
   primaryColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "Farbe muss ein Hex-Code im Format #RRGGBB sein")
@@ -84,6 +102,14 @@ export const brandingSettingsInputSchema = z.object({
   fontSizePt: z.coerce.number().int().min(8).max(14).default(10),
   backgroundPath: z.string().nullable().default(null),
   showBackground: z.boolean().default(false),
+  layoutId: layoutIdSchema.default("standard"),
+  layoutByType: layoutByTypeSchema.default({}),
+  footerMode: footerModeSchema.default("AUTO"),
+  // Phase 12c — White-Label; null = Produktvorgabe.
+  appName: z.string().trim().min(1).max(40).nullable().default(null),
+  appShortName: z.string().trim().min(1).max(12).nullable().default(null),
+  faviconPath: z.string().nullable().default(null),
+  appLogoPath: z.string().nullable().default(null),
 });
 export type BrandingSettingsInput = z.infer<typeof brandingSettingsInputSchema>;
 

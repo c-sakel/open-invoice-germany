@@ -6,6 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { normalizeToNoon } from "@/lib/recurring";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import type { CreateRecurringInput } from "@/schemas";
 
 export class RecurringError extends Error {
@@ -37,6 +38,8 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
   // Aenderungen der Org-Einstellung wirken danach NICHT mehr rueckwirkend auf dieses
   // Abo (Task-1-Facts: "je Abo ueberstimmt den Settings-Default").
   const showPeriodText = input.showPeriodText ?? docSettings.recurringInsertPeriodText;
+
+  await assertAllowedTaxRates(dbInternal, orgId, ratesOfLines(input.lines));
 
   const lines = input.lines.map((l, i) => ({
     position: i + 1,

@@ -27,6 +27,7 @@ import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import type { EInvoiceData } from "@/lib/einvoice/types";
@@ -76,7 +77,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     if (!loaded) throw new NotFoundError("Rechnung nicht gefunden.");
     const { invoice: inv, data } = loaded;
     const filenameBase = sanitizeFilename(inv.number ?? `entwurf-${inv.id.slice(0, 8)}`);
-    const theme = await loadPdfTheme(orgId, inv.printOptionsJson);
+    const theme = await loadPdfTheme(orgId, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
     if (format === "pdf") {
       return { buffer: await renderInvoicePdf(data, theme), mimeType: "application/pdf", filenameBase };
     }
@@ -96,7 +97,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
       include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
     });
     if (!q) throw new NotFoundError("Dokument nicht gefunden.");
-    const theme = await loadPdfTheme(orgId, q.printOptionsJson);
+    const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind));
     const buffer = await renderInvoicePdf(buildDocEInvoiceData(q), theme);
     return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(q.number ?? "dokument") };
   }
@@ -121,7 +122,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
           select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
         })
       : null;
-    const theme = await loadPdfTheme(orgId, dn.printOptionsJson);
+    const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE");
     const buffer = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
     return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(dn.number ?? "lieferschein") };
   }
@@ -132,7 +133,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     include: { invoice: { include: { org: true, customer: true } }, stage: true },
   });
   if (!d) throw new NotFoundError(`Mahnung "${document}" nicht gefunden.`);
-  const theme = await loadPdfTheme(orgId);
+  const theme = await loadPdfTheme(orgId, null, "DUNNING");
   const buffer = await renderDunningPdf(buildDunningPdfData(d, d.invoice), theme);
   return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(d.number ?? "mahnung") };
 }

@@ -11,13 +11,22 @@ import { updateRecurringSchema, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { RecurringError } from "@/domain/recurring/create";
 import { logActivity } from "@/domain/activity/log";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 
 export async function updateRecurringInvoice(orgId: string, id: string, raw: unknown, actor = "system") {
   const input: UpdateRecurringInput = updateRecurringSchema.parse(raw);
 
   const existing = await dbInternal.recurringInvoice.findFirst({
     where: { id, orgId },
-    select: { id: true, startDate: true, endDate: true, issuedCount: true, status: true, maxRuns: true },
+    select: {
+      id: true,
+      startDate: true,
+      endDate: true,
+      issuedCount: true,
+      status: true,
+      maxRuns: true,
+      lines: { select: { taxRate: true } },
+    },
   });
   if (!existing) throw new NotFoundError("Abo nicht gefunden.");
 
@@ -53,6 +62,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
 
   return dbInternal.$transaction(async (tx) => {
     if (input.lines) {
+      await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: ratesOfLines(existing.lines) });
       await tx.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: id } });
     }
 

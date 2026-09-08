@@ -10,6 +10,8 @@ import { create } from "xmlbuilder2";
 import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
+import { exemptionReasonCode, exemptionReasonText } from "./exemption";
+import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -50,25 +52,6 @@ function invoiceTypeCode(type: string): string {
       return "386";
     default:
       return "380";
-  }
-}
-
-function exemptionReason(category: string): string | null {
-  switch (category) {
-    case "AE":
-      return "Steuerschuldnerschaft des Leistungsempfängers";
-    case "K":
-      return "Innergemeinschaftliche Lieferung";
-    case "G":
-      return "Ausfuhrlieferung";
-    case "E":
-      return "Steuerbefreit";
-    case "Z":
-      return "Nullsatz";
-    case "O":
-      return "Nicht im Inland steuerbar gem. § 3a Abs. 2 UStG";
-    default:
-      return null;
   }
 }
 
@@ -127,6 +110,14 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
     p.ele("cbc:EndpointID", { schemeID: "EM" }).txt(endpoint).up();
   }
 
+  // BT-29 — Verkäuferkennung (PartyIdentification). Phase 12b: BR-CO-26 verlangt BT-29,
+  // BT-30 ODER BT-31 — BT-32 (Steuernummer, s.u.) genügt der Kernregel NICHT (nur BR-DE).
+  // Ohne USt-IdNr. (Kleinunternehmer) wird daher die Steuernummer zusätzlich als
+  // generische Verkäuferkennung ausgewiesen, damit BR-CO-26 erfüllt ist.
+  if (isSeller && !party.vatId && party.taxNumber) {
+    p.ele("cac:PartyIdentification").ele("cbc:ID").txt(party.taxNumber).up().up();
+  }
+
   const postal = p.ele("cac:PostalAddress");
   postal.ele("cbc:StreetName").txt(party.addressLine1).up();
   if (party.addressLine2) postal.ele("cbc:AdditionalStreetName").txt(party.addressLine2).up();
@@ -140,8 +131,10 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
     pts.ele("cbc:CompanyID").txt(party.vatId).up();
     pts.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
   }
-  // BT-32 — Steuernummer (PartyTaxScheme FC). Wichtig für Kleinunternehmer ohne
-  // USt-IdNr.: ohne BT-31 oder BT-32 ist die XRechnung KoSIT-invalid (BR-CO-26/BR-DE).
+  // BT-32 — Steuernummer (PartyTaxScheme FC). M2 (Fix-Welle Final-Review): BT-32 erfüllt
+  // BR-CO-26 NICHT (nur BT-29/BT-30/BT-31, s. Kommentar oben) — deshalb der zusätzliche
+  // BT-29-Zusatz oben für Kleinunternehmer ohne USt-IdNr. BT-32 bleibt trotzdem als eigene,
+  // kanonische Angabe der Steuernummer erhalten (§ 14 Abs. 4 Nr. 2 UStG, unabhängig von BR-CO-26).
   if (isSeller && party.taxNumber) {
     const pts = p.ele("cac:PartyTaxScheme");
     pts.ele("cbc:CompanyID").txt(party.taxNumber).up();
@@ -192,9 +185,20 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
   // Freitext-Hinweis, statt ihn zu ersetzen.
   if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions)).up();
+  // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
+  // Note-Element (mehrere cbc:Note sind laut UBL-XSD zulaessig), Phase 12b Task 5.
+  if (data.consumerRetentionHint) root.ele("cbc:Note").txt(CONSUMER_RETENTION_HINT).up();
   root.ele("cbc:DocumentCurrencyCode").txt(cur).up();
   // XRechnung: BT-10 Buyer reference Pflicht (Leitweg-ID im B2G); Fallback Belegnummer
   root.ele("cbc:BuyerReference").txt(data.buyerReference || data.number).up();
+
+  // BG-14 (BT-73/BT-74). UBL-Reihenfolge: nach BuyerReference, vor OrderReference.
+  if (data.deliveryStart && data.deliveryEnd) {
+    const period = root.ele("cac:InvoicePeriod");
+    period.ele("cbc:StartDate").txt(isoDate(data.deliveryStart)).up();
+    period.ele("cbc:EndDate").txt(isoDate(data.deliveryEnd)).up();
+    period.up();
+  }
 
   // BT-13 — Bestellnummer des Kunden (Phase 4b). UBL-Reihenfolge: direkt nach
   // BuyerReference und vor BillingReference (BG-3).
@@ -221,10 +225,25 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   appendParty(root.ele("cac:AccountingSupplierParty"), data.seller, true);
   appendParty(root.ele("cac:AccountingCustomerParty"), data.buyer, false);
 
-  // BG-13 Lieferinformationen — MUSS in der UBL-Reihenfolge NACH den Parteien und
-  // VOR PaymentMeans stehen (sonst XSD-fatal -> KoSIT lehnt das Dokument ab).
-  if (data.deliveryDate) {
-    root.ele("cac:Delivery").ele("cbc:ActualDeliveryDate").txt(isoDate(data.deliveryDate)).up().up();
+  // BG-13/BG-15 — MUSS nach den Parteien und vor PaymentMeans stehen (sonst XSD-fatal).
+  // DeliveryType-Reihenfolge: ActualDeliveryDate vor DeliveryLocation.
+  const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
+  if (data.deliveryDate || deliverToCountry) {
+    const delivery = root.ele("cac:Delivery");
+    if (data.deliveryDate) delivery.ele("cbc:ActualDeliveryDate").txt(isoDate(data.deliveryDate)).up();
+    // BT-80 ist die einzige Pflichtangabe der BG-15 nach EN16931-Kernregel BR-57 — die
+    // XRechnung-CIUS (KoSIT-Validator) verlangt zusaetzlich BR-DE-10/BR-DE-11 (Ort +
+    // PLZ), sobald die Gruppe uebermittelt wird. Ohne eigene Lieferanschrift (Ruling)
+    // ergaenzen wir Ort/PLZ aus der Kaeuferadresse — sonst waeren ALLE Belege mit
+    // Lieferland KoSIT-invalid, sobald BG-15 (auch nur mit Land) uebermittelt wird.
+    if (deliverToCountry) {
+      const loc = delivery.ele("cac:DeliveryLocation").ele("cac:Address");
+      loc.ele("cbc:CityName").txt(data.buyer.city).up();
+      loc.ele("cbc:PostalZone").txt(data.buyer.postalCode).up();
+      loc.ele("cac:Country").ele("cbc:IdentificationCode").txt(deliverToCountry).up().up();
+      loc.up();
+    }
+    delivery.up();
   }
 
   // Zahlungsweg (BT-81 ff.) — Phase 4a: data.paymentMeans (aus Zahlungsmethoden-Snapshot,
@@ -292,7 +311,10 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     const cat = st.ele("cac:TaxCategory");
     cat.ele("cbc:ID").txt(sub.taxCategory).up();
     cat.ele("cbc:Percent").txt(String(sub.taxRate)).up();
-    const reason = exemptionReason(sub.taxCategory);
+    // UBL-XSD (TaxCategoryType): ReasonCode steht VOR Reason.
+    const reasonCode = exemptionReasonCode(sub.taxCategory);
+    if (reasonCode) cat.ele("cbc:TaxExemptionReasonCode").txt(reasonCode).up();
+    const reason = exemptionReasonText(sub.taxCategory);
     if (reason) cat.ele("cbc:TaxExemptionReason").txt(reason).up();
     cat.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
     cat.up();

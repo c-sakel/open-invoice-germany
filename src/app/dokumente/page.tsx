@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { listQuotes } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
@@ -8,6 +9,7 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { loadListPage } from "@/lib/list-page";
+import { buildListeParam } from "@/domain/document/neighbors";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +35,10 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    offset: firstOf(sp.offset),
   };
+  const liste = buildListeParam(values);
+  const detailHref = (id: string) => `/dokumente/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
   // Fix-Welle (B1): siehe rechnungen/page.tsx.
@@ -60,12 +65,15 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Dokumente</h1>
-        <Link href="/dokumente/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Neues Dokument
-        </Link>
-      </div>
+      <PageHeader
+        title="Dokumente"
+        subtitle={`${result.total} Belege`}
+        actions={
+          <Link href="/dokumente/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Neues Dokument
+          </Link>
+        }
+      />
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">Angebote, Auftragsbestätigungen und Proforma-Rechnungen — keine Steuerbelege; jederzeit in eine Rechnung umwandelbar.</p>
         <Link href={showArchived ? "/dokumente" : "/dokumente?archiviert=1"} className="text-sm font-medium text-indigo-600 hover:underline">
@@ -107,7 +115,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                 return (
                   <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/dokumente/${d.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(d.id)} className="font-medium text-indigo-600 hover:underline">
                         {d.number ?? "—"}
                       </Link>
                     </td>

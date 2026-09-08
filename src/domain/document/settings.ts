@@ -6,9 +6,21 @@
  * bevor eine Organisation die Einstellungen zum ersten Mal oeffnet.
  */
 import { dbInternal } from "@/lib/db";
-import { documentSettingsInputSchema, type DocumentSettingsInput } from "@/schemas/quote-share";
+import { documentSettingsInputSchema, taxRatesSchema, normalizeTaxRates, type DocumentSettingsInput } from "@/schemas/quote-share";
 
 export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettingsInput = documentSettingsInputSchema.parse({});
+
+/** Liest `DocumentSettings.taxRatesJson`; kaputtes JSON oder ungueltige Werte ⇒ [19,7,0]
+ *  (Selbstheilung wie parseLayoutByType, src/domain/settings/layout.ts). */
+function parseTaxRates(json: string | null | undefined): number[] {
+  if (!json) return [19, 7, 0];
+  try {
+    const parsed = taxRatesSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : [19, 7, 0];
+  } catch {
+    return [19, 7, 0];
+  }
+}
 
 /** Laedt die Dokument-Einstellungen einer Organisation; Defaults, wenn noch keine Zeile existiert. */
 export async function loadDocumentSettings(orgId: string): Promise<DocumentSettingsInput> {
@@ -35,16 +47,20 @@ export async function loadDocumentSettings(orgId: string): Promise<DocumentSetti
     recurringInsertPeriodText: row.recurringInsertPeriodText,
     recurringAutoFinalizeDefault: row.recurringAutoFinalizeDefault,
     recurringAutoSendDefault: row.recurringAutoSendDefault,
+    taxRates: parseTaxRates(row.taxRatesJson),
   });
 }
 
 /** Speichert die Dokument-Einstellungen (Upsert, da anfangs keine Zeile existiert). */
 export async function saveDocumentSettings(orgId: string, rawInput: unknown): Promise<DocumentSettingsInput> {
   const input = documentSettingsInputSchema.parse(rawInput);
+  const { taxRates, ...rest } = input;
+  const normalized = normalizeTaxRates(taxRates);
+  const data = { ...rest, taxRatesJson: JSON.stringify(normalized) };
   await dbInternal.documentSettings.upsert({
     where: { orgId },
-    create: { orgId, ...input },
-    update: { ...input },
+    create: { orgId, ...data },
+    update: { ...data },
   });
-  return input;
+  return { ...input, taxRates: normalized };
 }

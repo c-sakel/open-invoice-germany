@@ -9,6 +9,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
+import { loadBrand } from "@/domain/settings/brand";
 import { attemptDelivery, type AttemptResult, type FetchLike } from "./deliver";
 import { getWebhookEndpointRaw } from "./endpoints";
 import type { WebhookDelivery, WebhookEndpoint } from "@/generated/prisma/client";
@@ -29,6 +30,7 @@ export interface TestDeliveryResult {
 export async function sendTestDelivery(orgId: string, endpointId: string, opts: TestDeliveryOptions = {}): Promise<TestDeliveryResult> {
   const now = opts.now ?? new Date();
   const endpoint: WebhookEndpoint = await getWebhookEndpointRaw(orgId, endpointId);
+  const brand = await loadBrand(orgId);
 
   const delivery = await dbInternal.webhookDelivery.create({
     data: {
@@ -37,7 +39,7 @@ export async function sendTestDelivery(orgId: string, endpointId: string, opts: 
       event: "webhook.test",
       objectName: "Webhook",
       objectId: endpoint.id,
-      dataJson: JSON.stringify({ message: "Dies ist eine Test-Zustellung von OpenInvoice Germany." }),
+      dataJson: JSON.stringify({ message: `Dies ist eine Test-Zustellung von ${brand.appName}.` }),
       status: "PENDING",
       nextAttemptAt: now,
     },

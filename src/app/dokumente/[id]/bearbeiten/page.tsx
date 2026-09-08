@@ -1,11 +1,13 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
-import { NewDocumentForm, type DocumentInitial } from "@/components/NewDocumentForm";
-import { PrintOptionsPanel } from "@/components/PrintOptionsPanel";
+import { DocumentEditor } from "@/components/editor/DocumentEditor";
+import { draftFromDocument, type DocumentInitialLike } from "@/lib/editor/draft";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
+import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +22,22 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (!q) notFound();
   if (q.status !== "DRAFT") redirect(`/dokumente/${id}`);
 
-  const [customers, products, contactRows, addressRows] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true, defaultDiscountPermille: true }, orderBy: { name: "asc" } }),
+  const [customers, products, contactRows, addressRows, attachments, documentSettings] = await Promise.all([
+    dbInternal.customer.findMany({
+      where: { orgId: org.id, isArchived: false },
+      select: {
+        id: true,
+        name: true,
+        customerNumber: true,
+        email: true,
+        defaultDiscountPermille: true,
+        addressLine1: true,
+        postalCode: true,
+        city: true,
+        countryCode: true,
+      },
+      orderBy: { name: "asc" },
+    }),
     dbInternal.product.findMany({
       where: { orgId: org.id, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
@@ -29,9 +45,11 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     }),
     dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
     dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
+    listAttachments(org.id, "QUOTE", q.id),
+    loadDocumentSettings(org.id),
   ]);
 
-  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, label: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
+  const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
     customerId: a.customerId,
@@ -40,12 +58,10 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     label: a.label ? `${a.label} — ${a.addressLine1}, ${a.postalCode} ${a.city}` : `${a.addressLine1}, ${a.postalCode} ${a.city}`,
   }));
 
-  const initial: DocumentInitial = {
+  const documentInitial: DocumentInitialLike = {
     id: q.id,
     kind: q.kind,
     customerId: q.customerId,
-    taxScheme: q.taxScheme,
-    currency: q.currency,
     subject: q.subject ?? "",
     customerReference: q.customerReference ?? "",
     contactPersonId: q.contactPersonId ?? "",
@@ -86,15 +102,20 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href={`/dokumente/${id}`} className="text-sm text-slate-500 hover:text-slate-800">
-          ← Zurück
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Entwurf bearbeiten</h1>
-      </div>
-      <NewDocumentForm customers={customers} products={products} contacts={contacts} addresses={addresses} initial={initial} />
-      <PrintOptionsPanel docId={q.id} apiKind="documents" effective={effectivePrint} initialOverride={printOverride} />
-    </div>
+    <DocumentEditor
+      mode="DOCUMENT"
+      initial={draftFromDocument(documentInitial, documentSettings.taxRates)}
+      customers={customers}
+      products={products}
+      taxRates={documentSettings.taxRates}
+      contacts={contacts}
+      addresses={addresses}
+      layouts={listLayouts()}
+      effectivePrintOptions={effectivePrint}
+      printOverride={printOverride}
+      attachments={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+      backHref={`/dokumente/${id}`}
+      title="Entwurf bearbeiten"
+    />
   );
 }
