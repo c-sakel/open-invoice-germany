@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PrintSettingsInput, PrintBooleanKey } from "@/schemas";
+import { parseClampedNumberInput } from "@/lib/forms/clamped-number-input";
 
 const LABELS: Record<PrintBooleanKey, string> = {
   showFooter: "Fußzeile anzeigen",
@@ -72,7 +73,7 @@ export function PrintSettingsForm({ initial }: { initial: PrintSettingsInput }) 
           min={15}
           max={40}
           value={values.giroSizeMm}
-          onChange={(e) => setValues((v) => ({ ...v, giroSizeMm: Number(e.target.value) }))}
+          onChange={(e) => setValues((v) => ({ ...v, giroSizeMm: parseClampedNumberInput(e.target.value, 15, 40) }))}
           className="w-24 rounded border border-slate-300 px-2 py-1"
         />
         <span className="text-xs text-slate-400">15–40 mm. Unter 15 mm wird der Code unzuverlässig scanbar.</span>

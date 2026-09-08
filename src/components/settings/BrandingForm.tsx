@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { BrandingSettingsInput } from "@/schemas";
+import { parseClampedNumberInput } from "@/lib/forms/clamped-number-input";
 
 /** Briefpapier-Einstellungen (§35): Logo-/Hintergrund-Upload, Farbe, Ränder, Fußzeilen.
  *  Die Live-Vorschau (vormals eine feste PDF-Vorschau hier im Formular) lebt seit Phase 11b,
@@ -128,7 +129,7 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
                   min={10}
                   max={140}
                   value={values.logoWidthMm}
-                  onChange={(e) => setField("logoWidthMm", Number(e.target.value))}
+                  onChange={(e) => setField("logoWidthMm", parseClampedNumberInput(e.target.value, 10, 140))}
                   className="w-24 rounded border border-slate-300 px-2 py-1"
                 />
               </div>

@@ -560,10 +560,19 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       // `footerHeight` > 32 (z. B. `schlicht`/`standard` seit der AUTO-Fusszeile, 44/46pt)
       // kollidierte die GiroCode-Bildunterschrift sonst mit der vierten Fusszeilen-Spalte.
       const giroY = footY - giroSize - 22;
-      await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: giroSizeMm });
-      // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(7)`.
-      doc.fontSize(base - 3).fillColor("#666");
-      doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
+      // Fix-Welle 12a (M2): `giroY` ist eine feste Position ohne Abgleich mit dem
+      // Inhaltscursor `y` (Fusstext/Hinweise/Zahlungsbedingungen). Mit der neuen
+      // Obergrenze `giroSizeMm = 40` (vorher fest 30) rueckt der GiroCode auf einer
+      // knapp gefuellten letzten Seite weiter nach oben und kann `y` ueberlagern.
+      // Kollidiert die berechnete Position mit dem Inhalt, wird der GiroCode auf
+      // dieser Seite ausgelassen statt ueberlappend gedruckt — kein Layoutumbau
+      // (neue Seite erzwingen) im Rahmen dieser Fix-Welle.
+      if (giroY > y + 6) {
+        await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: giroSizeMm });
+        // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(7)`.
+        doc.fontSize(base - 3).fillColor("#666");
+        doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
+      }
     } catch (e) {
       // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
       // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
