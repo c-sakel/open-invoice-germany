@@ -119,6 +119,25 @@ describe("BarChart", () => {
     expect(html).toContain('fill="#475569"');
     expect(html).not.toContain('fill="#94a3b8"');
   });
+
+  it("waagerechte Kundenbeschriftung bleibt bei einem 24-stelligen Namen im positiven Bereich (Fix 2)", () => {
+    // 24 Zeichen, angelehnt an "Beispiel GmbH & Co. KG" (Review-Fund: bei labelWidth=110
+    // ragte textAnchor="end" ueber den linken SVG-Rand hinaus, x < 0).
+    const longName = "Beispiel GmbH & Co. KG12"; // 24 Zeichen
+    expect(longName.length).toBe(24);
+    const data: ChartDatum[] = [{ label: longName, value: 100000, valueLabel: "1.000,00 €" }];
+    const html = renderToStaticMarkup(<BarChart title="Top 5" data={data} orientation="horizontal" />);
+    const groups = [...html.matchAll(/<g[^>]*>([\s\S]*?)<\/g>/g)];
+    expect(groups.length).toBeGreaterThan(0);
+    for (const group of groups) {
+      const labelText = /<text\b([^>]*)>/.exec(group[1]);
+      expect(labelText).not.toBeNull();
+      const x = Number(/\bx="(-?[\d.]+)"/.exec(labelText![1])?.[1]);
+      expect(Number.isNaN(x)).toBe(false);
+      expect(x).toBeGreaterThanOrEqual(0);
+    }
+    expectNoNaN(html);
+  });
 });
 
 describe("LineChart", () => {
