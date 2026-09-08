@@ -6,6 +6,7 @@ import { getCurrentUserId } from "@/lib/auth/server";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { RecurringError } from "@/domain/recurring/create";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (e instanceof z.ZodError) return NextResponse.json({ error: "Ungültige Eingabe." }, { status: 400 });
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof InvalidOperationError) return NextResponse.json({ error: e.message }, { status: 409 });
+    // Fix-Welle 12c (I2): derselbe Konflikt liefert am /api/v1-Zwilling bereits 409
+    // (src/api/errors.ts) — vorher fiel dieser Fall unter den generischen 400-Zweig.
+    if (e instanceof TaxRateNotAllowedError) return NextResponse.json({ error: e.message }, { status: 409 });
     if (e instanceof RecurringError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error("PATCH /api/recurring/[id]:", e);
     return NextResponse.json({ error: "Abo konnte nicht geändert werden." }, { status: 400 });

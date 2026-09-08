@@ -50,6 +50,7 @@ export function LineItemsEditor({
   draft,
   dispatch,
   products,
+  taxRates,
   mode,
   totals,
   onProductCreated,
@@ -57,6 +58,8 @@ export function LineItemsEditor({
   draft: DraftState;
   dispatch: (action: DraftAction) => void;
   products: ProductOption[];
+  /** Phase 12c — org-eigene Steuersatz-Liste, durchgereicht an `LineRow`. */
+  taxRates: readonly number[];
   mode: EditorMode;
   totals: DraftTotals;
   onProductCreated?: (p: ProductOption) => void;
@@ -142,6 +145,7 @@ export function LineItemsEditor({
                 key={line.key}
                 line={line}
                 mode={mode}
+                taxRates={taxRates}
                 itemPos={itemPositions[index] ?? null}
                 isLast={index === draft.lines.length - 1}
                 taxDisabled={taxDisabled}

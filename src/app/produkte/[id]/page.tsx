@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { ProductForm } from "@/components/forms/ProductForm";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export default async function ProduktBearbeitenPage({ params }: { params: Promis
   const org = await getActiveOrg();
   const product = await prisma.product.findFirst({ where: { id, orgId: org.id } });
   if (!product) notFound();
+  const { taxRates } = await loadDocumentSettings(org.id);
 
   return (
     <div className="space-y-6">
@@ -20,7 +22,7 @@ export default async function ProduktBearbeitenPage({ params }: { params: Promis
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Produkt bearbeiten</h1>
       </div>
-      <ProductForm product={product} />
+      <ProductForm product={product} taxRates={taxRates} />
     </div>
   );
 }

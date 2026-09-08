@@ -74,9 +74,11 @@ export default async function NeuerLieferscheinPage() {
         showPrices: docSettings.dnShowPrices,
         showArticleNumber: docSettings.dnShowArticleNumber,
         showDeliveryAddress: docSettings.dnShowDeliveryAddress,
+        allowedTaxRates: docSettings.taxRates,
       })}
       customers={customers}
       products={products}
+      taxRates={docSettings.taxRates}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

@@ -26,6 +26,7 @@ import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { setQuoteStatusWithinTx } from "@/domain/document/status";
 import { NotFoundError } from "@/domain/errors";
+import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { createDownpaymentInvoiceSchema, type CreateDownpaymentInvoiceInput, type CreateInvoiceInput } from "@/schemas";
 
 export class DownpaymentInvoiceError extends Error {
@@ -165,7 +166,7 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
       })),
     };
 
-    const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now });
+    const invoice = await createDraftInvoiceWithinTx(tx, orgId, createInput, { actor, now, inheritedTaxRates: ratesOfLines(lines) });
 
     // Fix-Runde 1 (Koordinator): Seller-/Buyer-/Kontakt-Snapshot der Quelle uebernehmen
     // statt live aus dem (moeglicherweise seither geaenderten) Kundenstamm neu zu bauen —

@@ -15,6 +15,7 @@ import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { createRecurringSchema, updateRecurringSchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -71,6 +72,10 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             `ID: ${rec.id}. Erzeugen: run_recurring (alle fälligen) oder warten auf den Cron-Lauf.`,
         );
       } catch (e) {
+        // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
+        // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,
+        // domain/settings/tax-rates.ts).
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof RecurringError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
@@ -175,6 +180,9 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
+        // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
+        // gefallen — dieselbe lesbare Meldung wie im Editor/UI.
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof RecurringError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
@@ -207,6 +215,9 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof InvalidOperationError) return ctx.fail(e.message);
+        // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
+        // gefallen — dieselbe lesbare Meldung wie im Editor/UI.
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof RecurringError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

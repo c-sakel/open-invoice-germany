@@ -152,6 +152,30 @@ describe("Briefpapier (/api/settings/branding)", () => {
     const res = await brandingPut(jsonRequest("http://x/api/settings/branding", { primaryColor: "blau" }));
     expect(res.status).toBe(400);
   });
+
+  // Fix-Welle (Fix 1): logoPath/backgroundPath/faviconPath/appLogoPath sind NIE per PUT
+  // client-schreibbar — nur die Upload-Route setzt sie (dieselbe Regel wie MCP
+  // update_branding_settings und PATCH /api/v1/Settings).
+  it("PUT ignoriert mitgeschickte Datei-Pfade (favicon/appLogo/logo/background)", async () => {
+    const before = await (await brandingGet()).json();
+    const res = await brandingPut(
+      jsonRequest("http://x/api/settings/branding", {
+        ...before.settings,
+        faviconPath: "boesartig/icon.png",
+        appLogoPath: "boesartig/logo.png",
+        logoPath: "boesartig/pfad.png",
+        backgroundPath: "boesartig/bg.png",
+        fontSizePt: 14,
+      }),
+    );
+    const j = await res.json();
+    expect(res.status).toBe(200);
+    expect(j.settings.faviconPath).toBe(before.settings.faviconPath);
+    expect(j.settings.appLogoPath).toBe(before.settings.appLogoPath);
+    expect(j.settings.logoPath).toBe(before.settings.logoPath);
+    expect(j.settings.backgroundPath).toBe(before.settings.backgroundPath);
+    expect(j.settings.fontSizePt).toBe(14);
+  });
 });
 
 describe("Logo-/Hintergrund-Upload (/api/settings/branding/upload)", () => {

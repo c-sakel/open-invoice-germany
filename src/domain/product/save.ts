@@ -12,6 +12,7 @@ import { dbInternal } from "@/lib/db";
 import { productSchema, type ProductInput } from "@/schemas";
 import { assignArticleNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
+import { assertAllowedTaxRates } from "@/domain/settings/tax-rates";
 import type { Product } from "@/generated/prisma/client";
 
 function toCreateData(v: ProductInput) {
@@ -31,6 +32,10 @@ function toCreateData(v: ProductInput) {
  *  nicht bereits gesetzt (§34). */
 export async function createProduct(orgId: string, rawInput: unknown): Promise<Product> {
   const v = productSchema.parse(rawInput);
+  // Ausserhalb der Transaktion: die Pruefung liest nur DocumentSettings (keine
+  // Produktzeile), ein Produkt-Race gegen diese eine Zeile gibt es nicht — anders als bei
+  // Beleg-Positionen entsteht hier keine TOCTOU-Luecke, die etwas Falsches persistiert.
+  await assertAllowedTaxRates(dbInternal, orgId, [v.taxRate]);
   const data = toCreateData(v);
   return dbInternal.$transaction(async (tx) => {
     const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, orgId));
@@ -46,6 +51,12 @@ export async function updateProduct(orgId: string, id: string, rawInput: unknown
 
   const existing = await dbInternal.product.findFirst({ where: { id, orgId } });
   if (!existing) throw new NotFoundError("Produkt nicht gefunden.");
+
+  // Ausserhalb der Transaktion (wie createProduct oben): reiner Settings-Read, kein
+  // Race gegen die zu aendernde Zeile selbst — `existing.taxRate` ist bereits gelesen.
+  if ("taxRate" in raw && v.taxRate !== undefined) {
+    await assertAllowedTaxRates(dbInternal, orgId, [v.taxRate], { existing: [existing.taxRate] });
+  }
 
   const patch: Record<string, unknown> = {};
   for (const key of Object.keys(raw)) {

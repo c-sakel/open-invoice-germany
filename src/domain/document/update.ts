@@ -12,6 +12,7 @@ import { StatusTransitionError } from "@/domain/document/status";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { normalizeLines } from "@/domain/document/lines";
 import { NotFoundError } from "@/domain/errors";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { updateDocumentSchema } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -139,6 +140,7 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
       );
 
       if (input.lines) {
+        await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: ratesOfLines(quote.lines) });
         await tx.quoteLine.deleteMany({ where: { quoteId: id } });
         data.lines = { create: lines };
         changedFields.push("lines");

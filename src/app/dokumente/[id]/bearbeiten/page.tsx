@@ -3,6 +3,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { draftFromDocument, type DocumentInitialLike } from "@/lib/editor/draft";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
@@ -21,7 +22,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   if (!q) notFound();
   if (q.status !== "DRAFT") redirect(`/dokumente/${id}`);
 
-  const [customers, products, contactRows, addressRows, attachments] = await Promise.all([
+  const [customers, products, contactRows, addressRows, attachments, documentSettings] = await Promise.all([
     dbInternal.customer.findMany({
       where: { orgId: org.id, isArchived: false },
       select: {
@@ -45,6 +46,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
     dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
     listAttachments(org.id, "QUOTE", q.id),
+    loadDocumentSettings(org.id),
   ]);
 
   const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
@@ -102,9 +104,10 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   return (
     <DocumentEditor
       mode="DOCUMENT"
-      initial={draftFromDocument(documentInitial)}
+      initial={draftFromDocument(documentInitial, documentSettings.taxRates)}
       customers={customers}
       products={products}
+      taxRates={documentSettings.taxRates}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

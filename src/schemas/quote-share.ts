@@ -15,6 +15,18 @@ const currencyCode = z
   .string()
   .regex(/^[A-Z]{3}$/, "Waehrung muss aus drei Grossbuchstaben bestehen (ISO 4217)");
 
+// Phase 12c, §33 — org-eigene Liste erlaubter Steuersaetze (ganze Prozentwerte, 1..10
+// Eintraege). KEIN `.transform` (Ruling): ein ZodPipe wird von `partialInputShape`
+// (src/mcp/tools/partial-input.ts, unwrappt nur ZodDefault) und zod-to-openapi nur
+// unsauber abgebildet. Sortierung/Deduplizierung uebernimmt normalizeTaxRates,
+// aufgerufen in saveDocumentSettings.
+export const taxRatesSchema = z.array(z.number().int().min(0).max(100)).min(1).max(10);
+
+/** Dedupliziert und sortiert aufsteigend — reine Funktion, kein Zod-Transform (s. o.). */
+export function normalizeTaxRates(rates: readonly number[]): number[] {
+  return Array.from(new Set(rates)).sort((a, b) => a - b);
+}
+
 export const documentSettingsInputSchema = z.object({
   onQuoteAccept: OnQuoteAccept.default("NONE"),
   /** Gueltigkeitsdauer neu erzeugter Angebotslinks in Tagen (Default, ueberschreibbar je Link). */
@@ -56,6 +68,9 @@ export const documentSettingsInputSchema = z.object({
   recurringAutoFinalizeDefault: z.boolean().default(false),
   /** Default fuer RecurringInvoice.autoSend bei neuen Dauerauftraegen. */
   recurringAutoSendDefault: z.boolean().default(false),
+  // Phase 12c, §33 — nur ganze Prozentwerte; alle taxRate-Spalten sind Int und die
+  // Rechenkette arbeitet mit net * rate / 100.
+  taxRates: taxRatesSchema.default([19, 7, 0]),
 });
 export type DocumentSettingsInput = z.infer<typeof documentSettingsInputSchema>;
 

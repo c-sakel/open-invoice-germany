@@ -25,6 +25,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { createDocumentSchema, type SnapshotSource } from "@/schemas";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,6 +33,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface CreateDocumentOptions {
   actor?: string;
   now?: Date;
+  // Phase 12c: Saetze eines Quellbelegs (Konvertierung Angebot -> AB) — gelten als
+  // zusaetzlich erlaubt (GoBD, kein Bypass, siehe src/domain/settings/tax-rates.ts).
+  inheritedTaxRates?: readonly number[];
 }
 
 export async function createBusinessDocumentWithinTx(
@@ -47,6 +51,7 @@ export async function createBusinessDocumentWithinTx(
   // normalizeLines (Lastenheft §8, zweite Verteidigungslinie neben Zod): Positionsnummern +
   // erzwungene Null-Betraege bei Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL).
   const normalized = normalizeLines(input.lines);
+  await assertAllowedTaxRates(tx, orgId, ratesOfLines(normalized), { existing: opts.inheritedTaxRates });
   const lines = normalized.map((l) => ({
     position: l.position,
     lineType: l.lineType,
