@@ -6,6 +6,7 @@
  * Verwendbar auf Rechnung/Dokument/Lieferschein — docType kommt aus DocRefType.
  */
 import { useRef, useState } from "react";
+import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 
 export interface AttachmentItem {
   id: string;
@@ -33,10 +34,9 @@ export function AttachmentPanel({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AttachmentItem | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<ConfirmDialogHandle>(null);
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -72,26 +72,21 @@ export function AttachmentPanel({
 
   function askDelete(item: AttachmentItem) {
     setPendingDelete(item);
-    dialogRef.current?.showModal();
-  }
-  function closeDeleteDialog() {
-    dialogRef.current?.close();
-    setPendingDelete(null);
+    dialogRef.current?.open();
   }
   async function confirmDelete() {
     if (!pendingDelete) return;
-    setDeleting(true);
+    const id = pendingDelete.id;
     try {
-      const res = await fetch(`/api/attachments/${pendingDelete.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/attachments/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setItems((prev) => prev.filter((a) => a.id !== pendingDelete.id));
+        setItems((prev) => prev.filter((a) => a.id !== id));
       } else {
         const j = await res.json().catch(() => ({}));
         setError(j.error ?? "Loeschen fehlgeschlagen.");
       }
     } finally {
-      setDeleting(false);
-      closeDeleteDialog();
+      setPendingDelete(null);
     }
   }
 
@@ -148,26 +143,13 @@ export function AttachmentPanel({
         </ul>
       )}
 
-      <dialog ref={dialogRef} className="rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
-        <div className="space-y-3 p-5">
-          <p className="text-sm text-slate-700">
-            Anhang <span className="font-medium">{pendingDelete?.filename}</span> wirklich löschen?
-          </p>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={closeDeleteDialog} className="text-sm text-slate-500 hover:text-slate-800">
-              Abbrechen
-            </button>
-            <button
-              type="button"
-              onClick={confirmDelete}
-              disabled={deleting}
-              className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60"
-            >
-              {deleting ? "Löscht…" : "Löschen"}
-            </button>
-          </div>
-        </div>
-      </dialog>
+      <ConfirmDialog
+        ref={dialogRef}
+        message={`Anhang ${pendingDelete?.filename ?? ""} wirklich löschen?`}
+        confirmLabel="Löschen"
+        tone="danger"
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

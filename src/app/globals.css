@@ -11,3 +11,16 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Phase 12a — native <dialog> wieder zentrieren. Das Tailwind-v4-Preflight
+ * (node_modules/tailwindcss/preflight.css, Z. 7-16) setzt `margin: 0` auf
+ * `*, ::after, ::before, ::backdrop, ::file-selector-button` und ueberschreibt damit
+ * die UA-Regel `dialog { margin: auto }` — jeder showModal()-Dialog klebte oben links.
+ * `dialog:modal` (0,1,1) schlaegt den Universalselektor (0,0,0).
+ */
+dialog:modal {
+  margin: auto;
+  max-height: calc(100dvh - 2rem);
+  max-width: calc(100vw - 2rem);
+}
