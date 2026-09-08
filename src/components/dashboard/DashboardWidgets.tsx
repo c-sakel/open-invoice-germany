@@ -1,8 +1,14 @@
 import Link from "next/link";
 import type { DashboardSummary } from "@/domain/dashboard/summary";
+import type { MonthlyRevenuePoint } from "@/domain/reporting/revenue";
+import type { StatusCount } from "@/domain/reporting/status";
+import type { TopCustomer } from "@/domain/reporting/customers";
 import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AgingChart } from "@/components/dashboard/AgingChart";
+import { BarChart } from "@/components/charts/BarChart";
+import { DonutChart } from "@/components/charts/DonutChart";
+import { revenueChartData, statusDonutData, topCustomerChartData } from "@/components/dashboard/chart-data";
 
 function deDate(d: Date) {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(d);
@@ -14,8 +20,23 @@ const DOC_HREF: Record<string, (id: string) => string> = {
   DELIVERY_NOTE: (id) => `/lieferscheine/${id}`,
 };
 
-/** Dashboard-Widgets (Task 4, `/`) — Kennzahlkacheln + Aging + letzte Belege. */
-export function DashboardWidgets({ summary }: { summary: DashboardSummary }) {
+/**
+ * Dashboard-Widgets (Task 4, `/`) — Kennzahlkacheln, Umsatzreihe, Statusring, Top-5-Kunden,
+ * Aging und letzte Belege. `revenue`/`statuses`/`top` kommen aus src/domain/reporting/* —
+ * dieselbe Aufteilung wie `summary` (dashboardSummary bleibt fuer die Kennzahlkacheln
+ * zustaendig, kein Doppelbau, §1.4).
+ */
+export function DashboardWidgets({
+  summary,
+  revenue,
+  statuses,
+  top,
+}: {
+  summary: DashboardSummary;
+  revenue: MonthlyRevenuePoint[];
+  statuses: StatusCount[];
+  top: TopCustomer[];
+}) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -61,10 +82,21 @@ export function DashboardWidgets({ summary }: { summary: DashboardSummary }) {
         </Link>
       </div>
 
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <BarChart title="Umsatz je Monat (netto, 12 Monate)" data={revenueChartData(revenue)} />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-800">Überfällig nach Alter</h2>
           <AgingChart aging={summary.aging} />
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <DonutChart title="Offen / Überfällig / Bezahlt" data={statusDonutData(statuses)} />
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <BarChart title="Top 5 Kunden (netto, 12 Monate)" data={topCustomerChartData(top)} orientation="horizontal" />
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-5">
