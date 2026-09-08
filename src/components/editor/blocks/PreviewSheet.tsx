@@ -51,7 +51,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, validateDraft, type DraftState } from "@/lib/editor/draft";
-import type { EditorMode } from "@/lib/editor/constants";
+import { previewPanelClass, PREVIEW_WIDE_KEY, type EditorMode } from "@/lib/editor/constants";
 import { getFocusable } from "@/lib/focus";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
 
@@ -98,6 +98,35 @@ export function PreviewSheet({
   const panelRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  // Panelbreite (Phase 12a, Task 2): Default schmal, Praeferenz je Geraet in
+  // localStorage — gleiches Muster wie `Sidebar.tsx`/`SidebarGroup.tsx` (`setTimeout(0)`
+  // im Lese-Effekt, damit `react-hooks/set-state-in-effect` das `setState` nicht als
+  // synchron im Effektkoerper einstuft; try/catch fuer den privaten Modus ohne Storage).
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        setWide(localStorage.getItem(PREVIEW_WIDE_KEY) === "1");
+      } catch {
+        // kein Storage (privater Modus) — schmal bleiben
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  function toggleWide() {
+    // Fix-Welle 12a (M5): der localStorage-Zugriff stand bisher im Updater selbst —
+    // Updater-Funktionen muessen rein sein (React ruft sie im StrictMode zweimal auf),
+    // der Seiteneffekt gehoert daher vor `setWide`.
+    const next = !wide;
+    try {
+      localStorage.setItem(PREVIEW_WIDE_KEY, next ? "1" : "0");
+    } catch {
+      // ignorieren
+    }
+    setWide(next);
+  }
 
   function revoke() {
     if (urlRef.current) {
@@ -226,7 +255,7 @@ export function PreviewSheet({
     // Overlay-`onKeyDown` bleibt bewusst weg, um `onClose` nicht doppelt auszuloesen.
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Vorschau">
       <button type="button" aria-label="Schließen" tabIndex={-1} className="absolute inset-0 cursor-default" onClick={onClose} />
-      <div ref={panelRef} className="relative flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl">
+      <div ref={panelRef} className={`relative flex h-full flex-col bg-white shadow-2xl ${previewPanelClass(wide)}`}>
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">Vorschau</h2>
           <div className="flex items-center gap-2">
@@ -237,6 +266,14 @@ export function PreviewSheet({
               className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               Neu laden
+            </button>
+            <button
+              type="button"
+              onClick={toggleWide}
+              aria-pressed={wide}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {wide ? "Schmal" : "Breit"}
             </button>
             <button ref={closeBtnRef} type="button" onClick={onClose} aria-label="Schließen" className="rounded-md px-2 py-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
               ✕

@@ -49,3 +49,27 @@ export const SCHEME_CATEGORY: Record<TaxScheme, TaxCategory> = Object.fromEntrie
 // Pflichthinweistexte (§ 14a UStG) — identisch mit src/domain/invoice/mandatory.ts
 // (dort die massgebliche Quelle, siehe validateMandatoryFields).
 export const SCHEME_NOTICE: Partial<Record<TaxScheme, string>> = MANDATORY_SCHEME_NOTICE as Partial<Record<TaxScheme, string>>;
+
+/** Phase 12a — Grenze fuer Kopf-/Fusstext. Keine eigene Regel, sondern Spiegel von
+ *  `z.string().max(5000)` in `invoiceHeaderFields` (headerText/footerText,
+ *  src/schemas/index.ts:352/353); dieselbe Zahl gilt fuer Quote und DeliveryNote. */
+export const LONG_TEXT_MAX = 5000;
+
+export function charCountLabel(value: string, max: number = LONG_TEXT_MAX): string {
+  return `${value.length} / ${max}`;
+}
+
+export function charCountTone(value: string, max: number = LONG_TEXT_MAX): "ok" | "warn" | "over" {
+  if (value.length > max) return "over";
+  if (value.length >= max * 0.9) return "warn";
+  return "ok";
+}
+
+/** Panelbreite des Vorschau-Overlays: schmal = eine A4-Seite bei 96 dpi (794 px) mit Rand,
+ *  breit = volle Overlay-Breite. `w-full` in beiden Faellen, sonst faellt das Panel auf
+ *  schmalen Fenstern auf fit-content zusammen. */
+export function previewPanelClass(wide: boolean): string {
+  return wide ? "w-full max-w-none" : "w-full max-w-[1100px]";
+}
+
+export const PREVIEW_WIDE_KEY = "oig.preview.wide";
