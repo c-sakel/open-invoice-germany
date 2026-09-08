@@ -32,6 +32,7 @@ import { RecurringError } from "@/domain/recurring/create";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { PricingError } from "@/lib/pricing/errors";
 import { MailNotConfiguredError } from "@/domain/email/settings";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 
 /**
  * Domain-Fehlerklassen (task-2-facts.md), die OHNE eigene `status`-Eigenschaft daherkommen
@@ -56,6 +57,7 @@ const DOMAIN_CONFLICT_ERROR_CLASSES = [
   AttachmentValidationError,
   PricingError,
   MailNotConfiguredError,
+  TaxRateNotAllowedError,
 ] as const;
 
 /**

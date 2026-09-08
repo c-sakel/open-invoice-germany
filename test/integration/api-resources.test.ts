@@ -492,8 +492,12 @@ describe("/api/v1/Invoice", () => {
   });
 
   it("Create mit ungueltiger taxRate -> 400", async () => {
+    // Phase 12c: TaxRate ist keine Literal-Union mehr (z.number().int().min(0).max(100)) —
+    // 101 bleibt am Zod-Boundary ungueltig (400); ein syntaktisch gueltiger, aber fuer die
+    // Org nicht freigegebener Satz (z. B. 5) wird jetzt von assertAllowedTaxRates im
+    // Domain-Kern abgelehnt (409 CONFLICT, siehe test/integration/tax-rates-enforcement.test.ts).
     const res = await InvoiceCreate(
-      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, lines: [{ description: "x", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 5 }] } }),
+      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, lines: [{ description: "x", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 101 }] } }),
     );
     expect(res.status).toBe(400);
   });

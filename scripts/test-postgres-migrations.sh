@@ -239,9 +239,10 @@ npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >
 # ebenfalls ausklammern, der anschliessende "migrate deploy" zieht sie in der richtigen
 # Reihenfolge nach Phase 7 nach. Phase 12a: die GiroCode-Groesse-Migration aendert
 # PrintSettings, ebenfalls eine Phase-7-Tabelle, die hier absichtlich noch nicht existiert
-# — ebenso ausgeklammert, sonst P1014. Phase 12c: die Marken-Migration aendert ebenfalls
-# BrandingSettings — aus demselben Grund ausgeklammert.
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke)$' | sort); do
+# — ebenso ausgeklammert, sonst P1014. Phase 12c: die Marken-Migration UND die Steuersatz-
+# Migration aendern ebenfalls Phase-7-Tabellen (BrandingSettings bzw. DocumentSettings) —
+# aus demselben Grund ausgeklammert.
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -735,5 +736,39 @@ COUNT18=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT18" = "43" ] || fail "erwartet weiterhin 43 Tabellen nach Phase 12c/Marke (nur Spalten), gefunden $COUNT18"
 echo "    ok — vier Marken-Spalten NULL-bar, Bestandszeile unveraendert, 43 Tabellen"
+
+echo "==> Fall 19 (Phase 12c): DocumentSettings.taxRatesJson-Default fuer Bestandszeile"
+# Eigenes Bestands-Szenario (analog Fall 18): alle Migrationen bis VOR der Phase-12c-
+# Steuersatz-Migration einspielen, eine DocumentSettings-Zeile im ALTEN Spaltenumfang
+# (ohne taxRatesJson) anlegen, dann per "migrate deploy" genau diese Migration nachziehen
+# und pruefen, dass die Bestandszeile den Default [19,7,0] traegt (bisher fest verdrahtete
+# Liste, jetzt org-eigene Spalte — keine Datenmigration noetig).
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910091100_phase12c_tax_rates)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org19','Bestand Neunzehn GmbH','Weg 20','99921','Bestadt',NOW());
+INSERT INTO "DocumentSettings" ("id","orgId","onQuoteAccept","shareLinkDays","storeAcceptIp","updatedAt")
+  VALUES ('ds19','org19','NONE',30,false,NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-12c-Steuersatz-Migration ist auf der Bestands-DB fehlgeschlagen"
+P12CTAXMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260910091100_phase12c_tax_rates' and finished_at is not null")
+[ "$P12CTAXMIG" = "1" ] || fail "Phase-12c-Steuersatz-Migration ist nicht als angewendet verbucht"
+TAXJSON=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"taxRatesJson\" from \"DocumentSettings\" where id='ds19'")
+[ "$TAXJSON" = "[19,7,0]" ] || fail "Bestandszeile ds19: taxRatesJson ist '$TAXJSON', erwartet Default [19,7,0]"
+COUNT19=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT19" = "43" ] || fail "erwartet weiterhin 43 Tabellen nach Phase 12c/Steuersaetze, gefunden $COUNT19"
+echo "    ok — taxRatesJson mit Default [19,7,0] auf Bestandszeile, 43 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"

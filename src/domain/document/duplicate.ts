@@ -10,6 +10,7 @@ import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { ratesOfLines } from "@/domain/settings/tax-rates";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
@@ -202,7 +203,7 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
       })),
     };
 
-    const copy = await createDraftInvoiceWithinTx(tx, orgId, input, { actor, now });
+    const copy = await createDraftInvoiceWithinTx(tx, orgId, input, { actor, now, inheritedTaxRates: ratesOfLines(src.lines) });
 
     await linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: copy.id, toType: "INVOICE", toId: id, relationType: "DUPLICATED_FROM" });
     await logActivity(tx, { orgId, entityType: "INVOICE", entityId: copy.id, type: "DUPLICATED", actor, at: now, data: { duplicatedFrom: id } });
