@@ -10,6 +10,7 @@ import { create } from "xmlbuilder2";
 import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
+import { exemptionReasonCode, exemptionReasonText } from "./exemption";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -50,23 +51,6 @@ function invoiceTypeCode(type: string): string {
       return "386";
     default:
       return "380";
-  }
-}
-
-function exemptionReason(category: string): string | null {
-  switch (category) {
-    case "AE":
-      return "Steuerschuldnerschaft des Leistungsempfängers";
-    case "K":
-      return "Innergemeinschaftliche Lieferung";
-    case "G":
-      return "Ausfuhrlieferung";
-    case "E":
-      return "Steuerbefreit";
-    case "Z":
-      return "Nullsatz";
-    default:
-      return null;
   }
 }
 
@@ -290,7 +274,10 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     const cat = st.ele("cac:TaxCategory");
     cat.ele("cbc:ID").txt(sub.taxCategory).up();
     cat.ele("cbc:Percent").txt(String(sub.taxRate)).up();
-    const reason = exemptionReason(sub.taxCategory);
+    // UBL-XSD (TaxCategoryType): ReasonCode steht VOR Reason.
+    const reasonCode = exemptionReasonCode(sub.taxCategory);
+    if (reasonCode) cat.ele("cbc:TaxExemptionReasonCode").txt(reasonCode).up();
+    const reason = exemptionReasonText(sub.taxCategory);
     if (reason) cat.ele("cbc:TaxExemptionReason").txt(reason).up();
     cat.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
     cat.up();
