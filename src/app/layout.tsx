@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { headers } from "next/headers";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
@@ -15,14 +16,29 @@ import { loadBrand, DEFAULT_APP_NAME, DEFAULT_BRAND, type Brand } from "@/domain
 // statt dort erneut importiert zu werden (Abschluss-Review M6).
 import pkg from "@/../package.json";
 
+/**
+ * `generateMetadata` und der Layout-Rumpf laufen beide serverseitig fuer JEDE Anfrage —
+ * ohne Dedupe laedt `getActiveOrg()` + `loadBrand()` (zwei Prisma-Queries) doppelt.
+ * `cache()` dedupliziert pro Request-Renderdurchlauf (React-Doku: "Data Fetching with
+ * cache und Server Components") — beide Aufrufer erhalten dasselbe Promise/Ergebnis.
+ * `null` statt Wurf im Setup-Zustand (keine Organisation), damit beide Aufrufer denselben
+ * try/catch-freien Pfad nutzen koennen.
+ */
+const getOrgAndBrand = cache(async (): Promise<{ org: Awaited<ReturnType<typeof getActiveOrg>>; brand: Brand } | null> => {
+  try {
+    const org = await getActiveOrg();
+    const brand = await loadBrand(org.id);
+    return { org, brand };
+  } catch {
+    return null;
+  }
+});
+
 /** Fuer AuthForm (Login-Seite) — dieselbe Selbstheilung wie unten im Rumpf: ohne
  *  Organisation (Setup-Zustand) gelten die Produktvorgaben. */
 export async function safeBrand(): Promise<Brand> {
-  try {
-    return await loadBrand((await getActiveOrg()).id);
-  } catch {
-    return DEFAULT_BRAND;
-  }
+  const result = await getOrgAndBrand();
+  return result?.brand ?? DEFAULT_BRAND;
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -31,16 +47,18 @@ export async function generateMetadata(): Promise<Metadata> {
   // Seite nie reissen.
   let brand = DEFAULT_BRAND;
   let iconUrl = "/api/branding/icon";
-  try {
-    const org = await getActiveOrg();
-    brand = await loadBrand(org.id);
-    // Cache-Busting fuers Favicon: die Route selbst cacht 5 Minuten (Task 2); ein neuer
-    // Upload soll trotzdem sofort sichtbar sein. `updatedAt` ist billig (indizierter
-    // Unique-Key, eine Spalte) und steht nicht auf `Brand` (siehe test/unit/brand-schemas.test.ts).
-    const row = await dbInternal.brandingSettings.findUnique({ where: { orgId: org.id }, select: { updatedAt: true } });
-    if (row) iconUrl = `/api/branding/icon?v=${row.updatedAt.getTime()}`;
-  } catch {
-    // keine Organisation eingerichtet
+  const result = await getOrgAndBrand();
+  if (result) {
+    brand = result.brand;
+    try {
+      // Cache-Busting fuers Favicon: die Route selbst cacht 5 Minuten (Task 2); ein neuer
+      // Upload soll trotzdem sofort sichtbar sein. `updatedAt` ist billig (indizierter
+      // Unique-Key, eine Spalte) und steht nicht auf `Brand` (siehe test/unit/brand-schemas.test.ts).
+      const row = await dbInternal.brandingSettings.findUnique({ where: { orgId: result.org.id }, select: { updatedAt: true } });
+      if (row) iconUrl = `/api/branding/icon?v=${row.updatedAt.getTime()}`;
+    } catch {
+      // Icon-Cache-Busting ist best effort — ohne Treffer bleibt die ungebustete URL.
+    }
   }
   const isDefault = brand.appName === DEFAULT_APP_NAME;
   return {
@@ -91,13 +109,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   let orgName = "";
   let unread = 0;
   let brand = DEFAULT_BRAND;
-  try {
-    const org = await getActiveOrg();
-    orgName = org.legalName;
-    unread = await unreadCount(org.id);
-    brand = await loadBrand(org.id);
-  } catch {
-    // keine Organisation eingerichtet — Shell trotzdem rendern
+  const result = await getOrgAndBrand();
+  if (result) {
+    orgName = result.org.legalName;
+    brand = result.brand;
+    try {
+      unread = await unreadCount(result.org.id);
+    } catch {
+      // Benachrichtigungszaehler ist best effort — Shell trotzdem rendern
+    }
   }
 
   return (

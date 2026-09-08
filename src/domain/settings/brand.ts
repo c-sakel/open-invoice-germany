@@ -1,15 +1,16 @@
 /**
  * Aufgeloeste Markenangaben fuer die App-Huellen (Phase 12c). NULL-Felder in
- * BrandingSettings bedeuten "Produktvorgabe" — diese Datei ist die EINZIGE Stelle, an der
- * die Vorgabewerte stehen. Die AGPL-Herkunftszeile ist bewusst NICHT Teil von `Brand`:
- * sie ist in AppShell/SlimShell fest verdrahtet und durch keine Einstellung abschaltbar
- * (§13 AGPL, COMPLIANCE.md).
+ * BrandingSettings bedeuten "Produktvorgabe" — die Vorgabewerte selbst stehen in
+ * `@/lib/brand-defaults` (die EINZIGE Stelle mit den Literalen; hier nur re-exportiert,
+ * damit bestehende Importe von hier weiter funktionieren). Die AGPL-Herkunftszeile ist
+ * bewusst NICHT Teil von `Brand`: sie ist in AppShell/SlimShell fest verdrahtet und durch
+ * keine Einstellung abschaltbar (§13 AGPL, COMPLIANCE.md).
  */
 import { loadBrandingSettings } from "@/domain/settings/branding";
 import type { BrandingSettingsInput } from "@/schemas/settings";
+import { DEFAULT_APP_NAME, DEFAULT_APP_SHORT_NAME } from "@/lib/brand-defaults";
 
-export const DEFAULT_APP_NAME = "OpenInvoice Germany";
-export const DEFAULT_APP_SHORT_NAME = "OI";
+export { DEFAULT_APP_NAME, DEFAULT_APP_SHORT_NAME };
 
 /** Quellcode-Link der AGPL-Zeile. Ein Fork darf hier seine eigene Quelle eintragen — die
  *  Herkunftsangabe selbst bleibt (AGPL §13: Zugang zum Quellcode, nicht Namensverzicht). */

@@ -3,16 +3,33 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BrandingSettingsInput } from "@/schemas";
+import { ErrorBanner } from "@/components/forms/fields";
+// "@/lib/brand-defaults" hat keine Imports und ist deshalb im Gegensatz zu
+// "@/domain/settings/brand" (zieht transitiv den Prisma-Client "@/lib/db" nach sich)
+// gefahrlos aus dieser "use client"-Datei importierbar (nur Anzeige-Fallback, keine
+// Validierung — die liegt serverseitig in brandingSettingsInputSchema).
+import { DEFAULT_APP_NAME as FALLBACK_APP_NAME, DEFAULT_APP_SHORT_NAME as FALLBACK_APP_SHORT_NAME } from "@/lib/brand-defaults";
 
 type UploadKind = "favicon" | "applogo";
 
-// Bewusst lokal statt aus "@/domain/settings/brand" importiert: dieses Modul zieht
-// (transitiv ueber branding.ts) den Prisma-Client "@/lib/db" nach sich — als reiner
-// Typ-Import (siehe Sidebar.tsx/Topbar.tsx) unproblematisch, als Wert-Import wuerde er
-// im Client-Bundle landen. Muessen mit DEFAULT_APP_NAME/DEFAULT_APP_SHORT_NAME dort
-// synchron bleiben (nur Anzeige-Fallback, keine Validierung).
-const FALLBACK_APP_NAME = "OpenInvoice Germany";
-const FALLBACK_APP_SHORT_NAME = "OI";
+/** Rohe Zod-`issues`, wie sie PUT /api/settings/branding bei einem 400 zurueckgibt
+ *  (`{ error, issues: e.issues }`) — dieselbe Form wie DocumentEditor.tsx' `flattenIssues`. */
+interface SaveErrorIssue {
+  path: (string | number)[];
+  message: string;
+}
+
+function flattenIssues(issues: SaveErrorIssue[] | undefined): string[] {
+  if (!issues) return [];
+  return issues.map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message));
+}
+
+/** Leerstring ODER reine Leerzeichen -> `null` (Produktvorgabe). Verhindert, dass ein
+ *  Nutzer versehentlich " " speichert und serverseitig (brandingSettingsInputSchema:
+ *  `.trim().min(1)`) einen Validierungsfehler erhaelt, obwohl das Feld visuell leer wirkt. */
+function nameOrNull(raw: string): string | null {
+  return raw.trim() === "" ? null : raw;
+}
 
 /**
  * Marke-Formular (Phase 12c, Task 4): App-Name/-Kurzname, Favicon-/App-Logo-Upload mit
@@ -47,9 +64,9 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(values),
       });
-      const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string };
+      const j = (await res.json().catch(() => ({}))) as { settings?: BrandingSettingsInput; error?: string; issues?: SaveErrorIssue[] };
       if (!res.ok || !j.settings) {
-        setError(j.error ?? "Speichern fehlgeschlagen.");
+        setError([j.error ?? "Speichern fehlgeschlagen.", ...flattenIssues(j.issues)].join("\n"));
         return;
       }
       setValues(j.settings);
@@ -98,7 +115,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
 
   return (
     <div className="space-y-6">
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+      <ErrorBanner message={error ?? undefined} />
       {saved && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
 
       <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
@@ -108,7 +125,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
             <span className="text-slate-700">Name der Instanz</span>
             <input
               value={values.appName ?? ""}
-              onChange={(e) => setField("appName", e.target.value === "" ? null : e.target.value)}
+              onChange={(e) => setField("appName", nameOrNull(e.target.value))}
               maxLength={40}
               placeholder={FALLBACK_APP_NAME}
               className="rounded border border-slate-300 px-2 py-1"
@@ -118,7 +135,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
             <span className="text-slate-700">Kurzname (Kürzel)</span>
             <input
               value={values.appShortName ?? ""}
-              onChange={(e) => setField("appShortName", e.target.value === "" ? null : e.target.value)}
+              onChange={(e) => setField("appShortName", nameOrNull(e.target.value))}
               maxLength={12}
               placeholder={FALLBACK_APP_SHORT_NAME}
               className="rounded border border-slate-300 px-2 py-1"
@@ -131,8 +148,11 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
         <h2 className="font-semibold text-slate-900">Favicon &amp; App-Logo</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-slate-700">Favicon</span>
+            <label htmlFor="marke-favicon-upload" className="text-sm font-medium text-slate-700">
+              Favicon
+            </label>
             <input
+              id="marke-favicon-upload"
               type="file"
               accept="image/png"
               onChange={(e) => {
@@ -154,8 +174,11 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-slate-700">App-Logo</span>
+            <label htmlFor="marke-applogo-upload" className="text-sm font-medium text-slate-700">
+              App-Logo
+            </label>
             <input
+              id="marke-applogo-upload"
               type="file"
               accept="image/png,image/jpeg"
               onChange={(e) => {
