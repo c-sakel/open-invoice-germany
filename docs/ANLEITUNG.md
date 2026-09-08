@@ -255,6 +255,19 @@ Die Liste der für neue Beleg-Positionen wählbaren Umsatzsteuersätze ist seit 
 
 ---
 
+## 6d. Anfrageprotokoll (`Einstellungen → API → Anfrageprotokoll`, Phase 12d)
+
+Wer die REST-API (`/api/v1`, siehe [docs/API.md](API.md)) nutzt, kann sich fehlgeschlagene und langsame Aufrufe zur Fehlersuche protokollieren lassen:
+
+- **Einschalten**: „Anfragen protokollieren" ist **standardmäßig AUS** — ohne diesen Haken bleibt die Tabelle leer, es entsteht keine einzige Zeile. Zusätzlich „Bodies mitschreiben" schaltet Request- **und** Response-Bodies dazu (Response-Body nur bei Fehlern, Status ≥ 400).
+- **Fehler nachvollziehen**: die Tabelle zeigt Zeit, Methode, Pfad, Status (farbig ab 400/500), Dauer und den verwendeten Schlüssel, neueste zuerst; der Filter „nur Fehler (≥ 400)" sowie Filter nach Schlüssel, Pfad und Zeitraum grenzen ein.
+- **Detail öffnen**: ein Klick auf eine Zeile öffnet die Detail-Schublade mit Request-ID (identisch mit dem `X-Request-Id`-Header der jeweiligen Antwort — nützlich beim Abgleich mit eigenen Client-Logs), vollständigem Pfad, IP, User-Agent und — falls „Bodies mitschreiben" aktiv war — Request-/Response-Body.
+- **Protokoll leeren**: löscht sofort das gesamte Protokoll der eigenen Organisation (Bestätigungsdialog, nicht rückgängig zu machen). Ohne aktiven Scheduler-Lauf (Abschnitt „Schritt 8") wächst die Tabelle sonst bis zum nächsten automatischen Aufräumen weiter — Aufbewahrung (Tage) und maximale Zeilenzahl je Organisation sind ebenfalls hier einstellbar.
+
+**Warnung:** „Bodies mitschreiben" schreibt die tatsächlich gesendeten/empfangenen JSON-Inhalte (bis 2 KB, gekürzt) in die Protokolltabelle — das können Kundendaten sein (Namen, Adressen, Beträge). Bekannt gefährliche Feldnamen (`token`, `secret`, `password`, `apiKey`, `iban`, `bic`, `authorization`, …) werden vor dem Speichern automatisch geschwärzt, ein genereller Datenschutzfilter ist das aber nicht — nur einschalten, wenn die konkrete Fehlersuche das rechtfertigt, und danach wieder ausschalten oder das Protokoll leeren.
+
+---
+
 ## 7. Per Sprache mit Claude Code (MCP)
 
 Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — z. B. mit Claude Code oder Claude Desktop. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.
