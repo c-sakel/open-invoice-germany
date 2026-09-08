@@ -178,6 +178,14 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // XRechnung: BT-10 Buyer reference Pflicht (Leitweg-ID im B2G); Fallback Belegnummer
   root.ele("cbc:BuyerReference").txt(data.buyerReference || data.number).up();
 
+  // BG-14 (BT-73/BT-74). UBL-Reihenfolge: nach BuyerReference, vor OrderReference.
+  if (data.deliveryStart && data.deliveryEnd) {
+    const period = root.ele("cac:InvoicePeriod");
+    period.ele("cbc:StartDate").txt(isoDate(data.deliveryStart)).up();
+    period.ele("cbc:EndDate").txt(isoDate(data.deliveryEnd)).up();
+    period.up();
+  }
+
   // BT-13 — Bestellnummer des Kunden (Phase 4b). UBL-Reihenfolge: direkt nach
   // BuyerReference und vor BillingReference (BG-3).
   if (data.orderNumber) {
@@ -203,10 +211,25 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   appendParty(root.ele("cac:AccountingSupplierParty"), data.seller, true);
   appendParty(root.ele("cac:AccountingCustomerParty"), data.buyer, false);
 
-  // BG-13 Lieferinformationen — MUSS in der UBL-Reihenfolge NACH den Parteien und
-  // VOR PaymentMeans stehen (sonst XSD-fatal -> KoSIT lehnt das Dokument ab).
-  if (data.deliveryDate) {
-    root.ele("cac:Delivery").ele("cbc:ActualDeliveryDate").txt(isoDate(data.deliveryDate)).up().up();
+  // BG-13/BG-15 — MUSS nach den Parteien und vor PaymentMeans stehen (sonst XSD-fatal).
+  // DeliveryType-Reihenfolge: ActualDeliveryDate vor DeliveryLocation.
+  const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
+  if (data.deliveryDate || deliverToCountry) {
+    const delivery = root.ele("cac:Delivery");
+    if (data.deliveryDate) delivery.ele("cbc:ActualDeliveryDate").txt(isoDate(data.deliveryDate)).up();
+    // BT-80 ist die einzige Pflichtangabe der BG-15 nach EN16931-Kernregel BR-57 — die
+    // XRechnung-CIUS (KoSIT-Validator) verlangt zusaetzlich BR-DE-10/BR-DE-11 (Ort +
+    // PLZ), sobald die Gruppe uebermittelt wird. Ohne eigene Lieferanschrift (Ruling)
+    // ergaenzen wir Ort/PLZ aus der Kaeuferadresse — sonst waeren ALLE Belege mit
+    // Lieferland KoSIT-invalid, sobald BG-15 (auch nur mit Land) uebermittelt wird.
+    if (deliverToCountry) {
+      const loc = delivery.ele("cac:DeliveryLocation").ele("cac:Address");
+      loc.ele("cbc:CityName").txt(data.buyer.city).up();
+      loc.ele("cbc:PostalZone").txt(data.buyer.postalCode).up();
+      loc.ele("cac:Country").ele("cbc:IdentificationCode").txt(deliverToCountry).up().up();
+      loc.up();
+    }
+    delivery.up();
   }
 
   // Zahlungsweg (BT-81 ff.) — Phase 4a: data.paymentMeans (aus Zahlungsmethoden-Snapshot,

@@ -208,17 +208,15 @@ export function buildFacturXCII(data: EInvoiceData): string {
   }
   agr.up();
 
-  // Lieferung
+  // Lieferung (BG-13/BG-15). CII-Reihenfolge: ShipToTradeParty VOR ActualDeliverySupplyChainEvent.
   const del = tx.ele("ram:ApplicableHeaderTradeDelivery");
+  const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
+  if (deliverToCountry) {
+    del.ele("ram:ShipToTradeParty").ele("ram:PostalTradeAddress").ele("ram:CountryID").txt(deliverToCountry).up().up().up();
+  }
   if (data.deliveryDate) {
-    del
-      .ele("ram:ActualDeliverySupplyChainEvent")
-      .ele("ram:OccurrenceDateTime")
-      .ele("udt:DateTimeString", { format: "102" })
-      .txt(ciiDate(data.deliveryDate))
-      .up()
-      .up()
-      .up();
+    del.ele("ram:ActualDeliverySupplyChainEvent").ele("ram:OccurrenceDateTime")
+      .ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.deliveryDate)).up().up().up();
   }
   del.up();
 
@@ -254,6 +252,13 @@ export function buildFacturXCII(data: EInvoiceData): string {
     if (reasonCode) t.ele("ram:ExemptionReasonCode").txt(reasonCode).up();
     t.ele("ram:RateApplicablePercent").txt(String(sub.taxRate)).up();
     t.up();
+  }
+  // BG-14 (BT-73/BT-74). CII-XSD: nach ApplicableTradeTax, vor SpecifiedTradeAllowanceCharge.
+  if (data.deliveryStart && data.deliveryEnd) {
+    const period = set.ele("ram:BillingSpecifiedPeriod");
+    period.ele("ram:StartDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.deliveryStart)).up().up();
+    period.ele("ram:EndDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.deliveryEnd)).up().up();
+    period.up();
   }
   // BG-20/BG-21 — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, NACH ApplicableTradeTax
   // und VOR SpecifiedTradePaymentTerms (CII-XSD-Reihenfolge).

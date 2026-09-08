@@ -92,6 +92,9 @@ export interface EInvoiceData {
   issueDate: Date; // BT-2
   dueDate?: Date | null; // BT-9
   deliveryDate?: Date | null; // BT-72
+  deliveryStart?: Date | null;         // BT-73 (BG-14)
+  deliveryEnd?: Date | null;           // BT-74 (BG-14)
+  deliverToCountryCode?: string | null; // BT-80 (BG-15), Default: Land des Kaeufers
   currency: string; // BT-5
   buyerReference?: string | null; // BT-10 (Leitweg-ID im B2G)
   /** Phase 4b — Bestellnummer des Kunden (BT-13, cac:OrderReference/cbc:ID bzw.
