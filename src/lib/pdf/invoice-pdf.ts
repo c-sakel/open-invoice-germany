@@ -34,7 +34,7 @@ function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" 
 
 const TYPE_TITLE: Record<string, string> = {
   INVOICE: "Rechnung",
-  CREDIT_NOTE: "Gutschrift / Storno",
+  CREDIT_NOTE: "Stornorechnung",
   // M4 (Fix-Welle Final-Review): "Rechnungskorrektur" statt "Korrekturrechnung" — dasselbe
   // Wort wie documentTitle() unten fuer creditNoteKind === "KORREKTUR" verwendet.
   CORRECTION: "Rechnungskorrektur",

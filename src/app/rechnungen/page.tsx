@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 const TYPE_LABEL: Record<string, string> = {
   INVOICE: "Rechnung",
   CREDIT_NOTE: "Stornorechnung",
-  CORRECTION: "Korrektur",
+  CORRECTION: "Rechnungskorrektur",
   PARTIAL: "Teilrechnung",
   DOWNPAYMENT: "Abschlagsrechnung",
   FINAL: "Schlussrechnung",
