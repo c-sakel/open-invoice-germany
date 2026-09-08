@@ -81,6 +81,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         skonto2Percent: z.number().min(0).max(100).optional().describe("2. Skontosatz in Prozent (nur zusammen mit Skonto 1, laengere Frist)"),
         skonto2Days: z.number().int().min(1).max(365).optional(),
         paymentMethod: z.string().optional().describe("Name oder Code einer Zahlungsmethode (Default: Kunden-Standard)"),
+        consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
       },
     },
     async (args): Promise<Result> => {
@@ -141,6 +142,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           skonto2Permille: args.skonto2Percent ? Math.round(args.skonto2Percent * 10) : undefined,
           skonto2Days: args.skonto2Days,
           paymentMethodId: paymentMethod?.id,
+          consumerRetentionHint: args.consumerRetentionHint,
           lines,
         });
         const invoice = await createDraftInvoice(org.id, input);
@@ -565,6 +567,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         paymentTerms: z.string().optional(),
         dueDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
+        consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
         lines: z
           .array(
             z.object({
@@ -598,6 +601,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.paymentTerms !== undefined) patch.paymentTerms = args.paymentTerms;
         if (args.dueDate !== undefined) patch.dueDate = ctx.parseDateInput(args.dueDate);
         if (args.deliveryDate !== undefined) patch.deliveryDate = ctx.parseDateInput(args.deliveryDate);
+        if (args.consumerRetentionHint !== undefined) patch.consumerRetentionHint = args.consumerRetentionHint;
         if (args.lines) patch.lines = await ctx.buildEditorLines(org.id, args.lines);
 
         const updated = await updateDraftInvoice(org.id, inv.id, patch, "mcp");

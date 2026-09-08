@@ -192,6 +192,8 @@ export async function createDraftInvoiceWithinTx(
       notes: input.notes,
       paymentTerms,
       internalNotes: input.internalNotes,
+      // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
+      consumerRetentionHint: input.consumerRetentionHint ?? false,
       headerText,
       footerText,
       documentDiscountPermille,

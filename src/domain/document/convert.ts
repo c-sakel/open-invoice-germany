@@ -15,7 +15,7 @@ import { remainingQuantities, assertNoOverDelivery, loadSourceLines, type Delive
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { setQuoteStatusWithinTx, effectiveQuoteStatus } from "@/domain/document/status";
 import { loadDocumentSettings } from "@/domain/document/settings";
-import { convertDocumentSchema, type ConvertDocumentInput } from "@/schemas";
+import { convertDocumentSchema, type ConvertDocumentInput, type TaxCategory } from "@/schemas";
 import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -227,7 +227,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
           unit: l.unit,
           unitNetPriceCents: l.unitNetPriceCents,
           taxRate: l.taxRate as 19 | 7 | 0,
-          taxCategory: l.taxCategory as "S" | "AE" | "K" | "G" | "E" | "Z",
+          taxCategory: l.taxCategory as TaxCategory,
           discountPermille: l.discountPermille,
           discountCents: l.discountCents,
         })),

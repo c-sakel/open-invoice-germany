@@ -556,3 +556,18 @@ describe("PdfTheme — Phase 12a Task 3: GiroCode-Groesse + Logo-Hoehenbegrenzun
     }
   });
 });
+
+describe("PdfTheme — § 14b-Hinweis, Storno-/Korrekturtitel (Phase 12b, Task 5)", () => {
+  it("§ 14b-Hinweis steht im PDF, wenn consumerRetentionHint gesetzt ist", async () => {
+    const parsed = await parsePdf(await renderInvoicePdf(baseInvoiceData({ consumerRetentionHint: true }), testPdfTheme()));
+    expect(parsed.text).toContain("zwei Jahre aufzubewahren");
+  });
+
+  it("Storno heisst Stornorechnung, Teilgutschrift heisst Rechnungskorrektur", async () => {
+    const storno = await parsePdf(await renderInvoicePdf(baseInvoiceData({ type: "CREDIT_NOTE", creditNoteKind: "STORNO" }), testPdfTheme()));
+    expect(storno.text).toContain("Stornorechnung");
+    const korrektur = await parsePdf(await renderInvoicePdf(baseInvoiceData({ type: "CREDIT_NOTE", creditNoteKind: "KORREKTUR" }), testPdfTheme()));
+    expect(korrektur.text).toContain("Rechnungskorrektur");
+    expect(korrektur.text).not.toContain("Gutschrift / Storno");
+  });
+});
