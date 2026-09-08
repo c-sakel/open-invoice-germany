@@ -71,7 +71,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ## 3. Verfügbare Tools
 
-89 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
+90 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
 
 ### System
 
@@ -240,6 +240,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Umsatz laufender Monat, letzte Belege, offene Angebote | „Wie ist die Lage — was ist offen und überfällig?" |
+| `get_report` | Auswertung (Phase 12e): `revenue` (Netto-Umsatz je Monat), `top-customers` (nach Netto), `status` (Rechnungen je effektivem Status) oder `payment-behaviour` (Ø Zahlungsdauer, Pünktlichkeitsanteil) — optional je Kunde (`customerId`) und über `months` Monate (Default 12) | „Wie war der Umsatz der letzten sechs Monate, und wer sind meine Top-5-Kunden?" |
 | `get_timeline` | Chronologische Historie eines Belegs (`kind`: Rechnung/Angebot/Lieferschein + `doc`-ID) — Anlage, Änderungen, Festschreibung, Versand, Zahlungen, Mahnungen, Statuswechsel | „Zeig mir die Historie von RE-2026-00342." |
 | `list_notifications` | Benachrichtigungen auflisten (optional nur ungelesen, `limit`) | „Welche ungelesenen Benachrichtigungen habe ich?" |
 | `mark_notifications_read` | Benachrichtigungen als gelesen markieren (einzelne IDs oder alle) | „Markiere alle Benachrichtigungen als gelesen." |

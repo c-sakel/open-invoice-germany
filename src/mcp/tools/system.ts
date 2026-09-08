@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { dashboardSummary } from "@/domain/dashboard/summary";
+import { runReport } from "@/domain/reporting/query";
 import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
 import { listApiRequestLogs } from "@/domain/api-log/list";
@@ -171,6 +172,31 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         const org = await ctx.requireOrg();
         const summary = await dashboardSummary(org.id);
         return ctx.ok(JSON.stringify(summary, null, 2));
+      } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── get_report ───────────────────────────────────────────────────────────────
+  server.registerTool(
+    "get_report",
+    {
+      title: "Auswertung abrufen",
+      description:
+        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status) oder payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil). Optional je Kunde (customerId) und ueber n Monate (months, Default 12).",
+      inputSchema: {
+        type: z.enum(["revenue", "top-customers", "status", "payment-behaviour"]),
+        months: z.number().int().min(1).max(36).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+        customerId: z.string().optional(),
+      },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        return ctx.ok(JSON.stringify(await runReport(org.id, args), null, 2));
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
