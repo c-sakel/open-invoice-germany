@@ -14,8 +14,9 @@
  */
 import { useId } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
-import type { EditorMode } from "@/lib/editor/constants";
+import { LONG_TEXT_MAX, type EditorMode } from "@/lib/editor/constants";
 import { inputCls } from "@/components/forms/fields";
+import { CharCount } from "../CharCount";
 import { TextTemplatePicker } from "../TextTemplatePicker";
 
 function insertTemplate(current: string, body: string): string {
@@ -35,7 +36,15 @@ export function FootTextBlock({ mode, draft, dispatch }: { mode: EditorMode; dra
         </label>
         <TextTemplatePicker docType={docType} position="FOOT" onPick={(body) => dispatch({ type: "set", field: "footerText", value: insertTemplate(value, body) })} />
       </div>
-      <textarea id={id} className={inputCls} rows={3} value={value} onChange={(e) => dispatch({ type: "set", field: "footerText", value: e.target.value })} />
+      <textarea
+        id={id}
+        className={`${inputCls} w-full min-h-40 resize-y leading-relaxed`}
+        rows={8}
+        maxLength={LONG_TEXT_MAX}
+        value={value}
+        onChange={(e) => dispatch({ type: "set", field: "footerText", value: e.target.value })}
+      />
+      <CharCount value={value} />
     </div>
   );
 }
