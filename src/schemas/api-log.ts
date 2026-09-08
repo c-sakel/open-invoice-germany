@@ -14,9 +14,15 @@ export type ApiSettingsInput = z.infer<typeof apiSettingsInputSchema>;
 
 export const apiRequestLogFilterSchema = z.object({
   apiKeyId: z.string().min(1).optional(),
-  // z.coerce.boolean() macht aus jedem nicht-leeren String true — fuer errorsOnly ist das
-  // korrekt, weil die UI den Parameter nur setzt, wenn der Haken gesetzt ist.
-  errorsOnly: z.coerce.boolean().default(false),
+  // Fix-Welle (I3, final-review.md): z.coerce.boolean() machte aus JEDEM nicht-leeren
+  // String true — "errorsOnly=false" wurde faelschlich zu true. Dieses Schema ist zugleich
+  // die Boundary der OEFFENTLICHEN REST-Ressource (GET /api/v1/ApiRequestLog, Query-String
+  // -> immer ein String) UND des MCP-Tools (dessen Aufrufer echte Booleans schicken kann) —
+  // ein expliziter Union statt Coerce deckt beide Faelle korrekt ab.
+  errorsOnly: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+    .default(false)
+    .transform((v) => v === true || v === "true" || v === "1"),
   path: z.string().min(1).max(200).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),

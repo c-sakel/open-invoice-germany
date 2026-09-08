@@ -53,7 +53,7 @@ import { beginIdempotency, completeIdempotency, abandonIdempotency } from "./ide
 import { apiError, PayloadTooLargeError } from "./errors";
 import { logApiRequest } from "@/domain/api-log/write";
 import { loadApiSettings } from "@/domain/api-log/settings";
-import { shouldLogPath } from "@/domain/api-log/redact";
+import { shouldLogPath, redactQuery } from "@/domain/api-log/redact";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -243,7 +243,12 @@ export function withApi<TParams = Record<string, string>>(
             requestId,
             method: req.method.toUpperCase(),
             path: url.pathname,
-            query: url.search ? url.search.slice(1) : null,
+            // Fix-Welle (I1, final-review.md): Query-Parameter mit verdaechtigem Namen
+            // (Geheimnis-Muster + E-Mail) werden VOR dem Speichern geschwaerzt — das galt
+            // vorher nur fuer JSON-Bodies, obwohl Clients Geheimnisse/PII auch in die URL
+            // haengen (?api_key=..., ?email=...). Scheitert die Redaktion, wird der Pfad
+            // OHNE Query gespeichert statt eines moeglicherweise ungeschwaerzten Strings.
+            query: redactQuery(url.search ? url.search.slice(1) : null),
             status: res.status,
             durationMs,
             errorCode,

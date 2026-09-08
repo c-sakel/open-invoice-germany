@@ -10,6 +10,7 @@ import { GET as oneGet } from "@/app/api/v1/ApiRequestLog/[id]/route";
 let orgId: string;
 let token: string;
 let rowId: string;
+let okRowId: string;
 
 function req(url: string, withToken = true) {
   const headers = new Headers();
@@ -28,6 +29,10 @@ beforeAll(async () => {
     data: { orgId, apiKeyId: null, requestId: "req-2084-1", method: "GET", path: "/api/v1/Invoice", status: 500, durationMs: 12 },
   });
   rowId = row.id;
+  const okRow = await dbInternal.apiRequestLog.create({
+    data: { orgId, apiKeyId: null, requestId: "req-2084-2", method: "GET", path: "/api/v1/Invoice", status: 200, durationMs: 8 },
+  });
+  okRowId = okRow.id;
 });
 
 beforeEach(() => resetRateLimits());
@@ -42,6 +47,13 @@ describe("GET /api/v1/ApiRequestLog", () => {
     expect(j.limit).toBe(10);
     const err = await (await listGet(req("http://x/api/v1/ApiRequestLog?errorsOnly=true"))).json();
     expect(err.data.every((r: { status: number }) => r.status >= 400)).toBe(true);
+  });
+
+  it("errorsOnly=false liefert auch NICHT-Fehler-Zeilen (Fix-Welle I3 — vorher faelschlich nur Fehler)", async () => {
+    const j = await (await listGet(req("http://x/api/v1/ApiRequestLog?errorsOnly=false"))).json();
+    expect(j.data.some((r: { status: number }) => r.status < 400)).toBe(true);
+    const ids: string[] = j.data.map((r: { id: string }) => r.id);
+    expect(ids).toContain(okRowId);
   });
 
   it("erzeugt selbst KEINE Protokollzeile (Rekursionsschutz)", async () => {

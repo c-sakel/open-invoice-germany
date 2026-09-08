@@ -137,6 +137,17 @@ describe("Protokollierung", () => {
     spy.mockRestore();
   });
 
+  it("schwaerzt verdaechtige Query-Parameter, laesst harmlose unveraendert (I1)", async () => {
+    await saveApiSettings(orgId, { logRequests: true, logBodies: false });
+    const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
+    await echo(req("http://x/api/v1/Echo?api_key=geheim&limit=5", { method: "POST", token: key.token, body: { note: "hallo" } }));
+    await waitForRows(1);
+    const row = await dbInternal.apiRequestLog.findFirstOrThrow({ where: { orgId }, orderBy: { createdAt: "desc" } });
+    expect(row.query).toContain("limit=5");
+    expect(row.query).not.toContain("geheim");
+    expect(row.query).toContain(encodeURIComponent("[redaktiert]"));
+  });
+
   it("Handler wirft unerwartet -> 500 traegt X-Request-Id, Zeile mit status 500", async () => {
     await saveApiSettings(orgId, { logRequests: true, logBodies: false });
     const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
