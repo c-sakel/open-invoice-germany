@@ -15,6 +15,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { createPartialInvoice, PartialInvoiceError } from "@/domain/invoice/partial";
 import { createDownpaymentInvoice, DownpaymentInvoiceError } from "@/domain/invoice/downpayment";
 import { createFinalInvoice, FinalInvoiceError } from "@/domain/invoice/final";
@@ -549,6 +550,10 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes });
         return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}.`);
       } catch (e) {
+        // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
+        // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,
+        // domain/settings/tax-rates.ts).
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof CreditError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
