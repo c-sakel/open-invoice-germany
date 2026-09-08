@@ -209,44 +209,51 @@ export function withApi<TParams = Record<string, string>>(
       // sonst schon konsumiert sein, wenn der Hintergrund-Task laeuft. Nur bei
       // Fehlerantworten (status >= 400) MIT JSON-Content-Type lohnt sich das ueberhaupt
       // (eine PDF/XML-Route wuerde sonst Binaerdaten sinnlos in einen String lesen).
-      // Ob der Klon ueberhaupt GELESEN wird, entscheidet zuerst ein Blick in die
-      // Einstellungen (`logBodies`) — das spart Lesen/Parsen komplett, wenn die
-      // Organisation gar keine Bodies speichert.
       const contentType = res.headers.get("content-type") ?? "";
       const errorClone = res.status >= 400 && contentType.includes("json") ? res.clone() : null;
       const key = trace.apiKey;
       void (async () => {
+        // Task-5-Review-Nachtrag: EINE `loadApiSettings`-Ladung fuer den gesamten Hook —
+        // `logApiRequest` (src/domain/api-log/write.ts) laedt die Einstellungen nicht
+        // mehr selbst (vorher zwei DB-Roundtrips je protokollierter Anfrage).
+        const settings = await loadApiSettings(key.orgId);
         let responseBody: string | null = null;
         let errorCode: string | null = null;
         if (errorClone) {
-          const settings = await loadApiSettings(key.orgId).catch(() => null);
-          if (settings?.logBodies) {
-            responseBody = await errorClone.text().catch(() => null);
-            if (responseBody) {
-              try {
-                const parsed = JSON.parse(responseBody) as { error?: { code?: unknown } };
-                if (typeof parsed.error?.code === "string") errorCode = parsed.error.code;
-              } catch {
-                // Content-Type sagte JSON, war aber keins -> kein Code ableitbar
-              }
+          // Der Fehler-Code wird UNABHAENGIG von `logBodies` ermittelt — er ist kein
+          // Body-Inhalt im Sinne der Datenminimierung, sondern ein kurzer, stets
+          // ungefaehrlicher technischer Code (z. B. "VALIDATION", "NOT_FOUND") und
+          // gehoert in jede Protokollzeile. Nur der VOLLE Body-Text ist an `logBodies`
+          // gebunden (Task-5-Review-Nachtrag).
+          const bodyText = await errorClone.text().catch(() => null);
+          if (bodyText) {
+            try {
+              const parsed = JSON.parse(bodyText) as { error?: { code?: unknown } };
+              if (typeof parsed.error?.code === "string") errorCode = parsed.error.code;
+            } catch {
+              // Content-Type sagte JSON, war aber keins -> kein Code ableitbar
             }
+            if (settings.logBodies) responseBody = bodyText;
           }
         }
-        await logApiRequest({
-          orgId: key.orgId,
-          apiKeyId: key.id,
-          requestId,
-          method: req.method.toUpperCase(),
-          path: url.pathname,
-          query: url.search ? url.search.slice(1) : null,
-          status: res.status,
-          durationMs,
-          errorCode,
-          ip: clientIpFromHeaders(req.headers),
-          userAgent: req.headers.get("user-agent"),
-          requestBody: trace.rawBody || null,
-          responseBody,
-        });
+        await logApiRequest(
+          {
+            orgId: key.orgId,
+            apiKeyId: key.id,
+            requestId,
+            method: req.method.toUpperCase(),
+            path: url.pathname,
+            query: url.search ? url.search.slice(1) : null,
+            status: res.status,
+            durationMs,
+            errorCode,
+            ip: clientIpFromHeaders(req.headers),
+            userAgent: req.headers.get("user-agent"),
+            requestBody: trace.rawBody || null,
+            responseBody,
+          },
+          settings,
+        );
       })().catch(() => {
         // Protokollieren darf die Anfrage nie kippen (Global Constraint).
       });

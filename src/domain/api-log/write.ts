@@ -1,14 +1,19 @@
 /**
- * Schreibt einen Eintrag des Anfrageprotokolls (Phase 12d, Task 2). Liest zuerst die
- * Einstellungen der Organisation: ohne `logRequests` oder fuer ausgeschlossene Pfade
- * (Doku, OpenAPI, ping, das Protokoll selbst — `shouldLogPath`) wird nichts geschrieben.
- * Bodies werden nur bei `logBodies` gespeichert — der Request-Body wird dann immer
- * versucht, der Response-Body nur, wenn der Aufrufer einen mitgegeben hat (die Regel
- * "nur bei status >= 400" setzt der Aufrufer durch, `withApi` klont die Antwort nur dort).
- * Protokollieren darf eine Anfrage nie zum Scheitern bringen — die Funktion wirft nie.
+ * Schreibt einen Eintrag des Anfrageprotokolls (Phase 12d, Task 2). Die Einstellungen der
+ * Organisation laedt der Aufrufer (`withApi`, src/api/auth.ts) EINMAL und reicht sie hier
+ * herein — Task-5-Review-Nachtrag: ein zweiter `loadApiSettings`-Aufruf innerhalb dieser
+ * Funktion war ein unnoetiger doppelter DB-Roundtrip je Anfrage. Ohne `logRequests` oder
+ * fuer ausgeschlossene Pfade (Doku, OpenAPI, ping, das Protokoll selbst — `shouldLogPath`)
+ * wird nichts geschrieben. Bodies werden nur bei `logBodies` gespeichert — der Request-Body
+ * wird dann immer versucht, der Response-Body nur, wenn der Aufrufer einen mitgegeben hat
+ * UND `input.status >= 400` (defensive Doppelpruefung: `withApi` haelt die Regel "Response-
+ * Body nur bei Fehlern" bereits selbst ein, hier zusaetzlich erzwungen, falls ein
+ * kuenftiger Aufrufer das vergisst). Protokollieren darf eine Anfrage nie zum Scheitern
+ * bringen — die Funktion wirft nie, ein Fehlschlag landet stattdessen einmalig auf
+ * `console.error`.
  */
 import { dbInternal } from "@/lib/db";
-import { loadApiSettings } from "./settings";
+import type { ApiSettingsInput } from "@/schemas/api-log";
 import { prepareBody, shouldLogPath } from "./redact";
 
 export interface ApiLogInput {
@@ -27,9 +32,8 @@ export interface ApiLogInput {
   responseBody: string | null; // nur vom Aufrufer gesetzt, wenn status >= 400
 }
 
-export async function logApiRequest(input: ApiLogInput): Promise<void> {
+export async function logApiRequest(input: ApiLogInput, settings: ApiSettingsInput): Promise<void> {
   try {
-    const settings = await loadApiSettings(input.orgId);
     if (!settings.logRequests) return;
     if (!shouldLogPath(input.path)) return;
 
@@ -40,7 +44,7 @@ export async function logApiRequest(input: ApiLogInput): Promise<void> {
       const req = prepareBody(input.requestBody);
       requestBody = req.text;
       bodyTruncated = bodyTruncated || req.truncated;
-      if (input.responseBody != null) {
+      if (input.responseBody != null && input.status >= 400) {
         const res = prepareBody(input.responseBody);
         responseBody = res.text;
         bodyTruncated = bodyTruncated || res.truncated;
@@ -66,7 +70,9 @@ export async function logApiRequest(input: ApiLogInput): Promise<void> {
       },
       select: { id: true },
     });
-  } catch {
-    // Protokollieren darf die Anfrage nie kippen.
+  } catch (e) {
+    // Protokollieren darf die Anfrage nie kippen — der Fehlschlag landet trotzdem
+    // einmalig im Server-Log, statt still zu verschwinden (Task-5-Review-Nachtrag).
+    console.error("logApiRequest fehlgeschlagen:", e);
   }
 }

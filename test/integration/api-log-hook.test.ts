@@ -111,6 +111,32 @@ describe("Protokollierung", () => {
     expect(row.responseBody).toContain("VALIDATION");
   });
 
+  it("errorCode wird auch OHNE logBodies ermittelt — nur der Body-TEXT ist an logBodies gebunden", async () => {
+    await saveApiSettings(orgId, { logRequests: true, logBodies: false });
+    const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
+    expect((await echo(req("http://x/api/v1/Echo", { method: "POST", token: key.token, body: { falsch: 1 } }))).status).toBe(400);
+    await waitForRows(1);
+    const row = await dbInternal.apiRequestLog.findFirstOrThrow({ where: { orgId }, orderBy: { createdAt: "desc" } });
+    expect(row.errorCode).toBe("VALIDATION");
+    expect(row.responseBody).toBeNull();
+    expect(row.requestBody).toBeNull();
+  });
+
+  it("laedt die API-Einstellungen fuer den Log-Hook nur EINMAL je Anfrage (kein doppelter loadApiSettings-Aufruf)", async () => {
+    await saveApiSettings(orgId, { logRequests: true, logBodies: true });
+    const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
+    const settingsModule = await import("@/domain/api-log/settings");
+    const spy = vi.spyOn(settingsModule, "loadApiSettings");
+    spy.mockClear();
+    // Fehlerantwort (400) durchlaeuft den teuersten Zweig (Fehler-Body lesen +
+    // errorCode ermitteln UND die Zeile schreiben) — genau hier waere ein zweiter,
+    // ueberfluessiger loadApiSettings-Aufruf am ehesten zu erwarten.
+    expect((await echo(req("http://x/api/v1/Echo", { method: "POST", token: key.token, body: { falsch: 1 } }))).status).toBe(400);
+    await waitForRows(1);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
   it("Handler wirft unerwartet -> 500 traegt X-Request-Id, Zeile mit status 500", async () => {
     await saveApiSettings(orgId, { logRequests: true, logBodies: false });
     const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
