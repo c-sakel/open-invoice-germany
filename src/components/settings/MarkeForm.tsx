@@ -12,6 +12,15 @@ import { DEFAULT_APP_NAME as FALLBACK_APP_NAME, DEFAULT_APP_SHORT_NAME as FALLBA
 
 type UploadKind = "favicon" | "applogo";
 
+/** Welches Feld von `BrandingSettingsInput` ein Upload/Entfernen tatsaechlich aendert —
+ *  Fix-Welle 12c (I1): upload()/removeFile() merged frueher die KOMPLETTE Server-Antwort
+ *  (`setValues(j.settings)`) in den lokalen Zustand. Die Upload-Route liefert aber den
+ *  gespeicherten DB-Stand aller Felder zurueck, nicht nur des hochgeladenen — eine
+ *  ungespeicherte Eingabe in Name/Kurzname (oder jedes andere Feld) ging dadurch
+ *  kommentarlos verloren, sobald man vor dem Speichern ein Bild hochlud. Jetzt wird nur
+ *  das betroffene Pfadfeld gemergt, der Rest des lokalen Zustands bleibt unangetastet. */
+const KIND_FIELD: Record<UploadKind, "faviconPath" | "appLogoPath"> = { favicon: "faviconPath", applogo: "appLogoPath" };
+
 /** Rohe Zod-`issues`, wie sie PUT /api/settings/branding bei einem 400 zurueckgibt
  *  (`{ error, issues: e.issues }`) — dieselbe Form wie DocumentEditor.tsx' `flattenIssues`. */
 interface SaveErrorIssue {
@@ -91,7 +100,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
       setUploading(null);
       return;
     }
-    setValues(j.settings);
+    setField(KIND_FIELD[kind], j.settings[KIND_FIELD[kind]]);
     setUploading(null);
     setPreviewBust((n) => n + 1);
     router.refresh();
@@ -105,7 +114,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
       setError(j.error ?? "Entfernen fehlgeschlagen.");
       return;
     }
-    setValues(j.settings);
+    setField(KIND_FIELD[kind], j.settings[KIND_FIELD[kind]]);
     setPreviewBust((n) => n + 1);
     router.refresh();
   }

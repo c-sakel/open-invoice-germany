@@ -76,6 +76,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
         defaultAutoFinalize={docSettings.recurringAutoFinalizeDefault}
         defaultAutoSend={docSettings.recurringAutoSendDefault}
         defaultShowPeriodText={docSettings.recurringInsertPeriodText}
+        taxRates={docSettings.taxRates}
         initial={initial}
       />
     </div>

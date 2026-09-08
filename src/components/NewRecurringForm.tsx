@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { taxRateOptions } from "@/lib/editor/constants";
 
 interface CustomerOption {
   id: string;
@@ -22,8 +23,8 @@ interface LineState {
   taxRate: number;
 }
 
-function emptyLine(): LineState {
-  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: 19 };
+function emptyLine(defaultTaxRate: number): LineState {
+  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: defaultTaxRate };
 }
 
 function todayISO(): string {
@@ -62,6 +63,7 @@ export function NewRecurringForm({
   recurringId,
   customerName,
   initial,
+  taxRates,
 }: {
   customers: CustomerOption[];
   products: ProductOption[];
@@ -87,8 +89,14 @@ export function NewRecurringForm({
   customerName?: string;
   /** Vorbelegung bei `mode="edit"` aus dem bestehenden Abo. */
   initial?: RecurringInitialValues;
+  /** Org-eigene Steuersatz-Liste (Phase 12c, Fix-Welle I2) — dieselbe Quelle
+   *  (`taxRateOptions`, `@/lib/editor/constants`) wie der Beleg-Editor; die Server-Seite
+   *  laedt sie ueber `loadDocumentSettings`. Ersetzt die vorher fest verdrahteten 19/7/0. */
+  taxRates: readonly number[];
 }) {
   const router = useRouter();
+  const taxOptions = taxRateOptions(taxRates);
+  const defaultTaxRate = taxOptions[0]?.value ?? 19;
   const [title, setTitle] = useState(initial?.title ?? "");
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [interval, setInterval] = useState(initial?.interval ?? "MONTHLY");
@@ -103,7 +111,7 @@ export function NewRecurringForm({
   const [emailTemplateId, setEmailTemplateId] = useState(initial?.emailTemplateId ?? "");
   const [showPeriodText, setShowPeriodText] = useState(initial?.showPeriodText ?? defaultShowPeriodText);
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [lines, setLines] = useState<LineState[]>(initial?.lines.length ? initial.lines : [emptyLine()]);
+  const [lines, setLines] = useState<LineState[]>(initial?.lines.length ? initial.lines : [emptyLine(defaultTaxRate)]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -118,6 +126,12 @@ export function NewRecurringForm({
     const p = products.find((x) => x.id === productId);
     if (!p) return;
     patchLine(i, { description: p.name, unit: p.unit, price: (p.netPriceCents / 100).toFixed(2), taxRate: p.taxRate });
+  }
+  // Wie LineRow.tsx (Editor): eine bereits gespeicherte Zeile (mode="edit") kann einen
+  // Satz tragen, der inzwischen nicht mehr in der Org-Liste steht — die Auswahl bleibt
+  // trotzdem sichtbar/waehlbar statt ihn stillschweigend zu verlieren (M4-Klasse).
+  function lineTaxOptions(rate: number) {
+    return taxOptions.some((o) => o.value === rate) ? taxOptions : [...taxOptions, { value: rate, label: `${rate}% (nicht mehr zulässig)` }];
   }
 
   async function submit(e: React.FormEvent) {
@@ -328,7 +342,7 @@ export function NewRecurringForm({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">Positionen</h2>
-          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine()])} className="text-sm font-medium text-indigo-600 hover:underline">
+          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine(defaultTaxRate)])} className="text-sm font-medium text-indigo-600 hover:underline">
             + Position
           </button>
         </div>
@@ -351,9 +365,11 @@ export function NewRecurringForm({
             <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
             <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
             <select className={`${input} col-span-8 sm:col-span-1`} value={line.taxRate} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })}>
-              <option value={19}>19%</option>
-              <option value={7}>7%</option>
-              <option value={0}>0%</option>
+              {lineTaxOptions(line.taxRate).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
             <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
               ✕

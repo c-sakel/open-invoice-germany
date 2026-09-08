@@ -249,8 +249,9 @@ White-Label für deine Instanz — unabhängig vom Briefpapier (Abschnitt 6, das
 Die Liste der für neue Beleg-Positionen wählbaren Umsatzsteuersätze ist seit Phase 12c **je Organisation** konfigurierbar (vorher fest 19 %/7 %/0 %):
 - **1 bis 10 Einträge**, jeweils eine **ganze Zahl zwischen 0 und 100** (Prozent). Vorgabe bei einer neuen Organisation: **19, 7, 0**.
 - Ein Satz lässt sich **nicht** entfernen, solange nur noch ein einziger übrig bliebe (mindestens ein Satz ist immer nötig).
-- **Bereits ausgestellte Belege behalten ihren Satz**, auch wenn er später aus der Liste entfernt wird (GoBD, § 51) — der Editor zeigt einen solchen Satz auf einem bestehenden Entwurf zusätzlich als „**19 % (nicht mehr zulässig)**" in der Auswahl an, damit er beim Speichern nicht verloren geht, aber niemand ihn neu auswählen kann.
-- Der Versuch, eine **neue** Position (oder einen neu gewählten Satz auf einem bestehenden Entwurf) mit einem nicht freigegebenen Satz zu speichern, scheitert mit der Fehlermeldung „**Steuersatz X % ist für diese Organisation nicht freigegeben (Einstellungen → Belege).**" — sowohl im Editor als auch bei Produkten, Abo-Vorlagen und über API/MCP.
+- **Bereits ausgestellte Belege behalten ihren Satz**, auch wenn er später aus der Liste entfernt wird (GoBD, § 51) — Editor, Produktformular und Abo-Formular zeigen einen solchen Satz auf einem bestehenden Entwurf/Datensatz zusätzlich als „**19 % (nicht mehr zulässig)**" in der Auswahl an, damit er beim Speichern nicht verloren geht, aber niemand ihn neu auswählen kann.
+- **Teilgutschrift** (`/rechnungen/[id]/teilgutschrift`): die Auswahl bietet zusätzlich zur Org-Liste jeden auf der Original-Rechnung tatsächlich verwendeten Satz als „**geerbt**" an, auch wenn er nicht mehr in der Org-Liste steht — eine Teilgutschrift muss immer zum selben Satz möglich sein wie die Original-Position.
+- Der Versuch, eine **neue** Position (oder einen neu gewählten Satz auf einem bestehenden Entwurf) mit einem nicht freigegebenen Satz zu speichern, scheitert mit der Fehlermeldung „**Steuersatz X % ist für diese Organisation nicht freigegeben (Einstellungen → Belege).**" — sowohl im Editor als auch bei Produkten, Abo-Vorlagen, Teilgutschriften und über API/MCP.
 
 ---
 
