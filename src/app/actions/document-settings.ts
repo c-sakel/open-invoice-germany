@@ -14,8 +14,13 @@ function firstError(issues: { message: string; path: PropertyKey[] }[]): string 
 /** M5 (Fix-Welle 12c): Unterscheidet "Feld fehlt" (legitim — z. B. ein Formular ohne
  *  `TaxRatesField`) von "Feld ist da, aber kaputt" (Hidden-Input liefert theoretisch
  *  IMMER gueltiges JSON, aber ein manipulierter/fehlerhafter Request-Body soll die
- *  GoBD-relevante Steuersatz-Liste NICHT still auf [19,7,0] zuruecksetzen). */
-export const TAX_RATES_PARSE_ERROR = Symbol("taxRatesParseError");
+ *  GoBD-relevante Steuersatz-Liste NICHT still auf [19,7,0] zuruecksetzen).
+ *  BEWUSST NICHT exportiert: diese Datei traegt "use server" — Next.js/Turbopack
+ *  erlaubt dort AUSSCHLIESSLICH async-Funktions-Exporte (jeder andere Export, auch ein
+ *  Symbol/eine Konstante, bricht mit "A 'use server' file can only export async
+ *  functions" zur Laufzeit — im Dev-Server sofort sichtbar, `next build` hat das NICHT
+ *  vorab abgefangen). Wird ausschliesslich innerhalb dieser Datei verwendet. */
+const TAX_RATES_PARSE_ERROR = Symbol("taxRatesParseError");
 
 /** Liest das versteckte `taxRates`-Feld (`TaxRatesField`, JSON-Array).
  *  - Feld fehlt (`raw` kein String, z. B. `null`) -> `undefined`, der Zod-Default greift
