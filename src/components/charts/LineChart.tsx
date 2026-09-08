@@ -55,7 +55,7 @@ export function LineChart({ title, data, color }: { title: string; data: ChartDa
             <title>{`${p.d.label}: ${p.d.valueLabel}`}</title>
           </circle>
           {i % 2 === 0 && (
-            <text x={p.x} y={height - 12} textAnchor="middle" fontSize={10} fill={CHART_COLORS.axis}>
+            <text x={p.x} y={height - 12} textAnchor="middle" fontSize={10} fill={CHART_COLORS.label}>
               {p.d.label}
             </text>
           )}
