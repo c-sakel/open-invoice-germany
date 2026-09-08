@@ -8,6 +8,8 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { dashboardSummary } from "@/domain/dashboard/summary";
 import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
+import { listApiRequestLogs } from "@/domain/api-log/list";
+import { apiRequestLogFilterSchema } from "@/schemas/api-log";
 import { organizationSchema, TaxScheme } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -61,6 +63,27 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           2,
         ),
       );
+    },
+  );
+
+  // ── list_api_requests ────────────────────────────────────────────────────────
+  server.registerTool(
+    "list_api_requests",
+    {
+      title: "API-Anfrageprotokoll",
+      description:
+        "Listet protokollierte REST-API-Anfragen (Phase 12d) zur Fehlersuche: Zeit, Methode, Pfad, Status, Dauer, Schluessel. Das Protokoll ist standardmaessig AUS (Einstellungen -> API); ohne Einschaltung ist die Liste leer. Bodies erscheinen nur, wenn zusaetzlich 'Bodies mitschreiben' aktiv ist — gekuerzt auf 2 KB und mit geschwaerzten Geheimnissen.",
+      inputSchema: { ...apiRequestLogFilterSchema.shape },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const result = await listApiRequestLogs(org.id, args);
+        return ctx.ok(JSON.stringify(result, null, 2));
+      } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
     },
   );
 

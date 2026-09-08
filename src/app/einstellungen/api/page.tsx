@@ -1,13 +1,15 @@
 import { getActiveOrg } from "@/lib/org";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { listApiKeys } from "@/domain/api-key/list";
+import { loadApiSettings } from "@/domain/api-log/settings";
 import { ApiKeysManager } from "@/components/api-keys/ApiKeysManager";
+import { ApiRequestLogPanel } from "@/components/api-keys/ApiRequestLogPanel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApiSettingsPage() {
   const org = await getActiveOrg();
-  const { rows: keys } = await listApiKeys(org.id, { limit: 1000, offset: 0 });
+  const [{ rows: keys }, apiSettings] = await Promise.all([listApiKeys(org.id, { limit: 1000, offset: 0 }), loadApiSettings(org.id)]);
 
   return (
     <div className="space-y-6">
@@ -33,6 +35,11 @@ export default async function ApiSettingsPage() {
             createdAt: k.createdAt.toISOString(),
           }))}
         />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-900">Anfrageprotokoll</h2>
+        <ApiRequestLogPanel initialSettings={apiSettings} initialKeys={keys.map((k) => ({ id: k.id, name: k.name }))} />
       </section>
     </div>
   );

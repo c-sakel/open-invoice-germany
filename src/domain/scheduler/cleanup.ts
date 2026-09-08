@@ -9,11 +9,14 @@
  *   rein lazy (eine Zeile wird nur geloescht, wenn GENAU IHR Schluessel erneut verwendet
  *   wird); ohne diesen Job bleibt jede einmal benutzte Idempotency-Key-Zeile fuer immer
  *   stehen, sobald sie nicht zufaellig wiederverwendet wird.
+ * - `ApiRequestLog`, je Organisation nach `ApiSettings.retentionDays` (Default 7) **und**
+ *   `maxRows` (Default 2000, die neuesten bleiben) — Phase 12d.
  *
  * Laeuft als LETZTER Job (JOB_ORDER, src/domain/scheduler/runner.ts, nach "webhooks") —
  * raeumt damit nie eine Zeile weg, die derselbe Lauf gerade erst als faellig behandelt hat.
  */
 import { dbInternal } from "@/lib/db";
+import { purgeApiRequestLogs } from "@/domain/api-log/purge";
 
 export const WEBHOOK_DELIVERY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const API_IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -21,6 +24,7 @@ export const API_IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 export interface CleanupResult {
   webhookDeliveriesDeleted: number;
   apiIdempotencyDeleted: number;
+  apiRequestLogsDeleted: number;
 }
 
 export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResult> {
@@ -33,6 +37,7 @@ export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResu
   const apiIdempotency = await dbInternal.apiIdempotency.deleteMany({
     where: { createdAt: { lt: idempotencyThreshold } },
   });
+  const apiRequestLogsDeleted = await purgeApiRequestLogs(now);
 
-  return { webhookDeliveriesDeleted: webhookDeliveries.count, apiIdempotencyDeleted: apiIdempotency.count };
+  return { webhookDeliveriesDeleted: webhookDeliveries.count, apiIdempotencyDeleted: apiIdempotency.count, apiRequestLogsDeleted };
 }

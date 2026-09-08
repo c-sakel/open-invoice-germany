@@ -902,3 +902,6 @@ export const attachmentUploadSchema = z.object({
 });
 export type AttachmentUploadInput = z.infer<typeof attachmentUploadSchema>;
 export * from "./webhook";
+
+// ── Phase 12d: Anfrageprotokoll der REST-API ────────────────────────────────
+export * from "./api-log";
