@@ -223,7 +223,20 @@ export function buildFacturXCII(data: EInvoiceData): string {
   const del = tx.ele("ram:ApplicableHeaderTradeDelivery");
   const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
   if (deliverToCountry) {
-    del.ele("ram:ShipToTradeParty").ele("ram:PostalTradeAddress").ele("ram:CountryID").txt(deliverToCountry).up().up().up();
+    // I2 (Fix-Welle Final-Review): BR-DE-10/BR-DE-11 verlangen PLZ/Ort in
+    // ShipToTradeParty/PostalTradeAddress, sobald BG-15 uebermittelt wird — bislang nur in
+    // der UBL-Delivery ergaenzt (xrechnung.ts), hier fehlte das Gegenstueck (die CII-Datei
+    // war als eigenstaendige XRechnung damit KoSIT-invalid, im EN16931-ZUGFeRD-Profil
+    // folgenlos, weil dort nur die EN-Kernregeln pruefen). Ohne eigene Lieferanschrift
+    // (Ruling) aus der Kaeuferadresse ergaenzt, identisch zu appendAddress/UBL. XSD-
+    // Reihenfolge TradeAddressType: PostcodeCode, ... LineOne, ... CityName, ... CountryID
+    // (siehe appendAddress oben) — LineOne bleibt hier bewusst weg (keine eigene
+    // Lieferstrasse erfasst, s. LIMITATIONEN.md).
+    const shipToAddr = del.ele("ram:ShipToTradeParty").ele("ram:PostalTradeAddress");
+    shipToAddr.ele("ram:PostcodeCode").txt(data.buyer.postalCode).up();
+    shipToAddr.ele("ram:CityName").txt(data.buyer.city).up();
+    shipToAddr.ele("ram:CountryID").txt(deliverToCountry).up();
+    shipToAddr.up().up();
   }
   if (data.deliveryDate) {
     del.ele("ram:ActualDeliverySupplyChainEvent").ele("ram:OccurrenceDateTime")
