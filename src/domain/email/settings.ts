@@ -12,6 +12,7 @@ import type { MailSettings } from "@/generated/prisma/client";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
 import { MailSendError } from "@/lib/mail/provider";
+import { loadBrand } from "@/domain/settings/brand";
 
 export type DecryptedMailSettings = Omit<MailSettings, "passwordEnc"> & { password: string | null };
 
@@ -103,6 +104,7 @@ export async function sendTestMail(orgId: string, provider?: MailProvider): Prom
   const to = org.email || settings.fromEmail;
   const prov = provider ?? createSmtpProvider(settings);
   const now = new Date();
+  const brand = await loadBrand(orgId);
 
   try {
     await prov.send({
@@ -111,8 +113,8 @@ export async function sendTestMail(orgId: string, provider?: MailProvider): Prom
       cc: [],
       bcc: [],
       replyTo: settings.replyTo ?? undefined,
-      subject: "Testnachricht von OpenInvoice",
-      text: `Dies ist eine Testnachricht der Mail-Einstellungen von OpenInvoice.\n\nHost: ${settings.host}\nPort: ${settings.port}\nGesendet am: ${now.toISOString()}`,
+      subject: `Testnachricht von ${brand.appName}`,
+      text: `Dies ist eine Testnachricht der Mail-Einstellungen von ${brand.appName}.\n\nHost: ${settings.host}\nPort: ${settings.port}\nGesendet am: ${now.toISOString()}`,
       attachments: [],
     });
     await dbInternal.mailSettings.update({ where: { orgId }, data: { lastTestAt: now, lastTestOk: true } });
