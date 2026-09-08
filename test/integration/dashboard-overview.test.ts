@@ -12,6 +12,7 @@ import { recordPayment } from "@/domain/invoice/payment";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createBusinessDocument } from "@/domain/document/create";
 import { setQuoteStatus } from "@/domain/document/status";
+import { cancelInvoice } from "@/domain/invoice/cancel";
 import { dashboardSummary, agingBuckets } from "@/domain/dashboard/summary";
 import { customerOverview } from "@/domain/customer/overview";
 import { NotFoundError } from "@/domain/errors";
@@ -233,5 +234,40 @@ describe("customerOverview", () => {
       data: { legalName: "Fremdorg GmbH", addressLine1: "Fremdweg 1", postalCode: "10119", city: "Berlin", vatId: "DE999888777", taxNumber: "77/888/99900" },
     });
     await expect(customerOverview(otherOrg.id, customerId, NOW)).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe("Fix I3 — Nettoumsatz-Kacheln nutzen dieselbe Definition wie die Umsatzdiagramme", () => {
+  // Eigene Org: das stornierte Original UND seine Storno-Gutschrift faellen absichtlich in
+  // denselben Kalendermonat (NOW), damit die Periodensumme direkt 0 ergeben MUSS. Vorher
+  // (Bug, Review-Befund) warf der Kachel-Filter (`notIn: [DRAFT, CANCELLED]`) das stornierte
+  // Original raus, behielt aber die Storno-Gutschrift (Status FINALIZED, negativer Betrag) —
+  // die Kachel zeigte faelschlich einen NEGATIVEN Betrag statt 0.
+  it("dashboardSummary.revenueThisMonthCents und customerOverview.totalRevenueCents zaehlen ein storniertes Original + seine Storno-Gutschrift zu 0 zusammen", async () => {
+    // Eigenes Jahr 2092 (Testjahr-Konvention): Belegnummern sind instanzweit @unique, nicht
+    // je Org (CLAUDE.md) — ein mit 2066 (Hauptszenario oben) geteiltes Jahr wuerde bei der
+    // ersten Rechnung dieser neuen Org kollidieren (Nummernkreis startet je Org bei 1).
+    const NOW92 = new Date(2092, 4, 15, 10, 0, 0);
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Nettoumsatz Test GmbH", addressLine1: "N 1", postalCode: "10115", city: "Berlin", vatId: "DE822222222", taxNumber: "82/222/22222" },
+    });
+    await ensureOrgMasterdata(dbInternal, org.id);
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "Epsilon KG", addressLine1: "E 1", postalCode: "10117", city: "Berlin", type: "BUSINESS" },
+    });
+
+    const inv = await createDraftInvoice(
+      org.id,
+      { customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: NOW92, lines: [line("Nettoumsatz-Test")] } as CreateInvoiceInput,
+      { now: NOW92 },
+    );
+    await finalizeInvoice(inv.id, { now: NOW92 });
+    await cancelInvoice(inv.id, { now: NOW92 }); // Original UND Storno-Gutschrift im selben Monat.
+
+    const summary = await dashboardSummary(org.id, NOW92);
+    expect(summary.revenueThisMonthCents).toBe(0);
+
+    const overview = await customerOverview(org.id, customer.id, NOW92);
+    expect(overview.kpis.totalRevenueCents).toBe(0);
   });
 });

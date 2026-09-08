@@ -102,11 +102,15 @@ describe("S1: halb bezahlte, ueberfaellige Rechnung bleibt faellig/ueberfaellig 
   });
 });
 
-describe("S2: Umsatz-KPIs zaehlen eine Abschlagskette nicht doppelt (payableBaseCents statt grossTotalCents)", () => {
+describe("S2: Umsatz-KPIs zaehlen eine Abschlagskette nicht doppelt (netShareCents statt netTotalCents)", () => {
+  // Fix I3 (Abschluss-Review, Phase 12e): dashboardSummary/customerOverview zaehlen den
+  // Nettoumsatz (nicht mehr brutto/payableBaseCents wie zur Zeit dieser urspruenglichen
+  // S2-Fix-Welle) — die Abschlagsketten-Entdopplung selbst (kein doppelt gezaehlter
+  // Abschlag) gilt unveraendert, nur die Bemessungsgrundlage ist jetzt netto.
   const S2_NOW = new Date(Date.UTC(2070, 5, 15, 10, 0, 0));
   let orgId: string;
   let customerId: string;
-  let quoteGrossTotalCents: number;
+  let quoteNetTotalCents: number;
 
   beforeAll(async () => {
     const org = await dbInternal.organization.create({
@@ -131,7 +135,7 @@ describe("S2: Umsatz-KPIs zaehlen eine Abschlagskette nicht doppelt (payableBase
       } as CreateDocumentInput,
       { now: S2_NOW },
     );
-    quoteGrossTotalCents = quote.grossTotalCents;
+    quoteNetTotalCents = quote.netTotalCents;
 
     const dp = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: S2_NOW });
     await finalizeInvoice(dp.id, { now: S2_NOW });
@@ -139,16 +143,18 @@ describe("S2: Umsatz-KPIs zaehlen eine Abschlagskette nicht doppelt (payableBase
     await finalizeInvoice(final.id, { now: S2_NOW });
   });
 
-  it("dashboardSummary.revenueThisMonthCents entspricht dem Gesamt-Bruttoauftragswert, nicht Abschlag+Schlussrechnung-Brutto addiert", async () => {
+  it("dashboardSummary.revenueThisMonthCents entspricht dem Gesamt-Nettoauftragswert, nicht Abschlag+Schlussrechnung-Netto addiert", async () => {
     const summary = await dashboardSummary(orgId, S2_NOW);
-    // Vor der Fix-Welle: dp.grossTotalCents + final.grossTotalCents (beide voller Brutto-
-    // Betrag) — der Abschlag waere doppelt gezaehlt worden, das Ergebnis haette den
-    // tatsaechlichen Auftragswert (quoteGrossTotalCents) UEBERSCHRITTEN.
-    expect(summary.revenueThisMonthCents).toBe(quoteGrossTotalCents);
+    // Vor der Fix-Welle: dp.grossTotalCents + final.grossTotalCents (beide voller Betrag) —
+    // der Abschlag waere doppelt gezaehlt worden, das Ergebnis haette den tatsaechlichen
+    // Auftragswert (quoteNetTotalCents) UEBERSCHRITTEN. Fix I3: die Bemessungsgrundlage ist
+    // jetzt netto (monthlyRevenue/netShareCents, dieselbe wie Umsatzreihe/-diagramme), nicht
+    // mehr brutto/payableBaseCents — die Entdopplung selbst bleibt unveraendert bestehen.
+    expect(summary.revenueThisMonthCents).toBe(quoteNetTotalCents);
   });
 
-  it("customerOverview.kpis.totalRevenueCents entspricht ebenfalls dem Gesamt-Bruttoauftragswert", async () => {
+  it("customerOverview.kpis.totalRevenueCents entspricht ebenfalls dem Gesamt-Nettoauftragswert", async () => {
     const overview = await customerOverview(orgId, customerId, S2_NOW);
-    expect(overview.kpis.totalRevenueCents).toBe(quoteGrossTotalCents);
+    expect(overview.kpis.totalRevenueCents).toBe(quoteNetTotalCents);
   });
 });

@@ -189,6 +189,66 @@ Request-/Response-Bodies hängen zusätzlich am separaten Schalter `logBodies`.
   `/api/v1/ApiRequestLog` selbst (Rekursionsschutz) — diese Pfade tragen nichts
   zur Fehlersuche bei.
 
+## Auswertungen (Phase 12e)
+
+`GET /api/v1/Report` (Scope `read`) liefert dieselben Auswertungen wie die Diagramme
+auf Dashboard und Kundenseite — **keine eigene Aggregation** für die API, sondern
+derselbe Kern (`runReport`, `src/domain/reporting/query.ts`), den auch das MCP-Tool
+`get_report` aufruft. Kein Eintrag in der CRUD-Ressourcenliste unten: `Report` ist
+rein lesend und keine Tabelle, die Antwortform ist bewusst `{ data: <typabhängig> }`
+ohne festes Ressourcenschema (wie bei den Aktions-Endpunkten).
+
+Parameter (Query):
+
+| Parameter | Pflicht | Bedeutung |
+|---|---|---|
+| `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` |
+| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue` und `top-customers` zulässig** (Fix 2, ehem. M8) |
+| `limit` | nein | Anzahl Kunden (1–50, Default 5) — **nur bei `top-customers` zulässig** |
+| `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
+
+Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
+gewählten `type` **nicht zulässiger** Parameter (z. B. `limit` bei
+`type=revenue`, `months` bei `type=status`) liefert `400 VALIDATION` — die
+Meldung (`error.details.issues`) nennt den betroffenen Parameter. Vor Fix 2
+wurde ein nicht zutreffender Parameter still ignoriert; das ist seither ein
+Fehler, kein No-op mehr.
+
+- **`revenue`** — Netto-Umsatz je Kalendermonat, lückenlos (auch Monate ohne Beleg
+  als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
+  (negativen) Vorzeichen enthalten.
+- **`top-customers`** — die `limit` umsatzstärksten Kunden (netto) im Zeitraum,
+  absteigend sortiert.
+- **`status`** — Anzahl Rechnungen je effektivem Status (inkl. fällig/überfällig-
+  Ableitung) sowie der offene Betrag je Status.
+- **`payment-behaviour`** — Ø Tage bis zur Zahlung und Pünktlichkeitsanteil (0–1)
+  über als `PAID` abgeschlossene Rechnungen; beide Felder sind `null` ohne
+  auswertbare Datengrundlage (keine bezahlte Rechnung bzw. keine mit
+  Fälligkeitsdatum).
+
+Beispiel:
+
+```bash
+curl -s "$BASE/api/v1/Report?type=revenue&months=6" -H "$AUTH"
+```
+
+```json
+{
+  "data": {
+    "objectName": "Report",
+    "type": "revenue",
+    "rows": [
+      { "month": "2026-03", "netCents": 0, "count": 0 },
+      { "month": "2026-04", "netCents": 150000, "count": 2 }
+    ]
+  }
+}
+```
+
+`type=payment-behaviour` liefert `rows` stets als Ein-Elemente-Array
+(`[{ avgDaysToPay, onTimeShare, paidCount }]`) — dieselbe Form wie die anderen drei
+Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden müssen.
+
 ## Weitere Ressourcen
 
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,

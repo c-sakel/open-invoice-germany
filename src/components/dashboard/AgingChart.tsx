@@ -1,31 +1,29 @@
 import type { AgingBucket } from "@/domain/dashboard/summary";
-import { formatCents } from "@/lib/money";
+import { BarChart } from "@/components/charts/BarChart";
+import { agingChartData } from "@/components/dashboard/chart-data";
 
 /**
- * Reine CSS-Balken (Task-4-Brief: "reine CSS-Balken", keine Chart-Bibliothek/neue
- * Dependency) fuer die Aging-Buckets ueberfaelliger Rechnungen. Fix-Runde 1: nimmt jetzt
- * das generalisierte Bucket-Array entgegen (N+1 Buckets, Labels bereits vom Domain-Helfer
- * `agingBuckets` mitgeliefert) statt der vorherigen festen Vier-Schluessel-Form.
+ * Aging-Buckets ueberfaelliger Rechnungen (Phase 12e, Task 4: migriert auf den
+ * Inline-SVG-Baukasten, Datei und Exportname bleiben — DashboardWidgets bindet weiterhin
+ * `<AgingChart aging={summary.aging} />` unveraendert ein). Die Titel-Ueberschrift kommt
+ * jetzt aus `ChartFrame` (figcaption), nicht mehr aus einer eigenen `<h2>` im Aufrufer.
+ *
+ * Fix I3 (Abschluss-Review): Titel nennt jetzt explizit die Bemessungsgrundlage — dieses
+ * Diagramm zeigt (anders als die Umsatzreihe/-diagramme, netto/accrual) den OFFENEN
+ * BRUTTObetrag (`AgingBucket.cents` = `openAmountCents`, dashboard/summary.ts), damit auf
+ * demselben Bildschirm nicht zwei unterschiedliche, aber gleich aussehende Bemessungs-
+ * grundlagen nebeneinanderstehen, ohne dass es aus dem Titel hervorgeht.
+ *
+ * Fix I6 (Abschluss-Review): `viewBoxWidth` durchgereicht an `BarChart` — DashboardWidgets
+ * uebergibt fuer die halbe Dashboard-Kartenbreite einen kleineren Wert.
  */
-export function AgingChart({ aging }: { aging: AgingBucket[] }) {
-  const max = Math.max(1, ...aging.map((b) => b.cents));
-
+export function AgingChart({ aging, viewBoxWidth }: { aging: AgingBucket[]; viewBoxWidth?: number }) {
   return (
-    <div className="space-y-2">
-      {aging.map((bucket) => {
-        const widthPercent = Math.round((bucket.cents / max) * 100);
-        return (
-          <div key={bucket.label} className="flex items-center gap-3 text-sm">
-            <div className="w-24 shrink-0 text-slate-500">{bucket.label}</div>
-            <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
-              <div className="h-4 rounded bg-amber-500" style={{ width: `${widthPercent}%` }} />
-            </div>
-            <div className="w-32 shrink-0 text-right text-slate-700">
-              {formatCents(bucket.cents)} <span className="text-slate-400">({bucket.count})</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <BarChart
+      title="Überfällig nach Alter (offen, brutto)"
+      data={agingChartData(aging)}
+      orientation="horizontal"
+      viewBoxWidth={viewBoxWidth}
+    />
   );
 }
