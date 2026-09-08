@@ -25,4 +25,14 @@ describe("apiRequestLogFilterSchema", () => {
     expect(v.from?.getUTCFullYear()).toBe(2026);
     expect(F.safeParse({ limit: 201 }).success).toBe(false);
   });
+
+  it("errorsOnly=false (String, Query-Boundary) bleibt false — Fix-Welle I3 (vorher z.coerce.boolean() -> true)", () => {
+    expect(F.parse({ errorsOnly: "false" })).toMatchObject({ errorsOnly: false });
+    expect(F.parse({ errorsOnly: "0" })).toMatchObject({ errorsOnly: false });
+  });
+
+  it("errorsOnly akzeptiert auch echte Booleans (MCP-Boundary)", () => {
+    expect(F.parse({ errorsOnly: true })).toMatchObject({ errorsOnly: true });
+    expect(F.parse({ errorsOnly: false })).toMatchObject({ errorsOnly: false });
+  });
 });
