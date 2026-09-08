@@ -247,6 +247,12 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Zwei `Sidebar`-Instanzen (Desktop + mobiler Drawer) koennen beim Auf-/Zuklappen einer Gruppe auseinanderdriften.** Beide lesen/schreiben denselben `localStorage`-Schluessel `oig.nav.open.<Gruppenschluessel>`, aber ohne `storage`-Event-Abgleich zwischen den beiden gleichzeitig gemounteten Instanzen (`AppShell.tsx`/`Topbar.tsx`) — ein Toggle im Drawer aktualisiert nicht sofort den React-State der Desktop-Sidebar (und umgekehrt), erst ein Neuladen gleicht beide wieder an. Praktisch selten, da Drawer nur unterhalb `lg` sichtbar ist.
 - **Lieferschein-Entwurfsstatus (DRAFT) ist ueber keinen heutigen Weg erreichbar.** `createDeliveryNoteWithinTx` (`src/domain/delivery-note/create.ts`) setzt bei jeder Anlage immer sofort `status="CREATED"` mit Nummernvergabe — weder UI (`/lieferscheine/neu`), noch API (`POST /api/delivery-notes`), noch MCP kennen einen Parameter für DRAFT. Die dafür vorbereitete Detailseiten-Darstellung (PDF-Platzhalter, „Lieferschein erstellen (Nummer vergeben)", der `#druckoptionen`-Anker) ist damit toter Code, bis eine künftige Editor-Funktion „Formular zwischenspeichern" (im Code-Kommentar als Reservierung erwähnt) das DRAFT-Anlegen tatsächlich anbietet.
 
+## Grafiken & Auswertungen (Phase 12e)
+- **Die Diagramme sind statisch (SVG, serverseitig gerendert): kein Zoom, kein Filtern im Bild.**
+- **Es gibt keinen Export der Auswertungen als CSV oder PDF.**
+- **Der Umsatz ist eine Netto-Auswertung nach Rechnungsdatum, keine Einnahmen-Überschuss-Rechnung und keine Buchhaltung (Lastenheft §60).**
+- **Rechnungen ohne erfasste Zahlung, die manuell auf PAID gesetzt wurden, gehen nicht in die Ø Zahlungsdauer ein.**
+
 ## Funktionsumfang (geplant)
 DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.
 

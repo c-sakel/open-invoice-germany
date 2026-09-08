@@ -216,6 +216,17 @@ Ist unter „Einstellungen → Belege" die Option **„Letztes Dokument als Vorl
 ### Dashboard (Startseite nach Anmeldung)
 Bist du angemeldet, zeigt die Startseite (`/`) statt der Marketingseite dein **Dashboard**: offene, fällige und überfällige Beträge, „fällig diese Woche", teilbezahlte Rechnungen, wie viele Rechnungen ein Mahnschreiben benötigen würden, ein Aging-Diagramm (0–7 / 8–30 / 31–60 / 61–90 / über 90 Tage überfällig), Umsatz im laufenden Monat, die letzten fünf Belege und die Anzahl offener Angebote. Das Aging auf dem Dashboard zählt den heutigen Fälligkeitstag bereits mit (Frühwarnung) — die Mahnübersicht unter `/mahnwesen` zählt erst ab dem Folgetag (Eskalationslogik); beide zeigen deshalb bei derselben Rechnung leicht unterschiedliche Buckets, siehe [LIMITATIONEN.md](LIMITATIONEN.md).
 
+**Vier Diagramme (Phase 12e):** ein Balkendiagramm „Umsatz je Monat" (12 Monate,
+netto), ein Ringdiagramm „Offen / Überfällig / Bezahlt", ein waagerechtes
+Balkendiagramm „Top 5 Kunden" (netto, 12 Monate) sowie das Aging-Diagramm — alle
+vier zählen **netto**, ohne Entwürfe und ohne stornierte Original-Rechnungen (das
+stornierte Original bleibt zwar in seinem eigenen Monat stehen, die Storno-Gutschrift
+mindert aber separat den Monat der Stornierung), Gutschriften sind bereits mit
+ihrem negativen Betrag eingerechnet. Jeder Wert erscheint beim Überfahren mit der
+Maus als Tooltip (Monat/Kunde + Betrag); unter jedem Diagramm steht dieselben Werte
+zusätzlich als für Screenreader zugängliche Tabelle (visuell ausgeblendet, aber im
+Code vorhanden) — die Diagramme sind damit ohne Maus und ohne Sehen bedienbar.
+
 ### Filter & Suche (Rechnungen, Angebote/AB/Proforma, Lieferscheine, Abos)
 Jede Listenseite (`/rechnungen`, `/dokumente`, `/lieferscheine`, `/abos`) hat oben eine Filterleiste: Status, Belegtyp, Kunde, Zeitraum (von/bis), Betrag (min/max), Nummer, Zahlungsart, E-Rechnung ja/nein, Währung sowie ein Freitextfeld für die Suche über Nummer/Bestellnummer/Kundenname (bei Rechnungen zusätzlich über Positionsbeschreibungen). Die Filterleiste ist ein einfaches Formular (funktioniert auch ohne JavaScript) — jeder Filter landet in der URL und lässt sich damit als Lesezeichen speichern oder teilen. Gutschriften findest du über `/rechnungen?type=CREDIT_NOTE` (kein eigener Menüpunkt).
 
@@ -224,6 +235,16 @@ In jeder Zeile einer Liste öffnet das „⋮"-Menü die für **diesen** Beleg i
 
 ### Kundendetailseite
 `Kunden → <Kunde>` zeigt jetzt zuerst eine Übersicht: offener Betrag, überfälliger Betrag, Gesamtumsatz, letzte Aktivität, sowie Reiter für alle Rechnungen/Angebote/Lieferscheine/Abos dieses Kunden. Die bisherigen Stammdatenformulare (Adressen, Ansprechpartner, Vorgaben, Kundenfelder) findest du unverändert unter „Bearbeiten" auf dieser Seite.
+
+**Zeitreihe, Ø Zahlungsdauer und Pünktlichkeitsanteil (Phase 12e):** darunter zeigt
+eine Liniengrafik den Netto-Umsatz dieses Kunden über die letzten 12 Monate. Zwei
+zusätzliche Kacheln fassen sein Zahlungsverhalten zusammen: „Ø Tage bis zur
+Zahlung" (Mittelwert zwischen Rechnungsdatum und der zuletzt erfassten Zahlung über
+alle bezahlten Rechnungen dieses Kunden) und „Pünktlichkeit" (Anteil der bis zum
+Fälligkeitstag beglichenen Rechnungen — der Fälligkeitstag selbst zählt noch als
+pünktlich). Beide zeigen „—" statt eines Werts, wenn es (noch) keine bezahlte
+Rechnung bzw. keine mit Fälligkeitsdatum gibt — siehe „Grafiken & Auswertungen" in
+[LIMITATIONEN.md](LIMITATIONEN.md).
 
 ### Zeitstrahl (Rechnungs-/Angebots-/Lieferschein-Detailseite)
 Jede Belegdetailseite zeigt unter „Zeitstrahl" eine chronologische Historie: Anlage, Änderungen, Festschreibung, Versand, Zahlungen, Mahnungen, Statuswechsel, Duplizierung, Umwandlung — alles an einem Ort statt über mehrere Karten verstreut. Diese Historie beginnt erst mit Phase 8b; für ältere Belege fehlen entsprechend frühere Ereignisse, siehe [LIMITATIONEN.md](LIMITATIONEN.md).

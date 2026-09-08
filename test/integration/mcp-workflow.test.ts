@@ -139,6 +139,22 @@ describe("get_dashboard", () => {
   });
 });
 
+describe("get_report", () => {
+  it("liefert dieselbe Form wie runReport/REST — revenue mit 12 Monatspunkten", async () => {
+    const res = await callTool("get_report", { type: "revenue" });
+    expect(res.isError).toBeFalsy();
+    const j = JSON.parse(text(res)) as { objectName: string; type: string; rows: unknown[] };
+    expect(j.objectName).toBe("Report");
+    expect(j.type).toBe("revenue");
+    expect(j.rows).toHaveLength(12);
+  });
+
+  it("liefert eine Fehlermeldung bei ungueltigem type", async () => {
+    const res = await callTool("get_report", { type: "nichtvorhanden" });
+    expect(res.isError).toBe(true);
+  });
+});
+
 describe("get_customer_overview", () => {
   it("liefert KPIs + Belegtabs des Kunden", async () => {
     const res = await callTool("get_customer_overview", { customer: customerName });
