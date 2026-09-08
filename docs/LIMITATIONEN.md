@@ -206,6 +206,19 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   gelöscht, unabhängig vom Alter.
 
 ## Anfrageprotokoll (Phase 12d)
+- **Was im „nur Kopfdaten"-Modus (`logRequests` an, `logBodies` aus) gespeichert
+  wird:** Methode, Pfad inklusive Query-String (verdächtige Parameter — Geheimnis-
+  Muster wie `token`/`secret`/`password`/`apiKey`/`iban`/`bic` sowie `email` —
+  werden vor dem Speichern geschwärzt), Status, Dauer, `apiKeyId`, Request-ID
+  sowie **IP-Adresse und User-Agent** des Aufrufers — unabhängig vom Schalter
+  `logBodies`, der ausschließlich die Bodies betrifft.
+- **Redaktion ohne Rückfall auf den Rohtext.** Scheitert die Schwärzung eines
+  Bodies (kein valides JSON, oder ein interner Fehler bei der Verarbeitung) oder
+  eines Query-Strings, wird NIE der Rohtext gespeichert — stattdessen ein
+  Platzhalter (Body) bzw. der Pfad ohne Query (Query-String).
+- **Bodies über 256 KB werden nicht geparst.** Ein Request-/Response-Body über
+  dieser Größe wird aus Performance-/DoS-Gründen gar nicht erst versucht zu
+  schwärzen oder zu kürzen — es landet nur ein Platzhalter in der Zeile.
 - **Vor-Auth-Fehler werden nicht protokolliert.** Ein unbekannter/ungültiger
   API-Schlüssel (`401`) oder das Vor-Auth-Rate-Limit (`429`, vor jedem
   Token-Lookup) hinterlassen keine `ApiRequestLog`-Zeile — es gibt keine
@@ -214,6 +227,12 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   ...`, `/api/invoices/...` usw.) laufen außerhalb dieses Protokolls.
 - **Die Retention läuft im Scheduler-Cleanup.** Ohne aktiven Scheduler wächst die
   Tabelle bis zum nächsten Lauf weiter (analog zur Webhook-Retention oben).
+- **API-Einstellungen sind bis zu 8 Sekunden zwischengespeichert.** `loadApiSettings`
+  cacht je Organisation im Prozessspeicher (winziger TTL-Cache, Fix-Welle m1) —
+  eine Änderung über `Einstellungen → API` invalidiert den Cache sofort, ein
+  Speichervorgang wirkt also immer ab dem nächsten Aufruf; ohne eigenen
+  Speichervorgang (z. B. bei einem direkten DB-Zugriff außerhalb der Software)
+  könnte ein bereits gecachter Wert bis zu 8 Sekunden weiterleben.
 
 ## Navigation & Suche (Phase 11a)
 - **Globale Suche ist eine Teilstring-Suche** (`contains`) über Belegnummer, Kundenname, Kundennummer, E-Mail, Produktname und Artikelnummer — kein Volltext, kein Ranking, keine Suche in Positionen, Betreffs oder Notizen (interne Notizen bewusst nie). Maximal 8 Treffer je Gruppe (Standard; per `limit` bis 20).

@@ -331,6 +331,30 @@ describe("setup_company", () => {
   });
 });
 
+describe("list_api_requests (Phase 12d, Task 5 — Fix-Welle m12)", () => {
+  it("listet nur Zeilen der aktiven Organisation und respektiert errorsOnly", async () => {
+    const foreignOrg = await dbInternal.organization.create({
+      data: { legalName: "MCP-Core Fremd GmbH", addressLine1: "Fremdweg 1", postalCode: "21339", city: "Lüneburg" },
+    });
+    const own = await dbInternal.apiRequestLog.create({
+      data: { orgId, apiKeyId: null, requestId: "mcp-req-1", method: "GET", path: "/api/v1/Invoice", status: 500, durationMs: 5 },
+    });
+    const foreign = await dbInternal.apiRequestLog.create({
+      data: { orgId: foreignOrg.id, apiKeyId: null, requestId: "mcp-req-2", method: "GET", path: "/api/v1/Invoice", status: 500, durationMs: 5 },
+    });
+    try {
+      const res = await callTool("list_api_requests", { errorsOnly: true });
+      expect(res.isError).toBeFalsy();
+      const parsed = JSON.parse(text(res)) as { rows: { id: string }[] };
+      const ids = parsed.rows.map((r) => r.id);
+      expect(ids).toContain(own.id);
+      expect(ids).not.toContain(foreign.id);
+    } finally {
+      await dbInternal.apiRequestLog.deleteMany({ where: { id: { in: [own.id, foreign.id] } } });
+    }
+  });
+});
+
 describe("list_customers / upsert_customer (Task 2)", () => {
   it("legt einen Kunden per upsert_customer an und findet ihn ueber list_customers wieder", async () => {
     const name = "MCP-Core-Listenkunde AG";

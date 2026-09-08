@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { z } from "zod";
+import { NextResponse } from "next/server";
 import { dbInternal } from "@/lib/db";
 import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
@@ -42,6 +43,13 @@ const echo = withApi(async (_req, ctx) => {
  *  Fehler) wirft — mapApiError faengt das im generischen Zweig als 500 INTERNAL ab. */
 const boom = withApi(async () => {
   throw new Error("unerwartet kaputt");
+}, { scope: "write" });
+
+/** Abschluss-Review Fix-Welle (m12): Fehlerantwort OHNE JSON-Content-Type (Binaerroute,
+ *  z. B. PDF/XRechnung-Export) — der Klon-Schutz in auth.ts darf hier weder werfen noch
+ *  den Non-JSON-Body als responseBody speichern. */
+const binaryError = withApi(async () => {
+  return new NextResponse("%PDF-kaputt", { status: 500, headers: { "content-type": "application/pdf" } });
 }, { scope: "write" });
 
 beforeAll(async () => {
@@ -146,6 +154,16 @@ describe("Protokollierung", () => {
     expect(row.query).toContain("limit=5");
     expect(row.query).not.toContain("geheim");
     expect(row.query).toContain(encodeURIComponent("[redaktiert]"));
+  });
+
+  it("Fehlerantwort OHNE JSON-Content-Type wird protokolliert, aber ohne responseBody/errorCode (m12)", async () => {
+    await saveApiSettings(orgId, { logRequests: true, logBodies: true });
+    const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
+    const res = await binaryError(req("http://x/api/v1/Binary", { method: "POST", token: key.token, body: { note: "x" } }));
+    expect(res.status).toBe(500);
+    await waitForRows(1);
+    const row = await dbInternal.apiRequestLog.findFirstOrThrow({ where: { orgId }, orderBy: { createdAt: "desc" } });
+    expect(row).toMatchObject({ status: 500, responseBody: null, errorCode: null });
   });
 
   it("Handler wirft unerwartet -> 500 traegt X-Request-Id, Zeile mit status 500", async () => {
