@@ -203,12 +203,16 @@ Parameter (Query):
 | Parameter | Pflicht | Bedeutung |
 |---|---|---|
 | `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` |
-| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — bei `status` und `payment-behaviour` ohne Wirkung (Fix M13a) |
-| `limit` | nein | nur `top-customers`: Anzahl Kunden (1–50, Default 5) |
-| `customerId` | nein | auf einen Kunden einschränken (`revenue`, `payment-behaviour`) |
+| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue` und `top-customers` zulässig** (Fix 2, ehem. M8) |
+| `limit` | nein | Anzahl Kunden (1–50, Default 5) — **nur bei `top-customers` zulässig** |
+| `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
 
-Ein unbekannter `type` (oder `months`/`limit` außerhalb der Grenzen) liefert
-`400 VALIDATION`.
+Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
+gewählten `type` **nicht zulässiger** Parameter (z. B. `limit` bei
+`type=revenue`, `months` bei `type=status`) liefert `400 VALIDATION` — die
+Meldung (`error.details.issues`) nennt den betroffenen Parameter. Vor Fix 2
+wurde ein nicht zutreffender Parameter still ignoriert; das ist seither ein
+Fehler, kein No-op mehr.
 
 - **`revenue`** — Netto-Umsatz je Kalendermonat, lückenlos (auch Monate ohne Beleg
   als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem

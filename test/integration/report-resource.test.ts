@@ -26,10 +26,45 @@ beforeAll(async () => {
 beforeEach(() => resetRateLimits());
 
 describe("reportQuerySchema", () => {
-  it("verlangt einen bekannten Typ und setzt Defaults", () => {
+  it("verlangt einen bekannten Typ", () => {
     expect(reportQuerySchema.safeParse({}).success).toBe(false);
     expect(reportQuerySchema.safeParse({ type: "unsinn" }).success).toBe(false);
-    expect(reportQuerySchema.parse({ type: "revenue" })).toMatchObject({ months: 12, limit: 5 });
+  });
+
+  // Fix M8 (Fix 2, Koordinator-Ruling): months/limit tragen bewusst kein Schema-Default
+  // mehr (siehe Modulkommentar in query.ts) — die tatsaechlichen Defaults (12/5) wendet
+  // runReport erst NACH der Validierung an, nur wenn der Parameter beim gewaehlten type
+  // ueberhaupt zaehlt.
+  it("months/limit bleiben ohne explizite Angabe undefined (Default wird erst in runReport angewendet)", () => {
+    const parsed = reportQuerySchema.parse({ type: "revenue" });
+    expect(parsed.type).toBe("revenue");
+    expect(parsed.months).toBeUndefined();
+    expect(parsed.limit).toBeUndefined();
+  });
+
+  it("lehnt einen beim gewaehlten type nicht anwendbaren Parameter ab und nennt ihn in der Meldung", () => {
+    const limitOnRevenue = reportQuerySchema.safeParse({ type: "revenue", limit: 5 });
+    expect(limitOnRevenue.success).toBe(false);
+    expect(limitOnRevenue.success === false && limitOnRevenue.error.issues[0].message).toContain("limit");
+
+    const customerIdOnTopCustomers = reportQuerySchema.safeParse({ type: "top-customers", customerId: "c1" });
+    expect(customerIdOnTopCustomers.success).toBe(false);
+    expect(customerIdOnTopCustomers.success === false && customerIdOnTopCustomers.error.issues[0].message).toContain("customerId");
+
+    const monthsOnStatus = reportQuerySchema.safeParse({ type: "status", months: 6 });
+    expect(monthsOnStatus.success).toBe(false);
+    expect(monthsOnStatus.success === false && monthsOnStatus.error.issues[0].message).toContain("months");
+
+    const monthsOnPaymentBehaviour = reportQuerySchema.safeParse({ type: "payment-behaviour", months: 6 });
+    expect(monthsOnPaymentBehaviour.success).toBe(false);
+    expect(monthsOnPaymentBehaviour.success === false && monthsOnPaymentBehaviour.error.issues[0].message).toContain("months");
+  });
+
+  it("akzeptiert nur die je type anwendbaren Parameter", () => {
+    expect(reportQuerySchema.safeParse({ type: "revenue", months: 6, customerId: "c1" }).success).toBe(true);
+    expect(reportQuerySchema.safeParse({ type: "top-customers", months: 6, limit: 5 }).success).toBe(true);
+    expect(reportQuerySchema.safeParse({ type: "status" }).success).toBe(true);
+    expect(reportQuerySchema.safeParse({ type: "payment-behaviour", customerId: "c1" }).success).toBe(true);
   });
 });
 
@@ -80,6 +115,30 @@ describe("GET /api/v1/Report", () => {
     expect(res.status).toBe(200);
     const j = await res.json();
     expect(j.data.rows.length).toBeLessThanOrEqual(1);
+  });
+
+  // Fix M8 (Fix 2, Koordinator-Ruling): ein beim gewaehlten type nicht anwendbarer
+  // Parameter wird jetzt per 400 VALIDATION abgelehnt statt still ignoriert.
+  it("limit bei type=revenue -> 400 VALIDATION (limit ist nur bei top-customers anwendbar)", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=revenue&limit=5"));
+    expect(res.status).toBe(400);
+    const j = await res.json();
+    expect(j.error.code).toBe("VALIDATION");
+    expect(JSON.stringify(j.error.details.issues)).toContain("limit");
+  });
+
+  it("months bei type=status -> 400 VALIDATION (status kennt kein Zeitfenster)", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=status&months=6"));
+    expect(res.status).toBe(400);
+    const j = await res.json();
+    expect(j.error.code).toBe("VALIDATION");
+    expect(JSON.stringify(j.error.details.issues)).toContain("months");
+  });
+
+  it("customerId bei type=top-customers -> 400 VALIDATION (top-customers gruppiert ueber alle Kunden)", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=top-customers&customerId=irgendwas"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION");
   });
 
   it("Org-Trennung: ein Schluessel von Org A liefert keine Zeilen von Org B", async () => {

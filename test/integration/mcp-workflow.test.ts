@@ -166,6 +166,24 @@ describe("get_report", () => {
     const res = await callTool("get_report", { type: "revenue", customer: "Nicht existent XYZ" });
     expect(res.isError).toBe(true);
   });
+
+  // Fix M8 (Fix 2, Koordinator-Ruling): ein beim gewaehlten type nicht anwendbarer
+  // Parameter wird abgelehnt — mit lesbarem Fehlertext (nicht dem generischen
+  // failUnknown-Fallback "Unerwarteter Fehler — Details im Serverlog.").
+  it("Fix M8 (Fix 2): months bei type=status wird abgelehnt, mit lesbarer Fehlermeldung", async () => {
+    const res = await callTool("get_report", { type: "status", months: 6 });
+    expect(res.isError).toBe(true);
+    const msg = text(res);
+    expect(msg).toContain("Validierung fehlgeschlagen");
+    expect(msg).toContain("months");
+    expect(msg).not.toContain("Unerwarteter Fehler");
+  });
+
+  it("Fix M8 (Fix 2): limit bei type=revenue wird abgelehnt, mit lesbarer Fehlermeldung", async () => {
+    const res = await callTool("get_report", { type: "revenue", limit: 5 });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("limit");
+  });
 });
 
 describe("get_customer_overview", () => {
