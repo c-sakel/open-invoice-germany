@@ -110,6 +110,14 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
     p.ele("cbc:EndpointID", { schemeID: "EM" }).txt(endpoint).up();
   }
 
+  // BT-29 — Verkäuferkennung (PartyIdentification). Phase 12b: BR-CO-26 verlangt BT-29,
+  // BT-30 ODER BT-31 — BT-32 (Steuernummer, s.u.) genügt der Kernregel NICHT (nur BR-DE).
+  // Ohne USt-IdNr. (Kleinunternehmer) wird daher die Steuernummer zusätzlich als
+  // generische Verkäuferkennung ausgewiesen, damit BR-CO-26 erfüllt ist.
+  if (isSeller && !party.vatId && party.taxNumber) {
+    p.ele("cac:PartyIdentification").ele("cbc:ID").txt(party.taxNumber).up().up();
+  }
+
   const postal = p.ele("cac:PostalAddress");
   postal.ele("cbc:StreetName").txt(party.addressLine1).up();
   if (party.addressLine2) postal.ele("cbc:AdditionalStreetName").txt(party.addressLine2).up();

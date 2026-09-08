@@ -88,6 +88,10 @@ describe("Neue Blocker (Phase 12b)", () => {
     const p = validateMandatoryFields(inv({ taxScheme: "IG_LIEFERUNG", customer: { ...euCustomer, vatId: "DE987654321" }, notes: igNotes, lines: [{ ...zeroLine, taxCategory: "K" }] }));
     expect(p.join(" ")).toMatch(/aus einem anderen EU-Mitgliedstaat/);
   });
+  it("IG_LIEFERUNG mit Nicht-EU-Praefix (Schweiz) blockt ebenfalls (§ 6a Abs. 1 Nr. 4)", () => {
+    const p = validateMandatoryFields(inv({ taxScheme: "IG_LIEFERUNG", customer: { ...euCustomer, vatId: "CHE-123.456.789" }, notes: igNotes, lines: [{ ...zeroLine, taxCategory: "K" }] }));
+    expect(p.join(" ")).toMatch(/aus einem anderen EU-Mitgliedstaat/);
+  });
   it("REVERSE_CHARGE ohne Empfaenger-USt-IdNr. blockt (BR-AE-3)", () => {
     const p = validateMandatoryFields(inv({ taxScheme: "REVERSE_CHARGE", notes: "Steuerschuldnerschaft des Leistungsempfängers", lines: [{ ...zeroLine, taxCategory: "AE" }] }));
     expect(p.join(" ")).toMatch(/USt-IdNr. des Empfängers erforderlich/);

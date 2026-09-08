@@ -98,9 +98,9 @@ async function validateFile(target: string): Promise<boolean> {
   return false;
 }
 
-// Phase 4a — Fixture-Set: die Bestandsregression ("base", UBL) PLUS fünf neue
-// Beispiele (Positionsrabatt, Belegrabatt 2 Sätze, Aufschlag, Skonto 2 Ziele,
-// Barzahlung), jeweils als UBL UND CII erzeugt (siehe scripts/generate-sample-xrechnung.ts).
+// Fixture-Set: die Bestandsregression ("base", nur UBL) PLUS 19 weitere Beispiele,
+// jeweils als UBL UND CII erzeugt (siehe scripts/generate-sample-xrechnung.ts) — macht
+// 20 Fixtures / 39 geprüfte XML-Dateien insgesamt.
 const SAMPLE_NAMES = [
   "base",
   "line-discount",
@@ -117,6 +117,11 @@ const SAMPLE_NAMES = [
   "downpayment-386", // Phase 5 (Task 3): Abschlagsrechnung, InvoiceTypeCode 386
   "partial-percent", // Phase 5 (Task 3): Teilrechnung (PERCENT), InvoiceTypeCode 380
   "final-two-downpayments", // Phase 5 (Task 3): Schlussrechnung mit zwei abgesetzten Abschlaegen (BT-113/BT-115/BG-3 x2/BT-22)
+  "reverse-charge-ae", // Phase 12b (Task 6): Reverse Charge (§ 13b), Kategorie AE
+  "ig-lieferung-k", // Phase 12b (Task 6): ig. Lieferung (§ 6a), Kategorie K, BG-14 (Leistungszeitraum)
+  "ausfuhr-g", // Phase 12b (Task 6): Ausfuhrlieferung (§ 6), Kategorie G, Drittlandkunde
+  "kleinunternehmer-e", // Phase 12b (Task 6): § 19 UStG, Kategorie E, Aussteller ohne USt-IdNr. (BT-32 statt BT-31)
+  "differenz-e", // Phase 12b (Task 6): § 25a Differenzbesteuerung, Kategorie E (BR-S-05-Fix)
 ];
 
 async function main(): Promise<void> {
