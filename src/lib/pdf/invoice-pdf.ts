@@ -22,6 +22,7 @@ import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, conca
 import { pdfMargins, drawBackground } from "./layout";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
+import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
@@ -33,8 +34,10 @@ function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" 
 
 const TYPE_TITLE: Record<string, string> = {
   INVOICE: "Rechnung",
-  CREDIT_NOTE: "Gutschrift / Storno",
-  CORRECTION: "Korrekturrechnung",
+  CREDIT_NOTE: "Stornorechnung",
+  // M4 (Fix-Welle Final-Review): "Rechnungskorrektur" statt "Korrekturrechnung" — dasselbe
+  // Wort wie documentTitle() unten fuer creditNoteKind === "KORREKTUR" verwendet.
+  CORRECTION: "Rechnungskorrektur",
   ANGEBOT: "Angebot",
   AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
   PROFORMA: "Proforma-Rechnung",
@@ -61,6 +64,22 @@ const NUMBER_LABEL: Record<string, string> = {
 // die Steuer entsteht mit Vereinnahmung des Entgelts, nicht mit Leistungserbringung.
 const DOWNPAYMENT_TAX_HINT =
   "Anzahlung, Steuer wird mit Vereinnahmung geschuldet (§ 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG).";
+
+/**
+ * Phase 12b (COMPLIANCE.md § 11): "Gutschrift" ist umsatzsteuerlich die Selbstabrechnung
+ * (§ 14 Abs. 2 S. 5 UStG, TypeCode 389) — diese Software erzeugt aber Storno bzw.
+ * Korrektur. Der Titel benennt das korrekt; InvoiceTypeCode bleibt 381, der
+ * Nummernkreis CREDIT_NOTE bleibt unveraendert. Ohne aufloesbares Original faellt der
+ * Titel auf "Stornorechnung" zurueck (der weit haeufigere Fall).
+ */
+function documentTitle(data: EInvoiceData): string {
+  if (data.type === "CREDIT_NOTE") return data.creditNoteKind === "KORREKTUR" ? "Rechnungskorrektur" : "Stornorechnung";
+  return TYPE_TITLE[data.type] ?? "Beleg";
+}
+function documentNumberLabel(data: EInvoiceData): string {
+  if (data.type === "CREDIT_NOTE") return data.creditNoteKind === "KORREKTUR" ? "Korrekturnummer" : "Stornonummer";
+  return NUMBER_LABEL[data.type] ?? "Belegnummer";
+}
 
 // Phase 7 (§37) — GiroCode nur für die Rechnungs-Familie, nie für Gutschrift oder
 // Geschäftsdokumente (Angebot/AB/Proforma erzeugen ohnehin kein giroAmountCents).
@@ -210,8 +229,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // (Rueckgabewert des Hooks), kein hartes Ueberschreiben, da pdfkit bei langem Text
   // automatisch umbricht/seitenwechselt.
   let y = layout.drawKopf(frame, {
-    title: TYPE_TITLE[data.type] ?? "Rechnung",
-    numberLabel: NUMBER_LABEL[data.type] ?? "Nummer",
+    title: documentTitle(data),
+    numberLabel: documentNumberLabel(data),
     number: data.number,
     meta,
     recipient: data.buyer,
@@ -506,6 +525,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (data.type === "DOWNPAYMENT") {
     y = ensurePlainSpace(y, 30);
     doc.text(DOWNPAYMENT_TAX_HINT, left, y, { width: right - left });
+    y = doc.y + 4;
+  }
+  // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis fuer den privaten
+  // Leistungsempfaenger (Bauleistung am Grundstueck). Nur auf ausdruecklichen Schalter:
+  // "Bauleistung" ist maschinell nicht erkennbar.
+  if (data.consumerRetentionHint) {
+    y = ensurePlainSpace(y, 30);
+    doc.text(CONSUMER_RETENTION_HINT, left, y, { width: right - left });
     y = doc.y + 4;
   }
   if (data.notes) {

@@ -73,8 +73,11 @@ export function MetaBlock({
             >
               <option value="REGULAR">Regelbesteuerung</option>
               <option value="KLEINUNTERNEHMER">Kleinunternehmer (§ 19)</option>
-              <option value="REVERSE_CHARGE">Reverse Charge (§ 13b)</option>
               <option value="DIFFERENZ">Differenzbesteuerung (§ 25a)</option>
+              <option value="REVERSE_CHARGE">Reverse Charge (§ 13b)</option>
+              <option value="IG_LIEFERUNG">Innergem. Lieferung (§ 6a)</option>
+              <option value="IG_LEISTUNG">Innergem. Leistung (§ 3a Abs. 2)</option>
+              <option value="AUSFUHR">Ausfuhrlieferung (§ 6)</option>
             </select>
           )}
         </EditorField>

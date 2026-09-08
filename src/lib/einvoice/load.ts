@@ -84,11 +84,18 @@ export async function loadEInvoiceData(invoiceId: string) {
   if (invoice.correctsInvoiceId) {
     const original = await dbInternal.invoice.findUnique({
       where: { id: invoice.correctsInvoiceId },
-      select: { number: true, issueDate: true },
+      select: { number: true, issueDate: true, reversedByInvoiceId: true },
     });
     if (original) {
       data.precedingInvoiceNumber = original.number;
       data.precedingInvoiceDate = original.issueDate;
+      // Phase 12b: ein CREDIT_NOTE entsteht auf zwei Wegen (cancel.ts = Vollstorno,
+      // credit.ts = Teilgutschrift) — beide setzen correctsInvoiceId. Unterscheidbar
+      // allein ueber den Rueckverweis: nur der Vollstorno setzt
+      // Invoice.reversedByInvoiceId (cancel.ts:229).
+      if (invoice.type === "CREDIT_NOTE") {
+        data.creditNoteKind = original.reversedByInvoiceId === invoice.id ? "STORNO" : "KORREKTUR";
+      }
     }
   }
 

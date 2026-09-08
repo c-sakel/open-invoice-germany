@@ -78,6 +78,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     dueDate: inv.dueDate ? inv.dueDate.toISOString().slice(0, 10) : "",
     notes: inv.notes ?? "",
     internalNotes: inv.internalNotes ?? "",
+    consumerRetentionHint: inv.consumerRetentionHint,
     paymentTerms: inv.paymentTerms ?? "",
     paymentMethodId: inv.paymentMethodId ?? "",
     headerText: inv.headerText ?? "",

@@ -105,6 +105,15 @@ const CUSTOMER: MapInput["customer"] = {
 // darf dabei KEIN PaymentMeans-Element entstehen (Altverhalten).
 const ORG_NO_IBAN: MapInput["org"] = { ...ORG, iban: null, bic: null, bankName: null };
 
+// Phase 12b (Task 6) — zwei weitere Kunden fuer die neuen Steuerschema-Fixtures:
+// EU-Kunde (ig. Lieferung, BR-IC-02 verlangt eine Empfaenger-USt-IdNr.) und
+// Schweizer Kunde (Ausfuhr, § 6 UStG setzt einen Drittland-Empfaenger voraus). Fix-Welle
+// Final-Review (I3): BR-G-02/BR-G-03 verlangen eine AUSSTELLER-USt-IdNr. (ORG hat eine) —
+// keine Regel der G-Familie verbietet eine Empfaenger-USt-IdNr., der fruehere Kommentar
+// hier war falsch (siehe COMPLIANCE.md § 8).
+const CUSTOMER_EU: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel BV", addressLine1: "Keizersgracht 1", postalCode: "1015", city: "Amsterdam", countryCode: "NL", vatId: "NL123456789B01" };
+const CUSTOMER_CH: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel AG", addressLine1: "Bahnhofstr. 1", postalCode: "8001", city: "Zürich", countryCode: "CH", vatId: null };
+
 interface SampleLine {
   description: string;
   quantityMilli: number;
@@ -157,6 +166,12 @@ function buildSample(opts: {
   issueDate?: Date;
   dueDate?: Date;
   deliveryDate?: Date;
+  // Phase 12b (Task 6) — Steuerschema-Fixtures: abweichender Kunde (EU/Drittland),
+  // Leistungszeitraum (BG-14) statt -datum, abweichender Hinweistext (§ 14a Abs. 6).
+  customer?: MapInput["customer"];
+  deliveryStart?: Date;
+  deliveryEnd?: Date;
+  notes?: string;
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -182,12 +197,17 @@ function buildSample(opts: {
     type: opts.type ?? "INVOICE",
     issueDate: opts.issueDate ?? new Date("2034-06-09"),
     dueDate: opts.dueDate ?? new Date("2034-07-09"),
-    deliveryDate: opts.deliveryDate ?? new Date("2034-06-01"),
+    // M9 (Fix-Welle Final-Review): kein Default-Leistungsdatum, wenn stattdessen explizit
+    // ein Leistungszeitraum (BG-14) gesetzt wurde — ein Beispielbeleg soll nicht gleichzeitig
+    // ein Leistungsdatum 2034 UND einen Leistungszeitraum in einem anderen Jahr behaupten.
+    deliveryDate: opts.deliveryDate ?? (opts.deliveryStart && opts.deliveryEnd ? null : new Date("2034-06-01")),
+    deliveryStart: opts.deliveryStart ?? null,
+    deliveryEnd: opts.deliveryEnd ?? null,
     currency: "EUR",
     buyerReference: "04011000-12345-86",
     orderNumber: opts.orderNumber ?? null,
     paymentTerms: opts.skonto1 ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
-    notes: "Vielen Dank für Ihren Auftrag.",
+    notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
     netTotalCents: totals.netTotalCents,
     taxTotalCents: totals.taxTotalCents,
     grossTotalCents: totals.grossTotalCents,
@@ -204,7 +224,7 @@ function buildSample(opts: {
     sourceNumber: opts.sourceNumber ?? null,
     sourceLabel: opts.sourceLabel ?? null,
     org: opts.org ?? ORG,
-    customer: CUSTOMER,
+    customer: opts.customer ?? CUSTOMER,
     lines: lines.map((l, i) => ({
       id: String(i + 1),
       description: l.description,
@@ -454,6 +474,58 @@ const finalTwoDownpayments = () =>
     sourceLabel: "Angebot",
   });
 
+// Phase 12b (Task 6) — je eine Fixture fuer die bislang ungetesteten Steuerkategorien
+// (AE/K/G/E) plus § 19. Testjahr 2041, damit die Beispiele nicht mit den 2034er-/
+// 2040er-Fixtures kollidieren. Die Hinweistexte sind wortgleich zu SCHEME_NOTICE
+// (src/domain/invoice/mandatory.ts) — einzige Quelle, siehe Abschluss-Review Punkt 1.
+
+// 16) Reverse Charge (AE) — Bauleistung, § 13b UStG.
+const reverseChargeAe = () =>
+  buildSample({
+    number: "RE-2041-0001",
+    notes: "Steuerschuldnerschaft des Leistungsempfängers",
+    lines: [{ description: "Bauleistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 250000, taxRate: 0, taxCategory: "AE" }],
+  });
+
+// 17) Innergemeinschaftliche Lieferung (K) — EU-Kunde (NL), Leistungszeitraum (BG-14).
+const igLieferungK = () =>
+  buildSample({
+    number: "RE-2041-0002",
+    customer: CUSTOMER_EU,
+    notes: "Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1 Buchst. b i. V. m. § 6a UStG)",
+    deliveryStart: new Date("2041-05-01"),
+    deliveryEnd: new Date("2041-05-31"),
+    lines: [{ description: "Warenlieferung", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 40000, taxRate: 0, taxCategory: "K" }],
+  });
+
+// 18) Ausfuhrlieferung (G) — Drittlandkunde (CH), § 6 UStG.
+const ausfuhrG = () =>
+  buildSample({
+    number: "RE-2041-0003",
+    customer: CUSTOMER_CH,
+    notes: "Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)",
+    lines: [{ description: "Maschinenteil", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 180000, taxRate: 0, taxCategory: "G" }],
+  });
+
+// 19) Kleinunternehmer (E) — § 19 UStG: idR keine USt-IdNr. -> BT-32 (Steuernummer)
+// noetig, sonst BR-CO-26.
+const kleinunternehmerE = () =>
+  buildSample({
+    number: "RE-2041-0004",
+    org: { ...ORG, vatId: null, taxNumber: "12/345/67890" },
+    notes: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
+    lines: [{ description: "Beratung", quantityMilli: 4000, unit: "HUR", unitNetPriceCents: 6000, taxRate: 0, taxCategory: "E" }],
+  });
+
+// 20) Differenzbesteuerung (E, § 25a UStG) — Kategorie E statt S (BR-S-05-Fix, siehe
+// src/lib/tax.ts#defaultCategoryForScheme).
+const differenzE = () =>
+  buildSample({
+    number: "RE-2041-0005",
+    notes: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
+    lines: [{ description: "Gebrauchtes Notebook", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 45000, taxRate: 0, taxCategory: "E" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -471,6 +543,11 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "downpayment-386": downpayment386,
   "partial-percent": partialPercent,
   "final-two-downpayments": finalTwoDownpayments,
+  "reverse-charge-ae": reverseChargeAe,
+  "ig-lieferung-k": igLieferungK,
+  "ausfuhr-g": ausfuhrG,
+  "kleinunternehmer-e": kleinunternehmerE,
+  "differenz-e": differenzE,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
