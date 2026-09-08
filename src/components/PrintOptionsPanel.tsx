@@ -52,6 +52,10 @@ export function PrintOptionsPanel({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(Object.keys(initialOverride).length > 0);
+  // Fix-Welle 12a, Fix 2: Rohtext waehrend des Tippens, getrennt vom committeten Wert
+  // (siehe clamped-number-input.ts). `null` = kein aktiver Draft.
+  const [giroDraft, setGiroDraft] = useState<string | null>(null);
+  const committedGiro = overrides.giroSizeMm ?? effective.giroSizeMm;
 
   function toggleOverride(key: PrintBooleanKey, isOverridden: boolean) {
     setOverrides((o) => {
@@ -101,10 +105,17 @@ export function PrintOptionsPanel({
     setSaving(true);
     setError(null);
     setSaved(false);
+    // Vor dem Speichern einen noch nicht per onBlur committeten Draft nachziehen.
+    const payload: PrintOptionsOverride =
+      giroDraft !== null ? { ...overrides, giroSizeMm: parseClampedNumberInput(giroDraft, 15, 40, committedGiro) } : overrides;
+    if (giroDraft !== null) {
+      setOverrides(payload);
+      setGiroDraft(null);
+    }
     const res = await fetch(`/api/${apiKind}/${docId}/print-options`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(overrides),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -181,9 +192,15 @@ export function PrintOptionsPanel({
                 type="number"
                 min={15}
                 max={40}
-                value={"giroSizeMm" in overrides ? overrides.giroSizeMm : effective.giroSizeMm}
+                value={giroDraft ?? String(committedGiro)}
                 disabled={!("giroSizeMm" in overrides)}
-                onChange={(e) => setGiroSizeOverride(parseClampedNumberInput(e.target.value, 15, 40))}
+                onChange={(e) => setGiroDraft(e.target.value)}
+                onBlur={() => {
+                  if (giroDraft !== null) {
+                    setGiroSizeOverride(parseClampedNumberInput(giroDraft, 15, 40, committedGiro));
+                    setGiroDraft(null);
+                  }
+                }}
                 className="w-20 rounded border border-slate-300 px-2 py-1 disabled:opacity-50"
               />
               <span className={"giroSizeMm" in overrides ? "font-medium text-slate-900" : "text-slate-500"}>GiroCode-Größe (mm)</span>
