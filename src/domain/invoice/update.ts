@@ -113,6 +113,8 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     if (input.headerText !== undefined) { data.headerText = input.headerText; changedFields.push("headerText"); }
     if (input.footerText !== undefined) { data.footerText = input.footerText; changedFields.push("footerText"); }
     if (input.internalNotes !== undefined) { data.internalNotes = input.internalNotes; changedFields.push("internalNotes"); }
+    // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
+    if (input.consumerRetentionHint !== undefined) { data.consumerRetentionHint = input.consumerRetentionHint; changedFields.push("consumerRetentionHint"); }
 
     if (input.skonto1Permille !== undefined) { data.skonto1Permille = input.skonto1Permille; changedFields.push("skonto1Permille"); }
     if (input.skonto1Days !== undefined) { data.skonto1Days = input.skonto1Days; changedFields.push("skonto1Days"); }

@@ -58,6 +58,50 @@ describe("editor/draft", () => {
     const p = createInvoiceSchema.parse(toInvoicePayload(s, false));
     expect(p.lines[0]).toMatchObject({ taxRate: 0, taxCategory: "E" }); expect(p.notes ?? "").toContain("§ 19");
   });
+  // Fix 1 (Koordinator, Task 5): toInvoicePayload stellte den Pflichthinweis bisher
+  // UNBEDINGT voran — ein zweiter Speicher-Durchlauf (z. B. Bearbeiten eines bereits
+  // gespeicherten Entwurfs, oder erneutes Klicken auf "Pflichthinweis einfuegen") liess
+  // `notes` bei jedem Aufruf erneut wachsen. Jetzt nur voranstellen, wenn `notes` noch
+  // KEINE fuer das Schema akzeptierte Formulierung enthaelt (SCHEME_NOTICE_ACCEPTED).
+  it("Pflichthinweis wird nicht verdoppelt, wenn notes ihn bereits enthaelt (zwei toInvoicePayload-Durchlaeufe)", () => {
+    let s = invoiceDraft();
+    s = draftReducer(s, { type: "set", field: "taxScheme", value: "KLEINUNTERNEHMER" });
+    s = draftReducer(s, { type: "set", field: "notes", value: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer" });
+    const first = toInvoicePayload(s, true) as { notes?: string };
+    expect(first.notes).toBe("Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer");
+    const second = toInvoicePayload(s, true) as { notes?: string };
+    expect(second.notes).toBe(first.notes);
+  });
+  it("Pflichthinweis wird bei leerem notes genau einmal ergaenzt", () => {
+    let s = invoiceDraft();
+    s = draftReducer(s, { type: "set", field: "taxScheme", value: "REVERSE_CHARGE" });
+    const p = toInvoicePayload(s, false) as { notes?: string };
+    expect(p.notes).toBe("Steuerschuldnerschaft des Leistungsempfängers");
+  });
+  it("Pflichthinweis bleibt unveraendert bei einer anderen zulaessigen § 25a-Formulierung", () => {
+    let s = invoiceDraft();
+    s = draftReducer(s, { type: "set", field: "taxScheme", value: "DIFFERENZ" });
+    s = draftReducer(s, { type: "set", field: "notes", value: "Kunstgegenstände/Sonderregelung (§ 25a UStG)" });
+    const p = toInvoicePayload(s, true) as { notes?: string };
+    expect(p.notes).toBe("Kunstgegenstände/Sonderregelung (§ 25a UStG)");
+  });
+  // Fix 1 (Koordinator, Task 5): consumerRetentionHint (§ 14b) muss unveraendert durch
+  // draftFromInvoice -> toInvoicePayload durchgereicht werden — auch wenn initial es
+  // (Alt-Aufrufer/Test-Fixture) gar nicht mitliefert (draftFromInvoice faellt auf false
+  // zurueck, siehe InvoiceInitialLike.consumerRetentionHint).
+  it("consumerRetentionHint: Rundtrip draftFromInvoice -> toInvoicePayload (true/false/undefined)", () => {
+    const withTrue = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", consumerRetentionHint: true, lines: [] } as never);
+    expect(withTrue.consumerRetentionHint).toBe(true);
+    expect((toInvoicePayload(withTrue, true) as { consumerRetentionHint?: boolean }).consumerRetentionHint).toBe(true);
+
+    const withFalse = draftFromInvoice({ id: "i2", customerId: "c1", taxScheme: "REGULAR", consumerRetentionHint: false, lines: [] } as never);
+    expect(withFalse.consumerRetentionHint).toBe(false);
+    expect((toInvoicePayload(withFalse, true) as { consumerRetentionHint?: boolean }).consumerRetentionHint).toBe(false);
+
+    const withUndefined = draftFromInvoice({ id: "i3", customerId: "c1", taxScheme: "REGULAR", lines: [] } as never);
+    expect(withUndefined.consumerRetentionHint).toBe(false);
+    expect((toInvoicePayload(withUndefined, true) as { consumerRetentionHint?: boolean }).consumerRetentionHint).toBe(false);
+  });
   it("toDocumentPayload/toDeliveryNotePayload sind schema-gueltig", () => {
     let d = emptyDraft("DOCUMENT"); d = draftReducer(d, { type: "set", field: "customerId", value: "c1" });
     d = draftReducer(d, { type: "setLine", key: d.lines[0]!.key, patch: { description: "Pos", quantity: "1", price: "10" } });

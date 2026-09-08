@@ -111,6 +111,33 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 - Die App validiert jede XRechnung gegen die EN-16931-Kernregeln, bevor sie ausgeliefert wird. Die vollständige amtliche Prüfung (KoSIT-Validator) läuft im CI.
 - **ZUGFeRD/Factur-X** (PDF mit eingebettetem XML) ist über den optionalen Mustang-Sidecar geplant (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md)).
 
+### Steuerschemata und Pflichthinweise (Phase 12b)
+
+Im Beleg-Editor wählst du unter „Steuerschema" eine von **sieben** Optionen — Details, Normen und Fixtures dazu stehen in [COMPLIANCE.md](../COMPLIANCE.md) § 1, 8 und 9:
+
+| Auswahl im Editor | Bedeutung |
+|---|---|
+| Regelbesteuerung | Normalfall, 19 %/7 %. Kein Pflichthinweis. |
+| Kleinunternehmer (§ 19) | Kein USt-Ausweis; Pflichthinweis wird eingefügt. |
+| Differenzbesteuerung (§ 25a) | Gebrauchtwaren/Kunst/Sammlerstücke; kein USt-Ausweis, Marge nicht sichtbar. |
+| Reverse Charge (§ 13b) | Steuerschuld geht auf den Empfänger über; braucht dessen USt-IdNr. |
+| Innergem. Lieferung (§ 6a) | Steuerfreie EU-Warenlieferung; braucht USt-IdNr. beider Seiten + Leistungsdatum/-zeitraum. |
+| Innergem. Leistung (§ 3a Abs. 2) | Steuerschuld beim EU-Empfänger; braucht USt-IdNr. beider Seiten. |
+| Ausfuhrlieferung (§ 6) | Steuerfreie Lieferung außerhalb der EU; Empfänger muss außerhalb der EU liegen. |
+
+**Pflichthinweis:** Sobald du ein Schema mit Pflichthinweis wählst, erscheint unter dem Feld „Hinweis / Notiz" der Text, der beim Festschreiben verlangt wird, sowie — falls der aktuelle Hinweistext nicht (mehr) passt — der Button **„Pflichthinweis einfügen"**, der ihn automatisch ergänzt. Die Prüfung ist wortgenau (kleine Abweichungen wie Groß-/Kleinschreibung oder mehrfache Leerzeichen sind egal, ein anderer Text nicht).
+
+**Was zusätzlich das Festschreiben blockiert** (reine Hinweistexte genügen nicht mehr):
+
+- **Innergem. Lieferung:** Leistungsdatum **oder** Leistungszeitraum muss gesetzt sein, **und** die USt-IdNr. des Kunden muss aus einem anderen EU-Land stammen (keine deutsche, keine Nicht-EU-USt-IdNr.).
+- **Reverse Charge:** der Kunde braucht eine USt-IdNr.
+- **Ausfuhrlieferung:** das Land des Kunden muss außerhalb der EU liegen.
+- Bei allen Schemata mit Pflichthinweis (außer Regelbesteuerung) dürfen die Positionen keinen USt-Satz > 0 % haben.
+
+**Den § 25a-Hinweistext austauschen:** Der voreingetragene Text „Gebrauchtgegenstände/Sonderregelung" passt für die meisten Fälle. Geht es stattdessen um Kunstgegenstände oder um Sammlungsstücke/Antiquitäten, überschreibst du das Feld „Hinweis / Notiz" von Hand mit „Kunstgegenstände/Sonderregelung" bzw. „Sammlungsstücke und Antiquitäten/Sonderregelung" — beide sind ebenso gültig (§ 14a Abs. 6 UStG).
+
+**§ 14b-Hinweis (Aufbewahrungspflicht des Kunden):** Bei einer Rechnung über eine grundstücksbezogene Bauleistung an eine **Privatperson** setzt du zusätzlich den Schalter „Hinweis auf Aufbewahrungspflicht (§ 14b)" in den weiteren Optionen — die Software erkennt das nicht automatisch (keine Leistungsart-/Kundentyp-Erkennung). Der Hinweis erscheint dann im PDF sowie in XRechnung und ZUGFeRD.
+
 ---
 
 ## 5. Datensicherung & Betrieb

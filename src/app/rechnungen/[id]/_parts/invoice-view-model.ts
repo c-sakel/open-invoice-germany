@@ -29,10 +29,16 @@ export type InvoiceDetail = Prisma.InvoiceGetPayload<{
 }>;
 
 // Task 4: PARTIAL/DOWNPAYMENT/FINAL sind rechtlich ebenfalls Rechnungen (§13-15 UStG).
+// Smoke-Bug-Fix (Fix-Welle Final-Review, Phase 12b): CREDIT_NOTE/CORRECTION passen den
+// Titel an den PDF-Titel an (invoice-pdf.ts documentTitle(), COMPLIANCE.md § 11 — "Gutschrift"
+// ist umsatzsteuerlich die Selbstabrechnung, die diese Software nicht ausstellt). Bewusst
+// STATISCH (kein Vollstorno-/Teilgutschrift-Unterschied wie im PDF): diese Datei greift nie
+// auf die Datenbank zu (s. o.), "Stornorechnung" ist laut invoice-pdf.ts der weit haeufigere
+// Fall und damit der richtige Default hier.
 export const TYPE_TITLE: Record<string, string> = {
   INVOICE: "Rechnung",
-  CREDIT_NOTE: "Gutschrift / Storno",
-  CORRECTION: "Korrekturrechnung",
+  CREDIT_NOTE: "Stornorechnung",
+  CORRECTION: "Rechnungskorrektur",
   PARTIAL: "Teilrechnung",
   DOWNPAYMENT: "Abschlagsrechnung",
   FINAL: "Schlussrechnung",

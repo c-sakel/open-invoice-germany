@@ -32,7 +32,7 @@ model Organization {
   vatId             String? // USt-IdNr. (§14 Abs.4 Nr.2)
   kuIdNr            String? // §19a Kleinunternehmer-IdNr.
   smallBusiness     Boolean  @default(false) // §19 UStG
-  defaultTaxScheme  String   @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ
+  defaultTaxScheme  String   @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
   iban              String?
   bic               String?
   bankName          String?
@@ -284,7 +284,7 @@ model Invoice {
   number                    String?           @unique // NULL bis Festschreibung
   status                    String            @default("DRAFT") // DRAFT | FINALIZED | SENT | PAID | PARTIALLY_PAID | CANCELLED
   type                      String            @default("INVOICE") // INVOICE | CREDIT_NOTE | CORRECTION
-  taxScheme                 String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG
+  taxScheme                 String            @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
   currency                  String            @default("EUR")
   issueDate                 DateTime          @default(now())
   deliveryDate              DateTime?

@@ -13,6 +13,7 @@
  */
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, SCHEME_NOTICE, type EditorMode } from "./constants";
+import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
 import type { TaxScheme } from "@/schemas";
@@ -49,6 +50,8 @@ export interface DraftState {
   paymentTerms: string;
   notes: string;
   internalNotes: string;
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — nur INVOICE (Phase 12b, Task 5). */
+  consumerRetentionHint: boolean;
   orderNumber: string;
   customerReference: string;
   internalReference: string;
@@ -156,6 +159,7 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     paymentTerms: "",
     notes: "",
     internalNotes: "",
+    consumerRetentionHint: false,
     orderNumber: "",
     customerReference: "",
     internalReference: "",
@@ -279,7 +283,14 @@ function daysOrUndefined(s: string): number | undefined {
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {
   const isRegular = d.taxScheme === "REGULAR";
   const notice = SCHEME_NOTICE[d.taxScheme];
-  const finalNotes = notice ? `${notice}${d.notes ? " — " + d.notes : ""}` : d.notes || undefined;
+  // Fix 1 (Koordinator, Task 5): notice nur voranstellen, wenn `notes` noch KEINE fuer das
+  // Schema zulaessige Formulierung enthaelt (SCHEME_NOTICE_ACCEPTED, dieselbe Pruefung wie
+  // validateMandatoryFields und der "Pflichthinweis einfuegen"-Knopf in MoreOptions.tsx) —
+  // sonst wuerde jeder Speicher-Durchlauf (inkl. Bearbeiten eines bereits gespeicherten
+  // Entwurfs) den Hinweis erneut voranstellen und `notes` bei jedem Save verdoppeln.
+  const accepted = SCHEME_NOTICE_ACCEPTED[d.taxScheme] ?? [];
+  const hasAcceptedNotice = accepted.some((re) => re.test(normalizeNotice(d.notes)));
+  const finalNotes = notice && !hasAcceptedNotice ? `${notice}${d.notes ? " — " + d.notes : ""}` : d.notes || undefined;
 
   const lines = d.lines.map((l) => ({
     lineType: l.lineType,
@@ -312,6 +323,7 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     dueDate: d.dueDate || undefined,
     notes: finalNotes,
     internalNotes: d.internalNotes || undefined,
+    consumerRetentionHint: d.consumerRetentionHint,
     paymentTerms: d.paymentTerms || undefined,
     // Fix 2 (Task-1-Review): createDraftInvoice waehlt bei Neuanlage die INVOICE-HEAD/
     // FOOT-Textvorlage nur, wenn headerText/footerText UNDEFINED ist (`input.headerText
@@ -487,6 +499,8 @@ export interface InvoiceInitialLike {
   dueDate: string;
   notes: string;
   internalNotes: string;
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG (Phase 12b, Task 5). */
+  consumerRetentionHint: boolean;
   paymentTerms: string;
   paymentMethodId: string;
   // Fix 2 (Task-1-Review, Ruling nach Task 4): headerText/footerText existieren im
@@ -579,6 +593,7 @@ export function draftFromInvoice(initial: InvoiceInitialLike): DraftState {
     dueDate: initial.dueDate ?? "",
     notes: initial.notes ?? "",
     internalNotes: initial.internalNotes ?? "",
+    consumerRetentionHint: initial.consumerRetentionHint ?? false,
     paymentTerms: initial.paymentTerms ?? "",
     paymentMethodId: initial.paymentMethodId ?? "",
     headerText: initial.headerText ?? "",

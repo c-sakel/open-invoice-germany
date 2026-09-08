@@ -15,10 +15,15 @@ export const TaxScheme = z.enum([
   "REVERSE_CHARGE",
   "IG_LIEFERUNG",
   "IG_LEISTUNG",
+  // Phase 12b — steuerfreie Ausfuhrlieferung ins Drittland
+  // (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG), Kategorie G.
+  "AUSFUHR",
 ]);
 export type TaxScheme = z.infer<typeof TaxScheme>;
 
-export const TaxCategory = z.enum(["S", "AE", "K", "G", "E", "Z"]);
+// UNTDID 5305. "O" (nicht steuerbar) ist in Phase 12b nur fuer den Mapper vorgesehen —
+// kein Schema waehlt sie (siehe defaultCategoryForScheme).
+export const TaxCategory = z.enum(["S", "AE", "K", "G", "E", "Z", "O"]);
 export type TaxCategory = z.infer<typeof TaxCategory>;
 
 export const TaxRate = z.union([z.literal(19), z.literal(7), z.literal(0)]);
@@ -352,6 +357,9 @@ const invoiceHeaderFields = {
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   internalNotes: z.string().optional(), // nur intern, nie im Beleg
+  /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
+   *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
+  consumerRetentionHint: z.boolean().optional(),
   ...documentAdjustmentFields,
   ...skontoFields,
 };
