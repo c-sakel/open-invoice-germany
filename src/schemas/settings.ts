@@ -105,6 +105,11 @@ export const brandingSettingsInputSchema = z.object({
   layoutId: layoutIdSchema.default("standard"),
   layoutByType: layoutByTypeSchema.default({}),
   footerMode: footerModeSchema.default("AUTO"),
+  // Phase 12c — White-Label; null = Produktvorgabe.
+  appName: z.string().trim().min(1).max(40).nullable().default(null),
+  appShortName: z.string().trim().min(1).max(12).nullable().default(null),
+  faviconPath: z.string().nullable().default(null),
+  appLogoPath: z.string().nullable().default(null),
 });
 export type BrandingSettingsInput = z.infer<typeof brandingSettingsInputSchema>;
 

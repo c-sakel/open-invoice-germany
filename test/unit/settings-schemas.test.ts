@@ -112,6 +112,10 @@ describe("brandingSettingsInputSchema", () => {
       layoutId: "standard",
       layoutByType: {},
       footerMode: "AUTO",
+      appName: null,
+      appShortName: null,
+      faviconPath: null,
+      appLogoPath: null,
     });
   });
 
