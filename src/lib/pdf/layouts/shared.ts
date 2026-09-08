@@ -58,7 +58,7 @@ export function drawMetaRows(frame: LayoutFrame, rows: { label: string; value: s
 }
 
 /**
- * Zweispaltige Meta-Tabelle (Label links grau, Wert rechts) fuer sevDesk-artige Infobloecke;
+ * Zweispaltige Meta-Tabelle (Label links grau, Wert rechts) fuer Infobloecke im Stil moderner Belege;
  * liefert Unterkante.
  *
  * Fix-Runde 1 (Koordinator, Punkt 5 — derselbe Befund wie in `standard.ts` fuer die grosse

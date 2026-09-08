@@ -72,7 +72,7 @@ export interface PdfLayout {
    * Fix-Welle (Abschluss-Review, Block 3 — `schlicht` vs. Referenzbeleg): Position des
    * GiroCode. `"bottom-right"` (Default, wenn weggelassen) ist das bisherige Verhalten
    * (rechts oberhalb der Fusszeile). `"below-totals"` zeichnet ihn stattdessen links
-   * direkt unter dem Summenblock (sevDesk-Referenz `RE-41362`) — der Engine-Code in
+   * direkt unter dem Summenblock (Referenzbeleg `RE-41362`) — der Engine-Code in
    * `invoice-pdf.ts` haelt beide Zweige vor, Layouts ohne dieses Feld bekommen den
    * bisherigen Default.
    */

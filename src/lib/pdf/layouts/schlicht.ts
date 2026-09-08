@@ -1,5 +1,5 @@
 /**
- * Layout "Schlicht" — nach den sevDesk-Beispielbelegen des Betreibers: Logo rechts oben,
+ * Layout "Schlicht" — nach den Beispielbelegen des Betreibers: Logo rechts oben,
  * kleine Absenderzeile, Infoblock rechts als zweispaltige Tabelle (Nummer gross kursiv),
  * Titel fett-kursiv, Tabellenkopf nur kursiv mit Linie, fette Positionstitel, vierspaltige
  * Fusszeile in Primaerfarbe.

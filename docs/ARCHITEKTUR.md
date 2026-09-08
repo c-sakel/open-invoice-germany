@@ -400,7 +400,7 @@ Die eingeloggte Ansicht nutzt eine App-Shell mit einklappbarer Sidebar (`src/com
 
 ### Belegansicht (Phase 11d)
 
-Rechnungs-, Dokument- (Angebot/AB/Proforma) und Lieferschein-Detailseiten (`src/app/{rechnungen,dokumente,lieferscheine}/[id]/page.tsx`) teilen sich seit Phase 11d einen gemeinsamen Rahmen statt drei unabhängig gewachsener Seiten — PDF mittig, Statuskarte rechts, Aktionen oben (sevDesk-Vorbild, Betreiber-Auftrag Phase 11). Der frühere dedizierte `PdfPreview`-Baustein ist damit vollständig entfallen, ersetzt durch `PdfStack` (siehe unten).
+Rechnungs-, Dokument- (Angebot/AB/Proforma) und Lieferschein-Detailseiten (`src/app/{rechnungen,dokumente,lieferscheine}/[id]/page.tsx`) teilen sich seit Phase 11d einen gemeinsamen Rahmen statt drei unabhängig gewachsener Seiten — PDF mittig, Statuskarte rechts, Aktionen oben (dem Vorbild moderner Rechnungsdienste, Betreiber-Auftrag Phase 11). Der frühere dedizierte `PdfPreview`-Baustein ist damit vollständig entfallen, ersetzt durch `PdfStack` (siehe unten).
 
 **Rahmen** (`DocumentDetailLayout`, `src/components/detail/DocumentDetailLayout.tsx`): reine Layout-Komponente ohne eigene Logik, nimmt neun benannte Slots — `nav` (siehe `DetailNav`), `title`, `badges`, `actions`, `more` (siehe `ActionMenu`), `notice`, `pdf` (Seitenmitte), `aside` (rechte Spalte, feste Breite `20rem`) und `children` (volle Breite darunter: Positionen, Korrekturbereich, E-Mail-Verlauf, Zeitstrahl). Grid `lg:grid-cols-[minmax(0,1fr)_20rem]` — PDF und Statuskarte stehen darüber nur ab `lg`-Breakpoint nebeneinander, darunter stapeln sie sich.
 

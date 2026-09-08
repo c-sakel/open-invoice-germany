@@ -103,8 +103,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   ausschließlich die Typ-Zuordnung (`layoutByType.DUNNING`) bzw. der
   Organisationsstandard, kein `printOptionsJson.layoutId` je Mahnung. **Schriften
   ausschließlich die pdfkit-Standardfonts** (Helvetica-Familie) — kein Custom-Font-
-  Upload, keine Web-/Systemfont-Einbettung; die Referenzbelege des Betreibers (sevDesk,
-  Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
+  Upload, keine Web-/Systemfont-Einbettung; die Referenzbelege des Betreibers (externe Referenzbelege, Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
   eigene Font-Einbettung bliebe ein späterer Schritt. Beim Layout `modern` **überdeckt der
   farbige Kopfbalken ein evtl. hinterlegtes Hintergrundbild** im oberen Bereich der
   Seite (bewusster Trade-off der Balken-Optik, kein Bug). **Beträge zeigen das

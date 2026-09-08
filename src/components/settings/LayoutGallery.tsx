@@ -28,7 +28,7 @@ const PREVIEW_DOC_TYPE_MAP: Record<LayoutDocType, PreviewDocType> = {
 /**
  * Layout-Galerie (Phase 11b, Task 7, §"Layout-Auswahl"): Kacheln mit SVG-Thumbnail je
  * Layout, Live-Vorschau als PDF-iframe, Auswahl je Belegtyp oder als Organisationsstandard.
- * Ein Kachel-Klick aendert nur den lokalen Entwurf (`values`) — anders als bei sevDesk gibt
+ * Ein Kachel-Klick aendert nur den lokalen Entwurf (`values`) — anders als bei manchen Rechnungsdiensten gibt
  * es KEIN sofortiges Speichern beim Klicken (Ruling der Spec); erst „Speichern“ sendet das
  * vollstaendige Branding-Objekt an `PUT /api/settings/branding` (bestehender Vertrag, wie
  * `BrandingForm.save()`).
@@ -70,7 +70,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   }
 
   // Betreiber-Befund (2026-09-07): Kachel-Klick UEBERNIMMT das Layout fuer den gewaehlten
-  // Belegtyp direkt (wie in sevDesk) — die Zwischenstufe "Fuer <Typ> uebernehmen" wurde als
+  // Belegtyp direkt (wie bei gaengigen Rechnungsdiensten) — die Zwischenstufe "Fuer <Typ> uebernehmen" wurde als
   // reine Auswahl missverstanden, der Speicher-Aufruf blieb aus. Persistiert wird weiterhin
   // erst mit "Einstellungen speichern" (Hinweis auf ungespeicherte Aenderungen unten).
   function selectTile(layoutId: LayoutId) {
