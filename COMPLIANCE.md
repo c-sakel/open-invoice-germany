@@ -767,6 +767,26 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
 
 Logo- und Hintergrunddatei (`BrandingSettings.logoPath`/`backgroundPath`) liegen im selben **Dateispeicher** wie die übrigen Beleg-Anhänge (Phase 4b, `src/lib/attachments/storage.ts`) — kein separates, öffentlich erreichbares Verzeichnis. In der Regel enthalten diese Dateien **keine personenbezogenen Daten** (Firmenlogo, Hintergrundgrafik); enthält ein hochgeladenes Bild dennoch personenbezogene Inhalte (z.B. ein Foto als Hintergrund), gelten dieselben Zugriffs-/Löschregeln wie für andere im Dateispeicher abgelegte Anhänge — kein Sonderfall.
 
+### Anfrageprotokoll (Phase 12d)
+
+**Umsetzung dieser Software:** Das REST-API-Anfrageprotokoll (`ApiRequestLog`,
+`src/domain/api-log/`) ist von Beginn an auf Datenminimierung ausgelegt —
+standardmäßig **AUS** (`ApiSettings.logRequests`, kein Eintrag ohne bewusstes
+Einschalten in `Einstellungen → API`), zwei getrennte Schalter (`logRequests`
+protokolliert nur Kopfdaten wie Methode/Pfad/Status/Dauer/Schlüssel;
+`logBodies` schaltet zusätzlich Request-/Response-Bodies dazu — Response-Bodies
+NUR bei Fehlerantworten, Status ≥ 400), Bodies auf **2 KB** gekürzt und vor dem
+Speichern JSON-Schlüssel mit sicherheitsrelevanten Namen (`token`, `secret`,
+`password`, `apiKey`, `iban`, `bic`, `authorization`, …) geschwärzt
+(`src/domain/api-log/redact.ts`). Es entsteht **keine neue Datenkategorie**:
+protokollierte Bodies gehören derselben Organisation, die sie selbst über ihren
+eigenen API-Schlüssel gesendet bzw. empfangen hat (`orgId`-Scope wie jede
+andere Ressource, kein Zugriff auf fremde Organisationen). Aufbewahrung ist
+zeit- **und** mengenbegrenzt (Default **7 Tage** / **2000 Zeilen** je
+Organisation, in `Einstellungen → API` anpassbar), zusätzlich existiert im UI
+ein sofortiger Löschknopf („Protokoll leeren") für das gesamte Protokoll der
+eigenen Organisation.
+
 ### OSS-/E-Rechnung-Tooling (Node/JS/JVM)
 
 | Tool | Sprache / Lizenz | Funktion | Reifegrad |
@@ -1001,6 +1021,20 @@ jede andere Ausgabe (PDF, XRechnung/ZUGFeRD, E-Mail) **niemals**
 Kunden-/externen Kanal). Verifiziert per Test
 (`test/integration/webhooks.test.ts`, `finalizeInvoice` mit gesetztem
 `internalNotes` → `dataJson` enthält weder den Text noch den Schlüssel).
+
+### Anfrageprotokoll ist kein Audit-/GoBD-Ereignis (Phase 12d)
+**Umsetzung dieser Software:** Das REST-API-Anfrageprotokoll (`ApiRequestLog`,
+Datenschutz-Einzelheiten in §13) protokolliert — sofern eingeschaltet — JEDE
+authentifizierte `/api/v1/*`-Anfrage zur technischen Fehlersuche, unabhängig
+davon, ob sie einen GoBD-relevanten Beleg verändert. Es ist bewusst **keine**
+`ChangeLog`-Hash-Kette (Betreiber-Ruling K5, `grep -rn "appendChangeLog"
+src/domain/api-log/` bleibt leer): ein Protokolleintrag ersetzt nicht den
+`ChangeLog`-Eintrag einer schreibenden Aktion (der weiterhin wie oben
+beschrieben mit `actor = "api:<Schluesselname>"` entsteht) und wird beim
+„Protokoll leeren" oder durch die Retention gelöscht, ohne die Hash-Kette zu
+berühren. Anfragen, die die Authentifizierung nicht bestehen (unbekannter/
+ungültiger Bearer-Token, Vor-Auth-Rate-Limit), werden nicht protokolliert — es
+gibt keine Organisation, der sie zuzuordnen wären.
 
 ### Webhook-Secrets
 Endpunkt-Secrets werden AES-GCM-verschlüsselt gespeichert

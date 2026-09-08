@@ -71,13 +71,14 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ## 3. Verfügbare Tools
 
-80 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
+89 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
 
 ### System
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `get_status` | Zustand der aktiven Organisation (Unternehmen eingerichtet? Kunden-/Produkt-/Rechnungszähler) | „Wie ist der Status meiner Instanz?" |
+| `list_api_requests` | Protokollierte REST-API-Anfragen auflisten (Phase 12d) — Zeit, Methode, Pfad, Status, Dauer, Schlüssel; standardmäßig leer, bis „Einstellungen → API → Anfrageprotokoll" eingeschaltet ist | „Zeig mir die letzten fehlgeschlagenen API-Aufrufe." |
 | `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
 
 ### Kunden
