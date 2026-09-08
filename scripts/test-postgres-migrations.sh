@@ -651,4 +651,51 @@ COUNT16=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$COUNT16" = "43" ] || fail "erwartet weiterhin 43 Tabellen nach Phase 12a (nur eine Spalte), gefunden $COUNT16"
 echo "    ok — giroSizeMm mit Default 22 auf Bestandszeile, 43 Tabellen"
 
+echo "==> Fall 17 (Phase 12b): Differenzbesteuerung — taxCategory S -> E nur bei DRAFT-Belegen"
+# Eigenes Bestands-Szenario (analog Fall 16): alle Migrationen bis VOR der Phase-12b-
+# Migration einspielen, eine festgeschriebene und eine im Entwurf befindliche DIFFERENZ-
+# Rechnung sowie ein DIFFERENZ-Angebot im Entwurf mit taxCategory='S' anlegen, dann per
+# "migrate deploy" die Phase-12b-Migration nachziehen und pruefen, dass NUR die Entwuerfe
+# auf 'E' migriert werden — der festgeschriebene Beleg bleibt unveraendert (GoBD).
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260909090100_phase12b_differenz_category)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org17','Bestand Siebzehn GmbH','Weg 18','99918','Bestadt',NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust17','org17','Siebzehn-Kunde GmbH','Kundenweg 18','99919','Bestadt',NOW());
+INSERT INTO "Invoice" ("id","orgId","customerId","status","taxScheme","updatedAt")
+  VALUES ('inv17final','org17','cust17','FINALIZED','DIFFERENZ',NOW());
+INSERT INTO "InvoiceLine" ("id","invoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate","taxCategory","lineNetCents")
+  VALUES ('il17final','inv17final',1,'Gebrauchtwagen',1000,500000,0,'S',500000);
+INSERT INTO "Invoice" ("id","orgId","customerId","status","taxScheme","updatedAt")
+  VALUES ('inv17draft','org17','cust17','DRAFT','DIFFERENZ',NOW());
+INSERT INTO "InvoiceLine" ("id","invoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate","taxCategory","lineNetCents")
+  VALUES ('il17draft','inv17draft',1,'Gebrauchtwagen',1000,500000,0,'S',500000);
+INSERT INTO "Quote" ("id","orgId","customerId","status","taxScheme","updatedAt")
+  VALUES ('quo17draft','org17','cust17','DRAFT','DIFFERENZ',NOW());
+INSERT INTO "QuoteLine" ("id","quoteId","position","description","quantityMilli","unitNetPriceCents","taxRate","taxCategory","lineNetCents")
+  VALUES ('ql17','quo17draft',1,'Gebrauchtwagen',1000,500000,0,'S',500000);
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-12b-Migration ist auf der Bestands-DB fehlgeschlagen"
+P12BMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260909090100_phase12b_differenz_category' and finished_at is not null")
+[ "$P12BMIG" = "1" ] || fail "Phase-12b-Migration ist nicht als angewendet verbucht"
+DRAFTCAT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"taxCategory\" from \"InvoiceLine\" where id='il17draft'")
+[ "$DRAFTCAT" = "E" ] || fail "Entwurfszeile il17draft: taxCategory ist '$DRAFTCAT', erwartet E"
+FINALCAT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"taxCategory\" from \"InvoiceLine\" where id='il17final'")
+[ "$FINALCAT" = "S" ] || fail "festgeschriebene Zeile il17final wurde veraendert ('$FINALCAT') — GoBD-Verstoss"
+QUOTECAT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"taxCategory\" from \"QuoteLine\" where id='ql17'")
+[ "$QUOTECAT" = "E" ] || fail "Angebotszeile ql17: taxCategory ist '$QUOTECAT', erwartet E"
+echo "    ok — DIFFERENZ-Entwuerfe auf E migriert, festgeschriebene Belege unveraendert"
+
 echo "ALLE TESTS BESTANDEN"

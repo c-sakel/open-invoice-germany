@@ -48,13 +48,54 @@ export interface MandatoryInvoice {
   customer: MandatoryCustomer;
 }
 
-/** Pflichthinweis-Texte je Steuerschema (§ 14a UStG). */
+/**
+ * Pflichthinweis-Texte je Steuerschema (§ 14 Abs. 4 Nr. 8, § 14a UStG). EINZIGE Quelle
+ * im Projekt — src/lib/editor/constants.ts und src/mcp/tools/invoices.ts importieren von
+ * hier. Quellen: COMPLIANCE.md § 1 (§ 14a), § 3 (§ 34a UStDV), § 8 (§ 13b/§ 6a), § 9 (§ 25a).
+ */
 export const SCHEME_NOTICE: Record<string, string> = {
+  // § 14a Abs. 5 UStG — wortgleich vorgeschrieben.
   REVERSE_CHARGE: "Steuerschuldnerschaft des Leistungsempfängers",
-  KLEINUNTERNEHMER: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
-  DIFFERENZ: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
-  IG_LIEFERUNG: "Steuerfreie innergemeinschaftliche Lieferung",
+  // § 3a Abs. 2 UStG (Leistungsort beim Empfaenger) i. V. m. § 14a Abs. 1/5 UStG.
   IG_LEISTUNG: "Steuerschuldnerschaft des Leistungsempfängers",
+  IG_LIEFERUNG: "Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1 Buchst. b i. V. m. § 6a UStG)",
+  AUSFUHR: "Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)",
+  // § 34a UStDV (Fassung ab 1.1.2025).
+  KLEINUNTERNEHMER: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
+  // § 14a Abs. 6 Satz 1 UStG — eine der drei zulaessigen Formulierungen.
+  DIFFERENZ: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
+};
+
+/** § 14b Abs. 1 Satz 5 UStG (§ 14 Abs. 4 Nr. 9) — Text fuer PDF UND beide XML-Formate. */
+export const CONSUMER_RETENTION_HINT =
+  "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).";
+
+/** Vergleichsform: klein, Umlaute/ß gefaltet, Whitespace normalisiert. */
+export function normalizeNotice(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Zulaessige Formulierungen je Schema (auf normalizeNotice-Text). Ersetzt die frühere
+ * Heuristik "erstes Wort des Pflichttextes kommt irgendwo vor" — die liess z. B.
+ * "Steuerfreie Lieferung nach Absprache" als ig. Lieferung durchgehen. § 14a Abs. 6 UStG
+ * laesst fuer § 25a genau drei Wortlaute zu.
+ */
+export const SCHEME_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
+  REVERSE_CHARGE: [/steuerschuldnerschaft des leistungsempfaengers/],
+  IG_LEISTUNG: [/steuerschuldnerschaft des leistungsempfaengers/],
+  IG_LIEFERUNG: [/steuerfreie innergemeinschaftliche lieferung/],
+  AUSFUHR: [/steuerfreie ausfuhrlieferung/],
+  KLEINUNTERNEHMER: [/kleinunternehmer(?=[\s\S]*\b19\b)/],
+  DIFFERENZ: [
+    /gebrauchtgegenstaende\s*\/\s*sonderregelung/,
+    /kunstgegenstaende\s*\/\s*sonderregelung/,
+    /sammlungsstuecke und antiquitaeten\s*\/\s*sonderregelung/,
+  ],
 };
 
 function hasDeliveryInfo(inv: MandatoryInvoice): boolean {
