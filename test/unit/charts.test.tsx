@@ -45,6 +45,35 @@ function parseRects(html: string): { x: number; y: number; width: number; height
   return rects;
 }
 
+/** Extrahiert cx/cy jedes <circle> aus dem gerenderten HTML-String (Fix I1: LineChart-Punkte). */
+function parseCircles(html: string): { cx: number; cy: number }[] {
+  const circles: { cx: number; cy: number }[] = [];
+  const circleTagRegex = /<circle\b([^>]*)>/g;
+  let tagMatch: RegExpExecArray | null;
+  while ((tagMatch = circleTagRegex.exec(html))) {
+    const attrs = tagMatch[1];
+    const get = (name: string) => {
+      const m = new RegExp(`\\b${name}="([^"]*)"`).exec(attrs);
+      return m ? Number(m[1]) : NaN;
+    };
+    circles.push({ cx: get("cx"), cy: get("cy") });
+  }
+  return circles;
+}
+
+/** Extrahiert die Punktkoordinaten des <polyline points="x,y x,y ..."> aus dem HTML-String. */
+function parsePolylinePoints(html: string): { x: number; y: number }[] {
+  const m = /<polyline\b[^>]*\bpoints="([^"]*)"/.exec(html);
+  if (!m) return [];
+  return m[1]
+    .trim()
+    .split(/\s+/)
+    .map((pair) => {
+      const [x, y] = pair.split(",").map(Number);
+      return { x, y };
+    });
+}
+
 function expectRectsWithinBounds(html: string, width: number, height: number, minCount = 1) {
   const rects = parseRects(html);
   expect(rects.length).toBeGreaterThanOrEqual(minCount);
@@ -152,6 +181,49 @@ describe("LineChart", () => {
     const html = renderToStaticMarkup(<LineChart title="Einer" data={[DATA[0]]} />);
     expect(html).not.toContain("<polyline");
     expect(html.match(/<circle/g)?.length).toBe(1);
+    expectNoNaN(html);
+  });
+
+  it("Fix I1: ein negativer Monat (Stornierungsmonat) bleibt innerhalb der viewBox, statt abgeschnitten zu werden", () => {
+    // Nachgebaut aus dem Review-Befund: Storno-Ruling erzeugt planmaessig negative Monate
+    // (reporting-revenue.test.ts, Februar/Maerz-Szenario). Mit der alten Math.abs(max)-Skala
+    // lag ein rein negativer Monat weit ausserhalb von [0, 240].
+    const withNegative: ChartDatum[] = [
+      { label: "Jan 26", value: 100000, valueLabel: "1.000,00 €" },
+      { label: "Feb 26", value: -40000, valueLabel: "-400,00 €" },
+      { label: "Mär 26", value: 0, valueLabel: "0,00 €" },
+    ];
+    const html = renderToStaticMarkup(<LineChart title="Umsatz" data={withNegative} />);
+    const circles = parseCircles(html);
+    expect(circles.length).toBe(3);
+    for (const c of circles) {
+      expect(c.cy).toBeGreaterThanOrEqual(0);
+      expect(c.cy).toBeLessThanOrEqual(240);
+      expect(c.cx).toBeGreaterThanOrEqual(0);
+      expect(c.cx).toBeLessThanOrEqual(640);
+    }
+    const points = parsePolylinePoints(html);
+    expect(points.length).toBe(3);
+    for (const p of points) {
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(240);
+    }
+    // Der negative Monat muss unterhalb der Nulllinie liegen, nicht ausserhalb der viewBox.
+    expect(circles[1].cy).toBeGreaterThan(circles[0].cy);
+    expectNoNaN(html);
+  });
+
+  it("Fix I1: eine komplett negative Reihe bleibt innerhalb der viewBox", () => {
+    const allNegative: ChartDatum[] = [
+      { label: "Jan 26", value: -10000, valueLabel: "-100,00 €" },
+      { label: "Feb 26", value: -30000, valueLabel: "-300,00 €" },
+    ];
+    const html = renderToStaticMarkup(<LineChart title="Verlust" data={allNegative} />);
+    const circles = parseCircles(html);
+    for (const c of circles) {
+      expect(c.cy).toBeGreaterThanOrEqual(0);
+      expect(c.cy).toBeLessThanOrEqual(240);
+    }
     expectNoNaN(html);
   });
 });

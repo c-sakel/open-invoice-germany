@@ -15,9 +15,10 @@
  */
 import { dbInternal } from "@/lib/db";
 import { effectiveInvoiceStatus } from "@/domain/invoice/status";
-import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
+import { openAmountCents } from "@/domain/invoice/amounts";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { dunningCandidateWhere } from "@/domain/dunning/auto";
+import { monthlyRevenue } from "@/domain/reporting/revenue";
 import { utcDateOnly, utcDateOnlyPlusDays } from "@/lib/date-only";
 
 export interface AgingBucket {
@@ -100,14 +101,6 @@ export interface DashboardSummary {
   openQuotes: { count: number; cents: number };
 }
 
-/** Beginn des Kalendermonats (UTC) von `d`. */
-function startOfMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-function startOfNextMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
-}
-
 export async function dashboardSummary(orgId: string, now: Date = new Date()): Promise<DashboardSummary> {
   // Offene/faellige/ueberfaellige Rechnungen — nur FINALIZED/SENT/PARTIALLY_PAID koennen
   // effectiveInvoiceStatus OPEN/DUE/OVERDUE liefern (siehe status.ts).
@@ -165,23 +158,18 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   // ohne die volle `dunnings`-Relation zu laden — nur die Anzahl wird gebraucht.
   const dunningRequired = { count: await dbInternal.invoice.count({ where: dunningCandidateWhere(orgId, now) }) };
 
-  // Umsatz laufender Monat: Summe der Bemessungsgrundlage (payableBaseCents) festgeschriebener
-  // Rechnungen (nicht DRAFT, nicht CANCELLED) mit issueDate im aktuellen Kalendermonat.
-  // Fix-Welle (S2): vorher grossTotalCents per Prisma-Aggregat — bei einer Abschlagskette
-  // (§14) zaehlt das den Abschlag doppelt (Abschlagsrechnung UND Schlussrechnung tragen
-  // beide ihren vollen Brutto-Betrag; die Schlussrechnung reduziert nur `payableCents`,
-  // nicht `grossTotalCents`). payableBaseCents (payableCents ?? grossTotalCents) ist die
-  // korrekte Bemessungsgrundlage — kein DB-Aggregat mehr moeglich, daher `select`-reduzierte
-  // Zeilen + JS-Summe (portabel, siehe Modul-Kommentar).
-  const revenueRows = await dbInternal.invoice.findMany({
-    where: {
-      orgId,
-      status: { notIn: ["DRAFT", "CANCELLED"] },
-      issueDate: { gte: startOfMonth(now), lt: startOfNextMonth(now) },
-    },
-    select: { grossTotalCents: true, payableCents: true },
-  });
-  const revenueThisMonthCents = revenueRows.reduce((sum, r) => sum + payableBaseCents(r), 0);
+  // Umsatz laufender Monat ("Nettoumsatz", Fix I3, Abschluss-Review): ruft `monthlyRevenue`
+  // mit `months: 1` auf statt eine eigene, parallele Query/Summenformel zu bauen (§1.4) — der
+  // aktuelle Kalendermonat von `now` ist dabei EXAKT der einzige Bucket, den `monthlyRevenue`
+  // mit `months: 1` liefert (siehe dessen Fensterberechnung: `start`/`end` = Beginn/Ende des
+  // Monats von `now`). Dieselbe Definition wie die Umsatzreihe/-diagramme: NETTO (nicht
+  // brutto/payableBaseCents wie vorher — Fix-Welle S2 loeste damit nur den Abschlagsketten-
+  // Doppelzaehler, nicht die Netto/Brutto-Frage), nur `status !== "DRAFT"` (CANCELLED zaehlt
+  // mit, siehe revenue.ts-Modulkommentar) statt `notIn: [DRAFT, CANCELLED]` — vorher warf der
+  // Filter das stornierte Original raus, behielt aber die Storno-Gutschrift (status FINALIZED)
+  // mit ihrem negativen Betrag, was die Kachel systematisch zu niedrig auswies (Review-Befund,
+  // Screenshot 12e-03: 404,60 € Abweichung).
+  const revenueThisMonthCents = (await monthlyRevenue(orgId, { months: 1, now })).reduce((sum, p) => sum + p.netCents, 0);
 
   // Offene Angebote: NUR SENT (noch nicht abgelaufen) — Fix-Welle (Nit): die Kachel
   // verlinkt auf /dokumente?status=SENT, zaehlte aber vorher zusaetzlich DRAFT mit, was

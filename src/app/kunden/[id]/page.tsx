@@ -67,7 +67,7 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
           <div className={`mt-1 text-xl font-semibold ${kpis.overdueCents > 0 ? "text-rose-700" : "text-slate-900"}`}>{formatCents(kpis.overdueCents)}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Gesamtumsatz</div>
+          <div className="text-xs uppercase tracking-wide text-slate-500">Nettoumsatz</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(kpis.totalRevenueCents)}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">

@@ -179,7 +179,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
     "get_customer_overview",
     {
       title: "Kunden-Uebersicht abrufen",
-      description: "Liefert KPIs (offen/ueberfaellig/Gesamtumsatz) und die letzten Belege eines Kunden je Belegart (Rechnungen, Angebote, Lieferscheine, Abos).",
+      description: "Liefert KPIs (offen/ueberfaellig/Nettoumsatz) und die letzten Belege eines Kunden je Belegart (Rechnungen, Angebote, Lieferscheine, Abos).",
       inputSchema: { customer: z.string().describe("Kundenname oder -ID") },
     },
     async ({ customer }): Promise<Result> => {

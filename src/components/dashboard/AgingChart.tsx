@@ -7,7 +7,13 @@ import { agingChartData } from "@/components/dashboard/chart-data";
  * Inline-SVG-Baukasten, Datei und Exportname bleiben — DashboardWidgets bindet weiterhin
  * `<AgingChart aging={summary.aging} />` unveraendert ein). Die Titel-Ueberschrift kommt
  * jetzt aus `ChartFrame` (figcaption), nicht mehr aus einer eigenen `<h2>` im Aufrufer.
+ *
+ * Fix I3 (Abschluss-Review): Titel nennt jetzt explizit die Bemessungsgrundlage — dieses
+ * Diagramm zeigt (anders als die Umsatzreihe/-diagramme, netto/accrual) den OFFENEN
+ * BRUTTObetrag (`AgingBucket.cents` = `openAmountCents`, dashboard/summary.ts), damit auf
+ * demselben Bildschirm nicht zwei unterschiedliche, aber gleich aussehende Bemessungs-
+ * grundlagen nebeneinanderstehen, ohne dass es aus dem Titel hervorgeht.
  */
 export function AgingChart({ aging }: { aging: AgingBucket[] }) {
-  return <BarChart title="Überfällig nach Alter" data={agingChartData(aging)} orientation="horizontal" />;
+  return <BarChart title="Überfällig nach Alter (offen, brutto)" data={agingChartData(aging)} orientation="horizontal" />;
 }
