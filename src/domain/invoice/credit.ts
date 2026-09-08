@@ -10,6 +10,7 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
+import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { finalizeWithinTx } from "./finalize";
 
 export class CreditError extends Error {
@@ -64,12 +65,18 @@ export async function createPartialCreditNote(
         sellerSnapshotJson: true, buyerSnapshotJson: true, contactSnapshotJson: true,
         documentDiscountPermille: true, documentDiscountCents: true,
         documentChargePermille: true, documentChargeCents: true, documentChargeReason: true,
-        lines: { select: { lineNetCents: true } },
+        lines: { select: { lineNetCents: true, taxRate: true } },
       },
     });
     if (!original) throw new CreditError("Rechnung nicht gefunden.");
     if (original.status === "DRAFT") throw new CreditError("Nur festgeschriebene Rechnungen können (teil-)gutgeschrieben werden.");
     if (original.type === "CREDIT_NOTE") throw new CreditError("Eine Gutschrift kann nicht gutgeschrieben werden.");
+
+    // Phase 12c Fix 1: Saetze der Teilgutschrift-Positionen pruefen, BEVOR irgendetwas
+    // geschrieben wird. Die Saetze des Originals gelten als geerbt (GoBD) — eine
+    // Gutschrift gegen eine alte, inzwischen aus der Org-Liste entfernte Rechnung (z. B.
+    // historisch 16 %) muss weiterhin moeglich sein.
+    await assertAllowedTaxRates(tx, original.orgId, ratesOfLines(input.lines), { existing: ratesOfLines(original.lines) });
 
     // Original-Positionsnetto VOR Beleganpassung (= taxBreakdown.lineTotalCents beim
     // Festschreiben) — Bezugsgroesse fuer die proportionale Aufteilung der Festbetraege.
