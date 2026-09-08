@@ -34,6 +34,7 @@ export function AttachmentPanel({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AttachmentItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<ConfirmDialogHandle>(null);
@@ -77,6 +78,7 @@ export function AttachmentPanel({
   async function confirmDelete() {
     if (!pendingDelete) return;
     const id = pendingDelete.id;
+    setDeleting(true);
     try {
       const res = await fetch(`/api/attachments/${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -86,7 +88,9 @@ export function AttachmentPanel({
         setError(j.error ?? "Loeschen fehlgeschlagen.");
       }
     } finally {
+      setDeleting(false);
       setPendingDelete(null);
+      dialogRef.current?.close();
     }
   }
 
@@ -145,9 +149,14 @@ export function AttachmentPanel({
 
       <ConfirmDialog
         ref={dialogRef}
-        message={`Anhang ${pendingDelete?.filename ?? ""} wirklich löschen?`}
+        message={
+          <>
+            Anhang <span className="font-medium">{pendingDelete?.filename}</span> wirklich löschen?
+          </>
+        }
         confirmLabel="Löschen"
         tone="danger"
+        busy={deleting}
         onConfirm={() => void confirmDelete()}
       />
     </div>

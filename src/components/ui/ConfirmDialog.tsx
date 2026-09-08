@@ -6,9 +6,20 @@
  * (next/link-Ziel, Editor "Trotzdem verlassen?"). Die Zentrierung kommt aus der
  * globalen Regel `dialog:modal { margin: auto }` — hier nicht nachgebaut.
  * Escape schliesst nativ; der Fokus landet beim Oeffnen auf "Abbrechen".
+ *
+ * `busy` (Task-1-Review-Nachtrag): der Aufrufer setzt dieses Prop NUR, wenn er
+ * selbst ueber die Dauer eines asynchronen Vorgangs (z. B. `AttachmentPanel`s
+ * Loesch-Fetch) Buch fuehrt. Ist das Prop ueberhaupt gesetzt ("busy-aware"),
+ * schliesst der Bestaetigen-Klick den Dialog NICHT mehr selbst — der Aufrufer
+ * ruft `close()` ueber `ConfirmDialogHandle` explizit auf, sobald der Vorgang
+ * abgeschlossen ist (fruehere UX vor der ConfirmDialog-Vereinheitlichung: der
+ * Dialog blieb waehrend des Loeschens offen, siehe `git show 9420a20:src/
+ * components/AttachmentPanel.tsx`). Ist `busy` nicht gesetzt (z. B.
+ * `EditorHeader`s "Trotzdem verlassen?"), bleibt das alte Verhalten (Klick
+ * schliesst sofort) unveraendert.
  */
 import Link from "next/link";
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useId, useImperativeHandle, useRef, type ReactNode } from "react";
 
 export interface ConfirmDialogHandle {
   open: () => void;
@@ -17,10 +28,11 @@ export interface ConfirmDialogHandle {
 
 type ConfirmDialogProps = {
   title?: string;
-  message: string;
+  message: ReactNode;
   confirmLabel: string;
   cancelLabel?: string;
   tone?: "default" | "danger";
+  busy?: boolean;
 } & ({ onConfirm: () => void; confirmHref?: never } | { confirmHref: string; onConfirm?: never });
 
 const TONE_CLS: Record<"default" | "danger", string> = {
@@ -29,11 +41,16 @@ const TONE_CLS: Record<"default" | "danger", string> = {
 };
 
 export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>(function ConfirmDialog(
-  { title, message, confirmLabel, cancelLabel = "Abbrechen", tone = "default", onConfirm, confirmHref },
+  { title, message, confirmLabel, cancelLabel = "Abbrechen", tone = "default", busy, onConfirm, confirmHref },
   ref,
 ) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const messageId = useId();
+  // Gesetzt (auch als `false`) => der Aufrufer verwaltet das Schliessen selbst,
+  // siehe Modulkommentar oben. `undefined` => altes Verhalten.
+  const busyAware = busy !== undefined;
 
   useImperativeHandle(ref, () => ({
     open: () => {
@@ -43,13 +60,24 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
     close: () => dialogRef.current?.close(),
   }));
 
-  const confirmCls = `rounded-md px-3 py-1.5 text-sm font-medium text-white ${TONE_CLS[tone]}`;
+  const confirmCls = `rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${TONE_CLS[tone]}`;
 
   return (
-    <dialog ref={dialogRef} className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={title ? titleId : undefined}
+      aria-describedby={messageId}
+      className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
+    >
       <div className="space-y-3 p-5">
-        {title && <h2 className="text-sm font-semibold text-slate-900">{title}</h2>}
-        <p className="text-sm text-slate-700">{message}</p>
+        {title && (
+          <h2 id={titleId} className="text-sm font-semibold text-slate-900">
+            {title}
+          </h2>
+        )}
+        <p id={messageId} className="text-sm text-slate-700">
+          {message}
+        </p>
         <div className="flex justify-end gap-2">
           <button ref={cancelRef} type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
             {cancelLabel}
@@ -59,8 +87,16 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
               {confirmLabel}
             </Link>
           ) : (
-            <button type="button" className={confirmCls} onClick={() => { dialogRef.current?.close(); onConfirm?.(); }}>
-              {confirmLabel}
+            <button
+              type="button"
+              disabled={busy === true}
+              className={confirmCls}
+              onClick={() => {
+                if (!busyAware) dialogRef.current?.close();
+                onConfirm?.();
+              }}
+            >
+              {busy === true ? `${confirmLabel}…` : confirmLabel}
             </button>
           )}
         </div>
