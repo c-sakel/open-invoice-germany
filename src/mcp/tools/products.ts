@@ -11,6 +11,7 @@ import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { archiveProduct } from "@/domain/product/archive";
 import { createProduct, updateProduct } from "@/domain/product/save";
+import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { productSchema, TaxRate } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -98,6 +99,10 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Produkt ${existing ? "aktualisiert" : "gespeichert"}: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
+        // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,
+        // domain/settings/tax-rates.ts).
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
     },
@@ -141,6 +146,7 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(`Produkt aktualisiert: ${product.name} — ${formatCents(product.netPriceCents)} / ${product.unit}.`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

@@ -19,7 +19,7 @@
  * dbInternal.organization.findFirst() statt ctx.requireOrg() (respektiert die in Tests
  * gemockte aktive Org) — get_status zaehlte zudem global statt orgId-gescopt.
  */
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -559,5 +559,88 @@ describe("cancel_invoice (Task 2)", () => {
   it("cancel_invoice: Fehlerpfad bei unbekannter Rechnung", async () => {
     const res = await callTool("cancel_invoice", { invoice: "unbekannt-mc69" });
     expect(res.isError).toBe(true);
+  });
+});
+
+/**
+ * Fix 2 (Re-Review Phase 12c): assertAllowedTaxRates (domain/settings/tax-rates.ts) warf
+ * TaxRateNotAllowedError schon seit Task 5 in createProduct/updateProduct,
+ * createRecurring/updateRecurringInvoice und createPartialCreditNote — die MCP-Tools, die
+ * diese Funktionen aufrufen (upsert_product/update_product, create_recurring/
+ * update_recurring_invoice/set_recurring_state, credit_invoice), fingen die Fehlerklasse
+ * aber in KEINEM ihrer catch-Bloecke ab und fielen auf ctx.failUnknown() zurueck
+ * ("Unerwarteter Fehler — Details im Serverlog.") — widersprach docs/ANLEITUNG.md §6c
+ * ("... sowohl im Editor als auch bei Produkten, Abo-Vorlagen, Teilgutschriften und ueber
+ * API/MCP"). Je ein Test pro Tool-Familie (Produkt/Abo/Gutschrift) genuegt: alle Tools
+ * einer Familie rufen dieselbe Domain-Funktion auf und haben denselben catch-Zweig
+ * (byte-identisch bei create_recurring/update_recurring_invoice/set_recurring_state).
+ */
+describe("TaxRateNotAllowedError -> lesbare MCP-Fehlermeldung (Fix 2, Re-Review Phase 12c)", () => {
+  let creditTestInvoiceNumber: string;
+
+  beforeAll(async () => {
+    // Setup-Rechnung MIT 19% anlegen, BEVOR die Org-Liste unten eingeschraenkt wird
+    // (create_invoice/finalize_invoice pruefen ebenfalls gegen die jeweils AKTUELLE
+    // Liste) -- 19% landet als "existing" auf dem Beleg und bleibt fuer eine
+    // Teilgutschrift ueber genau diesen Satz weiterhin erlaubt (GoBD, assertAllowedTaxRates
+    // opts.existing) — der Test unten verwendet deshalb bewusst einen DRITTEN Satz (7%),
+    // der weder auf dem Original steht noch in der eingeschraenkten Liste.
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "MCP-Fix2-Gutschrift-Kunde AG", addressLine1: "Fix2-Weg 1", postalCode: "10115", city: "Berlin", type: "BUSINESS" },
+    });
+    const created = await callTool("create_invoice", {
+      customer: customer.name,
+      lines: [{ description: "Beratung", quantity: 1, unitPriceEuro: 100, taxRatePercent: 19 }],
+      deliveryDate: "heute",
+    });
+    expect(created.isError).toBeFalsy();
+    const draft = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, customerId: customer.id, status: "DRAFT" } });
+    const finalized = await callTool("finalize_invoice", { invoice: draft.id });
+    expect(finalized.isError).toBeFalsy();
+    creditTestInvoiceNumber = (await dbInternal.invoice.findUniqueOrThrow({ where: { id: draft.id } })).number!;
+
+    // Jetzt die Org-Liste auf [16, 5, 0] einschraenken -- weder 19% (Original) noch 7%
+    // (fuer den Gutschrift-Test) stehen danach mehr drin.
+    await dbInternal.documentSettings.upsert({
+      where: { orgId },
+      create: { orgId, taxRatesJson: JSON.stringify([16, 5, 0]) },
+      update: { taxRatesJson: JSON.stringify([16, 5, 0]) },
+    });
+  });
+
+  afterAll(async () => {
+    await dbInternal.documentSettings.update({ where: { orgId }, data: { taxRatesJson: JSON.stringify([19, 7, 0]) } });
+  });
+
+  it("upsert_product (Produkt-Familie): 19% ist nicht in der Org-Liste -> lesbare Meldung statt 'Unerwarteter Fehler'", async () => {
+    const res = await callTool("upsert_product", { name: "MCP-Fix2-Produkt-19", netPriceEuro: 10, taxRatePercent: 19 });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("Steuersatz 19 % ist für diese Organisation nicht freigegeben");
+    expect(text(res)).not.toContain("Unerwarteter Fehler");
+  });
+
+  it("create_recurring (Abo-Familie): 19% ist nicht in der Org-Liste -> lesbare Meldung statt 'Unerwarteter Fehler'", async () => {
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "MCP-Fix2-Abo-Kunde AG", addressLine1: "Fix2-Weg 2", postalCode: "10115", city: "Berlin", type: "BUSINESS" },
+    });
+    const res = await callTool("create_recurring", {
+      customer: customer.name,
+      title: "MCP-Fix2-Testabo",
+      lines: [{ description: "Wartung", quantity: 1, unitPriceEuro: 50, taxRatePercent: 19 }],
+      startDate: "heute",
+    });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("Steuersatz 19 % ist für diese Organisation nicht freigegeben");
+    expect(text(res)).not.toContain("Unerwarteter Fehler");
+  });
+
+  it("credit_invoice (Gutschrift-Familie): 7% ist weder auf dem Original noch in der Org-Liste -> lesbare Meldung statt 'Unerwarteter Fehler'", async () => {
+    const res = await callTool("credit_invoice", {
+      invoice: creditTestInvoiceNumber,
+      lines: [{ description: "Teilerstattung", quantity: 1, unitPriceEuro: 10, taxRatePercent: 7 }],
+    });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("Steuersatz 7 % ist für diese Organisation nicht freigegeben");
+    expect(text(res)).not.toContain("Unerwarteter Fehler");
   });
 });
