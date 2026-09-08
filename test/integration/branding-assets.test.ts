@@ -49,7 +49,7 @@ describe("Branding-Upload: favicon/applogo", () => {
 
 describe("Oeffentliche Auslieferung", () => {
   it("GET /api/branding/icon liefert das hochgeladene Favicon mit Cache-Header und ETag", async () => {
-    const res = await iconGet();
+    const res = await iconGet(new Request("http://x/api/branding/icon"));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
     expect(res.headers.get("cache-control")).toContain("max-age=300");
@@ -76,7 +76,7 @@ describe("Pfad-Containment (Fix-Welle Fix 1 — Verteidigung in der Tiefe)", () 
 
   it("faviconPath mit Pfad-Traversal -> Fallback-Icon, KEIN Dateizugriff ausserhalb ATTACHMENTS_DIR", async () => {
     await dbInternal.brandingSettings.update({ where: { orgId }, data: { faviconPath: TRAVERSAL } });
-    const res = await iconGet();
+    const res = await iconGet(new Request("http://x/api/branding/icon"));
     expect(res.status).toBe(200);
     // "image/x-icon" ist der Fallback-Typ (mitgeliefertes favicon.ico) — ein Treffer
     // beweist, dass die Route den traversierten Pfad verworfen und NICHT gelesen hat.

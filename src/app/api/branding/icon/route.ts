@@ -22,11 +22,20 @@ export const dynamic = "force-dynamic";
  * Sicherheitswirkung ist trotzdem vollstaendig — bei Containment-Verletzung wird die
  * Datei gar nicht erst gelesen.
  *
+ * Fix-Welle 12c (C1): der Bundle-Fallback-Read lief bisher AUSSERHALB des try/catch —
+ * in der runner-Stage des Docker-Images existiert `src/app/` nicht (nur `src/generated`
+ * wurde kopiert), also warf JEDE Anfrage ohne eigenes Favicon dort ein unbehandeltes
+ * ENOENT -> 500, auf jeder Seite inkl. Login (generateMetadata haengt die Route ueberall
+ * an). Jetzt: Lesefehler wird gefangen, die Route leitet stattdessen auf die von Next
+ * selbst aus `src/app/favicon.ico` generierte statische Metadata-Route `/favicon.ico`
+ * um (siehe Dockerfile-COPY fuer die eigentliche Behebung — die Umleitung ist nur das
+ * Sicherheitsnetz, falls die Datei dort aus einem anderen Grund je fehlen sollte).
+ *
  * `?v=<updatedAt>` (von der Huelle, Task 3, an <link rel="icon"> angehaengt) ist reines
  * Cache-Busting fuer den Browser — diese Route liest den Parameter nicht, sondern setzt
  * auf ETag + `must-revalidate`.
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const org = await getActiveOrg();
     const row = await dbInternal.brandingSettings.findUnique({
@@ -45,6 +54,12 @@ export async function GET() {
   } catch {
     // keine Organisation / Datei nicht lesbar -> mitgeliefertes Icon
   }
-  const fallback = await readAppFile(path.join(process.cwd(), "src/app/favicon.ico"));
-  return new NextResponse(new Uint8Array(fallback), { status: 200, headers: { "content-type": "image/x-icon", ...ASSET_CACHE_HEADERS } });
+  try {
+    const fallback = await readAppFile(path.join(process.cwd(), "src/app/favicon.ico"));
+    return new NextResponse(new Uint8Array(fallback), { status: 200, headers: { "content-type": "image/x-icon", ...ASSET_CACHE_HEADERS } });
+  } catch {
+    // Bundle-Fallback nicht lesbar (z. B. fehlende COPY-Zeile im Image) -> niemals 500,
+    // sondern auf die statische Next-Route umlenken.
+    return NextResponse.redirect(new URL("/favicon.ico", req.url), 302);
+  }
 }
