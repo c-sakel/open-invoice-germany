@@ -56,8 +56,9 @@ function checkPartialInputShape<Shape extends Record<string, z.ZodTypeAny>>(sche
 checkPartialInputShape("documentSettingsInputSchema", documentSettingsInputSchema);
 checkPartialInputShape("printSettingsInputSchema", printSettingsInputSchema);
 // Die vier Settings-Tools nutzen `brandingSettingsInputSchema.omit({ logoPath: true,
-// backgroundPath: true })` als MCP-inputSchema (settings.ts) — dasselbe Objekt, nur ohne
-// die zwei Datei-Felder, die keine `.default(...)`-Felder sind; fuer diesen Test irrelevant.
+// backgroundPath: true, faviconPath: true, appLogoPath: true })` als MCP-inputSchema
+// (settings.ts) — dasselbe Objekt, nur ohne die vier Datei-Felder, die keine
+// `.default(...)`-Felder sind; fuer diesen Test irrelevant.
 checkPartialInputShape("brandingSettingsInputSchema", brandingSettingsInputSchema);
 checkPartialInputShape("dunningSettingsInputSchema", dunningSettingsInputSchema);
 // Kein "Settings"-Schema im engeren Sinn, aber dieselbe Teil-Update-Semantik

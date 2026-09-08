@@ -172,6 +172,21 @@ describe("update_branding_settings", () => {
     expect(after.fontSizePt).toBe(11);
   });
 
+  // Fix-Welle (Fix 1): faviconPath/appLogoPath sind dieselbe Regel wie logoPath/
+  // backgroundPath — nur die Upload-Route (POST /api/settings/branding/upload) setzt sie.
+  it("ignoriert mitgegebene faviconPath/appLogoPath (kein Datei-Upload ueber MCP moeglich)", async () => {
+    const before = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
+    await callTool("update_branding_settings", {
+      faviconPath: "boesartig/icon.png",
+      appLogoPath: "boesartig/logo.png",
+      fontSizePt: 13,
+    } as unknown as Record<string, unknown>);
+    const after = JSON.parse(text(await callTool("get_settings", { area: "branding" })));
+    expect(after.faviconPath).toBe(before.faviconPath);
+    expect(after.appLogoPath).toBe(before.appLogoPath);
+    expect(after.fontSizePt).toBe(13);
+  });
+
   // Fix (Task 8, vorbestehender Fehler): siehe Kommentar bei update_print_settings oben —
   // `brandingSettingsInputSchema.omit(...).partial().shape` hatte dieselbe Schwaeche.
   it("Teil-Update mit nur einem Feld setzt andere Felder nicht auf Default zurueck", async () => {
