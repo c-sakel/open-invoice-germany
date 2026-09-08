@@ -38,6 +38,12 @@ const echo = withApi(async (_req, ctx) => {
   return apiData({ note: parsed.data.note, requestId: ctx.requestId });
 }, { scope: "write" });
 
+/** Fix-Runde 1 (Important 1): Handler, der unerwartet (nicht als ZodError/Domain-
+ *  Fehler) wirft — mapApiError faengt das im generischen Zweig als 500 INTERNAL ab. */
+const boom = withApi(async () => {
+  throw new Error("unerwartet kaputt");
+}, { scope: "write" });
+
 beforeAll(async () => {
   const org = await dbInternal.organization.create({
     data: { legalName: "Protokoll Test GmbH", addressLine1: "Logweg 1", postalCode: "10115", city: "Berlin", vatId: "DE822222222", taxNumber: "82/222/22222" },
@@ -103,6 +109,17 @@ describe("Protokollierung", () => {
     expect(row).toMatchObject({ status: 400, errorCode: "VALIDATION" });
     expect(row.requestBody).toContain("falsch");
     expect(row.responseBody).toContain("VALIDATION");
+  });
+
+  it("Handler wirft unerwartet -> 500 traegt X-Request-Id, Zeile mit status 500", async () => {
+    await saveApiSettings(orgId, { logRequests: true, logBodies: false });
+    const key = await createApiKey(orgId, { name: `k${Math.random()}`, scopes: ["write"], expiresAt: null });
+    const res = await boom(req("http://x/api/v1/Boom", { method: "POST", token: key.token, body: { note: "x" } }));
+    expect(res.status).toBe(500);
+    expect(res.headers.get("X-Request-Id")).toMatch(/^[0-9a-f-]{36}$/);
+    await waitForRows(1);
+    const row = await dbInternal.apiRequestLog.findFirstOrThrow({ where: { orgId }, orderBy: { createdAt: "desc" } });
+    expect(row).toMatchObject({ status: 500, requestId: res.headers.get("X-Request-Id") });
   });
 
   it("Vor-Auth-401 und /api/v1/ping erzeugen keine Zeile", async () => {

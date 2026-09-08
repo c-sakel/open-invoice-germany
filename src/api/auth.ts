@@ -52,6 +52,7 @@ import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { beginIdempotency, completeIdempotency, abandonIdempotency } from "./idempotency";
 import { apiError, PayloadTooLargeError } from "./errors";
 import { logApiRequest } from "@/domain/api-log/write";
+import { loadApiSettings } from "@/domain/api-log/settings";
 import { shouldLogPath } from "@/domain/api-log/redact";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
@@ -196,23 +197,39 @@ export function withApi<TParams = Record<string, string>>(
     } catch (e) {
       res = apiError(e);
     }
+    // Fix-Runde 1 (Minor 2): Dauer wird SOFORT nach dem fertigen `res` erfasst — vor
+    // jeder Body-Extraktion weiter unten, die sonst faelschlich in die gemessene Zeit
+    // einfliesse.
+    const durationMs = Date.now() - startedAt;
     res.headers.set(REQUEST_ID_HEADER, requestId);
 
     if (trace.apiKey && shouldLogPath(url.pathname)) {
-      // Fehlerantworten werden GEKLONT, bevor Next.js den Body ausliefert — nur bei
-      // status >= 400 (Ruling: dort liegt der Debug-Wert; sonst waeren es Kilobytes
-      // Listenrauschen). Der Klon wird synchron erzeugt, gelesen wird er im Hintergrund.
-      const errorClone = res.status >= 400 ? res.clone() : null;
+      // Fix-Runde 1 (Minor 3): der Klon selbst ist eine reine Stream-Referenz (kein
+      // Lesen) und muss SYNCHRON vor der Rueckgabe entstehen — der Laufzeit-Body kann
+      // sonst schon konsumiert sein, wenn der Hintergrund-Task laeuft. Nur bei
+      // Fehlerantworten (status >= 400) MIT JSON-Content-Type lohnt sich das ueberhaupt
+      // (eine PDF/XML-Route wuerde sonst Binaerdaten sinnlos in einen String lesen).
+      // Ob der Klon ueberhaupt GELESEN wird, entscheidet zuerst ein Blick in die
+      // Einstellungen (`logBodies`) — das spart Lesen/Parsen komplett, wenn die
+      // Organisation gar keine Bodies speichert.
+      const contentType = res.headers.get("content-type") ?? "";
+      const errorClone = res.status >= 400 && contentType.includes("json") ? res.clone() : null;
       const key = trace.apiKey;
       void (async () => {
-        const responseBody = errorClone ? await errorClone.text().catch(() => null) : null;
+        let responseBody: string | null = null;
         let errorCode: string | null = null;
-        if (responseBody) {
-          try {
-            const parsed = JSON.parse(responseBody) as { error?: { code?: unknown } };
-            if (typeof parsed.error?.code === "string") errorCode = parsed.error.code;
-          } catch {
-            // Nicht-JSON-Fehlerantwort (z. B. PDF-Route) — kein Code ableitbar
+        if (errorClone) {
+          const settings = await loadApiSettings(key.orgId).catch(() => null);
+          if (settings?.logBodies) {
+            responseBody = await errorClone.text().catch(() => null);
+            if (responseBody) {
+              try {
+                const parsed = JSON.parse(responseBody) as { error?: { code?: unknown } };
+                if (typeof parsed.error?.code === "string") errorCode = parsed.error.code;
+              } catch {
+                // Content-Type sagte JSON, war aber keins -> kein Code ableitbar
+              }
+            }
           }
         }
         await logApiRequest({
@@ -223,7 +240,7 @@ export function withApi<TParams = Record<string, string>>(
           path: url.pathname,
           query: url.search ? url.search.slice(1) : null,
           status: res.status,
-          durationMs: Date.now() - startedAt,
+          durationMs,
           errorCode,
           ip: clientIpFromHeaders(req.headers),
           userAgent: req.headers.get("user-agent"),
