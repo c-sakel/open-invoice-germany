@@ -118,6 +118,15 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   dadurch beim nächsten PDF-Abruf eine andere Seitenzahl bekommen als beim vorherigen
   Abruf — der rechtlich maßgebliche Beleginhalt bleibt unverändert (COMPLIANCE.md
   Abschnitt 6).
+- **Nachtrag Phase 12a (GiroCode-Größe, Logohöhe, Vorschau-Breite):** Bereits
+  festgeschriebene Belege ohne eingefrorenen `giroSizeMm`-Wert rendern mit dem
+  aktuellen globalen Wert der Organisation (Schema-Default 22 mm, aber vom Betreiber
+  in den Druckoptionen jederzeit auf 15–40 mm änderbar — Druckoptionen sind
+  Darstellung, Phase-7-Ruling); vor Phase 12a gedruckte Belege hatten fest 30 mm. Die
+  Logohöhe ist auf 35 mm begrenzt (Layout `modern`: ~15 mm, Höhe des Kopfbalkens, siehe
+  ARCHITEKTUR.md); höhere Logos werden proportional verkleinert. Die Vorschau-Breite
+  (Breit/Schmal) liegt im `localStorage` des Browsers und gilt nicht
+  geräteübergreifend.
 ## Kundenkomfort (Phase 8a)
 - **`Customer.language` wird nur gespeichert, nicht ausgewertet.** Das Feld existiert (Default `de`) und ist über die Kundenvorgaben pflegbar, steuert aber weder PDF-Sprache noch E-Mail-Vorlagen — analog zur restigen Software ist derzeit alles ausschließlich auf Deutsch (siehe „Briefpapier, Druckoptionen …" oben).
 - **Gelöschte Kundenfeld-Definitionen lassen ihre Werte im JSON zurück.** `deleteCustomFieldDefinition` entfernt nur die Definition (`CustomFieldDefinition`); bereits gespeicherte Werte in `Customer.customFieldsJson` unter dem betroffenen `key` bleiben unverändert stehen (kein Cleanup-Job). `parseCustomerCustomFields` übergeht solche verwaisten Keys beim Lesen still, `{{customField.<key>}}` löst dafür nicht mehr auf (Platzhalter bleibt leer) — Bestellungen können die Definition jederzeit neu mit demselben `key` anlegen, um wieder Zugriff auf die alten Werte zu bekommen.

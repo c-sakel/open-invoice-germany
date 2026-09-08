@@ -1,7 +1,7 @@
 /** Layout "Klassik" — Logo links oben, Firmenname rechts, Doppellinie unter dem Kopf, graue Fusszeile mit Linie. */
 import type { PdfLayout } from "./types";
 import { drawRecipient, drawMetaRows, drawFooterColumns } from "./shared";
-import { drawSenderLine } from "../layout";
+import { drawSenderLine, LOGO_MAX_HEIGHT_MM } from "../layout";
 import { mm } from "../marks";
 
 export const klassikLayout: PdfLayout = {
@@ -11,7 +11,7 @@ export const klassikLayout: PdfLayout = {
   fontDelta: 0,
   drawKopf(frame, input) {
     const { doc, theme, left, right, margins, primary, base } = frame;
-    if (theme.logoBuffer) doc.image(theme.logoBuffer, left, margins.top, { width: mm(theme.brand.logoWidthMm) });
+    if (theme.logoBuffer) doc.image(theme.logoBuffer, left, margins.top, { fit: [mm(theme.brand.logoWidthMm), mm(LOGO_MAX_HEIGHT_MM)] });
     doc.font("Helvetica-Bold").fontSize(base + 4).fillColor(primary).text(input.senderFallback.split(" · ")[0] ?? "", left, margins.top, { width: right - left, align: "right" });
     const ruleY = margins.top + 42;
     doc.moveTo(left, ruleY).lineTo(right, ruleY).lineWidth(1.2).strokeColor(primary).stroke();

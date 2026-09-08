@@ -27,6 +27,7 @@ export async function loadPrintSettings(orgId: string): Promise<PrintSettingsInp
     showLineTotals: row.showLineTotals,
     showSenderLine: row.showSenderLine,
     showGiroCode: row.showGiroCode,
+    giroSizeMm: row.giroSizeMm,
   });
 }
 

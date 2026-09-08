@@ -194,7 +194,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 |---|---|---|
 | `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) | „Zeig mir meine Beleg-Einstellungen." |
 | `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand) — Merge | „Setze die Fälligkeitstage für Rechnungen auf 14." |
-| `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode) — Merge | „Aktiviere den GiroCode auf Rechnungen." |
+| `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode, GiroCode-Größe 15–40 mm) — Merge | „Aktiviere den GiroCode auf Rechnungen." |
 | `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) sowie das PDF-Layout (`layoutId`, `layoutByType` je Belegtyp, `footerMode` AUTO/CUSTOM, Phase 11b) — Merge; Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
 | `list_pdf_layouts` | Die sieben wählbaren PDF-Layouts auflisten (id, name, description) — ohne Eingabe | „Welche PDF-Layouts gibt es?" |
 | `update_number_range` | Einen Nummernkreis aktualisieren (`docType`, Muster/Präfix/Padding/`yearlyReset`/nächste Nummer) — Merge mit dem laufenden Jahr; lehnt ein Zurückdrehen unterhalb bereits vergebener Nummern ab | „Setze das Rechnungspräfix auf RE-2026-." |

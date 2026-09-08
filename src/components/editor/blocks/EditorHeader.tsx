@@ -39,6 +39,7 @@
  */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 
 function isModifiedClick(e: MouseEvent): boolean {
   return e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
@@ -63,7 +64,7 @@ export function EditorHeader({
   onPreview: () => void;
   previewDisabled?: boolean;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<ConfirmDialogHandle>(null);
   // Ziel-Href eines abgefangenen In-App-Navigationsklicks (Sidebar/Topbar/Breadcrumb) —
   // `null` bedeutet "der eigene Zurueck-Link hat den Dialog geoeffnet", dann greift
   // `backHref` als Fallback (siehe `Link href` im Dialog unten).
@@ -92,7 +93,7 @@ export function EditorHeader({
       if (url.origin !== window.location.origin) return;
       e.preventDefault();
       setPendingHref(`${url.pathname}${url.search}${url.hash}`);
-      dialogRef.current?.showModal();
+      dialogRef.current?.open();
     }
     document.addEventListener("click", onDocumentClick, true);
     return () => document.removeEventListener("click", onDocumentClick, true);
@@ -107,7 +108,7 @@ export function EditorHeader({
               type="button"
               onClick={() => {
                 setPendingHref(null);
-                dialogRef.current?.showModal();
+                dialogRef.current?.open();
               }}
               className="shrink-0 text-sm text-slate-500 hover:text-slate-800"
             >
@@ -143,33 +144,13 @@ export function EditorHeader({
         </div>
       </div>
 
-      <dialog ref={dialogRef} className="rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
-        <div className="space-y-3 p-5">
-          <p className="text-sm text-slate-700">Es gibt ungespeicherte Änderungen. Trotzdem verlassen?</p>
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                dialogRef.current?.close();
-                setPendingHref(null);
-              }}
-              className="text-sm text-slate-500 hover:text-slate-800"
-            >
-              Abbrechen
-            </button>
-            <Link
-              href={pendingHref ?? backHref}
-              className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700"
-              onClick={() => {
-                dialogRef.current?.close();
-                setPendingHref(null);
-              }}
-            >
-              Verlassen
-            </Link>
-          </div>
-        </div>
-      </dialog>
+      <ConfirmDialog
+        ref={dialogRef}
+        message="Es gibt ungespeicherte Änderungen. Trotzdem verlassen?"
+        confirmLabel="Verlassen"
+        tone="danger"
+        confirmHref={pendingHref ?? backHref}
+      />
     </div>
   );
 }

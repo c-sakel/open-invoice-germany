@@ -1010,6 +1010,9 @@ model PrintSettings {
   showLineTotals     Boolean      @default(true)
   showSenderLine     Boolean      @default(true)
   showGiroCode       Boolean      @default(true)
+  /// Phase 12a — Kantenlaenge des GiroCode in mm (15..40, Zod). Teil der Druckoptionen,
+  /// wird beim Festschreiben mit eingefroren (freezePrintOptionsJson).
+  giroSizeMm         Int          @default(22)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 }
