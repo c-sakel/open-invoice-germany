@@ -38,7 +38,6 @@ export interface MandatoryLine {
 }
 
 export interface MandatoryInvoice {
-  type: string; // INVOICE | CREDIT_NOTE | CORRECTION
   taxScheme: string;
   issueDate?: Date | string | null;
   deliveryDate?: Date | string | null;
@@ -114,12 +113,33 @@ function vatPrefix(vatId: string | null | undefined): string {
   return (vatId ?? "").replace(/\s/g, "").slice(0, 2).toUpperCase();
 }
 
+export interface ValidateMandatoryOptions {
+  /**
+   * C1 (Fix-Welle Phase 12b): true fuer einen Korrekturbeleg (Storno via cancel.ts,
+   * Teilgutschrift via credit.ts — beide setzen Invoice.correctsInvoiceId, wovon
+   * finalize.ts diese Option ableitet; kuenftige CORRECTION-Belege ebenso, sobald sie
+   * dieselbe Verknuepfung setzen). Ein Korrekturbeleg berichtigt ein bereits
+   * festgeschriebenes Original — seine Pflichtangaben (Hinweistext, Leistungszeitraum,
+   * Empfaenger-Kennung, Empfaenger-Land) sind durch das Original determiniert und vom
+   * Aufrufer nicht mehr korrigierbar. Die materiellen Phase-12b-Zusatzpruefungen (BR-IC-11-
+   * Datum, EU-Praefix, REVERSE_CHARGE-USt-IdNr., AUSFUHR-Land/-Aussteller-USt-IdNr.) sowie
+   * die verschaerfte Hinweis-Regexpruefung wuerden sonst genau den Korrekturweg blockieren,
+   * den Lastenheft §51/GoBD als EINZIGEN zulaessigen Weg fuer eine festgeschriebene
+   * Rechnung vorschreiben — u. a. fuer Bestandsbelege, die vor dieser Pruefung mit
+   * Alt-Hinweistext/ohne Leistungsdatum/ohne Empfaenger-USt-IdNr. wirksam festgeschrieben
+   * wurden. Die uebrigen § 14-Pflichtangaben (Nr. 1-3/5/6, USt-Satz-0-Pruefung fuer
+   * steuerbefreite Schemata) bleiben UNVERAENDERT auch fuer Korrekturbelege scharf.
+   */
+  isCorrection?: boolean;
+}
+
 /**
  * Liefert eine Liste fehlender/fehlerhafter Pflichtangaben. Leer = ok.
  */
-export function validateMandatoryFields(inv: MandatoryInvoice): string[] {
+export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMandatoryOptions = {}): string[] {
   const problems: string[] = [];
   const { org, customer } = inv;
+  const isCorrection = opts.isCorrection ?? false;
 
   // § 14 Abs. 4 Nr. 1 — Aussteller
   if (!org.legalName?.trim()) problems.push("Name des leistenden Unternehmers fehlt (§ 14 Abs. 4 Nr. 1).");
@@ -159,10 +179,14 @@ export function validateMandatoryFields(inv: MandatoryInvoice): string[] {
   if (!smallAmount && !hasDeliveryInfo(inv))
     problems.push("Leistungs-/Lieferzeitpunkt fehlt (§ 14 Abs. 4 Nr. 6) — Datum oder Zeitraum oder Hinweis erforderlich.");
 
-  // § 14 Abs. 4 Nr. 8 / § 14a — Steuerausweis oder Befreiungshinweis
+  // § 14 Abs. 4 Nr. 8 / § 14a — Steuerausweis oder Befreiungshinweis. C1 (Fix-Welle):
+  // NICHT bei Korrekturbelegen — siehe ValidateMandatoryOptions.isCorrection. Ein
+  // Bestandsbeleg, dessen Hinweistext vor der exakten Regexpruefung (Task 2) mit der
+  // frueheren Erst-Wort-Heuristik wirksam festgeschrieben wurde, muss weiterhin
+  // stornierbar/gutschreibbar bleiben.
   const scheme = inv.taxScheme;
   const noticeRequired = SCHEME_NOTICE[scheme];
-  if (noticeRequired) {
+  if (noticeRequired && !isCorrection) {
     const accepted = SCHEME_NOTICE_ACCEPTED[scheme] ?? [];
     const normalized = normalizeNotice(inv.notes ?? "");
     if (!accepted.some((re) => re.test(normalized))) {
@@ -170,34 +194,57 @@ export function validateMandatoryFields(inv: MandatoryInvoice): string[] {
     }
   }
   // Bei steuerbefreiten Schemata darf KEIN USt-Satz > 0 ausgewiesen sein (§ 14c-Risiko).
+  // Bleibt auch bei Korrekturbelegen scharf — kein Task-2-Blocker, sondern eine schon
+  // vor Phase 12b implizit geltende, hier nur benannte Bedingung (COMPLIANCE.md § 8).
   if (ZERO_TAX_SCHEMES.has(scheme) && inv.lines.some((l) => l.taxRate > 0)) {
     problems.push(`Schema ${scheme}: Positionen dürfen keinen USt-Satz > 0 ausweisen (§ 14c-Risiko).`);
   }
 
-  // ig. Lieferung/Leistung: USt-IdNr. beider Parteien (§ 14a Abs. 1/3)
+  // ig. Lieferung/Leistung: USt-IdNr. beider Parteien (§ 14a Abs. 1/3) — vor Phase 12b
+  // bereits geltende Pruefung, bleibt auch bei Korrekturbelegen scharf.
   if (scheme === "IG_LIEFERUNG" || scheme === "IG_LEISTUNG") {
     if (!org.vatId?.trim()) problems.push("USt-IdNr. des Ausstellers erforderlich (§ 14a Abs. 1/3).");
     if (!customer.vatId?.trim()) problems.push("USt-IdNr. des Empfängers erforderlich (§ 14a Abs. 1/3).");
   }
 
-  // Phase 12b — materielle Zusatzvoraussetzungen:
-  if (scheme === "IG_LIEFERUNG") {
-    if (!hasDeliveryDateOrPeriod(inv)) {
-      problems.push("Innergemeinschaftliche Lieferung: Leistungsdatum oder Leistungszeitraum erforderlich (§ 14 Abs. 4 Nr. 6; EN 16931 BR-IC-11) — ein Hinweistext genügt hier nicht.");
+  // Phase 12b — materielle Zusatzvoraussetzungen (C1, Fix-Welle: die VIER neuen Blocker
+  // dieses Abschnitts gelten NICHT fuer Korrekturbelege — siehe ValidateMandatoryOptions.
+  // isCorrection). Ein Storno/eine Teilgutschrift spiegelt ein bereits festgeschriebenes
+  // Original; seine materiellen Tatbestandsvoraussetzungen (Leistungszeitraum, Empfaenger-/
+  // Ausstellerkennung, Empfaengerland) sind zum Ursprungszeitpunkt determiniert und vom
+  // Korrekturpfad nicht mehr nachtraeglich herstellbar (z. B. wenn sich Kunden-Stammdaten
+  // seither geaendert haben oder der Beleg vor dieser Pruefung finalisiert wurde).
+  if (!isCorrection) {
+    if (scheme === "IG_LIEFERUNG") {
+      if (!hasDeliveryDateOrPeriod(inv)) {
+        problems.push("Innergemeinschaftliche Lieferung: Leistungsdatum oder Leistungszeitraum erforderlich (§ 14 Abs. 4 Nr. 6; EN 16931 BR-IC-11) — ein Hinweistext genügt hier nicht.");
+      }
+      const prefix = vatPrefix(customer.vatId);
+      if (customer.vatId?.trim() && (prefix === "DE" || !EU_VAT_PREFIXES.has(prefix))) {
+        problems.push("USt-IdNr. des Empfängers muss aus einem anderen EU-Mitgliedstaat stammen (§ 6a Abs. 1 Nr. 4 UStG).");
+      }
     }
-    const prefix = vatPrefix(customer.vatId);
-    if (customer.vatId?.trim() && (prefix === "DE" || !EU_VAT_PREFIXES.has(prefix))) {
-      problems.push("USt-IdNr. des Empfängers muss aus einem anderen EU-Mitgliedstaat stammen (§ 6a Abs. 1 Nr. 4 UStG).");
+    if (scheme === "REVERSE_CHARGE" && !customer.vatId?.trim()) {
+      // I1 (Fix-Welle): EN 16931 BR-AE-02 verlangt fuer die Rechnungszeile die
+      // Empfaenger-USt-IdNr. (BT-48) UND/ODER die Empfaenger-Handelsregisternummer
+      // (BT-47) — § 13b UStG selbst fordert KEINE Empfaenger-Kennung (nur den
+      // Pflichthinweis nach § 14a Abs. 5 S. 1, s. o.). BT-47 bildet das Datenmodell
+      // dieser Software nicht ab (kein eigenes Kundenfeld) — deshalb wird ausschliesslich
+      // die USt-IdNr. geprueft; siehe COMPLIANCE.md § 8 / docs/LIMITATIONEN.md.
+      problems.push("USt-IdNr. des Empfängers erforderlich, damit die E-Rechnung EN 16931 (BR-AE-02) erfüllt ist.");
     }
-  }
-  if (scheme === "REVERSE_CHARGE" && !customer.vatId?.trim()) {
-    // BR-AE-3 verlangt BT-48 oder BT-47; BT-47 bildet diese Software nicht ab.
-    problems.push("USt-IdNr. des Empfängers erforderlich (§ 13b UStG; EN 16931 BR-AE-3).");
-  }
-  if (scheme === "AUSFUHR") {
-    const country = (customer.countryCode ?? "").toUpperCase();
-    if (!country || EU_COUNTRY_CODES.has(country)) {
-      problems.push("Ausfuhrlieferung setzt einen Empfänger außerhalb der EU voraus (§ 6 Abs. 1 UStG) — Länderkennzeichen des Kunden prüfen.");
+    if (scheme === "AUSFUHR") {
+      const country = (customer.countryCode ?? "").toUpperCase();
+      if (!country || EU_COUNTRY_CODES.has(country)) {
+        problems.push("Ausfuhrlieferung setzt einen Empfänger außerhalb der EU voraus (§ 6 Abs. 1 UStG) — Länderkennzeichen des Kunden prüfen.");
+      }
+      // I3/M8 (Fix-Welle): ohne Aussteller-USt-IdNr. verletzt Kategorie G BR-G-02/BR-G-03
+      // (Seller VAT Identifier BT-31 oder Vertreter-USt-IdNr. BT-63) — der BT-29-Zusatz
+      // aus Task 6 (Steuernummer als generische Verkaeuferkennung) erfuellt diese Regel
+      // NICHT, die verlangt ausdruecklich eine USt-IdNr.
+      if (!org.vatId?.trim()) {
+        problems.push("Ausfuhrlieferung: USt-IdNr. des Ausstellers erforderlich, damit die E-Rechnung EN 16931 (BR-G-02/BR-G-03) erfüllt ist.");
+      }
     }
   }
 

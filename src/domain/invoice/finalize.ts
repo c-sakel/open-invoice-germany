@@ -110,26 +110,32 @@ export async function finalizeWithinTx(
     }
   }
 
-  // 1) Pflichtangaben
-  const problems = validateMandatoryFields({
-    type: invoice.type,
-    taxScheme: invoice.taxScheme,
-    issueDate,
-    deliveryDate: invoice.deliveryDate,
-    deliveryStart: invoice.deliveryStart,
-    deliveryEnd: invoice.deliveryEnd,
-    notes: invoice.notes,
-    isSmallAmount: opts.isSmallAmount,
-    lines: invoice.lines.map((l) => ({
-      description: l.description,
-      quantityMilli: l.quantityMilli,
-      taxRate: l.taxRate,
-      taxCategory: l.taxCategory,
-      lineType: l.lineType,
-    })),
-    org: invoice.org,
-    customer: invoice.customer,
-  });
+  // 1) Pflichtangaben. C1 (Fix-Welle): isCorrection wird aus Invoice.correctsInvoiceId
+  // abgeleitet — cancel.ts (Vollstorno) UND credit.ts (Teilgutschrift) setzen dieses Feld
+  // beim Anlegen des Korrekturbelegs (siehe dort), ein kuenftiger CORRECTION-Beleg ebenso.
+  // Damit muessen die neuen Phase-12b-Blocker/die verschaerfte Hinweispruefung NICHT den
+  // einzigen GoBD-konformen Korrekturweg fuer bereits festgeschriebene Rechnungen sperren.
+  const problems = validateMandatoryFields(
+    {
+      taxScheme: invoice.taxScheme,
+      issueDate,
+      deliveryDate: invoice.deliveryDate,
+      deliveryStart: invoice.deliveryStart,
+      deliveryEnd: invoice.deliveryEnd,
+      notes: invoice.notes,
+      isSmallAmount: opts.isSmallAmount,
+      lines: invoice.lines.map((l) => ({
+        description: l.description,
+        quantityMilli: l.quantityMilli,
+        taxRate: l.taxRate,
+        taxCategory: l.taxCategory,
+        lineType: l.lineType,
+      })),
+      org: invoice.org,
+      customer: invoice.customer,
+    },
+    { isCorrection: invoice.correctsInvoiceId != null },
+  );
   if (problems.length > 0) {
     throw new FinalizeError("Pflichtangaben unvollständig:\n- " + problems.join("\n- "));
   }
