@@ -8,6 +8,7 @@
 import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
+import { exemptionReasonCode, exemptionReasonText } from "./exemption";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -39,23 +40,6 @@ function typeCode(type: string): string {
   if (type === "DOWNPAYMENT") return "386";
   return "380";
 }
-function exemptionReason(category: string): string | null {
-  switch (category) {
-    case "AE":
-      return "Steuerschuldnerschaft des Leistungsempfängers";
-    case "K":
-      return "Innergemeinschaftliche Lieferung";
-    case "G":
-      return "Ausfuhrlieferung";
-    case "E":
-      return "Steuerbefreit";
-    case "Z":
-      return "Nullsatz";
-    default:
-      return null;
-  }
-}
-
 // BR-DE-23: PayeePartyCreditorFinancialAccount nur bei Überweisung/Lastschrift.
 const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
 
@@ -261,10 +245,13 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const t = set.ele("ram:ApplicableTradeTax");
     t.ele("ram:CalculatedAmount").txt(amt(sub.taxCents)).up();
     t.ele("ram:TypeCode").txt("VAT").up();
-    const reason = exemptionReason(sub.taxCategory);
+    const reason = exemptionReasonText(sub.taxCategory);
     if (reason) t.ele("ram:ExemptionReason").txt(reason).up();
     t.ele("ram:BasisAmount").txt(amt(sub.netCents)).up();
     t.ele("ram:CategoryCode").txt(sub.taxCategory).up();
+    // CII-XSD (TradeTaxType): ExemptionReasonCode NACH CategoryCode, VOR RateApplicablePercent.
+    const reasonCode = exemptionReasonCode(sub.taxCategory);
+    if (reasonCode) t.ele("ram:ExemptionReasonCode").txt(reasonCode).up();
     t.ele("ram:RateApplicablePercent").txt(String(sub.taxRate)).up();
     t.up();
   }
