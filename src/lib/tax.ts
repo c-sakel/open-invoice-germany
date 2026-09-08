@@ -15,7 +15,8 @@ export type TaxCategory =
   | "K" // Innergemeinschaftliche Lieferung (§ 6a)
   | "G" // Export außerhalb EU
   | "E" // Steuerbefreit (z.B. Kleinunternehmer § 19)
-  | "Z"; // Nullsatz
+  | "Z" // Nullsatz
+  | "O"; // Nicht steuerbar
 
 export interface TaxLineInput {
   lineNetCents: number;
@@ -120,26 +121,35 @@ export function computeTaxBreakdown(
   };
 }
 
-/** Steuerschemata, die eine 0-%-/befreite Behandlung erzwingen. */
-export const ZERO_TAX_SCHEMES = new Set([
-  "KLEINUNTERNEHMER",
-  "REVERSE_CHARGE",
-  "IG_LIEFERUNG",
-  "IG_LEISTUNG",
+/** Steuerschemata, die eine 0-%-/befreite Behandlung erzwingen. Phase 12b: bis hier ein
+ *  toter Export — wird jetzt von validateMandatoryFields ausgewertet. */
+export const ZERO_TAX_SCHEMES: ReadonlySet<string> = new Set([
+  "KLEINUNTERNEHMER", "REVERSE_CHARGE", "IG_LIEFERUNG", "IG_LEISTUNG", "DIFFERENZ", "AUSFUHR",
 ]);
 
 /** Default-Steuerkategorie je Schema (für neue Positionen/Hinweise). */
 export function defaultCategoryForScheme(scheme: string): TaxCategory {
   switch (scheme) {
-    case "KLEINUNTERNEHMER":
-      return "E";
-    case "REVERSE_CHARGE":
-      return "AE";
-    case "IG_LIEFERUNG":
-      return "K";
-    case "IG_LEISTUNG":
-      return "AE";
-    default:
-      return "S";
+    case "KLEINUNTERNEHMER": return "E";
+    case "REVERSE_CHARGE": return "AE";
+    case "IG_LIEFERUNG": return "K";
+    case "IG_LEISTUNG": return "AE";
+    // Phase 12b: DIFFERENZ fiel bisher auf "S" durch — Kategorie S mit 0 % verletzt
+    // EN 16931 BR-S-05 und machte jede § 25a-Rechnung als XRechnung ungueltig.
+    case "DIFFERENZ": return "E";
+    case "AUSFUHR": return "G";
+    default: return "S";
   }
 }
+
+/** Die 27 EU-Mitgliedstaaten (ISO 3166-1 alpha-2) — Land der Rechnungsanschrift. */
+export const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
+  "AT","BE","BG","CY","CZ","DE","DK","EE","ES","FI","FR","GR","HR","HU","IE",
+  "IT","LT","LU","LV","MT","NL","PL","PT","RO","SE","SI","SK",
+]);
+
+/** USt-IdNr.-Praefixe: wie EU_COUNTRY_CODES, aber "EL" statt "GR" und zusaetzlich "XI"
+ *  (Nordirland, Windsor Framework). */
+export const EU_VAT_PREFIXES: ReadonlySet<string> = new Set(
+  [...EU_COUNTRY_CODES].filter((c) => c !== "GR").concat(["EL", "XI"]),
+);
