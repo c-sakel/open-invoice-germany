@@ -131,8 +131,10 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
     pts.ele("cbc:CompanyID").txt(party.vatId).up();
     pts.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
   }
-  // BT-32 — Steuernummer (PartyTaxScheme FC). Wichtig für Kleinunternehmer ohne
-  // USt-IdNr.: ohne BT-31 oder BT-32 ist die XRechnung KoSIT-invalid (BR-CO-26/BR-DE).
+  // BT-32 — Steuernummer (PartyTaxScheme FC). M2 (Fix-Welle Final-Review): BT-32 erfüllt
+  // BR-CO-26 NICHT (nur BT-29/BT-30/BT-31, s. Kommentar oben) — deshalb der zusätzliche
+  // BT-29-Zusatz oben für Kleinunternehmer ohne USt-IdNr. BT-32 bleibt trotzdem als eigene,
+  // kanonische Angabe der Steuernummer erhalten (§ 14 Abs. 4 Nr. 2 UStG, unabhängig von BR-CO-26).
   if (isSeller && party.taxNumber) {
     const pts = p.ele("cac:PartyTaxScheme");
     pts.ele("cbc:CompanyID").txt(party.taxNumber).up();

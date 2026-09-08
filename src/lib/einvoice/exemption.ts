@@ -10,6 +10,10 @@
  * D/F/I/J betreffen innergemeinschaftliche ERWERBE und passen hier nicht.
  */
 const REASON_TEXT: Record<string, string> = {
+  // M11 (Fix-Welle Final-Review): wortgleich mit SCHEME_NOTICE.REVERSE_CHARGE
+  // (src/domain/invoice/mandatory.ts) — hier BT-120 (TaxExemptionReason, EN 16931), dort der
+  // Pflichthinweis nach § 14a Abs. 5 UStG. Zwei verschiedene Felder mit zufaellig identischem
+  // Wortlaut, keine gemeinsame Quelle noetig — nicht verwechseln.
   AE: "Steuerschuldnerschaft des Leistungsempfängers",
   K: "Innergemeinschaftliche Lieferung",
   G: "Ausfuhrlieferung",

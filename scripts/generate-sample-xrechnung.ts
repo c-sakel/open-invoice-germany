@@ -197,7 +197,10 @@ function buildSample(opts: {
     type: opts.type ?? "INVOICE",
     issueDate: opts.issueDate ?? new Date("2034-06-09"),
     dueDate: opts.dueDate ?? new Date("2034-07-09"),
-    deliveryDate: opts.deliveryDate ?? new Date("2034-06-01"),
+    // M9 (Fix-Welle Final-Review): kein Default-Leistungsdatum, wenn stattdessen explizit
+    // ein Leistungszeitraum (BG-14) gesetzt wurde — ein Beispielbeleg soll nicht gleichzeitig
+    // ein Leistungsdatum 2034 UND einen Leistungszeitraum in einem anderen Jahr behaupten.
+    deliveryDate: opts.deliveryDate ?? (opts.deliveryStart && opts.deliveryEnd ? null : new Date("2034-06-01")),
     deliveryStart: opts.deliveryStart ?? null,
     deliveryEnd: opts.deliveryEnd ?? null,
     currency: "EUR",
