@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PrintSettingsInput, PrintOptionsOverride } from "@/schemas";
+import type { PrintSettingsInput, PrintOptionsOverride, PrintBooleanKey } from "@/schemas";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
 
-const LABELS: Record<keyof PrintSettingsInput, string> = {
+const LABELS: Record<PrintBooleanKey, string> = {
   showFooter: "Fußzeile",
   showPageNumbers: "Seitenzahlen",
   foldMarks: "Falzmarken",
@@ -18,7 +18,7 @@ const LABELS: Record<keyof PrintSettingsInput, string> = {
   showGiroCode: "GiroCode",
 };
 
-const FIELDS = Object.keys(LABELS) as (keyof PrintSettingsInput)[];
+const FIELDS = Object.keys(LABELS) as PrintBooleanKey[];
 
 type ApiKind = "documents" | "invoices" | "delivery-notes";
 
@@ -52,7 +52,7 @@ export function PrintOptionsPanel({
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(Object.keys(initialOverride).length > 0);
 
-  function toggleOverride(key: keyof PrintSettingsInput, isOverridden: boolean) {
+  function toggleOverride(key: PrintBooleanKey, isOverridden: boolean) {
     setOverrides((o) => {
       const next = { ...o };
       if (isOverridden) {
@@ -64,8 +64,24 @@ export function PrintOptionsPanel({
     });
   }
 
-  function setOverrideValue(key: keyof PrintSettingsInput, value: boolean) {
+  function setOverrideValue(key: PrintBooleanKey, value: boolean) {
     setOverrides((o) => ({ ...o, [key]: value }));
+  }
+
+  function toggleGiroSizeOverride(isOverridden: boolean) {
+    setOverrides((o) => {
+      const next = { ...o };
+      if (isOverridden) {
+        next.giroSizeMm = effective.giroSizeMm;
+      } else {
+        delete next.giroSizeMm;
+      }
+      return next;
+    });
+  }
+
+  function setGiroSizeOverride(value: number) {
+    setOverrides((o) => ({ ...o, giroSizeMm: value }));
   }
 
   function setLayoutOverride(value: string) {
@@ -148,6 +164,29 @@ export function PrintOptionsPanel({
                 </div>
               );
             })}
+          </div>
+          <div className="flex items-center gap-3 text-sm">
+            <label className="flex items-center gap-1 text-xs text-slate-500" title="abweichend von der globalen Einstellung">
+              <input
+                type="checkbox"
+                checked={"giroSizeMm" in overrides}
+                onChange={(e) => toggleGiroSizeOverride(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300"
+              />
+              abweichend
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="number"
+                min={15}
+                max={40}
+                value={"giroSizeMm" in overrides ? overrides.giroSizeMm : effective.giroSizeMm}
+                disabled={!("giroSizeMm" in overrides)}
+                onChange={(e) => setGiroSizeOverride(Number(e.target.value))}
+                className="w-20 rounded border border-slate-300 px-2 py-1 disabled:opacity-50"
+              />
+              <span className={"giroSizeMm" in overrides ? "font-medium text-slate-900" : "text-slate-500"}>GiroCode-Größe (mm)</span>
+            </label>
           </div>
           <button type="button" onClick={save} disabled={saving} className="rounded-md bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
             {saving ? "Speichern…" : "Druckoptionen speichern"}

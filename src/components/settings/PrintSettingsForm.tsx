@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PrintSettingsInput } from "@/schemas";
+import type { PrintSettingsInput, PrintBooleanKey } from "@/schemas";
 
-const LABELS: Record<keyof PrintSettingsInput, string> = {
+const LABELS: Record<PrintBooleanKey, string> = {
   showFooter: "Fußzeile anzeigen",
   showPageNumbers: "Seitenzahlen anzeigen",
   foldMarks: "Falzmarken drucken",
@@ -17,7 +17,7 @@ const LABELS: Record<keyof PrintSettingsInput, string> = {
   showGiroCode: "GiroCode auf Rechnungen anzeigen",
 };
 
-const FIELDS = Object.keys(LABELS) as (keyof PrintSettingsInput)[];
+const FIELDS = Object.keys(LABELS) as PrintBooleanKey[];
 
 /** Globale Druckoptionen (§36) — Beleg-individuelle Überschreibung passiert im PrintOptionsPanel im jeweiligen Editor. */
 export function PrintSettingsForm({ initial }: { initial: PrintSettingsInput }) {
@@ -65,6 +65,18 @@ export function PrintSettingsForm({ initial }: { initial: PrintSettingsInput }) 
           </label>
         ))}
       </div>
+      <label className="flex max-w-xs flex-col gap-1 text-sm">
+        <span className="font-medium text-slate-700">GiroCode-Größe (mm)</span>
+        <input
+          type="number"
+          min={15}
+          max={40}
+          value={values.giroSizeMm}
+          onChange={(e) => setValues((v) => ({ ...v, giroSizeMm: Number(e.target.value) }))}
+          className="w-24 rounded border border-slate-300 px-2 py-1"
+        />
+        <span className="text-xs text-slate-400">15–40 mm. Unter 15 mm wird der Code unzuverlässig scanbar.</span>
+      </label>
       <button
         type="button"
         onClick={save}

@@ -9,6 +9,7 @@
  * — sonst wirft `pdf-parse` (buendelt eine sehr alte pdf.js-Version) bei manchen
  * strukturell validen, komprimierten pdfkit-PDFs `bad XRef entry`.
  */
+import { deflateSync } from "node:zlib";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { DEFAULT_BRANDING_SETTINGS } from "@/domain/settings/branding";
 import { DEFAULT_PRINT_SETTINGS } from "@/domain/settings/print";
@@ -40,4 +41,47 @@ export function testPdfTheme(overrides: Partial<PdfTheme> = {}): PdfTheme {
     compress: false,
     ...overrides,
   };
+}
+
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+
+/** Einfarbig graues RGB-PNG (Farbtyp 2, 8 bit) — Test-Logo fuer PDF-Renderer-Tests.
+ *  Selbst erzeugt statt als Fixture committet: das Projekt hat keine Binaerdateien.
+ *  pdfkit (png.js) liest Farbtyp 2 direkt. */
+export function testPngBuffer(width: number, height: number): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // Bittiefe
+  ihdr[9] = 2; // Farbtyp 2 = Truecolour (RGB)
+  const stride = 1 + width * 3; // je Zeile ein Filter-Byte 0 ("None")
+  const raw = Buffer.alloc(height * stride, 0x80);
+  for (let y = 0; y < height; y++) raw[y * stride] = 0;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }

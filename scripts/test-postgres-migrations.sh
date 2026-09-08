@@ -237,8 +237,10 @@ npx prisma db execute --url "$DATABASE_URL" \
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 # Phase 11b: beide Layout-Migrationen aendern BrandingSettings (legt Phase 7 an) — hier
 # ebenfalls ausklammern, der anschliessende "migrate deploy" zieht sie in der richtigen
-# Reihenfolge nach Phase 7 nach.
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill)$' | sort); do
+# Reihenfolge nach Phase 7 nach. Phase 12a: die GiroCode-Groesse-Migration aendert
+# PrintSettings, ebenfalls eine Phase-7-Tabelle, die hier absichtlich noch nicht existiert
+# — ebenso ausgeklammert, sonst P1014.
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -615,5 +617,38 @@ COUNT15=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT15" = "43" ] || fail "erwartet weiterhin 43 Tabellen nach Phase 11b (nur Spalten), gefunden $COUNT15"
 echo "    ok — Phase-11b-Migrationen angewendet, footerMode-Backfill CUSTOM/AUTO korrekt, layoutId-Default standard, Organization.ownerName vorhanden, 43 Tabellen"
+
+echo "==> Fall 16 (Phase 12a): giroSizeMm-Default auf Bestandszeile"
+# Eigenes Bestands-Szenario (analog Fall 15): alle Migrationen bis VOR der Phase-12a-
+# Migration einspielen, eine PrintSettings-Zeile im ALTEN Spaltenumfang (ohne giroSizeMm)
+# anlegen, dann per "migrate deploy" genau die Phase-12a-Migration nachziehen und pruefen,
+# dass ALTER TABLE ... ADD COLUMN ... DEFAULT 22 die Bestandszeile korrekt befuellt.
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260908090100_phase12a_giro_size)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org16','Bestand Sechzehn GmbH','Weg 17','99917','Bestadt',NOW());
+INSERT INTO "PrintSettings" ("id","orgId","updatedAt")
+  VALUES ('ps16','org16',NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-12a-Migration ist auf der Bestands-DB fehlgeschlagen"
+P12AMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260908090100_phase12a_giro_size' and finished_at is not null")
+[ "$P12AMIG" = "1" ] || fail "Phase-12a-Migration ist nicht als angewendet verbucht"
+GIRO=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"giroSizeMm\" from \"PrintSettings\" where id='ps16'")
+[ "$GIRO" = "22" ] || fail "Bestandszeile ps16: giroSizeMm ist '$GIRO', erwartet Default 22"
+COUNT16=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT16" = "43" ] || fail "erwartet weiterhin 43 Tabellen nach Phase 12a (nur eine Spalte), gefunden $COUNT16"
+echo "    ok — giroSizeMm mit Default 22 auf Bestandszeile, 43 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"

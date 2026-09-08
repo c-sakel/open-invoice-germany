@@ -37,11 +37,17 @@ export function drawBackground(doc: PDFKit.PDFDocument, theme: PdfTheme): void {
   doc.image(theme.backgroundBuffer, 0, 0, { width: doc.page.width, height: doc.page.height });
 }
 
+/** Maximale Logo-Hoehe in mm (Phase 12a). `drawLogo` zeichnete bisher nur mit `{ width }`
+ *  — ein hohes, schmales Logo wuchs unbegrenzt nach unten und lief in den Adressblock.
+ *  `fit` skaliert proportional in die Box [Breite x LOGO_MAX_HEIGHT_MM]; breite/flache
+ *  Logos (der Normalfall) rendern unveraendert. */
+export const LOGO_MAX_HEIGHT_MM = 35;
+
 /** Zeichnet das Logo oben rechts (Breite `brand.logoWidthMm`); ohne Logo-Buffer no-op. */
 export function drawLogo(doc: PDFKit.PDFDocument, theme: PdfTheme, right: number, top: number): void {
   if (!theme.logoBuffer) return;
   const width = mm(theme.brand.logoWidthMm);
-  doc.image(theme.logoBuffer, right - width, top, { width });
+  doc.image(theme.logoBuffer, right - width, top, { fit: [width, mm(LOGO_MAX_HEIGHT_MM)], align: "right" });
 }
 
 /**

@@ -88,7 +88,8 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     "update_print_settings",
     {
       title: "Globale Druckoptionen aktualisieren",
-      description: "Aktualisiert die zehn globalen Druckoptionen-Schalter (§36). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+      description:
+        "Aktualisiert die globalen Druckoptionen (§36): zehn Schalter plus die GiroCode-Groesse giroSizeMm (15-40 mm). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
       inputSchema: partialInputShape(printSettingsInputSchema),
     },
     async (args): Promise<Result> => {
