@@ -2,14 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-// Literal statt Import aus "@/domain/settings/brand": diese Datei ist "use client" und
-// jener Pfad zieht ueber branding.ts -> lib/db.ts den Prisma-Client (node:module) in den
-// Client-Bundle — der Turbopack-Build bricht dann mit "chunking context does not support
-// external modules" ab. Der echte Wert kommt server-seitig ohnehin ueber die Prop
-// (login/page.tsx ruft safeBrand()); dieser Default ist nur eine Typ-Absicherung fuer
-// Aufrufer ohne Marke und muss mit DEFAULT_APP_NAME (brand.ts) uebereinstimmen.
-const DEFAULT_APP_NAME = "OpenInvoice Germany";
+// "@/lib/brand-defaults" hat keine Imports (siehe dort) und ist deshalb im Gegensatz zu
+// "@/domain/settings/brand" (zieht ueber branding.ts -> lib/db.ts den Prisma-Client nach
+// sich) gefahrlos aus dieser "use client"-Datei importierbar. Der echte Wert kommt
+// server-seitig ohnehin ueber die Prop (login/page.tsx ruft safeBrand()); dieser Default
+// ist nur eine Typ-Absicherung fuer Aufrufer ohne Marke.
+import { DEFAULT_APP_NAME } from "@/lib/brand-defaults";
 
 export function AuthForm({
   mode,
