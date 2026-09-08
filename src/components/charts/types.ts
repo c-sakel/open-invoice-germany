@@ -20,6 +20,7 @@ export const CHART_COLORS = {
   second: "#0d9488", // teal-600
   due: "#f59e0b", // amber-500
   overdue: "#e11d48", // rose-600
-  grid: "#e2e8f0", // slate-200
-  axis: "#94a3b8", // slate-400
+  grid: "#e2e8f0", // slate-200 — Rasterlinien (dekorativ, keine Text-Kontrastpflicht)
+  axis: "#94a3b8", // slate-400 — Achsenlinien (dekorativ), NICHT fuer Text (Fix 1: WCAG AA)
+  label: "#475569", // slate-600 — Achsen-/Wertebeschriftung (Text): faellt auf Weiss unter AA (Fix 1)
 } as const;

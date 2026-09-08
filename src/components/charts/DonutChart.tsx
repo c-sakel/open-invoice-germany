@@ -7,7 +7,10 @@ import { ChartFrame } from "./ChartFrame";
  * Farbe je Segment kommt aus `datum.color` — es gibt keine automatische Palettenrotation,
  * weil Status im Projekt feste Farben tragen (amber = faellig, rose = ueberfaellig, ...).
  * `total === 0` rendert nur Spur + Mitteltext, keine Segmente — keine Division durch Null.
- * Legende als `<ul>` unter dem SVG (nicht im SVG), wie im Brief vorgegeben.
+ * Legende als `<ul>` unter dem SVG (nicht im SVG), wie im Brief vorgegeben. Fix 1 (Review):
+ * die Legende ist `aria-hidden`, weil die sr-only-Wertetabelle aus `ChartFrame` dieselben
+ * Label/Wert-Paare bereits vorliest — ohne das haette ein Screenreader jedes Segment
+ * doppelt angesagt.
  */
 export function DonutChart({ title, data }: { title: string; data: ChartDatum[] }) {
   const size = 240;
@@ -52,11 +55,10 @@ export function DonutChart({ title, data }: { title: string; data: ChartDatum[] 
         </text>
       </ChartFrame>
       {data.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm text-slate-600">
+        <ul aria-hidden="true" className="mt-3 space-y-1 text-sm text-slate-600">
           {data.map((d) => (
             <li key={d.label} className="flex items-center gap-2">
               <span
-                aria-hidden="true"
                 className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: d.color ?? CHART_COLORS.primary }}
               />
