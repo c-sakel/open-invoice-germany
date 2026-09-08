@@ -29,4 +29,6 @@ export const apiRequestLogFilterSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
-export type ApiRequestLogFilter = z.infer<typeof apiRequestLogFilterSchema>;
+// Fix-Welle (m7): kein `ApiRequestLogFilter`-Typalias mehr — wurde nirgends im Repo
+// verwendet (weder innerhalb noch ausserhalb dieses Moduls); `z.infer<typeof
+// apiRequestLogFilterSchema>` laesst sich bei Bedarf jederzeit direkt an der Aufrufstelle bilden.

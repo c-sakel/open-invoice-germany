@@ -772,13 +772,22 @@ Logo- und Hintergrunddatei (`BrandingSettings.logoPath`/`backgroundPath`) liegen
 **Umsetzung dieser Software:** Das REST-API-Anfrageprotokoll (`ApiRequestLog`,
 `src/domain/api-log/`) ist von Beginn an auf Datenminimierung ausgelegt —
 standardmäßig **AUS** (`ApiSettings.logRequests`, kein Eintrag ohne bewusstes
-Einschalten in `Einstellungen → API`), zwei getrennte Schalter (`logRequests`
-protokolliert nur Kopfdaten wie Methode/Pfad/Status/Dauer/Schlüssel;
-`logBodies` schaltet zusätzlich Request-/Response-Bodies dazu — Response-Bodies
-NUR bei Fehlerantworten, Status ≥ 400), Bodies auf **2 KB** gekürzt und vor dem
+Einschalten in `Einstellungen → API`), zwei getrennte Schalter: `logRequests`
+protokolliert **Kopfdaten** — Methode, Pfad **inklusive Query-String**,
+Status, Dauer, `apiKeyId`, Request-ID sowie **IP-Adresse und User-Agent** des
+Aufrufers; `logBodies` schaltet zusätzlich Request-/Response-Bodies dazu —
+Response-Bodies NUR bei Fehlerantworten, Status ≥ 400. Bodies werden auf
+**2 KB** gekürzt (Bodies über 256 KB werden aus Performance-/DoS-Gründen gar
+nicht erst geparst, sondern durch einen Platzhalter ersetzt) und vor dem
 Speichern JSON-Schlüssel mit sicherheitsrelevanten Namen (`token`, `secret`,
-`password`, `apiKey`, `iban`, `bic`, `authorization`, …) geschwärzt
-(`src/domain/api-log/redact.ts`). Es entsteht **keine neue Datenkategorie**:
+`password`, `apiKey`, `iban`, `bic`, `authorization`, …) geschwärzt; Query-
+Parameter mit demselben Muster **sowie** `email` werden ebenso vor dem
+Speichern geschwärzt — auch im „nur Kopfdaten"-Modus, der Schalter `logBodies`
+betrifft ausschließlich die Bodies (`src/domain/api-log/redact.ts`). Scheitert
+die Schwärzung eines Bodies oder Query-Strings ausnahmsweise (kein valides
+JSON, oder ein interner Fehler bei der Verarbeitung), wird NIE auf den
+Rohtext zurückgefallen — stattdessen ein Platzhalter (Body) bzw. der Pfad ohne
+Query (Query-String) gespeichert. Es entsteht **keine neue Datenkategorie**:
 protokollierte Bodies gehören derselben Organisation, die sie selbst über ihren
 eigenen API-Schlüssel gesendet bzw. empfangen hat (`orgId`-Scope wie jede
 andere Ressource, kein Zugriff auf fremde Organisationen). Aufbewahrung ist

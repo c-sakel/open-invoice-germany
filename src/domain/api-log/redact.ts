@@ -21,7 +21,9 @@ export const MAX_BODY_BYTES = 2048;
  *  aber vor `JSON.parse`/`JSON.stringify` auf sehr grossen (MB-grossen) Payloads. */
 export const MAX_INPUT_BYTES = 256 * 1024;
 export const REDACTED = "[redaktiert]";
-export const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic)/i;
+// Fix-Welle (m7): nicht mehr `export` — wird ausserhalb dieses Moduls nirgends importiert
+// (weder von redactJson noch von der neuen redactQuery, beide bleiben innerhalb der Datei).
+const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic)/i;
 /** Zusaetzlich zu SECRET_KEY_PATTERN nur fuer Query-Parameter (I1): E-Mail-Adressen sind
  *  keine Geheimnisse, aber personenbezogene Daten (z. B. `/api/v1/Contact?email=...`). */
 const QUERY_ONLY_PATTERN = /email/i;
@@ -30,8 +32,9 @@ const TOO_LARGE_MARKER = JSON.stringify({ truncated: true, reason: "too-large" }
 /** Marker statt Rohtext, wenn Parsen/Schwaerzen scheitert (I2: nie auf den Rohtext zurueckfallen). */
 const UNREDACTABLE_MARKER = JSON.stringify({ redacted: false, reason: "unparseable" });
 
-/** Pfade ohne Protokolleintrag — exakt ODER als Praefix mit "/". */
-export const UNLOGGED_PATHS: readonly string[] = ["/api/docs", "/api/v1/openapi.json", "/api/v1/ping", "/api/v1/ApiRequestLog"];
+/** Pfade ohne Protokolleintrag — exakt ODER als Praefix mit "/". Fix-Welle (m7): nicht
+ *  mehr `export` — nur `shouldLogPath` unten wird ausserhalb dieses Moduls gebraucht. */
+const UNLOGGED_PATHS: readonly string[] = ["/api/docs", "/api/v1/openapi.json", "/api/v1/ping", "/api/v1/ApiRequestLog"];
 
 export function shouldLogPath(pathname: string): boolean {
   return !UNLOGGED_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

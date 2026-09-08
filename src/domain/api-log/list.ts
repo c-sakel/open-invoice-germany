@@ -70,7 +70,30 @@ export async function listApiRequestLogs(orgId: string, rawFilter: unknown): Pro
   return { rows, total, limit: filter.limit, offset: filter.offset };
 }
 
-/** Voller Datensatz (inkl. Bodies) — nur fuer den Einzelabruf (Detail-Schublade/REST-`{id}`). */
+/** Voller Datensatz (inkl. Bodies) — nur fuer den Einzelabruf (Detail-Schublade/REST-`{id}`).
+ *  Abschluss-Review Fix-Welle (m6, final-review.md): expliziter `select` ueber ALLE
+ *  heutigen Spalten statt eines impliziten Voll-Selects — ein kuenftig neu hinzukommendes
+ *  Feld landet dann nicht automatisch (und unbemerkt) in dieser Antwort. */
 export async function findApiRequestLog(orgId: string, id: string): Promise<ApiRequestLog | null> {
-  return dbInternal.apiRequestLog.findFirst({ where: { id, orgId } });
+  return dbInternal.apiRequestLog.findFirst({
+    where: { id, orgId },
+    select: {
+      id: true,
+      orgId: true,
+      apiKeyId: true,
+      requestId: true,
+      method: true,
+      path: true,
+      query: true,
+      status: true,
+      durationMs: true,
+      errorCode: true,
+      ip: true,
+      userAgent: true,
+      requestBody: true,
+      responseBody: true,
+      bodyTruncated: true,
+      createdAt: true,
+    },
+  });
 }

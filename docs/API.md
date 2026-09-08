@@ -155,9 +155,11 @@ erneut. Nach vollständiger Zahlung wechselt die Rechnung auf Status `PAID`.
 ## Anfrageprotokoll
 
 Jede Antwort von `/api/v1/*` — Erfolg **und** Fehler — trägt den Header
-`X-Request-Id` (UUID). Ist das Anfrageprotokoll für die Organisation
-eingeschaltet (**standardmäßig AUS**, `Einstellungen → API → Anfrageprotokoll`),
-landet zu jeder protokollierten Anfrage eine Zeile mit **derselben** Kennung in
+`X-Request-Id` (UUID), **mit Ausnahme von** `GET /api/v1/openapi.json` (läuft
+bewusst ohne den `withApi`-Wrapper, siehe „Was NICHT protokolliert wird"
+unten). Ist das Anfrageprotokoll für die Organisation eingeschaltet
+(**standardmäßig AUS**, `Einstellungen → API → Anfrageprotokoll`), landet zu
+jeder protokollierten Anfrage eine Zeile mit **derselben** Kennung in
 `ApiRequestLog.requestId` — der Header eignet sich damit als Suchschlüssel beim
 Support/Debugging.
 
@@ -170,6 +172,14 @@ erreichbar (`Einstellungen → API`), nicht über `/api/v1`. Die Listenantwort
 enthält aus Datenminimierungsgründen **keine** Request-/Response-Bodies (immer
 `null`) — volle Bodies (sofern gespeichert) liefert nur der Einzelabruf
 `GET /api/v1/ApiRequestLog/{id}`.
+
+**Was im „nur Kopfdaten"-Modus (`logRequests` an, `logBodies` aus) gespeichert
+wird:** Methode, Pfad **inklusive Query-String** (Parameter mit verdächtigem
+Namen — Geheimnis-Muster wie `token`/`secret`/`password`/`apiKey`/`iban`/`bic`
+sowie `email` — werden vor dem Speichern geschwärzt; scheitert die Schwärzung
+ausnahmsweise, wird der Pfad **ohne** Query gespeichert), Status, Dauer,
+`apiKeyId`, Request-ID sowie **IP-Adresse und User-Agent** des Aufrufers. Nur
+Request-/Response-Bodies hängen zusätzlich am separaten Schalter `logBodies`.
 
 **Was NICHT protokolliert wird:**
 - Anfragen, die die Authentifizierung nicht passieren — ein `401` mit
