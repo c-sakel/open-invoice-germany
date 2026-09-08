@@ -106,8 +106,11 @@ const CUSTOMER: MapInput["customer"] = {
 const ORG_NO_IBAN: MapInput["org"] = { ...ORG, iban: null, bic: null, bankName: null };
 
 // Phase 12b (Task 6) — zwei weitere Kunden fuer die neuen Steuerschema-Fixtures:
-// EU-Kunde (ig. Lieferung, BR-IC-3 verlangt eine Empfaenger-USt-IdNr.) und
-// Schweizer Kunde (Ausfuhr, BR-G-3 verbietet dort eine Empfaenger-USt-IdNr.).
+// EU-Kunde (ig. Lieferung, BR-IC-02 verlangt eine Empfaenger-USt-IdNr.) und
+// Schweizer Kunde (Ausfuhr, § 6 UStG setzt einen Drittland-Empfaenger voraus). Fix-Welle
+// Final-Review (I3): BR-G-02/BR-G-03 verlangen eine AUSSTELLER-USt-IdNr. (ORG hat eine) —
+// keine Regel der G-Familie verbietet eine Empfaenger-USt-IdNr., der fruehere Kommentar
+// hier war falsch (siehe COMPLIANCE.md § 8).
 const CUSTOMER_EU: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel BV", addressLine1: "Keizersgracht 1", postalCode: "1015", city: "Amsterdam", countryCode: "NL", vatId: "NL123456789B01" };
 const CUSTOMER_CH: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel AG", addressLine1: "Bahnhofstr. 1", postalCode: "8001", city: "Zürich", countryCode: "CH", vatId: null };
 

@@ -17,9 +17,10 @@ import { buildListeParam } from "@/domain/document/neighbors";
 
 export const dynamic = "force-dynamic";
 
+// Smoke-Bug-Fix (Fix-Welle Final-Review, Phase 12b) — analog invoice-view-model.ts TYPE_TITLE.
 const TYPE_LABEL: Record<string, string> = {
   INVOICE: "Rechnung",
-  CREDIT_NOTE: "Gutschrift",
+  CREDIT_NOTE: "Stornorechnung",
   CORRECTION: "Korrektur",
   PARTIAL: "Teilrechnung",
   DOWNPAYMENT: "Abschlagsrechnung",

@@ -494,22 +494,27 @@ Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nic
 
 ### Materielle Zusatzprüfungen beim Festschreiben (Phase 12b)
 
-Bis Phase 12b prüfte das Festschreiben (`finalize`) nur, ob der **Hinweistext** je Schema vorhanden ist (§ 1) — nicht, ob die materiellen Tatbestandsvoraussetzungen der Steuerbefreiung/Steuerschuldverlagerung selbst erfüllt sind. `validateMandatoryFields` (`src/domain/invoice/mandatory.ts`) blockt seither zusätzlich in drei neuen Fällen:
+Bis Phase 12b prüfte das Festschreiben (`finalize`) nur, ob der **Hinweistext** je Schema vorhanden ist (§ 1) — nicht, ob die materiellen Tatbestandsvoraussetzungen der Steuerbefreiung/Steuerschuldverlagerung selbst erfüllt sind. `validateMandatoryFields` (`src/domain/invoice/mandatory.ts`) blockt seither zusätzlich in mehreren neuen Fällen:
 
 | Schema | Blocker | Norm / EN-16931-Regel |
 |--------|---------|------------------------|
 | `IG_LIEFERUNG` | Leistungsdatum **oder** -zeitraum (BT-72 bzw. BG-14/BT-73+BT-74) muss gesetzt sein — ein reiner Freitext-Hinweis genügt der EN-16931-Kernregel nicht | § 14 Abs. 4 Nr. 6 UStG; **BR-IC-11** |
 | `IG_LIEFERUNG` | Empfänger-USt-IdNr. muss aus einem **anderen** EU-Mitgliedstaat stammen (Präfix ≠ „DE" **und** Präfix in der EU-Präfixliste, s. § 4 unten) | § 6a Abs. 1 Nr. 4 UStG |
-| `REVERSE_CHARGE` | Empfänger-USt-IdNr. ist Pflicht | § 13b UStG; **BR-AE-3** |
+| `REVERSE_CHARGE` | Empfänger-USt-IdNr. ist Pflicht — **keine** UStG-Rechtsgrundlage (§ 13b UStG selbst verlangt beim inländischen Reverse Charge keine Empfänger-Kennung), sondern eine reine E-Rechnungs-Anforderung. Die Kernregel lässt BT-48 (USt-IdNr.) **oder** BT-47 (Handelsregisternummer) genügen; BT-47 bildet das Datenmodell dieser Software nicht ab (kein eigenes Kundenfeld) — geprüft wird deshalb ausschließlich BT-48 | **EN 16931 BR-AE-02** |
+| `AUSFUHR` | Empfänger-Länderkennzeichen fehlt oder liegt innerhalb der EU (eine Ausfuhrlieferung setzt einen Bestimmungsort außerhalb der EU voraus) | § 6 Abs. 1 UStG |
+| `AUSFUHR` | Aussteller-USt-IdNr. ist Pflicht (Fix-Welle Final-Review, I3/M8) — ohne sie ist die Kategorie **G** (Ausfuhr) EN-16931-ungültig; der BT-29-Zusatz aus Task 6 (Steuernummer als generische Verkäuferkennung, s. § 3) genügt hier **nicht**, weil die Regel ausdrücklich eine USt-IdNr. verlangt | **EN 16931 BR-G-02 / BR-G-03** |
 
-Verwandt (nicht Teil der „drei", aber in derselben Fix-Welle ergänzt): `AUSFUHR` blockt zusätzlich, wenn das Empfänger-Länderkennzeichen fehlt oder innerhalb der EU liegt (§ 6 Abs. 1 UStG — eine Ausfuhrlieferung setzt einen Bestimmungsort außerhalb der EU voraus; **BR-G-3** verlangt umgekehrt, dass hier **keine** Empfänger-USt-IdNr. gesetzt ist). Und für alle sechs Schemata mit Pflichthinweis gilt weiterhin: `ZERO_TAX_SCHEMES` (`src/lib/tax.ts`) verbietet jeden Positions-Steuersatz > 0 % (§ 14c-Risiko) — vorher eine implizite, ungenannte Bedingung, jetzt eine benannte, von `validateMandatoryFields` ausgewertete Liste.
+Und für alle sechs Schemata mit Pflichthinweis gilt weiterhin: `ZERO_TAX_SCHEMES` (`src/lib/tax.ts`) verbietet jeden Positions-Steuersatz > 0 % (§ 14c-Risiko) — vorher eine implizite, ungenannte Bedingung, jetzt eine benannte, von `validateMandatoryFields` ausgewertete Liste.
+
+**Korrekturbelege sind ausgenommen (Fix-Welle Final-Review, C1).** Ein Storno (`cancel.ts`) oder eine Teilgutschrift (`credit.ts`) berichtigt ein bereits **festgeschriebenes** Original — die Tabelle oben sowie die exakte Hinweis-Regexprüfung (§ 1) gelten dafür **nicht** (`validateMandatoryFields(inv, { isCorrection: true })`, von `finalize.ts` aus `Invoice.correctsInvoiceId` abgeleitet). Sonst wäre für Bestandsbelege — mit Alt-Hinweistext, ohne Leistungsdatum/-zeitraum oder ohne Empfänger-/Aussteller-USt-IdNr. bereits vor dieser Prüfung wirksam festgeschrieben — der Storno/die Gutschrift nicht mehr möglich, obwohl das der nach Lastenheft § 51/GoBD **einzige** zulässige Korrekturweg für eine festgeschriebene Rechnung ist. Die übrigen § 14-Pflichtangaben (u. a. die § 14c-Nullsatz-Prüfung und die USt-IdNr.-Pflicht beider Parteien bei ig. Lieferung/Leistung, § 14a Abs. 1/3) bleiben auch für Korrekturbelege scharf.
 
 **Ausdrücklich NICHT umgesetzt (Lastenheft § 60, Abgrenzung):**
 - **Keine VIES-Online-Gültigkeitsprüfung.** Die Empfänger-USt-IdNr. wird nur auf das zweistellige Länder-Präfix geprüft (Format/Plausibilität), nicht gegen die tatsächlich beim BZSt/VIES hinterlegten Daten (siehe „USt-IdNr.-Prüfung" oben — dort bleibt es bei der manuellen Einzel-/Qualifizierten Abfrage).
 - **Keine automatische Zusammenfassende Meldung (ZM, § 18a UStG).** Die Software erzeugt keine ZM-Daten; das bleibt eine manuelle Aufgabe außerhalb dieser Software.
+- **Kein BT-47 (Buyer legal registration identifier).** Siehe REVERSE_CHARGE-Zeile oben — nur BT-48 (USt-IdNr.) wird geprüft/erzeugt.
 
 **Quellen:** [§ 13b UStG](https://www.gesetze-im-internet.de/ustg_1980/__13b.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [§ 4 UStG](https://www.gesetze-im-internet.de/ustg_1980/__4.html) · [§ 6 UStG](https://www.gesetze-im-internet.de/ustg_1980/__6.html) · [§ 6a UStG](https://www.gesetze-im-internet.de/ustg_1980/__6a.html) · [§ 18a UStG](https://www.gesetze-im-internet.de/ustg_1980/__18a.html) · [BZSt — Bestätigung ausländischer USt-IdNr.](https://www.bzst.de/DE/Unternehmen/Identifikationsnummern/Umsatzsteuer-Identifikationsnummer/AuslaendischeUSt-IdNr/auslaendische_ust_idnr_node.html)
-**Stand:** 2026-09-08 (materielle Zusatzprüfungen Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, primärquellen-verifiziert)
+**Stand:** 2026-09-08 (Fix-Welle Final-Review: C1-Korrekturausnahme, I1 BR-AE-02-Korrektur, I3/M8 AUSFUHR-Aussteller-USt-IdNr.-Blocker ergänzt; materielle Zusatzprüfungen Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, primärquellen-verifiziert)
 
 ---
 
