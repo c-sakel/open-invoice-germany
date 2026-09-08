@@ -861,6 +861,16 @@ describe("/api/v1/Settings", () => {
     expect(branding.backgroundPath).toBe(before.backgroundPath);
     expect(branding.fontSizePt).toBe(12);
   });
+
+  // M9 (Abschluss-Review Phase 12c, Fix-Welle): die Kanten von taxRatesSchema (leer,
+  // >10 Eintraege, ausserhalb 0..100, Nicht-Ganzzahl) sind in test/unit/tax-rates.test.ts
+  // abgedeckt, aber nie ueber einen tatsaechlichen Schreibpfad — hier auf Routen-Ebene.
+  it("Patch mit documents.taxRates: [] -> 400 (taxRatesSchema.min(1))", async () => {
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", { method: "PATCH", token, body: { documents: { taxRates: [] } } }),
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 // ── ApiKey ────────────────────────────────────────────────────────────────────

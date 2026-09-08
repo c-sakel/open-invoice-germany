@@ -11,22 +11,35 @@ function firstError(issues: { message: string; path: PropertyKey[] }[]): string 
   return i ? `${i.path.join(".") || "Eingabe"}: ${i.message}` : "Ungültige Eingabe";
 }
 
-/** Liest das versteckte `taxRates`-Feld (`TaxRatesField`, JSON-Array). Bei Fehler
- *  `undefined` — dann greift der Zod-Default (`taxRatesSchema.default([19, 7, 0])`);
- *  ein Array mit ungueltigen Werten laeuft unveraendert in `saveDocumentSettings`, dessen
- *  `taxRatesSchema` es (mit lesbarem Pfad ueber `firstError`) ablehnt. */
-function parseTaxRatesField(raw: FormDataEntryValue | null): number[] | undefined {
+/** M5 (Fix-Welle 12c): Unterscheidet "Feld fehlt" (legitim — z. B. ein Formular ohne
+ *  `TaxRatesField`) von "Feld ist da, aber kaputt" (Hidden-Input liefert theoretisch
+ *  IMMER gueltiges JSON, aber ein manipulierter/fehlerhafter Request-Body soll die
+ *  GoBD-relevante Steuersatz-Liste NICHT still auf [19,7,0] zuruecksetzen). */
+export const TAX_RATES_PARSE_ERROR = Symbol("taxRatesParseError");
+
+/** Liest das versteckte `taxRates`-Feld (`TaxRatesField`, JSON-Array).
+ *  - Feld fehlt (`raw` kein String, z. B. `null`) -> `undefined`, der Zod-Default greift
+ *    (`taxRatesSchema.default([19, 7, 0])`) — unveraendert legitim.
+ *  - Feld ist ein String, aber kein gueltiges JSON-Array -> `TAX_RATES_PARSE_ERROR`; der
+ *    Aufrufer bricht damit explizit ab, statt die Liste still zurueckzusetzen.
+ *  - Gueltiges JSON-Array (auch mit ungueltigen Werten) laeuft unveraendert in
+ *    `saveDocumentSettings`, dessen `taxRatesSchema` es mit lesbarem Pfad ablehnt. */
+function parseTaxRatesField(raw: FormDataEntryValue | null): number[] | undefined | typeof TAX_RATES_PARSE_ERROR {
   if (typeof raw !== "string") return undefined;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : undefined;
+    return Array.isArray(parsed) ? parsed : TAX_RATES_PARSE_ERROR;
   } catch {
-    return undefined;
+    return TAX_RATES_PARSE_ERROR;
   }
 }
 
 /** Speichert die Beleg-Einstellungen der aktiven Organisation (Einstellungen → Belege, §33). */
 export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
+  const taxRates = parseTaxRatesField(fd.get("taxRates"));
+  if (taxRates === TAX_RATES_PARSE_ERROR) {
+    return { ok: false, error: "Steuersätze konnten nicht gelesen werden." };
+  }
   const raw = {
     onQuoteAccept: fd.get("onQuoteAccept") ?? "NONE",
     shareLinkDays: fd.get("shareLinkDays") ?? "30",
@@ -48,7 +61,7 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     recurringInsertPeriodText: fd.get("recurringInsertPeriodText") === "on",
     recurringAutoFinalizeDefault: fd.get("recurringAutoFinalizeDefault") === "on",
     recurringAutoSendDefault: fd.get("recurringAutoSendDefault") === "on",
-    taxRates: parseTaxRatesField(fd.get("taxRates")),
+    taxRates,
   };
 
   try {

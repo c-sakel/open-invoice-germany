@@ -17,6 +17,11 @@ describe("taxRateOptions", () => {
   it("faellt auf [19,7,0] zurueck, wenn die Liste leer ankommt", () => {
     expect(taxRateOptions([]).map((o) => o.value)).toEqual([...FALLBACK_TAX_RATES]);
   });
+  it("M4 (Fix-Welle): 0% bleibt immer eine Option, auch wenn die Org-Liste sie nicht enthaelt", () => {
+    // assertAllowedTaxRates (domain/settings/tax-rates.ts) laesst 0% domainweit IMMER zu
+    // (Gliederungszeilen, Nullsatz-Schemata) — die Auswahl darf sie deshalb nie verlieren.
+    expect(taxRateOptions([19, 5]).map((o) => o.value)).toEqual([19, 5, 0]);
+  });
 });
 
 describe("clampTaxRate", () => {

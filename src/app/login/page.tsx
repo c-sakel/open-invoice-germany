@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { dbInternal } from "@/lib/db";
 import { AuthForm } from "@/components/AuthForm";
-import { safeBrand } from "@/app/layout";
+import { safeBrand } from "@/domain/settings/brand";
 
 export const dynamic = "force-dynamic";
 
