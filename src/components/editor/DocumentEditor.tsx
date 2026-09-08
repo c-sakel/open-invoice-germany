@@ -42,6 +42,12 @@ interface DocumentEditorProps {
   initial?: DraftState;
   customers: RecipientCustomerOption[];
   products: ProductOption[];
+  /** Phase 12c — org-eigene Steuersatz-Liste (`DocumentSettings.taxRates`), Basis fuer
+   *  `taxRateOptions` im Editor. Faellt beim `emptyDraft`-Fallback (kein `initial`) in
+   *  `draft.allowedTaxRates`; wird zusaetzlich direkt an `LineItemsEditor` durchgereicht,
+   *  damit ein spaeteres, zum Draft-Aufbau eingefrorenes `allowedTaxRates` die Anzeige
+   *  nicht von der aktuellen Serverliste abkoppelt. */
+  taxRates: number[];
   paymentMethods?: PaymentMethodOption[];
   contacts?: ContactOption[];
   addresses?: AddressOption[];
@@ -92,6 +98,7 @@ export function DocumentEditor({
   initial,
   customers,
   products,
+  taxRates,
   paymentMethods = [],
   contacts = [],
   addresses = [],
@@ -104,7 +111,7 @@ export function DocumentEditor({
   title,
 }: DocumentEditorProps) {
   const router = useRouter();
-  const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode));
+  const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode, { allowedTaxRates: taxRates }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -282,6 +289,7 @@ export function DocumentEditor({
           draft={draft}
           dispatch={dispatch}
           products={productList}
+          taxRates={taxRates}
           mode={mode}
           totals={totals}
           onProductCreated={(p) => setProductList((list) => [...list, p])}

@@ -66,7 +66,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Beleg-Einstellungen aktualisieren",
       description:
-        "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+        "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen), freigegebene Steuersaetze (taxRates, ganze Prozentwerte 0-100, 1-10 Eintraege). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
       inputSchema: partialInputShape(documentSettingsInputSchema),
     },
     async (args): Promise<Result> => {

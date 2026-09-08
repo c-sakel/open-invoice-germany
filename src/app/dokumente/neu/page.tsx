@@ -73,6 +73,7 @@ export default async function NeuesDokumentPage() {
       mode="DOCUMENT"
       customers={customers}
       products={products}
+      taxRates={documentSettings.taxRates}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

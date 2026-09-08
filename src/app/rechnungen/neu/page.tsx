@@ -76,6 +76,7 @@ export default async function NewInvoicePage() {
       mode="INVOICE"
       customers={customers}
       products={products}
+      taxRates={documentSettings.taxRates}
       paymentMethods={paymentMethodOptions}
       contacts={contacts}
       addresses={addresses}

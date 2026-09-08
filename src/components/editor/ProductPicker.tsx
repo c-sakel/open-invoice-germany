@@ -19,10 +19,13 @@ export interface ProductOption {
 
 export function ProductPicker({
   products,
+  taxRates,
   onPick,
   onCreated,
 }: {
   products: ProductOption[];
+  /** Phase 12c — durchgereicht an `NewProductDialog` (org-eigene Steuersatz-Liste). */
+  taxRates: readonly number[];
   onPick: (p: ProductOption) => void;
   onCreated?: (p: InlineProduct) => void;
 }) {
@@ -47,6 +50,7 @@ export function ProductPicker({
           }}
         />
         <NewProductDialog
+          taxRates={taxRates}
           onCreated={(p) => {
             onCreated?.(p);
             onPick(p);

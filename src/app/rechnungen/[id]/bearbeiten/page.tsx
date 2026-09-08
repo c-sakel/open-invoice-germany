@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
 import { draftFromInvoice, type InvoiceInitialLike } from "@/lib/editor/draft";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
@@ -23,7 +24,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   // Nur Entwuerfe sind bearbeitbar (GoBD, Lastenheft 51).
   if (inv.status !== "DRAFT") redirect(`/rechnungen/${id}`);
 
-  const [customers, products, paymentMethods, contactRows, addressRows, attachments] = await Promise.all([
+  const [customers, products, paymentMethods, contactRows, addressRows, attachments, documentSettings] = await Promise.all([
     dbInternal.customer.findMany({
       where: { orgId: org.id, isArchived: false },
       select: {
@@ -49,6 +50,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
     dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
     listAttachments(org.id, "INVOICE", inv.id),
+    loadDocumentSettings(org.id),
   ]);
 
   const paymentMethodOptions = paymentMethods.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays }));
@@ -118,9 +120,10 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   return (
     <DocumentEditor
       mode="INVOICE"
-      initial={draftFromInvoice(invoiceInitial)}
+      initial={draftFromInvoice(invoiceInitial, documentSettings.taxRates)}
       customers={customers}
       products={products}
+      taxRates={documentSettings.taxRates}
       paymentMethods={paymentMethodOptions}
       contacts={contacts}
       addresses={addresses}

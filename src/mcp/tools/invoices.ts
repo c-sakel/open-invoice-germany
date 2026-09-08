@@ -33,6 +33,7 @@ import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { NotFoundError } from "@/domain/errors";
 import {
   TaxScheme,
+  TaxRate,
   createInvoiceSchema,
   createPartialInvoiceSchema,
   createDownpaymentInvoiceSchema,
@@ -60,7 +61,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               unitPriceEuro: z.number().optional().describe("Nettopreis je Einheit in Euro (oder productName nutzen)"),
               productName: z.string().optional().describe("Name einer gespeicherten Leistung — Preis/Einheit/Steuersatz werden übernommen"),
               unit: z.string().optional(),
-              taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+              taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional().describe("Zusaetzlicher Festbetragsrabatt je Position in Euro"),
             }),
@@ -112,6 +113,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             quantityMilli: ctx.qtyToMilli(l.quantity),
             unit: unit ?? "C62",
             unitNetPriceCents: ctx.euroToCents(unitPriceEuro),
+            // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
             taxRate: isRegular ? (taxRatePercent ?? 19) : 0,
             taxCategory: category,
             discountPermille: l.discountPercent ? Math.round(l.discountPercent * 10) : 0,
@@ -584,7 +586,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               unitPriceEuro: z.number().optional(),
               productName: z.string().optional(),
               unit: z.string().optional(),
-              taxRatePercent: z.union([z.literal(19), z.literal(7), z.literal(0)]).optional(),
+              taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional(),
             }),

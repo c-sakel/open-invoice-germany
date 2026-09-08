@@ -11,6 +11,20 @@ function firstError(issues: { message: string; path: PropertyKey[] }[]): string 
   return i ? `${i.path.join(".") || "Eingabe"}: ${i.message}` : "Ungültige Eingabe";
 }
 
+/** Liest das versteckte `taxRates`-Feld (`TaxRatesField`, JSON-Array). Bei Fehler
+ *  `undefined` — dann greift der Zod-Default (`taxRatesSchema.default([19, 7, 0])`);
+ *  ein Array mit ungueltigen Werten laeuft unveraendert in `saveDocumentSettings`, dessen
+ *  `taxRatesSchema` es (mit lesbarem Pfad ueber `firstError`) ablehnt. */
+function parseTaxRatesField(raw: FormDataEntryValue | null): number[] | undefined {
+  if (typeof raw !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Speichert die Beleg-Einstellungen der aktiven Organisation (Einstellungen → Belege, §33). */
 export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
   const raw = {
@@ -34,6 +48,7 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     recurringInsertPeriodText: fd.get("recurringInsertPeriodText") === "on",
     recurringAutoFinalizeDefault: fd.get("recurringAutoFinalizeDefault") === "on",
     recurringAutoSendDefault: fd.get("recurringAutoSendDefault") === "on",
+    taxRates: parseTaxRatesField(fd.get("taxRates")),
   };
 
   try {
