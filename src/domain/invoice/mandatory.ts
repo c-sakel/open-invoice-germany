@@ -6,6 +6,8 @@
  * Festschreiben (finalize), wenn Pflichtangaben fehlen.
  */
 
+import { ZERO_TAX_SCHEMES, EU_COUNTRY_CODES, EU_VAT_PREFIXES } from "@/lib/tax";
+
 export interface MandatoryOrg {
   legalName: string;
   addressLine1: string;
@@ -21,6 +23,7 @@ export interface MandatoryCustomer {
   postalCode: string;
   city: string;
   vatId?: string | null;
+  countryCode?: string | null;
 }
 
 export interface MandatoryLine {
@@ -102,6 +105,15 @@ function hasDeliveryInfo(inv: MandatoryInvoice): boolean {
   return Boolean(inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd) || inv.notes);
 }
 
+/** BR-IC-11: bei ig. Lieferung genuegt der Freitext NICHT — es braucht BT-72 oder BG-14. */
+function hasDeliveryDateOrPeriod(inv: MandatoryInvoice): boolean {
+  return Boolean(inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd));
+}
+/** Zweistelliges USt-IdNr.-Praefix, gross, ohne Leerzeichen. */
+function vatPrefix(vatId: string | null | undefined): string {
+  return (vatId ?? "").replace(/\s/g, "").slice(0, 2).toUpperCase();
+}
+
 /**
  * Liefert eine Liste fehlender/fehlerhafter Pflichtangaben. Leer = ok.
  */
@@ -151,21 +163,42 @@ export function validateMandatoryFields(inv: MandatoryInvoice): string[] {
   const scheme = inv.taxScheme;
   const noticeRequired = SCHEME_NOTICE[scheme];
   if (noticeRequired) {
-    const notes = (inv.notes ?? "").toLowerCase();
-    const ok = notes.includes(noticeRequired.toLowerCase().split(" ")[0]); // grobe Heuristik auf Kernbegriff
-    if (!ok)
-      problems.push(
-        `Pflichthinweis für Schema ${scheme} fehlt im Hinweistext: "${noticeRequired}" (§ 14a UStG / § 14 Abs. 4 Nr. 8).`,
-      );
-    // Bei steuerbefreiten Schemata darf KEIN USt-Satz > 0 ausgewiesen sein.
-    if (inv.lines.some((l) => l.taxRate > 0))
-      problems.push(`Schema ${scheme}: Positionen dürfen keinen USt-Satz > 0 ausweisen (§ 14c-Risiko).`);
+    const accepted = SCHEME_NOTICE_ACCEPTED[scheme] ?? [];
+    const normalized = normalizeNotice(inv.notes ?? "");
+    if (!accepted.some((re) => re.test(normalized))) {
+      problems.push(`Pflichthinweis für Schema ${scheme} fehlt im Hinweistext: "${noticeRequired}" (§ 14a UStG / § 14 Abs. 4 Nr. 8).`);
+    }
+  }
+  // Bei steuerbefreiten Schemata darf KEIN USt-Satz > 0 ausgewiesen sein (§ 14c-Risiko).
+  if (ZERO_TAX_SCHEMES.has(scheme) && inv.lines.some((l) => l.taxRate > 0)) {
+    problems.push(`Schema ${scheme}: Positionen dürfen keinen USt-Satz > 0 ausweisen (§ 14c-Risiko).`);
   }
 
   // ig. Lieferung/Leistung: USt-IdNr. beider Parteien (§ 14a Abs. 1/3)
   if (scheme === "IG_LIEFERUNG" || scheme === "IG_LEISTUNG") {
     if (!org.vatId?.trim()) problems.push("USt-IdNr. des Ausstellers erforderlich (§ 14a Abs. 1/3).");
     if (!customer.vatId?.trim()) problems.push("USt-IdNr. des Empfängers erforderlich (§ 14a Abs. 1/3).");
+  }
+
+  // Phase 12b — materielle Zusatzvoraussetzungen:
+  if (scheme === "IG_LIEFERUNG") {
+    if (!hasDeliveryDateOrPeriod(inv)) {
+      problems.push("Innergemeinschaftliche Lieferung: Leistungsdatum oder Leistungszeitraum erforderlich (§ 14 Abs. 4 Nr. 6; EN 16931 BR-IC-11) — ein Hinweistext genügt hier nicht.");
+    }
+    const prefix = vatPrefix(customer.vatId);
+    if (customer.vatId?.trim() && (prefix === "DE" || !EU_VAT_PREFIXES.has(prefix))) {
+      problems.push("USt-IdNr. des Empfängers muss aus einem anderen EU-Mitgliedstaat stammen (§ 6a Abs. 1 Nr. 4 UStG).");
+    }
+  }
+  if (scheme === "REVERSE_CHARGE" && !customer.vatId?.trim()) {
+    // BR-AE-3 verlangt BT-48 oder BT-47; BT-47 bildet diese Software nicht ab.
+    problems.push("USt-IdNr. des Empfängers erforderlich (§ 13b UStG; EN 16931 BR-AE-3).");
+  }
+  if (scheme === "AUSFUHR") {
+    const country = (customer.countryCode ?? "").toUpperCase();
+    if (!country || EU_COUNTRY_CODES.has(country)) {
+      problems.push("Ausfuhrlieferung setzt einen Empfänger außerhalb der EU voraus (§ 6 Abs. 1 UStG) — Länderkennzeichen des Kunden prüfen.");
+    }
   }
 
   return problems;
