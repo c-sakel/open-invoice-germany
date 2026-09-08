@@ -127,7 +127,8 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 Unter **„Einstellungen"** findest du seit Phase 7 zusätzliche Seiten für das Erscheinungsbild und die Nummerierung deiner Belege; seit Phase 11b ist das Erscheinungsbild in die Reiter „Briefpapier" / „Layouts" / „Druckoptionen" unter `Einstellungen → Briefpapier` aufgeteilt.
 
 ### Briefpapier einrichten (Reiter „Briefpapier")
-- **Logo hochladen**: PNG oder JPEG, max. **2 MB**. Wird oben rechts auf jedem Beleg-PDF angezeigt, Breite über **„Logo-Breite (mm)"** einstellbar (10–100 mm).
+- **Logo hochladen**: PNG oder JPEG, max. **2 MB**. Wird je nach Layout oben rechts oder oben links auf jedem Beleg-PDF angezeigt.
+- **Logogröße**: Schieberegler + Zahlenfeld „Breite im PDF (mm)", 10–140 mm. Die Höhe wird automatisch auf 35 mm begrenzt — ein breites/flaches Logo wird bis zu dieser Breite groß, ein hohes/schmales Logo wird schon vorher durch die Höhengrenze gebremst, damit es nicht in den Adressblock hineinläuft.
 - **Hintergrundbild** (optional): PNG oder JPEG, max. **5 MB**, ganzseitig hinter dem Beleginhalt — nur sichtbar, wenn „Hintergrund anzeigen" aktiv ist.
 - **Primärfarbe**, **Ränder** (oben/rechts/unten/links, mm) und **Schriftgröße** (pt) bestimmen Optik.
 - **Absenderzeile** und Fußzeile (automatisch aus den Stammdaten in vier Spalten, oder drei freie Textfelder links/mittig/rechts).
@@ -147,6 +148,9 @@ Tabelle mit **neun** Nummernkreisen: Angebote, Auftragsbestätigungen, Proforma-
 
 ### Druckoptionen (Reiter „Druckoptionen")
 Zehn globale Schalter für Beleg-PDFs: Fußzeile, Seitenzahlen, Falz-/Lochmarken (DIN 5008), Artikelnummer-/Beschreibungs-/Steuersatz-/Zeilensummen-Spalte, Absenderzeile, **GiroCode**. Auf einem einzelnen **Entwurf** (Rechnung/Angebot/Lieferschein) lässt sich im Editor unter „Weitere Optionen" gezielt von den globalen Werten abweichen — nur die tatsächlich angehakten Felder werden je Beleg überschrieben. Nach dem Festschreiben ist diese Beleg-Auswahl nicht mehr änderbar.
+
+### GiroCode-Größe
+Neben dem Schalter „GiroCode anzeigen" legt **„GiroCode-Größe (mm)"** unter **Einstellungen → Briefpapier → Druckoptionen** die Kantenlänge des QR-Codes fest — **15–40 mm**, Standard **22 mm**; unter 15 mm ist der Code in Banking-Apps nicht mehr zuverlässig scanbar. Wie die übrigen Druckoptionen lässt sich der Wert auf einem einzelnen **Entwurf** im Editor unter „Weitere Optionen" gezielt überschreiben; nach dem Festschreiben ist diese Beleg-Auswahl eingefroren und ändert sich nicht mehr rückwirkend.
 
 ### GiroCode-Voraussetzungen
 Der GiroCode (QR-Code für „Scannen & Bezahlen" in Banking-Apps, Standard EPC069-12) erscheint auf einer Rechnung nur, wenn **alle** Punkte erfüllt sind:
