@@ -1142,6 +1142,47 @@ model ApiIdempotency {
   @@index([orgId, createdAt])
 }
 
+/// Anfrageprotokoll der REST-API (Phase 12d, §18 COMPLIANCE.md). Standardmaessig AUS
+/// (ApiSettings.logRequests). Bodies nur bei zusaetzlich eingeschaltetem logBodies,
+/// Antwort-Bodies nur bei status >= 400, beide auf 2048 Byte gekuerzt und geschwaerzt.
+/// KEIN Belegereignis -> geht NICHT in den ChangeLog (Audit-Ruling K5).
+/// `orgId` ohne Relationsfeld — wie ApiIdempotency/WebhookDelivery (Infrastrukturtabelle).
+model ApiRequestLog {
+  id             String   @id @default(cuid())
+  orgId          String
+  apiKeyId       String?
+  requestId      String
+  method         String
+  path           String
+  query          String?
+  status         Int
+  durationMs     Int
+  errorCode      String?
+  ip             String?
+  userAgent      String?
+  requestBody    String?
+  responseBody   String?
+  bodyTruncated  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([orgId, status, createdAt])
+  // Ohne orgId-Praefix: der Aufraeumjob scannt ueber alle Organisationen
+  // (gleiches Muster wie WebhookDelivery.@@index([status, nextAttemptAt])).
+  @@index([createdAt])
+}
+
+/// Schalter und Retention des Anfrageprotokolls je Organisation (Phase 12d).
+model ApiSettings {
+  id            String   @id @default(cuid())
+  orgId         String   @unique
+  logRequests   Boolean  @default(false)
+  logBodies     Boolean  @default(false)
+  retentionDays Int      @default(7)
+  maxRows       Int      @default(2000)
+  updatedAt     DateTime @updatedAt
+}
+
 /// Webhook-Endpunkt einer Organisation (Phase 10, Task 5/10b) — URL + verschluesseltes
 /// Secret (AES-GCM, src/lib/crypto/secrets.ts) + abonnierte Ereignisse (eventsJson,
 /// JSON-Array aus src/schemas/webhook.ts#WEBHOOK_EVENTS). Kein Klartext-Secret nach der
