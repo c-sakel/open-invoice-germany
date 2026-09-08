@@ -34,6 +34,10 @@ export async function loadBrandingSettings(orgId: string): Promise<BrandingSetti
     layoutId: row.layoutId,
     layoutByType: parseLayoutByType(row.layoutByTypeJson),
     footerMode: row.footerMode,
+    appName: row.appName,
+    appShortName: row.appShortName,
+    faviconPath: row.faviconPath,
+    appLogoPath: row.appLogoPath,
   });
 }
 

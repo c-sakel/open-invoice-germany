@@ -990,6 +990,13 @@ model BrandingSettings {
   layoutId         String       @default("standard")
   layoutByTypeJson String?
   footerMode       String       @default("AUTO") // AUTO (vierspaltig aus Stammdaten) | CUSTOM (footerLeft/Center/Right)
+  /// Phase 12c — White-Label. NULL bedeutet ueberall "Produktvorgabe" (appName
+  /// "OpenInvoice Germany", appShortName "OI", src/app/favicon.ico, kein Sidebar-Logo).
+  /// Die AGPL-Herkunftszeile in AppShell/SlimShell ist davon NICHT betroffen (§13 AGPL).
+  appName          String?
+  appShortName     String?
+  faviconPath      String?
+  appLogoPath      String?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 }
