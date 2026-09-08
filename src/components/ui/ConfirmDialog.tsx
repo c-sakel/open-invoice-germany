@@ -66,6 +66,11 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
     <dialog
       ref={dialogRef}
       aria-labelledby={title ? titleId : undefined}
+      // Fix-Welle 12a (M3): ohne `title` fehlt `aria-labelledby`, und `aria-describedby`
+      // allein benennt einen Dialog nicht (nur eine Beschreibung, kein Name) — beide
+      // aktuellen Aufrufstellen (AttachmentPanel, EditorHeader) setzen `title` nicht.
+      // Fallback auf einen generischen Accessible Name, wenn kein Titel vorhanden ist.
+      aria-label={title ? undefined : "Bestätigung"}
       aria-describedby={messageId}
       className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
     >

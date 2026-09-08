@@ -116,14 +116,16 @@ export function PreviewSheet({
   }, []);
 
   function toggleWide() {
-    setWide((w) => {
-      try {
-        localStorage.setItem(PREVIEW_WIDE_KEY, w ? "0" : "1");
-      } catch {
-        // ignorieren
-      }
-      return !w;
-    });
+    // Fix-Welle 12a (M5): der localStorage-Zugriff stand bisher im Updater selbst —
+    // Updater-Funktionen muessen rein sein (React ruft sie im StrictMode zweimal auf),
+    // der Seiteneffekt gehoert daher vor `setWide`.
+    const next = !wide;
+    try {
+      localStorage.setItem(PREVIEW_WIDE_KEY, next ? "1" : "0");
+    } catch {
+      // ignorieren
+    }
+    setWide(next);
   }
 
   function revoke() {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PrintSettingsInput, PrintOptionsOverride, PrintBooleanKey } from "@/schemas";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
+import { parseClampedNumberInput } from "@/lib/forms/clamped-number-input";
 
 const LABELS: Record<PrintBooleanKey, string> = {
   showFooter: "Fußzeile",
@@ -182,7 +183,7 @@ export function PrintOptionsPanel({
                 max={40}
                 value={"giroSizeMm" in overrides ? overrides.giroSizeMm : effective.giroSizeMm}
                 disabled={!("giroSizeMm" in overrides)}
-                onChange={(e) => setGiroSizeOverride(Number(e.target.value))}
+                onChange={(e) => setGiroSizeOverride(parseClampedNumberInput(e.target.value, 15, 40))}
                 className="w-20 rounded border border-slate-300 px-2 py-1 disabled:opacity-50"
               />
               <span className={"giroSizeMm" in overrides ? "font-medium text-slate-900" : "text-slate-500"}>GiroCode-Größe (mm)</span>
