@@ -5,13 +5,22 @@
  * `purge.ts`) — der GoBD-Guard in src/lib/db.ts betrifft ApiRequestLog ohnehin nicht.
  * `path`-Filter nutzt den portablen `ciContains`-Helfer aus src/lib/db.ts statt eines
  * rohen `{ contains }`, damit die Suche auf SQLite UND Postgres gleich funktioniert.
+ *
+ * Task-5-Review-Nachtrag: die LISTE laedt bewusst OHNE `requestBody`/`responseBody`
+ * (per `select`) — eine Liste kann bis zu 200 Zeilen umfassen, jede davon bis zu 2 KB
+ * Body mitzuladen waere unnoetiger Datentransfer fuer eine Uebersicht, die ohnehin nur
+ * Kopfdaten anzeigt (Tabelle in ApiRequestLogPanel.tsx). Volle Bodies gibt es nur ueber
+ * den Einzelabruf (`findApiRequestLog`, Detail-Schublade).
  */
 import { ciContains, dbInternal } from "@/lib/db";
 import { apiRequestLogFilterSchema } from "@/schemas/api-log";
 import type { ApiRequestLog } from "@/generated/prisma/client";
 
+/** Listenzeile OHNE Bodies — siehe Modulkommentar. */
+export type ApiRequestLogListRow = Omit<ApiRequestLog, "requestBody" | "responseBody">;
+
 export interface ApiRequestLogListResult {
-  rows: ApiRequestLog[];
+  rows: ApiRequestLogListRow[];
   total: number;
   limit: number;
   offset: number;
@@ -40,11 +49,28 @@ export async function listApiRequestLogs(orgId: string, rawFilter: unknown): Pro
       orderBy: { createdAt: "desc" },
       skip: filter.offset,
       take: filter.limit,
+      select: {
+        id: true,
+        orgId: true,
+        apiKeyId: true,
+        requestId: true,
+        method: true,
+        path: true,
+        query: true,
+        status: true,
+        durationMs: true,
+        errorCode: true,
+        ip: true,
+        userAgent: true,
+        bodyTruncated: true,
+        createdAt: true,
+      },
     }),
   ]);
   return { rows, total, limit: filter.limit, offset: filter.offset };
 }
 
+/** Voller Datensatz (inkl. Bodies) — nur fuer den Einzelabruf (Detail-Schublade/REST-`{id}`). */
 export async function findApiRequestLog(orgId: string, id: string): Promise<ApiRequestLog | null> {
   return dbInternal.apiRequestLog.findFirst({ where: { id, orgId } });
 }

@@ -18,7 +18,20 @@ export async function purgeApiRequestLogs(now: Date = new Date()): Promise<numbe
   for (const { orgId } of orgs) {
     const { retentionDays, maxRows } = await loadApiSettings(orgId);
     const threshold = new Date(now.getTime() - retentionDays * DAY_MS);
-    deleted += (await dbInternal.apiRequestLog.deleteMany({ where: { orgId, createdAt: { lt: threshold } } })).count;
+
+    // Zeit-Retention zuerst — ebenfalls blockweise wie die maxRows-Kuerzung unten
+    // (Task-5-Review-Nachtrag): ein einzelnes `deleteMany` ueber sehr viele veraltete
+    // Zeilen haette SQLite fuer die Dauer der Loeschung sperren koennen.
+    for (;;) {
+      const stale = await dbInternal.apiRequestLog.findMany({
+        where: { orgId, createdAt: { lt: threshold } },
+        take: PURGE_BATCH_SIZE,
+        select: { id: true },
+      });
+      if (stale.length === 0) break;
+      deleted += (await dbInternal.apiRequestLog.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } })).count;
+      if (stale.length < PURGE_BATCH_SIZE) break;
+    }
 
     // Danach auf maxRows kuerzen — blockweise.
     for (;;) {
