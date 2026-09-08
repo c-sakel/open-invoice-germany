@@ -33,7 +33,15 @@
  * `DEFAULT_MAX_BODY_BYTES`) — erst per `Content-Length`-Header (schneller Abbruch ohne
  * den Body zu lesen), dann per tatsaechlich gelesener Laenge (Header ist faelschbar/
  * auslassbar). Ueberschreitung wirft `PayloadTooLargeError` -> 413 PAYLOAD_TOO_LARGE.
+ *
+ * Phase 12d, Task 3: `ctx.requestId` — dieselbe Kennung wie der `X-Request-Id`-Header
+ * auf der Antwort und (falls protokolliert) `ApiRequestLog.requestId`. Nach dem
+ * eigentlichen Handler-Aufruf laeuft ein nicht blockierender Log-Hook (`logApiRequest`,
+ * src/domain/api-log/write.ts) — er haengt NIE an der Antwort (immer `void`-Promise mit
+ * eigenem `catch`) und wird fuer Pfade ohne Protokollwert (Doku, OpenAPI, ping, das
+ * Protokoll selbst) uebersprungen (`shouldLogPath`, src/domain/api-log/redact.ts).
  */
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { ApiKeyScope } from "@/schemas";
@@ -43,6 +51,8 @@ import { checkApiRateLimit, checkPreAuthRateLimit, attachRateLimitHeader } from 
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { beginIdempotency, completeIdempotency, abandonIdempotency } from "./idempotency";
 import { apiError, PayloadTooLargeError } from "./errors";
+import { logApiRequest } from "@/domain/api-log/write";
+import { shouldLogPath } from "@/domain/api-log/redact";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -59,7 +69,11 @@ export interface ApiContext<TParams = Record<string, string>> {
   actor: string;
   params: TParams;
   body: unknown;
+  /** Phase 12d — auch als X-Request-Id auf der Antwort und in ApiRequestLog.requestId. */
+  requestId: string;
 }
+
+export const REQUEST_ID_HEADER = "X-Request-Id";
 
 export type ApiRouteContext<TParams> = { params: Promise<TParams> };
 
@@ -91,17 +105,24 @@ export function withApi<TParams = Record<string, string>>(
 ) {
   const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const wrapped = async (req: Request, routeCtx?: ApiRouteContext<TParams>): Promise<NextResponse> => {
-    try {
+    const startedAt = Date.now();
+    const requestId = randomUUID();
+    const url = new URL(req.url);
+    // Was `run()` fuer das Protokoll zurueckmeldet — nur gesetzt, wenn die Anfrage
+    // verifyApiToken passiert hat (vorher gibt es keine Organisation).
+    const trace: { apiKey?: VerifiedApiKey; rawBody: string } = { rawBody: "" };
+
+    async function run(): Promise<NextResponse> {
       // Fix-Welle (Should-fix 4): IP-gekeytes Kontingent VOR jedem Token-Lookup — sonst
       // verbraucht ein fehlender/ungueltiger Bearer-Token gar kein Kontingent und loest
       // trotzdem einen DB-Round-Trip aus (verifyApiToken -> apiKey.findUnique).
       checkPreAuthRateLimit(clientIpFromHeaders(req.headers));
       const apiKey = await verifyApiToken(bearerToken(req));
+      trace.apiKey = apiKey;
       requireScope(apiKey, opts.scope);
       const remaining = checkApiRateLimit(apiKey.id);
 
       const method = req.method.toUpperCase();
-      const url = new URL(req.url);
       const params = routeCtx ? await routeCtx.params : ({} as TParams);
 
       let rawBody = "";
@@ -115,6 +136,7 @@ export function withApi<TParams = Record<string, string>>(
           throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBodyBytes} Bytes.`);
         }
         rawBody = await req.text();
+        trace.rawBody = rawBody;
         if (Buffer.byteLength(rawBody, "utf8") > maxBodyBytes) {
           throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${maxBodyBytes} Bytes.`);
         }
@@ -128,7 +150,7 @@ export function withApi<TParams = Record<string, string>>(
       }
 
       const actor = `api:${slugifyKeyName(apiKey.name)}`;
-      const ctx: ApiContext<TParams> = { orgId: apiKey.orgId, apiKey, actor, params, body };
+      const ctx: ApiContext<TParams> = { orgId: apiKey.orgId, apiKey, actor, params, body, requestId };
 
       const idemKey = req.headers.get(IDEMPOTENCY_HEADER)?.trim() || undefined;
       const usesIdempotency = method === "POST" && idemKey !== undefined;
@@ -166,9 +188,53 @@ export function withApi<TParams = Record<string, string>>(
       }
 
       return attachRateLimitHeader(res, remaining);
-    } catch (e) {
-      return apiError(e);
     }
+
+    let res: NextResponse;
+    try {
+      res = await run();
+    } catch (e) {
+      res = apiError(e);
+    }
+    res.headers.set(REQUEST_ID_HEADER, requestId);
+
+    if (trace.apiKey && shouldLogPath(url.pathname)) {
+      // Fehlerantworten werden GEKLONT, bevor Next.js den Body ausliefert — nur bei
+      // status >= 400 (Ruling: dort liegt der Debug-Wert; sonst waeren es Kilobytes
+      // Listenrauschen). Der Klon wird synchron erzeugt, gelesen wird er im Hintergrund.
+      const errorClone = res.status >= 400 ? res.clone() : null;
+      const key = trace.apiKey;
+      void (async () => {
+        const responseBody = errorClone ? await errorClone.text().catch(() => null) : null;
+        let errorCode: string | null = null;
+        if (responseBody) {
+          try {
+            const parsed = JSON.parse(responseBody) as { error?: { code?: unknown } };
+            if (typeof parsed.error?.code === "string") errorCode = parsed.error.code;
+          } catch {
+            // Nicht-JSON-Fehlerantwort (z. B. PDF-Route) — kein Code ableitbar
+          }
+        }
+        await logApiRequest({
+          orgId: key.orgId,
+          apiKeyId: key.id,
+          requestId,
+          method: req.method.toUpperCase(),
+          path: url.pathname,
+          query: url.search ? url.search.slice(1) : null,
+          status: res.status,
+          durationMs: Date.now() - startedAt,
+          errorCode,
+          ip: clientIpFromHeaders(req.headers),
+          userAgent: req.headers.get("user-agent"),
+          requestBody: trace.rawBody || null,
+          responseBody,
+        });
+      })().catch(() => {
+        // Protokollieren darf die Anfrage nie kippen (Global Constraint).
+      });
+    }
+    return res;
   };
   Object.defineProperty(wrapped, WITH_API_MARKER, { value: true, enumerable: false });
   return wrapped;
