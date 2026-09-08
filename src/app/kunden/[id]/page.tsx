@@ -3,8 +3,12 @@ import { notFound } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { customerOverview } from "@/domain/customer/overview";
 import { NotFoundError } from "@/domain/errors";
+import { monthlyRevenue } from "@/domain/reporting/revenue";
+import { paymentBehaviour } from "@/domain/reporting/payment-behaviour";
 import { CustomerTabs } from "@/components/customers/CustomerTabs";
 import { StatusBadge } from "@/components/StatusBadge";
+import { LineChart } from "@/components/charts/LineChart";
+import { revenueChartData } from "@/components/dashboard/chart-data";
 import { formatCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +34,11 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
     throw e;
   }
 
+  const [revenue, behaviour] = await Promise.all([
+    monthlyRevenue(org.id, { customerId: id }),
+    paymentBehaviour(org.id, { customerId: id }),
+  ]);
+
   const { customer, kpis } = overview;
 
   return (
@@ -48,7 +57,7 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="text-xs uppercase tracking-wide text-slate-500">Offener Betrag</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(kpis.openCents)}</div>
@@ -61,6 +70,26 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
           <div className="text-xs uppercase tracking-wide text-slate-500">Gesamtumsatz</div>
           <div className="mt-1 text-xl font-semibold text-slate-900">{formatCents(kpis.totalRevenueCents)}</div>
         </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Ø Zahlungsdauer</div>
+          <div className="mt-1 text-xl font-semibold text-slate-900">
+            {behaviour.avgDaysToPay === null ? "—" : `${behaviour.avgDaysToPay} Tage`}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Pünktlich bezahlt</div>
+          <div
+            className={`mt-1 text-xl font-semibold ${
+              behaviour.onTimeShare !== null && behaviour.onTimeShare >= 0.8 ? "text-emerald-700" : "text-amber-700"
+            }`}
+          >
+            {behaviour.onTimeShare === null ? "—" : `${Math.round(behaviour.onTimeShare * 100)} %`}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <LineChart title="Umsatz je Monat (netto, 12 Monate)" data={revenueChartData(revenue)} />
       </div>
 
       <CustomerTabs
