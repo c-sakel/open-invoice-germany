@@ -74,10 +74,10 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
       <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="font-semibold text-slate-900">Bank & E-Rechnung</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Bankname" name="bankName" defaultValue={org?.bankName} />
-          <TextField label="IBAN" name="iban" defaultValue={org?.iban} />
           <TextField label="Kontoinhaber/-in" name="accountHolder" defaultValue={org?.accountHolder} hint="leer = Firmenname" />
+          <TextField label="IBAN" name="iban" defaultValue={org?.iban} />
           <TextField label="BIC" name="bic" defaultValue={org?.bic} />
+          <TextField label="Bankname" name="bankName" defaultValue={org?.bankName} />
           <TextField label="E-Rechnung-Adresse (Peppol)" name="electronicAddress" defaultValue={org?.electronicAddress} hint="Optional — Endpoint für E-Rechnung-Versand." />
         </div>
       </section>
