@@ -266,6 +266,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
     }
     pm.up();
   } else if (data.iban) {
+    // Fix-Runde (Review): in der Produktion tot (mapper.ts setzt paymentMeans immer), bleibt nur fuer Test-Fixtures ohne paymentMeans (z. B. test/unit/einvoice.test.ts) — Entfernen wuerde deren XML aendern.
     const pm = set.ele("ram:SpecifiedTradeSettlementPaymentMeans");
     pm.ele("ram:TypeCode").txt("58").up();
     pm.ele("ram:PayeePartyCreditorFinancialAccount").ele("ram:IBANID").txt(data.iban).up().up();
