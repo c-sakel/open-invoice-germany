@@ -69,6 +69,7 @@ async function loadPreviewOrg(orgId: string) {
       iban: true,
       bic: true,
       bankName: true,
+      accountHolder: true,
     },
   });
   if (!org) throw new NotFoundError("Organisation nicht gefunden.");
@@ -219,6 +220,7 @@ async function buildDeliveryNotePreview(orgId: string, org: Awaited<ReturnType<t
       iban: org.iban,
       bic: org.bic,
       bankName: org.bankName,
+      accountHolder: org.accountHolder,
     },
     buyer: {
       name: customer.name,

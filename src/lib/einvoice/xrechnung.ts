@@ -261,6 +261,7 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     }
     pm.up();
   } else if (data.iban) {
+    // Fix-Runde (Review): in der Produktion tot (mapper.ts setzt paymentMeans immer), bleibt nur fuer Test-Fixtures ohne paymentMeans (z. B. test/unit/einvoice.test.ts) — Entfernen wuerde deren XML aendern.
     const pm = root.ele("cac:PaymentMeans");
     pm.ele("cbc:PaymentMeansCode").txt("58").up(); // SEPA credit transfer
     const acc = pm.ele("cac:PayeeFinancialAccount");

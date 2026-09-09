@@ -32,6 +32,7 @@ export function buildSellerSnapshot(org: SellerSnapshot): SellerSnapshot {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    accountHolder: org.accountHolder,
   };
 }
 

@@ -121,6 +121,10 @@ export interface EInvoiceData {
   iban?: string | null;
   bic?: string | null;
   bankName?: string | null;
+  /** Kontoinhaber/-in — Fallback `seller.name` (legalName), wenn leer. Speist den
+   *  GiroCode-Namen und die BT-85-Zahlungsempfaenger-Name (PayeeFinancialAccount/Name
+   *  bzw. AccountName), siehe invoice-pdf.ts#buildEpcPayload/mapper.ts#paymentMeans. */
+  accountHolder?: string | null;
   // BG-20/BG-21 — Beleg-Rabatt/-Aufschlag (Phase 4a), je Steuersatz-Gruppe.
   documentAllowances?: EInvoiceDocumentAllowanceCharge[];
   documentCharges?: EInvoiceDocumentAllowanceCharge[];

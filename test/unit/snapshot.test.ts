@@ -6,7 +6,7 @@ import type { MapInput } from "@/lib/einvoice/mapper";
 const org = {
   legalName: "Muster GmbH", addressLine1: "Weg 1", addressLine2: null, postalCode: "12345", city: "Ort",
   country: "DE", vatId: "DE123456789", taxNumber: null, email: "a@b.de", phone: null,
-  electronicAddress: null, iban: "DE00", bic: null, bankName: null,
+  electronicAddress: null, iban: "DE00", bic: null, bankName: null, accountHolder: null,
 };
 const customer = {
   name: "Kunde AG", contactName: "Frau X", addressLine1: "Str. 2", addressLine2: null, postalCode: "54321",

@@ -45,6 +45,7 @@ interface PreviewOrg {
   iban: string | null;
   bic: string | null;
   bankName: string | null;
+  accountHolder: string | null;
 }
 
 const SAMPLE_CUSTOMER = {
@@ -124,6 +125,7 @@ export function buildSampleDeliveryNoteData(org: PreviewOrg): DeliveryNotePdfDat
       iban: org.iban,
       bic: org.bic,
       bankName: org.bankName,
+      accountHolder: org.accountHolder,
     },
     buyer: {
       name: SAMPLE_CUSTOMER.name,
@@ -177,6 +179,7 @@ export function buildSampleDunningData(org: PreviewOrg): DunningPdfData {
       iban: org.iban,
       bic: org.bic,
       bankName: org.bankName,
+      accountHolder: org.accountHolder,
     },
     buyer: {
       name: SAMPLE_CUSTOMER.name,

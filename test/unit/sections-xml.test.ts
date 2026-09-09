@@ -16,6 +16,7 @@ const ORG: MapInput["org"] = {
   legalName: "Test GmbH", addressLine1: "Hauptstr. 1", addressLine2: null, postalCode: "21339", city: "Lüneburg",
   country: "DE", vatId: "DE123456789", taxNumber: null, email: "info@test.de", phone: null,
   electronicAddress: null, iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Test Bank",
+  accountHolder: null,
 };
 const CUSTOMER: MapInput["customer"] = {
   name: "Kunde AG", contactName: null, addressLine1: "Marktplatz 2", addressLine2: null, postalCode: "20095",
@@ -289,7 +290,7 @@ describe("buildDocEInvoiceData — Positionsblöcke im Angebots-PDF (Phase 4b)",
       org: {
         legalName: "Verkaeufer GmbH", addressLine1: "Hauptstr. 1", addressLine2: null, postalCode: "12345",
         city: "Berlin", country: "DE", vatId: "DE123456789", taxNumber: null, email: null, phone: null,
-        electronicAddress: null, iban: null, bic: null, bankName: null,
+        electronicAddress: null, iban: null, bic: null, bankName: null, accountHolder: null,
       },
       customer: {
         name: "Kunde AG", contactName: null, addressLine1: "Kundenweg 2", addressLine2: null, postalCode: "54321",

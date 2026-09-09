@@ -7,6 +7,7 @@
  */
 import { useState } from "react";
 import { NewProductDialog, type InlineProduct } from "./NewProductDialog";
+import { unitLabel } from "@/lib/units";
 
 export interface ProductOption {
   id: string;
@@ -72,7 +73,7 @@ export function ProductPicker({
                   setOpen(false);
                 }}
               >
-                {p.name} <span className="text-slate-400">— {(p.netPriceCents / 100).toFixed(2)} € / {p.unit}</span>
+                {p.name} <span className="text-slate-400">— {(p.netPriceCents / 100).toFixed(2)} € / {unitLabel(p.unit)}</span>
               </button>
             </li>
           ))}

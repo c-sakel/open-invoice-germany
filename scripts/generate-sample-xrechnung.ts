@@ -87,6 +87,7 @@ const ORG: MapInput["org"] = {
   iban: "DE02120300000000202051",
   bic: "BYLADEM1001",
   bankName: "Muster Bank",
+  accountHolder: null,
 };
 const CUSTOMER: MapInput["customer"] = {
   name: "Beispiel AG",

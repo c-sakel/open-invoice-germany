@@ -36,6 +36,7 @@ model Organization {
   iban              String?
   bic               String?
   bankName          String?
+  accountHolder     String? // Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = legalName)
   ownerName         String? // Phase 11b — Inhaber/-in fuer die automatische Fusszeile
   logoPath          String?
   electronicAddress String? // Peppol-Adresse des Ausstellers

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { formatCents, formatQuantity } from "@/lib/money";
+import { unitLabel } from "@/lib/units";
 import { intervalLabel } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
@@ -108,7 +109,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
               <tr key={l.id}>
                 <td className="px-4 py-2 text-slate-700">{l.description}</td>
                 <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {l.unit}
+                  {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
                 </td>
                 <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, rec.currency)}</td>
                 <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>

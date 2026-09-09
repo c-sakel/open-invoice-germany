@@ -29,4 +29,22 @@ describe("buildFooterColumns", () => {
     expect(cols[0]!.lines).toEqual(["Muster GmbH", "Hauptstr. 1", "12345 Berlin"]);
     expect(cols.map((c) => c.lines).flat()).not.toContain("Alter Freitext aus Phase 7");
   });
+
+  // Fix (Kontoinhaber) — Bank-Spalte (4) traegt eine eigene "Kontoinhaber ..."-Zeile nur,
+  // wenn gesetzt UND vom Firmennamen abweichend; sonst deckt Spalte 1 (Firmenname) den
+  // Regelfall bereits ab.
+  it("Kontoinhaber gesetzt und vom Firmennamen abweichend: eigene Zeile in der Bank-Spalte", () => {
+    const cols = buildFooterColumns({ seller, iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Testbank", accountHolder: "Erika Muster" }, brandingSettingsInputSchema.parse({}));
+    expect(cols[3]!.lines).toEqual(["Bank Testbank", "IBAN DE02 1203 0000 0000 2020 51", "BIC BYLADEM1001", "Kontoinhaber Erika Muster"]);
+  });
+
+  it("Kontoinhaber gesetzt, aber identisch zum Firmennamen: keine eigene Zeile", () => {
+    const cols = buildFooterColumns({ seller, iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Testbank", accountHolder: seller.name }, brandingSettingsInputSchema.parse({}));
+    expect(cols[3]!.lines).toEqual(["Bank Testbank", "IBAN DE02 1203 0000 0000 2020 51", "BIC BYLADEM1001"]);
+  });
+
+  it("Kontoinhaber nicht gesetzt: keine eigene Zeile", () => {
+    const cols = buildFooterColumns({ seller, iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Testbank" }, brandingSettingsInputSchema.parse({}));
+    expect(cols[3]!.lines).toEqual(["Bank Testbank", "IBAN DE02 1203 0000 0000 2020 51", "BIC BYLADEM1001"]);
+  });
 });

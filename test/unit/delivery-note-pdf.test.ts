@@ -145,6 +145,7 @@ describe("buildDeliveryNotePdfData", () => {
       iban: null,
       bic: null,
       bankName: null,
+      accountHolder: null,
     });
     const data = buildDeliveryNotePdfData(deliveryNote({ sellerSnapshotJson: sellerSnapshot }), org, customer);
     expect(data.seller.name).toBe("Alt GmbH");
