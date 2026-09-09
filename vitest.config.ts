@@ -3,6 +3,10 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
+    // CI-Runner sind deutlich langsamer als lokale Laeufe (Timeouts bei 5 s in
+    // api-log-retention und scheduler-routes) — 20 s je Test, 30 s je Hook.
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
     environment: "node",
     globalSetup: ["./test/global-setup.ts"],
     env: {
