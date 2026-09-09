@@ -48,4 +48,27 @@ describe("Marke in den Huellen", () => {
     const html = renderToStaticMarkup(<SlimShell brand={DEFAULT_BRAND}>x</SlimShell>);
     expect(html).toContain("OpenInvoice Germany");
   });
+
+  // Betreiber-Ruling (2026-09-09): mit hinterlegtem Logo zeigt die Kopfzeile NUR das Bild,
+  // kein Name mehr daneben — der Name bleibt am `alt` des Bilds (Barrierefreiheit) und im
+  // Browser-Tab-Titel (generateMetadata, siehe Test oben) erhalten.
+  it("mit hinterlegtem Logo zeigt die Kopfzeile nur das Bild, der Name bleibt am alt-Text", () => {
+    const html = renderToStaticMarkup(<SlimShell brand={{ appName: "Muster Rechnungen", appShortName: "MR", hasAppLogo: true }}>x</SlimShell>);
+    expect(html).toContain('alt="Muster Rechnungen"');
+    expect(html).not.toContain('<span class="grid'); // Kuerzel-Kachel entfaellt mit Logo
+    // Der Name selbst darf nur noch im alt-Attribut stehen, nicht mehr als sichtbarer Text
+    // in der Kopfzeile — die AGPL-Fusszeile ist von diesem Ruling unberuehrt (siehe unten).
+    const headerHtml = html.slice(0, html.indexOf("</header>"));
+    expect(headerHtml.replace(/alt="[^"]*"/g, "")).not.toContain("Muster Rechnungen");
+  });
+
+  // Betreiber-Ruling (2026-09-09): Beratungs-Hinweis aus der Fusszeile entfernt (steht
+  // bereits in COMPLIANCE.md) — die AGPL-Zeile bleibt exakt bestehen (Lizenzbedingung).
+  it("die Fusszeile traegt keinen Beratungs-Hinweis mehr, nur noch die AGPL-Zeile", () => {
+    const html = renderToStaticMarkup(<SlimShell brand={DEFAULT_BRAND}>x</SlimShell>);
+    expect(html).not.toContain("Steuer-/Rechtsberatung");
+    expect(html).not.toContain("COMPLIANCE.md");
+    expect(html).toContain("powered by OpenInvoice Germany · AGPL-3.0");
+    expect(html).toContain("Quellcode");
+  });
 });
