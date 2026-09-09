@@ -814,4 +814,39 @@ COUNT20=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$COUNT20" = "45" ] || fail "erwartet 45 Tabellen nach Phase 12d, gefunden $COUNT20"
 echo "    ok — ApiRequestLog + ApiSettings mit vier Indizes, Protokoll standardmaessig AUS, 45 Tabellen"
 
+echo "==> Fall 21 (fix/einheiten-kontoinhaber): Organization.accountHolder"
+# Eigenes Bestands-Szenario (analog Fall 15, ownerName): alle Migrationen bis VOR der
+# Kontoinhaber-Migration einspielen, eine Bestandszeile im ALTEN Spaltenumfang anlegen,
+# dann per "migrate deploy" genau diese Migration nachziehen und pruefen, dass die neue
+# Spalte existiert (NULL auf der Bestandszeile, kein Default/Backfill noetig) und die
+# Tabellenzahl unveraendert bleibt (reine Spalte, keine neue Tabelle).
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260912090100_account_holder)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org21','Bestand Einundzwanzig GmbH','Weg 22','99921','Bestadt',NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Kontoinhaber-Migration ist auf der Bestands-DB fehlgeschlagen"
+ACCMIG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from _prisma_migrations where migration_name='20260912090100_account_holder' and finished_at is not null")
+[ "$ACCMIG" = "1" ] || fail "Kontoinhaber-Migration ist nicht als angewendet verbucht"
+ACCCOL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.columns where table_name='Organization' and column_name='accountHolder'")
+[ "$ACCCOL" = "1" ] || fail "Spalte Organization.accountHolder fehlt nach der Migration"
+ACCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(\"accountHolder\",'<null>') from \"Organization\" where id='org21'")
+[ "$ACCVAL" = "<null>" ] || fail "Bestandszeile org21: accountHolder ist '$ACCVAL', erwartet NULL (kein Backfill)"
+COUNT21=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT21" = "45" ] || fail "erwartet weiterhin 45 Tabellen nach der Kontoinhaber-Migration (nur eine Spalte), gefunden $COUNT21"
+echo "    ok — Organization.accountHolder vorhanden, NULL auf Bestandszeile, 45 Tabellen"
+
 echo "ALLE TESTS BESTANDEN"

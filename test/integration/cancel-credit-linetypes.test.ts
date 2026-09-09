@@ -82,7 +82,7 @@ describe("cancelInvoice — Positionstypen bei Storno (K1)", () => {
       org: {
         legalName: "Storno Bloecke GmbH", addressLine1: "Hauptstr. 1", addressLine2: null, postalCode: "21339", city: "Lüneburg",
         country: "DE", vatId: "DE123456789", taxNumber: "33/123/45678", email: null, phone: null, electronicAddress: null,
-        iban: null, bic: null, bankName: null,
+        iban: null, bic: null, bankName: null, accountHolder: null,
       },
       customer: {
         name: "Kunde AG", contactName: null, addressLine1: "Marktplatz 2", addressLine2: null, postalCode: "20095", city: "Hamburg",

@@ -67,6 +67,7 @@ export const sellerSnapshotSchema = z.object({
   iban: z.string().nullable(),
   bic: z.string().nullable(),
   bankName: z.string().nullable(),
+  accountHolder: z.string().nullable(),
 });
 export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
 
@@ -175,6 +176,9 @@ export const organizationSchema = z.object({
   iban: z.string().optional(),
   bic: z.string().optional(),
   bankName: z.string().optional(),
+  // Fix (Kontoinhaber): leer = Firmenname (legalName) als Fallback in GiroCode/Fusszeile/
+  // E-Rechnung (BT-85 PayeeFinancialAccount/Name), siehe mapper.ts/footer.ts.
+  accountHolder: z.string().trim().max(120).nullable().optional(),
   electronicAddress: z.string().optional(),
 });
 export type OrganizationInput = z.infer<typeof organizationSchema>;

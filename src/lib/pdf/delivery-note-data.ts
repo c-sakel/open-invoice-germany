@@ -71,6 +71,7 @@ export function buildDeliveryNotePdfData(
       iban: seller.iban,
       bic: seller.bic,
       bankName: seller.bankName,
+      accountHolder: seller.accountHolder,
     },
     buyer: {
       name: buyer.name,

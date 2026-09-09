@@ -32,6 +32,10 @@ export interface FooterFacts {
   iban?: string | null;
   bic?: string | null;
   bankName?: string | null;
+  /** Kontoinhaber/-in — Fusszeile zeigt "Kontoinhaber ..." nur, wenn gesetzt UND
+   *  (getrimmt) vom Firmennamen (`seller.name`) abweicht; leer/gleich -> keine eigene
+   *  Zeile (der Firmenname in Spalte 1 deckt den Regelfall bereits ab). */
+  accountHolder?: string | null;
   website?: string | null;
   ownerName?: string | null;
 }
@@ -52,11 +56,20 @@ export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsIn
   }
 
   const s = facts.seller;
+  const accountHolder = facts.accountHolder?.trim();
+  const showAccountHolder = Boolean(accountHolder && accountHolder !== s.name.trim());
   const columns: FooterColumn[] = [
     { lines: compact([s.name, s.addressLine1, s.addressLine2, `${s.postalCode} ${s.city}`]) },
     { lines: compact([s.phone && `Tel. ${s.phone}`, s.email && `E-Mail ${s.email}`, facts.website && `Web ${facts.website}`]) },
     { lines: compact([s.vatId && `USt-IdNr. ${s.vatId}`, s.taxNumber && `Steuer-Nr. ${s.taxNumber}`, facts.ownerName && `Inhaber/-in ${facts.ownerName}`]) },
-    { lines: compact([facts.bankName && `Bank ${facts.bankName}`, facts.iban && `IBAN ${groupIban(facts.iban)}`, facts.bic && `BIC ${facts.bic}`]) },
+    {
+      lines: compact([
+        facts.bankName && `Bank ${facts.bankName}`,
+        facts.iban && `IBAN ${groupIban(facts.iban)}`,
+        facts.bic && `BIC ${facts.bic}`,
+        showAccountHolder && `Kontoinhaber ${accountHolder}`,
+      ]),
+    },
   ];
   return columns.filter((c) => c.lines.length > 0);
 }
