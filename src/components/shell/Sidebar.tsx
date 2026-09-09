@@ -71,7 +71,10 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
           ) : (
             <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-sm font-bold text-white">{brand.appShortName}</span>
           )}
-          {!collapsed && <span>{brand.appName}</span>}
+          {/* Betreiber-Ruling (2026-09-09): mit hinterlegtem Logo NUR das Bild, kein
+              zusaetzlicher Name daneben — der Name bleibt fuer Screenreader am `alt` des
+              Bilds. Ohne Logo unveraendert Kuerzel-Kachel + Name. */}
+          {!collapsed && !brand.hasAppLogo && <span>{brand.appName}</span>}
         </Link>
         {drawer && (
           <button type="button" aria-label="Menü schließen" onClick={onClose} className="ml-auto rounded-md p-1 text-slate-500 hover:bg-slate-100">

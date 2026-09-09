@@ -261,7 +261,7 @@ Die Glocke im Kopfbereich zeigt die Anzahl ungelesener Benachrichtigungen und ei
 White-Label für deine Instanz — unabhängig vom Briefpapier (Abschnitt 6, das gilt nur für Beleg-PDFs):
 - **Name der Instanz** (max. **40** Zeichen) und **Kurzname/Kürzel** (max. **12** Zeichen) ersetzen „OpenInvoice Germany"/„OI" in Seitenleiste, Kopfzeile, Browser-Tab-Titel und Login-Seite. Leer gelassen gilt weiterhin die Produktvorgabe.
 - **Favicon**: **quadratisches PNG**, **32–512 px** Kantenlänge, max. **512 KB**. Kein SVG (bewusst — siehe [LIMITATIONEN.md](LIMITATIONEN.md)).
-- **App-Logo**: **PNG oder JPEG**, max. **1 MB** — ersetzt das Kürzel-Badge in der Kopfzeile, wird auf 28 px Höhe angezeigt.
+- **App-Logo**: **PNG oder JPEG**, max. **1 MB** — ersetzt das Kürzel-Badge in der Kopfzeile, wird auf 28 px Höhe angezeigt. Mit hinterlegtem Logo steht **nur noch das Bild** dort (kein Name mehr daneben); der Name bleibt als Barrierefreiheits-Text (`alt`) am Bild sowie im Browser-Tab-Titel erhalten.
 - Die Herkunftszeile **„powered by OpenInvoice Germany · AGPL-3.0"** mit Link zum Quellcode bleibt in der Fußzeile **immer** sichtbar, egal welcher Name eingetragen ist — sie ist Bedingung der AGPL-3.0-Lizenz und nicht abschaltbar (siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 19).
 
 ### Steuersätze (`Einstellungen → Belege`)

@@ -97,8 +97,16 @@ export function Topbar({ orgName, unreadCount, appVersion, brand }: Props) {
         <button type="button" aria-label="Menü" onClick={() => setOpen(true)} className="rounded-md p-1 text-slate-600 hover:bg-slate-100">
           <NavIcon name="menu" className="h-5 w-5" />
         </button>
-        <Link href="/" className="font-semibold tracking-tight">
-          {brand.appName}
+        <Link href="/" className="flex items-center font-semibold tracking-tight">
+          {/* Betreiber-Ruling (2026-09-09): mit hinterlegtem Logo NUR das Bild, kein
+              zusaetzlicher Name daneben — der Name bleibt fuer Screenreader am `alt`
+              des Bilds (analog Sidebar.tsx). */}
+          {brand.hasAppLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element -- kein optimierbares statisches Asset (Route liefert dynamisch aus der DB)
+            <img src="/api/branding/appLogo" alt={brand.appName} className="h-6 w-auto" />
+          ) : (
+            brand.appName
+          )}
         </Link>
         <div className="ml-auto">
           <SearchTrigger compact />
