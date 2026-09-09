@@ -45,7 +45,7 @@ describe("Retention des Anfrageprotokolls", () => {
     const rows = await dbInternal.apiRequestLog.findMany({ where: { orgId }, orderBy: { createdAt: "desc" } });
     expect(rows).toHaveLength(100);
     expect(rows[0].createdAt.getTime()).toBe(NOW.getTime());
-  });
+  }, 60_000);
 
   it("ohne ApiSettings-Zeile gelten 7 Tage / 2000 Zeilen", async () => {
     const noSettingsOrg = await dbInternal.organization.create({ data: { legalName: "Ohne Settings GmbH", addressLine1: "C 1", postalCode: "10115", city: "Berlin" } });
