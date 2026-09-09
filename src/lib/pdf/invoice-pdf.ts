@@ -15,6 +15,7 @@
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
+import { resolvePayeeName } from "@/lib/payee-name";
 import { parseRichText, renderRichTextPdf } from "@/lib/richtext";
 import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
@@ -463,6 +464,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       GIRO_ELIGIBLE_TYPES.has(data.type) &&
       (data.giroAmountCents ?? 0) > 0,
   );
+  // Fix (Kontoinhaber): Zahlungsempfaenger-Name im GiroCode — Kontoinhaber, wenn gesetzt,
+  // sonst der Firmenname (dieselbe Fallback-Regel wie mapper.ts#payeeAccountName fuer
+  // BT-85, EINMAL berechnet fuer beide Platzierungen unten).
+  const giroPayeeName = resolvePayeeName(data.accountHolder, data.seller.name);
   // Fix-Welle (Abschluss-Review, Block 3 — `schlicht` vs. Referenzbeleg "RE-41362"):
   // `giroPlacement === "below-totals"` zeichnet den GiroCode links DIREKT unter dem
   // Summenblock statt (wie bisher, siehe der `bottom-right`-Block unten) rechts oberhalb
@@ -473,7 +478,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (giroEligible && layout.giroPlacement === "below-totals") {
     try {
       const payload = buildEpcPayload({
-        name: data.seller.name,
+        name: giroPayeeName,
         iban: data.iban!,
         bic: data.bic,
         amountCents: data.giroAmountCents!,
@@ -575,7 +580,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   if (giroEligible && layout.giroPlacement !== "below-totals") {
     try {
       const payload = buildEpcPayload({
-        name: data.seller.name,
+        name: giroPayeeName,
         iban: data.iban!,
         bic: data.bic,
         amountCents: data.giroAmountCents!,
@@ -610,7 +615,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
 
   // Fusszeile (jede Seite) + Falz-/Lochmarken + Seitenzahlen — erst nach dem gesamten
   // Inhalt (Seitenzahlen brauchen die fertige Gesamtseitenzahl, `bufferPages: true`).
-  const footerColumns = buildFooterColumns({ seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, ...theme.footerFacts }, theme.brand);
+  const footerColumns = buildFooterColumns(
+    { seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, accountHolder: data.accountHolder, ...theme.footerFacts },
+    theme.brand,
+  );
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(range.start + i);

@@ -21,6 +21,7 @@ describe("buildDocEInvoiceData — Belegrabatt (K1)", () => {
     iban: null,
     bic: null,
     bankName: null,
+    accountHolder: null,
   };
   const baseCustomer = {
     name: "Kunde AG",

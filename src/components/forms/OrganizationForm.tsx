@@ -24,6 +24,7 @@ export interface OrgFormData {
   iban: string | null;
   bic: string | null;
   bankName: string | null;
+  accountHolder: string | null;
   electronicAddress: string | null;
 }
 
@@ -75,6 +76,7 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Bankname" name="bankName" defaultValue={org?.bankName} />
           <TextField label="IBAN" name="iban" defaultValue={org?.iban} />
+          <TextField label="Kontoinhaber/-in" name="accountHolder" defaultValue={org?.accountHolder} hint="leer = Firmenname" />
           <TextField label="BIC" name="bic" defaultValue={org?.bic} />
           <TextField label="E-Rechnung-Adresse (Peppol)" name="electronicAddress" defaultValue={org?.electronicAddress} hint="Optional — Endpoint für E-Rechnung-Versand." />
         </div>

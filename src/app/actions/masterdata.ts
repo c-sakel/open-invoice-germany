@@ -45,6 +45,7 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     iban: str(fd, "iban"),
     bic: str(fd, "bic"),
     bankName: str(fd, "bankName"),
+    accountHolder: str(fd, "accountHolder"),
     electronicAddress: str(fd, "electronicAddress"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
@@ -68,6 +69,7 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     iban: v.iban ?? null,
     bic: v.bic ?? null,
     bankName: v.bankName ?? null,
+    accountHolder: v.accountHolder ?? null,
     electronicAddress: v.electronicAddress ?? null,
   };
 

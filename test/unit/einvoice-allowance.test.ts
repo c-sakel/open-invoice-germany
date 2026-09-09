@@ -19,6 +19,7 @@ const ORG: MapInput["org"] = {
   legalName: "Test GmbH", addressLine1: "Hauptstr. 1", addressLine2: null, postalCode: "21339", city: "Lüneburg",
   country: "DE", vatId: "DE123456789", taxNumber: null, email: "info@test.de", phone: null,
   electronicAddress: null, iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Test Bank",
+  accountHolder: null,
 };
 const CUSTOMER: MapInput["customer"] = {
   name: "Kunde AG", contactName: null, addressLine1: "Marktplatz 2", addressLine2: null, postalCode: "20095",
@@ -226,7 +227,11 @@ describe("EN-16931-Rechenregeln (BR-CO-10/11/12/13) — unabhängig vom Schematr
         bankIban: "DE44500105175407324931", bankBic: "INGDDEFFXXX", bankName: "ING",
       }),
     });
-    expect(data.paymentMeans).toEqual({ code: "58", iban: "DE44500105175407324931", bic: "INGDDEFFXXX", accountName: "ING" });
+    // Fix (Kontoinhaber): BT-85 (accountName) ist der Kontoinhaber/Firmenname, NICHT die
+    // Bank der Zahlungsmethode ("ING") — PaymentMethod kennt keinen eigenen Kontoinhaber,
+    // siehe mapper.ts#payeeAccountName. Die IBAN bleibt weiterhin die abweichende
+    // Methoden-IBAN (Testzweck dieses Falls).
+    expect(data.paymentMeans).toEqual({ code: "58", iban: "DE44500105175407324931", bic: "INGDDEFFXXX", accountName: "Test GmbH" });
     const ubl = buildXRechnungUBL(data);
     expect(ubl).toContain("DE44500105175407324931");
     expect(ubl).not.toContain(ORG.iban!);
@@ -239,9 +244,24 @@ describe("EN-16931-Rechenregeln (BR-CO-10/11/12/13) — unabhängig vom Schematr
     expect(data.documentAllowances).toEqual([]);
     expect(data.documentCharges).toEqual([]);
     expect(data.lines[0].discountCents).toBe(0);
-    expect(data.paymentMeans).toEqual({ code: "58", iban: ORG.iban, bic: ORG.bic, accountName: ORG.bankName });
+    // Fix (Kontoinhaber): accountName faellt ohne accountHolder auf legalName zurueck
+    // (nicht mehr auf bankName, siehe mapper.ts#payeeAccountName).
+    expect(data.paymentMeans).toEqual({ code: "58", iban: ORG.iban, bic: ORG.bic, accountName: ORG.legalName });
     const ubl = buildXRechnungUBL(data);
     expect(ubl).not.toContain("AllowanceCharge");
+  });
+
+  it("Fix (Kontoinhaber) — gesetzter Kontoinhaber ueberschreibt den Firmennamen in BT-85 (UBL cbc:Name + CII ram:AccountName)", () => {
+    const data = build({
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      org: { ...ORG, accountHolder: "Max Mustermann" },
+    });
+    expect(data.paymentMeans).toEqual({ code: "58", iban: ORG.iban, bic: ORG.bic, accountName: "Max Mustermann" });
+    const ubl = buildXRechnungUBL(data);
+    expect(ubl).toContain("<cbc:Name>Max Mustermann</cbc:Name>");
+    const cii = buildFacturXCII(data);
+    expect(cii).toContain("<ram:AccountName>Max Mustermann</ram:AccountName>");
+    expect(validateXRechnung(data, ubl).errors).toEqual([]);
   });
 });
 

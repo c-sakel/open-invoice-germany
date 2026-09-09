@@ -254,7 +254,15 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const pm = set.ele("ram:SpecifiedTradeSettlementPaymentMeans");
     pm.ele("ram:TypeCode").txt(pmMeans.code).up();
     if (pmMeans.iban && ACCOUNT_REQUIRING_CODES.has(pmMeans.code)) {
-      pm.ele("ram:PayeePartyCreditorFinancialAccount").ele("ram:IBANID").txt(pmMeans.iban).up().up();
+      // BT-85 (Kontoinhaber, Fix): AccountName NACH IBANID (CII-Syntaxbindung
+      // EN16931 fuer PayeePartyCreditorFinancialAccount) — nur der PRIMAERE Pfad
+      // (data.paymentMeans, siehe mapper.ts#payeeAccountName), der `else if
+      // (data.iban)`-Fallback unten bleibt bewusst byte-identisch (Alt-/Test-Fixtures
+      // ohne paymentMeans).
+      const acc = pm.ele("ram:PayeePartyCreditorFinancialAccount");
+      acc.ele("ram:IBANID").txt(pmMeans.iban).up();
+      if (pmMeans.accountName) acc.ele("ram:AccountName").txt(pmMeans.accountName).up();
+      acc.up();
     }
     pm.up();
   } else if (data.iban) {

@@ -49,6 +49,7 @@ export interface DeliveryNotePdfSeller {
   iban?: string | null;
   bic?: string | null;
   bankName?: string | null;
+  accountHolder?: string | null;
 }
 
 /** S7 (Fix-Welle, §36) — zusaetzlicher Block, KEIN Ersatz fuer den Empfaengerblock. */
@@ -306,7 +307,14 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
     const footY = doc.page.height - margins.bottom - layout.footerHeight;
     const footerColumns = buildFooterColumns(
-      { seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts },
+      {
+        seller: data.seller,
+        iban: data.seller.iban,
+        bic: data.seller.bic,
+        bankName: data.seller.bankName,
+        accountHolder: data.seller.accountHolder,
+        ...theme.footerFacts,
+      },
       theme.brand,
     );
 
