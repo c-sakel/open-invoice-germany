@@ -55,6 +55,7 @@ export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfD
       iban: inv.org.iban,
       bic: inv.org.bic,
       bankName: inv.org.bankName,
+      accountHolder: inv.org.accountHolder,
     },
     buyer: {
       name: buyer.name,

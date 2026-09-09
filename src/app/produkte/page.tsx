@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureArticleNumbers } from "@/domain/numbering/ranges";
 import { formatCents } from "@/lib/money";
+import { unitLabel } from "@/lib/units";
 import { archiveProduct } from "@/app/actions/masterdata";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export default async function ProduktePage() {
                     </Link>
                     {p.differential && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">§ 25a</span>}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{p.unit}</td>
+                  <td className="px-4 py-3 text-slate-600">{unitLabel(p.unit)}</td>
                   <td className="tabular px-4 py-3 text-right">{formatCents(p.netPriceCents)}</td>
                   <td className="tabular px-4 py-3 text-right">{p.taxRate}%</td>
                   <td className="px-4 py-3 text-right">

@@ -11,6 +11,7 @@
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
+import { unitLabel } from "@/lib/units";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
@@ -48,6 +49,7 @@ export interface DeliveryNotePdfSeller {
   iban?: string | null;
   bic?: string | null;
   bankName?: string | null;
+  accountHolder?: string | null;
 }
 
 /** S7 (Fix-Welle, §36) — zusaetzlicher Block, KEIN Ersatz fuer den Empfaengerblock. */
@@ -114,7 +116,7 @@ function buildColumns(data: DeliveryNotePdfData): Column[] {
   if (data.showDescription) {
     columns.push({ header: "Beschreibung", width: data.showArticleNumber ? 150 : 220, render: (l) => l.description });
   }
-  columns.push({ header: "Menge", width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli)} ${l.unit}` });
+  columns.push({ header: "Menge", width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli)} ${unitLabel(l.unit)}` });
   if (data.showPrices) {
     columns.push({
       header: "Einzel",
@@ -305,7 +307,14 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
     const footY = doc.page.height - margins.bottom - layout.footerHeight;
     const footerColumns = buildFooterColumns(
-      { seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts },
+      {
+        seller: data.seller,
+        iban: data.seller.iban,
+        bic: data.seller.bic,
+        bankName: data.seller.bankName,
+        accountHolder: data.seller.accountHolder,
+        ...theme.footerFacts,
+      },
       theme.brand,
     );
 

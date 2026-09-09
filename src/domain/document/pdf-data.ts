@@ -56,6 +56,7 @@ interface DocInput {
     iban: string | null;
     bic: string | null;
     bankName: string | null;
+    accountHolder: string | null;
   };
   customer: {
     name: string;
@@ -203,6 +204,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    accountHolder: org.accountHolder,
     documentAllowances,
     documentCharges,
     lineTotalCents: totals.lineTotalCents,

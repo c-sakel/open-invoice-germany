@@ -34,6 +34,7 @@ export interface DunningPdfData {
     iban?: string | null;
     bic?: string | null;
     bankName?: string | null;
+    accountHolder?: string | null;
   };
   buyer: {
     name: string;
@@ -174,7 +175,14 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
     const footY = doc.page.height - margins.bottom - layout.footerHeight;
     const footerColumns = buildFooterColumns(
-      { seller: data.seller, iban: data.seller.iban, bic: data.seller.bic, bankName: data.seller.bankName, ...theme.footerFacts },
+      {
+        seller: data.seller,
+        iban: data.seller.iban,
+        bic: data.seller.bic,
+        bankName: data.seller.bankName,
+        accountHolder: data.seller.accountHolder,
+        ...theme.footerFacts,
+      },
       theme.brand,
     );
 

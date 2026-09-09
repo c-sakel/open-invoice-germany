@@ -108,6 +108,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         iban: z.string().optional(),
         bic: z.string().optional(),
         bankName: z.string().optional(),
+        accountHolder: z.string().optional().describe("Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = Firmenname)"),
         smallBusiness: z.boolean().default(false).describe("Kleinunternehmer nach § 19 UStG"),
         defaultTaxScheme: TaxScheme.default("REGULAR"),
       },
@@ -143,6 +144,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           iban: v.iban ?? null,
           bic: v.bic ?? null,
           bankName: v.bankName ?? null,
+          accountHolder: v.accountHolder ?? null,
           electronicAddress: v.email || null,
         };
         const org = existing

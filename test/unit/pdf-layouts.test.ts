@@ -148,6 +148,11 @@ describe("Layout standard (Kompatibilitaet)", () => {
     // im Kopf-Meta, fuer ALLE Layouts (siehe eigener Test unten fuer `schlicht`).
     expect(text).toContain("Ihre Kundennummer");
     expect(text).toContain("K-7100");
+    // Einheiten als Klarname (Fix: Einheiten-Anzeige) — die Menge-Spalte zeigt "Stk"
+    // statt des rohen UN/ECE-Codes "C62" (BT-130 bleibt im gespeicherten Wert unveraendert,
+    // siehe test/unit/units.test.ts).
+    expect(text).toContain("Stk");
+    expect(text).not.toContain("C62");
   });
 });
 

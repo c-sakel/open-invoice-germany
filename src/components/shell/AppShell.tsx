@@ -42,9 +42,11 @@ export function AppShell({ orgName, unreadCount, appVersion, brand, children }: 
             {/* M1 (Fix-Welle 12c): ohne eigenen Instanznamen zeigte die Fusszeile den
                 Produktnamen doppelt ("OpenInvoice Germany · powered by OpenInvoice
                 Germany · AGPL-3.0") — der fuehrende Teil erscheint nur bei einer
-                tatsaechlich abweichenden Marke. */}
+                tatsaechlich abweichenden Marke. Betreiber-Ruling (2026-09-09):
+                Beratungs-Hinweis aus der Fusszeile entfernt (steht bereits in
+                COMPLIANCE.md) — die AGPL-Zeile bleibt als Lizenzbedingung unveraendert. */}
             {brand.appName !== DEFAULT_APP_NAME && `${brand.appName} · `}powered by OpenInvoice Germany · AGPL-3.0 ·{" "}
-            <a href={SOURCE_URL} className="underline hover:text-slate-600">Quellcode</a> · Keine Steuer-/Rechtsberatung — siehe COMPLIANCE.md
+            <a href={SOURCE_URL} className="underline hover:text-slate-600">Quellcode</a>
           </footer>
         </div>
       </div>

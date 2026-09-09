@@ -13,6 +13,7 @@
 import { parseRichText, renderRichTextHtml } from "@/lib/richtext";
 import { computeSubtotals, type LineForSubtotal } from "@/domain/document/lines";
 import { formatCents, formatQuantity } from "@/lib/money";
+import { unitLabel } from "@/lib/units";
 
 const KNOWN_LINE_TYPES = new Set<LineForSubtotal["lineType"]>(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
 
@@ -107,7 +108,7 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
                 </td>
                 {showArticleNumber && <td className="px-4 py-2 text-slate-500">{l.articleNumber}</td>}
                 <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {l.unit}
+                  {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
                 </td>
                 <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, currency)}</td>
                 <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>

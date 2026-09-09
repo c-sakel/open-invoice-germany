@@ -7,6 +7,7 @@ import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import { roundHalfUp } from "@/lib/money";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
+import { resolvePayeeName } from "@/lib/payee-name";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
 import type {
@@ -100,6 +101,7 @@ export interface MapInput {
     iban: string | null;
     bic: string | null;
     bankName: string | null;
+    accountHolder: string | null;
   };
   customer: {
     name: string;
@@ -231,9 +233,14 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // und Lastschrift (59) fallen auf Code 1 zurueck — die brauchten je ein eigenes
   // XML-Element (CardAccount bzw. PaymentMandate), das dieser Mapper nicht erzeugt.
   const NON_EXPORTABLE_CODES = new Set(["48", "54", "55", "59"]);
+  // Fix (Kontoinhaber): BT-85 (PayeeFinancialAccount/Name) ist der KONTOINHABER, nicht die
+  // Bank (vorher stand hier `org.bankName`/`pm.bankName`, siehe Git-Historie) — leer faellt
+  // auf den Firmennamen zurueck, unabhaengig davon, ob eine spezifische Zahlungsmethode
+  // gewaehlt ist (PaymentMethod kennt keinen eigenen Kontoinhaber).
+  const payeeAccountName = resolvePayeeName(org.accountHolder, org.legalName);
   const NO_ACCOUNT_FALLBACK: EInvoicePaymentMeans = { code: "1", iban: null, bic: null, accountName: null };
   let paymentMeans: EInvoicePaymentMeans = org.iban
-    ? { code: "58", iban: org.iban, bic: org.bic, accountName: org.bankName }
+    ? { code: "58", iban: org.iban, bic: org.bic, accountName: payeeAccountName }
     : NO_ACCOUNT_FALLBACK;
   let paymentMethodText: string | null = null;
   if (invoice.paymentMethodSnapshotJson) {
@@ -251,7 +258,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
         );
         paymentMeans = NO_ACCOUNT_FALLBACK;
       } else {
-        paymentMeans = { code, iban, bic: pm.bankBic ?? org.bic, accountName: pm.bankName ?? org.bankName };
+        paymentMeans = { code, iban, bic: pm.bankBic ?? org.bic, accountName: payeeAccountName };
       }
       paymentMethodText = pm.invoiceText;
     } else {
@@ -357,6 +364,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
+    accountHolder: org.accountHolder,
     documentAllowances,
     documentCharges,
     lineTotalCents,

@@ -1,5 +1,6 @@
 // src/app/lieferscheine/[id]/_parts/DeliveryNoteLines.tsx
 import { formatCents, formatQuantity } from "@/lib/money";
+import { unitLabel } from "@/lib/units";
 
 export interface DeliveryNoteLineRow {
   id: string;
@@ -48,7 +49,7 @@ export function DeliveryNoteLines({
               {showArticleNumber && <td className="px-4 py-2 text-slate-500">{l.articleNumber ?? ""}</td>}
               {showDescription && <td className="px-4 py-2 text-slate-700">{l.description}</td>}
               <td className="tabular px-4 py-2 text-right">
-                {formatQuantity(l.quantityMilli)} {l.unit}
+                {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
               </td>
               {showPrices && <td className="tabular px-4 py-2 text-right">{l.unitNetPriceCents != null ? formatCents(l.unitNetPriceCents) : ""}</td>}
               {showPrices && showTax && <td className="tabular px-4 py-2 text-right">{l.taxRate != null ? `${l.taxRate}%` : ""}</td>}

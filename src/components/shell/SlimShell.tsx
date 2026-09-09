@@ -35,19 +35,23 @@ export function SlimShell({ brand, children, maxWidth = "5xl" }: { brand: Brand;
             ) : (
               <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-bold text-white">{brand.appShortName}</span>
             )}
-            {/* M6 (Fix-Welle 12c): mit Logo zeigte diese Huelle bisher NUR das Bild — die
-                Sidebar zeigt Logo UND Namen (Sidebar.tsx), hier fehlte er dann auf der
-                Login-Seite komplett (nur noch im AuthForm-Fliesstext). */}
-            {brand.appName}
+            {/* Betreiber-Ruling (2026-09-09): mit hinterlegtem Logo NUR das Bild, kein
+                Name daneben (loest M6/Fix-Welle 12c ab, das hier den Namen zusaetzlich
+                zeigte) — der Name bleibt fuer Screenreader am `alt` des Bilds. Ohne Logo
+                unveraendert Kuerzel-Kachel + Name (sonst fehlte er auf der Login-Seite
+                komplett, nur noch im AuthForm-Fliesstext). */}
+            {!brand.hasAppLogo && brand.appName}
           </span>
         </div>
       </header>
       <main className={`mx-auto ${width} px-6 py-10`}>{children}</main>
       <footer className={`mx-auto ${width} px-6 py-10 text-xs text-slate-400`}>
         {/* M1 (Fix-Welle 12c): siehe AppShell.tsx — ohne eigenen Instanznamen doppelte
-            Produktnennung vermeiden. */}
+            Produktnennung vermeiden. Betreiber-Ruling (2026-09-09): Beratungs-Hinweis aus
+            der Fusszeile entfernt (steht bereits in COMPLIANCE.md) — die AGPL-Zeile bleibt
+            als Lizenzbedingung unveraendert. */}
         {brand.appName !== DEFAULT_APP_NAME && `${brand.appName} · `}powered by OpenInvoice Germany · AGPL-3.0 ·{" "}
-        <a href={SOURCE_URL} className="underline hover:text-slate-600">Quellcode</a> · Keine Steuer-/Rechtsberatung — siehe COMPLIANCE.md
+        <a href={SOURCE_URL} className="underline hover:text-slate-600">Quellcode</a>
       </footer>
     </>
   );

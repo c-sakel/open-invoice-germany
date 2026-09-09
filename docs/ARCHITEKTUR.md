@@ -17,7 +17,7 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 ### Entitäten + Schlüsselfelder
 
 **Organization (Mandant/Unternehmen)** — der ausstellende Unternehmer
-`id` · `legalName` · `address` (struct) · `taxNumber?` · `vatId?` (USt-IdNr.) · `kuIdNr?` (§19a) · `smallBusiness` (bool, §19) · `defaultTaxScheme` (REGULAR | KLEINUNTERNEHMER | DIFFERENZ) · `iban` · `bic` · `bankName` · `electronicAddress?` (Peppol) · `createdAt`
+`id` · `legalName` · `address` (struct) · `taxNumber?` · `vatId?` (USt-IdNr.) · `kuIdNr?` (§19a) · `smallBusiness` (bool, §19) · `defaultTaxScheme` (REGULAR | KLEINUNTERNEHMER | DIFFERENZ) · `iban` · `bic` · `bankName` · `accountHolder?` (Kontoinhaber/-in — GiroCode/Fusszeile/BT-85, leer = `legalName`) · `ownerName?` (Inhaber/-in, automatische Fusszeile) · `logoPath?` (Spalte vorhanden, aber von keinem Formular/API/MCP-Pfad gelesen oder geschrieben — das tatsächliche Beleg-Logo liegt in `BrandingSettings.logoPath`, das App-Chrome-Logo in `BrandingSettings.appLogoPath`) · `electronicAddress?` (Peppol) · `createdAt`
 → Tenancy-Diskriminator auf **allen** belegführenden Tabellen (`orgId`), App-seitig erzwungen; bei Multi-Tenant zusätzlich Postgres RLS.
 
 **Customer (Kunde)**
