@@ -14,6 +14,7 @@
  */
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
+import { unitLabel } from "@/lib/units";
 import { parseRichText, renderRichTextPdf } from "@/lib/richtext";
 import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
@@ -341,7 +342,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
       doc.text(line.description, descX, y, { width: descWidth });
       if (layout.table.boldTitle) doc.font("Helvetica");
     }
-    doc.text(`${formatQuantity(line.quantityMilli)} ${line.unit}`, tableX + colX.menge!, y, { width: 50, align: "right" });
+    doc.text(`${formatQuantity(line.quantityMilli)} ${unitLabel(line.unit)}`, tableX + colX.menge!, y, { width: 50, align: "right" });
     doc.text(formatCents(line.unitNetPriceCents, cur), tableX + colX.einzel!, y, { width: 70, align: "right" });
     if (colX.ust != null) doc.text(`${line.taxRate}%`, tableX + colX.ust, y, { width: 35, align: "right" });
     if (colX.netto != null) doc.text(formatCents(line.lineNetCents, cur), tableX + colX.netto, y, { width: 70, align: "right" });

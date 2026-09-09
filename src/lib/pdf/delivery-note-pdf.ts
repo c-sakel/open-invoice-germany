@@ -11,6 +11,7 @@
 import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
+import { unitLabel } from "@/lib/units";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
@@ -114,7 +115,7 @@ function buildColumns(data: DeliveryNotePdfData): Column[] {
   if (data.showDescription) {
     columns.push({ header: "Beschreibung", width: data.showArticleNumber ? 150 : 220, render: (l) => l.description });
   }
-  columns.push({ header: "Menge", width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli)} ${l.unit}` });
+  columns.push({ header: "Menge", width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli)} ${unitLabel(l.unit)}` });
   if (data.showPrices) {
     columns.push({
       header: "Einzel",

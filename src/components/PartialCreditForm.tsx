@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { taxRateOptions } from "@/lib/editor/constants";
+import { UnitSelect } from "@/components/editor/blocks/UnitSelect";
 
 interface LineState {
   description: string;
@@ -109,7 +110,9 @@ export function PartialCreditForm({
           <div key={i} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-white p-3">
             <input className={`${input} col-span-12 sm:col-span-5`} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
             <input className={`${input} col-span-4 sm:col-span-2`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
-            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
+            <div className="col-span-3 sm:col-span-1">
+              <UnitSelect value={line.unit} onChange={(unit) => patchLine(i, { unit })} />
+            </div>
             <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
             <select className={`${input} col-span-8 sm:col-span-1`} value={line.taxRate} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })}>
               {lineTaxOptions(line.taxRate).map((o) => (

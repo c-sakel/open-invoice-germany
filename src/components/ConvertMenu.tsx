@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatQuantity } from "@/lib/money";
+import { unitLabel } from "@/lib/units";
 
 interface RemainingLine {
   sourceLineId: string;
@@ -379,13 +380,13 @@ export function ConvertMenu({
                       <tr key={l.sourceLineId}>
                         <td className="px-3 py-2 text-slate-700">{l.description}</td>
                         <td className="tabular px-3 py-2 text-right text-slate-500">
-                          {formatQuantity(l.orderedMilli)} {l.unit}
+                          {formatQuantity(l.orderedMilli)} {unitLabel(l.unit)}
                         </td>
                         <td className="tabular px-3 py-2 text-right text-slate-500">
-                          {formatQuantity(l.deliveredMilli)} {l.unit}
+                          {formatQuantity(l.deliveredMilli)} {unitLabel(l.unit)}
                         </td>
                         <td className="tabular px-3 py-2 text-right text-slate-500">
-                          {formatQuantity(l.remainingMilli)} {l.unit}
+                          {formatQuantity(l.remainingMilli)} {unitLabel(l.unit)}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <input
@@ -474,7 +475,7 @@ export function ConvertMenu({
                           </td>
                           <td className="px-3 py-2 text-slate-700">{l.description}</td>
                           <td className="tabular px-3 py-2 text-right text-slate-500">
-                            {formatQuantity(l.orderedMilli)} {l.unit}
+                            {formatQuantity(l.orderedMilli)} {unitLabel(l.unit)}
                           </td>
                         </tr>
                       ))}
@@ -507,13 +508,13 @@ export function ConvertMenu({
                         <tr key={l.sourceLineId}>
                           <td className="px-3 py-2 text-slate-700">{l.description}</td>
                           <td className="tabular px-3 py-2 text-right text-slate-500">
-                            {formatQuantity(l.orderedMilli)} {l.unit}
+                            {formatQuantity(l.orderedMilli)} {unitLabel(l.unit)}
                           </td>
                           <td className="tabular px-3 py-2 text-right text-slate-500">
-                            {formatQuantity(l.billedMilli)} {l.unit}
+                            {formatQuantity(l.billedMilli)} {unitLabel(l.unit)}
                           </td>
                           <td className="tabular px-3 py-2 text-right text-slate-500">
-                            {formatQuantity(l.remainingMilli)} {l.unit}
+                            {formatQuantity(l.remainingMilli)} {unitLabel(l.unit)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <input
