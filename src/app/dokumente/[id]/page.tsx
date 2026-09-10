@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateFor } from "@/domain/document/billing-state";
+import { convertTargets } from "@/domain/document/actions";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
@@ -41,15 +42,6 @@ const KIND_TITLE_PLURAL: Record<string, string> = {
   PROFORMA: "Proforma",
 };
 
-// Client-seitige Kopie der Statuslisten aus src/domain/document/convert.ts (dort nicht
-// importierbar, weil die Datei dbInternal fuer den Schreibpfad laedt) — steuert nur, welche
-// ConvertMenu-Optionen angeboten werden; die eigentliche Pruefung bleibt serverseitig
-// (ConvertError/409 bei Verstoss, W2 Fix-Runde 2).
-const ANGEBOT_TO_AB_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
-const ANGEBOT_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
-const AB_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT"]);
-const QUOTE_TO_DELIVERY_NOTE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
-
 export default async function DokumentDetail({
   params,
   searchParams,
@@ -68,9 +60,21 @@ export default async function DokumentDetail({
 
   const status = effectiveQuoteStatus({ status: q.status, validUntil: q.validUntil });
   const billing = q.kind !== "PROFORMA" ? await billingStateFor(org.id, "QUOTE", q.id) : null;
-  // Task 4: Teil-/Abschlags-/Schlussrechnung nur fuer Angebot/AB, solange noch nicht
-  // voll abgerechnet — Teil- und Abschlagsrechnungen werden nie gemischt (Task-2-Ruling).
-  const canBillQuote = q.kind !== "PROFORMA" && QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status) && billing != null && billing.state !== "FULL";
+  // Task 7 ("eine Aktionsmatrix"): einzige Quelle fuer AB-/Rechnungs-/Lieferschein-Sichtbarkeit —
+  // ersetzt die vier lokalen Status-Sets, die hier vorher standen (RowActionsMenu nutzt dieselbe
+  // Funktion).
+  const convert = convertTargets({
+    kind: "QUOTE",
+    type: q.kind,
+    status,
+    isDraft: status === "DRAFT",
+    convertedToInvoiceId: q.convertedToInvoiceId,
+    billingFull: billing != null && billing.state === "FULL",
+  });
+  // Task 4: Teil-/Abschlags-/Schlussrechnung nur fuer Angebot/AB, solange noch nicht voll
+  // abgerechnet — Teil- und Abschlagsrechnungen werden nie gemischt (Task-2-Ruling).
+  // Deckungsgleich mit convert.deliveryNote (dieselbe Matrix: Angebot/AB, nicht voll abgerechnet).
+  const canBillQuote = convert.deliveryNote;
   const hasPartialInvoices = billing != null && billing.state === "PARTIAL" && billing.downpaymentGrossCents === 0;
   const hasDownpayments = billing != null && billing.downpaymentGrossCents > 0;
   const archived = q.archivedAt !== null;
@@ -127,13 +131,9 @@ export default async function DokumentDetail({
             <DocumentMoreMenu
               quoteId={q.id}
               convertedToInvoiceId={q.convertedToInvoiceId}
-              showToOrderConfirmation={q.kind === "ANGEBOT" && !q.convertedToInvoiceId && ANGEBOT_TO_AB_STATUSES.has(status)}
-              showToInvoice={
-                !q.convertedToInvoiceId &&
-                ((q.kind === "ANGEBOT" && ANGEBOT_TO_INVOICE_STATUSES.has(status)) ||
-                  (q.kind === "AUFTRAGSBESTAETIGUNG" && AB_TO_INVOICE_STATUSES.has(status)))
-              }
-              showToDeliveryNote={QUOTE_TO_DELIVERY_NOTE_STATUSES.has(status)}
+              showToOrderConfirmation={convert.orderConfirmation}
+              showToInvoice={convert.invoice}
+              showToDeliveryNote={convert.deliveryNote}
               // Task 4 (Phase 5, §13-15 UStG): nur solange die Gesamtleistung noch nicht voll
               // abgerechnet ist; hasDownpayments/hasPartialInvoices blenden hier nur die
               // jeweils andere Art aus, die endgueltige Pruefung bleibt serverseitig (409).

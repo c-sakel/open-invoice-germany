@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { availableActions, type ActionableDoc } from "@/domain/document/actions";
+import { availableActions, convertTargets, type ActionableDoc } from "@/domain/document/actions";
 
 function doc(overrides: Partial<ActionableDoc>): ActionableDoc {
   return { kind: "INVOICE", type: "INVOICE", status: "OPEN", isDraft: false, ...overrides };
@@ -102,5 +102,24 @@ describe("availableActions", () => {
   it("Abo (RECURRING): nur OPEN/EDIT, keine Beleg-Aktionen", () => {
     const actions = availableActions({ kind: "RECURRING", type: "", status: "ACTIVE", isDraft: false });
     expect(actions).toEqual(["OPEN", "EDIT"]);
+  });
+});
+
+describe("convertTargets", () => {
+  const quote = (status: string, extra = {}) => ({ kind: "QUOTE" as const, type: "ANGEBOT", status, isDraft: status === "DRAFT", ...extra });
+
+  it("Angebot: AB, Rechnung und Lieferschein in DRAFT/SENT/ACCEPTED/EXPIRED", () => {
+    for (const s of ["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]) {
+      expect(convertTargets(quote(s))).toEqual({ orderConfirmation: true, invoice: true, deliveryNote: true });
+      expect(availableActions(quote(s))).toContain("CONVERT");
+    }
+  });
+
+  it("umgewandelt / vollstaendig berechnet / AB / PROFORMA / storniert", () => {
+    expect(convertTargets(quote("SENT", { convertedToInvoiceId: "inv1" })).orderConfirmation).toBe(false);
+    expect(convertTargets(quote("ACCEPTED", { billingFull: true }))).toEqual({ orderConfirmation: true, invoice: false, deliveryNote: false });
+    expect(convertTargets({ ...quote("ACCEPTED"), type: "AUFTRAGSBESTAETIGUNG" }).invoice).toBe(false);
+    expect(convertTargets({ ...quote("SENT"), type: "PROFORMA" }).deliveryNote).toBe(false);
+    expect(availableActions(quote("CANCELLED"))).not.toContain("CONVERT");
   });
 });
