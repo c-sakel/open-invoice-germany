@@ -60,10 +60,13 @@ export function PaymentDialog({
     <>
       {/* Anker-Ziel: Bestandslinks (#zahlung) springen hierher UND oeffnen den Dialog. */}
       <span id="zahlung" />
+      {/* S2 (Fix-Welle 1): sekundaer statt indigo — "Als bezahlt markieren" in der Kopfzeile
+          ist fuer denselben Status bereits die eine hervorgehobene Primaeraktion (Spec C,
+          Task 4); zwei indigo Knoepfe fuer dieselbe Aktion widersprechen dem. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
       >
         Zahlung erfassen
       </button>
