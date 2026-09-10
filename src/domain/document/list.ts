@@ -69,28 +69,33 @@ export interface QuoteListResult {
   offset: number;
 }
 
-export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<QuoteListResult> {
-  const filter = quoteListFilterSchema.parse(rawFilter);
+/**
+ * Uebersetzt den Status-Filter einer Angebots-/AB-Liste in ein Prisma-`where` auf
+ * `status`/`validUntil` (Phase 13a, Task 3 — herausgezogen aus `listQuotes`, damit
+ * `quoteStatusTabCounts` dieselbe Statuslogik wiederverwendet). EXPIRED ist kein
+ * gespeicherter Status (effectiveQuoteStatus) — als Filter uebersetzt in "status
+ * DRAFT/SENT UND validUntil < now"; alle anderen Filterwerte sind direkte Statuswerte.
+ */
+function quoteStatusWhere(status: QuoteListFilter["status"], now: Date): Prisma.QuoteWhereInput | undefined {
+  if (status === "all") return undefined;
+  if (status === "EXPIRED") return { status: { in: ["DRAFT", "SENT"] }, validUntil: { lt: now } };
+  if (status === "DRAFT" || status === "SENT") {
+    // DRAFT/SENT im Filter meint "aktiv und NICHT abgelaufen" — sonst wuerde ein
+    // abgelaufenes SENT-Angebot doppelt (unter SENT und EXPIRED) auftauchen.
+    return { status, OR: [{ validUntil: null }, { validUntil: { gte: now } }] };
+  }
+  return { status };
+}
 
+/**
+ * Alle Filterbedingungen einer Angebots-/AB-Liste AUSSER dem Status (Phase 13a, Task 3 —
+ * siehe invoiceFilterConditions fuer das Muster).
+ */
+export function quoteFilterConditions(orgId: string, filter: QuoteListFilter): Prisma.QuoteWhereInput[] {
   const and: Prisma.QuoteWhereInput[] = [{ orgId }];
   if (filter.kind) and.push({ kind: filter.kind });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (!filter.includeArchived) and.push({ archivedAt: null });
-
-  // EXPIRED ist kein gespeicherter Status (effectiveQuoteStatus) — als Filter uebersetzt
-  // in "status DRAFT/SENT UND validUntil < now"; alle anderen Filterwerte sind direkte
-  // Statuswerte.
-  if (filter.status !== "all") {
-    if (filter.status === "EXPIRED") {
-      and.push({ status: { in: ["DRAFT", "SENT"] }, validUntil: { lt: now } });
-    } else if (filter.status === "DRAFT" || filter.status === "SENT") {
-      // DRAFT/SENT im Filter meint "aktiv und NICHT abgelaufen" — sonst wuerde ein
-      // abgelaufenes SENT-Angebot doppelt (unter SENT und EXPIRED) auftauchen.
-      and.push({ status: filter.status, OR: [{ validUntil: null }, { validUntil: { gte: now } }] });
-    } else {
-      and.push({ status: filter.status });
-    }
-  }
 
   const dateRange = dateRangeAnd(filter.from, filter.to);
   if (dateRange) and.push({ issueDate: dateRange });
@@ -98,6 +103,37 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
   if (filter.q) {
     and.push({ OR: [{ number: ciContains(filter.q) }, { customer: { name: ciContains(filter.q) } }] });
   }
+
+  return and;
+}
+
+/**
+ * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3) — analog
+ * `invoiceStatusTabCounts`: je Tab ein `count()` mit demselben `where`, nur mit
+ * ausgetauschter Statusbedingung. Tabs: "all" + die gespeicherten QuoteStatus-Werte
+ * (inkl. des abgeleiteten EXPIRED, siehe quoteStatusWhere). Rueckgabetyp erlaubt `null`
+ * je Tab (Task 5: ein Zaehler kann mangels Daten unberechenbar sein — hier immer eine
+ * Zahl, kein `null`).
+ */
+export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<Record<string, number | null>> {
+  const filter = quoteListFilterSchema.parse(rawFilter);
+  const base = quoteFilterConditions(orgId, filter);
+  const tabs = ["all", ...QuoteStatus.options] as const;
+  const counts = await Promise.all(
+    tabs.map((tab) => {
+      const cond = quoteStatusWhere(tab, now);
+      return prisma.quote.count({ where: { AND: cond ? [...base, cond] : base } });
+    }),
+  );
+  return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<string, number | null>;
+}
+
+export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<QuoteListResult> {
+  const filter = quoteListFilterSchema.parse(rawFilter);
+
+  const and = quoteFilterConditions(orgId, filter);
+  const statusCond = quoteStatusWhere(filter.status, now);
+  if (statusCond) and.push(statusCond);
 
   const where: Prisma.QuoteWhereInput = { AND: and };
 
@@ -175,11 +211,12 @@ export interface DeliveryNoteListResult {
   offset: number;
 }
 
-export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListResult> {
-  const filter = deliveryNoteListFilterSchema.parse(rawFilter);
-
+/**
+ * Alle Filterbedingungen einer Lieferschein-Liste AUSSER dem Status (Phase 13a, Task 3 —
+ * siehe invoiceFilterConditions fuer das Muster).
+ */
+export function deliveryNoteFilterConditions(orgId: string, filter: DeliveryNoteListFilter): Prisma.DeliveryNoteWhereInput[] {
   const and: Prisma.DeliveryNoteWhereInput[] = [{ orgId }];
-  if (filter.status !== "all") and.push({ status: filter.status });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (!filter.includeArchived) and.push({ archivedAt: null });
   const dateRange = dateRangeAnd(filter.from, filter.to);
@@ -187,6 +224,32 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
   if (filter.q) {
     and.push({ OR: [{ number: ciContains(filter.q) }, { customer: { name: ciContains(filter.q) } }] });
   }
+  return and;
+}
+
+/**
+ * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3) — analog
+ * `invoiceStatusTabCounts`, ohne Zeitbezug (der Lieferschein-Status ist rein gespeichert,
+ * kein abgeleiteter Statuswert wie EXPIRED bei Angeboten).
+ */
+export async function deliveryNoteStatusTabCounts(orgId: string, rawFilter: unknown): Promise<Record<"all" | DeliveryNoteStatus, number>> {
+  const filter = deliveryNoteListFilterSchema.parse(rawFilter);
+  const base = deliveryNoteFilterConditions(orgId, filter);
+  const tabs = ["all", ...DeliveryNoteStatus.options] as const;
+  const counts = await Promise.all(
+    tabs.map((tab) => {
+      const cond: Prisma.DeliveryNoteWhereInput | undefined = tab === "all" ? undefined : { status: tab };
+      return prisma.deliveryNote.count({ where: { AND: cond ? [...base, cond] : base } });
+    }),
+  );
+  return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<"all" | DeliveryNoteStatus, number>;
+}
+
+export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListResult> {
+  const filter = deliveryNoteListFilterSchema.parse(rawFilter);
+
+  const and = deliveryNoteFilterConditions(orgId, filter);
+  if (filter.status !== "all") and.push({ status: filter.status });
 
   const where: Prisma.DeliveryNoteWhereInput = { AND: and };
 
@@ -252,11 +315,12 @@ export interface RecurringListResult {
   offset: number;
 }
 
-export async function listRecurring(orgId: string, rawFilter: unknown): Promise<RecurringListResult> {
-  const filter = recurringListFilterSchema.parse(rawFilter);
-
+/**
+ * Alle Filterbedingungen einer Abo-Liste AUSSER dem Status (Phase 13a, Task 3 — siehe
+ * invoiceFilterConditions fuer das Muster).
+ */
+export function recurringFilterConditions(orgId: string, filter: RecurringListFilter): Prisma.RecurringInvoiceWhereInput[] {
   const and: Prisma.RecurringInvoiceWhereInput[] = [{ orgId }];
-  if (filter.status !== "all") and.push({ status: filter.status });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   // "from/to" filtert bei Abos auf den naechsten Ausfuehrungstermin (nextRunDate) —
   // es gibt kein issueDate, das faellige Abos sinnvoll eingrenzen wuerde.
@@ -265,6 +329,31 @@ export async function listRecurring(orgId: string, rawFilter: unknown): Promise<
   if (filter.q) {
     and.push({ OR: [{ title: ciContains(filter.q) }, { customer: { name: ciContains(filter.q) } }] });
   }
+  return and;
+}
+
+/**
+ * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3) — analog
+ * `invoiceStatusTabCounts`.
+ */
+export async function recurringStatusTabCounts(orgId: string, rawFilter: unknown): Promise<Record<"all" | "ACTIVE" | "PAUSED" | "ENDED", number>> {
+  const filter = recurringListFilterSchema.parse(rawFilter);
+  const base = recurringFilterConditions(orgId, filter);
+  const tabs = ["all", "ACTIVE", "PAUSED", "ENDED"] as const;
+  const counts = await Promise.all(
+    tabs.map((tab) => {
+      const cond: Prisma.RecurringInvoiceWhereInput | undefined = tab === "all" ? undefined : { status: tab };
+      return prisma.recurringInvoice.count({ where: { AND: cond ? [...base, cond] : base } });
+    }),
+  );
+  return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<"all" | "ACTIVE" | "PAUSED" | "ENDED", number>;
+}
+
+export async function listRecurring(orgId: string, rawFilter: unknown): Promise<RecurringListResult> {
+  const filter = recurringListFilterSchema.parse(rawFilter);
+
+  const and = recurringFilterConditions(orgId, filter);
+  if (filter.status !== "all") and.push({ status: filter.status });
 
   const where: Prisma.RecurringInvoiceWhereInput = { AND: and };
 
