@@ -56,6 +56,12 @@ interface DocumentEditorProps {
    *  dritte Stufe der Faelligkeits-Vorbelegungskette in `MetaBlock` (Kunde > Zahlungs-
    *  methode > diese Einstellung > 14 Tage, dieselbe Reihenfolge wie `createDraftInvoice`). */
   invoiceDueDays?: number;
+  /** Fix-Welle 1, S2 (Abschluss-Review Phase 13b): `DocumentSettings.autoDeliveryDate` —
+   *  Neuanlage-Default fuer die Leistungsdatum-Kopplung (`deliveryDateFollowsIssue`), nur
+   *  wirksam ohne `initial` (Neuanlage; Bearbeiten setzt die Kopplung ueber `draftFromInvoice`
+   *  ohnehin fest auf `false`). Default `true`, spiegelt den bisherigen Festwert in
+   *  `emptyDraft` fuer Aufrufer, die die Einstellung (noch) nicht durchreichen. */
+  autoDeliveryDate?: boolean;
   contacts?: ContactOption[];
   addresses?: AddressOption[];
   layouts: { id: LayoutId; name: string }[];
@@ -108,6 +114,7 @@ export function DocumentEditor({
   taxRates,
   paymentMethods = [],
   invoiceDueDays,
+  autoDeliveryDate = true,
   contacts = [],
   addresses = [],
   layouts,
@@ -120,7 +127,7 @@ export function DocumentEditor({
 }: DocumentEditorProps) {
   const router = useRouter();
   const { setUnsaved } = useShell();
-  const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode, { allowedTaxRates: taxRates }));
+  const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode, { allowedTaxRates: taxRates, deliveryDateFollowsIssue: autoDeliveryDate }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);

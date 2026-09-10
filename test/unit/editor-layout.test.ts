@@ -93,4 +93,13 @@ describe("Unsaved-Guard der Befehlspalette (Phase 13b, Task 7, Backlog 12e)", ()
     expect(src).toMatch(/setUnsaved\(draft\.dirty\)/);
     expect(src).toMatch(/return \(\) => setUnsaved\(false\)/);
   });
+  // S3 (Fix-Welle 1, Abschluss-Review Phase 13b): EditorHeader.tsx haelt fest, dass der
+  // Unsaved-Guard bewusst KEIN `window.confirm` nutzt (eigener <dialog>, nur `beforeunload`
+  // greift auf den Browserdialog zurueck) — die Palette nutzte bisher trotzdem `confirm(...)`.
+  it("CommandPalette nutzt den bestehenden ConfirmDialog statt window.confirm", () => {
+    const src = readFileSync(path.join(SRC, "components/shell/CommandPalette.tsx"), "utf8");
+    expect(src).not.toMatch(/\bconfirm\(/);
+    expect(src).toMatch(/from "@\/components\/ui\/ConfirmDialog"/);
+    expect(src).toMatch(/<ConfirmDialog/);
+  });
 });
