@@ -145,3 +145,6 @@ Backend + UI + Zod an jeder Grenze + Audit-Wirkung geprüft + Tests + SQLite **u
 ### Offene Betreiber-Frage (zwingend)
 
 - **Betreff auf Altbelegen.** Der obige Ruling-Vorschlag druckt den Betreff künftig auch auf bereits festgeschriebenen Rechnungen, deren Betreff-Feld gefüllt ist — deren PDF sieht danach anders aus als beim Festschreiben. Rechtlich unbedenklich (Darstellung, kein Inhalt), aber sichtbar im Archiv. Alternative wäre eine Stichtagsregel (nur Belege mit `finalizedAt` nach dem Deploy). **Ohne Gegenmeldung wird die Ruling-Variante umgesetzt.**
+
+- **Betreff auf festgeschriebenen Belegen (Koordinator-Ruling 2026-09-10):** wird gedruckt, sobald das Feld gefuellt ist, auch fuer bereits
+  festgeschriebene Belege — Darstellung, nicht Inhalt (analog Phase 7/12a). Keine Stichtagsregel.
