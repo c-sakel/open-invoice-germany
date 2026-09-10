@@ -18,7 +18,7 @@
  */
 import { useState } from "react";
 import type { DraftLine, DraftAction } from "@/lib/editor/draft";
-import { inputCls } from "@/components/forms/fields";
+import { inputDenseCls } from "@/components/forms/fields";
 import { centsOrZero, permilleOrZero } from "@/lib/editor/parse";
 
 /** Reine Heuristik, exportiert fuer den Unit-Test (test/unit/editor-discount-mode.test.ts). */
@@ -37,7 +37,7 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
     <div>
       <div className="flex items-center gap-1">
         <input
-          className={`${inputCls} w-16`}
+          className={`${inputDenseCls} w-16`}
           value={value}
           aria-label={mode === "percent" ? "Rabatt in Prozent" : "Rabatt in Euro"}
           onChange={(e) =>

@@ -96,7 +96,7 @@ export function MoreOptions({
       <summary className="cursor-pointer select-none font-semibold text-slate-900">Weitere Optionen</summary>
       <div className="mt-4 space-y-4">
         {mode === "INVOICE" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <EditorField label="Bestellnummer">
               {(id) => <input id={id} className={inputCls} value={draft.orderNumber} onChange={(e) => set(dispatch, "orderNumber", e.target.value)} />}
             </EditorField>
@@ -118,7 +118,7 @@ export function MoreOptions({
         )}
 
         {mode === "DOCUMENT" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <TermsField
               label="Lieferbedingungen"
               value={draft.deliveryTerms}
@@ -139,7 +139,7 @@ export function MoreOptions({
         {(mode === "INVOICE" || mode === "DOCUMENT") && (
           <div className="space-y-3 border-t border-slate-100 pt-4">
             <h3 className="text-sm font-semibold text-slate-900">Beleg-Rabatt / -Aufschlag</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <EditorField label="Rabatt %" hint="leer = Kundenvorgabe">
                 {(id) => <input id={id} className={inputCls} value={draft.documentDiscountPercent} onChange={(e) => set(dispatch, "documentDiscountPercent", e.target.value)} />}
               </EditorField>
@@ -162,7 +162,7 @@ export function MoreOptions({
         {mode === "INVOICE" && (
           <div className="space-y-3 border-t border-slate-100 pt-4">
             <h3 className="text-sm font-semibold text-slate-900">Skonto</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <EditorField label="Skonto 1 — Prozent" hint="z. B. 2">
                 {(id) => <input id={id} className={inputCls} value={draft.skonto1Percent} onChange={(e) => set(dispatch, "skonto1Percent", e.target.value)} />}
               </EditorField>

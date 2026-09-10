@@ -269,19 +269,17 @@ export function DocumentEditor({
 
         <ErrorBanner message={error ?? undefined} />
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <RecipientBlock
-            mode={mode}
-            isEdit={isEdit}
-            draft={draft}
-            dispatch={dispatch}
-            customers={customers}
-            contacts={contacts}
-            addresses={addresses}
-            offerLastDocument={offerLastDocument}
-          />
-          <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} paymentMethods={paymentMethods} />
-        </div>
+        <RecipientBlock
+          mode={mode}
+          isEdit={isEdit}
+          draft={draft}
+          dispatch={dispatch}
+          customers={customers}
+          contacts={contacts}
+          addresses={addresses}
+          offerLastDocument={offerLastDocument}
+        />
+        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} paymentMethods={paymentMethods} />
 
         <HeadTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 
