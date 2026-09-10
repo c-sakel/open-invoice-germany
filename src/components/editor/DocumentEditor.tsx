@@ -214,11 +214,16 @@ export function DocumentEditor({
     };
   }, [mode, initial]);
 
-  async function save() {
+  // Task 6 (Phase 13b): Rueckgabewert (die gespeicherte Id) fuer `AttachmentsBlock`s
+  // `ensureDocId` — der Nutzer laedt im Neuanlage-Editor eine Datei hoch, BEVOR er
+  // explizit speichert; der Upload loest denselben Speicherweg wie der Speichern-Button
+  // aus, nur ohne Navigation (`navigate: false`). Bei Fehlern weiterhin `setError` und
+  // `null` (kein Beleg, kein Anhang, keine zweite Upload-Route — Koordinator-Ruling).
+  async function save(opts: { navigate?: boolean } = {}): Promise<string | null> {
     const problems = validateDraft(draft);
     if (problems.length > 0) {
       setError(problems.join("\n"));
-      return;
+      return null;
     }
     setSaving(true);
     setError(null);
@@ -242,16 +247,27 @@ export function DocumentEditor({
         const j = (await res.json().catch(() => ({}))) as { error?: string; issues?: SaveErrorIssue[] };
         setError([j.error ?? "Speichern fehlgeschlagen.", ...flattenIssues(j.issues)].join("\n"));
         setSaving(false);
-        return;
+        return null;
       }
-      const j = (await res.json()) as { id: string };
-      const id = isEdit ? draft.id! : j.id;
-      dispatch({ type: "markSaved" });
-      router.push(`${DETAIL_BASE_PATH[mode]}/${id}`);
-      router.refresh();
+      const id = isEdit ? draft.id! : ((await res.json()) as { id: string }).id;
+      // `replace` statt `set` — `set` setzt IMMER dirty:true, und ein gerade gespeicherter
+      // Entwurf ist nicht "ungespeichert" (dasselbe Argument wie bei den
+      // Vorbelegungs-Effekten oben).
+      dispatch({ type: "replace", state: { ...draftRef.current, id, dirty: false } });
+      if (opts.navigate !== false) {
+        router.push(`${DETAIL_BASE_PATH[mode]}/${id}`);
+        router.refresh();
+      } else {
+        // Kein Navigieren (Aufruf ueber `ensureDocId`) — anders als der normale
+        // Speichern-Button, der `saving` bis zur Navigation "true" laesst, bleibt der
+        // Editor hier sichtbar und braucht den zurueckgesetzten Status.
+        setSaving(false);
+      }
+      return id;
     } catch {
       setError("Speichern fehlgeschlagen (Netzwerkfehler).");
       setSaving(false);
+      return null;
     }
   }
 
@@ -305,7 +321,7 @@ export function DocumentEditor({
 
         <MoreOptions mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} effectivePrintOptions={effectivePrintOptions} printOverride={printOverride} layouts={layouts} />
 
-        <AttachmentsBlock mode={mode} isEdit={isEdit} docId={draft.id} attachments={attachments} />
+        <AttachmentsBlock mode={mode} docId={draft.id} attachments={attachments} onEnsureDocId={() => save({ navigate: false })} />
       </div>
 
       <PreviewSheet open={previewOpen} onClose={() => setPreviewOpen(false)} mode={mode} draft={draft} layoutId={printOverride?.layoutId} />
