@@ -18,6 +18,7 @@ import type { LayoutId } from "@/lib/pdf/layouts/ids";
 import type { ProductOption } from "./ProductPicker";
 import type { AttachmentItem } from "@/components/AttachmentPanel";
 import { ErrorBanner } from "@/components/forms/fields";
+import { createSaveGuard } from "@/lib/editor/save-guard";
 import { EditorHeader } from "./blocks/EditorHeader";
 import { RecipientBlock, type RecipientCustomerOption, type ContactOption, type AddressOption } from "./blocks/RecipientBlock";
 import { MetaBlock, type PaymentMethodOption } from "./blocks/MetaBlock";
@@ -214,12 +215,26 @@ export function DocumentEditor({
     };
   }, [mode, initial]);
 
+  // Re-Entrancy-Guard (Fix-Welle, Review Task 6): zwei schnelle Trigger VOR dem ersten
+  // `draft.id` (z. B. Speichern-Knopf + AttachmentsBlock.ensureDocId, oder zwei
+  // gleichzeitige Uploads ueber ensureDocId) duerfen nicht zwei POSTs und damit zwei
+  // Entwuerfe erzeugen. `saveGuardRef` (persistiert ueber Renders hinweg, siehe
+  // `createSaveGuard`) sorgt dafuer, dass ein zweiter Aufruf waehrend `performSave()`
+  // noch laeuft DASSELBE Promise zurueckbekommt (wartet mit), statt eine eigene Anfrage
+  // zu starten — dessen eigene `opts` (z. B. `navigate`) werden dabei ignoriert,
+  // massgeblich ist der zuerst gestartete Aufruf. Getestet ohne DOM in
+  // test/unit/save-guard.test.ts.
+  const saveGuardRef = useRef(createSaveGuard<string | null>());
+  function save(opts: { navigate?: boolean } = {}): Promise<string | null> {
+    return saveGuardRef.current.run(() => performSave(opts));
+  }
+
   // Task 6 (Phase 13b): Rueckgabewert (die gespeicherte Id) fuer `AttachmentsBlock`s
   // `ensureDocId` — der Nutzer laedt im Neuanlage-Editor eine Datei hoch, BEVOR er
   // explizit speichert; der Upload loest denselben Speicherweg wie der Speichern-Button
   // aus, nur ohne Navigation (`navigate: false`). Bei Fehlern weiterhin `setError` und
   // `null` (kein Beleg, kein Anhang, keine zweite Upload-Route — Koordinator-Ruling).
-  async function save(opts: { navigate?: boolean } = {}): Promise<string | null> {
+  async function performSave(opts: { navigate?: boolean } = {}): Promise<string | null> {
     const problems = validateDraft(draft);
     if (problems.length > 0) {
       setError(problems.join("\n"));
