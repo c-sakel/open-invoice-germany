@@ -45,6 +45,12 @@ export const quoteListFilterSchema = z.object({
   // Task 2: uebernimmt das bisherige Seitenverhalten (Standard: nur nicht-archivierte
   // Dokumente) als Domain-Filter statt eines Parallelcodes auf der Seite selbst.
   includeArchived: z.boolean().optional(),
+  // Phase 13a (Task 6): wirken auf grossTotalCents, analog invoiceListFilterSchema.
+  minCents: z.coerce.number().int().optional(),
+  maxCents: z.coerce.number().int().optional(),
+  // Nur angenommen und weitergereicht, keine Ausfilterung — die Aufloesung folgt erst mit
+  // dem Tag-Modell (13d). Erscheint bewusst in KEINER Filterleiste.
+  tag: z.string().min(1).optional(),
 });
 export type QuoteListFilter = z.infer<typeof quoteListFilterSchema>;
 
@@ -106,6 +112,15 @@ export function quoteFilterConditions(orgId: string, filter: QuoteListFilter): P
 
   const dateRange = dateRangeAnd(filter.from, filter.to);
   if (dateRange) and.push({ issueDate: dateRange });
+
+  if (filter.minCents != null || filter.maxCents != null) {
+    and.push({
+      grossTotalCents: {
+        ...(filter.minCents != null ? { gte: filter.minCents } : {}),
+        ...(filter.maxCents != null ? { lte: filter.maxCents } : {}),
+      },
+    });
+  }
 
   if (filter.q) {
     and.push({ OR: [{ number: ciContains(filter.q) }, { customer: { name: ciContains(filter.q) } }] });
@@ -229,6 +244,9 @@ export const deliveryNoteListFilterSchema = z.object({
   // Task 2: siehe quoteListFilterSchema.includeArchived — uebernimmt das bisherige
   // Seitenverhalten (Standard: nur nicht-archivierte Lieferscheine).
   includeArchived: z.boolean().optional(),
+  // Phase 13a (Task 6): siehe quoteListFilterSchema.tag — nur angenommen und
+  // weitergereicht, keine Ausfilterung, erscheint in KEINER Filterleiste.
+  tag: z.string().min(1).optional(),
 });
 export type DeliveryNoteListFilter = z.infer<typeof deliveryNoteListFilterSchema>;
 

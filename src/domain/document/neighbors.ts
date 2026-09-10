@@ -19,7 +19,24 @@ export interface Neighbors {
 }
 
 /** Schluessel, die die drei Listen kennen (FilterBar + Pagination + Archiv-Schalter). */
-const ALLOWED_KEYS = new Set(["q", "status", "type", "kind", "from", "to", "offset", "archiviert", "customerId"]);
+const ALLOWED_KEYS = new Set([
+  "q",
+  "status",
+  "type",
+  "kind",
+  "from",
+  "to",
+  "offset",
+  "archiviert",
+  "customerId",
+  // Phase 13a (Task 6): neue Filterfelder — `tag` nur angenommen/weitergereicht (siehe
+  // invoiceListFilterSchema.tag), nicht Teil einer Filterleiste.
+  "minCents",
+  "maxCents",
+  "paymentMethodId",
+  "eInvoice",
+  "tag",
+]);
 /** Maximal 200 Zeilen je Listenabfrage (Schema-Maximum der Listenfilter). */
 const NEIGHBOR_LIMIT = 200;
 
@@ -50,7 +67,10 @@ export function buildListeParam(values: Record<string, string | undefined>): str
 }
 
 async function orderedIds(kind: NeighborKind, orgId: string, params: URLSearchParams): Promise<string[]> {
-  const raw = parseListQuery(params);
+  // Phase 13a (Task 6): `eInvoice` ist jetzt ALLOWED_KEYS-Mitglied — ohne booleanKeys
+  // bliebe "true"/"false" eine Zeichenkette, invoiceListFilterSchema.eInvoice (z.boolean(),
+  // bewusst ohne .coerce) wuerfe einen ZodError, orderedIds faellt dann still auf [] zurueck.
+  const raw = parseListQuery(params, ["eInvoice"]);
   delete raw.offset;
   delete raw.archiviert;
   const includeArchived = params.get("archiviert") === "1";
