@@ -9,8 +9,16 @@
  * noch in `toDeliveryNotePayload` (Task 1) ein `subject`-Feld — ein hier angezeigtes
  * Feld wuerde beim Speichern stillschweigend verworfen (Code schlaegt Doku, Lastenheft
  * 61.6), obwohl der Brief „alle: Betreff" nennt. Siehe Task-4-Report, offener Punkt.
+ *
+ * Phase 13b, Task 2: „Rechnungsdatum" (nur INVOICE, `draft.issueDate`), eine Kopplung
+ * „Leistungsdatum entspricht dem Rechnungsdatum" (`draft.deliveryDateFollowsIssue` — die
+ * eigentliche Nachzieh-Logik sitzt im Reducer, `draftReducer`s `case "set"`, siehe dort)
+ * und „Fällig am" als Datum+Tageszahl-Paar (`dueDaysFrom`/`dueDateFromDays`, reine
+ * Helfer aus `draft.ts`) statt der bisherigen drei Schnellknöpfe — deren Funktion steckt
+ * jetzt vollständig im Tagesfeld.
  */
-import type { DraftState, DraftAction } from "@/lib/editor/draft";
+import { useEffect, useRef } from "react";
+import { dueDaysFrom, dueDateFromDays, type DraftState, type DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
 import { EditorField } from "../EditorField";
 import { inputCls } from "@/components/forms/fields";
@@ -19,12 +27,6 @@ export interface PaymentMethodOption {
   id: string;
   name: string;
   paymentTermsDays?: number | null;
-}
-
-function addDays(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
 }
 
 export function MetaBlock({
@@ -41,6 +43,31 @@ export function MetaBlock({
   paymentMethods?: PaymentMethodOption[];
 }) {
   const selectedMethod = paymentMethods.find((m) => m.id === draft.paymentMethodId);
+  // `issueDate || heute` als Bezug: `createDraftInvoice` setzt bei leerem Feld genau das
+  // (invoice/create.ts:102) — der Editor darf keine andere Frist zeigen als der
+  // gespeicherte Beleg (Ruling).
+  const issueRef = draft.issueDate || new Date().toISOString().slice(0, 10);
+
+  // Vorbelegung der Tageszahl aus der Zahlungsmethode beim ersten Oeffnen einer Neuanlage
+  // (Ruling): `draftRef` haelt denselben aktuellen Entwurf wie `DocumentEditor.tsx:145-148`
+  // (identisches Muster) — ohne ihn wuerde ein `dispatch({ type: "replace", ... })` mit der
+  // in der Effekt-Closure eingefrorenen `draft`-Variable zwischenzeitliche Eingaben in
+  // anderen Feldern verwerfen. Der Guard "`dueDate` noch leer" sorgt zugleich dafuer, dass
+  // die Vorbelegung nur EINMAL greift — sobald ein Wert gesetzt ist (ob durch diesen Effekt
+  // oder den Nutzer selbst), ueberschreibt der Effekt ihn nicht mehr.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  useEffect(() => {
+    if (mode !== "INVOICE" || isEdit) return;
+    if (draftRef.current.dueDate.trim() !== "") return;
+    if (selectedMethod?.paymentTermsDays == null) return;
+    const ref = draftRef.current.issueDate || new Date().toISOString().slice(0, 10);
+    const next = dueDateFromDays(ref, String(selectedMethod.paymentTermsDays));
+    if (!next) return;
+    dispatch({ type: "replace", state: { ...draftRef.current, dueDate: next } });
+  }, [mode, isEdit, selectedMethod, dispatch]);
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -85,9 +112,47 @@ export function MetaBlock({
         )}
 
         {mode === "INVOICE" && (
+          <EditorField label="Rechnungsdatum" hint="leer = Datum der Anlage">
+            {(id) => (
+              <input
+                id={id}
+                type="date"
+                className={inputCls}
+                value={draft.issueDate}
+                onChange={(e) => dispatch({ type: "set", field: "issueDate", value: e.target.value })}
+              />
+            )}
+          </EditorField>
+        )}
+
+        {mode === "INVOICE" && (
           <EditorField label="Leistungsdatum">
             {(id) => (
-              <input id={id} type="date" className={inputCls} value={draft.deliveryDate} onChange={(e) => dispatch({ type: "set", field: "deliveryDate", value: e.target.value })} />
+              <div className="space-y-1.5">
+                <input
+                  id={id}
+                  type="date"
+                  className={inputCls}
+                  value={draft.deliveryDate}
+                  disabled={draft.deliveryDateFollowsIssue}
+                  onChange={(e) => dispatch({ type: "set", field: "deliveryDate", value: e.target.value })}
+                />
+                <label className="flex items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-slate-300"
+                    checked={draft.deliveryDateFollowsIssue}
+                    onChange={(e) => {
+                      const follows = e.target.checked;
+                      dispatch({
+                        type: "replace",
+                        state: { ...draft, deliveryDateFollowsIssue: follows, deliveryDate: follows ? issueRef : draft.deliveryDate, dirty: true },
+                      });
+                    }}
+                  />
+                  entspricht dem Rechnungsdatum
+                </label>
+              </div>
             )}
           </EditorField>
         )}
@@ -103,21 +168,17 @@ export function MetaBlock({
                   value={draft.dueDate}
                   onChange={(e) => dispatch({ type: "set", field: "dueDate", value: e.target.value })}
                 />
-                <button type="button" onClick={() => dispatch({ type: "set", field: "dueDate", value: addDays(14) })} className="whitespace-nowrap text-xs font-medium text-indigo-600 hover:underline">
-                  +14 Tage
-                </button>
-                <button type="button" onClick={() => dispatch({ type: "set", field: "dueDate", value: addDays(30) })} className="whitespace-nowrap text-xs font-medium text-indigo-600 hover:underline">
-                  +30 Tage
-                </button>
-                {selectedMethod?.paymentTermsDays != null && (
-                  <button
-                    type="button"
-                    onClick={() => dispatch({ type: "set", field: "dueDate", value: addDays(selectedMethod.paymentTermsDays!) })}
-                    className="whitespace-nowrap text-xs font-medium text-indigo-600 hover:underline"
-                  >
-                    +{selectedMethod.paymentTermsDays} Tage (Zahlungsmethode)
-                  </button>
-                )}
+                <span className="text-xs text-slate-500">in</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={365}
+                  aria-label="Fällig in Tagen"
+                  className={`${inputCls} w-20`}
+                  value={dueDaysFrom(issueRef, draft.dueDate)}
+                  onChange={(e) => dispatch({ type: "set", field: "dueDate", value: dueDateFromDays(issueRef, e.target.value) })}
+                />
+                <span className="text-xs text-slate-500">Tagen</span>
               </div>
             )}
           </EditorField>
