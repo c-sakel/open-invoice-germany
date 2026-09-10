@@ -18,10 +18,11 @@
  * jetzt vollständig im Tagesfeld.
  */
 import { useEffect, useRef } from "react";
-import { dueDaysFrom, dueDateFromDays, type DraftState, type DraftAction } from "@/lib/editor/draft";
+import { dueDaysFrom, dueDateFromDays, resolveDueDays, type DraftState, type DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
 import { EditorField } from "../EditorField";
 import { inputCls } from "@/components/forms/fields";
+import type { RecipientCustomerOption } from "./RecipientBlock";
 
 export interface PaymentMethodOption {
   id: string;
@@ -34,27 +35,42 @@ export function MetaBlock({
   isEdit,
   draft,
   dispatch,
+  customers = [],
   paymentMethods = [],
+  invoiceDueDays,
 }: {
   mode: EditorMode;
   isEdit: boolean;
   draft: DraftState;
   dispatch: (action: DraftAction) => void;
+  /** Fix-Welle 1, M2: dieselbe Kundenliste wie `RecipientBlock` — nur fuer
+   *  `defaultPaymentTermsDays` gebraucht (Faelligkeits-Vorbelegung bei Neuanlage). */
+  customers?: RecipientCustomerOption[];
   paymentMethods?: PaymentMethodOption[];
+  /** Fix-Welle 1, M2: `DocumentSettings.invoiceDueDays` — dritte Stufe der Vorbelegungs-
+   *  Kette (`resolveDueDays`), fehlt nur, wenn der Aufrufer sie nicht laedt (dann greift
+   *  dort ohnehin der Systemdefault 14). */
+  invoiceDueDays?: number;
 }) {
   const selectedMethod = paymentMethods.find((m) => m.id === draft.paymentMethodId);
+  const selectedCustomer = customers.find((c) => c.id === draft.customerId);
   // `issueDate || heute` als Bezug: `createDraftInvoice` setzt bei leerem Feld genau das
   // (invoice/create.ts:102) — der Editor darf keine andere Frist zeigen als der
   // gespeicherte Beleg (Ruling).
   const issueRef = draft.issueDate || new Date().toISOString().slice(0, 10);
 
-  // Vorbelegung der Tageszahl aus der Zahlungsmethode beim ersten Oeffnen einer Neuanlage
-  // (Ruling): `draftRef` haelt denselben aktuellen Entwurf wie `DocumentEditor.tsx:145-148`
+  // Vorbelegung der Tageszahl beim ersten Oeffnen einer Neuanlage (Ruling, Fix-Welle 1
+  // M2): `draftRef` haelt denselben aktuellen Entwurf wie `DocumentEditor.tsx:145-148`
   // (identisches Muster) — ohne ihn wuerde ein `dispatch({ type: "replace", ... })` mit der
   // in der Effekt-Closure eingefrorenen `draft`-Variable zwischenzeitliche Eingaben in
   // anderen Feldern verwerfen. Der Guard "`dueDate` noch leer" sorgt zugleich dafuer, dass
   // die Vorbelegung nur EINMAL greift — sobald ein Wert gesetzt ist (ob durch diesen Effekt
-  // oder den Nutzer selbst), ueberschreibt der Effekt ihn nicht mehr.
+  // oder den Nutzer selbst), ueberschreibt der Effekt ihn nicht mehr. `resolveDueDays`
+  // bildet DIESELBE Prioritaetskette wie der Server (Kunde > Zahlungsmethode >
+  // Org-Einstellung > 14 Tage) — anders als vorher (nur Zahlungsmethode) laeuft die
+  // Vorbelegung jetzt IMMER, auch ohne gewaehlte Methode. Der Dispatch nutzt bewusst
+  // "replace" statt "set": eine reine Anzeige-Vorbelegung darf `dueDateTouched` nicht
+  // setzen, sonst wuerde `toInvoicePayload` sie wie eine Nutzereingabe senden (siehe dort).
   const draftRef = useRef(draft);
   useEffect(() => {
     draftRef.current = draft;
@@ -62,12 +78,12 @@ export function MetaBlock({
   useEffect(() => {
     if (mode !== "INVOICE" || isEdit) return;
     if (draftRef.current.dueDate.trim() !== "") return;
-    if (selectedMethod?.paymentTermsDays == null) return;
+    const days = resolveDueDays(selectedCustomer?.defaultPaymentTermsDays, selectedMethod?.paymentTermsDays, invoiceDueDays);
     const ref = draftRef.current.issueDate || new Date().toISOString().slice(0, 10);
-    const next = dueDateFromDays(ref, String(selectedMethod.paymentTermsDays));
+    const next = dueDateFromDays(ref, String(days));
     if (!next) return;
     dispatch({ type: "replace", state: { ...draftRef.current, dueDate: next } });
-  }, [mode, isEdit, selectedMethod, dispatch]);
+  }, [mode, isEdit, selectedCustomer, selectedMethod, invoiceDueDays, dispatch]);
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">

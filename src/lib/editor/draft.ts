@@ -74,6 +74,18 @@ export interface DraftState {
   deliveryStart: string;
   deliveryEnd: string;
   dueDate: string;
+  /** Fix-Welle 1, M2 (Abschluss-Review Phase 13b): `true`, sobald der Nutzer „Fällig am"
+   *  (Datum ODER Tageszahl, beide dispatchen `{type:"set", field:"dueDate"}`) selbst
+   *  geaendert hat — steuert, ob `toInvoicePayload` das Feld bei NEUANLAGE ueberhaupt
+   *  sendet (sonst greift die Server-Prioritaetskette `customer.defaultPaymentTermsDays
+   *  ?? method.paymentTermsDays ?? settings.invoiceDueDays ?? 14`, `invoice/create.ts:109`).
+   *  Die automatische Vorbelegung in `MetaBlock` (Anzeige, dieselbe Kette client-seitig
+   *  ueber `resolveDueDays`) dispatcht bewusst `"replace"` statt `"set"` und laesst dieses
+   *  Flag dadurch unveraendert — sonst wuerde die reine Anzeige-Vorbelegung dauerhaft die
+   *  serverseitige Kette durch die (ggf. abweichende) Client-Vorbelegung ersetzen. Beim
+   *  Bearbeiten (`draftFromInvoice`) ohne Wirkung: `toInvoicePayload` sendet `dueDate` dort
+   *  unabhaengig davon immer (Bestandsverhalten). */
+  dueDateTouched: boolean;
   validUntil: string;
   shippingDate: string;
   paymentMethodId: string;
@@ -187,6 +199,18 @@ export function dueDateFromDays(issueDate: string, days: string): string {
   return new Date(a + n * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** Faelligkeits-Vorbelegung bei Neuanlage (Fix-Welle 1, M2 — Abschluss-Review Phase 13b):
+ *  DIESELBE Prioritaetskette wie der Server (`createDraftInvoice`, invoice/create.ts:109)
+ *  — der Kunde ist die spezifischste Zusage, schlaegt die Zahlungsmethode, die wiederum
+ *  die Org-weite Voreinstellung (`DocumentSettings.invoiceDueDays`) schlaegt; ohne alle
+ *  drei 14 Tage (Systemdefault). Rein fuer die Client-ANZEIGE in `MetaBlock` — ob der Wert
+ *  tatsaechlich gespeichert wird, entscheidet weiterhin ausschliesslich der Server:
+ *  `toInvoicePayload` sendet `dueDate` bei Neuanlage nur, wenn der Nutzer es aktiv gesetzt
+ *  hat (`DraftState.dueDateTouched`). */
+export function resolveDueDays(customerDays: number | null | undefined, methodDays: number | null | undefined, settingsDays: number | null | undefined): number {
+  return customerDays ?? methodDays ?? settingsDays ?? 14;
+}
+
 export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): DraftState {
   const allowedTaxRates = defaults?.allowedTaxRates ?? [...FALLBACK_TAX_RATES];
   const base: DraftState = {
@@ -221,6 +245,7 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     deliveryStart: "",
     deliveryEnd: "",
     dueDate: "",
+    dueDateTouched: false,
     validUntil: "",
     shippingDate: "",
     paymentMethodId: "",
@@ -259,6 +284,12 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       // Kopplung nachbauen.
       if (action.field === "issueDate" && state.deliveryDateFollowsIssue) {
         return { ...state, issueDate: action.value as string, deliveryDate: action.value as string, dirty: true };
+      }
+      // Fix-Welle 1, M2: jede EXPLIZITE Nutzeraenderung an dueDate (Datumsfeld oder
+      // Tageszahl in MetaBlock, beide dispatchen "set"/"dueDate") markiert die
+      // Vorbelegung als vom Nutzer uebernommen/ueberschrieben — siehe DraftState.dueDateTouched.
+      if (action.field === "dueDate") {
+        return { ...state, dueDate: action.value as string, dueDateTouched: true, dirty: true };
       }
       return { ...state, [action.field]: action.value, dirty: true } as DraftState;
     case "setLine":
@@ -383,7 +414,13 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     deliveryStart: d.deliveryStart || undefined,
     deliveryEnd: d.deliveryEnd || undefined,
     deliveryDate: d.deliveryDate || undefined,
-    dueDate: d.dueDate || undefined,
+    // Fix-Welle 1 (M2): bei Neuanlage nur senden, wenn der Nutzer Tage/Datum AKTIV
+    // gesetzt hat (`dueDateTouched`, siehe Reducer `case "set"` und `DraftState`-Kommentar)
+    // — sonst wuerde `MetaBlock`s reine Anzeige-Vorbelegung (dieselbe Kette wie der Server,
+    // aber zum Ladezeitpunkt eingefroren) die serverseitige Prioritaetskette dauerhaft
+    // ersetzen. Beim Bearbeiten unveraendert: ein bereits gespeichertes/angezeigtes
+    // Zahlungsziel wird weiterhin immer mitgesendet (Bestandsverhalten).
+    dueDate: isEdit || d.dueDateTouched ? d.dueDate || undefined : undefined,
     notes: finalNotes,
     internalNotes: d.internalNotes || undefined,
     consumerRetentionHint: d.consumerRetentionHint,
@@ -670,6 +707,11 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     deliveryEnd: initial.deliveryEnd ?? "",
     deliveryDate: initial.deliveryDate ?? "",
     dueDate: initial.dueDate ?? "",
+    // Bearbeiten: ein geladener Beleg traegt bereits ein explizites (oder bewusst leeres)
+    // Zahlungsziel — `toInvoicePayload` sendet es beim Bearbeiten ohnehin immer, dieses
+    // Flag hat dort also keine Wirkung (siehe DraftState.dueDateTouched-Kommentar), wird
+    // aus Konsistenzgruenden trotzdem korrekt gesetzt.
+    dueDateTouched: true,
     notes: initial.notes ?? "",
     internalNotes: initial.internalNotes ?? "",
     consumerRetentionHint: initial.consumerRetentionHint ?? false,

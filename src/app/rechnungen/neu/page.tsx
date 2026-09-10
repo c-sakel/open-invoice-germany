@@ -28,6 +28,10 @@ export default async function NewInvoicePage() {
         email: true,
         defaultPaymentMethodId: true,
         defaultDiscountPermille: true,
+        // Fix-Welle 1, M2 (Abschluss-Review Phase 13b): Grundlage fuer MetaBlocks
+        // Faelligkeits-Vorbelegung (resolveDueDays) — dieselbe Kundenvorgabe wie
+        // createDraftInvoice (invoice/create.ts:109).
+        defaultPaymentTermsDays: true,
         addressLine1: true,
         postalCode: true,
         city: true,
@@ -78,6 +82,7 @@ export default async function NewInvoicePage() {
       products={products}
       taxRates={documentSettings.taxRates}
       paymentMethods={paymentMethodOptions}
+      invoiceDueDays={documentSettings.invoiceDueDays}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

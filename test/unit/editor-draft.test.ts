@@ -9,6 +9,7 @@ import {
   validateDraft,
   dueDaysFrom,
   dueDateFromDays,
+  resolveDueDays,
 } from "@/lib/editor/draft";
 import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema } from "@/schemas";
 
@@ -277,5 +278,42 @@ describe("editor/draft", () => {
     expect(d.deliveryDate).toBe("2066-03-05");
     d = draftReducer({ ...d, deliveryDateFollowsIssue: false }, { type: "set", field: "issueDate", value: "2066-03-09" });
     expect(d.deliveryDate).toBe("2066-03-05");
+  });
+
+  // Fix-Welle 1, M2 (Abschluss-Review Phase 13b): Faelligkeits-Vorbelegung ueber DIESELBE
+  // Prioritaetskette wie der Server (createDraftInvoice, invoice/create.ts:109) — der
+  // Kunde ist die spezifischste Zusage, schlaegt die Zahlungsmethode, die wiederum die
+  // Org-Einstellung schlaegt.
+  it("resolveDueDays: Kunde schlaegt Methode schlaegt Einstellung schlaegt 14 (M2)", () => {
+    expect(resolveDueDays(30, 14, 7)).toBe(30);
+    expect(resolveDueDays(null, 14, 7)).toBe(14);
+    expect(resolveDueDays(undefined, undefined, 7)).toBe(7);
+    expect(resolveDueDays(undefined, undefined, undefined)).toBe(14);
+    expect(resolveDueDays(null, null, null)).toBe(14);
+  });
+
+  // M2: die reine Anzeige-Vorbelegung (MetaBlock, "replace") darf toInvoicePayload nicht
+  // dazu bringen, den vorbelegten Wert zu senden — sonst gewinnt die (moeglicherweise
+  // unvollstaendige) Client-Kette gegenueber der Server-Kette. Erst eine EXPLIZITE
+  // Nutzeraenderung ("set") markiert dueDateTouched und damit sendefaehig.
+  it("toInvoicePayload sendet dueDate bei Neuanlage nur, wenn der Nutzer es aktiv gesetzt hat (M2)", () => {
+    const s = { ...invoiceDraft(), issueDate: "2066-03-01" };
+    // Vorbelegung wie MetaBlocks Prefill-Effekt: dispatch("replace", ...) OHNE dueDateTouched.
+    const prefilled = draftReducer(s, { type: "replace", state: { ...s, dueDate: "2066-03-15" } });
+    expect(prefilled.dueDateTouched).toBe(false);
+    expect(toInvoicePayload(prefilled, false).dueDate).toBeUndefined();
+
+    // Eine explizite Nutzeraenderung ("set") markiert touched — jetzt wird gesendet.
+    const touched = draftReducer(s, { type: "set", field: "dueDate", value: "2066-03-15" });
+    expect(touched.dueDateTouched).toBe(true);
+    expect(toInvoicePayload(touched, false).dueDate).toBe("2066-03-15");
+
+    // Bearbeiten sendet weiterhin immer, unabhaengig von dueDateTouched (Bestandsverhalten).
+    expect(toInvoicePayload(prefilled, true).dueDate).toBe("2066-03-15");
+  });
+
+  it("draftFromInvoice setzt dueDateTouched (Bearbeiten traegt einen bereits gespeicherten Wert)", () => {
+    const s = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", dueDate: "2066-03-15", lines: [] } as never);
+    expect(s.dueDateTouched).toBe(true);
   });
 });
