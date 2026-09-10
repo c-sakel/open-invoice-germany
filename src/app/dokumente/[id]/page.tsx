@@ -73,8 +73,12 @@ export default async function DokumentDetail({
   });
   // Task 4: Teil-/Abschlags-/Schlussrechnung nur fuer Angebot/AB, solange noch nicht voll
   // abgerechnet — Teil- und Abschlagsrechnungen werden nie gemischt (Task-2-Ruling).
-  // Deckungsgleich mit convert.deliveryNote (dieselbe Matrix: Angebot/AB, nicht voll abgerechnet).
-  const canBillQuote = convert.deliveryNote;
+  // Fix-Welle M5: eigenstaendig aus `billing` gebildet statt `convert.deliveryNote`
+  // gleichzusetzen — seit M5 folgt `convert.deliveryNote` der serverseitigen Regel in
+  // `convert.ts` (Status, unabhaengig vom Abrechnungsstand), waehrend Teil-/Abschlags-
+  // rechnungen weiterhin nur bis zur vollen Abrechnung sinnvoll sind. `billing` ist nur
+  // fuer Angebot/AB gesetzt (PROFORMA: `null` oben) — deckt die Kind-Einschraenkung mit ab.
+  const canBillQuote = billing != null && billing.state !== "FULL";
   const hasPartialInvoices = billing != null && billing.state === "PARTIAL" && billing.downpaymentGrossCents === 0;
   const hasDownpayments = billing != null && billing.downpaymentGrossCents > 0;
   const archived = q.archivedAt !== null;
