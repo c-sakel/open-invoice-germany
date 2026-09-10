@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction } from "@/app/actions/invoices";
 import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
+import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { DocumentChain } from "@/components/DocumentChain";
@@ -94,6 +95,14 @@ export default async function InvoiceDetail({
     });
     dunningSchedule = { nextStage: schedule.nextStage ? { name: schedule.nextStage.name, order: schedule.nextStage.order } : null, dueAt: schedule.dueAt, isDue: schedule.isDue };
   }
+
+  // Zahlungsmethoden-Auswahl im Zahlungsdialog: aktive Methoden OHNE den Systemcode SKONTO
+  // (der wird ausschliesslich automatisch bei detectSkonto gebucht, nie manuell gewaehlt).
+  // Default-Kette: Kunden-Standard -> Methode der Rechnung -> TRANSFER.
+  const activePaymentMethods = vm.canPay
+    ? (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO")
+    : [];
+  const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
 
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
 
@@ -185,6 +194,9 @@ export default async function InvoiceDetail({
             paymentMethodName={vm.paymentMethodName}
             hasSkonto={vm.hasSkonto}
             showPaymentBlock={showPaymentBlock}
+            canPay={vm.canPay}
+            paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
+            defaultPaymentMethod={defaultPaymentMethodCode}
             dunningSchedule={dunningSchedule}
           />
           <DetailCard title="Anhänge">
