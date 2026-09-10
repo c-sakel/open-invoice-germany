@@ -31,6 +31,11 @@ export interface CustomerOption {
   email?: string | null;
   defaultPaymentMethodId?: string | null;
   defaultDiscountPermille?: number | null;
+  /** Fix-Welle 1, M2 (Abschluss-Review Phase 13b): dieselbe Kundenvorgabe wie
+   *  `createDraftInvoice` (`invoice/create.ts:109`, spezifischste Zusage vor
+   *  Zahlungsmethode/Org-Einstellung) — Grundlage fuer `MetaBlock`s Faelligkeits-
+   *  Vorbelegung bei Neuanlage (`resolveDueDays`, `src/lib/editor/draft.ts`). */
+  defaultPaymentTermsDays?: number | null;
 }
 
 const MAX_HITS = 30;

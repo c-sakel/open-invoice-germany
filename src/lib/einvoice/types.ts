@@ -109,6 +109,8 @@ export interface EInvoiceData {
    * (wenn leer) paymentTermsText(skontoTerms). NUR fuers PDF, nicht ins XML. */
   paymentTermsHuman?: string | null;
   notes?: string | null; // BT-22
+  /** Phase 13b — Betreff (BT-22 mit Subjektcode BT-21 "AAI"); im PDF eigene Betreffzeile. */
+  subject?: string | null;
   seller: EInvoiceParty;
   buyer: EInvoiceParty;
   lines: EInvoiceLine[];

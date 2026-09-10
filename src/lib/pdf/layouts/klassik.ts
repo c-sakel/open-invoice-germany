@@ -1,6 +1,6 @@
 /** Layout "Klassik" — Logo links oben, Firmenname rechts, Doppellinie unter dem Kopf, graue Fusszeile mit Linie. */
 import type { PdfLayout } from "./types";
-import { drawRecipient, drawMetaRows, drawFooterColumns } from "./shared";
+import { drawRecipient, drawMetaRows, drawFooterColumns, drawSubject } from "./shared";
 import { drawSenderLine, LOGO_MAX_HEIGHT_MM } from "../layout";
 import { mm } from "../marks";
 
@@ -25,6 +25,7 @@ export const klassikLayout: PdfLayout = {
     doc.font("Helvetica-Bold").fontSize(base + 6).fillColor("#000").text(input.title, left + 250, buyerY, { width: right - left - 250, align: "right" });
     const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, buyerY + base + 14, base, "#333");
     let y = Math.max(recipientBottom, metaBottom, margins.top + 160) + 20;
+    if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {
       doc.font("Helvetica").fontSize(base).fillColor("#000").text(input.intro, left, y, { width: right - left });
       y = doc.y + 10;

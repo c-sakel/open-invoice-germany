@@ -4,8 +4,15 @@
  * Produkt-Picker (Phase 4b): Suchfeld filtert clientseitig ueber die Produktliste
  * (Props, keine neue Route noetig laut Vorgabe), plus "Neues Produkt"-Dialog fuer
  * die Inline-Anlage.
+ *
+ * `autoFocus` (Phase 13b, Task 3) — "+ Produkt auswählen" in `LineItemsEditor` legt eine
+ * neue Zeile an und will deren Suchfeld sofort fokussieren, OHNE ein zweites Suchfeld zu
+ * bauen: ein Effekt mit leerem Deps-Array fokussiert das bestehende Suchfeld einmalig
+ * beim Mount (ein spaeteres Aendern der Prop loest KEINEN erneuten Fokus aus — passend
+ * zum "einmalig beim Anlegen"-Verhalten). `.focus()` triggert den bestehenden
+ * `onFocus`-Handler (`setOpen(true)`) automatisch, wie ein manueller Klick auch.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NewProductDialog, type InlineProduct } from "./NewProductDialog";
 import { unitLabel } from "@/lib/units";
 
@@ -23,15 +30,24 @@ export function ProductPicker({
   taxRates,
   onPick,
   onCreated,
+  autoFocus,
 }: {
   products: ProductOption[];
   /** Phase 12c — durchgereicht an `NewProductDialog` (org-eigene Steuersatz-Liste). */
   taxRates: readonly number[];
   onPick: (p: ProductOption) => void;
   onCreated?: (p: InlineProduct) => void;
+  autoFocus?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+    // Bewusst nur beim Mount (siehe Modulkommentar) — nicht bei jeder `autoFocus`-Aenderung.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = query.trim()
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -41,6 +57,7 @@ export function ProductPicker({
     <div className="relative">
       <div className="flex items-center gap-2">
         <input
+          ref={inputRef}
           className="w-full rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
           placeholder="Produkt suchen…"
           value={query}

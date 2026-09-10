@@ -3,7 +3,13 @@
 import { useFormStatus } from "react-dom";
 
 export const inputCls =
-  "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-100";
+  "rounded-md border border-slate-300 px-3.5 py-2.5 text-[15px] focus:border-indigo-500 focus:outline-none disabled:bg-slate-100";
+/** Dichte Variante NUR fuer die Positionstabelle des Editors (Phase 13b): dort stehen bis zu
+ *  acht Eingaben nebeneinander in einer `min-w-[880px]`-Tabelle — mit `inputCls` bricht die
+ *  Zeile um bzw. erzwingt waagerechtes Scrollen. Bewusst dieselbe Rahmen-/Fokusdefinition,
+ *  nur kleinere Innenabstaende und Schrift. */
+export const inputDenseCls =
+  "rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-100";
 
 interface BaseField {
   label: string;

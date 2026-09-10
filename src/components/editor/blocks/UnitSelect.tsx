@@ -22,7 +22,7 @@
  */
 import { useState } from "react";
 import { UNIT_OPTIONS } from "@/lib/editor/constants";
-import { inputCls } from "@/components/forms/fields";
+import { inputDenseCls } from "@/components/forms/fields";
 
 const OTHER = "__other__";
 
@@ -38,7 +38,7 @@ export function UnitSelect({ value, onChange }: { value: string; onChange: (v: s
   return (
     <div className="flex flex-col gap-1">
       <select
-        className={inputCls}
+        className={inputDenseCls}
         aria-label="Einheit"
         value={otherMode ? OTHER : value}
         onChange={(e) => {
@@ -57,7 +57,7 @@ export function UnitSelect({ value, onChange }: { value: string; onChange: (v: s
         ))}
         <option value={OTHER}>andere…</option>
       </select>
-      {otherMode && <input className={inputCls} value={value} placeholder="Einheit" onChange={(e) => onChange(e.target.value)} />}
+      {otherMode && <input className={inputDenseCls} value={value} placeholder="Einheit" onChange={(e) => onChange(e.target.value)} />}
     </div>
   );
 }

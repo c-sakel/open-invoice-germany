@@ -34,6 +34,8 @@ export interface KopfInput {
   extraRecipientBlock?: { heading: string; lines: string[] };
   senderFallback: string;
   intro?: string | null;
+  /** Phase 13b — Betreff (BT-22 mit Subjektcode BT-21 "AAI"); eigene Zeile über dem Kopftext. */
+  subject?: string | null;
 }
 
 export interface TableStyle {

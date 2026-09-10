@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { DocumentEditor } from "@/components/editor/DocumentEditor";
-import { draftFromInvoice, type InvoiceInitialLike } from "@/lib/editor/draft";
+import { draftFromInvoice, localDateOnly, type InvoiceInitialLike } from "@/lib/editor/draft";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
@@ -74,6 +74,12 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     contactPersonId: inv.contactPersonId ?? "",
     billingAddressId: inv.billingAddressId ?? "",
     shippingAddressId: inv.shippingAddressId ?? "",
+    // Fix-Welle 1, S1 (Abschluss-Review Phase 13b): `issueDate` ist ein echter Zeitstempel
+    // (anders als deliveryDate/dueDate unten, die bereits auf UTC-Mitternacht liegen) —
+    // `localDateOnly` liest denselben Kalendertag wie das PDF (Intl.DateTimeFormat ohne
+    // `timeZone`-Option), `.toISOString().slice(0,10)` haette in der Naehe von Mitternacht
+    // Berliner Zeit einen anderen Tag gezeigt (siehe Kommentar dort).
+    issueDate: localDateOnly(inv.issueDate),
     deliveryStart: inv.deliveryStart ? inv.deliveryStart.toISOString().slice(0, 10) : "",
     deliveryEnd: inv.deliveryEnd ? inv.deliveryEnd.toISOString().slice(0, 10) : "",
     deliveryDate: inv.deliveryDate ? inv.deliveryDate.toISOString().slice(0, 10) : "",

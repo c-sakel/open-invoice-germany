@@ -59,10 +59,33 @@ export interface DraftState {
   contactPersonId: string;
   billingAddressId: string;
   shippingAddressId: string;
+  /** Phase 13b — nur INVOICE; leer bei Neuanlage bedeutet "Datum der Anlage"
+   *  (`createDraftInvoice` setzt dafuer `input.issueDate ?? now`, siehe
+   *  `toInvoicePayload`/`dueDaysFrom`-Kommentar unten). */
+  issueDate: string;
+  /** Phase 13b — nur INVOICE, reine Editor-Kopplung (kein eigenes Server-Feld): solange
+   *  `true`, zieht `deliveryDate` im Reducer bei jeder `issueDate`-Aenderung automatisch
+   *  nach (siehe `case "set"`). Default `false`; bei Neuanlage setzt `emptyDraft` `true`,
+   *  weil `DocumentSettings.autoDeliveryDate` serverseitig ohnehin so wirkt
+   *  (`invoice/create.ts:115`) — der Editor zeigt damit von Anfang an dasselbe Verhalten,
+   *  das beim Speichern ohne Eingabe greifen wuerde. */
+  deliveryDateFollowsIssue: boolean;
   deliveryDate: string;
   deliveryStart: string;
   deliveryEnd: string;
   dueDate: string;
+  /** Fix-Welle 1, M2 (Abschluss-Review Phase 13b): `true`, sobald der Nutzer „Fällig am"
+   *  (Datum ODER Tageszahl, beide dispatchen `{type:"set", field:"dueDate"}`) selbst
+   *  geaendert hat — steuert, ob `toInvoicePayload` das Feld bei NEUANLAGE ueberhaupt
+   *  sendet (sonst greift die Server-Prioritaetskette `customer.defaultPaymentTermsDays
+   *  ?? method.paymentTermsDays ?? settings.invoiceDueDays ?? 14`, `invoice/create.ts:109`).
+   *  Die automatische Vorbelegung in `MetaBlock` (Anzeige, dieselbe Kette client-seitig
+   *  ueber `resolveDueDays`) dispatcht bewusst `"replace"` statt `"set"` und laesst dieses
+   *  Flag dadurch unveraendert — sonst wuerde die reine Anzeige-Vorbelegung dauerhaft die
+   *  serverseitige Kette durch die (ggf. abweichende) Client-Vorbelegung ersetzen. Beim
+   *  Bearbeiten (`draftFromInvoice`) ohne Wirkung: `toInvoicePayload` sendet `dueDate` dort
+   *  unabhaengig davon immer (Bestandsverhalten). */
+  dueDateTouched: boolean;
   validUntil: string;
   shippingDate: string;
   paymentMethodId: string;
@@ -155,6 +178,60 @@ function emptyLine(lineType: LineType = "ITEM", allowed: readonly number[] = FAL
   };
 }
 
+// Ableitung zwischen Rechnungsdatum und Zahlungsziel (Phase 13b). Rein, ISO-Tagesstrings,
+// Rechnung in UTC (Date.UTC) — eine lokale Zeitzone wuerde die Differenz an DST-Grenzen um
+// einen Tag verschieben (dieselbe Begruendung wie utcDateOnly, src/lib/date-only.ts).
+const DAY_MS = 24 * 60 * 60 * 1000;
+function utcDay(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+/** Tage zwischen Rechnungs- und Faelligkeitsdatum; leer, wenn eines fehlt oder das Ziel davor liegt. */
+export function dueDaysFrom(issueDate: string, dueDate: string): string {
+  const a = utcDay(issueDate), b = utcDay(dueDate);
+  if (a == null || b == null || b < a) return "";
+  return String(Math.round((b - a) / DAY_MS));
+}
+/** Faelligkeitsdatum aus Rechnungsdatum + N Tagen (0..365); leer bei unvollstaendiger Eingabe. */
+export function dueDateFromDays(issueDate: string, days: string): string {
+  const a = utcDay(issueDate), n = Number(days.trim());
+  if (a == null || !days.trim() || !Number.isInteger(n) || n < 0 || n > 365) return "";
+  return new Date(a + n * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Faelligkeits-Vorbelegung bei Neuanlage (Fix-Welle 1, M2 — Abschluss-Review Phase 13b):
+ *  DIESELBE Prioritaetskette wie der Server (`createDraftInvoice`, invoice/create.ts:109)
+ *  — der Kunde ist die spezifischste Zusage, schlaegt die Zahlungsmethode, die wiederum
+ *  die Org-weite Voreinstellung (`DocumentSettings.invoiceDueDays`) schlaegt; ohne alle
+ *  drei 14 Tage (Systemdefault). Rein fuer die Client-ANZEIGE in `MetaBlock` — ob der Wert
+ *  tatsaechlich gespeichert wird, entscheidet weiterhin ausschliesslich der Server:
+ *  `toInvoicePayload` sendet `dueDate` bei Neuanlage nur, wenn der Nutzer es aktiv gesetzt
+ *  hat (`DraftState.dueDateTouched`). */
+export function resolveDueDays(customerDays: number | null | undefined, methodDays: number | null | undefined, settingsDays: number | null | undefined): number {
+  return customerDays ?? methodDays ?? settingsDays ?? 14;
+}
+
+/** Kalendertag eines echten Zeitstempels in der LOKALEN Zeitzone (S1, Abschluss-Review
+ *  Phase 13b) — im Unterschied zu deliveryDate/dueDate (bereits `z.coerce.date()`-
+ *  Datumsangaben auf UTC-Mitternacht) ist `Invoice.issueDate` ein realer Zeitstempel
+ *  (`now`, `invoice/create.ts:102`). `.toISOString().slice(0,10)` nimmt den UTC-Tag —
+ *  das PDF formatiert `issueDate` dagegen ueber `Intl.DateTimeFormat("de-DE", …)` OHNE
+ *  `timeZone`-Option (`invoice-pdf.ts:92`), also im lokalen Kalendertag des Laufzeit-
+ *  Prozesses (produktiv Europe/Berlin). Ein zwischen 00:00 und 02:00 Berliner Zeit
+ *  angelegter Entwurf liegt in UTC noch am Vortag — die Editor-Anzeige haette ein anderes
+ *  Datum gezeigt als das PDF, und ein reines Oeffnen+Speichern (issueDate wird beim
+ *  Bearbeiten immer mitgesendet) haette das korrekte Rechnungsdatum stillschweigend
+ *  ueberschrieben. `getFullYear()/getMonth()/getDate()` nutzen dieselbe lokale Zeitzone
+ *  wie `Intl.DateTimeFormat` ohne `timeZone`-Option — dieselbe Konvention, kein Abgleich
+ *  noetig. NUR fuer `Invoice.issueDate` verwendet; deliveryDate/dueDate bleiben bei
+ *  `utcDateOnly`/UTC (src/lib/date-only.ts), da sie bereits auf UTC-Mitternacht liegen. */
+export function localDateOnly(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): DraftState {
   const allowedTaxRates = defaults?.allowedTaxRates ?? [...FALLBACK_TAX_RATES];
   const base: DraftState = {
@@ -179,10 +256,17 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     contactPersonId: "",
     billingAddressId: "",
     shippingAddressId: "",
+    issueDate: "",
+    // Neuanlage: an — spiegelt `DocumentSettings.autoDeliveryDate` (`invoice/create.ts:115`),
+    // das serverseitig ohnehin greift, wenn kein Leistungsdatum mitgesendet wird.
+    // `draftFromInvoice`/`draftFromDocument` (Bearbeiten bestehender Belege) setzen dies
+    // gezielt auf `false` zurueck.
+    deliveryDateFollowsIssue: true,
     deliveryDate: "",
     deliveryStart: "",
     deliveryEnd: "",
     dueDate: "",
+    dueDateTouched: false,
     validUntil: "",
     shippingDate: "",
     paymentMethodId: "",
@@ -215,6 +299,19 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "markSaved":
       return { ...state, dirty: false };
     case "set":
+      // Phase 13b: das Leistungsdatum folgt dem Rechnungsdatum, solange der Nutzer die
+      // Kopplung nicht geloest hat. Bewusst hier und nicht in MetaBlock: sonst muesste
+      // jede weitere Stelle, die `issueDate` setzt (z. B. eine Vorlage in 13d), die
+      // Kopplung nachbauen.
+      if (action.field === "issueDate" && state.deliveryDateFollowsIssue) {
+        return { ...state, issueDate: action.value as string, deliveryDate: action.value as string, dirty: true };
+      }
+      // Fix-Welle 1, M2: jede EXPLIZITE Nutzeraenderung an dueDate (Datumsfeld oder
+      // Tageszahl in MetaBlock, beide dispatchen "set"/"dueDate") markiert die
+      // Vorbelegung als vom Nutzer uebernommen/ueberschrieben — siehe DraftState.dueDateTouched.
+      if (action.field === "dueDate") {
+        return { ...state, dueDate: action.value as string, dueDateTouched: true, dirty: true };
+      }
       return { ...state, [action.field]: action.value, dirty: true } as DraftState;
     case "setLine":
       return {
@@ -330,10 +427,21 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
     billingAddressId: optionalSelectValue(d.billingAddressId, isEdit),
     shippingAddressId: optionalSelectValue(d.shippingAddressId, isEdit),
+    // Phase 13b — leer (Neuanlage, Feld nicht angefasst): `createDraftInvoice` setzt dann
+    // `input.issueDate ?? now` (invoice/create.ts:102), genau wie ohne dieses Feld vorher.
+    // `toDocumentPayload` bekommt bewusst KEIN issueDate: `createDocument` setzt es fest auf
+    // `now` (document/create.ts:167) und kennt kein Eingabefeld dafuer.
+    issueDate: d.issueDate || undefined,
     deliveryStart: d.deliveryStart || undefined,
     deliveryEnd: d.deliveryEnd || undefined,
     deliveryDate: d.deliveryDate || undefined,
-    dueDate: d.dueDate || undefined,
+    // Fix-Welle 1 (M2): bei Neuanlage nur senden, wenn der Nutzer Tage/Datum AKTIV
+    // gesetzt hat (`dueDateTouched`, siehe Reducer `case "set"` und `DraftState`-Kommentar)
+    // — sonst wuerde `MetaBlock`s reine Anzeige-Vorbelegung (dieselbe Kette wie der Server,
+    // aber zum Ladezeitpunkt eingefroren) die serverseitige Prioritaetskette dauerhaft
+    // ersetzen. Beim Bearbeiten unveraendert: ein bereits gespeichertes/angezeigtes
+    // Zahlungsziel wird weiterhin immer mitgesendet (Bestandsverhalten).
+    dueDate: isEdit || d.dueDateTouched ? d.dueDate || undefined : undefined,
     notes: finalNotes,
     internalNotes: d.internalNotes || undefined,
     consumerRetentionHint: d.consumerRetentionHint,
@@ -506,6 +614,8 @@ export interface InvoiceInitialLike {
   contactPersonId: string;
   billingAddressId: string;
   shippingAddressId: string;
+  /** Phase 13b — `yyyy-mm-dd`, immer gesetzt (Invoice.issueDate hat `@default(now())`). */
+  issueDate: string;
   deliveryStart: string;
   deliveryEnd: string;
   deliveryDate: string;
@@ -608,10 +718,21 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     contactPersonId: initial.contactPersonId ?? "",
     billingAddressId: initial.billingAddressId ?? "",
     shippingAddressId: initial.shippingAddressId ?? "",
+    issueDate: initial.issueDate ?? "",
+    // Bearbeiten bestehender Belege: die Kopplung ist standardmaessig AUS (anders als bei
+    // `emptyDraft`s Neuanlage-Default `true`) — eine geladene Rechnung traegt bereits ein
+    // eigenstaendiges Leistungsdatum, das eine Rechnungsdatum-Aenderung nicht ungefragt
+    // ueberschreiben soll.
+    deliveryDateFollowsIssue: false,
     deliveryStart: initial.deliveryStart ?? "",
     deliveryEnd: initial.deliveryEnd ?? "",
     deliveryDate: initial.deliveryDate ?? "",
     dueDate: initial.dueDate ?? "",
+    // Bearbeiten: ein geladener Beleg traegt bereits ein explizites (oder bewusst leeres)
+    // Zahlungsziel — `toInvoicePayload` sendet es beim Bearbeiten ohnehin immer, dieses
+    // Flag hat dort also keine Wirkung (siehe DraftState.dueDateTouched-Kommentar), wird
+    // aus Konsistenzgruenden trotzdem korrekt gesetzt.
+    dueDateTouched: true,
     notes: initial.notes ?? "",
     internalNotes: initial.internalNotes ?? "",
     consumerRetentionHint: initial.consumerRetentionHint ?? false,
@@ -647,6 +768,10 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     customerReference: initial.customerReference ?? "",
     contactPersonId: initial.contactPersonId ?? "",
     billingAddressId: initial.billingAddressId ?? "",
+    // Bearbeiten (Ruling wie draftFromInvoice): DOCUMENT kennt kein eigenes issueDate-Feld
+    // im Editor, die Kopplung bleibt trotzdem konsistent auf "aus" statt des
+    // `emptyDraft`-Neuanlage-Defaults `true`.
+    deliveryDateFollowsIssue: false,
     validUntil: initial.validUntil ?? "",
     headerText: initial.headerText ?? "",
     footerText: initial.footerText ?? "",

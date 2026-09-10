@@ -1,6 +1,6 @@
 /** Layout "Modern" — Kopfbalken in Primaerfarbe ueber die volle Breite mit Logo/Firmenname in Weiss, Infoblock als Karte. */
 import type { PdfLayout } from "./types";
-import { drawRecipient, drawMetaTable, drawFooterColumns } from "./shared";
+import { drawRecipient, drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
 import { drawSenderLine } from "../layout";
 import { mm } from "../marks";
 
@@ -38,6 +38,7 @@ export const modernLayout: PdfLayout = {
     doc.fillColor("#000");
     const metaBottom = drawMetaTable(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], cardX + 8, buyerY, 194, base - 1);
     let y = Math.max(recipientBottom, metaBottom + 8, margins.top + 190) + 16;
+    if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {
       doc.font("Helvetica").fontSize(base).fillColor("#000").text(input.intro, left, y, { width: right - left });
       y = doc.y + 10;

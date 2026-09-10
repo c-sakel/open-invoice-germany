@@ -181,6 +181,13 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   if (data.dueDate) root.ele("cbc:DueDate").txt(isoDate(data.dueDate)).up();
   root.ele(isCredit ? "cbc:CreditNoteTypeCode" : "cbc:InvoiceTypeCode").txt(invoiceTypeCode(data.type)).up();
   if (data.notes) root.ele("cbc:Note").txt(data.notes).up();
+  // Phase 13b — Betreff als BT-22 (Note) mit Subjektcode BT-21 "AAI" (UNTDID 4451,
+  // "General information") — XRechnung kodiert BT-21 als "#CODE#"-Präfix im cbc:Note;
+  // mehrere cbc:Note sind laut UBL-XSD zulässig (siehe Abzugsaufstellung/
+  // Aufbewahrungshinweis darunter).
+  // Nachtrag Task 7: leer/nur Whitespace -> keine Note (getrimmt, nicht nur der rohe Wert).
+  const subjectTrimmed = data.subject?.trim();
+  if (subjectTrimmed) root.ele("cbc:Note").txt(`#AAI#${subjectTrimmed}`).up();
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES Note-Element
   // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
   // Freitext-Hinweis, statt ihn zu ersetzen.
