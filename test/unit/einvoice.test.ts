@@ -136,6 +136,32 @@ describe("XRechnung / EN 16931", () => {
     expect(xml).toContain('<cbc:PayableAmount currencyID="EUR">297.50</cbc:PayableAmount>'); // positiv
     expect(validateXRechnung(credit, xml).errors).toEqual([]);
   });
+
+  it("BT-9 (Fälligkeit) bei Gutschriften: kein cbc:DueDate auf Dokumentebene (UBL-CreditNote-XSD kennt es nicht — cvc-complex-type.2.4.a), stattdessen cac:PaymentMeans/cbc:PaymentDueDate direkt nach PaymentMeansCode", () => {
+    const credit: EInvoiceData = {
+      ...data,
+      number: "GS-2026-0001",
+      type: "CREDIT_NOTE",
+      precedingInvoiceNumber: "RE-2026-0001",
+      precedingInvoiceDate: new Date("2026-06-09"),
+    };
+    const xml = buildXRechnungUBL(credit);
+    expect(xml).not.toContain("<cbc:DueDate>");
+    const pmIdx = xml.indexOf("<cac:PaymentMeans>");
+    const codeIdx = xml.indexOf("<cbc:PaymentMeansCode>");
+    const dueIdx = xml.indexOf("<cbc:PaymentDueDate>2026-06-23</cbc:PaymentDueDate>");
+    const acctIdx = xml.indexOf("<cac:PayeeFinancialAccount>");
+    expect(dueIdx).toBeGreaterThan(pmIdx);
+    expect(dueIdx).toBeGreaterThan(codeIdx);
+    expect(dueIdx).toBeLessThan(acctIdx);
+    expect(validateXRechnung(credit, xml).errors).toEqual([]);
+  });
+
+  it("BT-9 bei einer normalen Rechnung bleibt unveraendert: cbc:DueDate auf Dokumentebene, KEIN PaymentMeans/PaymentDueDate", () => {
+    const xml = buildXRechnungUBL(data);
+    expect(xml).toContain("<cbc:DueDate>2026-06-23</cbc:DueDate>");
+    expect(xml).not.toContain("<cbc:PaymentDueDate>");
+  });
 });
 
 describe("ZUGFeRD / Factur-X (CII)", () => {

@@ -178,7 +178,13 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   root.ele("cbc:ProfileID").txt(PEPPOL_PROFILE).up();
   root.ele("cbc:ID").txt(data.number).up();
   root.ele("cbc:IssueDate").txt(isoDate(data.issueDate)).up();
-  if (data.dueDate) root.ele("cbc:DueDate").txt(isoDate(data.dueDate)).up();
+  // BT-9 (Faelligkeitsdatum): UBL-Invoice-XSD kennt cbc:DueDate auf Dokumentebene, das
+  // UBL-CreditNote-XSD NICHT (cvc-complex-type.2.4.a im echten KoSIT/XSD-Validator, seit
+  // 20e937c scharf gestellt) — fuer Gutschriften wird BT-9 stattdessen weiter unten als
+  // cac:PaymentMeans/cbc:PaymentDueDate ausgewiesen (siehe dort; auch schematronseitig
+  // korrekt: UBL-CR-412 verbietet PaymentMeans/PaymentDueDate bei Invoice, erlaubt es aber
+  // explizit bei CreditNote).
+  if (data.dueDate && !isCredit) root.ele("cbc:DueDate").txt(isoDate(data.dueDate)).up();
   root.ele(isCredit ? "cbc:CreditNoteTypeCode" : "cbc:InvoiceTypeCode").txt(invoiceTypeCode(data.type)).up();
   if (data.notes) root.ele("cbc:Note").txt(data.notes).up();
   // Phase 13b — Betreff als BT-22 (Note) mit Subjektcode BT-21 "AAI" (UNTDID 4451,
@@ -260,6 +266,9 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     const pmMeans = data.paymentMeans;
     const pm = root.ele("cac:PaymentMeans");
     pm.ele("cbc:PaymentMeansCode").txt(pmMeans.code).up();
+    // BT-9 bei Gutschriften (s. Kommentar oben bei cbc:IssueDate) — UBL-XSD-Reihenfolge
+    // innerhalb PaymentMeansType: PaymentMeansCode, PaymentDueDate, ... PayeeFinancialAccount.
+    if (isCredit && data.dueDate) pm.ele("cbc:PaymentDueDate").txt(isoDate(data.dueDate)).up();
     if (pmMeans.iban && ACCOUNT_REQUIRING_CODES.has(pmMeans.code)) {
       const acc = pm.ele("cac:PayeeFinancialAccount");
       acc.ele("cbc:ID").txt(pmMeans.iban).up();
@@ -271,12 +280,18 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     // Fix-Runde (Review): in der Produktion tot (mapper.ts setzt paymentMeans immer), bleibt nur fuer Test-Fixtures ohne paymentMeans (z. B. test/unit/einvoice.test.ts) — Entfernen wuerde deren XML aendern.
     const pm = root.ele("cac:PaymentMeans");
     pm.ele("cbc:PaymentMeansCode").txt("58").up(); // SEPA credit transfer
+    if (isCredit && data.dueDate) pm.ele("cbc:PaymentDueDate").txt(isoDate(data.dueDate)).up();
     const acc = pm.ele("cac:PayeeFinancialAccount");
     acc.ele("cbc:ID").txt(data.iban).up();
     if (data.bankName) acc.ele("cbc:Name").txt(data.bankName).up();
     acc.up();
     pm.up();
   }
+  // Ohne jedes PaymentMeans-Element (weder paymentMeans noch iban, z. B. "no-iban"-Fixture)
+  // gibt es fuer eine Gutschrift keine schemakonforme Stelle fuer BT-9 — das Faelligkeitsdatum
+  // entfaellt dann bewusst (BT-9 ist EN16931-optional, 0..1); ein cac:PaymentMeans nur zum
+  // Transport des Datums zu erzeugen wuerde ein PaymentMeansCode ohne fachliche Grundlage
+  // erfinden (BR-49 verlangt den Code, sobald BG-16 uebermittelt wird).
 
   // BT-20 — Zahlungsbedingungen. paymentTermsNote traegt bei Skonto die
   // #SKONTO#-Freitextsyntax (siehe mapper.ts); ohne Skonto identisch zu paymentTerms.
