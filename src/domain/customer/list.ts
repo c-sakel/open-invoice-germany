@@ -39,3 +39,26 @@ export async function listContactsApi(orgId: string, rawFilter: unknown): Promis
   ]);
   return { rows, total, limit: filter.limit, offset: filter.offset };
 }
+
+/**
+ * Fix-Welle M2: loest den Rohwert des "combo"-Kundenfilters der vier Listenseiten
+ * (`FilterBar`, Feld `customerId`) serverseitig auf — mit UND ohne JavaScript kommt
+ * hier derselbe Rohtext an (eine `customerId` aus einem Link/Lesezeichen ODER ein per
+ * `<datalist>` getippter Kundenname), `FilterBar` bildet ihn seit dieser Fix-Welle nicht
+ * mehr selbst ab. Bei exaktem Treffer (Id ODER Name) ersetzt der Aufrufer `customerId`
+ * im Rohfilter durch die aufgeloeste Id; ohne Treffer faellt der Rohtext auf die
+ * Volltextsuche `q` zurueck (Spec-Zusage „freier Text faellt auf `q` zurueck"), sofern
+ * dort noch kein eigener Suchbegriff steht — mutiert `rawFilter` in-place, analog dem
+ * bestehenden `withoutStatus`-Muster der Listenseiten.
+ */
+export async function applyCustomerComboFilter(orgId: string, rawFilter: Record<string, unknown>): Promise<void> {
+  const raw = rawFilter.customerId;
+  if (typeof raw !== "string" || !raw) return;
+  const match = await prisma.customer.findFirst({ where: { orgId, OR: [{ id: raw }, { name: raw }] }, select: { id: true } });
+  if (match) {
+    rawFilter.customerId = match.id;
+    return;
+  }
+  delete rawFilter.customerId;
+  if (!rawFilter.q) rawFilter.q = raw;
+}

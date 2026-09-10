@@ -2,8 +2,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
-import { listInvoices } from "@/domain/invoice/list";
+import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline } from "@/domain/invoice/list";
 import { availableActions } from "@/domain/document/actions";
+import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { resolveDefaultPaymentMethodCode } from "@/domain/payment-method/default";
 import { loadDocumentSettings } from "@/domain/document/settings";
@@ -12,8 +13,13 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
-import { loadListPage } from "@/lib/list-page";
+import { StatusTabs } from "@/components/list/StatusTabs";
+import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
+import { relativeDueLabel } from "@/lib/relative-date";
+import { originsFor } from "@/domain/document/origin";
+import { parseListQuery, runListFilter } from "@/lib/list-query";
 import { buildListeParam } from "@/domain/document/neighbors";
+import { InvoiceListStatusFilter } from "@/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -27,23 +33,45 @@ const TYPE_LABEL: Record<string, string> = {
   FINAL: "Schlussrechnung",
 };
 
-const STATUS_OPTIONS: FilterField = {
-  type: "select",
-  name: "status",
-  label: "Status",
-  options: [
-    { value: "draft", label: "Entwurf" },
-    { value: "open", label: "Offen" },
-    { value: "due", label: "Fällig heute" },
-    { value: "overdue", label: "Überfällig" },
-    { value: "partial", label: "Teilbezahlt" },
-    { value: "paid", label: "Bezahlt" },
-    { value: "cancelled", label: "Storniert" },
-  ],
+// Beschriftung der Status-Tabs (Phase 13a, Task 8) — ersetzt das bisherige Status-<select>
+// (STATUS_OPTIONS) in `fields`: der Status wird jetzt ausschliesslich ueber StatusTabs
+// gewaehlt, nicht mehr doppelt ueber Tabs UND Filterleiste.
+const STATUS_TAB_LABEL: Record<InvoiceListStatusFilter, string> = {
+  all: "Alle",
+  draft: "Entwurf",
+  open: "Offen",
+  due: "Fällig heute",
+  overdue: "Überfällig",
+  partial: "Teilbezahlt",
+  paid: "Bezahlt",
+  cancelled: "Storniert",
 };
 
 function deDate(d: Date | null) {
   return d ? new Intl.DateTimeFormat("de-DE").format(d) : "—";
+}
+
+/** Filterwerte ohne `status` (Task 8, Brief): die Tab-Zaehler gelten fuer JEDEN Tab
+ *  gleichermassen — `invoiceStatusTabCounts` ignoriert `filter.status` zwar ohnehin
+ *  (siehe invoiceFilterConditions), das Weglassen macht die Absicht im Code sichtbar. */
+function withoutStatus(filter: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...filter };
+  delete rest.status;
+  return rest;
+}
+
+/**
+ * Liste, Tabs und Kopfkennzahlen in EINEM Promise.all (Task-8-Brief) — alle drei teilen
+ * denselben `now` (sonst zeigt die Liste nachts zwei Stunden ein anderes "ueberfaellig"
+ * als die Tabs/Kennzahlen). Bei ungueltiger Handeingabe der URL (z. B. `offset=abc`)
+ * entfernt `runListFilter` (Fix-Welle S6) NUR die beanstandeten Schluessel und versucht es
+ * erneut, statt wie zuvor bei JEDEM ZodError alle Filter zu verwerfen — erst wenn auch der
+ * bereinigte Versuch scheitert, laufen alle drei mit den Standardfiltern.
+ */
+function loadOverview(orgId: string, rawFilter: Record<string, unknown>, now: Date) {
+  return runListFilter(rawFilter, (f) =>
+    Promise.all([listInvoices(orgId, f, now), invoiceStatusTabCounts(orgId, withoutStatus(f), now), invoiceListHeadline(orgId, f, now)]),
+  );
 }
 
 type SP = Record<string, string | string[] | undefined>;
@@ -54,6 +82,11 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     q: firstOf(sp.q),
     status: firstOf(sp.status),
     type: firstOf(sp.type),
+    customerId: firstOf(sp.customerId),
+    minCents: firstOf(sp.minCents),
+    maxCents: firstOf(sp.maxCents),
+    paymentMethodId: firstOf(sp.paymentMethodId),
+    eInvoice: firstOf(sp.eInvoice),
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     offset: firstOf(sp.offset),
@@ -62,12 +95,28 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   const detailHref = (id: string) => `/rechnungen/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
+  const now = new Date();
   // Fix-Welle (B1): rohe searchParams enthalten bei jedem FilterBar-Submit leere Strings
   // ("Alle" im <select>) — parseListQuery entfernt sie, ein verbleibender ZodError
-  // (handgeschriebene URL, z. B. offset=abc) faengt loadListPage ab statt die Seite
-  // abstuerzen zu lassen.
-  const result = await loadListPage(sp, (f) => listInvoices(org.id, f), { booleanKeys: ["eInvoice"] });
-  const allPaymentMethods = await listPaymentMethods(org.id);
+  // (handgeschriebene URL, z. B. offset=abc) faengt loadOverview ab statt die Seite
+  // abstuerzen zu lassen. Fix-Welle M2: `minCents`/`maxCents` kommen seit Fix M2 als
+  // getippter Euro-Text ("12,50") statt bereits umgerechneter Cent — `moneyKeys` bildet
+  // sie hier tolerant ab (dieselbe Abbildung fuer JS- und JS-freien Pfad).
+  const rawFilter = parseListQuery(sp, ["eInvoice"], ["minCents", "maxCents"]);
+  // Fix-Welle M2: `customerId` kann seit Fix M2 ein getippter Kundenname statt einer Id
+  // sein — auf einen exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck
+  // (Spec). MUSS vor `loadOverview` abgeschlossen sein (mutiert `rawFilter` in-place),
+  // deshalb sequenziell statt im selben Promise.all wie unten.
+  await applyCustomerComboFilter(org.id, rawFilter);
+
+  const [[result, tabCounts, headline], allPaymentMethods, docSettings, customerOptions] = await Promise.all([
+    loadOverview(org.id, rawFilter, now),
+    listPaymentMethods(org.id),
+    loadDocumentSettings(org.id),
+    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
+    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
+  ]);
   const activePaymentMethods = allPaymentMethods.filter((m) => m.isActive && m.code !== "SKONTO");
   const paymentMethodOptions = activePaymentMethods.map((m) => ({ code: m.code, name: m.name }));
 
@@ -76,7 +125,6 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   // hartkodiert die erste aktive Methode der Organisation fuer alle Zeilen. Ein
   // zusaetzlicher Bulk-Query fuer die Kunden-Standardmethoden der aktuellen Seite (kein
   // N+1) statt eines Joins je Zeile.
-  const docSettings = await loadDocumentSettings(org.id);
   const orgDefaultCode = docSettings.defaultPaymentMethodId
     ? (allPaymentMethods.find((m) => m.id === docSettings.defaultPaymentMethodId)?.code ?? null)
     : null;
@@ -87,21 +135,65 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   });
   const customerDefaultCodeById = new Map(customerDefaults.map((c) => [c.id, c.defaultPaymentMethod?.code ?? null]));
 
-  // Summenzeile offen/ueberfaellig (Task 2, Brief): Summe bezieht sich bewusst nur auf die
-  // aktuell angezeigte Seite (nicht die Gesamtmenge des Filters) — eine globale Aggregation
-  // ueber ALLE gefilterten Zeilen wuerde eine eigene Aggregat-Query erfordern, die nicht
-  // Teil des Task-1-Vertrags (listInvoices liefert nur `rows`+`total`) ist.
-  const openSumCents = result.rows.reduce((s, r) => s + (r.effectiveStatus !== "PAID" && r.effectiveStatus !== "CANCELLED" ? r.openCents : 0), 0);
-  const overdueSumCents = result.rows.reduce((s, r) => s + (r.effectiveStatus === "OVERDUE" ? r.openCents : 0), 0);
+  // Herkunft je Zeile (Task 2/8): eine Bulk-Abfrage fuer die gesamte Seite statt N+1.
+  const ids = result.rows.map((r) => r.id);
+  const origins = await originsFor(org.id, "INVOICE", ids);
+
+  const headlineItems: HeadlineItem[] = [
+    { label: "Belege", value: String(headline.count) },
+    {
+      label: "Brutto gesamt",
+      value: formatCents(headline.grossCents, headline.currency),
+      hint: headline.mixedCurrency ? "gemischte Währungen" : undefined,
+    },
+    {
+      label: "Offen",
+      value: formatCents(headline.openCents, headline.currency),
+      hint: headline.mixedCurrency ? "gemischte Währungen" : undefined,
+    },
+    {
+      label: "Überfällig",
+      value: formatCents(headline.overdueCents, headline.currency),
+      tone: "danger",
+      hint: headline.mixedCurrency ? "gemischte Währungen" : undefined,
+    },
+  ];
+
+  const statusTabs = InvoiceListStatusFilter.options.map((value) => ({ value, label: STATUS_TAB_LABEL[value], count: tabCounts[value] }));
 
   const fields: FilterField[] = [
     { type: "text", name: "q", label: "Suche", placeholder: "Nummer, Kunde, Position…" },
-    STATUS_OPTIONS,
     {
       type: "select",
       name: "type",
       label: "Typ",
       options: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
+    },
+    {
+      type: "combo",
+      name: "customerId",
+      label: "Kunde",
+      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
+      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
+      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
+      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+    },
+    { type: "number", name: "minCents", label: "Betrag von", placeholder: "0,00" },
+    { type: "number", name: "maxCents", label: "Betrag bis", placeholder: "0,00" },
+    {
+      type: "select",
+      name: "paymentMethodId",
+      label: "Zahlungsart",
+      options: allPaymentMethods.filter((m) => m.code !== "SKONTO").map((m) => ({ value: m.id, label: m.name })),
+    },
+    {
+      type: "select",
+      name: "eInvoice",
+      label: "E-Rechnung",
+      options: [
+        { value: "true", label: "Ja" },
+        { value: "false", label: "Nein" },
+      ],
     },
     { type: "date", name: "from", label: "Von" },
     { type: "date", name: "to", label: "Bis" },
@@ -119,18 +211,11 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         }
       />
 
+      <StatusTabs basePath="/rechnungen" searchParams={values} tabs={statusTabs} active={values.status ?? "all"} />
+
       <FilterBar basePath="/rechnungen" fields={fields} values={values} />
 
-      {result.total > 0 && (
-        <div className="flex flex-wrap gap-4 text-sm text-slate-600">
-          <span>
-            Offen (diese Seite): <strong className="tabular text-slate-900">{formatCents(openSumCents)}</strong>
-          </span>
-          <span>
-            Überfällig (diese Seite): <strong className="tabular text-rose-700">{formatCents(overdueSumCents)}</strong>
-          </span>
-        </div>
-      )}
+      <ListHeadline items={headlineItems} />
 
       {result.rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
@@ -164,16 +249,29 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                   hasEmailLog: inv.hasEmailLog,
                   dunningState: inv.dunningState,
                 });
+                const due = relativeDueLabel(inv.dueDate, now);
+                const origin = origins.get(inv.id);
                 return (
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <Link href={detailHref(inv.id)} className="font-medium text-indigo-600 hover:underline">
                         {inv.number ?? "Entwurf"}
                       </Link>
+                      {origin && (
+                        <div>
+                          <Link href={origin.href} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">
+                            {origin.label}
+                          </Link>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{TYPE_LABEL[inv.type] ?? inv.type}</td>
                     <td className="px-4 py-3 text-slate-600">{inv.customerName}</td>
-                    <td className="px-4 py-3 text-slate-600">{deDate(inv.dueDate)}</td>
+                    <td className="px-4 py-3">
+                      <span title={deDate(inv.dueDate)} className={due.overdue ? "text-rose-700" : "text-slate-600"}>
+                        {due.text}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
                     </td>

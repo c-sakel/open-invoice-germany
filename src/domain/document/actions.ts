@@ -21,7 +21,8 @@ export type ActionKey =
   | "REMINDER"
   | "DUNNING"
   | "DELIVERY_NOTE"
-  | "CANCEL";
+  | "CANCEL"
+  | "CONVERT";
 
 export type DocKind = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "RECURRING";
 
@@ -52,6 +53,51 @@ const CANCELLABLE_INVOICE_TYPES = new Set(["INVOICE", "CORRECTION", "PARTIAL", "
 const NOT_DUPLICATABLE_INVOICE_TYPES = new Set(["PARTIAL", "DOWNPAYMENT", "FINAL"]);
 
 const INVOICE_TYPES = new Set(["INVOICE", "CREDIT_NOTE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"]);
+
+// Task 7 ("eine Aktionsmatrix"): wortgleich aus der Dokument-Detailseite hierher verschoben
+// (vormals dokumente/[id]/page.tsx:48-51) — einzige Quelle fuer die Umwandlungs-Sichtbarkeit,
+// von RowActionsMenu UND der Detailseite genutzt. Reine Sichtbarkeit; die eigentliche Pruefung
+// bleibt serverseitig (ConvertError/409 bei Regelverstoss).
+const ANGEBOT_TO_AB_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+const ANGEBOT_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+const AB_TO_INVOICE_STATUSES = new Set(["DRAFT", "SENT"]);
+const QUOTE_TO_DELIVERY_NOTE_STATUSES = new Set(["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]);
+
+export interface ConvertTargets {
+  orderConfirmation: boolean;
+  invoice: boolean;
+  deliveryNote: boolean;
+}
+
+/**
+ * Ziele fuer die "Umwandeln"-Aktion eines Angebots/einer AB (ConvertMenu-Props
+ * showToOrderConfirmation/showToInvoice/showToDeliveryNote). Nur fuer kind "QUOTE" —
+ * andere Belegarten liefern immer drei `false`. `convertedToInvoiceId` sperrt AB/Rechnung
+ * (bereits umgewandelt), `billingFull` (Gesamtleistung bereits voll berechnet, §13-15 UStG)
+ * sperrt NUR die Rechnung — die AB-Erzeugung haengt nicht an der Abrechnung.
+ *
+ * Fix-Welle M5: `deliveryNote` folgt jetzt EXAKT der serverseitigen Regel in
+ * `convertToDeliveryNote` (`src/domain/document/convert.ts`, `fromType === "QUOTE"`) —
+ * die prueft dort NUR den (effektiven) Status gegen `QUOTE_TO_DELIVERY_NOTE_STATUSES`,
+ * weder `kind` (PROFORMA eingeschlossen) noch den Abrechnungsstand. Vorher sperrte diese
+ * Funktion zusaetzlich PROFORMA und ein bereits voll abgerechnetes Angebot/eine AB, obwohl
+ * der Server beides weiterhin erlaubte — zwei bisher funktionierende, aber im Zeilenmenue/
+ * auf der Detailseite unsichtbare Wege zur Lieferscheinerzeugung (Review-Finding M5). Nach
+ * einer Rechnung noch zu liefern ist der Normalfall, keine Ausnahme.
+ */
+export function convertTargets(doc: ActionableDoc & { convertedToInvoiceId?: string | null; billingFull?: boolean }): ConvertTargets {
+  if (doc.kind !== "QUOTE") return { orderConfirmation: false, invoice: false, deliveryNote: false };
+  const isAngebot = doc.type === "ANGEBOT";
+  const isAB = doc.type === "AUFTRAGSBESTAETIGUNG";
+  const converted = doc.convertedToInvoiceId != null;
+  const billingFull = doc.billingFull === true;
+  return {
+    orderConfirmation: isAngebot && !converted && ANGEBOT_TO_AB_STATUSES.has(doc.status),
+    invoice:
+      !converted && !billingFull && ((isAngebot && ANGEBOT_TO_INVOICE_STATUSES.has(doc.status)) || (isAB && AB_TO_INVOICE_STATUSES.has(doc.status))),
+    deliveryNote: QUOTE_TO_DELIVERY_NOTE_STATUSES.has(doc.status),
+  };
+}
 
 function invoiceActions(doc: ActionableDoc): ActionKey[] {
   const actions: ActionKey[] = ["OPEN", "PDF"];
@@ -111,6 +157,11 @@ function quoteActions(doc: ActionableDoc): ActionKey[] {
   }
 
   if (!doc.isDraft && !isCancelled) actions.push("CANCEL");
+
+  // Task 7 ("eine Aktionsmatrix"): CONVERT buendelt AB-/Rechnungs-/Lieferschein-Erzeugung
+  // ueber convertTargets — dieselbe Matrix wie die Dokument-Detailseite.
+  const targets = convertTargets(doc);
+  if (targets.orderConfirmation || targets.invoice || targets.deliveryNote) actions.push("CONVERT");
 
   return actions;
 }

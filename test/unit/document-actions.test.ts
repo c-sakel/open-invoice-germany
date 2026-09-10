@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { availableActions, type ActionableDoc } from "@/domain/document/actions";
+import { availableActions, convertTargets, type ActionableDoc } from "@/domain/document/actions";
 
 function doc(overrides: Partial<ActionableDoc>): ActionableDoc {
   return { kind: "INVOICE", type: "INVOICE", status: "OPEN", isDraft: false, ...overrides };
@@ -102,5 +102,39 @@ describe("availableActions", () => {
   it("Abo (RECURRING): nur OPEN/EDIT, keine Beleg-Aktionen", () => {
     const actions = availableActions({ kind: "RECURRING", type: "", status: "ACTIVE", isDraft: false });
     expect(actions).toEqual(["OPEN", "EDIT"]);
+  });
+});
+
+describe("convertTargets", () => {
+  const quote = (status: string, extra = {}) => ({ kind: "QUOTE" as const, type: "ANGEBOT", status, isDraft: status === "DRAFT", ...extra });
+
+  it("Angebot: AB, Rechnung und Lieferschein in DRAFT/SENT/ACCEPTED/EXPIRED", () => {
+    for (const s of ["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]) {
+      expect(convertTargets(quote(s))).toEqual({ orderConfirmation: true, invoice: true, deliveryNote: true });
+      expect(availableActions(quote(s))).toContain("CONVERT");
+    }
+  });
+
+  it("umgewandelt / vollstaendig berechnet / AB / PROFORMA / storniert", () => {
+    expect(convertTargets(quote("SENT", { convertedToInvoiceId: "inv1" })).orderConfirmation).toBe(false);
+    // Fix-Welle M5: billingFull sperrt NUR die Rechnung, nicht mehr den Lieferschein —
+    // convertTargets folgt jetzt exakt der serverseitigen Regel in convert.ts (nur
+    // Status, kein Abrechnungsstand fuer die Lieferschein-Konvertierung).
+    expect(convertTargets(quote("ACCEPTED", { billingFull: true }))).toEqual({ orderConfirmation: true, invoice: false, deliveryNote: true });
+    expect(convertTargets({ ...quote("ACCEPTED"), type: "AUFTRAGSBESTAETIGUNG" }).invoice).toBe(false);
+    expect(availableActions(quote("CANCELLED"))).not.toContain("CONVERT");
+  });
+
+  it("Fix-Welle M5: PROFORMA darf in einen Lieferschein umgewandelt werden (Server prueft in convert.ts nur den Status, nicht kind)", () => {
+    for (const s of ["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]) {
+      expect(convertTargets({ ...quote(s), type: "PROFORMA" }).deliveryNote).toBe(true);
+    }
+    // orderConfirmation/invoice bleiben fuer PROFORMA weiterhin gesperrt (kein Angebot/AB).
+    expect(convertTargets({ ...quote("SENT"), type: "PROFORMA" })).toMatchObject({ orderConfirmation: false, invoice: false });
+  });
+
+  it("Fix-Welle M5: voll abgerechnetes Angebot/AB darf weiterhin einen Lieferschein erzeugen (Rechnung bleibt gesperrt)", () => {
+    expect(convertTargets(quote("SENT", { billingFull: true }))).toMatchObject({ invoice: false, deliveryNote: true });
+    expect(convertTargets({ ...quote("SENT", { billingFull: true }), type: "AUFTRAGSBESTAETIGUNG" })).toMatchObject({ invoice: false, deliveryNote: true });
   });
 });

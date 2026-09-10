@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
-import { listRecurring } from "@/domain/document/list";
+import { dbInternal } from "@/lib/db";
+import { listRecurring, recurringStatusTabCounts, type RecurringListResult } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
+import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
-import { loadListPage } from "@/lib/list-page";
+import { StatusTabs, type StatusTab } from "@/components/list/StatusTabs";
+import { parseListQuery, runListFilter } from "@/lib/list-query";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +17,13 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   ACTIVE: { text: "aktiv", cls: "bg-emerald-100 text-emerald-800" },
   PAUSED: { text: "pausiert", cls: "bg-amber-100 text-amber-800" },
   ENDED: { text: "beendet", cls: "bg-slate-200 text-slate-600" },
+};
+
+const STATUS_TAB_LABEL: Record<string, string> = {
+  all: "Alle",
+  ACTIVE: "Aktiv",
+  PAUSED: "Pausiert",
+  ENDED: "Beendet",
 };
 
 function deDate(d: Date | null) {
@@ -31,23 +41,48 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
   const values: Record<string, string | undefined> = {
     q: firstOf(sp.q),
     status: firstOf(sp.status),
+    customerId: firstOf(sp.customerId),
+    offset: firstOf(sp.offset),
   };
 
   const org = await getActiveOrg();
-  // Fix-Welle (B1): siehe rechnungen/page.tsx.
-  const result = await loadListPage(sp, (f) => listRecurring(org.id, f));
+  const rawFilter = parseListQuery(sp);
+
+  const [customerOptions] = await Promise.all([
+    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
+    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
+    // Fix-Welle M2: `customerId` kann ein getippter Kundenname statt einer Id sein — auf
+    // einen exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec).
+    applyCustomerComboFilter(org.id, rawFilter),
+  ]);
+
+  // Fix-Welle S6: `runListFilter` versucht `rawFilter` zuerst vollstaendig, entfernt bei
+  // einem ZodError NUR die beanstandeten Schluessel (statt alle Filter zu verwerfen) und
+  // erst als letzte Sicherung die volle Rueckstellung auf `{}`.
+  const [result, tabCounts] = await runListFilter<[RecurringListResult, Record<"all" | "ACTIVE" | "PAUSED" | "ENDED", number>]>(rawFilter, (f) => {
+    // Filterwerte ohne `status` fuer die Tab-Zaehler (siehe rechnungen/page.tsx `withoutStatus`).
+    const tabFilter = { ...f };
+    delete tabFilter.status;
+    return Promise.all([listRecurring(org.id, f), recurringStatusTabCounts(org.id, tabFilter)]);
+  });
+
+  const statusTabs: StatusTab[] = (["all", "ACTIVE", "PAUSED", "ENDED"] as const).map((value) => ({
+    value,
+    label: STATUS_TAB_LABEL[value],
+    count: tabCounts[value],
+  }));
 
   const fields: FilterField[] = [
     { type: "text", name: "q", label: "Suche", placeholder: "Bezeichnung, Kunde…" },
     {
-      type: "select",
-      name: "status",
-      label: "Status",
-      options: [
-        { value: "ACTIVE", label: "Aktiv" },
-        { value: "PAUSED", label: "Pausiert" },
-        { value: "ENDED", label: "Beendet" },
-      ],
+      type: "combo",
+      name: "customerId",
+      label: "Kunde",
+      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
+      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
+      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
+      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
     },
   ];
 
@@ -66,6 +101,8 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
         Vorlagen, aus denen automatisch Rechnungen erzeugt werden — wöchentlich bis jährlich. Erzeugte Rechnungen durchlaufen Festschreibung,
         Nummernkreis und Audit wie jede andere Rechnung.
       </p>
+
+      <StatusTabs basePath="/abos" searchParams={values} tabs={statusTabs} active={values.status ?? "all"} />
 
       <FilterBar basePath="/abos" fields={fields} values={values} />
 
