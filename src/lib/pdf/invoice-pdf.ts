@@ -238,6 +238,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     recipient: data.buyer,
     senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
     intro: data.headerText,
+    subject: data.subject,
   });
 
   // Positions-Tabelle — Spalten nach Druckoptionen (§36).

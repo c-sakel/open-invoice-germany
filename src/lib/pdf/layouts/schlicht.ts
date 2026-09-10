@@ -5,7 +5,7 @@
  * Fusszeile in Primaerfarbe.
  */
 import type { PdfLayout } from "./types";
-import { drawLogoAndSender, drawRecipient, drawMetaTable, drawFooterColumns } from "./shared";
+import { drawLogoAndSender, drawRecipient, drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
 
 export const schlichtLayout: PdfLayout = {
   id: "schlicht",
@@ -37,6 +37,7 @@ export const schlichtLayout: PdfLayout = {
     let y = Math.max(recipientBottom, metaBottom, margins.top + 150) + 26;
     doc.font("Helvetica-BoldOblique").fontSize(base + 4).fillColor("#000").text(`${input.title} ${input.number}`, left, y, { width: right - left });
     y = doc.y + 12;
+    if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {
       doc.font("Helvetica").fontSize(base).fillColor("#000").text(input.intro, left, y, { width: right - left });
       y = doc.y + 12;
