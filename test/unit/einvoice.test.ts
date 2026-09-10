@@ -191,3 +191,32 @@ describe("§ 14b-Aufbewahrungshinweis (Phase 12b, Task 5)", () => {
     expect(buildXRechnungUBL(data)).not.toContain("§ 14b Abs. 1 Satz 5");
   });
 });
+
+describe("Betreff als BT-22-Note mit Subjektcode BT-21 AAI (Phase 13b, Task 5)", () => {
+  // Die Fixture `data` traegt `paymentTerms`, das (unabhaengig vom Betreff) selbst ein
+  // eigenes <cbc:Note> unter <cac:PaymentTerms> erzeugt (BT-20, kein BT-22) — fuer die
+  // reinen BT-22-Zaehltests hier neutralisiert, damit /<cbc:Note>/g nur die
+  // Dokumentebene-Notes (BG-1) zaehlt, nicht die (gleichnamige) Zahlungsbedingungs-Note.
+  const noPaymentTerms = { paymentTerms: null, paymentTermsNote: null };
+
+  it("UBL: Betreff als zusaetzliches cbc:Note mit #AAI#-Praefix", () => {
+    const xml = buildXRechnungUBL({ ...data, ...noPaymentTerms, notes: "Danke.", subject: "Wartung Anlage 4711" });
+    expect(xml).toContain("<cbc:Note>#AAI#Wartung Anlage 4711</cbc:Note>");
+    expect(xml).toContain("<cbc:Note>Danke.</cbc:Note>"); // Bestandsnote unveraendert
+    expect(xml.match(/<cbc:Note>/g)).toHaveLength(2);
+  });
+  it("CII: ram:IncludedNote mit ram:Content vor ram:SubjectCode", () => {
+    const xml = buildFacturXCII({ ...data, subject: "Wartung Anlage 4711" });
+    // prettyPrint:true fuegt Zeilenumbrueche/Einrueckung zwischen den Elementen ein —
+    // Reihenfolge (Content VOR SubjectCode) ist der eigentliche Pruefgegenstand (XSD).
+    expect(xml).toMatch(/<ram:IncludedNote>\s*<ram:Content>Wartung Anlage 4711<\/ram:Content>\s*<ram:SubjectCode>AAI<\/ram:SubjectCode>\s*<\/ram:IncludedNote>/);
+  });
+  it("ohne Betreff entsteht kein zusaetzliches Element", () => {
+    expect(buildXRechnungUBL(data)).toBe(buildXRechnungUBL({ ...data, subject: null }));
+    expect(buildFacturXCII(data)).toBe(buildFacturXCII({ ...data, subject: "" }));
+  });
+  it("Pflichthinweis und § 14b-Note bleiben eigene Elemente", () => {
+    const xml = buildXRechnungUBL({ ...data, ...noPaymentTerms, subject: "S", consumerRetentionHint: true });
+    expect(xml.match(/<cbc:Note>/g)).toHaveLength(3); // notes + Betreff + Aufbewahrungshinweis
+  });
+});
