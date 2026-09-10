@@ -354,6 +354,33 @@ export async function deliveryNoteStatusTabCounts(orgId: string, rawFilter: unkn
   return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<"all" | DeliveryNoteStatus, number>;
 }
 
+export interface DeliveryNoteListHeadline {
+  count: number;
+}
+
+/**
+ * Kopfkennzahl ueber der GEFILTERTEN Menge (Fix-Welle M4) — NUR Anzahl, bewusst OHNE
+ * „Brutto": anders als `Invoice`/`Quote` speichert `DeliveryNote` (kein Steuerbeleg,
+ * `prisma/schema.prisma`) weder eine Bruttosumme noch eine Waehrung — es gibt also keine
+ * Spalte, die sich analog `invoiceListHeadline`/`quoteListHeadline` per `groupBy`
+ * aggregieren liesse. Die einzigen Geldwerte stecken optional auf den Zeilen
+ * (`DeliveryNoteLine.unitNetPriceCents`/`.taxRate`, beide nullable) und sind bei den
+ * meisten Lieferscheinen gar nicht gesetzt (`showPrices` ist per Default aus) — eine
+ * daraus hochgerechnete Summe waere in der Praxis meist 0 und suggerierte eine
+ * Genauigkeit, die die Daten nicht hergeben (CLAUDE.md „keine Attrappen, keine
+ * Mock-Daten"). Ein echtes „Brutto" fuer Lieferscheine braucht eine Schemaaenderung
+ * (neue Spalte(n) auf `DeliveryNote`, SQLite UND Postgres, Bestandsdaten) — ausserhalb
+ * des Umfangs dieser Fix-Welle (Phase 13a aendert kein Schema); siehe Fix-Wave-1-Bericht
+ * und `docs/LIMITATIONEN.md`.
+ */
+export async function deliveryNoteListHeadline(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListHeadline> {
+  const filter = deliveryNoteListFilterSchema.parse(rawFilter);
+  const and = deliveryNoteFilterConditions(orgId, filter);
+  if (filter.status !== "all") and.push({ status: filter.status });
+  const count = await prisma.deliveryNote.count({ where: { AND: and } });
+  return { count };
+}
+
 export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListResult> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
 

@@ -31,7 +31,15 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { listInvoices, invoiceStatusTabCounts } from "@/domain/invoice/list";
 import { createBusinessDocument } from "@/domain/document/create";
 import { setQuoteStatus, setArchived, setDeliveryNoteStatus } from "@/domain/document/status";
-import { listQuotes, quoteStatusTabCounts, listDeliveryNotes, deliveryNoteStatusTabCounts, listRecurring, recurringStatusTabCounts } from "@/domain/document/list";
+import {
+  listQuotes,
+  quoteStatusTabCounts,
+  listDeliveryNotes,
+  deliveryNoteStatusTabCounts,
+  deliveryNoteListHeadline,
+  listRecurring,
+  recurringStatusTabCounts,
+} from "@/domain/document/list";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { createRecurring } from "@/domain/recurring/create";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
@@ -286,6 +294,23 @@ describe("deliveryNoteStatusTabCounts", () => {
     expect(counts.CREATED).toBeGreaterThanOrEqual(1);
     expect(counts.SENT).toBeGreaterThanOrEqual(1);
     expect(counts.DELIVERED).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("deliveryNoteListHeadline (Fix-Welle 1, M4)", () => {
+  it("count() entspricht der gefilterten Liste — bewusst KEIN grossCents (DeliveryNote hat keine Bruttosumme)", async () => {
+    const headline = await deliveryNoteListHeadline(orgId, {});
+    expect(headline).toEqual({ count: (await listDeliveryNotes(orgId, { limit: 200 })).total });
+    // Vertragstest: traegt NUR `count`, nie ein `grossCents`/`currency` (Schemaluecke — DeliveryNote hat keine Bruttosumme, siehe Kommentar in list.ts).
+    expect(Object.keys(headline)).toEqual(["count"]);
+
+    // Filter wirken auf die Kennzahl genau wie auf die Liste.
+    const sentOnly = await deliveryNoteListHeadline(orgId, { status: "SENT" });
+    expect(sentOnly.count).toBe((await listDeliveryNotes(orgId, { status: "SENT", limit: 200 })).total);
+    expect(sentOnly.count).toBeGreaterThanOrEqual(1);
+
+    // Fremde Organisation (keine eigenen Lieferscheine in dieser Fixtur) zaehlt nicht mit.
+    expect((await deliveryNoteListHeadline(otherOrgId, {})).count).toBe(0);
   });
 });
 
