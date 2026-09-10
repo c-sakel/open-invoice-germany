@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { z } from "zod";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listQuotes, quoteStatusTabCounts, quoteListHeadline, type QuoteListResult, type QuoteListHeadline } from "@/domain/document/list";
 import { availableActions, convertTargets } from "@/domain/document/actions";
 import { billingStateIndex } from "@/domain/document/billing-state";
+import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { formatCents } from "@/lib/money";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
@@ -13,7 +13,7 @@ import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs, type StatusTab } from "@/components/list/StatusTabs";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
-import { parseListQuery } from "@/lib/list-query";
+import { parseListQuery, runListFilter } from "@/lib/list-query";
 import { buildListeParam } from "@/domain/document/neighbors";
 import { QuoteStatus } from "@/schemas";
 
@@ -76,6 +76,10 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   const org = await getActiveOrg();
   const now = new Date();
   const rawFilter = parseListQuery(sp);
+  // Fix-Welle M2: `customerId` kann seit Fix M2 ein getippter Kundenname statt einer Id
+  // sein (JS-freier Rueckfall/`FilterBar` bilden nicht mehr selbst ab) — hier auf einen
+  // exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec-Zusage).
+  // Laeuft parallel zu `billingStateIndex`/`customerOptions` (unabhaengige Abfragen).
 
   // billingStateIndex laeuft VOR der Liste, weil er fuer drei Dinge gebraucht wird: ob die
   // zwei abgeleiteten Tabs ueberhaupt angeboten werden (Brief, Step 2), die `id`-Liste fuer
@@ -84,7 +88,10 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // `quoteStatusTabCounts` unten kostet also keine zusaetzliche Abfrage.
   const [index, customerOptions] = await Promise.all([
     billingStateIndex(org.id),
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
+    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
+    applyCustomerComboFilter(org.id, rawFilter),
   ]);
   const billedIds: string[] = [];
   const partiallyBilledIds: string[] = [];
@@ -99,35 +106,23 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // `quoteStatusWhere` um einen zweiten Statusbegriff zu erweitern ODER `ids` dem
   // oeffentlich genutzten `quoteListFilterSchema` hinzuzufuegen (das waere ein neuer,
   // ungewollter Query-Parameter der `/api/v1/Quote`-/`/api/v1/OrderConfirmation`-Routen).
-  const listFilter: Record<string, unknown> = { ...rawFilter, includeArchived: showArchived };
   const idsOpt: { ids?: string[] } = {};
-  if (values.status === "billed") {
-    listFilter.status = "all";
-    idsOpt.ids = billedIds;
-  } else if (values.status === "partially-billed") {
-    listFilter.status = "all";
-    idsOpt.ids = partiallyBilledIds;
-  }
-  const tabFilter = { ...withoutStatus(rawFilter), includeArchived: showArchived };
+  if (values.status === "billed") idsOpt.ids = billedIds;
+  else if (values.status === "partially-billed") idsOpt.ids = partiallyBilledIds;
 
-  let result: QuoteListResult;
-  let tabCounts: Record<string, number | null>;
-  let headline: QuoteListHeadline;
-  try {
-    [result, tabCounts, headline] = await Promise.all([
-      listQuotes(org.id, listFilter, now, idsOpt),
-      quoteStatusTabCounts(org.id, tabFilter, now),
-      quoteListHeadline(org.id, listFilter, now, idsOpt),
-    ]);
-  } catch (e) {
-    if (!(e instanceof z.ZodError)) throw e;
-    const fallback = { includeArchived: showArchived };
-    [result, tabCounts, headline] = await Promise.all([
-      listQuotes(org.id, fallback, now),
-      quoteStatusTabCounts(org.id, fallback, now),
-      quoteListHeadline(org.id, fallback, now),
-    ]);
-  }
+  // Fix-Welle S6: `runListFilter` versucht `rawFilter` zuerst vollstaendig, entfernt bei
+  // einem ZodError NUR die beanstandeten Schluessel (statt alle Filter zu verwerfen) und
+  // erst als letzte Sicherung die volle Rueckstellung auf `{ includeArchived }`.
+  const [result, tabCounts, headline] = await runListFilter<[QuoteListResult, Record<string, number | null>, QuoteListHeadline]>(
+    rawFilter,
+    (f) => {
+      const listFilter: Record<string, unknown> = { ...f, includeArchived: showArchived };
+      if (values.status === "billed" || values.status === "partially-billed") listFilter.status = "all";
+      const tabFilter = { ...withoutStatus(f), includeArchived: showArchived };
+      return Promise.all([listQuotes(org.id, listFilter, now, idsOpt), quoteStatusTabCounts(org.id, tabFilter, now), quoteListHeadline(org.id, listFilter, now, idsOpt)]);
+    },
+    { includeArchived: showArchived },
+  );
   const rows = result.rows;
 
   const statusTabValues = index.available ? (["all", ...QuoteStatus.options, "billed", "partially-billed"] as const) : (["all", ...QuoteStatus.options] as const);
@@ -144,7 +139,15 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
 
   const fields: FilterField[] = [
     { type: "text", name: "q", label: "Suche", placeholder: "Nummer, Kunde…" },
-    { type: "combo", name: "customerId", label: "Kunde", options: customerOptions.map((c) => ({ value: c.id, label: c.name })) },
+    {
+      type: "combo",
+      name: "customerId",
+      label: "Kunde",
+      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
+      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
+      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
+      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+    },
     {
       type: "select",
       name: "kind",
@@ -231,7 +234,12 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                     <td className="px-4 py-3 text-slate-600">{d.customerName}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={d.effectiveStatus} />
-                      {d.kind !== "PROFORMA" && <BillingStateBadge state={billingState} />}
+                      {/* Fix-Welle S1: ohne verfuegbaren Index (Obergrenze ueberschritten)
+                         liefert `index.states.get(d.id) ?? "NONE"` fuer JEDES Angebot
+                         "NONE" — der Zeilen-Chip wuerde dann fuer laengst voll abgerechnete
+                         Angebote faelschlich "Nicht berechnet" zeigen. Ohne Index ganz
+                         ausblenden (die Tabs verschwinden bereits, siehe StatusTabValues). */}
+                      {d.kind !== "PROFORMA" && index.available && <BillingStateBadge state={billingState} />}
                       {d.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
                     </td>
                     <td className="tabular px-4 py-3 text-right font-medium">{formatCents(d.grossTotalCents, d.currency)}</td>

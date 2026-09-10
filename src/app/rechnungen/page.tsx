@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { z } from "zod";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline } from "@/domain/invoice/list";
 import { availableActions } from "@/domain/document/actions";
+import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { resolveDefaultPaymentMethodCode } from "@/domain/payment-method/default";
 import { loadDocumentSettings } from "@/domain/document/settings";
@@ -17,7 +17,7 @@ import { StatusTabs } from "@/components/list/StatusTabs";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { originsFor } from "@/domain/document/origin";
-import { parseListQuery } from "@/lib/list-query";
+import { parseListQuery, runListFilter } from "@/lib/list-query";
 import { buildListeParam } from "@/domain/document/neighbors";
 import { InvoiceListStatusFilter } from "@/schemas";
 
@@ -63,22 +63,15 @@ function withoutStatus(filter: Record<string, unknown>): Record<string, unknown>
 /**
  * Liste, Tabs und Kopfkennzahlen in EINEM Promise.all (Task-8-Brief) — alle drei teilen
  * denselben `now` (sonst zeigt die Liste nachts zwei Stunden ein anderes "ueberfaellig"
- * als die Tabs/Kennzahlen). Bei ungueltiger Handeingabe der URL (z. B. `offset=abc`) faengt
- * `loadListPage` das bislang nur fuer die Liste ab (Fix-Welle B1) — hier fuer alle drei
- * gemeinsam: ein ZodError laesst alle drei mit den Standardfiltern erneut laufen, statt die
- * Next.js-Fehlerseite zu zeigen.
+ * als die Tabs/Kennzahlen). Bei ungueltiger Handeingabe der URL (z. B. `offset=abc`)
+ * entfernt `runListFilter` (Fix-Welle S6) NUR die beanstandeten Schluessel und versucht es
+ * erneut, statt wie zuvor bei JEDEM ZodError alle Filter zu verwerfen — erst wenn auch der
+ * bereinigte Versuch scheitert, laufen alle drei mit den Standardfiltern.
  */
-async function loadOverview(orgId: string, rawFilter: Record<string, unknown>, now: Date) {
-  try {
-    return await Promise.all([
-      listInvoices(orgId, rawFilter, now),
-      invoiceStatusTabCounts(orgId, withoutStatus(rawFilter), now),
-      invoiceListHeadline(orgId, rawFilter, now),
-    ]);
-  } catch (e) {
-    if (!(e instanceof z.ZodError)) throw e;
-    return Promise.all([listInvoices(orgId, {}, now), invoiceStatusTabCounts(orgId, {}, now), invoiceListHeadline(orgId, {}, now)]);
-  }
+function loadOverview(orgId: string, rawFilter: Record<string, unknown>, now: Date) {
+  return runListFilter(rawFilter, (f) =>
+    Promise.all([listInvoices(orgId, f, now), invoiceStatusTabCounts(orgId, withoutStatus(f), now), invoiceListHeadline(orgId, f, now)]),
+  );
 }
 
 type SP = Record<string, string | string[] | undefined>;
@@ -106,14 +99,23 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   // Fix-Welle (B1): rohe searchParams enthalten bei jedem FilterBar-Submit leere Strings
   // ("Alle" im <select>) — parseListQuery entfernt sie, ein verbleibender ZodError
   // (handgeschriebene URL, z. B. offset=abc) faengt loadOverview ab statt die Seite
-  // abstuerzen zu lassen.
-  const rawFilter = parseListQuery(sp, ["eInvoice"]);
+  // abstuerzen zu lassen. Fix-Welle M2: `minCents`/`maxCents` kommen seit Fix M2 als
+  // getippter Euro-Text ("12,50") statt bereits umgerechneter Cent — `moneyKeys` bildet
+  // sie hier tolerant ab (dieselbe Abbildung fuer JS- und JS-freien Pfad).
+  const rawFilter = parseListQuery(sp, ["eInvoice"], ["minCents", "maxCents"]);
+  // Fix-Welle M2: `customerId` kann seit Fix M2 ein getippter Kundenname statt einer Id
+  // sein — auf einen exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck
+  // (Spec). MUSS vor `loadOverview` abgeschlossen sein (mutiert `rawFilter` in-place),
+  // deshalb sequenziell statt im selben Promise.all wie unten.
+  await applyCustomerComboFilter(org.id, rawFilter);
 
   const [[result, tabCounts, headline], allPaymentMethods, docSettings, customerOptions] = await Promise.all([
     loadOverview(org.id, rawFilter, now),
     listPaymentMethods(org.id),
     loadDocumentSettings(org.id),
-    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
+    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
   ]);
   const activePaymentMethods = allPaymentMethods.filter((m) => m.isActive && m.code !== "SKONTO");
   const paymentMethodOptions = activePaymentMethods.map((m) => ({ code: m.code, name: m.name }));
@@ -167,7 +169,15 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       label: "Typ",
       options: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
     },
-    { type: "combo", name: "customerId", label: "Kunde", options: customerOptions.map((c) => ({ value: c.id, label: c.name })) },
+    {
+      type: "combo",
+      name: "customerId",
+      label: "Kunde",
+      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
+      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
+      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
+      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
+    },
     { type: "number", name: "minCents", label: "Betrag von", placeholder: "0,00" },
     { type: "number", name: "maxCents", label: "Betrag bis", placeholder: "0,00" },
     {
