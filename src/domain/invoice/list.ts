@@ -7,7 +7,7 @@
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma, ciContains } from "@/lib/db";
-import { invoiceListFilterSchema, type InvoiceListFilter } from "@/schemas";
+import { invoiceListFilterSchema, InvoiceListStatusFilter, type InvoiceListFilter } from "@/schemas";
 import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } from "@/domain/invoice/status";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
@@ -89,21 +89,17 @@ function sortOrder(sort: InvoiceListFilter["sort"]): Prisma.InvoiceOrderByWithRe
   }
 }
 
-export async function listInvoices(
-  orgId: string,
-  rawFilter: unknown,
-  now: Date = new Date(),
-): Promise<InvoiceListResult> {
-  const filter = invoiceListFilterSchema.parse(rawFilter);
-
-  // AND-Array statt flacher Objekt-Merges: der Status-Filter "open" traegt bereits ein
-  // eigenes `OR` (dueDate null ODER ab morgen) — ein zweites `OR` fuer `q` wuerde das
-  // erste sonst ueberschreiben statt beide zu kombinieren (Prisma erlaubt nur ein `OR`
-  // je Objektebene).
+/**
+ * Alle Filterbedingungen einer Rechnungsliste AUSSER dem Status (Phase 13a, Task 3 —
+ * herausgezogen aus `listInvoices`, damit `invoiceStatusTabCounts` dieselbe Filtermenge
+ * fuer jeden Tab wiederverwenden kann, statt sie ein zweites Mal zu bauen). AND-Array
+ * statt flacher Objekt-Merges: der Status-Filter "open" traegt bereits ein eigenes `OR`
+ * (dueDate null ODER ab morgen) — ein zweites `OR` fuer `q` wuerde das erste sonst
+ * ueberschreiben statt beide zu kombinieren (Prisma erlaubt nur ein `OR` je Objektebene).
+ */
+export function invoiceFilterConditions(orgId: string, filter: InvoiceListFilter): Prisma.InvoiceWhereInput[] {
   const and: Prisma.InvoiceWhereInput[] = [{ orgId }];
 
-  const statusCond = statusWhere(filter.status, now);
-  if (statusCond) and.push(statusCond);
   if (filter.type) and.push({ type: filter.type });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (filter.paymentMethodId) and.push({ paymentMethodId: filter.paymentMethodId });
@@ -141,6 +137,108 @@ export async function listInvoices(
       ],
     });
   }
+
+  return and;
+}
+
+/**
+ * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3): je Tab ein
+ * `count()` mit demselben `where` wie die Liste, nur mit ausgetauschter Statusbedingung —
+ * keine Zeilen im Speicher, kein zweiter Statusbegriff. Bewusst ueberlappend, wo
+ * `statusWhere` es ist: `partial` (Rohstatus PARTIALLY_PAID) ist Teilmenge von
+ * open/due/overdue. Feste Abfragezahl: ein `count()` je Tab (8 Tabs), kein N+1 auf
+ * Zeilenebene.
+ */
+export async function invoiceStatusTabCounts(
+  orgId: string,
+  rawFilter: unknown,
+  now: Date = new Date(),
+): Promise<Record<InvoiceListStatusFilter, number>> {
+  const filter = invoiceListFilterSchema.parse(rawFilter);
+  const base = invoiceFilterConditions(orgId, filter);
+  const tabs = InvoiceListStatusFilter.options;
+  const counts = await Promise.all(
+    tabs.map((tab) => {
+      const cond = statusWhere(tab, now);
+      return prisma.invoice.count({ where: { AND: cond ? [...base, cond] : base } });
+    }),
+  );
+  return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<InvoiceListStatusFilter, number>;
+}
+
+export interface InvoiceListHeadline {
+  count: number;
+  grossCents: number;
+  openCents: number;
+  overdueCents: number;
+  currency: string;
+  mixedCurrency: boolean;
+}
+
+/**
+ * Kopfkennzahlen ueber der GEFILTERTEN Menge (Phase 13a, Task 4) — ersetzt die "nur diese
+ * Seite"-Summe (rechnungen/page.tsx:90-95, laut Codekommentar eine Auslassung des
+ * Phase-8b-Task-1-Vertrags, keine fachliche Entscheidung). Waehrungen werden NICHT
+ * stillschweigend addiert: `groupBy({ by: ["currency"] })` liefert Anzahl + Σ Brutto
+ * DB-seitig und exakt, dazu die Waehrungsverteilung — bei mehr als einer Waehrung setzt
+ * `mixedCurrency`, die Anzeige haengt dann "(gemischte Waehrungen)" an statt eine falsche
+ * Zahl zu behaupten. Zweite Abfrage NUR ueber den potenziell offenen Teil (FINALIZED/SENT/
+ * PARTIALLY_PAID) mit vier Int-Spalten — offen/ueberfaellig aus openAmountCents +
+ * effectiveInvoiceStatus, dasselbe DB-portable JS-Aggregat wie dashboardSummary.
+ */
+export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<InvoiceListHeadline> {
+  const filter = invoiceListFilterSchema.parse(rawFilter);
+  const base = invoiceFilterConditions(orgId, filter);
+  const statusCond = statusWhere(filter.status, now);
+  const and = statusCond ? [...base, statusCond] : base;
+
+  const [groups, openish] = await Promise.all([
+    prisma.invoice.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } }),
+    prisma.invoice.findMany({
+      where: { AND: [...and, { status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } }] },
+      select: { status: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+    }),
+  ]);
+
+  let openCents = 0;
+  let overdueCents = 0;
+  for (const inv of openish) {
+    const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+    if (status !== "OPEN" && status !== "DUE" && status !== "OVERDUE") continue;
+    // openAmountCents rechnet vorzeichenbehaftet (payableBaseCents - paidAmountCents) — bei
+    // einer ueberzahlten Rechnung waere das Ergebnis negativ. Lokal geklemmt statt die
+    // geteilte Funktion zu aendern (sie hat weitere Aufrufer, z. B. dashboardSummary,
+    // dunning/auto.ts, deren Verhalten hier nicht mit angefasst werden soll).
+    const open = Math.max(0, openAmountCents(inv));
+    openCents += open;
+    if (status === "OVERDUE") overdueCents += open;
+  }
+
+  // Fuehrende Waehrung fuer die Anzeige: die mit den meisten Belegen (Tie-Break: erste
+  // Gruppe in Prisma-Ergebnisreihenfolge) — irrelevant, sobald `mixedCurrency` true ist
+  // und die UI den Hinweis anhaengt.
+  const leading = [...groups].sort((a, b) => b._count._all - a._count._all)[0];
+
+  return {
+    count: groups.reduce((sum, g) => sum + g._count._all, 0),
+    grossCents: groups.reduce((sum, g) => sum + (g._sum.grossTotalCents ?? 0), 0),
+    openCents,
+    overdueCents,
+    currency: leading?.currency ?? "EUR",
+    mixedCurrency: groups.length > 1,
+  };
+}
+
+export async function listInvoices(
+  orgId: string,
+  rawFilter: unknown,
+  now: Date = new Date(),
+): Promise<InvoiceListResult> {
+  const filter = invoiceListFilterSchema.parse(rawFilter);
+
+  const and = invoiceFilterConditions(orgId, filter);
+  const statusCond = statusWhere(filter.status, now);
+  if (statusCond) and.push(statusCond);
 
   const where: Prisma.InvoiceWhereInput = { AND: and };
 

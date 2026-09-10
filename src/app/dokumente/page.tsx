@@ -1,15 +1,21 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
-import { listQuotes } from "@/domain/document/list";
-import { availableActions } from "@/domain/document/actions";
+import { dbInternal } from "@/lib/db";
+import { listQuotes, quoteStatusTabCounts, quoteListHeadline, type QuoteListResult, type QuoteListHeadline } from "@/domain/document/list";
+import { availableActions, convertTargets } from "@/domain/document/actions";
+import { billingStateIndex } from "@/domain/document/billing-state";
+import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { formatCents } from "@/lib/money";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
-import { loadListPage } from "@/lib/list-page";
+import { StatusTabs, type StatusTab } from "@/components/list/StatusTabs";
+import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
+import { parseListQuery, runListFilter } from "@/lib/list-query";
 import { buildListeParam } from "@/domain/document/neighbors";
+import { QuoteStatus } from "@/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +24,32 @@ const KIND_LABEL: Record<string, string> = {
   AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
   PROFORMA: "Proforma",
 };
+
+// Beschriftung der Status-Tabs (Phase 13a, Task 8) — die zwei abgeleiteten Tabs (billed/
+// partially-billed) bilden den ABRECHNUNGSSTAND ab (billingStateIndex, Task 5), keinen
+// gespeicherten Beleg-Status — deshalb dieselben Labels wie BILLING_STATE_MAP
+// (src/components/StatusBadge.tsx).
+const STATUS_TAB_LABEL: Record<string, string> = {
+  all: "Alle",
+  DRAFT: "Entwurf",
+  SENT: "Versendet",
+  ACCEPTED: "Angenommen",
+  REJECTED: "Abgelehnt",
+  EXPIRED: "Abgelaufen",
+  CANCELLED: "Storniert",
+  billed: "Berechnet",
+  "partially-billed": "Teilweise berechnet",
+};
+
+/** Filterwerte ohne `status` (siehe rechnungen/page.tsx) — hier zusaetzlich ZWINGEND: die
+ *  beiden abgeleiteten Tabs "billed"/"partially-billed" sind KEIN gueltiger Wert von
+ *  `quoteListFilterSchema.status` (nur die gespeicherten QuoteStatus-Werte) — ohne das
+ *  Entfernen wuerfe `quoteStatusTabCounts` fuer diese beiden Werte einen ZodError. */
+function withoutStatus(filter: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...filter };
+  delete rest.status;
+  return rest;
+}
 
 type SP = Record<string, string | string[] | undefined>;
 
@@ -32,6 +64,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     q: firstOf(sp.q),
     status: firstOf(sp.status),
     kind: firstOf(sp.kind),
+    customerId: firstOf(sp.customerId),
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
@@ -41,17 +74,79 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   const detailHref = (id: string) => `/dokumente/${id}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
   const org = await getActiveOrg();
-  // Fix-Welle (B1): siehe rechnungen/page.tsx.
-  const result = await loadListPage(sp, (f) => listQuotes(org.id, f), { extra: { includeArchived: showArchived } });
+  const now = new Date();
+  const rawFilter = parseListQuery(sp);
+  // Fix-Welle M2: `customerId` kann seit Fix M2 ein getippter Kundenname statt einer Id
+  // sein (JS-freier Rueckfall/`FilterBar` bilden nicht mehr selbst ab) — hier auf einen
+  // exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec-Zusage).
+  // Laeuft parallel zu `billingStateIndex`/`customerOptions` (unabhaengige Abfragen).
+
+  // billingStateIndex laeuft VOR der Liste, weil er fuer drei Dinge gebraucht wird: ob die
+  // zwei abgeleiteten Tabs ueberhaupt angeboten werden (Brief, Step 2), die `id`-Liste fuer
+  // "?status=billed"/"?status=partially-billed" (Task-5-Kommentar zu `quoteStatusWhere`) und
+  // den Zeilen-Chip — `cache()` memoisiert ihn je Request, ein zweiter Aufruf innerhalb von
+  // `quoteStatusTabCounts` unten kostet also keine zusaetzliche Abfrage.
+  const [index, customerOptions] = await Promise.all([
+    billingStateIndex(org.id),
+    // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
+    // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
+    dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
+    applyCustomerComboFilter(org.id, rawFilter),
+  ]);
+  const billedIds: string[] = [];
+  const partiallyBilledIds: string[] = [];
+  for (const [quoteId, state] of index.states) {
+    if (state === "FULL") billedIds.push(quoteId);
+    else if (state === "PARTIAL") partiallyBilledIds.push(quoteId);
+  }
+
+  // Seiten-Wiring (Task 8, wie in Task 5 vorgesehen): "billed"/"partially-billed" sind kein
+  // Beleg-Status — vor dem Aufruf von `listQuotes`/`quoteListHeadline` in `status: "all"` +
+  // einen genuinen `ids`-Funktionsparameter (aus dem Index) uebersetzt, statt
+  // `quoteStatusWhere` um einen zweiten Statusbegriff zu erweitern ODER `ids` dem
+  // oeffentlich genutzten `quoteListFilterSchema` hinzuzufuegen (das waere ein neuer,
+  // ungewollter Query-Parameter der `/api/v1/Quote`-/`/api/v1/OrderConfirmation`-Routen).
+  const idsOpt: { ids?: string[] } = {};
+  if (values.status === "billed") idsOpt.ids = billedIds;
+  else if (values.status === "partially-billed") idsOpt.ids = partiallyBilledIds;
+
+  // Fix-Welle S6: `runListFilter` versucht `rawFilter` zuerst vollstaendig, entfernt bei
+  // einem ZodError NUR die beanstandeten Schluessel (statt alle Filter zu verwerfen) und
+  // erst als letzte Sicherung die volle Rueckstellung auf `{ includeArchived }`.
+  const [result, tabCounts, headline] = await runListFilter<[QuoteListResult, Record<string, number | null>, QuoteListHeadline]>(
+    rawFilter,
+    (f) => {
+      const listFilter: Record<string, unknown> = { ...f, includeArchived: showArchived };
+      if (values.status === "billed" || values.status === "partially-billed") listFilter.status = "all";
+      const tabFilter = { ...withoutStatus(f), includeArchived: showArchived };
+      return Promise.all([listQuotes(org.id, listFilter, now, idsOpt), quoteStatusTabCounts(org.id, tabFilter, now), quoteListHeadline(org.id, listFilter, now, idsOpt)]);
+    },
+    { includeArchived: showArchived },
+  );
   const rows = result.rows;
+
+  const statusTabValues = index.available ? (["all", ...QuoteStatus.options, "billed", "partially-billed"] as const) : (["all", ...QuoteStatus.options] as const);
+  const statusTabs: StatusTab[] = statusTabValues.map((value) => ({ value, label: STATUS_TAB_LABEL[value] ?? value, count: tabCounts[value] ?? null }));
+
+  const headlineItems: HeadlineItem[] = [
+    { label: "Belege", value: String(headline.count) },
+    {
+      label: "Brutto gesamt",
+      value: formatCents(headline.grossCents, headline.currency),
+      hint: headline.mixedCurrency ? "gemischte Währungen" : undefined,
+    },
+  ];
 
   const fields: FilterField[] = [
     { type: "text", name: "q", label: "Suche", placeholder: "Nummer, Kunde…" },
     {
-      type: "select",
-      name: "status",
-      label: "Status",
-      options: ["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"].map((v) => ({ value: v, label: v })),
+      type: "combo",
+      name: "customerId",
+      label: "Kunde",
+      options: customerOptions.map((c) => ({ value: c.id, label: c.name })),
+      // Fix-Welle S2: zeigt den Kundennamen statt der rohen Id, wenn `?customerId=<cuid>`
+      // ueber einen Link/ein Lesezeichen vorbelegt wurde.
+      displayValue: customerOptions.find((c) => c.id === values.customerId)?.name,
     },
     {
       type: "select",
@@ -81,7 +176,11 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         </Link>
       </div>
 
+      <StatusTabs basePath="/dokumente" searchParams={values} tabs={statusTabs} active={values.status ?? "all"} />
+
       <FilterBar basePath="/dokumente" fields={fields} values={values} />
+
+      <ListHeadline items={headlineItems} />
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
@@ -112,6 +211,18 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                   isDraft: d.effectiveStatus === "DRAFT",
                   hasEmailLog: d.hasEmailLog,
                 });
+                // Nachtrag Punkt 1: convertedToInvoiceId/billingFull an convertTargets, damit
+                // CONVERT im Zeilenmenue erscheint — der alte "Lieferschein erzeugen"-Eintrag
+                // in RowActionsMenu ist mit `!convert` bewacht, es entsteht kein Doppeleintrag.
+                const billingState = index.states.get(d.id) ?? "NONE";
+                const convert = convertTargets({
+                  kind: "QUOTE",
+                  type: d.kind,
+                  status: d.effectiveStatus,
+                  isDraft: d.effectiveStatus === "DRAFT",
+                  convertedToInvoiceId: d.convertedToInvoiceId,
+                  billingFull: billingState === "FULL",
+                });
                 return (
                   <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
@@ -123,6 +234,12 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                     <td className="px-4 py-3 text-slate-600">{d.customerName}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={d.effectiveStatus} />
+                      {/* Fix-Welle S1: ohne verfuegbaren Index (Obergrenze ueberschritten)
+                         liefert `index.states.get(d.id) ?? "NONE"` fuer JEDES Angebot
+                         "NONE" — der Zeilen-Chip wuerde dann fuer laengst voll abgerechnete
+                         Angebote faelschlich "Nicht berechnet" zeigen. Ohne Index ganz
+                         ausblenden (die Tabs verschwinden bereits, siehe StatusTabValues). */}
+                      {d.kind !== "PROFORMA" && index.available && <BillingStateBadge state={billingState} />}
                       {d.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
                     </td>
                     <td className="tabular px-4 py-3 text-right font-medium">{formatCents(d.grossTotalCents, d.currency)}</td>
@@ -140,6 +257,8 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                         duplicateRedirect="/dokumente/{id}"
                         cancelRoute={`/api/documents/${d.id}/status`}
                         cancelBody={{ action: "CANCEL" }}
+                        convert={convert}
+                        documentActions={{ type: "QUOTE", status: d.effectiveStatus, archived: d.archivedAt !== null }}
                       />
                     </td>
                   </tr>
