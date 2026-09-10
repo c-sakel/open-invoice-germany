@@ -345,21 +345,32 @@ export function buildFacturXCII(data: EInvoiceData): string {
   sum.up();
 
   // BG-3 — Bezug zur Originalrechnung (Gutschrift/Korrektur) bzw. Phase 5: je abgesetzter
-  // Abschlagsrechnung EIN ram:InvoiceReferencedDocument (mehrfach zulaessig). Reihenfolge
-  // laut CII-XSD (HeaderTradeSettlementType): NACH SpecifiedTradeSettlementHeaderMonetary-
-  // Summation, VOR ReceivableSpecifiedTradeAccountingAccount. precedingInvoices hat
-  // Vorrang, wenn gesetzt (nicht leer) — ohne dieses Feld (Alt-/Nicht-FINAL-Belege) bleibt
-  // das Einzelverhalten (precedingInvoiceNumber/-Date) unveraendert.
+  // Abschlagsrechnung ein Vorgaenger-Eintrag. Reihenfolge laut CII-XSD
+  // (HeaderTradeSettlementType): NACH SpecifiedTradeSettlementHeaderMonetarySummation,
+  // VOR ReceivableSpecifiedTradeAccountingAccount. precedingInvoices hat Vorrang, wenn
+  // gesetzt (nicht leer) — ohne dieses Feld (Alt-/Nicht-FINAL-Belege) bleibt das
+  // Einzelverhalten (precedingInvoiceNumber/-Date) unveraendert.
+  //
+  // ANDERS ALS UBL (cac:BillingReference ist laut XSD mehrfach zulaessig): die CII-XSD
+  // erlaubt ram:InvoiceReferencedDocument in ApplicableHeaderTradeSettlement nur EINMAL
+  // (kein maxOccurs -> Default 1) — ein zweites Vorkommen ist ein echter Schemafehler
+  // (cvc-complex-type.2.4.a, nicht nur eine Reihenfolgefrage; siehe
+  // CrossIndustryInvoice_ReusableAggregateBusinessInformationEntity_100pD16B.xsd,
+  // HeaderTradeSettlementType). Bei zwei oder mehr abgesetzten Abschlaegen (Schlussrechnung)
+  // wird daher nur der ZULETZT ausgestellte Abschlag strukturiert referenziert (BT-25/BT-26);
+  // die vollstaendige Aufstellung ALLER Abschlaege bleibt ueber das bereits vorhandene
+  // BT-22-Freitext-IncludedNote (deductionsNoteText, oben) inhaltlich vollstaendig erhalten.
   const precedingInvoices = data.precedingInvoices?.length
     ? data.precedingInvoices
     : data.precedingInvoiceNumber
       ? [{ number: data.precedingInvoiceNumber, issueDate: data.precedingInvoiceDate ?? undefined }]
       : [];
-  for (const preceding of precedingInvoices) {
+  const precedingInvoiceForHeader = precedingInvoices[precedingInvoices.length - 1];
+  if (precedingInvoiceForHeader) {
     const ref = set.ele("ram:InvoiceReferencedDocument");
-    ref.ele("ram:IssuerAssignedID").txt(preceding.number).up();
-    if (preceding.issueDate) {
-      ref.ele("ram:FormattedIssueDateTime").ele("qdt:DateTimeString", { format: "102" }).txt(ciiDate(preceding.issueDate)).up().up();
+    ref.ele("ram:IssuerAssignedID").txt(precedingInvoiceForHeader.number).up();
+    if (precedingInvoiceForHeader.issueDate) {
+      ref.ele("ram:FormattedIssueDateTime").ele("qdt:DateTimeString", { format: "102" }).txt(ciiDate(precedingInvoiceForHeader.issueDate)).up().up();
     }
     ref.up();
   }

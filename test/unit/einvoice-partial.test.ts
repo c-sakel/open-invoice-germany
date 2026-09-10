@@ -143,11 +143,17 @@ describe("buildXRechnungUBL — BG-3 mehrfach + BT-22 Abzugsaufstellung (Phase 5
     expect(ubl).toContain("<cbc:IssueDate>2040-03-01</cbc:IssueDate>");
   });
 
-  it("emittiert je Abschlag EIN ram:InvoiceReferencedDocument (CII, nach der Summation)", () => {
+  it("CII: nur EIN ram:InvoiceReferencedDocument (XSD erlaubt kein zweites Vorkommen in ApplicableHeaderTradeSettlement, anders als UBL) — der zuletzt ausgestellte Abschlag, nach der Summation", () => {
     const cii = buildFacturXCII(data);
-    expect((cii.match(/<ram:InvoiceReferencedDocument>/g) ?? []).length).toBe(2);
-    expect(cii).toContain("<ram:IssuerAssignedID>AR-2040-0001</ram:IssuerAssignedID>");
-    expect(cii).toContain("<qdt:DateTimeString format=\"102\">20400201</qdt:DateTimeString>");
+    // CrossIndustryInvoice_ReusableAggregateBusinessInformationEntity_100pD16B.xsd:
+    // InvoiceReferencedDocument hat kein maxOccurs -> Default 1. Ein zweites Vorkommen
+    // ist cvc-complex-type.2.4.a (echter KoSIT/XSD-Validator), kein reines Reihenfolge-
+    // problem — die vollstaendige Abzugsaufstellung bleibt ueber BT-22 (IncludedNote,
+    // s.u.) erhalten.
+    expect((cii.match(/<ram:InvoiceReferencedDocument>/g) ?? []).length).toBe(1);
+    expect(cii).toContain("<ram:IssuerAssignedID>AR-2040-0002</ram:IssuerAssignedID>");
+    expect(cii).not.toContain("<ram:IssuerAssignedID>AR-2040-0001</ram:IssuerAssignedID>");
+    expect(cii).toContain("<qdt:DateTimeString format=\"102\">20400301</qdt:DateTimeString>");
     const dueIdx = cii.indexOf("<ram:DuePayableAmount>");
     const refIdx = cii.indexOf("<ram:InvoiceReferencedDocument>");
     expect(refIdx).toBeGreaterThan(dueIdx);
