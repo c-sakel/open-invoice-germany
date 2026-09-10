@@ -1,9 +1,13 @@
 "use client";
 
 /**
- * Anhaenge-Block (Phase 11c, Task 4): `AttachmentPanel` (bestehend) nur bei Bearbeiten
- * (braucht eine `docId`) — bei Neuanlage nur ein Hinweis, da der Upload einen bereits
- * gespeicherten Beleg voraussetzt (`docId`/`orgId`-Zuordnung serverseitig).
+ * Anhaenge-Block (Phase 11c, Task 4; Phase 13b, Task 6): `AttachmentPanel` (bestehend)
+ * rendert jetzt IMMER, auch bei Neuanlage — waehlt der Nutzer dort die erste Datei,
+ * speichert `AttachmentPanel` (ueber `ensureDocId`) den Entwurf zuerst ueber den
+ * bestehenden Entwurfs-Erzeugungspfad (`DocumentEditor.save`) und laedt danach ueber die
+ * bestehende Route `POST /api/attachments` hoch — kein neuer Schreibpfad, kein
+ * schwebender Datensatz. Der bisherige Hinweistext ("...nach dem Speichern...") lebt nur
+ * noch als Fehlermeldung weiter, wenn das Speichern (Validierung) scheitert.
  *
  * `AttachmentPanel.docType` kennt keine eigene DOCUMENT-Unterscheidung nach Art
  * (Angebot/Auftragsbestaetigung/Proforma) — alle drei haengen wie heute
@@ -18,9 +22,18 @@ const DOC_TYPE: Record<EditorMode, "QUOTE" | "INVOICE" | "DELIVERY_NOTE"> = {
   DELIVERY_NOTE: "DELIVERY_NOTE",
 };
 
-export function AttachmentsBlock({ mode, isEdit, docId, attachments = [] }: { mode: EditorMode; isEdit: boolean; docId?: string; attachments?: AttachmentItem[] }) {
-  if (isEdit && docId) {
-    return <AttachmentPanel docType={DOC_TYPE[mode]} docId={docId} initial={attachments} />;
-  }
-  return <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">Anhänge lassen sich nach dem Speichern hinzufügen.</div>;
+export function AttachmentsBlock({
+  mode,
+  docId,
+  attachments = [],
+  onEnsureDocId,
+}: {
+  mode: EditorMode;
+  docId?: string;
+  attachments?: AttachmentItem[];
+  /** Neuanlage: speichert den Entwurf ueber den bestehenden Weg und liefert die neue
+   *  Id (oder `null` bei fehlgeschlagener Validierung) — siehe `DocumentEditor.save`. */
+  onEnsureDocId?: () => Promise<string | null>;
+}) {
+  return <AttachmentPanel docType={DOC_TYPE[mode]} docId={docId ?? ""} initial={attachments} ensureDocId={onEnsureDocId} />;
 }
