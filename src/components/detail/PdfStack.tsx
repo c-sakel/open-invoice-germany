@@ -1,6 +1,10 @@
 // src/components/detail/PdfStack.tsx
-/** PDF-Ansicht in der Seitenmitte (Phase 11d): Browser-PDF-Viewer im iframe im A4-Verhaeltnis
- *  (Hoehe = Breite * sqrt 2, per CSS aspect-ratio), darunter ein Download-Link als Fallback fuer
+import { PdfViewToolbar } from "./PdfViewToolbar";
+
+/** PDF-Ansicht in der Seitenmitte (Phase 11d, Werkzeugleiste ab Phase 13c frei — Ruling
+ *  "Kein PDF.js"): kein eigener Betrachter, nur der eingebettete Browser-PDF-Viewer im
+ *  iframe (`PdfViewToolbar` reicht Breit/Schmal-Umschalter, "in neuem Tab" und "herunterladen"
+ *  dazu, was der Betrachter selbst nicht bietet). Darunter ein Download-Link als Fallback fuer
  *  Browser ohne eingebetteten Viewer. Ohne `src` (Entwurf ohne Nummer/PDF) ein Hinweis. */
 export function PdfStack({
   src,
@@ -20,9 +24,7 @@ export function PdfStack({
   }
   return (
     <div className="space-y-2">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm">
-        <iframe src={`${src}#toolbar=0&navpanes=0`} title={title} className="block w-full" style={{ aspectRatio: "1 / 1.4142" }} />
-      </div>
+      <PdfViewToolbar src={src} title={title} />
       <p className="text-right text-xs text-slate-500">
         Wird das PDF nicht angezeigt:{" "}
         <a href={src} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
