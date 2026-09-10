@@ -10,6 +10,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma, ciContains } from "@/lib/db";
 import { QuoteStatus, DeliveryNoteStatus } from "@/schemas";
 import { effectiveQuoteStatus } from "@/domain/document/status";
+import { billingStateIndex } from "@/domain/document/billing-state";
 
 const baseFilterShape = {
   customerId: z.string().min(1).optional(),
@@ -75,6 +76,12 @@ export interface QuoteListResult {
  * `quoteStatusTabCounts` dieselbe Statuslogik wiederverwendet). EXPIRED ist kein
  * gespeicherter Status (effectiveQuoteStatus) — als Filter uebersetzt in "status
  * DRAFT/SENT UND validUntil < now"; alle anderen Filterwerte sind direkte Statuswerte.
+ *
+ * Bewusst OHNE "billed"/"partially-billed" (Task 5, Step 5): das ist der Belegstatus, der
+ * Abrechnungsstand ist eine andere Achse (`billingStateIndex`, s. `quoteStatusTabCounts`
+ * unten). Ein Seiten-Wiring uebersetzt `?status=billed` VOR dem Aufruf von `listQuotes` in
+ * `and.push({ id: { in: ids } })` (ids aus dem Index) statt hier einen Sonderfall zu
+ * ergaenzen — Folge-Task, nicht Teil dieser Funktion.
  */
 function quoteStatusWhere(status: QuoteListFilter["status"], now: Date): Prisma.QuoteWhereInput | undefined {
   if (status === "all") return undefined;
@@ -114,18 +121,50 @@ export function quoteFilterConditions(orgId: string, filter: QuoteListFilter): P
  * (inkl. des abgeleiteten EXPIRED, siehe quoteStatusWhere). Rueckgabetyp erlaubt `null`
  * je Tab (Task 5: ein Zaehler kann mangels Daten unberechenbar sein — hier immer eine
  * Zahl, kein `null`).
+ *
+ * Task 5, Step 5: ergaenzt um zwei ABGELEITETE Tabs, die keinen Belegstatus abbilden,
+ * sondern den Abrechnungsstand (`billingStateIndex`) — "billed" (FULL) und
+ * "partially-billed" (PARTIAL), jeweils ueber `id: { in: [...] }` auf denselben
+ * Basisfilter angewandt wie die uebrigen Tabs. Bewusst NICHT in `quoteStatusWhere`: das
+ * ist der gespeicherte Belegstatus, der Abrechnungsstand ist eine andere Achse (ein
+ * Angebot kann z. B. SENT UND bereits voll abgerechnet sein). Ohne Index (Obergrenze
+ * ueberschritten) liefern beide `null` — `StatusTabs` zeigt dann keine Zahl, die Seite
+ * kann die Tabs ganz ausblenden, statt eine falsche Zahl zu zeigen.
  */
 export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<Record<string, number | null>> {
   const filter = quoteListFilterSchema.parse(rawFilter);
   const base = quoteFilterConditions(orgId, filter);
   const tabs = ["all", ...QuoteStatus.options] as const;
-  const counts = await Promise.all(
-    tabs.map((tab) => {
-      const cond = quoteStatusWhere(tab, now);
-      return prisma.quote.count({ where: { AND: cond ? [...base, cond] : base } });
-    }),
-  );
-  return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<string, number | null>;
+  const [counts, index] = await Promise.all([
+    Promise.all(
+      tabs.map((tab) => {
+        const cond = quoteStatusWhere(tab, now);
+        return prisma.quote.count({ where: { AND: cond ? [...base, cond] : base } });
+      }),
+    ),
+    billingStateIndex(orgId),
+  ]);
+  const result: Record<string, number | null> = Object.fromEntries(tabs.map((t, i) => [t, counts[i]]));
+
+  if (!index.available) {
+    result.billed = null;
+    result["partially-billed"] = null;
+    return result;
+  }
+
+  const fullIds: string[] = [];
+  const partialIds: string[] = [];
+  for (const [quoteId, state] of index.states) {
+    if (state === "FULL") fullIds.push(quoteId);
+    else if (state === "PARTIAL") partialIds.push(quoteId);
+  }
+  const [billed, partiallyBilled] = await Promise.all([
+    prisma.quote.count({ where: { AND: [...base, { id: { in: fullIds } }] } }),
+    prisma.quote.count({ where: { AND: [...base, { id: { in: partialIds } }] } }),
+  ]);
+  result.billed = billed;
+  result["partially-billed"] = partiallyBilled;
+  return result;
 }
 
 export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<QuoteListResult> {
