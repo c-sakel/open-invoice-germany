@@ -125,7 +125,9 @@ export function buildFacturXCII(data: EInvoiceData): string {
   // ram:Content*, ram:SubjectCode? — ram:Content steht VOR ram:SubjectCode; eine
   // vertauschte Reihenfolge scheitert bereits an der Schema-, nicht erst an der
   // Schematron-Pruefung.
-  if (data.subject) doc.ele("ram:IncludedNote").ele("ram:Content").txt(data.subject).up().ele("ram:SubjectCode").txt("AAI").up().up();
+  // Nachtrag Task 7: leer/nur Whitespace -> keine Note (getrimmt, nicht nur der rohe Wert).
+  const subjectTrimmed = data.subject?.trim();
+  if (subjectTrimmed) doc.ele("ram:IncludedNote").ele("ram:Content").txt(subjectTrimmed).up().ele("ram:SubjectCode").txt("AAI").up().up();
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
   // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
   if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();

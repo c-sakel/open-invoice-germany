@@ -68,6 +68,18 @@ describe("PDF-Betreff (Phase 13b, Task 4)", () => {
     }
   });
 
+  it("Nachtrag Task 7: nur Whitespace bleibt byte-gleich zur Referenz (getrimmt)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2056-03-10T12:00:00.000Z"));
+    try {
+      const a = await renderInvoicePdf({ ...base, subject: "   \n\t " }, { ...theme, compress: false });
+      const b = await renderInvoicePdf(base, { ...theme, compress: false });
+      expect(a.equals(b)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ein 200 Zeichen langer Betreff bricht um und verdraengt den Adressblock nicht", async () => {
     const text = await pdfText(await renderInvoicePdf({ ...base, subject: "L".repeat(200) }, theme));
     expect(text).toContain(base.buyer.name);

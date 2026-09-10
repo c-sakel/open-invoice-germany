@@ -219,4 +219,23 @@ describe("Betreff als BT-22-Note mit Subjektcode BT-21 AAI (Phase 13b, Task 5)",
     const xml = buildXRechnungUBL({ ...data, ...noPaymentTerms, subject: "S", consumerRetentionHint: true });
     expect(xml.match(/<cbc:Note>/g)).toHaveLength(3); // notes + Betreff + Aufbewahrungshinweis
   });
+  it("Nachtrag Task 7: nur Whitespace zaehlt wie leer (getrimmt)", () => {
+    expect(buildXRechnungUBL(data)).toBe(buildXRechnungUBL({ ...data, subject: "   " }));
+    expect(buildFacturXCII(data)).toBe(buildFacturXCII({ ...data, subject: "\t\n  " }));
+  });
+  it("Nachtrag Task 7: Betreff wird vor der Ausgabe getrimmt (fuehrend/nachgestellt)", () => {
+    const xml = buildXRechnungUBL({ ...data, ...noPaymentTerms, subject: "  Wartung  " });
+    expect(xml).toContain("<cbc:Note>#AAI#Wartung</cbc:Note>");
+    const cii = buildFacturXCII({ ...data, subject: "  Wartung  " });
+    expect(cii).toContain("<ram:Content>Wartung</ram:Content>");
+  });
+  it("Nachtrag Task 7: Sonderzeichen im Betreff werden XML-escaped (&, <, Umlaute)", () => {
+    const subject = "Wartung & Reparatur <Anlage> für Müller";
+    const xml = buildXRechnungUBL({ ...data, ...noPaymentTerms, subject });
+    expect(xml).toContain("<cbc:Note>#AAI#Wartung &amp; Reparatur &lt;Anlage&gt; für Müller</cbc:Note>");
+    expect(xml).not.toContain("<Anlage>");
+    const cii = buildFacturXCII({ ...data, subject });
+    expect(cii).toContain("<ram:Content>Wartung &amp; Reparatur &lt;Anlage&gt; für Müller</ram:Content>");
+    expect(cii).not.toContain("<Anlage>");
+  });
 });
