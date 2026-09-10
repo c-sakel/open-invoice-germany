@@ -18,11 +18,14 @@ import type { LayoutId } from "@/lib/pdf/layouts/ids";
 import type { ProductOption } from "./ProductPicker";
 import type { AttachmentItem } from "@/components/AttachmentPanel";
 import { ErrorBanner } from "@/components/forms/fields";
+import { useShell } from "@/components/shell/ShellProvider";
+import { createSaveGuard } from "@/lib/editor/save-guard";
 import { EditorHeader } from "./blocks/EditorHeader";
 import { RecipientBlock, type RecipientCustomerOption, type ContactOption, type AddressOption } from "./blocks/RecipientBlock";
 import { MetaBlock, type PaymentMethodOption } from "./blocks/MetaBlock";
 import { HeadTextBlock } from "./blocks/HeadTextBlock";
 import { LineItemsEditor } from "./blocks/LineItemsEditor";
+import { DocumentAdjustmentFields } from "./blocks/DocumentAdjustmentFields";
 import { TotalsBlock } from "./blocks/TotalsBlock";
 import { FootTextBlock } from "./blocks/FootTextBlock";
 import { PreviewSheet } from "./blocks/PreviewSheet";
@@ -49,6 +52,16 @@ interface DocumentEditorProps {
    *  nicht von der aktuellen Serverliste abkoppelt. */
   taxRates: number[];
   paymentMethods?: PaymentMethodOption[];
+  /** Fix-Welle 1, M2 (Abschluss-Review Phase 13b): `DocumentSettings.invoiceDueDays` —
+   *  dritte Stufe der Faelligkeits-Vorbelegungskette in `MetaBlock` (Kunde > Zahlungs-
+   *  methode > diese Einstellung > 14 Tage, dieselbe Reihenfolge wie `createDraftInvoice`). */
+  invoiceDueDays?: number;
+  /** Fix-Welle 1, S2 (Abschluss-Review Phase 13b): `DocumentSettings.autoDeliveryDate` —
+   *  Neuanlage-Default fuer die Leistungsdatum-Kopplung (`deliveryDateFollowsIssue`), nur
+   *  wirksam ohne `initial` (Neuanlage; Bearbeiten setzt die Kopplung ueber `draftFromInvoice`
+   *  ohnehin fest auf `false`). Default `true`, spiegelt den bisherigen Festwert in
+   *  `emptyDraft` fuer Aufrufer, die die Einstellung (noch) nicht durchreichen. */
+  autoDeliveryDate?: boolean;
   contacts?: ContactOption[];
   addresses?: AddressOption[];
   layouts: { id: LayoutId; name: string }[];
@@ -100,6 +113,8 @@ export function DocumentEditor({
   products,
   taxRates,
   paymentMethods = [],
+  invoiceDueDays,
+  autoDeliveryDate = true,
   contacts = [],
   addresses = [],
   layouts,
@@ -111,7 +126,8 @@ export function DocumentEditor({
   title,
 }: DocumentEditorProps) {
   const router = useRouter();
-  const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode, { allowedTaxRates: taxRates }));
+  const { setUnsaved } = useShell();
+  const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode, { allowedTaxRates: taxRates, deliveryDateFollowsIssue: autoDeliveryDate }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -136,6 +152,17 @@ export function DocumentEditor({
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [draft.dirty]);
+
+  // Unsaved-Guard der Befehlspalette (Phase 13b, Task 7, Backlog 12e): meldet
+  // `draft.dirty` an den `ShellProvider`, damit `CommandPalette.go()` vor `router.push`
+  // nachfragen kann (siehe Kommentar dort) — der a[href]-Abfangjaeger in `EditorHeader`
+  // erfasst nur echte Link-Klicks, nicht die Palettennavigation. Beim Unmount (Editor
+  // verlassen, z.B. ueber den eigenen Bestaetigungs-Dialog) explizit `false`, sonst
+  // bliebe der Guard nach dem Verlassen faelschlich aktiv.
+  useEffect(() => {
+    setUnsaved(draft.dirty);
+    return () => setUnsaved(false);
+  }, [draft.dirty, setUnsaved]);
 
   // Beide Vorbelegungs-Effekte unten (DOCUMENT/INVOICE) nutzen `replace` auf Basis des
   // jeweils AKTUELLEN Entwurfs (`draftRef`, hier bei jedem Render synchron gehalten —
@@ -213,11 +240,30 @@ export function DocumentEditor({
     };
   }, [mode, initial]);
 
-  async function save() {
+  // Re-Entrancy-Guard (Fix-Welle, Review Task 6): zwei schnelle Trigger VOR dem ersten
+  // `draft.id` (z. B. Speichern-Knopf + AttachmentsBlock.ensureDocId, oder zwei
+  // gleichzeitige Uploads ueber ensureDocId) duerfen nicht zwei POSTs und damit zwei
+  // Entwuerfe erzeugen. `saveGuardRef` (persistiert ueber Renders hinweg, siehe
+  // `createSaveGuard`) sorgt dafuer, dass ein zweiter Aufruf waehrend `performSave()`
+  // noch laeuft DASSELBE Promise zurueckbekommt (wartet mit), statt eine eigene Anfrage
+  // zu starten — dessen eigene `opts` (z. B. `navigate`) werden dabei ignoriert,
+  // massgeblich ist der zuerst gestartete Aufruf. Getestet ohne DOM in
+  // test/unit/save-guard.test.ts.
+  const saveGuardRef = useRef(createSaveGuard<string | null>());
+  function save(opts: { navigate?: boolean } = {}): Promise<string | null> {
+    return saveGuardRef.current.run(() => performSave(opts));
+  }
+
+  // Task 6 (Phase 13b): Rueckgabewert (die gespeicherte Id) fuer `AttachmentsBlock`s
+  // `ensureDocId` — der Nutzer laedt im Neuanlage-Editor eine Datei hoch, BEVOR er
+  // explizit speichert; der Upload loest denselben Speicherweg wie der Speichern-Button
+  // aus, nur ohne Navigation (`navigate: false`). Bei Fehlern weiterhin `setError` und
+  // `null` (kein Beleg, kein Anhang, keine zweite Upload-Route — Koordinator-Ruling).
+  async function performSave(opts: { navigate?: boolean } = {}): Promise<string | null> {
     const problems = validateDraft(draft);
     if (problems.length > 0) {
       setError(problems.join("\n"));
-      return;
+      return null;
     }
     setSaving(true);
     setError(null);
@@ -241,16 +287,27 @@ export function DocumentEditor({
         const j = (await res.json().catch(() => ({}))) as { error?: string; issues?: SaveErrorIssue[] };
         setError([j.error ?? "Speichern fehlgeschlagen.", ...flattenIssues(j.issues)].join("\n"));
         setSaving(false);
-        return;
+        return null;
       }
-      const j = (await res.json()) as { id: string };
-      const id = isEdit ? draft.id! : j.id;
-      dispatch({ type: "markSaved" });
-      router.push(`${DETAIL_BASE_PATH[mode]}/${id}`);
-      router.refresh();
+      const id = isEdit ? draft.id! : ((await res.json()) as { id: string }).id;
+      // `replace` statt `set` — `set` setzt IMMER dirty:true, und ein gerade gespeicherter
+      // Entwurf ist nicht "ungespeichert" (dasselbe Argument wie bei den
+      // Vorbelegungs-Effekten oben).
+      dispatch({ type: "replace", state: { ...draftRef.current, id, dirty: false } });
+      if (opts.navigate !== false) {
+        router.push(`${DETAIL_BASE_PATH[mode]}/${id}`);
+        router.refresh();
+      } else {
+        // Kein Navigieren (Aufruf ueber `ensureDocId`) — anders als der normale
+        // Speichern-Button, der `saving` bis zur Navigation "true" laesst, bleibt der
+        // Editor hier sichtbar und braucht den zurueckgesetzten Status.
+        setSaving(false);
+      }
+      return id;
     } catch {
       setError("Speichern fehlgeschlagen (Netzwerkfehler).");
       setSaving(false);
+      return null;
     }
   }
 
@@ -269,19 +326,17 @@ export function DocumentEditor({
 
         <ErrorBanner message={error ?? undefined} />
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <RecipientBlock
-            mode={mode}
-            isEdit={isEdit}
-            draft={draft}
-            dispatch={dispatch}
-            customers={customers}
-            contacts={contacts}
-            addresses={addresses}
-            offerLastDocument={offerLastDocument}
-          />
-          <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} paymentMethods={paymentMethods} />
-        </div>
+        <RecipientBlock
+          mode={mode}
+          isEdit={isEdit}
+          draft={draft}
+          dispatch={dispatch}
+          customers={customers}
+          contacts={contacts}
+          addresses={addresses}
+          offerLastDocument={offerLastDocument}
+        />
+        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} customers={customers} paymentMethods={paymentMethods} invoiceDueDays={invoiceDueDays} />
 
         <HeadTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 
@@ -295,16 +350,18 @@ export function DocumentEditor({
           onProductCreated={(p) => setProductList((list) => [...list, p])}
         />
 
-        {/* Task-5-Fix 2: DELIVERY_NOTE kennt weder Beleg-Rabatt/-Aufschlag noch eine
-            Summenanzeige — ein TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
-            Server fuer Lieferscheine gar nicht kennt. */}
+        {/* Task-5-Fix 2 / Task 3: DELIVERY_NOTE kennt weder Beleg-Rabatt/-Aufschlag noch
+            eine Summenanzeige — TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
+            Server fuer Lieferscheine gar nicht kennt; DocumentAdjustmentFields (Phase 13b,
+            Task 3, aus MoreOptions verschoben) bedient dieselbe Bedingung. */}
+        {mode !== "DELIVERY_NOTE" && <DocumentAdjustmentFields draft={draft} dispatch={dispatch} />}
         {mode !== "DELIVERY_NOTE" && <TotalsBlock totals={totals} draft={draft} />}
 
         <FootTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 
         <MoreOptions mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} effectivePrintOptions={effectivePrintOptions} printOverride={printOverride} layouts={layouts} />
 
-        <AttachmentsBlock mode={mode} isEdit={isEdit} docId={draft.id} attachments={attachments} />
+        <AttachmentsBlock mode={mode} docId={draft.id} attachments={attachments} onEnsureDocId={() => save({ navigate: false })} />
       </div>
 
       <PreviewSheet open={previewOpen} onClose={() => setPreviewOpen(false)} mode={mode} draft={draft} layoutId={printOverride?.layoutId} />

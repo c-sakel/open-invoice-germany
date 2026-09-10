@@ -29,16 +29,20 @@ jobs:
       - name: EN-16931-Schematron-Validierung (offiziell, via SaxonJS, ohne Java)
         run: npm run validate:erechnung
 
-  # Zusätzliche XRechnung-CIUS-Prüfung mit dem offiziellen KoSIT-Validator (Java).
-  # Die EN-16931-Kernprüfung läuft bereits hart im build-test-Job (SaxonJS).
-  # Hinweis: Versions-Pins ggf. aktualisieren. Solange nicht verifiziert,
-  # läuft der Job mit continue-on-error (blockt PRs nicht).
-  # Hinweis: Versions-Pins ggf. aktualisieren. Solange nicht lokal verifiziert,
-  # läuft der Job mit continue-on-error (blockt PRs nicht). Zum Scharfschalten
-  # die Zeile `continue-on-error: true` entfernen.
+  # Zusätzliche XRechnung-CIUS-/XSD-Prüfung mit dem offiziellen KoSIT-Validator (Java) —
+  # der EINZIGE Lauf mit echter XSD-Prüfung (SaxonJS im build-test-Job prüft nur
+  # Schematron, siehe docs/LIMITATIONEN.md „E-Rechnung"). Prüft seit Fix-Welle 1
+  # (S4, Abschluss-Review Phase 13b) ALLE Fixtures aus scripts/validate-erechnung.ts
+  # (dieselbe Liste, 21 Beispiele/41 XML-Dateien) statt nur „base" — vorher sah dieser
+  # Job z. B. die Betreff-Fixture (Task 5) nie.
+  # continue-on-error ENTFERNT (S4): der Validator (1.6.3 + Konfiguration 2026-08-31,
+  # dieselben Pins wie unten) ist laut Ledger (.claude/verlauf.md, Stand 2026-09-07:
+  # „in eclipse-temurin:17 auf dem Server verifiziert: ACCEPTABLE") und Phase 12b
+  # (progress.md: „39/39 KoSIT") mehrfach erfolgreich gelaufen — die urspruengliche
+  # Bedingung „solange nicht lokal verifiziert" (siehe git log -S auf diesen Job) ist
+  # erfuellt, das Gate blockt PRs jetzt scharf.
   xrechnung-kosit:
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       # Validator 1.5.x bringt auf Java 17 kein JAXB mit (ClassNotFoundException
       # javax.xml.bind.*) — 1.6.x ist Java-17-faehig. Konfiguration = XRechnung 3.0.2.
@@ -57,8 +61,19 @@ jobs:
           java-version: "17"
       - run: npm install --no-audit --no-fund # nicht npm ci: saxon-js zieht plattformspezifische optionale Deps
       - run: npx prisma generate
-      - name: Beispiel-XRechnung erzeugen
-        run: npx tsx scripts/generate-sample-xrechnung.ts tmp/sample-xrechnung.xml
+      - name: Alle Beispiel-XRechnungen erzeugen (21 Fixtures, UBL + CII)
+        run: |
+          mkdir -p tmp/xrechnung-samples
+          # Dieselbe Fixture-Liste wie SAMPLE_NAMES in scripts/validate-erechnung.ts
+          # (dort der SaxonJS-Lauf im build-test-Job) — "base" nur als UBL (Bestands-
+          # regression), alle anderen als UBL UND CII.
+          SAMPLES="base line-discount doc-discount-two-rates charge skonto-two-terms cash credit-note-doc-discount no-iban card-48 sepa-59 sections credit-note-sections downpayment-386 partial-percent final-two-downpayments reverse-charge-ae ig-lieferung-k ausfuhr-g kleinunternehmer-e differenz-e betreff-note"
+          for sample in $SAMPLES; do
+            npx tsx scripts/generate-sample-xrechnung.ts "tmp/xrechnung-samples/${sample}-ubl.xml" "$sample" ubl
+            if [ "$sample" != "base" ]; then
+              npx tsx scripts/generate-sample-xrechnung.ts "tmp/xrechnung-samples/${sample}-cii.xml" "$sample" cii
+            fi
+          done
       - name: KoSIT-Validator + XRechnung-Konfiguration laden
         run: |
           mkdir -p kosit/config
@@ -67,14 +82,19 @@ jobs:
           curl -fsSL -o kosit/config.zip \
             "https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/download/${CONFIG_RELEASE}/${CONFIG_FILE}.zip"
           unzip -q kosit/config.zip -d kosit/config
-      - name: Validieren
+      - name: Validieren (alle Fixtures)
         run: |
           JAR=kosit/validator-standalone.jar
           SCENARIOS=$(find kosit/config -name 'scenarios.xml' | head -1)
           REPO=$(dirname "$SCENARIOS")
           echo "Validator: $JAR"
           echo "Szenarien: $SCENARIOS"
-          java -jar "$JAR" -s "$SCENARIOS" -r "$REPO" tmp/sample-xrechnung.xml
+          fail=0
+          for f in tmp/xrechnung-samples/*.xml; do
+            echo "=== $f ==="
+            java -jar "$JAR" -s "$SCENARIOS" -r "$REPO" "$f" || fail=1
+          done
+          exit $fail
 
   # Die beiden Schemadateien sind bis auf die Provider-Zeile zeichengleich.
   # Laufen sie auseinander, entstehen unvollstaendige Postgres-Migrationen —

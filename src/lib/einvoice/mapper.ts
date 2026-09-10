@@ -50,6 +50,8 @@ export interface MapInput {
   orderNumber?: string | null;
   paymentTerms: string | null;
   notes: string | null;
+  // Phase 13b — Betreff (BT-22 mit Subjektcode BT-21 "AAI"); optional, da Alt-Belege das Feld nicht kennen.
+  subject?: string | null;
   headerText?: string | null;
   footerText?: string | null;
   netTotalCents: number;
@@ -304,6 +306,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     paymentTermsNote,
     paymentTermsHuman,
     notes: invoice.notes,
+    subject: invoice.subject ?? null,
     seller: {
       name: org.legalName,
       addressLine1: org.addressLine1,

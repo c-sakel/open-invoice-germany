@@ -25,10 +25,17 @@ export function AttachmentPanel({
   docType,
   docId,
   initial,
+  ensureDocId,
 }: {
   docType: "QUOTE" | "INVOICE" | "RECURRING" | "DELIVERY_NOTE" | "DUNNING";
+  /** Phase 13b, Task 6: im Neuanlage-Editor VOR dem ersten Speichern leer (""). */
   docId: string;
   initial: AttachmentItem[];
+  /** Neuanlage: speichert den Entwurf ueber den bestehenden Weg (kein Parallelpfad) und
+   *  liefert die neue Id — oder `null` bei fehlgeschlagener Validierung. Fehlt `docId`
+   *  UND `ensureDocId` (z. B. weil der Aufrufer keine Neuanlage kennt), bricht der
+   *  Upload mit der bisherigen Fehlermeldung ab. */
+  ensureDocId?: () => Promise<string | null>;
 }) {
   const [items, setItems] = useState<AttachmentItem[]>(initial);
   const [uploading, setUploading] = useState(false);
@@ -38,15 +45,33 @@ export function AttachmentPanel({
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<ConfirmDialogHandle>(null);
+  // Re-Entrancy-Guard (Fix-Welle, Review Task 6): `disabled={uploading}` am Datei-Input
+  // greift erst nach dem naechsten Render — Drag&Drop hat gar keinen State-Schutz. Ein
+  // schneller zweiter Trigger (z. B. Drop waehrend ein vorheriger Upload noch laeuft)
+  // wuerde sonst OHNE `docId` ein zweites Mal `ensureDocId()` ausloesen und einen
+  // zweiten Entwurf anlegen. `uploadingRef` greift synchron beim Funktionsaufruf, ein
+  // State-Update kaeme zu spaet.
+  const uploadingRef = useRef(false);
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
     setUploading(true);
     setError(null);
     try {
+      // Phase 13b: im Neuanlage-Editor gibt es noch keine docId — der Aufrufer speichert den
+      // Entwurf ueber seinen bestehenden Speicherweg und liefert die neue Id. Schlaegt das fehl
+      // (Validierung), bricht der Upload ab: kein Beleg, kein Anhang, keine zweite Route.
+      const targetId = docId || (ensureDocId ? await ensureDocId() : null);
+      if (!targetId) {
+        setError("Bitte zuerst die Pflichtfelder ausfüllen — der Entwurf konnte nicht gespeichert werden.");
+        setUploading(false);
+        return;
+      }
       const fd = new FormData();
       fd.set("docType", docType);
-      fd.set("docId", docId);
+      fd.set("docId", targetId);
       for (const f of Array.from(files)) fd.append("files", f);
       const res = await fetch("/api/attachments", { method: "POST", body: fd });
       const j = await res.json();
@@ -66,6 +91,7 @@ export function AttachmentPanel({
     } catch {
       setError("Upload fehlgeschlagen.");
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }

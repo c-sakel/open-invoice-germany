@@ -42,7 +42,7 @@ import { taxRateOptions } from "@/lib/editor/constants";
 import type { EditorMode } from "@/lib/editor/constants";
 import { toCents, toMilli, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
 import { computeLineNet } from "@/lib/pricing/line";
-import { inputCls } from "@/components/forms/fields";
+import { inputDenseCls } from "@/components/forms/fields";
 import { RichTextField } from "../RichTextField";
 import { ProductPicker, type ProductOption } from "../ProductPicker";
 import { UnitSelect } from "./UnitSelect";
@@ -74,6 +74,10 @@ interface LineRowProps {
   onDrop: () => void;
   onRowKeyDown: (e: React.KeyboardEvent) => void;
   onProductCreated?: (p: ProductOption) => void;
+  /** Task 3 (Phase 13b) — "+ Produkt auswählen" in `LineItemsEditor`: fokussiert den
+   *  bestehenden `ProductPicker` dieser (neu angelegten) Zeile beim Mount, kein zweites
+   *  Suchfeld. */
+  autoFocusProduct?: boolean;
 }
 
 export function LineRow({
@@ -95,6 +99,7 @@ export function LineRow({
   onDrop,
   onRowKeyDown,
   onProductCreated,
+  autoFocusProduct,
 }: LineRowProps) {
   const showDiscount = mode !== "DELIVERY_NOTE";
   const allowTypeChange = mode !== "DELIVERY_NOTE";
@@ -161,7 +166,7 @@ export function LineRow({
               <div className="space-y-2">
                 <input
                   ref={(el) => registerDescRef(line.key, el)}
-                  className={inputCls}
+                  className={inputDenseCls}
                   placeholder="Kurztext"
                   value={line.description}
                   onChange={(e) => patch({ description: e.target.value })}
@@ -173,7 +178,7 @@ export function LineRow({
               <div className="flex items-center gap-3">
                 <input
                   ref={(el) => registerDescRef(line.key, el)}
-                  className={`${inputCls} flex-1`}
+                  className={`${inputDenseCls} flex-1`}
                   placeholder={line.lineType === "HEADING" ? "Überschrift" : "Bezeichnung (z. B. Zwischensumme Hosting)"}
                   value={line.description}
                   onChange={(e) => patch({ description: e.target.value })}
@@ -188,7 +193,7 @@ export function LineRow({
             <td className="py-1.5 pr-2">
               <input
                 ref={(el) => registerDescRef(line.key, el)}
-                className={inputCls}
+                className={inputDenseCls}
                 placeholder="Beschreibung"
                 value={line.description}
                 onChange={(e) => patch({ description: e.target.value })}
@@ -196,23 +201,29 @@ export function LineRow({
               />
               {products.length > 0 && (
                 <div className="mt-1">
-                  <ProductPicker products={products} taxRates={taxRates} onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })} onCreated={onProductCreated} />
+                  <ProductPicker
+                    products={products}
+                    taxRates={taxRates}
+                    onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })}
+                    onCreated={onProductCreated}
+                    autoFocus={autoFocusProduct}
+                  />
                 </div>
               )}
             </td>
             <td className="py-1.5 pr-2">
-              <input className={inputCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
+              <input className={inputDenseCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
             </td>
             <td className="py-1.5 pr-2">
               <UnitSelect value={line.unit} onChange={(v) => patch({ unit: v })} />
             </td>
             <td className="py-1.5 pr-2">
-              <input className={inputCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
+              <input className={inputDenseCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
               {grossHint && <div className="mt-0.5 text-[11px] text-slate-400">{grossHint}</div>}
             </td>
             <td className="py-1.5 pr-2">
               <select
-                className={inputCls}
+                className={inputDenseCls}
                 aria-label="USt-Satz"
                 value={taxDisabled ? 0 : line.taxRate}
                 disabled={taxDisabled}
@@ -254,7 +265,7 @@ export function LineRow({
             <RichTextField label="Langbeschreibung (optional)" value={line.descriptionLong} onChange={(v) => patch({ descriptionLong: v })} rows={3} />
             <label className="flex max-w-xs flex-col gap-1 text-xs">
               <span className="font-medium text-slate-600">Artikelnummer (optional)</span>
-              <input className={inputCls} value={line.articleNumber} onChange={(e) => patch({ articleNumber: e.target.value })} />
+              <input className={inputDenseCls} value={line.articleNumber} onChange={(e) => patch({ articleNumber: e.target.value })} />
             </label>
           </td>
         </tr>

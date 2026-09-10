@@ -38,6 +38,14 @@
  * angefordert" und ein Effekt auf `draft.lines.length` fokussiert die dann neue letzte
  * Zeile, sobald sie tatsaechlich existiert (der neue `key` wird erst im Reducer per
  * `crypto.randomUUID()` erzeugt, ist also vor dem Dispatch nicht bekannt).
+ *
+ * Task 3 (Phase 13b): "+ Produkt auswählen" (nur sichtbar, wenn `products.length > 0`)
+ * nutzt denselben "neue-Zeile-kam-an"-Effekt ueber ein zweites Flag
+ * (`pendingProductFocusRef`/`productFocusKey`) — statt des Beschreibungsfelds wird hier
+ * der `ProductPicker` der neuen Zeile fokussiert (`LineRow`s `autoFocusProduct`-Prop,
+ * kein zweites Suchfeld). Das Kontrollkaestchen "Brutto anzeigen" ist einem
+ * Segmentumschalter ("Preise: netto/brutto", `aria-pressed`) gewichen — dieselbe
+ * `grossDisplay`-Aktion, nur andere Bedienung (Ruling Task 3).
  */
 import { useEffect, useRef, useState } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
@@ -75,18 +83,33 @@ export function LineItemsEditor({
   const descRefs = useRef(new Map<string, HTMLInputElement>());
   const pendingFocusRef = useRef(false);
   const prevLen = useRef(draft.lines.length);
+  // Task 3 — "+ Produkt auswählen": derselbe "eine neue Zeile kam gerade hinzu"-Effekt
+  // wie oben (`pendingFocusRef`/`prevLen`), nur mit einem eigenen Flag, weil hier NICHT
+  // das Beschreibungsfeld, sondern der `ProductPicker` der neuen Zeile fokussiert werden
+  // soll. `productFocusKey` haelt den `key` der zuletzt so angelegten Zeile — `LineRow`
+  // bekommt darueber eine einmalige `autoFocusProduct`-Prop (Fokus passiert nur beim
+  // Mount der Zeile, ein spaeteres Beibehalten des States loest daher keinen erneuten
+  // Fokus aus).
+  const pendingProductFocusRef = useRef(false);
+  const [productFocusKey, setProductFocusKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (pendingFocusRef.current && draft.lines.length > prevLen.current) {
+    if (draft.lines.length > prevLen.current) {
       const last = draft.lines[draft.lines.length - 1];
-      if (last) descRefs.current.get(last.key)?.focus();
+      if (pendingFocusRef.current && last) descRefs.current.get(last.key)?.focus();
+      if (pendingProductFocusRef.current && last) setProductFocusKey(last.key);
       pendingFocusRef.current = false;
+      pendingProductFocusRef.current = false;
     }
     prevLen.current = draft.lines.length;
   }, [draft.lines]);
 
   function addLineAfterLast() {
     pendingFocusRef.current = true;
+    dispatch({ type: "addLine", lineType: "ITEM" });
+  }
+  function addLineWithProductFocus() {
+    pendingProductFocusRef.current = true;
     dispatch({ type: "addLine", lineType: "ITEM" });
   }
   function onDragOver(e: React.DragEvent) {
@@ -111,15 +134,30 @@ export function LineItemsEditor({
     <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-semibold text-slate-900">Positionen</h2>
-        <label className="flex items-center gap-2 text-xs text-slate-500" title="Reine Anzeige — die Eingabe bleibt immer netto.">
-          <input
-            type="checkbox"
-            className="h-3.5 w-3.5 rounded border-slate-300"
-            checked={draft.grossDisplay}
-            onChange={(e) => dispatch({ type: "set", field: "grossDisplay", value: e.target.checked })}
-          />
-          Brutto anzeigen
-        </label>
+        {/* Task 3 (Ruling): Kontrollkaestchen "Brutto anzeigen" ersetzt durch einen
+            Segmentumschalter — gleiche Aktion (`grossDisplay`, reine Anzeige, Preisfeld
+            bleibt immer netto), nur andere Bedienung. */}
+        <div className="flex items-center gap-2 text-xs text-slate-500" title="Reine Anzeige — die Eingabe bleibt immer netto.">
+          <span>Preise:</span>
+          <div className="inline-flex overflow-hidden rounded-md border border-slate-300">
+            <button
+              type="button"
+              aria-pressed={!draft.grossDisplay}
+              onClick={() => dispatch({ type: "set", field: "grossDisplay", value: false })}
+              className={`px-2 py-1 ${!draft.grossDisplay ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              netto
+            </button>
+            <button
+              type="button"
+              aria-pressed={draft.grossDisplay}
+              onClick={() => dispatch({ type: "set", field: "grossDisplay", value: true })}
+              className={`border-l border-slate-300 px-2 py-1 ${draft.grossDisplay ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              brutto
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -164,6 +202,7 @@ export function LineItemsEditor({
                 onDrop={() => onDrop(index)}
                 onRowKeyDown={(e) => onRowKeyDown(e, index, line.key)}
                 onProductCreated={onProductCreated}
+                autoFocusProduct={line.key === productFocusKey}
               />
             ))}
           </tbody>
@@ -174,6 +213,11 @@ export function LineItemsEditor({
         <button type="button" onClick={() => dispatch({ type: "addLine", lineType: "ITEM" })} className="hover:underline">
           + Position
         </button>
+        {products.length > 0 && (
+          <button type="button" onClick={addLineWithProductFocus} className="hover:underline">
+            + Produkt auswählen
+          </button>
+        )}
         {allowOtherTypes && (
           <>
             <button type="button" onClick={() => dispatch({ type: "addLine", lineType: "HEADING" })} className="hover:underline">

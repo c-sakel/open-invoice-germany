@@ -3,11 +3,15 @@
 /**
  * "Weitere Optionen"-Block (Phase 11c, Task 4; Fix 1 ergaenzt "Hinweis / Notiz"):
  * eingeklappte `<details>`, Inhalt je Modus. INVOICE: Bestellnummer/interne Referenz/
- * Leitweg-ID/Leistungszeitraum, Beleg-Rabatt/-Aufschlag, Skonto 1/2. DOCUMENT:
- * Lieferbedingungen/Zahlungsbedingungen (mit `TextTemplatePicker` TERMS_*),
- * Beleg-Rabatt/-Aufschlag. DELIVERY_NOTE: Darstellungs-Schalter. ALLE DREI zusaetzlich:
- * "Hinweis / Notiz" (`notes` — eigenstaendig, unabhaengig vom `headerText`-Kopftext aus
- * `HeadTextBlock`, siehe dort), interne Notizen, Druckoptionen (ausser DELIVERY_NOTE).
+ * Leitweg-ID/Leistungszeitraum, Skonto 1/2. DOCUMENT: Lieferbedingungen/
+ * Zahlungsbedingungen (mit `TextTemplatePicker` TERMS_*). DELIVERY_NOTE:
+ * Darstellungs-Schalter. ALLE DREI zusaetzlich: "Hinweis / Notiz" (`notes` —
+ * eigenstaendig, unabhaengig vom `headerText`-Kopftext aus `HeadTextBlock`, siehe dort),
+ * interne Notizen, Druckoptionen (ausser DELIVERY_NOTE).
+ *
+ * Beleg-Rabatt/-Aufschlag (INVOICE/DOCUMENT) ist Phase 13b, Task 3 nach
+ * `DocumentAdjustmentFields.tsx` ausgelagert — `DocumentEditor` rendert diesen Block
+ * jetzt direkt zwischen `LineItemsEditor` und `TotalsBlock`, nicht mehr hier.
  *
  * `PrintOptionsPanel` (Phase 7/11b) nur bei Bearbeiten (braucht eine `docId`) — DIESES
  * Panel speichert sofort (eigener PUT-Request), unabhaengig vom uebrigen Editor-`save()`.
@@ -96,7 +100,7 @@ export function MoreOptions({
       <summary className="cursor-pointer select-none font-semibold text-slate-900">Weitere Optionen</summary>
       <div className="mt-4 space-y-4">
         {mode === "INVOICE" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <EditorField label="Bestellnummer">
               {(id) => <input id={id} className={inputCls} value={draft.orderNumber} onChange={(e) => set(dispatch, "orderNumber", e.target.value)} />}
             </EditorField>
@@ -118,7 +122,7 @@ export function MoreOptions({
         )}
 
         {mode === "DOCUMENT" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <TermsField
               label="Lieferbedingungen"
               value={draft.deliveryTerms}
@@ -136,33 +140,10 @@ export function MoreOptions({
           </EditorField>
         )}
 
-        {(mode === "INVOICE" || mode === "DOCUMENT") && (
-          <div className="space-y-3 border-t border-slate-100 pt-4">
-            <h3 className="text-sm font-semibold text-slate-900">Beleg-Rabatt / -Aufschlag</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <EditorField label="Rabatt %" hint="leer = Kundenvorgabe">
-                {(id) => <input id={id} className={inputCls} value={draft.documentDiscountPercent} onChange={(e) => set(dispatch, "documentDiscountPercent", e.target.value)} />}
-              </EditorField>
-              <EditorField label="Rabatt € (zusätzlich)">
-                {(id) => <input id={id} className={inputCls} value={draft.documentDiscountAmount} onChange={(e) => set(dispatch, "documentDiscountAmount", e.target.value)} />}
-              </EditorField>
-              <EditorField label="Aufschlag %">
-                {(id) => <input id={id} className={inputCls} value={draft.documentChargePercent} onChange={(e) => set(dispatch, "documentChargePercent", e.target.value)} />}
-              </EditorField>
-              <EditorField label="Aufschlag € (zusätzlich)">
-                {(id) => <input id={id} className={inputCls} value={draft.documentChargeAmount} onChange={(e) => set(dispatch, "documentChargeAmount", e.target.value)} />}
-              </EditorField>
-              <EditorField label="Grund für Aufschlag/Rabatt" hint="optional" className="sm:col-span-2">
-                {(id) => <input id={id} className={inputCls} placeholder="z. B. Expresszuschlag" value={draft.documentChargeReason} onChange={(e) => set(dispatch, "documentChargeReason", e.target.value)} />}
-              </EditorField>
-            </div>
-          </div>
-        )}
-
         {mode === "INVOICE" && (
           <div className="space-y-3 border-t border-slate-100 pt-4">
             <h3 className="text-sm font-semibold text-slate-900">Skonto</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <EditorField label="Skonto 1 — Prozent" hint="z. B. 2">
                 {(id) => <input id={id} className={inputCls} value={draft.skonto1Percent} onChange={(e) => set(dispatch, "skonto1Percent", e.target.value)} />}
               </EditorField>

@@ -4,6 +4,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getFocusable } from "@/lib/focus";
+import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 import { NavIcon } from "./NavIcons";
 import { useShell } from "./ShellProvider";
 
@@ -32,7 +33,7 @@ const QUICK_ACTIONS: Hit[] = [
  */
 export function CommandPalette() {
   const router = useRouter();
-  const { searchOpen, openSearch, closeSearch } = useShell();
+  const { searchOpen, openSearch, closeSearch, unsavedRef } = useShell();
   const [q, setQ] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,6 +42,13 @@ export function CommandPalette() {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Unsaved-Guard (S3, Fix-Welle 1): eigener ConfirmDialog statt `window.confirm` —
+  // EditorHeader.tsx haelt ausdruecklich fest, dass der Zurueck-Link-Guard bewusst KEIN
+  // `window.confirm` nutzt (nur `beforeunload` greift auf den Browserdialog zurueck), die
+  // Palette bricht bisher mit dieser Entscheidung. `pendingHit` haelt das Navigationsziel,
+  // bis der Nutzer im Dialog bestaetigt (oder abbricht).
+  const confirmDialogRef = useRef<ConfirmDialogHandle>(null);
+  const [pendingHit, setPendingHit] = useState<Hit | null>(null);
 
   const flat = useMemo<Hit[]>(() => {
     if (q.trim().length < 2) return QUICK_ACTIONS;
@@ -147,8 +155,26 @@ export function CommandPalette() {
   const safeCursor = flat.length === 0 ? 0 : Math.min(cursor, flat.length - 1);
 
   function go(hit: Hit) {
+    // Unsaved-Guard (Backlog 12e; S3 Fix-Welle 1): die Befehlspalette navigiert per
+    // `router.push` und wird deshalb NICHT vom Klick-Abfangjaeger in EditorHeader
+    // (a[href]-Capture) erfasst — ohne diese Abfrage verliert ein Sprung aus der Palette
+    // den ungespeicherten Entwurf kommentarlos. Bestaetigung ueber den bestehenden
+    // `ConfirmDialog` (wie EditorHeader) statt `window.confirm` — die Navigation selbst
+    // passiert erst in `confirmPendingNavigation`, nach der Bestaetigung.
+    if (unsavedRef.current) {
+      setPendingHit(hit);
+      confirmDialogRef.current?.open();
+      return;
+    }
     close();
     router.push(hit.href);
+  }
+
+  function confirmPendingNavigation() {
+    const hit = pendingHit;
+    setPendingHit(null);
+    close();
+    if (hit) router.push(hit.href);
   }
 
   function onInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -216,6 +242,14 @@ export function CommandPalette() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        ref={confirmDialogRef}
+        message="Der Beleg hat ungespeicherte Änderungen. Trotzdem wechseln?"
+        confirmLabel="Wechseln"
+        tone="danger"
+        onConfirm={confirmPendingNavigation}
+      />
     </div>
   );
 }
