@@ -183,63 +183,65 @@ export function RecipientBlock({
         <TakeOverPrompt enabled={offerLastDocument} customerId={draft.customerId} kind={takeOverKind} documentDetailBasePath={takeOverBasePath} onApply={applyTakeOver} />
       )}
 
-      <EditorField label="Ansprechpartner">
-        {(id) => (
-          <select id={id} className={inputCls} value={draft.contactPersonId} onChange={(e) => dispatch({ type: "set", field: "contactPersonId", value: e.target.value })}>
-            <option value="">{emptyOptionLabel(hasDefaultContact)}</option>
-            {customerContacts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <EditorField label="Ansprechpartner">
+          {(id) => (
+            <select id={id} className={inputCls} value={draft.contactPersonId} onChange={(e) => dispatch({ type: "set", field: "contactPersonId", value: e.target.value })}>
+              <option value="">{emptyOptionLabel(hasDefaultContact)}</option>
+              {customerContacts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </EditorField>
+
+        {(mode === "INVOICE" || mode === "DOCUMENT") && (
+          <EditorField label="Rechnungsadresse">
+            {(id) => (
+              <select id={id} className={inputCls} value={draft.billingAddressId} onChange={(e) => dispatch({ type: "set", field: "billingAddressId", value: e.target.value })}>
+                <option value="">{emptyOptionLabel(hasDefaultBillingAddress)}</option>
+                {customerAddresses.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </EditorField>
         )}
-      </EditorField>
 
-      {(mode === "INVOICE" || mode === "DOCUMENT") && (
-        <EditorField label="Rechnungsadresse">
-          {(id) => (
-            <select id={id} className={inputCls} value={draft.billingAddressId} onChange={(e) => dispatch({ type: "set", field: "billingAddressId", value: e.target.value })}>
-              <option value="">{emptyOptionLabel(hasDefaultBillingAddress)}</option>
-              {customerAddresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </EditorField>
-      )}
+        {mode === "INVOICE" && (
+          <EditorField label="Lieferadresse">
+            {(id) => (
+              <select id={id} className={inputCls} value={draft.shippingAddressId} onChange={(e) => dispatch({ type: "set", field: "shippingAddressId", value: e.target.value })}>
+                <option value="">— wie Rechnungsadresse —</option>
+                {customerAddresses.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </EditorField>
+        )}
 
-      {mode === "INVOICE" && (
-        <EditorField label="Lieferadresse">
-          {(id) => (
-            <select id={id} className={inputCls} value={draft.shippingAddressId} onChange={(e) => dispatch({ type: "set", field: "shippingAddressId", value: e.target.value })}>
-              <option value="">— wie Rechnungsadresse —</option>
-              {customerAddresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </EditorField>
-      )}
-
-      {mode === "DELIVERY_NOTE" && (
-        <EditorField label="Lieferadresse">
-          {(id) => (
-            <select id={id} className={inputCls} value={draft.shippingAddressId} onChange={(e) => dispatch({ type: "set", field: "shippingAddressId", value: e.target.value })}>
-              <option value="">{emptyOptionLabel(hasDefaultShippingAddress)}</option>
-              {customerAddresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </EditorField>
-      )}
+        {mode === "DELIVERY_NOTE" && (
+          <EditorField label="Lieferadresse">
+            {(id) => (
+              <select id={id} className={inputCls} value={draft.shippingAddressId} onChange={(e) => dispatch({ type: "set", field: "shippingAddressId", value: e.target.value })}>
+                <option value="">{emptyOptionLabel(hasDefaultShippingAddress)}</option>
+                {customerAddresses.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </EditorField>
+        )}
+      </div>
     </div>
   );
 }
