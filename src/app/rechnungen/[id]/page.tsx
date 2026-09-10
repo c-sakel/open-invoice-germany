@@ -16,7 +16,6 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
 import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
-import { DetailCard } from "@/components/detail/DetailCard";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
@@ -218,16 +217,12 @@ export default async function InvoiceDetail({
             defaultPaymentMethod={defaultPaymentMethodCode}
             dunningSchedule={dunningSchedule}
           />
-          <DetailCard title="Anhänge">
-            <AttachmentPanel
-              docType="INVOICE"
-              docId={invoice.id}
-              initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
-            />
-          </DetailCard>
-          <DetailCard title="Dokumentenkette">
-            <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
-          </DetailCard>
+          <AttachmentPanel
+            docType="INVOICE"
+            docId={invoice.id}
+            initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+          />
+          <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
         </>
       }
     >
