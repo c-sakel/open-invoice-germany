@@ -48,9 +48,8 @@ export const quoteListFilterSchema = z.object({
   // Phase 13a (Task 6): wirken auf grossTotalCents, analog invoiceListFilterSchema.
   minCents: z.coerce.number().int().optional(),
   maxCents: z.coerce.number().int().optional(),
-  // Nur angenommen und weitergereicht, keine Ausfilterung — die Aufloesung folgt erst mit
-  // dem Tag-Modell (13d). Erscheint bewusst in KEINER Filterleiste.
-  tag: z.string().min(1).optional(),
+  // Fix-Welle M3: `tag` wieder entfernt (siehe invoiceListFilterSchema-Kommentar) — kommt
+  // in 13d zusammen mit dem Tag-Modell zurueck.
 });
 export type QuoteListFilter = z.infer<typeof quoteListFilterSchema>;
 
@@ -298,9 +297,8 @@ export const deliveryNoteListFilterSchema = z.object({
   // Task 2: siehe quoteListFilterSchema.includeArchived — uebernimmt das bisherige
   // Seitenverhalten (Standard: nur nicht-archivierte Lieferscheine).
   includeArchived: z.boolean().optional(),
-  // Phase 13a (Task 6): siehe quoteListFilterSchema.tag — nur angenommen und
-  // weitergereicht, keine Ausfilterung, erscheint in KEINER Filterleiste.
-  tag: z.string().min(1).optional(),
+  // Fix-Welle M3: `tag` wieder entfernt (siehe invoiceListFilterSchema-Kommentar) — kommt
+  // in 13d zusammen mit dem Tag-Modell zurueck.
 });
 export type DeliveryNoteListFilter = z.infer<typeof deliveryNoteListFilterSchema>;
 

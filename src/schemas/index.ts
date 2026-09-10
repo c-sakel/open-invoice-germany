@@ -577,9 +577,10 @@ export const invoiceListFilterSchema = z.object({
   eInvoice: z.boolean().optional(),
   currency: z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Grossbuchstaben (ISO 4217)").optional(),
   q: z.string().max(100).optional(),
-  // Phase 13a (Task 6): nur angenommen und weitergereicht, keine Ausfilterung — die
-  // Aufloesung folgt erst mit dem Tag-Modell (13d). Erscheint bewusst in KEINER Filterleiste.
-  tag: z.string().min(1).optional(),
+  // Fix-Welle M3: `tag` wieder entfernt — das Feld filterte in keiner *FilterConditions-
+  // Funktion (Aufloesung erst mit dem Tag-Modell, Phase 13d), war aber als oeffentlicher
+  // API-Query-Parameter dokumentiert und damit eine Attrappe (`?tag=Wichtig` lieferte
+  // ALLE Belege). Kommt in 13d zusammen mit dem Tag-Modell zurueck.
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
   sort: z.enum(["issueDate_desc", "issueDate_asc", "dueDate_asc", "gross_desc", "number_desc"]).default("issueDate_desc"),

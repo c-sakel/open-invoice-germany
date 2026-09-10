@@ -30,13 +30,11 @@ const ALLOWED_KEYS = new Set([
   "offset",
   "archiviert",
   "customerId",
-  // Phase 13a (Task 6): neue Filterfelder — `tag` nur angenommen/weitergereicht (siehe
-  // invoiceListFilterSchema.tag), nicht Teil einer Filterleiste.
+  // Phase 13a (Task 6): neue Filterfelder.
   "minCents",
   "maxCents",
   "paymentMethodId",
   "eInvoice",
-  "tag",
 ]);
 /** Maximal 200 Zeilen je Listenabfrage (Schema-Maximum der Listenfilter). */
 const NEIGHBOR_LIMIT = 200;
