@@ -23,6 +23,7 @@ import { RecipientBlock, type RecipientCustomerOption, type ContactOption, type 
 import { MetaBlock, type PaymentMethodOption } from "./blocks/MetaBlock";
 import { HeadTextBlock } from "./blocks/HeadTextBlock";
 import { LineItemsEditor } from "./blocks/LineItemsEditor";
+import { DocumentAdjustmentFields } from "./blocks/DocumentAdjustmentFields";
 import { TotalsBlock } from "./blocks/TotalsBlock";
 import { FootTextBlock } from "./blocks/FootTextBlock";
 import { PreviewSheet } from "./blocks/PreviewSheet";
@@ -293,9 +294,11 @@ export function DocumentEditor({
           onProductCreated={(p) => setProductList((list) => [...list, p])}
         />
 
-        {/* Task-5-Fix 2: DELIVERY_NOTE kennt weder Beleg-Rabatt/-Aufschlag noch eine
-            Summenanzeige — ein TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
-            Server fuer Lieferscheine gar nicht kennt. */}
+        {/* Task-5-Fix 2 / Task 3: DELIVERY_NOTE kennt weder Beleg-Rabatt/-Aufschlag noch
+            eine Summenanzeige — TotalsBlock wuerde hier eine Rabattzeile zeigen, die der
+            Server fuer Lieferscheine gar nicht kennt; DocumentAdjustmentFields (Phase 13b,
+            Task 3, aus MoreOptions verschoben) bedient dieselbe Bedingung. */}
+        {mode !== "DELIVERY_NOTE" && <DocumentAdjustmentFields draft={draft} dispatch={dispatch} />}
         {mode !== "DELIVERY_NOTE" && <TotalsBlock totals={totals} draft={draft} />}
 
         <FootTextBlock mode={mode} draft={draft} dispatch={dispatch} />

@@ -74,6 +74,10 @@ interface LineRowProps {
   onDrop: () => void;
   onRowKeyDown: (e: React.KeyboardEvent) => void;
   onProductCreated?: (p: ProductOption) => void;
+  /** Task 3 (Phase 13b) — "+ Produkt auswählen" in `LineItemsEditor`: fokussiert den
+   *  bestehenden `ProductPicker` dieser (neu angelegten) Zeile beim Mount, kein zweites
+   *  Suchfeld. */
+  autoFocusProduct?: boolean;
 }
 
 export function LineRow({
@@ -95,6 +99,7 @@ export function LineRow({
   onDrop,
   onRowKeyDown,
   onProductCreated,
+  autoFocusProduct,
 }: LineRowProps) {
   const showDiscount = mode !== "DELIVERY_NOTE";
   const allowTypeChange = mode !== "DELIVERY_NOTE";
@@ -196,7 +201,13 @@ export function LineRow({
               />
               {products.length > 0 && (
                 <div className="mt-1">
-                  <ProductPicker products={products} taxRates={taxRates} onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })} onCreated={onProductCreated} />
+                  <ProductPicker
+                    products={products}
+                    taxRates={taxRates}
+                    onPick={(p) => dispatch({ type: "applyProduct", key: line.key, product: p })}
+                    onCreated={onProductCreated}
+                    autoFocus={autoFocusProduct}
+                  />
                 </div>
               )}
             </td>
