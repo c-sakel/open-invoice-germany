@@ -48,8 +48,8 @@ export async function DocumentChain({ orgId, type, id }: { orgId: string; type: 
   if (!chain) return null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h2 className="mb-2 text-sm font-semibold text-slate-900">Dokumentkette</h2>
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm">
+      <h2 className="font-semibold text-slate-900">Dokumentenkette</h2>
       <ul>
         <NodeRow node={chain.root} currentId={chain.currentId} depth={0} />
       </ul>

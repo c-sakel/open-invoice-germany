@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { availableActions, convertTargets, type ActionableDoc } from "@/domain/document/actions";
 
 function doc(overrides: Partial<ActionableDoc>): ActionableDoc {
@@ -136,5 +138,22 @@ describe("convertTargets", () => {
   it("Fix-Welle M5: voll abgerechnetes Angebot/AB darf weiterhin einen Lieferschein erzeugen (Rechnung bleibt gesperrt)", () => {
     expect(convertTargets(quote("SENT", { billingFull: true }))).toMatchObject({ invoice: false, deliveryNote: true });
     expect(convertTargets({ ...quote("SENT", { billingFull: true }), type: "AUFTRAGSBESTAETIGUNG" })).toMatchObject({ invoice: false, deliveryNote: true });
+  });
+});
+
+describe("Angebots-Menue: Teilrechnung/Abschlagsrechnung (Phase 13c, Task 5, Smoke-Befund)", () => {
+  // canBillQuote ist reine Seiten-Sichtbarkeitslogik (dokumente/[id]/page.tsx, kein
+  // exportierter Domain-Helfer) — Strukturtest wie payment-dialog.test.ts/dialogs.test.ts
+  // statt eines DB-gestuetzten Integrationstests fuer eine Server-Komponente.
+  const page = readFileSync(path.resolve(__dirname, "../../src/app/dokumente/[id]/page.tsx"), "utf8");
+
+  it("canBillQuote blendet Teilrechnung/Abschlagsrechnung bei storniertem/abgelehntem Angebot aus", () => {
+    // Playwright-Smoke (13c-task5-smoke-run/run.py) fand vor diesem Fix: ein storniertes
+    // Angebot zeigte "Teilrechnung..."/"Abschlagsrechnung..." weiterhin im Mehr-Menue —
+    // canBillQuote pruefte nur billing.state, nicht den Beleg-Status. Server lehnt beides
+    // ohnehin mit 409 ab (QUOTE_STATUS_ALLOWED = DRAFT/SENT/ACCEPTED in
+    // src/domain/invoice/{partial,downpayment}.ts), das Menue bot den toten Einstieg aber
+    // weiterhin an.
+    expect(page).toMatch(/const canBillQuote = billing != null && billing\.state !== "FULL"[\s\S]{0,80}status !== "CANCELLED"[\s\S]{0,40}status !== "REJECTED"/);
   });
 });

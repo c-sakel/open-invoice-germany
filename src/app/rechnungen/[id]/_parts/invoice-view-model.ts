@@ -173,3 +173,23 @@ export function buildInvoiceViewModel(invoice: InvoiceDetail): InvoiceViewModel 
     deductionsByInvoice,
   };
 }
+
+export type PrimaryActionKind = "FINALIZE" | "PAY" | "NEW_INVOICE";
+
+export interface PrimaryAction {
+  kind: PrimaryActionKind;
+  label: string;
+}
+
+/**
+ * Phase 13c, Task 4: genau EINE hervorgehobene Aktion je Status (Spec C). Reine
+ * Ableitung aus dem bereits berechneten View-Model — KEINE zweite Aktionsmatrix neben
+ * `availableActions` (§41): `canPay` stammt selbst aus `!isDraft && !isCancelled &&
+ * isInvoiceType && openCents > 0`. "Als bezahlt markieren" oeffnet den vorbelegten
+ * Zahlungsdialog (`PaymentDialog`, Ruling: nie stilles Buchen).
+ */
+export function primaryAction(vm: Pick<InvoiceViewModel, "isDraft" | "isCancelled" | "canPay" | "isInvoiceType">): PrimaryAction {
+  if (vm.isDraft) return { kind: "FINALIZE", label: "Festschreiben" };
+  if (!vm.isCancelled && vm.isInvoiceType && vm.canPay) return { kind: "PAY", label: "Als bezahlt markieren" };
+  return { kind: "NEW_INVOICE", label: "Neue Rechnung" };
+}
