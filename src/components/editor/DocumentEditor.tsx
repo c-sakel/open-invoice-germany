@@ -18,6 +18,7 @@ import type { LayoutId } from "@/lib/pdf/layouts/ids";
 import type { ProductOption } from "./ProductPicker";
 import type { AttachmentItem } from "@/components/AttachmentPanel";
 import { ErrorBanner } from "@/components/forms/fields";
+import { useShell } from "@/components/shell/ShellProvider";
 import { createSaveGuard } from "@/lib/editor/save-guard";
 import { EditorHeader } from "./blocks/EditorHeader";
 import { RecipientBlock, type RecipientCustomerOption, type ContactOption, type AddressOption } from "./blocks/RecipientBlock";
@@ -113,6 +114,7 @@ export function DocumentEditor({
   title,
 }: DocumentEditorProps) {
   const router = useRouter();
+  const { setUnsaved } = useShell();
   const [draft, dispatch] = useReducer(draftReducer, initial ?? emptyDraft(mode, { allowedTaxRates: taxRates }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +140,17 @@ export function DocumentEditor({
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [draft.dirty]);
+
+  // Unsaved-Guard der Befehlspalette (Phase 13b, Task 7, Backlog 12e): meldet
+  // `draft.dirty` an den `ShellProvider`, damit `CommandPalette.go()` vor `router.push`
+  // nachfragen kann (siehe Kommentar dort) — der a[href]-Abfangjaeger in `EditorHeader`
+  // erfasst nur echte Link-Klicks, nicht die Palettennavigation. Beim Unmount (Editor
+  // verlassen, z.B. ueber den eigenen Bestaetigungs-Dialog) explizit `false`, sonst
+  // bliebe der Guard nach dem Verlassen faelschlich aktiv.
+  useEffect(() => {
+    setUnsaved(draft.dirty);
+    return () => setUnsaved(false);
+  }, [draft.dirty, setUnsaved]);
 
   // Beide Vorbelegungs-Effekte unten (DOCUMENT/INVOICE) nutzen `replace` auf Basis des
   // jeweils AKTUELLEN Entwurfs (`draftRef`, hier bei jedem Render synchron gehalten —
