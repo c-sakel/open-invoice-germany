@@ -1,6 +1,6 @@
 /** Layout "Standard" — exakt das Layout von Phase 7 (Kompatibilitaet fuer Bestandsbetreiber). */
 import type { PdfLayout } from "./types";
-import { drawLogoAndSender, drawRecipient, drawMetaRows, drawFooterColumns } from "./shared";
+import { drawLogoAndSender, drawRecipient, drawMetaRows, drawFooterColumns, drawSubject } from "./shared";
 
 export const standardLayout: PdfLayout = {
   id: "standard",
@@ -24,6 +24,7 @@ export const standardLayout: PdfLayout = {
     // weniger Platz als die feste Rechnungs-Kopfhoehe); ohne ihn bleibt die feste Hoehe aus
     // Task 2 (byte-kompatibel zu Phase 7).
     let y = input.extraRecipientBlock ? Math.max(recipientBottom, metaBottom, margins.top + 150) + 20 : margins.top + 170;
+    if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {
       doc.fontSize(9).fillColor("#333").text(input.intro, left, y, { width: right - left });
       y = doc.y + 10;

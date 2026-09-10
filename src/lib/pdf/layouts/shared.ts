@@ -147,6 +147,20 @@ export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y
   });
 }
 
+/**
+ * Betreffzeile (Phase 13b): fett, Grundschriftgroesse des Layouts, volle Textbreite,
+ * direkt ueber dem Kopftext. Genau EINE Implementierung fuer alle sieben Layouts —
+ * `standard`, `schlicht`, `klassik`, `modern` rufen sie in ihrem `drawKopf` auf,
+ * `blau`/`schwarz`/`kompakt` erben ueber styledLayout den Standard-Kopf.
+ * Liefert die neue y-Position (pdfkit kann bei langem Betreff selbst umbrechen).
+ */
+export function drawSubject(frame: LayoutFrame, subject: string, y: number): number {
+  const { doc, left, right, base } = frame;
+  doc.font("Helvetica-Bold").fontSize(base).fillColor("#000").text(subject, left, y, { width: right - left });
+  doc.font("Helvetica");
+  return doc.y + 8;
+}
+
 export function drawLogoAndSender(frame: LayoutFrame, input: KopfInput): void {
   const { doc, theme, right, left, margins } = frame;
   drawLogo(doc, theme, right, margins.top);

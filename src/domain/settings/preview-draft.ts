@@ -150,6 +150,8 @@ async function buildInvoicePreview(orgId: string, org: Awaited<ReturnType<typeof
   // Roh aus dem Payload — KEINE Platzhalteraufloesung (siehe Datei-Kommentar).
   data.headerText = payload.headerText ?? null;
   data.footerText = payload.footerText ?? null;
+  // Phase 13b — Betreff fuers PDF (drawSubject); toInvoicePayload sendet ihn bereits.
+  data.subject = payload.subject ?? null;
   data.dueDate = payload.dueDate ?? null;
   data.paymentTermsHuman = payload.paymentTerms ?? null;
   data.deliveryDate = payload.deliveryDate ?? null;
@@ -188,6 +190,8 @@ async function buildDocumentPreview(orgId: string, org: Awaited<ReturnType<typeo
   // Roh aus dem Payload — KEINE Platzhalteraufloesung (siehe Datei-Kommentar).
   data.headerText = payload.headerText ?? null;
   data.footerText = payload.footerText ?? null;
+  // Phase 13b — Betreff fuers PDF (drawSubject); toDocumentPayload sendet ihn bereits.
+  data.subject = payload.subject ?? null;
 
   return renderInvoicePdf(data, theme);
 }

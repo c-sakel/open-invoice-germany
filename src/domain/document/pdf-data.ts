@@ -28,6 +28,9 @@ interface DocInput {
   validUntil?: Date | null;
   currency: string;
   notes: string | null;
+  // Phase 13b — Betreff (BT-22 mit Subjektcode BT-21 "AAI"); Geschaeftsdokumente
+  // erzeugen keine E-Rechnung, der Betreff geht hier nur ins PDF.
+  subject?: string | null;
   headerText?: string | null;
   footerText?: string | null;
   id?: string;
@@ -155,6 +158,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
     buyerReference: null,
     paymentTerms: null,
     notes,
+    subject: q.subject ?? null,
     seller: {
       name: org.legalName,
       addressLine1: org.addressLine1,
