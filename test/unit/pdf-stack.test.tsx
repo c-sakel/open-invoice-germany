@@ -25,11 +25,10 @@ describe("PdfStack (Phase 13c)", () => {
     expect(html).not.toContain("<iframe");
   });
 
-  it("der Umschalter merkt sich den Zustand unter oig.pdf.wide", () => {
+  it("Fix-Welle 1 (S3): kein Breit/Schmal-Umschalter mehr (aenderte nie tatsaechlich die Breite)", () => {
     const bar = readFileSync(path.join(SRC, "components/detail/PdfViewToolbar.tsx"), "utf8");
-    expect(bar).toContain('"use client"');
-    expect(bar).toContain("oig.pdf.wide");
-    // Lesen erst im Effekt — sonst weicht der erste Client-Render vom Server-HTML ab.
-    expect(bar).toMatch(/useEffect\([\s\S]*localStorage\.getItem/);
+    expect(bar).not.toContain("oig.pdf.wide");
+    expect(bar).not.toMatch(/>\s*Breit\s*</);
+    expect(bar).not.toMatch(/>\s*Schmal\s*</);
   });
 });
