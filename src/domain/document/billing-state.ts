@@ -173,6 +173,12 @@ export interface BillingStateIndex {
   /** false ab `BILLING_INDEX_RELATION_LIMIT` Relationszeilen — dann bleibt `states` leer,
    *  Aufrufer zeigen einen Hinweis/blenden abgeleitete Zaehler/Tabs aus statt zu raten. */
   available: boolean;
+  /** Task 8 (Nachtrag): enthaelt NUR Angebote mit mindestens einer billingrelevanten
+   *  Relation (CONVERTED_TO/PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR) — ein Angebot ganz ohne
+   *  Rechnungsbezug hat KEINEN Eintrag mehr. Aufrufer lesen daher immer ueber
+   *  `states.get(id) ?? "NONE"`, nie ein bares `.get(id)` (ein fehlender Eintrag bedeutet
+   *  "NONE", nicht "unbekannt" — `available` regelt getrennt davon, ob der Index ueberhaupt
+   *  gebaut werden konnte). */
   states: Map<string, BillingState>;
 }
 
@@ -231,15 +237,24 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
     else if (r.relationType === "FINAL_FOR") bucket(finalsByQuote, r.toId, r.fromId);
   }
 
-  // Bulk-Abfrage 2 (Rechnungen) + Bulk-Abfrage 3 (Angebots-Brutto): Letztere laeuft
-  // bewusst ueber ALLE Angebote der Organisation (nicht nur die verknuepften) — nur so
-  // bekommt jedes Angebot einen Eintrag im Index, auch "ohne Rechnung" (Zustand NONE),
-  // und dieselbe Abfrage liefert gleich die Bruttosumme fuer `billedPermille` mit.
+  // Task 8 (Nachtrag, Review-Finding): Bulk-Abfrage 3 (Angebots-Brutto) NICHT mehr ueber
+  // ALLE Angebote der Organisation — nur ueber die tatsaechlich verknuepften (Vereinigung
+  // der vier obigen Maps). Ein Angebot ganz ohne Rechnungsbezug ist immer NONE (der
+  // "active.length > 0"-Zweig in deriveBillingState greift nur mit mindestens einer
+  // Relation), braucht also weder seine Bruttosumme noch einen eigenen Map-Eintrag — bei
+  // vielen Angeboten und wenigen abgerechneten waere die vorherige Fassung eine unbegrenzte
+  // Abfrage ueber die gesamte Angebotstabelle der Organisation gewesen (vgl. CLAUDE.md-
+  // Backlog "statusCounts unbounded query").
+  const linkedQuoteIds = [...new Set([...convertedByQuote.keys(), ...partialsByQuote.keys(), ...downpaymentsByQuote.keys(), ...finalsByQuote.keys()])];
+
+  // Bulk-Abfrage 2 (Rechnungen) + Bulk-Abfrage 3 (Angebots-Brutto der verknuepften Angebote).
   const [invoices, quotes] = await Promise.all([
     allInvoiceIds.size
       ? dbInternal.invoice.findMany({ where: { id: { in: [...allInvoiceIds] }, orgId }, select: { id: true, status: true, grossTotalCents: true } })
       : Promise.resolve([]),
-    dbInternal.quote.findMany({ where: { orgId }, select: { id: true, grossTotalCents: true } }),
+    linkedQuoteIds.length
+      ? dbInternal.quote.findMany({ where: { orgId, id: { in: linkedQuoteIds } }, select: { id: true, grossTotalCents: true } })
+      : Promise.resolve([]),
   ]);
   const invoiceById = new Map(invoices.map((i) => [i.id, i]));
 
