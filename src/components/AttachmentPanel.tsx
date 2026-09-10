@@ -45,9 +45,18 @@ export function AttachmentPanel({
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<ConfirmDialogHandle>(null);
+  // Re-Entrancy-Guard (Fix-Welle, Review Task 6): `disabled={uploading}` am Datei-Input
+  // greift erst nach dem naechsten Render — Drag&Drop hat gar keinen State-Schutz. Ein
+  // schneller zweiter Trigger (z. B. Drop waehrend ein vorheriger Upload noch laeuft)
+  // wuerde sonst OHNE `docId` ein zweites Mal `ensureDocId()` ausloesen und einen
+  // zweiten Entwurf anlegen. `uploadingRef` greift synchron beim Funktionsaufruf, ein
+  // State-Update kaeme zu spaet.
+  const uploadingRef = useRef(false);
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
     setUploading(true);
     setError(null);
     try {
@@ -82,6 +91,7 @@ export function AttachmentPanel({
     } catch {
       setError("Upload fehlgeschlagen.");
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
