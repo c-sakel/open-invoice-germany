@@ -185,7 +185,9 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // "General information") — XRechnung kodiert BT-21 als "#CODE#"-Präfix im cbc:Note;
   // mehrere cbc:Note sind laut UBL-XSD zulässig (siehe Abzugsaufstellung/
   // Aufbewahrungshinweis darunter).
-  if (data.subject) root.ele("cbc:Note").txt(`#AAI#${data.subject}`).up();
+  // Nachtrag Task 7: leer/nur Whitespace -> keine Note (getrimmt, nicht nur der rohe Wert).
+  const subjectTrimmed = data.subject?.trim();
+  if (subjectTrimmed) root.ele("cbc:Note").txt(`#AAI#${subjectTrimmed}`).up();
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES Note-Element
   // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
   // Freitext-Hinweis, statt ihn zu ersetzen.

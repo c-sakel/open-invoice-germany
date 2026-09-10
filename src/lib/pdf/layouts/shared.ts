@@ -155,8 +155,12 @@ export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y
  * Liefert die neue y-Position (pdfkit kann bei langem Betreff selbst umbrechen).
  */
 export function drawSubject(frame: LayoutFrame, subject: string, y: number): number {
+  // Nachtrag Task 7: getrimmt; leer/nur Whitespace zeichnet nichts (y unveraendert) —
+  // dieselbe Regel wie beim Betreff im UBL-/CII-Mapping (cii.ts, xrechnung.ts).
+  const trimmed = subject.trim();
+  if (!trimmed) return y;
   const { doc, left, right, base } = frame;
-  doc.font("Helvetica-Bold").fontSize(base).fillColor("#000").text(subject, left, y, { width: right - left });
+  doc.font("Helvetica-Bold").fontSize(base).fillColor("#000").text(trimmed, left, y, { width: right - left });
   doc.font("Helvetica");
   return doc.y + 8;
 }
