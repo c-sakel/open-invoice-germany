@@ -117,9 +117,24 @@ describe("convertTargets", () => {
 
   it("umgewandelt / vollstaendig berechnet / AB / PROFORMA / storniert", () => {
     expect(convertTargets(quote("SENT", { convertedToInvoiceId: "inv1" })).orderConfirmation).toBe(false);
-    expect(convertTargets(quote("ACCEPTED", { billingFull: true }))).toEqual({ orderConfirmation: true, invoice: false, deliveryNote: false });
+    // Fix-Welle M5: billingFull sperrt NUR die Rechnung, nicht mehr den Lieferschein —
+    // convertTargets folgt jetzt exakt der serverseitigen Regel in convert.ts (nur
+    // Status, kein Abrechnungsstand fuer die Lieferschein-Konvertierung).
+    expect(convertTargets(quote("ACCEPTED", { billingFull: true }))).toEqual({ orderConfirmation: true, invoice: false, deliveryNote: true });
     expect(convertTargets({ ...quote("ACCEPTED"), type: "AUFTRAGSBESTAETIGUNG" }).invoice).toBe(false);
-    expect(convertTargets({ ...quote("SENT"), type: "PROFORMA" }).deliveryNote).toBe(false);
     expect(availableActions(quote("CANCELLED"))).not.toContain("CONVERT");
+  });
+
+  it("Fix-Welle M5: PROFORMA darf in einen Lieferschein umgewandelt werden (Server prueft in convert.ts nur den Status, nicht kind)", () => {
+    for (const s of ["DRAFT", "SENT", "ACCEPTED", "EXPIRED"]) {
+      expect(convertTargets({ ...quote(s), type: "PROFORMA" }).deliveryNote).toBe(true);
+    }
+    // orderConfirmation/invoice bleiben fuer PROFORMA weiterhin gesperrt (kein Angebot/AB).
+    expect(convertTargets({ ...quote("SENT"), type: "PROFORMA" })).toMatchObject({ orderConfirmation: false, invoice: false });
+  });
+
+  it("Fix-Welle M5: voll abgerechnetes Angebot/AB darf weiterhin einen Lieferschein erzeugen (Rechnung bleibt gesperrt)", () => {
+    expect(convertTargets(quote("SENT", { billingFull: true }))).toMatchObject({ invoice: false, deliveryNote: true });
+    expect(convertTargets({ ...quote("SENT", { billingFull: true }), type: "AUFTRAGSBESTAETIGUNG" })).toMatchObject({ invoice: false, deliveryNote: true });
   });
 });

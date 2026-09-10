@@ -74,7 +74,16 @@ export interface ConvertTargets {
  * showToOrderConfirmation/showToInvoice/showToDeliveryNote). Nur fuer kind "QUOTE" —
  * andere Belegarten liefern immer drei `false`. `convertedToInvoiceId` sperrt AB/Rechnung
  * (bereits umgewandelt), `billingFull` (Gesamtleistung bereits voll berechnet, §13-15 UStG)
- * sperrt Rechnung/Lieferschein — die AB-Erzeugung haengt nicht an der Abrechnung.
+ * sperrt NUR die Rechnung — die AB-Erzeugung haengt nicht an der Abrechnung.
+ *
+ * Fix-Welle M5: `deliveryNote` folgt jetzt EXAKT der serverseitigen Regel in
+ * `convertToDeliveryNote` (`src/domain/document/convert.ts`, `fromType === "QUOTE"`) —
+ * die prueft dort NUR den (effektiven) Status gegen `QUOTE_TO_DELIVERY_NOTE_STATUSES`,
+ * weder `kind` (PROFORMA eingeschlossen) noch den Abrechnungsstand. Vorher sperrte diese
+ * Funktion zusaetzlich PROFORMA und ein bereits voll abgerechnetes Angebot/eine AB, obwohl
+ * der Server beides weiterhin erlaubte — zwei bisher funktionierende, aber im Zeilenmenue/
+ * auf der Detailseite unsichtbare Wege zur Lieferscheinerzeugung (Review-Finding M5). Nach
+ * einer Rechnung noch zu liefern ist der Normalfall, keine Ausnahme.
  */
 export function convertTargets(doc: ActionableDoc & { convertedToInvoiceId?: string | null; billingFull?: boolean }): ConvertTargets {
   if (doc.kind !== "QUOTE") return { orderConfirmation: false, invoice: false, deliveryNote: false };
@@ -86,7 +95,7 @@ export function convertTargets(doc: ActionableDoc & { convertedToInvoiceId?: str
     orderConfirmation: isAngebot && !converted && ANGEBOT_TO_AB_STATUSES.has(doc.status),
     invoice:
       !converted && !billingFull && ((isAngebot && ANGEBOT_TO_INVOICE_STATUSES.has(doc.status)) || (isAB && AB_TO_INVOICE_STATUSES.has(doc.status))),
-    deliveryNote: !billingFull && (isAngebot || isAB) && QUOTE_TO_DELIVERY_NOTE_STATUSES.has(doc.status),
+    deliveryNote: QUOTE_TO_DELIVERY_NOTE_STATUSES.has(doc.status),
   };
 }
 
