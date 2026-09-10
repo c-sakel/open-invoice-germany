@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
@@ -78,7 +79,17 @@ export default async function DokumentDetail({
   // `convert.ts` (Status, unabhaengig vom Abrechnungsstand), waehrend Teil-/Abschlags-
   // rechnungen weiterhin nur bis zur vollen Abrechnung sinnvoll sind. `billing` ist nur
   // fuer Angebot/AB gesetzt (PROFORMA: `null` oben) — deckt die Kind-Einschraenkung mit ab.
-  const canBillQuote = billing != null && billing.state !== "FULL";
+  // Task 5 (Smoke-Befund): `billing.state` allein blendete Teilrechnung/Abschlagsrechnung
+  // NICHT aus, sobald das Angebot storniert/abgelehnt war — server-seitig lehnen
+  // createPartialInvoice/createDownpaymentInvoice (QUOTE_STATUS_ALLOWED = DRAFT/SENT/
+  // ACCEPTED, `src/domain/invoice/{partial,downpayment}.ts`) das zwar mit 409 ab, das Menue
+  // bot den Einstieg aber weiterhin sichtbar an. `status` ist der ueber effectiveQuoteStatus
+  // gebildete Wert — fuer CANCELLED/REJECTED deckungsgleich mit dem rohen `quote.status`,
+  // den die Domainfunktionen pruefen (effectiveQuoteStatus veraendert nur DRAFT/SENT bei
+  // abgelaufenem validUntil zu EXPIRED, das die Domainfunktionen serverseitig ueber den
+  // weiterhin rohen DRAFT/SENT-Wert zulassen — hier deshalb bewusst NICHT zusaetzlich
+  // ausgeschlossen, sonst Diskrepanz zum tatsaechlich erlaubten Server-Verhalten).
+  const canBillQuote = billing != null && billing.state !== "FULL" && status !== "CANCELLED" && status !== "REJECTED";
   const hasPartialInvoices = billing != null && billing.state === "PARTIAL" && billing.downpaymentGrossCents === 0;
   const hasDownpayments = billing != null && billing.downpaymentGrossCents > 0;
   const archived = q.archivedAt !== null;
@@ -127,6 +138,15 @@ export default async function DokumentDetail({
               PDF
             </a>
             <SendEmailDialog docType={q.kind as EmailDocType} docId={q.id} />
+            {/* S5 (Fix-Welle 1, Spec C "Primäraktion je Status"): "Neue Rechnung" steht auf
+                JEDER Belegseite zusaetzlich als sekundaerer Link zur Verfuegung — bisher nur
+                auf der Rechnungsseite selbst umgesetzt. */}
+            <Link
+              href={`/rechnungen/neu?customerId=${q.customer.id}`}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Neue Rechnung
+            </Link>
           </>
         }
         more={
@@ -156,15 +176,18 @@ export default async function DokumentDetail({
         }
         pdf={<PdfStack src={`/api/documents/${q.id}/pdf`} title={`${title} — PDF`} />}
         aside={
-          <DocumentStatusCard q={q} status={status}>
-            {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
+          <>
+            <DocumentStatusCard q={q} status={status} />
+            {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && (
+              <ShareLinkPanel documentId={q.id} />
+            )}
             <AttachmentPanel
               docType="QUOTE"
               docId={q.id}
               initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
             />
             <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
-          </DocumentStatusCard>
+          </>
         }
       >
         <InternalNotesBox notes={q.internalNotes} />

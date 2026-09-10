@@ -1,13 +1,13 @@
 // src/app/rechnungen/[id]/_parts/InvoiceStatusCard.tsx
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
-import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
-import { PaymentForm } from "@/components/PaymentForm";
 import { formatCents } from "@/lib/money";
+import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
-import { PaymentSection } from "./PaymentSection";
+import { PaymentDialog } from "./PaymentDialog";
+
+const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
 
 function skontoText(invoice: Pick<InvoiceDetail, "skonto1Permille" | "skonto1Days" | "skonto2Permille" | "skonto2Days">): string {
   const first = `${(invoice.skonto1Permille! / 10).toString().replace(".", ",")} % bei Zahlung innerhalb ${invoice.skonto1Days} Tagen`;
@@ -18,21 +18,28 @@ function skontoText(invoice: Pick<InvoiceDetail, "skonto1Permille" | "skonto1Day
 }
 
 /**
- * Statuskarte der Rechnungsdetailseite (Phase 11d, Task 3, `aside`-Slot) — buendelt die
- * frueheren "Empfänger"/"Eckdaten"-Karten (Z. 254-283) als kompakte Zeilen (Kunde als Link
- * plus Anschrift/USt-IdNr., M2 Fix-Welle — direkt aus `customer`, kein Snapshot auf
- * `Invoice`), das "Zahlung & Mahnwesen"-Bezahlt/Offen (Z. 370-377) als Zeilen sowie
- * unveraendert PaymentForm/Zahlungsliste/Mahnblock (Z. 379-421) und die uebergebenen
- * `children` (AttachmentPanel, DocumentChain).
+ * Statuskarten der Rechnungsdetailseite (Phase 11d, Task 3, `aside`-Slot; Phase 13c, Task 2:
+ * aus EINER Karte werden ZWEI). "Kunde & Betrag" (mit Status-Chips) buendelt die frueheren
+ * "Empfänger"/"Eckdaten"-Zeilen (Kunde als Link plus Anschrift, M2 Fix-Welle — direkt aus
+ * `customer`, kein Snapshot auf `Invoice`) sowie Rechnungsdatum/Brutto und, solange
+ * `showPaymentBlock`, Bezahlt/Offen. "Details" (ohne Status-Chips) buendelt relative
+ * Faelligkeit (13a `relativeDueLabel`, Titel-Tooltip mit dem absoluten Datum), Leistungs-
+ * datum, versendet am + Kanal (Fix-Welle 1, S6 — juengster `EmailLog`-Eintrag, kein neues
+ * Feld), Zahlungsmethode, Steuerschema, USt-IdNr., Skonto, E-Rechnung-Badge und
+ * "Festgeschrieben am" — darunter die beschriftete Zahlungsliste (S8). Der Mahnblock
+ * (`PaymentSection`) sitzt seit Fix-Welle 1 (S7, Spec C) nicht mehr hier, sondern volle
+ * Breite unter der PDF-Vorschau (`page.tsx`, `children`-Slot von `DocumentDetailLayout`).
  *
- * `id="zahlung"` sitzt auf einem umschliessenden Wrapper statt auf CollapsibleSection
- * selbst (kein neues Prop auf dem Task-2-Baustein noetig) — die Primaeraktion "Zahlung
- * erfassen" verlinkt per Fragment (`#zahlung`) dorthin.
+ * Phase 13c, Task 3: das Zahlungs**formular** (frueher hier per CollapsibleSection/
+ * PaymentForm eingebettet) wandert in `PaymentDialog` — genau EINE Instanz auf der
+ * Belegseite, `canPay`-gated, mit `id="zahlung"` als weiterhin gueltigem Sprungziel der
+ * Primaeraktion (Kopfzeile, Liste, Mahnwesen). Die `children` (AttachmentPanel,
+ * DocumentChain) reicht der Aufrufer seit Fix-Welle 1 (M1) ohne eigene `DetailCard`-Huelle
+ * direkt weiter — kein `children`-Prop mehr auf dieser Komponente.
  */
 export function InvoiceStatusCard({
   invoice,
   openCents,
-  dueDate,
   isOverdue,
   paymentMethodName,
   hasSkonto,
@@ -40,23 +47,21 @@ export function InvoiceStatusCard({
   canPay,
   paymentMethods,
   defaultPaymentMethod,
-  dunningSchedule,
-  children,
+  lastSentAt,
 }: {
   invoice: InvoiceDetail;
   openCents: number;
-  /** Faellige Kante (invoice.dueDate ?? invoice.issueDate) — fuer den Mahnblock. */
-  dueDate: Date;
   isOverdue: boolean;
   paymentMethodName: string | null;
   hasSkonto: boolean;
   /** isInvoiceType && !isDraft && !isCancelled — schaltet Zahlung/Mahnwesen frei. */
   showPaymentBlock: boolean;
+  /** !isDraft && !isCancelled && isInvoiceType && openCents > 0 — schaltet PaymentDialog frei. */
   canPay: boolean;
   paymentMethods: { code: string; name: string }[];
   defaultPaymentMethod: string;
-  dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null;
-  children?: ReactNode;
+  /** Juengster erfolgreich versendeter EmailLog-Eintrag (sentAt bzw. createdAt als Rueckfall) — `null` ohne Versand. */
+  lastSentAt: Date | null;
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -64,7 +69,7 @@ export function InvoiceStatusCard({
   // gehoerte dagegen in der alten "Eckdaten"-Karte NICHT zu diesem Abschnitt und stand dort
   // unbedingt (nur an `paymentMethodName` geknuepft) — I4 (Fix-Welle) nimmt das zurueck, nachdem
   // eine fruehere Fassung sie faelschlich mitguardete.
-  const rows: StatusRow[] = [
+  const customerRows: StatusRow[] = [
     {
       label: "Kunde",
       value: (
@@ -85,44 +90,70 @@ export function InvoiceStatusCard({
       ),
     },
     { label: "Rechnungsdatum", value: deDate(invoice.issueDate) },
-    { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
-    { label: "Fällig", value: deDate(invoice.dueDate) },
-    { label: "Brutto", value: formatCents(invoice.grossTotalCents, invoice.currency) },
+    { label: "Brutto", value: <span className="text-base font-semibold">{formatCents(invoice.grossTotalCents, invoice.currency)}</span> },
   ];
   if (showPaymentBlock) {
-    rows.push(
+    customerRows.push(
       { label: "Bezahlt", value: formatCents(invoice.paidAmountCents, invoice.currency) },
       { label: "Offen", value: <strong>{formatCents(openCents, invoice.currency)}</strong> },
     );
   }
-  rows.push({ label: "Steuerschema", value: invoice.taxScheme });
-  if (invoice.customer.vatId) rows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });
-  if (paymentMethodName) rows.push({ label: "Zahlungsmethode", value: paymentMethodName });
-  if (hasSkonto) rows.push({ label: "Skonto", value: skontoText(invoice) });
+
+  const due = relativeDueLabel(invoice.dueDate, new Date());
+  const detailRows: StatusRow[] = [
+    {
+      label: "Fällig",
+      value: (
+        <span title={deDate(invoice.dueDate)} className={due.overdue ? "text-rose-700" : undefined}>
+          {due.text}
+        </span>
+      ),
+    },
+    { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
+  ];
+  // S6 (Fix-Welle 1): "Kanal" ist bislang immer E-Mail (einziger Versandweg), daher statisch
+  // angehaengt statt aus einem eigenen Feld gelesen.
+  if (lastSentAt) detailRows.push({ label: "Versendet am", value: `${deDate(lastSentAt)} · E-Mail` });
+  if (paymentMethodName) detailRows.push({ label: "Zahlungsmethode", value: paymentMethodName });
+  detailRows.push({ label: "Steuerschema", value: invoice.taxScheme });
+  if (invoice.customer.vatId) detailRows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });
+  if (hasSkonto) detailRows.push({ label: "Skonto", value: skontoText(invoice) });
+  if (invoice.xmlFormat) {
+    detailRows.push({
+      label: "E-Rechnung",
+      value: (
+        <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-800">
+          {XML_FORMAT_LABEL[invoice.xmlFormat] ?? invoice.xmlFormat}
+        </span>
+      ),
+    });
+  }
+  if (invoice.finalizedAt) detailRows.push({ label: "Festgeschrieben am", value: deDate(invoice.finalizedAt) });
 
   return (
-    <StatusCard
-      status={
-        <>
-          <StatusBadge status={invoice.status} />
-          {isOverdue && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">überfällig</span>}
-        </>
-      }
-      rows={rows}
-    >
-      <div className="space-y-4">
-        {showPaymentBlock && (
+    <>
+      <StatusCard
+        title="Kunde & Betrag"
+        status={
           <>
+            <StatusBadge status={invoice.status} />
+            {isOverdue && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">überfällig</span>}
+          </>
+        }
+        rows={customerRows}
+      />
+      <StatusCard title="Details" status={null} rows={detailRows}>
+        {showPaymentBlock && (
+          <div className="space-y-4">
             {canPay && (
-              <div id="zahlung">
-                <CollapsibleSection title="Zahlung erfassen" defaultOpen={canPay}>
-                  <PaymentForm invoiceId={invoice.id} openCents={openCents} methods={paymentMethods} defaultMethod={defaultPaymentMethod} />
-                </CollapsibleSection>
-              </div>
+              <PaymentDialog invoiceId={invoice.id} openCents={openCents} methods={paymentMethods} defaultMethod={defaultPaymentMethod} />
             )}
 
             {invoice.payments.length > 0 && (
               <div className="space-y-1 text-sm">
+                {/* S8 (Fix-Welle 1): Ueberschrift ergaenzt — ohne sie war nicht erkennbar,
+                    dass die nackten Zeilen darunter die gebuchten Zahlungen sind. */}
+                <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">Zahlungen</p>
                 {invoice.payments.map((p) => (
                   <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
                     <span>
@@ -136,22 +167,9 @@ export function InvoiceStatusCard({
                 ))}
               </div>
             )}
-
-            <PaymentSection
-              invoiceId={invoice.id}
-              currency={invoice.currency}
-              openCents={openCents}
-              isOverdue={isOverdue}
-              dueDate={dueDate}
-              dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
-              dunningPausedUntil={invoice.dunningPausedUntil}
-              dunningSchedule={dunningSchedule}
-              dunnings={invoice.dunnings}
-            />
-          </>
+          </div>
         )}
-        {children}
-      </div>
-    </StatusCard>
+      </StatusCard>
+    </>
   );
 }

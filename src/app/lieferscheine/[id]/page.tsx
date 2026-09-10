@@ -112,6 +112,15 @@ export default async function LieferscheinDetail({
             </a>
           )}
           {dn.status !== "DRAFT" && <SendEmailDialog docType="DELIVERY_NOTE" docId={dn.id} />}
+          {/* S5 (Fix-Welle 1, Spec C "Primäraktion je Status"): "Neue Rechnung" steht auf
+              JEDER Belegseite zusaetzlich als sekundaerer Link zur Verfuegung — bisher nur
+              auf der Rechnungsseite selbst umgesetzt. */}
+          <Link
+            href={`/rechnungen/neu?customerId=${dn.customer.id}`}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Neue Rechnung
+          </Link>
         </>
       }
       more={
@@ -167,14 +176,15 @@ export default async function LieferscheinDetail({
         />
       }
       aside={
-        <DeliveryNoteStatusCard dn={dn}>
+        <>
+          <DeliveryNoteStatusCard dn={dn} />
           <AttachmentPanel
             docType="DELIVERY_NOTE"
             docId={dn.id}
             initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
           />
           <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
-        </DeliveryNoteStatusCard>
+        </>
       }
     >
       <InternalNotesBox notes={dn.internalNotes} />

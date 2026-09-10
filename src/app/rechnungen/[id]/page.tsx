@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { prisma, dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction } from "@/app/actions/invoices";
-import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
+import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
 import { DocumentChain } from "@/components/DocumentChain";
@@ -21,13 +21,19 @@ import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
 import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
-import { buildInvoiceViewModel, TYPE_TITLE } from "./_parts/invoice-view-model";
+import { buildInvoiceViewModel, primaryAction, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
 import { InvoiceTotals } from "./_parts/InvoiceTotals";
 import { CorrectionSection } from "./_parts/CorrectionSection";
+import { PaymentSection } from "./_parts/PaymentSection";
 
 export const dynamic = "force-dynamic";
+
+// Phase 13c, Task 4: Klassen der Primaer-/Sekundaeraktion in der Kopfzeile — dieselben
+// Farben wie die bisherigen Einzelknoepfe (PDF/Bearbeiten sekundaer, Festschreiben primaer).
+const primaryBtnCls = "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700";
+const secondaryBtnCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50";
 
 export default async function InvoiceDetail({
   params,
@@ -60,6 +66,9 @@ export default async function InvoiceDetail({
   if (!invoice) notFound();
 
   const vm = buildInvoiceViewModel(invoice);
+  // Phase 13c, Task 4: genau EINE hervorgehobene Kopfzeilen-Aktion je Status statt bis zu
+  // fuenf gleichwertigen Knoepfen — reine Ableitung aus dem View-Model (primaryAction).
+  const primary = primaryAction(vm);
 
   // Task 4: Bezug zur Quelle (Angebot/AB bzw. Lieferschein) bei PARTIAL/DOWNPAYMENT/FINAL.
   let sourceLabel: { href: string; text: string } | null = null;
@@ -95,14 +104,25 @@ export default async function InvoiceDetail({
     dunningSchedule = { nextStage: schedule.nextStage ? { name: schedule.nextStage.name, order: schedule.nextStage.order } : null, dueAt: schedule.dueAt, isDue: schedule.isDue };
   }
 
-  // Zahlungsmethoden-Auswahl im Zahlungsformular: aktive Methoden OHNE den Systemcode
-  // SKONTO (der wird ausschliesslich automatisch bei detectSkonto gebucht, nie manuell
-  // ausgewaehlt). Default-Kette: Kunden-Standard -> Methode der Rechnung -> TRANSFER.
+  // Zahlungsmethoden-Auswahl im Zahlungsdialog: aktive Methoden OHNE den Systemcode SKONTO
+  // (der wird ausschliesslich automatisch bei detectSkonto gebucht, nie manuell gewaehlt).
+  // Default-Kette: Kunden-Standard -> Methode der Rechnung -> TRANSFER.
   const activePaymentMethods = vm.canPay
     ? (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO")
     : [];
   const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
+
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
+
+  // S6 (Fix-Welle 1, Spec C "Detail-Layout"): "versendet am + Kanal" in der Details-Karte —
+  // aus dem juengsten EmailLog-Eintrag, kein neues Feld auf Invoice. "Kanal" ist bislang
+  // immer E-Mail (einziger Versandweg dieser Software), daher statisch angehaengt.
+  const lastEmailLog = await dbInternal.emailLog.findFirst({
+    where: { orgId: org.id, docType: vm.emailDocType, docId: invoice.id, status: { in: ["SENT", "DELIVERED"] } },
+    orderBy: { createdAt: "desc" },
+    select: { sentAt: true, createdAt: true },
+  });
+  const lastSentAt = lastEmailLog?.sentAt ?? lastEmailLog?.createdAt ?? null;
 
   const { prevId, nextId, backQuery } = await loadNeighbors("INVOICE", org.id, id, liste);
   const navHref = (targetId: string) => `/rechnungen/${targetId}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
@@ -148,17 +168,28 @@ export default async function InvoiceDetail({
               Bearbeiten
             </Link>
           )}
-          {vm.isDraft && (
+          {/* Primaeraktion (Task 4): Entwurf -> Festschreiben, offen -> Als bezahlt markieren
+              (oeffnet den einen PaymentDialog in InvoiceStatusCard ueber den weiterhin
+              gueltigen Anker #zahlung — keine zweite Dialog-Instanz hier), sonst Neue
+              Rechnung. "Neue Rechnung" steht zusaetzlich IMMER als sekundaerer Link zur
+              Verfuegung, ausser er ist bereits die Primaeraktion (kein doppelter Knopf). */}
+          {primary.kind === "FINALIZE" && (
             <form action={finalizeAction}>
               <input type="hidden" name="id" value={invoice.id} />
-              <button className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Festschreiben</button>
+              <button className={primaryBtnCls}>{primary.label}</button>
             </form>
           )}
-          {!vm.isDraft && vm.canPay && (
-            <a href="#zahlung" className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
-              Zahlung erfassen
+          {primary.kind === "PAY" && (
+            <a href="#zahlung" className={primaryBtnCls}>
+              {primary.label}
             </a>
           )}
+          <Link
+            href={`/rechnungen/neu?customerId=${invoice.customer.id}`}
+            className={primary.kind === "NEW_INVOICE" ? primaryBtnCls : secondaryBtnCls}
+          >
+            {primary.kind === "NEW_INVOICE" ? primary.label : "Neue Rechnung"}
+          </Link>
         </>
       }
       more={
@@ -183,26 +214,26 @@ export default async function InvoiceDetail({
       }
       pdf={<PdfStack src={`/api/invoices/${invoice.id}/pdf`} title={`${title} — PDF`} />}
       aside={
-        <InvoiceStatusCard
-          invoice={invoice}
-          openCents={vm.openCents}
-          dueDate={vm.dueDate}
-          isOverdue={vm.isOverdue}
-          paymentMethodName={vm.paymentMethodName}
-          hasSkonto={vm.hasSkonto}
-          showPaymentBlock={showPaymentBlock}
-          canPay={vm.canPay}
-          paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
-          defaultPaymentMethod={defaultPaymentMethodCode}
-          dunningSchedule={dunningSchedule}
-        >
+        <>
+          <InvoiceStatusCard
+            invoice={invoice}
+            openCents={vm.openCents}
+            isOverdue={vm.isOverdue}
+            paymentMethodName={vm.paymentMethodName}
+            hasSkonto={vm.hasSkonto}
+            showPaymentBlock={showPaymentBlock}
+            canPay={vm.canPay}
+            paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
+            defaultPaymentMethod={defaultPaymentMethodCode}
+            lastSentAt={lastSentAt}
+          />
           <AttachmentPanel
             docType="INVOICE"
             docId={invoice.id}
             initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
           />
           <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
-        </InvoiceStatusCard>
+        </>
       }
     >
       <InternalNotesBox notes={invoice.internalNotes} />
@@ -228,6 +259,24 @@ export default async function InvoiceDetail({
           {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
         </div>
       </CollapsibleSection>
+
+      {/* S7 (Fix-Welle 1, Spec C "Detail-Layout"): Mahnblock bleibt unter der Vorschau (volle
+          Breite) statt sich in der 24rem-Statuskartenspalte einzuquetschen — PaymentSection
+          rendert bei Bedarf selbst nichts, wenn weder ein faelliger Mahnschritt noch bereits
+          verschickte Mahnungen vorliegen. */}
+      {showPaymentBlock && (
+        <PaymentSection
+          invoiceId={invoice.id}
+          currency={invoice.currency}
+          openCents={vm.openCents}
+          isOverdue={vm.isOverdue}
+          dueDate={vm.dueDate}
+          dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
+          dunningPausedUntil={invoice.dunningPausedUntil}
+          dunningSchedule={dunningSchedule}
+          dunnings={invoice.dunnings}
+        />
+      )}
 
       {!vm.isDraft && !vm.isCancelled && (
         <CorrectionSection invoiceId={invoice.id} type={invoice.type} canCancelOrCredit={vm.canCancelOrCredit} canDuplicate={vm.canDuplicate} />

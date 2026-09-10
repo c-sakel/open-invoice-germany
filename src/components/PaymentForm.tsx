@@ -27,6 +27,7 @@ export function PaymentForm({
   openCents,
   methods,
   defaultMethod,
+  onDone,
 }: {
   invoiceId: string;
   openCents: number;
@@ -34,6 +35,10 @@ export function PaymentForm({
   methods: PaymentMethodOption[];
   /** Vorbelegung: Kunden-Standard -> Methode der Rechnung -> "TRANSFER" (siehe Aufrufer). */
   defaultMethod: string;
+  /** Phase 13c, Task 3: optionaler Rueckruf NACH erfolgreicher Buchung (router.refresh()) —
+   *  damit sich ein umschliessender Dialog (PaymentDialog) schliessen kann. Kein neuer
+   *  Schreibpfad, PaymentForm bucht weiterhin unveraendert selbst. */
+  onDone?: () => void;
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState((openCents / 100).toFixed(2));
@@ -98,6 +103,7 @@ export function PaymentForm({
       return;
     }
     router.refresh();
+    onDone?.();
   }
 
   return (
