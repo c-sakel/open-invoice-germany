@@ -1,7 +1,7 @@
 // src/components/shell/ShellProvider.tsx
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
 interface ShellContextValue {
   searchOpen: boolean;
@@ -13,6 +13,17 @@ interface ShellContextValue {
    *  aktiv markiert wird. `null` = kein Hint, `Sidebar` nutzt den echten Pfad. */
   navHint: string | null;
   setNavHint: (href: string | null) => void;
+  /** Unsaved-Guard der Befehlspalette (Phase 13b, Task 7, Backlog 12e): `DocumentEditor`
+   *  meldet `draft.dirty` per `setUnsaved` in einem Effekt (und `false` beim Unmount).
+   *  `CommandPalette.go()` liest `unsavedRef.current` VOR `router.push` — ein Ref statt
+   *  State, weil die Palette bei jedem Tastendruck rendert und ein State-Update in
+   *  `ShellProvider` dafuer unnoetig die ganze Shell mit-rendern wuerde (siehe `navHint`,
+   *  das dieselbe Ref-vs-State-Abwaegung schon fuer einen seltener aendernden Wert nicht
+   *  braucht). Der Klick-Abfangjaeger in `EditorHeader` (a[href]-Capture) deckt nur echte
+   *  `<a href>`-Klicks (Sidebar/Topbar) ab — die Palette navigiert per `router.push` und
+   *  bleibt davon unberuehrt, siehe Kommentar dort. */
+  unsavedRef: MutableRefObject<boolean>;
+  setUnsaved: (v: boolean) => void;
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null);
@@ -29,9 +40,13 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const openSearch = useCallback(() => setSearchOpen(true), []);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
   const [navHint, setNavHint] = useState<string | null>(null);
+  const unsavedRef = useRef(false);
+  const setUnsaved = useCallback((v: boolean) => {
+    unsavedRef.current = v;
+  }, []);
   const value = useMemo<ShellContextValue>(
-    () => ({ searchOpen, openSearch, closeSearch, navHint, setNavHint }),
-    [searchOpen, openSearch, closeSearch, navHint],
+    () => ({ searchOpen, openSearch, closeSearch, navHint, setNavHint, unsavedRef, setUnsaved }),
+    [searchOpen, openSearch, closeSearch, navHint, setUnsaved],
   );
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
 }

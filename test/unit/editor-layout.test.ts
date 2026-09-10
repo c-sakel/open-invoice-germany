@@ -73,3 +73,24 @@ describe("Editor-Layout (Phase 13b, Task 3)", () => {
     expect(src).toContain("Produkt auswählen");
   });
 });
+
+describe("Unsaved-Guard der Befehlspalette (Phase 13b, Task 7, Backlog 12e)", () => {
+  it("ShellProvider exportiert setUnsaved (und einen unsavedRef)", () => {
+    const src = readFileSync(path.join(SRC, "components/shell/ShellProvider.tsx"), "utf8");
+    expect(src).toMatch(/setUnsaved/);
+    expect(src).toMatch(/unsavedRef/);
+  });
+  it("CommandPalette.go() fragt vor router.push den unsavedRef ab", () => {
+    const src = readFileSync(path.join(SRC, "components/shell/CommandPalette.tsx"), "utf8");
+    const goFn = src.slice(src.indexOf("function go("), src.indexOf("function onInputKey("));
+    expect(goFn).toMatch(/unsavedRef\.current/);
+    // "router.push(" (mit Klammer) statt nur "router.push" — der Kommentar direkt ueber
+    // der Abfrage erwaehnt "`router.push`" (ohne Klammer) selbst schon vor der Abfrage.
+    expect(goFn.indexOf("unsavedRef.current")).toBeLessThan(goFn.indexOf("router.push("));
+  });
+  it("DocumentEditor meldet draft.dirty an den ShellProvider und raeumt beim Unmount auf", () => {
+    const src = readFileSync(path.join(EDITOR, "DocumentEditor.tsx"), "utf8");
+    expect(src).toMatch(/setUnsaved\(draft\.dirty\)/);
+    expect(src).toMatch(/return \(\) => setUnsaved\(false\)/);
+  });
+});

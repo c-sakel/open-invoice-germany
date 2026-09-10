@@ -32,7 +32,7 @@ const QUICK_ACTIONS: Hit[] = [
  */
 export function CommandPalette() {
   const router = useRouter();
-  const { searchOpen, openSearch, closeSearch } = useShell();
+  const { searchOpen, openSearch, closeSearch, unsavedRef } = useShell();
   const [q, setQ] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
@@ -147,6 +147,11 @@ export function CommandPalette() {
   const safeCursor = flat.length === 0 ? 0 : Math.min(cursor, flat.length - 1);
 
   function go(hit: Hit) {
+    // Unsaved-Guard (Backlog 12e): die Befehlspalette navigiert per `router.push` und wird
+    // deshalb NICHT vom Klick-Abfangjaeger in EditorHeader (a[href]-Capture) erfasst — ohne
+    // diese Abfrage verliert ein Sprung aus der Palette den ungespeicherten Entwurf
+    // kommentarlos.
+    if (unsavedRef.current && !confirm("Der Beleg hat ungespeicherte Änderungen. Trotzdem wechseln?")) return;
     close();
     router.push(hit.href);
   }
