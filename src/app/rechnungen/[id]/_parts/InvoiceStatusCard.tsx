@@ -6,6 +6,7 @@ import { formatCents } from "@/lib/money";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
 import { PaymentSection } from "./PaymentSection";
+import { PaymentDialog } from "./PaymentDialog";
 
 const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
 
@@ -28,13 +29,12 @@ function skontoText(invoice: Pick<InvoiceDetail, "skonto1Permille" | "skonto1Day
  * "Festgeschrieben am" — darunter unveraendert die Zahlungsliste und der Mahnblock
  * (`PaymentSection`).
  *
- * Das Zahlungs**formular** (frueher hier per CollapsibleSection/PaymentForm eingebettet,
- * `id="zahlung"` als Sprungziel der Primaeraktion) entfaellt in dieser Karte — Task 3 bindet
- * "Zahlung erfassen" ueber einen Dialog ein (RowPaymentDialog/PaymentForm, Koordinator-
- * Nachtrag), kein zweites Formular hier. `canPay`/`paymentMethods`/`defaultPaymentMethod`
- * sind damit keine Props dieser Komponente mehr. Die `children` (AttachmentPanel,
- * DocumentChain) huellt jetzt der Aufrufer in eigene `DetailCard`s — kein `children`-Prop
- * mehr auf dieser Komponente.
+ * Phase 13c, Task 3: das Zahlungs**formular** (frueher hier per CollapsibleSection/
+ * PaymentForm eingebettet) wandert in `PaymentDialog` — genau EINE Instanz auf der
+ * Belegseite, `canPay`-gated, mit `id="zahlung"` als weiterhin gueltigem Sprungziel der
+ * Primaeraktion (Kopfzeile, Liste, Mahnwesen). Die `children` (AttachmentPanel,
+ * DocumentChain) huellt der Aufrufer in eigene `DetailCard`s — kein `children`-Prop mehr
+ * auf dieser Komponente.
  */
 export function InvoiceStatusCard({
   invoice,
@@ -44,6 +44,9 @@ export function InvoiceStatusCard({
   paymentMethodName,
   hasSkonto,
   showPaymentBlock,
+  canPay,
+  paymentMethods,
+  defaultPaymentMethod,
   dunningSchedule,
 }: {
   invoice: InvoiceDetail;
@@ -55,6 +58,10 @@ export function InvoiceStatusCard({
   hasSkonto: boolean;
   /** isInvoiceType && !isDraft && !isCancelled — schaltet Zahlung/Mahnwesen frei. */
   showPaymentBlock: boolean;
+  /** !isDraft && !isCancelled && isInvoiceType && openCents > 0 — schaltet PaymentDialog frei. */
+  canPay: boolean;
+  paymentMethods: { code: string; name: string }[];
+  defaultPaymentMethod: string;
   dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null;
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
@@ -136,6 +143,10 @@ export function InvoiceStatusCard({
       <StatusCard title="Details" status={null} rows={detailRows}>
         {showPaymentBlock && (
           <div className="space-y-4">
+            {canPay && (
+              <PaymentDialog invoiceId={invoice.id} openCents={openCents} methods={paymentMethods} defaultMethod={defaultPaymentMethod} />
+            )}
+
             {invoice.payments.length > 0 && (
               <div className="space-y-1 text-sm">
                 {invoice.payments.map((p) => (
