@@ -104,7 +104,7 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold text-slate-900">Annahme-Link</h2>
         <button

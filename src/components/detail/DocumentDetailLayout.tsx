@@ -46,10 +46,7 @@ export function DocumentDetailLayout({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="min-w-0">{pdf}</div>
         <aside className="space-y-4">
-          <DetailCard title="Beleg">
-            <p className="font-medium text-slate-900">{title}</p>
-            {nav}
-          </DetailCard>
+          <DetailCard title="Beleg">{nav}</DetailCard>
           {aside}
         </aside>
       </div>
