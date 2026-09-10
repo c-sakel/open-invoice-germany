@@ -166,6 +166,69 @@ export async function invoiceStatusTabCounts(
   return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<InvoiceListStatusFilter, number>;
 }
 
+export interface InvoiceListHeadline {
+  count: number;
+  grossCents: number;
+  openCents: number;
+  overdueCents: number;
+  currency: string;
+  mixedCurrency: boolean;
+}
+
+/**
+ * Kopfkennzahlen ueber der GEFILTERTEN Menge (Phase 13a, Task 4) — ersetzt die "nur diese
+ * Seite"-Summe (rechnungen/page.tsx:90-95, laut Codekommentar eine Auslassung des
+ * Phase-8b-Task-1-Vertrags, keine fachliche Entscheidung). Waehrungen werden NICHT
+ * stillschweigend addiert: `groupBy({ by: ["currency"] })` liefert Anzahl + Σ Brutto
+ * DB-seitig und exakt, dazu die Waehrungsverteilung — bei mehr als einer Waehrung setzt
+ * `mixedCurrency`, die Anzeige haengt dann "(gemischte Waehrungen)" an statt eine falsche
+ * Zahl zu behaupten. Zweite Abfrage NUR ueber den potenziell offenen Teil (FINALIZED/SENT/
+ * PARTIALLY_PAID) mit vier Int-Spalten — offen/ueberfaellig aus openAmountCents +
+ * effectiveInvoiceStatus, dasselbe DB-portable JS-Aggregat wie dashboardSummary.
+ */
+export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<InvoiceListHeadline> {
+  const filter = invoiceListFilterSchema.parse(rawFilter);
+  const base = invoiceFilterConditions(orgId, filter);
+  const statusCond = statusWhere(filter.status, now);
+  const and = statusCond ? [...base, statusCond] : base;
+
+  const [groups, openish] = await Promise.all([
+    prisma.invoice.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } }),
+    prisma.invoice.findMany({
+      where: { AND: [...and, { status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } }] },
+      select: { status: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+    }),
+  ]);
+
+  let openCents = 0;
+  let overdueCents = 0;
+  for (const inv of openish) {
+    const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+    if (status !== "OPEN" && status !== "DUE" && status !== "OVERDUE") continue;
+    // openAmountCents rechnet vorzeichenbehaftet (payableBaseCents - paidAmountCents) — bei
+    // einer ueberzahlten Rechnung waere das Ergebnis negativ. Lokal geklemmt statt die
+    // geteilte Funktion zu aendern (sie hat weitere Aufrufer, z. B. dashboardSummary,
+    // dunning/auto.ts, deren Verhalten hier nicht mit angefasst werden soll).
+    const open = Math.max(0, openAmountCents(inv));
+    openCents += open;
+    if (status === "OVERDUE") overdueCents += open;
+  }
+
+  // Fuehrende Waehrung fuer die Anzeige: die mit den meisten Belegen (Tie-Break: erste
+  // Gruppe in Prisma-Ergebnisreihenfolge) — irrelevant, sobald `mixedCurrency` true ist
+  // und die UI den Hinweis anhaengt.
+  const leading = [...groups].sort((a, b) => b._count._all - a._count._all)[0];
+
+  return {
+    count: groups.reduce((sum, g) => sum + g._count._all, 0),
+    grossCents: groups.reduce((sum, g) => sum + (g._sum.grossTotalCents ?? 0), 0),
+    openCents,
+    overdueCents,
+    currency: leading?.currency ?? "EUR",
+    mixedCurrency: groups.length > 1,
+  };
+}
+
 export async function listInvoices(
   orgId: string,
   rawFilter: unknown,
