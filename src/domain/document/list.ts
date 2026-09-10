@@ -67,6 +67,9 @@ export interface QuoteListRow {
   effectiveStatus: QuoteStatus;
   archivedAt: Date | null;
   hasEmailLog: boolean;
+  /** Task 8: denormalisierte Spalte (kein Zusatzquery) — steuert `convertTargets` in
+   *  Zeilenlisten genauso wie auf der Detailseite (dort direkt `q.convertedToInvoiceId`). */
+  convertedToInvoiceId: string | null;
 }
 
 export interface QuoteListResult {
@@ -103,11 +106,19 @@ function quoteStatusWhere(status: QuoteListFilter["status"], now: Date): Prisma.
 /**
  * Alle Filterbedingungen einer Angebots-/AB-Liste AUSSER dem Status (Phase 13a, Task 3 —
  * siehe invoiceFilterConditions fuer das Muster).
+ *
+ * `opts.ids` (Task 8): GENUINER Funktionsparameter, bewusst NICHT Teil von
+ * `quoteListFilterSchema` — dieses Schema ist die Query-Validierung der oeffentlichen API
+ * (`/api/v1/Quote`, `/api/v1/OrderConfirmation`, `request.query`), ein Zusatzfeld dort waere
+ * ein neuer, ungewollter oeffentlicher Query-Parameter samt OpenAPI-Drift. Das Seiten-Wiring
+ * von `/dokumente` (Task-5-Kommentar zu `quoteStatusWhere`: "and.push({ id: { in: ids } })")
+ * reicht die Ids stattdessen hier direkt durch.
  */
-export function quoteFilterConditions(orgId: string, filter: QuoteListFilter): Prisma.QuoteWhereInput[] {
+export function quoteFilterConditions(orgId: string, filter: QuoteListFilter, opts: { ids?: string[] } = {}): Prisma.QuoteWhereInput[] {
   const and: Prisma.QuoteWhereInput[] = [{ orgId }];
   if (filter.kind) and.push({ kind: filter.kind });
   if (filter.customerId) and.push({ customerId: filter.customerId });
+  if (opts.ids) and.push({ id: { in: opts.ids } });
   if (!filter.includeArchived) and.push({ archivedAt: null });
 
   const dateRange = dateRangeAnd(filter.from, filter.to);
@@ -182,10 +193,51 @@ export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, no
   return result;
 }
 
-export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<QuoteListResult> {
+export interface QuoteListHeadline {
+  count: number;
+  grossCents: number;
+  currency: string;
+  mixedCurrency: boolean;
+}
+
+/**
+ * Kopfkennzahlen ueber der GEFILTERTEN Menge (Phase 13a, Task 8) — analog
+ * `invoiceListHeadline`, aber OHNE offen/ueberfaellig (Angebote/ABs kennen keinen
+ * Zahlungsstatus). `groupBy({ by: ["currency"] })` liefert Anzahl + Σ Brutto DB-seitig und
+ * exakt, dazu die Waehrungsverteilung — bei mehr als einer Waehrung setzt `mixedCurrency`,
+ * die Anzeige haengt dann "(gemischte Waehrungen)" an statt eine falsche Zahl zu behaupten.
+ */
+export async function quoteListHeadline(
+  orgId: string,
+  rawFilter: unknown,
+  now: Date = new Date(),
+  opts: { ids?: string[] } = {},
+): Promise<QuoteListHeadline> {
+  const filter = quoteListFilterSchema.parse(rawFilter);
+  const base = quoteFilterConditions(orgId, filter, opts);
+  const statusCond = quoteStatusWhere(filter.status, now);
+  const and = statusCond ? [...base, statusCond] : base;
+
+  const groups = await prisma.quote.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } });
+  const leading = [...groups].sort((a, b) => b._count._all - a._count._all)[0];
+
+  return {
+    count: groups.reduce((sum, g) => sum + g._count._all, 0),
+    grossCents: groups.reduce((sum, g) => sum + (g._sum.grossTotalCents ?? 0), 0),
+    currency: leading?.currency ?? "EUR",
+    mixedCurrency: groups.length > 1,
+  };
+}
+
+export async function listQuotes(
+  orgId: string,
+  rawFilter: unknown,
+  now: Date = new Date(),
+  opts: { ids?: string[] } = {},
+): Promise<QuoteListResult> {
   const filter = quoteListFilterSchema.parse(rawFilter);
 
-  const and = quoteFilterConditions(orgId, filter);
+  const and = quoteFilterConditions(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
   if (statusCond) and.push(statusCond);
 
@@ -210,6 +262,7 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
         grossTotalCents: true,
         currency: true,
         archivedAt: true,
+        convertedToInvoiceId: true,
       },
     }),
   ]);
@@ -230,6 +283,7 @@ export async function listQuotes(orgId: string, rawFilter: unknown, now: Date = 
       effectiveStatus: effectiveQuoteStatus({ status: r.status, validUntil: r.validUntil }, now),
       archivedAt: r.archivedAt,
       hasEmailLog: emailLogDocIds.has(r.id),
+      convertedToInvoiceId: r.convertedToInvoiceId,
     })),
     total,
     limit: filter.limit,

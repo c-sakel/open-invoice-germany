@@ -26,7 +26,8 @@ import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
 import { createFinalInvoice } from "@/domain/invoice/final";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
-import { billingStateFor, billingStateIndex } from "@/domain/document/billing-state";
+import { billingStateFor, billingStateIndex, BILLING_INDEX_RELATION_LIMIT } from "@/domain/document/billing-state";
+import { quoteStatusTabCounts } from "@/domain/document/list";
 import type { BillingState } from "@/schemas";
 
 const FIX_DATE = new Date("2089-05-01T10:00:00.000Z");
@@ -172,13 +173,59 @@ describe("billingStateIndex", () => {
     expect(index.available).toBe(true);
     for (const [name, quoteId] of Object.entries(quoteIds)) {
       const single = await billingStateFor(orgId, "QUOTE", quoteId);
-      expect({ name, state: index.states.get(quoteId) }).toEqual({ name, state: single.state });
+      // Task 8 (Nachtrag, Review-Finding): der Index traegt seit Task 8 NUR noch Angebote
+      // mit mindestens einer billingrelevanten Relation (Bulk-Abfrage 3 laeuft nicht mehr
+      // ueber ALLE Angebote der Organisation) — "ohne Rechnung" hat also gar keinen
+      // Map-Eintrag mehr (`undefined`), was per Vertrag "NONE" bedeutet (siehe
+      // BillingStateIndex.states-Kommentar). Alle Konstellationen MIT Relation (auch die
+      // drei, deren einzige Relation zu einer stornierten Rechnung fuehrt) bleiben im Index.
+      expect({ name, state: index.states.get(quoteId) ?? "NONE" }).toEqual({ name, state: single.state });
     }
+    expect(index.states.has(quoteIds["ohne Rechnung"])).toBe(false);
   });
 
   it("der Index ruft nie die Einzelabfrage und bleibt bei hoechstens fuenf Bulk-Abfragen", () => {
     const body = readFileSync("src/domain/document/billing-state.ts", "utf8").split("export const billingStateIndex")[1];
     expect(body).not.toMatch(/billingStateFor/);
     expect((body.match(/findMany|groupBy/g) ?? []).length).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("quoteStatusTabCounts — billed/partially-billed (Task 8, Review-Finding T4)", () => {
+  it("zaehlt FULL/PARTIAL exakt entsprechend der zehn Konstellationen oben", async () => {
+    const counts = await quoteStatusTabCounts(orgId, {}, FIX_DATE);
+    // Aus der Fixtur-Kontrolle oben: 4x FULL (umgewandelt, Abschlaege zusammen 100%,
+    // Teilrechnung alle Mengen, festgeschriebene Schlussrechnung), 3x PARTIAL (ein
+    // Abschlag 30%, Teilrechnung halbe Mengen, Schlussrechnung nur Entwurf).
+    expect(counts.billed).toBe(4);
+    expect(counts["partially-billed"]).toBe(3);
+  });
+});
+
+describe("BILLING_INDEX_RELATION_LIMIT ueberschritten (Task 8, Review-Finding T5)", () => {
+  it("billingStateIndex liefert available=false, quoteStatusTabCounts liefert billed/partially-billed=null", async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Ueberlast-Index GmbH", addressLine1: "Massenweg 1", postalCode: "24941", city: "Flensburg", vatId: "DE777888999", taxNumber: "21/555/44446" },
+    });
+    // Rohe DocumentRelation-Zeilen statt echter Domain-Flows (20 001 reale Belege waeren
+    // in einem Testlauf unzumutbar langsam) — fromId/toId tragen keine Fremdschluessel
+    // (siehe prisma/schema.prisma DocumentRelation), ein Bulk-Insert reicht.
+    const rows = Array.from({ length: BILLING_INDEX_RELATION_LIMIT + 1 }, (_, i) => ({
+      orgId: org.id,
+      fromType: "QUOTE",
+      toType: "INVOICE",
+      relationType: "CONVERTED_TO",
+      fromId: `ueberlast-quote-${i}`,
+      toId: `ueberlast-invoice-${i}`,
+    }));
+    await dbInternal.documentRelation.createMany({ data: rows });
+
+    const index = await billingStateIndex(org.id);
+    expect(index.available).toBe(false);
+    expect(index.states.size).toBe(0);
+
+    const counts = await quoteStatusTabCounts(org.id, {}, FIX_DATE);
+    expect(counts.billed).toBeNull();
+    expect(counts["partially-billed"]).toBeNull();
   });
 });
