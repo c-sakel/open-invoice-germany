@@ -22,13 +22,18 @@ import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
 import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
-import { buildInvoiceViewModel, TYPE_TITLE } from "./_parts/invoice-view-model";
+import { buildInvoiceViewModel, primaryAction, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
 import { InvoiceTotals } from "./_parts/InvoiceTotals";
 import { CorrectionSection } from "./_parts/CorrectionSection";
 
 export const dynamic = "force-dynamic";
+
+// Phase 13c, Task 4: Klassen der Primaer-/Sekundaeraktion in der Kopfzeile — dieselben
+// Farben wie die bisherigen Einzelknoepfe (PDF/Bearbeiten sekundaer, Festschreiben primaer).
+const primaryBtnCls = "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700";
+const secondaryBtnCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50";
 
 export default async function InvoiceDetail({
   params,
@@ -61,6 +66,9 @@ export default async function InvoiceDetail({
   if (!invoice) notFound();
 
   const vm = buildInvoiceViewModel(invoice);
+  // Phase 13c, Task 4: genau EINE hervorgehobene Kopfzeilen-Aktion je Status statt bis zu
+  // fuenf gleichwertigen Knoepfen — reine Ableitung aus dem View-Model (primaryAction).
+  const primary = primaryAction(vm);
 
   // Task 4: Bezug zur Quelle (Angebot/AB bzw. Lieferschein) bei PARTIAL/DOWNPAYMENT/FINAL.
   let sourceLabel: { href: string; text: string } | null = null;
@@ -150,17 +158,28 @@ export default async function InvoiceDetail({
               Bearbeiten
             </Link>
           )}
-          {vm.isDraft && (
+          {/* Primaeraktion (Task 4): Entwurf -> Festschreiben, offen -> Als bezahlt markieren
+              (oeffnet den einen PaymentDialog in InvoiceStatusCard ueber den weiterhin
+              gueltigen Anker #zahlung — keine zweite Dialog-Instanz hier), sonst Neue
+              Rechnung. "Neue Rechnung" steht zusaetzlich IMMER als sekundaerer Link zur
+              Verfuegung, ausser er ist bereits die Primaeraktion (kein doppelter Knopf). */}
+          {primary.kind === "FINALIZE" && (
             <form action={finalizeAction}>
               <input type="hidden" name="id" value={invoice.id} />
-              <button className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Festschreiben</button>
+              <button className={primaryBtnCls}>{primary.label}</button>
             </form>
           )}
-          {!vm.isDraft && vm.canPay && (
-            <a href="#zahlung" className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
-              Zahlung erfassen
+          {primary.kind === "PAY" && (
+            <a href="#zahlung" className={primaryBtnCls}>
+              {primary.label}
             </a>
           )}
+          <Link
+            href={`/rechnungen/neu?customerId=${invoice.customer.id}`}
+            className={primary.kind === "NEW_INVOICE" ? primaryBtnCls : secondaryBtnCls}
+          >
+            {primary.kind === "NEW_INVOICE" ? primary.label : "Neue Rechnung"}
+          </Link>
         </>
       }
       more={
