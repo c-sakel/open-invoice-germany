@@ -120,6 +120,12 @@ export function buildFacturXCII(data: EInvoiceData): string {
   doc.ele("ram:TypeCode").txt(typeCode(data.type)).up();
   doc.ele("ram:IssueDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(data.issueDate)).up().up();
   if (data.notes) doc.ele("ram:IncludedNote").ele("ram:Content").txt(data.notes).up().up();
+  // Phase 13b — Betreff als BT-22 (Note) mit Subjektcode BT-21 "AAI" (UNTDID 4451,
+  // "General information"). XSD-Reihenfolge innerhalb ram:IncludedNote: ram:ContentCode?,
+  // ram:Content*, ram:SubjectCode? — ram:Content steht VOR ram:SubjectCode; eine
+  // vertauschte Reihenfolge scheitert bereits an der Schema-, nicht erst an der
+  // Schematron-Pruefung.
+  if (data.subject) doc.ele("ram:IncludedNote").ele("ram:Content").txt(data.subject).up().ele("ram:SubjectCode").txt("AAI").up().up();
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
   // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
   if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();

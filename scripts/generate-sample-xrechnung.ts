@@ -173,6 +173,8 @@ function buildSample(opts: {
   deliveryStart?: Date;
   deliveryEnd?: Date;
   notes?: string;
+  // Phase 13b (Task 5) — Betreff (BT-22 mit Subjektcode BT-21 "AAI").
+  subject?: string;
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -209,6 +211,7 @@ function buildSample(opts: {
     orderNumber: opts.orderNumber ?? null,
     paymentTerms: opts.skonto1 ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
     notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
+    subject: opts.subject ?? null,
     netTotalCents: totals.netTotalCents,
     taxTotalCents: totals.taxTotalCents,
     grossTotalCents: totals.grossTotalCents,
@@ -527,6 +530,15 @@ const differenzE = () =>
     lines: [{ description: "Gebrauchtes Notebook", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 45000, taxRate: 0, taxCategory: "E" }],
   });
 
+// 21) Phase 13b — Betreff als BT-22-Note mit Subjektcode BT-21 "AAI" (UNTDID 4451).
+const betreffNote = () =>
+  buildSample({
+    number: "RE-2042-0001",
+    subject: "Wartung Heizungsanlage, Objekt Lindenstr. 5",
+    notes: "Vielen Dank für Ihren Auftrag.",
+    lines: [{ description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 48000, taxRate: 19, taxCategory: "S" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -549,6 +561,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "ausfuhr-g": ausfuhrG,
   "kleinunternehmer-e": kleinunternehmerE,
   "differenz-e": differenzE,
+  "betreff-note": betreffNote,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
