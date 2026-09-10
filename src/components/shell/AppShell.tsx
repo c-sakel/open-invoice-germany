@@ -37,8 +37,8 @@ export function AppShell({ orgName, unreadCount, appVersion, brand, children }: 
           <Suspense fallback={null}>
             <Topbar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} brand={brand} />
           </Suspense>
-          <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
-          <footer className="mx-auto w-full max-w-6xl px-6 py-6 text-xs text-slate-400">
+          <main className="mx-auto w-full max-w-[1600px] flex-1 px-6 py-8">{children}</main>
+          <footer className="mx-auto w-full max-w-[1600px] px-6 py-6 text-xs text-slate-400">
             {/* M1 (Fix-Welle 12c): ohne eigenen Instanznamen zeigte die Fusszeile den
                 Produktnamen doppelt ("OpenInvoice Germany · powered by OpenInvoice
                 Germany · AGPL-3.0") — der fuehrende Teil erscheint nur bei einer
