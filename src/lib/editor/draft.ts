@@ -59,6 +59,17 @@ export interface DraftState {
   contactPersonId: string;
   billingAddressId: string;
   shippingAddressId: string;
+  /** Phase 13b — nur INVOICE; leer bei Neuanlage bedeutet "Datum der Anlage"
+   *  (`createDraftInvoice` setzt dafuer `input.issueDate ?? now`, siehe
+   *  `toInvoicePayload`/`dueDaysFrom`-Kommentar unten). */
+  issueDate: string;
+  /** Phase 13b — nur INVOICE, reine Editor-Kopplung (kein eigenes Server-Feld): solange
+   *  `true`, zieht `deliveryDate` im Reducer bei jeder `issueDate`-Aenderung automatisch
+   *  nach (siehe `case "set"`). Default `false`; bei Neuanlage setzt `emptyDraft` `true`,
+   *  weil `DocumentSettings.autoDeliveryDate` serverseitig ohnehin so wirkt
+   *  (`invoice/create.ts:115`) — der Editor zeigt damit von Anfang an dasselbe Verhalten,
+   *  das beim Speichern ohne Eingabe greifen wuerde. */
+  deliveryDateFollowsIssue: boolean;
   deliveryDate: string;
   deliveryStart: string;
   deliveryEnd: string;
@@ -155,6 +166,27 @@ function emptyLine(lineType: LineType = "ITEM", allowed: readonly number[] = FAL
   };
 }
 
+// Ableitung zwischen Rechnungsdatum und Zahlungsziel (Phase 13b). Rein, ISO-Tagesstrings,
+// Rechnung in UTC (Date.UTC) — eine lokale Zeitzone wuerde die Differenz an DST-Grenzen um
+// einen Tag verschieben (dieselbe Begruendung wie utcDateOnly, src/lib/date-only.ts).
+const DAY_MS = 24 * 60 * 60 * 1000;
+function utcDay(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+/** Tage zwischen Rechnungs- und Faelligkeitsdatum; leer, wenn eines fehlt oder das Ziel davor liegt. */
+export function dueDaysFrom(issueDate: string, dueDate: string): string {
+  const a = utcDay(issueDate), b = utcDay(dueDate);
+  if (a == null || b == null || b < a) return "";
+  return String(Math.round((b - a) / DAY_MS));
+}
+/** Faelligkeitsdatum aus Rechnungsdatum + N Tagen (0..365); leer bei unvollstaendiger Eingabe. */
+export function dueDateFromDays(issueDate: string, days: string): string {
+  const a = utcDay(issueDate), n = Number(days.trim());
+  if (a == null || !days.trim() || !Number.isInteger(n) || n < 0 || n > 365) return "";
+  return new Date(a + n * DAY_MS).toISOString().slice(0, 10);
+}
+
 export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): DraftState {
   const allowedTaxRates = defaults?.allowedTaxRates ?? [...FALLBACK_TAX_RATES];
   const base: DraftState = {
@@ -179,6 +211,12 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     contactPersonId: "",
     billingAddressId: "",
     shippingAddressId: "",
+    issueDate: "",
+    // Neuanlage: an — spiegelt `DocumentSettings.autoDeliveryDate` (`invoice/create.ts:115`),
+    // das serverseitig ohnehin greift, wenn kein Leistungsdatum mitgesendet wird.
+    // `draftFromInvoice`/`draftFromDocument` (Bearbeiten bestehender Belege) setzen dies
+    // gezielt auf `false` zurueck.
+    deliveryDateFollowsIssue: true,
     deliveryDate: "",
     deliveryStart: "",
     deliveryEnd: "",
@@ -215,6 +253,13 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "markSaved":
       return { ...state, dirty: false };
     case "set":
+      // Phase 13b: das Leistungsdatum folgt dem Rechnungsdatum, solange der Nutzer die
+      // Kopplung nicht geloest hat. Bewusst hier und nicht in MetaBlock: sonst muesste
+      // jede weitere Stelle, die `issueDate` setzt (z. B. eine Vorlage in 13d), die
+      // Kopplung nachbauen.
+      if (action.field === "issueDate" && state.deliveryDateFollowsIssue) {
+        return { ...state, issueDate: action.value as string, deliveryDate: action.value as string, dirty: true };
+      }
       return { ...state, [action.field]: action.value, dirty: true } as DraftState;
     case "setLine":
       return {
@@ -330,6 +375,11 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
     billingAddressId: optionalSelectValue(d.billingAddressId, isEdit),
     shippingAddressId: optionalSelectValue(d.shippingAddressId, isEdit),
+    // Phase 13b — leer (Neuanlage, Feld nicht angefasst): `createDraftInvoice` setzt dann
+    // `input.issueDate ?? now` (invoice/create.ts:102), genau wie ohne dieses Feld vorher.
+    // `toDocumentPayload` bekommt bewusst KEIN issueDate: `createDocument` setzt es fest auf
+    // `now` (document/create.ts:167) und kennt kein Eingabefeld dafuer.
+    issueDate: d.issueDate || undefined,
     deliveryStart: d.deliveryStart || undefined,
     deliveryEnd: d.deliveryEnd || undefined,
     deliveryDate: d.deliveryDate || undefined,
@@ -506,6 +556,8 @@ export interface InvoiceInitialLike {
   contactPersonId: string;
   billingAddressId: string;
   shippingAddressId: string;
+  /** Phase 13b — `yyyy-mm-dd`, immer gesetzt (Invoice.issueDate hat `@default(now())`). */
+  issueDate: string;
   deliveryStart: string;
   deliveryEnd: string;
   deliveryDate: string;
@@ -608,6 +660,12 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     contactPersonId: initial.contactPersonId ?? "",
     billingAddressId: initial.billingAddressId ?? "",
     shippingAddressId: initial.shippingAddressId ?? "",
+    issueDate: initial.issueDate ?? "",
+    // Bearbeiten bestehender Belege: die Kopplung ist standardmaessig AUS (anders als bei
+    // `emptyDraft`s Neuanlage-Default `true`) — eine geladene Rechnung traegt bereits ein
+    // eigenstaendiges Leistungsdatum, das eine Rechnungsdatum-Aenderung nicht ungefragt
+    // ueberschreiben soll.
+    deliveryDateFollowsIssue: false,
     deliveryStart: initial.deliveryStart ?? "",
     deliveryEnd: initial.deliveryEnd ?? "",
     deliveryDate: initial.deliveryDate ?? "",
@@ -647,6 +705,10 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     customerReference: initial.customerReference ?? "",
     contactPersonId: initial.contactPersonId ?? "",
     billingAddressId: initial.billingAddressId ?? "",
+    // Bearbeiten (Ruling wie draftFromInvoice): DOCUMENT kennt kein eigenes issueDate-Feld
+    // im Editor, die Kopplung bleibt trotzdem konsistent auf "aus" statt des
+    // `emptyDraft`-Neuanlage-Defaults `true`.
+    deliveryDateFollowsIssue: false,
     validUntil: initial.validUntil ?? "",
     headerText: initial.headerText ?? "",
     footerText: initial.footerText ?? "",

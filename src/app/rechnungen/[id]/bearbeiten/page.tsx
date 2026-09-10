@@ -74,6 +74,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     contactPersonId: inv.contactPersonId ?? "",
     billingAddressId: inv.billingAddressId ?? "",
     shippingAddressId: inv.shippingAddressId ?? "",
+    issueDate: inv.issueDate.toISOString().slice(0, 10),
     deliveryStart: inv.deliveryStart ? inv.deliveryStart.toISOString().slice(0, 10) : "",
     deliveryEnd: inv.deliveryEnd ? inv.deliveryEnd.toISOString().slice(0, 10) : "",
     deliveryDate: inv.deliveryDate ? inv.deliveryDate.toISOString().slice(0, 10) : "",

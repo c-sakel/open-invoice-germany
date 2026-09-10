@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { draftReducer, emptyDraft, toInvoicePayload, toDocumentPayload, toDeliveryNotePayload, draftFromInvoice, validateDraft } from "@/lib/editor/draft";
+import {
+  draftReducer,
+  emptyDraft,
+  toInvoicePayload,
+  toDocumentPayload,
+  toDeliveryNotePayload,
+  draftFromInvoice,
+  validateDraft,
+  dueDaysFrom,
+  dueDateFromDays,
+} from "@/lib/editor/draft";
 import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema } from "@/schemas";
 
 function invoiceDraft() {
@@ -238,5 +248,34 @@ describe("editor/draft", () => {
     expect(payload.footerText).toBe("Fusstext");
     expect(payload.showDeliveryAddress).toBe(false);
     expect(createDeliveryNoteSchema.safeParse(payload).success).toBe(true);
+  });
+
+  // Phase 13b, Task 2 — Rechnungsdatum, Kopplung Leistungsdatum, Zahlungsziel als Datum
+  // und Tageszahl.
+  it("Datum und Tageszahl bleiben konsistent", () => {
+    expect(dueDaysFrom("2066-03-01", "2066-03-15")).toBe("14");
+    expect(dueDateFromDays("2066-03-01", "14")).toBe("2066-03-15");
+    expect(dueDaysFrom("", "2066-03-15")).toBe(""); // ohne Rechnungsdatum keine Frist
+    expect(dueDaysFrom("2066-03-15", "2066-03-01")).toBe(""); // Ziel vor Rechnungsdatum
+    // Korrektur ggue. Brief: 2066 ist KEIN Schaltjahr (2066 % 4 = 2, kein 29.2.) — reine
+    // Tagesarithmetik (dieselbe wie invoice/create.ts fuer die Server-Faelligkeit) rollt von
+    // Feb 27 ueber Feb 28 nach Mar 1 (2 Tage) und landet nach 3 Tagen auf Mar 2, nicht Mar 1.
+    expect(dueDateFromDays("2066-02-27", "3")).toBe("2066-03-02");
+  });
+  it("issueDate aendern zieht dueDate ueber die Tageszahl nach", () => {
+    const days = dueDaysFrom("2066-03-01", "2066-03-15");
+    expect(dueDateFromDays("2066-03-08", days)).toBe("2066-03-22");
+  });
+  it("toInvoicePayload sendet issueDate nur, wenn gesetzt", () => {
+    const d = { ...emptyDraft("INVOICE"), customerId: "c1", issueDate: "" };
+    expect(toInvoicePayload(d, false).issueDate).toBeUndefined();
+    expect(toInvoicePayload({ ...d, issueDate: "2066-03-01" }, false).issueDate).toBe("2066-03-01");
+  });
+  it("Kopplung Leistungsdatum: an -> deliveryDate folgt issueDate, aus -> bleibt stehen", () => {
+    let d = { ...emptyDraft("INVOICE"), issueDate: "2066-03-01", deliveryDateFollowsIssue: true, deliveryDate: "2066-03-01" };
+    d = draftReducer(d, { type: "set", field: "issueDate", value: "2066-03-05" });
+    expect(d.deliveryDate).toBe("2066-03-05");
+    d = draftReducer({ ...d, deliveryDateFollowsIssue: false }, { type: "set", field: "issueDate", value: "2066-03-09" });
+    expect(d.deliveryDate).toBe("2066-03-05");
   });
 });
