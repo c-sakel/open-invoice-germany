@@ -5,7 +5,6 @@ import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
 import { formatCents } from "@/lib/money";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
-import { PaymentSection } from "./PaymentSection";
 import { PaymentDialog } from "./PaymentDialog";
 
 const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
@@ -25,21 +24,22 @@ function skontoText(invoice: Pick<InvoiceDetail, "skonto1Permille" | "skonto1Day
  * `customer`, kein Snapshot auf `Invoice`) sowie Rechnungsdatum/Brutto und, solange
  * `showPaymentBlock`, Bezahlt/Offen. "Details" (ohne Status-Chips) buendelt relative
  * Faelligkeit (13a `relativeDueLabel`, Titel-Tooltip mit dem absoluten Datum), Leistungs-
- * datum, Zahlungsmethode, Steuerschema, USt-IdNr., Skonto, E-Rechnung-Badge und
- * "Festgeschrieben am" — darunter unveraendert die Zahlungsliste und der Mahnblock
- * (`PaymentSection`).
+ * datum, versendet am + Kanal (Fix-Welle 1, S6 — juengster `EmailLog`-Eintrag, kein neues
+ * Feld), Zahlungsmethode, Steuerschema, USt-IdNr., Skonto, E-Rechnung-Badge und
+ * "Festgeschrieben am" — darunter die beschriftete Zahlungsliste (S8). Der Mahnblock
+ * (`PaymentSection`) sitzt seit Fix-Welle 1 (S7, Spec C) nicht mehr hier, sondern volle
+ * Breite unter der PDF-Vorschau (`page.tsx`, `children`-Slot von `DocumentDetailLayout`).
  *
  * Phase 13c, Task 3: das Zahlungs**formular** (frueher hier per CollapsibleSection/
  * PaymentForm eingebettet) wandert in `PaymentDialog` — genau EINE Instanz auf der
  * Belegseite, `canPay`-gated, mit `id="zahlung"` als weiterhin gueltigem Sprungziel der
  * Primaeraktion (Kopfzeile, Liste, Mahnwesen). Die `children` (AttachmentPanel,
- * DocumentChain) huellt der Aufrufer in eigene `DetailCard`s — kein `children`-Prop mehr
- * auf dieser Komponente.
+ * DocumentChain) reicht der Aufrufer seit Fix-Welle 1 (M1) ohne eigene `DetailCard`-Huelle
+ * direkt weiter — kein `children`-Prop mehr auf dieser Komponente.
  */
 export function InvoiceStatusCard({
   invoice,
   openCents,
-  dueDate,
   isOverdue,
   paymentMethodName,
   hasSkonto,
@@ -47,12 +47,10 @@ export function InvoiceStatusCard({
   canPay,
   paymentMethods,
   defaultPaymentMethod,
-  dunningSchedule,
+  lastSentAt,
 }: {
   invoice: InvoiceDetail;
   openCents: number;
-  /** Faellige Kante (invoice.dueDate ?? invoice.issueDate) — fuer den Mahnblock. */
-  dueDate: Date;
   isOverdue: boolean;
   paymentMethodName: string | null;
   hasSkonto: boolean;
@@ -62,7 +60,8 @@ export function InvoiceStatusCard({
   canPay: boolean;
   paymentMethods: { code: string; name: string }[];
   defaultPaymentMethod: string;
-  dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null;
+  /** Juengster erfolgreich versendeter EmailLog-Eintrag (sentAt bzw. createdAt als Rueckfall) — `null` ohne Versand. */
+  lastSentAt: Date | null;
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -112,6 +111,9 @@ export function InvoiceStatusCard({
     },
     { label: "Leistungsdatum", value: deDate(invoice.deliveryDate) },
   ];
+  // S6 (Fix-Welle 1): "Kanal" ist bislang immer E-Mail (einziger Versandweg), daher statisch
+  // angehaengt statt aus einem eigenen Feld gelesen.
+  if (lastSentAt) detailRows.push({ label: "Versendet am", value: `${deDate(lastSentAt)} · E-Mail` });
   if (paymentMethodName) detailRows.push({ label: "Zahlungsmethode", value: paymentMethodName });
   detailRows.push({ label: "Steuerschema", value: invoice.taxScheme });
   if (invoice.customer.vatId) detailRows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });
@@ -149,6 +151,9 @@ export function InvoiceStatusCard({
 
             {invoice.payments.length > 0 && (
               <div className="space-y-1 text-sm">
+                {/* S8 (Fix-Welle 1): Ueberschrift ergaenzt — ohne sie war nicht erkennbar,
+                    dass die nackten Zeilen darunter die gebuchten Zahlungen sind. */}
+                <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">Zahlungen</p>
                 {invoice.payments.map((p) => (
                   <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
                     <span>
@@ -162,18 +167,6 @@ export function InvoiceStatusCard({
                 ))}
               </div>
             )}
-
-            <PaymentSection
-              invoiceId={invoice.id}
-              currency={invoice.currency}
-              openCents={openCents}
-              isOverdue={isOverdue}
-              dueDate={dueDate}
-              dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
-              dunningPausedUntil={invoice.dunningPausedUntil}
-              dunningSchedule={dunningSchedule}
-              dunnings={invoice.dunnings}
-            />
           </div>
         )}
       </StatusCard>

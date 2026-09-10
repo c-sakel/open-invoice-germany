@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
@@ -137,6 +138,15 @@ export default async function DokumentDetail({
               PDF
             </a>
             <SendEmailDialog docType={q.kind as EmailDocType} docId={q.id} />
+            {/* S5 (Fix-Welle 1, Spec C "Primäraktion je Status"): "Neue Rechnung" steht auf
+                JEDER Belegseite zusaetzlich als sekundaerer Link zur Verfuegung — bisher nur
+                auf der Rechnungsseite selbst umgesetzt. */}
+            <Link
+              href={`/rechnungen/neu?customerId=${q.customer.id}`}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Neue Rechnung
+            </Link>
           </>
         }
         more={
