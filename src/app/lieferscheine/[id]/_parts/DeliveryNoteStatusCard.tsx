@@ -1,5 +1,4 @@
 // src/app/lieferscheine/[id]/_parts/DeliveryNoteStatusCard.tsx
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
@@ -20,16 +19,23 @@ interface DeliveryNoteForStatusCard {
 }
 
 /**
- * Statuskarte der Lieferscheindetailseite (Phase 11d, Task 4, `aside`-Slot) — buendelt die
- * frueheren Datumszeilen (Z. 168-179) und die alte "Empfänger"-Karte (Z. 119-126) als
- * kompakte Zeilen, ergaenzt um die drei anzeigerelevanten Belegoptionen als Chips.
+ * Statuskarten der Lieferscheindetailseite (Phase 11d, Task 4, `aside`-Slot; Phase 13c,
+ * Task 5: aus EINER Karte werden ZWEI — dieselbe Zweiteilung wie `InvoiceStatusCard`/
+ * `DocumentStatusCard`). "Kunde & Betrag" (mit dem Status-Badge) buendelt Kunde/Anschrift
+ * und das Ausstellungsdatum; "Details" (ohne Status-Badge) buendelt Liefer-/Versanddatum
+ * und die drei anzeigerelevanten Belegoptionen als Chips. Ein Lieferschein traegt keinen
+ * eigenen Belegbetrag (Preise sind optional, `showPrices`) — der Titel "Kunde & Betrag"
+ * bleibt trotzdem einheitlich mit den beiden anderen Belegarten.
  *
  * M2 (Fix-Welle): Kundenanschrift wieder ergaenzt (direkt aus `customer`, wie in der
  * urspruenglichen "Empfänger"-Karte vor 11d — kein Snapshot auf `DeliveryNote`, anders als
  * bei Rechnung/Dokument gab es hier auch vorher keinen).
+ *
+ * Kein `children`-Prop mehr (wie `InvoiceStatusCard`/`DocumentStatusCard`) —
+ * AttachmentPanel/DocumentChain huellt der Aufrufer (`page.tsx`) in eigene `DetailCard`s.
  */
-export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForStatusCard; children?: ReactNode }) {
-  const rows: StatusRow[] = [
+export function DeliveryNoteStatusCard({ dn }: { dn: DeliveryNoteForStatusCard }) {
+  const customerRows: StatusRow[] = [
     {
       label: "Kunde",
       value: (
@@ -50,9 +56,10 @@ export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForSt
       ),
     },
     { label: "Ausstellungsdatum", value: deDate(dn.issueDate) },
-    { label: "Lieferdatum", value: deDate(dn.deliveryDate) },
   ];
-  if (dn.shippingDate) rows.push({ label: "Versanddatum", value: deDate(dn.shippingDate) });
+
+  const detailRows: StatusRow[] = [{ label: "Lieferdatum", value: deDate(dn.deliveryDate) }];
+  if (dn.shippingDate) detailRows.push({ label: "Versanddatum", value: deDate(dn.shippingDate) });
 
   const chips = [
     dn.showPrices ? "Preise" : null,
@@ -60,7 +67,7 @@ export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForSt
     dn.showDeliveryAddress ? "Lieferadresse" : null,
   ].filter((c): c is string => c != null);
   if (chips.length > 0) {
-    rows.push({
+    detailRows.push({
       label: "Anzeigeoptionen",
       value: (
         <span className="flex flex-wrap justify-end gap-1">
@@ -75,8 +82,9 @@ export function DeliveryNoteStatusCard({ dn, children }: { dn: DeliveryNoteForSt
   }
 
   return (
-    <StatusCard status={<StatusBadge status={dn.status} />} rows={rows}>
-      <div className="space-y-4">{children}</div>
-    </StatusCard>
+    <>
+      <StatusCard title="Kunde & Betrag" status={<StatusBadge status={dn.status} />} rows={customerRows} />
+      <StatusCard title="Details" status={null} rows={detailRows} />
+    </>
   );
 }

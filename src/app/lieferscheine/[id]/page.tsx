@@ -18,6 +18,7 @@ import { printOptionsOverrideSchema } from "@/schemas";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
 import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
+import { DetailCard } from "@/components/detail/DetailCard";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
@@ -167,14 +168,19 @@ export default async function LieferscheinDetail({
         />
       }
       aside={
-        <DeliveryNoteStatusCard dn={dn}>
-          <AttachmentPanel
-            docType="DELIVERY_NOTE"
-            docId={dn.id}
-            initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
-          />
-          <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
-        </DeliveryNoteStatusCard>
+        <>
+          <DeliveryNoteStatusCard dn={dn} />
+          <DetailCard title="Anhänge">
+            <AttachmentPanel
+              docType="DELIVERY_NOTE"
+              docId={dn.id}
+              initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+            />
+          </DetailCard>
+          <DetailCard title="Dokumentenkette">
+            <DocumentChain orgId={org.id} type="DELIVERY_NOTE" id={dn.id} />
+          </DetailCard>
+        </>
       }
     >
       <InternalNotesBox notes={dn.internalNotes} />

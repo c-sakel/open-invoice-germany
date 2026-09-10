@@ -1,5 +1,4 @@
 // src/app/dokumente/[id]/_parts/DocumentStatusCard.tsx
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
@@ -43,26 +42,30 @@ interface QuoteForStatusCard {
 }
 
 /**
- * Statuskarte der Dokumentdetailseite (Phase 11d, Task 4, `aside`-Slot) — buendelt die
- * frueheren "Empfänger"/"Eckdaten"-Karten als kompakte Zeilen. Rechnungsadresse UND
- * Ansprechpartner kommen aus dem jeweiligen Beleg-Snapshot (Lastenheft 29/50: spaetere
- * Stammdaten-Aenderungen duerfen alte Belege nicht ruecktwirkend veraendern) mit Fallback
- * auf die am Beleg gewaehlte/lebende Adresse bzw. den lebenden Kontakt fuer Alt-Belege ohne
- * Snapshot (z. B. MIGRATION-Bestand vor Phase 0).
+ * Statuskarten der Dokumentdetailseite (Phase 11d, Task 4, `aside`-Slot; Phase 13c, Task 5:
+ * aus EINER Karte werden ZWEI — dieselbe Zweiteilung wie `InvoiceStatusCard`). "Kunde &
+ * Betrag" (mit dem Status-Badge) buendelt Kunde/Ansprechpartner/Rechnungsadresse, Datum und
+ * Brutto; "Details" (ohne Status-Badge) buendelt Betreff, Kundenreferenz, Gueltig-bis,
+ * Liefer-/Zahlungsbedingungen sowie Netto/USt. Rechnungsadresse UND Ansprechpartner kommen
+ * aus dem jeweiligen Beleg-Snapshot (Lastenheft 29/50: spaetere Stammdaten-Aenderungen
+ * duerfen alte Belege nicht ruecktwirkend veraendern) mit Fallback auf die am Beleg
+ * gewaehlte/lebende Adresse bzw. den lebenden Kontakt fuer Alt-Belege ohne Snapshot (z. B.
+ * MIGRATION-Bestand vor Phase 0).
  *
  * Fallback-Abweichung zum PDF: ohne Snapshot faellt diese Karte auf `billingAddress`/
  * `contactPerson` zurueck, das PDF (`src/domain/document/pdf-data.ts`) dagegen auf
  * `customer`/keinen Kontakt — beide Faelle betreffen nur Alt-Belege ohne Snapshot.
+ *
+ * Kein `children`-Prop mehr (wie `InvoiceStatusCard`) — ShareLinkPanel/AttachmentPanel/
+ * DocumentChain huellt der Aufrufer (`page.tsx`) in eigene `DetailCard`s.
  */
 export function DocumentStatusCard({
   q,
   status,
-  children,
 }: {
   q: QuoteForStatusCard;
   /** Wirksamer Status (aus `effectiveQuoteStatus`, page.tsx) fuer das StatusBadge. */
   status: string;
-  children?: ReactNode;
 }) {
   const buyerFallback: BuyerSnapshot = {
     name: q.customer.name,
@@ -91,7 +94,7 @@ export function DocumentStatusCard({
     q.id,
   );
 
-  const rows: StatusRow[] = [
+  const customerRows: StatusRow[] = [
     {
       label: "Kunde",
       value: (
@@ -101,8 +104,8 @@ export function DocumentStatusCard({
       ),
     },
   ];
-  if (contact) rows.push({ label: "Ansprechpartner", value: `${contact.firstName} ${contact.lastName}`.trim() });
-  rows.push({
+  if (contact) customerRows.push({ label: "Ansprechpartner", value: `${contact.firstName} ${contact.lastName}`.trim() });
+  customerRows.push({
     label: "Rechnungsadresse",
     value: (
       <span className="block text-right">
@@ -113,19 +116,22 @@ export function DocumentStatusCard({
       </span>
     ),
   });
-  if (q.subject) rows.push({ label: "Betreff", value: q.subject });
-  if (q.customerReference) rows.push({ label: "Kundenreferenz", value: q.customerReference });
-  rows.push({ label: "Datum", value: deDate(q.issueDate) });
-  if (q.validUntil) rows.push({ label: "Gültig bis", value: deDate(q.validUntil) });
-  if (q.deliveryTerms) rows.push({ label: "Lieferbedingungen", value: q.deliveryTerms });
-  if (q.paymentTerms) rows.push({ label: "Zahlungsbedingungen", value: q.paymentTerms });
-  rows.push({ label: "Netto", value: formatCents(q.netTotalCents, q.currency) });
-  rows.push({ label: "USt", value: formatCents(q.taxTotalCents, q.currency) });
-  rows.push({ label: "Brutto", value: <strong>{formatCents(q.grossTotalCents, q.currency)}</strong> });
+  customerRows.push({ label: "Datum", value: deDate(q.issueDate) });
+  customerRows.push({ label: "Brutto", value: <span className="text-base font-semibold">{formatCents(q.grossTotalCents, q.currency)}</span> });
+
+  const detailRows: StatusRow[] = [];
+  if (q.subject) detailRows.push({ label: "Betreff", value: q.subject });
+  if (q.customerReference) detailRows.push({ label: "Kundenreferenz", value: q.customerReference });
+  if (q.validUntil) detailRows.push({ label: "Gültig bis", value: deDate(q.validUntil) });
+  if (q.deliveryTerms) detailRows.push({ label: "Lieferbedingungen", value: q.deliveryTerms });
+  if (q.paymentTerms) detailRows.push({ label: "Zahlungsbedingungen", value: q.paymentTerms });
+  detailRows.push({ label: "Netto", value: formatCents(q.netTotalCents, q.currency) });
+  detailRows.push({ label: "USt", value: formatCents(q.taxTotalCents, q.currency) });
 
   return (
-    <StatusCard status={<StatusBadge status={status} />} rows={rows}>
-      <div className="space-y-4">{children}</div>
-    </StatusCard>
+    <>
+      <StatusCard title="Kunde & Betrag" status={<StatusBadge status={status} />} rows={customerRows} />
+      <StatusCard title="Details" status={null} rows={detailRows} />
+    </>
   );
 }

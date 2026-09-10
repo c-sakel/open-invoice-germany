@@ -17,6 +17,7 @@ import { LineItemsTable } from "@/components/LineItemsTable";
 import { DocumentChain } from "@/components/DocumentChain";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
 import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
+import { DetailCard } from "@/components/detail/DetailCard";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
@@ -78,7 +79,17 @@ export default async function DokumentDetail({
   // `convert.ts` (Status, unabhaengig vom Abrechnungsstand), waehrend Teil-/Abschlags-
   // rechnungen weiterhin nur bis zur vollen Abrechnung sinnvoll sind. `billing` ist nur
   // fuer Angebot/AB gesetzt (PROFORMA: `null` oben) — deckt die Kind-Einschraenkung mit ab.
-  const canBillQuote = billing != null && billing.state !== "FULL";
+  // Task 5 (Smoke-Befund): `billing.state` allein blendete Teilrechnung/Abschlagsrechnung
+  // NICHT aus, sobald das Angebot storniert/abgelehnt war — server-seitig lehnen
+  // createPartialInvoice/createDownpaymentInvoice (QUOTE_STATUS_ALLOWED = DRAFT/SENT/
+  // ACCEPTED, `src/domain/invoice/{partial,downpayment}.ts`) das zwar mit 409 ab, das Menue
+  // bot den Einstieg aber weiterhin sichtbar an. `status` ist der ueber effectiveQuoteStatus
+  // gebildete Wert — fuer CANCELLED/REJECTED deckungsgleich mit dem rohen `quote.status`,
+  // den die Domainfunktionen pruefen (effectiveQuoteStatus veraendert nur DRAFT/SENT bei
+  // abgelaufenem validUntil zu EXPIRED, das die Domainfunktionen serverseitig ueber den
+  // weiterhin rohen DRAFT/SENT-Wert zulassen — hier deshalb bewusst NICHT zusaetzlich
+  // ausgeschlossen, sonst Diskrepanz zum tatsaechlich erlaubten Server-Verhalten).
+  const canBillQuote = billing != null && billing.state !== "FULL" && status !== "CANCELLED" && status !== "REJECTED";
   const hasPartialInvoices = billing != null && billing.state === "PARTIAL" && billing.downpaymentGrossCents === 0;
   const hasDownpayments = billing != null && billing.downpaymentGrossCents > 0;
   const archived = q.archivedAt !== null;
@@ -156,15 +167,24 @@ export default async function DokumentDetail({
         }
         pdf={<PdfStack src={`/api/documents/${q.id}/pdf`} title={`${title} — PDF`} />}
         aside={
-          <DocumentStatusCard q={q} status={status}>
-            {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && <ShareLinkPanel documentId={q.id} />}
-            <AttachmentPanel
-              docType="QUOTE"
-              docId={q.id}
-              initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
-            />
-            <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
-          </DocumentStatusCard>
+          <>
+            <DocumentStatusCard q={q} status={status} />
+            {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && (
+              <DetailCard title="Annahme-Link">
+                <ShareLinkPanel documentId={q.id} />
+              </DetailCard>
+            )}
+            <DetailCard title="Anhänge">
+              <AttachmentPanel
+                docType="QUOTE"
+                docId={q.id}
+                initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+              />
+            </DetailCard>
+            <DetailCard title="Dokumentenkette">
+              <DocumentChain orgId={org.id} type="QUOTE" id={q.id} />
+            </DetailCard>
+          </>
         }
       >
         <InternalNotesBox notes={q.internalNotes} />
