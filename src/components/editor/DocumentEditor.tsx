@@ -52,6 +52,10 @@ interface DocumentEditorProps {
    *  nicht von der aktuellen Serverliste abkoppelt. */
   taxRates: number[];
   paymentMethods?: PaymentMethodOption[];
+  /** Fix-Welle 1, M2 (Abschluss-Review Phase 13b): `DocumentSettings.invoiceDueDays` —
+   *  dritte Stufe der Faelligkeits-Vorbelegungskette in `MetaBlock` (Kunde > Zahlungs-
+   *  methode > diese Einstellung > 14 Tage, dieselbe Reihenfolge wie `createDraftInvoice`). */
+  invoiceDueDays?: number;
   contacts?: ContactOption[];
   addresses?: AddressOption[];
   layouts: { id: LayoutId; name: string }[];
@@ -103,6 +107,7 @@ export function DocumentEditor({
   products,
   taxRates,
   paymentMethods = [],
+  invoiceDueDays,
   contacts = [],
   addresses = [],
   layouts,
@@ -324,7 +329,7 @@ export function DocumentEditor({
           addresses={addresses}
           offerLastDocument={offerLastDocument}
         />
-        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} paymentMethods={paymentMethods} />
+        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} customers={customers} paymentMethods={paymentMethods} invoiceDueDays={invoiceDueDays} />
 
         <HeadTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 
