@@ -5,7 +5,6 @@ import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction } from "@/app/actions/invoices";
-import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
@@ -16,6 +15,7 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
 import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
+import { DetailCard } from "@/components/detail/DetailCard";
 import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
@@ -95,13 +95,6 @@ export default async function InvoiceDetail({
     dunningSchedule = { nextStage: schedule.nextStage ? { name: schedule.nextStage.name, order: schedule.nextStage.order } : null, dueAt: schedule.dueAt, isDue: schedule.isDue };
   }
 
-  // Zahlungsmethoden-Auswahl im Zahlungsformular: aktive Methoden OHNE den Systemcode
-  // SKONTO (der wird ausschliesslich automatisch bei detectSkonto gebucht, nie manuell
-  // ausgewaehlt). Default-Kette: Kunden-Standard -> Methode der Rechnung -> TRANSFER.
-  const activePaymentMethods = vm.canPay
-    ? (await listPaymentMethods(org.id)).filter((m) => m.isActive && m.code !== "SKONTO")
-    : [];
-  const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
 
   const { prevId, nextId, backQuery } = await loadNeighbors("INVOICE", org.id, id, liste);
@@ -183,26 +176,28 @@ export default async function InvoiceDetail({
       }
       pdf={<PdfStack src={`/api/invoices/${invoice.id}/pdf`} title={`${title} — PDF`} />}
       aside={
-        <InvoiceStatusCard
-          invoice={invoice}
-          openCents={vm.openCents}
-          dueDate={vm.dueDate}
-          isOverdue={vm.isOverdue}
-          paymentMethodName={vm.paymentMethodName}
-          hasSkonto={vm.hasSkonto}
-          showPaymentBlock={showPaymentBlock}
-          canPay={vm.canPay}
-          paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
-          defaultPaymentMethod={defaultPaymentMethodCode}
-          dunningSchedule={dunningSchedule}
-        >
-          <AttachmentPanel
-            docType="INVOICE"
-            docId={invoice.id}
-            initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+        <>
+          <InvoiceStatusCard
+            invoice={invoice}
+            openCents={vm.openCents}
+            dueDate={vm.dueDate}
+            isOverdue={vm.isOverdue}
+            paymentMethodName={vm.paymentMethodName}
+            hasSkonto={vm.hasSkonto}
+            showPaymentBlock={showPaymentBlock}
+            dunningSchedule={dunningSchedule}
           />
-          <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
-        </InvoiceStatusCard>
+          <DetailCard title="Anhänge">
+            <AttachmentPanel
+              docType="INVOICE"
+              docId={invoice.id}
+              initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
+            />
+          </DetailCard>
+          <DetailCard title="Dokumentenkette">
+            <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
+          </DetailCard>
+        </>
       }
     >
       <InternalNotesBox notes={invoice.internalNotes} />
