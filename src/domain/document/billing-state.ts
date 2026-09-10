@@ -184,8 +184,13 @@ export interface BillingStateIndex {
 
 /** Ab dieser Zahl Relationszeilen je Organisation wird kein Index gebaut — die zwei
  *  abgeleiteten Tabs (billed/partially-billed) entfallen dann (Hinweis statt falscher
- *  Zahl, siehe docs/LIMITATIONEN.md). */
-export const BILLING_INDEX_RELATION_LIMIT = 20_000;
+ *  Zahl, siehe docs/LIMITATIONEN.md). Fix-Welle S5: von 20 000 auf 5 000 gesenkt — die
+ *  aus den Relationszeilen abgeleiteten Id-Listen (`fullIds`/`partialIds` in
+ *  `quoteStatusTabCounts`, `billedIds`/`partiallyBilledIds` in `dokumente/page.tsx`)
+ *  gehen ungeteilt als `id: { in: [...] }` in eine Abfrage; SQLite begrenzt Bind-
+ *  Parameter (999 vor Version 3.32, danach 32 766) — bei nahe 20 000 Ids plus den
+ *  uebrigen Filterparametern war der Abstand zur (aelteren) SQLite-Grenze zu klein. */
+export const BILLING_INDEX_RELATION_LIMIT = 5_000;
 
 /**
  * Abrechnungsstand ALLER Angebote/ABs einer Organisation in konstant vielen Abfragen
