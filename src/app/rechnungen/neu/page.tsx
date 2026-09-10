@@ -6,10 +6,18 @@ import { NeedOrgNotice } from "@/components/NeedOrgNotice";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
+import { emptyDraft } from "@/lib/editor/draft";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewInvoicePage() {
+export default async function NewInvoicePage({ searchParams }: { searchParams: Promise<{ customerId?: string }> }) {
+  // Phase 13c, Task 4: "Neue Rechnung" aus der Belegseite eines Kunden (Kopfzeile,
+  // Primaeraktion "bezahlt" -> "Neue Rechnung") verlinkt mit ?customerId= — belegt im
+  // Editor-Draft nur den Empfaenger vor, kein automatisches Speichern. Ungueltige/fremde
+  // IDs (customers-Liste unten ist bereits orgId-gefiltert) werden stillschweigend
+  // ignoriert statt einen Fehler zu zeigen — der Nutzer waehlt dann einfach selbst.
+  const { customerId } = await searchParams;
+
   let orgId: string;
   try {
     const org = await getActiveOrg();
@@ -75,9 +83,19 @@ export default async function NewInvoicePage() {
     );
   }
 
+  // Nur uebernehmen, wenn der Kunde tatsaechlich zu dieser Organisation gehoert (und
+  // nicht archiviert ist) — dieselben Defaults wie der interne Fallback in DocumentEditor
+  // (initial ?? emptyDraft(mode, { allowedTaxRates: taxRates, deliveryDateFollowsIssue:
+  // autoDeliveryDate })), nur mit vorbelegtem customerId.
+  const initial =
+    customerId && customers.some((c) => c.id === customerId)
+      ? emptyDraft("INVOICE", { customerId, allowedTaxRates: documentSettings.taxRates, deliveryDateFollowsIssue: documentSettings.autoDeliveryDate })
+      : undefined;
+
   return (
     <DocumentEditor
       mode="INVOICE"
+      initial={initial}
       customers={customers}
       products={products}
       taxRates={documentSettings.taxRates}
