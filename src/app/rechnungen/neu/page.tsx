@@ -83,6 +83,7 @@ export default async function NewInvoicePage() {
       taxRates={documentSettings.taxRates}
       paymentMethods={paymentMethodOptions}
       invoiceDueDays={documentSettings.invoiceDueDays}
+      autoDeliveryDate={documentSettings.autoDeliveryDate}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

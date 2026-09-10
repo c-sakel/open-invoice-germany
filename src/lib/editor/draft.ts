@@ -211,6 +211,27 @@ export function resolveDueDays(customerDays: number | null | undefined, methodDa
   return customerDays ?? methodDays ?? settingsDays ?? 14;
 }
 
+/** Kalendertag eines echten Zeitstempels in der LOKALEN Zeitzone (S1, Abschluss-Review
+ *  Phase 13b) — im Unterschied zu deliveryDate/dueDate (bereits `z.coerce.date()`-
+ *  Datumsangaben auf UTC-Mitternacht) ist `Invoice.issueDate` ein realer Zeitstempel
+ *  (`now`, `invoice/create.ts:102`). `.toISOString().slice(0,10)` nimmt den UTC-Tag —
+ *  das PDF formatiert `issueDate` dagegen ueber `Intl.DateTimeFormat("de-DE", …)` OHNE
+ *  `timeZone`-Option (`invoice-pdf.ts:92`), also im lokalen Kalendertag des Laufzeit-
+ *  Prozesses (produktiv Europe/Berlin). Ein zwischen 00:00 und 02:00 Berliner Zeit
+ *  angelegter Entwurf liegt in UTC noch am Vortag — die Editor-Anzeige haette ein anderes
+ *  Datum gezeigt als das PDF, und ein reines Oeffnen+Speichern (issueDate wird beim
+ *  Bearbeiten immer mitgesendet) haette das korrekte Rechnungsdatum stillschweigend
+ *  ueberschrieben. `getFullYear()/getMonth()/getDate()` nutzen dieselbe lokale Zeitzone
+ *  wie `Intl.DateTimeFormat` ohne `timeZone`-Option — dieselbe Konvention, kein Abgleich
+ *  noetig. NUR fuer `Invoice.issueDate` verwendet; deliveryDate/dueDate bleiben bei
+ *  `utcDateOnly`/UTC (src/lib/date-only.ts), da sie bereits auf UTC-Mitternacht liegen. */
+export function localDateOnly(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): DraftState {
   const allowedTaxRates = defaults?.allowedTaxRates ?? [...FALLBACK_TAX_RATES];
   const base: DraftState = {

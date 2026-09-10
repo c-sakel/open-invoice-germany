@@ -10,6 +10,7 @@ import {
   dueDaysFrom,
   dueDateFromDays,
   resolveDueDays,
+  localDateOnly,
 } from "@/lib/editor/draft";
 import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema } from "@/schemas";
 
@@ -315,5 +316,14 @@ describe("editor/draft", () => {
   it("draftFromInvoice setzt dueDateTouched (Bearbeiten traegt einen bereits gespeicherten Wert)", () => {
     const s = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", dueDate: "2066-03-15", lines: [] } as never);
     expect(s.dueDateTouched).toBe(true);
+  });
+
+  // S1 (Abschluss-Review Phase 13b): issueDate ist ein echter Zeitstempel (anders als
+  // deliveryDate/dueDate, die bereits UTC-Mitternacht sind) — localDateOnly liest den
+  // Kalendertag ueber die LOKALEN Date-Getter (wie die PDF-Ausgabe, Intl.DateTimeFormat
+  // ohne timeZone-Option), nicht ueber getUTC*.
+  it("localDateOnly liest den Kalendertag ueber lokale Date-Getter (S1)", () => {
+    expect(localDateOnly(new Date(2066, 8, 10, 23, 30))).toBe("2066-09-10");
+    expect(localDateOnly(new Date(2066, 0, 5, 0, 0))).toBe("2066-01-05");
   });
 });

@@ -18,7 +18,7 @@
  * jetzt vollständig im Tagesfeld.
  */
 import { useEffect, useRef } from "react";
-import { dueDaysFrom, dueDateFromDays, resolveDueDays, type DraftState, type DraftAction } from "@/lib/editor/draft";
+import { dueDaysFrom, dueDateFromDays, resolveDueDays, localDateOnly, type DraftState, type DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
 import { EditorField } from "../EditorField";
 import { inputCls } from "@/components/forms/fields";
@@ -56,8 +56,10 @@ export function MetaBlock({
   const selectedCustomer = customers.find((c) => c.id === draft.customerId);
   // `issueDate || heute` als Bezug: `createDraftInvoice` setzt bei leerem Feld genau das
   // (invoice/create.ts:102) — der Editor darf keine andere Frist zeigen als der
-  // gespeicherte Beleg (Ruling).
-  const issueRef = draft.issueDate || new Date().toISOString().slice(0, 10);
+  // gespeicherte Beleg (Ruling). N6 (Fix-Welle 1): `localDateOnly` statt UTC-Tag —
+  // dieselbe Begruendung wie bei S1 (`src/lib/editor/draft.ts`), hier nur fuer die
+  // "heute"-Vorbelegung der Faelligkeitsfrist (kein Speicherpfad betroffen).
+  const issueRef = draft.issueDate || localDateOnly(new Date());
 
   // Vorbelegung der Tageszahl beim ersten Oeffnen einer Neuanlage (Ruling, Fix-Welle 1
   // M2): `draftRef` haelt denselben aktuellen Entwurf wie `DocumentEditor.tsx:145-148`
@@ -79,7 +81,7 @@ export function MetaBlock({
     if (mode !== "INVOICE" || isEdit) return;
     if (draftRef.current.dueDate.trim() !== "") return;
     const days = resolveDueDays(selectedCustomer?.defaultPaymentTermsDays, selectedMethod?.paymentTermsDays, invoiceDueDays);
-    const ref = draftRef.current.issueDate || new Date().toISOString().slice(0, 10);
+    const ref = draftRef.current.issueDate || localDateOnly(new Date());
     const next = dueDateFromDays(ref, String(days));
     if (!next) return;
     dispatch({ type: "replace", state: { ...draftRef.current, dueDate: next } });
