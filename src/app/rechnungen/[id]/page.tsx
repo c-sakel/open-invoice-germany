@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { prisma, dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -26,6 +26,7 @@ import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
 import { InvoiceTotals } from "./_parts/InvoiceTotals";
 import { CorrectionSection } from "./_parts/CorrectionSection";
+import { PaymentSection } from "./_parts/PaymentSection";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,16 @@ export default async function InvoiceDetail({
   const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
 
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
+
+  // S6 (Fix-Welle 1, Spec C "Detail-Layout"): "versendet am + Kanal" in der Details-Karte —
+  // aus dem juengsten EmailLog-Eintrag, kein neues Feld auf Invoice. "Kanal" ist bislang
+  // immer E-Mail (einziger Versandweg dieser Software), daher statisch angehaengt.
+  const lastEmailLog = await dbInternal.emailLog.findFirst({
+    where: { orgId: org.id, docType: vm.emailDocType, docId: invoice.id, status: { in: ["SENT", "DELIVERED"] } },
+    orderBy: { createdAt: "desc" },
+    select: { sentAt: true, createdAt: true },
+  });
+  const lastSentAt = lastEmailLog?.sentAt ?? lastEmailLog?.createdAt ?? null;
 
   const { prevId, nextId, backQuery } = await loadNeighbors("INVOICE", org.id, id, liste);
   const navHref = (targetId: string) => `/rechnungen/${targetId}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
@@ -207,7 +218,6 @@ export default async function InvoiceDetail({
           <InvoiceStatusCard
             invoice={invoice}
             openCents={vm.openCents}
-            dueDate={vm.dueDate}
             isOverdue={vm.isOverdue}
             paymentMethodName={vm.paymentMethodName}
             hasSkonto={vm.hasSkonto}
@@ -215,7 +225,7 @@ export default async function InvoiceDetail({
             canPay={vm.canPay}
             paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
             defaultPaymentMethod={defaultPaymentMethodCode}
-            dunningSchedule={dunningSchedule}
+            lastSentAt={lastSentAt}
           />
           <AttachmentPanel
             docType="INVOICE"
@@ -249,6 +259,24 @@ export default async function InvoiceDetail({
           {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
         </div>
       </CollapsibleSection>
+
+      {/* S7 (Fix-Welle 1, Spec C "Detail-Layout"): Mahnblock bleibt unter der Vorschau (volle
+          Breite) statt sich in der 24rem-Statuskartenspalte einzuquetschen — PaymentSection
+          rendert bei Bedarf selbst nichts, wenn weder ein faelliger Mahnschritt noch bereits
+          verschickte Mahnungen vorliegen. */}
+      {showPaymentBlock && (
+        <PaymentSection
+          invoiceId={invoice.id}
+          currency={invoice.currency}
+          openCents={vm.openCents}
+          isOverdue={vm.isOverdue}
+          dueDate={vm.dueDate}
+          dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
+          dunningPausedUntil={invoice.dunningPausedUntil}
+          dunningSchedule={dunningSchedule}
+          dunnings={invoice.dunnings}
+        />
+      )}
 
       {!vm.isDraft && !vm.isCancelled && (
         <CorrectionSection invoiceId={invoice.id} type={invoice.type} canCancelOrCredit={vm.canCancelOrCredit} canDuplicate={vm.canDuplicate} />

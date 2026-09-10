@@ -5,10 +5,16 @@ import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
 
-/** Mahnblock (Phase 11d, Task 3) — unveraendert aus der frueheren `page.tsx` (Z. 402-442):
- *  naechste Mahnstufe + Mahnprozess-Status + Aktionen, darunter die bereits verschickten
- *  Mahnungen mit PDF/E-Mail. Wird nur eingebunden, wenn `isInvoiceType && !isDraft &&
- *  !isCancelled` gilt (Aufrufer entscheidet, siehe InvoiceStatusCard). */
+/** Mahnblock (Phase 11d, Task 3) — naechste Mahnstufe + Mahnprozess-Status + Aktionen,
+ *  darunter die bereits verschickten Mahnungen mit PDF/E-Mail. Wird nur eingebunden, wenn
+ *  `isInvoiceType && !isDraft && !isCancelled` gilt (Aufrufer entscheidet, `page.tsx`).
+ *
+ *  Fix-Welle 1 (S7, Spec C "Detail-Layout"): sitzt seither nicht mehr eingequetscht in der
+ *  24rem-Statuskartenspalte (`InvoiceStatusCard`), sondern volle Breite im `children`-Slot
+ *  von `DocumentDetailLayout`, wie Korrekturblock/E-Mail-Verlauf — bringt seither die
+ *  eigene Karte (Rahmen + Ueberschrift) mit statt sie vom umschliessenden `StatusCard` zu
+ *  erben, und rendert bei fehlendem Inhalt (weder faelliger Mahnschritt noch verschickte
+ *  Mahnungen) `null` statt einer leeren Karte (dasselbe Muster wie `DocumentChain`, M1). */
 export function PaymentSection({
   invoiceId,
   currency,
@@ -30,9 +36,14 @@ export function PaymentSection({
   dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null;
   dunnings: InvoiceDetail["dunnings"];
 }) {
+  const showProcess = openCents > 0 && dunningSchedule != null;
+  if (!showProcess && dunnings.length === 0) return null;
+
   return (
-    <>
-      {openCents > 0 && dunningSchedule && (
+    <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 text-sm">
+      <h2 className="font-semibold text-slate-900">Mahnwesen</h2>
+
+      {showProcess && dunningSchedule && (
         <div className="space-y-2 rounded-md border border-slate-100 bg-slate-50 p-3">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="font-medium text-slate-800">
@@ -77,6 +88,6 @@ export function PaymentSection({
           ))}
         </div>
       )}
-    </>
+    </section>
   );
 }

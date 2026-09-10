@@ -50,7 +50,7 @@ export function RowPaymentDialog({
       <div className="p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700">
+          <button type="button" onClick={onClose} aria-label="Schließen" className="text-slate-400 hover:text-slate-700">
             ✕
           </button>
         </div>

@@ -21,18 +21,20 @@ interface DeliveryNoteForStatusCard {
 /**
  * Statuskarten der Lieferscheindetailseite (Phase 11d, Task 4, `aside`-Slot; Phase 13c,
  * Task 5: aus EINER Karte werden ZWEI — dieselbe Zweiteilung wie `InvoiceStatusCard`/
- * `DocumentStatusCard`). "Kunde & Betrag" (mit dem Status-Badge) buendelt Kunde/Anschrift
- * und das Ausstellungsdatum; "Details" (ohne Status-Badge) buendelt Liefer-/Versanddatum
- * und die drei anzeigerelevanten Belegoptionen als Chips. Ein Lieferschein traegt keinen
- * eigenen Belegbetrag (Preise sind optional, `showPrices`) — der Titel "Kunde & Betrag"
- * bleibt trotzdem einheitlich mit den beiden anderen Belegarten.
+ * `DocumentStatusCard`). "Kunde" (mit dem Status-Badge) buendelt Kunde/Anschrift und das
+ * Ausstellungsdatum; "Details" (ohne Status-Badge) buendelt Liefer-/Versanddatum und die
+ * drei anzeigerelevanten Belegoptionen als Chips. Ein Lieferschein traegt keinen eigenen
+ * Belegbetrag (Preise sind optional, `showPrices`) — Fix-Welle 1 (S4): der Titel heisst
+ * hier deshalb bewusst nur "Kunde" statt wie bei Rechnung/Dokument "Kunde & Betrag", das
+ * einen Wert versprochen haette, den es nie gibt.
  *
  * M2 (Fix-Welle): Kundenanschrift wieder ergaenzt (direkt aus `customer`, wie in der
  * urspruenglichen "Empfänger"-Karte vor 11d — kein Snapshot auf `DeliveryNote`, anders als
  * bei Rechnung/Dokument gab es hier auch vorher keinen).
  *
- * Kein `children`-Prop mehr (wie `InvoiceStatusCard`/`DocumentStatusCard`) —
- * AttachmentPanel/DocumentChain huellt der Aufrufer (`page.tsx`) in eigene `DetailCard`s.
+ * Kein `children`-Prop mehr (wie `InvoiceStatusCard`/`DocumentStatusCard`) — AttachmentPanel/
+ * DocumentChain reicht der Aufrufer (`page.tsx`) seit Fix-Welle 1 (M1) ohne eigene
+ * `DetailCard`-Huelle direkt weiter (die Panels bringen ihre Kartenoptik selbst mit).
  */
 export function DeliveryNoteStatusCard({ dn }: { dn: DeliveryNoteForStatusCard }) {
   const customerRows: StatusRow[] = [
@@ -83,7 +85,9 @@ export function DeliveryNoteStatusCard({ dn }: { dn: DeliveryNoteForStatusCard }
 
   return (
     <>
-      <StatusCard title="Kunde & Betrag" status={<StatusBadge status={dn.status} />} rows={customerRows} />
+      {/* S4 (Fix-Welle 1): ein Lieferschein traegt keinen Belegbetrag (Preise sind optional) —
+          "Kunde & Betrag" verspraeche einen Wert, den es nie gibt; hier bewusst nur "Kunde". */}
+      <StatusCard title="Kunde" status={<StatusBadge status={dn.status} />} rows={customerRows} />
       <StatusCard title="Details" status={null} rows={detailRows} />
     </>
   );
