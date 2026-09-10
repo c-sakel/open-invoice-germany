@@ -3,13 +3,40 @@
  * test/unit/dialogs.test.ts). Prueft (1) den Editor-Rahmen laeuft einspaltig,
  * (2) inputCls ist vergroessert und inputDenseCls existiert, (3) die Positionstabelle
  * nutzt ausschliesslich die dichte Klasse, (4) Regression: EditorHeader bleibt sticky.
+ *
+ * Task 3 ergaenzt zwei weitere Strukturtests: (5) die vier Beleg-Rabattfelder
+ * (`documentDiscountPercent/Amount`, `documentChargePercent/Amount`) sind nach dem
+ * Verschieben aus `MoreOptions` nur noch in EINER Datei (`DocumentAdjustmentFields.tsx`)
+ * als Eingabefeld gebunden (`value={draft.<feld>}`), (6) `LineItemsEditor` traegt den
+ * Segmentumschalter (`aria-pressed`, kein `type="checkbox"` mehr fuer "Brutto anzeigen")
+ * und den "Produkt auswählen"-Link.
+ *
+ * Test 5 prueft bewusst NICHT jedes Textvorkommen des Feldnamens (Brief-Vorlage), sondern
+ * nur die JSX-Wertbindung `value={draft.<feld>}` — der reine Feldname taucht ausserhalb
+ * von `DocumentAdjustmentFields.tsx` schon vorher legitim auf: `RecipientBlock.tsx`
+ * uebernimmt beim Kundenwechsel/TakeOver den Rabatt-Default (`dispatch({ ..., field:
+ * "documentDiscountPercent", ... })`, `next.documentDiscountAmount = ...`), `TotalsBlock.tsx`
+ * erwaehnt ihn nur in einem Kommentar — beides ist bestehende Fachlogik/Doku ausserhalb
+ * des Task-3-Dateiumfangs (`MoreOptions`/`LineItemsEditor`/`LineRow`/`DocumentEditor`),
+ * keine doppelt gerenderte Eingabe. Die woertliche Textsuche aus der Brief-Vorlage wuerde
+ * an diesen zwei Dateien scheitern, ohne dass irgendein Rabattfeld doppelt gerendert wird.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 const SRC = path.resolve(__dirname, "../../src");
 const read = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
+
+const EDITOR = path.join(SRC, "components/editor");
+function walk(dir: string, out: string[] = []): string[] {
+  for (const e of readdirSync(dir)) {
+    const full = path.join(dir, e);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (full.endsWith(".tsx")) out.push(full);
+  }
+  return out;
+}
 
 describe("Editor-Layout (Phase 13b, Task 1)", () => {
   it("der Editor laeuft einspaltig", () => {
@@ -27,5 +54,22 @@ describe("Editor-Layout (Phase 13b, Task 1)", () => {
   });
   it("Regression: der Editor-Kopf bleibt sticky (Phase 12a)", () => {
     expect(read("components/editor/blocks/EditorHeader.tsx")).toMatch(/sticky top-0/);
+  });
+});
+
+describe("Editor-Layout (Phase 13b, Task 3)", () => {
+  const files = walk(EDITOR);
+  it("die vier Beleg-Rabattfelder sind nur in einer Datei als Eingabefeld gebunden", () => {
+    for (const field of ["documentDiscountPercent", "documentDiscountAmount", "documentChargePercent", "documentChargeAmount"]) {
+      const needle = `value={draft.${field}}`;
+      const hits = files.filter((f) => readFileSync(f, "utf8").includes(needle)).map((f) => path.basename(f));
+      expect({ field, hits }).toEqual({ field, hits: ["DocumentAdjustmentFields.tsx"] });
+    }
+  });
+  it("Umschalter und Produktauswahl sitzen in der Positionskopfzeile", () => {
+    const src = readFileSync(path.join(EDITOR, "blocks/LineItemsEditor.tsx"), "utf8");
+    expect(src).toMatch(/aria-pressed/);
+    expect(src).not.toMatch(/type="checkbox"/);
+    expect(src).toContain("Produkt auswählen");
   });
 });
