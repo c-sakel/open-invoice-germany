@@ -45,10 +45,12 @@ export const documentTemplatePayloadSchema = z
   .strict();
 export type DocumentTemplatePayload = z.infer<typeof documentTemplatePayloadSchema>;
 
-/** Vollstaendige Eingabeform einer Vorlagenzeile (Stammdaten-Sicht) — aktuell nur als
- *  Typ/Schema exportiert; der einzige Schreibpfad dieser Phase ist
- *  `saveTemplateFromDocument` (src/domain/template/save.ts), das seine DB-Zeile direkt
- *  aus einem bestehenden Beleg aufbaut. */
+/** Vollstaendige Eingabeform einer Vorlage (Stammdaten-Sicht). Die UI (/vorlagen) kennt
+ *  nur `saveTemplateFromDocument` (Vorlage AUS einem bestehenden Beleg) — dieses Schema
+ *  ist der direkte Anlegepfad fuer `POST /api/v1/DocumentTemplate` (Phase 13d, Task 5,
+ *  `createTemplate`, src/domain/template/save.ts): eine Vorlage ohne Quellbeleg, ein
+ *  API-Konsument liefert Payload/Kunde selbst. `.shape.name` wird ausserdem von
+ *  `renameTemplate` fuer dieselbe Laengengrenze wiederverwendet. */
 export const documentTemplateInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
   docType: TagDocType,
@@ -57,6 +59,22 @@ export const documentTemplateInputSchema = z.object({
   payload: documentTemplatePayloadSchema,
 });
 export type DocumentTemplateInput = z.infer<typeof documentTemplateInputSchema>;
+
+/**
+ * PATCH-Eingabe fuer `/api/v1/DocumentTemplate/{id}` (Phase 13d, Task 5) — alle Felder
+ * optional (Teil-Update), `docType`/`kind` bleiben unveraendert (bestimmen die Struktur
+ * des Payloads, siehe `documentTemplatePayloadSchema`-Kommentar). `.strict()` wie
+ * `documentTemplatePayloadSchema` selbst — ein unbekanntes Feld wird nie stillschweigend
+ * ignoriert.
+ */
+export const documentTemplateUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    customerId: z.string().min(1).nullable().optional(),
+    payload: documentTemplatePayloadSchema.optional(),
+  })
+  .strict();
+export type DocumentTemplateUpdateInput = z.infer<typeof documentTemplateUpdateSchema>;
 
 export const saveTemplateFromDocumentSchema = z.object({
   docType: TagDocType,

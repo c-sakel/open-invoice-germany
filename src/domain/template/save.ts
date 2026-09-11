@@ -12,7 +12,13 @@ import type { DocumentTemplate } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
-import { documentTemplatePayloadSchema, documentTemplateInputSchema, saveTemplateFromDocumentSchema, type DocumentTemplatePayload } from "@/schemas/template";
+import {
+  documentTemplatePayloadSchema,
+  documentTemplateInputSchema,
+  documentTemplateUpdateSchema,
+  saveTemplateFromDocumentSchema,
+  type DocumentTemplatePayload,
+} from "@/schemas/template";
 import type { TagDocType } from "@/schemas/tag";
 
 /** orgId/name ist eindeutig (DocumentTemplate.@@unique([orgId, name])) — statt des rohen
@@ -182,6 +188,42 @@ export async function saveTemplateFromDocument(orgId: string, raw: unknown, acto
 }
 
 /**
+ * Legt eine Vorlage DIREKT an — ohne Quellbeleg (Phase 13d, Task 5, `POST
+ * /api/v1/DocumentTemplate`). Anders als `saveTemplateFromDocument` (Payload aus einem
+ * bestehenden Beleg abgeleitet) validiert `documentTemplateInputSchema` den kompletten
+ * Payload direkt aus der Anfrage — `documentTemplatePayloadSchema` (darin enthalten)
+ * bleibt dieselbe zweite Verteidigungslinie wie beim UI-Pfad. `entityType "TEMPLATE"`
+ * wie `deleteTemplate`: es gibt keinen einzelnen Quellbeleg, auf den das Ereignis
+ * zeigen koennte.
+ */
+export async function createTemplate(orgId: string, rawInput: unknown, actor = "system"): Promise<DocumentTemplate> {
+  const input = documentTemplateInputSchema.parse(rawInput);
+  const now = new Date();
+
+  try {
+    return await dbInternal.$transaction(async (tx) => {
+      const created = await tx.documentTemplate.create({
+        data: {
+          orgId,
+          name: input.name,
+          docType: input.docType,
+          kind: input.kind ?? null,
+          customerId: input.customerId ?? null,
+          payloadJson: JSON.stringify(input.payload),
+        },
+      });
+      await logActivity(tx, { orgId, entityType: "TEMPLATE", entityId: created.id, type: "TEMPLATE_SAVED", actor, at: now, data: { name: input.name } });
+      return created;
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new TemplateNameConflictError("Es gibt bereits eine Vorlage mit diesem Namen.");
+    }
+    throw e;
+  }
+}
+
+/**
  * Benennt eine Vorlage um (Phase 13d, Task 4 — Umbenennen auf /vorlagen). Reine
  * Metadatenaenderung: Payload/Kunde/docType/kind bleiben unveraendert, kein neuer
  * ActivityLog-Eintrag (Muster `saveTag`: nur das Loeschen protokolliert, siehe
@@ -195,6 +237,36 @@ export async function renameTemplate(orgId: string, id: string, rawName: unknown
     const tpl = await dbInternal.documentTemplate.findFirst({ where: { id, orgId } });
     if (!tpl) throw new NotFoundError(`Vorlage ${id} nicht gefunden.`);
     return await dbInternal.documentTemplate.update({ where: { id: tpl.id }, data: { name } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new TemplateNameConflictError("Es gibt bereits eine Vorlage mit diesem Namen.");
+    }
+    throw e;
+  }
+}
+
+/**
+ * Aktualisiert Name/Kunde/Payload einer Vorlage (Phase 13d, Task 5, `PATCH
+ * /api/v1/DocumentTemplate/{id}`) — Teil-Update wie `documentTemplateUpdateSchema`
+ * (jedes Feld optional, unbekannte Felder wirft `.strict()`). `docType`/`kind` sind
+ * nicht Teil des Update-Schemas (bestimmen die Struktur eines bereits gespeicherten
+ * Payloads) — nur `renameTemplate` deckt die reine Namensaenderung ab, dieses hier
+ * zusaetzlich Kunde/Payload in einem Aufruf. Reine Metadatenaenderung wie
+ * `renameTemplate`: kein neuer ActivityLog-Eintrag.
+ */
+export async function updateTemplate(orgId: string, id: string, rawInput: unknown): Promise<DocumentTemplate> {
+  const input = documentTemplateUpdateSchema.parse(rawInput);
+  try {
+    const tpl = await dbInternal.documentTemplate.findFirst({ where: { id, orgId } });
+    if (!tpl) throw new NotFoundError(`Vorlage ${id} nicht gefunden.`);
+    return await dbInternal.documentTemplate.update({
+      where: { id: tpl.id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.customerId !== undefined ? { customerId: input.customerId } : {}),
+        ...(input.payload !== undefined ? { payloadJson: JSON.stringify(input.payload) } : {}),
+      },
+    });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       throw new TemplateNameConflictError("Es gibt bereits eine Vorlage mit diesem Namen.");
