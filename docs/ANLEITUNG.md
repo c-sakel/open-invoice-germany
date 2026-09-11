@@ -306,6 +306,27 @@ Wer die REST-API (`/api/v1`, siehe [docs/API.md](API.md)) nutzt, kann sich fehlg
 
 ---
 
+## 6e. Belegvorlagen & Tags (Phase 13d)
+
+### Belegvorlagen (`/vorlagen`)
+
+Eine Vorlage speichert Positionen und Kopf-Metadaten eines bereits **gespeicherten** Belegs (Rechnung, Angebot/AB/Proforma oder Lieferschein) für den späteren Neuaufbau — **ohne** Belegnummer, Datum, Snapshots, Zahlungen oder interne Notizen (§48): eine Vorlage ist ein Schnappschuss und ändert sich nicht mehr, wenn der Ursprungsbeleg später geändert wird.
+
+- **Anlegen**: auf einer Beleg-Detailseite oder in einer Liste über „Mehr → Als Vorlage speichern" — Name vergeben, fertig.
+- **Beleg daraus erzeugen**: auf `/vorlagen` bei der gewünschten Vorlage auf „Beleg erzeugen" — legt einen neuen Entwurf mit denselben Positionen an und öffnet ihn. Bei Rechnungen/Angeboten landest du im Editor; ein Lieferschein kennt keinen eigenen Editor und landet direkt auf seiner Detailseite (siehe [LIMITATIONEN.md](LIMITATIONEN.md)). Legt die Vorlage selbst keinen Kunden fest, fragt der Dialog vorher danach.
+- **Umbenennen/Löschen**: direkt auf `/vorlagen` — das Löschen einer Vorlage rührt keinen mit ihr bereits erzeugten Beleg an.
+
+### Tags (`Einstellungen → Tags`)
+
+Tags sind ein freies Ordnungsmerkmal über Rechnungen, Angeboten/AB/Proforma und Lieferscheinen — **rein intern**: ein Tag ist reine Metadatenverwaltung, kein Bestandteil des Belegs selbst, und erscheint **nie** beim Kunden (nicht im PDF, nicht in der XRechnung/im ZUGFeRD-XML, nicht im Mailtext, nicht im öffentlichen Angebots-Annahmelink). Ein Tag lässt sich deshalb auch an einer bereits **festgeschriebenen** Rechnung setzen oder entfernen, ohne die GoBD-Unveränderbarkeit zu berühren.
+
+- **Anlegen**: `Einstellungen → Tags` — Name (je Organisation eindeutig) und eine von acht Farben.
+- **An einem Beleg setzen**: in der Detailkarte des Belegs oder direkt in der Listenzeile über die Tag-Chips.
+- **Filtern**: in den Listen (`/rechnungen`, `/dokumente`, `/lieferscheine`) über den Tag-Filter der Filterleiste.
+- **Löschen**: `Einstellungen → Tags` — entfernt automatisch alle Zuordnungen dieses Tags, rührt aber keinen Beleg an.
+
+---
+
 ## 7. Per Sprache mit Claude Code (MCP)
 
 Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — z. B. mit Claude Code oder Claude Desktop. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.
@@ -328,7 +349,7 @@ Alle wichtigen Funktionen aus dieser Anleitung sind auch als MCP-Tool erreichbar
 
 > **„Erstelle die nächste Mahnstufe."** → `create_dunning`
 
-Vollständige Tool-Referenz (alle 80 Tools, nach Bereichen gruppiert, je ein Beispielkommando): [docs/MCP.md](MCP.md#3-verfügbare-tools).
+Vollständige Tool-Referenz (alle 98 Tools, nach Bereichen gruppiert, je ein Beispielkommando): [docs/MCP.md](MCP.md#3-verfügbare-tools).
 
 ---
 

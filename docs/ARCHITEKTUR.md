@@ -579,6 +579,49 @@ akzeptiert ausschließlich Bearer (kein Session-Cookie, `src/proxy.ts` lässt
 
 ---
 
+## 3c. Belegvorlagen & Tags (Phase 13d)
+
+`src/domain/template/` (`save.ts` — `saveTemplateFromDocument`/`createTemplate`/
+`updateTemplate`/`renameTemplate`/`deleteTemplate`; `apply.ts` — `applyTemplate`
+AUSSCHLIESSLICH über `createDraftInvoice`/`createBusinessDocument`/
+`createDeliveryNote`, kein zweiter Erzeugungspfad, ein gesperrter Steuersatz aus
+der Vorlage wird NICHT still übernommen; `list.ts` — `listTemplates`/
+`listTemplatesApi`) und `src/domain/tag/` (`manage.ts` — `listTags`/`saveTag`/
+`deleteTag`; `assign.ts` — `tagDocument`/`untagDocument`, beide idempotent;
+`list.ts` — `tagsForDocuments` (Batch-Query je Seite, kein N+1)/`docIdsForTag`,
+`TAG_FILTER_LIMIT = 10_000`) sind reine Metadaten ohne GoBD-Bezug: setz-/
+entfernbar auch an festgeschriebenen Belegen, kein Schreibvorgang auf
+Invoice/InvoiceLine, kein ChangeLog-Eintrag (nur das unverkettete `ActivityLog`,
+Audit K5). Eine Vorlage speichert Positionen + Kopf-Metadaten eines Belegs OHNE
+Belegnummer/Datum/Snapshots/Zahlungen/interne Notizen (§48,
+`documentTemplatePayloadSchema.strict()`, beim Speichern UND beim Anwenden
+erneut geparst statt dem gespeicherten JSON zu vertrauen) — ein Lieferschein
+kennt keinen eigenen Editor, „Beleg erzeugen" landet dort direkt auf der
+Detailseite (siehe `docs/LIMITATIONEN.md`). `createTemplate`/`updateTemplate`
+prüfen einen mitgegebenen `customerId` gegen die eigene Organisation
+(`customer.findFirst({id, orgId})`, Review-Fund Task 6) — wie
+`createDraftInvoiceWithinTx`/`createBusinessDocumentWithinTx`, die seit
+demselben Fund `NotFoundError` statt eines generischen `Error` werfen (REST/MCP
+404 statt 500).
+
+REST `/api/v1/Tag` und `/api/v1/DocumentTemplate` (sieben Routen, siehe
+`docs/API.md`) sowie MCP (`list_templates`/`create_template_from_document`/
+`apply_template`/`list_tags`/`create_tag`/`delete_tag`/`tag_document`/
+`untag_document`, `src/mcp/tools/{templates,tags}.ts`, siehe `docs/MCP.md`)
+rufen dieselben Domain-Funktionen und Zod-Schemas wie die UI (`/vorlagen`,
+`/einstellungen/tags`) — kein Bypass. Tag-/Vorlagennamen tauchen in keiner nach
+außen gehenden Ausgabe auf (PDF, XRechnung/ZUGFeRD-XML, Kunden-Mail,
+öffentlicher Angebotslink — je ein Regressionstest,
+`test/integration/tag-leak.test.ts`).
+
+### Neue Tabellen (Migrationen `phase13d_templates`, `phase13d_tags`, SQLite +
+Postgres identisch): `DocumentTemplate` (`@@unique([orgId, name])`), `Tag`
+(`@@unique([orgId, name])`), `DocumentTag` (`@@unique([orgId, tagId, docType,
+docId])`, `tagId` `ON DELETE CASCADE` — das Löschen eines Tags entfernt seine
+Zuordnungen, rührt aber keinen Beleg an).
+
+---
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.
@@ -658,6 +701,13 @@ src/
     api-log/                # settings.ts, write.ts, list.ts, purge.ts, redact.ts — Anfrageprotokoll
                            # der REST-API (Phase 12d); KEIN ChangeLog-Eintrag (Audit-Ruling K5),
                            # eigene ApiRequestLog/ApiSettings-Tabellen, Retention im Cleanup-Job
+    tag/                    # manage.ts (listTags/saveTag/deleteTag), assign.ts (tagDocument/
+                           # untagDocument, idempotent), list.ts (tagsForDocuments/docIdsForTag,
+                           # TAG_FILTER_LIMIT) — reine Metadaten, kein GoBD-Bezug (Phase 13d)
+    template/               # save.ts (saveTemplateFromDocument/createTemplate/updateTemplate/
+                           # renameTemplate/deleteTemplate), apply.ts (applyTemplate — AUSSCHLIESSLICH
+                           # ueber createDraftInvoice/createBusinessDocument/createDeliveryNote, kein
+                           # zweiter Erzeugungspfad), list.ts (Phase 13d, siehe Abschnitt 3c)
   api/                    # auth.ts (withApi), errors.ts, response.ts, rate-limit.ts, idempotency.ts,
                            # openapi.ts/openapi-zod-init.ts/spec.ts, docs-auth.ts, serializers/ (Phase 10,
                            # siehe Abschnitt 3b)
@@ -680,11 +730,12 @@ src/
     settings.ts             # Zod — DocumentSettings/PrintSettings/BrandingSettings/NumberRange (Phase 7)
     customer.ts             # Zod — Adressen/Ansprechpartner/Kundenfelder/Vorgaben (Phase 8a)
   mcp/                     # bootstrap.ts, server.ts (~65 Zeilen Composition Root, baut mcpContext
-                           # und registriert die 12 Bereichsmodule)
+                           # und registriert die 16 Bereichsmodule)
     tools/                 # context.ts (McpToolsContext, createDefaultContext()), system.ts,
                            # customers.ts, products.ts, invoices.ts, documents.ts, payments.ts,
                            # dunning.ts, email.ts, attachments.ts, settings.ts, recurring.ts,
-                           # scheduler.ts, api-keys.ts, webhooks.ts (Phase 10) — siehe docs/MCP.md
+                           # scheduler.ts, api-keys.ts, webhooks.ts (Phase 10), templates.ts,
+                           # tags.ts (Phase 13d) — siehe docs/MCP.md
   generated/prisma/        # generierter Prisma-Client (nicht im Repo versioniert editieren)
 openapi/
   openapi.json             # committete, deterministische OpenAPI-3.1-Spezifikation (Phase 10,
