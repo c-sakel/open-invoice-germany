@@ -12,7 +12,7 @@ import type { DocumentTemplate } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
-import { documentTemplatePayloadSchema, saveTemplateFromDocumentSchema, type DocumentTemplatePayload } from "@/schemas/template";
+import { documentTemplatePayloadSchema, documentTemplateInputSchema, saveTemplateFromDocumentSchema, type DocumentTemplatePayload } from "@/schemas/template";
 import type { TagDocType } from "@/schemas/tag";
 
 /** orgId/name ist eindeutig (DocumentTemplate.@@unique([orgId, name])) — statt des rohen
@@ -173,6 +173,28 @@ export async function saveTemplateFromDocument(orgId: string, raw: unknown, acto
       });
       return created;
     });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new TemplateNameConflictError("Es gibt bereits eine Vorlage mit diesem Namen.");
+    }
+    throw e;
+  }
+}
+
+/**
+ * Benennt eine Vorlage um (Phase 13d, Task 4 — Umbenennen auf /vorlagen). Reine
+ * Metadatenaenderung: Payload/Kunde/docType/kind bleiben unveraendert, kein neuer
+ * ActivityLog-Eintrag (Muster `saveTag`: nur das Loeschen protokolliert, siehe
+ * `deleteTag`/`deleteTemplate` unten). `documentTemplateInputSchema.shape.name` traegt
+ * dieselbe Laengengrenze wie beim Anlegen (max. 80 Zeichen) statt einer zweiten,
+ * abweichenden Grenze hier.
+ */
+export async function renameTemplate(orgId: string, id: string, rawName: unknown): Promise<DocumentTemplate> {
+  const name = documentTemplateInputSchema.shape.name.parse(rawName);
+  try {
+    const tpl = await dbInternal.documentTemplate.findFirst({ where: { id, orgId } });
+    if (!tpl) throw new NotFoundError(`Vorlage ${id} nicht gefunden.`);
+    return await dbInternal.documentTemplate.update({ where: { id: tpl.id }, data: { name } });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       throw new TemplateNameConflictError("Es gibt bereits eine Vorlage mit diesem Namen.");

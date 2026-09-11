@@ -21,7 +21,7 @@ import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { createInvoiceSchema, type CreateInvoiceInput, type CreateDocumentInput } from "@/schemas";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
-import { saveTemplateFromDocument, deleteTemplate, TemplateNameConflictError } from "@/domain/template/save";
+import { saveTemplateFromDocument, deleteTemplate, renameTemplate, TemplateNameConflictError } from "@/domain/template/save";
 import { applyTemplate, TemplateCustomerRequiredError } from "@/domain/template/apply";
 import { listTemplates } from "@/domain/template/list";
 import { documentTemplatePayloadSchema } from "@/schemas/template";
@@ -195,6 +195,38 @@ describe("saveTemplateFromDocument (INVOICE)", () => {
 
     const res = await applyTemplate(orgId, tpl.id, { customerId });
     expect(res.docType).toBe("INVOICE");
+  });
+});
+
+describe("renameTemplate (Task 4, /vorlagen)", () => {
+  it("aendert nur den Namen, Payload/Kunde/docType bleiben unveraendert", async () => {
+    const inv = await draftInvoice({ subject: "Wartung erneut" });
+    const tpl = await saveTemplateFromDocument(orgId, { docType: "INVOICE", docId: inv.id, name: uniqueName("Alt") });
+
+    const renamed = await renameTemplate(orgId, tpl.id, uniqueName("Neu"));
+
+    expect(renamed.id).toBe(tpl.id);
+    expect(renamed.name).not.toBe(tpl.name);
+    expect(renamed.payloadJson).toBe(tpl.payloadJson);
+    expect(renamed.customerId).toBe(tpl.customerId);
+  });
+
+  it("wirft TemplateNameConflictError bei doppeltem Namen, NotFoundError bei unbekannter/fremder id", async () => {
+    const inv = await draftInvoice();
+    const tplA = await saveTemplateFromDocument(orgId, { docType: "INVOICE", docId: inv.id, name: uniqueName("Rename-A") });
+    const invB = await draftInvoice();
+    const tplB = await saveTemplateFromDocument(orgId, { docType: "INVOICE", docId: invB.id, name: uniqueName("Rename-B") });
+
+    await expect(renameTemplate(orgId, tplB.id, tplA.name)).rejects.toBeInstanceOf(TemplateNameConflictError);
+    await expect(renameTemplate(orgId, "unbekannt", uniqueName("X"))).rejects.toBeInstanceOf(NotFoundError);
+
+    const invOrgB = await createDraftInvoice(
+      orgB,
+      createInvoiceSchema.parse({ customerId: customerBId, lines: [{ description: "Fremd 4", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 19 }] } as CreateInvoiceInput),
+      { now: FIX_DATE },
+    );
+    const tplForeign = await saveTemplateFromDocument(orgB, { docType: "INVOICE", docId: invOrgB.id, name: uniqueName("FremdVorlage-Rename") });
+    await expect(renameTemplate(orgId, tplForeign.id, uniqueName("X"))).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
