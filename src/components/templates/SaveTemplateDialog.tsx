@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { saveTemplateFromDocumentAction } from "@/app/actions/templates-doc";
 import { inputCls } from "@/components/forms/fields";
 import type { TagDocType } from "@/schemas/tag";
@@ -26,6 +26,7 @@ export function SaveTemplateDialog({
   asMenuItem?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   const [name, setName] = useState(defaultName ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,9 +67,11 @@ export function SaveTemplateDialog({
       >
         Als Vorlage speichern
       </button>
-      <dialog ref={dialogRef} className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <dialog ref={dialogRef} aria-labelledby={titleId} className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
         <div className="space-y-3 p-5">
-          <h2 className="text-sm font-semibold text-slate-900">Als Vorlage speichern</h2>
+          <h2 id={titleId} className="text-sm font-semibold text-slate-900">
+            Als Vorlage speichern
+          </h2>
           {saved ? (
             <>
               <p className="text-sm text-emerald-700">Vorlage „{name.trim()}“ gespeichert.</p>

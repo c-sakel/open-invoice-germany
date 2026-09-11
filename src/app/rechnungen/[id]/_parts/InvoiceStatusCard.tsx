@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
+import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 import { formatCents } from "@/lib/money";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
@@ -36,6 +37,10 @@ function skontoText(invoice: Pick<InvoiceDetail, "skonto1Permille" | "skonto1Day
  * Primaeraktion (Kopfzeile, Liste, Mahnwesen). Die `children` (AttachmentPanel,
  * DocumentChain) reicht der Aufrufer seit Fix-Welle 1 (M1) ohne eigene `DetailCard`-Huelle
  * direkt weiter — kein `children`-Prop mehr auf dieser Komponente.
+ *
+ * Fix-Welle 1 (should 5, Koordinator-Ruling): der `TagPicker` sitzt seit dieser Fix-Welle
+ * am Ende der "Details"-Karte statt im `nav`-Slot von `page.tsx` — die Spec listet Tags in
+ * der Aufzaehlung der Karte "Details".
  */
 export function InvoiceStatusCard({
   invoice,
@@ -48,6 +53,8 @@ export function InvoiceStatusCard({
   paymentMethods,
   defaultPaymentMethod,
   lastSentAt,
+  tags,
+  tagOptions,
 }: {
   invoice: InvoiceDetail;
   openCents: number;
@@ -62,6 +69,11 @@ export function InvoiceStatusCard({
   defaultPaymentMethod: string;
   /** Juengster erfolgreich versendeter EmailLog-Eintrag (sentAt bzw. createdAt als Rueckfall) — `null` ohne Versand. */
   lastSentAt: Date | null;
+  /** Fix-Welle 1 (should 5, Koordinator-Nachtrag): Tags dieser Rechnung UND die volle
+   *  Tag-Liste der Organisation — der TagPicker sitzt seit dieser Fix-Welle in der
+   *  Details-Karte statt im `nav`-Slot (page.tsx). */
+  tags: TagPickerItem[];
+  tagOptions: TagPickerItem[];
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -169,6 +181,7 @@ export function InvoiceStatusCard({
             )}
           </div>
         )}
+        <TagPicker docType="INVOICE" docId={invoice.id} tags={tags} options={tagOptions} />
       </StatusCard>
     </>
   );

@@ -2,12 +2,14 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
+import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 
 function deDate(d: Date | null): string {
   return d ? new Intl.DateTimeFormat("de-DE").format(d) : "—";
 }
 
 interface DeliveryNoteForStatusCard {
+  id: string;
   status: string;
   issueDate: Date;
   deliveryDate: Date | null;
@@ -35,8 +37,19 @@ interface DeliveryNoteForStatusCard {
  * Kein `children`-Prop mehr (wie `InvoiceStatusCard`/`DocumentStatusCard`) — AttachmentPanel/
  * DocumentChain reicht der Aufrufer (`page.tsx`) seit Fix-Welle 1 (M1) ohne eigene
  * `DetailCard`-Huelle direkt weiter (die Panels bringen ihre Kartenoptik selbst mit).
+ *
+ * Fix-Welle 1 (should 5, Koordinator-Ruling): der `TagPicker` sitzt seit dieser Fix-Welle
+ * am Ende der "Details"-Karte statt im `nav`-Slot von `page.tsx`.
  */
-export function DeliveryNoteStatusCard({ dn }: { dn: DeliveryNoteForStatusCard }) {
+export function DeliveryNoteStatusCard({
+  dn,
+  tags,
+  tagOptions,
+}: {
+  dn: DeliveryNoteForStatusCard;
+  tags: TagPickerItem[];
+  tagOptions: TagPickerItem[];
+}) {
   const customerRows: StatusRow[] = [
     {
       label: "Kunde",
@@ -88,7 +101,9 @@ export function DeliveryNoteStatusCard({ dn }: { dn: DeliveryNoteForStatusCard }
       {/* S4 (Fix-Welle 1): ein Lieferschein traegt keinen Belegbetrag (Preise sind optional) —
           "Kunde & Betrag" verspraeche einen Wert, den es nie gibt; hier bewusst nur "Kunde". */}
       <StatusCard title="Kunde" status={<StatusBadge status={dn.status} />} rows={customerRows} />
-      <StatusCard title="Details" status={null} rows={detailRows} />
+      <StatusCard title="Details" status={null} rows={detailRows}>
+        <TagPicker docType="DELIVERY_NOTE" docId={dn.id} tags={tags} options={tagOptions} />
+      </StatusCard>
     </>
   );
 }
