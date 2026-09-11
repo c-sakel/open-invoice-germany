@@ -11,6 +11,14 @@ import { prisma, ciContains } from "@/lib/db";
 import { QuoteStatus, DeliveryNoteStatus } from "@/schemas";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateIndex } from "@/domain/document/billing-state";
+import { docIdsForTag } from "@/domain/tag/list";
+
+// Phase 13d, Task 4: dieselbe Tag-Id fuer beide Listen (quoteListFilterSchema/
+// deliveryNoteListFilterSchema) — Aufloesung ueber docIdsForTag DIREKT in listQuotes/
+// listDeliveryNotes (siehe dort), bewusst NICHT in quoteFilterConditions/
+// deliveryNoteFilterConditions (die teilen sich *StatusTabCounts/*ListHeadline, beide
+// bleiben ausserhalb des Scopes dieses Tasks — task-4-brief.md, Step 3).
+const tagFilterShape = { tag: z.string().min(1).optional() };
 
 const baseFilterShape = {
   customerId: z.string().min(1).optional(),
@@ -48,8 +56,7 @@ export const quoteListFilterSchema = z.object({
   // Phase 13a (Task 6): wirken auf grossTotalCents, analog invoiceListFilterSchema.
   minCents: z.coerce.number().int().optional(),
   maxCents: z.coerce.number().int().optional(),
-  // Fix-Welle M3: `tag` wieder entfernt (siehe invoiceListFilterSchema-Kommentar) — kommt
-  // in 13d zusammen mit dem Tag-Modell zurueck.
+  ...tagFilterShape,
 });
 export type QuoteListFilter = z.infer<typeof quoteListFilterSchema>;
 
@@ -239,6 +246,9 @@ export async function listQuotes(
   const and = quoteFilterConditions(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
   if (statusCond) and.push(statusCond);
+  // Phase 13d, Task 4: siehe Kommentar bei tagFilterShape — eine leere Zuordnungsmenge
+  // ergibt bewusst `id: { in: [] }`, niemals einen ignorierten Filter.
+  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "QUOTE") } });
 
   const where: Prisma.QuoteWhereInput = { AND: and };
 
@@ -297,8 +307,7 @@ export const deliveryNoteListFilterSchema = z.object({
   // Task 2: siehe quoteListFilterSchema.includeArchived — uebernimmt das bisherige
   // Seitenverhalten (Standard: nur nicht-archivierte Lieferscheine).
   includeArchived: z.boolean().optional(),
-  // Fix-Welle M3: `tag` wieder entfernt (siehe invoiceListFilterSchema-Kommentar) — kommt
-  // in 13d zusammen mit dem Tag-Modell zurueck.
+  ...tagFilterShape,
 });
 export type DeliveryNoteListFilter = z.infer<typeof deliveryNoteListFilterSchema>;
 
@@ -386,6 +395,9 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
 
   const and = deliveryNoteFilterConditions(orgId, filter);
   if (filter.status !== "all") and.push({ status: filter.status });
+  // Phase 13d, Task 4: siehe Kommentar bei tagFilterShape — eine leere Zuordnungsmenge
+  // ergibt bewusst `id: { in: [] }`, niemals einen ignorierten Filter.
+  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "DELIVERY_NOTE") } });
 
   const where: Prisma.DeliveryNoteWhereInput = { AND: and };
 
