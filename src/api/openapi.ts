@@ -53,6 +53,8 @@ import { recurringSchema } from "./serializers/recurring";
 import { webhookSchema } from "./serializers/webhook";
 import { layoutSchema } from "./serializers/layout";
 import { apiRequestLogSchema } from "./serializers/api-request-log";
+import { tagSchema } from "./serializers/tag";
+import { documentTemplateSchema } from "./serializers/document-template";
 
 const V1_ROOT = path.resolve(process.cwd(), "src/app/api/v1");
 
@@ -122,6 +124,8 @@ export const RESOURCE_SCHEMAS: Record<string, z.ZodTypeAny> = {
   Webhook: webhookSchema,
   Layout: layoutSchema,
   ApiRequestLog: apiRequestLogSchema,
+  Tag: tagSchema,
+  DocumentTemplate: documentTemplateSchema,
 };
 
 /** `/api/v1/Invoice` oder `/api/v1/Invoice/{id}` -> "Invoice"; alles Tiefere (Aktionen,
@@ -364,7 +368,12 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     .sort((a, b) => (a.spec.path === b.spec.path ? a.spec.method.localeCompare(b.spec.method) : a.spec.path.localeCompare(b.spec.path)));
 
   for (const { key, spec } of flatSpecs) {
-    const pathResource = baseResourceName(spec.path);
+    // Phase 13d, Task 5: DELETE nimmt NIE an der Basis-CRUD-Ueberschreibung teil, auch
+    // wenn sein Pfad (z. B. "/api/v1/Tag/{id}") strukturell wie GET/PATCH aussieht —
+    // `DELETE /api/v1/Tag/{id}` liefert `{data:{deleted:true}}` (Route-eigenes
+    // `spec.response`), NIE die Ressource selbst; ohne diese Ausnahme wuerde die
+    // Ueberschreibung unten faelschlich `{data: Tag}` dokumentieren.
+    const pathResource = spec.method === "DELETE" ? undefined : baseResourceName(spec.path);
     const structuralRef = pathResource ? undefined : detectResourceReference(spec.response);
     const resource = pathResource ?? structuralRef?.name;
     const resourceSchema = resource ? registeredResources[resource] : undefined;
@@ -437,7 +446,9 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     const bodySchema = spec.request?.body;
 
     registry.registerPath({
-      method: spec.method.toLowerCase() as "get" | "post" | "patch",
+      // Phase 13d, Task 5: "delete" ergaenzt (RouteSpec.method kennt jetzt "DELETE",
+      // src/api/spec.ts) fuer das bodylose Loeschen von Tag/{id}.
+      method: spec.method.toLowerCase() as "get" | "post" | "patch" | "delete",
       path: spec.path,
       tags: [tagForPath(spec.path)],
       summary: spec.summary,

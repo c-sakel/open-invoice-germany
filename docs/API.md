@@ -254,9 +254,33 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
 `OrderConfirmation`, `DeliveryNote`, `Invoice`, `Payment`, `Dunning`, `Attachment`,
 `EmailLog`, `PaymentMethod`, `TextTemplate`, `EmailTemplate`, `Recurring`,
-`Settings`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog` — vollständige Liste mit
-Feldern, Filtern (`embed=`, Statusfilter, Datumsbereiche) und Beispielen:
-`GET /api/docs`.
+`Settings`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog`, `Tag`,
+`DocumentTemplate` — vollständige Liste mit Feldern, Filtern (`embed=`,
+Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
+
+`Tag` (Phase 13d) — Ordnungsmerkmal über Belegen (`INVOICE`/`QUOTE`/
+`DELIVERY_NOTE`), reine Metadaten ohne GoBD-Bezug: setz-/entfernbar auch an
+festgeschriebenen Rechnungen. `GET`/`POST /api/v1/Tag` und `GET`/`PATCH`/`DELETE
+/api/v1/Tag/{id}` decken Anlegen/Ändern/Löschen ab (`DELETE` ist bodylos und
+entfernt dabei alle Zuordnungen des Tags, `200` mit `{data:{deleted:true}}`).
+Zuordnen/Entfernen an einem konkreten Beleg läuft bewusst über zwei eigene,
+idempotente POST-Aktionsrouten statt `DELETE` mit Body (die API akzeptiert bei
+`DELETE` grundsätzlich keinen Request-Body): `POST /api/v1/Tag/{id}/assign`
+(`{docType,docId}` → `{created}`) und `POST /api/v1/Tag/{id}/unassign` (→
+`{removed}`) — ein erneuter Aufruf mit derselben Zuordnung ist kein Fehler.
+
+`DocumentTemplate` (Phase 13d) — wiederverwendbare Belegvorlage (Positionen +
+Kopf-Metadaten, ohne Belegnummer/Datum/Snapshots/interne Notizen, §48).
+`GET`/`POST /api/v1/DocumentTemplate` (Filter `docType`) und `GET`/`PATCH`/
+`DELETE /api/v1/DocumentTemplate/{id}` (`PATCH` deckt Name/Kunde/Payload ab,
+`docType`/`kind` bleiben fix) verwalten die Vorlage selbst; `payload` kommt
+immer als geparstes Objekt zurück, nie als roher JSON-String. `POST
+/api/v1/DocumentTemplate/{id}/apply` (`{customerId?}` → `201`) erzeugt daraus
+einen neuen Belegentwurf über dieselbe Domain-Funktion wie die UI (gleiche
+Steuersatz-/Kundenprüfung, `409 CONFLICT` ohne auflösbaren Kunden) und liefert
+nur ein kleines Verweisobjekt (`{objectName:"DocumentTemplateApplication",
+docType,id}`) — die neue Ressource selbst danach über `GET
+/api/v1/{Invoice,Quote,DeliveryNote}/{id}` laden.
 
 `GET /api/v1/Layout` (Scope `read`) liefert die sieben festen PDF-Layouts (`id`,
 `name`, `description`, `thumbnailUrl`) — keine Paginierung, kein POST/PATCH (feste
