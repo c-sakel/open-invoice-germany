@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from "@/components/detail/ActionMenu";
 import { ConvertMenu } from "@/components/ConvertMenu";
 import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
+import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import { cancelAction } from "@/app/actions/invoices";
 
 /**
@@ -27,6 +28,8 @@ export function InvoiceMoreMenu({
   isInvoiceType,
   canCancelOrCredit,
   canDuplicate,
+  canSaveTemplate,
+  templateName,
 }: {
   invoiceId: string;
   isDraft: boolean;
@@ -34,10 +37,14 @@ export function InvoiceMoreMenu({
   isInvoiceType: boolean;
   canCancelOrCredit: boolean;
   canDuplicate: boolean;
+  /** Phase 13d, Task 4: `vm.actions.includes("TEMPLATE_SAVE")` — unabhaengig vom Status
+   *  verfuegbar (auch ein Entwurf/eine stornierte Rechnung darf als Vorlage dienen). */
+  canSaveTemplate: boolean;
+  templateName?: string;
 }) {
   const showConvert = !isDraft && !isCancelled && isInvoiceType;
   const showDuplicate = canDuplicate && !isDraft && !isCancelled;
-  const hasAnyItem = !isDraft || showDuplicate || canCancelOrCredit || showConvert;
+  const hasAnyItem = !isDraft || showDuplicate || canCancelOrCredit || showConvert || canSaveTemplate;
   if (!hasAnyItem) return null;
 
   return (
@@ -60,6 +67,12 @@ export function InvoiceMoreMenu({
       {showDuplicate && (
         <ActionMenuItem>
           <DuplicateInvoiceButton invoiceId={invoiceId} asMenuItem />
+        </ActionMenuItem>
+      )}
+
+      {canSaveTemplate && (
+        <ActionMenuItem>
+          <SaveTemplateDialog docType="INVOICE" docId={invoiceId} defaultName={templateName} asMenuItem />
         </ActionMenuItem>
       )}
 

@@ -43,6 +43,7 @@ export const SETTINGS_KEYS = [
   "zahlungsmethoden",
   "mahnwesen",
   "kundenfelder",
+  "tags",
   "benachrichtigungen",
   "automatisierung",
   "api",
@@ -69,6 +70,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/rechnungen?type=CREDIT_NOTE", label: "Gutschriften", icon: "credit" },
       { href: "/abos", label: "Wiederkehrend", icon: "recurring" },
       { href: "/mahnwesen", label: "Mahnwesen", icon: "dunning" },
+      // Phase 13d, Task 4: Belegvorlagen (src/domain/template/*) — eigene Seite, kein
+      // Einstellungen-Unterpunkt (analog Kunden/Produkte: Nutzdaten, keine Konfiguration).
+      { href: "/vorlagen", label: "Vorlagen", icon: "invoice" },
     ],
   },
   {
@@ -107,6 +111,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/zahlungsmethoden", label: "Zahlungsmethoden", key: "zahlungsmethoden" },
   { href: "/einstellungen/mahnwesen", label: "Mahnwesen", key: "mahnwesen" },
   { href: "/einstellungen/kundenfelder", label: "Kundenfelder", key: "kundenfelder" },
+  { href: "/einstellungen/tags", label: "Tags", key: "tags" },
   { href: "/einstellungen/benachrichtigungen", label: "Benachrichtigungen", key: "benachrichtigungen" },
   { href: "/einstellungen/automatisierung", label: "Automatisierung", key: "automatisierung" },
   { href: "/einstellungen/api", label: "API", key: "api" },

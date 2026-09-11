@@ -105,6 +105,20 @@ describe("availableActions", () => {
     const actions = availableActions({ kind: "RECURRING", type: "", status: "ACTIVE", isDraft: false });
     expect(actions).toEqual(["OPEN", "EDIT"]);
   });
+
+  // Phase 13d, Task 4: TEMPLATE_SAVE ("Als Vorlage speichern", src/domain/template/save.ts
+  // #saveTemplateFromDocument) steht fuer INVOICE/QUOTE/DELIVERY_NOTE unabhaengig vom
+  // Status zur Verfuegung — anders als DUPLICATE haengt eine Vorlage an keiner Quelle,
+  // auch ein Entwurf oder ein stornierter Beleg darf als Vorlage dienen. Abos sind kein
+  // GoBD-Beleg und kein TagDocType (kein DocumentTemplate.docType-Wert) — kein TEMPLATE_SAVE.
+  it("TEMPLATE_SAVE: INVOICE/QUOTE/DELIVERY_NOTE immer, unabhaengig vom Status — RECURRING nie", () => {
+    expect(availableActions(doc({ status: "DRAFT", isDraft: true }))).toContain("TEMPLATE_SAVE");
+    expect(availableActions(doc({ status: "CANCELLED" }))).toContain("TEMPLATE_SAVE");
+    expect(availableActions({ kind: "QUOTE", type: "ANGEBOT", status: "DRAFT", isDraft: true })).toContain("TEMPLATE_SAVE");
+    expect(availableActions({ kind: "QUOTE", type: "ANGEBOT", status: "REJECTED", isDraft: false })).toContain("TEMPLATE_SAVE");
+    expect(availableActions({ kind: "DELIVERY_NOTE", type: "", status: "CREATED", isDraft: false })).toContain("TEMPLATE_SAVE");
+    expect(availableActions({ kind: "RECURRING", type: "", status: "ACTIVE", isDraft: false })).not.toContain("TEMPLATE_SAVE");
+  });
 });
 
 describe("convertTargets", () => {

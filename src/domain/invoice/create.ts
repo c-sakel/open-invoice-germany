@@ -17,6 +17,7 @@ import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
+import { NotFoundError } from "@/domain/errors";
 import type { CreateInvoiceInput } from "@/schemas";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -82,7 +83,11 @@ export async function createDraftInvoiceWithinTx(
       paymentTermsText: true,
     },
   });
-  if (!customer) throw new Error("Kunde nicht gefunden.");
+  // NotFoundError statt generischem Error (Review-Fund Task 6, Phase 13d): REST/MCP
+  // mappen NotFoundError bereits auf 404 (src/api/errors.ts) — ein einfacher `Error`
+  // fiel bisher auf 500 durch, sichtbar u. a. ueber applyTemplate (ungueltiger Kunde
+  // im Vorlagen-Payload/`customerId`-Override).
+  if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
 
   const settings = await loadDocumentSettings(orgId);
   // Waehrung (§28): Eingabe > Customer.defaultCurrency > DocumentSettings.defaultCurrency

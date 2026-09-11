@@ -6,11 +6,10 @@ import { quoteListFilterSchema, deliveryNoteListFilterSchema } from "@/domain/do
 // Phase 13a, Task 6: jeder Filter, den eine Leiste anbietet, MUSS die Detailseite
 // ueberleben (ALLOWED_KEYS in neighbors.ts) UND im jeweiligen Zod-Schema stehen — sonst
 // filtert die Leiste sichtbar, und "Zurueck zur Liste" verwirft das Feld stillschweigend.
-// Fix-Welle M3: `tag` wieder aus KEYS entfernt — das Feld filterte in keiner
-// *FilterConditions-Funktion (Attrappe, siehe M3-Kommentar in den Schemata) und ist
-// vollstaendig aus ALLOWED_KEYS/den Zod-Schemata entfernt worden. Kommt erst in 13d
-// zusammen mit dem Tag-Modell zurueck.
-const KEYS = ["q", "status", "type", "customerId", "minCents", "maxCents", "from", "to", "paymentMethodId", "eInvoice"];
+// Phase 13d, Task 4: `tag` kehrt zurueck (Fix-Welle M3 hatte es entfernt, solange es in
+// keiner *FilterConditions-Funktion aufloeste) — jetzt eine Tag-Id, siehe
+// test/integration/tag-filter.test.ts fuer die eigentliche Filterwirkung.
+const KEYS = ["q", "status", "type", "customerId", "minCents", "maxCents", "from", "to", "paymentMethodId", "eInvoice", "tag"];
 
 describe("Listen-Filterschluessel ueberleben die Detailseite", () => {
   it("alle Rechnungsfilter ueberleben Detailseite -> Zurueck zur Liste", () => {
@@ -22,10 +21,12 @@ describe("Listen-Filterschluessel ueberleben die Detailseite", () => {
     expect(invoiceListFilterSchema.parse({ minCents: "500" })).toMatchObject({ minCents: 500 });
     expect(quoteListFilterSchema.parse({ customerId: "c1", minCents: "500" })).toMatchObject({ minCents: 500 });
     expect(deliveryNoteListFilterSchema.parse({ customerId: "c1" })).toMatchObject({ customerId: "c1" });
+    expect(invoiceListFilterSchema.parse({ tag: "t1" })).toMatchObject({ tag: "t1" });
+    expect(quoteListFilterSchema.parse({ tag: "t1" })).toMatchObject({ tag: "t1" });
+    expect(deliveryNoteListFilterSchema.parse({ tag: "t1" })).toMatchObject({ tag: "t1" });
   });
 
-  it("unbekannte Schluessel fallen weiterhin heraus (Fix-Welle M3: `tag` jetzt ebenfalls unbekannt)", () => {
+  it("unbekannte Schluessel fallen weiterhin heraus", () => {
     expect(parseListeQuery(buildListeParam({ boese: "1", q: "x" }))?.has("boese")).toBe(false);
-    expect(parseListeQuery(buildListeParam({ tag: "Wichtig", q: "x" }))?.has("tag")).toBe(false);
   });
 });

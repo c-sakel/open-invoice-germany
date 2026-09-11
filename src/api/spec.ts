@@ -28,7 +28,10 @@ export type ApiScope = "read" | "write" | "send" | "admin";
 
 export interface RouteSpec {
   path: string;
-  method: "GET" | "POST" | "PATCH";
+  // Phase 13d, Task 5: "DELETE" ergaenzt fuer das bodylose Loeschen von Tag/{id} —
+  // Zuordnen/Entfernen laeuft bewusst ueber POST assign/unassign (withApi parst einen
+  // Body nur bei POST/PATCH/PUT, src/api/auth.ts#BODY_METHODS), siehe task-5-brief.md.
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   summary: string;
   scope: ApiScope;
   request?: { query?: z.ZodTypeAny; body?: z.ZodTypeAny; params?: z.ZodTypeAny };

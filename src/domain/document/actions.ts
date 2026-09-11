@@ -22,7 +22,11 @@ export type ActionKey =
   | "DUNNING"
   | "DELIVERY_NOTE"
   | "CANCEL"
-  | "CONVERT";
+  | "CONVERT"
+  // Phase 13d, Task 4: "Als Vorlage speichern" (src/domain/template/save.ts#saveTemplateFromDocument)
+  // — verfuegbar fuer INVOICE/QUOTE/DELIVERY_NOTE, unabhaengig vom Status (auch ein
+  // Entwurf oder ein stornierter Beleg darf als wiederverwendbare Vorlage dienen).
+  | "TEMPLATE_SAVE";
 
 export type DocKind = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "RECURRING";
 
@@ -100,7 +104,7 @@ export function convertTargets(doc: ActionableDoc & { convertedToInvoiceId?: str
 }
 
 function invoiceActions(doc: ActionableDoc): ActionKey[] {
-  const actions: ActionKey[] = ["OPEN", "PDF"];
+  const actions: ActionKey[] = ["OPEN", "PDF", "TEMPLATE_SAVE"];
   const isCancelled = doc.status === "CANCELLED";
   const isPayable = INVOICE_TYPES.has(doc.type) && doc.type !== "CREDIT_NOTE";
 
@@ -139,7 +143,7 @@ function invoiceActions(doc: ActionableDoc): ActionKey[] {
 }
 
 function quoteActions(doc: ActionableDoc): ActionKey[] {
-  const actions: ActionKey[] = ["OPEN", "PDF"];
+  const actions: ActionKey[] = ["OPEN", "PDF", "TEMPLATE_SAVE"];
   const isCancelled = doc.status === "CANCELLED";
   const isRejected = doc.status === "REJECTED";
 
@@ -167,7 +171,7 @@ function quoteActions(doc: ActionableDoc): ActionKey[] {
 }
 
 function deliveryNoteActions(doc: ActionableDoc): ActionKey[] {
-  const actions: ActionKey[] = ["OPEN", "PDF"];
+  const actions: ActionKey[] = ["OPEN", "PDF", "TEMPLATE_SAVE"];
   const isCancelled = doc.status === "CANCELLED";
 
   if (doc.isDraft) actions.push("EDIT");

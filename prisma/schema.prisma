@@ -67,6 +67,8 @@ model Organization {
   brandingSettings       BrandingSettings?
   printSettings          PrintSettings?
   customFieldDefinitions CustomFieldDefinition[]
+  documentTemplates      DocumentTemplate[]
+  tags                   Tag[]
 }
 
 /// Kunde / Leistungsempfänger.
@@ -1243,4 +1245,60 @@ model WebhookDelivery {
   @@index([orgId, status, nextAttemptAt])
   @@index([status, nextAttemptAt])
   @@index([endpointId, createdAt])
+}
+
+/// Belegvorlage (Phase 13d) — STAMMDATEN, kein GoBD-Beleg: `payloadJson` ist ein per
+/// `documentTemplatePayloadSchema` validierter Draft-Ausschnitt (Positionen, Texte,
+/// Steuerschema, Waehrung, Rabatt/Skonto) OHNE Nummer, Daten, Snapshots, Zahlungen und
+/// OHNE internalNotes (§48). Kein Json-Typ (Portabilitaet, Schemakopf).
+model DocumentTemplate {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  name        String
+  docType     String // INVOICE | QUOTE | DELIVERY_NOTE
+  kind        String? // nur QUOTE: ANGEBOT | AUFTRAGSBESTAETIGUNG | PROFORMA
+  customerId  String? // optionale Vorbelegung; kein FK (Kunde darf archiviert/geloescht sein)
+  payloadJson String
+  usageCount  Int          @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([orgId, name])
+  @@index([orgId, docType])
+}
+
+/// Tag (Phase 13d) — Ordnungsmerkmal ueber einem Beleg, KEINE Belegdaten: auch an
+/// festgeschriebenen Belegen setz-/entfernbar (kein Invoice-Schreibvorgang, Guard in
+/// src/lib/db.ts unberuehrt), im ActivityLog statt im ChangeLog protokolliert (K5).
+/// `color` ist eine Zod-Aufzaehlung, kein freier Hexwert.
+model Tag {
+  id        String        @id @default(cuid())
+  orgId     String
+  org       Organization  @relation(fields: [orgId], references: [id])
+  name      String
+  color     String        @default("slate")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  documents DocumentTag[]
+
+  @@unique([orgId, name])
+}
+
+/// Zuordnung Tag -> Beleg, polymorph wie DocumentAttachment/ActivityLog (docType+docId,
+/// bewusst OHNE Relation auf Invoice/Quote/DeliveryNote — sonst drei Nullable-FKs je Beleg).
+/// `orgId` ohne Relationsfeld (ActivityLog-Muster), Loeschen ueber die Kaskade an tagId.
+model DocumentTag {
+  id        String   @id @default(cuid())
+  orgId     String
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  docType   String // INVOICE | QUOTE | DELIVERY_NOTE
+  docId     String
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, tagId, docType, docId])
+  @@index([orgId, docType, docId])
+  @@index([orgId, tagId])
 }
