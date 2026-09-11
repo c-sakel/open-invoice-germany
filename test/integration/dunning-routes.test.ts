@@ -3,8 +3,21 @@
  * Mahnung erstellen (force/409), Mahnprozess-Status, Mahnversand-Route, Uebersicht
  * (Aging-Buckets). Muster: test/integration/partial-invoice-routes.test.ts (Route-Handler
  * direkt aufrufen, Auth/Org gemockt). Eigenes Jahr 2052 (Testjahr-Konvention, plan-header.md).
+ *
+ * Task 6 (Phase 13d, Koordinator-Nachtrag Punkt 2): vormals uhrzeitabhaengig flaky — die
+ * Routen selbst kennen keinen `now`-Override und lesen die ECHTE Systemzeit (siehe
+ * makeOverdueInvoice unten). `makeOverdueInvoice(0)` setzte dueDate auf "jetzt minus 2h";
+ * lief der Testlauf zufaellig zwischen 00:00 und 02:00 UTC, fiel "jetzt minus 2h" auf den
+ * VORTAG (UTC-Kalendertag) — die kalendertaggenaue Faelligkeitslogik (agingBuckets,
+ * `docs/ARCHITEKTUR.md`) zaehlte dann faelschlich 1 statt 0 Tage ueberfaellig, obwohl real
+ * nur Sekunden zwischen dueDate-Berechnung und Routenaufruf lagen — z. B. der
+ * "heute faellig faellt aus dem 1-7-Tage-Bucket"-Test schlug in diesem Fenster fehl.
+ * Fix: NUR `Date` einfrieren (`toFake: ["Date"]`, keine globalen Timer — die wuerden
+ * Prisma/SQLite-Async-I/O riskieren, siehe test/integration/api-keys-domain.test.ts) auf
+ * FIX_DATE (10 Uhr UTC, sicher fern jeder Mitternachtsgrenze) — Testaufbau UND Routen lesen
+ * danach durchgehend dieselbe feste Referenzzeit, unabhaengig von der echten Uhrzeit.
  */
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
 
@@ -40,12 +53,21 @@ let orgId: string;
 let n = 0;
 
 beforeAll(async () => {
+  // Nur `Date` einfrieren (siehe Datei-Kommentar) — Testaufbau UND die unter Test
+  // stehenden Routen lesen ab hier durchgehend dieselbe feste Referenzzeit.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(FIX_DATE);
+
   const org = await dbInternal.organization.create({
     data: { legalName: "Routen-Mahnwesen GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
   });
   orgId = org.id;
   orgStore.id = orgId;
   await ensureOrgMasterdata(dbInternal, orgId);
+});
+
+afterAll(() => {
+  vi.useRealTimers();
 });
 
 async function makeCustomer(type: "BUSINESS" | "CONSUMER" = "BUSINESS") {
@@ -68,10 +90,10 @@ function invoiceInput(customerId: string, dueDate: Date): CreateInvoiceInput {
   } as CreateInvoiceInput;
 }
 
-// Die Routen (POST .../dunning, GET .../overview) verwenden intern das ECHTE "jetzt"
-// (kein now-Override ueber die HTTP-Schnittstelle) — Faelligkeit/Ueberfaelligkeit muss
-// daher relativ zur echten Systemzeit gesetzt werden, nicht relativ zu FIX_DATE (2052,
-// nur fuer die Nummernkreis-Isolierung beim Festschreiben). 2h Puffer gegen Rundung.
+// Die Routen (POST .../dunning, GET .../overview) verwenden intern "jetzt" (kein
+// now-Override ueber die HTTP-Schnittstelle) — seit der Fake-Timer-Umstellung oben
+// (Datei-Kommentar) liest `Date.now()` hier UND in den Routen dieselbe eingefrorene
+// FIX_DATE, nicht mehr die echte Systemzeit. 2h Puffer gegen Rundung.
 async function makeOverdueInvoice(daysOverdue: number, type: "BUSINESS" | "CONSUMER" = "BUSINESS") {
   const customerId = await makeCustomer(type);
   const dueDate = new Date(Date.now() - daysOverdue * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000);
