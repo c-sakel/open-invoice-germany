@@ -19,8 +19,11 @@ export interface Neighbors {
   backQuery: string;
 }
 
-/** Schluessel, die die drei Listen kennen (FilterBar + Pagination + Archiv-Schalter). */
-const ALLOWED_KEYS = new Set([
+/** Schluessel, die die drei Listen kennen (FilterBar + Pagination + Archiv-Schalter).
+ *  Exportiert (Phase 13d, Task 4): test/integration/tag-filter.test.ts prueft direkt,
+ *  dass ein neues Filterfeld ("tag") hier ergaenzt wurde, statt nur indirekt ueber
+ *  parseListeQuery/buildListeParam zu runden (test/unit/list-filter-keys.test.ts). */
+export const ALLOWED_KEYS = new Set([
   "q",
   "status",
   "type",
@@ -35,6 +38,8 @@ const ALLOWED_KEYS = new Set([
   "maxCents",
   "paymentMethodId",
   "eInvoice",
+  // Phase 13d (Task 4): Tag-Filter (src/domain/tag/list.ts#docIdsForTag).
+  "tag",
 ]);
 /** Maximal 200 Zeilen je Listenabfrage (Schema-Maximum der Listenfilter). */
 const NEIGHBOR_LIMIT = 200;

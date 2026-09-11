@@ -11,6 +11,7 @@ import { invoiceListFilterSchema, InvoiceListStatusFilter, type InvoiceListFilte
 import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } from "@/domain/invoice/status";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
+import { docIdsForTag } from "@/domain/tag/list";
 
 export interface InvoiceListRow {
   id: string;
@@ -239,6 +240,11 @@ export async function listInvoices(
   const and = invoiceFilterConditions(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
   if (statusCond) and.push(statusCond);
+  // Phase 13d, Task 4 (task-4-brief.md, Step 3): bewusst NICHT in invoiceFilterConditions
+  // (die teilt sich invoiceStatusTabCounts/invoiceListHeadline, beide bleiben Scope-
+  // Grenze dieses Tasks) — eine leere Zuordnungsmenge ergibt hier ABSICHTLICH
+  // `id: { in: [] }` (leere Liste), niemals einen stillschweigend ignorierten Filter.
+  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "INVOICE") } });
 
   const where: Prisma.InvoiceWhereInput = { AND: and };
 
