@@ -71,7 +71,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ## 3. Verfügbare Tools
 
-90 Tools, registriert in `src/mcp/server.ts` über 12 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
+98 Tools, registriert in `src/mcp/server.ts` über 16 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
 
 ### System
 
@@ -188,6 +188,26 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `add_attachment` | Beleganhang hochladen (Rechnung/Angebot/Lieferschein/Abo/Mahnung), Dateiinhalt als Base64, gleiche Grenzen wie im UI (10 MB je Datei, 50 MB je Beleg) | „Hänge dieses PDF als Anhang an RE-2026-00342 an." |
 | `list_attachments` | Anhänge eines Belegs auflisten | „Welche Anhänge hat RE-2026-00342?" |
 | `remove_attachment` | Anhang von einem Beleg entfernen | „Entferne den zweiten Anhang von RE-2026-00342." |
+
+### Belegvorlagen (Phase 13d)
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `list_templates` | Belegvorlagen auflisten, optional nach Belegtyp gefiltert (INVOICE/QUOTE/DELIVERY_NOTE) | „Welche Vorlagen habe ich für Rechnungen?" |
+| `create_template_from_document` | Den aktuellen Stand eines gespeicherten Belegs (Belegnummer oder ID) als wiederverwendbare Vorlage speichern — Positionen + Kopf-Metadaten, ohne Belegnummer/Datum/Snapshots/interne Notizen (§48); eine Vorlage ist ein Schnappschuss und ändert sich nicht mit dem Ursprungsbeleg | „Speichere RE-2026-00342 als Vorlage ‚Wartung monatlich'." |
+| `apply_template` | Aus einer Vorlage (Name oder ID) einen neuen Belegentwurf erzeugen — dieselbe Domain-Funktion wie /vorlagen (gleiche Steuersatz-/Kundenprüfung, kein Bypass); optional ein Kunde (Name oder ID), falls die Vorlage noch keinen festlegt | „Erzeuge aus der Vorlage ‚Wartung monatlich' eine Rechnung an Müller GmbH." |
+
+### Tags (Phase 13d)
+
+Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfernbar auch an festgeschriebenen Rechnungen, erscheinen nie in PDF/XRechnung/ZUGFeRD/Kunden-Mail/öffentlichem Angebotslink.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `list_tags` | Tags der Organisation auflisten (mit Zuordnungszahl) | „Welche Tags gibt es?" |
+| `create_tag` | Tag anlegen (Name je Organisation eindeutig, Farbe aus acht festen Werten) | „Leg einen Tag ‚Wartung' an." |
+| `delete_tag` | Tag (Name oder ID) samt aller Zuordnungen löschen — rührt keinen Beleg an | „Lösche den Tag ‚Wartung'." |
+| `tag_document` | Tag (Name oder ID) einem Beleg (Belegnummer oder ID) zuordnen — idempotent | „Setze den Tag ‚Wartung' auf RE-2026-00342." |
+| `untag_document` | Tag-Zuordnung von einem Beleg entfernen — idempotent, kein Fehler ohne bestehende Zuordnung | „Entferne den Tag ‚Wartung' von RE-2026-00342." |
 
 ### Einstellungen
 

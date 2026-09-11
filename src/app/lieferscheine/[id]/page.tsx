@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
 import { ConvertMenu } from "@/components/ConvertMenu";
+import { availableActions } from "@/domain/document/actions";
 import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from "@/components/detail/ActionMenu";
 import { DocumentChain } from "@/components/DocumentChain";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
@@ -23,6 +24,9 @@ import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
 import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
+import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import { DeliveryNoteStatusCard } from "./_parts/DeliveryNoteStatusCard";
 import { DeliveryNoteLines } from "./_parts/DeliveryNoteLines";
 
@@ -52,6 +56,14 @@ export default async function LieferscheinDetail({
 
   const archived = dn.archivedAt !== null;
   const attachments = await listAttachments(org.id, "DELIVERY_NOTE", dn.id);
+  // Phase 13d, Task 4: TEMPLATE_SAVE ist unabhaengig vom Status verfuegbar (siehe
+  // src/domain/document/actions.ts#deliveryNoteActions). Tags der Details-Karte
+  // (Fix-Welle 1, should 5) — vorhandene Zuordnungen plus die volle Tag-Liste der Organisation.
+  const canSaveTemplate = availableActions({ kind: "DELIVERY_NOTE", type: "DELIVERY_NOTE", status: dn.status, isDraft: dn.status === "DRAFT" }).includes(
+    "TEMPLATE_SAVE",
+  );
+  const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "DELIVERY_NOTE", [dn.id])]);
+  const deliveryNoteTags = docTags.get(dn.id) ?? [];
   const printSettings = await loadPrintSettings(org.id);
   const effectivePrint = effectivePrintOptions(printSettings, dn.printOptionsJson);
   let printOverride: ReturnType<typeof printOptionsOverrideSchema.parse> = {};
@@ -126,6 +138,11 @@ export default async function LieferscheinDetail({
       more={
         <ActionMenu>
           <DocumentActionsMenuItems type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} />
+          {canSaveTemplate && (
+            <ActionMenuItem>
+              <SaveTemplateDialog docType="DELIVERY_NOTE" docId={dn.id} defaultName={dn.number ?? undefined} asMenuItem />
+            </ActionMenuItem>
+          )}
           {/* canBillDeliveryNote (CREATED/SENT/DELIVERED) und status === DRAFT schliessen sich
               gegenseitig aus — hoechstens einer der beiden folgenden Eintraege erscheint,
               der Trenner davor gilt fuer beide gleichermassen. */}
@@ -177,7 +194,7 @@ export default async function LieferscheinDetail({
       }
       aside={
         <>
-          <DeliveryNoteStatusCard dn={dn} />
+          <DeliveryNoteStatusCard dn={dn} tags={deliveryNoteTags} tagOptions={allTags} />
           <AttachmentPanel
             docType="DELIVERY_NOTE"
             docId={dn.id}

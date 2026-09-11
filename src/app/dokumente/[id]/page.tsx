@@ -5,7 +5,7 @@ import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateFor } from "@/domain/document/billing-state";
-import { convertTargets } from "@/domain/document/actions";
+import { convertTargets, availableActions } from "@/domain/document/actions";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { DocumentActions } from "@/components/DocumentActions";
 import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
@@ -22,9 +22,12 @@ import { DetailNav } from "@/components/detail/DetailNav";
 import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
 import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
-import { ActionMenu } from "@/components/detail/ActionMenu";
+import { ActionMenu, ActionMenuItem } from "@/components/detail/ActionMenu";
 import { NavHint } from "@/components/shell/NavHint";
 import { loadNeighbors } from "@/domain/document/neighbors";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
+import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import type { EmailDocType } from "@/schemas/email";
 import { DocumentStatusCard } from "./_parts/DocumentStatusCard";
 import { DocumentMoreMenu } from "./_parts/DocumentMoreMenu";
@@ -95,6 +98,15 @@ export default async function DokumentDetail({
   const archived = q.archivedAt !== null;
   const attachments = await listAttachments(org.id, "QUOTE", q.id);
 
+  // Phase 13d, Task 4: TEMPLATE_SAVE ist unabhaengig vom Status verfuegbar (siehe
+  // src/domain/document/actions.ts#quoteActions) — ueber availableActions statt einer
+  // eigenen, zweiten Bedingung ermittelt.
+  const canSaveTemplate = availableActions({ kind: "QUOTE", type: q.kind, status, isDraft: status === "DRAFT" }).includes("TEMPLATE_SAVE");
+  // Tags der Details-Karte (Fix-Welle 1, should 5) — vorhandene Zuordnungen plus die volle
+  // Tag-Liste der Organisation (Auswahlfeld in TagPicker).
+  const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "QUOTE", [q.id])]);
+  const quoteTags = docTags.get(q.id) ?? [];
+
   const { prevId, nextId, backQuery } = await loadNeighbors("QUOTE", org.id, id, liste);
   const navHref = (targetId: string) => `/dokumente/${targetId}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
 
@@ -152,6 +164,11 @@ export default async function DokumentDetail({
         more={
           <ActionMenu>
             <DocumentActionsMenuItems type="QUOTE" id={q.id} status={status} archived={archived} />
+            {canSaveTemplate && (
+              <ActionMenuItem>
+                <SaveTemplateDialog docType="QUOTE" docId={q.id} defaultName={q.number ?? undefined} asMenuItem />
+              </ActionMenuItem>
+            )}
             <DocumentMoreMenu
               quoteId={q.id}
               convertedToInvoiceId={q.convertedToInvoiceId}
@@ -177,7 +194,7 @@ export default async function DokumentDetail({
         pdf={<PdfStack src={`/api/documents/${q.id}/pdf`} title={`${title} — PDF`} />}
         aside={
           <>
-            <DocumentStatusCard q={q} status={status} />
+            <DocumentStatusCard q={q} status={status} tags={quoteTags} tagOptions={allTags} />
             {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && (
               <ShareLinkPanel documentId={q.id} />
             )}

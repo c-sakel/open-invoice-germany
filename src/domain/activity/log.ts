@@ -17,7 +17,14 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // Credential, das lesend UND schreibend auf alle GoBD-relevanten Daten zugreifen kann,
 // darf keine spurlose Anlage/Widerruf haben. ActivityLog statt ChangeLog (Audit K5 —
 // unverkettetes Protokoll, keine Hash-Kette, siehe Modulkommentar oben).
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY";
+// "TAG" (Phase 13d, Koordinator-Ruling aus T2-Review): Loeschen eines Tags entfernt seine
+// Zuordnungen an potenziell vielen Belegen zugleich (DB-Cascade) — kein einzelner Beleg
+// ist Ziel des Ereignisses, deshalb ein eigener entityType statt eines willkuerlich
+// gewaehlten Belegs (entityId = Tag.id, src/domain/tag/manage.ts#deleteTag).
+// "TEMPLATE" (Phase 13d, Task 4, Koordinator-Nachtrag): analog "TAG" — eine Vorlage ist
+// nach dem Speichern unabhaengig vom Quellbeleg, ihr Loeschen ist kein Ereignis AN einem
+// Beleg (entityId = DocumentTemplate.id, src/domain/template/save.ts#deleteTemplate).
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -43,6 +50,15 @@ export const ACTIVITY_TYPES = {
   QUOTE_ACCEPTED: "Angebot angenommen",
   QUOTE_REJECTED: "Angebot abgelehnt",
   REVOKED: "Widerrufen",
+  // Phase 13d: Tag-Zuordnung (src/domain/tag/assign.ts) und Belegvorlagen
+  // (src/domain/template/*, Task 3+) — beide nutzen bestehende ActivityEntityType-Werte
+  // (INVOICE|QUOTE|DELIVERY_NOTE), kein eigener entityType noetig.
+  TAG_ADDED: "Tag gesetzt",
+  TAG_REMOVED: "Tag entfernt",
+  TAG_DELETED: "Tag geloescht",
+  TEMPLATE_SAVED: "Als Belegvorlage gespeichert",
+  TEMPLATE_APPLIED: "Aus Belegvorlage erzeugt",
+  TEMPLATE_DELETED: "Vorlage geloescht",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

@@ -21,6 +21,8 @@ import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
 import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
 import { buildInvoiceViewModel, primaryAction, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
@@ -114,6 +116,11 @@ export default async function InvoiceDetail({
 
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
 
+  // Phase 13d, Task 4 (Fix-Welle 1, should 5: jetzt Details-Karte statt nav-Slot): Tags
+  // dieses Belegs plus die volle Tag-Liste der Organisation (Auswahlfeld in TagPicker).
+  const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "INVOICE", [invoice.id])]);
+  const invoiceTags = docTags.get(invoice.id) ?? [];
+
   // S6 (Fix-Welle 1, Spec C "Detail-Layout"): "versendet am + Kanal" in der Details-Karte —
   // aus dem juengsten EmailLog-Eintrag, kein neues Feld auf Invoice. "Kanal" ist bislang
   // immer E-Mail (einziger Versandweg dieser Software), daher statisch angehaengt.
@@ -200,6 +207,8 @@ export default async function InvoiceDetail({
           isInvoiceType={vm.isInvoiceType}
           canCancelOrCredit={vm.canCancelOrCredit}
           canDuplicate={vm.canDuplicate}
+          canSaveTemplate={vm.actions.includes("TEMPLATE_SAVE")}
+          templateName={invoice.number ?? undefined}
         />
       }
       notice={
@@ -226,6 +235,8 @@ export default async function InvoiceDetail({
             paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
             defaultPaymentMethod={defaultPaymentMethodCode}
             lastSentAt={lastSentAt}
+            tags={invoiceTags}
+            tagOptions={allTags}
           />
           <AttachmentPanel
             docType="INVOICE"

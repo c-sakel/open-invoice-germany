@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
+import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 import { formatCents } from "@/lib/money";
 import { parseBuyerSnapshot, parseContactSnapshot } from "@/domain/snapshot";
 import type { BuyerSnapshot } from "@/schemas";
@@ -58,14 +59,21 @@ interface QuoteForStatusCard {
  *
  * Kein `children`-Prop mehr (wie `InvoiceStatusCard`) — ShareLinkPanel/AttachmentPanel/
  * DocumentChain huellt der Aufrufer (`page.tsx`) in eigene `DetailCard`s.
+ *
+ * Fix-Welle 1 (should 5, Koordinator-Ruling): der `TagPicker` sitzt seit dieser Fix-Welle
+ * am Ende der "Details"-Karte statt im `nav`-Slot von `page.tsx`.
  */
 export function DocumentStatusCard({
   q,
   status,
+  tags,
+  tagOptions,
 }: {
   q: QuoteForStatusCard;
   /** Wirksamer Status (aus `effectiveQuoteStatus`, page.tsx) fuer das StatusBadge. */
   status: string;
+  tags: TagPickerItem[];
+  tagOptions: TagPickerItem[];
 }) {
   const buyerFallback: BuyerSnapshot = {
     name: q.customer.name,
@@ -131,7 +139,9 @@ export function DocumentStatusCard({
   return (
     <>
       <StatusCard title="Kunde & Betrag" status={<StatusBadge status={status} />} rows={customerRows} />
-      <StatusCard title="Details" status={null} rows={detailRows} />
+      <StatusCard title="Details" status={null} rows={detailRows}>
+        <TagPicker docType="QUOTE" docId={q.id} tags={tags} options={tagOptions} />
+      </StatusCard>
     </>
   );
 }

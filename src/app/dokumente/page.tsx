@@ -6,6 +6,9 @@ import { listQuotes, quoteStatusTabCounts, quoteListHeadline, type QuoteListResu
 import { availableActions, convertTargets } from "@/domain/document/actions";
 import { billingStateIndex } from "@/domain/document/billing-state";
 import { applyCustomerComboFilter } from "@/domain/customer/list";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
+import { TagChips } from "@/components/tags/TagChips";
 import { formatCents } from "@/lib/money";
 import { StatusBadge, BillingStateBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
@@ -68,6 +71,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    tag: firstOf(sp.tag),
     offset: firstOf(sp.offset),
   };
   const liste = buildListeParam(values);
@@ -86,12 +90,14 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // "?status=billed"/"?status=partially-billed" (Task-5-Kommentar zu `quoteStatusWhere`) und
   // den Zeilen-Chip — `cache()` memoisiert ihn je Request, ein zweiter Aufruf innerhalb von
   // `quoteStatusTabCounts` unten kostet also keine zusaetzliche Abfrage.
-  const [index, customerOptions] = await Promise.all([
+  const [index, customerOptions, , tags] = await Promise.all([
     billingStateIndex(org.id),
     // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
     // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
     dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
     applyCustomerComboFilter(org.id, rawFilter),
+    // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
+    listTags(org.id),
   ]);
   const billedIds: string[] = [];
   const partiallyBilledIds: string[] = [];
@@ -124,6 +130,8 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     { includeArchived: showArchived },
   );
   const rows = result.rows;
+  // Phase 13d, Task 4: Tag-Chips der Zeilen — ein Bulk-Query fuer die ganze Seite (kein N+1).
+  const tagsByDocId = await tagsForDocuments(org.id, "QUOTE", rows.map((r) => r.id));
 
   const statusTabValues = index.available ? (["all", ...QuoteStatus.options, "billed", "partially-billed"] as const) : (["all", ...QuoteStatus.options] as const);
   const statusTabs: StatusTab[] = statusTabValues.map((value) => ({ value, label: STATUS_TAB_LABEL[value] ?? value, count: tabCounts[value] ?? null }));
@@ -156,6 +164,8 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     },
     { type: "date", name: "from", label: "Von" },
     { type: "date", name: "to", label: "Bis" },
+    // Phase 13d, Task 4: Tag-Filter — Aufloesung in listQuotes (docIdsForTag).
+    { type: "select", name: "tag", label: "Tag", options: tags.map((t) => ({ value: t.id, label: t.name })) },
   ];
 
   return (
@@ -229,6 +239,11 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                       <Link href={detailHref(d.id)} className="font-medium text-indigo-600 hover:underline">
                         {d.number ?? "—"}
                       </Link>
+                      {(tagsByDocId.get(d.id) ?? []).length > 0 && (
+                        <div className="mt-1">
+                          <TagChips tags={tagsByDocId.get(d.id) ?? []} size="xs" />
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{KIND_LABEL[d.kind] ?? d.kind}</td>
                     <td className="px-4 py-3 text-slate-600">{d.customerName}</td>
@@ -259,6 +274,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                         cancelBody={{ action: "CANCEL" }}
                         convert={convert}
                         documentActions={{ type: "QUOTE", status: d.effectiveStatus, archived: d.archivedAt !== null }}
+                        templateName={d.number ?? undefined}
                       />
                     </td>
                   </tr>

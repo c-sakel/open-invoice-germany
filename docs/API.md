@@ -254,9 +254,41 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
 `OrderConfirmation`, `DeliveryNote`, `Invoice`, `Payment`, `Dunning`, `Attachment`,
 `EmailLog`, `PaymentMethod`, `TextTemplate`, `EmailTemplate`, `Recurring`,
-`Settings`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog` — vollständige Liste mit
-Feldern, Filtern (`embed=`, Statusfilter, Datumsbereiche) und Beispielen:
-`GET /api/docs`.
+`Settings`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog`, `Tag`,
+`DocumentTemplate` — vollständige Liste mit Feldern, Filtern (`embed=`,
+Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
+
+`Tag` (Phase 13d) — Ordnungsmerkmal über Belegen (`INVOICE`/`QUOTE`/
+`DELIVERY_NOTE`), reine Metadaten ohne GoBD-Bezug: setz-/entfernbar auch an
+festgeschriebenen Rechnungen. `GET /api/v1/Tag` (Scope `read`) und `POST
+/api/v1/Tag` (Scope `write`, Body `{"name":"Wartung","color":"slate"}` →
+`201`) sowie `GET` (Scope `read`)/`PATCH`/`DELETE /api/v1/Tag/{id}` (beide
+Scope `write`) decken Anlegen/Ändern/Löschen ab (`DELETE` ist bodylos und
+entfernt dabei alle Zuordnungen des Tags, `200` mit `{data:{deleted:true}}`).
+Zuordnen/Entfernen an einem konkreten Beleg läuft bewusst über zwei eigene,
+idempotente **POST**-Aktionsrouten (Scope `write`) statt `DELETE` mit Body (die
+API akzeptiert bei `DELETE` grundsätzlich keinen Request-Body): `POST
+/api/v1/Tag/{id}/assign` (Body `{"docType":"INVOICE","docId":"RE-2026-00342"}`
+→ `{created}`) und `POST /api/v1/Tag/{id}/unassign` (derselbe Body → `{removed}`)
+— **beide `assign` und `unassign` sind `POST`**, kein `DELETE`; ein erneuter
+Aufruf mit derselben Zuordnung ist kein Fehler.
+
+`DocumentTemplate` (Phase 13d) — wiederverwendbare Belegvorlage (Positionen +
+Kopf-Metadaten, ohne Belegnummer/Datum/Snapshots/interne Notizen, §48).
+`GET /api/v1/DocumentTemplate` (Scope `read`, Filter `docType`) und `POST
+/api/v1/DocumentTemplate` (Scope `write`, Body
+`{"name":"Wartung monatlich","docType":"INVOICE","customerId":"...","payload":{"lines":[...]}}`)
+sowie `GET` (Scope `read`)/`PATCH`/`DELETE /api/v1/DocumentTemplate/{id}`
+(beide Scope `write`; `PATCH` deckt Name/Kunde/Payload ab, `docType`/`kind`
+bleiben fix) verwalten die Vorlage selbst; `payload` kommt immer als geparstes
+Objekt zurück, nie als roher JSON-String. `POST
+/api/v1/DocumentTemplate/{id}/apply` (Scope `write`, Body `{"customerId":"..."}`
+optional → `201`) erzeugt daraus einen neuen Belegentwurf über dieselbe
+Domain-Funktion wie die UI (gleiche Steuersatz-/Kundenprüfung, `404 NOT_FOUND`
+bei unbekanntem Kunden, `409 CONFLICT` ohne auflösbaren Kunden) und liefert nur
+ein kleines Verweisobjekt (`{objectName:"DocumentTemplateApplication",
+docType,id}`) — die neue Ressource selbst danach über `GET
+/api/v1/{Invoice,Quote,DeliveryNote}/{id}` laden.
 
 `GET /api/v1/Layout` (Scope `read`) liefert die sieben festen PDF-Layouts (`id`,
 `name`, `description`, `thumbnailUrl`) — keine Paginierung, kein POST/PATCH (feste

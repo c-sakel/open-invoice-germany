@@ -11,6 +11,7 @@ import { invoiceListFilterSchema, InvoiceListStatusFilter, type InvoiceListFilte
 import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } from "@/domain/invoice/status";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
+import { docIdsForTag } from "@/domain/tag/list";
 
 export interface InvoiceListRow {
   id: string;
@@ -96,10 +97,20 @@ function sortOrder(sort: InvoiceListFilter["sort"]): Prisma.InvoiceOrderByWithRe
  * statt flacher Objekt-Merges: der Status-Filter "open" traegt bereits ein eigenes `OR`
  * (dueDate null ODER ab morgen) — ein zweites `OR` fuer `q` wuerde das erste sonst
  * ueberschreiben statt beide zu kombinieren (Prisma erlaubt nur ein `OR` je Objektebene).
+ *
+ * Fix-Welle 1 (must 1): der Tag-Filter (`filter.tag`) ist HIER aufgeloest, nicht mehr nur
+ * in `listInvoices` — `invoiceStatusTabCounts` und `invoiceListHeadline` teilen sich damit
+ * dasselbe `where` wie die Zeilenliste, statt den aktiven Tag-Filter zu ignorieren (Review-
+ * Fund: Tabs/Kopfkennzahlen zeigten die ungefilterte Gesamtzahl). `docIdsForTag` ist ueber
+ * React `cache()` je Anfrage memoisiert (Muster `billingStateIndex`) — alle drei Aufrufer
+ * (Zeilen, Tabs, Kennzahlen) loesen denselben Tag deshalb nur EINMAL auf, feste
+ * Abfragezahl. Eine leere Zuordnungsmenge ergibt bewusst `id: { in: [] }`, niemals einen
+ * stillschweigend ignorierten Filter.
  */
-export function invoiceFilterConditions(orgId: string, filter: InvoiceListFilter): Prisma.InvoiceWhereInput[] {
+export async function invoiceFilterConditions(orgId: string, filter: InvoiceListFilter): Promise<Prisma.InvoiceWhereInput[]> {
   const and: Prisma.InvoiceWhereInput[] = [{ orgId }];
 
+  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "INVOICE") } });
   if (filter.type) and.push({ type: filter.type });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (filter.paymentMethodId) and.push({ paymentMethodId: filter.paymentMethodId });
@@ -155,7 +166,7 @@ export async function invoiceStatusTabCounts(
   now: Date = new Date(),
 ): Promise<Record<InvoiceListStatusFilter, number>> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
-  const base = invoiceFilterConditions(orgId, filter);
+  const base = await invoiceFilterConditions(orgId, filter);
   const tabs = InvoiceListStatusFilter.options;
   const counts = await Promise.all(
     tabs.map((tab) => {
@@ -188,7 +199,7 @@ export interface InvoiceListHeadline {
  */
 export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<InvoiceListHeadline> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
-  const base = invoiceFilterConditions(orgId, filter);
+  const base = await invoiceFilterConditions(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
   const and = statusCond ? [...base, statusCond] : base;
 
@@ -236,7 +247,7 @@ export async function listInvoices(
 ): Promise<InvoiceListResult> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
 
-  const and = invoiceFilterConditions(orgId, filter);
+  const and = await invoiceFilterConditions(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
   if (statusCond) and.push(statusCond);
 
