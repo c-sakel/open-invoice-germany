@@ -17,7 +17,11 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // Credential, das lesend UND schreibend auf alle GoBD-relevanten Daten zugreifen kann,
 // darf keine spurlose Anlage/Widerruf haben. ActivityLog statt ChangeLog (Audit K5 —
 // unverkettetes Protokoll, keine Hash-Kette, siehe Modulkommentar oben).
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY";
+// "TAG" (Phase 13d, Koordinator-Ruling aus T2-Review): Loeschen eines Tags entfernt seine
+// Zuordnungen an potenziell vielen Belegen zugleich (DB-Cascade) — kein einzelner Beleg
+// ist Ziel des Ereignisses, deshalb ein eigener entityType statt eines willkuerlich
+// gewaehlten Belegs (entityId = Tag.id, src/domain/tag/manage.ts#deleteTag).
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -48,6 +52,7 @@ export const ACTIVITY_TYPES = {
   // (INVOICE|QUOTE|DELIVERY_NOTE), kein eigener entityType noetig.
   TAG_ADDED: "Tag gesetzt",
   TAG_REMOVED: "Tag entfernt",
+  TAG_DELETED: "Tag geloescht",
   TEMPLATE_SAVED: "Als Belegvorlage gespeichert",
   TEMPLATE_APPLIED: "Aus Belegvorlage erzeugt",
 } as const;

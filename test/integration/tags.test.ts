@@ -200,4 +200,18 @@ describe("Tag-Verwaltung (manage.ts)", () => {
     const localTag = await saveTag(orgId, null, { name: `Leer-${n}`, color: "indigo" });
     expect(await deleteTag(orgId, localTag.id)).toEqual({ removedAssignments: 0 });
   });
+
+  it("deleteTag schreibt einen ActivityLog-Eintrag TAG_DELETED (entityType TAG, entityId = Tag.id)", async () => {
+    const name = `Loeschen-${n}`;
+    const localTag = await saveTag(orgId, null, { name, color: "stone" });
+    const draft = await draftInvoice();
+    await tagDocument(orgId, localTag.id, { docType: "INVOICE", docId: draft.id });
+
+    await deleteTag(orgId, localTag.id, "tester@example.com");
+
+    const entries = await dbInternal.activityLog.findMany({ where: { orgId, entityType: "TAG", entityId: localTag.id, type: "TAG_DELETED" } });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ actor: "tester@example.com" });
+    expect(JSON.parse(entries[0].dataJson ?? "{}")).toMatchObject({ name, removedAssignments: 1 });
+  });
 });

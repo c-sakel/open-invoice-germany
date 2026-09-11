@@ -11,6 +11,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { Tag } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { logActivity } from "@/domain/activity/log";
 import { tagInputSchema } from "@/schemas/tag";
 
 export class TagNotFoundError extends Error {}
@@ -67,13 +68,19 @@ export async function saveTag(orgId: string, id: string | null, rawInput: unknow
  * Loescht einen Tag. Seine Zuordnungen (DocumentTag) werden per DB-Cascade automatisch
  * entfernt — kein Beleg wird dabei veraendert, kein ChangeLog-Eintrag (Tags sind
  * Metadaten). Rueckgabe: Anzahl der entfernten Zuordnungen (Bestaetigungsmeldung UI).
+ *
+ * Koordinator-Ruling (T2-Review): schreibt einen ActivityLog-Eintrag TAG_DELETED — ein
+ * Tag kann an vielen Belegen zugleich gehangen haben, deshalb entityType "TAG" mit
+ * entityId = Tag.id statt eines willkuerlich gewaehlten Belegs (src/domain/activity/log.ts).
  */
-export async function deleteTag(orgId: string, id: string): Promise<{ removedAssignments: number }> {
+export async function deleteTag(orgId: string, id: string, actor = "system"): Promise<{ removedAssignments: number }> {
+  const now = new Date();
   return dbInternal.$transaction(async (tx) => {
     const tag = await tx.tag.findFirst({ where: { id, orgId } });
     if (!tag) throw new TagNotFoundError("Tag nicht gefunden.");
     const removedAssignments = await tx.documentTag.count({ where: { orgId, tagId: id } });
     await tx.tag.delete({ where: { id: tag.id } });
+    await logActivity(tx, { orgId, entityType: "TAG", entityId: tag.id, type: "TAG_DELETED", actor, at: now, data: { name: tag.name, removedAssignments } });
     return { removedAssignments };
   });
 }
