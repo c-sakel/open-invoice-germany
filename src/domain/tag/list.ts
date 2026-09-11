@@ -3,6 +3,7 @@
  * Abfrage statt N+1) und Beleg-IDs je Tag (FilterBar-Filter `tag`, 13a-Nachtrag). Phase
  * 13d, Task 5 ergaenzt die paginierte `listTagsApi`/`getTagRow` fuer `/api/v1/Tag`.
  */
+import { cache } from "react";
 import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import type { TagDocType } from "@/schemas/tag";
@@ -91,12 +92,21 @@ export async function tagsForDocuments(orgId: string, docType: TagDocType, docId
   return map;
 }
 
-/** Beleg-IDs, die einen bestimmten Tag tragen (FilterBar-Filter `tag`) — auf TAG_FILTER_LIMIT gedeckelt. */
-export async function docIdsForTag(orgId: string, tagId: string, docType: TagDocType): Promise<string[]> {
+/**
+ * Beleg-IDs, die einen bestimmten Tag tragen (FilterBar-Filter `tag`) — auf
+ * TAG_FILTER_LIMIT gedeckelt, neueste Zuordnung zuerst (nit 8: `take` ohne `orderBy`
+ * lieferte bei erreichtem Deckel eine nicht deterministische Teilmenge). Ueber React
+ * `cache()` je Anfrage memoisiert (Muster `billingStateIndex`, Fix-Welle 1, must 1) —
+ * `invoiceFilterConditions`/`quoteFilterConditions`/`deliveryNoteFilterConditions` UND die
+ * jeweilige `list*`-Funktion rufen dieselbe (orgId, tagId, docType)-Kombination auf und
+ * sehen dadurch garantiert dieselbe Id-Liste, ohne die Abfrage doppelt auszufuehren.
+ */
+export const docIdsForTag = cache(async (orgId: string, tagId: string, docType: TagDocType): Promise<string[]> => {
   const rows = await dbInternal.documentTag.findMany({
     where: { orgId, tagId, docType },
     select: { docId: true },
+    orderBy: { createdAt: "desc" },
     take: TAG_FILTER_LIMIT,
   });
   return rows.map((r) => r.docId);
-}
+});

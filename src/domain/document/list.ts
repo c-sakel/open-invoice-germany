@@ -14,10 +14,9 @@ import { billingStateIndex } from "@/domain/document/billing-state";
 import { docIdsForTag } from "@/domain/tag/list";
 
 // Phase 13d, Task 4: dieselbe Tag-Id fuer beide Listen (quoteListFilterSchema/
-// deliveryNoteListFilterSchema) — Aufloesung ueber docIdsForTag DIREKT in listQuotes/
-// listDeliveryNotes (siehe dort), bewusst NICHT in quoteFilterConditions/
-// deliveryNoteFilterConditions (die teilen sich *StatusTabCounts/*ListHeadline, beide
-// bleiben ausserhalb des Scopes dieses Tasks — task-4-brief.md, Step 3).
+// deliveryNoteListFilterSchema). Fix-Welle 1 (must 1): die Aufloesung sitzt in
+// `quoteFilterConditions`/`deliveryNoteFilterConditions` (siehe dort) — Tabs/Kennzahlen
+// teilen sich dadurch dasselbe `where` wie die Zeilenliste.
 const tagFilterShape = { tag: z.string().min(1).optional() };
 
 const baseFilterShape = {
@@ -119,9 +118,18 @@ function quoteStatusWhere(status: QuoteListFilter["status"], now: Date): Prisma.
  * ein neuer, ungewollter oeffentlicher Query-Parameter samt OpenAPI-Drift. Das Seiten-Wiring
  * von `/dokumente` (Task-5-Kommentar zu `quoteStatusWhere`: "and.push({ id: { in: ids } })")
  * reicht die Ids stattdessen hier direkt durch.
+ *
+ * Fix-Welle 1 (must 1): der Tag-Filter (`filter.tag`) ist HIER aufgeloest — siehe
+ * `invoiceFilterConditions` fuer die Begruendung (Tabs/Kennzahlen teilen sich damit
+ * dasselbe `where` wie die Zeilenliste, `docIdsForTag` ist je Anfrage `cache()`-memoisiert).
  */
-export function quoteFilterConditions(orgId: string, filter: QuoteListFilter, opts: { ids?: string[] } = {}): Prisma.QuoteWhereInput[] {
+export async function quoteFilterConditions(
+  orgId: string,
+  filter: QuoteListFilter,
+  opts: { ids?: string[] } = {},
+): Promise<Prisma.QuoteWhereInput[]> {
   const and: Prisma.QuoteWhereInput[] = [{ orgId }];
+  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "QUOTE") } });
   if (filter.kind) and.push({ kind: filter.kind });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (opts.ids) and.push({ id: { in: opts.ids } });
@@ -165,7 +173,7 @@ export function quoteFilterConditions(orgId: string, filter: QuoteListFilter, op
  */
 export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<Record<string, number | null>> {
   const filter = quoteListFilterSchema.parse(rawFilter);
-  const base = quoteFilterConditions(orgId, filter);
+  const base = await quoteFilterConditions(orgId, filter);
   const tabs = ["all", ...QuoteStatus.options] as const;
   const [counts, index] = await Promise.all([
     Promise.all(
@@ -220,7 +228,7 @@ export async function quoteListHeadline(
   opts: { ids?: string[] } = {},
 ): Promise<QuoteListHeadline> {
   const filter = quoteListFilterSchema.parse(rawFilter);
-  const base = quoteFilterConditions(orgId, filter, opts);
+  const base = await quoteFilterConditions(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
   const and = statusCond ? [...base, statusCond] : base;
 
@@ -243,12 +251,9 @@ export async function listQuotes(
 ): Promise<QuoteListResult> {
   const filter = quoteListFilterSchema.parse(rawFilter);
 
-  const and = quoteFilterConditions(orgId, filter, opts);
+  const and = await quoteFilterConditions(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
   if (statusCond) and.push(statusCond);
-  // Phase 13d, Task 4: siehe Kommentar bei tagFilterShape — eine leere Zuordnungsmenge
-  // ergibt bewusst `id: { in: [] }`, niemals einen ignorierten Filter.
-  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "QUOTE") } });
 
   const where: Prisma.QuoteWhereInput = { AND: and };
 
@@ -331,10 +336,13 @@ export interface DeliveryNoteListResult {
 
 /**
  * Alle Filterbedingungen einer Lieferschein-Liste AUSSER dem Status (Phase 13a, Task 3 —
- * siehe invoiceFilterConditions fuer das Muster).
+ * siehe invoiceFilterConditions fuer das Muster). Fix-Welle 1 (must 1): der Tag-Filter
+ * (`filter.tag`) ist HIER aufgeloest — siehe `invoiceFilterConditions` fuer die
+ * Begruendung.
  */
-export function deliveryNoteFilterConditions(orgId: string, filter: DeliveryNoteListFilter): Prisma.DeliveryNoteWhereInput[] {
+export async function deliveryNoteFilterConditions(orgId: string, filter: DeliveryNoteListFilter): Promise<Prisma.DeliveryNoteWhereInput[]> {
   const and: Prisma.DeliveryNoteWhereInput[] = [{ orgId }];
+  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "DELIVERY_NOTE") } });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (!filter.includeArchived) and.push({ archivedAt: null });
   const dateRange = dateRangeAnd(filter.from, filter.to);
@@ -352,7 +360,7 @@ export function deliveryNoteFilterConditions(orgId: string, filter: DeliveryNote
  */
 export async function deliveryNoteStatusTabCounts(orgId: string, rawFilter: unknown): Promise<Record<"all" | DeliveryNoteStatus, number>> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
-  const base = deliveryNoteFilterConditions(orgId, filter);
+  const base = await deliveryNoteFilterConditions(orgId, filter);
   const tabs = ["all", ...DeliveryNoteStatus.options] as const;
   const counts = await Promise.all(
     tabs.map((tab) => {
@@ -384,7 +392,7 @@ export interface DeliveryNoteListHeadline {
  */
 export async function deliveryNoteListHeadline(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListHeadline> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
-  const and = deliveryNoteFilterConditions(orgId, filter);
+  const and = await deliveryNoteFilterConditions(orgId, filter);
   if (filter.status !== "all") and.push({ status: filter.status });
   const count = await prisma.deliveryNote.count({ where: { AND: and } });
   return { count };
@@ -393,11 +401,8 @@ export async function deliveryNoteListHeadline(orgId: string, rawFilter: unknown
 export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListResult> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
 
-  const and = deliveryNoteFilterConditions(orgId, filter);
+  const and = await deliveryNoteFilterConditions(orgId, filter);
   if (filter.status !== "all") and.push({ status: filter.status });
-  // Phase 13d, Task 4: siehe Kommentar bei tagFilterShape — eine leere Zuordnungsmenge
-  // ergibt bewusst `id: { in: [] }`, niemals einen ignorierten Filter.
-  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "DELIVERY_NOTE") } });
 
   const where: Prisma.DeliveryNoteWhereInput = { AND: and };
 
