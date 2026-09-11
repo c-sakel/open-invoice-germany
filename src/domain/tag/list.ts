@@ -9,8 +9,11 @@ import { dbInternal } from "@/lib/db";
 import type { TagDocType } from "@/schemas/tag";
 import type { TagRow } from "@/domain/tag/manage";
 
-/** Deckelt docIdsForTag gegen unbegrenztes Laden bei sehr vielen Zuordnungen. */
-export const TAG_FILTER_LIMIT = 10_000;
+/** Deckelt docIdsForTag gegen unbegrenztes Laden bei sehr vielen Zuordnungen — dieselbe
+ *  ungeteilte `id: { in: [...] }`-Konstruktion wie `BILLING_INDEX_RELATION_LIMIT`
+ *  (src/domain/document/billing-state.ts), deshalb derselbe Deckel: 5.000 haelt sicheren
+ *  Abstand zur SQLite-Bind-Parameter-Grenze (Fix-Welle 1, must 2 — vormals 10.000). */
+export const TAG_FILTER_LIMIT = 5_000;
 
 /** Dieselbe Projektion wie `listTags` (src/domain/tag/manage.ts) — dort UI-seitig ohne
  *  Paginierung, hier fuer `/api/v1/Tag` (Liste UND Einzelzugriff) wiederverwendet. */
