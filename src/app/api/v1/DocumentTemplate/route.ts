@@ -50,6 +50,8 @@ export const spec = {
     scope: "write",
     request: { body: documentTemplateInputSchema },
     response: apiDataResponseSchema(documentTemplateSchema),
-    errors: [400, 401, 403, 409, 429],
+    // 404: ein angegebener customerId gehoert nicht zur eigenen Organisation
+    // (Review-Fund Task 6, createTemplate prueft jetzt gegen Customer.orgId).
+    errors: [400, 401, 403, 404, 409, 429],
   },
 } satisfies Record<string, RouteSpec>;

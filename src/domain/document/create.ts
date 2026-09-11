@@ -26,6 +26,7 @@ import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
+import { NotFoundError } from "@/domain/errors";
 import { createDocumentSchema, type SnapshotSource } from "@/schemas";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -71,7 +72,9 @@ export async function createBusinessDocumentWithinTx(
   const itemLines = lines.filter((l) => l.lineType === "ITEM");
 
   const customer = await tx.customer.findFirst({ where: { id: input.customerId, orgId } });
-  if (!customer) throw new Error("Kunde nicht gefunden.");
+  // NotFoundError statt generischem Error (Review-Fund Task 6, Phase 13d) — siehe
+  // Kommentar in src/domain/invoice/create.ts.
+  if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
   const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId } });
 
   // Fix-Runde 1: org- UND kundengeprueft — Ansprechpartner/Rechnungsadresse muessen zum
