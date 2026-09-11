@@ -27,7 +27,6 @@ import { NavHint } from "@/components/shell/NavHint";
 import { loadNeighbors } from "@/domain/document/neighbors";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
-import { TagPicker } from "@/components/tags/TagPicker";
 import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import type { EmailDocType } from "@/schemas/email";
 import { DocumentStatusCard } from "./_parts/DocumentStatusCard";
@@ -103,8 +102,8 @@ export default async function DokumentDetail({
   // src/domain/document/actions.ts#quoteActions) — ueber availableActions statt einer
   // eigenen, zweiten Bedingung ermittelt.
   const canSaveTemplate = availableActions({ kind: "QUOTE", type: q.kind, status, isDraft: status === "DRAFT" }).includes("TEMPLATE_SAVE");
-  // Tags der Detailkarte "Beleg" — vorhandene Zuordnungen plus die volle Tag-Liste der
-  // Organisation (Auswahlfeld in TagPicker).
+  // Tags der Details-Karte (Fix-Welle 1, should 5) — vorhandene Zuordnungen plus die volle
+  // Tag-Liste der Organisation (Auswahlfeld in TagPicker).
   const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "QUOTE", [q.id])]);
   const quoteTags = docTags.get(q.id) ?? [];
 
@@ -118,15 +117,12 @@ export default async function DokumentDetail({
       <NavHint href={`/dokumente?kind=${q.kind}`} />
       <DocumentDetailLayout
         nav={
-          <>
-            <DetailNav
-              backHref={`/dokumente${backQuery ? `?${backQuery}` : ""}`}
-              backLabel={KIND_TITLE_PLURAL[q.kind] ?? "Dokumente"}
-              prevHref={prevId ? navHref(prevId) : null}
-              nextHref={nextId ? navHref(nextId) : null}
-            />
-            <TagPicker docType="QUOTE" docId={q.id} tags={quoteTags} options={allTags} />
-          </>
+          <DetailNav
+            backHref={`/dokumente${backQuery ? `?${backQuery}` : ""}`}
+            backLabel={KIND_TITLE_PLURAL[q.kind] ?? "Dokumente"}
+            prevHref={prevId ? navHref(prevId) : null}
+            nextHref={nextId ? navHref(nextId) : null}
+          />
         }
         title={title}
         badges={
@@ -198,7 +194,7 @@ export default async function DokumentDetail({
         pdf={<PdfStack src={`/api/documents/${q.id}/pdf`} title={`${title} — PDF`} />}
         aside={
           <>
-            <DocumentStatusCard q={q} status={status} />
+            <DocumentStatusCard q={q} status={status} tags={quoteTags} tagOptions={allTags} />
             {q.kind === "ANGEBOT" && (status === "DRAFT" || status === "SENT" || status === "EXPIRED") && (
               <ShareLinkPanel documentId={q.id} />
             )}

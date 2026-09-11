@@ -26,7 +26,6 @@ import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
-import { TagPicker } from "@/components/tags/TagPicker";
 import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import { DeliveryNoteStatusCard } from "./_parts/DeliveryNoteStatusCard";
 import { DeliveryNoteLines } from "./_parts/DeliveryNoteLines";
@@ -58,8 +57,8 @@ export default async function LieferscheinDetail({
   const archived = dn.archivedAt !== null;
   const attachments = await listAttachments(org.id, "DELIVERY_NOTE", dn.id);
   // Phase 13d, Task 4: TEMPLATE_SAVE ist unabhaengig vom Status verfuegbar (siehe
-  // src/domain/document/actions.ts#deliveryNoteActions). Tags der Detailkarte "Beleg" —
-  // vorhandene Zuordnungen plus die volle Tag-Liste der Organisation.
+  // src/domain/document/actions.ts#deliveryNoteActions). Tags der Details-Karte
+  // (Fix-Welle 1, should 5) — vorhandene Zuordnungen plus die volle Tag-Liste der Organisation.
   const canSaveTemplate = availableActions({ kind: "DELIVERY_NOTE", type: "DELIVERY_NOTE", status: dn.status, isDraft: dn.status === "DRAFT" }).includes(
     "TEMPLATE_SAVE",
   );
@@ -96,15 +95,12 @@ export default async function LieferscheinDetail({
   return (
     <DocumentDetailLayout
       nav={
-        <>
-          <DetailNav
-            backHref={`/lieferscheine${backQuery ? `?${backQuery}` : ""}`}
-            backLabel="Lieferscheine"
-            prevHref={prevId ? navHref(prevId) : null}
-            nextHref={nextId ? navHref(nextId) : null}
-          />
-          <TagPicker docType="DELIVERY_NOTE" docId={dn.id} tags={deliveryNoteTags} options={allTags} />
-        </>
+        <DetailNav
+          backHref={`/lieferscheine${backQuery ? `?${backQuery}` : ""}`}
+          backLabel="Lieferscheine"
+          prevHref={prevId ? navHref(prevId) : null}
+          nextHref={nextId ? navHref(nextId) : null}
+        />
       }
       title={title}
       badges={
@@ -198,7 +194,7 @@ export default async function LieferscheinDetail({
       }
       aside={
         <>
-          <DeliveryNoteStatusCard dn={dn} />
+          <DeliveryNoteStatusCard dn={dn} tags={deliveryNoteTags} tagOptions={allTags} />
           <AttachmentPanel
             docType="DELIVERY_NOTE"
             docId={dn.id}

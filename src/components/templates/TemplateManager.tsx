@@ -119,7 +119,13 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
               <tr key={t.id}>
                 <td className="px-4 py-2 font-medium text-slate-800">
                   {editingId === t.id ? (
-                    <input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={80} className={`${inputCls} py-1 text-sm`} />
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      maxLength={80}
+                      className={`${inputCls} py-1 text-sm`}
+                      aria-label="Vorlagenname"
+                    />
                   ) : (
                     t.name
                   )}
@@ -167,14 +173,18 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
         </table>
       </div>
 
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-rose-600">
+          {error}
+        </p>
+      )}
 
       <ConfirmDialog
         ref={dialogRef}
         title="Vorlage löschen"
         message={
           <>
-            Vorlage <span className="font-medium">{pendingDelete?.name}</span> wirklich löschen? Bereits daraus erzeugte Belege bleiben unveraendert.
+            Vorlage <span className="font-medium">{pendingDelete?.name}</span> wirklich löschen? Bereits daraus erzeugte Belege bleiben unverändert.
           </>
         }
         confirmLabel="Löschen"

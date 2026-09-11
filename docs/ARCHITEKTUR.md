@@ -582,7 +582,9 @@ akzeptiert ausschließlich Bearer (kein Session-Cookie, `src/proxy.ts` lässt
 ## 3c. Belegvorlagen & Tags (Phase 13d)
 
 `src/domain/template/` (`save.ts` — `saveTemplateFromDocument`/`createTemplate`/
-`updateTemplate`/`renameTemplate`/`deleteTemplate`; `apply.ts` — `applyTemplate`
+`updateTemplate`/`renameTemplate`/`deleteTemplate`; `source.ts` — `loadSourcePayload`
+(Fix-Welle 1, should 6: aus `save.ts` ausgegliedert, „Beleg -> Payload" fuer die drei
+Belegarten); `apply.ts` — `applyTemplate`
 AUSSCHLIESSLICH über `createDraftInvoice`/`createBusinessDocument`/
 `createDeliveryNote`, kein zweiter Erzeugungspfad, ein gesperrter Steuersatz aus
 der Vorlage wird NICHT still übernommen; `list.ts` — `listTemplates`/
@@ -705,9 +707,11 @@ src/
                            # untagDocument, idempotent), list.ts (tagsForDocuments/docIdsForTag,
                            # TAG_FILTER_LIMIT) — reine Metadaten, kein GoBD-Bezug (Phase 13d)
     template/               # save.ts (saveTemplateFromDocument/createTemplate/updateTemplate/
-                           # renameTemplate/deleteTemplate), apply.ts (applyTemplate — AUSSCHLIESSLICH
-                           # ueber createDraftInvoice/createBusinessDocument/createDeliveryNote, kein
-                           # zweiter Erzeugungspfad), list.ts (Phase 13d, siehe Abschnitt 3c)
+                           # renameTemplate/deleteTemplate), source.ts (loadSourcePayload,
+                           # Fix-Welle 1 should 6: Beleg -> Payload, aus save.ts ausgegliedert),
+                           # apply.ts (applyTemplate — AUSSCHLIESSLICH ueber createDraftInvoice/
+                           # createBusinessDocument/createDeliveryNote, kein zweiter Erzeugungspfad),
+                           # list.ts (Phase 13d, siehe Abschnitt 3c)
   api/                    # auth.ts (withApi), errors.ts, response.ts, rate-limit.ts, idempotency.ts,
                            # openapi.ts/openapi-zod-init.ts/spec.ts, docs-auth.ts, serializers/ (Phase 10,
                            # siehe Abschnitt 3b)

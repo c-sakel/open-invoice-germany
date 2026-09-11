@@ -118,10 +118,21 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
               editingId === t.id ? (
                 <tr key={t.id}>
                   <td className="px-4 py-2">
-                    <input value={editName} onChange={(e) => setEditName(e.target.value)} className={`${inputCls} py-1 text-sm`} maxLength={40} />
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className={`${inputCls} py-1 text-sm`}
+                      maxLength={40}
+                      aria-label="Tag-Name"
+                    />
                   </td>
                   <td className="px-4 py-2">
-                    <select value={editColor} onChange={(e) => setEditColor(e.target.value as TagColor)} className={`${inputCls} py-1 text-sm`}>
+                    <select
+                      value={editColor}
+                      onChange={(e) => setEditColor(e.target.value as TagColor)}
+                      className={`${inputCls} py-1 text-sm`}
+                      aria-label="Tag-Farbe"
+                    >
                       {TagColor.options.map((c) => (
                         <option key={c} value={c}>
                           {COLOR_LABEL[c] ?? c}
@@ -197,7 +208,11 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
         </button>
       </div>
 
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-rose-600">
+          {error}
+        </p>
+      )}
 
       <ConfirmDialog
         ref={dialogRef}
@@ -206,7 +221,7 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
           <>
             Tag <span className="font-medium">{pendingDelete?.name}</span> wirklich löschen? Das entfernt die Zuordnung bei{" "}
             <span className="font-medium">{pendingDelete?.documentCount ?? 0}</span>{" "}
-            {(pendingDelete?.documentCount ?? 0) === 1 ? "Beleg" : "Belegen"} — die Belege selbst bleiben unveraendert.
+            {(pendingDelete?.documentCount ?? 0) === 1 ? "Beleg" : "Belegen"} — die Belege selbst bleiben unverändert.
           </>
         }
         confirmLabel="Löschen"

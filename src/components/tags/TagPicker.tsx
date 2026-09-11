@@ -100,7 +100,7 @@ export function TagPicker({
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             className={`${inputCls} py-1 text-xs`}
-            aria-label="Tag auswaehlen"
+            aria-label="Tag auswählen"
           >
             <option value="">Tag wählen…</option>
             {available.map((o) => (
@@ -119,7 +119,11 @@ export function TagPicker({
           </button>
         </div>
       ) : null}
-      {error && <p className="text-xs text-rose-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-xs text-rose-600">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
