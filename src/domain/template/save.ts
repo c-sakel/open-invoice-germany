@@ -200,6 +200,14 @@ export async function createTemplate(orgId: string, rawInput: unknown, actor = "
   const input = documentTemplateInputSchema.parse(rawInput);
   const now = new Date();
 
+  // Kunde muss zur Organisation gehoeren (Review-Fund Task 6, Phase 13d, Muster
+  // src/domain/invoice/create.ts) — sonst koennte eine fremde Kunden-Id (andere Org)
+  // unbemerkt in der Vorlage landen.
+  if (input.customerId) {
+    const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true } });
+    if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
+  }
+
   try {
     return await dbInternal.$transaction(async (tx) => {
       const created = await tx.documentTemplate.create({
@@ -256,6 +264,12 @@ export async function renameTemplate(orgId: string, id: string, rawName: unknown
  */
 export async function updateTemplate(orgId: string, id: string, rawInput: unknown): Promise<DocumentTemplate> {
   const input = documentTemplateUpdateSchema.parse(rawInput);
+  // Kunde muss zur Organisation gehoeren (Review-Fund Task 6, Phase 13d) — wie
+  // `createTemplate`; ein explizites `null` (Kunde entfernen) braucht keine Pruefung.
+  if (input.customerId) {
+    const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true } });
+    if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
+  }
   try {
     const tpl = await dbInternal.documentTemplate.findFirst({ where: { id, orgId } });
     if (!tpl) throw new NotFoundError(`Vorlage ${id} nicht gefunden.`);

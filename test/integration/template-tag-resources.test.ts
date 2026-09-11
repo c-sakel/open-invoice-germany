@@ -23,6 +23,7 @@ import { POST as TemplateApply } from "@/app/api/v1/DocumentTemplate/[id]/apply/
 let orgId: string;
 let otherOrgId: string;
 let customerId: string;
+let otherCustomerId: string;
 let token: string;
 let readOnlyToken: string;
 let otherToken: string;
@@ -59,6 +60,13 @@ beforeAll(async () => {
     data: { orgId, name: "Wartungskunde AG", addressLine1: "Marktplatz 9", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
   });
   customerId = customer.id;
+
+  // Review-Fund Task 6: Kunde einer FREMDEN Organisation — createTemplate/updateTemplate/
+  // applyTemplate duerfen eine solche id nie stillschweigend akzeptieren.
+  const otherCustomer = await dbInternal.customer.create({
+    data: { orgId: otherOrgId, name: "Fremdkunde AG", addressLine1: "Y-Str. 1", postalCode: "2", city: "Y", type: "BUSINESS" },
+  });
+  otherCustomerId = otherCustomer.id;
 
   const key = await createApiKey(orgId, { name: "Vorlagen-Tags-Key", scopes: ["read", "write"] });
   token = key.token;
@@ -316,6 +324,55 @@ describe("/api/v1/DocumentTemplate", () => {
 
   it("Anwenden einer unbekannten Vorlage -> 404", async () => {
     const res = await TemplateApply(req("http://x/api/v1/DocumentTemplate/unbekannt/apply", { method: "POST", token, body: {} }), ctxFor("unbekannt"));
+    expect(res.status).toBe(404);
+  });
+
+  // Review-Fund Task 6 (Befund zu Task 5): customerId muss gegen die eigene Organisation
+  // geprueft werden — sonst koennte eine fremde Kunden-Id unbemerkt in einer Vorlage
+  // landen (createTemplate) bzw. eine bestehende Vorlage auf einen fremden Kunden
+  // umgehaengt werden (updateTemplate).
+  it("Create mit Kunde einer fremden Organisation -> 404", async () => {
+    const res = await TemplateCreate(
+      req("http://x/api/v1/DocumentTemplate", {
+        method: "POST",
+        token,
+        body: {
+          name: "Fremdkunden-Vorlage",
+          docType: "INVOICE",
+          customerId: otherCustomerId,
+          payload: { lines: [{ description: "Pos", quantityMilli: 1000, unitNetPriceCents: 1000, taxRate: 19 }] },
+        },
+      }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("Update mit Kunde einer fremden Organisation -> 404", async () => {
+    const created = await TemplateCreate(
+      req("http://x/api/v1/DocumentTemplate", {
+        method: "POST",
+        token,
+        body: { name: "Umzuhaengende Vorlage", docType: "INVOICE", payload: { lines: [{ description: "Pos", quantityMilli: 1000, unitNetPriceCents: 1000, taxRate: 19 }] } },
+      }),
+    );
+    const tpl = (await json(created)).data;
+    const res = await TemplateUpdate(req(`http://x/api/v1/DocumentTemplate/${tpl.id}`, { method: "PATCH", token, body: { customerId: otherCustomerId } }), ctxFor(tpl.id));
+    expect(res.status).toBe(404);
+  });
+
+  // Review-Fund Task 6: applyTemplate ruft createDraftInvoice/createBusinessDocument mit
+  // dem angegebenen `customerId` (Override) auf — ein ungueltiger/fremder Kunde muss dort
+  // (jetzt NotFoundError statt generischem Error) 404 liefern, nicht 500.
+  it("Anwenden mit ungueltigem Kunden -> 404", async () => {
+    const created = await TemplateCreate(
+      req("http://x/api/v1/DocumentTemplate", {
+        method: "POST",
+        token,
+        body: { name: "Vorlage fuer ungueltigen Kunden", docType: "INVOICE", payload: { lines: [{ description: "Pos", quantityMilli: 1000, unitNetPriceCents: 1000, taxRate: 19 }] } },
+      }),
+    );
+    const tpl = (await json(created)).data;
+    const res = await TemplateApply(req(`http://x/api/v1/DocumentTemplate/${tpl.id}/apply`, { method: "POST", token, body: { customerId: "unbekannt" } }), ctxFor(tpl.id));
     expect(res.status).toBe(404);
   });
 });
