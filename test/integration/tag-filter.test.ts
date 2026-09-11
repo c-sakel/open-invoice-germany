@@ -15,8 +15,8 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { createInvoiceSchema, type CreateInvoiceInput, type CreateDocumentInput } from "@/schemas";
-import { listInvoices } from "@/domain/invoice/list";
-import { listQuotes, listDeliveryNotes } from "@/domain/document/list";
+import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline } from "@/domain/invoice/list";
+import { listQuotes, listDeliveryNotes, quoteStatusTabCounts, quoteListHeadline, deliveryNoteStatusTabCounts, deliveryNoteListHeadline } from "@/domain/document/list";
 import { saveTag } from "@/domain/tag/manage";
 import { tagDocument } from "@/domain/tag/assign";
 import { ALLOWED_KEYS } from "@/domain/document/neighbors";
@@ -109,5 +109,66 @@ describe("Tag-Filter der Listen", () => {
 
   it("tag ueberlebt den Sprung Detailseite -> Zurueck zur Liste (ALLOWED_KEYS)", () => {
     expect(ALLOWED_KEYS).toContain("tag");
+  });
+
+  // Fix-Welle 1 (must 1, Koordinator-Ruling): Tab-Zaehler UND Kopfkennzahl muessen bei
+  // aktivem Tag-Filter dieselbe Zahl zeigen wie die (gefilterte) Liste — vor dieser
+  // Fix-Welle ignorierten invoiceStatusTabCounts/invoiceListHeadline (analog bei Angeboten/
+  // Lieferscheinen) `filter.tag`, siehe final-review.md must 1.
+  it("Tag-Filter: Tab-Zaehler UND Kopfkennzahl stimmen bei Rechnungen mit der gefilterten Liste ueberein", async () => {
+    const tag = await saveTag(orgId, null, { name: "Filter-Counts-Invoice" });
+    const tagged = await draftInvoice();
+    await draftInvoice(); // ungetaggt — darf weder in den Tabs noch in der Kennzahl mitzaehlen.
+    await tagDocument(orgId, tag.id, { docType: "INVOICE", docId: tagged.id });
+
+    const [list, tabs, headline] = await Promise.all([
+      listInvoices(orgId, { tag: tag.id }),
+      invoiceStatusTabCounts(orgId, { tag: tag.id }),
+      invoiceListHeadline(orgId, { tag: tag.id }),
+    ]);
+
+    expect(list.rows.map((r) => r.id)).toEqual([tagged.id]);
+    expect(list.total).toBe(1);
+    expect(tabs.all).toBe(1);
+    expect(tabs.draft).toBe(1); // draftInvoice() legt den Beleg als DRAFT an.
+    expect(headline.count).toBe(1);
+  });
+
+  it("Tag-Filter: Tab-Zaehler UND Kopfkennzahl stimmen bei Angeboten mit der gefilterten Liste ueberein", async () => {
+    const tag = await saveTag(orgId, null, { name: "Filter-Counts-Quote" });
+    const tagged = await draftQuote();
+    await draftQuote(); // ungetaggt
+    await tagDocument(orgId, tag.id, { docType: "QUOTE", docId: tagged.id });
+
+    const [list, tabs, headline] = await Promise.all([
+      listQuotes(orgId, { tag: tag.id }),
+      quoteStatusTabCounts(orgId, { tag: tag.id }),
+      quoteListHeadline(orgId, { tag: tag.id }),
+    ]);
+
+    expect(list.rows.map((r) => r.id)).toEqual([tagged.id]);
+    expect(list.total).toBe(1);
+    expect(tabs.all).toBe(1);
+    expect(tabs.DRAFT).toBe(1);
+    expect(headline.count).toBe(1);
+  });
+
+  it("Tag-Filter: Tab-Zaehler UND Kopfkennzahl stimmen bei Lieferscheinen mit der gefilterten Liste ueberein", async () => {
+    const tag = await saveTag(orgId, null, { name: "Filter-Counts-DeliveryNote" });
+    const tagged = await draftDeliveryNote();
+    await draftDeliveryNote(); // ungetaggt
+    await tagDocument(orgId, tag.id, { docType: "DELIVERY_NOTE", docId: tagged.id });
+
+    const [list, tabs, headline] = await Promise.all([
+      listDeliveryNotes(orgId, { tag: tag.id }),
+      deliveryNoteStatusTabCounts(orgId, { tag: tag.id }),
+      deliveryNoteListHeadline(orgId, { tag: tag.id }),
+    ]);
+
+    expect(list.rows.map((r) => r.id)).toEqual([tagged.id]);
+    expect(list.total).toBe(1);
+    expect(tabs.all).toBe(1);
+    expect(tabs.CREATED).toBe(1); // createDeliveryNoteWithinTx vergibt sofort status=CREATED.
+    expect(headline.count).toBe(1);
   });
 });
