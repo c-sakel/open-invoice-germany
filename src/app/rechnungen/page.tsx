@@ -6,6 +6,9 @@ import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline } from "@/dom
 import { availableActions } from "@/domain/document/actions";
 import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
+import { TagChips } from "@/components/tags/TagChips";
 import { resolveDefaultPaymentMethodCode } from "@/domain/payment-method/default";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { formatCents } from "@/lib/money";
@@ -89,6 +92,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     eInvoice: firstOf(sp.eInvoice),
     from: firstOf(sp.from),
     to: firstOf(sp.to),
+    tag: firstOf(sp.tag),
     offset: firstOf(sp.offset),
   };
   const liste = buildListeParam(values);
@@ -109,13 +113,15 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   // deshalb sequenziell statt im selben Promise.all wie unten.
   await applyCustomerComboFilter(org.id, rawFilter);
 
-  const [[result, tabCounts, headline], allPaymentMethods, docSettings, customerOptions] = await Promise.all([
+  const [[result, tabCounts, headline], allPaymentMethods, docSettings, customerOptions, tags] = await Promise.all([
     loadOverview(org.id, rawFilter, now),
     listPaymentMethods(org.id),
     loadDocumentSettings(org.id),
     // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
     // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
     dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
+    // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
+    listTags(org.id),
   ]);
   const activePaymentMethods = allPaymentMethods.filter((m) => m.isActive && m.code !== "SKONTO");
   const paymentMethodOptions = activePaymentMethods.map((m) => ({ code: m.code, name: m.name }));
@@ -137,7 +143,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
   // Herkunft je Zeile (Task 2/8): eine Bulk-Abfrage fuer die gesamte Seite statt N+1.
   const ids = result.rows.map((r) => r.id);
-  const origins = await originsFor(org.id, "INVOICE", ids);
+  const [origins, tagsByDocId] = await Promise.all([originsFor(org.id, "INVOICE", ids), tagsForDocuments(org.id, "INVOICE", ids)]);
 
   const headlineItems: HeadlineItem[] = [
     { label: "Belege", value: String(headline.count) },
@@ -197,6 +203,8 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     },
     { type: "date", name: "from", label: "Von" },
     { type: "date", name: "to", label: "Bis" },
+    // Phase 13d, Task 4: Tag-Filter — Aufloesung in listInvoices (docIdsForTag).
+    { type: "select", name: "tag", label: "Tag", options: tags.map((t) => ({ value: t.id, label: t.name })) },
   ];
 
   return (
@@ -251,6 +259,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                 });
                 const due = relativeDueLabel(inv.dueDate, now);
                 const origin = origins.get(inv.id);
+                const rowTags = tagsByDocId.get(inv.id) ?? [];
                 return (
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
@@ -262,6 +271,11 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                           <Link href={origin.href} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">
                             {origin.label}
                           </Link>
+                        </div>
+                      )}
+                      {rowTags.length > 0 && (
+                        <div className="mt-1">
+                          <TagChips tags={rowTags} size="xs" />
                         </div>
                       )}
                     </td>
@@ -293,6 +307,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                         cancelRoute={`/api/invoices/${inv.id}/cancel`}
                         dunningRoute={`/api/invoices/${inv.id}/dunning`}
                         dunningCount={inv.dunningCount}
+                        templateName={inv.number ?? undefined}
                         payment={
                           inv.openCents > 0
                             ? {

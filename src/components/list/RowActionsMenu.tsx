@@ -9,8 +9,10 @@ import { PaymentForm } from "@/components/PaymentForm";
 import { ConvertMenu } from "@/components/ConvertMenu";
 import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
 import { RowPaymentDialog } from "@/components/list/RowPaymentDialog";
+import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import { shouldForceDunningRetry } from "@/lib/dunning-force";
 import type { EmailDocType } from "@/schemas/email";
+import type { TagDocType } from "@/schemas/tag";
 
 const itemCls = "block w-full rounded-md px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50";
 const linkCls = `${itemCls} no-underline`;
@@ -50,6 +52,7 @@ export function RowActionsMenu({
   payment,
   convert,
   documentActions,
+  templateName,
 }: {
   kind: DocKind;
   id: string;
@@ -81,6 +84,10 @@ export function RowActionsMenu({
   /** Task 7: Statuswechsel/Archivieren/Duplizieren ueber die bestehende `DocumentActionsMenuItems` —
    *  keine eigene Uebergangstabelle hier. */
   documentActions?: { type: "QUOTE" | "DELIVERY_NOTE"; status: string; archived: boolean };
+  /** Phase 13d, Task 4: Namensvorschlag fuer SaveTemplateDialog ("Als Vorlage speichern",
+   *  nur bei `has("TEMPLATE_SAVE")` sichtbar) — i. d. R. die Belegnummer. `kind` liefert
+   *  bereits den TagDocType (RECURRING erhaelt TEMPLATE_SAVE nie, siehe availableActions). */
+  templateName?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -221,6 +228,9 @@ export function RowActionsMenu({
             <button type="button" onClick={duplicate} disabled={busy === "DUPLICATE"} className={itemCls}>
               {busy === "DUPLICATE" ? "…" : "Duplizieren"}
             </button>
+          )}
+          {has("TEMPLATE_SAVE") && kind !== "RECURRING" && (
+            <SaveTemplateDialog docType={kind as TagDocType} docId={id} defaultName={templateName} asMenuItem />
           )}
           {(has("SEND") || has("RESEND")) && emailDocType && (
             <div className={itemCls}>
