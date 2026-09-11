@@ -21,7 +21,7 @@ import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { createInvoiceSchema, type CreateInvoiceInput, type CreateDocumentInput } from "@/schemas";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
-import { saveTemplateFromDocument, TemplateNameConflictError } from "@/domain/template/save";
+import { saveTemplateFromDocument, deleteTemplate, TemplateNameConflictError } from "@/domain/template/save";
 import { applyTemplate, TemplateCustomerRequiredError } from "@/domain/template/apply";
 import { listTemplates } from "@/domain/template/list";
 import { documentTemplatePayloadSchema } from "@/schemas/template";
@@ -195,6 +195,34 @@ describe("saveTemplateFromDocument (INVOICE)", () => {
 
     const res = await applyTemplate(orgId, tpl.id, { customerId });
     expect(res.docType).toBe("INVOICE");
+  });
+});
+
+describe("deleteTemplate (Task 4, Koordinator-Nachtrag)", () => {
+  it("loescht die Vorlage und schreibt TEMPLATE_DELETED ins ActivityLog", async () => {
+    const inv = await draftInvoice();
+    const tpl = await saveTemplateFromDocument(orgId, { docType: "INVOICE", docId: inv.id, name: uniqueName("Zu-loeschen") });
+
+    await deleteTemplate(orgId, tpl.id);
+
+    expect(await dbInternal.documentTemplate.findUnique({ where: { id: tpl.id } })).toBeNull();
+    expect(await dbInternal.activityLog.count({ where: { orgId, entityId: tpl.id, type: "TEMPLATE_DELETED" } })).toBe(1);
+    // Bereits erzeugte Belege bleiben unberuehrt — Loeschen der Vorlage ruehrt keinen Beleg an.
+    expect(await dbInternal.invoice.findUnique({ where: { id: inv.id } })).not.toBeNull();
+  });
+
+  it("wirft NotFoundError fuer eine unbekannte oder fremde Vorlage (Org-Isolation)", async () => {
+    await expect(deleteTemplate(orgId, "unbekannt")).rejects.toBeInstanceOf(NotFoundError);
+
+    const invB = await createDraftInvoice(
+      orgB,
+      createInvoiceSchema.parse({ customerId: customerBId, lines: [{ description: "Fremd 3", quantityMilli: 1000, unitNetPriceCents: 100, taxRate: 19 }] } as CreateInvoiceInput),
+      { now: FIX_DATE },
+    );
+    const tplB = await saveTemplateFromDocument(orgB, { docType: "INVOICE", docId: invB.id, name: uniqueName("FremdVorlage-Delete") });
+    await expect(deleteTemplate(orgId, tplB.id)).rejects.toBeInstanceOf(NotFoundError);
+    // Aus Sicht der Eigentuemer-Org weiterhin vorhanden.
+    expect(await dbInternal.documentTemplate.findUnique({ where: { id: tplB.id } })).not.toBeNull();
   });
 });
 

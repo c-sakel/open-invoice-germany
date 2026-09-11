@@ -21,7 +21,10 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // Zuordnungen an potenziell vielen Belegen zugleich (DB-Cascade) — kein einzelner Beleg
 // ist Ziel des Ereignisses, deshalb ein eigener entityType statt eines willkuerlich
 // gewaehlten Belegs (entityId = Tag.id, src/domain/tag/manage.ts#deleteTag).
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG";
+// "TEMPLATE" (Phase 13d, Task 4, Koordinator-Nachtrag): analog "TAG" — eine Vorlage ist
+// nach dem Speichern unabhaengig vom Quellbeleg, ihr Loeschen ist kein Ereignis AN einem
+// Beleg (entityId = DocumentTemplate.id, src/domain/template/save.ts#deleteTemplate).
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -55,6 +58,7 @@ export const ACTIVITY_TYPES = {
   TAG_DELETED: "Tag geloescht",
   TEMPLATE_SAVED: "Als Belegvorlage gespeichert",
   TEMPLATE_APPLIED: "Aus Belegvorlage erzeugt",
+  TEMPLATE_DELETED: "Vorlage geloescht",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

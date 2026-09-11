@@ -180,3 +180,21 @@ export async function saveTemplateFromDocument(orgId: string, raw: unknown, acto
     throw e;
   }
 }
+
+/**
+ * Loescht eine Vorlage (Phase 13d, Task 4 — Koordinator-Nachtrag: VOR der Oberflaeche in
+ * einem eigenen Commit). Eine Vorlage ist reine Metadaten, kein GoBD-Belegbestandteil
+ * (Modulkommentar) — das Loeschen ruehrt keinen mit ihr bereits erzeugten Beleg an, nur
+ * die Vorlage selbst verschwindet (kein ChangeLog-Eintrag, nur das unverkettete
+ * ActivityLog, Audit K5). Org-Isolation wie `applyTemplate`: eine fremde/unbekannte id
+ * wirft `NotFoundError` (dasselbe Muster, kein eigener TemplateNotFoundError noetig).
+ */
+export async function deleteTemplate(orgId: string, id: string, actor = "system"): Promise<void> {
+  const now = new Date();
+  await dbInternal.$transaction(async (tx) => {
+    const tpl = await tx.documentTemplate.findFirst({ where: { id, orgId } });
+    if (!tpl) throw new NotFoundError(`Vorlage ${id} nicht gefunden.`);
+    await tx.documentTemplate.delete({ where: { id: tpl.id } });
+    await logActivity(tx, { orgId, entityType: "TEMPLATE", entityId: tpl.id, type: "TEMPLATE_DELETED", actor, at: now, data: { name: tpl.name } });
+  });
+}
