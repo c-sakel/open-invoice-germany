@@ -21,6 +21,9 @@ import { PdfStack } from "@/components/detail/PdfStack";
 import { CollapsibleSection } from "@/components/detail/CollapsibleSection";
 import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
+import { TagPicker } from "@/components/tags/TagPicker";
 import { buildInvoiceViewModel, primaryAction, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
@@ -114,6 +117,11 @@ export default async function InvoiceDetail({
 
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
 
+  // Phase 13d, Task 4: Tags der Detailkarte "Beleg" — vorhandene Zuordnungen (fuer DIESEN
+  // Beleg) plus die volle Tag-Liste der Organisation (Auswahlfeld in TagPicker).
+  const [allTags, docTags] = await Promise.all([listTags(org.id), tagsForDocuments(org.id, "INVOICE", [invoice.id])]);
+  const invoiceTags = docTags.get(invoice.id) ?? [];
+
   // S6 (Fix-Welle 1, Spec C "Detail-Layout"): "versendet am + Kanal" in der Details-Karte —
   // aus dem juengsten EmailLog-Eintrag, kein neues Feld auf Invoice. "Kanal" ist bislang
   // immer E-Mail (einziger Versandweg dieser Software), daher statisch angehaengt.
@@ -133,12 +141,15 @@ export default async function InvoiceDetail({
   return (
     <DocumentDetailLayout
       nav={
-        <DetailNav
-          backHref={`/rechnungen${backQuery ? `?${backQuery}` : ""}`}
-          backLabel="Rechnungen"
-          prevHref={prevId ? navHref(prevId) : null}
-          nextHref={nextId ? navHref(nextId) : null}
-        />
+        <>
+          <DetailNav
+            backHref={`/rechnungen${backQuery ? `?${backQuery}` : ""}`}
+            backLabel="Rechnungen"
+            prevHref={prevId ? navHref(prevId) : null}
+            nextHref={nextId ? navHref(nextId) : null}
+          />
+          <TagPicker docType="INVOICE" docId={invoice.id} tags={invoiceTags} options={allTags} />
+        </>
       }
       title={title}
       badges={
@@ -200,6 +211,8 @@ export default async function InvoiceDetail({
           isInvoiceType={vm.isInvoiceType}
           canCancelOrCredit={vm.canCancelOrCredit}
           canDuplicate={vm.canDuplicate}
+          canSaveTemplate={vm.actions.includes("TEMPLATE_SAVE")}
+          templateName={invoice.number ?? undefined}
         />
       }
       notice={
