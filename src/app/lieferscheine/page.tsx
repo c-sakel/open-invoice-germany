@@ -11,6 +11,9 @@ import {
 } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
 import { applyCustomerComboFilter } from "@/domain/customer/list";
+import { listTags } from "@/domain/tag/manage";
+import { tagsForDocuments } from "@/domain/tag/list";
+import { TagChips } from "@/components/tags/TagChips";
 import { StatusBadge } from "@/components/StatusBadge";
 import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
@@ -53,6 +56,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
     from: firstOf(sp.from),
     to: firstOf(sp.to),
     archiviert: firstOf(sp.archiviert),
+    tag: firstOf(sp.tag),
     offset: firstOf(sp.offset),
   };
   const liste = buildListeParam(values);
@@ -61,13 +65,15 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
   const org = await getActiveOrg();
   const rawFilter = parseListQuery(sp);
 
-  const [customerOptions] = await Promise.all([
+  const [customerOptions, , tags] = await Promise.all([
     // Fix-Welle S3: `take: 500` (Spec: „bis zu 500 Kunden") — ohne Begrenzung laedt jeder
     // Seitenaufruf ALLE nicht archivierten Kunden der Organisation in die <datalist>.
     dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 500 }),
     // Fix-Welle M2: `customerId` kann ein getippter Kundenname statt einer Id sein — auf
     // einen exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec).
     applyCustomerComboFilter(org.id, rawFilter),
+    // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
+    listTags(org.id),
   ]);
 
   // Fix-Welle S6: `runListFilter` versucht `rawFilter` zuerst vollstaendig, entfernt bei
@@ -87,7 +93,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
 
   // Herkunft je Zeile (Task 2/8): eine Bulk-Abfrage fuer die gesamte Seite statt N+1.
   const ids = result.rows.map((r) => r.id);
-  const origins = await originsFor(org.id, "DELIVERY_NOTE", ids);
+  const [origins, tagsByDocId] = await Promise.all([originsFor(org.id, "DELIVERY_NOTE", ids), tagsForDocuments(org.id, "DELIVERY_NOTE", ids)]);
 
   const statusTabs: StatusTab[] = (["all", ...DeliveryNoteStatus.options] as const).map((value) => ({
     value,
@@ -108,6 +114,8 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
     },
     { type: "date", name: "from", label: "Von" },
     { type: "date", name: "to", label: "Bis" },
+    // Phase 13d, Task 4: Tag-Filter — Aufloesung in listDeliveryNotes (docIdsForTag).
+    { type: "select", name: "tag", label: "Tag", options: tags.map((t) => ({ value: t.id, label: t.name })) },
   ];
 
   const headlineItems: HeadlineItem[] = [{ label: "Belege", value: String(headline.count) }];
@@ -178,6 +186,11 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                           </Link>
                         </div>
                       )}
+                      {(tagsByDocId.get(n.id) ?? []).length > 0 && (
+                        <div className="mt-1">
+                          <TagChips tags={tagsByDocId.get(n.id) ?? []} size="xs" />
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{n.customerName}</td>
                     <td className="px-4 py-3 text-slate-600">{deDate(n.issueDate)}</td>
@@ -200,6 +213,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                         duplicateRedirect="/lieferscheine/{id}"
                         cancelRoute={`/api/delivery-notes/${n.id}/status`}
                         cancelBody={{ action: "CANCEL" }}
+                        templateName={n.number ?? undefined}
                       />
                     </td>
                   </tr>
