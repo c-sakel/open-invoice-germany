@@ -589,7 +589,7 @@ der Vorlage wird NICHT still übernommen; `list.ts` — `listTemplates`/
 `listTemplatesApi`) und `src/domain/tag/` (`manage.ts` — `listTags`/`saveTag`/
 `deleteTag`; `assign.ts` — `tagDocument`/`untagDocument`, beide idempotent;
 `list.ts` — `tagsForDocuments` (Batch-Query je Seite, kein N+1)/`docIdsForTag`,
-`TAG_FILTER_LIMIT = 10_000`) sind reine Metadaten ohne GoBD-Bezug: setz-/
+`TAG_FILTER_LIMIT = 5_000`) sind reine Metadaten ohne GoBD-Bezug: setz-/
 entfernbar auch an festgeschriebenen Belegen, kein Schreibvorgang auf
 Invoice/InvoiceLine, kein ChangeLog-Eintrag (nur das unverkettete `ActivityLog`,
 Audit K5). Eine Vorlage speichert Positionen + Kopf-Metadaten eines Belegs OHNE
