@@ -43,6 +43,13 @@ export const ACTIVITY_TYPES = {
   QUOTE_ACCEPTED: "Angebot angenommen",
   QUOTE_REJECTED: "Angebot abgelehnt",
   REVOKED: "Widerrufen",
+  // Phase 13d: Tag-Zuordnung (src/domain/tag/assign.ts) und Belegvorlagen
+  // (src/domain/template/*, Task 3+) — beide nutzen bestehende ActivityEntityType-Werte
+  // (INVOICE|QUOTE|DELIVERY_NOTE), kein eigener entityType noetig.
+  TAG_ADDED: "Tag gesetzt",
+  TAG_REMOVED: "Tag entfernt",
+  TEMPLATE_SAVED: "Als Belegvorlage gespeichert",
+  TEMPLATE_APPLIED: "Aus Belegvorlage erzeugt",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

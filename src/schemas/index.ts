@@ -913,3 +913,6 @@ export * from "./webhook";
 
 // ── Phase 12d: Anfrageprotokoll der REST-API ────────────────────────────────
 export * from "./api-log";
+
+// ── Phase 13d: Tags ──────────────────────────────────────────────────────────
+export * from "./tag";
