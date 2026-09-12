@@ -913,11 +913,20 @@ model SchedulerLock {
 }
 
 /// Anmeldekonto (Self-Hosting). MVP: ein Admin-Konto, beim ersten Start angelegt.
+/// Phase 14a, Task 8 (R12): Anmeldung haerten — failedLoginCount/lockedUntil tragen die
+/// Kontosperre ueber einen Neustart hinweg (die IP-Bremse in src/lib/rate-limit.ts ist
+/// bewusst nur In-Memory), lastLoginAt/passwordChangedAt bereiten Task 9 vor (Sitzungs-
+/// entwertung nach Passwortaenderung). Alle vier additiv/nullable bzw. mit Default —
+/// Bestandszeilen bleiben unveraendert lauffaehig.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
+  createdAt         DateTime  @default(now())
 }
 
 /// Append-only Änderungsprotokoll (GoBD-Kern). Hash-Chain macht Manipulation erkennbar.

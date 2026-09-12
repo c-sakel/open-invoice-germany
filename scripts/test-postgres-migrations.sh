@@ -954,4 +954,29 @@ COUNT24=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count
 [ "$COUNT24" = "49" ] || fail "erwartet 49 Tabellen nach Phase 14a/Basiszins+Dunning-Segmente, gefunden $COUNT24"
 echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, Bestands-Dunning behaelt NULL interestSegmentsJson, 49 Tabellen"
 
+echo "==> Fall 25 (Phase 14a, Task 8): Anmeldung haerten — additive User-Spalten, Bestandszeile bleibt lauffaehig"
+# Praeambel woertlich wie Fall 21, Ausschluss der Login-Haertung-Migration, Bestandszeile
+# user25 im ALTEN Spaltenumfang (id, email, passwordHash, createdAt) — die Migration darf
+# nur Spalten hinzufuegen, keine Bestandszeile veraendern/entfernen.
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914092100_phase14a_login_hardening)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "User" ("id","email","passwordHash","createdAt") VALUES ('user25','bestand25@example.com','x:y',NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Login-Haertung-Migration ist auf der Bestands-DB fehlgeschlagen"
+USERVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"failedLoginCount\", coalesce(\"lockedUntil\"::text,'<null>'), coalesce(\"lastLoginAt\"::text,'<null>'), coalesce(\"passwordChangedAt\"::text,'<null>') from \"User\" where id='user25'")
+[ "$USERVAL" = "0|<null>|<null>|<null>" ] || fail "User-Bestandszeile user25 abweichend ('$USERVAL'), erwartet 0|<null>|<null>|<null>"
+COUNT25=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT25" = "49" ] || fail "erwartet weiterhin 49 Tabellen nach der Login-Haertung-Migration (nur vier Spalten), gefunden $COUNT25"
+echo "    ok — User.failedLoginCount=0, lockedUntil/lastLoginAt/passwordChangedAt NULL auf Bestandszeile, 49 Tabellen"
+
 echo "ALLE TESTS BESTANDEN"
