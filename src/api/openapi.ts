@@ -55,6 +55,7 @@ import { layoutSchema } from "./serializers/layout";
 import { apiRequestLogSchema } from "./serializers/api-request-log";
 import { tagSchema } from "./serializers/tag";
 import { documentTemplateSchema } from "./serializers/document-template";
+import { baseInterestRateSchema } from "./serializers/base-interest-rate";
 
 const V1_ROOT = path.resolve(process.cwd(), "src/app/api/v1");
 
@@ -118,6 +119,7 @@ export const RESOURCE_SCHEMAS: Record<string, z.ZodTypeAny> = {
     documents: z.record(z.string(), z.unknown()),
     branding: z.record(z.string(), z.unknown()),
     print: z.record(z.string(), z.unknown()),
+    dunning: z.record(z.string(), z.unknown()),
   }),
   ApiKey: apiKeySchema,
   Recurring: recurringSchema,
@@ -126,6 +128,7 @@ export const RESOURCE_SCHEMAS: Record<string, z.ZodTypeAny> = {
   ApiRequestLog: apiRequestLogSchema,
   Tag: tagSchema,
   DocumentTemplate: documentTemplateSchema,
+  BaseInterestRate: baseInterestRateSchema,
 };
 
 /** `/api/v1/Invoice` oder `/api/v1/Invoice/{id}` -> "Invoice"; alles Tiefere (Aktionen,

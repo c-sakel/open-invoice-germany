@@ -53,6 +53,8 @@ import { GET as TextTemplateGet, PATCH as TextTemplateUpdate } from "@/app/api/v
 import { GET as EmailTemplateList, POST as EmailTemplateCreate } from "@/app/api/v1/EmailTemplate/route";
 import { GET as EmailTemplateGet, PATCH as EmailTemplateUpdate } from "@/app/api/v1/EmailTemplate/[id]/route";
 import { GET as SettingsGet, PATCH as SettingsUpdate } from "@/app/api/v1/Settings/route";
+import { GET as BaseInterestRateList, POST as BaseInterestRateCreate } from "@/app/api/v1/BaseInterestRate/route";
+import { DELETE as BaseInterestRateDelete } from "@/app/api/v1/BaseInterestRate/[id]/route";
 import { GET as ApiKeyList, POST as ApiKeyCreate } from "@/app/api/v1/ApiKey/route";
 import { GET as ApiKeyGet, PATCH as ApiKeyUpdate } from "@/app/api/v1/ApiKey/[id]/route";
 import { GET as LayoutList } from "@/app/api/v1/Layout/route";
@@ -793,7 +795,7 @@ describe("/api/v1/EmailTemplate", () => {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 describe("/api/v1/Settings", () => {
-  it("Get liefert documents/branding/print", async () => {
+  it("Get liefert documents/branding/print/dunning", async () => {
     const res = await SettingsGet(req("http://x/api/v1/Settings", { token }));
     expect(res.status).toBe(200);
     const j = (await json(res)).data;
@@ -801,6 +803,7 @@ describe("/api/v1/Settings", () => {
     expect(j.documents).toBeDefined();
     expect(j.branding).toBeDefined();
     expect(j.print).toBeDefined();
+    expect(j.dunning).toBeDefined();
   });
 
   it("Patch aktualisiert ein Fragment", async () => {
@@ -870,6 +873,110 @@ describe("/api/v1/Settings", () => {
       req("http://x/api/v1/Settings", { method: "PATCH", token, body: { documents: { taxRates: [] } } }),
     );
     expect(res.status).toBe(400);
+  });
+
+  // Phase 14a, Task 4 (R6): dunning ist ANDERS verdrahtet als die drei aelteren Fragmente
+  // (kein lokales mergeSentFields VOR saveDunningSettings, siehe Modulkommentar der Route)
+  // — hier trotzdem dieselbe Merge-Erwartung wie bei branding oben: ein Teil-Update darf
+  // andere, bereits vom Default abweichende dunning-Felder nicht zuruecksetzen.
+  it("Patch von nur dunning.gracePeriodDays laesst autoSend unveraendert (Merge)", async () => {
+    const setup = await SettingsUpdate(req("http://x/api/v1/Settings", { method: "PATCH", token, body: { dunning: { autoSend: true } } }));
+    expect(setup.status).toBe(200);
+    expect((await json(setup)).data.dunning.autoSend).toBe(true);
+
+    const res = await SettingsUpdate(req("http://x/api/v1/Settings", { method: "PATCH", token, body: { dunning: { gracePeriodDays: 9 } } }));
+    expect(res.status).toBe(200);
+    const dunning = (await json(res)).data.dunning;
+    expect(dunning.gracePeriodDays).toBe(9);
+    expect(dunning.autoSend).toBe(true);
+  });
+
+  // Altschreibweg (R6): ein PATCH auf dunning.baseInterestRateBp/-baseRateValidFrom legt
+  // ZUSAETZLICH einen Eintrag in der Basiszinssatz-Historie an (BaseInterestRate) — die
+  // Verzugszinsberechnung liest seit Phase 14a/Task 3 ausschliesslich diese Tabelle.
+  it("Patch dunning.baseInterestRateBp (Altschreibweg) legt einen BaseInterestRate-Eintrag an", async () => {
+    const res = await SettingsUpdate(
+      req("http://x/api/v1/Settings", { method: "PATCH", token, body: { dunning: { baseInterestRateBp: 333, baseRateValidFrom: "2059-01-01" } } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await json(res)).data.dunning.baseInterestRateBp).toBe(333);
+
+    const listRes = await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token }));
+    const rows = (await json(listRes)).data as { validFrom: string; rateBp: number }[];
+    const entry = rows.find((r) => r.validFrom === "2059-01-01");
+    expect(entry?.rateBp).toBe(333);
+  });
+
+  it("Patch von nur dunning.gracePeriodDays (ohne baseInterestRateBp) legt KEINEN neuen BaseInterestRate-Eintrag an", async () => {
+    const before = (await json(await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token })))).data.length;
+    const res = await SettingsUpdate(req("http://x/api/v1/Settings", { method: "PATCH", token, body: { dunning: { gracePeriodDays: 2 } } }));
+    expect(res.status).toBe(200);
+    const after = (await json(await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token })))).data.length;
+    expect(after).toBe(before);
+  });
+});
+
+// ── BaseInterestRate (Phase 14a, Task 4, R6) ───────────────────────────────────
+describe("/api/v1/BaseInterestRate", () => {
+  it("Liste ist nach validFrom aufsteigend sortiert und enthaelt den zuvor angelegten Eintrag", async () => {
+    const res = await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token }));
+    expect(res.status).toBe(200);
+    const rows = (await json(res)).data as { validFrom: string }[];
+    const sorted = [...rows].map((r) => r.validFrom).sort();
+    expect(rows.map((r) => r.validFrom)).toEqual(sorted);
+    expect(rows.some((r) => r.validFrom === "2059-01-01")).toBe(true);
+  });
+
+  it("Create -> 201, ueberschreibt denselben Stichtag statt zu duplizieren (Upsert)", async () => {
+    const createRes = await BaseInterestRateCreate(
+      req("http://x/api/v1/BaseInterestRate", { method: "POST", token, body: { validFrom: "2059-07-01", rateBp: 400, source: "Bundesbank" } }),
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await json(createRes)).data;
+    expect(created.objectName).toBe("BaseInterestRate");
+    expect(created.rateBp).toBe(400);
+
+    const updateRes = await BaseInterestRateCreate(
+      req("http://x/api/v1/BaseInterestRate", { method: "POST", token, body: { validFrom: "2059-07-01", rateBp: 450 } }),
+    );
+    expect(updateRes.status).toBe(201);
+    const listRes = await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token }));
+    const matching = ((await json(listRes)).data as { validFrom: string; rateBp: number }[]).filter((r) => r.validFrom === "2059-07-01");
+    expect(matching.length).toBe(1);
+    expect(matching[0]?.rateBp).toBe(450);
+  });
+
+  it("Create ohne rateBp -> 400", async () => {
+    const res = await BaseInterestRateCreate(req("http://x/api/v1/BaseInterestRate", { method: "POST", token, body: { validFrom: "2059-08-01" } }));
+    expect(res.status).toBe(400);
+  });
+
+  it("Delete entfernt einen Eintrag, wenn mindestens ein weiterer existiert", async () => {
+    const before = (await json(await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token })))).data as { id: string; validFrom: string }[];
+    const toDelete = before.find((r) => r.validFrom === "2059-07-01")!;
+    const res = await BaseInterestRateDelete(req(`http://x/api/v1/BaseInterestRate/${toDelete.id}`, { method: "DELETE", token }), ctxFor(toDelete.id));
+    expect(res.status).toBe(200);
+    const after = (await json(await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token })))).data as { id: string }[];
+    expect(after.find((r) => r.id === toDelete.id)).toBeUndefined();
+  });
+
+  it("Delete des letzten verbleibenden Eintrags -> 400", async () => {
+    // Alle bis auf einen Eintrag der fremden Organisation loeschen, damit "letzter
+    // verbleibender Eintrag" deterministisch ist — otherOrgId hat bislang noch keinen
+    // eigenen BaseInterestRate-Eintrag angelegt bekommen.
+    const createRes = await BaseInterestRateCreate(
+      req("http://x/api/v1/BaseInterestRate", { method: "POST", token: otherToken, body: { validFrom: "2059-01-01", rateBp: 200 } }),
+    );
+    const onlyEntry = (await json(createRes)).data as { id: string };
+    const res = await BaseInterestRateDelete(req(`http://x/api/v1/BaseInterestRate/${onlyEntry.id}`, { method: "DELETE", token: otherToken }), ctxFor(onlyEntry.id));
+    expect(res.status).toBe(400);
+  });
+
+  it("Delete fremder Org -> 404", async () => {
+    const listRes = await BaseInterestRateList(req("http://x/api/v1/BaseInterestRate", { token: otherToken }));
+    const [entry] = (await json(listRes)).data as { id: string }[];
+    const res = await BaseInterestRateDelete(req(`http://x/api/v1/BaseInterestRate/${entry!.id}`, { method: "DELETE", token }), ctxFor(entry!.id));
+    expect(res.status).toBe(404);
   });
 });
 
