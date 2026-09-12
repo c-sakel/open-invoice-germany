@@ -71,15 +71,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const authed = Boolean(userId);
 
   if (!authed) {
-    // Task 9 (R12): `src/proxy.ts` laesst ein strukturell gueltiges, nicht abgelaufenes
-    // Token unveraendert durch (Edge-Pruefung bleibt bewusst ohne Datenbankzugriff) — erst
-    // `getCurrentUserId()` (oben) verwirft eine Sitzung, deren `pwc` nicht mehr zum
-    // aktuellen `User.passwordChangedAt` passt (Passwortwechsel auf einem ANDEREN
-    // Geraet/Browser). Ohne diese Umleitung wuerde die angeforderte Seite trotzdem mit
-    // vollem Inhalt rendern (nur die Navigation faellt weg) — "andere Sitzungen beenden"
-    // waere dann nur Kosmetik. "/", "/login" und "/setup" rendern bewusst AUCH ohne
-    // gueltige Sitzung (siehe deren jeweilige page.tsx) und duerfen deshalb nicht
-    // umgeleitet werden — sonst Redirect-Schleife bzw. kaputte Marketing-/Setup-Seite.
+    // Task 9 (R12), praezisiert in Fix-Welle 4 (must 2): `src/proxy.ts` verwirft eine
+    // Sitzung mit entwertetem `pwc` (Passwortwechsel auf einem ANDEREN Geraet/Browser)
+    // inzwischen bereits selbst (`userIdFromToken`, derselbe Helfer wie hier) und leitet
+    // fuer jeden nicht-oeffentlichen Pfad um — dieser Zweig laeuft fuer einen SOLCHEN Pfad
+    // also praktisch nie noch mehr. Er bleibt trotzdem als zweite Verteidigungslinie
+    // stehen UND ist fuer die drei PUBLIC-Pfade weiterhin die einzige Pruefung: "/",
+    // "/login" und "/setup" rendern bewusst AUCH ohne gueltige Sitzung (siehe deren
+    // jeweilige page.tsx) und werden vom Proxy deshalb nie umgeleitet — nur hier
+    // entscheidet `authed`, ob z. B. "/" das Dashboard oder die Marketing-Seite zeigt.
+    // Umgeleitet wird trotzdem NICHT auf "/", "/login" oder "/setup" selbst — sonst
+    // Redirect-Schleife bzw. kaputte Marketing-/Setup-Seite.
     const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
     if (pathname && pathname !== "/" && pathname !== "/login" && pathname !== "/setup") {
       redirect(`/login?from=${encodeURIComponent(pathname)}`);

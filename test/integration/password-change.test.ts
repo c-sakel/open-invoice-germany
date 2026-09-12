@@ -31,6 +31,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { createSessionToken } from "@/lib/auth/session";
 import { userIdFromToken } from "@/lib/auth/server";
+import { changePassword } from "@/domain/auth/login";
 import { POST } from "@/app/api/auth/password/route";
 
 const CURRENT_PASSWORD = "aktuelles-passwort-123";
@@ -157,5 +158,28 @@ describe("Sitzungsentwertung nach Passwortwechsel (userIdFromToken)", () => {
     const updated = await dbInternal.user.findUniqueOrThrow({ where: { id: user.id } });
     const freshToken = await createSessionToken(user.id, updated.passwordChangedAt!.getTime());
     expect(await userIdFromToken(freshToken)).toBe(user.id);
+  });
+});
+
+describe("changePassword — Kontosperre nach Ablauf (Fix-Welle 4, must 1, Konsistenzfix zu attemptLogin)", () => {
+  it("ein falsches aktuelles Passwort nach abgelaufener Sperre sperrt NICHT sofort wieder", async () => {
+    const user = await makeUser();
+    const now = new Date("2037-02-01T10:00:00.000Z");
+    for (let i = 0; i < 5; i++) {
+      await changePassword(user.id, { currentPassword: "falsch", newPassword: NEW_PASSWORD, newPasswordRepeat: NEW_PASSWORD }, { now });
+    }
+    const locked = await dbInternal.user.findUniqueOrThrow({ where: { id: user.id }, select: { failedLoginCount: true, lockedUntil: true } });
+    expect(locked.failedLoginCount).toBe(5);
+    expect(locked.lockedUntil).not.toBeNull();
+
+    const afterLockExpired = new Date(now.getTime() + 16 * 60_000);
+    const res = await changePassword(user.id, { currentPassword: "immer-noch-falsch", newPassword: NEW_PASSWORD, newPasswordRepeat: NEW_PASSWORD }, { now: afterLockExpired });
+    expect(res.status).toBe("invalid_current_password");
+    const afterOneMore = await dbInternal.user.findUniqueOrThrow({ where: { id: user.id }, select: { failedLoginCount: true, lockedUntil: true } });
+    expect(afterOneMore.failedLoginCount).toBe(1);
+    expect(afterOneMore.lockedUntil).toBeNull();
+
+    const okRes = await changePassword(user.id, { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD, newPasswordRepeat: NEW_PASSWORD }, { now: new Date(afterLockExpired.getTime() + 1000) });
+    expect(okRes.status).toBe("ok");
   });
 });

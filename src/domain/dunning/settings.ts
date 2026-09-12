@@ -112,19 +112,31 @@ export async function saveDunningSettings(orgId: string, rawInput: unknown): Pro
   const raw = (rawInput && typeof rawInput === "object" ? (rawInput as Record<string, unknown>) : {}) as Record<string, unknown>;
   const parsed = dunningSettingsInputSchema.partial().parse(raw);
   const input = mergeSentFields(current, raw, parsed);
+  const writesBaseRate = "baseInterestRateBp" in raw || "baseRateValidFrom" in raw;
 
-  if ("baseInterestRateBp" in raw || "baseRateValidFrom" in raw) {
-    await upsertBaseRate(orgId, {
-      validFrom: input.baseRateValidFrom ?? new Date().toISOString().slice(0, 10),
-      rateBp: input.baseInterestRateBp,
-      source: "Altschreibweg (Mahnwesen-Einstellungen)",
+  // Fix-Welle 4 (should 3, bindende Regel "Transaktionen bei abhaengigen
+  // Schreibvorgaengen"): der Basiszinssatz-Upsert und der DunningSettings-Upsert waren
+  // bisher zwei unabhaengige Schreibvorgaenge — bricht der zweite ab, bliebe ein
+  // `BaseInterestRate`-Eintrag zurueck, der nie gewollt war. Beide jetzt in EINER
+  // Transaktion (Muster src/domain/invoice/*.ts).
+  const row = await dbInternal.$transaction(async (tx) => {
+    if (writesBaseRate) {
+      await upsertBaseRate(
+        orgId,
+        {
+          validFrom: input.baseRateValidFrom ?? new Date().toISOString().slice(0, 10),
+          rateBp: input.baseInterestRateBp,
+          source: "Altschreibweg (Mahnwesen-Einstellungen)",
+        },
+        tx,
+      );
+    }
+
+    return tx.dunningSettings.upsert({
+      where: { orgId },
+      create: { orgId, ...input, baseRateValidFrom: input.baseRateValidFrom ? new Date(input.baseRateValidFrom) : null },
+      update: { ...input, baseRateValidFrom: input.baseRateValidFrom ? new Date(input.baseRateValidFrom) : null },
     });
-  }
-
-  const row = await dbInternal.dunningSettings.upsert({
-    where: { orgId },
-    create: { orgId, ...input, baseRateValidFrom: input.baseRateValidFrom ? new Date(input.baseRateValidFrom) : null },
-    update: { ...input, baseRateValidFrom: input.baseRateValidFrom ? new Date(input.baseRateValidFrom) : null },
   });
   return toInput(row);
 }

@@ -111,6 +111,17 @@ export async function attemptLogin(rawInput: unknown, ctx: { ip?: string; now?: 
   }
 
   const isLocked = user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
+  // Fix-Welle 4 (must 1): eine ABGELAUFENE Sperre (lockedUntil gesetzt, aber in der
+  // Vergangenheit) liess den Zaehler bisher unveraendert auf dem Sperr-Schwellenwert
+  // stehen — nur ein RICHTIGES Passwort setzt ihn zurueck (Erfolgsfall unten). Ein
+  // einzelner weiterer Fehlversuch NACH Ablauf ergab dadurch sofort wieder
+  // `failedLoginCount >= LOCK_THRESHOLD` und sperrte erneut fuer 15 Minuten — immer
+  // wieder, ohne dass je ein richtiges Passwort noetig gewesen waere. Fuer das EINZIGE
+  // Betreiberkonto der Produktivinstanz waere das eine dauerhafte Selbstaussperrung durch
+  // einen einzigen Fehlversuch je Sperrfenster — genau das, was laut Moduldoc/
+  // docs/LIMITATIONEN.md ausgeschlossen sein soll. Nach Ablauf zaehlt ein Fehlversuch
+  // deshalb wie der ERSTE einer neuen Serie.
+  const expiredLock = user.lockedUntil !== null && !isLocked;
 
   if (!passwordOk) {
     if (isLocked) {
@@ -121,7 +132,7 @@ export async function attemptLogin(rawInput: unknown, ctx: { ip?: string; now?: 
       // einem andauernden Angriff waehrend der Sperre unbegrenzt.
       return { status: "invalid" };
     }
-    const failedLoginCount = user.failedLoginCount + 1;
+    const failedLoginCount = expiredLock ? 1 : user.failedLoginCount + 1;
     const willLock = failedLoginCount >= LOCK_THRESHOLD;
     await dbInternal.user.update({
       where: { id: user.id },
@@ -180,6 +191,10 @@ export async function changePassword(userId: string, rawInput: unknown, ctx: { i
   if (!user) return { status: "invalid_current_password" };
 
   const isLocked = user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
+  // Fix-Welle 4 (must 1, Konsistenzfix analog attemptLogin): siehe dortiger Kommentar —
+  // eine abgelaufene Sperre zaehlt den naechsten Fehlversuch wie den ERSTEN einer neuen
+  // Serie, statt sofort wieder zu sperren.
+  const expiredLock = user.lockedUntil !== null && !isLocked;
   const currentOk = verifyPassword(input.currentPassword, user.passwordHash);
 
   if (!currentOk) {
@@ -189,7 +204,7 @@ export async function changePassword(userId: string, rawInput: unknown, ctx: { i
       // mehr — die Sperre wurde bereits beim Ausloesen protokolliert (LOGIN_LOCKED).
       return { status: "invalid_current_password" };
     }
-    const failedLoginCount = user.failedLoginCount + 1;
+    const failedLoginCount = expiredLock ? 1 : user.failedLoginCount + 1;
     const willLock = failedLoginCount >= LOCK_THRESHOLD;
     await dbInternal.user.update({
       where: { id: user.id },

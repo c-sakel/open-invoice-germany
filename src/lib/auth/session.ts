@@ -45,8 +45,13 @@ export interface SessionTokenPayload {
    * die Signatur/den Ablauf prueft diese Funktion selbst — der Abgleich gegen den
    * AKTUELLEN `User.passwordChangedAt`-Wert (Sitzungsentwertung nach Passwortwechsel)
    * passiert bewusst NICHT hier, sondern in `getCurrentUserId`/`userIdFromToken`
-   * (`src/lib/auth/server.ts`, Node-Laufzeit) — diese Datei bleibt Edge-tauglich
-   * (`src/proxy.ts`) und damit ohne Datenbankzugriff.
+   * (`src/lib/auth/server.ts`). Fix-Welle 4 (must 2): `userIdFromToken` laeuft
+   * mittlerweile SOWOHL im Root-Layout ALS AUCH direkt in `src/proxy.ts` — Next.js 16
+   * fuehrt Proxy-Dateien immer in der Node.js-Laufzeit aus (kein optionales Edge mehr wie
+   * beim frueheren `middleware.ts`), ein Datenbankzugriff dort ist also moeglich. Diese
+   * Datei (`verifySessionToken`) bleibt trotzdem bewusst rein signatur-/ablaufpruefend
+   * und ohne Datenbankzugriff, DAMIT sie unveraendert in beiden Kontexten wiederverwendbar
+   * bleibt.
    */
   pwc: number | null;
 }
