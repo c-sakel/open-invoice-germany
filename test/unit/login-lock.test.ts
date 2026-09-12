@@ -109,7 +109,7 @@ describe("attemptLogin — Kontosperre", () => {
     expect(row.lastLoginAt?.toISOString()).toBe(now.toISOString());
   });
 
-  it("unbekannte E-Mail liefert 'invalid', ohne eine Zeile anzulegen oder zu aendern", async () => {
+  it("unbekannte E-Mail liefert 'invalid', ohne ein Konto anzulegen oder zu aendern", async () => {
     const res = await attemptLogin({ email: "unbekannt-login-lock@example.com", password: "irgendwas" });
     expect(res.status).toBe("invalid");
   });
@@ -121,5 +121,14 @@ describe("attemptLogin — Kontosperre", () => {
       await attemptLogin({ email, password: "falsch" }, { ip: "203.0.113.9", now });
     }
     await expect(attemptLogin({ email, password: "falsch" }, { ip: "203.0.113.9", now })).rejects.toThrow();
+  });
+
+  it("IP-Bremse greift auch OHNE IP (Fix-Welle 3, must): fehlende IPs teilen sich einen 'unknown'-Bucket", async () => {
+    const { email } = await makeUser();
+    const now = new Date("2037-01-01T10:00:00.000Z");
+    for (let i = 0; i < 10; i++) {
+      await attemptLogin({ email, password: "falsch" }, { now });
+    }
+    await expect(attemptLogin({ email, password: "falsch" }, { now })).rejects.toThrow();
   });
 });

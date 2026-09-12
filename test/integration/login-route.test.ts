@@ -108,4 +108,44 @@ describe("POST /api/auth/login", () => {
       expect(row.actor).not.toBe(email);
     }
   });
+
+  it("11 Versuche OHNE Proxy-Header (keine IP) -> 429 mit Retry-After (Fix-Welle 3, must)", async () => {
+    const { email } = await makeUser();
+    for (let i = 0; i < 10; i++) {
+      const res = await POST(loginReq({ email, password: "falsch" }));
+      expect(res.status).toBe(401);
+    }
+    const res = await POST(loginReq({ email, password: "falsch" }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).not.toBeNull();
+  });
+
+  it("Fehlversuch bei unbekannter E-Mail wird protokolliert wie bei bekanntem Konto (Fix-Welle 3, must — Laufzeit-Symmetrie), ohne E-Mail/Passwort im Protokoll", async () => {
+    const unknownEmail = "unbekannt-symmetrie@example.com";
+    const countBefore = await dbInternal.activityLog.count({ where: { entityType: "USER", entityId: "unknown" } });
+    const res = await POST(loginReq({ email: unknownEmail, password: "falsch-und-geheim" }, "198.51.100.7"));
+    expect(res.status).toBe(401);
+    const countAfter = await dbInternal.activityLog.count({ where: { entityType: "USER", entityId: "unknown" } });
+    expect(countAfter).toBe(countBefore + 1);
+    const row = await dbInternal.activityLog.findFirst({ where: { entityType: "USER", entityId: "unknown" }, orderBy: { at: "desc" } });
+    expect(row?.type).toBe("LOGIN_FAILED");
+    expect(row?.actor).toBe("unknown");
+    expect(row?.dataJson ?? "").not.toContain(unknownEmail);
+    expect(row?.dataJson ?? "").not.toContain("falsch-und-geheim");
+  });
+
+  it("ActivityLog waechst waehrend einer aktiven Sperre nicht mit jedem weiteren Fehlversuch (Fix-Welle 3, should)", async () => {
+    const { id, email } = await makeUser();
+    const ip = "198.51.100.8";
+    for (let i = 0; i < 5; i++) {
+      await POST(loginReq({ email, password: "falsch" }, ip));
+    }
+    const countAtLock = await dbInternal.activityLog.count({ where: { entityType: "USER", entityId: id } });
+    for (let i = 0; i < 5; i++) {
+      const res = await POST(loginReq({ email, password: "immer-noch-falsch" }, ip));
+      expect(res.status).toBe(401);
+    }
+    const countAfterMoreAttempts = await dbInternal.activityLog.count({ where: { entityType: "USER", entityId: id } });
+    expect(countAfterMoreAttempts).toBe(countAtLock);
+  });
 });
