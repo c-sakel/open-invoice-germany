@@ -19,9 +19,13 @@ npm run db:migrate          # legt die Datenbank an
 npm run dev                 # startet http://localhost:3000
 ```
 
-Optional Demo-Daten: `npm run db:seed` (1 Beispiel-Unternehmen, 1 Kunde, Produkte, eine festgeschriebene Rechnung).
+Optional Demo-Daten: `npm run db:seed` (1 Beispiel-Unternehmen, 1 Kunde, Produkte, eine festgeschriebene Rechnung; Demo-Login `admin@example.com` / `demo1234`).
 
 Deine Daten liegen in `prisma/dev.db` — eine einzige Datei, die nur dir gehört. **Sichere sie regelmäßig** (kopieren genügt).
+
+### Anmeldung & Konto
+
+Beim allerersten Start führt dich `/setup` zur Einrichtung von E-Mail und Passwort für das (einzige) Admin-Konto — danach läuft jede weitere Anmeldung über `/login`. Nach **5 falschen Passworteingaben in Folge** wird das Konto **15 Minuten** gesperrt (die Meldung nennt die verbleibende Wartezeit); auch das richtige Passwort wird währenddessen abgelehnt. Unter **„Einstellungen → Konto"** änderst du dein Passwort (aktuelles Passwort + neues Passwort, mindestens 10 Zeichen) — das beendet **sofort alle anderen angemeldeten Sitzungen** (andere Browser/Geräte müssen sich neu anmelden), nur der Browser, in dem du gerade änderst, bleibt angemeldet. Es gibt (noch) **keinen Passwort-Reset per E-Mail** und **keine Zwei-Faktor-Authentifizierung** — bei einem verlorenen Passwort hilft nur ein direkter Zugriff auf die Datenbank (siehe [SECURITY.md](../SECURITY.md)).
 
 ---
 
@@ -150,7 +154,7 @@ Im Beleg-Editor wählst du unter „Steuerschema" eine von **sieben** Optionen �
 ## 5. Datensicherung & Betrieb
 
 - **Backup**: Die SQLite-Datei `prisma/dev.db` (bzw. die PostgreSQL-Datenbank) regelmäßig sichern. Aufbewahrungsfrist beachten (siehe COMPLIANCE.md).
-- **Mehrbenutzer/Internet**: Das MVP hat noch **keine eingebaute Anmeldung**. Betreibe es lokal oder hinter einem Auth-Proxy. Siehe [SECURITY.md](../SECURITY.md).
+- **Mehrbenutzer/Internet**: Die App hat eine eingebaute Anmeldung (ein Admin-Konto, siehe „Anmeldung & Konto" oben) — aber **keine Mehrbenutzer-/Rollentrennung**. Betreibe sie in Produktion **immer** hinter HTTPS mit gesetztem `AUTH_SECRET`. Siehe [SECURITY.md](../SECURITY.md).
 - **PostgreSQL/Docker**: `docker compose up --build` (siehe README).
 - **API-Dokumentation im Container**: `/api/docs` (Swagger UI) und `GET /api/v1/openapi.json` lesen die committete Datei `openapi/openapi.json` zur Laufzeit relativ zu `process.cwd()` — das Docker-Image kopiert dieses Verzeichnis in die runner-Stage (`Dockerfile`, Fix-Welle Phase 10). Bei einem selbst angepassten Dockerfile darauf achten, `openapi/` mit auszuliefern, sonst liefert `/api/docs` einen 500er.
 

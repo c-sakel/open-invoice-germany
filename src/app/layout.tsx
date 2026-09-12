@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { AppShell } from "@/components/shell/AppShell";
 import { SlimShell } from "@/components/shell/SlimShell";
 import { unreadCount } from "@/domain/notifications/create";
-import { PUBLIC_NO_NAV_HEADER } from "@/proxy";
+import { PUBLIC_NO_NAV_HEADER, PATHNAME_HEADER } from "@/proxy";
 import { dbInternal } from "@/lib/db";
 import { DEFAULT_APP_NAME, DEFAULT_BRAND, getOrgAndBrand, safeBrand } from "@/domain/settings/brand";
 // `resolveJsonModule` ist in tsconfig.json aktiv — der JSON-Import wird beim Build inline
@@ -70,6 +71,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const authed = Boolean(userId);
 
   if (!authed) {
+    // Task 9 (R12): `src/proxy.ts` laesst ein strukturell gueltiges, nicht abgelaufenes
+    // Token unveraendert durch (Edge-Pruefung bleibt bewusst ohne Datenbankzugriff) — erst
+    // `getCurrentUserId()` (oben) verwirft eine Sitzung, deren `pwc` nicht mehr zum
+    // aktuellen `User.passwordChangedAt` passt (Passwortwechsel auf einem ANDEREN
+    // Geraet/Browser). Ohne diese Umleitung wuerde die angeforderte Seite trotzdem mit
+    // vollem Inhalt rendern (nur die Navigation faellt weg) — "andere Sitzungen beenden"
+    // waere dann nur Kosmetik. "/", "/login" und "/setup" rendern bewusst AUCH ohne
+    // gueltige Sitzung (siehe deren jeweilige page.tsx) und duerfen deshalb nicht
+    // umgeleitet werden — sonst Redirect-Schleife bzw. kaputte Marketing-/Setup-Seite.
+    const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
+    if (pathname && pathname !== "/" && pathname !== "/login" && pathname !== "/setup") {
+      redirect(`/login?from=${encodeURIComponent(pathname)}`);
+    }
+
     // Login/Setup: schlanke Huelle ohne Sidebar (Abschluss-Review M7: Header/Footer wieder
     // wie vor der Sidebar-Einfuehrung — dieselbe SlimShell wie die oeffentliche Huelle oben).
     const brand = await safeBrand();

@@ -48,6 +48,7 @@ export const SETTINGS_KEYS = [
   "automatisierung",
   "api",
   "webhooks",
+  "konto",
 ] as const;
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];
 
@@ -116,6 +117,9 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/automatisierung", label: "Automatisierung", key: "automatisierung" },
   { href: "/einstellungen/api", label: "API", key: "api" },
   { href: "/einstellungen/webhooks", label: "Webhooks", key: "webhooks" },
+  // Task 9 (R12): einzige Einstellungsseite OHNE Organisationsbezug — das eigene
+  // Anmeldekonto (Passwort). `SettingsTabs` rueckt sie deshalb optisch nach rechts ab.
+  { href: "/einstellungen/konto", label: "Konto", key: "konto" },
 ];
 
 function splitHref(href: string): { path: string; params: URLSearchParams } {

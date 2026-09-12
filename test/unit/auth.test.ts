@@ -15,9 +15,14 @@ describe("password (scrypt)", () => {
 });
 
 describe("session token (HMAC)", () => {
-  it("Round-Trip liefert die userId", async () => {
+  it("Round-Trip liefert uid + pwc", async () => {
+    const token = await createSessionToken("user-123", 1_700_000_000_000);
+    expect(await verifySessionToken(token)).toEqual({ uid: "user-123", pwc: 1_700_000_000_000 });
+  });
+
+  it("ohne pwc (Alt-Token-kompatibel, Task 9) liefert pwc null", async () => {
     const token = await createSessionToken("user-123");
-    expect(await verifySessionToken(token)).toBe("user-123");
+    expect(await verifySessionToken(token)).toEqual({ uid: "user-123", pwc: null });
   });
 
   it("manipuliertes Token wird abgelehnt", async () => {
