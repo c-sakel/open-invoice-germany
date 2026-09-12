@@ -526,7 +526,12 @@ describe("Phase 7, Task 2 — Wiederkehrende Rechnungen (recurringAutoFinalizeDe
     expect(invoice.headerText).toMatch(/^Abrechnungszeitraum \d{2}\.\d{2}\.\d{4} – \d{2}\.\d{2}\.\d{4}$/);
   });
 
-  it("recurringInsertPeriodText aus: erzeugte Rechnung bekommt keinen Kopftext", async () => {
+  // Phase 14a, Task 1 (R5): Abo-Rechnungen laufen jetzt ueber createDraftInvoiceWithinTx —
+  // "kein Kopftext" (headerText undefined) bedeutet ab jetzt, dass wie bei jeder anderen
+  // Rechnung die INVOICE-HEAD-Textvorlage greift (hier der Systemdefault aus
+  // ensureOrgTextTemplates), statt gar keinen Text zu haben. Textaenderung, keine
+  // Betragsaenderung (Spec R5) — der Test hiess vorher "...bekommt keinen Kopftext".
+  it("recurringInsertPeriodText aus: erzeugte Rechnung bekommt die INVOICE-HEAD-Textvorlage statt des Zeitraumtexts", async () => {
     await saveDocumentSettings(orgId, { recurringInsertPeriodText: false });
     const rec = await createRecurring(orgId, {
       customerId,
@@ -543,7 +548,8 @@ describe("Phase 7, Task 2 — Wiederkehrende Rechnungen (recurringAutoFinalizeDe
     });
     const emitted = await emitRecurringNow(rec.id, { now: FIX_DATE });
     const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
-    expect(invoice.headerText).toBeNull();
+    expect(invoice.headerText).not.toMatch(/^Abrechnungszeitraum/);
+    expect(invoice.headerText).toBe("Wir erlauben uns, folgende Leistungen in Rechnung zu stellen:");
     await saveDocumentSettings(orgId, { recurringInsertPeriodText: true });
   });
 });

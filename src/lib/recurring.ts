@@ -66,3 +66,23 @@ export function advanceDate(from: Date, interval: RecurInterval, count = 1, anch
   const day = Math.min(desiredDay, lastDayOfMonth);
   return new Date(targetYear, targetMonth, day, 12, 0, 0, 0);
 }
+
+/**
+ * Grenzen der Abrechnungsperiode, die zu einem Periodenstichtag (`periodEnd`) gehört.
+ *
+ * `periodEnd` ist bei Abos IMMER der Stichtag des aktuellen Laufs (`RecurringInvoice.nextRunDate`
+ * zum Zeitpunkt der Erzeugung) — nicht `now`: der Lauf kann nachträglich (z. B. nach einem
+ * Ausfall) erzeugt werden, das Leistungsdatum bleibt trotzdem der geplante Stichtag. Der
+ * Periodenbeginn ist folgerichtig GENAU ein Intervall VOR diesem Stichtag — `advanceDate` mit
+ * negativem `intervalCount` liefert das (dieselbe Monats-/Wochenklemmung wie beim Vorwärts-
+ * schieben, siehe `advanceDate`-Kommentar), keine zweite Datumsrechnung.
+ */
+export function periodRange(
+  periodEnd: Date,
+  interval: RecurInterval,
+  intervalCount: number,
+  anchorDay?: number | null,
+): { start: Date; end: Date } {
+  const start = advanceDate(periodEnd, interval, -intervalCount, anchorDay);
+  return { start, end: periodEnd };
+}
