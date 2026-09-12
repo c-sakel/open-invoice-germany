@@ -17,4 +17,10 @@ describe("Dockerfile", () => {
     const runnerStage = dockerfile.slice(dockerfile.indexOf("AS runner"));
     expect(runnerStage).toMatch(/COPY --from=build \/app\/openapi \.\/openapi/);
   });
+
+  it("kopiert assets/ (Liberation-Sans-Schriften) in die runner-Stage (sonst PDF/A-Bruch: registerFont findet die TTFs nicht)", () => {
+    const dockerfile = readFileSync(path.join(process.cwd(), "Dockerfile"), "utf8");
+    const runnerStage = dockerfile.slice(dockerfile.indexOf("AS runner"));
+    expect(runnerStage).toMatch(/COPY --from=build \/app\/assets \.\/assets/);
+  });
 });

@@ -33,6 +33,10 @@ COPY --from=build /app/prisma ./prisma
 # — ohne diese Zeile fehlte das Verzeichnis in der runner-Stage komplett, /api/docs und
 # GET /api/v1/openapi.json warfen ENOENT -> 500 auf jeder Produktivinstanz.
 COPY --from=build /app/openapi ./openapi
+# Task 6 (Phase 14a): pdfkit registriert die vier Liberation-Sans-Schnitte fuer den
+# PDF/A-3b-Modus zur Laufzeit aus assets/fonts/ (src/lib/pdf/fonts.ts liest relativ zu
+# process.cwd()) — ohne diese Zeile fehlten die Schriften in der runner-Stage komplett.
+COPY --from=build /app/assets ./assets
 # Fix-Welle 12c (C1): src/app/api/branding/icon/route.ts liest den Fallback bei fehlendem
 # Upload zur Laufzeit relativ zu process.cwd() (`src/app/favicon.ico`) — ohne diese Zeile
 # fehlte die Datei in der runner-Stage, jede Anfrage ohne eigenes Favicon warf ENOENT.
