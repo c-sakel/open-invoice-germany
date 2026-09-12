@@ -93,6 +93,26 @@ describe("attemptLogin — Kontosperre", () => {
     expect(res.status).toBe("ok");
   });
 
+  it("Fix-Welle 4 (must 1): ein FALSCHES Passwort nach abgelaufener Sperre sperrt NICHT sofort wieder (keine dauerhafte Selbstaussperrung)", async () => {
+    const { email } = await makeUser();
+    const now = new Date("2037-01-01T10:00:00.000Z");
+    for (let i = 0; i < 5; i++) {
+      await attemptLogin({ email, password: "falsch" }, { now });
+    }
+    const afterLockExpired = new Date(now.getTime() + 16 * 60_000);
+    // Ein EINZELNER weiterer Fehlversuch nach Ablauf der Sperre — vorher zaehlte das
+    // als 6. Versuch (>= LOCK_THRESHOLD) und sperrte sofort erneut fuer 15 Minuten.
+    const res = await attemptLogin({ email, password: "immer-noch-falsch" }, { now: afterLockExpired });
+    expect(res.status).toBe("invalid");
+    const row = await dbInternal.user.findUniqueOrThrow({ where: { email }, select: { failedLoginCount: true, lockedUntil: true } });
+    expect(row.failedLoginCount).toBe(1);
+    expect(row.lockedUntil).toBeNull();
+
+    // Das richtige Passwort ist danach sofort wieder moeglich, ohne 15 Minuten warten zu muessen.
+    const okRes = await attemptLogin({ email, password: PASSWORD }, { now: new Date(afterLockExpired.getTime() + 1000) });
+    expect(okRes.status).toBe("ok");
+  });
+
   it("Erfolg setzt Zaehler/Sperre zurueck und setzt lastLoginAt", async () => {
     const { email, id } = await makeUser();
     const now = new Date("2037-01-01T10:00:00.000Z");

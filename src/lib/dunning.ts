@@ -13,6 +13,8 @@
  * funktion mit genau einem Satz — bestehende Aufrufer/Tests bleiben unveraendert gruen.
  */
 import { roundHalfUp } from "./money";
+import { utcDateOnly } from "./date-only";
+import { allocateProportional } from "./pricing/allocate";
 import { rateForDate, type BaseRateEntry } from "@/domain/dunning/base-rate";
 import type { InterestSegment } from "@/schemas";
 
@@ -77,8 +79,8 @@ export interface ComputeInterestSegmentsInput {
 
 export interface ComputeInterestSegmentsResult {
   segments: InterestSegment[];
-  /** Gesamtbetrag ueber ALLE Abschnitte — Rundung erfolgt EINMAL ueber die exakte
-   *  Bruch-Summe (R7), nicht als Summe der (je fuer sich gerundeten) `segments[].interestCents`. */
+  /** Gesamtbetrag ueber ALLE Abschnitte — identisch zur Summe der `segments[].interestCents`
+   *  (Fix-Welle 4, should 2: Groesst-Rest-Verteilung, siehe unten). */
   interestCents: number;
   /** Tagegewichteter Mittelwert des Basiszinssatzes in bp, gerundet (R8, `baseInterestRatePermille`-Snapshot). */
   baseRateBpWeighted: number;
@@ -90,16 +92,29 @@ export interface ComputeInterestSegmentsResult {
  * Basiszinssatz-Historie und berechnet je Abschnitt `offen * (Basiszins + Zuschlag) *
  * Tage / (10000 * 365)` als exakten (ungerundeten) Bruch — `interestCents` (gesamt) rundet
  * diese Summe genau EINMAL (R7), damit das Ergebnis nicht gegenueber der einstufigen
- * Rechnung driftet. Die einzelnen `segments[].interestCents` sind je fuer sich gerundet
- * und dienen NUR der Anzeige (PDF-Zeile je Abschnitt) — nicht der Gesamtsumme.
+ * Rechnung driftet. `segments[].interestCents` verteilt genau DIESEN gerundeten
+ * Gesamtbetrag per Groesst-Rest-Verfahren (`allocateProportional`, Fix-Welle 4, should 2)
+ * proportional zu den exakten Bruchanteilen auf die Abschnitte — die Summe der
+ * Abschnittsbetraege ist dadurch IMMER exakt `interestCents` (vorher je Abschnitt
+ * unabhaengig gerundet, konnte um 1-2 Cent von der ausgewiesenen Zinssumme abweichen).
  */
 export function computeInterestSegments(input: ComputeInterestSegmentsInput): ComputeInterestSegmentsResult {
   const { openAmountCents, isConsumer, rates } = input;
   const pointsBp = (isConsumer ? 5 : 9) * 100;
-  const totalDays = Math.max(0, daysBetween(input.from, input.to));
+  // Fix-Welle 4 (should 1): auf UTC-Kalendertagsgrenzen normalisieren, BEVOR an den
+  // Basiszinssatz-Wechseln geschnitten wird — `input.from`/`input.to` koennen eine
+  // Uhrzeit tragen (z. B. `invoice.dueDate` bei einem Abo-Lauf,
+  // src/domain/recurring/run.ts, oder das `now` der Mahnung). Ohne Normalisierung
+  // schneidet `daysBetween` je Abschnitt EINZELN ab (Math.floor) — die Summe der
+  // Abschnittstage konnte dadurch bis zu einen Tag kleiner sein als `totalDays`
+  // (Zinsverlust). Mit Normalisierung ist die Summe der Abschnittstage immer exakt
+  // `totalDays`.
+  const from = new Date(utcDateOnly(input.from));
+  const to = new Date(utcDateOnly(input.to));
+  const totalDays = Math.max(0, daysBetween(from, to));
 
   if (totalDays === 0) {
-    return { segments: [], interestCents: 0, baseRateBpWeighted: rateForDate(rates, input.from).rateBp, pointsBp };
+    return { segments: [], interestCents: 0, baseRateBpWeighted: rateForDate(rates, from).rateBp, pointsBp };
   }
 
   // Grenzen strikt ZWISCHEN from und to — eine Grenze exakt auf `from` (Satzwechsel am
@@ -107,13 +122,13 @@ export function computeInterestSegments(input: ComputeInterestSegmentsInput): Co
   // zum jeweiligen Abschnittsbeginn (`rateForDate`) traegt sie ohnehin bereits mit.
   const boundaries = rates
     .map((r) => r.validFrom.getTime())
-    .filter((t) => t > input.from.getTime() && t < input.to.getTime())
+    .filter((t) => t > from.getTime() && t < to.getTime())
     .sort((a, b) => a - b);
-  const cutTimes = [input.from.getTime(), ...boundaries, input.to.getTime()];
+  const cutTimes = [from.getTime(), ...boundaries, to.getTime()];
 
   let exactSum = 0;
   let weightedDaySum = 0;
-  const segments: InterestSegment[] = [];
+  const rawSegments: { from: Date; to: Date; days: number; baseRateBp: number; fraction: number }[] = [];
   for (let i = 0; i < cutTimes.length - 1; i++) {
     const segFrom = new Date(cutTimes[i]!);
     const segTo = new Date(cutTimes[i + 1]!);
@@ -123,19 +138,26 @@ export function computeInterestSegments(input: ComputeInterestSegmentsInput): Co
     const fraction = (openAmountCents * (baseRateBp + pointsBp) * days) / (10000 * 365);
     exactSum += fraction;
     weightedDaySum += baseRateBp * days;
-    segments.push({
-      from: segFrom.toISOString(),
-      to: segTo.toISOString(),
-      days,
-      baseRateBp,
-      pointsBp,
-      interestCents: roundHalfUp(fraction),
-    });
+    rawSegments.push({ from: segFrom, to: segTo, days, baseRateBp, fraction });
   }
+
+  const interestCents = roundHalfUp(exactSum);
+  const segmentCents = allocateProportional(
+    interestCents,
+    rawSegments.map((s) => s.fraction),
+  );
+  const segments: InterestSegment[] = rawSegments.map((s, i) => ({
+    from: s.from.toISOString(),
+    to: s.to.toISOString(),
+    days: s.days,
+    baseRateBp: s.baseRateBp,
+    pointsBp,
+    interestCents: segmentCents[i]!,
+  }));
 
   return {
     segments,
-    interestCents: roundHalfUp(exactSum),
+    interestCents,
     baseRateBpWeighted: roundHalfUp(weightedDaySum / totalDays),
     pointsBp,
   };

@@ -1,17 +1,21 @@
 /**
  * W2/G1 (Phase 3b, Fix-Runde): Verhalten des `proxy` selbst (nicht nur die Praefix-Liste
- * wie in test/unit/proxy-public.test.ts). `verifySessionToken` wird gemockt, damit die
- * Tests ohne echte Session-Tokens/DB laufen.
+ * wie in test/unit/proxy-public.test.ts). `userIdFromToken` wird gemockt, damit die Tests
+ * ohne echte Session-Tokens/DB laufen.
+ *
+ * Fix-Welle 4 (must 2): `proxy.ts` ruft seitdem `userIdFromToken`
+ * (`@/lib/auth/server`, prueft zusaetzlich `pwc` gegen die DB) statt nur
+ * `verifySessionToken` (reine Signatur-/Ablaufpruefung) auf — Next.js 16 fuehrt
+ * Proxy-Dateien immer in der Node.js-Laufzeit aus, ein Datenbankzugriff dort ist also
+ * moeglich. "valid-token" simuliert eine gueltige, "stale-token" eine strukturell
+ * gueltige, aber per Passwortwechsel entwertete Sitzung (pwc-Mismatch) — beide Faelle
+ * unterscheidet erst `userIdFromToken`, nicht mehr `verifySessionToken` alleine.
  */
 import { describe, it, expect, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-// Task 9 (R12): verifySessionToken liefert seitdem { uid, pwc } statt einer blossen
-// userId-Zeichenkette — proxy.ts selbst prueft aber weiterhin nur die Wahrheitshaftigkeit
-// des Rueckgabewerts (kein Datenbankzugriff in der Edge-Pruefung, siehe src/proxy.ts).
-vi.mock("@/lib/auth/session", () => ({
-  SESSION_COOKIE: "oig_session",
-  verifySessionToken: vi.fn(async (token: string | undefined | null) => (token === "valid-token" ? { uid: "user-1", pwc: null } : null)),
+vi.mock("@/lib/auth/server", () => ({
+  userIdFromToken: vi.fn(async (token: string | undefined | null) => (token === "valid-token" ? "user-1" : null)),
 }));
 
 import { proxy, PUBLIC_NO_NAV_HEADER, PATHNAME_HEADER } from "@/proxy";
@@ -111,5 +115,32 @@ describe("proxy", () => {
     });
     const res = await proxy(req);
     expect(res.headers.get("x-middleware-request-" + PATHNAME_HEADER)).toBe("/rechnungen");
+  });
+
+  // Fix-Welle 4 (must 2): eine entwertete Sitzung (pwc-Mismatch nach Passwortwechsel)
+  // muss NICHT nur beim Seiten-Rendern, sondern auch auf Schreibpfaden greifen — eine
+  // Server-Action kommt als POST auf denselben Seiten-Pfad an (z. B. "/einstellungen/
+  // mahnwesen", wo src/app/actions/base-interest-rate.ts haengt), eine interne API-Route
+  // (z. B. /api/dunning-settings) ist kein PUBLIC_PREFIX. Beide muessen VOR jeder
+  // Schreibwirkung abgewiesen werden, nicht erst beim naechsten Seitenaufruf.
+  it("Fix-Welle 4 (must 2): POST mit entwerteter Sitzung auf einen Seiten-Pfad (Server-Action) -> Redirect statt next()", async () => {
+    const req = new NextRequest("http://localhost/einstellungen/mahnwesen", {
+      method: "POST",
+      headers: { cookie: "oig_session=stale-token" },
+    });
+    const res = await proxy(req);
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+
+  it("Fix-Welle 4 (must 2): entwertete Sitzung auf einer internen API-Route -> 401 statt next()", async () => {
+    const req = new NextRequest("http://localhost/api/dunning-settings", {
+      method: "PUT",
+      headers: { cookie: "oig_session=stale-token" },
+    });
+    const res = await proxy(req);
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.error).toBe("Nicht angemeldet");
   });
 });

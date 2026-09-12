@@ -108,4 +108,33 @@ describe("computeInterestSegments (Verzugszins ueber Basiszins-Halbjahresgrenzen
     expect(seg.segments.map((s) => s.days)).toEqual([10, 10]);
     expect(seg.baseRateBpWeighted).toBe(150); // (100*10 + 200*10) / 20, exakt
   });
+
+  it("Fix-Welle 4 (should 1): traegt `from`/`to` eine Uhrzeit, geht die Summe der Abschnittstage trotzdem exakt auf (kein Tagesverlust am Halbjahresschnitt)", () => {
+    const from = new Date("2026-06-21T14:32:00.000Z"); // 10 Kalendertage vor dem Wechsel, MIT Uhrzeit
+    const to = new Date("2026-07-11T09:00:00.000Z"); // 10 Kalendertage nach dem Wechsel, MIT Uhrzeit
+    const rates: BaseRateEntry[] = [
+      { validFrom: new Date("2026-01-01T00:00:00.000Z"), rateBp: 100 },
+      { validFrom: new Date("2026-07-01T00:00:00.000Z"), rateBp: 200 },
+    ];
+    const seg = computeInterestSegments({ openAmountCents: 100000, from, to, isConsumer: false, rates });
+    // Vor der Normalisierung auf UTC-Kalendertagsgrenzen schnitt `daysBetween` je Abschnitt
+    // einzeln ab (Math.floor) — mit Uhrzeiten auf `from`/`to` konnte die Summe der
+    // Abschnittstage dadurch 1 Tag kleiner sein als die tatsaechlichen 20 Kalendertage.
+    expect(seg.segments.map((s) => s.days)).toEqual([10, 10]);
+    const totalDays = seg.segments.reduce((sum, s) => sum + s.days, 0);
+    expect(totalDays).toBe(daysBetween(new Date("2026-06-21T00:00:00.000Z"), new Date("2026-07-11T00:00:00.000Z")));
+  });
+
+  it("Fix-Welle 4 (should 2): die Summe der Abschnittsbetraege ist immer exakt der ausgewiesene Gesamtzins (Groesst-Rest-Verfahren)", () => {
+    const from = new Date("2026-05-01T00:00:00.000Z");
+    const to = new Date("2026-09-15T00:00:00.000Z");
+    const cut = new Date("2026-07-01T00:00:00.000Z");
+    const rates: BaseRateEntry[] = [
+      { validFrom: new Date("2026-01-01T00:00:00.000Z"), rateBp: 127 },
+      { validFrom: cut, rateBp: 188 },
+    ];
+    const seg = computeInterestSegments({ openAmountCents: 23800, from, to, isConsumer: false, rates });
+    const sumOfSegments = seg.segments.reduce((sum, s) => sum + s.interestCents, 0);
+    expect(sumOfSegments).toBe(seg.interestCents);
+  });
 });

@@ -49,11 +49,16 @@ export async function listBaseRates(orgId: string) {
  * demselben `validFrom` (Unique auf (orgId, validFrom)) — ein zweiter Eintrag zum
  * gleichen Stichtag waere fachlich unsinnig (welcher Satz gilt dann?) und wuerde sonst
  * den Unique-Constraint verletzen statt die Korrektur eines Tippfehlers zu erlauben.
+ *
+ * `db` optional (Default `dbInternal`, Muster `loadBaseRates`) — Aufrufer mit einem
+ * zweiten, davon abhaengigen Schreibvorgang (`saveDunningSettings`, Fix-Welle 4, should 3)
+ * reichen hier ihren `Prisma.TransactionClient` durch, damit beide Schreibvorgaenge
+ * atomar sind.
  */
-export async function upsertBaseRate(orgId: string, rawInput: unknown) {
+export async function upsertBaseRate(orgId: string, rawInput: unknown, db: Db = dbInternal) {
   const input: BaseInterestRateInput = baseInterestRateInputSchema.parse(rawInput);
   const validFrom = new Date(input.validFrom);
-  return dbInternal.baseInterestRate.upsert({
+  return db.baseInterestRate.upsert({
     where: { orgId_validFrom: { orgId, validFrom } },
     create: { orgId, validFrom, rateBp: input.rateBp, source: input.source ?? null },
     update: { rateBp: input.rateBp, source: input.source ?? null },

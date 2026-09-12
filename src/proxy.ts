@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
+import { SESSION_COOKIE } from "@/lib/auth/session";
+import { userIdFromToken } from "@/lib/auth/server";
 
 // Öffentlich erreichbar (ohne Anmeldung):
 const PUBLIC_EXACT = new Set(["/"]);
@@ -84,7 +85,18 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  const userId = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+  // Fix-Welle 4 (must 2): `userIdFromToken` statt `verifySessionToken` — prueft neben
+  // Signatur/Ablauf zusaetzlich, ob das Token-`pwc` noch zum AKTUELLEN
+  // `User.passwordChangedAt` passt (DB-Zugriff). Next.js 16 fuehrt Proxy-Dateien
+  // grundsaetzlich in der Node.js-Laufzeit aus (nicht mehr optional Edge wie beim alten
+  // `middleware.ts`) — ein Datenbankzugriff ist hier also moeglich, die vorherige Annahme
+  // "Edge, daher ohne DB" (siehe Kommentare in session.ts/layout.tsx) galt fuer die
+  // Middleware-Aera, nicht mehr fuer diesen Next-Stand. Damit greift die
+  // Sitzungsentwertung nach einem Passwortwechsel jetzt an DIESER einen Stelle fuer JEDEN
+  // nicht-oeffentlichen Pfad — Seiten (inkl. der darauf laufenden Server-Actions, die als
+  // POST auf denselben Pfad ankommen) UND interne `/api/*`-Routen — statt nur beim
+  // Seiten-Rendering (`getCurrentUserId()` im Root-Layout, das denselben Helfer nutzt).
+  const userId = await userIdFromToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (userId) return NextResponse.next({ request: { headers } });
 
   if (pathname.startsWith("/api/")) {
