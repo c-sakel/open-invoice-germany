@@ -753,7 +753,17 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
   `baseInterestRatePermille` trägt weiterhin einen (tagegewichteten) Einzelwert für Alt-Anzeigen.
   Der Betreiber pflegt die Historie weiterhin manuell nach jeder halbjährlichen
   Bundesbank-Anpassung (nächste zum 01.07.2026, siehe Quellen oben) — ein automatischer Bezug des
-  Satzes ist nicht Teil dieses Programms.
+  Satzes ist nicht Teil dieses Programms. **Pflege-Oberfläche (Phase 14a, Task 4):** eine Tabelle
+  unter „Einstellungen → Mahnwesen" (anlegen/ändern/löschen je Stichtag, der letzte verbleibende
+  Eintrag ist geschützt) hat das einzelne Formularfeld abgelöst; dieselbe Domain-Funktion
+  (`upsertBaseRate`/`deleteBaseRate`) steht auch über REST (`GET`/`POST /api/v1/BaseInterestRate`,
+  `DELETE /api/v1/BaseInterestRate/{id}`, Scope `admin`) und MCP (`list_base_interest_rates`,
+  `set_base_interest_rate`, `delete_base_interest_rate`) zur Verfügung. Ein weiterhin unterstützter
+  Altschreibweg auf `DunningSettings.baseInterestRateBp`/`-baseRateValidFrom` (REST
+  `PATCH /api/v1/Settings` mit `dunning.baseInterestRateBp`, MCP `update_dunning_settings`, die
+  interne Formularroute) wird als Upsert desselben `BaseInterestRate`-Eintrags interpretiert
+  (`validFrom = baseRateValidFrom ?? heute`) — eine Quelle der Wahrheit, kein API-Bruch
+  (siehe [API.md](docs/API.md)).
 
 ---
 

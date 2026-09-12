@@ -71,7 +71,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ## 3. Verfügbare Tools
 
-98 Tools, registriert in `src/mcp/server.ts` über 16 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
+101 Tools, registriert in `src/mcp/server.ts` über 16 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
 
 ### System
 
@@ -219,7 +219,10 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 | `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) sowie das PDF-Layout (`layoutId`, `layoutByType` je Belegtyp, `footerMode` AUTO/CUSTOM, Phase 11b) **und** die Marke (`appName` max. 40 Zeichen, `appShortName` max. 12 Zeichen, Phase 12c) — Merge; Favicon-/Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
 | `list_pdf_layouts` | Die sieben wählbaren PDF-Layouts auflisten (id, name, description) — ohne Eingabe | „Welche PDF-Layouts gibt es?" |
 | `update_number_range` | Einen Nummernkreis aktualisieren (`docType`, Muster/Präfix/Padding/`yearlyReset`/nächste Nummer) — Merge mit dem laufenden Jahr; lehnt ein Zurückdrehen unterhalb bereits vergebener Nummern ab | „Setze das Rechnungspräfix auf RE-2026-." |
-| `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Basiszins) — Merge | „Aktiviere automatischen Mahnungsversand." |
+| `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Karenztage) — Merge. **Altschreibweg:** ein mitgeschicktes `baseInterestRateBp`/`baseRateValidFrom` legt zusätzlich einen Eintrag in der Basiszinssatz-Historie an (siehe `set_base_interest_rate`) — neu: `list_base_interest_rates`/`set_base_interest_rate`/`delete_base_interest_rate` verwenden | „Aktiviere automatischen Mahnungsversand." |
+| `list_base_interest_rates` | Basiszinssatz-Historie auflisten (§ 288 Abs. 1 Satz 2 BGB, Phase 14a) — aufsteigend nach „gültig ab"; seit Phase 14a die alleinige Quelle der Verzugszinsberechnung | „Welche Basiszinssätze sind hinterlegt?" |
+| `set_base_interest_rate` | Basiszinssatz zu einem Stichtag anlegen oder überschreiben (Upsert auf „gültig ab", `rateBp` in Basispunkten, 127 = 1,27 %) — wirkt erst auf danach erstellte Mahnungen | „Trage zum 01.07.2026 einen Basiszins von 3,42 % ein." |
+| `delete_base_interest_rate` | Basiszinssatz-Eintrag löschen — der letzte verbleibende Eintrag ist geschützt | „Lösche den Basiszins-Eintrag zum 01.01.2024." |
 | `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) sowie optional des PDF-Layouts (`layoutId`, Phase 11b) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
 
 ### API-Schluessel

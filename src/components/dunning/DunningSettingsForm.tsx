@@ -6,11 +6,19 @@ import { useRouter } from "next/navigation";
 interface Settings {
   autoCreate: boolean;
   autoSend: boolean;
-  baseInterestRateBp: number;
-  baseRateValidFrom?: string | null;
   gracePeriodDays: number;
 }
 
+/**
+ * Phase 14a, Task 4 (R6): das Formularfeld "Basiszinssatz" (Basispunkte + Stichtag) ist
+ * einer eigenen Tabelle gewichen (`BaseRateTable`, unter dieser Karte auf derselben Seite)
+ * — ein einzelner Satz konnte Halbjahreswechsel nicht abbilden (Task 3). Das PUT hier
+ * sendet deshalb bewusst NICHT mehr `baseInterestRateBp`/`baseRateValidFrom`: ein
+ * fehlender Schlüssel laesst `saveDunningSettings` (src/domain/dunning/settings.ts) den
+ * bestehenden Spaltenwert unangetastet UND loest keinen Altschreibweg-Upsert in
+ * `BaseInterestRate` aus (siehe dortiger Kommentar) — die Tabelle bleibt allein
+ * zustaendig fuer die Historie.
+ */
 export function DunningSettingsForm({ initial }: { initial: Settings }) {
   const router = useRouter();
   const [settings, setSettings] = useState(initial);
@@ -49,36 +57,15 @@ export function DunningSettingsForm({ initial }: { initial: Settings }) {
         <input type="checkbox" checked={settings.autoSend} onChange={(e) => setSettings((s) => ({ ...s, autoSend: e.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
         <span className="font-medium text-slate-700">Mahnungen automatisch versenden (§26, zusätzlich je Stufe erforderlich)</span>
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          {/* S7 (Fix-Welle): "‰, Basispunkte" war widerspruechlich (‰ = Promille, aber der
-              Wert sind Basispunkte — 127 als Promille gelesen waeren 12,7 % statt 1,27 %).
-              Klares Beispiel im Label, min/max/step passend zur Zod-Schranke (0..2000),
-              Prozentwert direkt daneben zur Kontrolle. */}
-          <span className="font-medium text-slate-700">Basiszinssatz in Basispunkten (127 = 1,27 %)</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              max={2000}
-              step={1}
-              value={settings.baseInterestRateBp}
-              onChange={(e) => setSettings((s) => ({ ...s, baseInterestRateBp: Number(e.target.value) }))}
-              className="rounded-md border border-slate-300 px-3 py-2"
-            />
-            <span className="text-xs text-slate-500">= {(settings.baseInterestRateBp / 100).toFixed(2).replace(".", ",")} %</span>
-          </div>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Karenztage (nur erste Stufe)</span>
-          <input
-            type="number"
-            value={settings.gracePeriodDays}
-            onChange={(e) => setSettings((s) => ({ ...s, gracePeriodDays: Number(e.target.value) }))}
-            className="rounded-md border border-slate-300 px-3 py-2"
-          />
-        </label>
-      </div>
+      <label className="flex flex-col gap-1 text-sm sm:w-64">
+        <span className="font-medium text-slate-700">Karenztage (nur erste Stufe)</span>
+        <input
+          type="number"
+          value={settings.gracePeriodDays}
+          onChange={(e) => setSettings((s) => ({ ...s, gracePeriodDays: Number(e.target.value) }))}
+          className="rounded-md border border-slate-300 px-3 py-2"
+        />
+      </label>
       {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
       <div className="flex items-center gap-3 pt-1">
         <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">

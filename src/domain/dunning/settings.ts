@@ -8,6 +8,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { dunningSettingsInputSchema, type DunningSettingsInput } from "@/schemas";
+import { upsertBaseRate } from "./base-rate";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -74,9 +75,52 @@ export async function loadDunningSettings(orgId: string): Promise<DunningSetting
   return toInput(row);
 }
 
-/** Speichert die Mahnwesen-Einstellungen (Upsert, da anfangs keine Zeile existiert). */
+/**
+ * Uebernimmt aus `raw` (dem tatsaechlich vom Aufrufer gesendeten, NICHT vorab mit dem
+ * aktuellen Stand gemischten Objekt) nur die Schluessel, die dort wirklich vorkommen —
+ * ein fehlender Schluessel behaelt `current`s Wert. Noetig, weil `dunningSettingsInputSchema`
+ * jedes Feld mit `.default(...)` versieht: ein `.partial().parse({})` wuerde sonst JEDES
+ * Feld mit seinem Default zurueckliefern, auch wenn der Aufrufer es gar nicht gesendet hat
+ * (dasselbe Muster wie `mergeSentFields` in src/app/api/v1/Settings/route.ts).
+ */
+function mergeSentFields<T extends Record<string, unknown>>(current: T, raw: Record<string, unknown>, parsed: Partial<T>): T {
+  const merged: T = { ...current };
+  for (const key of Object.keys(raw)) {
+    if (key in parsed) (merged as Record<string, unknown>)[key] = (parsed as Record<string, unknown>)[key];
+  }
+  return merged;
+}
+
+/**
+ * Speichert die Mahnwesen-Einstellungen (Teil-Update: `rawInput` muss NUR die
+ * tatsaechlich geaenderten Felder enthalten — nicht angegebene bleiben unveraendert).
+ *
+ * Phase 14a, Task 4 (R6): `baseInterestRateBp`/`baseRateValidFrom` sind seit Task 3 kein
+ * Eingabekanal fuer die Verzugszinsberechnung mehr (die liest ausschliesslich
+ * `BaseInterestRate`, `src/domain/dunning/base-rate.ts#loadBaseRates`) — die Spalten
+ * bleiben aber bestehen (nichts Destruktives, Alt-API-Vertrag). Ein expliziter
+ * Schreibvorgang auf eines der beiden Felder (Altschreibweg: MCP `update_dunning_settings`,
+ * die interne Route `/api/dunning-settings`, oder der `dunning`-Zweig von
+ * `PATCH /api/v1/Settings`) wird deshalb ZUSAETZLICH als Upsert eines
+ * `BaseInterestRate`-Eintrags interpretiert (`validFrom = baseRateValidFrom ?? heute`) —
+ * eine Quelle der Wahrheit, kein API-Bruch (docs/API.md). Die Pruefung auf `raw` (statt
+ * auf das bereits gemergte `input`) ist zwingend: nur so ist ein tatsaechlicher
+ * Schreibvorgang von einem lediglich unveraendert mitgefuehrten Altwert unterscheidbar.
+ */
 export async function saveDunningSettings(orgId: string, rawInput: unknown): Promise<DunningSettingsInput> {
-  const input = dunningSettingsInputSchema.parse(rawInput);
+  const current = await loadDunningSettings(orgId);
+  const raw = (rawInput && typeof rawInput === "object" ? (rawInput as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const parsed = dunningSettingsInputSchema.partial().parse(raw);
+  const input = mergeSentFields(current, raw, parsed);
+
+  if ("baseInterestRateBp" in raw || "baseRateValidFrom" in raw) {
+    await upsertBaseRate(orgId, {
+      validFrom: input.baseRateValidFrom ?? new Date().toISOString().slice(0, 10),
+      rateBp: input.baseInterestRateBp,
+      source: "Altschreibweg (Mahnwesen-Einstellungen)",
+    });
+  }
+
   const row = await dbInternal.dunningSettings.upsert({
     where: { orgId },
     create: { orgId, ...input, baseRateValidFrom: input.baseRateValidFrom ? new Date(input.baseRateValidFrom) : null },
