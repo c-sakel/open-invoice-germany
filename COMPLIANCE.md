@@ -214,7 +214,7 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | **ZUGFeRD/Factur-X ≥ 2.0.1 — Profil EXTENDED** | CII | ✅ ja | zulässig |
 | **Peppol BIS Billing 3.0** | UBL | ✅ ja | zulässig |
 
-- **Hybrid (ZUGFeRD):** PDF/A-3 mit eingebettetem CII-XML. Der **strukturierte XML-Teil ist führend** (BMF 15.10.2025); bei Abweichung zwischen XML und Bildteil ist der XML-Teil maßgebend.
+- **Hybrid (ZUGFeRD):** PDF/A-3b (eingebettete Schriften, sRGB-OutputIntent, Factur-X-XMP-Erweiterungsschema), im CI mit **veraPDF** geprüft, mit eingebettetem CII-XML. Der **strukturierte XML-Teil ist führend** (BMF 15.10.2025); bei Abweichung zwischen XML und Bildteil ist der XML-Teil maßgebend. Einschränkungen siehe `docs/LIMITATIONEN.md`.
 - ZUGFeRD **vor 2.0.1** sowie MINIMUM/BASIC-WL gelten **NICHT** als gültige E-Rechnung.
 
 ### Wichtigste EN-16931-Kern-/Pflichtfelder (BT-Nummern)

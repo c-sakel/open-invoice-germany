@@ -1,13 +1,13 @@
 # Bekannte Einschränkungen (MVP)
 
-Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-08.
+Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-12.
 
 ## Betrieb & Sicherheit
 - **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Mehrbenutzer, Rollen, Passwort-Reset und 2FA sind Roadmap. In Produktion `AUTH_SECRET` setzen + hinter HTTPS betreiben.
 - **Single-Tenant.** Das Datenmodell trägt `orgId`, die App nutzt aber eine aktive Organisation. Schreibpfade (Stammdaten) sind org-gescoped; eine vollständige Mehrmandanten-Trennung (inkl. Lese-Pfade, Postgres-RLS) ist Roadmap.
 
 ## E-Rechnung
-- **ZUGFeRD/Factur-X** wird erzeugt: Hybrid-PDF mit eingebettetem **EN-16931-CII-XML** (offiziell Schematron-validiert, `factur-x.xml`, AFRelationship). Einschränkung: der PDF-Container ist **kein striktes PDF/A-3** (pdf-lib setzt keine PDF/A-3-Konformität durch) — für strenge PDF/A-3-Validierung den Mustang-Sidecar/veraPDF nutzen. Der eingebettete XML-Teil ist führend.
+- **ZUGFeRD/Factur-X** wird erzeugt: Hybrid-PDF mit eingebettetem **EN-16931-CII-XML** (offiziell Schematron-validiert, `factur-x.xml`, AFRelationship) in einem **PDF/A-3b-konformen** Container (eingebettete Liberation-Sans-Schriften, sRGB-OutputIntent, Factur-X-XMP-Erweiterungsschema) — in CI mit **veraPDF** gegen Rechnung, Lieferschein und Mahnung geprüft (`.github/workflows/ci.yml`, Job `xrechnung-kosit`). Der eingebettete XML-Teil bleibt führend. Verbleibende Einschränkungen: (1) ein **vor Phase 14a hochgeladenes CMYK-JPEG-Logo/-Hintergrundbild** bricht die Konformität weiter, bis es ersetzt wird (Hinweis auf der Briefpapier-Seite, neue Uploads werden abgelehnt); (2) geprüft/erzeugt wird **Profil 3b**, nicht 3a (Barrierefreiheit) oder 3u (Unicode-Pflicht); (3) sonstige Beleganhänge (z. B. Zusatzanhänge an E-Mails) werden weiterhin **nicht** in den PDF/A-Container eingebettet, nur die E-Rechnungs-XML.
 - **Validierung:** Die erzeugte XRechnung besteht die **offiziellen Schematron-Regeln** — EN-16931-UBL **und** XRechnung-CIUS (BR-DE) — lokal & in CI via SaxonJS (`npm run validate:erechnung`, ohne Java). Der KoSIT-Validator (Java) läuft als unabhängiger Cross-Check in der CI. Die vorgelagerte **XSD-Prüfung** deckt nur der KoSIT-Lauf ab (SaxonJS prüft „nur" Schematron — in der Praxis aber der entscheidende Teil).
 - **Storno/Gutschrift als E-Rechnung:** wird als korrektes UBL-`CreditNote`-Dokument (Typ 381, positive Beträge) mit `BillingReference` (BG-3, Bezug zur Originalrechnung, § 31 Abs. 5 UStDV) erzeugt. ✓
 - **EndpointID** wird als E-Mail (`EM`) ausgegeben. Leitweg-/Peppol-Schemacodes (EAS) werden noch nicht differenziert.
