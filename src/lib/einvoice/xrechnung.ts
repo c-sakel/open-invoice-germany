@@ -239,7 +239,8 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   appendParty(root.ele("cac:AccountingCustomerParty"), data.buyer, false);
 
   // BG-13/BG-15 — MUSS nach den Parteien und vor PaymentMeans stehen (sonst XSD-fatal).
-  // DeliveryType-Reihenfolge: ActualDeliveryDate vor DeliveryLocation.
+  // DeliveryType-Reihenfolge: ActualDeliveryDate, dann DeliveryLocation, dann DeliveryParty.
+  const deliverTo = data.deliverTo ?? null;
   const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
   if (data.deliveryDate || deliverToCountry) {
     const delivery = root.ele("cac:Delivery");
@@ -251,10 +252,26 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     // Lieferland KoSIT-invalid, sobald BG-15 (auch nur mit Land) uebermittelt wird.
     if (deliverToCountry) {
       const loc = delivery.ele("cac:DeliveryLocation").ele("cac:Address");
-      loc.ele("cbc:CityName").txt(data.buyer.city).up();
-      loc.ele("cbc:PostalZone").txt(data.buyer.postalCode).up();
+      // Phase 14a (Task 5): mit eigener Lieferanschrift (deliverTo) Strasse/Ort/PLZ aus
+      // DIESER Adresse (BT-75/BT-76/BT-77/BT-78); ohne sie bleibt der bisherige Fallback
+      // auf die Kaeuferadresse (byte-gleich zum Bestand) erhalten.
+      if (deliverTo) {
+        loc.ele("cbc:StreetName").txt(deliverTo.addressLine1).up();
+        if (deliverTo.addressLine2) loc.ele("cbc:AdditionalStreetName").txt(deliverTo.addressLine2).up();
+        loc.ele("cbc:CityName").txt(deliverTo.city).up();
+        loc.ele("cbc:PostalZone").txt(deliverTo.postalCode).up();
+      } else {
+        loc.ele("cbc:CityName").txt(data.buyer.city).up();
+        loc.ele("cbc:PostalZone").txt(data.buyer.postalCode).up();
+      }
       loc.ele("cac:Country").ele("cbc:IdentificationCode").txt(deliverToCountry).up().up();
       loc.up();
+    }
+    // BT-70 — Name der Lieferpartei (Phase 14a, Task 5), aus CustomerAddress.label; NUR
+    // wenn gesetzt (Alt-Fixtures/Belege ohne Lieferanschrift bleiben unveraendert). Laut
+    // UBL-XSD (DeliveryType) steht cac:DeliveryParty NACH cac:DeliveryLocation.
+    if (deliverTo?.name) {
+      delivery.ele("cac:DeliveryParty").ele("cac:PartyName").ele("cbc:Name").txt(deliverTo.name).up().up().up();
     }
     delivery.up();
   }

@@ -9,6 +9,13 @@
  * gewaehlte CustomerAddress-Zeile — nur gesetzt, wenn `billingAddressId` eine Adresse
  * trifft) und `customFields` (Snapshot der Kunden-Zusatzfelder zum Zeitpunkt der Anlage)
  * in den Buyer-Snapshot ein.
+ *
+ * Phase 14a (Task 5, BG-13/BG-15): optionaler Parameter `shippingAddressId` traegt bei
+ * Treffer die gewaehlte Lieferadresse unter `shippingAddress` in den Snapshot ein — EIGENER
+ * Schluessel, die flachen `addressLine1`-Felder bleiben die RECHNUNGSanschrift (BG-8).
+ * Nur `finalize.ts` (Rechnung) uebergibt bislang eine echte Lieferadresse; andere Aufrufer
+ * (Geschaeftsdokumente) lassen den Parameter weg (`undefined`) — Quote kennt keine eigene
+ * Lieferadresse (kein Feld auf dem Modell), Verhalten bleibt dort unveraendert.
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { buildBuyerSnapshot } from "@/domain/snapshot";
@@ -40,6 +47,7 @@ export async function resolveBuyerSnapshot(
   customer: CustomerLike,
   contactPersonId: string | null | undefined,
   billingAddressId: string | null | undefined,
+  shippingAddressId?: string | null,
 ): Promise<BuyerSnapshot> {
   let contactName = customer.contactName;
   let addressLine1 = customer.addressLine1;
@@ -48,6 +56,7 @@ export async function resolveBuyerSnapshot(
   let city = customer.city;
   let countryCode = customer.countryCode;
   let address: BuyerSnapshot["address"] | undefined;
+  let shippingAddress: BuyerSnapshot["shippingAddress"] | undefined;
 
   if (contactPersonId) {
     const contact = await tx.contactPerson.findFirst({ where: { id: contactPersonId, orgId } });
@@ -62,6 +71,25 @@ export async function resolveBuyerSnapshot(
       city = found.city;
       countryCode = found.countryCode;
       address = {
+        type: found.type as "BILLING" | "SHIPPING" | "OTHER",
+        label: found.label,
+        addressLine1: found.addressLine1,
+        addressLine2: found.addressLine2,
+        postalCode: found.postalCode,
+        city: found.city,
+        countryCode: found.countryCode,
+      };
+    }
+  }
+  // Phase 14a (Task 5, BG-13/BG-15): eigenstaendig von der Rechnungsadresse — setzt NUR
+  // `shippingAddress`, die flachen `addressLine1`-Felder oben (BG-8) bleiben unberuehrt.
+  if (shippingAddressId) {
+    const found = await tx.customerAddress.findFirst({
+      where: { id: shippingAddressId, orgId },
+      select: { type: true, label: true, addressLine1: true, addressLine2: true, postalCode: true, city: true, countryCode: true },
+    });
+    if (found) {
+      shippingAddress = {
         type: found.type as "BILLING" | "SHIPPING" | "OTHER",
         label: found.label,
         addressLine1: found.addressLine1,
@@ -88,6 +116,7 @@ export async function resolveBuyerSnapshot(
     email: customer.email,
     leitwegId: customer.leitwegId,
     ...(address !== undefined ? { address } : {}),
+    ...(shippingAddress !== undefined ? { shippingAddress } : {}),
     ...(customFields !== undefined ? { customFields } : {}),
     ...(customer.customerNumber !== undefined ? { customerNumber: customer.customerNumber } : {}),
   });

@@ -28,6 +28,17 @@ describe("Snapshot-Builder und -Schemas", () => {
     void _sellerCheck; void _buyerCheck;
   });
 
+  // Phase 14a (Task 5, BG-13/BG-15): shippingAddress ist wie address/customFields/
+  // customerNumber NUR gesetzt, wenn der Aufrufer es mitgibt (Object.keys-Kompatibilitaet,
+  // siehe buildBuyerSnapshot#shippingAddress).
+  it("buildBuyerSnapshot uebernimmt shippingAddress nur, wenn der Aufrufer es mitgibt", () => {
+    expect(buildBuyerSnapshot(customer)).not.toHaveProperty("shippingAddress");
+    const shippingAddress = { type: "SHIPPING" as const, label: "Lager Nord", addressLine1: "Industriestr. 9", addressLine2: null, postalCode: "22525", city: "Hamburg", countryCode: "DE" };
+    const withShipping = buildBuyerSnapshot({ ...customer, shippingAddress });
+    expect(withShipping.shippingAddress).toEqual(shippingAddress);
+    expect(buyerSnapshotSchema.safeParse(withShipping).success).toBe(true);
+  });
+
   it("parse bevorzugt einen gueltigen Snapshot", () => {
     const json = JSON.stringify({ ...buildSellerSnapshot(org), legalName: "Alt GmbH" });
     expect(parseSellerSnapshot(json, org, "inv-1").legalName).toBe("Alt GmbH");
