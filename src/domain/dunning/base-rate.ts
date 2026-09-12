@@ -107,7 +107,11 @@ export async function loadBaseRates(db: Db, orgId: string): Promise<BaseRateEntr
 
   const created = await db.baseInterestRate.upsert({
     where: { orgId_validFrom: { orgId, validFrom } },
-    create: { orgId, validFrom, rateBp, source: "Selbstheilung Phase 14a" },
+    // Hotfix (A9, Tiefenanalyse UI/Ausgabe/Bedienung): "source" ist das Quellenfeld des
+    // Basiszinssatzes auf der Oberflaeche (Beispiel daneben: "Deutsche Bundesbank") und
+    // damit § 288 BGB-relevant — ein Entwicklervermerk ("Selbstheilung Phase 14a") gehoert
+    // dort nicht hin. Neutraler deutscher Text statt Implementierungsdetail.
+    create: { orgId, validFrom, rateBp, source: "Übernommen aus den Mahnwesen-Einstellungen" },
     update: {},
     select: { validFrom: true, rateBp: true },
   });
