@@ -230,12 +230,30 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // aufgeloest, siehe buildEInvoiceData/buildDocEInvoiceData) — y danach dynamisch
   // (Rueckgabewert des Hooks), kein hartes Ueberschreiben, da pdfkit bei langem Text
   // automatisch umbricht/seitenwechselt.
+  // Phase 14a (Task 5, BG-13/BG-15): eigener Block "Lieferanschrift" unter der
+  // Empfaengeranschrift, NUR wenn der Beleg eine abweichende Lieferadresse traegt
+  // (data.deliverTo) — generischer extraRecipientBlock-Mechanismus, den alle Layouts
+  // bereits fuer den Lieferschein-Lieferadressblock zeichnen (siehe delivery-note-pdf.ts).
+  const deliverTo = data.deliverTo;
+  const extraRecipientBlock = deliverTo
+    ? {
+        heading: "Lieferanschrift:",
+        lines: [
+          ...(deliverTo.name ? [deliverTo.name] : []),
+          deliverTo.addressLine1,
+          ...(deliverTo.addressLine2 ? [deliverTo.addressLine2] : []),
+          `${deliverTo.postalCode} ${deliverTo.city}`,
+        ],
+      }
+    : undefined;
+
   let y = layout.drawKopf(frame, {
     title: documentTitle(data),
     numberLabel: documentNumberLabel(data),
     number: data.number,
     meta,
     recipient: data.buyer,
+    extraRecipientBlock,
     senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
     intro: data.headerText,
     subject: data.subject,

@@ -231,6 +231,7 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | BT-20 | Payment terms (Zahlungs-/Skontobedingungen, Freitext) | § 14 Abs. 4 Nr. 7 |
 | BT-154 | Freitext-Detailbeschreibung der Position (Rich-Text als Klartext, Phase 4b) | § 14 Abs. 4 Nr. 5 |
 | BT-155 | Artikelnummer der Position (Phase 4b) | § 14 Abs. 4 Nr. 5 |
+| BG-13/BG-15 / BT-70, BT-75–BT-78, BT-80 | Lieferanschrift (Name, Straße, Ort, PLZ, Land) — nur wenn am Beleg abweichend von der Rechnungsanschrift gewählt (`Invoice.shippingAddressId`, Phase 14a Task 5); ohne Auswahl weiterhin Ort/PLZ/Land der Rechnungsanschrift als Näherung (BR-DE-10/BR-DE-11) | EN 16931 (optional, kein § 14-Pflichtfeld) |
 | BG-23 / BT-118, BT-119 | VAT category code + rate | § 14 Abs. 4 Nr. 8 |
 | BT-121 | VAT category code (z.B. „AE" Reverse charge, „E" steuerbefreit) | § 14a |
 | BG-25 / BT-129, BT-153 | Menge / Art der Leistung | § 14 Abs. 4 Nr. 5 |

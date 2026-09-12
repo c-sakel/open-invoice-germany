@@ -113,7 +113,9 @@ export async function createBusinessDocumentWithinTx(
   const deliveryTerms = input.deliveryTerms ?? customer.deliveryTermsText ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_DELIVERY"));
   const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_PAYMENT"));
 
-  const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, contactPersonId, billingAddressId);
+  // Phase 14a (Task 5, BG-13/BG-15): kein shippingAddressId — Quote/Geschaeftsdokument
+  // kennt keine eigene Lieferadresse (kein Feld auf dem Modell); Verhalten unveraendert.
+  const buyerSnapshot = await resolveBuyerSnapshot(tx, orgId, customer, contactPersonId, billingAddressId, undefined);
   // Ansprechpartner-Snapshot (§30): NUR gesetzt, wenn tatsaechlich ein Ansprechpartner
   // gewaehlt/vorbelegt wurde — kein Ansprechpartner bleibt strukturell `null`.
   let contactSnapshotJson: string | null = null;

@@ -229,6 +229,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
 
   // Lieferung (BG-13/BG-15). CII-Reihenfolge: ShipToTradeParty VOR ActualDeliverySupplyChainEvent.
   const del = tx.ele("ram:ApplicableHeaderTradeDelivery");
+  const deliverTo = data.deliverTo ?? null;
   const deliverToCountry = data.deliverToCountryCode ?? data.buyer.countryCode ?? null;
   if (deliverToCountry) {
     // I2 (Fix-Welle Final-Review): BR-DE-10/BR-DE-11 verlangen PLZ/Ort in
@@ -238,13 +239,24 @@ export function buildFacturXCII(data: EInvoiceData): string {
     // folgenlos, weil dort nur die EN-Kernregeln pruefen). Ohne eigene Lieferanschrift
     // (Ruling) aus der Kaeuferadresse ergaenzt, identisch zu appendAddress/UBL. XSD-
     // Reihenfolge TradeAddressType: PostcodeCode, ... LineOne, ... CityName, ... CountryID
-    // (siehe appendAddress oben) — LineOne bleibt hier bewusst weg (keine eigene
-    // Lieferstrasse erfasst, s. LIMITATIONEN.md).
-    const shipToAddr = del.ele("ram:ShipToTradeParty").ele("ram:PostalTradeAddress");
-    shipToAddr.ele("ram:PostcodeCode").txt(data.buyer.postalCode).up();
-    shipToAddr.ele("ram:CityName").txt(data.buyer.city).up();
+    // (siehe appendAddress oben).
+    // Phase 14a (Task 5): mit eigener Lieferanschrift (deliverTo) zusaetzlich ram:Name
+    // (BT-70, aus CustomerAddress.label; TradePartyType-Reihenfolge wie bei Seller-/
+    // BuyerTradeParty: Name VOR der Adresse) und ram:LineOne/LineTwo aus dieser Adresse.
+    // Ohne deliverTo bleibt der bisherige Fallback auf die Kaeuferadresse OHNE Name/LineOne
+    // erhalten (byte-gleich zum Bestand, keine eigene Lieferstrasse erfasst, s. LIMITATIONEN.md).
+    const shipTo = del.ele("ram:ShipToTradeParty");
+    if (deliverTo?.name) shipTo.ele("ram:Name").txt(deliverTo.name).up();
+    const shipToAddr = shipTo.ele("ram:PostalTradeAddress");
+    shipToAddr.ele("ram:PostcodeCode").txt(deliverTo?.postalCode ?? data.buyer.postalCode).up();
+    if (deliverTo) {
+      shipToAddr.ele("ram:LineOne").txt(deliverTo.addressLine1).up();
+      if (deliverTo.addressLine2) shipToAddr.ele("ram:LineTwo").txt(deliverTo.addressLine2).up();
+    }
+    shipToAddr.ele("ram:CityName").txt(deliverTo?.city ?? data.buyer.city).up();
     shipToAddr.ele("ram:CountryID").txt(deliverToCountry).up();
-    shipToAddr.up().up();
+    shipToAddr.up();
+    shipTo.up();
   }
   if (data.deliveryDate) {
     del.ele("ram:ActualDeliverySupplyChainEvent").ele("ram:OccurrenceDateTime")

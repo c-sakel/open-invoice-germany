@@ -17,6 +17,7 @@ import { createBusinessDocument } from "@/domain/document/create";
 import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildEInvoiceData } from "@/lib/einvoice/mapper";
+import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { buyerSnapshotSchema, sellerSnapshotSchema, createDocumentSchema, type CreateInvoiceInput } from "@/schemas";
 
 // Eigenes Jahr fuer die Nummernvergabe: "Invoice.number" ist global @unique
@@ -132,6 +133,52 @@ describe("Phase 0 — Snapshots", () => {
     );
     expect(q.snapshotSource).toBe("CREATE");
     expect(sellerSnapshotSchema.safeParse(JSON.parse(q.sellerSnapshotJson!)).success).toBe(true);
+  });
+
+  it("Rechnung mit abweichender Lieferadresse: Snapshot traegt shippingAddress, XML enthaelt die Anschrift (BG-13/BG-15, Phase 14a Task 5)", async () => {
+    const shipAddr = await dbInternal.customerAddress.create({
+      data: {
+        orgId,
+        customerId,
+        type: "SHIPPING",
+        label: "Lager Nord",
+        addressLine1: "Industriestr. 9",
+        postalCode: "22525",
+        city: "Hamburg",
+        countryCode: "DE",
+      },
+    });
+    const inv = await createDraftInvoice(orgId, baseInput(customerId, { shippingAddressId: shipAddr.id }));
+    await finalizeInvoice(inv.id, { now: FIX_DATE });
+    const loaded = await loadEInvoiceData(inv.id);
+    expect(loaded!.data.deliverTo).toEqual({
+      name: "Lager Nord",
+      addressLine1: "Industriestr. 9",
+      addressLine2: null,
+      postalCode: "22525",
+      city: "Hamburg",
+      countryCode: "DE",
+    });
+    const persisted = await dbInternal.invoice.findUniqueOrThrow({ where: { id: inv.id } });
+    const parsedSnapshot = buyerSnapshotSchema.parse(JSON.parse(persisted.buyerSnapshotJson!));
+    expect(parsedSnapshot.shippingAddress?.label).toBe("Lager Nord");
+    const xml = buildXRechnungUBL(loaded!.data);
+    expect(xml).toContain("<cbc:StreetName>Industriestr. 9</cbc:StreetName>");
+    expect(xml).toContain("<cbc:Name>Lager Nord</cbc:Name>");
+  });
+
+  it("Alt-/Standard-Rechnung ohne gewaehlte Lieferadresse erzeugt unveraendertes XML (kein deliverTo, keine DeliveryParty)", async () => {
+    const inv = await createDraftInvoice(orgId, baseInput(customerId));
+    await finalizeInvoice(inv.id, { now: FIX_DATE });
+    const loaded = await loadEInvoiceData(inv.id);
+    expect(loaded!.data.deliverTo).toBeUndefined();
+    const xml = buildXRechnungUBL(loaded!.data);
+    expect(xml).not.toContain("<cac:DeliveryParty>");
+    // cbc:StreetName existiert bereits fuer Verkaeufer/Kaeufer (appendParty) — der
+    // Regressionscheck gilt nur dem DeliveryLocation-Ausschnitt.
+    const locStart = xml.indexOf("<cac:DeliveryLocation>");
+    const locEnd = xml.indexOf("</cac:DeliveryLocation>");
+    expect(xml.slice(locStart, locEnd)).not.toContain("<cbc:StreetName>");
   });
 
   it("Backfill-Migration friert Belege ohne Snapshot mit Herkunft MIGRATION ein", async () => {
