@@ -24,7 +24,14 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // "TEMPLATE" (Phase 13d, Task 4, Koordinator-Nachtrag): analog "TAG" — eine Vorlage ist
 // nach dem Speichern unabhaengig vom Quellbeleg, ihr Loeschen ist kein Ereignis AN einem
 // Beleg (entityId = DocumentTemplate.id, src/domain/template/save.ts#deleteTemplate).
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE";
+// "USER" (Phase 14a, Task 8, R12): Anmeldeereignisse (Fehlversuch/Sperre, spaeter
+// Passwortaenderung) sind an keinen Beleg gebunden, sondern an das Anmeldekonto selbst
+// (entityId = User.id, src/domain/auth/login.ts#attemptLogin). Nur fuer eine BEKANNTE
+// E-Mail-Adresse (existierender User) protokolliert — bei unbekannter E-Mail gibt es
+// keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
+// die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
+// Durchprobieren unbekannter Adressen ab.
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -59,6 +66,12 @@ export const ACTIVITY_TYPES = {
   TEMPLATE_SAVED: "Als Belegvorlage gespeichert",
   TEMPLATE_APPLIED: "Aus Belegvorlage erzeugt",
   TEMPLATE_DELETED: "Vorlage geloescht",
+  // Phase 14a, Task 8 (R12): Anmeldung haerten — src/domain/auth/login.ts.
+  // PASSWORD_CHANGED wird erst in Task 9 (Passwort aendern) ausgeloest, der Typ wird
+  // hier bereits mit den anderen beiden Anmelde-Ereignissen angelegt (Plan-Vorgabe).
+  LOGIN_FAILED: "Anmeldung fehlgeschlagen",
+  LOGIN_LOCKED: "Konto gesperrt",
+  PASSWORD_CHANGED: "Passwort geaendert",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

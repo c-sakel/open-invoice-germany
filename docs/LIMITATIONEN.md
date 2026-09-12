@@ -3,7 +3,7 @@
 Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-12.
 
 ## Betrieb & Sicherheit
-- **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Mehrbenutzer, Rollen, Passwort-Reset und 2FA sind Roadmap. In Produktion `AUTH_SECRET` setzen + hinter HTTPS betreiben.
+- **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Seit Phase 14a (Task 8) gehärtet: eine IP-Bremse (max. 10 Versuche/5 Minuten, nur im Speicher) und eine Kontosperre nach 5 Fehlversuchen in Folge (15 Minuten, übersteht einen Neustart) verlangsamen das Erraten des Passworts; jeder Fehlversuch und jede Sperre werden protokolliert (nie E-Mail/Passwort im Protokoll). Die Sperre hat eine feste Obergrenze — weitere Fehlversuche während einer laufenden Sperre verlängern sie nicht, ein Selbst-Aussperren auf Dauer ist damit ausgeschlossen. Weiterhin **nicht** vorhanden: Mehrbenutzer, Rollen, Passwort-Reset per Mail und 2FA (Roadmap). In Produktion `AUTH_SECRET` setzen + hinter HTTPS betreiben.
 - **Single-Tenant.** Das Datenmodell trägt `orgId`, die App nutzt aber eine aktive Organisation. Schreibpfade (Stammdaten) sind org-gescoped; eine vollständige Mehrmandanten-Trennung (inkl. Lese-Pfade, Postgres-RLS) ist Roadmap.
 
 ## E-Rechnung
