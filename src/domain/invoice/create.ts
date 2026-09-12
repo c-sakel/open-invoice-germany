@@ -33,9 +33,11 @@ export interface CreateOptions {
   // von createInvoiceSchema — nur src/domain/recurring/run.ts setzt dieses Feld, kein
   // Bypass ueber Formular/REST/MCP moeglich.
   recurringInvoiceId?: string;
-  // Phase 14a, Task 1: zusaetzlicher Kontext (z. B. { recurring, period }) fuer den
-  // ChangeLog-Diff DIESES CREATE-Eintrags — verhindert einen zweiten Eintrag je erzeugter
-  // Rechnung, der Abo-Lauf muesste sonst selbst appendChangeLog aufrufen.
+  // Phase 14a, Task 1 (Fix-Welle 1, must): zusaetzlicher Kontext (z. B. { recurring, period })
+  // fuer den ChangeLog-Diff UND den ActivityLog-Eintrag (data) DIESES CREATE-Eintrags —
+  // verhindert je einen zweiten Eintrag je erzeugter Rechnung, der Abo-Lauf muesste sonst
+  // selbst appendChangeLog/logActivity aufrufen (Belegverlauf zeigte "Rechnung erstellt"
+  // vorher doppelt).
   changeLogExtra?: Record<string, unknown>;
 }
 
@@ -244,7 +246,15 @@ export async function createDraftInvoiceWithinTx(
     at: now,
     diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents, ...opts.changeLogExtra },
   });
-  await logActivity(tx, { orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now });
+  await logActivity(tx, {
+    orgId,
+    entityType: "INVOICE",
+    entityId: invoice.id,
+    type: "CREATED",
+    actor,
+    at: now,
+    ...(opts.changeLogExtra ? { data: opts.changeLogExtra } : {}),
+  });
 
   return invoice;
 }

@@ -20,7 +20,6 @@
  * Kundenvorgaben statt leer zu bleiben.
  */
 import { dbInternal } from "@/lib/db";
-import { logActivity } from "@/domain/activity/log";
 import { onRecurringFailed } from "@/domain/notifications/hooks";
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
@@ -185,13 +184,13 @@ async function emitOne(
       // Sonst wuerde ein Bestandsabo mit inzwischen abgewaehltem Satz am Lauf scheitern.
       inheritedTaxRates: ratesOfLines(rec.lines),
       recurringInvoiceId: rec.id,
-      // Abo-Kontext (recurring, period) im selben ChangeLog-CREATE-Eintrag wie der
-      // gemeinsame Pfad — kein zweiter Eintrag je erzeugter Rechnung.
+      // Abo-Kontext (recurring, period) im selben ChangeLog-CREATE-Eintrag UND im selben
+      // ActivityLog-CREATED-Eintrag wie der gemeinsame Pfad (Fix-Welle 1, must) — kein
+      // zweiter Eintrag je erzeugter Rechnung, in keinem der beiden Protokolle.
       changeLogExtra: { recurring: rec.id, period: periodDate.toISOString() },
     });
 
     await linkDocuments(tx, { orgId: rec.orgId, fromType: "INVOICE", fromId: invoice.id, toType: "RECURRING", toId: rec.id, relationType: "GENERATED_BY" });
-    await logActivity(tx, { orgId: rec.orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now, data: { recurring: rec.id } });
 
     let number: string | null = invoice.number;
     let finalized = false;

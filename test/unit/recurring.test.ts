@@ -73,6 +73,14 @@ describe("periodRange (Abo-Periodengrenzen)", () => {
     expect(iso(start)).toBe("2026-01-15");
     expect(iso(end)).toBe("2026-03-15");
   });
+
+  // Fix-Welle 1 (should): Schaltjahr-Stichtag 29.02. mit Ankertag 31 — ein Monat zurueck
+  // ist Januar (31 Tage, klemmt nicht), speist seit Task 1 auch BG-14 (deliveryStart/-End).
+  it("Schaltjahr: Stichtag 29.02.2028 (MONTHLY, Anker 31) -> Periodenbeginn 31.01.2028", () => {
+    const { start, end } = periodRange(new Date("2028-02-29T12:00:00"), "MONTHLY", 1, 31);
+    expect(iso(start)).toBe("2028-01-31");
+    expect(iso(end)).toBe("2028-02-29");
+  });
 });
 
 // W4: src/domain/recurring/run.ts nutzt seit der Fix-Welle dieselbe Rundung wie die
