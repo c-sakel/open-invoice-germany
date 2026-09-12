@@ -370,8 +370,8 @@ describe("Recurring: geerbter Steuersatz bleibt gueltig, auch nach Delisting (R3
   });
 });
 
-describe("Recurring: genau ein ChangeLog-CREATE-Eintrag je Rechnung, Kette bleibt gueltig", () => {
-  it("kein zweiter Eintrag durch den Abo-Lauf, Abo-Kontext steht im Diff des gemeinsamen Pfads", async () => {
+describe("Recurring: genau ein ChangeLog-CREATE- und ein ActivityLog-CREATED-Eintrag je Rechnung, Kette bleibt gueltig", () => {
+  it("kein zweiter Eintrag durch den Abo-Lauf, Abo-Kontext steht im Diff/Data des gemeinsamen Pfads", async () => {
     const customer = await makeCustomer("changelog-abo@example.org");
     const rec = await createRecurring(orgId, {
       customerId: customer.id,
@@ -392,6 +392,15 @@ describe("Recurring: genau ein ChangeLog-CREATE-Eintrag je Rechnung, Kette bleib
     });
     expect(createEntries).toHaveLength(1);
     expect(JSON.parse(createEntries[0]!.diffJson)).toMatchObject({ recurring: rec.id });
+
+    // Fix-Welle 1 (must): run.ts schrieb frueher zusaetzlich zum CREATED-Eintrag aus
+    // createDraftInvoiceWithinTx einen zweiten eigenen ActivityLog-Eintrag — Belegverlauf
+    // zeigte "Rechnung erstellt" doppelt. Jetzt genau ein Eintrag, mit den Abo-Zusatzdaten.
+    const activityEntries = await dbInternal.activityLog.findMany({
+      where: { orgId, entityType: "INVOICE", entityId: emitted.invoiceId, type: "CREATED" },
+    });
+    expect(activityEntries).toHaveLength(1);
+    expect(JSON.parse(activityEntries[0]!.dataJson ?? "null")).toMatchObject({ recurring: rec.id, period: emitted.periodDate.toISOString() });
 
     const rows = await dbInternal.changeLog.findMany({
       where: { orgId },
