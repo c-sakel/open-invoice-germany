@@ -6,7 +6,6 @@
  * (siehe invoice-pdf.ts). Kein Item-Tabellenkopf noetig (die Aufstellung ist eine
  * einfache zweispaltige Liste, kein `layout.table`).
  */
-import PDFDocument from "pdfkit";
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { InterestSegment } from "@/schemas";
@@ -16,6 +15,7 @@ import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
 import type { LayoutFrame } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
+import { createPdfDocument } from "./document";
 
 export interface DunningPdfData {
   number: string;
@@ -81,11 +81,11 @@ const INTRO: Record<number, (n: string) => string> = {
 export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const margins = pdfMargins(theme);
-    const doc = new PDFDocument({
+    const doc = createPdfDocument({
       size: "A4",
-      margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
-      bufferPages: true,
+      margins,
       compress: theme.compress ?? true,
+      pdfa: true,
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));

@@ -1,31 +1,32 @@
 /**
- * Bettet die CII/Factur-X-XML als Anhang in ein PDF ein → ZUGFeRD/Factur-X-Hybrid.
+ * Erzeugt ein ZUGFeRD/Factur-X-Hybrid-PDF: die CII/Factur-X-XML (EN-16931-Schematron-
+ * validiert) wird als Anhang direkt waehrend des pdfkit-Renderns eingebettet
+ * (`renderInvoicePdf(..., { attachments: [...] })` → `doc.file(...)`), nicht mehr im
+ * Nachgang ueber `pdf-lib`.
  *
- * Der eingebettete XML-Teil (factur-x.xml) ist EN-16931-CII-konform (offiziell
- * Schematron-validiert). Hinweis: pdf-lib erzeugt KEIN strenges PDF/A-3 (Farb-
- * profile/XMP-Konformität). Für strenge PDF/A-3-Validierung den Mustang-Sidecar
- * (docker-compose) bzw. veraPDF nutzen. Der eingebettete XML-Teil ist führend.
+ * Task 6 (Spec R10): das Ergebnis ist PDF/A-3b (eingebettete Schriften, sRGB-OutputIntent,
+ * `/AF`/`/AFRelationship`, Factur-X-XMP-Erweiterungsschema) — `pdf-lib` erzeugte das nicht
+ * und entfaellt, weil dies der einzige Nutzungsort war. Der eingebettete XML-Teil bleibt
+ * fachlich fuehrend.
  */
-import { PDFDocument, AFRelationship } from "pdf-lib";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import type { PdfTheme } from "@/lib/pdf/theme";
 import { buildFacturXCII } from "./cii";
 import type { EInvoiceData } from "./types";
 
-export async function embedFacturX(pdfBytes: Uint8Array, ciiXml: string): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.load(pdfBytes);
-  await pdfDoc.attach(new TextEncoder().encode(ciiXml), "factur-x.xml", {
-    mimeType: "application/xml",
-    description: "Factur-X / ZUGFeRD — strukturierte Rechnung (EN 16931)",
-    afRelationship: AFRelationship.Alternative,
-  });
-  // Ohne Object-Streams: bessere Lesbarkeit/Kompatibilität für E-Rechnungs-Tools.
-  return pdfDoc.save({ useObjectStreams: false });
-}
+const FACTUR_X_FILENAME = "factur-x.xml";
 
 export async function renderZugferdPdf(data: EInvoiceData, theme: PdfTheme): Promise<Buffer> {
-  const pdf = await renderInvoicePdf(data, theme);
   const cii = buildFacturXCII(data);
-  const hybrid = await embedFacturX(new Uint8Array(pdf), cii);
-  return Buffer.from(hybrid);
+  return renderInvoicePdf(data, theme, {
+    attachments: [
+      {
+        name: FACTUR_X_FILENAME,
+        bytes: Buffer.from(cii, "utf8"),
+        relationship: "Alternative",
+        type: "text/xml",
+        description: "Factur-X / ZUGFeRD — strukturierte Rechnung (EN 16931)",
+      },
+    ],
+  });
 }
