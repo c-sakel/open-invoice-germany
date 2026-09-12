@@ -914,12 +914,17 @@ echo "    ok — Tag/DocumentTag mit Unique und ON DELETE CASCADE, 49 Tabellen"
 echo "==> Fall 24 (Phase 14a): Basiszins-Halbjahrestabelle — Backfill aus DunningSettings, Unique (orgId,validFrom); Dunning.interestSegmentsJson bleibt bei Bestandszeilen NULL"
 # Praeambel woertlich wie Fall 21, Ausschluss der beiden Phase-14a-Mahnwesen-Migrationen
 # (Basiszins-Backfill UND die additive Dunning-Spalte aus Task 3) — Bestandszeilen org24.
+# Hotfix (fix/pdf-zeilenhoehe-und-quelle, A9): die spaetere Migration
+# 20260914093100_hotfix_base_rate_source_text aendert per UPDATE ausschliesslich
+# BaseInterestRate.source — hier ebenfalls ausklammern, sonst P1014 (Tabelle existiert an
+# dieser Stelle absichtlich noch nicht), der anschliessende "migrate deploy" zieht sie nach
+# der Basiszins-Migration in der richtigen Reihenfolge nach.
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
   -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate|20260914091100_phase14a_dunning_segments)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate|20260914091100_phase14a_dunning_segments|20260914093100_hotfix_base_rate_source_text)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -946,13 +951,19 @@ BIRCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coun
 [ "$BIRCOUNT" = "1" ] || fail "erwartet genau einen BaseInterestRate-Eintrag fuer org24 (Backfill), gefunden $BIRCOUNT"
 BIRVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"rateBp\", to_char(\"validFrom\",'YYYY-MM-DD') from \"BaseInterestRate\" where \"orgId\"='org24'")
 [ "$BIRVAL" = "188|1970-01-01" ] || fail "Basiszins-Backfill abweichend ('$BIRVAL'), erwartet 188|1970-01-01"
+# Hotfix (A9): 20260914093100_hotfix_base_rate_source_text lief soeben als Teil desselben
+# "migrate deploy" (nach der Basiszins-Migration, siehe Ausschlussliste oben) — org24s
+# Backfill-Zeile traegt den ANDEREN Text "Migration Phase 14a" (nicht den vom Hotfix
+# anvisierten Platzhalter "Selbstheilung Phase 14a") und muss deshalb unveraendert bleiben.
+BIRSRC=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"source\" from \"BaseInterestRate\" where \"orgId\"='org24'")
+[ "$BIRSRC" = "Migration Phase 14a" ] || fail "Hotfix-Migration hat eine NICHT betroffene BaseInterestRate.source-Zeile veraendert ('$BIRSRC')"
 DUP3=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "insert into \"BaseInterestRate\" (\"id\",\"orgId\",\"validFrom\",\"rateBp\",\"updatedAt\") values ('bir24b','org24','1970-01-01',150,NOW())" 2>&1 || true)
 echo "$DUP3" | grep -q "duplicate key" || fail "Unique (orgId, validFrom) auf BaseInterestRate greift nicht"
 DUNSEG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"interestSegmentsJson\" from \"Dunning\" where id='dun24'")
 [ -z "$DUNSEG" ] || fail "erwartet NULL interestSegmentsJson fuer Bestands-Dunning dun24, gefunden '$DUNSEG'"
 COUNT24=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT24" = "49" ] || fail "erwartet 49 Tabellen nach Phase 14a/Basiszins+Dunning-Segmente, gefunden $COUNT24"
-echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, Bestands-Dunning behaelt NULL interestSegmentsJson, 49 Tabellen"
+echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, Bestands-Dunning behaelt NULL interestSegmentsJson, 49 Tabellen, Hotfix-Quellenfeld-Migration liess nicht betroffene Zeile unveraendert"
 
 echo "==> Fall 25 (Phase 14a, Task 8): Anmeldung haerten — additive User-Spalten, Bestandszeile bleibt lauffaehig"
 # Praeambel woertlich wie Fall 21, Ausschluss der Login-Haertung-Migration, Bestandszeile

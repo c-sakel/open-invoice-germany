@@ -119,6 +119,9 @@ describe("Phase 14a — Basiszinssatz-Historie (base-rate.ts)", () => {
     // Selbstheilung schreibt den Eintrag persistent (kein erneuter Heilungsversuch beim naechsten Read).
     const persisted = await listBaseRates(orgId);
     expect(persisted).toHaveLength(1);
+    // Hotfix (A9): Quellenfeld ist ein neutraler deutscher Text, kein Entwicklervermerk —
+    // die Oberflaeche zeigt es als Quelle des Basiszinssatzes an (§ 288 BGB-relevant).
+    expect(persisted[0]?.source).toBe("Übernommen aus den Mahnwesen-Einstellungen");
   });
 
   it("loadBaseRates legt bei fehlender DunningSettings-Zeile den Systemdefault 127 bp zum 1970-01-01 an", async () => {
@@ -129,6 +132,7 @@ describe("Phase 14a — Basiszinssatz-Historie (base-rate.ts)", () => {
     expect(rates[0]?.validFrom.getTime()).toBe(new Date("1970-01-01T00:00:00.000Z").getTime());
     const persisted = await listBaseRates(orgId);
     expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.source).toBe("Übernommen aus den Mahnwesen-Einstellungen");
   });
 
   it("loadBaseRates liest eine bestehende Historie, ohne erneut zu heilen", async () => {
