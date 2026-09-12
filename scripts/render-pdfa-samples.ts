@@ -107,6 +107,15 @@ async function main(): Promise<void> {
 
   writeFileSync(path.join(OUT_DIR, "mahnung.pdf"), await renderDunningPdf(buildSampleDunningData(SAMPLE_ORG), theme));
 
+  // Fix (Review Task 6/7, "must"): die drei Muster oben nutzen alle Layout "standard" —
+  // kursive ("Helvetica-Oblique") und fett-kursive ("Helvetica-BoldOblique") Schriftschnitte
+  // kommen im gesamten Bestand NUR in Layout "schlicht" vor (src/lib/pdf/layouts/
+  // schlicht.ts). Ohne ein Muster mit diesem Layout war die vollstaendige Schrifteinbettung
+  // (Task 6, Spec R10) fuer zwei der vier Liberation-Sans-Schnitte NIE tatsaechlich durch
+  // veraPDF geprueft.
+  const schlichtTheme: PdfTheme = { ...baseTheme(), layoutId: "schlicht" };
+  writeFileSync(path.join(OUT_DIR, "rechnung-schlicht.pdf"), await renderZugferdPdf(invoiceData, schlichtTheme));
+
   console.log(`PDF/A-3b-Muster erzeugt: ${OUT_DIR}`);
 }
 
