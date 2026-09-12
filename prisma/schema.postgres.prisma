@@ -61,6 +61,7 @@ model Organization {
   paymentMethods         PaymentMethod[]
   dunningStages          DunningStage[]
   dunningSettings        DunningSettings?
+  baseInterestRates      BaseInterestRate[]
   mailSettings           MailSettings?
   documentSettings       DocumentSettings?
   documentAttachments    DocumentAttachment[]
@@ -854,6 +855,27 @@ model DunningSettings {
   gracePeriodDays    Int          @default(0)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
+}
+
+/// Basiszinssatz-Historie je Halbjahr (Phase 14a, § 288 Abs. 1 Satz 2 BGB: der
+/// Basiszinssatz aendert sich zum 1. Januar und 1. Juli eines jeden Jahres). Loest
+/// DunningSettings.baseInterestRateBp/-baseRateValidFrom als Quelle der Verzugszins-
+/// berechnung ab (Task 3) — die alten Spalten bleiben bestehen (nichts Destruktives),
+/// werden aber von keiner Berechnung mehr gelesen. Der fuer einen Tag gueltige Satz ist
+/// der Eintrag mit dem groessten `validFrom <= Tag`; vor dem ersten Eintrag gilt der
+/// aelteste Eintrag (keine Zinsluecke, siehe rateForDate in src/domain/dunning/base-rate.ts).
+model BaseInterestRate {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  validFrom DateTime
+  rateBp    Int // Basiszinssatz in Basispunkten (1,27 % = 127), gueltig ab validFrom
+  source    String? // z.B. "Migration Phase 14a", Bundesbank-Referenz, manuelle Pflege
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([orgId, validFrom])
+  @@index([orgId, validFrom])
 }
 
 /// Protokoll der Scheduler-Laeufe (Phase 6) — DB-Lock und Nachvollziehbarkeit fuer den
