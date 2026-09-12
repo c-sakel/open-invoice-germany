@@ -209,6 +209,85 @@ describe("BG-14 / BT-80 (Phase 12b)", () => {
   });
 });
 
+describe("BG-13/BG-15 — eigene Lieferanschrift (Phase 14a, Task 5)", () => {
+  // Stadt bewusst NICHT "Hamburg" (= data.buyer.city) — sonst faende ein content-basierter
+  // indexOf-Vergleich das FALSCHE (fruehere) Vorkommen in der Kaeuferadresse.
+  const deliverTo: NonNullable<EInvoiceData["deliverTo"]> = {
+    name: "Lager Nord",
+    addressLine1: "Industriestr. 9",
+    addressLine2: "Halle 3",
+    postalCode: "22525",
+    city: "Bremen",
+    countryCode: "AT",
+  };
+  const withShipping: EInvoiceData = { ...data, deliverTo, deliverToCountryCode: deliverTo.countryCode };
+
+  it("UBL: ohne Lieferanschrift bleibt die Ausgabe byte-gleich zum Bestand (DeliveryLocation ohne StreetName, keine DeliveryParty)", () => {
+    // cbc:StreetName existiert schon heute in Seller-/BuyerTradeParty (appendParty) — der
+    // Regressionscheck muss daher auf den DeliveryLocation-Ausschnitt beschraenkt sein.
+    const xml = buildXRechnungUBL(data);
+    const locStart = xml.indexOf("<cac:DeliveryLocation>");
+    const locEnd = xml.indexOf("</cac:DeliveryLocation>");
+    expect(xml.slice(locStart, locEnd)).not.toContain("<cbc:StreetName>");
+    expect(xml).not.toContain("<cac:DeliveryParty>");
+  });
+
+  it("UBL: mit Lieferanschrift StreetName/AdditionalStreetName/CityName/PostalZone/Country (BT-75/76/77/78/80) in DeliveryLocation, DeliveryParty mit Name (BT-70) danach", () => {
+    const xml = buildXRechnungUBL(withShipping);
+    const streetIdx = xml.indexOf("<cbc:StreetName>Industriestr. 9</cbc:StreetName>");
+    const addStreetIdx = xml.indexOf("<cbc:AdditionalStreetName>Halle 3</cbc:AdditionalStreetName>");
+    const cityIdx = xml.indexOf("<cbc:CityName>Bremen</cbc:CityName>");
+    const zoneIdx = xml.indexOf("<cbc:PostalZone>22525</cbc:PostalZone>");
+    const countryIdx = xml.indexOf("<cbc:IdentificationCode>AT</cbc:IdentificationCode>");
+    const partyIdx = xml.indexOf("<cac:DeliveryParty>");
+    const nameIdx = xml.indexOf("<cbc:Name>Lager Nord</cbc:Name>");
+    expect(streetIdx).toBeGreaterThan(-1);
+    expect(addStreetIdx).toBeGreaterThan(streetIdx);
+    expect(cityIdx).toBeGreaterThan(addStreetIdx);
+    expect(zoneIdx).toBeGreaterThan(cityIdx);
+    expect(countryIdx).toBeGreaterThan(zoneIdx);
+    expect(partyIdx).toBeGreaterThan(countryIdx);
+    expect(nameIdx).toBeGreaterThan(partyIdx);
+    expect(validateXRechnung(withShipping, xml).errors).toEqual([]);
+  });
+
+  it("UBL: ohne Label (name null) bleibt cac:DeliveryParty aus", () => {
+    const xml = buildXRechnungUBL({ ...withShipping, deliverTo: { ...deliverTo, name: null } });
+    expect(xml).not.toContain("<cac:DeliveryParty>");
+  });
+
+  it("CII: ohne Lieferanschrift bleibt die Ausgabe byte-gleich (ShipToTradeParty ohne LineOne/Name)", () => {
+    // ram:LineOne existiert schon heute in Seller-/BuyerTradeParty (appendAddress) — der
+    // Regressionscheck muss daher auf den ShipToTradeParty-Ausschnitt beschraenkt sein.
+    const xml = buildFacturXCII(data);
+    const shipStart = xml.indexOf("<ram:ShipToTradeParty>");
+    const shipEnd = xml.indexOf("</ram:ShipToTradeParty>");
+    const shipToXml = xml.slice(shipStart, shipEnd);
+    expect(shipToXml).not.toContain("<ram:LineOne>");
+    expect(shipToXml).not.toContain("<ram:Name>");
+  });
+
+  it("CII: mit Lieferanschrift Name (BT-70) vor PostalTradeAddress, LineOne/LineTwo/CityName/CountryID vor ActualDeliverySupplyChainEvent", () => {
+    const xml = buildFacturXCII(withShipping);
+    const nameIdx = xml.indexOf("<ram:Name>Lager Nord</ram:Name>");
+    // ram:PostalTradeAddress existiert auch bei Seller-/BuyerTradeParty (frueher im
+    // Dokument) — Suche ab nameIdx, um sicher das ShipToTradeParty-Vorkommen zu treffen.
+    const addrIdx = xml.indexOf("<ram:PostalTradeAddress>", nameIdx);
+    const lineOneIdx = xml.indexOf("<ram:LineOne>Industriestr. 9</ram:LineOne>");
+    const lineTwoIdx = xml.indexOf("<ram:LineTwo>Halle 3</ram:LineTwo>");
+    const cityIdx = xml.indexOf("<ram:CityName>Bremen</ram:CityName>");
+    const countryIdx = xml.indexOf("<ram:CountryID>AT</ram:CountryID>");
+    const eventIdx = xml.indexOf("<ram:ActualDeliverySupplyChainEvent>");
+    expect(nameIdx).toBeGreaterThan(-1);
+    expect(addrIdx).toBeGreaterThan(nameIdx);
+    expect(lineOneIdx).toBeGreaterThan(addrIdx);
+    expect(lineTwoIdx).toBeGreaterThan(lineOneIdx);
+    expect(cityIdx).toBeGreaterThan(lineTwoIdx);
+    expect(countryIdx).toBeGreaterThan(cityIdx);
+    expect(eventIdx).toBeGreaterThan(countryIdx);
+  });
+});
+
 describe("§ 14b-Aufbewahrungshinweis (Phase 12b, Task 5)", () => {
   it("§ 14b-Hinweis erscheint als eigener Note in UBL und CII, sonst nicht", () => {
     const hint = "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).";

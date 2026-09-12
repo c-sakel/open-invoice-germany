@@ -115,6 +115,22 @@ const ORG_NO_IBAN: MapInput["org"] = { ...ORG, iban: null, bic: null, bankName: 
 const CUSTOMER_EU: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel BV", addressLine1: "Keizersgracht 1", postalCode: "1015", city: "Amsterdam", countryCode: "NL", vatId: "NL123456789B01" };
 const CUSTOMER_CH: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel AG", addressLine1: "Bahnhofstr. 1", postalCode: "8001", city: "Zürich", countryCode: "CH", vatId: null };
 
+// Phase 14a (Task 5) — Kunde mit abweichender Lieferanschrift (BG-13/BG-15): eigenes Label
+// (BT-70), zweite Adresszeile (BT-76/LineTwo) und eigenes Land (BT-80 folgt der
+// Lieferanschrift, nicht mehr dem Kaeuferland).
+const CUSTOMER_WITH_SHIPPING: MapInput["customer"] = {
+  ...CUSTOMER,
+  shippingAddress: {
+    type: "SHIPPING",
+    label: "Lager Nord",
+    addressLine1: "Industriestr. 9",
+    addressLine2: "Halle 3",
+    postalCode: "22525",
+    city: "Hamburg",
+    countryCode: "DE",
+  },
+};
+
 interface SampleLine {
   description: string;
   quantityMilli: number;
@@ -539,6 +555,15 @@ const betreffNote = () =>
     lines: [{ description: "Wartung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 48000, taxRate: 19, taxCategory: "S" }],
   });
 
+// 22) Phase 14a (Task 5) — Lieferanschrift (BG-13/BG-15): abweichende Lieferadresse mit
+// Label (BT-70), zweiter Adresszeile (BT-76) und eigenem Land (BT-80).
+const lieferanschriftBg15 = () =>
+  buildSample({
+    number: "RE-2042-0002",
+    customer: CUSTOMER_WITH_SHIPPING,
+    lines: [{ description: "Warenlieferung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 120000, taxRate: 19, taxCategory: "S" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -562,6 +587,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "kleinunternehmer-e": kleinunternehmerE,
   "differenz-e": differenzE,
   "betreff-note": betreffNote,
+  "lieferanschrift-bg15": lieferanschriftBg15,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

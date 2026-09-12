@@ -26,7 +26,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
   const rec = await prisma.recurringInvoice.findFirst({
     where: { id, orgId: org.id },
     include: {
-      customer: true,
+      customer: { include: { defaultPaymentMethod: { select: { name: true } } } },
       lines: { orderBy: { position: "asc" } },
       invoices: { orderBy: { issueDate: "desc" }, include: { customer: { select: { name: true } } } },
     },
@@ -35,6 +35,34 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
 
   const net = rec.lines.reduce((s, l) => s + Math.round((l.quantityMilli * l.unitNetPriceCents) / 1000), 0);
   const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-slate-100 text-slate-600" };
+
+  // Phase 14a, Task 1 (R1/R2): rein darstellender Block "Aus den Kundenvorgaben
+  // uebernommen" — jeder Lauf dieses Abos zieht diese Werte ab jetzt tatsaechlich aus dem
+  // Kunden (createDraftInvoiceWithinTx), da das Abo selbst keine dieser Angaben fuehrt.
+  const [defaultContact, defaultBillingAddress, defaultShippingAddress] = await Promise.all([
+    prisma.contactPerson.findFirst({
+      where: { orgId: org.id, customerId: rec.customerId, isDefault: true },
+      select: { firstName: true, lastName: true },
+    }),
+    prisma.customerAddress.findFirst({
+      where: { orgId: org.id, customerId: rec.customerId, type: "BILLING", isDefault: true },
+      select: { addressLine1: true, postalCode: true, city: true },
+    }),
+    prisma.customerAddress.findFirst({
+      where: { orgId: org.id, customerId: rec.customerId, type: "SHIPPING", isDefault: true },
+      select: { addressLine1: true, postalCode: true, city: true },
+    }),
+  ]);
+  const fmtAddress = (a: { addressLine1: string; postalCode: string; city: string } | null) =>
+    a ? `${a.addressLine1}, ${a.postalCode} ${a.city}` : "— (keine Vorgabe)";
+  const inherited = {
+    paymentMethod: rec.customer.defaultPaymentMethod?.name ?? "— (keine Vorgabe)",
+    billingAddress: fmtAddress(defaultBillingAddress),
+    shippingAddress: fmtAddress(defaultShippingAddress),
+    contactPerson: defaultContact ? `${defaultContact.firstName} ${defaultContact.lastName}` : "— (keine Vorgabe)",
+    discount: rec.customer.defaultDiscountPermille > 0 ? `${(rec.customer.defaultDiscountPermille / 10).toFixed(1)} %` : "— (kein Rabatt)",
+    orderReference: rec.customer.orderReference ?? "— (keine Vorgabe)",
+  };
 
   return (
     <div className="space-y-6">
@@ -92,6 +120,28 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
             <dd className="text-right">{rec.autoSend ? "automatisch" : "manuell"}</dd>
           </dl>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
+        <h2 className="mb-2 font-semibold text-slate-900">Aus den Kundenvorgaben übernommen</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          Diese Werte führt das Abo selbst nicht — sie kommen bei jedem Rechnungslauf frisch vom Kunden (§28–§30). Ändert sich eine
+          Kundenvorgabe, wirkt sich das ab dem nächsten Lauf aus.
+        </p>
+        <dl className="grid grid-cols-1 gap-y-1 text-slate-600 sm:grid-cols-2">
+          <dt>Zahlungsart</dt>
+          <dd className="text-right">{inherited.paymentMethod}</dd>
+          <dt>Rechnungsadresse</dt>
+          <dd className="text-right">{inherited.billingAddress}</dd>
+          <dt>Lieferadresse</dt>
+          <dd className="text-right">{inherited.shippingAddress}</dd>
+          <dt>Ansprechpartner</dt>
+          <dd className="text-right">{inherited.contactPerson}</dd>
+          <dt>Rabatt</dt>
+          <dd className="text-right">{inherited.discount}</dd>
+          <dt>Bestellreferenz</dt>
+          <dd className="text-right">{inherited.orderReference}</dd>
+        </dl>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">

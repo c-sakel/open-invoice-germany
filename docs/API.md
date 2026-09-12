@@ -24,7 +24,7 @@ Schlüssel ohne den passenden Scope liefert `403 FORBIDDEN`.
 | `read`  | Lesen (GET) |
 | `write` | Anlegen/Ändern/zustandsändernde Aktionen (finalisieren, stornieren, Zahlung erfassen, …) |
 | `send`  | E-Mail-Versand und Mahnungen (`/send`, `/dunning`) |
-| `admin` | Einstellungen (`/Settings`), API-Schlüsselverwaltung (`/ApiKey`) und Webhook-Endpunkte (`/Webhook`) |
+| `admin` | Einstellungen (`/Settings`), Basiszinssatz-Historie (`/BaseInterestRate`), API-Schlüsselverwaltung (`/ApiKey`) und Webhook-Endpunkte (`/Webhook`) |
 
 ## Antwortformat
 
@@ -254,9 +254,23 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
 `OrderConfirmation`, `DeliveryNote`, `Invoice`, `Payment`, `Dunning`, `Attachment`,
 `EmailLog`, `PaymentMethod`, `TextTemplate`, `EmailTemplate`, `Recurring`,
-`Settings`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog`, `Tag`,
+`Settings`, `BaseInterestRate`, `ApiKey`, `Webhook`, `Layout`, `ApiRequestLog`, `Tag`,
 `DocumentTemplate` — vollständige Liste mit Feldern, Filtern (`embed=`,
 Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
+
+`BaseInterestRate` (Phase 14a) — Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB,
+Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), seit Phase 14a die
+alleinige Quelle der Verzugszinsberechnung (ersetzt das einzelne Feld
+`DunningSettings.baseInterestRateBp`). `GET /api/v1/BaseInterestRate` (Scope
+`admin`, keine Paginierung — die Historie wächst höchstens zweimal jährlich)
+liefert alle Einträge aufsteigend nach `validFrom`. `POST
+/api/v1/BaseInterestRate` (Scope `admin`, Body
+`{"validFrom":"2026-07-01","rateBp":342,"source":"Bundesbank"}` → `201`) legt
+einen Eintrag an oder überschreibt den bestehenden Eintrag zu genau diesem
+`validFrom` (Upsert, `rateBp` in Basispunkten, 127 = 1,27 %). `DELETE
+/api/v1/BaseInterestRate/{id}` (Scope `admin`) löscht einen Eintrag — der
+letzte verbleibende Eintrag einer Organisation ist geschützt (`400
+VALIDATION`, die Verzugszinsberechnung braucht mindestens einen Satz).
 
 `Tag` (Phase 13d) — Ordnungsmerkmal über Belegen (`INVOICE`/`QUOTE`/
 `DELIVERY_NOTE`), reine Metadaten ohne GoBD-Bezug: setz-/entfernbar auch an
@@ -304,18 +318,30 @@ Einstellungen verschmolzen mit einer etwaigen Beleg-Überschreibung) bzw. setzt 
 sonst). `Quote/{id}/print-options` gilt nur für `kind=ANGEBOT` — Auftragsbestätigung/
 Proforma haben keinen eigenen `print-options`-Endpunkt.
 
-`GET`/`PATCH /api/v1/Settings` (Scope `admin`) bündelt drei Fragmente unter je
+`GET`/`PATCH /api/v1/Settings` (Scope `admin`) bündelt vier Fragmente unter je
 einem Schlüssel: `documents` (u. a. `taxRates` — die org-eigene Liste
 freigegebener Steuersätze, 1–10 ganze Prozentwerte 0–100, Default `[19, 7, 0]`,
 Phase 12c), `branding` (u. a. `appName`/`appShortName`/`faviconPath`/
 `appLogoPath` — Marke/White-Label, Phase 12c; `appName`/`appShortName` sind per
 `PATCH` schreibbar, `faviconPath`/`appLogoPath` nur lesbar — Datei-Upload läuft
 ausschließlich über die Session-Route `/api/settings/branding/upload`, nicht
-über `/api/v1`) und `print`. Ein Versuch, eine Rechnung/ein Angebot/einen
-Lieferschein/ein Produkt mit einem Steuersatz zu speichern, der **nicht** in
-`documents.taxRates` steht (und auch nicht bereits auf dem betroffenen Beleg
-gespeichert war), liefert `409 CONFLICT` — dieselbe Regel wie in UI und MCP,
-durchgesetzt in den Domain-Kernen, kein API-eigener Bypass.
+über `/api/v1`), `print` und `dunning` (Auto-Erstellung/-Versand, Karenztage).
+Ein Versuch, eine Rechnung/ein Angebot/einen Lieferschein/ein Produkt mit einem
+Steuersatz zu speichern, der **nicht** in `documents.taxRates` steht (und auch
+nicht bereits auf dem betroffenen Beleg gespeichert war), liefert `409
+CONFLICT` — dieselbe Regel wie in UI und MCP, durchgesetzt in den
+Domain-Kernen, kein API-eigener Bypass.
+
+**Altschreibweg `dunning.baseInterestRateBp`/`dunning.baseRateValidFrom`**
+(Phase 14a, R6): seit Phase 14a liest die Verzugszinsberechnung ausschließlich
+die Basiszinssatz-Historie (`BaseInterestRate`, siehe oben) — die beiden
+gleichnamigen `DunningSettings`-Felder bleiben aus Kompatibilitätsgründen
+bestehen und lesbar, werden aber von keiner Berechnung mehr verwendet. Ein
+`PATCH /api/v1/Settings` mit `dunning.baseInterestRateBp` (optional zusammen
+mit `dunning.baseRateValidFrom`) wird deshalb zusätzlich als Upsert eines
+`BaseInterestRate`-Eintrags interpretiert (`validFrom = baseRateValidFrom ??
+heute`) — eine Quelle der Wahrheit, kein API-Bruch. Für neue Integrationen:
+direkt `POST /api/v1/BaseInterestRate` verwenden.
 
 ## Webhooks
 

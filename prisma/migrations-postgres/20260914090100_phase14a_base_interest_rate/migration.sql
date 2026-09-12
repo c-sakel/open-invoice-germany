@@ -1,0 +1,34 @@
+-- Phase 14a — Basiszinssatz als Halbjahrestabelle (§ 288 Abs. 1 Satz 2 BGB: der
+-- Basiszinssatz aendert sich zum 1. Januar und 1. Juli eines jeden Jahres). Loest
+-- DunningSettings.baseInterestRateBp/-baseRateValidFrom als Quelle der Verzugszins-
+-- berechnung ab (Task 3) — die alten Spalten bleiben unveraendert stehen (nichts
+-- Destruktives), werden aber von keiner Berechnung mehr gelesen. Backfill: jede
+-- bestehende DunningSettings-Zeile bekommt genau einen BaseInterestRate-Eintrag mit
+-- ihrem bisherigen Wert (validFrom = bisheriges baseRateValidFrom, sonst 1970-01-01 —
+-- keine Zinsluecke fuer Bestandsorganisationen ohne gesetztes Datum).
+-- CreateTable
+CREATE TABLE "BaseInterestRate" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "validFrom" TIMESTAMP(3) NOT NULL,
+    "rateBp" INTEGER NOT NULL,
+    "source" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "BaseInterestRate_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "BaseInterestRate_orgId_validFrom_key" ON "BaseInterestRate"("orgId", "validFrom");
+
+-- CreateIndex
+CREATE INDEX "BaseInterestRate_orgId_validFrom_idx" ON "BaseInterestRate"("orgId", "validFrom");
+
+-- AddForeignKey
+ALTER TABLE "BaseInterestRate" ADD CONSTRAINT "BaseInterestRate_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Backfill: ein Eintrag je bestehender DunningSettings-Zeile.
+INSERT INTO "BaseInterestRate" ("id", "orgId", "validFrom", "rateBp", "source", "createdAt", "updatedAt")
+  SELECT 'bir_' || md5(random()::text || clock_timestamp()::text), "orgId", COALESCE("baseRateValidFrom", TIMESTAMP '1970-01-01'), "baseInterestRateBp", 'Migration Phase 14a', NOW(), NOW()
+  FROM "DunningSettings";

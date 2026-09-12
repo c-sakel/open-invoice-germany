@@ -8,7 +8,6 @@
  * Positionszeile (vorher konnte pdfkit bei vielen Positionen unkontrolliert mitten in
  * einer Zeile umbrechen).
  */
-import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { unitLabel } from "@/lib/units";
@@ -18,6 +17,7 @@ import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow, type TableHeaderColumn } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
+import { createPdfDocument } from "./document";
 import { buildFooterColumns } from "./footer";
 
 export interface DeliveryNotePdfLine {
@@ -137,11 +137,11 @@ const COLUMN_GAP = 8;
 export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const margins = pdfMargins(theme);
-    const doc = new PDFDocument({
+    const doc = createPdfDocument({
       size: "A4",
-      margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
-      bufferPages: true,
+      margins,
       compress: theme.compress ?? true,
+      pdfa: true,
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));

@@ -39,3 +39,17 @@ export class EInvoiceInvalidError extends Error {
     this.issues = issues;
   }
 }
+
+/**
+ * Phase 14a, Task 2: gemeinsame Domain-Fehlerklasse fuer eine an sich plausible
+ * Eingabe, die eine fachliche Invariante verletzt (z. B. Loeschen des letzten
+ * verbleibenden Basiszinssatzes, src/domain/dunning/base-rate.ts) — nicht zu
+ * verwechseln mit einem Zod-Parse-Fehler (Formatfehler) oder InvalidOperationError
+ * (Beleg-Statuskonflikt). Routen mappen sie auf 400 Bad Request.
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}

@@ -61,6 +61,7 @@ model Organization {
   paymentMethods         PaymentMethod[]
   dunningStages          DunningStage[]
   dunningSettings        DunningSettings?
+  baseInterestRates      BaseInterestRate[]
   mailSettings           MailSettings?
   documentSettings       DocumentSettings?
   documentAttachments    DocumentAttachment[]
@@ -471,6 +472,11 @@ model Dunning {
   baseInterestRatePermille Int? // Basiszinssatz-Snapshot (‰ zum Verzugsstichtag)
   interestRatePoints       Int? // 5 (B2C) oder 9 (B2B) Prozentpunkte über Basiszins
   interestAmountCents      Int       @default(0)
+  // Phase 14a, Task 3 (R7/R8, § 288 Abs. 1 Satz 2 BGB): Snapshot der Verzugszins-Abschnitte
+  // ueber Basiszins-Halbjahresgrenzen hinweg, JSON-Array [{from,to,days,baseRateBp,pointsBp,
+  // interestCents}]. NULL bei Bestandsmahnungen (additive Spalte) und bei genau einem
+  // Abschnitt — das PDF zeigt dann weiterhin die bisherige Einzelzeile.
+  interestSegmentsJson     String?
   lateFeeCents             Int       @default(0) // nur konkrete Kosten, KEINE Pauschale
   flatFee40Cents           Int       @default(0) // §288 Abs.5, nur B2B
   pdfPath                  String?
@@ -856,6 +862,27 @@ model DunningSettings {
   updatedAt          DateTime     @updatedAt
 }
 
+/// Basiszinssatz-Historie je Halbjahr (Phase 14a, § 288 Abs. 1 Satz 2 BGB: der
+/// Basiszinssatz aendert sich zum 1. Januar und 1. Juli eines jeden Jahres). Loest
+/// DunningSettings.baseInterestRateBp/-baseRateValidFrom als Quelle der Verzugszins-
+/// berechnung ab (Task 3) — die alten Spalten bleiben bestehen (nichts Destruktives),
+/// werden aber von keiner Berechnung mehr gelesen. Der fuer einen Tag gueltige Satz ist
+/// der Eintrag mit dem groessten `validFrom <= Tag`; vor dem ersten Eintrag gilt der
+/// aelteste Eintrag (keine Zinsluecke, siehe rateForDate in src/domain/dunning/base-rate.ts).
+model BaseInterestRate {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  validFrom DateTime
+  rateBp    Int // Basiszinssatz in Basispunkten (1,27 % = 127), gueltig ab validFrom
+  source    String? // z.B. "Migration Phase 14a", Bundesbank-Referenz, manuelle Pflege
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([orgId, validFrom])
+  @@index([orgId, validFrom])
+}
+
 /// Protokoll der Scheduler-Laeufe (Phase 6) — DB-Lock und Nachvollziehbarkeit fuer den
 /// Intervall-Runner (dunning, recurring). Kein Org-Bezug: der Scheduler laeuft prozessweit
 /// ueber alle Organisationen hinweg, ein Lauf verarbeitet mehrere Organisationen seriell.
@@ -886,11 +913,20 @@ model SchedulerLock {
 }
 
 /// Anmeldekonto (Self-Hosting). MVP: ein Admin-Konto, beim ersten Start angelegt.
+/// Phase 14a, Task 8 (R12): Anmeldung haerten — failedLoginCount/lockedUntil tragen die
+/// Kontosperre ueber einen Neustart hinweg (die IP-Bremse in src/lib/rate-limit.ts ist
+/// bewusst nur In-Memory), lastLoginAt/passwordChangedAt bereiten Task 9 vor (Sitzungs-
+/// entwertung nach Passwortaenderung). Alle vier additiv/nullable bzw. mit Default —
+/// Bestandszeilen bleiben unveraendert lauffaehig.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
+  createdAt         DateTime  @default(now())
 }
 
 /// Append-only Änderungsprotokoll (GoBD-Kern). Hash-Chain macht Manipulation erkennbar.

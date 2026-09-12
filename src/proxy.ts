@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
+import { SESSION_COOKIE } from "@/lib/auth/session";
+import { userIdFromToken } from "@/lib/auth/server";
 
 // Öffentlich erreichbar (ohne Anmeldung):
 const PUBLIC_EXACT = new Set(["/"]);
@@ -38,6 +39,14 @@ function matchesPublicPrefix(pathname: string, prefix: string): boolean {
 const NO_NAV_PREFIXES = ["/angebot/", "/api/public/"];
 export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 
+// Task 9 (R12): das Root-Layout (`src/app/layout.tsx`) braucht den Pfad, um eine
+// Passwortwechsel-entwertete Sitzung (strukturell gueltiges, nicht abgelaufenes Token,
+// aber `pwc` != `User.passwordChangedAt` — siehe `src/lib/auth/server.ts#userIdFromToken`)
+// auf geschuetzten Seiten aktiv auf /login umzuleiten, OHNE dabei "/", "/login" oder
+// "/setup" (die bewusst auch OHNE gueltige Sitzung rendern) mit umzuleiten. Immer
+// server-seitig ueberschrieben (wie PUBLIC_NO_NAV_HEADER) — ein Client kann ihn nicht faelschen.
+export const PATHNAME_HEADER = "x-oig-pathname";
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -47,6 +56,7 @@ export async function proxy(req: NextRequest) {
   // Erst danach wird er fuer NO_NAV_PREFIXES wieder gesetzt.
   const headers = new Headers(req.headers);
   headers.delete(PUBLIC_NO_NAV_HEADER);
+  headers.set(PATHNAME_HEADER, pathname);
 
   const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => matchesPublicPrefix(pathname, p));
 
@@ -75,7 +85,18 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  const userId = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
+  // Fix-Welle 4 (must 2): `userIdFromToken` statt `verifySessionToken` — prueft neben
+  // Signatur/Ablauf zusaetzlich, ob das Token-`pwc` noch zum AKTUELLEN
+  // `User.passwordChangedAt` passt (DB-Zugriff). Next.js 16 fuehrt Proxy-Dateien
+  // grundsaetzlich in der Node.js-Laufzeit aus (nicht mehr optional Edge wie beim alten
+  // `middleware.ts`) — ein Datenbankzugriff ist hier also moeglich, die vorherige Annahme
+  // "Edge, daher ohne DB" (siehe Kommentare in session.ts/layout.tsx) galt fuer die
+  // Middleware-Aera, nicht mehr fuer diesen Next-Stand. Damit greift die
+  // Sitzungsentwertung nach einem Passwortwechsel jetzt an DIESER einen Stelle fuer JEDEN
+  // nicht-oeffentlichen Pfad — Seiten (inkl. der darauf laufenden Server-Actions, die als
+  // POST auf denselben Pfad ankommen) UND interne `/api/*`-Routen — statt nur beim
+  // Seiten-Rendering (`getCurrentUserId()` im Root-Layout, das denselben Helfer nutzt).
+  const userId = await userIdFromToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (userId) return NextResponse.next({ request: { headers } });
 
   if (pathname.startsWith("/api/")) {

@@ -8,7 +8,8 @@ import { loadPrintSettings, savePrintSettings, setPrintOptions } from "@/domain/
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { listNumberRanges, updateNumberRange } from "@/domain/numbering/ranges";
 import { loadDunningSettings, saveDunningSettings } from "@/domain/dunning/settings";
-import { NotFoundError, InvalidOperationError } from "@/domain/errors";
+import { listBaseRates, upsertBaseRate, deleteBaseRate } from "@/domain/dunning/base-rate";
+import { NotFoundError, InvalidOperationError, ValidationError } from "@/domain/errors";
 import {
   documentSettingsInputSchema,
   printSettingsInputSchema,
@@ -16,6 +17,7 @@ import {
   brandingSettingsInputSchema,
   NumberRangeDocType,
   dunningSettingsInputSchema,
+  baseInterestRateInputSchema,
 } from "@/schemas";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { ToolError, type McpToolsContext, type Result } from "./context";
@@ -254,11 +256,86 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     async (args): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        const current = await loadDunningSettings(org.id);
-        const saved = await saveDunningSettings(org.id, { ...current, ...args });
+        // Fix-Welle (Phase 14a, Task 4, R6): `args` UNGEMISCHT durchreichen — `saveDunningSettings`
+        // merged jetzt selbst mit dem aktuellen Stand und muss dafuer sehen, welche Felder der
+        // Aufrufer WIRKLICH mitgeschickt hat (Altschreibweg-Erkennung fuer baseInterestRateBp/
+        // baseRateValidFrom, siehe dortiger Kommentar). Ein vorheriges `{ ...current, ...args }`
+        // haette baseInterestRateBp IMMER in die Merge-Eingabe gemischt, auch wenn der Aufrufer
+        // nur z. B. autoSend aendern wollte.
+        const saved = await saveDunningSettings(org.id, args);
         return ctx.ok(`Mahnwesen-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── list_base_interest_rates ────────────────────────────────────────────────────
+  // Phase 14a, Task 4 (R6): Basiszinssatz-Halbjahrestabelle (§ 288 Abs. 1 Satz 2 BGB) —
+  // seit Task 3 die alleinige Quelle der Verzugszinsberechnung, ersetzt das einzelne
+  // Feld DunningSettings.baseInterestRateBp. Dieselbe Domain-Funktion wie
+  // /api/v1/BaseInterestRate (GET) und die Server-Action fuer die Oberflaeche.
+  server.registerTool(
+    "list_base_interest_rates",
+    {
+      title: "Basiszinssatz-Historie auflisten",
+      description:
+        "Listet die Basiszinssatz-Historie der Organisation (§ 288 Abs. 1 Satz 2 BGB, Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), aufsteigend nach 'gueltig ab'. Der fuer einen Tag gueltige Satz ist der Eintrag mit dem groessten 'gueltig ab' <= diesem Tag.",
+      inputSchema: {},
+    },
+    async (): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const rates = await listBaseRates(org.id);
+        return ctx.ok(JSON.stringify(rates, null, 2));
+      } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── set_base_interest_rate ───────────────────────────────────────────────────────
+  server.registerTool(
+    "set_base_interest_rate",
+    {
+      title: "Basiszinssatz anlegen oder ueberschreiben",
+      description:
+        "Legt einen Basiszinssatz zu einem Stichtag an oder ueberschreibt den bestehenden Eintrag zu genau diesem Stichtag (Upsert auf 'gueltig ab', § 288 Abs. 1 Satz 2 BGB). rateBp in Basispunkten (127 = 1,27 %, 0-2000). Wirkt erst auf Mahnungen, die NACH dem Speichern erstellt werden — festgeschriebene Mahnungen behalten ihren Snapshot.",
+      inputSchema: baseInterestRateInputSchema.shape,
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const saved = await upsertBaseRate(org.id, args);
+        return ctx.ok(`Basiszinssatz gespeichert: ${JSON.stringify(saved)}`);
+      } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── delete_base_interest_rate ────────────────────────────────────────────────────
+  server.registerTool(
+    "delete_base_interest_rate",
+    {
+      title: "Basiszinssatz loeschen",
+      description:
+        "Loescht einen Basiszinssatz-Eintrag der Organisation. Der letzte verbleibende Eintrag kann nicht geloescht werden — die Verzugszinsberechnung braucht mindestens einen Satz.",
+      inputSchema: { id: z.string().min(1) },
+    },
+    async ({ id }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        await deleteBaseRate(org.id, id);
+        return ctx.ok(`Basiszinssatz "${id}" geloescht.`);
+      } catch (e) {
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
+        if (e instanceof ValidationError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

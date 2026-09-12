@@ -214,7 +214,7 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | **ZUGFeRD/Factur-X ≥ 2.0.1 — Profil EXTENDED** | CII | ✅ ja | zulässig |
 | **Peppol BIS Billing 3.0** | UBL | ✅ ja | zulässig |
 
-- **Hybrid (ZUGFeRD):** PDF/A-3 mit eingebettetem CII-XML. Der **strukturierte XML-Teil ist führend** (BMF 15.10.2025); bei Abweichung zwischen XML und Bildteil ist der XML-Teil maßgebend.
+- **Hybrid (ZUGFeRD):** PDF/A-3b (eingebettete Schriften, sRGB-OutputIntent, Factur-X-XMP-Erweiterungsschema), im CI mit **veraPDF** geprüft, mit eingebettetem CII-XML. Der **strukturierte XML-Teil ist führend** (BMF 15.10.2025); bei Abweichung zwischen XML und Bildteil ist der XML-Teil maßgebend. Einschränkungen siehe `docs/LIMITATIONEN.md`.
 - ZUGFeRD **vor 2.0.1** sowie MINIMUM/BASIC-WL gelten **NICHT** als gültige E-Rechnung.
 
 ### Wichtigste EN-16931-Kern-/Pflichtfelder (BT-Nummern)
@@ -231,6 +231,7 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | BT-20 | Payment terms (Zahlungs-/Skontobedingungen, Freitext) | § 14 Abs. 4 Nr. 7 |
 | BT-154 | Freitext-Detailbeschreibung der Position (Rich-Text als Klartext, Phase 4b) | § 14 Abs. 4 Nr. 5 |
 | BT-155 | Artikelnummer der Position (Phase 4b) | § 14 Abs. 4 Nr. 5 |
+| BG-13/BG-15 / BT-70, BT-75–BT-78, BT-80 | Lieferanschrift (Name, Straße, Ort, PLZ, Land) — nur wenn am Beleg abweichend von der Rechnungsanschrift gewählt (`Invoice.shippingAddressId`, Phase 14a Task 5); ohne Auswahl weiterhin Ort/PLZ/Land der Rechnungsanschrift als Näherung (BR-DE-10/BR-DE-11) | EN 16931 (optional, kein § 14-Pflichtfeld) |
 | BG-23 / BT-118, BT-119 | VAT category code + rate | § 14 Abs. 4 Nr. 8 |
 | BT-121 | VAT category code (z.B. „AE" Reverse charge, „E" steuerbefreit) | § 14a |
 | BG-25 / BT-129, BT-153 | Menge / Art der Leistung | § 14 Abs. 4 Nr. 5 |
@@ -736,15 +737,33 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
   Abschnitt 12 gefordert ("verschuldensunabhängig, ohne gesonderte Mahnung", "je verspäteter
   Zahlung/Rechnung gesondert", aber nicht mehrfach je Rechnung).
 - **Verzugszinsen:** `DunningStage.calculateInterest` schaltet die Berechnung je Stufe frei;
-  der Satz (5 Pp B2C / 9 Pp B2B über Basiszins) und die taggenaue Berechnung stammen unverändert
-  aus `computeDunning`. **Basiszins-Pflege:** `DunningSettings.baseInterestRateBp` (Basispunkte,
-  Default 127 = 1,27 %) und `DunningSettings.baseRateValidFrom` (Einstellungen → Mahnwesen) bilden
-  den je Organisation hinterlegten, AKTUELL gültigen Basiszinssatz ab — bei der halbjährlichen
-  Bundesbank-Anpassung (nächste zum 01.07.2026, siehe Quellen oben) muss der Betreiber den Wert
-  manuell nachpflegen. **Bekannte Lücke (siehe `docs/LIMITATIONEN.md`):** es gibt keine Historie
-  je Zeitabschnitt — eine Änderung wirkt sofort auf alle künftigen Zinsberechnungen; bereits
-  gestellte Mahnungen (GoBD-Snapshot) bleiben unverändert, aber eine rückwirkend korrekte,
-  abschnittsweise Verzinsung über einen Satzwechsel hinweg wird nicht automatisch berechnet.
+  der Satz (5 Pp B2C / 9 Pp B2B über Basiszins) stammt unverändert aus `computeDunning`/
+  `computeInterestSegments` (`src/lib/dunning.ts`). **Basiszins-Historie (Phase 14a, Task 2+3):**
+  die Tabelle `BaseInterestRate` (`orgId`, `validFrom`, `rateBp`, `@@unique([orgId, validFrom])`,
+  `src/domain/dunning/base-rate.ts`) hat die bisherigen Einzelfelder
+  `DunningSettings.baseInterestRateBp`/`-baseRateValidFrom` als Quelle der Berechnung abgelöst —
+  diese Spalten bleiben bestehen (nichts Destruktives), werden aber von keiner Berechnung mehr
+  gelesen. Liegt eine Verzugsperiode über einer Satzwechsel-Grenze (1.1./1.7.), stückelt
+  `computeInterestSegments` sie an jeder `validFrom`-Grenze und rechnet je Abschnitt mit dem dort
+  gültigen Satz (gerundet wird einmal über die exakte Gesamtsumme, nicht je Abschnitt) — die vormals
+  dokumentierte Lücke ("keine abschnittsweise Verzinsung über einen Satzwechsel hinweg") ist damit
+  geschlossen. Die Abschnitte werden bei der Mahnungserstellung als Snapshot in
+  `Dunning.interestSegmentsJson` festgehalten und im Mahn-PDF je Abschnitt ausgewiesen (GoBD: eine
+  spätere Korrektur der Basiszins-Historie berechnet bereits gestellte Mahnungen NICHT neu);
+  `baseInterestRatePermille` trägt weiterhin einen (tagegewichteten) Einzelwert für Alt-Anzeigen.
+  Der Betreiber pflegt die Historie weiterhin manuell nach jeder halbjährlichen
+  Bundesbank-Anpassung (nächste zum 01.07.2026, siehe Quellen oben) — ein automatischer Bezug des
+  Satzes ist nicht Teil dieses Programms. **Pflege-Oberfläche (Phase 14a, Task 4):** eine Tabelle
+  unter „Einstellungen → Mahnwesen" (anlegen/ändern/löschen je Stichtag, der letzte verbleibende
+  Eintrag ist geschützt) hat das einzelne Formularfeld abgelöst; dieselbe Domain-Funktion
+  (`upsertBaseRate`/`deleteBaseRate`) steht auch über REST (`GET`/`POST /api/v1/BaseInterestRate`,
+  `DELETE /api/v1/BaseInterestRate/{id}`, Scope `admin`) und MCP (`list_base_interest_rates`,
+  `set_base_interest_rate`, `delete_base_interest_rate`) zur Verfügung. Ein weiterhin unterstützter
+  Altschreibweg auf `DunningSettings.baseInterestRateBp`/`-baseRateValidFrom` (REST
+  `PATCH /api/v1/Settings` mit `dunning.baseInterestRateBp`, MCP `update_dunning_settings`, die
+  interne Formularroute) wird als Upsert desselben `BaseInterestRate`-Eintrags interpretiert
+  (`validFrom = baseRateValidFrom ?? heute`) — eine Quelle der Wahrheit, kein API-Bruch
+  (siehe [API.md](docs/API.md)).
 
 ---
 

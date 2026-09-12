@@ -9,6 +9,7 @@ import { roundHalfUp } from "@/lib/money";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { resolvePayeeName } from "@/lib/payee-name";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
+import type { BuyerSnapshot } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
 import type {
   EInvoiceData,
@@ -119,6 +120,10 @@ export interface MapInput {
     // Fix-Welle (Abschluss-Review Phase 11b, Block 3): optional, damit bestehende Aufrufer
     // (Alt-Snapshots ohne dieses Feld) unveraendert bleiben — siehe BuyerSnapshot/EInvoiceParty.
     customerNumber?: string | null;
+    // Phase 14a (Task 5, BG-13/BG-15): eigene Lieferanschrift aus buyerSnapshot.shippingAddress
+    // (nur bei Rechnungen mit gewaehlter Invoice.shippingAddressId gesetzt). Optional aus
+    // demselben Grund wie customerNumber — Aufrufer ohne Lieferanschrift bleiben unveraendert.
+    shippingAddress?: BuyerSnapshot["shippingAddress"];
   };
   lines: Array<{
     id: string;
@@ -295,9 +300,26 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     // obwohl Invoice sie seit Phase 1 fuehrt.
     deliveryStart: invoice.deliveryStart ?? null,
     deliveryEnd: invoice.deliveryEnd ?? null,
-    // BT-80 (BG-15) — Land der Rechnungsanschrift aus dem Kaeufer-Snapshot; eine
-    // eigene Lieferanschrift bildet die E-Rechnung hier nicht ab.
-    deliverToCountryCode: customer.countryCode,
+    // BT-80 (BG-15) — Land der Lieferanschrift, wenn der Kaeufer-Snapshot eine eigene
+    // Lieferanschrift traegt (Phase 14a, Task 5); sonst weiterhin das Land der
+    // Rechnungsanschrift (Bestandsverhalten, byte-gleich ohne shippingAddress).
+    deliverToCountryCode: customer.shippingAddress?.countryCode ?? customer.countryCode,
+    // BG-13/BG-15 — eigene Lieferanschrift (Phase 14a, Task 5). `name` (BT-70) aus dem
+    // Adress-Label, nur wenn gesetzt. Schluessel wird NUR gesetzt, wenn der Snapshot eine
+    // Lieferanschrift traegt (Object.keys-Kompatibilitaet, gleiches Muster wie
+    // buildBuyerSnapshot#address/shippingAddress) — sonst byte-gleiches XML zum Bestand.
+    ...(customer.shippingAddress
+      ? {
+          deliverTo: {
+            name: customer.shippingAddress.label,
+            addressLine1: customer.shippingAddress.addressLine1,
+            addressLine2: customer.shippingAddress.addressLine2,
+            postalCode: customer.shippingAddress.postalCode,
+            city: customer.shippingAddress.city,
+            countryCode: customer.shippingAddress.countryCode,
+          },
+        }
+      : {}),
     currency: invoice.currency,
     // B2G: Leitweg-ID des Kunden als Buyer reference (BT-10), sonst explizit gesetzter Wert.
     buyerReference: invoice.buyerReference ?? customer.leitwegId,

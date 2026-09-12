@@ -29,6 +29,16 @@ export interface CreateOptions {
   // Schlussrechnung) — gelten als zusaetzlich erlaubt (GoBD, kein Bypass, siehe
   // src/domain/settings/tax-rates.ts).
   inheritedTaxRates?: readonly number[];
+  // Phase 14a, Task 1 (R1-R5): interne Verknuepfung zu einem Abo-Lauf. Bewusst NICHT Teil
+  // von createInvoiceSchema — nur src/domain/recurring/run.ts setzt dieses Feld, kein
+  // Bypass ueber Formular/REST/MCP moeglich.
+  recurringInvoiceId?: string;
+  // Phase 14a, Task 1 (Fix-Welle 1, must): zusaetzlicher Kontext (z. B. { recurring, period })
+  // fuer den ChangeLog-Diff UND den ActivityLog-Eintrag (data) DIESES CREATE-Eintrags —
+  // verhindert je einen zweiten Eintrag je erzeugter Rechnung, der Abo-Lauf muesste sonst
+  // selbst appendChangeLog/logActivity aufrufen (Belegverlauf zeigte "Rechnung erstellt"
+  // vorher doppelt).
+  changeLogExtra?: Record<string, unknown>;
 }
 
 export async function createDraftInvoiceWithinTx(
@@ -217,6 +227,7 @@ export async function createDraftInvoiceWithinTx(
       skonto2Permille: input.skonto2Permille,
       skonto2Days: input.skonto2Days,
       paymentMethodId,
+      recurringInvoiceId: opts.recurringInvoiceId,
       netTotalCents: totals.netTotalCents,
       taxTotalCents: totals.taxTotalCents,
       grossTotalCents: totals.grossTotalCents,
@@ -233,9 +244,17 @@ export async function createDraftInvoiceWithinTx(
     action: "CREATE",
     actor,
     at: now,
-    diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents },
+    diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents, ...opts.changeLogExtra },
   });
-  await logActivity(tx, { orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now });
+  await logActivity(tx, {
+    orgId,
+    entityType: "INVOICE",
+    entityId: invoice.id,
+    type: "CREATED",
+    actor,
+    at: now,
+    ...(opts.changeLogExtra ? { data: opts.changeLogExtra } : {}),
+  });
 
   return invoice;
 }

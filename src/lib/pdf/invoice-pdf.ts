@@ -12,7 +12,6 @@
  * fest verdrahteter Zeichenlogik — `standard` ist die byte-fuer-byte-aequivalente Extraktion
  * des bisherigen (Phase-7-)Layouts.
  */
-import PDFDocument from "pdfkit";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
 import { resolvePayeeName } from "@/lib/payee-name";
@@ -29,6 +28,22 @@ import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
+import { createPdfDocument } from "./document";
+import { buildFacturXXmp } from "./pdfa-xmp";
+
+/** Anhang fuer den ZUGFeRD-Hybrid-Pfad (Task 6) — ersetzt das bisherige `pdf-lib`-Nach-
+ *  bearbeiten des fertigen PDF-Bytestroms durch `doc.file(...)` waehrend des Renderns. */
+export interface InvoicePdfAttachment {
+  name: string;
+  bytes: Buffer;
+  relationship: "Alternative" | "Source" | "Data" | "Supplement" | "Unspecified";
+  type: string;
+  description?: string;
+}
+
+export interface RenderInvoicePdfOptions {
+  attachments?: InvoicePdfAttachment[];
+}
 
 function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" {
   return line.lineType ?? "ITEM";
@@ -139,13 +154,13 @@ function buildItemColumns(
   return { columns, x };
 }
 
-export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Promise<Buffer> {
+export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, options?: RenderInvoicePdfOptions): Promise<Buffer> {
   const margins = pdfMargins(theme);
-  const doc = new PDFDocument({
+  const doc = createPdfDocument({
     size: "A4",
-    margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
-    bufferPages: true,
+    margins,
     compress: theme.compress ?? true,
+    pdfa: true,
   });
   const chunks: Buffer[] = [];
   const finished = new Promise<Buffer>((resolve, reject) => {
@@ -230,12 +245,30 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
   // aufgeloest, siehe buildEInvoiceData/buildDocEInvoiceData) — y danach dynamisch
   // (Rueckgabewert des Hooks), kein hartes Ueberschreiben, da pdfkit bei langem Text
   // automatisch umbricht/seitenwechselt.
+  // Phase 14a (Task 5, BG-13/BG-15): eigener Block "Lieferanschrift" unter der
+  // Empfaengeranschrift, NUR wenn der Beleg eine abweichende Lieferadresse traegt
+  // (data.deliverTo) — generischer extraRecipientBlock-Mechanismus, den alle Layouts
+  // bereits fuer den Lieferschein-Lieferadressblock zeichnen (siehe delivery-note-pdf.ts).
+  const deliverTo = data.deliverTo;
+  const extraRecipientBlock = deliverTo
+    ? {
+        heading: "Lieferanschrift:",
+        lines: [
+          ...(deliverTo.name ? [deliverTo.name] : []),
+          deliverTo.addressLine1,
+          ...(deliverTo.addressLine2 ? [deliverTo.addressLine2] : []),
+          `${deliverTo.postalCode} ${deliverTo.city}`,
+        ],
+      }
+    : undefined;
+
   let y = layout.drawKopf(frame, {
     title: documentTitle(data),
     numberLabel: documentNumberLabel(data),
     number: data.number,
     meta,
     recipient: data.buyer,
+    extraRecipientBlock,
     senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
     intro: data.headerText,
     subject: data.subject,
@@ -629,6 +662,24 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme): Pro
     if (theme.watermark) drawWatermark(doc, theme.watermark);
   }
   if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
+
+  // Task 6 (ZUGFeRD-Hybrid): Anhang + Factur-X-XMP-Erweiterungsschema nur, wenn der
+  // Aufrufer (renderZugferdPdf) welche mitgibt — Rechnung/Angebot/Auftragsbestaetigung
+  // ohne XML-Anhang bleiben unveraendert.
+  for (const attachment of options?.attachments ?? []) {
+    // `relationship` fehlt in `@types/pdfkit` (`PDFAttachmentOptions`), wird zur Laufzeit
+    // aber ausdruecklich unterstuetzt und setzt `/AFRelationship` im Filespec (siehe
+    // `AttachmentsMixin.file` in pdfkit.js) — lokale Erweiterung der Drittanbieter-
+    // Deklaration statt `any`.
+    const fileOptions: PDFKit.Mixins.PDFAttachmentOptions & { relationship: InvoicePdfAttachment["relationship"] } = {
+      name: attachment.name,
+      relationship: attachment.relationship,
+      type: attachment.type,
+      description: attachment.description,
+    };
+    doc.file(attachment.bytes, fileOptions);
+    doc.appendXML(buildFacturXXmp(attachment.name));
+  }
 
   doc.end();
   return finished;

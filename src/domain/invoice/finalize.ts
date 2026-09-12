@@ -193,12 +193,16 @@ export async function finalizeWithinTx(
   // Phase 8a (§29/§31): der Buyer-Snapshot beruecksichtigt die AM BELEG gewaehlte
   // Rechnungsadresse (`billingAddressId`) und die Kunden-Zusatzfelder — dieselbe Funktion
   // wie bei Anlage eines Geschaeftsdokuments (resolveBuyerSnapshot), damit Erstellung und
-  // Festschreibung denselben Snapshot bauen.
+  // Festschreibung denselben Snapshot bauen. Phase 14a (Task 5, BG-13/BG-15): zusaetzlich
+  // die am Beleg gewaehlte Lieferadresse (`invoice.shippingAddressId`) — nur Rechnungen
+  // kennen dieses Feld (Quote/Geschaeftsdokument nicht), daher NUR hier uebergeben.
   const buyerSnapshotJson = explicitInherit
     ? inherited!.buyerSnapshotJson
     : draftInherited
       ? invoice.buyerSnapshotJson
-      : JSON.stringify(await resolveBuyerSnapshot(tx, invoice.orgId, invoice.customer, invoice.contactPersonId, invoice.billingAddressId));
+      : JSON.stringify(
+          await resolveBuyerSnapshot(tx, invoice.orgId, invoice.customer, invoice.contactPersonId, invoice.billingAddressId, invoice.shippingAddressId),
+        );
   // Ansprechpartner-Snapshot (§30): Storno/Teilgutschrift bzw. ein bereits vererbter
   // Entwurf-Snapshot erben den Snapshot des Originals (fehlt er dort — Altbelege vor
   // Phase 8a —, bleibt er `null`); sonst wird er aus dem am Beleg gewaehlten
