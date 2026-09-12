@@ -252,14 +252,27 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     y = drawTableHeader(y);
 
     doc.fillColor("#000").fontSize(base - 1);
+    // Hotfix (A1, Tiefenanalyse UI/Ausgabe/Bedienung): dasselbe Muster wie invoice-pdf.ts —
+    // die Zeilenhoehe war fest `rowH` (eine Zeile); bricht die Beschreibung um, ueberdruckte
+    // die naechste Position den Text. Ueber die Zeilenanzahl (gemessene Hoehe / Zeilenhoehe,
+    // gerundet) statt ueber die rohe Hoehe gerechnet — eine einzeilige Beschreibung ergibt
+    // dadurch exakt `rowH` wie bisher (keine Rundungsdrift durch Gleitkomma-Abweichungen
+    // zwischen `heightOfString` und `currentLineHeight`, siehe invoice-pdf.ts). `lineHeight`
+    // ist konstant (Font/Groesse aendern sich in dieser Datei nicht) und daher vor der
+    // Schleife einmal gemessen.
+    const descColumn = columns.find((c) => c.header === "Beschreibung");
+    const lineHeight = doc.currentLineHeight();
     for (const line of data.lines) {
-      y = ensureSpace(y, rowH);
+      const measuredDescHeight = descColumn ? doc.heightOfString(descColumn.render(line), { width: descColumn.width }) : 0;
+      const extraLines = descColumn ? Math.max(0, Math.round(measuredDescHeight / lineHeight) - 1) : 0;
+      const h = rowH + extraLines * lineHeight;
+      y = ensureSpace(y, h);
       let x = tableX;
       for (const col of columns) {
         doc.text(col.render(line), x, y, { width: col.width, align: col.align ?? "left" });
         x += col.width + COLUMN_GAP;
       }
-      y += rowH;
+      y += h;
     }
 
     // Summen — nur mit Preisen (ohne showPrices gibt es keinen Wert, den man summieren koennte).
