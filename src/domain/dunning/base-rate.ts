@@ -40,6 +40,7 @@ export async function listBaseRates(orgId: string) {
   return dbInternal.baseInterestRate.findMany({
     where: { orgId },
     orderBy: { validFrom: "asc" },
+    select: { id: true, validFrom: true, rateBp: true, source: true, createdAt: true, updatedAt: true },
   });
 }
 
@@ -56,6 +57,7 @@ export async function upsertBaseRate(orgId: string, rawInput: unknown) {
     where: { orgId_validFrom: { orgId, validFrom } },
     create: { orgId, validFrom, rateBp: input.rateBp, source: input.source ?? null },
     update: { rateBp: input.rateBp, source: input.source ?? null },
+    select: { id: true, validFrom: true, rateBp: true, source: true, createdAt: true, updatedAt: true },
   });
 }
 
@@ -65,7 +67,7 @@ export async function upsertBaseRate(orgId: string, rawInput: unknown) {
  * Satz dastehen (rateForDate erwartet mindestens einen Eintrag).
  */
 export async function deleteBaseRate(orgId: string, id: string): Promise<void> {
-  const existing = await dbInternal.baseInterestRate.findFirst({ where: { id, orgId } });
+  const existing = await dbInternal.baseInterestRate.findFirst({ where: { id, orgId }, select: { id: true } });
   if (!existing) throw new NotFoundError("Basiszinssatz nicht gefunden.");
   const count = await dbInternal.baseInterestRate.count({ where: { orgId } });
   if (count <= 1) {
