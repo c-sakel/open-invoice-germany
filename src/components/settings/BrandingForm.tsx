@@ -10,7 +10,7 @@ import { parseClampedNumberInput } from "@/lib/forms/clamped-number-input";
  *  Die Live-Vorschau (vormals eine feste PDF-Vorschau hier im Formular) lebt seit Phase 11b,
  *  Task 7 im Reiter "Layouts" (Galerie mit iframe-Vorschau je Belegtyp) — kein doppelter
  *  Vorschau-Mechanismus mehr. */
-export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
+export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettingsInput; cmykWarning?: { logo: boolean; background: boolean } }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
@@ -122,6 +122,12 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
                 </button>
               </div>
             )}
+            {cmykWarning?.logo && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                Dieses Logo ist ein CMYK-JPEG — es wird weiterhin gedruckt, verhindert aber die PDF/A-3b-Konformität
+                (ISO 19005) aller Belege mit diesem Logo. Bitte durch ein RGB-JPEG oder PNG ersetzen.
+              </p>
+            )}
             {uploading === "logo" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-slate-600">Breite im PDF (mm)</span>
@@ -178,6 +184,13 @@ export function BrandingForm({ initial }: { initial: BrandingSettingsInput }) {
                   entfernen
                 </button>
               </div>
+            )}
+            {cmykWarning?.background && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                Dieses Hintergrundbild ist ein CMYK-JPEG — es wird weiterhin gedruckt, verhindert aber die
+                PDF/A-3b-Konformität (ISO 19005) aller Belege mit diesem Hintergrund. Bitte durch ein RGB-JPEG oder
+                PNG ersetzen.
+              </p>
             )}
             {uploading === "background" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
             <label className="flex items-center gap-2 text-sm">

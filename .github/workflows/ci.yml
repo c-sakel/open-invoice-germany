@@ -96,6 +96,41 @@ jobs:
           done
           exit $fail
 
+      # Task 6/7 (Phase 14a): PDF/A-3b-Nachweis fuer den ZUGFeRD-Hybrid-Container (und,
+      # da dieselbe Fabrik src/lib/pdf/document.ts nutzt, auch Lieferschein/Mahnung).
+      # Java 17 liegt in diesem Job bereits vor (siehe setup-java oben) — kein eigener
+      # Job noetig, solange veraPDF darunter laeuft (Ruling, siehe COMPLIANCE.md/Ledger:
+      # laut offizieller veraPDF-Doku wird die Installation unter Java 8/11/17/21
+      # unterstuetzt; bricht der Schritt hier dennoch ab, ist die Ausweiche ein eigener
+      # Job mit `actions/setup-java` auf Java 11 statt eines stillschweigenden Wegfalls).
+      - name: PDF/A-3b-Muster erzeugen (ZUGFeRD-Rechnung mit Logo/GiroCode, Lieferschein, Mahnung)
+        run: npx tsx scripts/render-pdfa-samples.ts
+      - name: veraPDF installieren (IzPack, headless — nur das CLI-Paket)
+        run: |
+          curl -fsSL -o verapdf-installer.zip "https://software.verapdf.org/releases/verapdf-installer.zip"
+          unzip -q verapdf-installer.zip -d verapdf-installer
+          cat > verapdf-auto-install.xml <<'XML'
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <AutomatedInstallation langpack="eng">
+          <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
+          <com.izforge.izpack.panels.target.TargetPanel id="install_dir">
+          <installpath>/tmp/verapdf</installpath>
+          </com.izforge.izpack.panels.target.TargetPanel>
+          <com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select">
+          <pack index="0" name="veraPDF GUI" selected="false"/>
+          <pack index="1" name="veraPDF CLI" selected="true"/>
+          <pack index="2" name="veraPDF Documentation" selected="false"/>
+          <pack index="3" name="veraPDF Sample Plugins" selected="false"/>
+          </com.izforge.izpack.panels.packs.PacksPanel>
+          <com.izforge.izpack.panels.install.InstallPanel id="install"/>
+          <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
+          </AutomatedInstallation>
+          XML
+          INSTALLER_JAR=$(find verapdf-installer -name "verapdf-izpack-installer-*.jar" | head -1)
+          java -jar "$INSTALLER_JAR" verapdf-auto-install.xml
+      - name: PDF/A-3b pruefen (veraPDF, Profil 3b — Rechnung, Lieferschein, Mahnung)
+        run: /tmp/verapdf/verapdf -f 3b tmp/pdfa-samples/*.pdf
+
   # Die beiden Schemadateien sind bis auf die Provider-Zeile zeichengleich.
   # Laufen sie auseinander, entstehen unvollstaendige Postgres-Migrationen —
   # genau so fehlten RecurringInvoice/RecurringInvoiceLine ueber Monate.

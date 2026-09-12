@@ -53,6 +53,9 @@ next-env.d.ts
 # heruntergeladenes EN-16931-XSLT + SVRL-Reports (Validierung)
 /validation/.cache
 
+# PDF/A-3b-Muster fuer den lokalen/CI-veraPDF-Lauf (scripts/render-pdfa-samples.ts)
+/tmp
+
 # Beleganhaenge (Phase 4b, ATTACHMENTS_DIR-Default) — ausserhalb des Web-Roots, aber
 # lokal unter data/ abgelegt; nie ins Repo, kein Compose-Volume beim lokalen Dev.
 /data

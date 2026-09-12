@@ -4,6 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { storeFile, AttachmentValidationError } from "@/lib/attachments/storage";
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { pngSize } from "@/lib/images/png-size";
+import { jpegComponents } from "@/lib/images/jpeg-info";
 
 export const runtime = "nodejs";
 
@@ -85,6 +86,18 @@ export async function POST(req: Request) {
     }
     if (size.width < 32 || size.width > 512) {
       return NextResponse.json({ error: "Das Favicon muss zwischen 32 und 512 px gross sein." }, { status: 400 });
+    }
+  }
+
+  // Task 7 (Spec R11): Logo/Hintergrund werden in PDF/A-3b eingebettet — ein CMYK-JPEG
+  // erzeugt dabei `DeviceCMYK` ohne passenden OutputIntent und bricht die Konformität.
+  // Favicon/App-Logo landen nicht im PDF, daher keine Pruefung dort.
+  if ((kind === "logo" || kind === "background") && mime === "image/jpeg") {
+    if (jpegComponents(buffer) === 4) {
+      return NextResponse.json(
+        { error: "CMYK-JPEGs sind nicht erlaubt (bricht die PDF/A-Konformität) — bitte als RGB-JPEG oder PNG hochladen." },
+        { status: 400 },
+      );
     }
   }
 

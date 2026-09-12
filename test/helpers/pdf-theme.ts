@@ -85,3 +85,31 @@ export function testPngBuffer(width: number, height: number): Buffer {
     pngChunk("IEND", Buffer.alloc(0)),
   ]);
 }
+
+/**
+ * Minimales JPEG mit SOI + SOF0 (Baseline) fuer `componentCount` Farbkomponenten (Task 7,
+ * `src/lib/images/jpeg-info.ts`) — 3 = RGB/YCbCr, 4 = CMYK/YCCK. Traegt keine gueltigen
+ * Scan-Daten (reicht `jpegComponents`/den Magic-Bytes der Upload-Route, die nur die ersten
+ * drei Bytes `FF D8 FF` pruefen — siehe `src/lib/attachments/mime.ts#JPG_MAGIC`).
+ */
+export function testJpegBuffer(componentCount: number): Buffer {
+  const componentBytes = Array.from({ length: componentCount }, (_, i) => [i + 1, 0x11, i === 0 ? 0 : 1]).flat();
+  const sofLength = 2 + 1 + 2 + 2 + 1 + componentBytes.length; // Laenge inkl. der beiden Laengebytes
+  return Buffer.from([
+    0xff,
+    0xd8, // SOI
+    0xff,
+    0xc0, // SOF0 (Baseline DCT)
+    (sofLength >> 8) & 0xff,
+    sofLength & 0xff,
+    0x08, // Praezision
+    0x00,
+    0x10, // Hoehe = 16
+    0x00,
+    0x10, // Breite = 16
+    componentCount,
+    ...componentBytes,
+    0xff,
+    0xd9, // EOI
+  ]);
+}
