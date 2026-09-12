@@ -77,6 +77,8 @@ Die App bringt einen **eingebauten Scheduler** mit: im laufenden Prozess (`npm r
 
 Für regelmäßige Leistungen (Wartung, Retainer, Miete): Lege ein **Abo** an — Kunde, Positionen, Rhythmus (wöchentlich bis jährlich), Startdatum, optional Enddatum. Wahlweise werden die erzeugten Rechnungen **automatisch festgeschrieben**. **Jetzt Rechnung erzeugen** auf der Abo-Seite erstellt sofort die nächste Rechnung.
 
+**Vorrangregel bei Abo-Läufen (§28–§30):** Jede erzeugte Rechnung läuft seit Phase 14a über denselben Erstellungspfad wie eine manuell angelegte Rechnung. Was das Abo selbst festlegt — Steuerschema, Währung, Notiz, Positionen und die im Abo hinterlegte **Zahlungsfrist** —, überstimmt in jedem Fall eine abweichende Kundenvorgabe. Alles, was das Abo nicht kennt, kommt dagegen jetzt aus den **Kundenvorgaben**: Zahlungsart, Ansprechpartner, Rechnungs-/Lieferadresse, **Kundenrabatt**, Bestellreferenz, Zahlungsbedingungstext sowie Kopf-/Fußtextvorlage. Die Abo-Detailseite zeigt einen eigenen Block „Aus den Kundenvorgaben übernommen" mit den aktuell wirksamen Werten. **Prüfabfrage vor dem Deploy dieser Version:** Hat ein Kunde mit laufendem Abo einen hinterlegten `Kundenrabatt` (§28) größer 0 %? Falls ja, sinkt der Rechnungsbetrag ab dem nächsten Lauf dieses Abos entsprechend — das ist die beabsichtigte Fehlerbehebung, kein Defekt, sollte aber vor dem ersten Lauf nach dem Update bekannt sein.
+
 **Cron-Alternative** — wer den eingebauten Loop nicht nutzen will (z. B. `SCHEDULER_ENABLED=false`, oder mehrere App-Instanzen ohne Loop), kann denselben Vorgang per Cron/CLI anstoßen — der DB-Mutex (`SchedulerLock`) sorgt dafür, dass sich Loop, Cron und manuelle Läufe nie überschneiden:
 
 ```bash

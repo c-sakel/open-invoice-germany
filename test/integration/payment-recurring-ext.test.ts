@@ -18,6 +18,15 @@ import { createMemoryProvider } from "@/lib/mail/memory";
 import { createRecurring } from "@/domain/recurring/create";
 import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
 import { recordPaymentSchema, type CreateInvoiceInput } from "@/schemas";
+// Phase 14a, Task 1 (R1-R5) — Kundenvorgaben-Uebernahme, Steuersatz-Vererbung,
+// ChangeLog-Kette, Kopftext/BG-14.
+import { saveDocumentSettings, loadDocumentSettings } from "@/domain/document/settings";
+import { createAddress } from "@/domain/customer/addresses";
+import { createContact } from "@/domain/customer/contacts";
+import { saveTextTemplate } from "@/domain/text-template/manage";
+import { computeLineNet } from "@/lib/pricing/line";
+import { computeTaxBreakdown } from "@/lib/tax";
+import { verifyChain, type ChainEntry } from "@/domain/changelog";
 
 let orgId: string;
 let customerId: string;
@@ -250,5 +259,206 @@ describe("Recurring: autoSend nutzt emailTemplateId", () => {
     expect(log).not.toBeNull();
     expect(log?.templateId).toBe(template.id);
     expect(log?.subject).toContain("Ihre Sonderrechnung");
+  });
+});
+
+// Phase 14a, Task 1 (R1-R5, §28-§30): Abo-Rechnungen laufen ab jetzt ueber
+// createDraftInvoiceWithinTx — Kundenvorgaben werden uebernommen, die Abo-eigenen Felder
+// (Zahlungsfrist, Steuersatz) bleiben trotzdem vorrangig.
+describe("Recurring: Kundenvorgaben werden uebernommen (R1/R2)", () => {
+  it("Zahlungsart, Adressen, Ansprechpartner, Rabatt und Bestellreferenz des Kunden landen auf der erzeugten Rechnung; der Betrag sinkt um den Rabatt", async () => {
+    const customer = await makeCustomer("kundenvorgaben-abo@example.org");
+    const method = await dbInternal.paymentMethod.create({ data: { orgId, code: "ABO_VORGABE", name: "Abo-Vorgabe-Zahlungsart", untdidCode: "58" } });
+    const billing = await createAddress(orgId, customer.id, { type: "BILLING", addressLine1: "Rechnungsweg 5", postalCode: "10115", city: "Berlin", isDefault: true });
+    const shipping = await createAddress(orgId, customer.id, { type: "SHIPPING", addressLine1: "Lagerweg 5", postalCode: "20095", city: "Hamburg", isDefault: true });
+    const contact = await createContact(orgId, customer.id, { firstName: "Vera", lastName: "Vorgabe", isDefault: true });
+    // Exakter Wert aus dem Plan (Task 1, Tests): defaultDiscountPermille = 50 (= 5 %).
+    await dbInternal.customer.update({
+      where: { id: customer.id },
+      data: { defaultPaymentMethodId: method.id, defaultDiscountPermille: 50, orderReference: "PO-4711" },
+    });
+
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo mit Kundenvorgaben",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2064-10-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      lines: [line],
+    });
+
+    const emitted = await emitRecurringNow(rec.id, { now: new Date("2064-10-01T10:00:00.000Z") });
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
+
+    expect(invoice.paymentMethodId).toBe(method.id);
+    expect(invoice.billingAddressId).toBe(billing.id);
+    expect(invoice.shippingAddressId).toBe(shipping.id);
+    expect(invoice.contactPersonId).toBe(contact.id);
+    expect(invoice.orderNumber).toBe("PO-4711");
+    expect(invoice.documentDiscountPermille).toBe(50);
+
+    // grossTotalCents ist um den Kundenrabatt niedriger als ohne Rabatt (dieselbe
+    // Berechnung wie createDraftInvoiceWithinTx, R2).
+    const lineNetCents = computeLineNet({
+      quantityMilli: line.quantityMilli,
+      unitNetPriceCents: line.unitNetPriceCents,
+      discountPermille: line.discountPermille,
+    }).lineNetCents;
+    const withoutDiscount = computeTaxBreakdown([{ lineNetCents, taxRate: line.taxRate, taxCategory: line.taxCategory }]);
+    const withDiscount = computeTaxBreakdown([{ lineNetCents, taxRate: line.taxRate, taxCategory: line.taxCategory }], { discountPermille: 50 });
+    expect(invoice.grossTotalCents).toBe(withDiscount.grossTotalCents);
+    expect(withDiscount.grossTotalCents).toBeLessThan(withoutDiscount.grossTotalCents);
+  });
+});
+
+describe("Recurring: Abo-Zahlungsziel schlaegt die Kundenvorgabe (R1)", () => {
+  it("dueDate = issueDate + Abo-paymentTermsDays, Customer.defaultPaymentTermsDays bleibt wirkungslos", async () => {
+    const customer = await makeCustomer("zahlungsziel-vorrang@example.org");
+    await dbInternal.customer.update({ where: { id: customer.id }, data: { defaultPaymentTermsDays: 7 } });
+
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo mit eigenem Zahlungsziel",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2064-10-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 30,
+      autoFinalize: false,
+      lines: [line],
+    });
+
+    const now = new Date("2064-10-01T10:00:00.000Z");
+    const emitted = await emitRecurringNow(rec.id, { now });
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
+    const expectedDue = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    expect(invoice.dueDate).not.toBeNull();
+    expect(invoice.dueDate!.toISOString().slice(0, 10)).toBe(expectedDue.toISOString().slice(0, 10));
+  });
+});
+
+describe("Recurring: geerbter Steuersatz bleibt gueltig, auch nach Delisting (R3)", () => {
+  it("Abo mit 16 % laeuft weiter, obwohl die Org-Liste zum Lauf-Zeitpunkt nur noch 19/7/0 fuehrt", async () => {
+    const customer = await makeCustomer("steuersatz-16-abo@example.org");
+    const before = await loadDocumentSettings(orgId);
+    await saveDocumentSettings(orgId, { ...before, taxRates: [...before.taxRates, 16] });
+
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo mit 16 %",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2064-11-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      lines: [{ ...line, taxRate: 16 }],
+    });
+
+    // Delisting NACH Abo-Anlage, VOR dem Lauf — die Org-Liste fuehrt 16 % nicht mehr.
+    await saveDocumentSettings(orgId, before);
+
+    const emitted = await emitRecurringNow(rec.id, { now: new Date("2064-11-01T10:00:00.000Z") });
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId }, include: { lines: true } });
+    expect(invoice.lines[0]!.taxRate).toBe(16);
+  });
+});
+
+describe("Recurring: genau ein ChangeLog-CREATE-Eintrag je Rechnung, Kette bleibt gueltig", () => {
+  it("kein zweiter Eintrag durch den Abo-Lauf, Abo-Kontext steht im Diff des gemeinsamen Pfads", async () => {
+    const customer = await makeCustomer("changelog-abo@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo ChangeLog-Test",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2064-12-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      lines: [line],
+    });
+    const emitted = await emitRecurringNow(rec.id, { now: new Date("2064-12-01T10:00:00.000Z") });
+
+    const createEntries = await dbInternal.changeLog.findMany({
+      where: { orgId, entity: "INVOICE", entityId: emitted.invoiceId, action: "CREATE" },
+    });
+    expect(createEntries).toHaveLength(1);
+    expect(JSON.parse(createEntries[0]!.diffJson)).toMatchObject({ recurring: rec.id });
+
+    const rows = await dbInternal.changeLog.findMany({
+      where: { orgId },
+      orderBy: { id: "asc" },
+      select: { prevHash: true, hash: true, entity: true, entityId: true, action: true, actor: true, at: true, diffJson: true },
+    });
+    const entries: ChainEntry[] = rows.map((r) => ({
+      prevHash: r.prevHash,
+      hash: r.hash,
+      payload: { entity: r.entity, entityId: r.entityId, action: r.action, actor: r.actor, at: r.at.toISOString(), diff: JSON.parse(r.diffJson) },
+    }));
+    expect(verifyChain(entries).valid).toBe(true);
+  });
+});
+
+describe("Recurring: Kopftext folgt showPeriodText (R4/R5)", () => {
+  it("showPeriodText aus: die INVOICE-HEAD-Textvorlage greift, kein Zeitraumtext, kein BG-14", async () => {
+    await saveTextTemplate(orgId, {
+      name: "Standard-Kopftext (Phase 14a Test)",
+      docType: "INVOICE",
+      position: "HEAD",
+      body: "Vielen Dank fuer Ihren Auftrag.",
+      isDefault: true,
+    });
+    const customer = await makeCustomer("kopftext-aus@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo ohne Zeitraumtext",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2065-01-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      showPeriodText: false,
+      lines: [line],
+    });
+
+    const emitted = await emitRecurringNow(rec.id, { now: new Date("2065-01-01T10:00:00.000Z") });
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
+    expect(invoice.headerText).toBe("Vielen Dank fuer Ihren Auftrag.");
+    expect(invoice.deliveryStart).toBeNull();
+    expect(invoice.deliveryEnd).toBeNull();
+  });
+
+  it("showPeriodText an: Zeitraumtext im Kopf, BG-14 (deliveryStart/deliveryEnd = Periodengrenzen) gesetzt", async () => {
+    const customer = await makeCustomer("kopftext-an@example.org");
+    const rec = await createRecurring(orgId, {
+      customerId: customer.id,
+      title: "Abo mit Zeitraumtext",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      startDate: new Date("2065-01-01T10:00:00.000Z"),
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      paymentTermsDays: 14,
+      autoFinalize: false,
+      showPeriodText: true,
+      lines: [line],
+    });
+
+    const emitted = await emitRecurringNow(rec.id, { now: new Date("2065-01-01T10:00:00.000Z") });
+    const invoice = await dbInternal.invoice.findUniqueOrThrow({ where: { id: emitted.invoiceId } });
+    expect(invoice.headerText).toMatch(/^Abrechnungszeitraum /);
+    expect(invoice.deliveryStart).not.toBeNull();
+    expect(invoice.deliveryEnd?.toISOString().slice(0, 10)).toBe("2065-01-01");
+    expect(invoice.deliveryStart?.toISOString().slice(0, 10)).toBe("2064-12-01");
   });
 });
