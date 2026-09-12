@@ -70,7 +70,12 @@ function RateRow({ row, isLast }: { row: BaseRateRow; isLast: boolean }) {
         {saveState.error && <p className="mt-1 text-xs text-rose-700">{saveState.error}</p>}
       </td>
       <td className="px-3 py-2 text-right">
-        <form action={deleteAction}>
+        <form
+          action={deleteAction}
+          onSubmit={(e) => {
+            if (!confirm(`Basiszinssatz-Eintrag gültig ab ${row.validFrom} wirklich löschen?`)) e.preventDefault();
+          }}
+        >
           <input type="hidden" name="id" value={row.id} />
           <CompactSubmitButton tone="danger">{isLast ? "Löschen (letzter Eintrag)" : "Löschen"}</CompactSubmitButton>
         </form>
