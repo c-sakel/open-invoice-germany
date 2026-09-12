@@ -783,6 +783,17 @@ export const dunningSettingsInputSchema = z.object({
 });
 export type DunningSettingsInput = z.infer<typeof dunningSettingsInputSchema>;
 
+// Phase 14a, Task 2 — Basiszinssatz-Halbjahrestabelle (§ 288 Abs. 1 Satz 2 BGB).
+// `validFrom` als reines Datum (keine Uhrzeit relevant, Halbjahresgrenzen sind Tage);
+// `rateBp` wie DunningSettings.baseInterestRateBp begrenzt (0-20 %, grosszuegig ueber
+// dem historisch je erreichten Basiszinssatz). `source` optional (z.B. Bundesbank-Beleg).
+export const baseInterestRateInputSchema = z.object({
+  validFrom: z.iso.date(),
+  rateBp: z.number().int().min(0).max(2000),
+  source: z.string().max(120).nullable().optional(),
+});
+export type BaseInterestRateInput = z.infer<typeof baseInterestRateInputSchema>;
+
 export const DunningState = z.enum(["ACTIVE", "PAUSED", "STOPPED"]);
 export type DunningState = z.infer<typeof DunningState>;
 
