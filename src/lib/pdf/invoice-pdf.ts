@@ -362,7 +362,25 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
 
     // ITEM
     itemPos += 1;
-    const h = rowH;
+    // Hotfix (A1, Tiefenanalyse UI/Ausgabe/Bedienung): die Zeilenhoehe war bisher fest
+    // `rowH` (eine Zeile) — bricht die Beschreibung auf zwei oder mehr Zeilen um (langer
+    // Text in einer schmalen Spalte, z. B. bei aktivierten Zusatzspalten), ueberdruckte die
+    // naechste Position den umgebrochenen Text. `doc.heightOfString` misst VOR dem
+    // Zeichnen mit denselben Optionen (Breite, Schrift, Schriftgroesse) wie beim
+    // tatsaechlichen `doc.text(...)` unten — nur so kennt die Seitenumbruchpruefung
+    // (`ensureSpace`) die echte Hoehe. Ueber die Zeilenanzahl (gemessene Hoehe / Zeilenhoehe,
+    // gerundet) statt ueber die rohe Hoehe gerechnet, damit eine einzeilige Beschreibung
+    // (der ueberwaeltigend haeufige Fall) exakt `rowH` ergibt wie bisher (byte-identisch,
+    // keine Rundungsdrift durch Gleitkomma-Abweichungen zwischen `heightOfString` und
+    // `currentLineHeight` — das haette sich bei vielen Positionen zu einer zusaetzlichen
+    // Seite aufsummiert und bestehende, empirisch kalibrierte Paginierungstests gebrochen).
+    const descFont = layout.table.boldTitle ? "Helvetica-Bold" : "Helvetica";
+    doc.font(descFont).fontSize(base - 1);
+    const lineHeight = doc.currentLineHeight();
+    const measuredDescHeight = showDescription ? doc.heightOfString(line.description, { width: descWidth }) : 0;
+    doc.font("Helvetica").fontSize(base - 1);
+    const extraLines = showDescription ? Math.max(0, Math.round(measuredDescHeight / lineHeight) - 1) : 0;
+    const h = rowH + extraLines * lineHeight;
     y = ensureSpace(y, h);
     if (layout.table.zebra && itemPos % 2 === 0) {
       doc.rect(left, y - 2, right - left, h).fill(layout.table.zebra);
