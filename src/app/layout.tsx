@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { AppShell } from "@/components/shell/AppShell";
 import { SlimShell } from "@/components/shell/SlimShell";
 import { unreadCount } from "@/domain/notifications/create";
-import { PUBLIC_NO_NAV_HEADER } from "@/proxy";
+import { PUBLIC_NO_NAV_HEADER, PATHNAME_HEADER } from "@/proxy";
 import { dbInternal } from "@/lib/db";
 import { DEFAULT_APP_NAME, DEFAULT_BRAND, getOrgAndBrand, safeBrand } from "@/domain/settings/brand";
 // `resolveJsonModule` ist in tsconfig.json aktiv — der JSON-Import wird beim Build inline
@@ -70,6 +71,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const authed = Boolean(userId);
 
   if (!authed) {
+    // Task 9 (R12), praezisiert in Fix-Welle 4 (must 2): `src/proxy.ts` verwirft eine
+    // Sitzung mit entwertetem `pwc` (Passwortwechsel auf einem ANDEREN Geraet/Browser)
+    // inzwischen bereits selbst (`userIdFromToken`, derselbe Helfer wie hier) und leitet
+    // fuer jeden nicht-oeffentlichen Pfad um — dieser Zweig laeuft fuer einen SOLCHEN Pfad
+    // also praktisch nie noch mehr. Er bleibt trotzdem als zweite Verteidigungslinie
+    // stehen UND ist fuer die drei PUBLIC-Pfade weiterhin die einzige Pruefung: "/",
+    // "/login" und "/setup" rendern bewusst AUCH ohne gueltige Sitzung (siehe deren
+    // jeweilige page.tsx) und werden vom Proxy deshalb nie umgeleitet — nur hier
+    // entscheidet `authed`, ob z. B. "/" das Dashboard oder die Marketing-Seite zeigt.
+    // Umgeleitet wird trotzdem NICHT auf "/", "/login" oder "/setup" selbst — sonst
+    // Redirect-Schleife bzw. kaputte Marketing-/Setup-Seite.
+    const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
+    if (pathname && pathname !== "/" && pathname !== "/login" && pathname !== "/setup") {
+      redirect(`/login?from=${encodeURIComponent(pathname)}`);
+    }
+
     // Login/Setup: schlanke Huelle ohne Sidebar (Abschluss-Review M7: Header/Footer wieder
     // wie vor der Sidebar-Einfuehrung — dieselbe SlimShell wie die oeffentliche Huelle oben).
     const brand = await safeBrand();

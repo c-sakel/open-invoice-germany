@@ -10,20 +10,27 @@
  * Datum: Rechnungsdatum = Erstellungstag (`now`), Leistungsdatum = Perioden-
  * Stichtag, fällig = `now` + Zahlungsziel. `nextRunDate` wird vom Stichtag aus
  * fortgeschrieben (nicht von `now`), damit der Rhythmus stabil bleibt.
+ *
+ * Phase 14a, Task 1 (§28-§30, R1-R5): die Rechnung entsteht über
+ * `createDraftInvoiceWithinTx` — denselben Pfad wie jede manuell angelegte Rechnung.
+ * Nummernvergabe, `assertAllowedTaxRates`, Netto-/Steuerberechnung, Snapshots und
+ * Textvorlagen laufen dadurch identisch; Felder, die das Abo selbst nicht führt
+ * (Zahlungsmethode, Ansprechpartner, Rechnungs-/Lieferadresse, Belegrabatt,
+ * Bestellreferenz, Zahlungsbedingungstext, Kopf-/Fußtextvorlage), kommen jetzt aus den
+ * Kundenvorgaben statt leer zu bleiben.
  */
 import { dbInternal } from "@/lib/db";
-import { computeLineNet } from "@/lib/pricing/line";
-import { computeTaxBreakdown } from "@/lib/tax";
-import { appendChangeLog } from "@/domain/audit";
-import { logActivity } from "@/domain/activity/log";
 import { onRecurringFailed } from "@/domain/notifications/hooks";
 import { linkDocuments } from "@/domain/relations";
+import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
-import { advanceDate, type RecurInterval } from "@/lib/recurring";
+import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { advanceDate, periodRange, type RecurInterval } from "@/lib/recurring";
 import { formatDateDe } from "@/lib/template/format";
 import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
 import type { MailProvider } from "@/lib/mail/provider";
+import type { CreateInvoiceInput } from "@/schemas";
 import { RecurringError } from "./create";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -106,74 +113,84 @@ async function emitOne(
 
     const periodDate = rec.nextRunDate;
 
-    const lines = rec.lines.map((l, i) => ({
-      position: i + 1,
+    // Positionen 1:1 aus dem Abo — RecurringInvoiceLine kennt keine Gliederungszeilen,
+    // lineType bleibt immer ITEM. Netto-/Steuerberechnung (inkl. der W4-Rundung ueber
+    // computeLineNet) uebernimmt ab jetzt createDraftInvoiceWithinTx — kein zweiter,
+    // separat gerechneter Block mehr.
+    const lines: CreateInvoiceInput["lines"] = rec.lines.map((l) => ({
+      lineType: "ITEM",
       description: l.description,
       quantityMilli: l.quantityMilli,
       unit: l.unit,
       unitNetPriceCents: l.unitNetPriceCents,
       taxRate: l.taxRate,
-      taxCategory: l.taxCategory,
+      taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
       discountPermille: l.discountPermille,
-      // W4 — dieselbe Rundung wie bei der manuellen Rechnung (computeLineNet aus
-      // src/lib/pricing/line.ts): erst grossLineCents runden, dann den Prozentabzug
-      // runden, statt in einem Schritt (computeLineNetCents rundete abweichend).
-      lineNetCents: computeLineNet({
-        quantityMilli: l.quantityMilli,
-        unitNetPriceCents: l.unitNetPriceCents,
-        discountPermille: l.discountPermille,
-      }).lineNetCents,
+      discountCents: 0,
     }));
-    const totals = computeTaxBreakdown(
-      lines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
-    );
 
     // recurringInsertPeriodText (Phase 7, §33): Kopftext "Abrechnungszeitraum dd.mm.yyyy –
-    // dd.mm.yyyy", nur wenn die Org-Einstellung aktiv ist. Periodenstart = ein Intervall
-    // vor dem aktuellen Stichtag (negativer advanceDate-Aufruf, dieselbe Monats-/
-    // Wochenklemmung wie beim Vorwaertsschieben).
+    // dd.mm.yyyy", nur wenn die Org-Einstellung aktiv ist. R4/R5 (Phase 14a, §43a):
+    // bei aktivem Text zusaetzlich BG-14 setzen (deliveryStart/deliveryEnd = Perioden-
+    // grenzen, derselbe Zeitraum wie im Kopftext) — ist er aus, bleibt headerText
+    // undefined, damit die INVOICE-HEAD-Textvorlage greift (createDraftInvoiceWithinTx).
     let headerText: string | undefined;
+    let deliveryStart: Date | undefined;
+    let deliveryEnd: Date | undefined;
     // showPeriodText (Phase 8b, §43): das Abo-Feld ist ab jetzt allein massgeblich — der
     // Settings-Default (recurringInsertPeriodText) wird nur noch beim Anlegen des Abos
     // uebernommen (createRecurring), nicht mehr live bei jedem Lauf gelesen.
     if (rec.showPeriodText) {
-      const periodStart = advanceDate(periodDate, rec.interval as RecurInterval, -rec.intervalCount, rec.anchorDay);
-      headerText = `Abrechnungszeitraum ${formatDateDe(periodStart)} – ${formatDateDe(periodDate)}`;
+      const { start } = periodRange(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
+      headerText = `Abrechnungszeitraum ${formatDateDe(start)} – ${formatDateDe(periodDate)}`;
+      deliveryStart = start;
+      deliveryEnd = periodDate;
     }
 
-    const invoice = await tx.invoice.create({
-      data: {
-        orgId: rec.orgId,
-        customerId: rec.customerId,
-        type: "INVOICE",
-        taxScheme: rec.taxScheme,
-        currency: rec.currency,
-        issueDate: now,
-        deliveryDate: periodDate,
-        dueDate: new Date(now.getTime() + rec.paymentTermsDays * DAY_MS),
-        notes: rec.notes,
-        headerText,
-        recurringInvoiceId: rec.id,
-        netTotalCents: totals.netTotalCents,
-        taxTotalCents: totals.taxTotalCents,
-        grossTotalCents: totals.grossTotalCents,
-        taxBreakdownJson: JSON.stringify(totals.breakdown),
-        lines: { create: lines },
-      },
+    // R1 (Spec Phase 14a): Felder, die das Abo selbst fuehrt (taxScheme, currency, notes,
+    // Positionen, Faelligkeit via explizitem dueDate), gewinnen immer. Alles, was das Abo
+    // NICHT fuehrt (paymentMethodId, contactPersonId, billingAddressId, shippingAddressId,
+    // documentDiscountPermille/Cents, orderNumber, paymentTerms, headerText/footerText ohne
+    // Zeitraumtext), bleibt hier bewusst undefined — createDraftInvoiceWithinTx zieht dafuer
+    // die jeweilige Kundenvorgabe (§28-§30).
+    const input: CreateInvoiceInput = {
+      customerId: rec.customerId,
+      type: "INVOICE",
+      taxScheme: rec.taxScheme as CreateInvoiceInput["taxScheme"],
+      currency: rec.currency,
+      issueDate: now,
+      deliveryDate: periodDate,
+      deliveryStart,
+      deliveryEnd,
+      // dueDate EXPLIZIT aus der Abo-Zusage (rec.paymentTermsDays) uebergeben — sonst
+      // wuerde Customer.defaultPaymentTermsDays diese ausdrueckliche Abo-Zusage in
+      // createDraftInvoiceWithinTx stillschweigend ueberstimmen (R1).
+      dueDate: new Date(now.getTime() + rec.paymentTermsDays * DAY_MS),
+      notes: rec.notes ?? undefined,
+      headerText,
+      // documentChargePermille/-Cents haben in createInvoiceSchema ein `.default(0)` und
+      // sind im Output-Typ deshalb Pflichtfelder — das Abo kennt keinen Belegaufschlag.
+      documentChargePermille: 0,
+      documentChargeCents: 0,
+      lines,
+    };
+
+    const invoice = await createDraftInvoiceWithinTx(tx, rec.orgId, input, {
+      actor,
+      now,
+      // R3: der/die im Abo verwendete(n) Steuersatz/-saetze gilt/gelten zusaetzlich als
+      // erlaubt, auch wenn er/sie inzwischen aus der Org-Liste entfernt wurde(n) —
+      // dasselbe Muster wie Duplikat/Konvertierung/Teilrechnung (Phase 12c), kein Bypass.
+      // Sonst wuerde ein Bestandsabo mit inzwischen abgewaehltem Satz am Lauf scheitern.
+      inheritedTaxRates: ratesOfLines(rec.lines),
+      recurringInvoiceId: rec.id,
+      // Abo-Kontext (recurring, period) im selben ChangeLog-CREATE-Eintrag UND im selben
+      // ActivityLog-CREATED-Eintrag wie der gemeinsame Pfad (Fix-Welle 1, must) — kein
+      // zweiter Eintrag je erzeugter Rechnung, in keinem der beiden Protokolle.
+      changeLogExtra: { recurring: rec.id, period: periodDate.toISOString() },
     });
 
     await linkDocuments(tx, { orgId: rec.orgId, fromType: "INVOICE", fromId: invoice.id, toType: "RECURRING", toId: rec.id, relationType: "GENERATED_BY" });
-
-    await appendChangeLog(tx, {
-      orgId: rec.orgId,
-      entity: "INVOICE",
-      entityId: invoice.id,
-      action: "CREATE",
-      actor,
-      at: now,
-      diff: { recurring: rec.id, period: periodDate.toISOString(), grossTotalCents: totals.grossTotalCents },
-    });
-    await logActivity(tx, { orgId: rec.orgId, entityType: "INVOICE", entityId: invoice.id, type: "CREATED", actor, at: now, data: { recurring: rec.id } });
 
     let number: string | null = invoice.number;
     let finalized = false;

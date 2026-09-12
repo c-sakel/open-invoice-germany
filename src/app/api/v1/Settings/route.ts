@@ -1,9 +1,18 @@
 /**
  * /api/v1/Settings — Einstellungen (task-2-facts.md Registry, singulaere Ressource: kein
- * [id]-Unterpfad, siehe task-2-report.md "Deviations"). Buendelt die drei bestehenden
- * Fragment-Domains (Dokument-/Briefpapier-/Druckeinstellungen) unter je einem Schluessel.
- * Scope: `admin` fuer GET UND PATCH (Brief-Ruling "admin fuer ApiKey/Settings" — anders
- * als der sonstige read/write-Split).
+ * [id]-Unterpfad, siehe task-2-report.md "Deviations"). Buendelt die vier bestehenden
+ * Fragment-Domains (Dokument-/Briefpapier-/Druck-/Mahnwesen-Einstellungen) unter je einem
+ * Schluessel. Scope: `admin` fuer GET UND PATCH (Brief-Ruling "admin fuer ApiKey/Settings"
+ * — anders als der sonstige read/write-Split).
+ *
+ * Phase 14a, Task 4 (R6): `dunning` ist ANDERS verdrahtet als die drei aelteren Fragmente —
+ * `saveDunningSettings` (src/domain/dunning/settings.ts) merged seit diesem Task selbst mit
+ * dem aktuellen Stand UND muss dafuer das ROHE, ungemergte `raw.dunning` sehen (Erkennung
+ * eines Altschreibvorgangs auf `baseInterestRateBp`/`baseRateValidFrom` — ein solcher
+ * Schreibvorgang legt zusaetzlich einen `BaseInterestRate`-Eintrag an, siehe dortiger
+ * Kommentar). Ein lokales `mergeSentFields(current, raw.dunning, v.dunning)` wie bei den
+ * drei anderen Fragmenten wuerde diese Unterscheidung genau an dieser Stelle wieder
+ * einebnen (das gemergte Ergebnis enthaelt IMMER alle Feldnamen).
  */
 import { z } from "zod";
 import { withApi } from "@/api/auth";
@@ -12,14 +21,20 @@ import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 import { loadPrintSettings, savePrintSettings } from "@/domain/settings/print";
-import { documentSettingsInputSchema, brandingSettingsInputSchema, printSettingsInputSchema } from "@/schemas";
+import { loadDunningSettings, saveDunningSettings } from "@/domain/dunning/settings";
+import { documentSettingsInputSchema, brandingSettingsInputSchema, printSettingsInputSchema, dunningSettingsInputSchema } from "@/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function loadAll(orgId: string) {
-  const [documents, branding, print] = await Promise.all([loadDocumentSettings(orgId), loadBrandingSettings(orgId), loadPrintSettings(orgId)]);
-  return { objectName: "Settings" as const, documents, branding, print };
+  const [documents, branding, print, dunning] = await Promise.all([
+    loadDocumentSettings(orgId),
+    loadBrandingSettings(orgId),
+    loadPrintSettings(orgId),
+    loadDunningSettings(orgId),
+  ]);
+  return { objectName: "Settings" as const, documents, branding, print, dunning };
 }
 
 export const GET = withApi(async (_req, ctx) => {
@@ -44,6 +59,7 @@ const patchBodySchema = z.object({
   documents: documentSettingsInputSchema.partial().optional(),
   branding: brandingPatchSchema.partial().optional(),
   print: printSettingsInputSchema.partial().optional(),
+  dunning: dunningSettingsInputSchema.partial().optional(),
 });
 
 /**
@@ -83,6 +99,11 @@ export const PATCH = withApi(async (_req, ctx) => {
     const current = await loadPrintSettings(ctx.orgId);
     await savePrintSettings(ctx.orgId, mergeSentFields(current, raw.print, v.print));
   }
+  // Bewusst OHNE mergeSentFields hier — siehe Modulkommentar (R6-Altschreibweg-Erkennung
+  // braucht das rohe raw.dunning, saveDunningSettings merged selbst).
+  if (v.dunning) {
+    await saveDunningSettings(ctx.orgId, raw.dunning);
+  }
   return apiData(await loadAll(ctx.orgId));
 }, { scope: "admin" });
 
@@ -90,7 +111,7 @@ export const spec = {
   get: {
     path: "/api/v1/Settings",
     method: "GET",
-    summary: "Einstellungen abrufen (Dokumente/Briefpapier/Druck)",
+    summary: "Einstellungen abrufen (Dokumente/Briefpapier/Druck/Mahnwesen)",
     scope: "admin",
     response: apiDataResponseSchema(z.unknown()),
     errors: [401, 403, 429],

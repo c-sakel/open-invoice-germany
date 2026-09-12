@@ -36,15 +36,35 @@ async function hmac(data: string): Promise<Uint8Array> {
   return new Uint8Array(sig);
 }
 
-export async function createSessionToken(userId: string): Promise<string> {
+/** Ergebnis von `verifySessionToken` bei einem gueltigen Token. */
+export interface SessionTokenPayload {
+  uid: string;
+  /**
+   * Task 9 (R12): Zeitstempel (epoch ms) von `User.passwordChangedAt` zum Ausstellungs-
+   * zeitpunkt des Tokens, oder `null` (Konto hat sein Passwort noch nie geaendert). Nur
+   * die Signatur/den Ablauf prueft diese Funktion selbst — der Abgleich gegen den
+   * AKTUELLEN `User.passwordChangedAt`-Wert (Sitzungsentwertung nach Passwortwechsel)
+   * passiert bewusst NICHT hier, sondern in `getCurrentUserId`/`userIdFromToken`
+   * (`src/lib/auth/server.ts`). Fix-Welle 4 (must 2): `userIdFromToken` laeuft
+   * mittlerweile SOWOHL im Root-Layout ALS AUCH direkt in `src/proxy.ts` — Next.js 16
+   * fuehrt Proxy-Dateien immer in der Node.js-Laufzeit aus (kein optionales Edge mehr wie
+   * beim frueheren `middleware.ts`), ein Datenbankzugriff dort ist also moeglich. Diese
+   * Datei (`verifySessionToken`) bleibt trotzdem bewusst rein signatur-/ablaufpruefend
+   * und ohne Datenbankzugriff, DAMIT sie unveraendert in beiden Kontexten wiederverwendbar
+   * bleibt.
+   */
+  pwc: number | null;
+}
+
+export async function createSessionToken(userId: string, pwc: number | null = null): Promise<string> {
   const payload = b64urlEncode(
-    new TextEncoder().encode(JSON.stringify({ uid: userId, exp: Date.now() + SESSION_MAX_AGE * 1000 })),
+    new TextEncoder().encode(JSON.stringify({ uid: userId, exp: Date.now() + SESSION_MAX_AGE * 1000, pwc })),
   );
   const sig = b64urlEncode(await hmac(payload));
   return `${payload}.${sig}`;
 }
 
-export async function verifySessionToken(token: string | undefined | null): Promise<string | null> {
+export async function verifySessionToken(token: string | undefined | null): Promise<SessionTokenPayload | null> {
   if (!token) return null;
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
@@ -56,9 +76,11 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   if (diff !== 0) return null;
 
   try {
-    const data = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as { uid?: string; exp?: number };
+    const data = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as { uid?: string; exp?: number; pwc?: number | null };
     if (!data.uid || typeof data.exp !== "number" || data.exp < Date.now()) return null;
-    return data.uid;
+    // Alt-Token (vor Task 9 ausgestellt) tragen kein `pwc` — behandelt wie `null`
+    // (Konto ohne Passwortwechsel), siehe SessionTokenPayload-Doc.
+    return { uid: data.uid, pwc: typeof data.pwc === "number" ? data.pwc : null };
   } catch {
     return null;
   }

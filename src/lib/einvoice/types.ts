@@ -94,7 +94,26 @@ export interface EInvoiceData {
   deliveryDate?: Date | null; // BT-72
   deliveryStart?: Date | null;         // BT-73 (BG-14)
   deliveryEnd?: Date | null;           // BT-74 (BG-14)
-  deliverToCountryCode?: string | null; // BT-80 (BG-15), Default: Land des Kaeufers
+  /** BT-80 (BG-15) — Land der Lieferanschrift, wenn `deliverTo` gesetzt ist, sonst
+   *  weiterhin das Land der Rechnungsanschrift (Kaeufer). Phase 14a, Task 5: hat KEINEN
+   *  Einfluss auf die AUSFUHR-Pruefung (§ 6 UStG bleibt an `buyer.countryCode`, siehe
+   *  src/domain/invoice/mandatory.ts). */
+  deliverToCountryCode?: string | null;
+  /** BG-13/BG-15 — eigene Lieferanschrift (Phase 14a, Task 5), aus
+   *  `buyerSnapshot.shippingAddress` (Invoice.shippingAddressId). NUR gesetzt, wenn am
+   *  Beleg eine von der Rechnungsanschrift abweichende Lieferadresse gewaehlt wurde;
+   *  ohne dieses Feld bleibt die XML-Ausgabe byte-gleich zum bisherigen Verhalten
+   *  (Kaeuferadresse als Fallback in xrechnung.ts/cii.ts). `name` (BT-70, Deliver to
+   *  party name) stammt aus `CustomerAddress.label` und wird nur ausgegeben, wenn
+   *  vorhanden. */
+  deliverTo?: {
+    name?: string | null;
+    addressLine1: string;
+    addressLine2?: string | null;
+    postalCode: string;
+    city: string;
+    countryCode: string;
+  } | null;
   currency: string; // BT-5
   buyerReference?: string | null; // BT-10 (Leitweg-ID im B2G)
   /** Phase 4b — Bestellnummer des Kunden (BT-13, cac:OrderReference/cbc:ID bzw.

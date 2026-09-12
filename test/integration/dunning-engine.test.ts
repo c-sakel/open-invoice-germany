@@ -22,7 +22,9 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveMailSettings } from "@/domain/email/settings";
 import { createMemoryProvider } from "@/lib/mail/memory";
 import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
-import { computeDunning } from "@/lib/dunning";
+import { computeDunning, daysBetween } from "@/lib/dunning";
+// Phase 14a, Task 3 (R6/R7/R8): Basiszins-Halbjahrestabelle statt Einzelwert.
+import { upsertBaseRate } from "@/domain/dunning/base-rate";
 import { recordPaymentSchema, type CreateInvoiceInput } from "@/schemas";
 
 const FIX_DATE = new Date("2050-06-09T10:00:00.000Z"); // 8 Tage nach dueDate (2050-06-01)
@@ -304,5 +306,52 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     const fin = await makeFinalizedInvoice(customerId);
     const r0 = await createDunning(fin.id, { now: FIX_DATE });
     await expect(prisma.dunning.update({ where: { id: r0.dunning.id }, data: { interestAmountCents: 1 } })).rejects.toThrow(/unveraenderlich/);
+  });
+
+  // Phase 14a, Task 3 (R6/R7/R8) — ANS ENDE der Datei gehaengt: legt eigene BaseInterestRate-
+  // Eintraege fuer den gemeinsamen `orgId` an (127 bp ab 01.01.2050, 188 bp ab 01.07.2050) und
+  // darf deshalb keinen der vorangehenden Tests beeinflussen, die denselben orgId nutzen.
+  it("Rechnung faellig 01.05.2050, Mahnung am 15.09.2050, Satzwechsel 127 bp -> 188 bp zum 01.07. wird gestueckelt; Snapshot bleibt bei spaeterer Korrektur der Historie unveraendert", async () => {
+    await upsertBaseRate(orgId, { validFrom: "2050-01-01", rateBp: 127, source: "Test Task 3" });
+    await upsertBaseRate(orgId, { validFrom: "2050-07-01", rateBp: 188, source: "Test Task 3" });
+
+    const customerId = await makeCustomer("BUSINESS");
+    const fin = await makeFinalizedInvoice(customerId, {
+      deliveryDate: new Date("2050-05-01"),
+      dueDate: new Date("2050-05-01"),
+    });
+    const mahnungAm = new Date("2050-09-15T10:00:00.000Z");
+
+    const r0 = await createDunning(fin.id, { now: mahnungAm }); // order 0, Zahlungserinnerung: keine Zinsen
+    expect(r0.dunning.interestAmountCents).toBe(0);
+    expect(r0.dunning.interestSegmentsJson).toBeNull();
+
+    const r1 = await createDunning(fin.id, { now: mahnungAm, force: true }); // order 1: verzinst
+
+    const cut = new Date("2050-07-01T00:00:00.000Z");
+    const days1 = daysBetween(new Date("2050-05-01"), cut);
+    const days2 = daysBetween(cut, mahnungAm);
+    const openAmount = fin.grossTotalCents;
+    // Handrechnung: exakte Bruch-Summe der beiden Abschnitte, EINMAL gerundet (R7).
+    const exact = (openAmount * (127 + 900) * days1) / (10000 * 365) + (openAmount * (188 + 900) * days2) / (10000 * 365);
+    const expectedInterest = Math.round(exact);
+    expect(r1.dunning.interestAmountCents).toBe(expectedInterest);
+
+    const segments = JSON.parse(r1.dunning.interestSegmentsJson ?? "null");
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toMatchObject({ days: days1, baseRateBp: 127 });
+    expect(segments[1]).toMatchObject({ days: days2, baseRateBp: 188 });
+
+    // R8 (GoBD): die Basiszins-Historie AENDERT sich NACH der Mahnung — das PDF der bereits
+    // erstellten Mahnung darf sich dadurch nicht veraendern (Snapshot, keine Neuberechnung).
+    await upsertBaseRate(orgId, { validFrom: "2050-01-01", rateBp: 999, source: "Spaetere Korrektur" });
+    const row = await dbInternal.dunning.findUniqueOrThrow({
+      where: { id: r1.dunning.id },
+      include: { invoice: { include: { org: true, customer: true } }, stage: true },
+    });
+    const pdfData = buildDunningPdfData(row, row.invoice);
+    expect(pdfData.interestCents).toBe(expectedInterest);
+    expect(pdfData.interestSegments).toHaveLength(2);
+    expect(pdfData.interestSegments?.[0]?.baseRateBp).toBe(127); // unveraendert trotz "999" danach
   });
 });

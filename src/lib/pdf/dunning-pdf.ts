@@ -6,15 +6,16 @@
  * (siehe invoice-pdf.ts). Kein Item-Tabellenkopf noetig (die Aufstellung ist eine
  * einfache zweispaltige Liste, kein `layout.table`).
  */
-import PDFDocument from "pdfkit";
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
+import type { InterestSegment } from "@/schemas";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
 import type { LayoutFrame } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
+import { createPdfDocument } from "./document";
 
 export interface DunningPdfData {
   number: string;
@@ -48,6 +49,11 @@ export interface DunningPdfData {
   invoiceDate: Date;
   openAmountCents: number;
   interestCents: number;
+  /** Phase 14a, Task 3 (R7/R8): Abschnitte der Verzugszinsberechnung ueber Basiszins-
+   *  Halbjahresgrenzen — vorhanden, sobald die Mahnung sie beim Erstellen gespeichert hat
+   *  (`interestSegmentsJson`, Snapshot). Ohne sie (Altmahnung oder Stufe ohne Verzinsung)
+   *  bleibt die bisherige Einzelzeile aus `interestCents`/`daysOverdue` stehen. */
+  interestSegments?: InterestSegment[];
   flatFee40Cents: number;
   /** Mahnkosten der Stufe (Phase 6, `DunningStage.feeCents`, nur order >= 2). */
   feeCents: number;
@@ -56,8 +62,14 @@ export interface DunningPdfData {
   daysOverdue: number;
 }
 
+// Fix-Welle (Phase 14a, Task nach Task 3): ohne `timeZone` interpretiert Intl das Datum
+// im Server-Lauf (UTC in CI/Produktion, siehe CLAUDE.md) statt in Europe/Berlin — anders
+// als `formatDateDe` (src/lib/template/format.ts). Bei einem Segment-Enddatum kurz vor
+// Mitternacht Berliner Zeit (z. B. 23:30 UTC im Winter = 00:30 CET des Folgetags) zeigte
+// das PDF dadurch ein um einen Tag zu frühes Datum. Dieselbe Zeitzonenbehandlung wie
+// `formatDateDe`, kein neues Datumsformat.
 function deDate(d: Date): string {
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }).format(d);
 }
 
 const INTRO: Record<number, (n: string) => string> = {
@@ -69,11 +81,11 @@ const INTRO: Record<number, (n: string) => string> = {
 export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const margins = pdfMargins(theme);
-    const doc = new PDFDocument({
+    const doc = createPdfDocument({
       size: "A4",
-      margins: { top: margins.top, right: margins.right, bottom: margins.bottom, left: margins.left },
-      bufferPages: true,
+      margins,
       compress: theme.compress ?? true,
+      pdfa: true,
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -152,7 +164,26 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       y += rowH;
     };
     row(`Rechnung ${data.invoiceNumber} vom ${deDate(data.invoiceDate)} — offener Betrag`, formatCents(data.openAmountCents, cur));
-    if (data.interestCents > 0) row(`Verzugszinsen (${data.daysOverdue} Tage)`, formatCents(data.interestCents, cur));
+    if (data.interestCents > 0) {
+      // Phase 14a, Task 3 (R7/R8): liegt die Verzugsperiode ueber einer Basiszins-
+      // Halbjahresgrenze, zeigt jede Zeile ihren eigenen Abschnitt samt dort gueltigem
+      // Satz — die je Abschnitt gerundeten Betraege koennen sich in Summe um wenige Cent
+      // vom (einmal ueber die exakte Summe gerundeten) `interestCents` unterscheiden;
+      // massgeblich fuer den Gesamtbetrag bleibt ausschliesslich `data.totalCents` unten.
+      // Ohne Segmente (Altmahnung vor dieser Migration) bleibt die bisherige Einzelzeile.
+      if (data.interestSegments && data.interestSegments.length > 0) {
+        for (const seg of data.interestSegments) {
+          const ratePct = (seg.baseRateBp / 100).toFixed(2).replace(".", ",");
+          const points = (seg.pointsBp / 100).toFixed(0);
+          row(
+            `Verzugszinsen vom ${deDate(new Date(seg.from))} bis ${deDate(new Date(seg.to))} (${seg.days} Tage, ${ratePct} % + ${points} Pp)`,
+            formatCents(seg.interestCents, cur),
+          );
+        }
+      } else {
+        row(`Verzugszinsen (${data.daysOverdue} Tage)`, formatCents(data.interestCents, cur));
+      }
+    }
     if (data.flatFee40Cents > 0) row("Verzugspauschale (§ 288 Abs. 5 BGB)", formatCents(data.flatFee40Cents, cur));
     if (data.feeCents > 0) row("Mahnkosten", formatCents(data.feeCents, cur));
     if (data.lateFeeCents > 0) row("Sonstige Auslagen", formatCents(data.lateFeeCents, cur));
