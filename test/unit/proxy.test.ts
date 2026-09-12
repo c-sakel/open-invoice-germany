@@ -6,12 +6,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+// Task 9 (R12): verifySessionToken liefert seitdem { uid, pwc } statt einer blossen
+// userId-Zeichenkette — proxy.ts selbst prueft aber weiterhin nur die Wahrheitshaftigkeit
+// des Rueckgabewerts (kein Datenbankzugriff in der Edge-Pruefung, siehe src/proxy.ts).
 vi.mock("@/lib/auth/session", () => ({
   SESSION_COOKIE: "oig_session",
-  verifySessionToken: vi.fn(async (token: string | undefined | null) => (token === "valid-token" ? "user-1" : null)),
+  verifySessionToken: vi.fn(async (token: string | undefined | null) => (token === "valid-token" ? { uid: "user-1", pwc: null } : null)),
 }));
 
-import { proxy, PUBLIC_NO_NAV_HEADER } from "@/proxy";
+import { proxy, PUBLIC_NO_NAV_HEADER, PATHNAME_HEADER } from "@/proxy";
 
 describe("proxy", () => {
   it("geschuetzter Pfad ohne Cookie -> Redirect auf /login", async () => {
@@ -84,5 +87,29 @@ describe("proxy", () => {
     // ueberschriebenen Request-Headern zurueckgegeben — der Client-Header darf NICHT
     // durchgereicht werden.
     expect(res.headers.get("x-middleware-request-" + PUBLIC_NO_NAV_HEADER)).toBeNull();
+  });
+
+  // Task 9 (R12): das Root-Layout braucht den echten Pfad, um eine Passwortwechsel-
+  // entwertete Sitzung (gueltiges Token, aber pwc-Mismatch) auf geschuetzten Seiten aktiv
+  // auf /login umzuleiten (src/app/layout.tsx) — proxy.ts selbst bleibt dafuer weiterhin
+  // ohne Datenbankzugriff, es reicht nur den Pfad durch.
+  it("traegt den echten Pfad im x-oig-pathname-Header (geschuetzter Pfad, angemeldet)", async () => {
+    const req = new NextRequest("http://localhost/rechnungen", { headers: { cookie: "oig_session=valid-token" } });
+    const res = await proxy(req);
+    expect(res.headers.get("x-middleware-request-" + PATHNAME_HEADER)).toBe("/rechnungen");
+  });
+
+  it("traegt den echten Pfad im x-oig-pathname-Header auch fuer oeffentliche Pfade (/login)", async () => {
+    const req = new NextRequest("http://localhost/login");
+    const res = await proxy(req);
+    expect(res.headers.get("x-middleware-request-" + PATHNAME_HEADER)).toBe("/login");
+  });
+
+  it("ein vom Client gefaelschter x-oig-pathname-Header wird durch den echten Pfad ueberschrieben", async () => {
+    const req = new NextRequest("http://localhost/rechnungen", {
+      headers: { cookie: "oig_session=valid-token", [PATHNAME_HEADER]: "/login" },
+    });
+    const res = await proxy(req);
+    expect(res.headers.get("x-middleware-request-" + PATHNAME_HEADER)).toBe("/rechnungen");
   });
 });

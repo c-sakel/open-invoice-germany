@@ -38,6 +38,14 @@ function matchesPublicPrefix(pathname: string, prefix: string): boolean {
 const NO_NAV_PREFIXES = ["/angebot/", "/api/public/"];
 export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 
+// Task 9 (R12): das Root-Layout (`src/app/layout.tsx`) braucht den Pfad, um eine
+// Passwortwechsel-entwertete Sitzung (strukturell gueltiges, nicht abgelaufenes Token,
+// aber `pwc` != `User.passwordChangedAt` — siehe `src/lib/auth/server.ts#userIdFromToken`)
+// auf geschuetzten Seiten aktiv auf /login umzuleiten, OHNE dabei "/", "/login" oder
+// "/setup" (die bewusst auch OHNE gueltige Sitzung rendern) mit umzuleiten. Immer
+// server-seitig ueberschrieben (wie PUBLIC_NO_NAV_HEADER) — ein Client kann ihn nicht faelschen.
+export const PATHNAME_HEADER = "x-oig-pathname";
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -47,6 +55,7 @@ export async function proxy(req: NextRequest) {
   // Erst danach wird er fuer NO_NAV_PREFIXES wieder gesetzt.
   const headers = new Headers(req.headers);
   headers.delete(PUBLIC_NO_NAV_HEADER);
+  headers.set(PATHNAME_HEADER, pathname);
 
   const isPublic = PUBLIC_EXACT.has(pathname) || PUBLIC_PREFIXES.some((p) => matchesPublicPrefix(pathname, p));
 

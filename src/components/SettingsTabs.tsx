@@ -13,7 +13,10 @@ export function SettingsTabs({ active }: { active: SettingsTabKey }) {
         <Link
           key={t.key}
           href={t.href}
-          className={`-mb-px border-b-2 px-1 py-2 font-medium ${
+          // Task 9 (R12): "Konto" ist die einzige Seite ohne Organisationsbezug (das
+          // eigene Anmeldekonto statt einer Firmeneinstellung) — `ml-auto` rueckt sie
+          // optisch von den Organisationsreitern ab, statt sie dazwischen zu mischen.
+          className={`-mb-px border-b-2 px-1 py-2 font-medium ${t.key === "konto" ? "ml-auto" : ""} ${
             active === t.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >

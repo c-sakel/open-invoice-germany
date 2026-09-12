@@ -21,7 +21,7 @@ import { dbInternal } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { rateLimit } from "@/lib/rate-limit";
 import { logActivity } from "@/domain/activity/log";
-import { loginSchema } from "@/schemas/auth";
+import { loginSchema, changePasswordSchema } from "@/schemas/auth";
 
 const LOCK_THRESHOLD = 5;
 const LOCK_DURATION_MS = 15 * 60_000;
@@ -47,8 +47,8 @@ async function findOrgIdForActivityLog(): Promise<string | null> {
   return org?.id ?? null;
 }
 
-/** Schreibt einen Anmelde-Ereigniseintrag — NIE E-Mail oder Passwort in `data` (R12). */
-async function logLoginEvent(userId: string, type: "LOGIN_FAILED" | "LOGIN_LOCKED", ip: string | undefined, reason: string, now: Date): Promise<void> {
+/** Schreibt einen Anmelde-/Konto-Ereigniseintrag — NIE E-Mail oder Passwort in `data` (R12). */
+async function logLoginEvent(userId: string, type: "LOGIN_FAILED" | "LOGIN_LOCKED" | "PASSWORD_CHANGED", ip: string | undefined, reason: string, now: Date): Promise<void> {
   const orgId = await findOrgIdForActivityLog();
   if (!orgId) return; // Erstinstallation ohne Organisation — siehe Moduldoc.
   await logActivity(dbInternal, { orgId, entityType: "USER", entityId: userId, type, actor: userId, at: now, data: { ip: ip ?? null, reason } });
@@ -114,4 +114,73 @@ export async function attemptLogin(rawInput: unknown, ctx: { ip?: string; now?: 
     select: { id: true },
   });
   return { status: "ok", userId: user.id };
+}
+
+export type ChangePasswordResult =
+  | { status: "ok"; passwordChangedAt: Date }
+  | { status: "invalid_current_password" }
+  | { status: "locked"; retryAfterMs: number };
+
+/**
+ * Aendert das Passwort des ANGEMELDETEN Nutzers (Task 9, R12) — dieselbe IP-Bremse und
+ * dieselbe Konto-Sperre/-Schwelle wie `attemptLogin` (ein falsches aktuelles Passwort
+ * zaehlt als Fehlversuch, siehe Spec R12/Plan Task 9). Setzt bei Erfolg
+ * `passwordHash`/`passwordChangedAt` und setzt Zaehler/Sperre zurueck. Die Route erneuert
+ * danach das Session-Cookie NUR des aktuellen Browsers (`setSession`) — jede ANDERE
+ * Sitzung traegt noch den alten `pwc`-Wert im Token und wird beim naechsten Zugriff ueber
+ * `userIdFromToken`/`getCurrentUserId` (`src/lib/auth/server.ts`) verworfen.
+ */
+export async function changePassword(userId: string, rawInput: unknown, ctx: { ip?: string; now?: Date } = {}): Promise<ChangePasswordResult> {
+  const input = changePasswordSchema.parse(rawInput);
+  const now = ctx.now ?? new Date();
+
+  if (ctx.ip) {
+    rateLimit(`password-change:${ctx.ip}`, { limit: IP_RATE_LIMIT, windowMs: IP_RATE_WINDOW_MS, now: now.getTime() });
+  }
+
+  const user = await dbInternal.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true, failedLoginCount: true, lockedUntil: true },
+  });
+  // Es gibt keinen User-Loeschpfad — eine gueltige Sitzung ohne zugehoerigen User sollte
+  // praktisch nie vorkommen, wird aber sicherheitshalber wie ein falsches Passwort
+  // behandelt (kein Absturz der Route).
+  if (!user) return { status: "invalid_current_password" };
+
+  const isLocked = user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
+  const currentOk = verifyPassword(input.currentPassword, user.passwordHash);
+
+  if (!currentOk) {
+    if (isLocked) {
+      // Wie attemptLogin: waehrend einer aktiven Sperre NICHTS an Zaehler/Sperre aendern.
+      await logLoginEvent(user.id, "LOGIN_FAILED", ctx.ip, "falsches aktuelles Passwort waehrend aktiver Sperre (Passwortwechsel)", now);
+      return { status: "invalid_current_password" };
+    }
+    const failedLoginCount = user.failedLoginCount + 1;
+    const willLock = failedLoginCount >= LOCK_THRESHOLD;
+    await dbInternal.user.update({
+      where: { id: user.id },
+      data: { failedLoginCount, lockedUntil: willLock ? new Date(now.getTime() + LOCK_DURATION_MS) : null },
+      select: { id: true },
+    });
+    await logLoginEvent(user.id, "LOGIN_FAILED", ctx.ip, "falsches aktuelles Passwort (Passwortwechsel)", now);
+    if (willLock) {
+      await logLoginEvent(user.id, "LOGIN_LOCKED", ctx.ip, `${failedLoginCount} Fehlversuche in Folge`, now);
+    }
+    return { status: "invalid_current_password" };
+  }
+
+  // Aktuelles Passwort korrekt.
+  if (isLocked) {
+    return { status: "locked", retryAfterMs: user.lockedUntil!.getTime() - now.getTime() };
+  }
+
+  const passwordHash = hashPassword(input.newPassword);
+  await dbInternal.user.update({
+    where: { id: user.id },
+    data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
+    select: { id: true },
+  });
+  await logLoginEvent(user.id, "PASSWORD_CHANGED", ctx.ip, "Passwort erfolgreich geaendert", now);
+  return { status: "ok", passwordChangedAt: now };
 }
