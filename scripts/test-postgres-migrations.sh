@@ -911,14 +911,15 @@ COUNT23=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count
 [ "$COUNT23" = "49" ] || fail "erwartet 49 Tabellen nach Phase 13d/Tags, gefunden $COUNT23"
 echo "    ok — Tag/DocumentTag mit Unique und ON DELETE CASCADE, 49 Tabellen"
 
-echo "==> Fall 24 (Phase 14a): Basiszins-Halbjahrestabelle — Backfill aus DunningSettings, Unique (orgId,validFrom)"
-# Praeambel woertlich wie Fall 21, Ausschluss '20260914090100_phase14a_base_interest_rate', Bestandszeile org24.
+echo "==> Fall 24 (Phase 14a): Basiszins-Halbjahrestabelle — Backfill aus DunningSettings, Unique (orgId,validFrom); Dunning.interestSegmentsJson bleibt bei Bestandszeilen NULL"
+# Praeambel woertlich wie Fall 21, Ausschluss der beiden Phase-14a-Mahnwesen-Migrationen
+# (Basiszins-Backfill UND die additive Dunning-Spalte aus Task 3) — Bestandszeilen org24.
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
   -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate|20260914091100_phase14a_dunning_segments)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -926,22 +927,31 @@ done
 # Bestands-DunningSettings mit 188 bp und OHNE baseRateValidFrom (NULL) — die Migration
 # muss dafuer genau einen BaseInterestRate-Eintrag mit validFrom=1970-01-01 anlegen
 # (COALESCE-Fallback, keine Zinsluecke fuer Bestandsorganisationen ohne gesetztes Datum).
+# Zusaetzlich eine Bestands-Mahnung (Kunde/Rechnung/Dunning) VOR der additiven
+# interestSegmentsJson-Spalte anlegen (Task 3) — muss danach unveraendert NULL bleiben.
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
   VALUES ('org24','Bestand Vierundzwanzig GmbH','Weg 25','99925','Bestadt',NOW());
 INSERT INTO "DunningSettings" ("id","orgId","baseInterestRateBp","updatedAt")
   VALUES ('dset24','org24',188,NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust24','org24','Bestand Vierundzwanzig Kunde AG','Weg 26','99926','Bestadt',NOW());
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
+  VALUES ('inv24','org24','cust24','RE-2026-00024','FINALIZED',NOW());
+INSERT INTO "Dunning" ("id","invoiceId","level") VALUES ('dun24','inv24',1);
 SQL
 npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
-  || fail "Basiszins-Migration ist auf der Bestands-DB fehlgeschlagen"
+  || fail "Basiszins-/Dunning-Segmente-Migration ist auf der Bestands-DB fehlgeschlagen"
 BIRCOUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"BaseInterestRate\" where \"orgId\"='org24'")
 [ "$BIRCOUNT" = "1" ] || fail "erwartet genau einen BaseInterestRate-Eintrag fuer org24 (Backfill), gefunden $BIRCOUNT"
 BIRVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"rateBp\", to_char(\"validFrom\",'YYYY-MM-DD') from \"BaseInterestRate\" where \"orgId\"='org24'")
 [ "$BIRVAL" = "188|1970-01-01" ] || fail "Basiszins-Backfill abweichend ('$BIRVAL'), erwartet 188|1970-01-01"
 DUP3=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "insert into \"BaseInterestRate\" (\"id\",\"orgId\",\"validFrom\",\"rateBp\",\"updatedAt\") values ('bir24b','org24','1970-01-01',150,NOW())" 2>&1 || true)
 echo "$DUP3" | grep -q "duplicate key" || fail "Unique (orgId, validFrom) auf BaseInterestRate greift nicht"
+DUNSEG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"interestSegmentsJson\" from \"Dunning\" where id='dun24'")
+[ -z "$DUNSEG" ] || fail "erwartet NULL interestSegmentsJson fuer Bestands-Dunning dun24, gefunden '$DUNSEG'"
 COUNT24=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT24" = "49" ] || fail "erwartet 49 Tabellen nach Phase 14a/Basiszins, gefunden $COUNT24"
-echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, 49 Tabellen"
+[ "$COUNT24" = "49" ] || fail "erwartet 49 Tabellen nach Phase 14a/Basiszins+Dunning-Segmente, gefunden $COUNT24"
+echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, Bestands-Dunning behaelt NULL interestSegmentsJson, 49 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"

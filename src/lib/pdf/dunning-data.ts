@@ -14,7 +14,32 @@ import type { Prisma } from "@/generated/prisma/client";
 import { daysBetween } from "@/lib/dunning";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import { interestSegmentsSchema } from "@/schemas";
 import type { DunningPdfData } from "./dunning-pdf";
+
+/**
+ * Phase 14a, Task 3 (R8): `interestSegmentsJson` ist ein Snapshot (geschrieben beim
+ * Erstellen der Mahnung, nie neu berechnet) — `safeParse` faengt Altdaten (Spalte war vor
+ * dieser Migration NULL) und theoretisch beschaedigtes JSON ab, Muster wie
+ * `parseSellerSnapshot`/`parseBuyerSnapshot`: bei Ungueltigkeit `undefined` statt Absturz,
+ * das PDF faellt dann auf die bisherige Einzelzeile zurueck.
+ */
+function parseInterestSegments(json: string | null, ctx: string): DunningPdfData["interestSegments"] {
+  if (!json) return undefined;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    console.warn(`dunning-data: interestSegmentsJson von ${ctx} ist kein gueltiges JSON, zeige Einzelzeile`);
+    return undefined;
+  }
+  const parsed = interestSegmentsSchema.safeParse(raw);
+  if (!parsed.success) {
+    console.warn(`dunning-data: interestSegmentsJson von ${ctx} ungueltig, zeige Einzelzeile`);
+    return undefined;
+  }
+  return parsed.data;
+}
 
 export type InvoiceRow = Prisma.InvoiceGetPayload<{ include: { org: true; customer: true } }>;
 export type DunningRow = Prisma.DunningGetPayload<{
@@ -69,6 +94,10 @@ export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfD
     invoiceDate,
     openAmountCents: open,
     interestCents: d.interestAmountCents,
+    // Phase 14a, Task 3 (R8): nur gesetzt, wenn die Mahnung eine Abschnitts-Aufschluesselung
+    // gespeichert hat (Snapshot, siehe parseInterestSegments) — sonst zeigt das PDF weiterhin
+    // die bisherige Einzelzeile ueber `interestCents`/`daysOverdue`.
+    interestSegments: parseInterestSegments(d.interestSegmentsJson, snapshotCtx),
     flatFee40Cents: d.flatFee40Cents,
     feeCents: d.feeCents,
     lateFeeCents: d.lateFeeCents,

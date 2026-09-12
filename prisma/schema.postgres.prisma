@@ -472,6 +472,11 @@ model Dunning {
   baseInterestRatePermille Int? // Basiszinssatz-Snapshot (‰ zum Verzugsstichtag)
   interestRatePoints       Int? // 5 (B2C) oder 9 (B2B) Prozentpunkte über Basiszins
   interestAmountCents      Int       @default(0)
+  // Phase 14a, Task 3 (R7/R8, § 288 Abs. 1 Satz 2 BGB): Snapshot der Verzugszins-Abschnitte
+  // ueber Basiszins-Halbjahresgrenzen hinweg, JSON-Array [{from,to,days,baseRateBp,pointsBp,
+  // interestCents}]. NULL bei Bestandsmahnungen (additive Spalte) und bei genau einem
+  // Abschnitt — das PDF zeigt dann weiterhin die bisherige Einzelzeile.
+  interestSegmentsJson     String?
   lateFeeCents             Int       @default(0) // nur konkrete Kosten, KEINE Pauschale
   flatFee40Cents           Int       @default(0) // §288 Abs.5, nur B2B
   pdfPath                  String?

@@ -736,15 +736,23 @@ Skonti · Nachlässe wegen Mängelrügen **ohne** Auswirkung auf die abgerechnet
   Abschnitt 12 gefordert ("verschuldensunabhängig, ohne gesonderte Mahnung", "je verspäteter
   Zahlung/Rechnung gesondert", aber nicht mehrfach je Rechnung).
 - **Verzugszinsen:** `DunningStage.calculateInterest` schaltet die Berechnung je Stufe frei;
-  der Satz (5 Pp B2C / 9 Pp B2B über Basiszins) und die taggenaue Berechnung stammen unverändert
-  aus `computeDunning`. **Basiszins-Pflege:** `DunningSettings.baseInterestRateBp` (Basispunkte,
-  Default 127 = 1,27 %) und `DunningSettings.baseRateValidFrom` (Einstellungen → Mahnwesen) bilden
-  den je Organisation hinterlegten, AKTUELL gültigen Basiszinssatz ab — bei der halbjährlichen
-  Bundesbank-Anpassung (nächste zum 01.07.2026, siehe Quellen oben) muss der Betreiber den Wert
-  manuell nachpflegen. **Bekannte Lücke (siehe `docs/LIMITATIONEN.md`):** es gibt keine Historie
-  je Zeitabschnitt — eine Änderung wirkt sofort auf alle künftigen Zinsberechnungen; bereits
-  gestellte Mahnungen (GoBD-Snapshot) bleiben unverändert, aber eine rückwirkend korrekte,
-  abschnittsweise Verzinsung über einen Satzwechsel hinweg wird nicht automatisch berechnet.
+  der Satz (5 Pp B2C / 9 Pp B2B über Basiszins) stammt unverändert aus `computeDunning`/
+  `computeInterestSegments` (`src/lib/dunning.ts`). **Basiszins-Historie (Phase 14a, Task 2+3):**
+  die Tabelle `BaseInterestRate` (`orgId`, `validFrom`, `rateBp`, `@@unique([orgId, validFrom])`,
+  `src/domain/dunning/base-rate.ts`) hat die bisherigen Einzelfelder
+  `DunningSettings.baseInterestRateBp`/`-baseRateValidFrom` als Quelle der Berechnung abgelöst —
+  diese Spalten bleiben bestehen (nichts Destruktives), werden aber von keiner Berechnung mehr
+  gelesen. Liegt eine Verzugsperiode über einer Satzwechsel-Grenze (1.1./1.7.), stückelt
+  `computeInterestSegments` sie an jeder `validFrom`-Grenze und rechnet je Abschnitt mit dem dort
+  gültigen Satz (gerundet wird einmal über die exakte Gesamtsumme, nicht je Abschnitt) — die vormals
+  dokumentierte Lücke ("keine abschnittsweise Verzinsung über einen Satzwechsel hinweg") ist damit
+  geschlossen. Die Abschnitte werden bei der Mahnungserstellung als Snapshot in
+  `Dunning.interestSegmentsJson` festgehalten und im Mahn-PDF je Abschnitt ausgewiesen (GoBD: eine
+  spätere Korrektur der Basiszins-Historie berechnet bereits gestellte Mahnungen NICHT neu);
+  `baseInterestRatePermille` trägt weiterhin einen (tagegewichteten) Einzelwert für Alt-Anzeigen.
+  Der Betreiber pflegt die Historie weiterhin manuell nach jeder halbjährlichen
+  Bundesbank-Anpassung (nächste zum 01.07.2026, siehe Quellen oben) — ein automatischer Bezug des
+  Satzes ist nicht Teil dieses Programms.
 
 ---
 
