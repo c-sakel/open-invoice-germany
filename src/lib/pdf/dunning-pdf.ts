@@ -62,8 +62,14 @@ export interface DunningPdfData {
   daysOverdue: number;
 }
 
+// Fix-Welle (Phase 14a, Task nach Task 3): ohne `timeZone` interpretiert Intl das Datum
+// im Server-Lauf (UTC in CI/Produktion, siehe CLAUDE.md) statt in Europe/Berlin — anders
+// als `formatDateDe` (src/lib/template/format.ts). Bei einem Segment-Enddatum kurz vor
+// Mitternacht Berliner Zeit (z. B. 23:30 UTC im Winter = 00:30 CET des Folgetags) zeigte
+// das PDF dadurch ein um einen Tag zu frühes Datum. Dieselbe Zeitzonenbehandlung wie
+// `formatDateDe`, kein neues Datumsformat.
 function deDate(d: Date): string {
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }).format(d);
 }
 
 const INTRO: Record<number, (n: string) => string> = {
