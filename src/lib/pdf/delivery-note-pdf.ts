@@ -99,23 +99,39 @@ function lineNetCents(line: DeliveryNotePdfLine): number {
   return Math.round((line.quantityMilli * line.unitNetPriceCents) / 1000);
 }
 
-interface Column {
+export interface DeliveryNoteColumn {
   header: string;
   width: number;
   align?: "left" | "right";
   render: (line: DeliveryNotePdfLine) => string;
+  /** Beschreibungsspalte: bekommt die Restbreite (siehe buildColumns) statt einer festen. */
+  isDescription?: boolean;
 }
+type Column = DeliveryNoteColumn;
 
-/** Spalten dynamisch je nach Flags — Artikelnr./Beschreibung/Preise/USt sind optional. */
-function buildColumns(data: DeliveryNotePdfData): Column[] {
+const COLUMN_GAP = 8;
+
+/**
+ * Spalten dynamisch je nach Flags — Artikelnr./Beschreibung/Preise/USt sind optional.
+ *
+ * Hotfix (A2, Tiefenanalyse UI/Ausgabe/Bedienung): die festen Spaltenbreiten (28+70+150+
+ * 70+70+35+70 = 493pt plus 6x8pt Abstand = 541pt) passten nur zufaellig in den bei 18mm
+ * Rand ~489pt breiten Inhaltsbereich hinein — bei aktivierten Zusatzspalten oder engeren
+ * Raendern (5-40mm sind erlaubt) lief die Tabelle ueber den Seitenrand ("Netto" fiel weg,
+ * Betraege standen am Papierrand). `buildItemColumns()` in invoice-pdf.ts macht es richtig:
+ * alle Spalten AUSSER der Beschreibung haben feste Breiten, die Beschreibung bekommt den
+ * Rest von `contentWidth` (mit Mindestbreite 60pt) — dieselbe Rechnung hier uebernommen.
+ * Exportiert (wie `buildDeliveryNotePdfData`), damit die Spaltenbreiten-Rechnung direkt
+ * unit-testbar ist, ohne ein vollstaendiges PDF zu rendern und zu parsen.
+ */
+export function buildColumns(data: DeliveryNotePdfData, contentWidth: number): Column[] {
   const cur = data.currency;
   const columns: Column[] = [{ header: "Pos.", width: 28, render: (l) => String(l.pos) }];
   if (data.showArticleNumber) {
     columns.push({ header: "Art.-Nr.", width: 70, render: (l) => l.articleNumber ?? "" });
   }
-  if (data.showDescription) {
-    columns.push({ header: "Beschreibung", width: data.showArticleNumber ? 150 : 220, render: (l) => l.description });
-  }
+  const descColumn: Column | null = data.showDescription ? { header: "Beschreibung", width: 0, isDescription: true, render: (l) => l.description } : null;
+  if (descColumn) columns.push(descColumn);
   columns.push({ header: "Menge", width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli)} ${unitLabel(l.unit)}` });
   if (data.showPrices) {
     columns.push({
@@ -129,10 +145,13 @@ function buildColumns(data: DeliveryNotePdfData): Column[] {
     }
     columns.push({ header: "Netto", width: 70, align: "right", render: (l) => (l.unitNetPriceCents != null ? formatCents(lineNetCents(l), cur) : "") });
   }
+  if (descColumn) {
+    const fixedSum = columns.reduce((sum, c) => sum + (c === descColumn ? 0 : c.width), 0);
+    const totalGaps = (columns.length - 1) * COLUMN_GAP;
+    descColumn.width = Math.max(contentWidth - fixedSum - totalGaps, 60);
+  }
   return columns;
 }
-
-const COLUMN_GAP = 8;
 
 export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -207,8 +226,9 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
       intro: data.headerText,
     });
 
-    // Positions-Tabelle
-    const columns = buildColumns(data);
+    // Positions-Tabelle — Hotfix (A2): Spaltenbreiten wie invoice-pdf.ts aus dem tatsaechlich
+    // verfuegbaren Inhaltsbereich ableiten (`tableX` unten ist `left + 4`, siehe dort).
+    const columns = buildColumns(data, right - left - 4);
     const tableX = left + 4;
     // Fix-Runde 2 (Koordinator, Critical): seit Fix-Runde 1 (Punkt 6) zeichnet
     // `layout.drawFooter` die Fusszeile auf JEDER Seite — `pageBottom` reservierte diesen

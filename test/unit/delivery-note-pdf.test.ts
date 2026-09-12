@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildDeliveryNotePdfData, type DeliveryNoteRow, type OrgRow, type CustomerRow } from "@/lib/pdf/delivery-note-data";
-import { renderDeliveryNotePdf, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
+import { renderDeliveryNotePdf, buildColumns, type DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
 import { testPdfTheme, parsePdf } from "../helpers/pdf-theme";
 
 const org: OrgRow = {
@@ -271,5 +271,46 @@ describe("renderDeliveryNotePdf", () => {
     expect(text).toContain("Gesamtbetrag");
     const beschreibungCount = (text.match(/Beschreibung/g) ?? []).length;
     expect(beschreibungCount).toBe(numpages - 1);
+  });
+});
+
+describe("buildColumns — Hotfix A2: Spaltenbreiten ueberschreiten den Inhaltsbereich nicht", () => {
+  const baseData: DeliveryNotePdfData = {
+    number: "LS-2026-0002",
+    issueDate: new Date("2026-06-01"),
+    currency: "EUR",
+    seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+    buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+    lines: [],
+    showPrices: true,
+    showTax: true,
+    showArticleNumber: true,
+    showDescription: true,
+    showDeliveryAddress: false,
+  };
+
+  it("bei allen Zusatzspalten aktiv (Art.-Nr./Preise/USt) und Standard-18mm-Raendern bleibt die Summe im Inhaltsbereich", () => {
+    // right - left - 4 bei 18mm Raendern auf A4 (595,28pt Seitenbreite) — dieselbe Formel
+    // wie der Aufruf in renderDeliveryNotePdf. Vor dem Hotfix ergaben die festen Breiten
+    // (28+70+150+70+70+35+70 = 493pt plus 6x8pt Abstand = 541pt) hier eine Ueberschreitung
+    // um 52pt — "Netto" fiel als Kopfspalte weg, Betraege standen am Papierrand.
+    const contentWidth = 489;
+    const columns = buildColumns(baseData, contentWidth);
+    const totalWidth = columns.reduce((sum, c) => sum + c.width, 0) + (columns.length - 1) * 8;
+    expect(totalWidth).toBeLessThanOrEqual(contentWidth);
+    expect(columns.find((c) => c.header === "Netto")).toBeDefined();
+  });
+
+  it("bei sehr schmalem Inhaltsbereich (grosse Raender, bis 40mm je Seite erlaubt) behaelt die Beschreibungsspalte die Mindestbreite von 60pt", () => {
+    const narrowContentWidth = 200; // erzwingt den Math.max(..., 60)-Floor (Fixspalten allein: 343pt + 40pt Abstand)
+    const columns = buildColumns(baseData, narrowContentWidth);
+    const descColumn = columns.find((c) => c.isDescription);
+    expect(descColumn?.width).toBe(60);
+  });
+
+  it("ohne Beschreibungsspalte (showDescription aus) bleiben die uebrigen Spaltenbreiten unveraendert", () => {
+    const columns = buildColumns({ ...baseData, showDescription: false }, 489);
+    expect(columns.find((c) => c.isDescription)).toBeUndefined();
+    expect(columns.map((c) => c.header)).toEqual(["Pos.", "Art.-Nr.", "Menge", "Einzel", "USt", "Netto"]);
   });
 });
