@@ -7,7 +7,8 @@
  */
 import { dbInternal } from "@/lib/db";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
-import { computeDunning } from "@/lib/dunning";
+import { computeInterestSegments } from "@/lib/dunning";
+import { loadBaseRates } from "@/domain/dunning/base-rate";
 import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
@@ -154,15 +155,26 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     // Ruling (task-2-facts.md): Zinsen werden je Mahnung neu auf die Gesamt-Ueberfaelligkeit
     // seit RECHNUNGSFAELLIGKEIT berechnet (nicht kumulativ ab der letzten Mahnung) und
     // ersetzen den zuvor ausgewiesenen Betrag, statt ihn zu addieren.
-    const calc = computeDunning({
+    // Task 3 (R6/R7): Basiszinssatz-HISTORIE statt eines einzelnen `settings.baseInterestRateBp`
+    // — `loadBaseRates` heilt eine fehlende Historie idempotent aus derselben Bestandszeile
+    // (Selbstheilung, Task 2). Zinszeitraum ist `dueDate` (Rechnungsfaelligkeit) -> `now`
+    // (Mahnungs-Erstellungszeitpunkt) — identisch zu `schedule.daysOverdue` (dieselbe
+    // `daysBetween`-Formel), nur mit den tatsaechlichen Datumsgrenzen statt der reinen Tageszahl,
+    // damit an jeder Basiszins-Halbjahresgrenze innerhalb der Periode gestueckelt werden kann.
+    const rates = await loadBaseRates(tx, inv.orgId);
+    const seg = computeInterestSegments({
       openAmountCents: openAmount,
-      daysOverdue: schedule.daysOverdue,
+      from: dueDate,
+      to: now,
       isConsumer,
-      baseRateBp: settings.baseInterestRateBp,
-      applyFlatFee,
+      rates,
     });
-    const interestCents = stage.calculateInterest ? calc.interestCents : 0;
-    const flatFee = calc.flatFee40Cents;
+    const interestCents = stage.calculateInterest ? seg.interestCents : 0;
+    // interestSegmentsJson NUR, wenn diese Stufe ueberhaupt verzinst (sonst waere die
+    // gespeicherte Aufschluesselung inkonsistent zu interestAmountCents=0) — Snapshot,
+    // wird nach dem Schreiben nie neu berechnet (R8, GoBD).
+    const interestSegmentsJson = stage.calculateInterest ? JSON.stringify(seg.segments) : null;
+    const flatFee = applyFlatFee && !isConsumer ? 4000 : 0;
     const feeCents = charging ? stage.feeCents : 0;
     const lateFeeCents = charging ? (opts.lateFeeCents ?? 0) : 0;
 
@@ -182,9 +194,13 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         stageId: stage.id,
         sentAt: now,
         dueDate: newDueDate,
-        baseInterestRatePermille: settings.baseInterestRateBp,
+        // Tagegewichteter Mittelwert der Abschnitte (R8) — bei genau einem Abschnitt (der
+        // Regelfall ohne Satzwechsel in der Verzugsperiode) identisch zum bisherigen
+        // Einzelwert, Alt-Anzeige/Alt-Mahnungen bleiben dadurch unveraendert lesbar.
+        baseInterestRatePermille: seg.baseRateBpWeighted,
         interestRatePoints: isConsumer ? 5 : 9,
         interestAmountCents: interestCents,
+        interestSegmentsJson,
         lateFeeCents,
         flatFee40Cents: flatFee,
         feeCents,

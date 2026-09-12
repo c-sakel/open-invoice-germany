@@ -9,6 +9,7 @@
 import PDFDocument from "pdfkit";
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
+import type { InterestSegment } from "@/schemas";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
@@ -48,6 +49,11 @@ export interface DunningPdfData {
   invoiceDate: Date;
   openAmountCents: number;
   interestCents: number;
+  /** Phase 14a, Task 3 (R7/R8): Abschnitte der Verzugszinsberechnung ueber Basiszins-
+   *  Halbjahresgrenzen — vorhanden, sobald die Mahnung sie beim Erstellen gespeichert hat
+   *  (`interestSegmentsJson`, Snapshot). Ohne sie (Altmahnung oder Stufe ohne Verzinsung)
+   *  bleibt die bisherige Einzelzeile aus `interestCents`/`daysOverdue` stehen. */
+  interestSegments?: InterestSegment[];
   flatFee40Cents: number;
   /** Mahnkosten der Stufe (Phase 6, `DunningStage.feeCents`, nur order >= 2). */
   feeCents: number;
@@ -152,7 +158,26 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       y += rowH;
     };
     row(`Rechnung ${data.invoiceNumber} vom ${deDate(data.invoiceDate)} — offener Betrag`, formatCents(data.openAmountCents, cur));
-    if (data.interestCents > 0) row(`Verzugszinsen (${data.daysOverdue} Tage)`, formatCents(data.interestCents, cur));
+    if (data.interestCents > 0) {
+      // Phase 14a, Task 3 (R7/R8): liegt die Verzugsperiode ueber einer Basiszins-
+      // Halbjahresgrenze, zeigt jede Zeile ihren eigenen Abschnitt samt dort gueltigem
+      // Satz — die je Abschnitt gerundeten Betraege koennen sich in Summe um wenige Cent
+      // vom (einmal ueber die exakte Summe gerundeten) `interestCents` unterscheiden;
+      // massgeblich fuer den Gesamtbetrag bleibt ausschliesslich `data.totalCents` unten.
+      // Ohne Segmente (Altmahnung vor dieser Migration) bleibt die bisherige Einzelzeile.
+      if (data.interestSegments && data.interestSegments.length > 0) {
+        for (const seg of data.interestSegments) {
+          const ratePct = (seg.baseRateBp / 100).toFixed(2).replace(".", ",");
+          const points = (seg.pointsBp / 100).toFixed(0);
+          row(
+            `Verzugszinsen vom ${deDate(new Date(seg.from))} bis ${deDate(new Date(seg.to))} (${seg.days} Tage, ${ratePct} % + ${points} Pp)`,
+            formatCents(seg.interestCents, cur),
+          );
+        }
+      } else {
+        row(`Verzugszinsen (${data.daysOverdue} Tage)`, formatCents(data.interestCents, cur));
+      }
+    }
     if (data.flatFee40Cents > 0) row("Verzugspauschale (§ 288 Abs. 5 BGB)", formatCents(data.flatFee40Cents, cur));
     if (data.feeCents > 0) row("Mahnkosten", formatCents(data.feeCents, cur));
     if (data.lateFeeCents > 0) row("Sonstige Auslagen", formatCents(data.lateFeeCents, cur));

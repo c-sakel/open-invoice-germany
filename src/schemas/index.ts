@@ -794,6 +794,22 @@ export const baseInterestRateInputSchema = z.object({
 });
 export type BaseInterestRateInput = z.infer<typeof baseInterestRateInputSchema>;
 
+// Phase 14a, Task 3 — Snapshot der Verzugszins-Abschnitte einer Mahnung
+// (Dunning.interestSegmentsJson, R7/R8): `from`/`to` als ISO-Datetime (der Zinszeitraum
+// ist invoiceDueDate -> Mahnungs-Erstellungszeitpunkt, Uhrzeit relevant — anders als
+// BaseInterestRate.validFrom, das ein reines Kalenderdatum ist). Wird beim Lesen fuer das
+// PDF ueber `safeParse` gegen Altdaten/Fehler abgesichert (Muster: parseSellerSnapshot).
+export const interestSegmentSchema = z.object({
+  from: z.iso.datetime(),
+  to: z.iso.datetime(),
+  days: z.number().int().min(0),
+  baseRateBp: z.number().int().min(0),
+  pointsBp: z.number().int().min(0),
+  interestCents: z.number().int().min(0),
+});
+export const interestSegmentsSchema = z.array(interestSegmentSchema);
+export type InterestSegment = z.infer<typeof interestSegmentSchema>;
+
 export const DunningState = z.enum(["ACTIVE", "PAUSED", "STOPPED"]);
 export type DunningState = z.infer<typeof DunningState>;
 
