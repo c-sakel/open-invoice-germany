@@ -2,7 +2,7 @@
  * Phase 14a, Task 2 — Basiszinssatz-Halbjahrestabelle (src/domain/dunning/base-rate.ts).
  * § 288 Abs. 1 Satz 2 BGB: der Basiszinssatz aendert sich zum 1.1. und 1.7. jeden Jahres.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { listBaseRates, upsertBaseRate, deleteBaseRate, loadBaseRates, rateForDate, type BaseRateEntry } from "@/domain/dunning/base-rate";
 import { ValidationError } from "@/domain/errors";
@@ -137,5 +137,45 @@ describe("Phase 14a — Basiszinssatz-Historie (base-rate.ts)", () => {
     const rates = await loadBaseRates(dbInternal, orgId);
     expect(rates).toHaveLength(1);
     expect(rates[0]?.rateBp).toBe(200);
+  });
+
+  // Review-Befund (Fix-Welle 2 zu Task 2): CI laeuft mit TZ=UTC, lokale Entwicklung mit
+  // Europe/Berlin (CLAUDE.md-Gate) — dieser Test stellt sicher, dass ein per Datums-String
+  // ("YYYY-MM-DD", z.iso.date()) gespeicherter Basiszinssatz an der Halbjahresgrenze
+  // (1. Juli, CEST) unter BEIDEN Systemzeitzonen denselben Satz liefert: `validFrom` wird
+  // als UTC-Mitternacht interpretiert (ECMA-262, date-only ISO-Strings sind immer UTC), der
+  // DB-Roundtrip (SQLite) speichert denselben UTC-Zeitpunkt, und `rateForDate` vergleicht
+  // ausschliesslich ueber `getTime()` — nie ueber lokale Datumsmethoden.
+  describe("Halbjahresgrenze ueber upsertBaseRate/loadBaseRates (zeitzonenunabhaengig)", () => {
+    const originalTz = process.env.TZ;
+
+    afterEach(() => {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    });
+
+    it("liefert an der Grenze 2026-07-01 (00:00 UTC) denselben Satz unter TZ=UTC und TZ=Europe/Berlin", async () => {
+      const orgId = await makeOrg();
+      await upsertBaseRate(orgId, { validFrom: "2026-01-01", rateBp: 127, source: "Bundesbank" });
+      await upsertBaseRate(orgId, { validFrom: "2026-07-01", rateBp: 188, source: "Bundesbank" });
+
+      const boundary = new Date("2026-07-01T00:00:00.000Z");
+      const justBefore = new Date(boundary.getTime() - 1);
+
+      process.env.TZ = "UTC";
+      const ratesUtc = await loadBaseRates(dbInternal, orgId);
+      const utcAtBoundary = rateForDate(ratesUtc, boundary).rateBp;
+      const utcJustBefore = rateForDate(ratesUtc, justBefore).rateBp;
+
+      process.env.TZ = "Europe/Berlin";
+      const ratesBerlin = await loadBaseRates(dbInternal, orgId);
+      const berlinAtBoundary = rateForDate(ratesBerlin, boundary).rateBp;
+      const berlinJustBefore = rateForDate(ratesBerlin, justBefore).rateBp;
+
+      expect(utcAtBoundary).toBe(188);
+      expect(utcJustBefore).toBe(127);
+      expect(berlinAtBoundary).toBe(utcAtBoundary);
+      expect(berlinJustBefore).toBe(utcJustBefore);
+    });
   });
 });
