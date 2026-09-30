@@ -56,6 +56,7 @@ export const schlichtLayout: PdfLayout = {
     drawFooterColumns(frame, columns, y, 7.5, frame.primary);
   },
   footerHeight: 44,
+  footerFontSize: 7.5,
   // Fix-Welle: GiroCode links unter dem Summenblock (Referenz RE-41362) statt rechts
   // oberhalb der Fusszeile.
   giroPlacement: "below-totals",

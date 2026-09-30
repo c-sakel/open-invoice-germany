@@ -13,6 +13,7 @@ import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
+import { footerZoneHeight } from "./layouts/shared";
 import type { LayoutFrame } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
 import { createPdfDocument } from "./document";
@@ -146,7 +147,20 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // passt, manuell um. Der `pageAdded`-Handler oben zeichnet Hintergrund + Kopf-Chrome
     // bereits automatisch fuer JEDEN `doc.addPage()` (auch diesen) — ein zusaetzlicher
     // expliziter `drawPageChrome`-Aufruf hier wuerde ihn doppelt zeichnen.
-    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
+    // fix/pdf-umbrueche (B1/B2): Fusszone aus der tatsaechlichen Fusszeile messen.
+    const footerColumns = buildFooterColumns(
+      {
+        seller: data.seller,
+        iban: data.seller.iban,
+        bic: data.seller.bic,
+        bankName: data.seller.bankName,
+        accountHolder: data.seller.accountHolder,
+        ...theme.footerFacts,
+      },
+      theme.brand,
+    );
+    const footerZone = footerZoneHeight(frame, layout, footerColumns);
+    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
     const ensurePlainSpace = (atY: number, needed: number): number => {
       if (atY + needed <= pageBottom) return atY;
       doc.addPage();
@@ -204,18 +218,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
     // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
-    const footY = doc.page.height - margins.bottom - layout.footerHeight;
-    const footerColumns = buildFooterColumns(
-      {
-        seller: data.seller,
-        iban: data.seller.iban,
-        bic: data.seller.bic,
-        bankName: data.seller.bankName,
-        accountHolder: data.seller.accountHolder,
-        ...theme.footerFacts,
-      },
-      theme.brand,
-    );
+    const footY = doc.page.height - margins.bottom - footerZone;
 
     // Falz-/Lochmarken + Seitenzahlen + Fusszeile.
     const range = doc.bufferedPageRange();

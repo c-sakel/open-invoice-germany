@@ -15,7 +15,7 @@ import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
-import { drawTableHeaderRow, type TableHeaderColumn } from "./layouts/shared";
+import { drawTableHeaderRow, footerZoneHeight, type TableHeaderColumn } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
 import { createPdfDocument } from "./document";
 import { buildFooterColumns } from "./footer";
@@ -236,7 +236,20 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // hineinragen konnten (verifiziert: 75 Positionen ueberlappten auf Seite 1). Bei
     // aktiver Fusszeile reserviert `pageBottom` jetzt zusaetzlich `layout.footerHeight`
     // plus 6pt Sicherheitsabstand; `footY` selbst bleibt unveraendert.
-    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
+    // fix/pdf-umbrueche (B1/B2): Fusszone aus der tatsaechlichen Fusszeile messen.
+    const footerColumns = buildFooterColumns(
+      {
+        seller: data.seller,
+        iban: data.seller.iban,
+        bic: data.seller.bic,
+        bankName: data.seller.bankName,
+        accountHolder: data.seller.accountHolder,
+        ...theme.footerFacts,
+      },
+      theme.brand,
+    );
+    const footerZone = footerZoneHeight(frame, layout, footerColumns);
+    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
 
     const drawTableHeader = (atY: number): number => {
       let cursor = 0;
@@ -338,18 +351,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
     // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
-    const footY = doc.page.height - margins.bottom - layout.footerHeight;
-    const footerColumns = buildFooterColumns(
-      {
-        seller: data.seller,
-        iban: data.seller.iban,
-        bic: data.seller.bic,
-        bankName: data.seller.bankName,
-        accountHolder: data.seller.accountHolder,
-        ...theme.footerFacts,
-      },
-      theme.brand,
-    );
+    const footY = doc.page.height - margins.bottom - footerZone;
 
     // Falz-/Lochmarken + Seitenzahlen + Fusszeile.
     const range = doc.bufferedPageRange();

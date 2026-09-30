@@ -56,6 +56,7 @@ export const modernLayout: PdfLayout = {
     drawFooterColumns(frame, columns, y, 7.5, "#333333");
   },
   footerHeight: 44,
+  footerFontSize: 7.5,
   // Nur der Balken (kein Logo/Titel) auf Folgeseiten — der volle Kopf steht bereits auf
   // Seite 1 (drawKopf). Rueckgabe = neue Start-y fuer den Seiteninhalt (statt margins.top).
   drawPageChrome(frame) {
