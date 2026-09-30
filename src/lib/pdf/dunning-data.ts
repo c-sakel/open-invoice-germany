@@ -73,8 +73,11 @@ export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfD
     seller: {
       name: seller.legalName,
       addressLine1: seller.addressLine1,
+      addressLine2: seller.addressLine2,
       postalCode: seller.postalCode,
       city: seller.city,
+      email: seller.email,
+      phone: seller.phone,
       taxNumber: inv.org.taxNumber,
       vatId: seller.vatId,
       iban: inv.org.iban,

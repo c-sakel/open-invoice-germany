@@ -159,3 +159,24 @@ describe("Kontoinhaber in der Fusszeile — PDF, alle Layouts", () => {
     }
   });
 });
+
+describe("Mahnung und Lieferschein: Fusszeile hat dieselben Spalten wie die Rechnung", () => {
+  it("Tel./E-Mail/Web aus dem Verkaeuferdatensatz, vier Spalten wie bei der Rechnung", async () => {
+    const t = testPdfTheme({ layoutId: "standard", footerFacts: { website: "Prepaid-Host.com", ownerName: "Christopher Sakel" } });
+    const seller = { ...facts.seller, countryCode: "DE", iban: facts.iban, bic: facts.bic, bankName: facts.bankName };
+    const d = sampleDunning();
+    d.seller = { ...d.seller, ...seller };
+    const n = sampleDeliveryNote();
+    n.seller = { ...n.seller, ...seller };
+    const inv = { ...referenzInvoice(), seller: { ...facts.seller, countryCode: "DE" }, iban: facts.iban, bic: facts.bic, bankName: facts.bankName, accountHolder: null };
+    const footerStrings = async (pdf: Buffer): Promise<string[]> => {
+      const items = await extractItems(pdf);
+      const fields = /^(Tel\.|E-Mail|Web |USt-IdNr\.|Steuer-Nr\.|Inhaber\/-in|Bank |IBAN|BIC)/;
+      return [...new Set(items.filter((i) => i.page === 0 && i.y < 130 && fields.test(i.str)).map((i) => i.str))].sort();
+    };
+    const reference = await footerStrings(await renderInvoicePdf(inv, t));
+    expect(reference).toContain("Tel. 05571 808998");
+    expect(await footerStrings(await renderDunningPdf(d, t))).toEqual(reference);
+    expect(await footerStrings(await renderDeliveryNotePdf(n, t))).toEqual(reference);
+  });
+});
