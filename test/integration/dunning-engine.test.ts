@@ -226,6 +226,9 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     });
     const pdfData = buildDunningPdfData(row, row.invoice);
     expect(pdfData.buyer.name).toBe("Alter Kundenname AG");
+    // Fusszeile wie bei der Rechnung: Kontaktdaten des Verkaeufers sind im Datensatz
+    expect(pdfData.seller).toHaveProperty("email");
+    expect(pdfData.seller).toHaveProperty("phone");
   });
 
   it("ensureDunningSnapshots baut Snapshots fuer Altmahnungen (snapshotSource null) mit Herkunft MIGRATION nach", async () => {
