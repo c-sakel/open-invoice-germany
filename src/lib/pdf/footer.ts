@@ -70,8 +70,8 @@ export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsIn
       ]),
     },
   ];
-  // Kontoinhaber als eigene Zeile ueber die volle Breite unter den Spalten: in der Bank-Spalte
-  // war sie die breiteste Zeile und erzwang Umbrueche in allen uebrigen Spalten.
-  if (showAccountHolder) columns.push({ lines: [`Kontoinhaber ${accountHolder}`], fullWidth: true });
+  // Kontoinhaber: bevorzugt in der Bank-Spalte (vor der IBAN); passt das Raster dann nicht mehr
+  // (breiteste Zeile erzwaenge Umbrueche in den anderen Spalten), als Vollbreite-Zeile darunter.
+  if (showAccountHolder) columns.push({ lines: [`Kontoinhaber ${accountHolder}`], fullWidth: true, preferBankColumn: true });
   return columns.filter((c) => c.lines.length > 0);
 }
