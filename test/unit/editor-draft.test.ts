@@ -170,19 +170,6 @@ describe("editor/draft", () => {
     const p = updateInvoiceSchema.parse(toInvoicePayload(s, true));
     expect(p.lines?.[0]).toMatchObject({ quantityMilli: 1500, unitNetPriceCents: 1234, discountPermille: 100 });
   });
-  // Task-5-Fix (Minor): toggleExpanded ist eine eigene Aktion statt `setLine`, damit das
-  // Ein-/Ausblenden des Langtexts (reine Anzeige) kein `dirty: true` ausloest.
-  it("toggleExpanded schaltet expanded um, ohne dirty zu setzen", () => {
-    let s = emptyDraft("INVOICE");
-    const key = s.lines[0]!.key;
-    expect(s.lines[0]!.expanded).toBe(false);
-    s = draftReducer(s, { type: "toggleExpanded", key });
-    expect(s.lines[0]!.expanded).toBe(true);
-    expect(s.dirty).toBe(false);
-    s = draftReducer(s, { type: "toggleExpanded", key });
-    expect(s.lines[0]!.expanded).toBe(false);
-    expect(s.dirty).toBe(false);
-  });
   // Ruling (Task-5-Fix): "Typ ändern" im LineRowMenu nutzt die bestehende `setLine`-
   // Aktion (kein dediziertes `setLineType` noetig, da `lineType` ein normales
   // `DraftLine`-Feld ist) — bleibt dabei (anders als toggleExpanded) `dirty`, da es

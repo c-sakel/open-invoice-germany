@@ -22,22 +22,19 @@ export const GET = withApi(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
   const embed = parseEmbed(searchParams);
   const result = await listInvoices(ctx.orgId, parseInvoiceQuery(searchParams) as InvoiceListFilter);
-  if (!embed.has("lines") && !embed.has("customer") && !embed.has("payments")) {
-    return apiList(
-      result.rows.map((r) => serializeInvoice({ ...r } as never, embed)),
-      result,
-    );
-  }
+  // Die Liste liefert die volle Form von invoiceSchema: listInvoices (schmales select) dient nur
+  // Filter/Sortierung/Paginierung, die Datensaetze werden in EINEM Query nachgeladen.
   const ids = result.rows.map((r) => r.id);
   const full = await prisma.invoice.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, orgId: ctx.orgId },
     include: { lines: embed.has("lines"), customer: embed.has("customer"), payments: embed.has("payments") },
   });
   const byId = new Map(full.map((i) => [i.id, i]));
-  return apiList(
-    result.rows.map((r) => serializeInvoice(byId.get(r.id) as never, embed)),
-    result,
-  );
+  const rows = ids.flatMap((id) => {
+    const inv = byId.get(id);
+    return inv ? [serializeInvoice(inv, embed)] : [];
+  });
+  return apiList(rows, result);
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {
