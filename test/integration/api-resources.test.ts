@@ -18,6 +18,9 @@ import { resetRateLimits } from "@/lib/rate-limit";
 import { recordPayment } from "@/domain/invoice/payment";
 import { createDunning } from "@/domain/dunning/create";
 import { NotFoundError } from "@/domain/errors";
+import { invoiceSchema } from "@/api/serializers/invoice";
+import { quoteSchema } from "@/api/serializers/document";
+import { deliveryNoteSchema } from "@/api/serializers/delivery-note";
 
 import { GET as ContactList, POST as ContactCreate } from "@/app/api/v1/Contact/route";
 import { GET as ContactGet, PATCH as ContactUpdate } from "@/app/api/v1/Contact/[id]/route";
@@ -476,6 +479,26 @@ describe("/api/v1/Invoice", () => {
     const created = await createInvoice();
     expect(created.objectName).toBe("Invoice");
     expect(created.status).toBe("DRAFT");
+  });
+
+  it("T2: Liste ohne embed liefert die volle invoiceSchema-Form (alle Pflichtfelder)", async () => {
+    await createInvoice();
+    const res = await InvoiceList(req("http://x/api/v1/Invoice?limit=5&status=all", { token }));
+    expect(res.status).toBe(200);
+    const j = await json(res);
+    expect(j.data.length).toBeGreaterThan(0);
+    for (const entry of j.data) {
+      expect(() => invoiceSchema.strict().parse(entry)).not.toThrow();
+      expect(typeof entry.netTotalCents).toBe("number");
+      expect("finalizedAt" in entry).toBe(true);
+    }
+  });
+
+  it("T2: Quote-/Lieferschein-Liste ohne embed bestehen das Schema", async () => {
+    const q = await QuoteList(req("http://x/api/v1/Quote?limit=5", { token }));
+    for (const entry of (await json(q)).data) expect(() => quoteSchema.strict().parse(entry)).not.toThrow();
+    const d = await DeliveryNoteList(req("http://x/api/v1/DeliveryNote?limit=5", { token }));
+    for (const entry of (await json(d)).data) expect(() => deliveryNoteSchema.strict().parse(entry)).not.toThrow();
   });
 
   it("Liste: Paginierung/Filter/embed=customer,lines,payments", async () => {
