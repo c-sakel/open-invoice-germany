@@ -16,22 +16,17 @@ export const GET = withApi(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
   const embed = parseEmbed(searchParams);
   const result = await listDeliveryNotes(ctx.orgId, Object.fromEntries(searchParams));
-  if (!embed.has("lines") && !embed.has("customer")) {
-    return apiList(
-      result.rows.map((r) => serializeDeliveryNote({ ...r } as never, embed)),
-      result,
-    );
-  }
   const ids = result.rows.map((r) => r.id);
   const full = await prisma.deliveryNote.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, orgId: ctx.orgId },
     include: { lines: embed.has("lines"), customer: embed.has("customer") },
   });
   const byId = new Map(full.map((d) => [d.id, d]));
-  return apiList(
-    result.rows.map((r) => serializeDeliveryNote(byId.get(r.id) as never, embed)),
-    result,
-  );
+  const rows = ids.flatMap((id) => {
+    const dn = byId.get(id);
+    return dn ? [serializeDeliveryNote(dn, embed)] : [];
+  });
+  return apiList(rows, result);
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {
