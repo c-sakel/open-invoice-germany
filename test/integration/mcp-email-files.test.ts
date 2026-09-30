@@ -293,6 +293,30 @@ describe("send_email", () => {
     }
   });
 
+  it("T1: Standardanhaenge — Default mit PDF, Kuerzel pdf, [] keiner, unbekannt -> Fehler", async () => {
+    const provider = createMemoryProvider();
+    mcpContext.mailProvider = provider;
+    try {
+      const base = { docType: "INVOICE", to: ["kunde@example.org"], subject: "S", body: "B" };
+      const a = await makeFinalizedInvoice();
+      expect((await callTool("send_email", { ...base, docId: a.number! })).isError).toBeFalsy();
+      expect(provider.sent[0]!.attachments?.some((x) => x.filename.endsWith(".pdf"))).toBe(true);
+      const b = await makeFinalizedInvoice();
+      expect((await callTool("send_email", { ...base, docId: b.number!, standardAttachments: ["pdf"] })).isError).toBeFalsy();
+      expect(provider.sent[1]!.attachments?.map((x) => x.filename.endsWith(".pdf"))).toEqual([true]);
+      const c = await makeFinalizedInvoice();
+      expect((await callTool("send_email", { ...base, docId: c.number!, standardAttachments: [] })).isError).toBeFalsy();
+      expect(provider.sent[2]!.attachments ?? []).toHaveLength(0);
+      const d = await makeFinalizedInvoice();
+      const bad = await callTool("send_email", { ...base, docId: d.number!, standardAttachments: ["quatsch"] });
+      expect(bad.isError).toBe(true);
+      expect(text(bad)).toContain("quatsch");
+      expect(provider.sent).toHaveLength(3);
+    } finally {
+      mcpContext.mailProvider = undefined;
+    }
+  });
+
   it("Fehlerpfad: unbekannter Beleg", async () => {
     const provider = createMemoryProvider();
     mcpContext.mailProvider = provider;

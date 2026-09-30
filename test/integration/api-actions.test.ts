@@ -31,11 +31,11 @@ import { saveMailSettings } from "@/domain/email/settings";
 import type { CreateInvoiceInput, CreateDocumentInput } from "@/schemas";
 
 const { sentMails, getMemoryProvider } = vi.hoisted(() => {
-  const sent: Array<{ to: string[]; subject: string }> = [];
+  const sent: Array<{ to: string[]; subject: string; attachments?: Array<{ filename: string }> }> = [];
   return {
     sentMails: sent,
     getMemoryProvider: () => ({
-      async send(mail: { to: string[]; subject: string }) {
+      async send(mail: { to: string[]; subject: string; attachments?: Array<{ filename: string }> }) {
         sent.push(mail);
         return { providerId: `mem-${sent.length}` };
       },
@@ -302,6 +302,47 @@ describe("/api/v1/Invoice/{id}/send", () => {
     expect(res.status).toBe(200);
     expect((await json(res)).data.status).toBe("SENT");
     expect(sentMails.length).toBe(before + 1);
+  });
+
+  async function sendWith(id: string, extra: Record<string, unknown>) {
+    const before = sentMails.length;
+    const res = await InvoiceSend(
+      req(`http://x/api/v1/Invoice/${id}/send`, { method: "POST", token, body: { to: ["kunde@example.com"], subject: "S", body: "B", ...extra } }),
+      ctx1(id),
+    );
+    return { res, mail: sentMails.length > before ? sentMails[sentMails.length - 1] : undefined };
+  }
+
+  it("T1: ohne standardAttachments -> PDF-Anhang (UI-Vorbelegung)", async () => {
+    const fin = await makeFinalizedInvoice();
+    const { res, mail } = await sendWith(fin.id, {});
+    expect(res.status).toBe(200);
+    expect(mail?.attachments?.some((a) => a.filename.endsWith(".pdf"))).toBe(true);
+  });
+
+  it("T1: standardAttachments [\"pdf\"] -> PDF-Anhang", async () => {
+    const fin = await makeFinalizedInvoice();
+    const { res, mail } = await sendWith(fin.id, { standardAttachments: ["pdf"] });
+    expect(res.status).toBe(200);
+    expect(mail?.attachments?.map((a) => a.filename.endsWith(".pdf"))).toEqual([true]);
+  });
+
+  it("T1: standardAttachments [] -> keine Standardanhaenge", async () => {
+    const fin = await makeFinalizedInvoice();
+    const { res, mail } = await sendWith(fin.id, { standardAttachments: [] });
+    expect(res.status).toBe(200);
+    expect(mail?.attachments ?? []).toHaveLength(0);
+  });
+
+  it("T1: unbekannter Wert -> 400 mit Liste der verfuegbaren Werte, kein Versand", async () => {
+    const fin = await makeFinalizedInvoice();
+    const { res, mail } = await sendWith(fin.id, { standardAttachments: ["quatsch"] });
+    expect(res.status).toBe(400);
+    const body = await json(res);
+    expect(body.error.code).toBe("VALIDATION");
+    expect(body.error.message).toContain("quatsch");
+    expect(body.error.message).toContain(".pdf");
+    expect(mail).toBeUndefined();
   });
 
   it("write-Scope ohne send -> 403", async () => {

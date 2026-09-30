@@ -11,6 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
+import { resolveStandardAttachmentSelection, StandardAttachmentSelectionError } from "@/domain/email/attachments";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { EmailDocType, type SendEmailRawInput } from "@/schemas/email";
 import { ToolError, type McpToolsContext, type Result } from "./context";
@@ -36,7 +37,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
         body: z.string().min(1).max(50000),
         signature: z.string().max(5000).optional(),
         copyToSelf: z.boolean().default(false),
-        standardAttachments: z.array(z.string()).optional().describe("Dateinamen der Standardanhaenge (z. B. PDF/XRechnung), die mitgehen sollen"),
+        standardAttachments: z.array(z.string()).optional().describe("Standardanhaenge: exakte Dateinamen oder Kuerzel \"pdf\" / \"xml\". Fehlt das Feld: Vorbelegung wie im Versand-Dialog; leeres Array: keine Standardanhaenge; unbekannter Wert: Fehler"),
         attachmentIds: z.array(z.string()).optional().describe("IDs bestehender Beleganhaenge, die zusaetzlich mitgesendet werden sollen"),
         templateId: z.string().optional(),
       },
@@ -50,6 +51,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
         else if (args.docType === "DELIVERY_NOTE") docRef = await ctx.resolveDeliveryNote(org.id, args.docId);
         else docRef = await ctx.resolveDunning(org.id, args.docId);
 
+        const standardAttachments = await resolveStandardAttachmentSelection(org.id, args.docType, docRef.id, args.standardAttachments);
         const rawInput: SendEmailRawInput = {
           docType: args.docType,
           docId: docRef.id,
@@ -60,7 +62,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
           body: args.body,
           signature: args.signature ?? "",
           copyToSelf: args.copyToSelf,
-          standardAttachments: args.standardAttachments ?? [],
+          standardAttachments,
           templateId: args.templateId,
           attachmentIds: args.attachmentIds ?? [],
           warnings: [],
@@ -73,6 +75,7 @@ export function registerEmailTools(server: McpServer, ctx: McpToolsContext): voi
         if (e instanceof DocumentNotFoundError) return ctx.fail(e.message);
         if (e instanceof MailNotConfiguredError) return ctx.fail(e.message);
         if (e instanceof EmailAttachmentsTooLargeError) return ctx.fail(e.message);
+        if (e instanceof StandardAttachmentSelectionError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
