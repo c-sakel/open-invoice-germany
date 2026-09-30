@@ -3,6 +3,7 @@ import { z } from "zod";
 import { iso } from "./common";
 import { serializeInvoiceLine, invoiceLineSchema } from "./lines";
 import type { Invoice, InvoiceLine, Customer, Payment } from "@/generated/prisma/client";
+import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 import { serializePayment, paymentSchema } from "./payment";
 
 export type InvoiceWithOptionalRelations = Invoice & { lines?: InvoiceLine[]; customer?: Customer; payments?: Payment[] };
@@ -47,6 +48,8 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     grossTotalCents: inv.grossTotalCents,
     paidAmountCents: inv.paidAmountCents,
     payableCents: inv.payableCents,
+    payableTotalCents: payableBaseCents(inv),
+    openAmountCents: Math.max(0, openAmountCents(inv)),
     prepaidCents: inv.prepaidCents,
     reversedByInvoiceId: inv.reversedByInvoiceId,
     correctsInvoiceId: inv.correctsInvoiceId,
@@ -110,7 +113,19 @@ export const invoiceSchema = z.object({
   taxTotalCents: z.number().int(),
   grossTotalCents: z.number().int(),
   paidAmountCents: z.number().int(),
-  payableCents: z.number().int().nullable(),
+  payableCents: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Abweichender Zahlbetrag in Cent, nur bei Abschlags-/Teilrechnungen gesetzt. null = kein abweichender Zahlbetrag, dann gilt grossTotalCents. Fuer einen immer gesetzten Wert payableTotalCents nutzen."),
+  payableTotalCents: z
+    .number()
+    .int()
+    .describe("Immer gesetzter Zahlbetrag in Cent (Lesefeld): payableCents, falls gesetzt, sonst grossTotalCents."),
+  openAmountCents: z
+    .number()
+    .int()
+    .describe("Noch offener Betrag in Cent (Lesefeld): payableTotalCents minus paidAmountCents, mindestens 0."),
   prepaidCents: z.number().int(),
   reversedByInvoiceId: z.string().nullable(),
   correctsInvoiceId: z.string().nullable(),
