@@ -123,7 +123,9 @@ export function drawTableHeaderRow(frame: LayoutFrame, layout: PdfLayout, column
 // richten sich nach dem Inhalt, bei Platzmangel schrumpft erst die Schrift (bis -0,75 pt), dann Abstand und IBAN-
 // Gruppierung; nur frei umbrechbare Zeilen (Firmenname,
 // Anschrift, Freitext) werden als letzte Stufe an Leerzeichen umgebrochen.
-const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Web|USt-IdNr\.|Steuer-Nr\.|IBAN|BIC)\s|@|:\/\//;
+// Unumbrechbar: Feldzeilen mit bekanntem Label (AUTO-Spalten) oder ein einzelnes Token mit @ bzw. ://
+// (E-Mail/URL). Eine Freitextzeile mit @ oder :// MIT Leerzeichen ist frei umbrechbar.
+const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Web|USt-IdNr\.|Steuer-Nr\.|IBAN|BIC)\s|^\S*(@|:\/\/)\S*$/;
 const IBAN_FOOTER_LINE = /^(IBAN )([A-Z0-9 ]+)$/;
 const FOOTER_LINE_GAP = 1;
 
@@ -152,7 +154,11 @@ export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[],
   if (visible.length === 0) return empty;
   const logical = visible.map((c) => c.lines.flatMap((l) => l.split("\n")));
 
-  const attempt = (s: number, gap: number, ungroup: boolean, wrap: boolean): FooterLayoutResult | null => {
+  // wrap: 0 = kein Umbruch, 1 = Feldzeilen bleiben unumbrechbar, 2 = alles an Woertern umbrechbar,
+  // 3 = wie 2, Spalten duerfen zusaetzlich unter die Wort-Mindestbreite schrumpfen (zu lange Woerter
+  // werden hart getrennt) — damit die Fusszeile nie verschwindet.
+  const attempt = (s: number, gap: number, ungroup: boolean, wrap: 0 | 1 | 2 | 3): FooterLayoutResult | null => {
+    const isFixed = (l: string): boolean => wrap === 1 && FIXED_FOOTER_LINE.test(l);
     doc.font("Helvetica").fontSize(s);
     const lineHeight = footerLineHeight(doc);
     const avail = width - gap * (visible.length - 1);
@@ -164,8 +170,8 @@ export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[],
       if (wrap) {
         min = 0;
         ls.forEach((l, i) => {
-          if (FIXED_FOOTER_LINE.test(l)) min = Math.max(min, widths[i]!);
-          else for (const word of l.split(/\s+/)) min = Math.max(min, doc.widthOfString(word));
+          if (isFixed(l)) min = Math.max(min, widths[i]!);
+          else if (wrap < 3) for (const word of l.split(/\s+/)) min = Math.max(min, doc.widthOfString(word));
         });
       }
       return { ls, natural, min };
@@ -186,7 +192,7 @@ export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[],
     let maxLines = 0;
     const placed = cols.map((c, i) => {
       const w = widths[i]!;
-      const lines = wrap ? c.ls.flatMap((l) => (FIXED_FOOTER_LINE.test(l) ? [l] : wrapPlain(doc, l, w + 0.01, "Helvetica", s))) : c.ls;
+      const lines = wrap > 0 ? c.ls.flatMap((l) => (isFixed(l) ? [l] : wrapPlain(doc, l, w + 0.01, "Helvetica", s))) : c.ls;
       maxLines = Math.max(maxLines, lines.length);
       const col = { x, width: w, lines };
       x += w + gap;
@@ -201,10 +207,13 @@ export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[],
   for (let s = size; s >= size - 0.75; s -= 0.25) plan.push([s, 10, false], [s, 10, true]);
   plan.push([size, 8, true], [size, 6, true]);
   for (const [s, gap, ungroup] of plan) {
-    const r = attempt(s, gap, ungroup, false);
+    const r = attempt(s, gap, ungroup, 0);
     if (r) return r;
   }
-  return attempt(size, 6, true, true) ?? attempt(size, 4, true, true) ?? empty;
+  return (
+    attempt(size, 6, true, 1) ?? attempt(size, 4, true, 1) ??
+    attempt(size, 4, true, 2) ?? attempt(size, 4, true, 3) ?? attempt(size - 0.75, 2, true, 3) ?? empty
+  );
 }
 
 /** Hoehe der Fusszone (Layout-Mindesthoehe, bei umbrochenen/mehrzeiligen Spalten mehr). */

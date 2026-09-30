@@ -117,4 +117,38 @@ describe("layoutFooterColumns", () => {
     const tall = footerZoneHeight(frame, layout, [{ lines: [custom] }]);
     expect(tall).toBeGreaterThan(layout.footerHeight);
   });
+
+  // Final-Review (must): CUSTOM-Fusszeilen mit @ / :// MIT Leerzeichen duerfen nie als
+  // unumbrechbar gelten; die Fusszeile darf nie leer werden.
+  it("CUSTOM-Fusszeilen mit E-Mail/URL inmitten von Text: Fusszeile bleibt sichtbar, alles in der Breite", () => {
+    for (const id of ["standard", "klassik", "modern", "schlicht"] as const) {
+      const theme = testPdfTheme({ layoutId: id });
+      const layout = getLayout(id);
+      const doc = createPdfDocument({ size: "A4", margins: pdfMargins(theme), pdfa: true });
+      const frame = frameFor(doc, theme);
+      const cols = [
+        { lines: ["Musterfirma GmbH · Musterweg 10 · 12345 Musterstadt · Tel. 0123 456789 · info@musterfirma-beispiel.de"] },
+        { lines: ["Musterbank · IBAN DE02 1203 0000 0000 2020 51 · BIC BYLADEM1001 · Web https://www.musterfirma-beispiel.de"] },
+      ];
+      const laid = layoutFooterColumns(frame, cols, layout.footerFontSize);
+      expect(laid.columns.length, id).toBe(2);
+      expect(laid.height, id).toBeGreaterThan(0);
+      expect(footerZoneHeight(frame, layout, cols), id).toBeGreaterThanOrEqual(Math.ceil(laid.height) + 4);
+      const text = laid.columns.flatMap((c) => c.lines).join(" ");
+      expect(text).toContain("info@musterfirma-beispiel.de");
+      expect(text).toContain("BYLADEM1001");
+      doc.font("Helvetica").fontSize(laid.size);
+      for (const col of laid.columns) for (const l of col.lines) expect(doc.widthOfString(l), id).toBeLessThanOrEqual(col.width + 0.5);
+    }
+  });
+
+  it("ein einzelnes ueberlanges Token ohne Leerzeichen: Fusszeile verschwindet nie (harter Umbruch)", () => {
+    const theme = testPdfTheme({ layoutId: "standard" });
+    const doc = createPdfDocument({ size: "A4", margins: pdfMargins(theme), pdfa: true });
+    const frame = frameFor(doc, theme);
+    const token = "x".repeat(200) + "@beispiel.example";
+    const laid = layoutFooterColumns(frame, [{ lines: [token] }, { lines: ["Zweite Spalte"] }], 8);
+    expect(laid.columns.length).toBe(2);
+    expect(laid.height).toBeGreaterThan(0);
+  });
 });
