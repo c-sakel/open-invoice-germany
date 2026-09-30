@@ -4,6 +4,9 @@ import { drawRecipient, drawMetaTable, drawFooterColumns, drawSubject } from "./
 import { drawSenderLine } from "../layout";
 import { mm } from "../marks";
 
+/** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
+const FOOTER_FONT_SIZE = 7.5;
+
 // Hoehe des Kopfbalkens auf der ersten Seite (in drawKopf) bzw. auf Folgeseiten (in
 // drawPageChrome, dort schmaler — nur der Balken, kein Titel/Logo).
 const HEADER_BAR_H = 54;
@@ -53,10 +56,10 @@ export const modernLayout: PdfLayout = {
     const { doc, primary } = frame;
     doc.rect(0, y - 8, doc.page.width, doc.page.height - y + 8).fill("#f3f4f6");
     doc.moveTo(frame.left, y - 8).lineTo(frame.right, y - 8).lineWidth(1).strokeColor(primary).stroke();
-    drawFooterColumns(frame, columns, y, 7.5, "#333333");
+    drawFooterColumns(frame, columns, y, FOOTER_FONT_SIZE, "#333333");
   },
   footerHeight: 44,
-  footerFontSize: 7.5,
+  footerFontSize: FOOTER_FONT_SIZE,
   // Nur der Balken (kein Logo/Titel) auf Folgeseiten — der volle Kopf steht bereits auf
   // Seite 1 (drawKopf). Rueckgabe = neue Start-y fuer den Seiteninhalt (statt margins.top).
   drawPageChrome(frame) {

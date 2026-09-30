@@ -10,6 +10,9 @@ import type { PdfLayout, TableStyle } from "./types";
 import { standardLayout } from "./standard";
 import { drawFooterColumns } from "./shared";
 
+/** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
+const FOOTER_FONT_SIZE = 7.5;
+
 interface StyledOptions {
   id: PdfLayout["id"];
   name: string;
@@ -29,7 +32,7 @@ export function styledLayout(o: StyledOptions): PdfLayout {
     name: o.name,
     description: o.description,
     fontDelta: o.fontDelta ?? 0,
-    footerFontSize: 7.5,
+    footerFontSize: FOOTER_FONT_SIZE,
     table: { ...standardLayout.table, ...o.table },
     drawKopf(frame, input) {
       return standardLayout.drawKopf({ ...frame, primary: o.accent }, input);
@@ -39,7 +42,7 @@ export function styledLayout(o: StyledOptions): PdfLayout {
     },
     drawFooter(frame, columns, y) {
       frame.doc.moveTo(frame.left, y - 6).lineTo(frame.right, y - 6).lineWidth(0.6).strokeColor(o.accent).stroke().lineWidth(1);
-      drawFooterColumns(frame, columns, y, 7.5, o.footerColor ?? "#555555");
+      drawFooterColumns(frame, columns, y, FOOTER_FONT_SIZE, o.footerColor ?? "#555555");
     },
   };
 }
