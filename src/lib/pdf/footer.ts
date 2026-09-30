@@ -32,7 +32,7 @@ export interface FooterFacts {
   iban?: string | null;
   bic?: string | null;
   bankName?: string | null;
-  /** Kontoinhaber/-in — Fusszeile zeigt "Kontoinhaber ..." nur, wenn gesetzt UND
+  /** Kontoinhaber/-in — Fusszeile zeigt "Kontoinhaber ..." (volle Breite unter den Spalten) nur, wenn gesetzt UND
    *  (getrimmt) vom Firmennamen (`seller.name`) abweicht; leer/gleich -> keine eigene
    *  Zeile (der Firmenname in Spalte 1 deckt den Regelfall bereits ab). */
   accountHolder?: string | null;
@@ -67,9 +67,11 @@ export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsIn
         facts.bankName && `Bank ${facts.bankName}`,
         facts.iban && `IBAN ${groupIban(facts.iban)}`,
         facts.bic && `BIC ${facts.bic}`,
-        showAccountHolder && `Kontoinhaber ${accountHolder}`,
       ]),
     },
   ];
+  // Kontoinhaber als eigene Zeile ueber die volle Breite unter den Spalten: in der Bank-Spalte
+  // war sie die breiteste Zeile und erzwang Umbrueche in allen uebrigen Spalten.
+  if (showAccountHolder) columns.push({ lines: [`Kontoinhaber ${accountHolder}`], fullWidth: true });
   return columns.filter((c) => c.lines.length > 0);
 }
