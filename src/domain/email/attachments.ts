@@ -11,6 +11,7 @@ import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { dbInternal } from "@/lib/db";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
@@ -153,4 +154,56 @@ export async function buildStandardAttachments(orgId: string, docType: EmailDocT
   if (!q) return [];
   const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind));
   return [{ filename: `${safe(q.number ?? "Dokument")}.pdf`, contentType: "application/pdf", content: await renderInvoicePdf(buildDocEInvoiceData(q), theme) }];
+}
+
+/** Unbekannter Wert in der Standardanhang-Auswahl (API/MCP) — 400 (Duck-Typing `status` in src/api/errors.ts). */
+export class StandardAttachmentSelectionError extends Error {
+  readonly status = 400;
+  readonly available: string[];
+  constructor(unknown: string[], available: string[]) {
+    super(
+      `Unbekannte Standardanhaenge: ${unknown.join(", ")}. Verfuegbar: ${available.length ? available.join(", ") : "(keine)"}; Kuerzel: pdf, xml.`,
+    );
+    this.name = "StandardAttachmentSelectionError";
+    this.available = available;
+  }
+}
+
+/**
+ * Loest die Standardanhang-Auswahl fuer API und MCP auf (Feld `standardAttachments`):
+ * - `undefined` (Feld fehlt) -> dieselbe Vorbelegung wie der UI-Dialog (`prefillEmail`:
+ *   Org-Vorbelegung eInvoiceDefault, vom Kunden nur einschaltbar).
+ * - `[]` -> bewusst keine Standardanhaenge.
+ * - Werte: exakte Dateinamen ODER Kuerzel `pdf` / `xml` (passender Standardanhang per contentType).
+ * Unbekannte Werte werfen `StandardAttachmentSelectionError` (nie still ignorieren).
+ * Liefert exakte Dateinamen, wie sie `sendDocumentEmail` filtert.
+ */
+export async function resolveStandardAttachmentSelection(
+  orgId: string,
+  docType: EmailDocType,
+  docId: string,
+  requested: string[] | undefined,
+): Promise<string[]> {
+  if (requested && requested.length === 0) return [];
+  const attachments = await buildStandardAttachments(orgId, docType, docId);
+  if (requested === undefined) {
+    const docSettings = await loadDocumentSettings(orgId);
+    const eInvoiceDefault = docSettings.eInvoiceDefault || ((await customerEInvoicePreferred(orgId, docType, docId)) ?? false);
+    return defaultStandardAttachmentFilenames(attachments, eInvoiceDefault);
+  }
+  const out: string[] = [];
+  const unknown: string[] = [];
+  for (const value of requested) {
+    const lower = value.toLowerCase();
+    const byName = attachments.find((a) => a.filename === value);
+    const byAlias =
+      lower === "pdf" ? attachments.find((a) => a.contentType === "application/pdf")
+      : lower === "xml" ? attachments.find((a) => a.contentType === "application/xml")
+      : undefined;
+    const hit = byName ?? byAlias;
+    if (!hit) unknown.push(value);
+    else if (!out.includes(hit.filename)) out.push(hit.filename);
+  }
+  if (unknown.length) throw new StandardAttachmentSelectionError(unknown, attachments.map((a) => a.filename));
+  return out;
 }

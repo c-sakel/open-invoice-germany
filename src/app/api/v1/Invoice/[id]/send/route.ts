@@ -19,6 +19,7 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { sendDocumentEmail, EmailAttachmentsTooLargeError } from "@/domain/email/send";
 import { DocumentNotFoundError } from "@/domain/email/context";
+import { resolveStandardAttachmentSelection } from "@/domain/email/attachments";
 import type { SendEmailRawInput } from "@/schemas/email";
 import { prisma } from "@/lib/db";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
@@ -36,7 +37,12 @@ const sendActionBodySchema = z.object({
   body: z.string().min(1).max(50000),
   signature: z.string().max(5000).optional(),
   copyToSelf: z.boolean().default(false),
-  standardAttachments: z.array(z.string()).optional(),
+  standardAttachments: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Standardanhaenge: exakte Dateinamen (z. B. RE-50001.pdf) oder Kuerzel \"pdf\" / \"xml\". Feld fehlt = dieselbe Vorbelegung wie im Versand-Dialog (PDF, XRechnung-XML nur bei aktivem E-Rechnungs-Default); leeres Array = bewusst keine Standardanhaenge; unbekannter Wert = 400.",
+    ),
   attachmentIds: z.array(z.string()).optional(),
   templateId: z.string().optional(),
 });
@@ -46,8 +52,11 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
   const body = sendActionBodySchema.parse(ctx.body);
 
+  const docType = existing.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE";
+  const standardAttachments = await resolveStandardAttachmentSelection(ctx.orgId, docType, existing.id, body.standardAttachments);
+
   const rawInput: SendEmailRawInput = {
-    docType: existing.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE",
+    docType,
     docId: existing.id,
     to: body.to.join(","),
     cc: (body.cc ?? []).join(","),
@@ -56,7 +65,7 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
     body: body.body,
     signature: body.signature ?? "",
     copyToSelf: body.copyToSelf,
-    standardAttachments: body.standardAttachments ?? [],
+    standardAttachments,
     templateId: body.templateId,
     attachmentIds: body.attachmentIds ?? [],
     warnings: [],
