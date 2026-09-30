@@ -52,7 +52,7 @@ export interface FooterColumn {
   lines: string[];
   /** Zeilen ueber die volle Textbreite UNTER den Spalten (fix/kontoinhaber-footer): eine
    *  lange Zeile (Kontoinhaber) verbreitert sonst die Bank-Spalte und presst alle anderen
-   *  Spalten in Umbrueche. Nimmt nicht an der Spaltenaufteilung teil. */
+   *  Spalten in Umbrueche. Nimmt nicht an der Spaltenaufteilung teil (Ausnahme: `preferBankColumn`). */
   fullWidth?: boolean;
   /** Nur mit `fullWidth`: die Zeile wird bevorzugt in die Bank-Spalte (Spalte mit "IBAN ...",
    *  vor der IBAN) einsortiert, sofern das Raster dadurch nicht schlechter wird. */
