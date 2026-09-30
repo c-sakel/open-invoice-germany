@@ -184,7 +184,17 @@ export function drawWrappedLine(doc: PDFKit.PDFDocument, line: WrappedLine, x: n
   let cx = x;
   for (const seg of line.segments) {
     doc.font(seg.font).fontSize(size);
-    const options: PDFKit.Mixins.TextOptions = { lineBreak: false, underline: seg.underline === true };
+    // Ohne `width` ueberspringt pdfkit seinen LineWrapper und damit die Breitenmessung, aus
+    // der Unterstreichung und Link-Flaeche ihre Ausdehnung beziehen (sonst NaN) — die
+    // gemessene Breite wird deshalb selbst mitgegeben (interne pdfkit-Optionen, nicht in
+    // den mitgelieferten Typen).
+    const options: PDFKit.Mixins.TextOptions & { textWidth: number; wordCount: number; lineWidth: number } = {
+      lineBreak: false,
+      underline: seg.underline === true,
+      textWidth: seg.width,
+      wordCount: 1,
+      lineWidth: seg.width,
+    };
     if (seg.href) options.link = seg.href;
     doc.text(seg.text, cx, y, options);
     cx += seg.width;

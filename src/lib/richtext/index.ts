@@ -6,7 +6,7 @@
 export type { Block, ListBlock, ParagraphBlock, Run } from "./types";
 export { parseRichText, parseInline } from "./parse";
 export { renderRichTextHtml } from "./render-html";
-export { renderRichTextPdf } from "./render-pdf";
-export type { RenderPdfOptions } from "./render-pdf";
+export { renderRichTextPdf, renderPlainTextPdf, measureRichTextPdf } from "./render-pdf";
+export type { RenderPdfOptions, RenderPlainTextOptions } from "./render-pdf";
 export { plainText } from "./plain-text";
 export { isAllowedHref } from "./sanitize";
