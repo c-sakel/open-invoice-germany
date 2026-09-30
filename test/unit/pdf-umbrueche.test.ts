@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import PDFDocument from "pdfkit";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { renderDunningPdf, type DunningPdfData } from "@/lib/pdf/dunning-pdf";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { buildFooterColumns } from "@/lib/pdf/footer";
 import { wrapRuns } from "@/lib/pdf/text-wrap";
@@ -116,6 +117,53 @@ describe("B1 — nichts in der Fusszeilen-Zone", () => {
         const lowest = Math.min(...onPage.filter((i) => !isFooterItem(i)).map((i) => i.y));
         expect(lowest, `${layoutId} Seite ${page + 1}`).toBeGreaterThan(footerTop + 6);
       }
+    }
+  });
+});
+
+describe("B1 — Mahnung: Inhalt bleibt ueber der mehrzeiligen Fusszeile", () => {
+  it("viele Zinssegmente + sechszeilige CUSTOM-Fusszeile: kein Inhalt in der Fusszone, Fusszeile auf jeder Seite", async () => {
+    const segments = Array.from({ length: 40 }, (_, i) => ({
+      from: `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+      to: `2026-02-${String((i % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+      days: 31,
+      baseRateBp: 342,
+      pointsBp: 900,
+      interestCents: 100,
+    }));
+    const data: DunningPdfData = {
+      number: "MA-2026-0001",
+      level: 1,
+      sentDate: new Date("2026-06-01T10:00:00Z"),
+      newDueDate: new Date("2026-06-10T10:00:00Z"),
+      currency: "EUR",
+      seller: { name: "Muster GmbH", addressLine1: "Hauptstr. 1", postalCode: "12345", city: "Berlin" },
+      buyer: { name: "Kunde AG", addressLine1: "Kundenweg 2", postalCode: "54321", city: "Stadt" },
+      invoiceNumber: "RE-2026-0001",
+      invoiceDate: new Date("2026-05-01T10:00:00Z"),
+      openAmountCents: 10000,
+      interestCents: 4000,
+      flatFee40Cents: 0,
+      feeCents: 0,
+      lateFeeCents: 0,
+      totalCents: 14000,
+      daysOverdue: 30,
+      interestSegments: segments,
+    };
+    const base = testPdfTheme();
+    const t = testPdfTheme({
+      brand: { ...base.brand, footerMode: "CUSTOM", footerLeft: Array.from({ length: 6 }, (_, i) => `Fusszeile Zeile ${i + 1}`).join("\n") },
+    });
+    const items = await extractItems(await renderDunningPdf(data, t));
+    const pages = [...new Set(items.map((i) => i.page))];
+    expect(pages.length).toBeGreaterThanOrEqual(2);
+    for (const page of pages) {
+      const onPage = items.filter((i) => i.page === page);
+      const footer = onPage.filter((i) => i.str.startsWith("Fusszeile Zeile"));
+      expect(footer.length, `Seite ${page + 1}: Fusszeile fehlt`).toBeGreaterThan(0);
+      const footerTop = Math.max(...footer.map((i) => i.y));
+      const lowest = Math.min(...onPage.filter((i) => !i.str.startsWith("Fusszeile Zeile") && !/^Seite \d+ von \d+$/.test(i.str)).map((i) => i.y));
+      expect(lowest, `Seite ${page + 1}`).toBeGreaterThan(footerTop + 6);
     }
   });
 });
