@@ -50,7 +50,7 @@ export function RichTextField({
   rows?: number;
   placeholder?: string;
   /** Kompakte Zeilenvariante (Positionsliste): Label nur fuer Screenreader, Werkzeugleiste
-   *  erst bei Fokus im Feld, Textarea waechst mit dem Inhalt (Start: `rows`). */
+   *  erst bei Fokus im Feld (schwebend, ohne Layoutsprung), Textarea waechst mit dem Inhalt (Start: `rows`). */
   compact?: boolean;
 }) {
   const id = useId();
@@ -83,12 +83,12 @@ export function RichTextField({
   const btn = "rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50";
 
   return (
-    <div className={`group flex min-w-0 flex-col gap-1 text-sm ${compact ? "text-xs" : ""}`}>
-      <div className={compact ? "flex items-center justify-between" : "flex items-center justify-between"}>
+    <div className={`group flex min-w-0 flex-col gap-1 text-sm ${compact ? "relative text-xs" : ""}`}>
+      <div className={compact ? "contents" : "flex items-center justify-between"}>
         <label htmlFor={id} className={compact ? "sr-only" : "font-medium text-slate-700"}>
           {label}
         </label>
-        <div className={compact ? "hidden flex-wrap gap-1 group-focus-within:flex" : "flex gap-1"}>
+        <div className={compact ? "absolute right-0 top-full z-20 mt-0.5 hidden flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-md group-focus-within:flex" : "flex gap-1"}>
           <button type="button" className={btn} title="Fett" onClick={() => wrap("**", "**")}>
             <strong>F</strong>
           </button>

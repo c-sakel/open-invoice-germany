@@ -38,7 +38,7 @@ export function UnitSelect({ value, onChange }: { value: string; onChange: (v: s
   return (
     <div className="flex flex-col gap-1">
       <select
-        className={inputDenseCls}
+        className={`${inputDenseCls} w-full min-w-0`}
         aria-label="Einheit"
         value={otherMode ? OTHER : value}
         onChange={(e) => {
@@ -57,7 +57,7 @@ export function UnitSelect({ value, onChange }: { value: string; onChange: (v: s
         ))}
         <option value={OTHER}>andere…</option>
       </select>
-      {otherMode && <input className={inputDenseCls} value={value} placeholder="Einheit" onChange={(e) => onChange(e.target.value)} />}
+      {otherMode && <input className={`${inputDenseCls} w-full min-w-0`} value={value} placeholder="Einheit" onChange={(e) => onChange(e.target.value)} />}
     </div>
   );
 }

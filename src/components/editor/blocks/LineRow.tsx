@@ -36,6 +36,7 @@
  * entfaellt nur der Langtext: `deliveryNoteLineInputSchema` kennt kein `descriptionLong`,
  * ein Eintrag wuerde beim Speichern still verworfen (M1, Abschluss-Review).
  */
+import { useState } from "react";
 import { clampTaxRate, type DraftLine, type DraftAction, type LineType } from "@/lib/editor/draft";
 import { taxRateOptions } from "@/lib/editor/constants";
 import type { EditorMode } from "@/lib/editor/constants";
@@ -47,6 +48,13 @@ import { ProductPicker, type ProductOption } from "../ProductPicker";
 import { UnitSelect } from "./UnitSelect";
 import { LineRowMenu } from "./LineRowMenu";
 import { LineDiscountField } from "./LineDiscountField";
+
+/** Hoehe eines Textfelds an den Inhalt anpassen (einzeilig bis zum ersten Umbruch). */
+function fitHeight(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
 
 // M4 (Abschluss-Review): kein `export` mehr — kein Importer (nur `LineItemsEditor`
 // verwendet die Komponente selbst, der Props-Typ wird nirgends separat referenziert).
@@ -66,7 +74,7 @@ interface LineRowProps {
   dispatch: (action: DraftAction) => void;
   subtotalCents: number;
   canRemove: boolean;
-  registerDescRef: (key: string, el: HTMLInputElement | null) => void;
+  registerDescRef: (key: string, el: HTMLInputElement | HTMLTextAreaElement | null) => void;
   onEnterLast: () => void;
   onDragStart: () => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -101,12 +109,15 @@ export function LineRow({
   autoFocusProduct,
 }: LineRowProps) {
   const showDiscount = mode !== "DELIVERY_NOTE";
+  // Nur waehrend des Anfassens am Griff ist die Zeile ziehbar — sonst wuerde `draggable`
+  // auf dem <tr> das Markieren von Text in Eingabefeldern verhindern.
+  const [dragArmed, setDragArmed] = useState(false);
   const allowTypeChange = mode !== "DELIVERY_NOTE";
 
   function patch(p: Partial<DraftLine>) {
     dispatch({ type: "setLine", key: line.key, patch: p });
   }
-  function onDescKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  function onDescKeyDown(e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
     if (isLast && e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onEnterLast();
@@ -146,26 +157,46 @@ export function LineRow({
   }
 
   const reduced = line.lineType !== "ITEM";
+  const fieldCls = `${inputDenseCls} w-full min-w-0`;
+  // Schmale Container (< 56rem): jede Zeile ist eine Karte im 6-Spalten-Raster, die Zellen
+  // tragen ihr Label per `data-label`. Ab `@4xl` klassische Tabellenzeile (table-fixed).
+  const cell = "@4xl:table-cell @4xl:py-1.5 @4xl:pr-2 before:mb-0.5 before:block before:text-[11px] before:text-slate-500 before:content-[attr(data-label)] @4xl:before:hidden";
   // Beschreibung…Betrag (ohne Rabatt bei DELIVERY_NOTE, siehe Modulkommentar).
   const middleColSpan = showDiscount ? 7 : 6;
 
   return (
     <>
-      <tr draggable onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onKeyDown={onRowKeyDown} className="border-b border-slate-100 align-top">
-        <td className="py-1.5 pr-2 text-xs text-slate-400">
-          <span className="mr-1 cursor-grab select-none" title="Ziehen zum Sortieren">
+      <tr
+        draggable={dragArmed}
+        onDragStart={onDragStart}
+        onDragEnd={() => setDragArmed(false)}
+        onDragOver={onDragOver}
+        onDrop={() => {
+          setDragArmed(false);
+          onDrop();
+        }}
+        onKeyDown={onRowKeyDown}
+        className="grid grid-cols-6 gap-x-2 gap-y-2 border-b border-slate-100 py-3 align-top @4xl:table-row @4xl:py-0"
+      >
+        <td className="order-1 col-span-5 text-xs text-slate-400 @4xl:table-cell @4xl:py-1.5 @4xl:pr-2">
+          <span
+            className="mr-1 inline-block cursor-grab select-none px-0.5 py-1"
+            title="Ziehen zum Sortieren (oder Alt+Pfeil auf/ab)"
+            onMouseDown={() => setDragArmed(true)}
+            onMouseUp={() => setDragArmed(false)}
+          >
             ⠿
           </span>
           {itemPos !== null && <span>{itemPos}</span>}
         </td>
 
         {reduced ? (
-          <td colSpan={middleColSpan} className="py-1.5 pr-2">
+          <td colSpan={middleColSpan} className="order-3 col-span-6 @4xl:table-cell @4xl:py-1.5 @4xl:pr-2">
             {line.lineType === "TEXT" ? (
               <div className="space-y-2">
                 <input
                   ref={(el) => registerDescRef(line.key, el)}
-                  className={inputDenseCls}
+                  className={fieldCls}
                   placeholder="Kurztext"
                   value={line.description}
                   onChange={(e) => patch({ description: e.target.value })}
@@ -177,7 +208,7 @@ export function LineRow({
               <div className="flex items-center gap-3">
                 <input
                   ref={(el) => registerDescRef(line.key, el)}
-                  className={`${inputDenseCls} flex-1`}
+                  className={`${fieldCls} flex-1`}
                   placeholder={line.lineType === "HEADING" ? "Überschrift" : "Bezeichnung (z. B. Zwischensumme Hosting)"}
                   value={line.description}
                   onChange={(e) => patch({ description: e.target.value })}
@@ -189,14 +220,29 @@ export function LineRow({
           </td>
         ) : (
           <>
-            <td className="py-1.5 pr-2">
-              <input
-                ref={(el) => registerDescRef(line.key, el)}
-                className={inputDenseCls}
+            <td className="order-3 col-span-6 @4xl:table-cell @4xl:py-1.5 @4xl:pr-2">
+              {/* Titel als mitwachsendes Feld (1 Zeile, umbricht bei langem Titel) statt eines
+                  einzeiligen Inputs, der lange Titel abschneidet. Enter fuegt keinen
+                  Zeilenumbruch ein (Titel ist einzeilig), sondern nur in der letzten Zeile
+                  eine neue Position an (`onDescKeyDown`). */}
+              <textarea
+                ref={(el) => {
+                  registerDescRef(line.key, el);
+                  fitHeight(el);
+                }}
+                rows={1}
+                className={`${fieldCls} block resize-none overflow-hidden`}
                 placeholder="Beschreibung"
+                aria-label="Beschreibung"
                 value={line.description}
-                onChange={(e) => patch({ description: e.target.value })}
-                onKeyDown={onDescKeyDown}
+                onChange={(e) => {
+                  fitHeight(e.target);
+                  patch({ description: e.target.value.replace(/\r?\n/g, " ") });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !(isLast && !e.shiftKey)) e.preventDefault();
+                  onDescKeyDown(e);
+                }}
               />
               {mode !== "DELIVERY_NOTE" && (
                 <div className="mt-1">
@@ -211,7 +257,7 @@ export function LineRow({
                 </div>
               )}
               <input
-                className={`${inputDenseCls} mt-1 w-full min-w-0 text-xs`}
+                className={`${fieldCls} mt-1 text-xs`}
                 aria-label="Artikelnummer"
                 placeholder="Artikelnummer (optional)"
                 value={line.articleNumber}
@@ -229,19 +275,19 @@ export function LineRow({
                 </div>
               )}
             </td>
-            <td className="py-1.5 pr-2">
-              <input className={inputDenseCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
+            <td data-label="Menge" className={`order-3 col-span-2 ${cell}`}>
+              <input className={fieldCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
             </td>
-            <td className="py-1.5 pr-2">
+            <td data-label="Einheit" className={`order-3 col-span-2 ${cell}`}>
               <UnitSelect value={line.unit} onChange={(v) => patch({ unit: v })} />
             </td>
-            <td className="py-1.5 pr-2">
-              <input className={inputDenseCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
+            <td data-label={grossDisplay ? "Preis (brutto)" : "Preis (netto)"} className={`order-3 col-span-2 ${cell}`}>
+              <input className={fieldCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
               {grossHint && <div className="mt-0.5 text-[11px] text-slate-400">{grossHint}</div>}
             </td>
-            <td className="py-1.5 pr-2">
+            <td data-label="USt." className={`order-3 col-span-2 ${cell}`}>
               <select
-                className={inputDenseCls}
+                className={fieldCls}
                 aria-label="USt-Satz"
                 value={taxDisabled ? 0 : line.taxRate}
                 disabled={taxDisabled}
@@ -255,15 +301,17 @@ export function LineRow({
               </select>
             </td>
             {showDiscount && (
-              <td className="py-1.5 pr-2">
+              <td data-label="Rabatt" className={`order-3 col-span-2 ${cell}`}>
                 <LineDiscountField line={line} dispatch={dispatch} />
               </td>
             )}
-            <td className="py-1.5 pr-2 text-right tabular-nums">{amountLabel}</td>
+            <td data-label="Betrag" className={`order-3 col-span-2 tabular-nums @4xl:text-right ${cell}`}>
+              {amountLabel}
+            </td>
           </>
         )}
 
-        <td className="py-1.5 align-top">
+        <td className="order-2 col-span-1 text-right @4xl:table-cell @4xl:py-1.5 @4xl:align-top">
           <LineRowMenu
             canRemove={canRemove}
             onDuplicate={() => dispatch({ type: "duplicateLine", key: line.key })}

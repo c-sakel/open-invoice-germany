@@ -44,14 +44,14 @@ export function LineRowMenu({
   useEffect(() => {
     if (!open) return;
     const id = requestAnimationFrame(() => {
-      panelRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      panelRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(id);
   }, [open]);
 
   function closeAndRestoreFocus() {
     setOpen(false);
-    triggerRef.current?.focus();
+    triggerRef.current?.focus({ preventScroll: true });
   }
   function onMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === "Escape") {
@@ -70,7 +70,7 @@ export function LineRowMenu({
       else if (e.key === "ArrowUp") next = (idx - 1 + items.length) % items.length;
       else if (e.key === "Home") next = 0;
       else next = items.length - 1;
-      items[next]?.focus();
+      items[next]?.focus({ preventScroll: true });
     } else if (e.key === "Tab") {
       setOpen(false);
     }
