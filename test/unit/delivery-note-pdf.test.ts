@@ -152,6 +152,11 @@ describe("buildDeliveryNotePdfData", () => {
     expect(data.seller.city).toBe("Altstadt");
   });
 
+  it("Verkaeufer traegt E-Mail/Telefon/Adresszeile 2 aus dem Snapshot (Fusszeile wie bei der Rechnung)", () => {
+    const data = buildDeliveryNotePdfData(deliveryNote(), { ...org, email: "kontakt@muster.example", phone: "05571 1", addressLine2: "Hinterhaus" }, customer);
+    expect(data.seller).toMatchObject({ email: "kontakt@muster.example", phone: "05571 1", addressLine2: "Hinterhaus" });
+  });
+
   it("ohne Snapshot: Live-Stamm als Fallback", () => {
     const data = buildDeliveryNotePdfData(deliveryNote(), org, customer);
     expect(data.seller.name).toBe("Muster GmbH");
