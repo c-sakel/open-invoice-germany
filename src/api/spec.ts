@@ -13,7 +13,18 @@ import "./openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hi
 import { z } from "zod";
 
 export const apiErrorResponseSchema = z.object({
-  error: z.object({ code: z.string(), message: z.string(), details: z.unknown().optional() }),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z.unknown().optional(),
+    reason: z
+      .enum(["MISSING", "UNKNOWN", "REVOKED", "EXPIRED"])
+      .optional()
+      .describe("Nur bei 401: MISSING (kein Bearer-Token), UNKNOWN (Schluessel unbekannt), REVOKED (widerrufen), EXPIRED (abgelaufen)."),
+    keyPrefix: z.string().optional().describe("Nur bei 401 mit reason REVOKED/EXPIRED: Praefix des Schluessels zur Zuordnung (nie Hash oder Token)."),
+    expiredAt: z.string().optional().describe("Nur bei 401 mit reason EXPIRED: Ablaufzeitpunkt (ISO 8601)."),
+    revokedAt: z.string().optional().describe("Nur bei 401 mit reason REVOKED: Widerrufszeitpunkt (ISO 8601)."),
+  }),
 });
 
 export function apiDataResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
