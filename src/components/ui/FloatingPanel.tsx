@@ -7,8 +7,8 @@
  *
  * Kollisionserkennung: Standard ist "unterhalb des Ankers"; reicht der Platz dort nicht
  * fuer die gemessene Panelhoehe und oben ist mehr Platz, klappt das Panel nach oben.
- * Horizontal wird auf den Viewport geklemmt. Scrollen (ausserhalb des Panels) und
- * Groessenaenderung schliessen das Panel, ein Klick ausserhalb ebenso (`onClose`).
+ * Horizontal wird auf den Viewport geklemmt. Scrollen und Groessenaenderung
+ * fuehren die Position nach, ein Klick ausserhalb schliesst (`onClose`).
  * Fokus-Rueckgabe/Tastatur (Esc, Pfeile) verantwortet der Aufrufer.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
@@ -63,47 +63,46 @@ export function FloatingPanel({
 
   useLayoutEffect(() => {
     if (!open) return;
-    const anchor = anchorRef.current;
-    const panel = panelRef.current;
-    if (!anchor || !panel) return;
-    const a = anchor.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const w = matchAnchorWidth ? a.width : (width ?? panel.offsetWidth);
-    const naturalH = panel.scrollHeight;
-    const below = vh - a.bottom - GAP - MARGIN;
-    const above = a.top - GAP - MARGIN;
-    const openUp = naturalH > below && above > below;
-    const maxHeight = Math.max(96, openUp ? above : below);
-    const h = Math.min(naturalH, maxHeight);
-    const top = openUp ? a.top - GAP - h : a.bottom + GAP;
-    const rawLeft = align === "end" ? a.right - w : a.left;
-    const left = Math.min(Math.max(MARGIN, rawLeft), Math.max(MARGIN, vw - w - MARGIN));
-    // Positionsmessung nach dem Rendern des Panels (Hoehe erst dann bekannt).
-    setPos({ top, left, width: matchAnchorWidth || width !== undefined ? w : undefined, maxHeight });
+    function place() {
+      const anchor = anchorRef.current;
+      const panel = panelRef.current;
+      if (!anchor || !panel) return;
+      const a = anchor.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const w = matchAnchorWidth ? a.width : (width ?? panel.offsetWidth);
+      const naturalH = panel.scrollHeight;
+      const below = vh - a.bottom - GAP - MARGIN;
+      const above = a.top - GAP - MARGIN;
+      const openUp = naturalH > below && above > below;
+      const maxHeight = Math.max(96, openUp ? above : below);
+      const h = Math.min(naturalH, maxHeight);
+      const top = openUp ? a.top - GAP - h : a.bottom + GAP;
+      const rawLeft = align === "end" ? a.right - w : a.left;
+      const left = Math.min(Math.max(MARGIN, rawLeft), Math.max(MARGIN, vw - w - MARGIN));
+      setPos({ top, left, width: matchAnchorWidth || width !== undefined ? w : undefined, maxHeight });
+    }
+    // Positionsmessung nach dem Rendern des Panels (Hoehe erst dann bekannt); bei Scroll
+    // (auch durch Fokus-Scrollen) und Resize mitfuehren statt zu schliessen.
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
   }, [open, anchorRef, align, matchAnchorWidth, width, children]);
 
   useEffect(() => {
     if (!open) return;
-    function onScroll(e: Event) {
-      if (panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target)) return;
-      closeRef.current();
-    }
-    function onResize() {
-      closeRef.current();
-    }
     function onPointerDown(e: PointerEvent) {
       const t = e.target;
       if (!(t instanceof Node)) return;
       if (panelRef.current?.contains(t) || anchorRef.current?.contains(t)) return;
       closeRef.current();
     }
-    window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onScroll, true);
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onScroll, true);
       document.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [open, anchorRef]);

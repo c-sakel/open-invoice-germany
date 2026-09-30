@@ -57,7 +57,7 @@ export function ProductPicker({
 
   return (
     <div>
-      <div ref={anchorRef} className="flex items-center gap-2">
+      <div ref={anchorRef} className="flex items-center gap-2 whitespace-nowrap">
         <input
           ref={inputRef}
           className="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
