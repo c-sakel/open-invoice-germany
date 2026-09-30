@@ -24,22 +24,17 @@ export const GET = withApi(async (req, ctx) => {
   const embed = parseEmbed(searchParams);
   const raw = { ...Object.fromEntries(searchParams), kind: "AUFTRAGSBESTAETIGUNG" };
   const result = await listQuotes(ctx.orgId, raw);
-  if (!embed.has("lines") && !embed.has("customer")) {
-    return apiList(
-      result.rows.map((r) => serializeQuote({ ...r } as never, "OrderConfirmation", embed)),
-      result,
-    );
-  }
   const ids = result.rows.map((r) => r.id);
   const full = await prisma.quote.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, orgId: ctx.orgId },
     include: { lines: embed.has("lines"), customer: embed.has("customer") },
   });
   const byId = new Map(full.map((q) => [q.id, q]));
-  return apiList(
-    result.rows.map((r) => serializeQuote(byId.get(r.id) as never, "OrderConfirmation", embed)),
-    result,
-  );
+  const rows = ids.flatMap((id) => {
+    const q = byId.get(id);
+    return q ? [serializeQuote(q, "OrderConfirmation", embed)] : [];
+  });
+  return apiList(rows, result);
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {
