@@ -31,6 +31,9 @@ export interface DunningPdfData {
   seller: {
     name: string;
     addressLine1: string;
+    addressLine2?: string | null;
+    email?: string | null;
+    phone?: string | null;
     postalCode: string;
     city: string;
     taxNumber?: string | null;
