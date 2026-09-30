@@ -39,9 +39,10 @@ describe("buildFooterColumns", () => {
   // Fix (Kontoinhaber) — Bank-Spalte (4) traegt eine eigene "Kontoinhaber ..."-Zeile nur,
   // wenn gesetzt UND vom Firmennamen abweichend; sonst deckt Spalte 1 (Firmenname) den
   // Regelfall bereits ab.
-  it("Kontoinhaber gesetzt und vom Firmennamen abweichend: eigene Zeile in der Bank-Spalte", () => {
+  it("Kontoinhaber gesetzt und vom Firmennamen abweichend: eigene Zeile ueber die volle Breite unter den Spalten", () => {
     const cols = buildFooterColumns({ seller, iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Testbank", accountHolder: "Erika Muster" }, brandingSettingsInputSchema.parse({}));
-    expect(cols[3]!.lines).toEqual(["Bank Testbank", "IBAN DE02 1203 0000 0000 2020 51", "BIC BYLADEM1001", "Kontoinhaber Erika Muster"]);
+    expect(cols[3]!.lines).toEqual(["Bank Testbank", "IBAN DE02 1203 0000 0000 2020 51", "BIC BYLADEM1001"]);
+    expect(cols[4]).toEqual({ lines: ["Kontoinhaber Erika Muster"], fullWidth: true });
   });
 
   it("Kontoinhaber gesetzt, aber identisch zum Firmennamen: keine eigene Zeile", () => {

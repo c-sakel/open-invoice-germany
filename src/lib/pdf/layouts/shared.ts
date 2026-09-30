@@ -125,14 +125,14 @@ export function drawTableHeaderRow(frame: LayoutFrame, layout: PdfLayout, column
 // Anschrift, Freitext) werden als letzte Stufe an Leerzeichen umgebrochen.
 // Unumbrechbar: Feldzeilen mit bekanntem Label (AUTO-Spalten) oder ein einzelnes Token mit @ bzw. ://
 // (E-Mail/URL). Eine Freitextzeile mit @ oder :// MIT Leerzeichen ist frei umbrechbar.
-const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Web|USt-IdNr\.|Steuer-Nr\.|IBAN|BIC)\s|^\S*(@|:\/\/)\S*$/;
+const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Web|USt-IdNr\.|Steuer-Nr\.|Inhaber\/-in|IBAN|BIC)\s|^\S*(@|:\/\/)\S*$/;
 const IBAN_FOOTER_LINE = /^(IBAN )([A-Z0-9 ]+)$/;
 const FOOTER_LINE_GAP = 1;
 
 export interface FooterLayoutResult {
   size: number;
   lineHeight: number;
-  columns: { x: number; width: number; lines: string[] }[];
+  columns: { x: number; width: number; lines: string[]; /** Zeilen-Offset (volle Breite unter den Spalten) */ top: number }[];
   /** Hoehe des hoechsten Fusszeilenblocks in pt (Zeilenanzahl x Zeilenhoehe). */
   height: number;
 }
@@ -146,10 +146,29 @@ function footerLineHeight(doc: PDFKit.PDFDocument): number {
   return doc.currentLineHeight(true) + FOOTER_LINE_GAP;
 }
 
-/** Berechnet Spaltenpositionen und Zeilen der Fusszeile (ohne zu zeichnen). */
+/** Berechnet Spaltenpositionen und Zeilen der Fusszeile (ohne zu zeichnen). `fullWidth`-Spalten
+ *  (Kontoinhaber) stehen einzeilig ueber die volle Breite unter dem Spaltenblock. */
 export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[], size = 7.5): FooterLayoutResult {
+  const nonEmpty = columns.filter((c) => c.lines.length > 0);
+  const rows = nonEmpty.filter((c) => c.fullWidth);
+  const grid = nonEmpty.filter((c) => !c.fullWidth);
+  if (rows.length === 0 || grid.length === 0) return layoutGrid(frame, nonEmpty, size);
+  const main = layoutGrid(frame, grid, size);
   const { doc, left, width } = frame;
-  const visible = columns.filter((c) => c.lines.length > 0);
+  doc.font("Helvetica").fontSize(main.size);
+  const placed = main.columns.slice();
+  let top = main.columns.length > 0 ? Math.max(...main.columns.map((c) => c.lines.length)) : 0;
+  for (const row of rows) {
+    const lines = row.lines.flatMap((l) => l.split("\n")).flatMap((l) => wrapPlain(doc, l, width + 0.01, "Helvetica", main.size));
+    placed.push({ x: left, width, lines, top });
+    top += lines.length;
+  }
+  return { size: main.size, lineHeight: main.lineHeight, columns: placed, height: top * main.lineHeight };
+}
+
+function layoutGrid(frame: LayoutFrame, columns: FooterColumn[], size: number): FooterLayoutResult {
+  const { doc, left, width } = frame;
+  const visible = columns;
   const empty: FooterLayoutResult = { size, lineHeight: 0, columns: [], height: 0 };
   if (visible.length === 0) return empty;
   const logical = visible.map((c) => c.lines.flatMap((l) => l.split("\n")));
@@ -194,7 +213,7 @@ export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[],
       const w = widths[i]!;
       const lines = wrap > 0 ? c.ls.flatMap((l) => (isFixed(l) ? [l] : wrapPlain(doc, l, w + 0.01, "Helvetica", s))) : c.ls;
       maxLines = Math.max(maxLines, lines.length);
-      const col = { x, width: w, lines };
+      const col = { x, width: w, lines, top: 0 };
       x += w + gap;
       return col;
     });
@@ -230,7 +249,7 @@ export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y
   doc.font("Helvetica").fontSize(laid.size).fillColor(color);
   for (const col of laid.columns) {
     col.lines.forEach((line, i) => {
-      doc.text(line, col.x, y + i * laid.lineHeight, { lineBreak: false });
+      doc.text(line, col.x, y + (col.top + i) * laid.lineHeight, { lineBreak: false });
     });
   }
 }

@@ -50,6 +50,10 @@ export interface TableStyle {
 
 export interface FooterColumn {
   lines: string[];
+  /** Zeilen ueber die volle Textbreite UNTER den Spalten (fix/kontoinhaber-footer): eine
+   *  lange Zeile (Kontoinhaber) verbreitert sonst die Bank-Spalte und presst alle anderen
+   *  Spalten in Umbrueche. Nimmt nicht an der Spaltenaufteilung teil. */
+  fullWidth?: boolean;
 }
 
 export interface PdfLayout {
