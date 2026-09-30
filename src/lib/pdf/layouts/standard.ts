@@ -48,4 +48,5 @@ export const standardLayout: PdfLayout = {
   // eigenen (durch dieselben `margins.bottom` gesetzten) Seitenumbruch-Schwellenwert
   // ueberschreitet — sonst haengt eine ueberlaufende Fusszeile eine leere Folgeseite an.
   footerHeight: 46,
+  footerFontSize: 8,
 };

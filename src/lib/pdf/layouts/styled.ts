@@ -29,6 +29,7 @@ export function styledLayout(o: StyledOptions): PdfLayout {
     name: o.name,
     description: o.description,
     fontDelta: o.fontDelta ?? 0,
+    footerFontSize: 7.5,
     table: { ...standardLayout.table, ...o.table },
     drawKopf(frame, input) {
       return standardLayout.drawKopf({ ...frame, primary: o.accent }, input);

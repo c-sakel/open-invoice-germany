@@ -6,6 +6,7 @@
  */
 import type { LayoutFrame, KopfInput, FooterColumn, PdfLayout } from "./types";
 import { drawLogo, drawSenderLine } from "../layout";
+import { wrapPlain } from "../text-wrap";
 
 /**
  * Empfaengerblock (DIN-5008-Fenster); liefert Unterkante.
@@ -115,36 +116,114 @@ export function drawTableHeaderRow(frame: LayoutFrame, layout: PdfLayout, column
   return atY + t.headerHeight + 4;
 }
 
-// Follow-up (Reviews, Task 5): die gruppierte IBAN ("IBAN DE02 1203 ...", siehe
-// footer.ts#groupIban) kann in der schmalen vierspaltigen AUTO-Fusszeile innerhalb
-// ihrer Spalte umbrechen — die Gruppierungs-Leerzeichen machen die Zeile breiter als
-// noetig. Alternative waere eine fixe 7pt-Fusszeilenschrift gewesen; bei den Standard-
-// Raendern bleiben davon aber nur ~0,2pt Reserve, und je nach Randkonfiguration/IBAN-
-// Laenge waere das nicht zuverlaessig. `doc.widthOfString` misst stattdessen
-// deterministisch bei der gerade gesetzten Schriftgroesse — passt die gruppierte Zeile
-// nicht in `maxWidth`, wird sie ungruppiert (nur die Leerzeichen der Ziffernfolge
-// entfernt, das Label "IBAN " bleibt durch ein Leerzeichen getrennt) gezeichnet, damit
-// sie garantiert einzeilig bleibt.
+// Fusszeile (fix/pdf-umbrueche, B2): Felder, die nie innerhalb umbrechen duerfen (Kontakt-,
+// Steuer- und Bankangaben: E-Mail, URL, USt-IdNr., IBAN ...). pdfkit trennte E-Mail/URL am
+// Bindestrich ("contact@prepaid- / host.com") und schob die IBAN-Nummer in eine eigene
+// Zeile. Die Zeilen werden jetzt selbst gesetzt (kein pdfkit-Umbruch); die Spaltenbreiten
+// richten sich nach dem Inhalt, bei Platzmangel schrumpft erst die Schrift (bis -0,75 pt), dann Abstand und IBAN-
+// Gruppierung; nur frei umbrechbare Zeilen (Firmenname,
+// Anschrift, Freitext) werden als letzte Stufe an Leerzeichen umgebrochen.
+const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Web|USt-IdNr\.|Steuer-Nr\.|IBAN|BIC)\s|@|:\/\//;
 const IBAN_FOOTER_LINE = /^(IBAN )([A-Z0-9 ]+)$/;
+const FOOTER_LINE_GAP = 1;
 
-function fitFooterLine(doc: PDFKit.PDFDocument, line: string, maxWidth: number): string {
-  const m = IBAN_FOOTER_LINE.exec(line);
-  if (!m || doc.widthOfString(line) <= maxWidth) return line;
-  return m[1] + m[2]!.replace(/\s+/g, "");
+export interface FooterLayoutResult {
+  size: number;
+  lineHeight: number;
+  columns: { x: number; width: number; lines: string[] }[];
+  /** Hoehe des hoechsten Fusszeilenblocks in pt (Zeilenanzahl x Zeilenhoehe). */
+  height: number;
 }
 
-/** Fusszeilen-Spalten gleichmaessig ueber die Breite; liefert nichts. */
-export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y: number, size = 7.5, color = "#666666"): void {
+function ungroupIbanLine(line: string): string {
+  const m = IBAN_FOOTER_LINE.exec(line);
+  return m ? m[1] + m[2]!.replace(/\s+/g, "") : line;
+}
+
+function footerLineHeight(doc: PDFKit.PDFDocument): number {
+  return doc.currentLineHeight(true) + FOOTER_LINE_GAP;
+}
+
+/** Berechnet Spaltenpositionen und Zeilen der Fusszeile (ohne zu zeichnen). */
+export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[], size = 7.5): FooterLayoutResult {
   const { doc, left, width } = frame;
   const visible = columns.filter((c) => c.lines.length > 0);
-  if (visible.length === 0) return;
-  const gap = 10;
-  const colWidth = (width - gap * (visible.length - 1)) / visible.length;
-  doc.font("Helvetica").fontSize(size).fillColor(color);
-  visible.forEach((col, i) => {
-    const lines = col.lines.map((line) => fitFooterLine(doc, line, colWidth));
-    doc.text(lines.join("\n"), left + i * (colWidth + gap), y, { width: colWidth, lineGap: 1 });
-  });
+  const empty: FooterLayoutResult = { size, lineHeight: 0, columns: [], height: 0 };
+  if (visible.length === 0) return empty;
+  const logical = visible.map((c) => c.lines.flatMap((l) => l.split("\n")));
+
+  const attempt = (s: number, gap: number, ungroup: boolean, wrap: boolean): FooterLayoutResult | null => {
+    doc.font("Helvetica").fontSize(s);
+    const lineHeight = footerLineHeight(doc);
+    const avail = width - gap * (visible.length - 1);
+    const cols = logical.map((lines) => {
+      const ls = ungroup ? lines.map(ungroupIbanLine) : lines;
+      const widths = ls.map((l) => doc.widthOfString(l));
+      const natural = Math.max(...widths);
+      let min = natural;
+      if (wrap) {
+        min = 0;
+        ls.forEach((l, i) => {
+          if (FIXED_FOOTER_LINE.test(l)) min = Math.max(min, widths[i]!);
+          else for (const word of l.split(/\s+/)) min = Math.max(min, doc.widthOfString(word));
+        });
+      }
+      return { ls, natural, min };
+    });
+    const naturalSum = cols.reduce((sum, c) => sum + c.natural, 0);
+    let widths: number[];
+    if (naturalSum <= avail) {
+      const slack = (avail - naturalSum) / cols.length;
+      widths = cols.map((c) => c.natural + slack);
+    } else if (wrap && cols.reduce((sum, c) => sum + c.min, 0) <= avail) {
+      const need = naturalSum - avail;
+      const shrinkable = cols.reduce((sum, c) => sum + (c.natural - c.min), 0);
+      widths = cols.map((c) => c.natural - (shrinkable > 0 ? (need * (c.natural - c.min)) / shrinkable : 0));
+    } else {
+      return null;
+    }
+    let x = left;
+    let maxLines = 0;
+    const placed = cols.map((c, i) => {
+      const w = widths[i]!;
+      const lines = wrap ? c.ls.flatMap((l) => (FIXED_FOOTER_LINE.test(l) ? [l] : wrapPlain(doc, l, w + 0.01, "Helvetica", s))) : c.ls;
+      maxLines = Math.max(maxLines, lines.length);
+      const col = { x, width: w, lines };
+      x += w + gap;
+      return col;
+    });
+    return { size: s, lineHeight, columns: placed, height: maxLines * lineHeight };
+  };
+
+  // Reihenfolge der Sparmassnahmen: erst Schrift (bis -0,75 pt) bei vollem Spaltenabstand,
+  // dann kleinerer Abstand; IBAN je Stufe erst gruppiert, dann zusammenhaengend.
+  const plan: [number, number, boolean][] = [];
+  for (let s = size; s >= size - 0.75; s -= 0.25) plan.push([s, 10, false], [s, 10, true]);
+  plan.push([size, 8, true], [size, 6, true]);
+  for (const [s, gap, ungroup] of plan) {
+    const r = attempt(s, gap, ungroup, false);
+    if (r) return r;
+  }
+  return attempt(size, 6, true, true) ?? attempt(size, 4, true, true) ?? empty;
+}
+
+/** Hoehe der Fusszone (Layout-Mindesthoehe, bei umbrochenen/mehrzeiligen Spalten mehr). */
+export function footerZoneHeight(frame: LayoutFrame, layout: PdfLayout, columns: FooterColumn[]): number {
+  const measured = layoutFooterColumns(frame, columns, layout.footerFontSize).height;
+  return measured === 0 ? layout.footerHeight : Math.max(layout.footerHeight, Math.ceil(measured) + 4);
+}
+
+/** Fusszeilen-Spalten nach Inhalt ueber die Breite; liefert nichts. */
+export function drawFooterColumns(frame: LayoutFrame, columns: FooterColumn[], y: number, size = 7.5, color = "#666666"): void {
+  const { doc } = frame;
+  const laid = layoutFooterColumns(frame, columns, size);
+  if (laid.columns.length === 0) return;
+  doc.font("Helvetica").fontSize(laid.size).fillColor(color);
+  for (const col of laid.columns) {
+    col.lines.forEach((line, i) => {
+      doc.text(line, col.x, y + i * laid.lineHeight, { lineBreak: false });
+    });
+  }
 }
 
 /**
