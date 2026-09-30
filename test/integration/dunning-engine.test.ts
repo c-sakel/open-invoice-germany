@@ -231,6 +231,30 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(pdfData.seller).toHaveProperty("phone");
   });
 
+  it("Snapshot friert Bankdaten und Steuer-Nr. ein — spaetere Stammdaten-Aenderung aendert die Mahnung nicht", async () => {
+    const customerId = await makeCustomer("BUSINESS");
+    const fin = await makeFinalizedInvoice(customerId);
+    const r0 = await createDunning(fin.id, { now: FIX_DATE });
+    const load = () =>
+      dbInternal.dunning.findUniqueOrThrow({
+        where: { id: r0.dunning.id },
+        include: { invoice: { include: { org: true, customer: true } }, stage: true },
+      });
+    const before = buildDunningPdfData(await load(), (await load()).invoice).seller;
+    await dbInternal.organization.update({
+      where: { id: orgId },
+      data: { iban: "DE89370400440532013000", bic: "COBADEFFXXX", bankName: "Neue Bank", accountHolder: "Neuer Inhaber", taxNumber: "99/999/99999" },
+    });
+    const row = await load();
+    const after = buildDunningPdfData(row, row.invoice).seller;
+    expect(after.iban).toBe(before.iban);
+    expect(after.bic).toBe(before.bic);
+    expect(after.bankName).toBe(before.bankName);
+    expect(after.accountHolder).toBe(before.accountHolder);
+    expect(after.taxNumber).toBe(before.taxNumber);
+    expect(after.iban).not.toBe("DE89370400440532013000");
+  });
+
   it("ensureDunningSnapshots baut Snapshots fuer Altmahnungen (snapshotSource null) mit Herkunft MIGRATION nach", async () => {
     const customerId = await makeCustomer("BUSINESS", "Migrations-Kunde");
     const fin = await makeFinalizedInvoice(customerId);
