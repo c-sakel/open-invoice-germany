@@ -25,7 +25,7 @@ import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
 import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import { getLayout } from "./layouts/registry";
-import { drawTableHeaderRow } from "./layouts/shared";
+import { drawTableHeaderRow, footerZoneHeight } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
 import { createPdfDocument } from "./document";
@@ -292,7 +292,15 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // Positionen ueberlappten auf Seite 1). Bei aktiver Fusszeile reserviert `pageBottom`
   // jetzt zusaetzlich `layout.footerHeight` plus 6pt Sicherheitsabstand; `footY` selbst
   // bleibt unveraendert (Fusszeile/GiroCode-Position aendern sich nicht).
-  const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
+  // fix/pdf-umbrueche (B1/B2): die Fusszone wird aus der TATSAECHLICHEN Fusszeile gemessen
+  // (umbrochene/mehrzeilige Spalten, siehe `layouts/shared.ts#footerZoneHeight`) statt aus
+  // der statischen `layout.footerHeight` — sonst ragt Inhalt in eine hoehere Fusszeile.
+  const footerColumns = buildFooterColumns(
+    { seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, accountHolder: data.accountHolder, ...theme.footerFacts },
+    theme.brand,
+  );
+  const footerZone = footerZoneHeight(frame, layout, footerColumns);
+  const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
 
   const drawTableHeader = (atY: number): number =>
     drawTableHeaderRow(
@@ -621,7 +629,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // Schleife unten, statt in ihr). `footY` bleibt trotzdem vor der Schleife berechnet, da
   // GiroCode (nur letzte Seite) denselben Wert braucht und alle Seiten dieselbe Groesse
   // haben (kein `doc.page.height`-Unterschied je Seite in diesem Renderer).
-  const footY = doc.page.height - margins.bottom - layout.footerHeight;
+  const footY = doc.page.height - margins.bottom - footerZone;
 
   // GiroCode (§37) — im Zahlungsblock rechts oberhalb der Fusszeile, Kantenlaenge aus
   // `theme.options.giroSizeMm` (Phase 12a, vorher fest 30 mm),
@@ -667,10 +675,6 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
 
   // Fusszeile (jede Seite) + Falz-/Lochmarken + Seitenzahlen — erst nach dem gesamten
   // Inhalt (Seitenzahlen brauchen die fertige Gesamtseitenzahl, `bufferPages: true`).
-  const footerColumns = buildFooterColumns(
-    { seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, accountHolder: data.accountHolder, ...theme.footerFacts },
-    theme.brand,
-  );
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(range.start + i);

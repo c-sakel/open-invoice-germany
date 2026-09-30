@@ -41,4 +41,5 @@ export const klassikLayout: PdfLayout = {
     drawFooterColumns(frame, columns, y, 7.5, "#555555");
   },
   footerHeight: 40,
+  footerFontSize: 7.5,
 };
