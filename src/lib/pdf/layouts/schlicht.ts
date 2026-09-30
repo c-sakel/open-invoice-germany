@@ -7,6 +7,9 @@
 import type { PdfLayout } from "./types";
 import { drawLogoAndSender, drawRecipient, drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
 
+/** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
+const FOOTER_FONT_SIZE = 7.5;
+
 export const schlichtLayout: PdfLayout = {
   id: "schlicht",
   name: "Schlicht",
@@ -53,9 +56,10 @@ export const schlichtLayout: PdfLayout = {
     frame.doc.moveTo(frame.left, y).lineTo(frame.right, y).lineWidth(0.5).strokeColor("#999999").stroke().lineWidth(1);
   },
   drawFooter(frame, columns, y) {
-    drawFooterColumns(frame, columns, y, 7.5, frame.primary);
+    drawFooterColumns(frame, columns, y, FOOTER_FONT_SIZE, frame.primary);
   },
   footerHeight: 44,
+  footerFontSize: FOOTER_FONT_SIZE,
   // Fix-Welle: GiroCode links unter dem Summenblock (Referenz RE-41362) statt rechts
   // oberhalb der Fusszeile.
   giroPlacement: "below-totals",

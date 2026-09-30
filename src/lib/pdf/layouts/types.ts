@@ -62,6 +62,8 @@ export interface PdfLayout {
   drawTotalsRule(frame: LayoutFrame, x: number, y: number): void;
   drawFooter(frame: LayoutFrame, columns: FooterColumn[], y: number): void;
   footerHeight: number;
+  /** Schriftgroesse der Fusszeile in pt (wird auch fuer die Hoehenmessung genutzt). */
+  footerFontSize: number;
   /**
    * Optionaler Hook (Phase 11b, Task 4) fuer Kopf-"Chrome" auf Folgeseiten (z. B. der
    * farbige Balken von `modern`) — wird von den drei Renderern direkt nach `doc.addPage()`

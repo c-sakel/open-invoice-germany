@@ -2,6 +2,9 @@
 import type { PdfLayout } from "./types";
 import { drawLogoAndSender, drawRecipient, drawMetaRows, drawFooterColumns, drawSubject } from "./shared";
 
+/** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
+const FOOTER_FONT_SIZE = 8;
+
 export const standardLayout: PdfLayout = {
   id: "standard",
   name: "Standard",
@@ -38,7 +41,7 @@ export const standardLayout: PdfLayout = {
   drawFooter(frame, columns, y) {
     // Phase 7: drei Spalten (links/mitte/rechts) — bei AUTO-Fusszeile werden vier Spalten
     // gleichmaessig verteilt; Text grau 8pt wie bisher.
-    drawFooterColumns(frame, columns, y, 8, "#666666");
+    drawFooterColumns(frame, columns, y, FOOTER_FONT_SIZE, "#666666");
   },
   // Phase 11b, Task 3 — vorher 32pt (reichte fuer die zweizeilige Phase-7-Fusszeile).
   // Die vierspaltige AUTO-Fusszeile traegt bis zu drei Zeilen JE Spalte bei einer bei
@@ -48,4 +51,5 @@ export const standardLayout: PdfLayout = {
   // eigenen (durch dieselben `margins.bottom` gesetzten) Seitenumbruch-Schwellenwert
   // ueberschreitet — sonst haengt eine ueberlaufende Fusszeile eine leere Folgeseite an.
   footerHeight: 46,
+  footerFontSize: FOOTER_FONT_SIZE,
 };

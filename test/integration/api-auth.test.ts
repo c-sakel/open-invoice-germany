@@ -85,6 +85,50 @@ describe("withApi — Bearer-Auth", () => {
     expect(j.error.code).toBe("UNAUTHORIZED");
   });
 
+  it("T4: reason je 401-Fall, keyPrefix/Zeitpunkt nur bei REVOKED/EXPIRED, nie Hash/Token", async () => {
+    const missing = await (await pingGet(req("http://x/api/v1/ping"))).json();
+    expect(missing.error.reason).toBe("MISSING");
+    expect(missing.error.keyPrefix).toBeUndefined();
+
+    const unknown = await (await pingGet(req("http://x/api/v1/ping", { token: "oig_" + "a".repeat(40) }))).json();
+    expect(unknown.error.reason).toBe("UNKNOWN");
+    expect(unknown.error.keyPrefix).toBeUndefined();
+
+    const revKey = await issueKey();
+    const revokedAt = new Date("2026-05-01T10:00:00Z");
+    await dbInternal.apiKey.update({ where: { id: revKey.id }, data: { revokedAt } });
+    const row = await dbInternal.apiKey.findUniqueOrThrow({ where: { id: revKey.id } });
+    const revoked = await (await pingGet(req("http://x/api/v1/ping", { token: revKey.token }))).json();
+    expect(revoked.error.reason).toBe("REVOKED");
+    expect(revoked.error.keyPrefix).toBe(row.prefix);
+    expect(revoked.error.revokedAt).toBe(revokedAt.toISOString());
+    expect(revoked.error.message).toBe("API-Schluessel wurde widerrufen.");
+    expect(JSON.stringify(revoked)).not.toContain(row.keyHash);
+    expect(JSON.stringify(revoked)).not.toContain(revKey.token);
+
+    const expiresAt = new Date(Date.now() - 60_000);
+    const expKey = await issueKey({ expiresAt });
+    const expRow = await dbInternal.apiKey.findUniqueOrThrow({ where: { id: expKey.id } });
+    const expired = await (await pingGet(req("http://x/api/v1/ping", { token: expKey.token }))).json();
+    expect(expired.error.reason).toBe("EXPIRED");
+    expect(expired.error.keyPrefix).toBe(expRow.prefix);
+    expect(expired.error.expiredAt).toBe(expRow.expiresAt!.toISOString());
+    expect(expired.error.message).toBe("API-Schluessel ist abgelaufen.");
+  });
+
+  it("T4: X-Api-Key-Expires-At nur bei Schluessel mit Ablaufdatum", async () => {
+    const expiresAt = new Date(Date.now() + 10 * 86_400_000);
+    const withExp = await issueKey({ expiresAt });
+    const row = await dbInternal.apiKey.findUniqueOrThrow({ where: { id: withExp.id } });
+    const res = await pingGet(req("http://x/api/v1/ping", { token: withExp.token }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Api-Key-Expires-At")).toBe(row.expiresAt!.toISOString());
+
+    const without = await issueKey();
+    const res2 = await pingGet(req("http://x/api/v1/ping", { token: without.token }));
+    expect(res2.headers.get("X-Api-Key-Expires-At")).toBeNull();
+  });
+
   it("falscher Scope -> 403 FORBIDDEN", async () => {
     const key = await issueKey({ scopes: ["write"] }); // ping braucht "read"
     const res = await pingGet(req("http://x/api/v1/ping", { token: key.token }));

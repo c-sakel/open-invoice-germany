@@ -267,7 +267,7 @@ const ERROR_INFO: Record<number, { code: string; message: string }> = {
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   400: "Validierungsfehler (Zod) — `error.details.issues`.",
-  401: "Kein gueltiger Bearer-Token.",
+  401: "Kein gueltiger Bearer-Token — `error.reason` (MISSING | UNKNOWN | REVOKED | EXPIRED), bei REVOKED/EXPIRED zusaetzlich `keyPrefix` und `revokedAt`/`expiredAt`. Erfolgreiche Antworten tragen bei Schluesseln mit Ablaufdatum den Header `X-Api-Key-Expires-At` (ISO 8601).",
   403: "Token hat nicht den erforderlichen Scope.",
   404: "Ressource nicht gefunden oder gehoert nicht zur Organisation des Schluessels.",
   409: "Zustandskonflikt (GoBD-Regel, Idempotenz-Konflikt oder EN-16931-Validierung).",

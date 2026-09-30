@@ -4,9 +4,9 @@
  * Positionstabelle (Phase 11c, Task 5): Tabellenkopf Pos. | Beschreibung | Menge |
  * Einheit | Preis | USt. | Rabatt | Betrag | ⋯, eine `LineRow` je `draft.lines`-
  * Eintrag, darunter die Add-Links. Echte `<table>` statt Grid-`<div>`s (Brief verlangt
- * eine Kopfzeile mit festen Spalten) — daher `overflow-x-auto` als bewusste
- * Vereinfachung fuer schmale Bildschirme (kein Card-Layout-Fallback, siehe
- * Task-5-Report).
+ * eine Kopfzeile mit festen Spalten). Ab 56rem Containerbreite `table-fixed` (die
+ * Beschreibung nimmt den Rest), darunter Kartenlayout je Zeile (siehe `LineRow`)
+ * — kein waagerechtes Scrollen mehr, Dropdowns werden per Portal gerendert.
  *
  * `grossDisplay` ist Teil von `DraftState` (nicht lokaler Komponentenzustand) —
  * ueberlebt so z. B. ein `replace` durch `TakeOverPrompt` und bleibt beim Umschalten
@@ -80,7 +80,7 @@ export function LineItemsEditor({
   const itemPositions = draft.lines.map((l) => (l.lineType === "ITEM" ? ++itemCounter : null));
 
   const [dragKey, setDragKey] = useState<string | null>(null);
-  const descRefs = useRef(new Map<string, HTMLInputElement>());
+  const descRefs = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>());
   const pendingFocusRef = useRef(false);
   const prevLen = useRef(draft.lines.length);
   // Task 3 — "+ Produkt auswählen": derselbe "eine neue Zeile kam gerade hinzu"-Effekt
@@ -160,24 +160,26 @@ export function LineItemsEditor({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] border-collapse text-sm">
-          <thead>
+      {/* Container-Query statt Viewport-Breite: die Seitenleiste verengt den Editor, das
+          Umschalten Karte/Tabelle haengt an der tatsaechlich verfuegbaren Breite. */}
+      <div className="@container">
+        <table className="block w-full border-collapse text-sm @4xl:table @4xl:table-fixed">
+          <thead className="hidden @4xl:table-header-group">
             <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
-              <th scope="col" className="w-10 py-1.5 pr-2">Pos.</th>
+              <th scope="col" className="w-12 py-1.5 pr-2">Pos.</th>
               <th scope="col" className="py-1.5 pr-2">Beschreibung</th>
               <th scope="col" className="w-20 py-1.5 pr-2">Menge</th>
-              <th scope="col" className="w-28 py-1.5 pr-2">Einheit</th>
+              <th scope="col" className="w-24 py-1.5 pr-2">Einheit</th>
               <th scope="col" className="w-28 py-1.5 pr-2">{draft.grossDisplay ? "Preis (brutto)" : "Preis (netto)"}</th>
-              <th scope="col" className="w-16 py-1.5 pr-2">USt.</th>
+              <th scope="col" className="w-[4.5rem] py-1.5 pr-2">USt.</th>
               {showDiscount && (
                 <th scope="col" className="w-28 py-1.5 pr-2">Rabatt</th>
               )}
-              <th scope="col" className="w-28 py-1.5 pr-2 text-right">Betrag</th>
+              <th scope="col" className="w-24 py-1.5 pr-2 text-right">Betrag</th>
               <th scope="col" className="w-8 py-1.5" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="block @4xl:table-row-group">
             {draft.lines.map((line, index) => (
               <LineRow
                 key={line.key}
