@@ -37,7 +37,7 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
     <div>
       <div className="flex items-center gap-1">
         <input
-          className={`${inputDenseCls} w-16`}
+          className={`${inputDenseCls} w-full min-w-0 flex-1`}
           value={value}
           aria-label={mode === "percent" ? "Rabatt in Prozent" : "Rabatt in Euro"}
           onChange={(e) =>
@@ -52,7 +52,7 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
           type="button"
           onClick={() => setMode((m) => (m === "percent" ? "amount" : "percent"))}
           title="Rabatt-Art wechseln (% / €)"
-          className="rounded border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
+          className="shrink-0 rounded border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
         >
           {mode === "percent" ? "%" : "€"}
         </button>
