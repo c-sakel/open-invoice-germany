@@ -142,7 +142,7 @@ describe("Kontoinhaber in der Fusszeile — PDF, alle Layouts", () => {
   });
 
   it("Mahnung und Lieferschein: Kontoinhaber-Zeile in der Fusszeile, kein Inhalt darunter oder daneben", async () => {
-    for (const layoutId of ["standard", "schlicht", "klassik", "modern"] as const) {
+    for (const layoutId of LAYOUTS) {
       const t = testPdfTheme({ layoutId });
       const bank = { iban: "DE02120300000000202051", bic: "BYLADEM1001", bankName: "Testbank", accountHolder: HOLDERS[1] };
       const d = sampleDunning();
