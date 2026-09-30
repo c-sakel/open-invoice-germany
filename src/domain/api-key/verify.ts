@@ -6,10 +6,29 @@ import { dbInternal } from "@/lib/db";
 import type { ApiKeyScope } from "@/schemas";
 import { hashApiToken } from "./create";
 
+/** Maschinenlesbarer Grund einer 401-Antwort (Body `error.reason`). */
+export type ApiAuthReason = "MISSING" | "UNKNOWN" | "REVOKED" | "EXPIRED";
+
+export interface ApiAuthErrorDetails {
+  reason: ApiAuthReason;
+  /** Nur bei REVOKED/EXPIRED: Feld `prefix` der Schluesselzeile (nie Hash/Token). */
+  keyPrefix?: string;
+  expiredAt?: Date;
+  revokedAt?: Date;
+}
+
 export class ApiAuthError extends Error {
-  constructor(message: string) {
+  readonly reason: ApiAuthReason;
+  readonly keyPrefix?: string;
+  readonly expiredAt?: Date;
+  readonly revokedAt?: Date;
+  constructor(message: string, details: ApiAuthErrorDetails) {
     super(message);
     this.name = "ApiAuthError";
+    this.reason = details.reason;
+    this.keyPrefix = details.keyPrefix;
+    this.expiredAt = details.expiredAt;
+    this.revokedAt = details.revokedAt;
   }
 }
 
@@ -25,6 +44,8 @@ export interface VerifiedApiKey {
   orgId: string;
   name: string;
   scopes: ApiKeyScope[];
+  /** Ablaufzeitpunkt, falls gesetzt (-> Antwort-Header X-Api-Key-Expires-At). */
+  expiresAt: Date | null;
 }
 
 function parseScopes(scopesJson: string): ApiKeyScope[] {
@@ -46,20 +67,20 @@ const LAST_USED_THROTTLE_MS = 60_000;
  */
 export async function verifyApiToken(token: string | undefined | null): Promise<VerifiedApiKey> {
   if (!token || !token.startsWith("oig_")) {
-    throw new ApiAuthError("Kein gueltiger API-Schluessel im Authorization-Header.");
+    throw new ApiAuthError("Kein gueltiger API-Schluessel im Authorization-Header.", { reason: "MISSING" });
   }
   const hash = hashApiToken(token);
   const row = await dbInternal.apiKey.findUnique({ where: { keyHash: hash } });
-  if (!row) throw new ApiAuthError("Unbekannter API-Schluessel.");
-  if (row.revokedAt) throw new ApiAuthError("API-Schluessel wurde widerrufen.");
+  if (!row) throw new ApiAuthError("Unbekannter API-Schluessel.", { reason: "UNKNOWN" });
+  if (row.revokedAt) throw new ApiAuthError("API-Schluessel wurde widerrufen.", { reason: "REVOKED", keyPrefix: row.prefix, revokedAt: row.revokedAt });
   if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
-    throw new ApiAuthError("API-Schluessel ist abgelaufen.");
+    throw new ApiAuthError("API-Schluessel ist abgelaufen.", { reason: "EXPIRED", keyPrefix: row.prefix, expiredAt: row.expiresAt });
   }
   const now = Date.now();
   if (!row.lastUsedAt || now - row.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS) {
     await dbInternal.apiKey.update({ where: { id: row.id }, data: { lastUsedAt: new Date(now) } });
   }
-  return { id: row.id, orgId: row.orgId, name: row.name, scopes: parseScopes(row.scopesJson) };
+  return { id: row.id, orgId: row.orgId, name: row.name, scopes: parseScopes(row.scopesJson), expiresAt: row.expiresAt };
 }
 
 /** Wirft ApiScopeError (403), wenn der Schluessel den geforderten Scope nicht traegt. */
