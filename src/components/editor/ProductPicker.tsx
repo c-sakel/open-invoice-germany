@@ -13,6 +13,7 @@
  * `onFocus`-Handler (`setOpen(true)`) automatisch, wie ein manueller Klick auch.
  */
 import { useEffect, useRef, useState } from "react";
+import { FloatingPanel } from "@/components/ui/FloatingPanel";
 import { NewProductDialog, type InlineProduct } from "./NewProductDialog";
 import { unitLabel } from "@/lib/units";
 
@@ -42,6 +43,7 @@ export function ProductPicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
@@ -54,14 +56,20 @@ export function ProductPicker({
     : products;
 
   return (
-    <div className="relative">
-      <div className="flex items-center gap-2">
+    <div>
+      <div ref={anchorRef} className="flex items-center gap-2">
         <input
           ref={inputRef}
-          className="w-full rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+          className="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
           placeholder="Produkt suchen…"
           value={query}
           onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && open) {
+              e.preventDefault();
+              setOpen(false);
+            }
+          }}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
@@ -77,8 +85,17 @@ export function ProductPicker({
           }}
         />
       </div>
-      {open && filtered.length > 0 && (
-        <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-slate-200 bg-white text-xs shadow-lg">
+      {/* Portal + fixed (FloatingPanel): wird vom `overflow-x-auto` der Positionstabelle
+          nicht abgeschnitten und klappt bei Platzmangel nach oben. Klick ausserhalb
+          schliesst (FloatingPanel `onClose`), Esc schliesst im Suchfeld. */}
+      <FloatingPanel
+        anchorRef={anchorRef}
+        open={open && filtered.length > 0}
+        onClose={() => setOpen(false)}
+        matchAnchorWidth
+        className="max-h-48 rounded-md border border-slate-200 bg-white text-xs shadow-lg"
+      >
+        <ul>
           {filtered.slice(0, 30).map((p) => (
             <li key={p.id}>
               <button
@@ -95,10 +112,7 @@ export function ProductPicker({
             </li>
           ))}
         </ul>
-      )}
-      {open && (
-        <button type="button" aria-hidden className="fixed inset-0 z-0 cursor-default" onClick={() => setOpen(false)} tabIndex={-1} />
-      )}
+      </FloatingPanel>
     </div>
   );
 }
