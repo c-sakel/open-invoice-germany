@@ -89,7 +89,17 @@ export type ApiErrorCode =
   | "INTERNAL";
 
 export interface ApiErrorBody {
-  error: { code: ApiErrorCode; message: string; details?: unknown };
+  error: {
+    code: ApiErrorCode;
+    message: string;
+    details?: unknown;
+    /** Nur 401: maschinenlesbarer Grund (MISSING | UNKNOWN | REVOKED | EXPIRED). */
+    reason?: string;
+    /** Nur 401 bei REVOKED/EXPIRED: Praefix des Schluessels (nie Hash/Token). */
+    keyPrefix?: string;
+    expiredAt?: string;
+    revokedAt?: string;
+  };
 }
 
 function statusToCode(status: number): ApiErrorCode | null {
@@ -117,7 +127,19 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
     return { status: 400, body: { error: { code: "VALIDATION", message: "Validierung fehlgeschlagen.", details: { issues: e.issues } } } };
   }
   if (e instanceof ApiAuthError) {
-    return { status: 401, body: { error: { code: "UNAUTHORIZED", message: e.message } } };
+    return {
+      status: 401,
+      body: {
+        error: {
+          code: "UNAUTHORIZED",
+          reason: e.reason,
+          ...(e.keyPrefix !== undefined ? { keyPrefix: e.keyPrefix } : {}),
+          ...(e.expiredAt ? { expiredAt: e.expiredAt.toISOString() } : {}),
+          ...(e.revokedAt ? { revokedAt: e.revokedAt.toISOString() } : {}),
+          message: e.message,
+        },
+      },
+    };
   }
   if (e instanceof ApiScopeError) {
     return { status: 403, body: { error: { code: "FORBIDDEN", message: e.message } } };

@@ -76,6 +76,14 @@ export interface ApiContext<TParams = Record<string, string>> {
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
 
+/** Antwort-Header bei Schluesseln mit Ablaufdatum (ISO 8601) — Vorwarnung fuer Integrationen. */
+export const API_KEY_EXPIRES_HEADER = "X-Api-Key-Expires-At";
+
+function attachKeyExpiry(res: NextResponse, apiKey: VerifiedApiKey): NextResponse {
+  if (apiKey.expiresAt) res.headers.set(API_KEY_EXPIRES_HEADER, apiKey.expiresAt.toISOString());
+  return res;
+}
+
 export type ApiRouteContext<TParams> = { params: Promise<TParams> };
 
 export type ApiHandler<TParams = Record<string, string>> = (req: Request, ctx: ApiContext<TParams>) => Promise<NextResponse>;
@@ -163,7 +171,7 @@ export function withApi<TParams = Record<string, string>>(
         // (409), bevor der Handler ueberhaupt startet. Siehe src/api/idempotency.ts.
         const replay = await beginIdempotency(ctx.orgId, idemKey!, method, url.pathname, rawBody);
         if (replay) {
-          return attachRateLimitHeader(NextResponse.json(replay.body, { status: replay.status }), remaining);
+          return attachKeyExpiry(attachRateLimitHeader(NextResponse.json(replay.body, { status: replay.status }), remaining), apiKey);
         }
       }
 
@@ -188,7 +196,7 @@ export function withApi<TParams = Record<string, string>>(
         }
       }
 
-      return attachRateLimitHeader(res, remaining);
+      return attachKeyExpiry(attachRateLimitHeader(res, remaining), apiKey);
     }
 
     let res: NextResponse;
