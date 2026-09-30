@@ -19,6 +19,8 @@ import { drawTableHeaderRow, footerZoneHeight, type TableHeaderColumn } from "./
 import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
 import { createPdfDocument } from "./document";
 import { buildFooterColumns } from "./footer";
+import { renderPlainTextPdf } from "@/lib/richtext";
+import { drawWrappedLine, wrapRuns } from "./text-wrap";
 
 export interface DeliveryNotePdfLine {
   pos: number;
@@ -293,18 +295,23 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // zwischen `heightOfString` und `currentLineHeight`, siehe invoice-pdf.ts). `lineHeight`
     // ist konstant (Font/Groesse aendern sich in dieser Datei nicht) und daher vor der
     // Schleife einmal gemessen.
-    const descColumn = columns.find((c) => c.header === "Beschreibung");
-    const lineHeight = doc.currentLineHeight();
+    // fix/pdf-umbrueche (B4/B1): Zellen selbst umbrechen (nur an Leerzeichen, Bindestriche
+    // bleiben erhalten) — die Zeilenzahl der hoechsten Zelle bestimmt die Zeilenhoehe.
+    const lineHeight = doc.currentLineHeight(true);
+    const cellSize = base - 1;
     for (const line of data.lines) {
-      const measuredDescHeight = descColumn ? doc.heightOfString(descColumn.render(line), { width: descColumn.width }) : 0;
-      const extraLines = descColumn ? Math.max(0, Math.round(measuredDescHeight / lineHeight) - 1) : 0;
+      const cells = columns.map((col) => wrapRuns(doc, [{ text: col.render(line), font: "Helvetica" }], col.width, cellSize));
+      const extraLines = Math.max(0, ...cells.map((c) => c.length - 1));
       const h = rowH + extraLines * lineHeight;
       y = ensureSpace(y, h);
       let x = tableX;
-      for (const col of columns) {
-        doc.text(col.render(line), x, y, { width: col.width, align: col.align ?? "left" });
+      columns.forEach((col, ci) => {
+        cells[ci]!.forEach((cl, li) => {
+          const dx = col.align === "right" ? Math.max(col.width - cl.width, 0) : 0;
+          drawWrappedLine(doc, cl, x + dx, y + li * lineHeight, cellSize);
+        });
         x += col.width + COLUMN_GAP;
-      }
+      });
       y += h;
     }
 
@@ -346,7 +353,8 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     if (data.footerText) {
       y = ensurePlainSpace(y, 30);
       y += 10;
-      doc.fontSize(base - 1).fillColor("#333").text(data.footerText, left, y, { width: right - left });
+      doc.fontSize(base - 1).fillColor("#333");
+      renderPlainTextPdf(doc, data.footerText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" });
     }
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`

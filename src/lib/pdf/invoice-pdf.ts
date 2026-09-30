@@ -15,7 +15,8 @@
 import { formatCents, formatQuantity } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
 import { resolvePayeeName } from "@/lib/payee-name";
-import { parseRichText, renderRichTextPdf } from "@/lib/richtext";
+import { parseRichText, renderRichTextPdf, renderPlainTextPdf, measureRichTextPdf } from "@/lib/richtext";
+import { drawWrappedLine, wrapPlain, wrapRuns } from "./text-wrap";
 import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import type { PdfTheme } from "./theme";
@@ -351,7 +352,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       // renderRichTextPdf schreibt ab doc.y (pdfkit-Cursor) — mit der eigenen
       // Layout-Variablen y synchronisieren, bevor gerendert wird.
       doc.y = y;
-      renderRichTextPdf(doc, blocks, { x: left, width: right - left, fontSize: base - 1 });
+      renderRichTextPdf(doc, blocks, { x: left, width: right - left, fontSize: base - 1, ensureSpace, color: "#000" });
       y = doc.y + 4;
       return;
     }
@@ -384,12 +385,20 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     // Seite aufsummiert und bestehende, empirisch kalibrierte Paginierungstests gebrochen).
     const descFont = layout.table.boldTitle ? "Helvetica-Bold" : "Helvetica";
     doc.font(descFont).fontSize(base - 1);
-    const lineHeight = doc.currentLineHeight();
-    const measuredDescHeight = showDescription ? doc.heightOfString(line.description, { width: descWidth }) : 0;
+    const lineHeight = doc.currentLineHeight(true);
+    // fix/pdf-umbrueche (B4): Titel selbst umbrechen (nur an Leerzeichen) statt pdfkit —
+    // Zeilenzahl = Hoehe, und ein Bindestrich ("E-Mail-Sicherheit") bleibt im Text erhalten.
+    const titleLines = showDescription ? wrapRuns(doc, [{ text: line.description, font: descFont }], descWidth, base - 1) : [];
     doc.font("Helvetica").fontSize(base - 1);
-    const extraLines = showDescription ? Math.max(0, Math.round(measuredDescHeight / lineHeight) - 1) : 0;
+    const extraLines = Math.max(0, titleLines.length - 1);
     const h = rowH + extraLines * lineHeight;
-    y = ensureSpace(y, h);
+    // fix/pdf-umbrueche (B1): Kopfzeile (Titel + Betraege) nie allein am Seitenende —
+    // Rabattzeile und die ersten zwei Zeilen des Langtexts muessen mit auf die Seite passen.
+    const longBlocks = line.descriptionLong && showDescription ? parseRichText(line.descriptionLong) : [];
+    const longOpts = { x: descX, width: right - descX, fontSize: base - 2 };
+    const lead = longBlocks.length > 0 ? measureRichTextPdf(doc, longBlocks, longOpts).leadHeight : 0;
+    doc.font("Helvetica").fontSize(base - 1);
+    y = ensureSpace(y, h + (line.discountCents ? discountRowH : 0) + lead);
     if (layout.table.zebra && itemPos % 2 === 0) {
       doc.rect(left, y - 2, right - left, h).fill(layout.table.zebra);
       doc.fillColor(layout.table.textColor);
@@ -400,7 +409,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     if (colX.artNr != null) doc.text(line.articleNumber ?? "", tableX + colX.artNr, y, { width: 55 });
     if (showDescription) {
       if (layout.table.boldTitle) doc.font("Helvetica-Bold");
-      doc.text(line.description, descX, y, { width: descWidth });
+      titleLines.forEach((tl, ti) => drawWrappedLine(doc, tl, descX, y + ti * lineHeight, base - 1));
       if (layout.table.boldTitle) doc.font("Helvetica");
     }
     doc.text(`${formatQuantity(line.quantityMilli)} ${unitLabel(line.unit)}`, tableX + colX.menge!, y, { width: 50, align: "right" });
@@ -428,15 +437,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       y += discountRowH;
     }
     // Langtext (BT-154) als Rich-Text unter der Bezeichnung, kleinere Schrift.
-    if (line.descriptionLong && showDescription) {
-      const blocks = parseRichText(line.descriptionLong);
-      if (blocks.length > 0) {
-        doc.fillColor("#333");
-        doc.y = y;
-        renderRichTextPdf(doc, blocks, { x: descX, width: right - descX, fontSize: base - 2 });
-        doc.fillColor("#000").fontSize(base - 1);
-        y = doc.y + 2;
-      }
+    if (longBlocks.length > 0) {
+      doc.fillColor("#333");
+      doc.y = y;
+      renderRichTextPdf(doc, longBlocks, { ...longOpts, ensureSpace, color: "#333" });
+      doc.fillColor("#000").fontSize(base - 1);
+      y = doc.y + 2;
     }
   });
 
@@ -498,15 +504,19 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   if (isFinal && data.deductions?.length) {
     doc.font("Helvetica").fontSize(base - 1).fillColor("#333");
     for (const d of data.deductions) {
-      doc.text(
-        // Fix-Runde 1, Punkt 7 — "–" (En-Dash, U+2013) statt "−" (Minuszeichen, U+2212):
-        // Letzteres fehlt im Glyphensatz von Helvetica (pdfkit-Standardschrift).
-        `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} –${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`,
-        sumLabelX,
-        y,
-        { width: right - sumLabelX, align: "right" },
-      );
-      y = doc.y + 4;
+      // Fix-Runde 1, Punkt 7 — "–" (En-Dash, U+2013) statt "−" (Minuszeichen, U+2212):
+      // Letzteres fehlt im Glyphensatz von Helvetica (pdfkit-Standardschrift).
+      const deductionText = `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} –${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`;
+      y = ensurePlainSpace(y, 16);
+      y =
+        renderPlainTextPdf(doc, deductionText, y, {
+          x: sumLabelX,
+          width: right - sumLabelX,
+          fontSize: base - 1,
+          align: "right",
+          ensureSpace: ensurePlainSpace,
+          color: "#333",
+        }) + 4;
     }
     doc.fillColor("#000").fontSize(base);
     sumRow("Restbetrag", formatCents(data.payableCents, cur), true);
@@ -515,6 +525,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
 
   // GiroCode (§37) — Eligibilitaet EINMAL geprueft, fuer beide Platzierungen (siehe unten
   // und der `bottom-right`-Block kurz vor der Fusszeilen-Schleife) wiederverwendet.
+  const giroCaptionHeight = (text: string, giroSize: number): number => {
+    doc.font("Helvetica").fontSize(base - 3);
+    return wrapPlain(doc, text, giroSize, "Helvetica", base - 3).length * doc.currentLineHeight(true);
+  };
   const giroEligible = Boolean(
     theme.options.showGiroCode &&
       data.iban &&
@@ -546,13 +560,15 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       });
       const giroSizeMm = theme.options.giroSizeMm;
       const giroSize = mm(giroSizeMm);
-      const captionH = base - 3 + 6;
-      y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH);
+      // fix/pdf-umbrueche (B1): die Bildunterschrift bricht in der schmalen GiroCode-Breite
+      // auf mehrere Zeilen um — Hoehe messen statt fest 13 pt anzunehmen.
+      const captionText = layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen";
+      const captionH = giroCaptionHeight(captionText, giroSize);
+      y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH + 6);
       const giroY = y + 8;
       await renderGiroCode(doc, payload, { x: left, y: giroY, sizeMm: giroSizeMm });
-      doc.fontSize(base - 3).fillColor("#666");
-      doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", left, giroY + giroSize + 3, { width: giroSize, align: "center" });
-      y = giroY + giroSize + 3 + captionH;
+      renderPlainTextPdf(doc, captionText, giroY + giroSize + 3, { x: left, width: giroSize, fontSize: base - 3, align: "center", color: "#666" });
+      y = giroY + giroSize + 3 + captionH + 6;
     } catch (e) {
       // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
       // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
@@ -577,8 +593,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   if (data.footerText) {
     y = ensurePlainSpace(y, 30);
     y += 10;
-    doc.fontSize(base - 1).fillColor("#333").text(data.footerText, left, y, { width: right - left });
-    y = doc.y;
+    doc.fontSize(base - 1).fillColor("#333");
+    y = renderPlainTextPdf(doc, data.footerText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" });
   }
 
   // Pflichthinweise / Zahlungsbedingungen (inkl. Skonto-Absatz aus paymentTermsText,
@@ -590,21 +606,18 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // Hinweis auf jeder Abschlagsrechnung, vor den übrigen Hinweisen.
   if (data.type === "DOWNPAYMENT") {
     y = ensurePlainSpace(y, 30);
-    doc.text(DOWNPAYMENT_TAX_HINT, left, y, { width: right - left });
-    y = doc.y + 4;
+    y = renderPlainTextPdf(doc, DOWNPAYMENT_TAX_HINT, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
   }
   // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis fuer den privaten
   // Leistungsempfaenger (Bauleistung am Grundstueck). Nur auf ausdruecklichen Schalter:
   // "Bauleistung" ist maschinell nicht erkennbar.
   if (data.consumerRetentionHint) {
     y = ensurePlainSpace(y, 30);
-    doc.text(CONSUMER_RETENTION_HINT, left, y, { width: right - left });
-    y = doc.y + 4;
+    y = renderPlainTextPdf(doc, CONSUMER_RETENTION_HINT, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
   }
   if (data.notes) {
     y = ensurePlainSpace(y, 30);
-    doc.text(data.notes, left, y, { width: right - left });
-    y = doc.y;
+    y = renderPlainTextPdf(doc, data.notes, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" });
   }
   // Fix-Runde 1 (Befund C): paymentTermsHuman traegt bei Skonto den Klartext ohne
   // #SKONTO#-Tags; ohne Skonto identisch zu paymentTerms (Alt-Belege unveraendert).
@@ -614,14 +627,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   if (paymentTermsHuman && theme.showPaymentTermsText) {
     y = ensurePlainSpace(y, 30);
     y += 5; // entspricht in etwa dem vorherigen `doc.moveDown(0.4)` bei 9pt Schrift
-    doc.text(paymentTermsHuman, left, y, { width: right - left });
-    y = doc.y;
+    y = renderPlainTextPdf(doc, paymentTermsHuman, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" });
   }
   if (data.paymentMethodText) {
     y = ensurePlainSpace(y, 30);
     y += 5;
-    doc.text(data.paymentMethodText, left, y, { width: right - left });
-    y = doc.y;
+    y = renderPlainTextPdf(doc, data.paymentMethodText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" });
   }
 
   // Fix-Runde 1 (Koordinator, Punkt 6): die Fusszeile wird jetzt auf JEDER Seite gezeichnet
@@ -652,7 +663,11 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       // Fix-Runde 1 (Koordinator, Punkt 8): 14 -> 22pt Abstand zu `footY` — bei Layouts mit
       // `footerHeight` > 32 (z. B. `schlicht`/`standard` seit der AUTO-Fusszeile, 44/46pt)
       // kollidierte die GiroCode-Bildunterschrift sonst mit der vierten Fusszeilen-Spalte.
-      const giroY = footY - giroSize - 22;
+      const captionText = layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen";
+      const captionH = giroCaptionHeight(captionText, giroSize);
+      // fix/pdf-umbrueche (B1): Unterkante der (mehrzeiligen) Bildunterschrift bleibt 10 pt
+      // ueber der Fusszeile (vorher fest 22 pt Abstand fuer eine einzeilige Unterschrift).
+      const giroY = footY - giroSize - 3 - captionH - 10;
       // Fix-Welle 12a (M2): `giroY` ist eine feste Position ohne Abgleich mit dem
       // Inhaltscursor `y` (Fusstext/Hinweise/Zahlungsbedingungen). Mit der neuen
       // Obergrenze `giroSizeMm = 40` (vorher fest 30) rueckt der GiroCode auf einer
@@ -663,8 +678,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       if (giroY > y + 6) {
         await renderGiroCode(doc, payload, { x: giroX, y: giroY, sizeMm: giroSizeMm });
         // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(7)`.
-        doc.fontSize(base - 3).fillColor("#666");
-        doc.text(layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen", giroX, giroY + giroSize + 3, { width: giroSize, align: "center" });
+        renderPlainTextPdf(doc, captionText, giroY + giroSize + 3, { x: giroX, width: giroSize, fontSize: base - 3, align: "center", color: "#666" });
       }
     } catch (e) {
       // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
