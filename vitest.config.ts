@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
@@ -15,6 +15,8 @@ export default defineConfig({
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell
     fileParallelism: false,
+    // Agent-Worktrees unter .claude/ sind vollstaendige Repo-Kopien — nie mitlaufen lassen.
+    exclude: [...configDefaults.exclude, ".claude/**"],
   },
   resolve: {
     alias: {
