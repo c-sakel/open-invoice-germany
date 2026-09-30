@@ -4,6 +4,9 @@ import { drawRecipient, drawMetaRows, drawFooterColumns, drawSubject } from "./s
 import { drawSenderLine, LOGO_MAX_HEIGHT_MM } from "../layout";
 import { mm } from "../marks";
 
+/** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
+const FOOTER_FONT_SIZE = 7.5;
+
 export const klassikLayout: PdfLayout = {
   id: "klassik",
   name: "Klassik",
@@ -38,8 +41,8 @@ export const klassikLayout: PdfLayout = {
   },
   drawFooter(frame, columns, y) {
     frame.doc.moveTo(frame.left, y - 6).lineTo(frame.right, y - 6).lineWidth(0.4).strokeColor("#999999").stroke().lineWidth(1);
-    drawFooterColumns(frame, columns, y, 7.5, "#555555");
+    drawFooterColumns(frame, columns, y, FOOTER_FONT_SIZE, "#555555");
   },
   footerHeight: 40,
-  footerFontSize: 7.5,
+  footerFontSize: FOOTER_FONT_SIZE,
 };
