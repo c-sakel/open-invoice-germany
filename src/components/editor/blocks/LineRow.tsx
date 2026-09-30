@@ -31,11 +31,10 @@
  * gerendert (statt eines interaktiven Felds, dessen Wert beim Speichern still
  * verworfen wuerde), reduzierte Zeilen kollabieren dann auf `colSpan={6}` statt `{7}`.
  *
- * M1 (Abschluss-Review): aus demselben Grund bekommt der Langtext-Umschalter
- * ("Langtext ein-/ausblenden" im `LineRowMenu`, oeffnet den `descriptionLong`-Block
- * unten) bei DELIVERY_NOTE gar keinen Menuepunkt — `deliveryNoteLineInputSchema` kennt
- * kein `descriptionLong`-Feld, ein eingegebener Langtext wuerde beim Speichern still
- * verworfen.
+ * Langtext (`descriptionLong`) und Artikelnummer stehen bei jeder ITEM-Zeile direkt unter
+ * dem Titel (kompaktes, mitwachsendes Feld, kein Ein-/Ausblenden mehr). Bei DELIVERY_NOTE
+ * entfaellt nur der Langtext: `deliveryNoteLineInputSchema` kennt kein `descriptionLong`,
+ * ein Eintrag wuerde beim Speichern still verworfen (M1, Abschluss-Review).
  */
 import { clampTaxRate, type DraftLine, type DraftAction, type LineType } from "@/lib/editor/draft";
 import { taxRateOptions } from "@/lib/editor/constants";
@@ -199,6 +198,25 @@ export function LineRow({
                 onChange={(e) => patch({ description: e.target.value })}
                 onKeyDown={onDescKeyDown}
               />
+              {mode !== "DELIVERY_NOTE" && (
+                <div className="mt-1">
+                  <RichTextField
+                    compact
+                    label="Langtext (optional)"
+                    placeholder="Langtext (optional)"
+                    value={line.descriptionLong}
+                    onChange={(v) => patch({ descriptionLong: v })}
+                    rows={2}
+                  />
+                </div>
+              )}
+              <input
+                className={`${inputDenseCls} mt-1 w-full min-w-0 text-xs`}
+                aria-label="Artikelnummer"
+                placeholder="Artikelnummer (optional)"
+                value={line.articleNumber}
+                onChange={(e) => patch({ articleNumber: e.target.value })}
+              />
               {products.length > 0 && (
                 <div className="mt-1">
                   <ProductPicker
@@ -250,26 +268,11 @@ export function LineRow({
             canRemove={canRemove}
             onDuplicate={() => dispatch({ type: "duplicateLine", key: line.key })}
             onRemove={() => dispatch({ type: "removeLine", key: line.key })}
-            toggleLabel={line.lineType === "ITEM" && mode !== "DELIVERY_NOTE" ? (line.expanded ? "Langtext ausblenden" : "Langtext einblenden") : undefined}
-            onToggleExpanded={line.lineType === "ITEM" && mode !== "DELIVERY_NOTE" ? () => dispatch({ type: "toggleExpanded", key: line.key }) : undefined}
             currentType={allowTypeChange ? line.lineType : undefined}
             onChangeType={allowTypeChange ? onChangeType : undefined}
           />
         </td>
       </tr>
-
-      {line.lineType === "ITEM" && line.expanded && (
-        <tr className="border-b border-slate-100 bg-slate-50/60">
-          <td />
-          <td colSpan={middleColSpan + 1} className="space-y-2 py-2 pr-2">
-            <RichTextField label="Langbeschreibung (optional)" value={line.descriptionLong} onChange={(v) => patch({ descriptionLong: v })} rows={3} />
-            <label className="flex max-w-xs flex-col gap-1 text-xs">
-              <span className="font-medium text-slate-600">Artikelnummer (optional)</span>
-              <input className={inputDenseCls} value={line.articleNumber} onChange={(e) => patch({ articleNumber: e.target.value })} />
-            </label>
-          </td>
-        </tr>
-      )}
     </>
   );
 }

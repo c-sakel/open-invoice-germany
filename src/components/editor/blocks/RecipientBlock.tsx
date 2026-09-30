@@ -71,7 +71,6 @@ function toDraftLine(l: TakeOverLineDTO, allowedTaxRates: readonly number[]): Dr
     discountPercent: fromPermille(l.discountPermille),
     discountAmount: fromCents(l.discountCents),
     productId: null,
-    expanded: false,
   };
 }
 

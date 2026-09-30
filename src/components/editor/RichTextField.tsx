@@ -9,7 +9,7 @@
  * dem Sammelindex @/lib/richtext/index.ts — dessen renderRichTextPdf haengt an
  * pdfkit und darf nicht in den Client-Bundle wandern.
  */
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { parseRichText } from "@/lib/richtext/parse";
 import { renderRichTextHtml } from "@/lib/richtext/render-html";
 
@@ -42,12 +42,16 @@ export function RichTextField({
   onChange,
   rows = 4,
   placeholder,
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   rows?: number;
   placeholder?: string;
+  /** Kompakte Zeilenvariante (Positionsliste): Label nur fuer Screenreader, Werkzeugleiste
+   *  erst bei Fokus im Feld, Textarea waechst mit dem Inhalt (Start: `rows`). */
+  compact?: boolean;
 }) {
   const id = useId();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -66,17 +70,25 @@ export function RichTextField({
     insertAroundSelection(ref.current, "[", "](https://)", value, onChange);
   }
 
+  // Hoehe an den Inhalt anpassen (nur compact) — bei jeder Aenderung von `value` und beim Mount.
+  useEffect(() => {
+    const el = ref.current;
+    if (!compact || !el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [compact, value, showPreview]);
+
   const html = showPreview ? renderRichTextHtml(parseRichText(value)) : "";
 
   const btn = "rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50";
 
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      <div className="flex items-center justify-between">
-        <label htmlFor={id} className="font-medium text-slate-700">
+    <div className={`group flex min-w-0 flex-col gap-1 text-sm ${compact ? "text-xs" : ""}`}>
+      <div className={compact ? "flex items-center justify-between" : "flex items-center justify-between"}>
+        <label htmlFor={id} className={compact ? "sr-only" : "font-medium text-slate-700"}>
           {label}
         </label>
-        <div className="flex gap-1">
+        <div className={compact ? "hidden flex-wrap gap-1 group-focus-within:flex" : "flex gap-1"}>
           <button type="button" className={btn} title="Fett" onClick={() => wrap("**", "**")}>
             <strong>F</strong>
           </button>
@@ -107,7 +119,11 @@ export function RichTextField({
           id={id}
           ref={ref}
           rows={rows}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+          className={
+            compact
+              ? "w-full min-w-0 resize-none overflow-hidden rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-indigo-500 focus:outline-none"
+              : "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+          }
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}

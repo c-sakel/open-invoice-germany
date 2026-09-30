@@ -26,16 +26,12 @@ export function LineRowMenu({
   onDuplicate,
   onRemove,
   canRemove,
-  toggleLabel,
-  onToggleExpanded,
   currentType,
   onChangeType,
 }: {
   onDuplicate: () => void;
   onRemove: () => void;
   canRemove: boolean;
-  toggleLabel?: string;
-  onToggleExpanded?: () => void;
   currentType?: LineType;
   onChangeType?: (lineType: LineType) => void;
 }) {
@@ -115,11 +111,6 @@ export function LineRowMenu({
           <button type="button" role="menuitem" className={itemCls} onClick={() => pick(onDuplicate)}>
             Duplizieren
           </button>
-          {onToggleExpanded && toggleLabel && (
-            <button type="button" role="menuitem" className={itemCls} onClick={() => pick(onToggleExpanded)}>
-              {toggleLabel}
-            </button>
-          )}
           {currentType && onChangeType && (
             <>
               <div className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Typ ändern</div>
