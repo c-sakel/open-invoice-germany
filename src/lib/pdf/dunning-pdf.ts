@@ -13,6 +13,9 @@ import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground } from "./layout";
 import { getLayout } from "./layouts/registry";
+import { footerZoneHeight } from "./layouts/shared";
+import { renderPlainTextPdf } from "@/lib/richtext";
+import { drawWrappedLine, wrapRuns } from "./text-wrap";
 import type { LayoutFrame } from "./layouts/types";
 import { buildFooterColumns } from "./footer";
 import { createPdfDocument } from "./document";
@@ -146,7 +149,20 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // passt, manuell um. Der `pageAdded`-Handler oben zeichnet Hintergrund + Kopf-Chrome
     // bereits automatisch fuer JEDEN `doc.addPage()` (auch diesen) — ein zusaetzlicher
     // expliziter `drawPageChrome`-Aufruf hier wuerde ihn doppelt zeichnen.
-    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - layout.footerHeight - 6 : doc.page.height - margins.bottom;
+    // fix/pdf-umbrueche (B1/B2): Fusszone aus der tatsaechlichen Fusszeile messen.
+    const footerColumns = buildFooterColumns(
+      {
+        seller: data.seller,
+        iban: data.seller.iban,
+        bic: data.seller.bic,
+        bankName: data.seller.bankName,
+        accountHolder: data.seller.accountHolder,
+        ...theme.footerFacts,
+      },
+      theme.brand,
+    );
+    const footerZone = footerZoneHeight(frame, layout, footerColumns);
+    const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
     const ensurePlainSpace = (atY: number, needed: number): number => {
       if (atY + needed <= pageBottom) return atY;
       doc.addPage();
@@ -157,11 +173,18 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // Aufstellung
     y = doc.y + 20;
     const row = (label: string, value: string, bold = false) => {
-      y = ensurePlainSpace(y, rowH);
-      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor("#000");
-      doc.text(label, left, y, { width: 360 });
-      doc.text(value, left + 360, y, { width: right - left - 360, align: "right" });
-      y += rowH;
+      // fix/pdf-umbrueche: lange Zeilenbeschriftungen (Zins-Abschnitte) selbst umbrechen und
+      // die Zeilenhoehe danach bemessen — sonst ueberdruckt der Umbruch die Folgezeile.
+      const font = bold ? "Helvetica-Bold" : "Helvetica";
+      doc.font(font).fontSize(10);
+      const labelLines = wrapRuns(doc, [{ text: label, font }], 360, 10);
+      const lineHeight = doc.currentLineHeight(true);
+      const h = rowH + (labelLines.length - 1) * lineHeight;
+      y = ensurePlainSpace(y, h);
+      doc.fillColor("#000");
+      labelLines.forEach((ll, li) => drawWrappedLine(doc, ll, left, y + li * lineHeight, 10));
+      doc.font(font).fontSize(10).text(value, left + 360, y, { width: right - left - 360, align: "right", lineBreak: false });
+      y += h;
     };
     row(`Rechnung ${data.invoiceNumber} vom ${deDate(data.invoiceDate)} — offener Betrag`, formatCents(data.openAmountCents, cur));
     if (data.interestCents > 0) {
@@ -200,22 +223,17 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // Paginierung kennt nur `margins.bottom`, nicht die zusaetzlichen `footerHeight + 6`
     // Reservierung von `pageBottom`).
     y = ensurePlainSpace(y, 30);
-    doc.fontSize(10).fillColor("#000").text(`Bitte überweisen Sie den Gesamtbetrag bis spätestens ${deDate(data.newDueDate)}.`, left, y, { width: right - left });
+    renderPlainTextPdf(doc, `Bitte überweisen Sie den Gesamtbetrag bis spätestens ${deDate(data.newDueDate)}.`, y, {
+      x: left,
+      width: right - left,
+      fontSize: 10,
+      ensureSpace: ensurePlainSpace,
+      color: "#000",
+    });
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`
     // wandert in die Seiten-Schleife (vorher nur auf der zuletzt angelegten Seite).
-    const footY = doc.page.height - margins.bottom - layout.footerHeight;
-    const footerColumns = buildFooterColumns(
-      {
-        seller: data.seller,
-        iban: data.seller.iban,
-        bic: data.seller.bic,
-        bankName: data.seller.bankName,
-        accountHolder: data.seller.accountHolder,
-        ...theme.footerFacts,
-      },
-      theme.brand,
-    );
+    const footY = doc.page.height - margins.bottom - footerZone;
 
     // Falz-/Lochmarken + Seitenzahlen + Fusszeile.
     const range = doc.bufferedPageRange();
