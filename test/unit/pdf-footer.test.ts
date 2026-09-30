@@ -36,7 +36,7 @@ describe("buildFooterColumns", () => {
     expect(cols.map((c) => c.lines).flat()).not.toContain("Alter Freitext aus Phase 7");
   });
 
-  // Fix (Kontoinhaber) — Bank-Spalte (4) traegt eine eigene "Kontoinhaber ..."-Zeile nur,
+  // Fix (Kontoinhaber) — Kontoinhaber-Zeile (Bank-Spalte bevorzugt, Vollbreite als Fallback) nur,
   // wenn gesetzt UND vom Firmennamen abweichend; sonst deckt Spalte 1 (Firmenname) den
   // Regelfall bereits ab.
   it("Kontoinhaber gesetzt und vom Firmennamen abweichend: eigene Zeile ueber die volle Breite unter den Spalten", () => {

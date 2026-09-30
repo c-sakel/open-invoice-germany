@@ -1,8 +1,9 @@
 /**
  * fix/kontoinhaber-footer — ein gesetzter Kontoinhaber (kurz oder lang) zerstoerte die
  * Fusszeile: die Zeile war die breiteste der Bank-Spalte, erzwang Umbrueche in Firmenname,
- * Inhaber/-in und IBAN und machte die Fusszeile hoeher. Jetzt steht sie einzeilig ueber die
- * volle Breite UNTER dem unveraenderten Spaltenraster.
+ * Inhaber/-in und IBAN und machte die Fusszeile hoeher. Jetzt steht sie bevorzugt in der Bank-Spalte vor der IBAN
+ * (wenn das Raster dadurch gleich bleibt), sonst einzeilig ueber die volle Breite UNTER dem
+ * unveraenderten Spaltenraster.
  */
 import { describe, it, expect } from "vitest";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
