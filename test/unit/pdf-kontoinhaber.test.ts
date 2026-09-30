@@ -39,24 +39,35 @@ function frameFor(doc: PDFKit.PDFDocument, theme: ReturnType<typeof testPdfTheme
 }
 
 describe("layoutFooterColumns — Kontoinhaber", () => {
-  it.each(LAYOUTS)("%s: Spaltenraster mit Kontoinhaber identisch, Kontoinhaber einzeilig ueber die volle Breite", (id) => {
+  it.each(LAYOUTS)("%s: kurzer Kontoinhaber steht in der Bank-Spalte vor der IBAN, Raster sonst unveraendert", (id) => {
     const theme = testPdfTheme({ layoutId: id });
     const layout = getLayout(id);
     const doc = createPdfDocument({ size: "A4", margins: pdfMargins(theme), pdfa: true });
     const frame = frameFor(doc, theme);
     const without = layoutFooterColumns(frame, buildFooterColumns(facts, theme.brand), layout.footerFontSize);
-    for (const accountHolder of HOLDERS) {
-      const laid = layoutFooterColumns(frame, buildFooterColumns({ ...facts, accountHolder }, theme.brand), layout.footerFontSize);
-      expect(laid.columns.slice(0, without.columns.length), `${id} ${accountHolder}`).toEqual(without.columns);
-      const row = laid.columns[laid.columns.length - 1]!;
-      expect(row.lines).toEqual([`Kontoinhaber ${accountHolder}`]);
-      expect(row.top).toBe(Math.max(...without.columns.map((c) => c.lines.length)));
-      expect(laid.height).toBeCloseTo(without.height + laid.lineHeight, 5);
-      expect(laid.size).toBe(without.size);
-      const lines = laid.columns.flatMap((c) => c.lines);
-      expect(lines).toContain("Einzelunternehmen Christopher Sakel");
-      expect(lines).toContain("Inhaber/-in Christopher Sakel");
-    }
+    const laid = layoutFooterColumns(frame, buildFooterColumns({ ...facts, accountHolder: HOLDERS[0] }, theme.brand), layout.footerFontSize);
+    expect(laid.columns).toHaveLength(without.columns.length);
+    expect(laid.size).toBe(without.size);
+    for (let i = 0; i < 3; i++) expect(laid.columns[i]!.lines, `${id} Spalte ${i}`).toEqual(without.columns[i]!.lines);
+    const bank = laid.columns[3]!.lines;
+    expect(bank).toEqual(["Bank Commerzbank Holzminden", "Kontoinhaber Christopher Sakel", without.columns[3]!.lines[1], "BIC COBADEFFXXX"]);
+    expect(bank[2]).toMatch(/^IBAN DE91 2724 /); // IBAN bleibt gruppiert
+  });
+
+  it.each(LAYOUTS)("%s: langer Kontoinhaber faellt auf die Vollbreite-Zeile zurueck, Raster identisch", (id) => {
+    const theme = testPdfTheme({ layoutId: id });
+    const layout = getLayout(id);
+    const doc = createPdfDocument({ size: "A4", margins: pdfMargins(theme), pdfa: true });
+    const frame = frameFor(doc, theme);
+    const without = layoutFooterColumns(frame, buildFooterColumns(facts, theme.brand), layout.footerFontSize);
+    const accountHolder = HOLDERS[1]!;
+    const laid = layoutFooterColumns(frame, buildFooterColumns({ ...facts, accountHolder }, theme.brand), layout.footerFontSize);
+    expect(laid.columns.slice(0, without.columns.length), `${id} ${accountHolder}`).toEqual(without.columns);
+    const row = laid.columns[laid.columns.length - 1]!;
+    expect(row.lines).toEqual([`Kontoinhaber ${accountHolder}`]);
+    expect(row.top).toBe(Math.max(...without.columns.map((c) => c.lines.length)));
+    expect(laid.height).toBeCloseTo(without.height + laid.lineHeight, 5);
+    expect(laid.size).toBe(without.size);
   });
 
   it("ein extrem langer Kontoinhaber bricht nur in seiner eigenen Zeile um und bleibt in der Breite", () => {

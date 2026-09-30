@@ -147,13 +147,40 @@ function footerLineHeight(doc: PDFKit.PDFDocument): number {
 }
 
 /** Berechnet Spaltenpositionen und Zeilen der Fusszeile (ohne zu zeichnen). `fullWidth`-Spalten
- *  (Kontoinhaber) stehen einzeilig ueber die volle Breite unter dem Spaltenblock. */
+ *  (Kontoinhaber) stehen einzeilig ueber die volle Breite unter dem Spaltenblock — es sei denn, sie
+ *  tragen `preferBankColumn` und das Raster bleibt mit der Zeile in dieser Spalte (vor der IBAN)
+ *  unveraendert (gleiche Schrift, keine andere Spalte bricht um, Zeile selbst ungebrochen). */
 export function layoutFooterColumns(frame: LayoutFrame, columns: FooterColumn[], size = 7.5): FooterLayoutResult {
   const nonEmpty = columns.filter((c) => c.lines.length > 0);
-  const rows = nonEmpty.filter((c) => c.fullWidth);
-  const grid = nonEmpty.filter((c) => !c.fullWidth);
+  let rows = nonEmpty.filter((c) => c.fullWidth);
+  let grid = nonEmpty.filter((c) => !c.fullWidth);
   if (rows.length === 0 || grid.length === 0) return layoutGrid(frame, nonEmpty, size);
-  const main = layoutGrid(frame, grid, size);
+  let main = layoutGrid(frame, grid, size);
+  for (const row of rows) {
+    if (!row.preferBankColumn) continue;
+    const idx = grid.findIndex((c) => c.lines.some((l) => /^IBAN /.test(l)));
+    const target = grid[idx];
+    if (!target) continue;
+    const lines = row.lines.flatMap((l) => l.split("\n"));
+    const at = target.lines.findIndex((l) => IBAN_FOOTER_LINE.test(l) || /^IBAN /.test(l));
+    const merged = at < 0 ? [...target.lines, ...lines] : [...target.lines.slice(0, at), ...lines, ...target.lines.slice(at)];
+    const candGrid = grid.map((c, i) => (i === idx ? { ...c, lines: merged } : c));
+    const cand = layoutGrid(frame, candGrid, size);
+    const better = (a: FooterLayoutResult, b: FooterLayoutResult): boolean =>
+      a.size === b.size &&
+      a.columns.length === b.columns.length &&
+      a.columns.every((col, i) => {
+        if (i !== idx) return col.lines.join("\n") === b.columns[i]!.lines.join("\n");
+        // Bank-Spalte: alte Zeilen unveraendert (IBAN gruppiert wie zuvor), plus die eine, ungebrochene Kontoinhaber-Zeile
+        return col.lines.length === b.columns[i]!.lines.length + lines.length && lines.every((l) => col.lines.includes(l)) && b.columns[i]!.lines.every((l) => col.lines.includes(l));
+      });
+    if (better(cand, main)) {
+      grid = candGrid;
+      main = cand;
+      rows = rows.filter((r) => r !== row);
+    }
+  }
+  if (rows.length === 0) return main;
   const { doc, left, width } = frame;
   doc.font("Helvetica").fontSize(main.size);
   const placed = main.columns.slice();
