@@ -21,10 +21,11 @@ import { computeSubtotals } from "@/domain/document/lines";
 import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import type { PdfTheme } from "./theme";
 import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground } from "./layout";
+import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
+import { foreignCountryLine } from "../countries";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
-import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
+import { CONSUMER_RETENTION_HINT, categoryNoticesToPrint } from "@/domain/invoice/mandatory";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow, footerZoneHeight } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
@@ -45,6 +46,15 @@ export interface InvoicePdfAttachment {
 export interface RenderInvoicePdfOptions {
   attachments?: InvoicePdfAttachment[];
 }
+
+/** Kurzbezeichnung der Steuerkategorie fuer die 0-%-Steuerzeile im Summenblock (A2). */
+const ZERO_RATE_TAX_ROW_LABEL: Record<string, string> = {
+  G: "steuerfreie Ausfuhr",
+  K: "ig. Lieferung",
+  AE: "Reverse Charge",
+  Z: "Nullsatz",
+  O: "nicht steuerbar",
+};
 
 function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" {
   return line.lineType ?? "ITEM";
@@ -251,6 +261,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // (data.deliverTo) — generischer extraRecipientBlock-Mechanismus, den alle Layouts
   // bereits fuer den Lieferschein-Lieferadressblock zeichnen (siehe delivery-note-pdf.ts).
   const deliverTo = data.deliverTo;
+  const deliverToCountry = deliverTo ? foreignCountryLine(deliverTo.countryCode, data.seller.countryCode) : null;
   const extraRecipientBlock = deliverTo
     ? {
         heading: "Lieferanschrift:",
@@ -259,6 +270,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
           deliverTo.addressLine1,
           ...(deliverTo.addressLine2 ? [deliverTo.addressLine2] : []),
           `${deliverTo.postalCode} ${deliverTo.city}`,
+          ...(deliverToCountry ? [deliverToCountry] : []),
         ],
       }
     : undefined;
@@ -268,9 +280,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     numberLabel: documentNumberLabel(data),
     number: data.number,
     meta,
-    recipient: data.buyer,
+    recipient: { ...data.buyer, countryLine: foreignCountryLine(data.buyer.countryCode, data.seller.countryCode) },
     extraRecipientBlock,
-    senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
+    senderFallback: senderLineFallback(data.seller, data.buyer.countryCode),
     intro: data.headerText,
     subject: data.subject,
   });
@@ -461,7 +473,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   y += 10;
   layout.drawTotalsRule(frame, sumLabelX, y);
   y += 6;
-  const sumRow = (label: string, value: string, bold = false) => {
+  const sumRow = (label: string, value: string, bold = false, wideLabel = false) => {
     y = ensurePlainSpace(y, 16);
     // Fix-Welle (Abschluss-Review, Block 3 "Minor"): war fest `fontSize(10)` — bei
     // `kompakt` (base 9) oder einem hoeheren `fontSizePt` folgte der Summenblock der
@@ -469,7 +481,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     // (siehe oben) — bei den Defaults (fontSizePt 10, `standard`/`kompakt`s eigener
     // fontDelta bereits in `base` eingerechnet) identisch zum bisherigen Wert 10.
     doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(base);
-    doc.text(label, sumLabelX, y, { width: sumLabelWidth, align: "right" });
+    // wideLabel: die Zeile "Umsatzsteuer 0 % (Grund)" ist laenger als die Standardspalte; links vom
+    // Summenblock ist Platz (oberhalb steht nur die Positionstabelle).
+    const labelX = wideLabel ? sumLabelX - 70 : sumLabelX;
+    doc.text(label, labelX, y, { width: wideLabel ? sumLabelWidth + 70 : sumLabelWidth, align: "right" });
     doc.text(value, sumValueX, y, { width: sumValueWidth, align: "right" });
     y += 16;
   };
@@ -496,6 +511,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   sumRow(isFinal ? "Gesamtleistung netto" : (labels?.net ?? "Nettobetrag"), formatCents(data.netTotalCents, cur));
   for (const t of data.taxSubtotals) {
     if (t.taxCents > 0) sumRow(labels?.taxRow?.(t.taxRate) ?? `zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
+    // A2: 0-%-Gruppe mit Befreiungs-/Nichtsteuerbarkeitsgrund -> Zeile mit benannter Kategorie
+    // statt keiner Steuerzeile. E (Kleinunternehmer § 19 / § 25a) bleibt ohne USt-Zeile ("kein Ausweis").
+    else if (ZERO_RATE_TAX_ROW_LABEL[t.taxCategory]) sumRow(`Umsatzsteuer 0 % (${ZERO_RATE_TAX_ROW_LABEL[t.taxCategory]})`, formatCents(0, cur), false, true);
   }
   sumRow(isFinal ? "Gesamtleistung brutto" : (labels?.gross ?? "Gesamtbetrag"), formatCents(data.grossTotalCents, cur), true);
 
@@ -614,6 +632,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   if (data.consumerRetentionHint) {
     y = ensurePlainSpace(y, 30);
     y = renderPlainTextPdf(doc, CONSUMER_RETENTION_HINT, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
+  }
+  // A2 (§ 14 Abs. 4 Satz 1 Nr. 8 UStG): Grund der Steuerfreiheit/Nichtsteuerbarkeit je
+  // vorkommender Nicht-S-Kategorie, auch bei Regelbesteuerung — nur wenn der Hinweistext
+  // (notes, z. B. Schemahinweis) den Grund nicht bereits nennt. Gutschriften/Stornos wie das Original.
+  const categoryNotices = categoryNoticesToPrint(data.taxSubtotals.map((t) => t.taxCategory), data.notes);
+  for (const text of categoryNotices) {
+    y = ensurePlainSpace(y, 30);
+    y = renderPlainTextPdf(doc, text, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
   }
   if (data.notes) {
     y = ensurePlainSpace(y, 30);

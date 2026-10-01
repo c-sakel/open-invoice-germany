@@ -113,6 +113,7 @@ const ORG_NO_IBAN: MapInput["org"] = { ...ORG, iban: null, bic: null, bankName: 
 // keine Regel der G-Familie verbietet eine Empfaenger-USt-IdNr., der fruehere Kommentar
 // hier war falsch (siehe COMPLIANCE.md § 8).
 const CUSTOMER_EU: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel BV", addressLine1: "Keizersgracht 1", postalCode: "1015", city: "Amsterdam", countryCode: "NL", vatId: "NL123456789B01" };
+const CUSTOMER_AU: MapInput["customer"] = { ...CUSTOMER, name: "Jane Example", addressLine1: "1 Sample Street", postalCode: "2000", city: "Sydney", countryCode: "AU", vatId: null };
 const CUSTOMER_CH: MapInput["customer"] = { ...CUSTOMER, name: "Beispiel AG", addressLine1: "Bahnhofstr. 1", postalCode: "8001", city: "Zürich", countryCode: "CH", vatId: null };
 
 // Phase 14a (Task 5) — Kunde mit abweichender Lieferanschrift (BG-13/BG-15): eigenes Label
@@ -527,6 +528,17 @@ const ausfuhrG = () =>
     lines: [{ description: "Maschinenteil", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 180000, taxRate: 0, taxCategory: "G" }],
   });
 
+// 18b) Drittland-Dienstleistung (NICHT_STEUERBAR, § 3a UStG) — Kategorie O, VATEX-EU-O. Hinweis
+// EN 16931 BR-O-02: bei Kategorie O duerfen weder Verkaeufer-USt-IdNr. (BT-31) noch Kaeufer-
+// USt-IdNr. (BT-48) ausgewiesen werden; BR-O-11..14: keine weiteren Kategorien im Beleg.
+const nichtSteuerbarO = () =>
+  buildSample({
+    number: "RE-2042-0003",
+    customer: CUSTOMER_AU,
+    notes: "Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)",
+    lines: [{ description: "Webhosting 12 Monate", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 12000, taxRate: 0, taxCategory: "O" }],
+  });
+
 // 19) Kleinunternehmer (E) — § 19 UStG: idR keine USt-IdNr. -> BT-32 (Steuernummer)
 // noetig, sonst BR-CO-26.
 const kleinunternehmerE = () =>
@@ -584,6 +596,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "reverse-charge-ae": reverseChargeAe,
   "ig-lieferung-k": igLieferungK,
   "ausfuhr-g": ausfuhrG,
+  "nicht-steuerbar-o": nichtSteuerbarO,
   "kleinunternehmer-e": kleinunternehmerE,
   "differenz-e": differenzE,
   "betreff-note": betreffNote,

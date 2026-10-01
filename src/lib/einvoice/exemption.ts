@@ -36,3 +36,15 @@ export function exemptionReasonText(category: string): string | null {
 export function exemptionReasonCode(category: string): string | null {
   return REASON_CODE[category] ?? null;
 }
+
+/**
+ * EN 16931 Kategorie O (nicht steuerbar): der Beleg traegt mindestens eine Position bzw.
+ * Steuergruppe mit "O". BR-O-02 verbietet dann Verkaeufer-USt-IdNr. (BT-31) und Kaeufer-
+ * USt-IdNr. (BT-48); BR-O-05..07 verbieten Steuersaetze (BT-152/BT-119).
+ */
+export function hasNotSubjectToVat(data: {
+  lines: readonly { taxCategory: string }[];
+  taxSubtotals: readonly { taxCategory: string }[];
+}): boolean {
+  return data.lines.some((l) => l.taxCategory === "O") || data.taxSubtotals.some((t) => t.taxCategory === "O");
+}

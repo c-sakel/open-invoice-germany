@@ -124,7 +124,7 @@ export function computeTaxBreakdown(
 /** Steuerschemata, die eine 0-%-/befreite Behandlung erzwingen. Phase 12b: bis hier ein
  *  toter Export — wird jetzt von validateMandatoryFields ausgewertet. */
 export const ZERO_TAX_SCHEMES: ReadonlySet<string> = new Set([
-  "KLEINUNTERNEHMER", "REVERSE_CHARGE", "IG_LIEFERUNG", "IG_LEISTUNG", "DIFFERENZ", "AUSFUHR",
+  "KLEINUNTERNEHMER", "REVERSE_CHARGE", "IG_LIEFERUNG", "IG_LEISTUNG", "DIFFERENZ", "AUSFUHR", "NICHT_STEUERBAR",
 ]);
 
 /** Default-Steuerkategorie je Schema (für neue Positionen/Hinweise). */
@@ -138,6 +138,8 @@ export function defaultCategoryForScheme(scheme: string): TaxCategory {
     // EN 16931 BR-S-05 und machte jede § 25a-Rechnung als XRechnung ungueltig.
     case "DIFFERENZ": return "E";
     case "AUSFUHR": return "G";
+    // Dienstleistung an Drittland-Empfaenger: Leistungsort ausserhalb DE (§ 3a UStG), Kategorie O.
+    case "NICHT_STEUERBAR": return "O";
     default: return "S";
   }
 }

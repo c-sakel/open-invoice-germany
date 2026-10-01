@@ -124,6 +124,7 @@ export function MetaBlock({
                 <option value="IG_LIEFERUNG">Innergem. Lieferung (§ 6a)</option>
                 <option value="IG_LEISTUNG">Innergem. Leistung (§ 3a Abs. 2)</option>
                 <option value="AUSFUHR">Ausfuhrlieferung (§ 6)</option>
+                <option value="NICHT_STEUERBAR">Nicht steuerbar, Drittland-Leistung (§ 3a Abs. 2/4/5)</option>
               </select>
             )}
           </EditorField>

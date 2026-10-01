@@ -10,8 +10,11 @@ export const dynamic = "force-dynamic";
 
 export default async function NeuesDokumentPage() {
   let orgId: string;
+  let senderCountryCode: string;
   try {
-    orgId = (await getActiveOrg()).id;
+    const org = await getActiveOrg();
+    orgId = org.id;
+    senderCountryCode = org.country;
   } catch {
     return <NeedOrgNotice />;
   }
@@ -70,6 +73,7 @@ export default async function NeuesDokumentPage() {
 
   return (
     <DocumentEditor
+      senderCountryCode={senderCountryCode}
       mode="DOCUMENT"
       customers={customers}
       products={products}

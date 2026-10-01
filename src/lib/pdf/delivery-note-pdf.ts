@@ -13,7 +13,8 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { unitLabel } from "@/lib/units";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground } from "./layout";
+import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
+import { foreignCountryLine } from "../countries";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow, footerZoneHeight, type TableHeaderColumn } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
@@ -39,6 +40,8 @@ export interface DeliveryNotePdfParty {
   addressLine2?: string | null;
   postalCode: string;
   city: string;
+  /** ISO-Land (Snapshot); steuert die Landeszeile bei Auslandsempfaengern. */
+  countryCode?: string | null;
 }
 
 export interface DeliveryNotePdfSeller {
@@ -49,6 +52,8 @@ export interface DeliveryNotePdfSeller {
   phone?: string | null;
   postalCode: string;
   city: string;
+  /** ISO-Land des Absenders (Snapshot); fehlt es, gilt DE. */
+  countryCode?: string | null;
   taxNumber?: string | null;
   vatId?: string | null;
   iban?: string | null;
@@ -63,6 +68,7 @@ export interface DeliveryNotePdfShippingAddress {
   addressLine2?: string | null;
   postalCode: string;
   city: string;
+  countryCode?: string | null;
 }
 
 export interface DeliveryNotePdfData {
@@ -220,14 +226,15 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // existiert (ohne sie kein Block, kein leeres "Lieferadresse:"). Der Empfaengerblock
     // (`recipient`) wird davon unabhaengig IMMER gedruckt (siehe `KopfInput`).
     const da = data.showDeliveryAddress ? data.deliveryAddress : null;
+    const daCountry = da ? foreignCountryLine(da.countryCode, data.seller.countryCode) : null;
     let y = layout.drawKopf(frame, {
       title: "Lieferschein",
       numberLabel: "Lieferscheinnummer",
       number: data.number,
       meta,
-      recipient: data.buyer,
-      extraRecipientBlock: da ? { heading: "Lieferadresse:", lines: [da.addressLine1, ...(da.addressLine2 ? [da.addressLine2] : []), `${da.postalCode} ${da.city}`] } : undefined,
-      senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
+      recipient: { ...data.buyer, countryLine: foreignCountryLine(data.buyer.countryCode, data.seller.countryCode) },
+      extraRecipientBlock: da ? { heading: "Lieferadresse:", lines: [da.addressLine1, ...(da.addressLine2 ? [da.addressLine2] : []), `${da.postalCode} ${da.city}`, ...(daCountry ? [daCountry] : [])] } : undefined,
+      senderFallback: senderLineFallback(data.seller, data.buyer.countryCode),
       intro: data.headerText,
     });
 

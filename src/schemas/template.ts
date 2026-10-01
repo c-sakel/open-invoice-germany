@@ -8,7 +8,7 @@
  * nachtrag.md), niemals nur einmal beim Schreiben vertraut.
  */
 import { z } from "zod";
-import { TaxScheme, invoiceLineInputSchema } from "@/schemas";
+import { TaxScheme, invoiceLineDerivableSchema, resolveLineCategories } from "@/schemas";
 import { TagDocType } from "@/schemas/tag";
 
 // Dieselben Grenzen wie documentAdjustmentFields/skontoFields (src/schemas/index.ts,
@@ -40,9 +40,11 @@ export const documentTemplatePayloadSchema = z
     skonto1Days: DAYS,
     skonto2Permille: PERMILLE_MIN1,
     skonto2Days: DAYS,
-    lines: z.array(invoiceLineInputSchema).min(1),
+    // Kategorie je Schema ableiten, sobald der Payload ein Schema traegt; sonst Default S (REGULAR).
+    lines: z.array(invoiceLineDerivableSchema).min(1),
   })
-  .strict();
+  .strict()
+  .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme ?? "REGULAR") }));
 export type DocumentTemplatePayload = z.infer<typeof documentTemplatePayloadSchema>;
 
 /** Vollstaendige Eingabeform einer Vorlage (Stammdaten-Sicht). Die UI (/vorlagen) kennt

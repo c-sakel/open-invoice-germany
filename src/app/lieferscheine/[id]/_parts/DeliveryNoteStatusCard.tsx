@@ -1,5 +1,8 @@
 // src/app/lieferscheine/[id]/_parts/DeliveryNoteStatusCard.tsx
 import Link from "next/link";
+import { foreignCountryLine } from "@/lib/countries";
+import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
+import type { BuyerSnapshot } from "@/schemas";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
 import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
@@ -17,7 +20,8 @@ interface DeliveryNoteForStatusCard {
   showPrices: boolean;
   showArticleNumber: boolean;
   showDeliveryAddress: boolean;
-  customer: { id: string; name: string; addressLine1: string; postalCode: string; city: string };
+  buyerSnapshotJson: string | null;
+  customer: BuyerSnapshot & { id: string };
 }
 
 /**
@@ -45,11 +49,16 @@ export function DeliveryNoteStatusCard({
   dn,
   tags,
   tagOptions,
+  sellerCountryCode,
 }: {
   dn: DeliveryNoteForStatusCard;
+  /** Absenderland (Organization.country) fuer die Landeszeile der Anschrift. */
+  sellerCountryCode: string;
   tags: TagPickerItem[];
   tagOptions: TagPickerItem[];
 }) {
+  // Anschrift/Land aus dem Snapshot (GoBD) — wie im PDF.
+  const buyer = parseBuyerSnapshot(dn.buyerSnapshotJson, buildBuyerSnapshot(dn.customer), dn.id);
   const customerRows: StatusRow[] = [
     {
       label: "Kunde",
@@ -63,10 +72,11 @@ export function DeliveryNoteStatusCard({
       label: "Anschrift",
       value: (
         <span className="block text-right">
-          <span className="block">{dn.customer.addressLine1}</span>
+          <span className="block">{buyer.addressLine1}</span>
           <span className="block">
-            {dn.customer.postalCode} {dn.customer.city}
+            {buyer.postalCode} {buyer.city}
           </span>
+          {foreignCountryLine(buyer.countryCode, sellerCountryCode) && <span className="block">{foreignCountryLine(buyer.countryCode, sellerCountryCode)}</span>}
         </span>
       ),
     },

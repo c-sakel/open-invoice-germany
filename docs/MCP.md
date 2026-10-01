@@ -281,6 +281,7 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 - **Festschreiben blockt** bei fehlenden Pflichtangaben (z. B. Leistungsdatum, Steuernummer) und liefert die genaue Liste zurück — Claude ergänzt und versucht es erneut.
 - **Festgeschriebene Rechnungen sind unveränderbar** (GoBD) — Korrektur nur per Storno/Gutschrift/Korrekturrechnung.
 - **Steuerschema** (Kleinunternehmer, Reverse Charge …) ergänzt automatisch den Pflichthinweis und weist keine USt aus.
+  Für Dienstleistungen an Drittland-Kunden: `taxScheme` `NICHT_STEUERBAR` (Positionen mit `taxCategory` `O`, 0 %); `AUSFUHR`/`G` nur für Warenlieferungen.
 
 ## 5. Grenzen
 

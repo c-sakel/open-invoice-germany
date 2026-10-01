@@ -30,7 +30,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const shippingAddress = dn.showDeliveryAddress
     ? await dbInternal.customerAddress.findFirst({
         where: { orgId: org.id, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
-        select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
+        select: { addressLine1: true, addressLine2: true, postalCode: true, city: true, countryCode: true },
       })
     : null;
 

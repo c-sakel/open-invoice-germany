@@ -62,6 +62,9 @@ export const SCHEME_NOTICE: Record<string, string> = {
   IG_LEISTUNG: "Steuerschuldnerschaft des Leistungsempfängers",
   IG_LIEFERUNG: "Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1 Buchst. b i. V. m. § 6a UStG)",
   AUSFUHR: "Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)",
+  // § 3a Abs. 2/4/5 UStG (Leistungsort ausserhalb Deutschlands, z. B. Drittland), UNTDID 5305
+  // Kategorie O (EN 16931), VATEX-EU-O — Dienstleistungen an Empfaenger im Drittland.
+  NICHT_STEUERBAR: "Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)",
   // § 34a UStDV (Fassung ab 1.1.2025).
   KLEINUNTERNEHMER: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
   // § 14a Abs. 6 Satz 1 UStG — eine der drei zulaessigen Formulierungen.
@@ -92,6 +95,7 @@ export const SCHEME_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
   IG_LEISTUNG: [/steuerschuldnerschaft des leistungsempfaengers/],
   IG_LIEFERUNG: [/steuerfreie innergemeinschaftliche lieferung/],
   AUSFUHR: [/steuerfreie ausfuhrlieferung/],
+  NICHT_STEUERBAR: [/nicht im inland steuerbar/],
   KLEINUNTERNEHMER: [/kleinunternehmer(?=[\s\S]*\b19\b)/],
   DIFFERENZ: [
     /gebrauchtgegenstaende\s*\/\s*sonderregelung/,
@@ -99,6 +103,54 @@ export const SCHEME_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
     /sammlungsstuecke und antiquitaeten\s*\/\s*sonderregelung/,
   ],
 };
+
+/**
+ * Pflichthinweis je UNTDID-5305-Steuerkategorie (A2): auch bei Regelbesteuerung (taxScheme
+ * REGULAR) und Positionen mit 0 % ist der Grund der Steuerfreiheit bzw. Nichtsteuerbarkeit
+ * anzugeben (§ 14 Abs. 4 Satz 1 Nr. 8 UStG). Kategorie S hat keinen Hinweis. EINZIGE Quelle
+ * fuer den PDF-Ausdruck; BT-120/BT-121 der E-Rechnung stehen in src/lib/einvoice/exemption.ts.
+ * Z: § 12 Abs. 3 UStG (Nullsatz, z. B. Photovoltaikanlagen). E: allgemeine Steuerbefreiung —
+ * Kleinunternehmer (§ 19) und § 25a tragen ihren eigenen Schemahinweis (siehe unten).
+ */
+export const CATEGORY_NOTICE: Record<string, string> = {
+  AE: SCHEME_NOTICE.REVERSE_CHARGE!,
+  K: SCHEME_NOTICE.IG_LIEFERUNG!,
+  G: SCHEME_NOTICE.AUSFUHR!,
+  E: "Steuerfreie Leistung",
+  Z: "Umsatzsteuersatz 0 % (§ 12 Abs. 3 UStG)",
+  O: SCHEME_NOTICE.NICHT_STEUERBAR!,
+};
+
+/** Formulierungen (normalizeNotice-Text), die den Kategorie-Hinweis im Hinweistext bereits abdecken. */
+const CATEGORY_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
+  AE: SCHEME_NOTICE_ACCEPTED.REVERSE_CHARGE!,
+  K: SCHEME_NOTICE_ACCEPTED.IG_LIEFERUNG!,
+  G: SCHEME_NOTICE_ACCEPTED.AUSFUHR!,
+  E: [
+    ...SCHEME_NOTICE_ACCEPTED.KLEINUNTERNEHMER!,
+    ...SCHEME_NOTICE_ACCEPTED.DIFFERENZ!,
+    /steuerfrei|steuerbefreit|befreit/,
+  ],
+  Z: [/nullsatz|\b0 ?%|§ 12 abs\.? 3/],
+  O: SCHEME_NOTICE_ACCEPTED.NICHT_STEUERBAR!,
+};
+
+/**
+ * Welche Kategorie-Hinweise muss das PDF zusaetzlich drucken? Je in den Positionen/Steuer-
+ * gruppen vorkommender Nicht-S-Kategorie genau eine Zeile — ausser der Hinweistext (`notes`,
+ * z. B. der Schemahinweis) nennt den Grund bereits (keine Dublette). Reihenfolge stabil.
+ */
+export function categoryNoticesToPrint(categories: Iterable<string>, notes: string | null | undefined): string[] {
+  const normalized = normalizeNotice(notes ?? "");
+  const out: string[] = [];
+  for (const cat of new Set(categories)) {
+    const text = CATEGORY_NOTICE[cat];
+    if (!text) continue;
+    if ((CATEGORY_NOTICE_ACCEPTED[cat] ?? []).some((re) => re.test(normalized))) continue;
+    out.push(text);
+  }
+  return out;
+}
 
 function hasDeliveryInfo(inv: MandatoryInvoice): boolean {
   return Boolean(inv.deliveryDate || (inv.deliveryStart && inv.deliveryEnd) || inv.notes);
@@ -200,6 +252,16 @@ export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMan
     problems.push(`Schema ${scheme}: Positionen dürfen keinen USt-Satz > 0 ausweisen (§ 14c-Risiko).`);
   }
 
+  // EN 16931 BR-O-11..14: ein Beleg mit Kategorie O (nicht steuerbar) darf keine weiteren
+  // Steuerkategorien enthalten; Schema NICHT_STEUERBAR setzt O fuer alle Positionen voraus.
+  // Nur Neubelege (Korrekturbelege spiegeln das Original).
+  if (!isCorrection) {
+    const itemCategories = new Set(itemLines.map((l) => l.taxCategory));
+    if ((itemCategories.has("O") && itemCategories.size > 1) || (scheme === "NICHT_STEUERBAR" && [...itemCategories].some((c) => c !== "O"))) {
+      problems.push("Nicht steuerbare Leistung (Kategorie O): alle Positionen müssen die Kategorie O tragen, andere Steuerkategorien im selben Beleg sind nicht zulässig (EN 16931 BR-O-11 bis BR-O-14).");
+    }
+  }
+
   // ig. Lieferung/Leistung: USt-IdNr. beider Parteien (§ 14a Abs. 1/3) — vor Phase 12b
   // bereits geltende Pruefung, bleibt auch bei Korrekturbelegen scharf.
   if (scheme === "IG_LIEFERUNG" || scheme === "IG_LEISTUNG") {
@@ -232,6 +294,14 @@ export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMan
       // dieser Software nicht ab (kein eigenes Kundenfeld) — deshalb wird ausschliesslich
       // die USt-IdNr. geprueft; siehe COMPLIANCE.md § 8 / docs/LIMITATIONEN.md.
       problems.push("USt-IdNr. des Empfängers erforderlich, damit die E-Rechnung EN 16931 (BR-AE-02) erfüllt ist.");
+    }
+    if (scheme === "NICHT_STEUERBAR") {
+      // Empfaengerland DE (Inland) oder EU-Mitglied: die Leistung ist dort (B2C) in DE steuerbar bzw.
+      // (B2B) nach § 3a Abs. 2 UStG im EU-Ausland zu behandeln — "nicht steuerbar" (O) waere falsch.
+      const country = (customer.countryCode ?? "").toUpperCase();
+      if (!country || EU_COUNTRY_CODES.has(country)) {
+        problems.push("Schema NICHT_STEUERBAR gilt nur für Empfänger außerhalb der EU (Drittland); Empfängerland ist leer, Deutschland oder EU-Mitglied. Bei EU-Unternehmern IG_LEISTUNG (Reverse Charge, § 3a Abs. 2 UStG), bei Inlandsleistungen REGULAR verwenden.");
+      }
     }
     if (scheme === "AUSFUHR") {
       const country = (customer.countryCode ?? "").toUpperCase();
