@@ -34,6 +34,7 @@ export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, s
   doc.text(r.addressLine1, { width: maxWidth });
   if (r.addressLine2) doc.text(r.addressLine2, { width: maxWidth });
   doc.text(`${r.postalCode} ${r.city}`, { width: maxWidth });
+  if (r.countryLine) doc.text(r.countryLine, { width: maxWidth });
   if (input.extraRecipientBlock) {
     doc.fontSize(size - 2).fillColor("#555").text(input.extraRecipientBlock.heading, left, doc.y + 8, { width: maxWidth });
     doc.fontSize(size).fillColor("#000");

@@ -36,8 +36,8 @@ describe("Steuerkategorie, Listen und Hinweistexte (Phase 12b)", () => {
     expect([EU_COUNTRY_CODES.size, EU_COUNTRY_CODES.has("GR"), EU_COUNTRY_CODES.has("CH")]).toEqual([27, true, false]);
     expect([EU_VAT_PREFIXES.has("EL"), EU_VAT_PREFIXES.has("XI"), EU_VAT_PREFIXES.has("GR")]).toEqual([true, true, false]);
   });
-  it("sechs Schemata tragen einen Text, REGULAR nicht", () => {
-    expect(Object.keys(SCHEME_NOTICE).sort()).toEqual(["AUSFUHR", "DIFFERENZ", "IG_LEISTUNG", "IG_LIEFERUNG", "KLEINUNTERNEHMER", "REVERSE_CHARGE"]);
+  it("sieben Schemata tragen einen Text, REGULAR nicht", () => {
+    expect(Object.keys(SCHEME_NOTICE).sort()).toEqual(["AUSFUHR", "DIFFERENZ", "IG_LEISTUNG", "IG_LIEFERUNG", "KLEINUNTERNEHMER", "NICHT_STEUERBAR", "REVERSE_CHARGE"]);
     expect(SCHEME_NOTICE.REGULAR).toBeUndefined();
   });
   it("normalizeNotice faltet Umlaute, ss und Mehrfach-Whitespace", () => {

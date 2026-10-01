@@ -120,6 +120,7 @@ const SAMPLE_NAMES = [
   "reverse-charge-ae", // Phase 12b (Task 6): Reverse Charge (§ 13b), Kategorie AE
   "ig-lieferung-k", // Phase 12b (Task 6): ig. Lieferung (§ 6a), Kategorie K, BG-14 (Leistungszeitraum)
   "ausfuhr-g", // Phase 12b (Task 6): Ausfuhrlieferung (§ 6), Kategorie G, Drittlandkunde
+  "nicht-steuerbar-o", // Drittland-Dienstleistung (§ 3a UStG), Kategorie O, VATEX-EU-O (BR-O-*)
   "kleinunternehmer-e", // Phase 12b (Task 6): § 19 UStG, Kategorie E, Aussteller ohne USt-IdNr. (BT-32 statt BT-31)
   "differenz-e", // Phase 12b (Task 6): § 25a Differenzbesteuerung, Kategorie E (BR-S-05-Fix)
   "betreff-note", // Phase 13b (Task 5): Betreff als BT-22-Note mit Subjektcode BT-21 "AAI" (UNTDID 4451)

@@ -107,6 +107,17 @@ describe("Neue Blocker (Phase 12b)", () => {
     expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, notes, lines: [{ description: "L", quantityMilli: 1000, taxRate: 19, taxCategory: "G" }] })).join(" "))
       .toMatch(/USt-Satz > 0/);
   });
+  it("NICHT_STEUERBAR blockt bei Empfaenger DE/EU/leer, Drittland ist ok", () => {
+    const notes = "Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)";
+    const oLine = { description: "L", quantityMilli: 1000, taxRate: 0, taxCategory: "O" as const };
+    const run = (c: typeof customer) => validateMandatoryFields(inv({ taxScheme: "NICHT_STEUERBAR", customer: c, notes, lines: [oLine] })).join(" ");
+    expect(run(customer)).toMatch(/NICHT_STEUERBAR gilt nur für Empfänger außerhalb der EU/);
+    expect(run(euCustomer)).toMatch(/IG_LEISTUNG/);
+    expect(run({ ...customer, countryCode: "" })).toMatch(/NICHT_STEUERBAR gilt nur/);
+    expect(run(chCustomer)).toBe("");
+    // Korrekturbeleg bleibt frei
+    expect(validateMandatoryFields(inv({ taxScheme: "NICHT_STEUERBAR", customer, notes, lines: [oLine] }), { isCorrection: true })).toEqual([]);
+  });
   it("AUSFUHR ohne Aussteller-USt-IdNr. blockt (I3/M8, BR-G-02/BR-G-03)", () => {
     const p = validateMandatoryFields(
       inv({ taxScheme: "AUSFUHR", org: { ...org, vatId: undefined, taxNumber: "12/345/67890" }, customer: chCustomer, notes: "Steuerfreie Ausfuhrlieferung", lines: [{ ...zeroLine, taxCategory: "G" }] }),

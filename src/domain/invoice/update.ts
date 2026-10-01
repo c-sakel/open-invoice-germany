@@ -14,7 +14,7 @@ import { normalizeLines } from "@/domain/document/lines";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
-import { updateInvoiceSchema } from "@/schemas";
+import { updateInvoiceSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
 
 export class InvoiceUpdateError extends Error {
@@ -138,7 +138,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     // die Beleg-Anpassung geaendert wurde (ohne neue Positionen), analog updateDraftDocument.
     if (input.lines || adjustmentFieldChanged) {
       const lines = input.lines
-        ? normalizeLines(input.lines).map((l) => ({
+        ? normalizeLines(resolveLineCategories(input.lines, input.taxScheme ?? invoice.taxScheme as TaxSchemeValue)).map((l) => ({
             position: l.position,
             lineType: l.lineType,
             productId: l.productId,

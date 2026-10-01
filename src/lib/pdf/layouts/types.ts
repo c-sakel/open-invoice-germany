@@ -30,7 +30,17 @@ export interface KopfInput {
   numberLabel: string;
   number: string;
   meta: KopfMetaRow[];
-  recipient: { name: string; contactName?: string | null; addressLine1: string; addressLine2?: string | null; postalCode: string; city: string };
+  recipient: {
+    name: string;
+    contactName?: string | null;
+    addressLine1: string;
+    addressLine2?: string | null;
+    postalCode: string;
+    city: string;
+    /** Letzte Anschriftszeile (Landesname in Grossbuchstaben) — nur bei Auslandsempfaengern
+     *  gesetzt, siehe countries.ts#foreignCountryLine. */
+    countryLine?: string | null;
+  };
   extraRecipientBlock?: { heading: string; lines: string[] };
   senderFallback: string;
   intro?: string | null;

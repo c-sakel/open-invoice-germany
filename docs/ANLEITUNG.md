@@ -124,7 +124,7 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 
 ### Steuerschemata und Pflichthinweise (Phase 12b)
 
-Im Beleg-Editor wählst du unter „Steuerschema" eine von **sieben** Optionen — Details, Normen und Fixtures dazu stehen in [COMPLIANCE.md](../COMPLIANCE.md) § 1, 8 und 9:
+Im Beleg-Editor wählst du unter „Steuerschema" eine von **acht** Optionen — Details, Normen und Fixtures dazu stehen in [COMPLIANCE.md](../COMPLIANCE.md) § 1, 8 und 9:
 
 | Auswahl im Editor | Bedeutung |
 |---|---|
@@ -134,7 +134,10 @@ Im Beleg-Editor wählst du unter „Steuerschema" eine von **sieben** Optionen �
 | Reverse Charge (§ 13b) | Steuerschuld geht auf den Empfänger über; braucht dessen USt-IdNr. |
 | Innergem. Lieferung (§ 6a) | Steuerfreie EU-Warenlieferung; braucht USt-IdNr. beider Seiten + Leistungsdatum/-zeitraum. |
 | Innergem. Leistung (§ 3a Abs. 2) | Steuerschuld beim EU-Empfänger; braucht USt-IdNr. beider Seiten. |
-| Ausfuhrlieferung (§ 6) | Steuerfreie Lieferung außerhalb der EU; Empfänger muss außerhalb der EU liegen. |
+| Ausfuhrlieferung (§ 6) | Steuerfreie **Warenlieferung** außerhalb der EU; Empfänger muss außerhalb der EU liegen. |
+| Nicht steuerbar, Drittland-Leistung (§ 3a Abs. 2/4/5) | **Dienstleistungen** an Unternehmer im Drittland (§ 3a Abs. 2 UStG) oder an Privatkunden im Drittland, soweit elektronische Leistungen (§ 3a Abs. 5 S. 2 Nr. 3, z. B. Hosting) bzw. Katalogleistungen (§ 3a Abs. 4); sonstige B2C-Leistungen bleiben in Deutschland steuerbar (dann „Regelbesteuerung"). Nur für Empfänger außerhalb der EU: Leistungsort außerhalb Deutschlands, Kategorie O, 0 %, Pflichthinweis wird eingefügt. Alle Positionen müssen Kategorie O tragen; in der E-Rechnung entfallen USt-IdNr.-Angaben (EN 16931 BR-O-02). |
+
+**Land und Steuerhinweis im PDF:** Bei Kunden im Ausland steht der Landesname (deutsch, Großbuchstaben, z. B. „AUSTRALIEN") als letzte Anschriftszeile in Rechnung, Angebot, Lieferschein und Mahnung (Inland: keine Landeszeile). Bei 0-%-Positionen druckt das PDF zusätzlich den Grund der Steuerfreiheit/Nichtsteuerbarkeit je Steuerkategorie, auch bei Regelbesteuerung.
 
 **Pflichthinweis:** Sobald du ein Schema mit Pflichthinweis wählst, erscheint unter dem Feld „Hinweis / Notiz" der Text, der beim Festschreiben verlangt wird, sowie — falls der aktuelle Hinweistext nicht (mehr) passt — der Button **„Pflichthinweis einfügen"**, der ihn automatisch ergänzt. Die Prüfung ist wortgenau (kleine Abweichungen wie Groß-/Kleinschreibung oder mehrfache Leerzeichen sind egal, ein anderer Text nicht).
 

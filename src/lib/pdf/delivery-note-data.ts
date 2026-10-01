@@ -16,7 +16,7 @@ export type CustomerRow = Prisma.CustomerGetPayload<Record<string, never>>;
 export type ShippingAddressRow = Pick<
   Prisma.CustomerAddressGetPayload<Record<string, never>>,
   "addressLine1" | "addressLine2" | "postalCode" | "city"
->;
+> & { countryCode?: string | null };
 
 export function buildDeliveryNotePdfData(
   dn: DeliveryNoteRow,
@@ -67,6 +67,7 @@ export function buildDeliveryNotePdfData(
       addressLine2: seller.addressLine2,
       postalCode: seller.postalCode,
       city: seller.city,
+      countryCode: seller.country,
       email: seller.email,
       phone: seller.phone,
       taxNumber: seller.taxNumber,
@@ -83,6 +84,7 @@ export function buildDeliveryNotePdfData(
       addressLine2: buyer.addressLine2,
       postalCode: buyer.postalCode,
       city: buyer.city,
+      countryCode: buyer.countryCode,
     },
     lines: dn.lines
       .slice()
@@ -110,6 +112,7 @@ export function buildDeliveryNotePdfData(
           addressLine2: buyer.shippingAddress.addressLine2,
           postalCode: buyer.shippingAddress.postalCode,
           city: buyer.shippingAddress.city,
+          countryCode: buyer.shippingAddress.countryCode,
         }
       : shippingAddressFallback
         ? {
@@ -117,6 +120,7 @@ export function buildDeliveryNotePdfData(
             addressLine2: shippingAddressFallback.addressLine2,
             postalCode: shippingAddressFallback.postalCode,
             city: shippingAddressFallback.city,
+            countryCode: shippingAddressFallback.countryCode,
           }
         : null,
     headerText,

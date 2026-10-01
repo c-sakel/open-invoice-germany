@@ -118,6 +118,16 @@ curl -s -X POST "$BASE/api/v1/Invoice" \
 
 Antwort enthält `data.id` (Rechnung, Status `DRAFT`, noch keine Rechnungsnummer).
 
+**Kunden im Ausland (Webshop-Anbindung):** Das Steuerschema (`taxScheme`) muss gesetzt werden; fehlt `lines[].taxCategory`, wird sie aus dem Schema abgeleitet (z. B. `NICHT_STEUERBAR` → `O`, `AUSFUHR` → `G`, `IG_LIEFERUNG` → `K`). Eine ausdrücklich gesetzte Kategorie bleibt unverändert. Bei einem Teil-Update ohne `taxScheme` wird gegen das gespeicherte Schema des Belegs abgeleitet.
+
+| Fall | `taxScheme` | `lines[].taxCategory` / `taxRate` | Hinweis |
+|---|---|---|---|
+| Dienstleistung an Unternehmer im **Drittland** (§ 3a Abs. 2) oder elektronische Leistung (z. B. Hosting, § 3a Abs. 5 S. 2 Nr. 3) bzw. Katalogleistung (§ 3a Abs. 4) an Privatkunden im Drittland; Empfängerland darf weder leer noch DE/EU sein | `NICHT_STEUERBAR` | `O` / `0` | `notes`: „Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)" (Pflicht beim Festschreiben); alle Positionen `O` |
+| **Warenlieferung** ins Drittland | `AUSFUHR` | `G` / `0` | `notes`: „Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)" |
+| Warenlieferung an EU-Unternehmer | `IG_LIEFERUNG` | `K` / `0` | siehe COMPLIANCE.md § 8 |
+
+`G` (Ausfuhrlieferung) gilt nur für Waren. Webshop-Hinweis: Dienstleistungen an Drittland-Kunden sind nur bei B2B (§ 3a Abs. 2 UStG) sowie bei elektronischen Leistungen/Katalogleistungen an Privatkunden nicht steuerbar (Kategorie `O`); sonstige B2C-Leistungen bleiben nach § 3a Abs. 1 UStG in Deutschland steuerbar (`REGULAR`). Das Land des Kunden (`countryCode`) steht als letzte Anschriftszeile im PDF, sobald es vom Absenderland abweicht; bei 0-%-Positionen druckt das PDF den Grund je Steuerkategorie auch ohne `notes`-Hinweis.
+
 ### 3. Festschreiben (GoBD: unveränderbar ab hier)
 
 ```bash

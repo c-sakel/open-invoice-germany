@@ -10,7 +10,7 @@ import { create } from "xmlbuilder2";
 import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
-import { exemptionReasonCode, exemptionReasonText } from "./exemption";
+import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
 import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
@@ -94,14 +94,15 @@ function appendAllowanceCharge(
   if (opts.taxCategory) {
     const cat = ac.ele("cac:TaxCategory");
     cat.ele("cbc:ID").txt(opts.taxCategory.id).up();
-    cat.ele("cbc:Percent").txt(String(opts.taxCategory.taxRate)).up();
+    // EN 16931 BR-O-06/-07: bei Kategorie O (nicht steuerbar) darf kein Steuersatz stehen.
+    if (opts.taxCategory.id !== "O") cat.ele("cbc:Percent").txt(String(opts.taxCategory.taxRate)).up();
     cat.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
     cat.up();
   }
   ac.up();
 }
 
-function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: boolean) {
+function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: boolean, omitVatId = false) {
   const p = parent.ele("cac:Party");
 
   // BT-34 / BT-49 — elektronische Adresse (Endpoint)
@@ -114,8 +115,11 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
   // BT-30 ODER BT-31 — BT-32 (Steuernummer, s.u.) genügt der Kernregel NICHT (nur BR-DE).
   // Ohne USt-IdNr. (Kleinunternehmer) wird daher die Steuernummer zusätzlich als
   // generische Verkäuferkennung ausgewiesen, damit BR-CO-26 erfüllt ist.
-  if (isSeller && !party.vatId && party.taxNumber) {
-    p.ele("cac:PartyIdentification").ele("cbc:ID").txt(party.taxNumber).up().up();
+  // Bei Kategorie O (omitVatId) faellt BT-31 weg (BR-O-02): BT-29 traegt dann Steuernummer bzw.
+  // USt-IdNr. als generische Verkaeuferkennung, damit BR-CO-26 erfuellt bleibt.
+  const sellerId = (!party.vatId ? party.taxNumber : omitVatId ? (party.taxNumber ?? party.vatId) : null) ?? null;
+  if (isSeller && sellerId) {
+    p.ele("cac:PartyIdentification").ele("cbc:ID").txt(sellerId).up().up();
   }
 
   const postal = p.ele("cac:PostalAddress");
@@ -126,7 +130,8 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
   postal.ele("cac:Country").ele("cbc:IdentificationCode").txt(party.countryCode).up().up();
 
   // BT-31/BT-48 — USt-IdNr. (PartyTaxScheme VAT)
-  if (party.vatId) {
+  // EN 16931 BR-O-02: bei Kategorie O weder BT-31 noch BT-48 (omitVatId).
+  if (party.vatId && !omitVatId) {
     const pts = p.ele("cac:PartyTaxScheme");
     pts.ele("cbc:CompanyID").txt(party.vatId).up();
     pts.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
@@ -235,8 +240,10 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     idr.up().up();
   }
 
-  appendParty(root.ele("cac:AccountingSupplierParty"), data.seller, true);
-  appendParty(root.ele("cac:AccountingCustomerParty"), data.buyer, false);
+  // EN 16931 BR-O-02: Beleg mit Kategorie O (nicht steuerbar) -> keine USt-IdNr. beider Parteien.
+  const omitVatIds = hasNotSubjectToVat(data);
+  appendParty(root.ele("cac:AccountingSupplierParty"), data.seller, true, omitVatIds);
+  appendParty(root.ele("cac:AccountingCustomerParty"), data.buyer, false, omitVatIds);
 
   // BG-13/BG-15 — MUSS nach den Parteien und vor PaymentMeans stehen (sonst XSD-fatal).
   // DeliveryType-Reihenfolge: ActualDeliveryDate, dann DeliveryLocation, dann DeliveryParty.
@@ -350,6 +357,7 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     st.ele("cbc:TaxAmount", { currencyID: cur }).txt(amt(sub.taxCents)).up();
     const cat = st.ele("cac:TaxCategory");
     cat.ele("cbc:ID").txt(sub.taxCategory).up();
+    // BT-119 bleibt auch bei O (Wert 0): XRechnung BR-DE-14 verlangt ihn fuer jede Steuergruppe.
     cat.ele("cbc:Percent").txt(String(sub.taxRate)).up();
     // UBL-XSD (TaxCategoryType): ReasonCode steht VOR Reason.
     const reasonCode = exemptionReasonCode(sub.taxCategory);
@@ -420,7 +428,8 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     }
     const ctc = item.ele("cac:ClassifiedTaxCategory");
     ctc.ele("cbc:ID").txt(line.taxCategory).up();
-    ctc.ele("cbc:Percent").txt(String(line.taxRate)).up();
+    // EN 16931 BR-O-05: Kategorie O traegt keinen Positionssteuersatz (BT-152).
+    if (line.taxCategory !== "O") ctc.ele("cbc:Percent").txt(String(line.taxRate)).up();
     ctc.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
     ctc.up();
     item.up();

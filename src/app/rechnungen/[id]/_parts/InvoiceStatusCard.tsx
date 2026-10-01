@@ -6,6 +6,8 @@ import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 import { formatCents } from "@/lib/money";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
+import { foreignCountryLine } from "@/lib/countries";
+import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { PaymentDialog } from "./PaymentDialog";
 
 const XML_FORMAT_LABEL: Record<string, string> = { XRECHNUNG: "XRechnung", ZUGFERD: "ZUGFeRD" };
@@ -81,6 +83,11 @@ export function InvoiceStatusCard({
   // gehoerte dagegen in der alten "Eckdaten"-Karte NICHT zu diesem Abschnitt und stand dort
   // unbedingt (nur an `paymentMethodName` geknuepft) — I4 (Fix-Welle) nimmt das zurueck, nachdem
   // eine fruehere Fassung sie faelschlich mitguardete.
+  // Land nur bei Auslandskunden (Snapshot, GoBD) — wie in der PDF-Anschrift.
+  const countryLine = foreignCountryLine(
+    parseBuyerSnapshot(invoice.buyerSnapshotJson, buildBuyerSnapshot(invoice.customer), invoice.id).countryCode,
+    invoice.org.country,
+  );
   const customerRows: StatusRow[] = [
     {
       label: "Kunde",
@@ -98,6 +105,7 @@ export function InvoiceStatusCard({
           <span className="block">
             {invoice.customer.postalCode} {invoice.customer.city}
           </span>
+          {countryLine && <span className="block">{countryLine}</span>}
         </span>
       ),
     },

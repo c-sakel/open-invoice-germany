@@ -170,7 +170,7 @@ describe("buildDeliveryNotePdfData", () => {
       postalCode: "88888",
       city: "Werksstadt",
     });
-    expect(withAddress.deliveryAddress).toEqual({ addressLine1: "Lagerhalle 7", addressLine2: null, postalCode: "88888", city: "Werksstadt" });
+    expect(withAddress.deliveryAddress).toEqual({ addressLine1: "Lagerhalle 7", addressLine2: null, postalCode: "88888", city: "Werksstadt", countryCode: undefined });
 
     const withoutAddress = buildDeliveryNotePdfData(deliveryNote(), org, customer);
     expect(withoutAddress.deliveryAddress).toBeNull();
@@ -205,7 +205,7 @@ describe("buildDeliveryNotePdfData", () => {
       postalCode: "77777",
       city: "Neustadt",
     });
-    expect(data.deliveryAddress).toEqual({ addressLine1: "Lagerhalle 7 (Snapshot)", addressLine2: null, postalCode: "88888", city: "Werksstadt" });
+    expect(data.deliveryAddress).toEqual({ addressLine1: "Lagerhalle 7 (Snapshot)", addressLine2: null, postalCode: "88888", city: "Werksstadt", countryCode: "DE" });
   });
 });
 
