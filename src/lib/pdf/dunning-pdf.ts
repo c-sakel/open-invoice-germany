@@ -11,7 +11,8 @@ import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import type { InterestSegment } from "@/schemas";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground } from "./layout";
+import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
+import { foreignCountryLine } from "../countries";
 import { getLayout } from "./layouts/registry";
 import { footerZoneHeight } from "./layouts/shared";
 import { renderPlainTextPdf } from "@/lib/richtext";
@@ -36,6 +37,8 @@ export interface DunningPdfData {
     phone?: string | null;
     postalCode: string;
     city: string;
+    /** ISO-Land des Absenders (Snapshot); fehlt es, gilt DE. */
+    countryCode?: string | null;
     taxNumber?: string | null;
     vatId?: string | null;
     iban?: string | null;
@@ -50,6 +53,8 @@ export interface DunningPdfData {
     addressLine2?: string | null;
     postalCode: string;
     city: string;
+    /** ISO-Land des Empfaengers (Snapshot). */
+    countryCode?: string | null;
   };
   invoiceNumber: string;
   invoiceDate: Date;
@@ -135,8 +140,8 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       numberLabel: "Nr.",
       number: data.number,
       meta: [{ label: "Datum", value: deDate(data.sentDate) }],
-      recipient: data.buyer,
-      senderFallback: `${data.seller.name} · ${data.seller.addressLine1} · ${data.seller.postalCode} ${data.seller.city}`,
+      recipient: { ...data.buyer, countryLine: foreignCountryLine(data.buyer.countryCode, data.seller.countryCode) },
+      senderFallback: senderLineFallback(data.seller, data.buyer.countryCode),
     });
 
     doc.fontSize(11).fillColor("#000").text("Sehr geehrte Damen und Herren,", left, y);

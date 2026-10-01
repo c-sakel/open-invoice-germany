@@ -1,5 +1,6 @@
 // src/app/dokumente/[id]/_parts/DocumentStatusCard.tsx
 import Link from "next/link";
+import { foreignCountryLine } from "@/lib/countries";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
 import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
@@ -68,8 +69,11 @@ export function DocumentStatusCard({
   status,
   tags,
   tagOptions,
+  sellerCountryCode,
 }: {
   q: QuoteForStatusCard;
+  /** Absenderland (Organization.country) fuer die Landeszeile der Anschrift. */
+  sellerCountryCode: string;
   /** Wirksamer Status (aus `effectiveQuoteStatus`, page.tsx) fuer das StatusBadge. */
   status: string;
   tags: TagPickerItem[];
@@ -121,6 +125,7 @@ export function DocumentStatusCard({
         <span className="block">
           {buyer.postalCode} {buyer.city}
         </span>
+        {foreignCountryLine(buyer.countryCode, sellerCountryCode) && <span className="block">{foreignCountryLine(buyer.countryCode, sellerCountryCode)}</span>}
       </span>
     ),
   });

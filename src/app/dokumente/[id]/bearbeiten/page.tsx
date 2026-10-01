@@ -103,6 +103,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
 
   return (
     <DocumentEditor
+      senderCountryCode={org.country}
       mode="DOCUMENT"
       initial={draftFromDocument(documentInitial, documentSettings.taxRates)}
       customers={customers}

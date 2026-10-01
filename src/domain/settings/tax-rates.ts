@@ -8,7 +8,7 @@
  *   (b) bereits auf dem zu aendernden/abgeleiteten Beleg gespeichert ist (GoBD, §51:
  *       ein Beleg verliert seinen Satz nicht, weil die Organisation die Liste aendert), ODER
  *   (c) 0 ist — Gliederungszeilen (HEADING/TEXT/SUBTOTAL) und die Nullsatz-Schemata
- *       (KLEINUNTERNEHMER, DIFFERENZ, REVERSE_CHARGE, IG_*, AUSFUHR) brauchen ihn immer.
+ *       (KLEINUNTERNEHMER, DIFFERENZ, REVERSE_CHARGE, IG_*, AUSFUHR, NICHT_STEUERBAR) brauchen ihn immer.
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";

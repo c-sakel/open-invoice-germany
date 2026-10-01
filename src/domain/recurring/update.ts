@@ -7,7 +7,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { normalizeToNoon } from "@/lib/recurring";
-import { updateRecurringSchema, type UpdateRecurringInput } from "@/schemas";
+import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { RecurringError } from "@/domain/recurring/create";
 import { logActivity } from "@/domain/activity/log";
@@ -25,6 +25,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       issuedCount: true,
       status: true,
       maxRuns: true,
+      taxScheme: true,
       lines: { select: { taxRate: true } },
     },
   });
@@ -87,7 +88,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.lines
           ? {
               lines: {
-                create: input.lines.map((l, i) => ({
+                create: resolveLineCategories(input.lines, existing.taxScheme as TaxSchemeValue).map((l, i) => ({
                   position: i + 1,
                   description: l.description,
                   quantityMilli: l.quantityMilli,
