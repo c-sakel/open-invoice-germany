@@ -194,7 +194,7 @@ export default async function LieferscheinDetail({
       }
       aside={
         <>
-          <DeliveryNoteStatusCard dn={dn} tags={deliveryNoteTags} tagOptions={allTags} />
+          <DeliveryNoteStatusCard dn={dn} sellerCountryCode={org.country} tags={deliveryNoteTags} tagOptions={allTags} />
           <AttachmentPanel
             docType="DELIVERY_NOTE"
             docId={dn.id}

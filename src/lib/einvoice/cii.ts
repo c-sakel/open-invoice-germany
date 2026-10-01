@@ -8,7 +8,7 @@
 import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
-import { exemptionReasonCode, exemptionReasonText } from "./exemption";
+import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
 import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
@@ -76,7 +76,8 @@ function appendAllowanceCharge(
     const cat = ac.ele("ram:CategoryTradeTax");
     cat.ele("ram:TypeCode").txt("VAT").up();
     cat.ele("ram:CategoryCode").txt(opts.categoryTax.categoryCode).up();
-    cat.ele("ram:RateApplicablePercent").txt(String(opts.categoryTax.taxRate)).up();
+    // EN 16931 BR-O-06/-07: Kategorie O traegt keinen Steuersatz.
+    if (opts.categoryTax.categoryCode !== "O") cat.ele("ram:RateApplicablePercent").txt(String(opts.categoryTax.taxRate)).up();
     cat.up();
   }
   ac.up();
@@ -172,7 +173,8 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const ltax = ls.ele("ram:ApplicableTradeTax");
     ltax.ele("ram:TypeCode").txt("VAT").up();
     ltax.ele("ram:CategoryCode").txt(line.taxCategory).up();
-    ltax.ele("ram:RateApplicablePercent").txt(String(line.taxRate)).up();
+    // EN 16931 BR-O-05: Kategorie O traegt keinen Positionssteuersatz (BT-152).
+    if (line.taxCategory !== "O") ltax.ele("ram:RateApplicablePercent").txt(String(line.taxRate)).up();
     ltax.up();
     // BG-27 — Zeilenrabatt.
     if (line.discountCents) {
@@ -199,12 +201,15 @@ export function buildFacturXCII(data: EInvoiceData): string {
   // BT-30 ODER BT-31 — BT-32 (Steuernummer, s.u.) genügt der Kernregel NICHT (nur BR-DE).
   // Ohne USt-IdNr. (Kleinunternehmer) wird daher die Steuernummer zusätzlich als
   // generische Verkäuferkennung ausgewiesen, damit BR-CO-26 erfüllt ist.
-  if (!data.seller.vatId && data.seller.taxNumber) {
-    seller.ele("ram:ID").txt(data.seller.taxNumber).up();
+  // EN 16931 BR-O-02: bei Kategorie O weder BT-31 noch BT-48 -> Steuernummer als BT-29/BT-32.
+  const omitVatIds = hasNotSubjectToVat(data);
+  const sellerId = !data.seller.vatId ? data.seller.taxNumber : omitVatIds ? (data.seller.taxNumber ?? data.seller.vatId) : null;
+  if (sellerId) {
+    seller.ele("ram:ID").txt(sellerId).up();
   }
   seller.ele("ram:Name").txt(data.seller.name).up();
   appendAddress(seller, data.seller);
-  if (data.seller.vatId) {
+  if (data.seller.vatId && !omitVatIds) {
     seller.ele("ram:SpecifiedTaxRegistration").ele("ram:ID", { schemeID: "VA" }).txt(data.seller.vatId).up().up();
   }
   if (data.seller.taxNumber) {
@@ -215,7 +220,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
   const buyer = agr.ele("ram:BuyerTradeParty");
   buyer.ele("ram:Name").txt(data.buyer.name).up();
   appendAddress(buyer, data.buyer);
-  if (data.buyer.vatId) {
+  if (data.buyer.vatId && !omitVatIds) {
     buyer.ele("ram:SpecifiedTaxRegistration").ele("ram:ID", { schemeID: "VA" }).txt(data.buyer.vatId).up().up();
   }
   buyer.up();
@@ -303,6 +308,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
     // CII-XSD (TradeTaxType): ExemptionReasonCode NACH CategoryCode, VOR RateApplicablePercent.
     const reasonCode = exemptionReasonCode(sub.taxCategory);
     if (reasonCode) t.ele("ram:ExemptionReasonCode").txt(reasonCode).up();
+    // BT-119 bleibt auch bei O (Wert 0): XRechnung BR-DE-14 verlangt ihn fuer jede Steuergruppe.
     t.ele("ram:RateApplicablePercent").txt(String(sub.taxRate)).up();
     t.up();
   }

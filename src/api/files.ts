@@ -119,7 +119,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     const shippingAddress = dn.showDeliveryAddress
       ? await dbInternal.customerAddress.findFirst({
           where: { orgId, customerId: dn.customerId, type: "SHIPPING", isDefault: true },
-          select: { addressLine1: true, addressLine2: true, postalCode: true, city: true },
+          select: { addressLine1: true, addressLine2: true, postalCode: true, city: true, countryCode: true },
         })
       : null;
     const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE");

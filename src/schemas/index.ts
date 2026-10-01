@@ -6,6 +6,7 @@ import { z } from "zod";
 // Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
+import { defaultCategoryForScheme } from "@/lib/tax";
 
 // ── Enumerationen ────────────────────────────────────────────────────────
 export const TaxScheme = z.enum([
@@ -18,11 +19,14 @@ export const TaxScheme = z.enum([
   // Phase 12b — steuerfreie Ausfuhrlieferung ins Drittland
   // (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG), Kategorie G.
   "AUSFUHR",
+  // Dienstleistung an Empfaenger im Drittland: nicht im Inland steuerbar (§ 3a UStG),
+  // Kategorie O (UNTDID 5305) / VATEX-EU-O. "G" bleibt Warenlieferungen vorbehalten.
+  "NICHT_STEUERBAR",
 ]);
 export type TaxScheme = z.infer<typeof TaxScheme>;
 
-// UNTDID 5305. "O" (nicht steuerbar) ist in Phase 12b nur fuer den Mapper vorgesehen —
-// kein Schema waehlt sie (siehe defaultCategoryForScheme).
+// UNTDID 5305. "O" (nicht steuerbar) wird vom Schema NICHT_STEUERBAR gewaehlt (siehe
+// defaultCategoryForScheme).
 export const TaxCategory = z.enum(["S", "AE", "K", "G", "E", "Z", "O"]);
 export type TaxCategory = z.infer<typeof TaxCategory>;
 
@@ -223,8 +227,7 @@ export type ProductInput = z.infer<typeof productSchema>;
 
 // ── Rechnung ─────────────────────────────────────────────────────────────
 // lineType default "ITEM" haelt bestehende Aufrufer (ohne das Feld) abwaertskompatibel.
-export const invoiceLineInputSchema = z
-  .object({
+const invoiceLineBaseShape = {
     lineType: LineType.default("ITEM"),
     productId: z.string().optional(),
     description: z.string().min(1),
@@ -236,11 +239,14 @@ export const invoiceLineInputSchema = z
     unit: z.string().default("C62"),
     unitNetPriceCents: z.number().int(),
     taxRate: TaxRate,
-    taxCategory: TaxCategory.default("S"),
     discountPermille: z.number().int().min(0).max(1000).default(0),
     discountCents: z.number().int().nonnegative().default(0),
-  })
-  .superRefine((line, ctx) => {
+};
+
+const refineInvoiceLine = (
+  line: { lineType: z.infer<typeof LineType>; quantityMilli: number; unitNetPriceCents: number; discountPermille: number; discountCents: number; taxRate: number },
+  ctx: z.RefinementCtx<typeof line>,
+): void => {
     if (line.lineType === "ITEM") {
       if (line.quantityMilli === 0) {
         ctx.addIssue({ code: "custom", message: "Menge darf nicht 0 sein", path: ["quantityMilli"] });
@@ -264,7 +270,27 @@ export const invoiceLineInputSchema = z
     if (line.taxRate !== 0) {
       ctx.addIssue({ code: "custom", message: "Steuersatz muss bei Nicht-Positionszeilen 0 sein", path: ["taxRate"] });
     }
-  });
+  };
+
+export const invoiceLineInputSchema = z
+  .object({ ...invoiceLineBaseShape, taxCategory: TaxCategory.default("S") })
+  .superRefine(refineInvoiceLine);
+
+/** Wie invoiceLineInputSchema, aber OHNE Default fuer die Kategorie: Boundaries mit
+ *  Steuerschema leiten sie aus dem Schema ab (resolveLineCategories), explizite Werte bleiben. */
+export const invoiceLineDerivableSchema = z
+  .object({ ...invoiceLineBaseShape, taxCategory: TaxCategory.optional() })
+  .superRefine(refineInvoiceLine);
+
+/** Fehlende Positions-Kategorien aus dem Steuerschema ableiten (gleiche Funktion wie Editor/MCP). */
+export function resolveLineCategories<L extends { taxCategory?: z.infer<typeof TaxCategory> }>(
+  lines: readonly L[],
+  scheme: z.infer<typeof TaxScheme>,
+): (L & { taxCategory: z.infer<typeof TaxCategory> })[] {
+  const fallback = defaultCategoryForScheme(scheme);
+  return lines.map((l) => ({ ...l, taxCategory: l.taxCategory ?? fallback }));
+}
+
 export type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
 
 // ── Beleg-Rabatt/-Aufschlag + Skonto (Phase 4a) ─────────────────────────────
@@ -373,9 +399,10 @@ const invoiceHeaderFields = {
 export const createInvoiceSchema = z
   .object({
     ...invoiceHeaderFields,
-    lines: z.array(invoiceLineInputSchema).min(1),
+    lines: z.array(invoiceLineDerivableSchema).min(1),
   })
-  .superRefine(refineSkontoTargets);
+  .superRefine(refineSkontoTargets)
+  .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 
 // Partial-Update (Phase 4b, src/domain/invoice/update.ts) — nur fuer DRAFT-Rechnungen.
@@ -385,16 +412,26 @@ export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export const updateInvoiceSchema = z
   .object({
     ...invoiceHeaderFields,
-    lines: z.array(invoiceLineInputSchema).min(1).optional(),
+    lines: z.array(invoiceLineDerivableSchema).min(1).optional(),
   })
   .partial()
+  // zod 4: .partial() behaelt Defaults -> ein Update ohne Schema/Aufschlag wuerde sie auf
+  // REGULAR/0 zuruecksetzen. Beim Teil-Update gilt "nicht gesetzt = unveraendert".
+  .extend({
+    taxScheme: TaxScheme.optional(),
+    documentChargePermille: z.number().int().min(0).max(1000).optional(),
+    documentChargeCents: z.number().int().nonnegative().optional(),
+  })
   // Fix-Runde 1: `type` (INVOICE/CREDIT_NOTE/CORRECTION) ist beim Bearbeiten eines
   // Entwurfs NICHT aenderbar — die Rechnungsart wird bei der Anlage festgelegt (§14
   // UStG-Belegcharakter haengt daran). .omit NACH .partial(), weil createInvoiceSchema
   // (die Quelle von invoiceHeaderFields) bereits ein ZodEffects ist und .omit nur auf
   // einem ZodObject existiert — updateInvoiceSchema baut sein eigenes ZodObject neu auf.
   .omit({ type: true })
-  .superRefine(refineSkontoTargets);
+  .superRefine(refineSkontoTargets)
+  // Kategorie nur ableiten, wenn das Schema im Body steht; sonst loest die Domain gegen
+  // das gespeicherte Schema auf (invoice/update.ts) — daher bleibt taxCategory hier optional.
+  .transform((v) => (v.taxScheme !== undefined && v.lines ? { ...v, lines: resolveLineCategories(v.lines, v.taxScheme) } : v));
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 
 // ── Teil-, Abschlags- und Schlussrechnungen (Phase 5, §13-15 UStG) ──────────
@@ -479,7 +516,7 @@ const documentTextFields = {
   billingAddressId: z.string().nullable().optional(),
 };
 
-export const createDocumentSchema = z.object({
+const documentObjectSchema = z.object({
   kind: DocumentKind,
   customerId: z.string().min(1),
   taxScheme: TaxScheme.default("REGULAR"),
@@ -490,13 +527,18 @@ export const createDocumentSchema = z.object({
   internalNotes: z.string().optional(),
   ...documentTextFields,
   ...documentAdjustmentFields,
-  lines: z.array(invoiceLineInputSchema).min(1),
+  lines: z.array(invoiceLineDerivableSchema).min(1),
 });
+export const createDocumentSchema = documentObjectSchema.transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 
-export const updateDocumentSchema = createDocumentSchema.omit({ kind: true }).partial().extend({
-  lines: z.array(invoiceLineInputSchema).min(1).optional(),
-});
+// Kategorie nur bei gesetztem Schema ableiten; sonst loest document/update.ts gegen das gespeicherte Schema auf.
+export const updateDocumentSchema = documentObjectSchema.omit({ kind: true }).partial().extend({
+  taxScheme: TaxScheme.optional(),
+  documentChargePermille: z.number().int().min(0).max(1000).optional(),
+  documentChargeCents: z.number().int().nonnegative().optional(),
+  lines: z.array(invoiceLineDerivableSchema).min(1).optional(),
+}).transform((v) => (v.taxScheme !== undefined && v.lines ? { ...v, lines: resolveLineCategories(v.lines, v.taxScheme) } : v));
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
 
 export const convertDocumentSchema = z.object({
@@ -595,7 +637,7 @@ export type InvoiceListFilter = z.infer<typeof invoiceListFilterSchema>;
 export const RecurInterval = z.enum(["DAY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
 export type RecurInterval = z.infer<typeof RecurInterval>;
 
-export const createRecurringSchema = z.object({
+const recurringObjectSchema = z.object({
   customerId: z.string().min(1),
   title: z.string().min(1),
   interval: RecurInterval.default("MONTHLY"),
@@ -623,8 +665,9 @@ export const createRecurringSchema = z.object({
   // der Aufrufer das Feld nicht selbst gesetzt hat (Task-1-Facts).
   showPeriodText: z.boolean().optional(),
   notes: z.string().optional(),
-  lines: z.array(invoiceLineInputSchema).min(1),
+  lines: z.array(invoiceLineDerivableSchema).min(1),
 });
+export const createRecurringSchema = recurringObjectSchema.transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
 
 export const updateRecurringStatusSchema = z.object({
@@ -655,7 +698,8 @@ export const updateRecurringSchema = z.object({
   showPeriodText: z.boolean().optional(),
   notes: z.string().nullable().optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
-  lines: z.array(invoiceLineInputSchema).min(1).optional(),
+  // Kategorie optional: die Domain leitet sie aus dem Abo-Steuerschema ab (recurring/update.ts).
+  lines: z.array(invoiceLineDerivableSchema).min(1).optional(),
 });
 export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
 

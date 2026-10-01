@@ -18,6 +18,7 @@ import { newLineKey } from "@/lib/editor/ids";
 import type { EditorMode } from "@/lib/editor/constants";
 import { CustomerPicker, type CustomerOption } from "../CustomerPicker";
 import { EditorField } from "../EditorField";
+import { foreignCountryLine } from "@/lib/countries";
 import { inputCls } from "@/components/forms/fields";
 import { emptyOptionLabel } from "@/lib/forms/optional-select";
 import { nextDiscountOnCustomerChange } from "@/lib/forms/discount-prefill";
@@ -85,6 +86,7 @@ export function RecipientBlock({
   contacts = [],
   addresses = [],
   offerLastDocument = false,
+  senderCountryCode = "DE",
 }: {
   mode: EditorMode;
   isEdit: boolean;
@@ -94,6 +96,7 @@ export function RecipientBlock({
   contacts?: ContactOption[];
   addresses?: AddressOption[];
   offerLastDocument?: boolean;
+  senderCountryCode?: string;
 }) {
   // Fix-Welle B6-Muster: der zuletzt AUTOMATISCH angewendete Rabatt-Default — nur wenn
   // das Feld dem noch entspricht (oder leer ist), ueberschreibt ein weiterer
@@ -175,6 +178,12 @@ export function RecipientBlock({
           {selectedCustomer.addressLine1}
           {selectedCustomer.addressLine1 && <br />}
           {[selectedCustomer.postalCode, selectedCustomer.city].filter(Boolean).join(" ")}
+          {foreignCountryLine(selectedCustomer.countryCode, senderCountryCode) && (
+            <>
+              <br />
+              {foreignCountryLine(selectedCustomer.countryCode, senderCountryCode)}
+            </>
+          )}
         </div>
       )}
 

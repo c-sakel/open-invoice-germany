@@ -13,7 +13,7 @@ import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { normalizeLines } from "@/domain/document/lines";
 import { NotFoundError } from "@/domain/errors";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
-import { updateDocumentSchema } from "@/schemas";
+import { updateDocumentSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
 
 type QuoteWithLines = Prisma.QuoteGetPayload<{ include: { lines: true } }>;
@@ -97,7 +97,7 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
       // bleiben die Positionen unveraendert (nur Beleg-Anpassung geaendert), werden die
       // bereits gespeicherten Zeilen samt lineType uebernommen.
       const lines = input.lines
-        ? normalizeLines(input.lines).map((l) => ({
+        ? normalizeLines(resolveLineCategories(input.lines, input.taxScheme ?? quote.taxScheme as TaxSchemeValue)).map((l) => ({
             position: l.position,
             lineType: l.lineType,
             description: l.description,
