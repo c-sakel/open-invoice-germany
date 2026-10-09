@@ -12,7 +12,7 @@ import type { InterestSegment } from "@/schemas";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
-import { foreignCountryLine } from "../countries";
+import { addressCountryLine } from "../countries";
 import { getLayout } from "./layouts/registry";
 import { footerZoneHeight } from "./layouts/shared";
 import { renderPlainTextPdf } from "@/lib/richtext";
@@ -140,8 +140,8 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       numberLabel: "Nr.",
       number: data.number,
       meta: [{ label: "Datum", value: deDate(data.sentDate) }],
-      recipient: { ...data.buyer, countryLine: foreignCountryLine(data.buyer.countryCode, data.seller.countryCode) },
-      senderFallback: senderLineFallback(data.seller, data.buyer.countryCode),
+      recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode) },
+      senderFallback: senderLineFallback(data.seller),
     });
 
     doc.fontSize(11).fillColor("#000").text("Sehr geehrte Damen und Herren,", left, y);

@@ -6,7 +6,7 @@ import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 import { formatCents } from "@/lib/money";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
-import { foreignCountryLine } from "@/lib/countries";
+import { addressCountryLine } from "@/lib/countries";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { PaymentDialog } from "./PaymentDialog";
 
@@ -83,10 +83,9 @@ export function InvoiceStatusCard({
   // gehoerte dagegen in der alten "Eckdaten"-Karte NICHT zu diesem Abschnitt und stand dort
   // unbedingt (nur an `paymentMethodName` geknuepft) — I4 (Fix-Welle) nimmt das zurueck, nachdem
   // eine fruehere Fassung sie faelschlich mitguardete.
-  // Land nur bei Auslandskunden (Snapshot, GoBD) — wie in der PDF-Anschrift.
-  const countryLine = foreignCountryLine(
+  // Land immer (Snapshot, GoBD) — wie in der PDF-Anschrift.
+  const countryLine = addressCountryLine(
     parseBuyerSnapshot(invoice.buyerSnapshotJson, buildBuyerSnapshot(invoice.customer), invoice.id).countryCode,
-    invoice.org.country,
   );
   const customerRows: StatusRow[] = [
     {
