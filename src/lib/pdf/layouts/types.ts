@@ -37,8 +37,8 @@ export interface KopfInput {
     addressLine2?: string | null;
     postalCode: string;
     city: string;
-    /** Letzte Anschriftszeile (Landesname in Grossbuchstaben) — nur bei Auslandsempfaengern
-     *  gesetzt, siehe countries.ts#foreignCountryLine. */
+    /** Letzte Anschriftszeile (Landesname in Grossbuchstaben) — immer gesetzt, wenn das Land
+     *  bekannt ist, siehe countries.ts#addressCountryLine. */
     countryLine?: string | null;
   };
   extraRecipientBlock?: { heading: string; lines: string[] };

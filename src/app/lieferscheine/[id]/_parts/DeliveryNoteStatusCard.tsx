@@ -1,6 +1,6 @@
 // src/app/lieferscheine/[id]/_parts/DeliveryNoteStatusCard.tsx
 import Link from "next/link";
-import { foreignCountryLine } from "@/lib/countries";
+import { addressCountryLine } from "@/lib/countries";
 import { parseBuyerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import type { BuyerSnapshot } from "@/schemas";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -49,11 +49,9 @@ export function DeliveryNoteStatusCard({
   dn,
   tags,
   tagOptions,
-  sellerCountryCode,
 }: {
   dn: DeliveryNoteForStatusCard;
   /** Absenderland (Organization.country) fuer die Landeszeile der Anschrift. */
-  sellerCountryCode: string;
   tags: TagPickerItem[];
   tagOptions: TagPickerItem[];
 }) {
@@ -76,7 +74,7 @@ export function DeliveryNoteStatusCard({
           <span className="block">
             {buyer.postalCode} {buyer.city}
           </span>
-          {foreignCountryLine(buyer.countryCode, sellerCountryCode) && <span className="block">{foreignCountryLine(buyer.countryCode, sellerCountryCode)}</span>}
+          {addressCountryLine(buyer.countryCode) && <span className="block">{addressCountryLine(buyer.countryCode)}</span>}
         </span>
       ),
     },

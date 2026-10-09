@@ -19,11 +19,9 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
   const { customerId } = await searchParams;
 
   let orgId: string;
-  let senderCountryCode: string;
   try {
     const org = await getActiveOrg();
     orgId = org.id;
-    senderCountryCode = org.country;
   } catch {
     return <NeedOrgNotice />;
   }
@@ -96,7 +94,6 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
 
   return (
     <DocumentEditor
-      senderCountryCode={senderCountryCode}
       mode="INVOICE"
       initial={initial}
       customers={customers}

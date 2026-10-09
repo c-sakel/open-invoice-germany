@@ -126,7 +126,7 @@ Antwort enthält `data.id` (Rechnung, Status `DRAFT`, noch keine Rechnungsnummer
 | **Warenlieferung** ins Drittland | `AUSFUHR` | `G` / `0` | `notes`: „Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)" |
 | Warenlieferung an EU-Unternehmer | `IG_LIEFERUNG` | `K` / `0` | siehe COMPLIANCE.md § 8 |
 
-`G` (Ausfuhrlieferung) gilt nur für Waren. Webshop-Hinweis: Dienstleistungen an Drittland-Kunden sind nur bei B2B (§ 3a Abs. 2 UStG) sowie bei elektronischen Leistungen/Katalogleistungen an Privatkunden nicht steuerbar (Kategorie `O`); sonstige B2C-Leistungen bleiben nach § 3a Abs. 1 UStG in Deutschland steuerbar (`REGULAR`). Das Land des Kunden (`countryCode`) steht als letzte Anschriftszeile im PDF, sobald es vom Absenderland abweicht; bei 0-%-Positionen druckt das PDF den Grund je Steuerkategorie auch ohne `notes`-Hinweis.
+`G` (Ausfuhrlieferung) gilt nur für Waren. Webshop-Hinweis: Dienstleistungen an Drittland-Kunden sind nur bei B2B (§ 3a Abs. 2 UStG) sowie bei elektronischen Leistungen/Katalogleistungen an Privatkunden nicht steuerbar (Kategorie `O`); sonstige B2C-Leistungen bleiben nach § 3a Abs. 1 UStG in Deutschland steuerbar (`REGULAR`). Das Land des Kunden (`countryCode`) steht immer als letzte Anschriftszeile im PDF (auch „DEUTSCHLAND“); bei 0-%-Positionen druckt das PDF den Grund je Steuerkategorie auch ohne `notes`-Hinweis.
 
 ### 3. Festschreiben (GoBD: unveränderbar ab hier)
 

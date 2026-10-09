@@ -22,7 +22,7 @@ import type { EInvoiceData, EInvoiceLine } from "@/lib/einvoice/types";
 import type { PdfTheme } from "./theme";
 import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
-import { foreignCountryLine } from "../countries";
+import { addressCountryLine } from "../countries";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
 import { CONSUMER_RETENTION_HINT, categoryNoticesToPrint } from "@/domain/invoice/mandatory";
@@ -261,7 +261,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // (data.deliverTo) — generischer extraRecipientBlock-Mechanismus, den alle Layouts
   // bereits fuer den Lieferschein-Lieferadressblock zeichnen (siehe delivery-note-pdf.ts).
   const deliverTo = data.deliverTo;
-  const deliverToCountry = deliverTo ? foreignCountryLine(deliverTo.countryCode, data.seller.countryCode) : null;
+  const deliverToCountry = deliverTo ? addressCountryLine(deliverTo.countryCode) : null;
   const extraRecipientBlock = deliverTo
     ? {
         heading: "Lieferanschrift:",
@@ -280,9 +280,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     numberLabel: documentNumberLabel(data),
     number: data.number,
     meta,
-    recipient: { ...data.buyer, countryLine: foreignCountryLine(data.buyer.countryCode, data.seller.countryCode) },
+    recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode) },
     extraRecipientBlock,
-    senderFallback: senderLineFallback(data.seller, data.buyer.countryCode),
+    senderFallback: senderLineFallback(data.seller),
     intro: data.headerText,
     subject: data.subject,
   });
