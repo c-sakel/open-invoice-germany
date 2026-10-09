@@ -5,7 +5,7 @@
  * 11b in `footer.ts` (Spalten-Fakten) + `layouts/shared.ts#drawFooterColumns` (Zeichnen).
  */
 import type { PdfTheme } from "./theme";
-import { foreignCountryLine, countryNameDe } from "../countries";
+import { addressCountryLine } from "../countries";
 
 export { mm, MM_TO_PT } from "./marks";
 import { mm } from "./marks";
@@ -63,16 +63,13 @@ export function drawSenderLine(doc: PDFKit.PDFDocument, theme: PdfTheme, left: n
 }
 
 /**
- * Fallback-Text der Absenderzeile ("Name · Strasse · PLZ Ort"). Bei einem Empfaenger im
- * Ausland (Land != Absenderland) steht das Absenderland als letzter Teil dabei, damit die
- * Ruecksendeangabe international zustellbar ist; im Inland bleibt die Zeile unveraendert.
+ * Fallback-Text der Absenderzeile ("Name · Strasse · PLZ Ort · LAND"). Das Absenderland steht
+ * immer als letzter Teil dabei (Betreiber-Wunsch 2026-10-09, wie die Empfaengeranschrift).
  */
 export function senderLineFallback(
   seller: { name: string; addressLine1: string; postalCode: string; city: string; countryCode?: string | null },
-  recipientCountryCode?: string | null,
 ): string {
   const base = `${seller.name} · ${seller.addressLine1} · ${seller.postalCode} ${seller.city}`;
-  if (!foreignCountryLine(recipientCountryCode, seller.countryCode)) return base;
-  const own = countryNameDe(seller.countryCode ?? "DE");
-  return own ? `${base} · ${own.toLocaleUpperCase("de-DE")}` : base;
+  const own = addressCountryLine(seller.countryCode ?? "DE");
+  return own ? `${base} · ${own}` : base;
 }

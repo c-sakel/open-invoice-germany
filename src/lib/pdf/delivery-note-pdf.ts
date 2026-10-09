@@ -14,7 +14,7 @@ import { unitLabel } from "@/lib/units";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
-import { foreignCountryLine } from "../countries";
+import { addressCountryLine } from "../countries";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow, footerZoneHeight, type TableHeaderColumn } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
@@ -226,15 +226,15 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // existiert (ohne sie kein Block, kein leeres "Lieferadresse:"). Der Empfaengerblock
     // (`recipient`) wird davon unabhaengig IMMER gedruckt (siehe `KopfInput`).
     const da = data.showDeliveryAddress ? data.deliveryAddress : null;
-    const daCountry = da ? foreignCountryLine(da.countryCode, data.seller.countryCode) : null;
+    const daCountry = da ? addressCountryLine(da.countryCode) : null;
     let y = layout.drawKopf(frame, {
       title: "Lieferschein",
       numberLabel: "Lieferscheinnummer",
       number: data.number,
       meta,
-      recipient: { ...data.buyer, countryLine: foreignCountryLine(data.buyer.countryCode, data.seller.countryCode) },
+      recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode) },
       extraRecipientBlock: da ? { heading: "Lieferadresse:", lines: [da.addressLine1, ...(da.addressLine2 ? [da.addressLine2] : []), `${da.postalCode} ${da.city}`, ...(daCountry ? [daCountry] : [])] } : undefined,
-      senderFallback: senderLineFallback(data.seller, data.buyer.countryCode),
+      senderFallback: senderLineFallback(data.seller),
       intro: data.headerText,
     });
 
