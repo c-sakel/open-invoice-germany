@@ -1,7 +1,6 @@
 /**
- * Laendernamen fuer Anschriftszeilen (DIN 5008 / Weltpostverein): Landesname deutsch in
- * Grossbuchstaben als letzte Zeile, aber nur bei Auslandsanschriften (Empfaengerland !=
- * Absenderland). Quelle der Namen: Intl.DisplayNames("de") (ICU, im Node-Image enthalten —
+ * Laendernamen fuer Anschriftszeilen: Landesname deutsch in Grossbuchstaben als letzte Zeile,
+ * auf Betreiber-Wunsch (2026-10-09) bei JEDER Anschrift, auch im Inland. Quelle der Namen: Intl.DisplayNames("de") (ICU, im Node-Image enthalten —
  * Node >= 13 liefert full-icu); fehlt ein Name, wird der ISO-Code selbst gedruckt.
  */
 
@@ -27,16 +26,10 @@ export function countryNameDe(code: string | null | undefined): string | null {
 }
 
 /**
- * Letzte Anschriftszeile "LANDESNAME" (Grossbuchstaben) oder null, wenn das Land fehlt
- * bzw. dem Absenderland entspricht (Inland — kein Landeszusatz).
+ * Letzte Anschriftszeile "LANDESNAME" (Grossbuchstaben), auch fuer Inlandsanschriften;
+ * null nur, wenn das Land fehlt oder ungueltig ist.
  */
-export function foreignCountryLine(
-  countryCode: string | null | undefined,
-  senderCountryCode: string | null | undefined,
-): string | null {
-  const c = (countryCode ?? "").trim().toUpperCase();
-  const s = (senderCountryCode ?? "DE").trim().toUpperCase() || "DE";
-  if (!c || c === s) return null;
-  const name = countryNameDe(c);
+export function addressCountryLine(countryCode: string | null | undefined): string | null {
+  const name = countryNameDe(countryCode);
   return name ? name.toLocaleUpperCase("de-DE") : null;
 }

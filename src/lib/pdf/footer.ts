@@ -16,6 +16,7 @@
  */
 import type { BrandingSettingsInput } from "@/schemas/settings";
 import type { FooterColumn } from "./layouts/types";
+import { countryNameDe } from "../countries";
 
 export interface FooterFacts {
   seller: {
@@ -24,6 +25,8 @@ export interface FooterFacts {
     addressLine2?: string | null;
     postalCode: string;
     city: string;
+    /** ISO-Land der Firma; Fusszeile zeigt den Landesnamen immer (Default DE). */
+    countryCode?: string | null;
     vatId?: string | null;
     taxNumber?: string | null;
     email?: string | null;
@@ -59,7 +62,7 @@ export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsIn
   const accountHolder = facts.accountHolder?.trim();
   const showAccountHolder = Boolean(accountHolder && accountHolder !== s.name.trim());
   const columns: FooterColumn[] = [
-    { lines: compact([s.name, s.addressLine1, s.addressLine2, `${s.postalCode} ${s.city}`]) },
+    { lines: compact([s.name, s.addressLine1, s.addressLine2, `${s.postalCode} ${s.city}`, countryNameDe(s.countryCode ?? "DE")]) },
     { lines: compact([s.phone && `Tel. ${s.phone}`, s.email && `E-Mail ${s.email}`, facts.website && `Web ${facts.website}`]) },
     { lines: compact([s.vatId && `USt-IdNr. ${s.vatId}`, s.taxNumber && `Steuer-Nr. ${s.taxNumber}`, facts.ownerName && `Inhaber/-in ${facts.ownerName}`]) },
     {

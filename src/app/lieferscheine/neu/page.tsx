@@ -11,11 +11,9 @@ export const dynamic = "force-dynamic";
 
 export default async function NeuerLieferscheinPage() {
   let orgId: string;
-  let senderCountryCode: string;
   try {
     const org = await getActiveOrg();
     orgId = org.id;
-    senderCountryCode = org.country;
   } catch {
     return <NeedOrgNotice />;
   }
@@ -72,7 +70,6 @@ export default async function NeuerLieferscheinPage() {
 
   return (
     <DocumentEditor
-      senderCountryCode={senderCountryCode}
       mode="DELIVERY_NOTE"
       initial={emptyDraft("DELIVERY_NOTE", {
         showPrices: docSettings.dnShowPrices,

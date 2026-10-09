@@ -36,8 +36,6 @@ import { AttachmentsBlock } from "./blocks/AttachmentsBlock";
 // `DocumentEditor` selbst, der Props-Typ wird nirgends separat referenziert).
 interface DocumentEditorProps {
   mode: EditorMode;
-  /** Absenderland (Organization.country) — Landeszeile der Empfaengeranschrift nur bei Abweichung. */
-  senderCountryCode?: string;
   /** aus `draftFromInvoice`/`draftFromDocument` (Bearbeiten) oder `undefined` (Neu, dann
    *  `emptyDraft(mode)`). M14 (Abschluss-Review): fuer DELIVERY_NOTE bei Neuanlage
    *  ausnahmsweise auch gesetzt — `emptyDraft("DELIVERY_NOTE", { showPrices, ... })` mit
@@ -110,7 +108,6 @@ function flattenIssues(issues: SaveErrorIssue[] | undefined): string[] {
 
 export function DocumentEditor({
   mode,
-  senderCountryCode = "DE",
   initial,
   customers,
   products,
@@ -338,7 +335,6 @@ export function DocumentEditor({
           contacts={contacts}
           addresses={addresses}
           offerLastDocument={offerLastDocument}
-          senderCountryCode={senderCountryCode}
         />
         <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} customers={customers} paymentMethods={paymentMethods} invoiceDueDays={invoiceDueDays} />
 
