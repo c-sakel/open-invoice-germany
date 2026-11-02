@@ -1,7 +1,7 @@
 /** Standardanhaenge je Belegtyp (Lastenheft 19, Abschnitt 2). */
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
-import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { renderInvoiceDocumentPdf, renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
@@ -132,7 +132,7 @@ export async function buildStandardAttachments(
     const inv = await loadEInvoiceData(d.invoiceId);
     if (inv) {
       const invoiceTheme = await loadPdfTheme(orgId, inv.invoice.printOptionsJson, invoiceTypeToLayoutDocType(inv.invoice.type));
-      out.push({ filename: `${safe(inv.invoice.number ?? "Rechnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoicePdf(inv.data, invoiceTheme)) });
+      out.push({ filename: `${safe(inv.invoice.number ?? "Rechnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoiceDocumentPdf(inv.data, invoiceTheme, inv.invoice.status)) });
     }
     return out;
   }

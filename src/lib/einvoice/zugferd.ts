@@ -30,3 +30,20 @@ export async function renderZugferdPdf(data: EInvoiceData, theme: PdfTheme): Pro
     ],
   });
 }
+
+/**
+ * Das "normale" Rechnungs-PDF (Download, API, Anhaenge): festgeschriebene oder stornierte
+ * Belege tragen IMMER die eingebettete ZUGFeRD/Factur-X-XML; nur echte Entwuerfe bleiben
+ * ein schlichtes PDF. Blockiert den PDF-Export nicht — scheitert der XML-Bau, wird mit
+ * Fehlerlog auf das schlichte PDF zurueckgefallen (Validierung bleibt im XRechnung-/
+ * ZUGFeRD-Export und im KoSIT-CI-Gate).
+ */
+export async function renderInvoiceDocumentPdf(data: EInvoiceData, theme: PdfTheme, status: string): Promise<Buffer> {
+  if (status !== "FINALIZED" && status !== "CANCELLED") return renderInvoicePdf(data, theme);
+  try {
+    return await renderZugferdPdf(data, theme);
+  } catch (err) {
+    console.error("ZUGFeRD-Einbettung fehlgeschlagen, liefere schlichtes PDF:", err instanceof Error ? err.message : err);
+    return renderInvoicePdf(data, theme);
+  }
+}
