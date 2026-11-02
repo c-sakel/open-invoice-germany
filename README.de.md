@@ -101,6 +101,8 @@ npm run dev                     # http://localhost:3000
 
 Die SQLite-Datei liegt unter `prisma/dev.db` und gehört nur dir. Beim ersten Start legst du unter **`/setup`** dein Admin-Konto an (nach `npm run db:seed` gibt es einen Demo-Login `admin@example.com` / `demo1234` — bitte ändern). Für **Produktion**: `AUTH_SECRET` in `.env` setzen (`openssl rand -base64 32`) und hinter HTTPS betreiben.
 
+**Nativer Produktivbetrieb ohne Docker** (`npm run build && npm start`): `AUTH_SECRET` ist Pflicht — ohne startet die Sitzungssignierung nicht. Hinter einem TLS-Reverse-Proxy `X-Forwarded-Proto` weiterreichen (das Session-Cookie bekommt `Secure` nur bei HTTPS; reines HTTP im LAN funktioniert ebenfalls). Sendet der Proxy den Header nicht, `SESSION_COOKIE_SECURE=true` setzen.
+
 **In der App:** `Einstellungen` (Unternehmen anlegen) → `Kunden` → `Neue Rechnung` → Position erfassen → **Festschreiben** (vergibt die Nummer, macht GoBD-konform unveränderbar) → **PDF**- und **XRechnung**-Export. Komplette Schritt-für-Schritt-Anleitung: **[docs/ANLEITUNG.md](docs/ANLEITUNG.md)**.
 
 ## Mit Docker (PostgreSQL + ZUGFeRD-Sidecar)
