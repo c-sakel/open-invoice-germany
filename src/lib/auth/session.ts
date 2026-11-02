@@ -8,7 +8,11 @@ export const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 Tage (Sekunden)
 function getSecret(): string {
   const s = process.env.AUTH_SECRET;
   if (s && s.length >= 16) return s;
-  // Dev-Fallback: funktioniert lokal, ist aber NICHT sicher. In Produktion AUTH_SECRET setzen.
+  // Das feste Dev-Secret steht im Quellcode: in Produktion koennte jeder damit Sitzungen
+  // faelschen. Deshalb dort kein Fallback, sondern harter Abbruch mit klarer Anweisung.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET fehlt oder ist kuerzer als 16 Zeichen. Setzen (z. B. `openssl rand -base64 32`) und neu starten.");
+  }
   return "dev-insecure-secret-bitte-AUTH_SECRET-setzen";
 }
 
