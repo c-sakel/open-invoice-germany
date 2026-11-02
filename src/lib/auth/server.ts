@@ -1,7 +1,8 @@
 /** Server-seitige Session-Helfer (Cookies via next/headers — Node-Runtime). */
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 import { dbInternal } from "@/lib/db";
+import { isSecureRequest } from "./cookie-secure";
 import { SESSION_COOKIE, SESSION_MAX_AGE, createSessionToken, verifySessionToken } from "./session";
 
 /**
@@ -50,7 +51,7 @@ export async function setSession(userId: string): Promise<void> {
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureRequest(await headers()),
     path: "/",
     maxAge: SESSION_MAX_AGE,
   });
