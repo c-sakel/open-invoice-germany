@@ -18,7 +18,7 @@
 import { dbInternal } from "@/lib/db";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
-import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { renderInvoiceDocumentPdf, renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
@@ -79,7 +79,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     const filenameBase = sanitizeFilename(inv.number ?? `entwurf-${inv.id.slice(0, 8)}`);
     const theme = await loadPdfTheme(orgId, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
     if (format === "pdf") {
-      return { buffer: await renderInvoicePdf(data, theme), mimeType: "application/pdf", filenameBase };
+      return { buffer: await renderInvoiceDocumentPdf(data, theme, inv.status), mimeType: "application/pdf", filenameBase };
     }
     if (format === "xrechnung") {
       if (inv.status === "DRAFT") throw new InvalidOperationError("XRechnung nur fuer festgeschriebene Rechnungen. Zuerst finalisieren.");

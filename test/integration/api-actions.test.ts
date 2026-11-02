@@ -390,6 +390,15 @@ describe("/api/v1/Invoice/{id}/pdf,xrechnung,zugferd", () => {
     expect(res.headers.get("content-type")).toBe("application/pdf");
     const buf = Buffer.from(await res.arrayBuffer());
     expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
+    // Festgeschriebene Rechnung: das normale PDF traegt die ZUGFeRD-XML eingebettet.
+    expect(buf.toString("latin1")).toContain("factur-x.xml");
+  });
+
+  it("pdf eines Entwurfs bleibt ein schlichtes PDF ohne ZUGFeRD-XML", async () => {
+    const draft = await createDraftInvoice(orgId, invoiceInput());
+    const res = await InvoicePdf(req(`http://x/api/v1/Invoice/${draft.id}/pdf`, { token }), ctx1(draft.id));
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer()).toString("latin1")).not.toContain("factur-x.xml");
   });
 
   it("xrechnung liefert XML fuer eine festgeschriebene Rechnung", async () => {
