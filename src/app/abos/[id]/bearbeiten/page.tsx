@@ -49,6 +49,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
     emailTemplateId: rec.emailTemplateId ?? "",
     showPeriodText: rec.showPeriodText,
     notes: rec.notes ?? "",
+    currency: rec.currency,
     lines: rec.lines.map((l) => ({
       description: l.description,
       quantity: (l.quantityMilli / 1000).toString(),
@@ -77,6 +78,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
         defaultAutoSend={docSettings.recurringAutoSendDefault}
         defaultShowPeriodText={docSettings.recurringInsertPeriodText}
         taxRates={docSettings.taxRates}
+        defaultCurrency={docSettings.defaultCurrency}
         initial={initial}
       />
     </div>

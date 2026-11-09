@@ -677,3 +677,54 @@ describe("TaxRateNotAllowedError -> lesbare MCP-Fehlermeldung (Fix 2, Re-Review 
     expect(text(res)).not.toContain("Unerwarteter Fehler");
   });
 });
+
+describe("Waehrungskette in create_invoice / create_document / create_recurring", () => {
+  let usdName: string;
+  let usdCustomerId: string;
+
+  beforeAll(async () => {
+    const c = await dbInternal.customer.create({
+      data: { orgId, name: "MCP-Core-USD-Kunde Inc", addressLine1: "Main St 1", postalCode: "10001", city: "New York", type: "BUSINESS", defaultCurrency: "USD" },
+    });
+    usdName = c.name;
+    usdCustomerId = c.id;
+  });
+
+  it("create_invoice ohne currency uebernimmt die Kundenvorgabe (USD)", async () => {
+    const res = await callTool("create_invoice", { customer: usdName, lines: [{ description: "Beratung", quantity: 1, unitPriceEuro: 100, taxRatePercent: 19 }] });
+    expect(res.isError).toBeFalsy();
+    const inv = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, customerId: usdCustomerId }, orderBy: { createdAt: "desc" }, select: { currency: true } });
+    expect(inv.currency).toBe("USD");
+  });
+
+  it("create_invoice mit expliziter currency ueberstimmt die Kundenvorgabe", async () => {
+    const res = await callTool("create_invoice", { customer: usdName, currency: "CHF", lines: [{ description: "Beratung", quantity: 1, unitPriceEuro: 10, taxRatePercent: 19 }] });
+    expect(res.isError).toBeFalsy();
+    const inv = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, customerId: usdCustomerId }, orderBy: { createdAt: "desc" }, select: { currency: true } });
+    expect(inv.currency).toBe("CHF");
+  });
+
+  it("create_invoice lehnt kleingeschriebenen Code ab", async () => {
+    const res = await callTool("create_invoice", { customer: usdName, currency: "usd", lines: [{ description: "X", quantity: 1, unitPriceEuro: 10 }] });
+    expect(res.isError).toBe(true);
+  });
+
+  it("create_document ohne currency uebernimmt die Kundenvorgabe (USD)", async () => {
+    const res = await callTool("create_document", { kind: "ANGEBOT", customer: usdName, lines: [{ description: "Angebot", quantity: 1, unitPriceEuro: 50, taxRatePercent: 19 }] });
+    expect(res.isError).toBeFalsy();
+    const doc = await dbInternal.quote.findFirstOrThrow({ where: { orgId, customerId: usdCustomerId }, orderBy: { createdAt: "desc" }, select: { currency: true } });
+    expect(doc.currency).toBe("USD");
+  });
+
+  it("create_recurring ohne currency uebernimmt die Kundenvorgabe (USD)", async () => {
+    const res = await callTool("create_recurring", {
+      customer: usdName,
+      title: "USD-Abo",
+      startDate: "2069-04-01",
+      lines: [{ description: "Wartung", quantity: 1, unitPriceEuro: 20, taxRatePercent: 19 }],
+    });
+    expect(res.isError).toBeFalsy();
+    const rec = await dbInternal.recurringInvoice.findFirstOrThrow({ where: { orgId, title: "USD-Abo" }, select: { currency: true } });
+    expect(rec.currency).toBe("USD");
+  });
+});

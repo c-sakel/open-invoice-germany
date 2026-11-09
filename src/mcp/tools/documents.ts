@@ -19,7 +19,7 @@ import { duplicateDocument, type DuplicatableType } from "@/domain/document/dupl
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
 import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import { getDocumentFile } from "@/api/files";
-import { createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
+import { currencyCodeSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
@@ -37,6 +37,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         customer: z.string().describe("Kundenname oder -ID"),
         lines: z.array(docLineSchema).min(1),
         validUntil: z.string().optional().describe("Gültig bis YYYY-MM-DD (für Angebote)"),
+        currency: currencyCodeSchema.optional().describe("ISO-4217-Code (3 Grossbuchstaben, z. B. USD); ohne Angabe: Kunde > Einstellung > EUR"),
         notes: z.string().optional(),
         documentDiscountPercent: z.number().min(0).max(100).optional().describe("Belegrabatt in Prozent (auf alle Steuersaetze proportional verteilt)"),
         documentDiscountEuro: z.number().min(0).optional().describe("Zusaetzlicher Belegrabatt als Festbetrag in Euro"),
@@ -54,7 +55,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           kind: args.kind,
           customerId: customer.id,
           taxScheme: "REGULAR",
-          currency: "EUR",
+          currency: args.currency,
           validUntil: ctx.parseDateInput(args.validUntil),
           notes: args.notes,
           documentDiscountPermille: args.documentDiscountPercent ? Math.round(args.documentDiscountPercent * 10) : undefined,

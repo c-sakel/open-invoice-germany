@@ -40,6 +40,7 @@ import {
   createFinalInvoiceSchema,
   invoiceListFilterSchema,
   LineType,
+  currencyCodeSchema,
 } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -70,6 +71,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         taxScheme: TaxScheme.optional().describe("Default: Schema des Unternehmens (sonst REGULAR)"),
         deliveryDate: z.string().optional().describe("Leistungsdatum YYYY-MM-DD oder 'heute' (Pflicht für Festschreiben)"),
         dueDate: z.string().optional(),
+        currency: currencyCodeSchema.optional().describe("ISO-4217-Code (3 Grossbuchstaben, z. B. USD); ohne Angabe: Kunde > Einstellung > EUR"),
         notes: z.string().optional(),
         paymentTerms: z.string().optional(),
         documentDiscountPercent: z.number().min(0).max(100).optional().describe("Belegrabatt in Prozent (auf alle Steuersaetze proportional verteilt)"),
@@ -134,7 +136,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           customerId: customer.id,
           type: "INVOICE",
           taxScheme: scheme,
-          currency: "EUR",
+          currency: args.currency,
           deliveryDate: ctx.parseDateInput(args.deliveryDate),
           dueDate: ctx.parseDateInput(args.dueDate),
           notes,
