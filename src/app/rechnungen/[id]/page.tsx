@@ -23,6 +23,7 @@ import { InternalNotesBox } from "@/components/detail/InternalNotesBox";
 import { loadNeighbors } from "@/domain/document/neighbors";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
+import { refundablePaidCents } from "@/domain/invoice/amounts";
 import { buildInvoiceViewModel, primaryAction, TYPE_TITLE } from "./_parts/invoice-view-model";
 import { InvoiceStatusCard } from "./_parts/InvoiceStatusCard";
 import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
@@ -70,7 +71,7 @@ export default async function InvoiceDetail({
   const vm = buildInvoiceViewModel(invoice);
   // T7: nach einem Storno zurueckzuzahlender Betrag = echte Zahlungen (ohne Verrechnungen mit Teilgutschriften).
   const refundDueCents = vm.isCancelled
-    ? Math.max(0, invoice.payments.filter((p) => p.method !== "CREDIT_NOTE").reduce((sum, p) => sum + p.amountCents, 0))
+    ? refundablePaidCents(invoice.payments)
     : 0;
   // Phase 13c, Task 4: genau EINE hervorgehobene Kopfzeilen-Aktion je Status statt bis zu
   // fuenf gleichwertigen Knoepfen — reine Ableitung aus dem View-Model (primaryAction).
@@ -219,8 +220,8 @@ export default async function InvoiceDetail({
         <>
           {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm whitespace-pre-line text-rose-800">{error}</div>}
           {vm.isCancelled && refundDueCents > 0 && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Erstattung von {formatCents(refundDueCents, invoice.currency)} fällig — auf diese Rechnung wurden Zahlungen erfasst, die nach dem Storno an den Kunden zurückzuzahlen sind.
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              Erfasste Zahlungen: {formatCents(refundDueCents, invoice.currency)} — falls noch nicht geschehen, an den Kunden zurückzahlen (Skonto und Verrechnungen mit Gutschriften sind nicht enthalten).
             </div>
           )}
           {vm.isDraft && (

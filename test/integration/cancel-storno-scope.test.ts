@@ -223,3 +223,37 @@ describe("getCancelPreview — Storno-Dialog", () => {
     expect((await getCancelPreview(inv.id, inv.orgId)).cancellable).toBe(false);
   });
 });
+
+describe("Erstattung — Skonto und Schlussrechnung mit Gutschriften", () => {
+  it("Skonto-Buchung zaehlt nicht als Geldeingang (Vorschau und Storno)", async () => {
+    const inv = await finalized([{ description: "A", netCents: 100000, taxRate: 19 }], { skonto1Permille: 20, skonto1Days: 10 });
+    await recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: 119000 - 2380, method: "TRANSFER", paidAt: NOW, applySkonto: true }), { now: NOW });
+    const prev = await getCancelPreview(inv.id, inv.orgId);
+    expect(prev.paidCents).toBe(119000 - 2380);
+    expect(prev.refundDueCents).toBe(119000 - 2380);
+    const res = await cancelInvoice(inv.id, { orgId: inv.orgId, now: NOW });
+    expect(res.refundDueCents).toBe(119000 - 2380);
+  });
+
+  it("Schlussrechnung durch Gutschriften zwischen Zahlbetrag und Brutto aufgehoben: Abschlag bleibt nicht gesperrt", async () => {
+    const quote = await createBusinessDocument(
+      orgId,
+      { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 100000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }] },
+      { now: NOW },
+    );
+    const dp = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: NOW });
+    const dpFin = await finalizeInvoice(dp.id, { now: NOW });
+    const fin = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: NOW });
+    const finFin = await finalizeInvoice(fin.id, { now: NOW });
+    const payable = finFin.payableCents ?? 0;
+    expect(payable).toBeLessThan(finFin.grossTotalCents);
+
+    // Gutschrift ueber den Zahlbetrag, aber unter dem Brutto (zulaessig).
+    const net = Math.ceil(payable / 1.19) + 100;
+    await createPartialCreditNote(finFin.id, { lines: [creditLine(net)] }, { orgId: finFin.orgId, now: NOW });
+    await expect(cancelInvoice(finFin.id, { orgId: finFin.orgId, now: NOW })).rejects.toBeInstanceOf(CancelError);
+
+    const res = await cancelInvoice(dpFin.id, { orgId: dpFin.orgId, now: NOW });
+    expect(res.creditNote.status).toBe("FINALIZED");
+  });
+});

@@ -9,8 +9,11 @@ import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
 
-/** ISO-4217-Waehrungscode: genau 3 Grossbuchstaben (kleingeschriebene Codes werden abgelehnt). */
-export const currencyCodeSchema = z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Grossbuchstaben (ISO 4217)");
+/** ISO-4217-Waehrungscode: Eingabe wird getrimmt und in Grossbuchstaben normalisiert ("eur" -> "EUR"), danach genau 3 Buchstaben. */
+export const currencyCodeSchema = z
+  .string()
+  .transform((s) => s.trim().toUpperCase())
+  .pipe(z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Buchstaben (ISO 4217)"));
 
 /** IBAN-Eingabe (BT-84): Leerzeichen raus, Grossbuchstaben, MOD-97-10-Pruefsumme. Leer bleibt erlaubt.
  * Nur fuer Eingaben — Snapshot-Schemas festgeschriebener Belege bleiben bewusst ungeprueft. */

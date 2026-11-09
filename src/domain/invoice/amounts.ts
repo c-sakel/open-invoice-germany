@@ -32,3 +32,15 @@ export function openAmountCents(invoice: OpenAmountInvoice): number {
 export function creditCapCents(invoice: Pick<OpenAmountInvoice, "grossTotalCents">): number {
   return invoice.grossTotalCents;
 }
+
+/**
+ * Tatsaechlich eingegangenes (erstattungsfaehiges) Geld: Verrechnungen mit Gutschriften
+ * (method CREDIT_NOTE) und Skonto-Buchungen (method SKONTO / isSkonto) sind kein Geldeingang
+ * und werden bei Storno nicht erstattet. Eine Quelle fuer Detailseite, Storno und Vorschau.
+ */
+export function refundablePaidCents(payments: ReadonlyArray<{ amountCents: number; method: string; isSkonto?: boolean }>): number {
+  return Math.max(
+    0,
+    payments.filter((p) => p.method !== "CREDIT_NOTE" && p.method !== "SKONTO" && !p.isSkonto).reduce((sum, p) => sum + p.amountCents, 0),
+  );
+}

@@ -17,6 +17,7 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
 import { NotFoundError } from "@/domain/errors";
 import { finalizeWithinTx } from "./finalize";
+import { refundablePaidCents } from "./amounts";
 
 /** Zeilentypen, die keinen Betrag tragen (§8: HEADING/TEXT/SUBTOTAL nie in Summen/XML). */
 const NON_ITEM_LINE_TYPES = new Set(["HEADING", "TEXT", "SUBTOTAL"]);
@@ -206,9 +207,19 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
     if (original.type === "DOWNPAYMENT") {
       const deduction = await tx.finalInvoiceDeduction.findFirst({
         where: { downpaymentInvoiceId: original.id, finalInvoice: { status: { not: "CANCELLED" } } },
-        select: { finalInvoice: { select: { number: true } } },
+        select: { finalInvoice: { select: { id: true, number: true, grossTotalCents: true, payableCents: true } } },
       });
+      // Eine vollstaendig gutgeschriebene Schlussrechnung ist wirtschaftlich aufgehoben und
+      // nicht mehr stornierbar -> ihre Abschlaege duerfen nicht dauerhaft gesperrt bleiben.
+      let finalFullyCredited = false;
       if (deduction) {
+        const fc = await tx.invoice.aggregate({
+          where: { correctsInvoiceId: deduction.finalInvoice.id, type: "CREDIT_NOTE", status: { notIn: ["DRAFT", "CANCELLED"] } },
+          _sum: { grossTotalCents: true },
+        });
+        finalFullyCredited = Math.abs(fc._sum.grossTotalCents ?? 0) >= (deduction.finalInvoice.payableCents ?? deduction.finalInvoice.grossTotalCents);
+      }
+      if (deduction && !finalFullyCredited) {
         throw new CancelError(`Abschlag ist in Schlussrechnung ${deduction.finalInvoice.number ?? "(ohne Nummer)"} verrechnet — zuerst die Schlussrechnung stornieren.`);
       }
     }
@@ -339,12 +350,12 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
       now,
     });
 
-    // Erstattung: tatsaechlich eingegangene Zahlungen (ohne Verrechnungen mit Teilgutschriften).
-    const offsets = await tx.payment.aggregate({
-      where: { invoiceId: original.id, method: "CREDIT_NOTE" },
-      _sum: { amountCents: true },
+    // Erstattung: tatsaechlich eingegangenes Geld (ohne Verrechnungen mit Gutschriften und Skonto-Buchungen).
+    const payments = await tx.payment.findMany({
+      where: { invoiceId: original.id },
+      select: { amountCents: true, method: true, isSkonto: true },
     });
-    const refundDueCents = Math.max(0, original.paidAmountCents - (offsets._sum.amountCents ?? 0));
+    const refundDueCents = refundablePaidCents(payments);
 
     return { originalId: original.id, originalNumber: original.number, creditNote: finalizedCredit, refundDueCents };
   });

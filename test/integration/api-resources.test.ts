@@ -475,6 +475,14 @@ async function createInvoice() {
 }
 
 describe("/api/v1/Invoice", () => {
+  it("Kleinschreibung der Waehrung wird normalisiert (eur -> EUR)", async () => {
+    const res = await InvoiceCreate(
+      req("http://x/api/v1/Invoice", { method: "POST", token, body: { customerId, currency: " eur ", lines: [{ description: "Pos 1", quantityMilli: 1000, unitNetPriceCents: 10000, taxRate: 19 }] } }),
+    );
+    expect(res.status).toBe(201);
+    expect((await json(res)).data.currency).toBe("EUR");
+  });
+
   it("Create -> 201 DRAFT", async () => {
     const created = await createInvoice();
     expect(created.objectName).toBe("Invoice");

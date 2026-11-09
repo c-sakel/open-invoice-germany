@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
-import { payableBaseCents } from "./amounts";
+import { payableBaseCents, refundablePaidCents } from "./amounts";
 
 export interface CancelPreview {
   invoiceId: string;
@@ -29,7 +29,7 @@ export async function getCancelPreview(invoiceId: string, orgId: string): Promis
     select: {
       id: true, number: true, currency: true, type: true, status: true,
       grossTotalCents: true, payableCents: true,
-      payments: { select: { amountCents: true, method: true } },
+      payments: { select: { amountCents: true, method: true, isSkonto: true } },
       dunnings: { select: { level: true, stage: { select: { name: true, order: true } } } },
     },
   });
@@ -44,7 +44,7 @@ export async function getCancelPreview(invoiceId: string, orgId: string): Promis
   // Wie cancelInvoice: Rest-Storno nur nach Teilgutschriften, sonst voller Betrag.
   const stornoCents = credits.length > 0 ? Math.max(0, (inv.type === "FINAL" ? (inv.payableCents ?? 0) : inv.grossTotalCents) - creditedCents) : base;
 
-  const paidCents = inv.payments.filter((p) => p.method !== "CREDIT_NOTE").reduce((s, p) => s + p.amountCents, 0);
+  const paidCents = refundablePaidCents(inv.payments);
   const top = [...inv.dunnings].sort((a, b) => (b.stage?.order ?? b.level) - (a.stage?.order ?? a.level))[0];
   const dunningLabel = top ? (top.stage?.name ?? (top.level === 0 ? "Zahlungserinnerung" : `${top.level}. Mahnung`)) : null;
 
@@ -57,7 +57,7 @@ export async function getCancelPreview(invoiceId: string, orgId: string): Promis
     stornoCents,
     creditedCents,
     paidCents,
-    refundDueCents: Math.max(0, paidCents),
+    refundDueCents: paidCents,
     dunningLabel,
     cancellable: inv.status !== "DRAFT" && inv.status !== "CANCELLED" && inv.type !== "CREDIT_NOTE",
   };

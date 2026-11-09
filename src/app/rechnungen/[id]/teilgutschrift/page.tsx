@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { loadDocumentSettings } from "@/domain/document/settings";
-import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
+import { creditCapCents, openAmountCents } from "@/domain/invoice/amounts";
 import { PartialCreditForm } from "@/components/PartialCreditForm";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
     where: { correctsInvoiceId: inv.id, type: "CREDIT_NOTE", status: { not: "DRAFT" } },
     _sum: { grossTotalCents: true },
   });
-  const remainingCents = Math.max(0, payableBaseCents(inv) - Math.abs(credits._sum.grossTotalCents ?? 0));
+  const remainingCents = Math.max(0, creditCapCents(inv) - Math.abs(credits._sum.grossTotalCents ?? 0));
 
   // Teilgutschrift nur ueber ITEM-Positionen — HEADING/TEXT/SUBTOTAL tragen keinen Betrag
   // und werden hier nicht angeboten (§8, K1).
