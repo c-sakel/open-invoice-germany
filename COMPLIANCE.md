@@ -471,6 +471,18 @@ Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nic
 
 - Reverse Charge beim Empfänger im Bestimmungsland; Rechnung bis 15. Tag des Folgemonats, USt-IdNr. beider Parteien + „Steuerschuldnerschaft des Leistungsempfängers" (§ 14a Abs. 1).
 
+### (3a) Drittland-Leistung (§ 3a UStG — Nicht-EU)
+
+- **Ort der Leistung** im Drittland → **nicht im Inland steuerbar** (kein USt-Ausweis). Gilt für sonstige Leistungen an **Unternehmer** im Drittland (§ 3a Abs. 2 UStG) sowie für Katalogleistungen (§ 3a Abs. 4 UStG) und auf elektronischem Weg erbrachte Leistungen (§ 3a Abs. 5 S. 2 Nr. 3 UStG) an Privatkunden im Drittland. **Andere B2C-Leistungen** bleiben nach § 3a Abs. 1 UStG in Deutschland steuerbar (Regelsteuersatz).
+- **Keine USt-IdNr.-Pflicht** für den Empfänger (Drittland), keine ZM-Meldung.
+- **EN 16931 Steuerkategorie:** `O` (Out of scope) — nicht `G` (Export/Waren), nicht `AE` (Reverse Charge/EU), nicht `Z` (Nullsatz).
+- **Umsetzung:** Steuerschema `NICHT_STEUERBAR` (Kategorie `O`, VATEX-EU-O), siehe Tabelle der Schemahinweise oben. Kein eigenes Drittland-Schema — der Upstream-Vorschlag `DRITTLAND_LEISTUNG` ist fachlich identisch und wird hier nicht doppelt geführt.
+- **Hinweis:** „Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)". Keine Steuerbefreiung, daher kein Fall des § 14 Abs. 4 S. 1 Nr. 8 UStG; der Hinweis ist nach EN 16931 BR-O-10/BT-120 empfohlen und wird immer gedruckt.
+- **Abgrenzung zu `G` (Ausfuhrlieferung):** `G` = Warenexport § 4 Nr. 1 Buchst. a i. V. m. § 6 UStG (Gegenstand geht ins Drittland). `O` = sonstige Leistung mit Leistungsort im Ausland — kein Warenexport.
+- **Währung:** Fremdwährung ist umsatzsteuerlich zulässig (Umrechnung nach § 16 Abs. 6 UStG); eine Wechselkursangabe auf dem Beleg ist derzeit nicht umgesetzt.
+- **Quellen:** [§ 3a UStG](https://www.gesetze-im-internet.de/ustg_1980/__3a.html) · [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html) · [§ 16 UStG](https://www.gesetze-im-internet.de/ustg_1980/__16.html)
+**Stand:** 2026-11-09
+
 ### USt-IdNr.-Prüfung (§ 18e UStG / VIES)
 
 | Anfrage-Art | Prüft | Nachweiswert |

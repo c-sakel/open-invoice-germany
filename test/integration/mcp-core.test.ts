@@ -329,6 +329,15 @@ describe("setup_company", () => {
     const res = await callTool("setup_company", { legalName: "X-GmbH", addressLine1: "Y-Weg 1", city: "Z-Stadt" });
     expect(res.isError).toBe(true);
   });
+
+  it("Fehlerpfad: ungueltige IBAN liefert eine Validierungsmeldung statt 'Unerwarteter Fehler'", async () => {
+    const res = await callTool("setup_company", {
+      legalName: "X-GmbH", addressLine1: "Y-Weg 1", postalCode: "10999", city: "Z-Stadt",
+      taxNumber: "99/999/99999", iban: "DE89370400440532013001",
+    });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("Ungültige IBAN");
+  });
 });
 
 describe("list_api_requests (Phase 12d, Task 5 — Fix-Welle m12)", () => {
