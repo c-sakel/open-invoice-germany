@@ -704,8 +704,8 @@ describe("Waehrungskette in create_invoice / create_document / create_recurring"
     expect(inv.currency).toBe("CHF");
   });
 
-  it("create_invoice lehnt kleingeschriebenen Code ab", async () => {
-    const res = await callTool("create_invoice", { customer: usdName, currency: "usd", lines: [{ description: "X", quantity: 1, unitPriceEuro: 10 }] });
+  it("create_invoice lehnt ungueltigen Waehrungscode ab", async () => {
+    const res = await callTool("create_invoice", { customer: usdName, currency: "US1", lines: [{ description: "X", quantity: 1, unitPriceEuro: 10 }] });
     expect(res.isError).toBe(true);
   });
 

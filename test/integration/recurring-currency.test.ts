@@ -53,9 +53,10 @@ describe("createRecurring: Waehrungskette", () => {
     expect((await createRecurring(orgId, input(usdCustomerId))).currency).toBe("USD");
   });
 
-  it("ungueltiger Code wird vom Schema abgelehnt", () => {
-    expect(() => input(plainCustomerId, { currency: "usd" })).toThrow();
-    expect(updateRecurringSchema.safeParse({ currency: "usd" }).success).toBe(false);
+  it("ungueltiger Code wird vom Schema abgelehnt, Kleinschreibung wird normalisiert", () => {
+    expect(() => input(plainCustomerId, { currency: "US1" })).toThrow();
+    expect(updateRecurringSchema.safeParse({ currency: "EURO" }).success).toBe(false);
+    expect(updateRecurringSchema.parse({ currency: "usd" }).currency).toBe("USD");
     expect(updateRecurringSchema.safeParse({ currency: "USD" }).success).toBe(true);
   });
 });
