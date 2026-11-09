@@ -22,3 +22,13 @@ export function payableBaseCents(invoice: Pick<OpenAmountInvoice, "grossTotalCen
 export function openAmountCents(invoice: OpenAmountInvoice): number {
   return payableBaseCents(invoice) - invoice.paidAmountCents;
 }
+
+/**
+ * Obergrenze fuer Gutschriften gegen eine Rechnung: der Rechnungsbetrag (brutto) selbst.
+ * Bei einer Schlussrechnung ist `payableCents` (= brutto - Abschlaege) NUR die Zahlungs-
+ * grundlage; die Positionen der Schlussrechnung (und damit eine Gutschrift darauf) beziehen
+ * sich auf den vollen Bruttobetrag. Verrechnet wird weiterhin nur gegen den offenen Rest.
+ */
+export function creditCapCents(invoice: Pick<OpenAmountInvoice, "grossTotalCents">): number {
+  return invoice.grossTotalCents;
+}

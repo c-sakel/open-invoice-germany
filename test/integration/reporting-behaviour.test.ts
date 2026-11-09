@@ -72,3 +72,13 @@ describe("paymentBehaviour", () => {
     expect(b.onTimeShare).toBeCloseTo(2 / 3, 5);
   });
 });
+
+describe("paymentBehaviour — Verrechnung", () => {
+  it("Zahlung method CREDIT_NOTE zaehlt nicht als Zahlung", async () => {
+    const before = await paymentBehaviour(orgId, { customerId });
+    const inv = await make(7000, new Date(Date.UTC(2086, 2, 25)));
+    await dbInternal.payment.create({ data: { invoiceId: inv.id, amountCents: 7000, paidAt: new Date(Date.UTC(2086, 3, 1)), method: "CREDIT_NOTE" } });
+    await dbInternal.invoice.update({ where: { id: inv.id }, data: { status: "PAID", paidAmountCents: 7000 } });
+    expect(await paymentBehaviour(orgId, { customerId })).toEqual(before);
+  });
+});

@@ -11,7 +11,8 @@ import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
 import { NotFoundError } from "@/domain/errors";
-import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
+import { creditCapCents, openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
+import { incrementPaidAmount } from "./paid-amount";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { finalizeWithinTx } from "./finalize";
 
@@ -151,7 +152,7 @@ export async function createPartialCreditNote(
     });
     const creditedBefore = Math.abs(earlier._sum.grossTotalCents ?? 0);
     const creditGross = Math.abs(finalized.grossTotalCents);
-    const base = payableBaseCents(original);
+    const base = creditCapCents(original);
     if (creditedBefore + creditGross > base) {
       const remaining = Math.max(0, base - creditedBefore);
       throw new CreditError(
@@ -174,9 +175,11 @@ export async function createPartialCreditNote(
           note: `Verrechnung mit Gutschrift ${finalized.number}`,
         },
       });
-      const newPaid = original.paidAmountCents + offsetCents;
-      const newStatus = newPaid >= base ? "PAID" : "PARTIALLY_PAID";
-      await tx.invoice.update({ where: { id: original.id }, data: { paidAmountCents: newPaid, status: newStatus } });
+      const payBase = payableBaseCents(original);
+      const newPaid = await incrementPaidAmount(tx, original.id, payBase, offsetCents);
+      if (newPaid === null) throw new CreditError(`Die Rechnung ${original.number} wurde parallel geändert (Zahlung/Gutschrift); bitte erneut versuchen.`);
+      const newStatus = newPaid >= payBase ? "PAID" : "PARTIALLY_PAID";
+      await tx.invoice.update({ where: { id: original.id }, data: { status: newStatus } });
       await appendChangeLog(tx, {
         orgId: original.orgId,
         entity: "INVOICE",

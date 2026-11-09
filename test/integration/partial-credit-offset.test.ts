@@ -169,3 +169,55 @@ describe("E-Rechnung des Originals", () => {
     expect(xml).toContain("<ram:TotalPrepaidAmount>300.00</ram:TotalPrepaidAmount>");
   });
 });
+
+describe("Schlussrechnung und Folge-Gutschriften", () => {
+  // Schlussrechnung simuliert: brutto 1.190, Abschlaege 300 -> payableCents 890.
+  async function finalLike() {
+    const inv = await invoice1190();
+    await dbInternal.invoice.update({ where: { id: inv.id }, data: { type: "FINAL", payableCents: 89000, prepaidCents: 30000 } });
+    return inv;
+  }
+
+  it("Obergrenze = voller Bruttobetrag, Verrechnung nur gegen den offenen Zahlbetrag", async () => {
+    const inv = await finalLike();
+    const res = await createPartialCreditNote(inv.id, { lines: [creditLine(90000)] }, { orgId, now: NOW }); // 1.071 brutto > Zahlbetrag 890
+    const gross = Math.abs(res.creditNote.grossTotalCents);
+    expect(gross).toBe(107100);
+    expect(res.offsetCents).toBe(89000);
+    expect(res.refundDueCents).toBe(gross - 89000);
+    expect((await state(inv.id)).status).toBe("PAID");
+    // Rest bis 1.190: 119 brutto gehen, mehr nicht
+    await expect(createPartialCreditNote(inv.id, { lines: [creditLine(10001)] }, { orgId, now: NOW })).rejects.toBeInstanceOf(CreditError);
+    const ok = await createPartialCreditNote(inv.id, { lines: [creditLine(10000)] }, { orgId, now: NOW });
+    expect(ok.offsetCents).toBe(0);
+    expect(ok.refundDueCents).toBe(11900);
+  });
+
+  it("zweite Teilgutschrift nach Verrechnung: Σ-Obergrenze greift, Verrechnung nur Rest", async () => {
+    const inv = await invoice1190();
+    const first = await createPartialCreditNote(inv.id, { lines: [creditLine(60000)] }, { orgId, now: NOW }); // 714
+    expect(first.offsetCents).toBe(71400);
+    const second = await createPartialCreditNote(inv.id, { lines: [creditLine(40000)] }, { orgId, now: NOW }); // 476 = Rest
+    expect(second.offsetCents).toBe(47600);
+    expect(second.refundDueCents).toBe(0);
+    const after = await state(inv.id);
+    expect(after.status).toBe("PAID");
+    expect(after.paidAmountCents).toBe(119000);
+    await expect(createPartialCreditNote(inv.id, { lines: [creditLine(100)] }, { orgId, now: NOW })).rejects.toBeInstanceOf(CreditError);
+  });
+});
+
+describe("Paralleler Zugriff", () => {
+  it("Zahlung und Gutschrift gleichzeitig: Summe ueberschreitet den Rechnungsbetrag nie", async () => {
+    const inv = await invoice1190();
+    const results = await Promise.allSettled([
+      recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: 80000, method: "TRANSFER" }), { now: NOW }),
+      createPartialCreditNote(inv.id, { lines: [creditLine(50000)] }, { orgId, now: NOW }), // 595
+    ]);
+    const after = await state(inv.id);
+    expect(after.paidAmountCents).toBeLessThanOrEqual(119000);
+    const pays = await dbInternal.payment.findMany({ where: { invoiceId: inv.id }, select: { amountCents: true } });
+    expect(pays.reduce((s, p) => s + p.amountCents, 0)).toBe(after.paidAmountCents);
+    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
+  });
+});

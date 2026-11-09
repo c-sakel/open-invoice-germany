@@ -168,7 +168,9 @@ kein Geldeingang; Anzeige „Verrechnung Gutschrift“). Die Rechnung wird dann 
 bzw. `PAID`; ein darüber hinausgehender Gutschriftsbetrag ist zu erstatten. Die Summe aller
 Gutschriften darf den Rechnungsbetrag nicht übersteigen, auf stornierte Rechnungen ist keine
 Teilgutschrift möglich (jeweils 409). In der E-Rechnung des Originals zählen Verrechnungen
-nicht als bezahlt (BT-113).
+nicht als bezahlt (BT-113). Hinweis: Eine Gutschrift über den vollen Betrag setzt das Original auf `PAID`, obwohl
+kein Geldeingang erfolgt ist (reine Verrechnung); als Obergrenze für Gutschriften gilt der Rechnungsbetrag
+(bei Schlussrechnungen der volle Bruttobetrag, nicht der um Abschläge reduzierte Zahlbetrag).
 
 ## Anfrageprotokoll
 
