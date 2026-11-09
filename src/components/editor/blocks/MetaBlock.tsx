@@ -23,6 +23,8 @@ import type { EditorMode } from "@/lib/editor/constants";
 import { EditorField } from "../EditorField";
 import { inputCls } from "@/components/forms/fields";
 import type { RecipientCustomerOption } from "./RecipientBlock";
+import { currencyOptions } from "@/lib/currencies";
+import { useEditorCurrency } from "../currency-context";
 
 export interface PaymentMethodOption {
   id: string;
@@ -52,6 +54,7 @@ export function MetaBlock({
    *  dort ohnehin der Systemdefault 14). */
   invoiceDueDays?: number;
 }) {
+  const displayCurrency = useEditorCurrency();
   const selectedMethod = paymentMethods.find((m) => m.id === draft.paymentMethodId);
   const selectedCustomer = customers.find((c) => c.id === draft.customerId);
   // `issueDate || heute` als Bezug: `createDraftInvoice` setzt bei leerem Feld genau das
@@ -125,6 +128,23 @@ export function MetaBlock({
                 <option value="IG_LEISTUNG">Innergem. Leistung (§ 3a Abs. 2)</option>
                 <option value="AUSFUHR">Ausfuhrlieferung (§ 6)</option>
                 <option value="NICHT_STEUERBAR">Nicht steuerbar, Drittland-Leistung (§ 3a Abs. 2/4/5)</option>
+              </select>
+            )}
+          </EditorField>
+        )}
+
+        {(mode === "INVOICE" || mode === "DOCUMENT") && (
+          <EditorField
+            label="Währung"
+            hint={displayCurrency !== "EUR" ? "Fremdwährung: kein GiroCode; USt-Betrag in EUR und Wechselkurs werden nicht ausgewiesen (Art. 230 MwStSystRL, § 16 Abs. 6 UStG)." : undefined}
+          >
+            {(id) => (
+              <select id={id} className={inputCls} value={displayCurrency} onChange={(e) => dispatch({ type: "set", field: "currency", value: e.target.value })}>
+                {currencyOptions(displayCurrency).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
               </select>
             )}
           </EditorField>

@@ -34,6 +34,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         email: true,
         defaultPaymentMethodId: true,
         defaultDiscountPermille: true,
+        defaultCurrency: true,
         addressLine1: true,
         postalCode: true,
         city: true,
@@ -67,6 +68,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     id: inv.id,
     customerId: inv.customerId,
     taxScheme: inv.taxScheme,
+    currency: inv.currency,
     subject: inv.subject ?? "",
     orderNumber: inv.orderNumber ?? "",
     internalReference: inv.internalReference ?? "",
@@ -130,6 +132,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
       customers={customers}
       products={products}
       taxRates={documentSettings.taxRates}
+      defaultCurrency={documentSettings.defaultCurrency}
       paymentMethods={paymentMethodOptions}
       contacts={contacts}
       addresses={addresses}

@@ -93,10 +93,19 @@ async function loadPreviewCustomer(orgId: string, customerId: string) {
       email: true,
       leitwegId: true,
       customerNumber: true,
+      defaultCurrency: true,
     },
   });
   if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
   return customer;
+}
+
+/** Waehrung wie bei der echten Anlage: Beleg > Kunde > Einstellung > EUR
+ *  (`createDraftInvoice`/`createBusinessDocument`). */
+async function resolvePreviewCurrency(orgId: string, explicit: string | undefined, customerDefault: string | null): Promise<string> {
+  if (explicit) return explicit;
+  if (customerDefault) return customerDefault;
+  return (await loadDocumentSettings(orgId)).defaultCurrency || "EUR";
 }
 
 /** Positionsnetto je Zeile — dieselbe Rechenregel wie bei der echten Anlage
@@ -133,7 +142,7 @@ async function buildInvoicePreview(orgId: string, org: Awaited<ReturnType<typeof
     number: null,
     kind: payload.type,
     issueDate: new Date(),
-    currency: payload.currency ?? "EUR",
+    currency: await resolvePreviewCurrency(orgId, payload.currency, customer.defaultCurrency),
     notes: payload.notes ?? null,
     org,
     customer,
@@ -173,7 +182,7 @@ async function buildDocumentPreview(orgId: string, org: Awaited<ReturnType<typeo
     kind: payload.kind,
     issueDate: new Date(),
     validUntil: payload.validUntil ?? null,
-    currency: payload.currency ?? "EUR",
+    currency: await resolvePreviewCurrency(orgId, payload.currency, customer.defaultCurrency),
     notes: payload.notes ?? null,
     org,
     customer,

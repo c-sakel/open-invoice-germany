@@ -14,9 +14,10 @@
 import type { DraftState } from "@/lib/editor/draft";
 import type { DraftTotals } from "@/lib/editor/totals";
 import { fromCents } from "@/lib/editor/parse";
+import { useEditorCurrencySymbol } from "../currency-context";
 
-function euro(cents: number): string {
-  return `${fromCents(cents)} €`;
+function euro(symbol: string, cents: number): string {
+  return `${fromCents(cents)} ${symbol}`;
 }
 
 /** Reiner Anzeigetext aus den rohen Skonto-Eingabefeldern (`MoreOptions`) — bewusst
@@ -35,6 +36,7 @@ function skontoHint(draft: DraftState): string | null {
 }
 
 export function TotalsBlock({ totals, draft }: { totals: DraftTotals; draft: DraftState }) {
+  const sym = useEditorCurrencySymbol();
   if (totals.error) {
     return <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{totals.error}</div>;
   }
@@ -45,35 +47,35 @@ export function TotalsBlock({ totals, draft }: { totals: DraftTotals; draft: Dra
     <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
       <div className="flex justify-between">
         <span>Zwischensumme (Positionen)</span>
-        <span className="tabular-nums">{euro(totals.lineNetCents)}</span>
+        <span className="tabular-nums">{euro(sym, totals.lineNetCents)}</span>
       </div>
       {totals.allowanceCents > 0 && (
         <div className="flex justify-between text-slate-500">
           <span>Rabatt</span>
-          <span className="tabular-nums">− {euro(totals.allowanceCents)}</span>
+          <span className="tabular-nums">− {euro(sym, totals.allowanceCents)}</span>
         </div>
       )}
       {totals.chargeCents > 0 && (
         <div className="flex justify-between text-slate-500">
           <span>Aufschlag</span>
-          <span className="tabular-nums">+ {euro(totals.chargeCents)}</span>
+          <span className="tabular-nums">+ {euro(sym, totals.chargeCents)}</span>
         </div>
       )}
       <div className="flex justify-between border-t border-slate-100 pt-1">
         <span>Netto</span>
-        <span className="tabular-nums font-medium">{euro(totals.netCents)}</span>
+        <span className="tabular-nums font-medium">{euro(sym, totals.netCents)}</span>
       </div>
       {totals.taxRows.map((r) => (
         <div key={r.rate} className="flex justify-between text-slate-500">
           <span>
-            USt {r.rate} % <span className="text-slate-400">(Basis {euro(r.baseCents)})</span>
+            USt {r.rate} % <span className="text-slate-400">(Basis {euro(sym, r.baseCents)})</span>
           </span>
-          <span className="tabular-nums">{euro(r.taxCents)}</span>
+          <span className="tabular-nums">{euro(sym, r.taxCents)}</span>
         </div>
       ))}
       <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold text-slate-900">
         <span>Brutto</span>
-        <span className="tabular-nums">{euro(totals.grossCents)}</span>
+        <span className="tabular-nums">{euro(sym, totals.grossCents)}</span>
       </div>
       {hint && <p className="border-t border-slate-100 pt-1 text-xs text-slate-500">{hint}</p>}
     </div>

@@ -333,4 +333,21 @@ describe("editor/draft", () => {
     const r = draftReducer(d, { type: "replace", state: { ...d, currency: "CHF" } });
     expect(r.currencyTouched).toBe(false);
   });
+  it("Waehrung: Kundenvorgabe (suggestCurrency) setzt currency ohne currencyTouched", () => {
+    const d = emptyDraft("INVOICE");
+    const r = draftReducer(d, { type: "suggestCurrency", value: "CHF" });
+    expect(r.currency).toBe("CHF");
+    expect(r.currencyTouched).toBe(false);
+    expect(toInvoicePayload(r, false).currency).toBe("CHF");
+    // Kunde ohne Vorgabe -> zurueck auf Server-Kette
+    expect(toInvoicePayload(draftReducer(r, { type: "suggestCurrency", value: "" }), false).currency).toBeUndefined();
+  });
+  it("Waehrung: manuelle Wahl wird durch Kundenwechsel nicht ueberschrieben", () => {
+    const manual = draftReducer(emptyDraft("INVOICE"), { type: "set", field: "currency", value: "USD" });
+    expect(draftReducer(manual, { type: "suggestCurrency", value: "CHF" }).currency).toBe("USD");
+  });
+  it("Waehrung: im Bearbeiten-Fall ignoriert suggestCurrency", () => {
+    const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "USD", lines: [] } as never);
+    expect(draftReducer(inv, { type: "suggestCurrency", value: "CHF" })).toBe(inv);
+  });
 });

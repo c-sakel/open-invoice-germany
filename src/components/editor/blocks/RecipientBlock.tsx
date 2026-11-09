@@ -125,6 +125,9 @@ export function RecipientBlock({
       dispatch({ type: "set", field: "shippingAddressId", value: "" });
     }
     if (!isEdit) {
+      if (mode === "INVOICE" || mode === "DOCUMENT") {
+        dispatch({ type: "suggestCurrency", value: customer?.defaultCurrency ?? "" });
+      }
       if (mode === "INVOICE") {
         dispatch({ type: "set", field: "paymentMethodId", value: customer?.defaultPaymentMethodId ?? "" });
       }

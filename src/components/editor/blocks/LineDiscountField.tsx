@@ -20,6 +20,7 @@ import { useState } from "react";
 import type { DraftLine, DraftAction } from "@/lib/editor/draft";
 import { inputDenseCls } from "@/components/forms/fields";
 import { centsOrZero, permilleOrZero } from "@/lib/editor/parse";
+import { useEditorCurrencySymbol } from "../currency-context";
 
 /** Reine Heuristik, exportiert fuer den Unit-Test (test/unit/editor-discount-mode.test.ts). */
 export function initialDiscountMode(line: Pick<DraftLine, "discountPercent" | "discountAmount">): "percent" | "amount" {
@@ -27,11 +28,12 @@ export function initialDiscountMode(line: Pick<DraftLine, "discountPercent" | "d
 }
 
 export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatch: (a: DraftAction) => void }) {
+  const sym = useEditorCurrencySymbol();
   const [mode, setMode] = useState<"percent" | "amount">(() => initialDiscountMode(line));
   const value = mode === "percent" ? line.discountPercent : line.discountAmount;
   const hidden = mode === "percent" ? line.discountAmount : line.discountPercent;
   const hiddenIsSet = mode === "percent" ? centsOrZero(hidden) > 0 : permilleOrZero(hidden) > 0;
-  const hiddenHint = hiddenIsSet ? `+ ${hidden} ${mode === "percent" ? "€" : "%"}` : null;
+  const hiddenHint = hiddenIsSet ? `+ ${hidden} ${mode === "percent" ? sym : "%"}` : null;
 
   return (
     <div>
@@ -39,7 +41,7 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
         <input
           className={`${inputDenseCls} w-full min-w-0 flex-1`}
           value={value}
-          aria-label={mode === "percent" ? "Rabatt in Prozent" : "Rabatt in Euro"}
+          aria-label={mode === "percent" ? "Rabatt in Prozent" : `Rabatt in ${sym}`}
           onChange={(e) =>
             dispatch({
               type: "setLine",
@@ -51,10 +53,10 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
         <button
           type="button"
           onClick={() => setMode((m) => (m === "percent" ? "amount" : "percent"))}
-          title="Rabatt-Art wechseln (% / €)"
+          title={`Rabatt-Art wechseln (% / ${sym})`}
           className="shrink-0 rounded border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
         >
-          {mode === "percent" ? "%" : "€"}
+          {mode === "percent" ? "%" : sym}
         </button>
       </div>
       {hiddenHint && <div className="mt-0.5 text-[11px] text-slate-400">{hiddenHint}</div>}

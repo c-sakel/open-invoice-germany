@@ -26,6 +26,7 @@ export default async function NeuesDokumentPage() {
         customerNumber: true,
         email: true,
         defaultDiscountPermille: true,
+        defaultCurrency: true,
         addressLine1: true,
         postalCode: true,
         city: true,
@@ -75,6 +76,7 @@ export default async function NeuesDokumentPage() {
       customers={customers}
       products={products}
       taxRates={documentSettings.taxRates}
+      defaultCurrency={documentSettings.defaultCurrency}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

@@ -36,6 +36,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
         email: true,
         defaultPaymentMethodId: true,
         defaultDiscountPermille: true,
+        defaultCurrency: true,
         // Fix-Welle 1, M2 (Abschluss-Review Phase 13b): Grundlage fuer MetaBlocks
         // Faelligkeits-Vorbelegung (resolveDueDays) — dieselbe Kundenvorgabe wie
         // createDraftInvoice (invoice/create.ts:109).
@@ -99,6 +100,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
       customers={customers}
       products={products}
       taxRates={documentSettings.taxRates}
+      defaultCurrency={documentSettings.defaultCurrency}
       paymentMethods={paymentMethodOptions}
       invoiceDueDays={documentSettings.invoiceDueDays}
       autoDeliveryDate={documentSettings.autoDeliveryDate}

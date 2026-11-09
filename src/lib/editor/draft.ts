@@ -153,6 +153,8 @@ export type DraftAction =
       product: { id: string; name: string; unit: string; netPriceCents: number; taxRate: number; articleNumber?: string | null };
     }
   | { type: "replace"; state: DraftState }
+  /** Kundenvorgabe uebernehmen (Neuanlage, Waehrung noch nicht selbst gewaehlt); leer = Server-Kette. */
+  | { type: "suggestCurrency"; value: string }
   | { type: "markSaved" };
 
 /** Phase 12c — haelt einen Satz in der org-eigenen Liste. Unbekannte Werte (z. B. aus einem
@@ -302,6 +304,9 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       return action.state;
     case "markSaved":
       return { ...state, dirty: false };
+    case "suggestCurrency":
+      if (state.id || state.currencyTouched) return state;
+      return { ...state, currency: action.value, dirty: true };
     case "set":
       // Phase 13b: das Leistungsdatum folgt dem Rechnungsdatum, solange der Nutzer die
       // Kopplung nicht geloest hat. Bewusst hier und nicht in MetaBlock: sonst muesste

@@ -48,6 +48,7 @@ import { ProductPicker, type ProductOption } from "../ProductPicker";
 import { UnitSelect } from "./UnitSelect";
 import { LineRowMenu } from "./LineRowMenu";
 import { LineDiscountField } from "./LineDiscountField";
+import { useEditorCurrencySymbol } from "../currency-context";
 
 /** Hoehe eines Textfelds an den Inhalt anpassen (einzeilig bis zum ersten Umbruch). */
 function fitHeight(el: HTMLTextAreaElement | null) {
@@ -108,6 +109,7 @@ export function LineRow({
   onProductCreated,
   autoFocusProduct,
 }: LineRowProps) {
+  const sym = useEditorCurrencySymbol();
   const showDiscount = mode !== "DELIVERY_NOTE";
   // Nur waehrend des Anfassens am Griff ist die Zeile ziehbar — sonst wuerde `draggable`
   // auf dem <tr> das Markieren von Text in Eingabefeldern verhindern.
@@ -149,8 +151,8 @@ export function LineRow({
         discountCents: centsOrZero(line.discountAmount),
       });
       const displayCents = grossDisplay ? Math.round(lineNetCents * (1 + effectiveRate / 100)) : lineNetCents;
-      amountLabel = `${fromCents(displayCents)} €`;
-      if (grossDisplay) grossHint = `≈ ${fromCents(Math.round(priceCents * (1 + effectiveRate / 100)))} € brutto`;
+      amountLabel = `${fromCents(displayCents)} ${sym}`;
+      if (grossDisplay) grossHint = `≈ ${fromCents(Math.round(priceCents * (1 + effectiveRate / 100)))} ${sym} brutto`;
     } catch {
       amountLabel = "–";
     }
@@ -214,7 +216,7 @@ export function LineRow({
                   onChange={(e) => patch({ description: e.target.value })}
                   onKeyDown={onDescKeyDown}
                 />
-                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-slate-600">{fromCents(subtotalCents)} €</span>}
+                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-slate-600">{fromCents(subtotalCents)} {sym}</span>}
               </div>
             )}
           </td>
