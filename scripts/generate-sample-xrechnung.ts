@@ -192,6 +192,8 @@ function buildSample(opts: {
   notes?: string;
   // Phase 13b (Task 5) — Betreff (BT-22 mit Subjektcode BT-21 "AAI").
   subject?: string;
+  // Storno-Belege tragen keine Zahlungsbedingungen des Originals (B8).
+  noPaymentTerms?: boolean;
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -226,7 +228,7 @@ function buildSample(opts: {
     currency: "EUR",
     buyerReference: "04011000-12345-86",
     orderNumber: opts.orderNumber ?? null,
-    paymentTerms: opts.skonto1 ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
+    paymentTerms: opts.skonto1 || opts.noPaymentTerms ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
     notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
     subject: opts.subject ?? null,
     netTotalCents: totals.netTotalCents,
@@ -576,6 +578,21 @@ const lieferanschriftBg15 = () =>
     lines: [{ description: "Warenlieferung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 120000, taxRate: 19, taxCategory: "S" }],
   });
 
+// 23) Storno nach Teilgutschrift: eine Summenzeile je Steuersatz (19 % und 7 %), nur der Restbetrag nach der Teilgutschrift, ohne Zahlungsbedingungen.
+const creditNoteRestStorno = () =>
+  buildSample({
+    number: "GS-2042-0003",
+    type: "CREDIT_NOTE",
+    sign: -1,
+    noPaymentTerms: true,
+    lines: [
+      { description: "Storno Rechnung RE-2042-0003 – Restbetrag nach Teilgutschrift", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 90000, taxRate: 19, taxCategory: "S" },
+      { description: "Storno Rechnung RE-2042-0003 – Restbetrag nach Teilgutschrift", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 6000, taxRate: 7, taxCategory: "S" },
+    ],
+    precedingInvoiceNumber: "RE-2042-0003",
+    precedingInvoiceDate: new Date("2042-06-09"),
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -601,6 +618,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "differenz-e": differenzE,
   "betreff-note": betreffNote,
   "lieferanschrift-bg15": lieferanschriftBg15,
+  "credit-note-rest-storno": creditNoteRestStorno,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

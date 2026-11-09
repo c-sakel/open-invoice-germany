@@ -41,6 +41,7 @@ import {
   invoiceListFilterSchema,
   LineType,
   currencyCodeSchema,
+  cancelInvoiceSchema,
 } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -196,16 +197,22 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
     {
       title: "Rechnung stornieren",
       description: "Storniert eine festgeschriebene Rechnung GoBD-konform: legt eine Storno-Gutschrift an, Original bleibt erhalten.",
-      inputSchema: { invoice: z.string().describe("Rechnungs-ID oder -Nummer") },
+      inputSchema: {
+        invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
+        reason: cancelInvoiceSchema.shape.reason.describe("Stornogrund (optional, max. 500 Zeichen) — landet in den Notizen des Stornobelegs"),
+      },
     },
-    async ({ invoice }): Promise<Result> => {
+    async ({ invoice, reason }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const res = await cancelInvoice(inv.id);
-        return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.`);
+        const input = cancelInvoiceSchema.parse({ reason });
+        const res = await cancelInvoice(inv.id, { orgId: org.id, reason: input.reason });
+        const refund = res.refundDueCents > 0 ? ` Erstattung fällig: ${(res.refundDueCents / 100).toFixed(2).replace(".", ",")} ${res.creditNote.currency}.` : "";
+        return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.${refund}`);
       } catch (e) {
         if (e instanceof CancelError) return ctx.fail(`Storno nicht möglich: ${e.message}`);
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

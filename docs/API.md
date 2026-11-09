@@ -359,6 +359,16 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
 `/api/v1/Webhook` (Scope `admin`) — Ereignisse, Payload-Form, Signaturprüfung
 (Node/PHP), Retry-Zeitplan und SSRF-Regeln: siehe [WEBHOOKS.md](WEBHOOKS.md).
 
+## Storno (`POST /api/v1/Invoice/{id}/cancel`)
+
+Optionaler JSON-Body `{ "reason": "…" }` (max. 500 Zeichen): der Stornogrund steht als
+„Grund: …“ in den Notizen der Storno-Gutschrift und im ChangeLog. Gibt es bereits
+festgeschriebene Teilgutschriften, erstattet das Storno nur den Rest (Summe aller
+Gutschriften = Rechnungsbetrag); ist die Rechnung vollständig gutgeschrieben, antwortet
+die API mit 409. Eine Abschlagsrechnung, die in einer nicht stornierten Schlussrechnung
+verrechnet ist, lässt sich nicht stornieren (409). Die Storno-Gutschrift trägt keine
+Zahlungsbedingungen des Originals.
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,

@@ -98,9 +98,9 @@ async function validateFile(target: string): Promise<boolean> {
   return false;
 }
 
-// Fixture-Set: die Bestandsregression ("base", nur UBL) PLUS 21 weitere Beispiele,
+// Fixture-Set: die Bestandsregression ("base", nur UBL) PLUS 23 weitere Beispiele,
 // jeweils als UBL UND CII erzeugt (siehe scripts/generate-sample-xrechnung.ts) — macht
-// 22 Fixtures / 43 geprüfte XML-Dateien insgesamt.
+// 24 Fixtures / 47 geprüfte XML-Dateien insgesamt.
 const SAMPLE_NAMES = [
   "base",
   "line-discount",
@@ -125,6 +125,7 @@ const SAMPLE_NAMES = [
   "differenz-e", // Phase 12b (Task 6): § 25a Differenzbesteuerung, Kategorie E (BR-S-05-Fix)
   "betreff-note", // Phase 13b (Task 5): Betreff als BT-22-Note mit Subjektcode BT-21 "AAI" (UNTDID 4451)
   "lieferanschrift-bg15", // Phase 14a (Task 5): eigene Lieferanschrift (BG-13/BG-15), Label (BT-70), LineTwo (BT-76)
+  "credit-note-rest-storno", // Storno nach Teilgutschrift: Summenzeile je Steuersatz, ohne Zahlungsbedingungen
 ];
 
 async function main(): Promise<void> {

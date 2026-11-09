@@ -14,6 +14,7 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeInvoice, invoiceSchema } from "@/api/serializers/invoice";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { cancelInvoiceSchema } from "@/schemas";
 import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 
@@ -21,9 +22,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
+  // Body optional: nur `reason` (Stornogrund, landet in den Notizen des Stornobelegs).
+  const input = cancelInvoiceSchema.parse(ctx.body ?? {});
   const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true } });
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
-  const result = await cancelInvoice(ctx.params.id, { actor: ctx.actor });
+  const result = await cancelInvoice(ctx.params.id, { actor: ctx.actor, orgId: ctx.orgId, reason: input.reason });
   return apiData(serializeInvoice(result.creditNote, new Set()));
 }, { scope: "write" });
 
@@ -33,7 +36,8 @@ export const spec = {
     method: "POST",
     summary: "Rechnung stornieren (liefert die erzeugte Storno-Gutschrift)",
     scope: "write",
+    request: { body: cancelInvoiceSchema },
     response: apiDataResponseSchema(invoiceSchema),
-    errors: [401, 403, 404, 409, 429],
+    errors: [400, 401, 403, 404, 409, 429],
   },
 } satisfies Record<string, RouteSpec>;

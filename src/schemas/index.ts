@@ -590,6 +590,10 @@ export const partialCreditSchema = z.object({
     )
     .min(1),
 });
+// ── Storno ──────────────────────────────────────────────────────────────────
+export const cancelInvoiceSchema = z.object({ reason: z.string().trim().max(500).optional() });
+export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
+
 export type PartialCreditInput = z.infer<typeof partialCreditSchema>;
 
 export const recordPaymentSchema = z.object({
