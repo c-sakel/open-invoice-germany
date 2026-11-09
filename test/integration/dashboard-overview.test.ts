@@ -276,7 +276,7 @@ describe("Fix I3 — Nettoumsatz-Kacheln nutzen dieselbe Definition wie die Umsa
 
 describe("T4 — Gutschriften zaehlen nicht als offene Forderung (R2)", () => {
   it("Rechnung 119,00 + Storno -> Dashboard offen/faellig/ueberfaellig 0, Liste 'open' ohne Gutschrift, Statusdiagramm ohne negativen Betrag", async () => {
-    const NOW93 = new Date(2093, 4, 15, 10, 0, 0);
+    const NOW93 = new Date(2098, 4, 15, 10, 0, 0); // eigenes Jahr: Invoice.number ist global eindeutig (2093 nutzt tag-leak)
     const org = await dbInternal.organization.create({
       data: { legalName: "Storno-Offen Test GmbH", addressLine1: "S 1", postalCode: "10115", city: "Berlin", vatId: "DE833333333", taxNumber: "83/333/33333" },
     });
