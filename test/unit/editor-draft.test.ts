@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  type DraftLine,
+  type DraftState,
   draftReducer,
   emptyDraft,
   toInvoicePayload,
@@ -47,6 +49,45 @@ describe("editor/draft", () => {
     expect(s.lines).toHaveLength(2);
     s = draftReducer(s, { type: "removeLine", key: s.lines[0]!.key }); s = draftReducer(s, { type: "removeLine", key: s.lines[0]!.key });
     expect(s.lines).toHaveLength(1); // nie leer: letzte Zeile wird durch eine leere ITEM-Zeile ersetzt
+  });
+  it("moveBlock: Slot-Logik, No-op und Ueberschrift-Block", () => {
+    const base = emptyDraft("DOCUMENT");
+    const mk = (types: DraftLine["lineType"][]): DraftState => ({
+      ...base,
+      lines: types.map((lineType, i) => ({ ...base.lines[0]!, key: `k${i}`, lineType, description: `d${i}` })),
+      dirty: false,
+    });
+    const order = (s: DraftState) => s.lines.map((l) => l.description).join(",");
+    // Zeile 0 auf Slot 3 bei 4 Zeilen -> Index 2
+    let s = draftReducer(mk(["ITEM", "ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k0", slot: 3 });
+    expect(order(s)).toBe("d1,d2,d0,d3");
+    expect(s.dirty).toBe(true);
+    // Randfaelle
+    s = draftReducer(mk(["ITEM", "ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k3", slot: 0 });
+    expect(order(s)).toBe("d3,d0,d1,d2");
+    s = draftReducer(mk(["ITEM", "ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k0", slot: 4 });
+    expect(order(s)).toBe("d1,d2,d3,d0");
+    // No-op: Slot = from bzw. from+1 -> unveraendert, nicht dirty
+    for (const slot of [1, 2]) {
+      const n = draftReducer(mk(["ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k1", slot });
+      expect(order(n)).toBe("d0,d1,d2");
+      expect(n.dirty).toBe(false);
+    }
+    // HEADING mit 2 Unterzeilen hinter den naechsten Block
+    s = draftReducer(mk(["HEADING", "ITEM", "ITEM", "HEADING", "ITEM"]), { type: "moveBlock", key: "k0", slot: 5 });
+    expect(order(s)).toBe("d3,d4,d0,d1,d2");
+    // Block nach oben
+    s = draftReducer(mk(["ITEM", "HEADING", "ITEM", "TEXT"]), { type: "moveBlock", key: "k1", slot: 0 });
+    expect(order(s)).toBe("d1,d2,d3,d0");
+    // Drop innerhalb des eigenen Blocks -> No-op
+    const inside = draftReducer(mk(["HEADING", "ITEM", "ITEM", "HEADING"]), { type: "moveBlock", key: "k0", slot: 2 });
+    expect(inside.dirty).toBe(false);
+    expect(order(inside)).toBe("d0,d1,d2,d3");
+    // SUBTOTAL/TEXT wie ITEM
+    s = draftReducer(mk(["SUBTOTAL", "TEXT", "ITEM"]), { type: "moveBlock", key: "k0", slot: 3 });
+    expect(order(s)).toBe("d1,d2,d0");
+    // unbekannter Key
+    expect(draftReducer(mk(["ITEM"]), { type: "moveBlock", key: "x", slot: 0 }).dirty).toBe(false);
   });
   it("applyProduct uebernimmt Preis/Einheit/Steuer/Artikelnummer als Anzeige-Strings", () => {
     let s = emptyDraft("INVOICE");

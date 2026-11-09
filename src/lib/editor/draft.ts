@@ -16,6 +16,7 @@ import { SCHEME_CATEGORY, SCHEME_NOTICE, FALLBACK_TAX_RATES, type EditorMode } f
 import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
+import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
 import type { TaxScheme } from "@/schemas";
 
 export type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
@@ -146,6 +147,7 @@ export type DraftAction =
   | { type: "addLine"; lineType: DraftLine["lineType"]; after?: string }
   | { type: "removeLine"; key: string }
   | { type: "moveLine"; key: string; to: number }
+  | { type: "moveBlock"; key: string; slot: number }
   | { type: "duplicateLine"; key: string }
   | {
       type: "applyProduct";
@@ -350,6 +352,17 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       const [moved] = lines.splice(from, 1);
       const to = Math.max(0, Math.min(lines.length, action.to));
       lines.splice(to, 0, moved!);
+      return { ...state, lines, dirty: true };
+    }
+    case "moveBlock": {
+      const from = state.lines.findIndex((l) => l.key === action.key);
+      if (from === -1) return state;
+      const [start, end] = blockRange(state.lines, from);
+      const slot = Math.max(0, Math.min(state.lines.length, action.slot));
+      if (isNoopMove(start, slot, end - start)) return state;
+      const lines = [...state.lines];
+      const moved = lines.splice(start, end - start);
+      lines.splice(slotToMoveTarget(start, slot, end - start), 0, ...moved);
       return { ...state, lines, dirty: true };
     }
     case "duplicateLine": {
