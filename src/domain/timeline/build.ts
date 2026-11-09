@@ -8,6 +8,7 @@
  * Unterscheidung (ein Angebot traegt je nach `kind` ANGEBOT/AUFTRAGSBESTAETIGUNG/PROFORMA
  * als EmailLog.docType, alle drei gehoeren zu genau diesem Beleg).
  */
+import { paymentMethodLabel } from "@/lib/payment-method-label";
 import { dbInternal } from "@/lib/db";
 import { ACTIVITY_TYPES, type ActivityEntityType, type ActivityType } from "@/domain/activity/log";
 import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
@@ -71,7 +72,7 @@ async function paymentEntries(orgId: string, invoiceId: string): Promise<Timelin
     at: p.paidAt,
     kind: "payment" as const,
     label: p.isSkonto ? "Skontoabzug gebucht" : "Zahlung erfasst",
-    detail: `${formatCents(p.amountCents, currency)} (${p.method})`,
+    detail: `${formatCents(p.amountCents, currency)} (${paymentMethodLabel(p.method)})`,
   }));
 }
 

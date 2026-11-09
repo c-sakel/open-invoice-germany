@@ -69,8 +69,15 @@ export async function loadEInvoiceData(invoiceId: string) {
     }
   }
 
+  // BT-113 nennt nur echte Zahlungen: Verrechnungen mit Teilgutschriften (method CREDIT_NOTE)
+  // stehen schon als eigene Gutschriftsbelege und duerfen den Zahlbetrag des Originals nicht senken.
+  const offsets = await dbInternal.payment.aggregate({
+    where: { invoiceId: invoice.id, method: "CREDIT_NOTE" },
+    _sum: { amountCents: true },
+  });
   const data = buildEInvoiceData({
     ...invoice,
+    paidAmountCents: invoice.paidAmountCents - (offsets._sum.amountCents ?? 0),
     deductions: invoice.type === "FINAL" ? aggregateDeductions(invoice.finalDeductions) : undefined,
     sourceNumber,
     sourceLabel,

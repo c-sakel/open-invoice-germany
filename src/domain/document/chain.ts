@@ -4,6 +4,7 @@
  * Blaettern (Zahlungen/Mahnungen). Dient der UI (Task 5), daher `internalNotes`
  * NIE in einem Knoten — nur Anzeige-Metadaten (Nummer, Status, Link).
  */
+import { paymentMethodLabel } from "@/lib/payment-method-label";
 import { dbInternal } from "@/lib/db";
 import { listRelations } from "@/domain/relations";
 import { DocRefType } from "@/schemas";
@@ -225,7 +226,7 @@ async function buildNode(orgId: string, type: RefType, id: string, relation: str
         id: p.id,
         label: `Zahlung ${formatCents(p.amountCents)}`,
         number: null,
-        status: p.method,
+        status: paymentMethodLabel(p.method),
         href: null,
         children: [],
       });

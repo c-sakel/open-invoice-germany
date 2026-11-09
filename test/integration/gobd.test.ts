@@ -181,7 +181,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     expect(res.creditNote.type).toBe("CREDIT_NOTE");
     expect(res.creditNote.grossTotalCents).toBe(-11900); // 100 € netto + 19 % = 119 €, negativ
     const original = await prisma.invoice.findUnique({ where: { id: fin.id } });
-    expect(original!.status).toBe("FINALIZED"); // NICHT storniert
+    expect(original!.status).toBe("PARTIALLY_PAID"); // NICHT storniert; Teilgutschrift mit offenem Rest verrechnet (T6)
   });
 
   it("Teilgutschrift: Beleg-Festbetrag (Rabatt/Aufschlag) proportional zum Positionsverhaeltnis", async () => {

@@ -555,8 +555,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           taxRate: l.taxRate,
           taxCategory: l.taxCategory,
         }));
-        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes });
-        return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}.`);
+        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes }, { orgId: org.id });
+        return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}${res.offsetCents > 0 ? ` · ${formatCents(res.offsetCents)} mit offenem Rest verrechnet` : ""}${res.refundDueCents > 0 ? ` · Erstattung fällig: ${formatCents(res.refundDueCents)}` : ""}.`);
       } catch (e) {
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
         // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,

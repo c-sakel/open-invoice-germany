@@ -162,6 +162,14 @@ Der `Idempotency-Key` sorgt dafür, dass ein wiederholter Request (z. B. Timeout
 Client) nicht zweimal gebucht wird — derselbe Schlüssel liefert dieselbe Antwort
 erneut. Nach vollständiger Zahlung wechselt die Rechnung auf Status `PAID`.
 
+Zahlungen mit `method: "CREDIT_NOTE"` entstehen automatisch, wenn eine Teilgutschrift
+(`POST /api/v1/Invoice/{id}/credit`) den offenen Rest der Rechnung mindert (Verrechnung,
+kein Geldeingang; Anzeige „Verrechnung Gutschrift“). Die Rechnung wird dann `PARTIALLY_PAID`
+bzw. `PAID`; ein darüber hinausgehender Gutschriftsbetrag ist zu erstatten. Die Summe aller
+Gutschriften darf den Rechnungsbetrag nicht übersteigen, auf stornierte Rechnungen ist keine
+Teilgutschrift möglich (jeweils 409). In der E-Rechnung des Originals zählen Verrechnungen
+nicht als bezahlt (BT-113).
+
 ## Anfrageprotokoll
 
 Jede Antwort von `/api/v1/*` — Erfolg **und** Fehler — trägt den Header

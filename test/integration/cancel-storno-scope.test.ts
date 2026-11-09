@@ -144,7 +144,8 @@ describe("cancelInvoice — Rest-Storno nach Teilgutschrift (B6)", () => {
     await expect(cancelInvoice(inv.id, { now: NOW })).rejects.toThrow("vollständig gutgeschrieben");
     expect(await dbInternal.invoice.count({ where: { correctsInvoiceId: inv.id } })).toBe(before);
     const after = await dbInternal.invoice.findUniqueOrThrow({ where: { id: inv.id }, select: { status: true } });
-    expect(after.status).toBe("FINALIZED");
+    // Voll gutgeschrieben: der Betrag wurde mit dem offenen Rest verrechnet (T6) -> PAID, nicht storniert.
+    expect(after.status).toBe("PAID");
   });
 
   it("ohne Teilgutschrift bleibt das Storno ein 1:1-Spiegel", async () => {

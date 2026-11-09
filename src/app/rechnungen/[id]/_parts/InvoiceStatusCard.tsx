@@ -1,4 +1,5 @@
 // src/app/rechnungen/[id]/_parts/InvoiceStatusCard.tsx
+import { paymentMethodLabel } from "@/lib/payment-method-label";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
@@ -176,7 +177,7 @@ export function InvoiceStatusCard({
                 {invoice.payments.map((p) => (
                   <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
                     <span>
-                      {deDate(p.paidAt)} · {formatCents(p.amountCents, invoice.currency)} · {p.method}
+                      {deDate(p.paidAt)} · {formatCents(p.amountCents, invoice.currency)} · {paymentMethodLabel(p.method)}
                       {p.isSkonto && (
                         <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">Skonto</span>
                       )}
