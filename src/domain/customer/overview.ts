@@ -81,8 +81,8 @@ export async function customerOverview(orgId: string, customerId: string, now: D
     if (inv.status !== "DRAFT") {
       totalRevenueCents += signedRevenueShareCents(inv);
     }
-    if (["FINALIZED", "SENT", "PARTIALLY_PAID"].includes(inv.status)) {
-      const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+    if (inv.type !== "CREDIT_NOTE" && ["FINALIZED", "SENT", "PARTIALLY_PAID"].includes(inv.status)) {
+      const status = effectiveInvoiceStatus({ status: inv.status, type: inv.type, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
       const open = openAmountCents(inv);
       if (status === "OVERDUE") overdueCents += open;
       if (status === "OPEN" || status === "DUE" || status === "OVERDUE") openCents += open;

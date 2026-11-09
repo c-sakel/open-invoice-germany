@@ -14,6 +14,8 @@ import { createBusinessDocument } from "@/domain/document/create";
 import { setQuoteStatus } from "@/domain/document/status";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { dashboardSummary, agingBuckets } from "@/domain/dashboard/summary";
+import { statusCounts } from "@/domain/reporting/status";
+import { listInvoices } from "@/domain/invoice/list";
 import { customerOverview } from "@/domain/customer/overview";
 import { NotFoundError } from "@/domain/errors";
 import type { CreateInvoiceInput, CreateDocumentInput } from "@/schemas";
@@ -269,5 +271,45 @@ describe("Fix I3 — Nettoumsatz-Kacheln nutzen dieselbe Definition wie die Umsa
 
     const overview = await customerOverview(org.id, customer.id, NOW92);
     expect(overview.kpis.totalRevenueCents).toBe(0);
+  });
+});
+
+describe("T4 — Gutschriften zaehlen nicht als offene Forderung (R2)", () => {
+  it("Rechnung 119,00 + Storno -> Dashboard offen/faellig/ueberfaellig 0, Liste 'open' ohne Gutschrift, Statusdiagramm ohne negativen Betrag", async () => {
+    const NOW93 = new Date(2093, 4, 15, 10, 0, 0);
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Storno-Offen Test GmbH", addressLine1: "S 1", postalCode: "10115", city: "Berlin", vatId: "DE833333333", taxNumber: "83/333/33333" },
+    });
+    await ensureOrgMasterdata(dbInternal, org.id);
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "Zeta KG", addressLine1: "Z 1", postalCode: "10117", city: "Berlin", type: "BUSINESS" },
+    });
+    const inv = await createDraftInvoice(
+      org.id,
+      { customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: NOW93, lines: [line("Storno-Offen")] } as CreateInvoiceInput,
+      { now: NOW93 },
+    );
+    await finalizeInvoice(inv.id, { now: NOW93 });
+    await cancelInvoice(inv.id, { now: NOW93 });
+
+    const summary = await dashboardSummary(org.id, NOW93);
+    expect(summary.openInvoices).toEqual({ count: 0, cents: 0 });
+    expect(summary.dueInvoices).toEqual({ count: 0, cents: 0 });
+    expect(summary.overdueInvoices).toEqual({ count: 0, cents: 0 });
+
+    const counts = await statusCounts(org.id, NOW93);
+    expect(counts.find((c) => c.status === "OPEN")).toBeUndefined();
+    expect(counts.every((c) => c.openCents >= 0)).toBe(true);
+    expect(counts.find((c) => c.status === "FINALIZED")?.count).toBe(1);
+
+    for (const status of ["open", "due", "overdue"] as const) {
+      const list = await listInvoices(org.id, { status });
+      expect(list.rows.filter((r) => r.type === "CREDIT_NOTE")).toHaveLength(0);
+    }
+    const all = await listInvoices(org.id, { status: "all" });
+    expect(all.rows.find((r) => r.type === "CREDIT_NOTE")?.effectiveStatus).toBe("FINALIZED");
+
+    const overview = await customerOverview(org.id, customer.id, NOW93);
+    expect(overview.kpis.openCents).toBe(0);
   });
 });

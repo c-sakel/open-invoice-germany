@@ -44,6 +44,8 @@ export const INVOICE_STATUS_LABEL: Record<EffectiveInvoiceStatus, string> = {
 export interface EffectiveInvoiceStatusInput {
   /** Rohstatus aus Invoice.status: DRAFT | FINALIZED | SENT | PAID | PARTIALLY_PAID | CANCELLED. */
   status: string;
+  /** Belegtyp (Invoice.type). CREDIT_NOTE ist nie eine Forderung (Ruling R2) -> nie OPEN/DUE/OVERDUE. */
+  type?: string;
   dueDate: Date | null;
   /** Aktuell nicht Teil der Berechnung (fälliger Vergleich läuft ausschließlich über dueDate),
    *  aber Teil der Signatur, damit Aufrufer stets denselben Belegausschnitt reichen wie bei
@@ -65,6 +67,9 @@ export function effectiveInvoiceStatus(
   if (status === "DRAFT" || status === "PAID" || status === "CANCELLED") {
     return status;
   }
+
+  // Gutschriften/Stornobelege sind keine Forderungen (R2): Rohstatus, niemals OPEN/DUE/OVERDUE.
+  if (inv.type === "CREDIT_NOTE") return "FINALIZED";
 
   // status ist FINALIZED, SENT oder PARTIALLY_PAID (jeder andere/unbekannte Rohstatus
   // faellt hier ebenfalls durch — bewusst kein throw, reine Anzeige-Funktion). Eine

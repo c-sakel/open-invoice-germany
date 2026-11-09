@@ -96,7 +96,7 @@ export function buildInvoiceViewModel(invoice: InvoiceDetail): InvoiceViewModel 
   const actions = availableActions({
     kind: "INVOICE",
     type: invoice.type,
-    status: effectiveInvoiceStatus({ status: invoice.status, dueDate: invoice.dueDate, issueDate: invoice.issueDate }),
+    status: effectiveInvoiceStatus({ status: invoice.status, type: invoice.type, dueDate: invoice.dueDate, issueDate: invoice.issueDate }),
     isDraft,
     dunningState: invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED" | undefined,
   });
