@@ -25,9 +25,8 @@ import { listInvoices } from "@/domain/invoice/list";
 import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
-import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { renderInvoiceDocumentPdf, renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
-import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
@@ -338,7 +337,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const theme = await loadPdfTheme(org.id, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
 
         if (format === "both" || format === "pdf") {
-          const pdf = await renderInvoicePdf(data, theme);
+          const pdf = await renderInvoiceDocumentPdf(data, theme, inv.status);
           const pdfPath = path.join(dir, `${base}.pdf`);
           writeFileSync(pdfPath, pdf);
           written.push(pdfPath);

@@ -3,6 +3,7 @@ import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { recordPayment } from "@/domain/invoice/payment";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/context";
 import { buildStandardAttachments } from "@/domain/email/attachments";
@@ -115,6 +116,19 @@ describe("buildTemplateContext / buildStandardAttachments — Rechnung", () => {
     expect(pdf.content.subarray(0, 4).toString()).toBe("%PDF");
     expect(xml.filename).toBe(`${finalized.number}-xrechnung.xml`);
     expect(xml.content.subarray(0, 5).toString()).toBe("<?xml");
+  });
+
+  it("bezahlte Rechnung: Anhang ist das ZUGFeRD-PDF mit Rechnungsnummer, nicht das ENTWURF-PDF", async () => {
+    const draft = await createDraftInvoice(orgId, baseInput());
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    await recordPayment(finalized.id, { amountCents: finalized.grossTotalCents, paidAt: FIX_DATE, method: "TRANSFER", isSkonto: false, applySkonto: false });
+    const status = (await dbInternal.invoice.findUniqueOrThrow({ where: { id: finalized.id }, select: { status: true } })).status;
+    expect(status).toBe("PAID");
+
+    const attachments = await buildStandardAttachments(orgId, "INVOICE", finalized.id);
+    const pdf = attachments.find((a) => a.filename.endsWith(".pdf"))!;
+    expect(pdf.filename).toBe(`${finalized.number}.pdf`);
+    expect(pdf.content.toString("latin1")).toContain("factur-x.xml");
   });
 
   it("Kunde ohne Leitweg-ID: nur PDF, keine XRechnung", async () => {
