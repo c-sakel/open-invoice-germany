@@ -88,10 +88,17 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
   // nicht archiviert ist) — dieselben Defaults wie der interne Fallback in DocumentEditor
   // (initial ?? emptyDraft(mode, { allowedTaxRates: taxRates, deliveryDateFollowsIssue:
   // autoDeliveryDate })), nur mit vorbelegtem customerId.
-  const initial =
-    customerId && customers.some((c) => c.id === customerId)
-      ? emptyDraft("INVOICE", { customerId, allowedTaxRates: documentSettings.taxRates, deliveryDateFollowsIssue: documentSettings.autoDeliveryDate })
-      : undefined;
+  // Kundenwaehrung (Kette Kunde > Einstellung > EUR) wird mit vorbelegt, damit die Anzeige
+  // im Editor der spaeter gespeicherten Waehrung entspricht.
+  const presetCustomer = customerId ? customers.find((c) => c.id === customerId) : undefined;
+  const initial = presetCustomer
+    ? emptyDraft("INVOICE", {
+        customerId: presetCustomer.id,
+        currency: presetCustomer.defaultCurrency ?? "",
+        allowedTaxRates: documentSettings.taxRates,
+        deliveryDateFollowsIssue: documentSettings.autoDeliveryDate,
+      })
+    : undefined;
 
   return (
     <DocumentEditor

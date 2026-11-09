@@ -105,7 +105,9 @@ export function NewRecurringForm({
   const taxOptions = taxRateOptions(taxRates);
   const defaultTaxRate = taxOptions[0]?.value ?? 19;
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
+  // Vorbelegter Kunde: derselbe Datensatz fuer customerId und Initialwaehrung.
+  const presetCustomer = customers[0];
+  const [customerId, setCustomerId] = useState(presetCustomer?.id ?? "");
   const [interval, setInterval] = useState(initial?.interval ?? "MONTHLY");
   const [intervalCount, setIntervalCount] = useState(String(initial?.intervalCount ?? 1));
   const [startDate, setStartDate] = useState(initial?.startDate ?? todayISO());
@@ -120,7 +122,7 @@ export function NewRecurringForm({
   // Waehrung: Kette Kunde > Einstellung > EUR; manuelle Wahl (currencyTouched) wird durch
   // spaeteren Kundenwechsel nicht ueberschrieben. Beim Bearbeiten gilt der Bestandswert.
   const [currency, setCurrency] = useState(
-    initial?.currency ?? customers[0]?.defaultCurrency ?? defaultCurrency,
+    initial?.currency ?? presetCustomer?.defaultCurrency ?? defaultCurrency,
   );
   const [currencyTouched, setCurrencyTouched] = useState(mode === "edit");
   const [notes, setNotes] = useState(initial?.notes ?? "");
