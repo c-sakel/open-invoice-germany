@@ -113,7 +113,7 @@ export default async function LieferscheinDetail({
         <>
           {/* Fix-Welle I2: kompakte Kopfzeile — nur der erste verfuegbare Statusuebergang;
               der Rest wandert per DocumentActionsMenuItems ins "Mehr"-Menue. */}
-          <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} variant="compact" />
+          <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} variant="compact" cancelInfo={{ noun: "Lieferschein", number: dn.number }} />
           {dn.number && (
             <a
               href={`/api/delivery-notes/${dn.id}/pdf`}
@@ -137,7 +137,7 @@ export default async function LieferscheinDetail({
       }
       more={
         <ActionMenu>
-          <DocumentActionsMenuItems type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} />
+          <DocumentActionsMenuItems type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} cancelInfo={{ noun: "Lieferschein", number: dn.number }} />
           {canSaveTemplate && (
             <ActionMenuItem>
               <SaveTemplateDialog docType="DELIVERY_NOTE" docId={dn.id} defaultName={dn.number ?? undefined} asMenuItem />

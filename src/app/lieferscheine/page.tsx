@@ -213,6 +213,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                         duplicateRedirect="/lieferscheine/{id}"
                         cancelRoute={`/api/delivery-notes/${n.id}/status`}
                         cancelBody={{ action: "CANCEL" }}
+                        cancelInfo={{ noun: "Lieferschein", number: n.number }}
                         templateName={n.number ?? undefined}
                       />
                     </td>

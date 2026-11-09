@@ -272,6 +272,11 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                         duplicateRedirect="/dokumente/{id}"
                         cancelRoute={`/api/documents/${d.id}/status`}
                         cancelBody={{ action: "CANCEL" }}
+                        cancelInfo={{
+                          noun: KIND_LABEL[d.kind] ?? "Beleg",
+                          number: d.number,
+                          linkedInvoices: billingState !== "NONE" || d.convertedToInvoiceId !== null,
+                        }}
                         convert={convert}
                         documentActions={{ type: "QUOTE", status: d.effectiveStatus, archived: d.archivedAt !== null }}
                         templateName={d.number ?? undefined}

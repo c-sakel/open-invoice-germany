@@ -1,5 +1,6 @@
 "use client";
 
+import { CancelDocumentDialog, type CancelDocumentInfo } from "@/components/CancelDocumentDialog";
 import { ACTION_LABEL, NoteDialog, documentActionItemCls, useDocumentActions, type DocType } from "@/components/DocumentActions";
 
 /**
@@ -16,14 +17,16 @@ export function DocumentActionsMenuItems({
   status,
   archived,
   onDuplicate,
+  cancelInfo,
 }: {
   type: DocType;
   id: string;
   status: string;
   archived: boolean;
   onDuplicate?: (newId: string) => void;
+  cancelInfo?: CancelDocumentInfo;
 }) {
-  const { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog } = useDocumentActions({
+  const { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog, cancelDialogRef, confirmCancel } = useDocumentActions({
     type,
     id,
     status,
@@ -59,6 +62,12 @@ export function DocumentActionsMenuItems({
       {error && <li className="px-3 py-1 text-xs text-rose-600">{error}</li>}
       <li className="contents">
         <NoteDialog dialogRef={noteDialogRef} pendingNoteAction={pendingNoteAction} note={note} setNote={setNote} onConfirm={confirmNoteDialog} />
+        <CancelDocumentDialog
+          ref={cancelDialogRef}
+          info={cancelInfo ?? { noun: type === "QUOTE" ? "Angebot" : "Lieferschein" }}
+          busy={busy === "CANCEL"}
+          onConfirm={() => void confirmCancel()}
+        />
       </li>
     </>
   );

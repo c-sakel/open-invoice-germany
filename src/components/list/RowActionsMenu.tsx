@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ActionKey, ConvertTargets, DocKind } from "@/domain/document/actions";
@@ -8,6 +8,8 @@ import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { PaymentForm } from "@/components/PaymentForm";
 import { ConvertMenu } from "@/components/ConvertMenu";
 import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
+import { CancelDocumentDialog, type CancelDocumentInfo } from "@/components/CancelDocumentDialog";
+import type { ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 import { CancelInvoiceDialog } from "@/components/invoices/CancelInvoiceDialog";
 import { RowPaymentDialog } from "@/components/list/RowPaymentDialog";
 import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
@@ -48,6 +50,7 @@ export function RowActionsMenu({
   duplicateRedirect,
   cancelRoute,
   cancelBody,
+  cancelInfo,
   dunningRoute,
   dunningCount,
   payment,
@@ -71,6 +74,8 @@ export function RowActionsMenu({
   duplicateRedirect?: string;
   cancelRoute?: string;
   cancelBody?: Record<string, unknown>;
+  /** Texte der Storno-Rueckfrage fuer Angebot/AB/Lieferschein (Rechnungen nutzen CancelInvoiceDialog). */
+  cancelInfo?: CancelDocumentInfo;
   dunningRoute?: string;
   /** Fix-Welle (Nit): Anzahl bereits erstellter Mahnungen fuer diesen Beleg — steuert,
    *  ob "Zahlungserinnerung senden" oder "Nächste Mahnung erstellen" angezeigt wird.
@@ -95,6 +100,7 @@ export function RowActionsMenu({
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const cancelDialogRef = useRef<ConfirmDialogHandle>(null);
   // Ruling (a), Phase 8b Fix-Runde 1: REMINDER legt zunaechst eine Mahnung an (wie
   // DUNNING), oeffnet danach aber den Versand-Dialog DAFUER (docType DUNNING) statt nur
   // zu aktualisieren — nie den Rechnungs-Versand-Dialog. `key={reminderDunningId}`
@@ -125,7 +131,6 @@ export function RowActionsMenu({
 
   async function cancel() {
     if (!cancelRoute) return;
-    if (!confirm("Beleg wirklich stornieren?")) return;
     setBusy("CANCEL");
     setError(null);
     const res = await fetch(cancelRoute, {
@@ -137,9 +142,11 @@ export function RowActionsMenu({
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       setError(j.error ?? "Stornieren fehlgeschlagen.");
       setBusy(null);
+      cancelDialogRef.current?.close();
       return;
     }
     setBusy(null);
+    cancelDialogRef.current?.close();
     closeMenu();
     router.refresh();
   }
@@ -307,9 +314,17 @@ export function RowActionsMenu({
             </CancelInvoiceDialog>
           )}
           {has("CANCEL") && cancelRoute && kind !== "INVOICE" && (
-            <button type="button" onClick={cancel} disabled={busy === "CANCEL"} className={`${itemCls} text-rose-700 hover:bg-rose-50`}>
+            <button type="button" onClick={() => cancelDialogRef.current?.open()} disabled={busy === "CANCEL"} className={`${itemCls} text-rose-700 hover:bg-rose-50`}>
               {busy === "CANCEL" ? "…" : "Stornieren"}
             </button>
+          )}
+          {has("CANCEL") && cancelRoute && kind !== "INVOICE" && (
+            <CancelDocumentDialog
+              ref={cancelDialogRef}
+              info={cancelInfo ?? { noun: kind === "DELIVERY_NOTE" ? "Lieferschein" : "Beleg" }}
+              busy={busy === "CANCEL"}
+              onConfirm={() => void cancel()}
+            />
           )}
           {documentActions && (
             <ul className="space-y-0.5 border-t border-slate-100 pt-1">
