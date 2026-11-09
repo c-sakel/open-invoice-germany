@@ -264,7 +264,7 @@ describe("Fix I3 — Nettoumsatz-Kacheln nutzen dieselbe Definition wie die Umsa
       { now: NOW92 },
     );
     await finalizeInvoice(inv.id, { now: NOW92 });
-    await cancelInvoice(inv.id, { now: NOW92 }); // Original UND Storno-Gutschrift im selben Monat.
+    await cancelInvoice(inv.id, { orgId: inv.orgId, now: NOW92 }); // Original UND Storno-Gutschrift im selben Monat.
 
     const summary = await dashboardSummary(org.id, NOW92);
     expect(summary.revenueThisMonthCents).toBe(0);
@@ -290,7 +290,7 @@ describe("T4 — Gutschriften zaehlen nicht als offene Forderung (R2)", () => {
       { now: NOW93 },
     );
     await finalizeInvoice(inv.id, { now: NOW93 });
-    await cancelInvoice(inv.id, { now: NOW93 });
+    await cancelInvoice(inv.id, { orgId: inv.orgId, now: NOW93 });
 
     const summary = await dashboardSummary(org.id, NOW93);
     expect(summary.openInvoices).toEqual({ count: 0, cents: 0 });

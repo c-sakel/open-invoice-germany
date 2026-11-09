@@ -19,6 +19,7 @@ import { NotFoundError } from "@/domain/errors";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { createInvoiceSchema, recordPaymentSchema } from "@/schemas";
+import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 
 const NOW = new Date("2097-05-01T10:00:00.000Z");
 
@@ -135,6 +136,24 @@ describe("createPartialCreditNote — Sperren", () => {
     expect(seq(second.creditNote.number)).toBe(seq(first.creditNote.number) + 1);
     // Rest 0 -> jede weitere Gutschrift abgewiesen
     await expect(createPartialCreditNote(inv.id, { lines: [creditLine(100)] }, { orgId, now: NOW })).rejects.toBeInstanceOf(CreditError);
+  });
+});
+
+describe("Verrechnung loest keine Webhooks aus", () => {
+  it("weder payment.recorded noch invoice.paid (Verrechnung ist keine Kundenzahlung), auch bei vollstaendiger Verrechnung", async () => {
+    process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
+    const endpoint = await createWebhookEndpoint(orgId, { url: "https://93.184.216.77/hook", events: ["payment.recorded", "invoice.paid"] }, { now: NOW });
+    const inv = await invoice1190();
+    await createPartialCreditNote(inv.id, { lines: [creditLine(50000)] }, { orgId, now: NOW }); // Teilverrechnung
+    const full = await createPartialCreditNote(inv.id, { lines: [creditLine(50000)] }, { orgId, now: NOW }); // Rest -> PAID
+    expect(full.offsetCents).toBeGreaterThan(0);
+    expect((await state(inv.id)).status).toBe("PAID");
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id, method: "CREDIT_NOTE" } })).toBe(2);
+    expect(await dbInternal.webhookDelivery.count({ where: { endpointId: endpoint.id } })).toBe(0);
+    // Gegenprobe: eine echte Zahlung loest den Webhook weiterhin aus.
+    const inv2 = await invoice1190();
+    await recordPayment(inv2.id, recordPaymentSchema.parse({ amountCents: 1000, method: "TRANSFER" }), { now: NOW });
+    expect(await dbInternal.webhookDelivery.count({ where: { endpointId: endpoint.id, event: "payment.recorded" } })).toBe(1);
   });
 });
 

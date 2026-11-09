@@ -82,14 +82,14 @@ beforeAll(async () => {
   await createPartialCreditNote(
     aprilInvoiceA.id,
     { lines: [{ description: "Teilgutschrift", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 20000, taxRate: 19, taxCategory: "S" }] },
-    { now: MAY },
+    { orgId: aprilInvoiceA.orgId, now: MAY },
   );
 
   // Storno-Szenario (Fix 1): Rechnung im Februar, Storno im Maerz — Original bleibt mit
   // vollem Betrag im Februar stehen (GoBD, status wechselt nur auf CANCELLED), die
   // Storno-Gutschrift traegt den negierten Betrag im Maerz.
   const febInvoiceC = await invoice(customerC, 40000, FEBRUARY);
-  await cancelInvoice(febInvoiceC.id, { now: MARCH });
+  await cancelInvoice(febInvoiceC.id, { orgId: febInvoiceC.orgId, now: MARCH });
 });
 
 describe("monthlyRevenue", () => {

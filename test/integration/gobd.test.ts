@@ -135,7 +135,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
 
   it("storniert per Gutschrift; Original bleibt erhalten (Storno statt Löschung)", async () => {
     const fin = await finalizeInvoice((await createDraftInvoice(orgId, baseInput())).id, { now: FIX_DATE });
-    const res = await cancelInvoice(fin.id, { now: FIX_DATE });
+    const res = await cancelInvoice(fin.id, { orgId: fin.orgId, now: FIX_DATE });
 
     expect(res.creditNote.type).toBe("CREDIT_NOTE");
     expect(res.creditNote.number).toMatch(/^GS-2026-\d{4}$/);
@@ -176,7 +176,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const res = await createPartialCreditNote(
       fin.id,
       { lines: [{ description: "Teilerstattung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
-      { now: FIX_DATE },
+      { orgId: fin.orgId, now: FIX_DATE },
     );
     expect(res.creditNote.type).toBe("CREDIT_NOTE");
     expect(res.creditNote.grossTotalCents).toBe(-11900); // 100 € netto + 19 % = 119 €, negativ
@@ -195,7 +195,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const resDiscount = await createPartialCreditNote(
       finDiscount.id,
       { lines: [{ description: "Teilerstattung", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
-      { now: FIX_DATE },
+      { orgId: finDiscount.orgId, now: FIX_DATE },
     );
     expect(resDiscount.creditNote.documentDiscountCents).toBe(500);
     expect(resDiscount.creditNote.netTotalCents).toBe(-4500);
@@ -210,7 +210,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const resCharge = await createPartialCreditNote(
       finCharge.id,
       { lines: [{ description: "Teilerstattung", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
-      { now: FIX_DATE },
+      { orgId: finCharge.orgId, now: FIX_DATE },
     );
     expect(resCharge.creditNote.documentChargeCents).toBe(250);
     expect(resCharge.creditNote.netTotalCents).toBe(-5250);
@@ -224,7 +224,7 @@ describe("GoBD: Nummernkreis + Unveränderbarkeit", () => {
     const res = await createPartialCreditNote(
       fin.id,
       { lines: [{ description: "Volle Erstattung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
-      { now: FIX_DATE },
+      { orgId: fin.orgId, now: FIX_DATE },
     );
     expect(res.creditNote.documentDiscountCents).toBe(2000);
     expect(res.creditNote.netTotalCents).toBe(-18000); // (20.000 - 2.000) Cent, negativ

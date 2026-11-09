@@ -92,7 +92,7 @@ beforeAll(async () => {
   const q3 = await makeQuote(100_000);
   const inv3 = await convertDocumentToInvoice(orgId, q3.id, { now: FIX_DATE });
   const finalized3 = await finalizeInvoice(inv3.id, { now: FIX_DATE });
-  await cancelInvoice(finalized3.id, { now: FIX_DATE });
+  await cancelInvoice(finalized3.id, { orgId: finalized3.orgId, now: FIX_DATE });
   quoteIds["umgewandelt+storniert"] = q3.id;
 
   // 4: ein Abschlag ueber 30 %.
@@ -142,7 +142,7 @@ beforeAll(async () => {
     { now: FIX_DATE },
   );
   const finalizedP10 = await finalizeInvoice(p10.id, { now: FIX_DATE });
-  await cancelInvoice(finalizedP10.id, { now: FIX_DATE });
+  await cancelInvoice(finalizedP10.id, { orgId: finalizedP10.orgId, now: FIX_DATE });
   quoteIds["nur stornierte Teilrechnungen"] = q10.id;
 });
 

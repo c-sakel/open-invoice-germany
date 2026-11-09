@@ -227,7 +227,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // CII-Ausgabe kennt BT-9 fuer Gutschriften nicht. Nur XML (BT-20); das PDF zeigt weiterhin
   // keinen Zahlungsbedingungstext.
   const creditFallbackNote =
-    invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? "Gutschrift – kein Zahlungsziel; ein Guthaben wird erstattet bzw. mit offenen Forderungen verrechnet." : null;
+    invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? "Gutschrift – Verrechnung bzw. Erstattung" : null;
   const paymentTermsNote =
     skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : (paymentTermsHuman ?? creditFallbackNote);
 

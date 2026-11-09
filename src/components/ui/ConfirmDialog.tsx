@@ -33,6 +33,8 @@ type ConfirmDialogProps = {
   cancelLabel?: string;
   tone?: "default" | "danger";
   busy?: boolean;
+  /** "md" = breiterer Dialog (z. B. mit Formularfeldern). */
+  size?: "sm" | "md";
 } & ({ onConfirm: () => void; confirmHref?: never } | { confirmHref: string; onConfirm?: never });
 
 const TONE_CLS: Record<"default" | "danger", string> = {
@@ -41,7 +43,7 @@ const TONE_CLS: Record<"default" | "danger", string> = {
 };
 
 export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>(function ConfirmDialog(
-  { title, message, confirmLabel, cancelLabel = "Abbrechen", tone = "default", busy, onConfirm, confirmHref },
+  { title, message, confirmLabel, cancelLabel = "Abbrechen", tone = "default", busy, size = "sm", onConfirm, confirmHref },
   ref,
 ) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -72,7 +74,8 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
       // Fallback auf einen generischen Accessible Name, wenn kein Titel vorhanden ist.
       aria-label={title ? undefined : "Bestätigung"}
       aria-describedby={messageId}
-      className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
+      data-size={size}
+      className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40 data-[size=md]:max-w-md"
     >
       <div className="space-y-3 p-5">
         {title && (
@@ -80,9 +83,9 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
             {title}
           </h2>
         )}
-        <p id={messageId} className="text-sm text-slate-700">
+        <div id={messageId} className="text-sm text-slate-700">
           {message}
-        </p>
+        </div>
         <div className="flex justify-end gap-2">
           <button ref={cancelRef} type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
             {cancelLabel}

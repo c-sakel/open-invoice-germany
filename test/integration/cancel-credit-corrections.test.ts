@@ -136,7 +136,7 @@ describe("Storno von Bestandsbelegen (C1) — die vier neuen Phase-12b-Blocker s
       deliveryDate: NOW,
       taxCategory: "AE",
     });
-    const res = await cancelInvoice(original.id, { now: NOW });
+    const res = await cancelInvoice(original.id, { orgId: original.orgId, now: NOW });
     expect(res.creditNote.status).toBe("FINALIZED");
     const updated = await dbInternal.invoice.findUnique({ where: { id: original.id } });
     expect(updated?.status).toBe("CANCELLED");
@@ -151,7 +151,7 @@ describe("Storno von Bestandsbelegen (C1) — die vier neuen Phase-12b-Blocker s
       deliveryDate: null,
       taxCategory: "K",
     });
-    const res = await cancelInvoice(original.id, { now: NOW });
+    const res = await cancelInvoice(original.id, { orgId: original.orgId, now: NOW });
     expect(res.creditNote.status).toBe("FINALIZED");
   });
 
@@ -164,7 +164,7 @@ describe("Storno von Bestandsbelegen (C1) — die vier neuen Phase-12b-Blocker s
       deliveryDate: NOW2,
       taxCategory: "E",
     });
-    const res = await cancelInvoice(original.id, { now: NOW2 });
+    const res = await cancelInvoice(original.id, { orgId: original.orgId, now: NOW2 });
     expect(res.creditNote.status).toBe("FINALIZED");
   });
 
@@ -177,7 +177,7 @@ describe("Storno von Bestandsbelegen (C1) — die vier neuen Phase-12b-Blocker s
       deliveryDate: NOW2,
       taxCategory: "G",
     });
-    const res = await cancelInvoice(original.id, { now: NOW2 });
+    const res = await cancelInvoice(original.id, { orgId: original.orgId, now: NOW2 });
     expect(res.creditNote.status).toBe("FINALIZED");
   });
 });
@@ -195,7 +195,7 @@ describe("Teilgutschrift von Bestandsbelegen (C1) — credit.ts ist ebenso befre
     const res = await createPartialCreditNote(
       original.id,
       { lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 0, taxCategory: "AE" }] },
-      { now: NOW },
+      { orgId: original.orgId, now: NOW },
     );
     expect(res.creditNote.status).toBe("FINALIZED");
   });

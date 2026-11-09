@@ -42,10 +42,10 @@ export default async function InvoiceDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; liste?: string | string[] }>;
+  searchParams: Promise<{ error?: string; send?: string; liste?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { error, liste: listeParam } = await searchParams;
+  const { error, send, liste: listeParam } = await searchParams;
   const liste = firstOf(listeParam);
 
   const org = await getActiveOrg();
@@ -68,6 +68,10 @@ export default async function InvoiceDetail({
   if (!invoice) notFound();
 
   const vm = buildInvoiceViewModel(invoice);
+  // T7: nach einem Storno zurueckzuzahlender Betrag = echte Zahlungen (ohne Verrechnungen mit Teilgutschriften).
+  const refundDueCents = vm.isCancelled
+    ? Math.max(0, invoice.payments.filter((p) => p.method !== "CREDIT_NOTE").reduce((sum, p) => sum + p.amountCents, 0))
+    : 0;
   // Phase 13c, Task 4: genau EINE hervorgehobene Kopfzeilen-Aktion je Status statt bis zu
   // fuenf gleichwertigen Knoepfen — reine Ableitung aus dem View-Model (primaryAction).
   const primary = primaryAction(vm);
@@ -169,7 +173,7 @@ export default async function InvoiceDetail({
           <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
             PDF
           </a>
-          <SendEmailDialog docType={vm.emailDocType} docId={invoice.id} label={vm.isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} />
+          <SendEmailDialog docType={vm.emailDocType} docId={invoice.id} label={vm.isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} autoOpen={send === "1" && invoice.type === "CREDIT_NOTE"} />
           {vm.isDraft && (
             <Link href={`/rechnungen/${invoice.id}/bearbeiten`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
               Bearbeiten
@@ -214,6 +218,11 @@ export default async function InvoiceDetail({
       notice={
         <>
           {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm whitespace-pre-line text-rose-800">{error}</div>}
+          {vm.isCancelled && refundDueCents > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Erstattung von {formatCents(refundDueCents, invoice.currency)} fällig — auf diese Rechnung wurden Zahlungen erfasst, die nach dem Storno an den Kunden zurückzuzahlen sind.
+            </div>
+          )}
           {vm.isDraft && (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               Entwurf — noch keine Rechnungsnummer vergeben. Mit „Festschreiben“ wird die Rechnung GoBD-konform unveränderbar.

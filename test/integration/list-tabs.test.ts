@@ -124,7 +124,7 @@ beforeAll(async () => {
   await recordPayment(paid.id, recordPaymentSchema.parse({ amountCents: 11900, method: "TRANSFER", paidAt: NOW }));
 
   const cancelled = await finalizedInvoice("Beratung Standardvertrag", YESTERDAY);
-  await cancelInvoice(cancelled.id, { now: NOW });
+  await cancelInvoice(cancelled.id, { orgId: cancelled.orgId, now: NOW });
 
   // Angebote: zwei abgelaufene (DRAFT + SENT, validUntil in der Vergangenheit => EXPIRED),
   // ein aktives DRAFT (validUntil in der Zukunft), ein angenommenes, ein archiviertes.

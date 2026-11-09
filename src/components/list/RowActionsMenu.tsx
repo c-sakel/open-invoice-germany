@@ -8,6 +8,7 @@ import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { PaymentForm } from "@/components/PaymentForm";
 import { ConvertMenu } from "@/components/ConvertMenu";
 import { DocumentActionsMenuItems } from "@/components/DocumentActionsMenu";
+import { CancelInvoiceDialog } from "@/components/invoices/CancelInvoiceDialog";
 import { RowPaymentDialog } from "@/components/list/RowPaymentDialog";
 import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import { shouldForceDunningRetry } from "@/lib/dunning-force";
@@ -299,7 +300,13 @@ export function RowActionsMenu({
               asMenuItem
             />
           )}
-          {has("CANCEL") && cancelRoute && (
+          {has("CANCEL") && cancelRoute && kind === "INVOICE" && (
+            // T7: Rechnungs-Storno nur nach Rueckfrage mit Betraegen, Grund und Versandoption.
+            <CancelInvoiceDialog invoiceId={id} className={`${itemCls} text-rose-700 hover:bg-rose-50`}>
+              Stornieren
+            </CancelInvoiceDialog>
+          )}
+          {has("CANCEL") && cancelRoute && kind !== "INVOICE" && (
             <button type="button" onClick={cancel} disabled={busy === "CANCEL"} className={`${itemCls} text-rose-700 hover:bg-rose-50`}>
               {busy === "CANCEL" ? "…" : "Stornieren"}
             </button>

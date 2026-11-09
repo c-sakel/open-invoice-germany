@@ -10,9 +10,6 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
-import { emitEvent } from "@/domain/webhook/emit";
-import { serializePayment } from "@/api/serializers/payment";
-import { serializeInvoice } from "@/api/serializers/invoice";
 import { NotFoundError } from "@/domain/errors";
 import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
@@ -55,7 +52,7 @@ function proportionalCents(amountCents: number, creditLineTotal: number, origina
 export async function createPartialCreditNote(
   invoiceId: string,
   input: PartialCreditInput,
-  opts: { actor?: string; now?: Date; orgId?: string } = {},
+  opts: { actor?: string; now?: Date; orgId: string },
 ) {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
@@ -76,7 +73,7 @@ export async function createPartialCreditNote(
     });
     if (!original) throw new CreditError("Rechnung nicht gefunden.");
     // Fremde Organisation: wie "nicht gefunden" (404), keine Existenz preisgeben.
-    if (opts.orgId && original.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
+    if (original.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
     if (original.status === "CANCELLED") throw new CreditError("Rechnung ist storniert.");
     if (original.status === "DRAFT") throw new CreditError("Nur festgeschriebene Rechnungen können (teil-)gutgeschrieben werden.");
     if (original.type === "CREDIT_NOTE") throw new CreditError("Eine Gutschrift kann nicht gutgeschrieben werden.");
@@ -166,9 +163,8 @@ export async function createPartialCreditNote(
     // (Zahlung "CREDIT_NOTE"); ein darueber hinausgehender Teil ist zu erstatten.
     const openBefore = openAmountCents(original);
     const offsetCents = Math.min(creditGross, Math.max(openBefore, 0));
-    let updatedOriginal: Awaited<ReturnType<typeof tx.invoice.update>> | null = null;
     if (offsetCents > 0) {
-      const payment = await tx.payment.create({
+      await tx.payment.create({
         data: {
           invoiceId: original.id,
           amountCents: offsetCents,
@@ -180,7 +176,7 @@ export async function createPartialCreditNote(
       });
       const newPaid = original.paidAmountCents + offsetCents;
       const newStatus = newPaid >= base ? "PAID" : "PARTIALLY_PAID";
-      updatedOriginal = await tx.invoice.update({ where: { id: original.id }, data: { paidAmountCents: newPaid, status: newStatus } });
+      await tx.invoice.update({ where: { id: original.id }, data: { paidAmountCents: newPaid, status: newStatus } });
       await appendChangeLog(tx, {
         orgId: original.orgId,
         entity: "INVOICE",
@@ -190,24 +186,8 @@ export async function createPartialCreditNote(
         at: now,
         diff: { creditOffsetCents: offsetCents, creditNote: finalized.number, paidAmountCents: newPaid, status: newStatus },
       });
-      await emitEvent(tx, {
-        orgId: original.orgId,
-        type: "payment.recorded",
-        objectName: "Payment",
-        objectId: payment.id,
-        data: serializePayment(payment),
-        now,
-      });
-      if (newStatus === "PAID") {
-        await emitEvent(tx, {
-          orgId: original.orgId,
-          type: "invoice.paid",
-          objectName: "Invoice",
-          objectId: original.id,
-          data: serializeInvoice(updatedOriginal, new Set()),
-          now,
-        });
-      }
+      // Bewusst KEIN Webhook (payment.recorded/invoice.paid): eine Verrechnung ist keine
+      // Kundenzahlung; ein angebundener Shop wuerde sie sonst als Zahlungseingang deuten.
     }
     const refundDueCents = creditGross - offsetCents;
 

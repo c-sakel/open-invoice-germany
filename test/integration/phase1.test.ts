@@ -56,7 +56,7 @@ describe("Phase 1 — Verknuepfungen", () => {
   it("Storno schreibt REVERSES und CORRECTS", async () => {
     const inv = await createDraftInvoice(orgId, { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0, lines: [line], deliveryDate: FIX });
     await finalizeInvoice(inv.id, { now: FIX });
-    const { creditNote } = await cancelInvoice(inv.id, { now: FIX });
+    const { creditNote } = await cancelInvoice(inv.id, { orgId: inv.orgId, now: FIX });
     const rels = await listRelations(orgId, "INVOICE", creditNote.id);
     expect(rels.map((r) => r.relationType).sort()).toEqual(["CORRECTS", "REVERSES"]);
   });

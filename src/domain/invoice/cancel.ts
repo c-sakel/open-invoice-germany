@@ -7,6 +7,7 @@
  * Status CANCELLED und einen Verweis auf die Gutschrift (§ 31 Abs. 5 UStDV).
  */
 import { dbInternal } from "@/lib/db";
+import { roundHalfUp } from "@/lib/money";
 import type { TaxBreakdownEntry } from "@/lib/tax";
 import { reconcileNetsForGross } from "@/lib/pricing/partial";
 import { appendChangeLog } from "@/domain/audit";
@@ -133,10 +134,18 @@ function summaryStornoLines(input: {
   if (input.credits.length > 0 && naiveNets.some((n) => n < 0)) {
     throw new CancelError("Die Teilgutschriften übersteigen den Rechnungsbetrag in mindestens einem Steuersatz — der Restbetrag kann nicht ermittelt werden.");
   }
-  const reconciledNets = reconcileNetsForGross(
-    breakdown.map((entry, i) => ({ netCents: naiveNets[i], taxRate: entry.taxRate })),
-    input.targetGrossCents,
-  );
+  const rateBuckets = breakdown.map((entry, i) => ({ netCents: naiveNets[i], taxRate: entry.taxRate }));
+  const reconciledNets = reconcileNetsForGross(rateBuckets, input.targetGrossCents);
+  // Ist der Zielbetrag mit ganzzahligem Netto nicht erreichbar (ein Steuersatz: die Funktion
+  // net + round(net * satz) ueberspringt einzelne Bruttowerte), darf der Storno den Rest NIE
+  // ueber-erstatten: dann das Netto schrittweise senken, bis die Summe <= Ziel ist (Abweichung
+  // hoechstens wenige Cent zugunsten der Rechnung; BR-CO-17 verbietet einen "krummen" Steuerbetrag).
+  const grossOf = (nets: readonly number[]) => nets.reduce((sum, n, i) => sum + n + roundHalfUp((n * breakdown[i].taxRate) / 100), 0);
+  for (let guard = 0; guard < 20 && grossOf(reconciledNets) > input.targetGrossCents; guard++) {
+    const idx = reconciledNets.findIndex((n) => n > 0);
+    if (idx < 0) break;
+    reconciledNets[idx] -= 1;
+  }
 
   const lines = breakdown.map((entry, i) => ({ entry, remainingNetCents: reconciledNets[i] }));
   // Rest-Storno: vollstaendig gutgeschriebene Saetze entfallen (keine 0-Zeilen im Beleg).
@@ -170,13 +179,13 @@ export class CancelError extends Error {
 export interface CancelOptions {
   actor?: string;
   now?: Date;
-  /** Wenn gesetzt, muss die Rechnung zu dieser Organisation gehoeren (sonst NotFoundError). */
-  orgId?: string;
+  /** Pflicht: die Rechnung muss zu dieser Organisation gehoeren (sonst NotFoundError). */
+  orgId: string;
   /** Optionaler Stornogrund — landet in den Notizen des Stornobelegs und im ChangeLog-Diff. */
   reason?: string;
 }
 
-export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {}) {
+export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
 
@@ -187,7 +196,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions = {})
     });
     if (!original) throw new CancelError("Rechnung nicht gefunden.");
     // Org-Scope (B2): fremde Belege sind "nicht gefunden" (Muster payment.ts).
-    if (opts.orgId && original.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
+    if (original.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
     if (original.status === "DRAFT") throw new CancelError("Entwürfe werden gelöscht, nicht storniert.");
     if (original.status === "CANCELLED") throw new CancelError("Rechnung ist bereits storniert.");
     if (original.type === "CREDIT_NOTE") throw new CancelError("Eine Gutschrift/Storno kann nicht erneut storniert werden.");

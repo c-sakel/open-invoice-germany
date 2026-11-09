@@ -4,7 +4,7 @@ import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from "@/components/de
 import { ConvertMenu } from "@/components/ConvertMenu";
 import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
 import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
-import { cancelAction } from "@/app/actions/invoices";
+import { CancelInvoiceDialog } from "@/components/invoices/CancelInvoiceDialog";
 
 /**
  * "Mehr"-Menue der Rechnungsdetailseite (Phase 11d, Task 3) — buendelt XRechnung/ZUGFeRD,
@@ -84,12 +84,9 @@ export function InvoiceMoreMenu({
 
       {canCancelOrCredit && (
         <ActionMenuItem>
-          <form action={cancelAction}>
-            <input type="hidden" name="id" value={invoiceId} />
-            <button type="submit" className="text-rose-700">
-              Stornieren
-            </button>
-          </form>
+          <CancelInvoiceDialog invoiceId={invoiceId} className="text-rose-700">
+            Stornieren
+          </CancelInvoiceDialog>
         </ActionMenuItem>
       )}
 

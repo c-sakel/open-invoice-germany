@@ -594,6 +594,24 @@ export const partialCreditSchema = z.object({
 export const cancelInvoiceSchema = z.object({ reason: z.string().trim().max(500).optional() });
 export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
 
+/** Server-Action `cancelAction` (Storno-Dialog): Formularfelder -> validierte Eingabe. */
+export const cancelActionSchema = z.object({
+  id: z.string().trim().min(1),
+  reason: z.string().trim().max(500).optional(),
+  sendAfter: z.boolean(),
+});
+export type CancelActionInput = z.infer<typeof cancelActionSchema>;
+
+export function parseCancelFormData(formData: FormData): CancelActionInput {
+  const reason = formData.get("reason");
+  const send = formData.get("sendAfter");
+  return cancelActionSchema.parse({
+    id: formData.get("id"),
+    reason: typeof reason === "string" && reason.trim() !== "" ? reason : undefined,
+    sendAfter: send === "1" || send === "on" || send === "true",
+  });
+}
+
 export type PartialCreditInput = z.infer<typeof partialCreditSchema>;
 
 export const recordPaymentSchema = z.object({

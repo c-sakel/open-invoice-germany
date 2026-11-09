@@ -212,7 +212,7 @@ describe("buildTemplateContext / buildStandardAttachments — Rechnung", () => {
   it("stornierte Rechnung liefert weiterhin das ZUGFeRD-PDF, kein ENTWURF-Anhang", async () => {
     const draft = await createDraftInvoice(orgId, baseInput());
     const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
-    const cancelled = await cancelInvoice(finalized.id, { now: FIX_DATE });
+    const cancelled = await cancelInvoice(finalized.id, { orgId: finalized.orgId, now: FIX_DATE });
 
     const attachments = await buildStandardAttachments(orgId, "INVOICE", cancelled.originalId);
     expect(attachments.length).toBeGreaterThanOrEqual(1);
