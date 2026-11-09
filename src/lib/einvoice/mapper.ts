@@ -221,8 +221,15 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     invoice.paymentTerms && skontoHumanText
       ? `${invoice.paymentTerms}\n${skontoHumanText}`
       : (invoice.paymentTerms ?? skontoHumanText);
+  // Storno-/Gutschriftbelege tragen (seit dem Storno-Fix) keine Zahlungsbedingungen des
+  // Originals. EN 16931 BR-CO-25 verlangt bei positivem Zahlbetrag (BT-115, Gutschriften
+  // fuehren positive Betraege) Faelligkeit (BT-9) ODER Zahlungsbedingungen (BT-20) — die
+  // CII-Ausgabe kennt BT-9 fuer Gutschriften nicht. Nur XML (BT-20); das PDF zeigt weiterhin
+  // keinen Zahlungsbedingungstext.
+  const creditFallbackNote =
+    invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? "Gutschrift – Verrechnung bzw. Erstattung" : null;
   const paymentTermsNote =
-    skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : paymentTermsHuman;
+    skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : (paymentTermsHuman ?? creditFallbackNote);
 
   // Phase 4a — Zahlungsweg aus dem Zahlungsmethoden-Snapshot; Fallback Org-Konto,
   // Code 58 (SEPA-Überweisung).

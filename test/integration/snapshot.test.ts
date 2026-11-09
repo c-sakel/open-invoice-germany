@@ -104,7 +104,7 @@ describe("Phase 0 — Snapshots", () => {
     // Stammdaten AENDERN, nachdem das Original festgeschrieben wurde: das Storno muss
     // trotzdem den Empfaenger des Originals nennen, nicht den geaenderten.
     await dbInternal.customer.update({ where: { id: customerId }, data: { name: "STORNO-GEAENDERT AG" } });
-    const { creditNote } = await cancelInvoice(inv.id, { now: FIX_DATE });
+    const { creditNote } = await cancelInvoice(inv.id, { orgId: inv.orgId, now: FIX_DATE });
     const credit = await dbInternal.invoice.findUniqueOrThrow({ where: { id: creditNote.id } });
     expect(credit.snapshotSource).toBe("INHERITED");
     expect(credit.buyerSnapshotJson).toBe(original.buyerSnapshotJson);
@@ -119,7 +119,7 @@ describe("Phase 0 — Snapshots", () => {
     const { creditNote } = await createPartialCreditNote(
       inv.id,
       { lines: [{ description: "Beratung (teilweise)", quantityMilli: 500, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] },
-      { now: FIX_DATE },
+      { orgId: inv.orgId, now: FIX_DATE },
     );
     const credit = await dbInternal.invoice.findUniqueOrThrow({ where: { id: creditNote.id } });
     expect(credit.snapshotSource).toBe("INHERITED");

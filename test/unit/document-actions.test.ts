@@ -87,6 +87,21 @@ describe("availableActions", () => {
     expect(actions).toContain("CANCEL");
   });
 
+  it("Angebot REJECTED: kein Stornieren mehr (Endzustand)", () => {
+    expect(availableActions({ kind: "QUOTE", type: "ANGEBOT", status: "REJECTED", isDraft: false })).not.toContain("CANCEL");
+  });
+
+  it("Angebot EXPIRED: weiterhin stornierbar", () => {
+    expect(availableActions({ kind: "QUOTE", type: "ANGEBOT", status: "EXPIRED", isDraft: false })).toContain("CANCEL");
+  });
+
+  it("Client-Tabelle: EXPIRED bietet Ablehnen und Stornieren, REJECTED nichts", () => {
+    const src = readFileSync(path.resolve(__dirname, "../../src/components/DocumentActions.tsx"), "utf8");
+    expect(src).toContain('EXPIRED: ["MARK_SENT", "MARK_ACCEPTED", "MARK_REJECTED", "CANCEL"]');
+    expect(src).toContain("REJECTED: [],");
+    expect(src).not.toMatch(/\bconfirm\(/);
+  });
+
   it("Angebot REJECTED: kein SEND/DELIVERY_NOTE mehr", () => {
     const actions = availableActions({ kind: "QUOTE", type: "ANGEBOT", status: "REJECTED", isDraft: false });
     expect(actions).not.toContain("SEND");

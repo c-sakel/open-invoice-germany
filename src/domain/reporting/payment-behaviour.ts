@@ -26,7 +26,7 @@ export interface PaymentBehaviour {
  * Mittelt ueber alle als PAID abgeschlossenen Rechnungen der Organisation (optional
  * gefiltert auf einen Kunden) die Tage zwischen Rechnungsdatum und der spaetesten
  * erfassten Zahlung sowie den Anteil, der bis zum Faelligkeitstag beglichen wurde
- * ("am Faelligkeitstag" zaehlt als puenktlich). Rechnungen ohne Zahlungszeile (z. B. per
+ * ("am Faelligkeitstag" zaehlt als puenktlich). Verrechnungen mit Gutschriften (method CREDIT_NOTE) sind keine Zahlung und zaehlen nicht. Rechnungen ohne Zahlungszeile (z. B. per
  * manuellem Statuswechsel auf PAID gesetzt, ohne `recordPayment`) werden uebersprungen
  * und zaehlen nicht in `paidCount` — es gibt keinen Zahlungszeitpunkt, ueber den gemittelt
  * werden koennte.
@@ -34,7 +34,7 @@ export interface PaymentBehaviour {
 export async function paymentBehaviour(orgId: string, opts: { customerId?: string } = {}): Promise<PaymentBehaviour> {
   const invoices = await dbInternal.invoice.findMany({
     where: { orgId, status: "PAID", ...(opts.customerId ? { customerId: opts.customerId } : {}) },
-    select: { id: true, issueDate: true, dueDate: true, payments: { select: { paidAt: true }, orderBy: { paidAt: "desc" }, take: 1 } },
+    select: { id: true, issueDate: true, dueDate: true, payments: { where: { method: { not: "CREDIT_NOTE" } }, select: { paidAt: true }, orderBy: { paidAt: "desc" }, take: 1 } },
   });
 
   let paidCount = 0;

@@ -66,7 +66,8 @@ function statusWhere(status: InvoiceListFilter["status"], now: Date): Prisma.Inv
 
   const today = new Date(utcDateOnlyPlusDays(now, 0));
   const tomorrow = new Date(utcDateOnlyPlusDays(now, 1));
-  const openOrDue = { status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } };
+  // Gutschriften/Stornobelege sind keine Forderungen (R2) -> aus offen/faellig/ueberfaellig ausgeschlossen.
+  const openOrDue = { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } };
 
   if (status === "overdue") return { ...openOrDue, dueDate: { lt: today } };
   if (status === "due") return { ...openOrDue, dueDate: { gte: today, lt: tomorrow } };
@@ -206,15 +207,15 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
   const [groups, openish] = await Promise.all([
     prisma.invoice.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } }),
     prisma.invoice.findMany({
-      where: { AND: [...and, { status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } }] },
-      select: { status: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+      where: { AND: [...and, { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } }] },
+      select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
     }),
   ]);
 
   let openCents = 0;
   let overdueCents = 0;
   for (const inv of openish) {
-    const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+    const status = effectiveInvoiceStatus({ status: inv.status, type: inv.type, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
     if (status !== "OPEN" && status !== "DUE" && status !== "OVERDUE") continue;
     // openAmountCents rechnet vorzeichenbehaftet (payableBaseCents - paidAmountCents) — bei
     // einer ueberzahlten Rechnung waere das Ergebnis negativ. Lokal geklemmt statt die
@@ -306,7 +307,7 @@ export async function listInvoices(
         payableCents: r.payableCents,
       }),
       currency: r.currency,
-      effectiveStatus: effectiveInvoiceStatus({ status: r.status, dueDate: r.dueDate, issueDate: r.issueDate }, now),
+      effectiveStatus: effectiveInvoiceStatus({ status: r.status, type: r.type, dueDate: r.dueDate, issueDate: r.issueDate }, now),
       hasEmailLog: emailLogDocIds.has(r.id),
       partiallyPaid: isPartiallyPaid(r.status),
       dunningState: r.dunningState as "ACTIVE" | "PAUSED" | "STOPPED",

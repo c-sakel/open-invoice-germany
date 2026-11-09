@@ -29,7 +29,7 @@ const OPEN_STATUSES = new Set<EffectiveInvoiceStatus>(["OPEN", "DUE", "OVERDUE",
 export async function statusCounts(orgId: string, now: Date = new Date()): Promise<StatusCount[]> {
   const invoices = await dbInternal.invoice.findMany({
     where: { orgId },
-    select: { status: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+    select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
   });
 
   const byStatus = new Map<EffectiveInvoiceStatus, { count: number; openCents: number }>();

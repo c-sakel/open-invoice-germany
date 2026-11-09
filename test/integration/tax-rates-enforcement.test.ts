@@ -108,14 +108,14 @@ describe("Teilgutschrift erbt die Saetze des Originals (Fix 1)", () => {
 
     // (a) Weder in der Org-Liste noch auf dem Original vorhanden -> abgelehnt.
     await expect(
-      createPartialCreditNote(original.id, { lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 5, taxCategory: "S" }] }, { now: NOW }),
+      createPartialCreditNote(original.id, { lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 5, taxCategory: "S" }] }, { orgId: original.orgId, now: NOW }),
     ).rejects.toBeInstanceOf(TaxRateNotAllowedError);
 
     // (b) Der (inzwischen delistete) Satz des Originals bleibt erlaubt (GoBD, geerbt).
     const credited = await createPartialCreditNote(
       original.id,
       { lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 16, taxCategory: "S" }] },
-      { now: NOW },
+      { orgId: original.orgId, now: NOW },
     );
     expect(credited.creditNote.status).toBe("FINALIZED");
   });

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { creditCapCents, openAmountCents } from "@/domain/invoice/amounts";
 import { PartialCreditForm } from "@/components/PartialCreditForm";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,14 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
   if (!inv) notFound();
   const { taxRates } = await loadDocumentSettings(org.id);
 
+  if (inv.status === "CANCELLED") {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+        Die Rechnung {inv.number} ist storniert — eine Teilgutschrift ist nicht mehr möglich.
+      </div>
+    );
+  }
+
   if (inv.status === "DRAFT") {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
@@ -24,6 +33,12 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
       </div>
     );
   }
+
+  const credits = await prisma.invoice.aggregate({
+    where: { correctsInvoiceId: inv.id, type: "CREDIT_NOTE", status: { not: "DRAFT" } },
+    _sum: { grossTotalCents: true },
+  });
+  const remainingCents = Math.max(0, creditCapCents(inv) - Math.abs(credits._sum.grossTotalCents ?? 0));
 
   // Teilgutschrift nur ueber ITEM-Positionen — HEADING/TEXT/SUBTOTAL tragen keinen Betrag
   // und werden hier nicht angeboten (§8, K1).
@@ -45,7 +60,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Teilgutschrift</h1>
       </div>
-      <PartialCreditForm invoiceId={id} initialLines={initialLines} taxRates={taxRates} />
+      <PartialCreditForm invoiceId={id} remainingCents={remainingCents} openCents={openAmountCents(inv)} currency={inv.currency} initialLines={initialLines} taxRates={taxRates} />
     </div>
   );
 }

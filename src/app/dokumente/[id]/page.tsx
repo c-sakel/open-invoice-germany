@@ -141,7 +141,9 @@ export default async function DokumentDetail({
           <>
             {/* Fix-Welle I2: kompakte Kopfzeile — nur Bearbeiten + der erste verfuegbare
                 Statusuebergang; der Rest wandert per DocumentActionsMenuItems ins "Mehr"-Menue. */}
-            <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} variant="compact" />
+            <DocumentActions type="QUOTE" id={q.id} status={status} archived={archived} editHref={`/dokumente/${q.id}/bearbeiten`} variant="compact"
+              cancelInfo={{ noun: KIND_TITLE[q.kind] ?? "Beleg", number: q.number, linkedInvoices: (billing != null && billing.invoiceIds.length > 0) || q.convertedToInvoiceId !== null }}
+            />
             <a
               href={`/api/documents/${q.id}/pdf`}
               target="_blank"
@@ -163,7 +165,13 @@ export default async function DokumentDetail({
         }
         more={
           <ActionMenu>
-            <DocumentActionsMenuItems type="QUOTE" id={q.id} status={status} archived={archived} />
+            <DocumentActionsMenuItems
+              type="QUOTE"
+              id={q.id}
+              status={status}
+              archived={archived}
+              cancelInfo={{ noun: KIND_TITLE[q.kind] ?? "Beleg", number: q.number, linkedInvoices: (billing != null && billing.invoiceIds.length > 0) || q.convertedToInvoiceId !== null }}
+            />
             {canSaveTemplate && (
               <ActionMenuItem>
                 <SaveTemplateDialog docType="QUOTE" docId={q.id} defaultName={q.number ?? undefined} asMenuItem />

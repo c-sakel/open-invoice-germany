@@ -76,6 +76,11 @@ describe("effectiveInvoiceStatus", () => {
     expect(effectiveInvoiceStatus({ status: "FINALIZED", dueDate: dueLateToday, issueDate: ISSUE }, NOW)).toBe("DUE");
   });
 
+  it("CREDIT_NOTE ist nie OPEN/DUE/OVERDUE (R2), auch nicht mit dueDate gestern", () => {
+    expect(effectiveInvoiceStatus({ type: "CREDIT_NOTE", status: "FINALIZED", dueDate: YESTERDAY, issueDate: ISSUE }, NOW)).toBe("FINALIZED");
+    expect(effectiveInvoiceStatus({ type: "CREDIT_NOTE", status: "FINALIZED", dueDate: null, issueDate: ISSUE }, NOW)).toBe("FINALIZED");
+  });
+
   it("INVOICE_STATUS_LABEL deckt alle acht Zustaende ab", () => {
     const keys: Array<keyof typeof INVOICE_STATUS_LABEL> = [
       "DRAFT", "FINALIZED", "OPEN", "DUE", "OVERDUE", "PARTIALLY_PAID", "PAID", "CANCELLED",

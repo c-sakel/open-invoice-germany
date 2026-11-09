@@ -205,7 +205,7 @@ describe("B6: FINAL-Storno trifft -payableCents exakt, wo rechnerisch erreichbar
     const payable = final.payableCents!;
     expect(payable).toBe(146_905);
 
-    const { creditNote } = await cancelInvoice(final.id, { now: FIX_DATE });
+    const { creditNote } = await cancelInvoice(final.id, { orgId: final.orgId, now: FIX_DATE });
     expect(Math.abs(creditNote.grossTotalCents - -payable)).toBeLessThanOrEqual(1);
   });
 
@@ -228,7 +228,7 @@ describe("B6: FINAL-Storno trifft -payableCents exakt, wo rechnerisch erreichbar
     const final = await finalizeInvoice((await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: FIX_DATE })).id, { now: FIX_DATE });
     const payable = final.payableCents!;
 
-    const { creditNote } = await cancelInvoice(final.id, { now: FIX_DATE });
+    const { creditNote } = await cancelInvoice(final.id, { orgId: final.orgId, now: FIX_DATE });
     expect(creditNote.grossTotalCents).toBe(-payable);
   });
 });

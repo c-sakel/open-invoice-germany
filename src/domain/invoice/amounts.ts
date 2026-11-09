@@ -22,3 +22,25 @@ export function payableBaseCents(invoice: Pick<OpenAmountInvoice, "grossTotalCen
 export function openAmountCents(invoice: OpenAmountInvoice): number {
   return payableBaseCents(invoice) - invoice.paidAmountCents;
 }
+
+/**
+ * Obergrenze fuer Gutschriften gegen eine Rechnung: der Rechnungsbetrag (brutto) selbst.
+ * Bei einer Schlussrechnung ist `payableCents` (= brutto - Abschlaege) NUR die Zahlungs-
+ * grundlage; die Positionen der Schlussrechnung (und damit eine Gutschrift darauf) beziehen
+ * sich auf den vollen Bruttobetrag. Verrechnet wird weiterhin nur gegen den offenen Rest.
+ */
+export function creditCapCents(invoice: Pick<OpenAmountInvoice, "grossTotalCents">): number {
+  return invoice.grossTotalCents;
+}
+
+/**
+ * Tatsaechlich eingegangenes (erstattungsfaehiges) Geld: Verrechnungen mit Gutschriften
+ * (method CREDIT_NOTE) und Skonto-Buchungen (method SKONTO / isSkonto) sind kein Geldeingang
+ * und werden bei Storno nicht erstattet. Eine Quelle fuer Detailseite, Storno und Vorschau.
+ */
+export function refundablePaidCents(payments: ReadonlyArray<{ amountCents: number; method: string; isSkonto?: boolean }>): number {
+  return Math.max(
+    0,
+    payments.filter((p) => p.method !== "CREDIT_NOTE" && p.method !== "SKONTO" && !p.isSkonto).reduce((sum, p) => sum + p.amountCents, 0),
+  );
+}

@@ -24,7 +24,7 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true } });
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
   const input = partialCreditSchema.parse(ctx.body);
-  const res = await createPartialCreditNote(ctx.params.id, input, { actor: ctx.actor });
+  const res = await createPartialCreditNote(ctx.params.id, input, { actor: ctx.actor, orgId: ctx.orgId });
   return apiData(serializeInvoice(res.creditNote, new Set()), 201);
 }, { scope: "write" });
 

@@ -3,10 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { taxRateOptions } from "@/lib/editor/constants";
+import { currencyOptions, currencySymbol } from "@/lib/currencies";
 
 interface CustomerOption {
   id: string;
   name: string;
+  /** Waehrungsvorgabe des Kunden (Customer.defaultCurrency), sonst null. */
+  defaultCurrency?: string | null;
 }
 interface ProductOption {
   id: string;
@@ -49,6 +52,7 @@ export interface RecurringInitialValues {
   emailTemplateId: string;
   showPeriodText: boolean;
   notes: string;
+  currency: string;
   lines: LineState[];
 }
 
@@ -64,6 +68,7 @@ export function NewRecurringForm({
   customerName,
   initial,
   taxRates,
+  defaultCurrency = "EUR",
 }: {
   customers: CustomerOption[];
   products: ProductOption[];
@@ -93,12 +98,16 @@ export function NewRecurringForm({
    *  (`taxRateOptions`, `@/lib/editor/constants`) wie der Beleg-Editor; die Server-Seite
    *  laedt sie ueber `loadDocumentSettings`. Ersetzt die vorher fest verdrahteten 19/7/0. */
   taxRates: readonly number[];
+  /** DocumentSettings.defaultCurrency — Vorbelegung, wenn der Kunde keine Vorgabe hat. */
+  defaultCurrency?: string;
 }) {
   const router = useRouter();
   const taxOptions = taxRateOptions(taxRates);
   const defaultTaxRate = taxOptions[0]?.value ?? 19;
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
+  // Vorbelegter Kunde: derselbe Datensatz fuer customerId und Initialwaehrung.
+  const presetCustomer = customers[0];
+  const [customerId, setCustomerId] = useState(presetCustomer?.id ?? "");
   const [interval, setInterval] = useState(initial?.interval ?? "MONTHLY");
   const [intervalCount, setIntervalCount] = useState(String(initial?.intervalCount ?? 1));
   const [startDate, setStartDate] = useState(initial?.startDate ?? todayISO());
@@ -110,6 +119,12 @@ export function NewRecurringForm({
   const [autoSend, setAutoSend] = useState(initial?.autoSend ?? defaultAutoSend);
   const [emailTemplateId, setEmailTemplateId] = useState(initial?.emailTemplateId ?? "");
   const [showPeriodText, setShowPeriodText] = useState(initial?.showPeriodText ?? defaultShowPeriodText);
+  // Waehrung: Kette Kunde > Einstellung > EUR; manuelle Wahl (currencyTouched) wird durch
+  // spaeteren Kundenwechsel nicht ueberschrieben. Beim Bearbeiten gilt der Bestandswert.
+  const [currency, setCurrency] = useState(
+    initial?.currency ?? presetCustomer?.defaultCurrency ?? defaultCurrency,
+  );
+  const [currencyTouched, setCurrencyTouched] = useState(mode === "edit");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [lines, setLines] = useState<LineState[]>(initial?.lines.length ? initial.lines : [emptyLine(defaultTaxRate)]);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +133,11 @@ export function NewRecurringForm({
   const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
   const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
   const netCents = lines.reduce((sum, l) => sum + Math.round((toMilli(l.quantity) * toCents(l.price)) / 1000), 0);
+
+  function selectCustomer(id: string) {
+    setCustomerId(id);
+    if (!currencyTouched) setCurrency(customers.find((c) => c.id === id)?.defaultCurrency ?? defaultCurrency);
+  }
 
   function patchLine(i: number, patch: Partial<LineState>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -165,6 +185,7 @@ export function NewRecurringForm({
         emailTemplateId: emailTemplateId || null,
         showPeriodText,
         notes: notes || null,
+        currency,
         lines: lineInputs,
       };
       const res = await fetch(`/api/recurring/${recurringId}`, {
@@ -196,9 +217,9 @@ export function NewRecurringForm({
       emailTemplateId: emailTemplateId || undefined,
       showPeriodText,
       taxScheme: "REGULAR",
-      // S5 (Fix-Welle, Final-Review): keine hartcodierte Waehrung mehr — createRecurring()
-      // faellt bei `undefined` auf DocumentSettings.defaultCurrency (bzw. EUR) zurueck.
-      currency: undefined,
+      // Nur bei manueller Wahl senden; sonst greift die Server-Kette Kunde > Einstellung > EUR
+      // (identisch zur hier angezeigten Vorbelegung).
+      currency: currencyTouched ? currency : undefined,
       notes: notes || undefined,
       lines: lineInputs,
     };
@@ -238,7 +259,7 @@ export function NewRecurringForm({
         ) : (
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">Kunde</span>
-            <select className={input} value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+            <select className={input} value={customerId} onChange={(e) => selectCustomer(e.target.value)} required>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -250,6 +271,28 @@ export function NewRecurringForm({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-700">Währung</span>
+          <select
+            className={input}
+            value={currency}
+            onChange={(e) => {
+              setCurrency(e.target.value);
+              setCurrencyTouched(true);
+            }}
+          >
+            {currencyOptions(currency).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          {currency !== "EUR" && (
+            <span className="text-xs text-amber-700">
+              Fremdwährung: kein GiroCode; USt-Betrag in EUR (Art. 230 MwStSystRL, § 16 Abs. 6 UStG) wird nicht ausgewiesen.
+            </span>
+          )}
+        </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-slate-700">Rhythmus</span>
           <select className={input} value={interval} onChange={(e) => setInterval(e.target.value)}>
@@ -363,7 +406,7 @@ export function NewRecurringForm({
             </div>
             <input className={`${input} col-span-4 sm:col-span-2`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
             <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
-            <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto €" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
+            <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
             <select className={`${input} col-span-8 sm:col-span-1`} value={line.taxRate} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })}>
               {lineTaxOptions(line.taxRate).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -385,7 +428,7 @@ export function NewRecurringForm({
 
       <div className="flex items-center justify-between border-t border-slate-200 pt-4">
         <span className="text-sm text-slate-500">
-          Nettosumme je Rechnung: <span className="tabular font-medium text-slate-800">{(netCents / 100).toFixed(2)} €</span>
+          Nettosumme je Rechnung: <span className="tabular font-medium text-slate-800">{(netCents / 100).toFixed(2)} {currencySymbol(currency)}</span>
         </span>
         <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
           {busy ? "Speichert…" : mode === "edit" ? "Änderungen speichern" : "Abo anlegen"}

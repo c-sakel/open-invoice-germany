@@ -124,7 +124,7 @@ describe("Storno einer Abschlagsrechnung vor der Schlussrechnung", () => {
     const dp1 = await finalizeInvoice((await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: FIX_DATE })).id, { now: FIX_DATE });
     const dp2 = await finalizeInvoice((await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: FIX_DATE })).id, { now: FIX_DATE });
 
-    await cancelInvoice(dp1.id, { now: FIX_DATE });
+    await cancelInvoice(dp1.id, { orgId: dp1.orgId, now: FIX_DATE });
 
     const final = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: FIX_DATE });
     const finalized = await finalizeInvoice(final.id, { now: FIX_DATE });
@@ -337,7 +337,7 @@ describe("Storno der Schlussrechnung erstattet nur den Rest (nicht die Abschlaeg
     const finalized = await finalizeInvoice(final.id, { now: FIX_DATE });
     expect(finalized.payableCents).toBe(1_190_000 - 357_000);
 
-    const { creditNote } = await cancelInvoice(final.id, { now: FIX_DATE });
+    const { creditNote } = await cancelInvoice(final.id, { orgId: final.orgId, now: FIX_DATE });
     expect(creditNote.grossTotalCents).toBe(-(finalized.payableCents as number));
   });
 });
@@ -366,7 +366,7 @@ describe("Fix-Runde 1 (MEDIUM): Storno einer Schlussrechnung mit Beleg-Rabatt + 
     const finalized = await finalizeInvoice(final.id, { now: FIX_DATE });
     expect(finalized.payableCents).not.toBeNull();
 
-    const { creditNote } = await cancelInvoice(final.id, { now: FIX_DATE });
+    const { creditNote } = await cancelInvoice(final.id, { orgId: final.orgId, now: FIX_DATE });
     expect(creditNote.grossTotalCents).toBe(-(finalized.payableCents as number));
     expect(creditNote.documentDiscountPermille).toBe(0);
   });

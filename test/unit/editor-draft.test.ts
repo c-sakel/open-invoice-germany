@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
+  type DraftLine,
+  type DraftState,
   draftReducer,
   emptyDraft,
   toInvoicePayload,
   toDocumentPayload,
   toDeliveryNotePayload,
   draftFromInvoice,
+  draftFromDocument,
   validateDraft,
   dueDaysFrom,
   dueDateFromDays,
@@ -47,6 +50,45 @@ describe("editor/draft", () => {
     s = draftReducer(s, { type: "removeLine", key: s.lines[0]!.key }); s = draftReducer(s, { type: "removeLine", key: s.lines[0]!.key });
     expect(s.lines).toHaveLength(1); // nie leer: letzte Zeile wird durch eine leere ITEM-Zeile ersetzt
   });
+  it("moveBlock: Slot-Logik, No-op und Ueberschrift-Block", () => {
+    const base = emptyDraft("DOCUMENT");
+    const mk = (types: DraftLine["lineType"][]): DraftState => ({
+      ...base,
+      lines: types.map((lineType, i) => ({ ...base.lines[0]!, key: `k${i}`, lineType, description: `d${i}` })),
+      dirty: false,
+    });
+    const order = (s: DraftState) => s.lines.map((l) => l.description).join(",");
+    // Zeile 0 auf Slot 3 bei 4 Zeilen -> Index 2
+    let s = draftReducer(mk(["ITEM", "ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k0", slot: 3 });
+    expect(order(s)).toBe("d1,d2,d0,d3");
+    expect(s.dirty).toBe(true);
+    // Randfaelle
+    s = draftReducer(mk(["ITEM", "ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k3", slot: 0 });
+    expect(order(s)).toBe("d3,d0,d1,d2");
+    s = draftReducer(mk(["ITEM", "ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k0", slot: 4 });
+    expect(order(s)).toBe("d1,d2,d3,d0");
+    // No-op: Slot = from bzw. from+1 -> unveraendert, nicht dirty
+    for (const slot of [1, 2]) {
+      const n = draftReducer(mk(["ITEM", "ITEM", "ITEM"]), { type: "moveBlock", key: "k1", slot });
+      expect(order(n)).toBe("d0,d1,d2");
+      expect(n.dirty).toBe(false);
+    }
+    // HEADING mit 2 Unterzeilen hinter den naechsten Block
+    s = draftReducer(mk(["HEADING", "ITEM", "ITEM", "HEADING", "ITEM"]), { type: "moveBlock", key: "k0", slot: 5 });
+    expect(order(s)).toBe("d3,d4,d0,d1,d2");
+    // Block nach oben
+    s = draftReducer(mk(["ITEM", "HEADING", "ITEM", "TEXT"]), { type: "moveBlock", key: "k1", slot: 0 });
+    expect(order(s)).toBe("d1,d2,d3,d0");
+    // Drop innerhalb des eigenen Blocks -> No-op
+    const inside = draftReducer(mk(["HEADING", "ITEM", "ITEM", "HEADING"]), { type: "moveBlock", key: "k0", slot: 2 });
+    expect(inside.dirty).toBe(false);
+    expect(order(inside)).toBe("d0,d1,d2,d3");
+    // SUBTOTAL/TEXT wie ITEM
+    s = draftReducer(mk(["SUBTOTAL", "TEXT", "ITEM"]), { type: "moveBlock", key: "k0", slot: 3 });
+    expect(order(s)).toBe("d1,d2,d0");
+    // unbekannter Key
+    expect(draftReducer(mk(["ITEM"]), { type: "moveBlock", key: "x", slot: 0 }).dirty).toBe(false);
+  });
   it("applyProduct uebernimmt Preis/Einheit/Steuer/Artikelnummer als Anzeige-Strings", () => {
     let s = emptyDraft("INVOICE");
     s = draftReducer(s, { type: "applyProduct", key: s.lines[0]!.key, product: { id: "p1", name: "Lizenz", unit: "C62", netPriceCents: 24000, taxRate: 19, articleNumber: "LZ-1" } });
@@ -59,7 +101,7 @@ describe("editor/draft", () => {
     if (create.success) {
       expect(create.data.lines[0]).toMatchObject({ quantityMilli: 2000, unitNetPriceCents: 9500, unit: "HUR", taxRate: 19, lineType: "ITEM" });
       expect(create.data.lines[1]).toMatchObject({ lineType: "HEADING", quantityMilli: 0, unitNetPriceCents: 0 });
-      expect(create.data.type).toBe("INVOICE"); expect(create.data.currency).toBe("EUR");
+      expect(create.data.type).toBe("INVOICE"); expect(create.data.currency).toBeUndefined();
     }
     const update = updateInvoiceSchema.safeParse(toInvoicePayload(s, true));
     expect(update.success).toBe(true);
@@ -312,5 +354,41 @@ describe("editor/draft", () => {
   it("localDateOnly liest den Kalendertag ueber lokale Date-Getter (S1)", () => {
     expect(localDateOnly(new Date(2066, 8, 10, 23, 30))).toBe("2066-09-10");
     expect(localDateOnly(new Date(2066, 0, 5, 0, 0))).toBe("2066-01-05");
+  });
+  it("Waehrung: Neuanlage ohne Auswahl sendet undefined, mit Auswahl den Code", () => {
+    const d = invoiceDraft();
+    expect(toInvoicePayload(d, false).currency).toBeUndefined();
+    const usd = draftReducer(d, { type: "set", field: "currency", value: "USD" });
+    expect(usd.currencyTouched).toBe(true);
+    expect(toInvoicePayload(usd, false).currency).toBe("USD");
+    expect(toDocumentPayload(emptyDraft("DOCUMENT"), false).currency).toBeUndefined();
+  });
+  it("Waehrung: USD-Entwurf bleibt nach Laden und Speichern USD (Rechnung und Dokument)", () => {
+    const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "USD", lines: [] } as never);
+    expect(toInvoicePayload(inv, true).currency).toBe("USD");
+    const doc = draftFromDocument({ id: "d1", kind: "ANGEBOT", customerId: "c1", currency: "USD", lines: [] } as never);
+    expect(toDocumentPayload(doc, true).currency).toBe("USD");
+  });
+  it("Waehrung: replace laesst currencyTouched unveraendert", () => {
+    const d = emptyDraft("INVOICE");
+    const r = draftReducer(d, { type: "replace", state: { ...d, currency: "CHF" } });
+    expect(r.currencyTouched).toBe(false);
+  });
+  it("Waehrung: Kundenvorgabe (suggestCurrency) setzt currency ohne currencyTouched", () => {
+    const d = emptyDraft("INVOICE");
+    const r = draftReducer(d, { type: "suggestCurrency", value: "CHF" });
+    expect(r.currency).toBe("CHF");
+    expect(r.currencyTouched).toBe(false);
+    expect(toInvoicePayload(r, false).currency).toBe("CHF");
+    // Kunde ohne Vorgabe -> zurueck auf Server-Kette
+    expect(toInvoicePayload(draftReducer(r, { type: "suggestCurrency", value: "" }), false).currency).toBeUndefined();
+  });
+  it("Waehrung: manuelle Wahl wird durch Kundenwechsel nicht ueberschrieben", () => {
+    const manual = draftReducer(emptyDraft("INVOICE"), { type: "set", field: "currency", value: "USD" });
+    expect(draftReducer(manual, { type: "suggestCurrency", value: "CHF" }).currency).toBe("USD");
+  });
+  it("Waehrung: im Bearbeiten-Fall ignoriert suggestCurrency", () => {
+    const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "USD", lines: [] } as never);
+    expect(draftReducer(inv, { type: "suggestCurrency", value: "CHF" })).toBe(inv);
   });
 });

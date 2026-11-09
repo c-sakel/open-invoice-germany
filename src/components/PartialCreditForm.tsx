@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatCents } from "@/lib/money";
 import { taxRateOptions } from "@/lib/editor/constants";
 import { UnitSelect } from "@/components/editor/blocks/UnitSelect";
 
@@ -21,8 +23,16 @@ export function PartialCreditForm({
   invoiceId,
   initialLines,
   taxRates,
+  remainingCents,
+  openCents,
+  currency,
 }: {
   invoiceId: string;
+  /** Noch gutschreibbarer Restbetrag (brutto) dieser Rechnung (Obergrenze der Teilgutschriften). */
+  remainingCents: number;
+  /** Aktuell offener Rest der Rechnung (brutto) — wird zuerst mit der Gutschrift verrechnet. */
+  openCents: number;
+  currency: string;
   initialLines: LineState[];
   /** Org-eigene Steuersatz-Liste (Phase 12c, Fix-Welle I2) — dieselbe Quelle
    *  (`taxRateOptions`, `@/lib/editor/constants`) wie der Beleg-Editor; die Server-Seite
@@ -50,6 +60,7 @@ export function PartialCreditForm({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<{ id: string; number: string; offsetCents: number; refundDueCents: number } | null>(null);
 
   const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
   const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
@@ -85,12 +96,26 @@ export function PartialCreditForm({
       setBusy(false);
       return;
     }
-    const j = (await res.json()) as { creditNoteId: string };
-    router.push(`/rechnungen/${j.creditNoteId}`);
+    const j = (await res.json()) as { creditNoteId: string; creditNoteNumber: string; offsetCents: number; refundDueCents: number };
+    setBusy(false);
+    setDone({ id: j.creditNoteId, number: j.creditNoteNumber, offsetCents: j.offsetCents, refundDueCents: j.refundDueCents });
     router.refresh();
   }
 
   const input = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none";
+
+  if (done) {
+    return (
+      <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
+        <p className="font-semibold">Teilgutschrift {done.number} erstellt.</p>
+        {done.offsetCents > 0 && <p>{formatCents(done.offsetCents, currency)} wurden mit dem offenen Rest der Rechnung verrechnet.</p>}
+        {done.refundDueCents > 0 && <p>Erstattung fällig: {formatCents(done.refundDueCents, currency)} (bereits bezahlter Anteil).</p>}
+        <Link href={`/rechnungen/${done.id}`} className="inline-block font-medium text-indigo-700 hover:underline">
+          Zur Gutschrift →
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={submit} className="space-y-5">
@@ -98,6 +123,10 @@ export function PartialCreditForm({
       <p className="text-sm text-slate-500">
         Gib die zu erstattenden Positionen/Beträge an (positiv). Entferne oder kürze, was nicht gutgeschrieben werden soll. Die Original-Rechnung bleibt erhalten.
       </p>
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        Noch gutschreibbar: <strong>{formatCents(remainingCents, currency)}</strong> (brutto). Die Gutschrift mindert zuerst den offenen Rest
+        ({formatCents(Math.max(openCents, 0), currency)}); ein darüber hinausgehender Betrag ist zu erstatten.
+      </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">

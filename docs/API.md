@@ -162,6 +162,16 @@ Der `Idempotency-Key` sorgt dafür, dass ein wiederholter Request (z. B. Timeout
 Client) nicht zweimal gebucht wird — derselbe Schlüssel liefert dieselbe Antwort
 erneut. Nach vollständiger Zahlung wechselt die Rechnung auf Status `PAID`.
 
+Zahlungen mit `method: "CREDIT_NOTE"` entstehen automatisch, wenn eine Teilgutschrift
+(`POST /api/v1/Invoice/{id}/credit`) den offenen Rest der Rechnung mindert (Verrechnung,
+kein Geldeingang; Anzeige „Verrechnung Gutschrift“). Die Rechnung wird dann `PARTIALLY_PAID`
+bzw. `PAID`; ein darüber hinausgehender Gutschriftsbetrag ist zu erstatten. Die Summe aller
+Gutschriften darf den Rechnungsbetrag nicht übersteigen, auf stornierte Rechnungen ist keine
+Teilgutschrift möglich (jeweils 409). In der E-Rechnung des Originals zählen Verrechnungen
+nicht als bezahlt (BT-113). Hinweis: Eine Gutschrift über den vollen Betrag setzt das Original auf `PAID`, obwohl
+kein Geldeingang erfolgt ist (reine Verrechnung); als Obergrenze für Gutschriften gilt der Rechnungsbetrag
+(bei Schlussrechnungen der volle Bruttobetrag, nicht der um Abschläge reduzierte Zahlbetrag).
+
 ## Anfrageprotokoll
 
 Jede Antwort von `/api/v1/*` — Erfolg **und** Fehler — trägt den Header
@@ -358,6 +368,20 @@ direkt `POST /api/v1/BaseInterestRate` verwenden.
 Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
 `/api/v1/Webhook` (Scope `admin`) — Ereignisse, Payload-Form, Signaturprüfung
 (Node/PHP), Retry-Zeitplan und SSRF-Regeln: siehe [WEBHOOKS.md](WEBHOOKS.md).
+
+## Währung (`currency`)
+
+`currency` ist ein optionaler ISO-4217-Code aus drei Großbuchstaben (z. B. `USD`; Kleinbuchstaben werden mit 400 abgelehnt) an Rechnung, Dokument (Angebot/AB/Proforma) und Abo. Ohne Angabe gilt die Kette Kunde (`defaultCurrency`) > Einstellung > `EUR`. Alle Beträge des Belegs sind in dieser Währung (Integer-Cent); Fremdwährungsbelege haben keinen GiroCode.
+
+## Storno (`POST /api/v1/Invoice/{id}/cancel`)
+
+Optionaler JSON-Body `{ "reason": "…" }` (max. 500 Zeichen): der Stornogrund steht als
+„Grund: …“ in den Notizen der Storno-Gutschrift und im ChangeLog. Gibt es bereits
+festgeschriebene Teilgutschriften, erstattet das Storno nur den Rest (Summe aller
+Gutschriften = Rechnungsbetrag); ist die Rechnung vollständig gutgeschrieben, antwortet
+die API mit 409. Eine Abschlagsrechnung, die in einer nicht stornierten Schlussrechnung
+verrechnet ist, lässt sich nicht stornieren (409). Die Storno-Gutschrift trägt keine
+Zahlungsbedingungen des Originals.
 
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 

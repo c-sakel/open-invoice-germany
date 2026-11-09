@@ -18,7 +18,7 @@ export default async function NeuesAboPage() {
   const docSettings = await loadDocumentSettings(orgId);
 
   const [customers, products, emailTemplates] = await Promise.all([
-    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    dbInternal.customer.findMany({ where: { orgId, isArchived: false }, select: { id: true, name: true, defaultCurrency: true }, orderBy: { name: "asc" } }),
     dbInternal.product.findMany({
       where: { orgId, isArchived: false },
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true },
@@ -56,6 +56,7 @@ export default async function NeuesAboPage() {
         defaultAutoSend={docSettings.recurringAutoSendDefault}
         defaultShowPeriodText={docSettings.recurringInsertPeriodText}
         taxRates={docSettings.taxRates}
+        defaultCurrency={docSettings.defaultCurrency}
       />
     </div>
   );

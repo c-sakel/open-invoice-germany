@@ -50,7 +50,7 @@ describe("cancelInvoice — Positionstypen bei Storno (K1)", () => {
       { now: FIX_DATE },
     );
     const fin = await finalizeInvoice(draft.id, { now: FIX_DATE });
-    const res = await cancelInvoice(fin.id, { now: FIX_DATE });
+    const res = await cancelInvoice(fin.id, { orgId: fin.orgId, now: FIX_DATE });
 
     const creditLines = await dbInternal.invoiceLine.findMany({ where: { invoiceId: res.creditNote.id }, orderBy: { position: "asc" } });
     expect(creditLines.map((l) => l.lineType)).toEqual(["HEADING", "ITEM", "ITEM", "SUBTOTAL"]);

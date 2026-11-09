@@ -9,6 +9,12 @@ import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
 
+/** ISO-4217-Waehrungscode: Eingabe wird getrimmt und in Grossbuchstaben normalisiert ("eur" -> "EUR"), danach genau 3 Buchstaben. */
+export const currencyCodeSchema = z
+  .string()
+  .transform((s) => s.trim().toUpperCase())
+  .pipe(z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Buchstaben (ISO 4217)"));
+
 /** IBAN-Eingabe (BT-84): Leerzeichen raus, Grossbuchstaben, MOD-97-10-Pruefsumme. Leer bleibt erlaubt.
  * Nur fuer Eingaben — Snapshot-Schemas festgeschriebener Belege bleiben bewusst ungeprueft. */
 const ibanInput = z
@@ -377,7 +383,7 @@ const invoiceHeaderFields = {
   // Phase 7 Fix-Runde 1: ohne explizite Angabe greift DocumentSettings.defaultCurrency
   // (Selbstheilung), zuletzt "EUR" — bewusst KEIN `.default()`, sonst koennte die
   // Domain "nicht gesetzt" nicht von "EUR" unterscheiden.
-  currency: z.string().length(3).optional(),
+  currency: currencyCodeSchema.optional(),
   issueDate: z.coerce.date().optional(),
   deliveryDate: z.coerce.date().optional(),
   deliveryStart: z.coerce.date().optional(),
@@ -530,7 +536,7 @@ const documentObjectSchema = z.object({
   customerId: z.string().min(1),
   taxScheme: TaxScheme.default("REGULAR"),
   // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
-  currency: z.string().length(3).optional(),
+  currency: currencyCodeSchema.optional(),
   validUntil: z.coerce.date().optional(),
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
@@ -587,6 +593,28 @@ export const partialCreditSchema = z.object({
     )
     .min(1),
 });
+// ── Storno ──────────────────────────────────────────────────────────────────
+export const cancelInvoiceSchema = z.object({ reason: z.string().trim().max(500).optional() });
+export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
+
+/** Server-Action `cancelAction` (Storno-Dialog): Formularfelder -> validierte Eingabe. */
+export const cancelActionSchema = z.object({
+  id: z.string().trim().min(1),
+  reason: z.string().trim().max(500).optional(),
+  sendAfter: z.boolean(),
+});
+export type CancelActionInput = z.infer<typeof cancelActionSchema>;
+
+export function parseCancelFormData(formData: FormData): CancelActionInput {
+  const reason = formData.get("reason");
+  const send = formData.get("sendAfter");
+  return cancelActionSchema.parse({
+    id: formData.get("id"),
+    reason: typeof reason === "string" && reason.trim() !== "" ? reason : undefined,
+    sendAfter: send === "1" || send === "on" || send === "true",
+  });
+}
+
 export type PartialCreditInput = z.infer<typeof partialCreditSchema>;
 
 export const recordPaymentSchema = z.object({
@@ -626,7 +654,7 @@ export const invoiceListFilterSchema = z.object({
   number: z.string().optional(),
   paymentMethodId: z.string().min(1).optional(),
   eInvoice: z.boolean().optional(),
-  currency: z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Grossbuchstaben (ISO 4217)").optional(),
+  currency: currencyCodeSchema.optional(),
   q: z.string().max(100).optional(),
   // Phase 13d, Task 4: kehrt zurueck (Fix-Welle M3 hatte das Feld entfernt, solange es in
   // keiner *FilterConditions-Funktion aufloeste) — jetzt eine Tag-Id, `listInvoices`
@@ -659,7 +687,7 @@ const recurringObjectSchema = z.object({
   maxRuns: z.number().int().positive().optional(),
   taxScheme: TaxScheme.default("REGULAR"),
   // Phase 7 Fix-Runde 1: siehe invoiceHeaderFields — Fallback DocumentSettings.defaultCurrency.
-  currency: z.string().length(3).optional(),
+  currency: currencyCodeSchema.optional(),
   paymentTermsDays: z.number().int().min(0).max(365).default(14),
   // Ohne explizite Angabe greifen recurringAutoFinalizeDefault/recurringAutoSendDefault
   // (Phase 7, §33) — bewusst KEIN `.default()`, sonst koennte die Domain nicht mehr
@@ -706,6 +734,7 @@ export const updateRecurringSchema = z.object({
   emailTemplateId: z.string().min(1).nullable().optional(),
   showPeriodText: z.boolean().optional(),
   notes: z.string().nullable().optional(),
+  currency: currencyCodeSchema.optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
   // Kategorie optional: die Domain leitet sie aus dem Abo-Steuerschema ab (recurring/update.ts).
   lines: z.array(invoiceLineDerivableSchema).min(1).optional(),

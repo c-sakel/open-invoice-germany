@@ -10,6 +10,9 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { linkDocuments } from "@/domain/relations";
+import { NotFoundError } from "@/domain/errors";
+import { creditCapCents, openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
+import { incrementPaidAmount } from "./paid-amount";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { finalizeWithinTx } from "./finalize";
 
@@ -50,7 +53,7 @@ function proportionalCents(amountCents: number, creditLineTotal: number, origina
 export async function createPartialCreditNote(
   invoiceId: string,
   input: PartialCreditInput,
-  opts: { actor?: string; now?: Date } = {},
+  opts: { actor?: string; now?: Date; orgId: string },
 ) {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
@@ -62,6 +65,7 @@ export async function createPartialCreditNote(
       where: { id: invoiceId },
       select: {
         id: true, orgId: true, customerId: true, number: true, taxScheme: true, currency: true, status: true, type: true,
+        grossTotalCents: true, paidAmountCents: true, payableCents: true,
         sellerSnapshotJson: true, buyerSnapshotJson: true, contactSnapshotJson: true,
         documentDiscountPermille: true, documentDiscountCents: true,
         documentChargePermille: true, documentChargeCents: true, documentChargeReason: true,
@@ -69,6 +73,9 @@ export async function createPartialCreditNote(
       },
     });
     if (!original) throw new CreditError("Rechnung nicht gefunden.");
+    // Fremde Organisation: wie "nicht gefunden" (404), keine Existenz preisgeben.
+    if (original.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
+    if (original.status === "CANCELLED") throw new CreditError("Rechnung ist storniert.");
     if (original.status === "DRAFT") throw new CreditError("Nur festgeschriebene Rechnungen können (teil-)gutgeschrieben werden.");
     if (original.type === "CREDIT_NOTE") throw new CreditError("Eine Gutschrift kann nicht gutgeschrieben werden.");
 
@@ -136,6 +143,57 @@ export async function createPartialCreditNote(
       inheritSnapshotFrom: { sellerSnapshotJson: original.sellerSnapshotJson, buyerSnapshotJson: original.buyerSnapshotJson, contactSnapshotJson: original.contactSnapshotJson },
     });
 
+    // Obergrenze: Σ|bisherige festgeschriebene Gutschriften| + |neue| <= Bemessungsgrundlage
+    // des Originals (§ 14c UStG: keine Minderung ohne Grundlage). Bei Verstoss bricht der
+    // throw die Transaktion ab -> Nummer und Beleg werden zurueckgerollt.
+    const earlier = await tx.invoice.aggregate({
+      where: { correctsInvoiceId: original.id, type: "CREDIT_NOTE", status: { notIn: ["DRAFT", "CANCELLED"] }, id: { not: finalized.id } },
+      _sum: { grossTotalCents: true },
+    });
+    const creditedBefore = Math.abs(earlier._sum.grossTotalCents ?? 0);
+    const creditGross = Math.abs(finalized.grossTotalCents);
+    const base = creditCapCents(original);
+    if (creditedBefore + creditGross > base) {
+      const remaining = Math.max(0, base - creditedBefore);
+      throw new CreditError(
+        `Gutschrift übersteigt den gutschreibbaren Rest der Rechnung ${original.number}: verfügbar ${remaining} Cent, beantragt ${creditGross} Cent (bereits gutgeschrieben ${creditedBefore} Cent).`,
+      );
+    }
+
+    // Verrechnung: der gutgeschriebene Betrag mindert zuerst den offenen Rest der Rechnung
+    // (Zahlung "CREDIT_NOTE"); ein darueber hinausgehender Teil ist zu erstatten.
+    const openBefore = openAmountCents(original);
+    const offsetCents = Math.min(creditGross, Math.max(openBefore, 0));
+    if (offsetCents > 0) {
+      await tx.payment.create({
+        data: {
+          invoiceId: original.id,
+          amountCents: offsetCents,
+          paidAt: now,
+          method: "CREDIT_NOTE",
+          reference: finalized.number,
+          note: `Verrechnung mit Gutschrift ${finalized.number}`,
+        },
+      });
+      const payBase = payableBaseCents(original);
+      const newPaid = await incrementPaidAmount(tx, original.id, payBase, offsetCents);
+      if (newPaid === null) throw new CreditError(`Die Rechnung ${original.number} wurde parallel geändert (Zahlung/Gutschrift); bitte erneut versuchen.`);
+      const newStatus = newPaid >= payBase ? "PAID" : "PARTIALLY_PAID";
+      await tx.invoice.update({ where: { id: original.id }, data: { status: newStatus } });
+      await appendChangeLog(tx, {
+        orgId: original.orgId,
+        entity: "INVOICE",
+        entityId: original.id,
+        action: "PAYMENT",
+        actor,
+        at: now,
+        diff: { creditOffsetCents: offsetCents, creditNote: finalized.number, paidAmountCents: newPaid, status: newStatus },
+      });
+      // Bewusst KEIN Webhook (payment.recorded/invoice.paid): eine Verrechnung ist keine
+      // Kundenzahlung; ein angebundener Shop wuerde sie sonst als Zahlungseingang deuten.
+    }
+    const refundDueCents = creditGross - offsetCents;
+
     await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalized.id, toType: "INVOICE", toId: original.id, relationType: "CORRECTS" });
 
     await appendChangeLog(tx, {
@@ -157,6 +215,6 @@ export async function createPartialCreditNote(
       data: { creditNote: finalized.number },
     });
 
-    return { originalId: original.id, originalNumber: original.number, creditNote: finalized };
+    return { originalId: original.id, originalNumber: original.number, creditNote: finalized, offsetCents, refundDueCents };
   });
 }

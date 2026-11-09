@@ -20,6 +20,7 @@ import { serializeInvoice } from "@/api/serializers/invoice";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { skontoTerms, detectSkonto, type SkontoTerm } from "@/lib/pricing/skonto";
 import { payableBaseCents } from "@/domain/invoice/amounts";
+import { incrementPaidAmount } from "./paid-amount";
 import { NotFoundError } from "@/domain/errors";
 import type { RecordPaymentInput } from "@/schemas";
 
@@ -116,11 +117,12 @@ export async function recordPayment(
       },
     });
 
-    const newPaid = inv.paidAmountCents + input.amountCents;
+    const newPaid = await incrementPaidAmount(tx, invoiceId, baseCents, input.amountCents);
+    if (newPaid === null) throw new PaymentError("Zahlung übersteigt den offenen Betrag (Rechnung wurde parallel geändert).");
     const status = newPaid >= baseCents ? "PAID" : "PARTIALLY_PAID";
     let updated = await tx.invoice.update({
       where: { id: invoiceId },
-      data: { paidAmountCents: newPaid, status },
+      data: { status },
     });
 
     await appendChangeLog(tx, {
@@ -199,9 +201,11 @@ export async function recordPayment(
             },
           });
 
+          const paidAfterSkonto = await incrementPaidAmount(tx, invoiceId, baseCents, restCents);
+          if (paidAfterSkonto === null) throw new PaymentError("Skontobuchung übersteigt den offenen Betrag (Rechnung wurde parallel geändert).");
           updated = await tx.invoice.update({
             where: { id: invoiceId },
-            data: { paidAmountCents: baseCents, status: "PAID" },
+            data: { status: "PAID" },
           });
 
           await appendChangeLog(tx, {

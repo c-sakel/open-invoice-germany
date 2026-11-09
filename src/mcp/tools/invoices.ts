@@ -40,6 +40,8 @@ import {
   createFinalInvoiceSchema,
   invoiceListFilterSchema,
   LineType,
+  currencyCodeSchema,
+  cancelInvoiceSchema,
 } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -70,6 +72,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         taxScheme: TaxScheme.optional().describe("Default: Schema des Unternehmens (sonst REGULAR)"),
         deliveryDate: z.string().optional().describe("Leistungsdatum YYYY-MM-DD oder 'heute' (Pflicht für Festschreiben)"),
         dueDate: z.string().optional(),
+        currency: currencyCodeSchema.optional().describe("ISO-4217-Code (3 Grossbuchstaben, z. B. USD); ohne Angabe: Kunde > Einstellung > EUR"),
         notes: z.string().optional(),
         paymentTerms: z.string().optional(),
         documentDiscountPercent: z.number().min(0).max(100).optional().describe("Belegrabatt in Prozent (auf alle Steuersaetze proportional verteilt)"),
@@ -134,7 +137,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           customerId: customer.id,
           type: "INVOICE",
           taxScheme: scheme,
-          currency: "EUR",
+          currency: args.currency,
           deliveryDate: ctx.parseDateInput(args.deliveryDate),
           dueDate: ctx.parseDateInput(args.dueDate),
           notes,
@@ -194,16 +197,22 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
     {
       title: "Rechnung stornieren",
       description: "Storniert eine festgeschriebene Rechnung GoBD-konform: legt eine Storno-Gutschrift an, Original bleibt erhalten.",
-      inputSchema: { invoice: z.string().describe("Rechnungs-ID oder -Nummer") },
+      inputSchema: {
+        invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
+        reason: cancelInvoiceSchema.shape.reason.describe("Stornogrund (optional, max. 500 Zeichen) — landet in den Notizen des Stornobelegs"),
+      },
     },
-    async ({ invoice }): Promise<Result> => {
+    async ({ invoice, reason }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const res = await cancelInvoice(inv.id);
-        return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.`);
+        const input = cancelInvoiceSchema.parse({ reason });
+        const res = await cancelInvoice(inv.id, { orgId: org.id, reason: input.reason });
+        const refund = res.refundDueCents > 0 ? ` Erstattung fällig: ${(res.refundDueCents / 100).toFixed(2).replace(".", ",")} ${res.creditNote.currency}.` : "";
+        return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.${refund}`);
       } catch (e) {
         if (e instanceof CancelError) return ctx.fail(`Storno nicht möglich: ${e.message}`);
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
@@ -546,8 +555,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           taxRate: l.taxRate,
           taxCategory: l.taxCategory,
         }));
-        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes });
-        return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}.`);
+        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes }, { orgId: org.id });
+        return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}${res.offsetCents > 0 ? ` · ${formatCents(res.offsetCents)} mit offenem Rest verrechnet` : ""}${res.refundDueCents > 0 ? ` · Erstattung fällig: ${formatCents(res.refundDueCents)}` : ""}.`);
       } catch (e) {
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
         // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,

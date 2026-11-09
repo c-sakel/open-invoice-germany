@@ -118,7 +118,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_document` | Angebot / Auftragsbestätigung / Proforma anlegen | „Erstelle für Müller GmbH ein Angebot über 10 Stunden Beratung zu 95 Euro." |
+| `create_document` | Angebot / Auftragsbestätigung / Proforma anlegen (optional `currency`) | „Erstelle für Müller GmbH ein Angebot über 10 Stunden Beratung zu 95 Euro." |
 | `list_documents` | Angebote/AB/Proformas auflisten (Filter u. a. Status, Kunde) | „Welche Angebote sind noch offen?" |
 | `get_quote` | Details eines Angebots/einer AB/Proforma anzeigen | „Zeig mir Angebot ANG-2026-00123." |
 | `get_delivery_note` | Details eines Lieferscheins anzeigen | „Zeig mir Lieferschein LS-2026-00045." |
@@ -133,14 +133,14 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_invoice` | Rechnung als Entwurf (Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
+| `create_invoice` | Rechnung als Entwurf (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
 | `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar | „Schreib die Rechnung fest." |
 | `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType`; Rechnungstyp bleibt unveränderbar | „Setze bei der Entwurfsrechnung die Bestellnummer auf PO-4711." |
 | `get_invoice` | Rechnung anzeigen | „Zeig mir Rechnung RE-2026-00342." |
 | `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig, Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung) | „Welche Rechnungen sind überfällig?" |
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei (`exports/`) + Validierungsreport | „Exportier die XRechnung und das PDF." |
-| `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben) | „Erstelle eine Teilgutschrift über 50 Euro zu RE-2026-00342." |
-| `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten) | „Storniere RE-2026-00342." |
+| `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben); verrechnet sich mit dem offenen Rest (Zahlungsart `CREDIT_NOTE`, kein Geldeingang), Summe aller Gutschriften höchstens Rechnungsbetrag | „Erstelle eine Teilgutschrift über 50 Euro zu RE-2026-00342." |
+| `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten); optional `reason` (Stornogrund, steht in den Belegnotizen), nach Teilgutschriften nur der Rest, Hinweis auf fällige Erstattung | „Storniere RE-2026-00342." |
 
 ### Teil-/Abschlags-/Schlussrechnungen
 
@@ -246,7 +246,7 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_recurring` | Abo / wiederkehrende Rechnung anlegen | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
+| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
 | `list_recurring` | Abos auflisten (Filter u. a. Status) | „Welche Abos sind fällig?" |
 | `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort) | „Erzeuge die fälligen Rechnungen." |
 | `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich | „Ändere beim Wartungsvertrag von Müller den Preis auf 109 €." |

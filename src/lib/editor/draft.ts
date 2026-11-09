@@ -16,6 +16,7 @@ import { SCHEME_CATEGORY, SCHEME_NOTICE, FALLBACK_TAX_RATES, type EditorMode } f
 import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
+import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
 import type { TaxScheme } from "@/schemas";
 
 export type LineType = "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
@@ -42,6 +43,13 @@ export interface DraftState {
   type: "INVOICE" | "CREDIT_NOTE";
   customerId: string;
   taxScheme: TaxScheme;
+  /** ISO-4217-Code der Belegwaehrung. Leer = bei Neuanlage nicht gewaehlt: `toInvoicePayload`/
+   *  `toDocumentPayload` senden dann `undefined`, und die Server-Kette
+   *  `input.currency ?? customer.defaultCurrency ?? settings.defaultCurrency ?? Standardwaehrung` greift. */
+  currency: string;
+  /** `true`, sobald der Nutzer die Waehrung selbst gewaehlt hat (Reducer `set`/`currency`) —
+   *  dann ueberschreibt ein spaeterer Kundenwechsel sie nicht mehr. */
+  currencyTouched: boolean;
   subject: string;
   headerText: string;
   footerText: string;
@@ -139,6 +147,7 @@ export type DraftAction =
   | { type: "addLine"; lineType: DraftLine["lineType"]; after?: string }
   | { type: "removeLine"; key: string }
   | { type: "moveLine"; key: string; to: number }
+  | { type: "moveBlock"; key: string; slot: number }
   | { type: "duplicateLine"; key: string }
   | {
       type: "applyProduct";
@@ -146,6 +155,8 @@ export type DraftAction =
       product: { id: string; name: string; unit: string; netPriceCents: number; taxRate: number; articleNumber?: string | null };
     }
   | { type: "replace"; state: DraftState }
+  /** Kundenvorgabe uebernehmen (Neuanlage, Waehrung noch nicht selbst gewaehlt); leer = Server-Kette. */
+  | { type: "suggestCurrency"; value: string }
   | { type: "markSaved" };
 
 /** Phase 12c — haelt einen Satz in der org-eigenen Liste. Unbekannte Werte (z. B. aus einem
@@ -236,6 +247,8 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     type: "INVOICE",
     customerId: "",
     taxScheme: "REGULAR",
+    currency: "",
+    currencyTouched: false,
     subject: "",
     headerText: "",
     footerText: "",
@@ -293,6 +306,9 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       return action.state;
     case "markSaved":
       return { ...state, dirty: false };
+    case "suggestCurrency":
+      if (state.id || state.currencyTouched) return state;
+      return { ...state, currency: action.value, dirty: true };
     case "set":
       // Phase 13b: das Leistungsdatum folgt dem Rechnungsdatum, solange der Nutzer die
       // Kopplung nicht geloest hat. Bewusst hier und nicht in MetaBlock: sonst muesste
@@ -306,6 +322,9 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       // Vorbelegung als vom Nutzer uebernommen/ueberschrieben — siehe DraftState.dueDateTouched.
       if (action.field === "dueDate") {
         return { ...state, dueDate: action.value as string, dueDateTouched: true, dirty: true };
+      }
+      if (action.field === "currency") {
+        return { ...state, currency: action.value as string, currencyTouched: true, dirty: true };
       }
       return { ...state, [action.field]: action.value, dirty: true } as DraftState;
     case "setLine":
@@ -333,6 +352,17 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       const [moved] = lines.splice(from, 1);
       const to = Math.max(0, Math.min(lines.length, action.to));
       lines.splice(to, 0, moved!);
+      return { ...state, lines, dirty: true };
+    }
+    case "moveBlock": {
+      const from = state.lines.findIndex((l) => l.key === action.key);
+      if (from === -1) return state;
+      const [start, end] = blockRange(state.lines, from);
+      const slot = Math.max(0, Math.min(state.lines.length, action.slot));
+      if (isNoopMove(start, slot, end - start)) return state;
+      const lines = [...state.lines];
+      const moved = lines.splice(start, end - start);
+      lines.splice(slotToMoveTarget(start, slot, end - start), 0, ...moved);
       return { ...state, lines, dirty: true };
     }
     case "duplicateLine": {
@@ -408,7 +438,7 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
   const shared: Record<string, unknown> = {
     customerId: d.customerId,
     taxScheme: d.taxScheme,
-    currency: "EUR",
+    currency: d.currency || undefined,
     subject: d.subject || undefined,
     orderNumber: d.orderNumber || undefined,
     internalReference: d.internalReference || undefined,
@@ -476,7 +506,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
   const shared: Record<string, unknown> = {
     customerId: d.customerId,
     taxScheme: "REGULAR",
-    currency: "EUR",
+    currency: d.currency || undefined,
     subject: d.subject || undefined,
     customerReference: d.customerReference || undefined,
     contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
@@ -596,6 +626,9 @@ export interface InvoiceInitialLike {
   id: string;
   customerId: string;
   taxScheme: string;
+  /** ISO-4217-Code des gespeicherten Belegs. */
+  currency?: string;
+
   subject: string;
   orderNumber: string;
   internalReference: string;
@@ -637,6 +670,8 @@ export interface DocumentInitialLike {
   id: string;
   kind: string;
   customerId: string;
+  /** ISO-4217-Code des gespeicherten Dokuments. */
+  currency?: string;
   subject: string;
   customerReference: string;
   contactPersonId: string;
@@ -699,6 +734,8 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     id: initial.id,
     customerId: initial.customerId ?? "",
     taxScheme: (initial.taxScheme as TaxScheme) ?? "REGULAR",
+    currency: initial.currency ?? "",
+    currencyTouched: true,
     subject: initial.subject ?? "",
     orderNumber: initial.orderNumber ?? "",
     internalReference: initial.internalReference ?? "",
@@ -752,6 +789,8 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     id: initial.id,
     kind,
     customerId: initial.customerId ?? "",
+    currency: initial.currency ?? "",
+    currencyTouched: true,
     subject: initial.subject ?? "",
     customerReference: initial.customerReference ?? "",
     contactPersonId: initial.contactPersonId ?? "",

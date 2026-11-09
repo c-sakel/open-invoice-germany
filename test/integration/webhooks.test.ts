@@ -454,7 +454,7 @@ describe("Emit-Aufrufe in den Domain-Funktionen", () => {
     const endpoint = await makeActiveEndpoint(["invoice.cancelled"], "https://93.184.216.42/hook");
     const draft = await createDraftInvoice(orgId, invoiceInput());
     const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
-    const cancelResult = await cancelInvoice(finalized.id, { now: FIX_DATE });
+    const cancelResult = await cancelInvoice(finalized.id, { orgId: finalized.orgId, now: FIX_DATE });
 
     const delivery = await dbInternal.webhookDelivery.findFirst({ where: { endpointId: endpoint.id, event: "invoice.cancelled", objectId: finalized.id } });
     expect(delivery).not.toBeNull();

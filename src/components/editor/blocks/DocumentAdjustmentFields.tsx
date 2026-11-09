@@ -24,6 +24,7 @@ import { useState } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
 import { EditorField } from "../EditorField";
 import { inputCls } from "@/components/forms/fields";
+import { useEditorCurrencySymbol } from "../currency-context";
 
 function set<K extends keyof DraftState>(dispatch: (action: DraftAction) => void, field: K, value: DraftState[K]) {
   dispatch({ type: "set", field, value } as DraftAction);
@@ -35,6 +36,7 @@ function isSet(value: string): boolean {
 }
 
 export function DocumentAdjustmentFields({ draft, dispatch }: { draft: DraftState; dispatch: (action: DraftAction) => void }) {
+  const sym = useEditorCurrencySymbol();
   const [expanded, setExpanded] = useState(
     () => isSet(draft.documentDiscountPercent) || isSet(draft.documentDiscountAmount) || isSet(draft.documentChargePercent) || isSet(draft.documentChargeAmount),
   );
@@ -54,13 +56,13 @@ export function DocumentAdjustmentFields({ draft, dispatch }: { draft: DraftStat
         <EditorField label="Rabatt %" hint="leer = Kundenvorgabe">
           {(id) => <input id={id} className={inputCls} value={draft.documentDiscountPercent} onChange={(e) => set(dispatch, "documentDiscountPercent", e.target.value)} />}
         </EditorField>
-        <EditorField label="Rabatt € (zusätzlich)">
+        <EditorField label={`Rabatt ${sym} (zusätzlich)`}>
           {(id) => <input id={id} className={inputCls} value={draft.documentDiscountAmount} onChange={(e) => set(dispatch, "documentDiscountAmount", e.target.value)} />}
         </EditorField>
         <EditorField label="Aufschlag %">
           {(id) => <input id={id} className={inputCls} value={draft.documentChargePercent} onChange={(e) => set(dispatch, "documentChargePercent", e.target.value)} />}
         </EditorField>
-        <EditorField label="Aufschlag € (zusätzlich)">
+        <EditorField label={`Aufschlag ${sym} (zusätzlich)`}>
           {(id) => <input id={id} className={inputCls} value={draft.documentChargeAmount} onChange={(e) => set(dispatch, "documentChargeAmount", e.target.value)} />}
         </EditorField>
         <EditorField label="Grund für Aufschlag/Rabatt" hint="optional" className="sm:col-span-2">

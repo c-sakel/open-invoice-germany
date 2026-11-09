@@ -31,6 +31,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         customerNumber: true,
         email: true,
         defaultDiscountPermille: true,
+        defaultCurrency: true,
         addressLine1: true,
         postalCode: true,
         city: true,
@@ -61,6 +62,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
   const documentInitial: DocumentInitialLike = {
     id: q.id,
     kind: q.kind,
+    currency: q.currency,
     customerId: q.customerId,
     subject: q.subject ?? "",
     customerReference: q.customerReference ?? "",
@@ -108,6 +110,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
       customers={customers}
       products={products}
       taxRates={documentSettings.taxRates}
+      defaultCurrency={documentSettings.defaultCurrency}
       contacts={contacts}
       addresses={addresses}
       layouts={listLayouts()}

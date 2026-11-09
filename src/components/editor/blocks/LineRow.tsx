@@ -36,7 +36,6 @@
  * entfaellt nur der Langtext: `deliveryNoteLineInputSchema` kennt kein `descriptionLong`,
  * ein Eintrag wuerde beim Speichern still verworfen (M1, Abschluss-Review).
  */
-import { useState } from "react";
 import { clampTaxRate, type DraftLine, type DraftAction, type LineType } from "@/lib/editor/draft";
 import { taxRateOptions } from "@/lib/editor/constants";
 import type { EditorMode } from "@/lib/editor/constants";
@@ -48,6 +47,8 @@ import { ProductPicker, type ProductOption } from "../ProductPicker";
 import { UnitSelect } from "./UnitSelect";
 import { LineRowMenu } from "./LineRowMenu";
 import { LineDiscountField } from "./LineDiscountField";
+import { useEditorCurrencySymbol } from "../currency-context";
+import type { MoveKind, ReorderHandleProps } from "./use-pointer-reorder";
 
 /** Hoehe eines Textfelds an den Inhalt anpassen (einzeilig bis zum ersten Umbruch). */
 function fitHeight(el: HTMLTextAreaElement | null) {
@@ -76,9 +77,13 @@ interface LineRowProps {
   canRemove: boolean;
   registerDescRef: (key: string, el: HTMLInputElement | HTMLTextAreaElement | null) => void;
   onEnterLast: () => void;
-  onDragStart: () => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDrop: () => void;
+  /** Sortier-Griff (Zeiger + Tastatur, siehe `useReorder`) und Zeilen-Ref fuer die Messung. */
+  handleProps: ReorderHandleProps;
+  rowRef: (el: HTMLElement | null) => void;
+  /** Zeile gehoert zum gerade gezogenen/aufgenommenen Block. */
+  dragging: boolean;
+  canMove: (kind: MoveKind) => boolean;
+  onMove: (kind: MoveKind) => void;
   onRowKeyDown: (e: React.KeyboardEvent) => void;
   onProductCreated?: (p: ProductOption) => void;
   /** Task 3 (Phase 13b) — "+ Produkt auswählen" in `LineItemsEditor`: fokussiert den
@@ -101,17 +106,17 @@ export function LineRow({
   canRemove,
   registerDescRef,
   onEnterLast,
-  onDragStart,
-  onDragOver,
-  onDrop,
+  handleProps,
+  rowRef,
+  dragging,
+  canMove,
+  onMove,
   onRowKeyDown,
   onProductCreated,
   autoFocusProduct,
 }: LineRowProps) {
+  const sym = useEditorCurrencySymbol();
   const showDiscount = mode !== "DELIVERY_NOTE";
-  // Nur waehrend des Anfassens am Griff ist die Zeile ziehbar — sonst wuerde `draggable`
-  // auf dem <tr> das Markieren von Text in Eingabefeldern verhindern.
-  const [dragArmed, setDragArmed] = useState(false);
   const allowTypeChange = mode !== "DELIVERY_NOTE";
 
   function patch(p: Partial<DraftLine>) {
@@ -149,8 +154,8 @@ export function LineRow({
         discountCents: centsOrZero(line.discountAmount),
       });
       const displayCents = grossDisplay ? Math.round(lineNetCents * (1 + effectiveRate / 100)) : lineNetCents;
-      amountLabel = `${fromCents(displayCents)} €`;
-      if (grossDisplay) grossHint = `≈ ${fromCents(Math.round(priceCents * (1 + effectiveRate / 100)))} € brutto`;
+      amountLabel = `${fromCents(displayCents)} ${sym}`;
+      if (grossDisplay) grossHint = `≈ ${fromCents(Math.round(priceCents * (1 + effectiveRate / 100)))} ${sym} brutto`;
     } catch {
       amountLabel = "–";
     }
@@ -167,26 +172,19 @@ export function LineRow({
   return (
     <>
       <tr
-        draggable={dragArmed}
-        onDragStart={onDragStart}
-        onDragEnd={() => setDragArmed(false)}
-        onDragOver={onDragOver}
-        onDrop={() => {
-          setDragArmed(false);
-          onDrop();
-        }}
+        ref={rowRef}
         onKeyDown={onRowKeyDown}
-        className="grid grid-cols-6 gap-x-2 gap-y-2 border-b border-slate-100 py-3 align-top @4xl:table-row @4xl:py-0"
+        className={`${dragging ? "bg-sky-50 opacity-50 outline outline-2 -outline-offset-2 outline-sky-400 " : ""}grid grid-cols-6 gap-x-2 gap-y-2 border-b border-slate-100 py-3 align-top @4xl:table-row @4xl:py-0`}
       >
         <td className="order-1 col-span-5 text-xs text-slate-400 @4xl:table-cell @4xl:py-1.5 @4xl:pr-2">
-          <span
-            className="mr-1 inline-block cursor-grab select-none px-0.5 py-1"
-            title="Ziehen zum Sortieren (oder Alt+Pfeil auf/ab)"
-            onMouseDown={() => setDragArmed(true)}
-            onMouseUp={() => setDragArmed(false)}
+          <button
+            type="button"
+            {...handleProps}
+            title="Ziehen zum Sortieren, oder Leertaste und Pfeiltasten (Alt+Pfeil verschiebt direkt)"
+            className="mr-1 inline-flex h-8 w-8 cursor-grab touch-none select-none items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
           >
             ⠿
-          </span>
+          </button>
           {itemPos !== null && <span>{itemPos}</span>}
         </td>
 
@@ -214,7 +212,7 @@ export function LineRow({
                   onChange={(e) => patch({ description: e.target.value })}
                   onKeyDown={onDescKeyDown}
                 />
-                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-slate-600">{fromCents(subtotalCents)} €</span>}
+                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-slate-600">{fromCents(subtotalCents)} {sym}</span>}
               </div>
             )}
           </td>
@@ -318,6 +316,8 @@ export function LineRow({
             onRemove={() => dispatch({ type: "removeLine", key: line.key })}
             currentType={allowTypeChange ? line.lineType : undefined}
             onChangeType={allowTypeChange ? onChangeType : undefined}
+            canMove={canMove}
+            onMove={onMove}
           />
         </td>
       </tr>

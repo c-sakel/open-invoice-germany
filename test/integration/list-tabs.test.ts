@@ -124,7 +124,7 @@ beforeAll(async () => {
   await recordPayment(paid.id, recordPaymentSchema.parse({ amountCents: 11900, method: "TRANSFER", paidAt: NOW }));
 
   const cancelled = await finalizedInvoice("Beratung Standardvertrag", YESTERDAY);
-  await cancelInvoice(cancelled.id, { now: NOW });
+  await cancelInvoice(cancelled.id, { orgId: cancelled.orgId, now: NOW });
 
   // Angebote: zwei abgelaufene (DRAFT + SENT, validUntil in der Vergangenheit => EXPIRED),
   // ein aktives DRAFT (validUntil in der Zukunft), ein angenommenes, ein archiviertes.
@@ -258,9 +258,10 @@ describe("invoiceStatusTabCounts", () => {
     }
   });
 
-  it("die sechs disjunkten Tabs ergeben zusammen 'Alle'", async () => {
+  it("die sechs disjunkten Tabs ergeben zusammen 'Alle' (Gutschriften/Stornobelege sind keine Forderung und nur unter 'Alle' sichtbar, R2)", async () => {
     const c = await invoiceStatusTabCounts(orgId, {}, NOW);
-    expect(c.draft + c.open + c.due + c.overdue + c.paid + c.cancelled).toBe(c.all);
+    const creditNotes = await dbInternal.invoice.count({ where: { orgId, type: "CREDIT_NOTE", status: { in: ["FINALIZED", "SENT"] } } });
+    expect(c.draft + c.open + c.due + c.overdue + c.paid + c.cancelled + creditNotes).toBe(c.all);
   });
 
   it("ein Textfilter wirkt auf ALLE Zaehler, eine fremde Organisation zaehlt nicht mit", async () => {

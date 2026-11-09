@@ -17,7 +17,7 @@ export class RecurringError extends Error {
 }
 
 export async function createRecurring(orgId: string, input: CreateRecurringInput) {
-  const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true } });
+  const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true } });
   if (!customer) throw new RecurringError("Kunde nicht gefunden.");
   if (input.endDate && input.endDate < input.startDate) throw new RecurringError("Enddatum liegt vor dem Startdatum.");
 
@@ -66,8 +66,8 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       endDate,
       maxRuns: input.maxRuns ?? null,
       taxScheme: input.taxScheme,
-      // defaultCurrency (Phase 7 Fix-Runde 1): ohne explizite Angabe DocumentSettings.defaultCurrency.
-      currency: input.currency ?? docSettings.defaultCurrency ?? "EUR",
+      // Kette wie Rechnung/Beleg: Eingabe > Kundenvorgabe > DocumentSettings.defaultCurrency > EUR.
+      currency: input.currency ?? customer.defaultCurrency ?? docSettings.defaultCurrency ?? "EUR",
       paymentTermsDays: input.paymentTermsDays,
       autoFinalize,
       autoSend,

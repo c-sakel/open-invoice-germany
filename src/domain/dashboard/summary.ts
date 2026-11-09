@@ -105,8 +105,8 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   // Offene/faellige/ueberfaellige Rechnungen — nur FINALIZED/SENT/PARTIALLY_PAID koennen
   // effectiveInvoiceStatus OPEN/DUE/OVERDUE liefern (siehe status.ts).
   const openish = await dbInternal.invoice.findMany({
-    where: { orgId, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } },
-    select: { id: true, status: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+    where: { orgId, type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } },
+    select: { id: true, status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
   });
 
   const openInvoices = { count: 0, cents: 0 };
@@ -118,7 +118,7 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   const agingRows: { dueDate: Date; cents: number }[] = [];
 
   for (const inv of openish) {
-    const status = effectiveInvoiceStatus({ status: inv.status, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+    const status = effectiveInvoiceStatus({ status: inv.status, type: inv.type, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
     const open = openAmountCents(inv);
     if (status === "OPEN") {
       openInvoices.count += 1;
@@ -148,7 +148,7 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   const today = new Date(utcDateOnly(now));
   const weekEnd = new Date(utcDateOnlyPlusDays(now, 8)); // exklusiv: +7 Tage inklusive
   const dueThisWeekRows = await dbInternal.invoice.findMany({
-    where: { orgId, status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: today, lt: weekEnd } },
+    where: { orgId, type: { not: "CREDIT_NOTE" }, status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: today, lt: weekEnd } },
     select: { grossTotalCents: true, paidAmountCents: true, payableCents: true },
   });
   const dueThisWeek = { count: dueThisWeekRows.length, cents: dueThisWeekRows.reduce((sum, r) => sum + openAmountCents(r), 0) };

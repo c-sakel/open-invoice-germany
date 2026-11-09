@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CancelDocumentDialog, type CancelDocumentInfo } from "@/components/CancelDocumentDialog";
+import type { ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 
 export type DocType = "QUOTE" | "DELIVERY_NOTE";
 export type Action = "MARK_SENT" | "MARK_ACCEPTED" | "MARK_REJECTED" | "MARK_DELIVERED" | "MARK_CREATED" | "CANCEL" | "ARCHIVE" | "UNARCHIVE";
@@ -14,7 +16,7 @@ const QUOTE_ACTIONS: Record<string, Action[]> = {
   SENT: ["MARK_ACCEPTED", "MARK_REJECTED", "CANCEL"],
   ACCEPTED: ["CANCEL"],
   REJECTED: [],
-  EXPIRED: ["MARK_SENT", "MARK_ACCEPTED"],
+  EXPIRED: ["MARK_SENT", "MARK_ACCEPTED", "MARK_REJECTED", "CANCEL"],
   CANCELLED: [],
 };
 const DELIVERY_ACTIONS: Record<string, Action[]> = {
@@ -55,6 +57,7 @@ export function useDocumentActions({ type, id, status, onDuplicate }: { type: Do
   const noteDialogRef = useRef<HTMLDialogElement>(null);
   const [pendingNoteAction, setPendingNoteAction] = useState<Action | null>(null);
   const [note, setNote] = useState("");
+  const cancelDialogRef = useRef<ConfirmDialogHandle>(null);
 
   const statusRoute = type === "QUOTE" ? `/api/documents/${id}/status` : `/api/delivery-notes/${id}/status`;
   const duplicateRoute = type === "QUOTE" ? `/api/documents/${id}/duplicate` : `/api/delivery-notes/${id}/duplicate`;
@@ -109,7 +112,16 @@ export function useDocumentActions({ type, id, status, onDuplicate }: { type: Do
     }
   }
 
+  async function confirmCancel() {
+    await runAction("CANCEL");
+    cancelDialogRef.current?.close();
+  }
+
   function click(action: Action) {
+    if (action === "CANCEL") {
+      cancelDialogRef.current?.open();
+      return;
+    }
     if (action === "MARK_ACCEPTED" || action === "MARK_REJECTED") {
       openNoteDialog(action);
       return;
@@ -117,7 +129,7 @@ export function useDocumentActions({ type, id, status, onDuplicate }: { type: Do
     void runAction(action);
   }
 
-  return { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog };
+  return { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog, cancelDialogRef, confirmCancel };
 }
 
 export function NoteDialog({
@@ -174,6 +186,7 @@ export function DocumentActions({
   editHref,
   onDuplicate,
   variant = "default",
+  cancelInfo,
 }: {
   type: DocType;
   id: string;
@@ -183,8 +196,9 @@ export function DocumentActions({
   /** DELIVERY_NOTE ist eigenstaendig routbar (/lieferscheine/[id]); QUOTE bleibt auf /dokumente/[id]. */
   onDuplicate?: (newId: string) => void;
   variant?: "default" | "compact";
+  cancelInfo?: CancelDocumentInfo;
 }) {
-  const { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog } = useDocumentActions({
+  const { available, busy, error, noteDialogRef, pendingNoteAction, note, setNote, click, duplicate, confirmNoteDialog, cancelDialogRef, confirmCancel } = useDocumentActions({
     type,
     id,
     status,
@@ -224,6 +238,12 @@ export function DocumentActions({
       </span>
       {error && <span className="text-xs text-rose-600">{error}</span>}
       <NoteDialog dialogRef={noteDialogRef} pendingNoteAction={pendingNoteAction} note={note} setNote={setNote} onConfirm={confirmNoteDialog} />
+      <CancelDocumentDialog
+        ref={cancelDialogRef}
+        info={cancelInfo ?? { noun: type === "QUOTE" ? "Angebot" : "Lieferschein" }}
+        busy={busy === "CANCEL"}
+        onConfirm={() => void confirmCancel()}
+      />
     </span>
   );
 }

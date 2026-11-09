@@ -117,7 +117,7 @@ describe("logActivity an den Domain-Aufrufstellen (Task-3-Brief)", () => {
     const draft = await createDraftInvoice(orgId, invoiceInput(), { now: FIX_DATE });
     const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
 
-    await cancelInvoice(finalized.id, { now: FIX_DATE });
+    await cancelInvoice(finalized.id, { orgId: finalized.orgId, now: FIX_DATE });
 
     const rows = await activityRows("INVOICE", finalized.id);
     expect(rows.map((r) => r.type)).toContain("CANCELLED");
@@ -127,7 +127,7 @@ describe("logActivity an den Domain-Aufrufstellen (Task-3-Brief)", () => {
     const draft = await createDraftInvoice(orgId, invoiceInput(), { now: FIX_DATE });
     const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
 
-    await createPartialCreditNote(finalized.id, { lines: [{ description: "Teilgutschrift", quantityMilli: 1000, unitNetPriceCents: 1000, taxRate: 19, taxCategory: "S" }] }, { now: FIX_DATE });
+    await createPartialCreditNote(finalized.id, { lines: [{ description: "Teilgutschrift", quantityMilli: 1000, unitNetPriceCents: 1000, taxRate: 19, taxCategory: "S" }] }, { orgId: finalized.orgId, now: FIX_DATE });
 
     const rows = await activityRows("INVOICE", finalized.id);
     expect(rows.map((r) => r.type)).toContain("CREDIT_NOTE_CREATED");

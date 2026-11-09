@@ -1,6 +1,6 @@
 // src/app/rechnungen/[id]/_parts/CorrectionSection.tsx
 import Link from "next/link";
-import { cancelAction } from "@/app/actions/invoices";
+import { CancelInvoiceDialog } from "@/components/invoices/CancelInvoiceDialog";
 import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
 import { TYPE_TITLE } from "./invoice-view-model";
 
@@ -33,12 +33,12 @@ export function CorrectionSection({
             Höhe des Restbetrags nach Abzug der Abschläge). Das Original bleibt unverändert erhalten (GoBD).
           </p>
           {canCancelOrCredit ? (
-            <form action={cancelAction}>
-              <input type="hidden" name="id" value={invoiceId} />
-              <button className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50">
-                Stornieren
-              </button>
-            </form>
+            <CancelInvoiceDialog
+              invoiceId={invoiceId}
+              className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50"
+            >
+              Stornieren
+            </CancelInvoiceDialog>
           ) : (
             <span className="text-xs text-slate-400">Nicht möglich für {TYPE_TITLE[type] ?? type}.</span>
           )}

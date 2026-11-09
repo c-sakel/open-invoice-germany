@@ -31,6 +31,7 @@ import { FootTextBlock } from "./blocks/FootTextBlock";
 import { PreviewSheet } from "./blocks/PreviewSheet";
 import { MoreOptions } from "./blocks/MoreOptions";
 import { AttachmentsBlock } from "./blocks/AttachmentsBlock";
+import { EditorCurrencyContext } from "./currency-context";
 
 // M4 (Abschluss-Review): kein `export` mehr — kein Importer (die Seiten importieren nur
 // `DocumentEditor` selbst, der Props-Typ wird nirgends separat referenziert).
@@ -56,6 +57,8 @@ interface DocumentEditorProps {
    *  dritte Stufe der Faelligkeits-Vorbelegungskette in `MetaBlock` (Kunde > Zahlungs-
    *  methode > diese Einstellung > 14 Tage, dieselbe Reihenfolge wie `createDraftInvoice`). */
   invoiceDueDays?: number;
+  /** `DocumentSettings.defaultCurrency` — Anzeige-/Auswahlvorbelegung, wenn weder Beleg noch Kunde eine Waehrung tragen. */
+  defaultCurrency?: string;
   /** Fix-Welle 1, S2 (Abschluss-Review Phase 13b): `DocumentSettings.autoDeliveryDate` —
    *  Neuanlage-Default fuer die Leistungsdatum-Kopplung (`deliveryDateFollowsIssue`), nur
    *  wirksam ohne `initial` (Neuanlage; Bearbeiten setzt die Kopplung ueber `draftFromInvoice`
@@ -114,6 +117,7 @@ export function DocumentEditor({
   taxRates,
   paymentMethods = [],
   invoiceDueDays,
+  defaultCurrency,
   autoDeliveryDate = true,
   contacts = [],
   addresses = [],
@@ -136,6 +140,8 @@ export function DocumentEditor({
   // ohne einen Seiten-Reload — die `products`-Prop selbst ist unveraendert vom Server.
   const [productList, setProductList] = useState<ProductOption[]>(products);
   const isEdit = Boolean(draft.id);
+  // Anzeige: Belegwert > Kundenvorgabe (steckt im Draft, sobald gewaehlt) > Einstellung > EUR.
+  const displayCurrency = draft.currency || defaultCurrency || "EUR";
   // Task-5-Fix (Minor): einmal pro `draft`-Aenderung berechnet statt zusaetzlich ein
   // zweites Mal in `LineItemsEditor` — `totals` wandert als Prop weiter.
   const totals = useMemo(() => computeDraftTotals(draft), [draft]);
@@ -312,7 +318,7 @@ export function DocumentEditor({
   }
 
   return (
-    <>
+    <EditorCurrencyContext.Provider value={displayCurrency}>
       <div className="space-y-6 pb-10">
         <EditorHeader
           backHref={backHref}
@@ -365,6 +371,6 @@ export function DocumentEditor({
       </div>
 
       <PreviewSheet open={previewOpen} onClose={() => setPreviewOpen(false)} mode={mode} draft={draft} layoutId={printOverride?.layoutId} />
-    </>
+    </EditorCurrencyContext.Provider>
   );
 }

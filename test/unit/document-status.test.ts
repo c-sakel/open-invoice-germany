@@ -237,3 +237,29 @@ describe("setArchived", () => {
     expect(logs.some((l) => l.action === "UNARCHIVE")).toBe(true);
   });
 });
+
+describe("abgelaufenes Angebot (gespeichert SENT, validUntil verstrichen)", () => {
+  async function expiredSent() {
+    const quote = await createQuote({ validUntil: "2031-06-01" } as Partial<Parameters<typeof createBusinessDocument>[1]>);
+    await setQuoteStatus(orgId, quote.id, "SENT", { now: FIX_DATE });
+    const stored = await dbInternal.quote.findUniqueOrThrow({ where: { id: quote.id } });
+    expect(effectiveQuoteStatus(stored, FIX_DATE)).toBe("EXPIRED");
+    return quote;
+  }
+
+  it("kann abgelehnt werden (REJECTED, ChangeLog)", async () => {
+    const quote = await expiredSent();
+    const rejected = await setQuoteStatus(orgId, quote.id, "REJECTED", { now: FIX_DATE, note: "zu spaet" });
+    expect(rejected.status).toBe("REJECTED");
+    const logs = await dbInternal.changeLog.findMany({ where: { orgId, entity: "QUOTE", entityId: quote.id } });
+    expect(logs.some((l) => l.action === "STATUS_REJECTED")).toBe(true);
+  });
+
+  it("kann storniert werden (CANCELLED, ChangeLog)", async () => {
+    const quote = await expiredSent();
+    const cancelled = await setQuoteStatus(orgId, quote.id, "CANCELLED", { now: FIX_DATE });
+    expect(cancelled.status).toBe("CANCELLED");
+    const logs = await dbInternal.changeLog.findMany({ where: { orgId, entity: "QUOTE", entityId: quote.id } });
+    expect(logs.some((l) => l.action === "STATUS_CANCELLED")).toBe(true);
+  });
+});

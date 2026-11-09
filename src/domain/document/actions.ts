@@ -160,7 +160,7 @@ function quoteActions(doc: ActionableDoc): ActionKey[] {
     actions.push("DELIVERY_NOTE");
   }
 
-  if (!doc.isDraft && !isCancelled) actions.push("CANCEL");
+  if (!doc.isDraft && !isCancelled && !isRejected) actions.push("CANCEL");
 
   // Task 7 ("eine Aktionsmatrix"): CONVERT buendelt AB-/Rechnungs-/Lieferschein-Erzeugung
   // ueber convertTargets — dieselbe Matrix wie die Dokument-Detailseite.

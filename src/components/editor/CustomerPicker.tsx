@@ -36,6 +36,8 @@ export interface CustomerOption {
    *  Zahlungsmethode/Org-Einstellung) — Grundlage fuer `MetaBlock`s Faelligkeits-
    *  Vorbelegung bei Neuanlage (`resolveDueDays`, `src/lib/editor/draft.ts`). */
   defaultPaymentTermsDays?: number | null;
+  /** Kundenvorgabe-Waehrung (ISO 4217) — Vorbelegung der Belegwaehrung bei Neuanlage. */
+  defaultCurrency?: string | null;
 }
 
 const MAX_HITS = 30;
