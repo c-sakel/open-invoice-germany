@@ -26,11 +26,10 @@
  * Aufrufer haetten sonst bei jedem Tastendruck dieselbe (nicht ganz billige) Berechnung
  * doppelt ausgefuehrt.
  *
- * Drag & Drop: `dragKey` (lokaler State) haelt den `key` der gezogenen Zeile;
- * `onDrop` dispatcht `moveLine` mit dem (Vor-Entfernen-)Index der Zielzeile — gleiches
- * Verhalten wie die alte `dragIndex`-Logik, nur ueber den stabilen `line.key` statt
- * eines Arrayindex. Tastatur-Alternative: Alt+↑/↓ auf einer Zeile (`onRowKeyDown`,
- * bubbelt von jedem fokussierten Feld der Zeile zum `<tr>` hoch).
+ * Sortieren: `useReorder` (use-pointer-reorder.ts) — Zeiger (Maus/Touch) und Tastatur am Griff,
+ * Ablage-Indikator (2-px-Linie), `aria-live`-Ansage; Ergebnis ist `moveBlock` (Ueberschrift
+ * nimmt ihre Unterzeilen mit). Zusaetzlich Alt+↑/↓ auf einer Zeile (`onRowKeyDown`,
+ * bubbelt von jedem fokussierten Feld der Zeile zum `<tr>` hoch) und die Menueeintraege.
  *
  * "Enter" im Beschreibungs-/Bezeichnungsfeld der LETZTEN Zeile legt eine neue
  * ITEM-Zeile an und fokussiert deren Beschreibungsfeld: `descRefs` haelt eine
@@ -53,6 +52,7 @@ import type { EditorMode } from "@/lib/editor/constants";
 import type { DraftTotals } from "@/lib/editor/totals";
 import type { ProductOption } from "../ProductPicker";
 import { LineRow } from "./LineRow";
+import { useReorder } from "./use-pointer-reorder";
 
 export function LineItemsEditor({
   draft,
@@ -79,7 +79,7 @@ export function LineItemsEditor({
   let itemCounter = 0;
   const itemPositions = draft.lines.map((l) => (l.lineType === "ITEM" ? ++itemCounter : null));
 
-  const [dragKey, setDragKey] = useState<string | null>(null);
+  const reorder = useReorder(draft.lines, dispatch);
   const descRefs = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>());
   const pendingFocusRef = useRef(false);
   const prevLen = useRef(draft.lines.length);
@@ -111,13 +111,6 @@ export function LineItemsEditor({
   function addLineWithProductFocus() {
     pendingProductFocusRef.current = true;
     dispatch({ type: "addLine", lineType: "ITEM" });
-  }
-  function onDragOver(e: React.DragEvent) {
-    e.preventDefault();
-  }
-  function onDrop(index: number) {
-    if (dragKey) dispatch({ type: "moveLine", key: dragKey, to: index });
-    setDragKey(null);
   }
   function onRowKeyDown(e: React.KeyboardEvent, index: number, key: string) {
     if (!e.altKey) return;
@@ -199,9 +192,11 @@ export function LineItemsEditor({
                   else descRefs.current.delete(key);
                 }}
                 onEnterLast={addLineAfterLast}
-                onDragStart={() => setDragKey(line.key)}
-                onDragOver={onDragOver}
-                onDrop={() => onDrop(index)}
+                handleProps={reorder.handleProps(line.key, index)}
+                rowRef={(el) => reorder.registerRow(line.key, el)}
+                dragging={reorder.activeKeys?.has(line.key) ?? false}
+                canMove={(kind) => reorder.canMove(line.key, kind)}
+                onMove={(kind) => reorder.move(line.key, kind)}
                 onRowKeyDown={(e) => onRowKeyDown(e, index, line.key)}
                 onProductCreated={onProductCreated}
                 autoFocusProduct={line.key === productFocusKey}
@@ -209,6 +204,17 @@ export function LineItemsEditor({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {reorder.indicator && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed z-40 h-0.5 bg-sky-500"
+          style={{ top: reorder.indicator.top - 1, left: reorder.indicator.left, width: reorder.indicator.width }}
+        />
+      )}
+      <div aria-live="polite" role="status" className="sr-only">
+        {reorder.announcement}
       </div>
 
       <div className="flex flex-wrap gap-3 text-sm font-medium text-indigo-600">

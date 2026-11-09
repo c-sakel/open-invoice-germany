@@ -19,6 +19,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/FloatingPanel";
 import type { LineType } from "@/lib/editor/draft";
 import { LINE_TYPE_LABEL } from "@/lib/editor/constants";
+import type { MoveKind } from "./use-pointer-reorder";
+
+const MOVE_ITEMS: readonly { kind: MoveKind; label: string }[] = [
+  { kind: "up", label: "Nach oben" },
+  { kind: "down", label: "Nach unten" },
+  { kind: "top", label: "An den Anfang" },
+  { kind: "bottom", label: "Ans Ende" },
+];
 
 const TYPE_ORDER: readonly LineType[] = ["ITEM", "HEADING", "TEXT", "SUBTOTAL"];
 
@@ -28,12 +36,16 @@ export function LineRowMenu({
   canRemove,
   currentType,
   onChangeType,
+  canMove,
+  onMove,
 }: {
   onDuplicate: () => void;
   onRemove: () => void;
   canRemove: boolean;
   currentType?: LineType;
   onChangeType?: (lineType: LineType) => void;
+  canMove?: (kind: MoveKind) => boolean;
+  onMove?: (kind: MoveKind) => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -111,6 +123,19 @@ export function LineRowMenu({
           <button type="button" role="menuitem" className={itemCls} onClick={() => pick(onDuplicate)}>
             Duplizieren
           </button>
+          {onMove &&
+            MOVE_ITEMS.map(({ kind, label }) => (
+              <button
+                key={kind}
+                type="button"
+                role="menuitem"
+                disabled={canMove ? !canMove(kind) : false}
+                className={`${itemCls} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent`}
+                onClick={() => pick(() => onMove(kind))}
+              >
+                {label}
+              </button>
+            ))}
           {currentType && onChangeType && (
             <>
               <div className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Typ ändern</div>
