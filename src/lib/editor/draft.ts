@@ -42,6 +42,13 @@ export interface DraftState {
   type: "INVOICE" | "CREDIT_NOTE";
   customerId: string;
   taxScheme: TaxScheme;
+  /** ISO-4217-Code der Belegwaehrung. Leer = bei Neuanlage nicht gewaehlt: `toInvoicePayload`/
+   *  `toDocumentPayload` senden dann `undefined`, und die Server-Kette
+   *  `input.currency ?? customer.defaultCurrency ?? settings.defaultCurrency ?? Standardwaehrung` greift. */
+  currency: string;
+  /** `true`, sobald der Nutzer die Waehrung selbst gewaehlt hat (Reducer `set`/`currency`) —
+   *  dann ueberschreibt ein spaeterer Kundenwechsel sie nicht mehr. */
+  currencyTouched: boolean;
   subject: string;
   headerText: string;
   footerText: string;
@@ -236,6 +243,8 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     type: "INVOICE",
     customerId: "",
     taxScheme: "REGULAR",
+    currency: "",
+    currencyTouched: false,
     subject: "",
     headerText: "",
     footerText: "",
@@ -306,6 +315,9 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
       // Vorbelegung als vom Nutzer uebernommen/ueberschrieben — siehe DraftState.dueDateTouched.
       if (action.field === "dueDate") {
         return { ...state, dueDate: action.value as string, dueDateTouched: true, dirty: true };
+      }
+      if (action.field === "currency") {
+        return { ...state, currency: action.value as string, currencyTouched: true, dirty: true };
       }
       return { ...state, [action.field]: action.value, dirty: true } as DraftState;
     case "setLine":
@@ -408,7 +420,7 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
   const shared: Record<string, unknown> = {
     customerId: d.customerId,
     taxScheme: d.taxScheme,
-    currency: "EUR",
+    currency: d.currency || undefined,
     subject: d.subject || undefined,
     orderNumber: d.orderNumber || undefined,
     internalReference: d.internalReference || undefined,
@@ -476,7 +488,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
   const shared: Record<string, unknown> = {
     customerId: d.customerId,
     taxScheme: "REGULAR",
-    currency: "EUR",
+    currency: d.currency || undefined,
     subject: d.subject || undefined,
     customerReference: d.customerReference || undefined,
     contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
@@ -596,6 +608,9 @@ export interface InvoiceInitialLike {
   id: string;
   customerId: string;
   taxScheme: string;
+  /** ISO-4217-Code des gespeicherten Belegs. */
+  currency?: string;
+
   subject: string;
   orderNumber: string;
   internalReference: string;
@@ -637,6 +652,8 @@ export interface DocumentInitialLike {
   id: string;
   kind: string;
   customerId: string;
+  /** ISO-4217-Code des gespeicherten Dokuments. */
+  currency?: string;
   subject: string;
   customerReference: string;
   contactPersonId: string;
@@ -699,6 +716,8 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     id: initial.id,
     customerId: initial.customerId ?? "",
     taxScheme: (initial.taxScheme as TaxScheme) ?? "REGULAR",
+    currency: initial.currency ?? "",
+    currencyTouched: true,
     subject: initial.subject ?? "",
     orderNumber: initial.orderNumber ?? "",
     internalReference: initial.internalReference ?? "",
@@ -752,6 +771,8 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     id: initial.id,
     kind,
     customerId: initial.customerId ?? "",
+    currency: initial.currency ?? "",
+    currencyTouched: true,
     subject: initial.subject ?? "",
     customerReference: initial.customerReference ?? "",
     contactPersonId: initial.contactPersonId ?? "",

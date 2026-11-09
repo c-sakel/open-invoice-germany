@@ -6,6 +6,7 @@ import {
   toDocumentPayload,
   toDeliveryNotePayload,
   draftFromInvoice,
+  draftFromDocument,
   validateDraft,
   dueDaysFrom,
   dueDateFromDays,
@@ -59,7 +60,7 @@ describe("editor/draft", () => {
     if (create.success) {
       expect(create.data.lines[0]).toMatchObject({ quantityMilli: 2000, unitNetPriceCents: 9500, unit: "HUR", taxRate: 19, lineType: "ITEM" });
       expect(create.data.lines[1]).toMatchObject({ lineType: "HEADING", quantityMilli: 0, unitNetPriceCents: 0 });
-      expect(create.data.type).toBe("INVOICE"); expect(create.data.currency).toBe("EUR");
+      expect(create.data.type).toBe("INVOICE"); expect(create.data.currency).toBeUndefined();
     }
     const update = updateInvoiceSchema.safeParse(toInvoicePayload(s, true));
     expect(update.success).toBe(true);
@@ -312,5 +313,24 @@ describe("editor/draft", () => {
   it("localDateOnly liest den Kalendertag ueber lokale Date-Getter (S1)", () => {
     expect(localDateOnly(new Date(2066, 8, 10, 23, 30))).toBe("2066-09-10");
     expect(localDateOnly(new Date(2066, 0, 5, 0, 0))).toBe("2066-01-05");
+  });
+  it("Waehrung: Neuanlage ohne Auswahl sendet undefined, mit Auswahl den Code", () => {
+    const d = invoiceDraft();
+    expect(toInvoicePayload(d, false).currency).toBeUndefined();
+    const usd = draftReducer(d, { type: "set", field: "currency", value: "USD" });
+    expect(usd.currencyTouched).toBe(true);
+    expect(toInvoicePayload(usd, false).currency).toBe("USD");
+    expect(toDocumentPayload(emptyDraft("DOCUMENT"), false).currency).toBeUndefined();
+  });
+  it("Waehrung: USD-Entwurf bleibt nach Laden und Speichern USD (Rechnung und Dokument)", () => {
+    const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "USD", lines: [] } as never);
+    expect(toInvoicePayload(inv, true).currency).toBe("USD");
+    const doc = draftFromDocument({ id: "d1", kind: "ANGEBOT", customerId: "c1", currency: "USD", lines: [] } as never);
+    expect(toDocumentPayload(doc, true).currency).toBe("USD");
+  });
+  it("Waehrung: replace laesst currencyTouched unveraendert", () => {
+    const d = emptyDraft("INVOICE");
+    const r = draftReducer(d, { type: "replace", state: { ...d, currency: "CHF" } });
+    expect(r.currencyTouched).toBe(false);
   });
 });
