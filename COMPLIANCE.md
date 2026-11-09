@@ -471,6 +471,18 @@ Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nic
 
 - Reverse Charge beim Empfänger im Bestimmungsland; Rechnung bis 15. Tag des Folgemonats, USt-IdNr. beider Parteien + „Steuerschuldnerschaft des Leistungsempfängers" (§ 14a Abs. 1).
 
+### (3a) Drittland-Leistung (§ 3a Abs. 2 UStG — Nicht-EU)
+
+- **Ort der Leistung** beim Empfänger im Drittland (außerhalb EU) → **nicht im Inland steuerbar** (kein USt-Ausweis, kein Steuersatz).
+- **Keine USt-IdNr.-Pflicht** für den Empfänger (Drittland), keine ZM-Meldung.
+- **EN 16931 Steuerkategorie:** `O` (Out of scope) — nicht `G` (Export/Waren), nicht `AE` (Reverse Charge/EU), nicht `Z` (Nullsatz).
+- **Umsetzung:** Steuerschema `NICHT_STEUERBAR` (Kategorie `O`, VATEX-EU-O). Kein eigenes Drittland-Schema — der Upstream-Vorschlag `DRITTLAND_LEISTUNG` ist fachlich identisch und wird hier nicht doppelt gefuehrt.
+- **Pflichthinweis:** „Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)" (§ 14 Abs. 4 Nr. 8 — bei Steuerfreiheit/Nicht-Steuerbarkeit Hinweis erforderlich); die Pruefung akzeptiert jede Formulierung mit „nicht im Inland steuerbar".
+- **Abgrenzung zu `G` (Ausfuhrlieferung):** `G` = Warenexport § 4 Nr. 1 i.V.m. § 6 UStG (Gegenstand geht ins Drittland). `O` = sonstige Leistung, bei der der Ort nach § 3a Abs. 2 im Ausland liegt — kein Warenexport.
+- **Währung:** Fremdwährung (z.B. USD) zulässig; GoBD-Belegfunktion (Rz 77) erfordert Währung/Wechselkurs-Angabe.
+- **Quellen:** [§ 3a UStG](https://www.gesetze-im-internet.de/ustg_1980/__3a.html) · [§ 14 Abs. 4 Nr. 8 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html)
+**Stand:** 2026-08-17
+
 ### USt-IdNr.-Prüfung (§ 18e UStG / VIES)
 
 | Anfrage-Art | Prüft | Nachweiswert |

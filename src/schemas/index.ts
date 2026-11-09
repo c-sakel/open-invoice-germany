@@ -7,6 +7,15 @@ import { z } from "zod";
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
+import { isValidIban, normalizeIban } from "@/lib/iban";
+
+/** IBAN-Eingabe (BT-84): Leerzeichen raus, Grossbuchstaben, MOD-97-10-Pruefsumme. Leer bleibt erlaubt.
+ * Nur fuer Eingaben — Snapshot-Schemas festgeschriebener Belege bleiben bewusst ungeprueft. */
+const ibanInput = z
+  .string()
+  .optional()
+  .transform((s) => (s ? normalizeIban(s) : s))
+  .refine((s) => !s || isValidIban(s), "Ungültige IBAN");
 
 // ── Enumerationen ────────────────────────────────────────────────────────
 export const TaxScheme = z.enum([
@@ -177,7 +186,7 @@ export const organizationSchema = z.object({
   kuIdNr: z.string().optional(),
   smallBusiness: z.boolean().default(false),
   defaultTaxScheme: TaxScheme.default("REGULAR"),
-  iban: z.string().optional(),
+  iban: ibanInput,
   bic: z.string().optional(),
   bankName: z.string().optional(),
   // Fix (Kontoinhaber): leer = Firmenname (legalName) als Fallback in GiroCode/Fusszeile/
@@ -768,7 +777,7 @@ export const UNTDID_PAYMENT_MEANS_CODES = [
 export const paymentMethodSchema = z.object({
   code: z.string().min(1).max(40).regex(/^[A-Z0-9_]+$/), name: z.string().min(1), description: z.string().optional(),
   paymentTermsDays: z.number().int().min(0).optional(), invoiceText: z.string().optional(), bankAccountRef: z.string().optional(),
-  bankIban: z.string().optional(), bankBic: z.string().optional(), bankName: z.string().optional(),
+  bankIban: ibanInput, bankBic: z.string().optional(), bankName: z.string().optional(),
   untdidCode: z.enum(UNTDID_PAYMENT_MEANS_CODES).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
 });
 export type PaymentMethodInput = z.infer<typeof paymentMethodSchema>;
