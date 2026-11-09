@@ -369,6 +369,10 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
 `/api/v1/Webhook` (Scope `admin`) — Ereignisse, Payload-Form, Signaturprüfung
 (Node/PHP), Retry-Zeitplan und SSRF-Regeln: siehe [WEBHOOKS.md](WEBHOOKS.md).
 
+## Währung (`currency`)
+
+`currency` ist ein optionaler ISO-4217-Code aus drei Großbuchstaben (z. B. `USD`; Kleinbuchstaben werden mit 400 abgelehnt) an Rechnung, Dokument (Angebot/AB/Proforma) und Abo. Ohne Angabe gilt die Kette Kunde (`defaultCurrency`) > Einstellung > `EUR`. Alle Beträge des Belegs sind in dieser Währung (Integer-Cent); Fremdwährungsbelege haben keinen GiroCode.
+
 ## Storno (`POST /api/v1/Invoice/{id}/cancel`)
 
 Optionaler JSON-Body `{ "reason": "…" }` (max. 500 Zeichen): der Stornogrund steht als

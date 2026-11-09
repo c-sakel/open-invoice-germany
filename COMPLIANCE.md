@@ -450,6 +450,14 @@ Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nic
 
 ---
 
+### Gutschriften, Storno und Verrechnung (Editor-/Storno-Welle 2026-11)
+
+- **Obergrenze (§ 14c Abs. 1 UStG):** Wer in einer Rechnung einen höheren Steuerbetrag ausweist als geschuldet, schuldet den Mehrbetrag. Eine Gutschrift über mehr als den Rechnungsbetrag würde die Steuer des Originals über das Geschuldete hinaus mindern bzw. einen nicht bestehenden Anspruch ausweisen; die Software begrenzt deshalb die Summe aller festgeschriebenen Gutschriften (Teilgutschriften und Storno) je Original auf den Bruttobetrag der Rechnung (bei Schlussrechnung: Bruttobetrag, nicht der um Abschläge geminderte Zahlbetrag) und lehnt weitere ab. Auf stornierte Rechnungen ist keine Teilgutschrift möglich.
+- **Rest-Storno mit Bezug (§ 31 Abs. 5 UStDV, § 14 Abs. 4 Nr. 1–8 UStG):** Eine Berichtigung muss sich eindeutig auf die ursprüngliche Rechnung beziehen (Nummer und Datum; E-Rechnung: BG-3/BT-25). Nach Teilgutschriften neutralisiert das Storno nur den noch nicht gutgeschriebenen Rest, Summe aller Gutschriften = Rechnungsbetrag; der Bezug bleibt die Originalrechnung. Bei genau einem Steuersatz kann das Zielbrutto um höchstens 1 Cent zugunsten der Rechnung verfehlt werden (BR-CO-17, siehe `docs/LIMITATIONEN.md`).
+- **Verrechnung ist keine Zahlung:** Eine Teilgutschrift mindert den offenen Rest als Zahlungsart „Verrechnung Gutschrift“ (`CREDIT_NOTE`), nicht als Geldeingang. In der E-Rechnung des Originals zählt sie nicht zu BT-113 (Gezahlter Betrag); Zahlungsverhalten, Skonto und Webhooks `payment.recorded` behandeln sie nicht als Zahlung. Ein Gutschriftsbetrag über dem offenen Rest ist zu erstatten (Hinweis, keine Buchung — Zahlungsverkehr liegt außerhalb der Software).
+- **Gutschriften in Offenen Posten:** Festgeschriebene Gutschriften sind keine Forderung; sie erscheinen weder in „Offen“ noch in Fälligkeits-/Mahnauswertungen.
+- **Quellen:** [§ 14c UStG](https://www.gesetze-im-internet.de/ustg_1980/__14c.html) · [§ 31 UStDV](https://www.gesetze-im-internet.de/ustdv_1980/__31.html) · EN 16931 (BR-CO-17, BR-CO-25, BT-113).
+
 ## 8. Reverse Charge (§ 13b), ig. Lieferung/Leistung, USt-IdNr/VIES, ZM
 
 **Kurzregel:** Grenz-/EU-bezogene Umsätze verschieben die Steuerschuld (Reverse Charge) bzw. befreien steuerfrei — mit **zwingenden** Rechnungs- und Meldepflichten. Die inhaltlichen Pflichten sind stabil; geändert hat sich nur die **Form** (E-Rechnung).
@@ -479,7 +487,7 @@ Bei grundstücksbezogenen Werklieferungen/-leistungen an **Privatpersonen** (Nic
 - **Umsetzung:** Steuerschema `NICHT_STEUERBAR` (Kategorie `O`, VATEX-EU-O), siehe Tabelle der Schemahinweise oben. Kein eigenes Drittland-Schema — der Upstream-Vorschlag `DRITTLAND_LEISTUNG` ist fachlich identisch und wird hier nicht doppelt geführt.
 - **Hinweis:** „Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)". Keine Steuerbefreiung, daher kein Fall des § 14 Abs. 4 S. 1 Nr. 8 UStG; der Hinweis ist nach EN 16931 BR-O-10/BT-120 empfohlen und wird immer gedruckt.
 - **Abgrenzung zu `G` (Ausfuhrlieferung):** `G` = Warenexport § 4 Nr. 1 Buchst. a i. V. m. § 6 UStG (Gegenstand geht ins Drittland). `O` = sonstige Leistung mit Leistungsort im Ausland — kein Warenexport.
-- **Währung:** Fremdwährung ist umsatzsteuerlich zulässig (Umrechnung nach § 16 Abs. 6 UStG); eine Wechselkursangabe auf dem Beleg ist derzeit nicht umgesetzt.
+- **Währung:** Fremdwährung ist umsatzsteuerlich zulässig (Umrechnung nach § 16 Abs. 6 UStG); eine Wechselkursangabe auf dem Beleg ist derzeit nicht umgesetzt. Der Editor (Rechnung, Angebot/AB/Proforma, Abo) bietet eine Währungsauswahl mit Vorbelegung Kunde > Einstellung > EUR und weist bei Fremdwährung darauf hin. Bei Rechnungen mit Umsatzsteuer in Fremdwährung verlangt Art. 230 MwStSystRL (Richtlinie 2006/112/EG) den Steuerbetrag in der Landeswährung des Mitgliedstaats; diesen EUR-Betrag weist die Software nicht aus (siehe `docs/LIMITATIONEN.md`). GiroCode nur bei EUR. Quellen: [Art. 230 MwStSystRL](https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:32006L0112) · [§ 16 Abs. 6 UStG](https://www.gesetze-im-internet.de/ustg_1980/__16.html)
 - **Quellen:** [§ 3a UStG](https://www.gesetze-im-internet.de/ustg_1980/__3a.html) · [§ 14 UStG](https://www.gesetze-im-internet.de/ustg_1980/__14.html) · [§ 16 UStG](https://www.gesetze-im-internet.de/ustg_1980/__16.html)
 **Stand:** 2026-11-09
 
