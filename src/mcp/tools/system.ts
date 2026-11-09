@@ -155,6 +155,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         return ctx.ok(`Unternehmen ${existing ? "aktualisiert" : "angelegt"}: ${org.legalName} (${org.id}).`);
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         return ctx.failUnknown(e);
       }
     },
