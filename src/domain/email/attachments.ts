@@ -94,9 +94,9 @@ export async function buildStandardAttachments(
     const { invoice, data } = loaded;
     const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
     const base = safe(invoice.number ?? "Entwurf");
-    // Festgeschrieben ODER storniert -> das rechtsverbindliche ZUGFeRD-PDF; nur echte
-    // Entwuerfe bekommen den Entwurfs-Hinweis (Feldwert siehe finalize.ts/cancel.ts).
-    const finalized = invoice.status === "FINALIZED" || invoice.status === "CANCELLED";
+    // Jeder Nicht-Entwurf (festgeschrieben, versendet, (teil)bezahlt, storniert) -> das
+    // rechtsverbindliche ZUGFeRD-PDF; nur echte Entwuerfe bekommen den Entwurfs-Hinweis.
+    const finalized = invoice.status !== "DRAFT";
     if (!finalized) {
       return [{ filename: `${base}-ENTWURF.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoicePdf(data, theme)) }];
     }

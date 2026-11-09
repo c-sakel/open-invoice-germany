@@ -394,6 +394,20 @@ describe("/api/v1/Invoice/{id}/pdf,xrechnung,zugferd", () => {
     expect(buf.toString("latin1")).toContain("factur-x.xml");
   });
 
+  it("pdf einer bezahlten und einer teilbezahlten Rechnung traegt die ZUGFeRD-XML", async () => {
+    const paid = await makeFinalizedInvoice();
+    const p1 = await InvoicePayment(req(`http://x/api/v1/Invoice/${paid.id}/payment`, { method: "POST", token, body: { amountCents: paid.grossTotalCents } }), ctx1(paid.id));
+    expect((await json(p1)).data.invoice.status).toBe("PAID");
+    const resPaid = await InvoicePdf(req(`http://x/api/v1/Invoice/${paid.id}/pdf`, { token }), ctx1(paid.id));
+    expect(Buffer.from(await resPaid.arrayBuffer()).toString("latin1")).toContain("factur-x.xml");
+
+    const partial = await makeFinalizedInvoice();
+    const p2 = await InvoicePayment(req(`http://x/api/v1/Invoice/${partial.id}/payment`, { method: "POST", token, body: { amountCents: 100 } }), ctx1(partial.id));
+    expect((await json(p2)).data.invoice.status).toBe("PARTIALLY_PAID");
+    const resPartial = await InvoicePdf(req(`http://x/api/v1/Invoice/${partial.id}/pdf`, { token }), ctx1(partial.id));
+    expect(Buffer.from(await resPartial.arrayBuffer()).toString("latin1")).toContain("factur-x.xml");
+  });
+
   it("pdf eines Entwurfs bleibt ein schlichtes PDF ohne ZUGFeRD-XML", async () => {
     const draft = await createDraftInvoice(orgId, invoiceInput());
     const res = await InvoicePdf(req(`http://x/api/v1/Invoice/${draft.id}/pdf`, { token }), ctx1(draft.id));
