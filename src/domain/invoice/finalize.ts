@@ -332,6 +332,7 @@ export async function finalizeWithinTx(
     deliveryDate: invoice.deliveryDate,
     deliveryEnd: invoice.deliveryEnd,
     issueDate,
+    now,
     taxTotalCents: totals.taxTotalCents,
     netTotalCents: totals.netTotalCents,
     taxBreakdown: totals.breakdown,

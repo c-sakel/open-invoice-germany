@@ -46,6 +46,8 @@ export interface FxSnapshotInput {
   deliveryDate: Date | null;
   deliveryEnd: Date | null;
   issueDate: Date;
+  /** Referenzzeit fuer Vorausrechnung (Stichtag in der Zukunft); Standard: jetzt. */
+  now?: Date;
   taxTotalCents: number;
   netTotalCents: number;
   /** Steuer je Satz (Steueraufschluesselung des Belegs) — Grundlage der EUR-Steuersumme. */
@@ -106,7 +108,7 @@ export async function resolveFxSnapshot(tx: Prisma.TransactionClient, input: FxS
     return { fxRateMicros: input.fxOverrideMicros, fxRateDate: stichtag, fxRateSource: "MANUAL", ...convert(input, input.fxOverrideMicros) };
   }
 
-  const pick = await rateFor(input.orgId, input.currency, stichtag, tx);
+  const pick = await rateFor(input.orgId, input.currency, stichtag, tx, input.now);
   if (!pick) {
     throw new FxRateError(`Kein Wechselkurs für ${input.currency} zum ${ddmmyyyy(stichtag)} — Kurs manuell eintragen.`);
   }

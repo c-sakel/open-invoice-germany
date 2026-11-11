@@ -160,10 +160,42 @@ export async function refreshExchangeRates(now: Date, fetchImpl?: typeof fetch):
     inserted += (await storeDailyRates(parsed.rows, now)).inserted;
   }
 
-  const averages = await computeMonthlyAverages(prevMonthStart(now), now);
+  // Monatsmittel fuer JEDEN abgeschlossenen Monat mit gespeicherten Tageskursen (idempotent,
+  // ueberschreibt nichts): nach dem ersten Lauf (90-Tage-Datei) haben auch aeltere Belege einen Kurs.
   const prev = prevMonthStart(now);
-  const incompleteMonths = averages.incompleteCurrencies.length > 0 ? [prev.toISOString().slice(0, 7)] : [];
-  return { inserted, months: averages.written > 0 ? 1 : 0, skippedCurrencies: [...skipped].sort(), incompleteMonths };
+  const dates = await dbInternal.exchangeRate.findMany({
+    where: { source: "ECB", rateDate: { lt: monthStart(now) } },
+    distinct: ["rateDate"],
+    select: { rateDate: true },
+  });
+  const months = new Map<number, Date>();
+  for (const { rateDate } of dates) {
+    const m = monthStart(rateDate);
+    months.set(m.getTime(), m);
+  }
+  months.set(prev.getTime(), prev);
+  let written = 0;
+  const incompleteMonths: string[] = [];
+  for (const month of [...months.values()].sort((a, b) => a.getTime() - b.getTime())) {
+    const averages = await computeMonthlyAverages(month, now);
+    if (averages.written > 0) written += 1;
+    // Alarm nur fuer den Vormonat: aeltere Monate koennen unvollstaendig bleiben (z. B. Anfang der 90-Tage-Datei).
+    if (month.getTime() === prev.getTime() && averages.incompleteCurrencies.length > 0) incompleteMonths.push(month.toISOString().slice(0, 7));
+  }
+  return { inserted, months: written, skippedCurrencies: [...skipped].sort(), incompleteMonths };
+}
+
+/**
+ * Monatsmittel des Vormonats ohne Netzabruf (reine DB-Arbeit). Der Scheduler ruft das auch im Zweig
+ * "nicht faellig" auf: die Tageskurse des Vormonats liegen seit dessen letztem Werktag vollstaendig vor,
+ * ein Abo mit Stichtag im neuen Monat soll nicht bis zum ersten Abruf des Tages warten.
+ */
+export async function ensurePreviousMonthAverage(now: Date): Promise<{ written: number }> {
+  const prev = prevMonthStart(now);
+  const exists = await dbInternal.exchangeRate.count({ where: { source: "MONTHLY", rateDate: prev } });
+  if (exists > 0) return { written: 0 };
+  const { written } = await computeMonthlyAverages(prev, now);
+  return { written };
 }
 
 /** Pflegt einen Kurs manuell (z. B. amtlicher BMF-Monatswert); ueberschreibt Importe und Berechnungen. */

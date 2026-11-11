@@ -124,8 +124,8 @@ describe("refreshExchangeRates", () => {
     expect(first.inserted).toBeGreaterThan(100);
     expect(first.skippedCurrencies).toEqual(["IDR"]);
     expect(new Set(calls)).toEqual(new Set([ECB_DAILY_URL, ECB_HIST90_URL]));
-    // Vormonat Oktober liegt in der hist-Datei vollstaendig vor (>= 15 Tageskurse).
-    expect(first.months).toBe(1);
+    // Oktober (Vormonat) und weitere abgeschlossene Monate der hist-Datei haben >= 15 Tageskurse.
+    expect(first.months).toBeGreaterThanOrEqual(2);
     expect(first.incompleteMonths).toEqual([]);
     calls.length = 0;
     const second = await refreshExchangeRates(now, fakeFetch);
@@ -145,6 +145,30 @@ describe("refreshExchangeRates", () => {
     expect(m).toMatchObject({ source: "BMF_MONTHLY", rateDate: d("2026-10-01") });
     expect(await rateFor(orgId, "IDR", d("2026-11-11"))).toBeNull();
     await dbInternal.documentSettings.delete({ where: { orgId } });
+  });
+
+  it("bildet das Monatsmittel fuer jeden abgeschlossenen Monat mit >= 15 Tageskursen, idempotent, ohne Ueberschreiben", async () => {
+    const now = new Date("2026-11-11T16:30:00.000Z");
+    await upsertManualRate({ source: "MONTHLY", currency: "USD", rateDate: d("2026-09-01"), rate: 1_999_999 }, "tester", orgId);
+    const first = await refreshExchangeRates(now, fakeFetch);
+    const monthsOf = async () =>
+      (await dbInternal.exchangeRate.findMany({ where: { source: "MONTHLY", currency: "USD" }, select: { rateDate: true, origin: true, rateMicros: true }, orderBy: { rateDate: "asc" } })).map((r) => ({
+        month: r.rateDate.toISOString().slice(0, 7),
+        origin: r.origin,
+        rateMicros: r.rateMicros,
+      }));
+    const rows = await monthsOf();
+    // Oktober (Vormonat) und der aeltere Monat der 90-Tage-Datei liegen vor; der gepflegte September bleibt unberuehrt.
+    expect(rows.map((r) => r.month)).toEqual(expect.arrayContaining(["2026-09", "2026-10"]));
+    expect(rows.find((r) => r.month === "2026-09")).toEqual({ month: "2026-09", origin: "MANUAL", rateMicros: 1_999_999 });
+    expect(rows.find((r) => r.month === "2026-10")?.origin).toBe("COMPUTED");
+    expect(first.months).toBeGreaterThanOrEqual(2);
+    // Alarm nur fuer den Vormonat; Oktober ist vollstaendig.
+    expect(first.incompleteMonths).toEqual([]);
+    const before = await monthsOf();
+    const second = await refreshExchangeRates(now, fakeFetch);
+    expect(second.months).toBe(0);
+    expect(await monthsOf()).toEqual(before);
   });
 
   it("wirft bei Netzfehler (der Job faengt ihn ab)", async () => {
@@ -202,6 +226,16 @@ describe("runFxJob: Fenster, Backoff, Pflicht-Alarm", () => {
     await dbInternal.schedulerRun.deleteMany({ where: { job: "fx" } });
     await run("2108-03-04T15:30:00Z", { fetched: true });
     expect(await runFxJob(new Date("2108-03-05T16:00:00Z"), failing)).toMatchObject({ error: expect.stringContaining("503") });
+  });
+
+  it("Zweig not-due: Monatsmittel des Vormonats entsteht ohne Netzabruf", async () => {
+    await storeDailyRates(febSeries(16, 1_000_000), NOW_MAR);
+    await run("2108-03-04T15:30:00Z", { fetched: true });
+    // Neuer Monat 00:xx: Abruf schon "erfolgt" (Vortag 15:30 liegt im Fenster) -> nicht faellig, Mittel trotzdem da.
+    const res = await runFxJob(new Date("2108-03-05T00:10:00Z"), failing);
+    expect(res).toEqual({ skipped: "not-due" });
+    const row = await dbInternal.exchangeRate.findFirst({ where: { source: "MONTHLY", currency: "USD", rateDate: d("2108-02-01") }, select: { origin: true } });
+    expect(row).toEqual({ origin: "COMPUTED" });
   });
 
   it("findet den letzten Abruf auch hinter vielen spaeteren Nicht-Abruf-Laeufen", async () => {

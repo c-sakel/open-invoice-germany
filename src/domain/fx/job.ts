@@ -11,7 +11,7 @@ import { dbInternal } from "@/lib/db";
 import { createNotification } from "@/domain/notifications/create";
 import { loadNotificationSettings } from "@/domain/notifications/settings";
 import { shouldFetchFx } from "./fetch-ecb";
-import { MIN_DAILY_RATES_FOR_MONTH, refreshExchangeRates } from "./store";
+import { MIN_DAILY_RATES_FOR_MONTH, ensurePreviousMonthAverage, refreshExchangeRates } from "./store";
 
 const RETRY_BACKOFF_MS = 30 * 60 * 1000;
 
@@ -52,7 +52,14 @@ export async function runFxJob(now: Date, fetchImpl?: typeof fetch): Promise<Rec
   if (lastFail && (!lastOk || lastFail > lastOk) && now.getTime() - lastFail.getTime() < RETRY_BACKOFF_MS) {
     return { skipped: "backoff" };
   }
-  if (!shouldFetchFx(now, lastOk)) return { skipped: "not-due" };
+  if (!shouldFetchFx(now, lastOk)) {
+    try {
+      await ensurePreviousMonthAverage(now);
+    } catch (e) {
+      console.error("fx: Monatsmittel fehlgeschlagen", e);
+    }
+    return { skipped: "not-due" };
+  }
 
   try {
     const result = await refreshExchangeRates(now, fetchImpl);

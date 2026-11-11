@@ -262,7 +262,9 @@ describe("Kurs-Snapshot beim Festschreiben", () => {
 
     it("Storno eines Altbelegs ohne Kurs: ohne Override 422, mit Override MANUAL", async () => {
       const id = await legacyUsdInvoice();
-      const err = await cancelInvoice(id, { orgId, now: NOW }).catch((e: unknown) => e);
+      // Storno im September: Stichtag Juli liegt in der Vergangenheit, Juni/Juli ohne Tabellenkurs.
+      const LATER = new Date("2109-09-20T10:00:00.000Z");
+      const err = await cancelInvoice(id, { orgId, now: LATER }).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(FxRateError);
       expect((err as Error).message).toBe("Kein Wechselkurs für USD zum 12.07.2109 — Kurs manuell eintragen.");
       const input = cancelInvoiceSchema.parse({ fxOverrideRate: "1,25" });
@@ -292,6 +294,15 @@ describe("Kurs-Snapshot beim Festschreiben", () => {
       const credit2 = await fxOf(res2.creditNote.id);
       expect(credit2.fxRateMicros).toBe(1300000);
       expect(credit2.fxOverrideMicros).toBeNull();
+    });
+
+    it("Vorausrechnung: Leistungsdatum im Folgemonat nimmt den juengsten Monatskurs bis zum Monat von now", async () => {
+      const d = await draft({ deliveryDate: new Date("2109-04-15T00:00:00.000Z") });
+      await finalizeInvoice(d.id, { now: NOW });
+      const fx = await fxOf(d.id);
+      expect(fx.fxRateSource).toBe("BMF_MONTHLY");
+      expect(fx.fxRateMicros).toBe(1121400);
+      expect(fx.fxRateDate?.toISOString()).toBe("2109-03-01T00:00:00.000Z");
     });
 
     it("Storno einer EUR-Rechnung mit Kurs-Override wird abgelehnt", async () => {

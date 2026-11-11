@@ -47,6 +47,26 @@ describe("pickRate BMF_MONTHLY", () => {
   });
 });
 
+describe("pickRate Vorausrechnung (now gesetzt)", () => {
+  const now = d("2108-03-10");
+  it("ECB_DAILY: Stichtag in der Zukunft -> juengster Tageskurs bis now, 7-Tage-Fenster relativ zu now", () => {
+    expect(pickRate([ecb("2108-03-09", 9)], "USD", d("2108-03-25"), "ECB_DAILY", now)?.rateMicros).toBe(9);
+    expect(pickRate([ecb("2108-03-03", 2)], "USD", d("2108-03-25"), "ECB_DAILY", now)?.rateMicros).toBe(2);
+    expect(pickRate([ecb("2108-03-02", 1)], "USD", d("2108-03-25"), "ECB_DAILY", now)).toBeNull();
+    expect(pickRate([ecb("2108-03-11", 5)], "USD", d("2108-03-25"), "ECB_DAILY", now)).toBeNull();
+  });
+  it("BMF_MONTHLY: Stichtagsmonat nach dem Monat von now -> juengster Monatskurs bis Monat von now", () => {
+    const p = pickRate([mon("2108-01-01", 1), mon("2108-02-01", 2)], "USD", d("2108-04-15"), "BMF_MONTHLY", now);
+    expect(p).toEqual({ rateMicros: 2, rateDate: d("2108-02-01"), source: "BMF_MONTHLY" });
+    expect(pickRate([mon("2108-03-01", 3), mon("2108-02-01", 2)], "USD", d("2108-04-15"), "BMF_MONTHLY", now)?.rateMicros).toBe(3);
+    expect(pickRate([mon("2108-05-01", 5)], "USD", d("2108-04-15"), "BMF_MONTHLY", now)).toBeNull();
+  });
+  it("Stichtag im laufenden Monat (auch spaeter als now): unveraendert Monats-/Vormonatskurs", () => {
+    expect(pickRate([mon("2108-02-01", 2)], "USD", d("2108-03-25"), "BMF_MONTHLY", now)?.rateMicros).toBe(2);
+    expect(pickRate([mon("2108-01-01", 1)], "USD", d("2108-03-25"), "BMF_MONTHLY", now)).toBeNull();
+  });
+});
+
 describe("fxStichtag", () => {
   it("deliveryDate vor deliveryEnd vor issueDate", () => {
     const issueDate = d("2108-03-10");
