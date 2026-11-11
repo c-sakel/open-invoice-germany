@@ -10,13 +10,19 @@ vi.mock("@/app/actions/layout-design", () => ({
   archiveLayoutDesignAction: vi.fn(async () => ({ ok: true, id: "d1", name: "Test", currentVersion: 1, archived: true })),
 }));
 
+import { ShellProvider } from "@/components/shell/ShellProvider";
 import { LayoutDesigner } from "@/components/settings/layout-designer/LayoutDesigner";
 
 const DESIGN = { id: "d1", name: "Test", baseLayoutId: "standard" as const, currentVersion: 1, archived: false };
 const PRESETS = ["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"].map((id) => ({ id: id as "standard", name: id, config: presetConfig(id as "standard") }));
 
 function mount(config: LayoutDesignConfig = presetConfig("standard")) {
-  return render(<LayoutDesigner design={DESIGN} initialConfig={config} presets={PRESETS} versions={[]} drafts={[]} />);
+  return render(
+    <ShellProvider>
+      <LayoutDesigner design={DESIGN} initialConfig={config} presets={PRESETS} versions={[]} drafts={[]} />
+      <a href="/einstellungen/briefpapier/designer?id=d2">Anderes Design</a>
+    </ShellProvider>,
+  );
 }
 
 function blockOrder(): string[] {
@@ -96,6 +102,38 @@ describe("LayoutDesigner", () => {
     fireEvent.change(screen.getByLabelText("Textfarbe"), { target: { value: "#12" } });
     expect(screen.getByText("Farbe im Format #rrggbb angeben.")).toBeTruthy();
     expect(screen.getByLabelText("Textfarbe")).toBeTruthy();
+  });
+
+  it("Unsaved-Guard: beforeunload und Bestaetigung bei internen Links nur bei Aenderungen", () => {
+    const showModal = vi.fn();
+    HTMLDialogElement.prototype.showModal = showModal;
+    HTMLDialogElement.prototype.close = vi.fn();
+    mount();
+    const link = screen.getByText("Anderes Design");
+    // Bubble-Listener nach dem Guard (Capture): merkt sich den Zustand und verhindert die jsdom-Navigation.
+    let seenPrevented: boolean | null = null;
+    const record = (e: Event) => {
+      seenPrevented = e.defaultPrevented;
+      e.preventDefault();
+    };
+    document.addEventListener("click", record);
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(seenPrevented).toBe(false);
+    expect(showModal).not.toHaveBeenCalled();
+    const cleanUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(cleanUnload);
+    expect(cleanUnload.defaultPrevented).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Geaendert" } });
+    const dirtyUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(dirtyUnload);
+    expect(dirtyUnload.defaultPrevented).toBe(true);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    act(() => void link.dispatchEvent(click));
+    document.removeEventListener("click", record);
+    expect(click.defaultPrevented).toBe(true);
+    expect(showModal).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: "Verlassen", hidden: true }).getAttribute("href")).toBe("/einstellungen/briefpapier/designer?id=d2");
   });
 
   it("entprellt die Vorschau: drei Aenderungen innerhalb 300 ms ergeben genau einen fetch 500 ms nach der letzten", async () => {

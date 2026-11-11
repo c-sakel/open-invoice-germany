@@ -64,7 +64,7 @@ export default async function LayoutDesignerPage({ searchParams }: { searchParam
         </Link>
       </nav>
       <LayoutDesigner
-        key={current ? `${current.id}-${current.currentVersion}-${current.archived}` : `new-${startPreset}`}
+        key={current ? `${current.id}-${current.currentVersion}` : `new-${startPreset}`}
         design={
           current
             ? { id: current.id, name: current.name, baseLayoutId: current.baseLayoutId, currentVersion: current.currentVersion, archived: current.archived }

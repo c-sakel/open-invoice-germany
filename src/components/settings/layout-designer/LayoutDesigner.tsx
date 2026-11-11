@@ -5,7 +5,7 @@
  * Die Pruefung laeuft ueber dasselbe Zod-Schema wie Domain, REST und MCP; Speichern und
  * Archivieren gehen ausschliesslich ueber die Server-Actions (Domain-Validierung).
  */
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, buttonClass } from "@/components/ui/Button";
@@ -20,6 +20,7 @@ import { ColumnTable } from "./ColumnTable";
 import { StyleFields } from "./StyleFields";
 import { VersionList, type VersionInfo } from "./VersionList";
 import { useLayoutPreview } from "./use-layout-preview";
+import { useUnsavedGuard } from "./use-unsaved-guard";
 
 export interface DesignerDesign {
   id: string;
@@ -52,6 +53,7 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
   const router = useRouter();
   const archiveDialog = useRef<ConfirmDialogHandle>(null);
   const presetDialog = useRef<ConfirmDialogHandle>(null);
+  const leaveDialog = useRef<ConfirmDialogHandle>(null);
   const [pendingPreset, setPendingPreset] = useState<string | null>(null);
   const [name, setName] = useState(design?.name ?? "");
   const [baseLayoutId, setBaseLayoutId] = useState<LayoutId>(design?.baseLayoutId ?? "standard");
@@ -68,6 +70,8 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
   const errors = useMemo(() => (parsed.success ? {} : collectFieldErrors(parsed.error.issues)), [parsed]);
   const nameValid = name.trim().length > 0;
   const dirty = JSON.stringify({ name, config }) !== baseline;
+  const openLeaveDialog = useCallback(() => leaveDialog.current?.open(), []);
+  const leaveHref = useUnsavedGuard(dirty, openLeaveDialog);
 
   const previewRequest = useMemo<Record<string, unknown> | null>(() => {
     const target = draftId ? { draftInvoiceId: draftId, docType } : { docType };
@@ -269,6 +273,14 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
         confirmLabel="Archivieren"
         tone="danger"
         onConfirm={() => void setArchived(true)}
+      />
+
+      <ConfirmDialog
+        ref={leaveDialog}
+        message="Es gibt ungespeicherte Änderungen. Trotzdem verlassen?"
+        confirmLabel="Verlassen"
+        tone="danger"
+        confirmHref={leaveHref ?? "/einstellungen/briefpapier/designer"}
       />
 
       <ConfirmDialog
