@@ -17,7 +17,7 @@ import { ensureDunningArchive } from "@/domain/dunning/archive";
 import { saveBrandingSettings } from "@/domain/settings/branding";
 import { setPrintOptions } from "@/domain/settings/print";
 import { loadPdfTheme } from "@/domain/settings/theme";
-import { archiveLayoutDesign, saveLayoutDesign } from "@/domain/layout-design/save";
+import { archiveLayoutDesign, saveLayoutDesign, DESIGN_CONFLICT } from "@/domain/layout-design/save";
 import { getLayoutDesign, listLayoutDesignVersions, listLayoutDesigns } from "@/domain/layout-design/list";
 import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 import { InvalidOperationError, ValidationError } from "@/domain/errors";
@@ -32,11 +32,7 @@ import { readArchiveFile } from "@/lib/archive/storage";
 import { normalizedPdfHash } from "../helpers/pdf-normalize";
 import type { CreateInvoiceInput } from "@/schemas";
 
-const windowProbe = vi.hoisted(() => ({ forceProblem: false }));
-vi.mock("@/lib/pdf/layouts/configurable", async (importActual) => {
-  const actual = await importActual<typeof import("@/lib/pdf/layouts/configurable")>();
-  return { ...actual, checkRecipientWindow: (c: Parameters<typeof actual.checkRecipientWindow>[0]) => (windowProbe.forceProblem ? "Anschrift passt nicht ins Fenster." : actual.checkRecipientWindow(c)) };
-});
+import * as configurable from "@/lib/pdf/layouts/configurable";
 
 const ISSUE = new Date("2120-03-01T10:00:00.000Z");
 const DUNNING_AT = new Date("2120-04-20T10:00:00.000Z");
@@ -58,7 +54,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  windowProbe.forceProblem = false;
   if (prevEnv === undefined) delete process.env.ARCHIVE_DIR;
   else process.env.ARCHIVE_DIR = prevEnv;
   await fs.rm(tmpDir, { recursive: true, force: true });
@@ -108,18 +103,35 @@ describe("Designs speichern", () => {
     await expect(saveLayoutDesign(orgId, { name: "Kaputt", config: { ...base, colors: { ...base.colors, primary: "rot" } } }, "tester")).rejects.toBeInstanceOf(ZodError);
   });
 
-  it("DIN-5008-Fensterpruefung: scheitert die Anschrift, wird weder angelegt noch eine Version gespeichert", async () => {
+  // Verdrahtungstest: fuer schema-gueltige Konfigurationen liefert checkRecipientWindow null (siehe
+  // din5008-window.test.ts); hier wird nur geprueft, dass ein Fehlertext das Speichern verhindert.
+  it("Verdrahtung: meldet checkRecipientWindow einen Fehlertext, wird weder angelegt noch eine Version gespeichert", async () => {
     const d = await saveLayoutDesign(orgId, { name: "Fenster" }, "tester");
-    windowProbe.forceProblem = true;
+    const spy = vi.spyOn(configurable, "checkRecipientWindow").mockReturnValue("Anschrift passt nicht ins Fenster.");
     try {
       await expect(saveLayoutDesign(orgId, { id: d.id, name: "Fenster neu" }, "tester")).resolves.toBeDefined(); // reines Umbenennen prueft nicht erneut
       await expect(saveLayoutDesign(orgId, { id: d.id, name: "Fenster neu", config: withPrimary(d.config, "#00aa00") }, "tester")).rejects.toBeInstanceOf(ValidationError);
       await expect(saveLayoutDesign(orgId, { name: "Fenster 2" }, "tester")).rejects.toThrow("Anschrift passt nicht ins Fenster.");
     } finally {
-      windowProbe.forceProblem = false;
+      spy.mockRestore();
     }
     expect((await getLayoutDesign(orgId, d.id)).currentVersion).toBe(1);
     expect(await dbInternal.layoutDesign.count({ where: { orgId, name: "Fenster 2" } })).toBe(0);
+  });
+
+  it("gleichzeitige Speicherungen: Versionen bleiben lueckenlos, Verlierer melden den Konflikt statt eines Namensfehlers", async () => {
+    const d = await saveLayoutDesign(orgId, { name: "Rennen" }, "tester");
+    const results = await Promise.allSettled([
+      saveLayoutDesign(orgId, { id: d.id, name: "Rennen", config: withPrimary(d.config, "#110000") }, "tester"),
+      saveLayoutDesign(orgId, { id: d.id, name: "Rennen", config: withPrimary(d.config, "#220000") }, "tester"),
+    ]);
+    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
+    for (const r of results) {
+      if (r.status === "rejected") expect(String((r.reason as Error).message)).toBe(DESIGN_CONFLICT);
+    }
+    const versions = (await listLayoutDesignVersions(orgId, d.id)).map((v) => v.version);
+    expect(versions).toEqual(versions.map((_, i) => i + 1));
+    expect((await getLayoutDesign(orgId, d.id)).currentVersion).toBe(versions.length);
   });
 });
 
@@ -184,6 +196,43 @@ describe("Einfrieren", () => {
     expect(normalizedPdfHash(archived as Buffer)).toBe(normalizedPdfHash(await render(v1.id)));
     expect(normalizedPdfHash(await render(null))).not.toBe(normalizedPdfHash(archived as Buffer));
     await assign({});
+  });
+});
+
+describe("Festes Layout und archivierte Designs", () => {
+  it("Mahnung ohne eingefrorene Version rendert nie mit einem spaeter zugeordneten Design", async () => {
+    await assign({});
+    const draft = await createDraftInvoice(orgId, invoiceInput(), { now: ISSUE });
+    const fin = await finalizeInvoice(draft.id, { now: ISSUE });
+    const { dunning } = await createDunning(fin.id, { now: DUNNING_AT, force: true });
+    expect(dunning.layoutVersionId).toBeNull();
+    const design = await saveLayoutDesign(orgId, { name: "Spaeter zugeordnet" }, "tester");
+    await saveLayoutDesign(orgId, { id: design.id, name: "Spaeter zugeordnet", config: withPrimary(design.config, "#dd0000") }, "tester");
+    await assign({ DUNNING: design.ref });
+    const entry = await ensureDunningArchive(orgId, dunning.id);
+    const row = await dbInternal.dunning.findFirstOrThrow({ where: { id: dunning.id }, include: { invoice: { include: { org: true, customer: true } }, stage: true } });
+    const render = async (fixed: boolean) =>
+      renderDunningPdf(buildDunningPdfData(row, row.invoice), await loadPdfTheme(orgId, null, "DUNNING", fixed ? { fixedLayoutOnly: true } : {}));
+    const archived = normalizedPdfHash((await readArchiveFile(entry.path)) as Buffer);
+    expect(archived).toBe(normalizedPdfHash(await render(true)));
+    expect(archived).not.toBe(normalizedPdfHash(await render(false)));
+    await assign({});
+  });
+
+  it("Design nach dem Festschreiben archiviert: Neuausgabe rendert weiter mit v1", async () => {
+    const design = await saveLayoutDesign(orgId, { name: "Spaeter archiviert", baseLayoutId: "klassik" }, "tester");
+    await assign({ INVOICE: design.ref });
+    const draft = await createDraftInvoice(orgId, invoiceInput(), { now: ISSUE });
+    const fin = await finalizeInvoice(draft.id, { now: ISSUE });
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: fin.id }, select: { printOptionsJson: true } });
+    const themeV1 = await loadPdfTheme(orgId, inv.printOptionsJson, "INVOICE");
+    await assign({});
+    await archiveLayoutDesign(orgId, design.id, true, "tester");
+    const loaded = await loadEInvoiceData(fin.id);
+    if (!loaded) throw new Error("Rechnung fehlt");
+    const set = await ensureInvoiceArchive(orgId, fin.id, "OUTPUT", new Date("2120-06-02T10:00:00.000Z"));
+    expect(normalizedPdfHash((await readArchiveFile(set.PDF.path)) as Buffer)).toBe(normalizedPdfHash(await renderZugferdPdf(loaded.data, themeV1, buildFacturXCII(loaded.data))));
+    expect(themeV1.layoutConfig).toBeDefined();
   });
 });
 

@@ -88,4 +88,17 @@ describe("DIN-5008-Fenster", () => {
   it("checkRecipientWindow: alle Schriften passen mit den Standardraendern", () => {
     for (const font of PDF_FONT_FAMILIES) expect(checkRecipientWindow({ ...presetConfig("standard"), font }), font).toBeNull();
   });
+
+  it("checkRecipientWindow: Extremkonfiguration innerhalb des Schemas (Rand links 25 mm, 12 pt) liefert null", () => {
+    // Dokumentiert: die Pruefung wertet nur Schrift und linken Rand aus; jede schema-gueltige Konfiguration besteht.
+    for (const font of PDF_FONT_FAMILIES) {
+      const config = { ...presetConfig("standard"), font, fontSizePt: 12, marginsMm: { top: 20, right: 25, bottom: 30, left: 25 } };
+      expect(checkRecipientWindow(config), font).toBeNull();
+    }
+  });
+
+  it("checkRecipientWindow: kuenstlich ungueltige Eingabe (Schema umgangen, Rand links 90 mm) liefert einen Fehlertext", () => {
+    const config = { ...presetConfig("standard"), marginsMm: { top: 20, right: 10, bottom: 20, left: 90 } };
+    expect(checkRecipientWindow(config)).toContain("passt");
+  });
 });

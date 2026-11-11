@@ -10,7 +10,7 @@ import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/prin
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { resolveLayoutId } from "@/domain/settings/layout";
 import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
-import type { LayoutDocType } from "@/lib/pdf/layouts/ids";
+import { DEFAULT_LAYOUT_ID, designIdOf, isLayoutId, type LayoutDocType } from "@/lib/pdf/layouts/ids";
 import type { PdfTheme } from "@/lib/pdf/theme";
 
 /** Liest eine gespeicherte Logo-/Hintergrunddatei; fehlt sie (gelöscht/inkonsistent),
@@ -38,7 +38,7 @@ async function readOptionalFile(storagePath: string | null): Promise<Buffer | un
  * (bestehende Aufrufer bleiben unveraendert lauffaehig). `footerFacts` kommt aus
  * `Organization.website`/`.ownerName` (Phase 11b, Task 1).
  */
-export async function loadPdfTheme(orgId: string, overrideJson?: string | null, docType: LayoutDocType = "INVOICE", opts: { layoutVersionId?: string | null } = {}): Promise<PdfTheme> {
+export async function loadPdfTheme(orgId: string, overrideJson?: string | null, docType: LayoutDocType = "INVOICE", opts: { layoutVersionId?: string | null; fixedLayoutOnly?: boolean } = {}): Promise<PdfTheme> {
   const [brand, printSettings, documentSettings, org] = await Promise.all([
     loadBrandingSettings(orgId),
     loadPrintSettings(orgId),
@@ -46,12 +46,19 @@ export async function loadPdfTheme(orgId: string, overrideJson?: string | null, 
     dbInternal.organization.findUnique({ where: { id: orgId }, select: { website: true, ownerName: true } }),
   ]);
   const options = effectivePrintOptions(printSettings, overrideJson);
-  const layoutRef = resolveLayoutId({
+  let layoutRef = resolveLayoutId({
     overrideLayoutId: options.layoutId ?? null,
     layoutByType: brand.layoutByType,
     orgDefault: brand.layoutId,
     docType,
   });
+  // Beleg ohne eingefrorene Design-Version (Bestand, festes Layout): nie ein Design aufloesen,
+  // sonst bekaeme er nachtraeglich das aktuell zugeordnete Design. Basislayout des Designs bzw. standard.
+  const assignedDesignId = designIdOf(layoutRef);
+  if (opts.fixedLayoutOnly && assignedDesignId) {
+    const design = await dbInternal.layoutDesign.findFirst({ where: { id: assignedDesignId, orgId }, select: { baseLayoutId: true } });
+    layoutRef = design && isLayoutId(design.baseLayoutId) ? design.baseLayoutId : DEFAULT_LAYOUT_ID;
+  }
   // Phase 16g: eingefrorene Version (Beleg/Mahnung) > Design der Zuordnung > festes Layout.
   const selection = await resolveLayoutSelection(dbInternal, orgId, { ref: layoutRef, frozenVersionId: opts.layoutVersionId ?? options.layoutVersionId ?? null });
 

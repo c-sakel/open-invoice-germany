@@ -26,6 +26,13 @@ export const layoutDesignSaveSchema = z
   .strict();
 
 const NAME_TAKEN = "Ein Design mit diesem Namen existiert bereits.";
+export const DESIGN_CONFLICT = "Das Design wurde gleichzeitig gespeichert, bitte erneut speichern.";
+
+function isVersionConflict(e: Prisma.PrismaClientKnownRequestError): boolean {
+  const target = (e.meta as { target?: unknown } | undefined)?.target;
+  const text = Array.isArray(target) ? target.join(",") : String(target ?? "");
+  return text.includes("designId") || text.includes("version");
+}
 
 export async function saveLayoutDesign(orgId: string, rawInput: unknown, actor: string, now: Date = new Date()): Promise<LayoutDesignView> {
   const input = layoutDesignSaveSchema.parse(rawInput);
@@ -76,7 +83,13 @@ export async function saveLayoutDesign(orgId: string, rawInput: unknown, actor: 
           });
         }
       }
-      await tx.layoutDesign.update({ where: { id: design.id }, data: { name: input.name, currentVersion: version }, select: { id: true } });
+      if (version !== design.currentVersion) {
+        // Optimistisch: nur fortschreiben, wenn niemand zwischenzeitlich eine Version angelegt hat.
+        const bumped = await tx.layoutDesign.updateMany({ where: { id: design.id, orgId, currentVersion: design.currentVersion }, data: { name: input.name, currentVersion: version } });
+        if (bumped.count !== 1) throw new InvalidOperationError(DESIGN_CONFLICT) /* 409 */;
+      } else {
+        await tx.layoutDesign.update({ where: { id: design.id }, data: { name: input.name }, select: { id: true } });
+      }
       await logActivity(tx, {
         orgId,
         entityType: "LAYOUT_DESIGN",
@@ -89,7 +102,9 @@ export async function saveLayoutDesign(orgId: string, rawInput: unknown, actor: 
       return design.id;
     });
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new InvalidOperationError(NAME_TAKEN);
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new InvalidOperationError(isVersionConflict(e) ? DESIGN_CONFLICT : NAME_TAKEN);
+    }
     throw e;
   }
   return getLayoutDesign(orgId, designId);
