@@ -32,6 +32,8 @@ services:
     environment:
       DATABASE_URL: "postgresql://oig@db:5432/openinvoice?schema=public"
       ATTACHMENTS_DIR: "/app/data/attachments"
+      # Belegarchiv (Phase 16a): write-once-Ablage der ausgegebenen Rechnungsdateien.
+      ARCHIVE_DIR: "/app/data/archive"
       # E-Rechnung-Sidecar (optional, siehe unten):
       # EINVOICE_SERVICE_URL: "http://einvoice:8080"
       # Scheduler (Mahnwesen/Abos, Phase 6) — Intervall-Loop läuft standardmäßig im
@@ -52,6 +54,7 @@ services:
       CRON_SECRET: ""
     volumes:
       - oig-attachments:/app/data/attachments
+      - oig-archive:/app/data/archive
     ports:
       - "3000:3000"
 
@@ -72,3 +75,4 @@ services:
 volumes:
   oig-db:
   oig-attachments:
+  oig-archive:

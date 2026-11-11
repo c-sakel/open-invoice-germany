@@ -16,13 +16,18 @@ import type { EInvoiceData } from "./types";
 
 const FACTUR_X_FILENAME = "factur-x.xml";
 
-export async function renderZugferdPdf(data: EInvoiceData, theme: PdfTheme): Promise<Buffer> {
-  const cii = buildFacturXCII(data);
+/**
+ * `cii` (Phase 16a, Belegarchiv): bereits gebaute Factur-X-XML, die unveraendert eingebettet
+ * wird — damit traegt das archivierte PDF byte-genau das archivierte CII. Ohne `cii` wird die
+ * XML wie bisher aus `data` gebaut.
+ */
+export async function renderZugferdPdf(data: EInvoiceData, theme: PdfTheme, cii?: string): Promise<Buffer> {
+  const xml = cii ?? buildFacturXCII(data);
   return renderInvoicePdf(data, theme, {
     attachments: [
       {
         name: FACTUR_X_FILENAME,
-        bytes: Buffer.from(cii, "utf8"),
+        bytes: Buffer.from(xml, "utf8"),
         relationship: "Alternative",
         type: "text/xml",
         description: "Factur-X / ZUGFeRD — strukturierte Rechnung (EN 16931)",

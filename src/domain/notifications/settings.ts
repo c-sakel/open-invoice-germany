@@ -15,6 +15,9 @@ export const NOTIFICATION_TYPES = {
   EMAIL_BOUNCED: "E-Mail unzustellbar",
   RECURRING_FAILED: "Wiederkehrende Rechnung fehlgeschlagen",
   EINVOICE_INVALID: "E-Rechnung ungueltig",
+  ARCHIVE_TAMPERED: "Archivierter Beleg fehlt oder wurde veraendert",
+  ARCHIVE_FAILED: "Archivierung fehlgeschlagen",
+  CHAIN_BROKEN: "Aenderungsprotokoll: Hash-Kette gebrochen",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

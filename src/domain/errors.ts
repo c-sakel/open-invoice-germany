@@ -53,3 +53,24 @@ export class ValidationError extends Error {
     this.name = "ValidationError";
   }
 }
+
+/**
+ * Phase 16a (Belegarchiv, GoBD): eine archivierte Belegdatei fehlt oder ihr SHA-256 weicht
+ * vom Archivsatz ab. Nie still neu rendern — der Abruf scheitert mit HTTP 500, und die
+ * Organisation wird benachrichtigt (`ARCHIVE_TAMPERED`).
+ */
+export class ArchiveTamperedError extends Error {
+  readonly status = 500;
+  readonly invoiceId: string;
+  readonly kind: string;
+  constructor(invoiceId: string, kind: string, reason: "missing" | "hash-mismatch") {
+    super(
+      reason === "missing"
+        ? `Archivierte Belegdatei (${kind}) fehlt — Beleg wird nicht neu erzeugt.`
+        : `Archivierte Belegdatei (${kind}) wurde veraendert (SHA-256 weicht ab) — Beleg wird nicht neu erzeugt.`,
+    );
+    this.name = "ArchiveTamperedError";
+    this.invoiceId = invoiceId;
+    this.kind = kind;
+  }
+}
