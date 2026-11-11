@@ -166,6 +166,7 @@ model Product {
   taxRate       Int          @default(19) // 19 | 7 | 0
   taxCategory   String       @default("S") // UNTDID 5305: S | AE | K | G | E | Z
   differential  Boolean      @default(false) // §25a Differenzbesteuerung
+  ossCategory   String       @default("NONE") // Phase 16e, § 3c Abs. 4 UStG: NONE | GOODS_DISTANCE | ELECTRONIC_SERVICE
   isArchived    Boolean      @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -275,6 +276,7 @@ model QuoteLine {
   discountPermille  Int     @default(0) // 0..1000 (= 0..100 %)
   discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
   lineNetCents      Int
+  ossCategory       String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
 
   @@index([quoteId])
 }
@@ -452,6 +454,9 @@ model InvoiceLine {
   // billedQuantities() die bereits abgerechnete Menge prueft. NULL bei allen anderen
   // Zeilen (Festbetrags-/Prozent-Teil-/Abschlagsrechnung, normale Rechnung).
   sourceLineId      String?
+  // Phase 16e, § 3c Abs. 4 UStG: Snapshot der OSS-Kategorie (NONE | GOODS_DISTANCE | ELECTRONIC_SERVICE);
+  // NULL = vor 16e angelegt bzw. ohne Produkt.
+  ossCategory       String?
 
   @@index([invoiceId])
 }
@@ -618,6 +623,7 @@ model RecurringInvoiceLine {
   taxRate            Int
   taxCategory        String           @default("S")
   discountPermille   Int              @default(0)
+  ossCategory        String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
 
   @@index([recurringInvoiceId])
 }
@@ -1069,6 +1075,10 @@ model DocumentSettings {
   taxRatesJson                 String       @default("[19,7,0]")
   // Phase 16b: Kursquelle fuer Fremdwaehrungsbelege (BMF-Monatskurs oder EZB-Tageskurs).
   fxRateSource                 String       @default("BMF_MONTHLY")
+  // Phase 16e (§ 3c Abs. 4 UStG): Zaehlmodus der OSS-Schwelle, ALL_EU_B2C | BY_PRODUCT.
+  ossCountMode                 String       @default("ALL_EU_B2C")
+  // Phase 16e (§ 3c Abs. 4 UStG): Warnschwelle in Prozent der 10.000-EUR-Grenze (1..99).
+  ossWarnPercent               Int          @default(80)
   updatedAt                    DateTime     @updatedAt
 }
 

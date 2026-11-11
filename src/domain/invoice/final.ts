@@ -12,6 +12,7 @@ import { linkDocuments, listRelations } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { NotFoundError } from "@/domain/errors";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { parseOss } from "@/domain/product/oss-snapshot";
 import { createFinalInvoiceSchema, type CreateFinalInvoiceInput, type CreateInvoiceInput } from "@/schemas";
 
 export class FinalInvoiceError extends Error {
@@ -101,6 +102,7 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,
         discountCents: l.discountCents,
+        ossCategory: parseOss(l.ossCategory),
       })),
     };
 

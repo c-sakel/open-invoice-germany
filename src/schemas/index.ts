@@ -10,6 +10,7 @@ import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
 import { parseRateMicros } from "@/domain/fx/decimal";
 import { DOC_LANGUAGES } from "@/lib/i18n/doc";
+import { OssCategorySchema } from "./oss";
 
 /** Belegsprache (Phase 16b): de | en. */
 export const DocLanguageSchema = z.enum(DOC_LANGUAGES);
@@ -257,6 +258,8 @@ export const productSchema = z.object({
   taxRate: TaxRate.default(19),
   taxCategory: TaxCategory.default("S"),
   differential: z.boolean().default(false),
+  // Phase 16e: OSS-Kategorie; ohne Angabe DB-Default NONE (Create) bzw. unveraendert (Update).
+  ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie (NONE | GOODS_DISTANCE | ELECTRONIC_SERVICE); wird beim Anlegen einer Position als Snapshot uebernommen"),
 });
 export type ProductInput = z.infer<typeof productSchema>;
 
@@ -276,6 +279,8 @@ const invoiceLineBaseShape = {
     taxRate: TaxRate,
     discountPermille: z.number().int().min(0).max(1000).default(0),
     discountCents: z.number().int().nonnegative().default(0),
+    // Phase 16e: OSS-Kategorie der Position; ohne Angabe aus dem Produkt (Snapshot beim Speichern).
+    ossCategory: OssCategorySchema.optional(),
 };
 
 const refineInvoiceLine = (

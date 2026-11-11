@@ -6,6 +6,7 @@ import type { ActionResult } from "@/app/actions/result";
 import { SelectField, TextField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
 import { TaxRatesField } from "@/components/settings/TaxRatesField";
 import type { DocumentSettingsInput } from "@/schemas";
+import { OSS_NOTICE } from "@/schemas/oss";
 
 export interface PaymentMethodOption {
   id: string;
@@ -15,6 +16,7 @@ export interface PaymentMethodOption {
 export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settings: DocumentSettingsInput; paymentMethods?: PaymentMethodOption[] }) {
   const [state, action] = useActionState<ActionResult, FormData>(saveDocumentSettingsAction, { ok: false });
   const [fxSource, setFxSource] = useState(settings.fxRateSource);
+  const [ossMode, setOssMode] = useState(settings.ossCountMode);
 
   return (
     <form action={action} className="space-y-6">
@@ -140,6 +142,29 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
           defaultChecked={settings.recurringAutoFinalizeDefault}
         />
         <CheckboxField label="Neue Abos standardmäßig automatisch versenden" name="recurringAutoSendDefault" defaultChecked={settings.recurringAutoSendDefault} />
+      </section>
+
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">EU-Fernverkäufe (OSS-Schwelle)</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField
+            label="Zählweise"
+            name="ossCountMode"
+            defaultValue={settings.ossCountMode}
+            onChange={(e) => setOssMode(e.target.value === "BY_PRODUCT" ? "BY_PRODUCT" : "ALL_EU_B2C")}
+            options={[
+              { value: "ALL_EU_B2C", label: "Alle EU-Privatkunden-Umsätze zählen (vorsichtig, Standard)" },
+              { value: "BY_PRODUCT", label: "Nur Positionen mit OSS-Kategorie" },
+            ]}
+          />
+          <TextField label="Warnung ab (%)" name="ossWarnPercent" type="number" defaultValue={String(settings.ossWarnPercent)} hint="Ganze Zahl von 1 bis 99." />
+        </div>
+        {ossMode === "BY_PRODUCT" && (
+          <p className="text-sm text-ink-soft">
+            Gezählt werden nur Positionen, deren Produkt oder Position eine OSS-Kategorie trägt. Neue Produkte haben „Keine“ — Kategorien in den Produkten pflegen. Rechnungen per API ohne Produkt brauchen das Feld ossCategory je Position. Anteils-Teilrechnungen zählen hier nie, Abschläge erst mit der Schlussrechnung, Belege von vor Phase 16e gar nicht — für das Einführungsjahr und das Vorjahr gilt die Standard-Zählweise.
+          </p>
+        )}
+        <p className="text-xs text-ink-muted">{OSS_NOTICE}</p>
       </section>
 
       <SubmitButton>Einstellungen speichern</SubmitButton>

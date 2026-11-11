@@ -46,6 +46,7 @@ import {
   partialCreditSchema,
   DocLanguageSchema,
 } from "@/schemas";
+import { OssCategorySchema } from "@/schemas/oss";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): void {
@@ -69,6 +70,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional().describe("Zusaetzlicher Festbetragsrabatt je Position in Euro"),
+              ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie der Position (nur Zaehlmodus BY_PRODUCT); ohne Angabe aus dem Produkt"),
             }),
           )
           .min(1),
@@ -110,16 +112,23 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           let unit = l.unit;
           let taxRatePercent: number | undefined = l.taxRatePercent;
           let description = l.description;
-          if (unitPriceEuro == null && l.productName) {
+          let productId: string | undefined;
+          if (l.productName) {
             const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-            if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
-            unitPriceEuro = p.netPriceCents / 100;
-            unit = unit ?? p.unit;
-            taxRatePercent = taxRatePercent ?? p.taxRate;
-            description = description || p.name;
+            // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie bisher).
+            if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+            if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt (auch bei eigenem Preis)
+            if (p && unitPriceEuro == null) {
+              unitPriceEuro = p.netPriceCents / 100;
+              unit = unit ?? p.unit;
+              taxRatePercent = taxRatePercent ?? p.taxRate;
+              description = description || p.name;
+            }
           }
           if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
           return {
+            productId,
+            ossCategory: l.ossCategory,
             description,
             quantityMilli: ctx.qtyToMilli(l.quantity),
             unit: unit ?? "C62",
@@ -665,6 +674,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional(),
+              ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie der Position (nur Zaehlmodus BY_PRODUCT); ohne Angabe aus dem Produkt"),
             }),
           )
           .optional(),

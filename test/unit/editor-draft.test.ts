@@ -475,4 +475,23 @@ describe("editor/draft", () => {
     expect(toDocumentPayload(doc, false).language).toBe("en");
     expect(toDeliveryNotePayload({ ...emptyDraft("DELIVERY_NOTE"), customerId: "c1", language: "en" as const }).language).toBe("en");
   });
+  it("OSS-Kategorie: Bearbeiten behaelt sie im Payload, Produktwahl entfernt sie", () => {
+    const base = invoiceDraft();
+    const initial = {
+      id: "i1", customerId: "c1", taxScheme: "REGULAR", subject: "", orderNumber: "", internalReference: "", buyerReference: "",
+      contactPersonId: "", billingAddressId: "", shippingAddressId: "", issueDate: "2119-06-01", deliveryStart: "", deliveryEnd: "", deliveryDate: "",
+      dueDate: "", notes: "", internalNotes: "", consumerRetentionHint: false, paymentTerms: "",
+      documentDiscountPercent: "0", documentDiscountAmount: "0", documentChargePercent: "0", documentChargeAmount: "0", documentChargeReason: "",
+      skonto1Percent: "", skonto1Days: "", skonto2Percent: "", skonto2Days: "",
+      lines: [{ lineType: "ITEM" as const, description: "Ware", descriptionLong: "", articleNumber: "", quantity: "1", unit: "C62", price: "10.00", taxRate: 19, discountPercent: "0", discountAmount: "0.00", ossCategory: "GOODS_DISTANCE" }],
+    } as unknown as Parameters<typeof draftFromInvoice>[0];
+    let s = draftFromInvoice(initial);
+    expect(s.lines[0]!.ossCategory).toBe("GOODS_DISTANCE");
+    const lines = (toInvoicePayload(s, true).lines as { ossCategory?: string }[]);
+    expect(lines[0]!.ossCategory).toBe("GOODS_DISTANCE");
+    s = draftReducer(s, { type: "applyProduct", key: s.lines[0]!.key, product: { id: "p1", name: "P", netPriceCents: 1000, unit: "C62", taxRate: 19, articleNumber: null } } as Parameters<typeof draftReducer>[1]);
+    expect(s.lines[0]!.ossCategory).toBeUndefined();
+    expect((toInvoicePayload(s, true).lines as { ossCategory?: string }[])[0]!.ossCategory).toBeUndefined();
+    expect(base.lines[0]!.ossCategory).toBeUndefined();
+  });
 });

@@ -20,6 +20,7 @@ import { loadMailSettings } from "@/domain/email/settings";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
 import { loadBrand } from "@/domain/settings/brand";
+import { checkOssNotifications } from "@/domain/reporting/oss-notify";
 
 const DUNNABLE_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID"]);
 const QUOTE_EXPIRING_WINDOW_DAYS = 3;
@@ -164,6 +165,12 @@ async function processQuoteExpiring(orgId: string, now: Date, enabled: Set<Notif
   }
 }
 
+async function processOssThreshold(orgId: string, now: Date, enabled: Set<NotificationType>, byType: Record<string, number>): Promise<void> {
+  if (!enabled.has("OSS_THRESHOLD")) return;
+  const created = await checkOssNotifications(orgId, now);
+  if (created > 0) byType.OSS_THRESHOLD = (byType.OSS_THRESHOLD ?? 0) + created;
+}
+
 async function sendDigestIfDue(orgId: string, now: Date, provider: MailProvider | undefined, result: RunNotificationsJobResult): Promise<void> {
   const settings = await loadNotificationSettings(orgId);
   if (!settings.emailDigest) return;
@@ -217,6 +224,7 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
       await processDueAndOverdue(org.id, now, enabled, result.byType);
       await processDunningStages(org.id, now, enabled, result.byType);
       await processQuoteExpiring(org.id, now, enabled, result.byType);
+      await processOssThreshold(org.id, now, enabled, result.byType);
       await sendDigestIfDue(org.id, now, opts.provider, result);
     } catch (e) {
       result.errors.push({ orgId: org.id, message: e instanceof Error ? e.message : String(e) });

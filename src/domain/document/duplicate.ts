@@ -11,6 +11,7 @@ import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { parseOss } from "@/domain/product/oss-snapshot";
 import type { CreateInvoiceInput } from "@/schemas";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
@@ -78,6 +79,7 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
             lineNetCents: l.lineNetCents,
+            ossCategory: l.ossCategory,
           })),
         },
       },
@@ -202,6 +204,7 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,
         discountCents: l.discountCents,
+        ossCategory: parseOss(l.ossCategory),
       })),
     };
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
-import { saveDocumentSettings } from "@/domain/document/settings";
+import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import type { ActionResult } from "./result";
 
 function firstError(issues: { message: string; path: PropertyKey[] }[]): string {
@@ -45,6 +45,15 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
   if (taxRates === TAX_RATES_PARSE_ERROR) {
     return { ok: false, error: "Steuersätze konnten nicht gelesen werden." };
   }
+  // Phase 16e (Review F1): fehlen die OSS-Felder im Formular, bleiben die gespeicherten (z. B. per
+  // REST/MCP gesetzten) Werte erhalten statt auf die Defaults zurueckzufallen.
+  let current: Awaited<ReturnType<typeof loadDocumentSettings>>;
+  try {
+    current = await loadDocumentSettings((await getActiveOrg()).id);
+  } catch (e) {
+    console.error("saveDocumentSettingsAction:", e);
+    return { ok: false, error: "Speichern fehlgeschlagen." };
+  }
   const raw = {
     onQuoteAccept: fd.get("onQuoteAccept") ?? "NONE",
     shareLinkDays: fd.get("shareLinkDays") ?? "30",
@@ -69,6 +78,8 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     taxRates,
     fxRateSource: fd.get("fxRateSource") ?? "BMF_MONTHLY",
     fxEcbConfirmed: fd.get("fxEcbConfirmed") === "on",
+    ossCountMode: fd.get("ossCountMode") ?? current.ossCountMode,
+    ossWarnPercent: fd.has("ossWarnPercent") ? Number(fd.get("ossWarnPercent")) : current.ossWarnPercent,
   };
 
   try {

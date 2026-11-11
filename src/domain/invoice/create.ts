@@ -15,6 +15,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
+import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { pickTextTemplate } from "@/domain/text-template/pick";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
@@ -57,7 +58,9 @@ export async function createDraftInvoiceWithinTx(
   // am Boundary, dies ist die zweite Verteidigungslinie fuer Aufrufer ohne Zod-Lauf.
   const normalized = normalizeLines(input.lines);
   await assertAllowedTaxRates(tx, orgId, ratesOfLines(normalized), { existing: opts.inheritedTaxRates });
-  const lines = normalized.map((line) => ({
+  // Phase 16e: OSS-Kategorie als Snapshot (explizit > Produkt der Org > null); nur ITEM-Zeilen.
+  const ossCategories = await resolveLineOssCategories(tx, orgId, normalized);
+  const lines = normalized.map((line, i) => ({
     position: line.position,
     lineType: line.lineType,
     productId: line.productId,
@@ -71,6 +74,7 @@ export async function createDraftInvoiceWithinTx(
     taxCategory: line.taxCategory,
     discountPermille: line.discountPermille,
     discountCents: line.discountCents,
+    ossCategory: line.lineType === "ITEM" ? ossCategories[i] : null,
     // Nicht-ITEM-Zeilen tragen quantityMilli=0/unitNetPriceCents=0 -> lineNetCents ohnehin 0;
     // computeLineNet trotzdem nur fuer ITEM aufrufen (gleiche Regel wie bei der
     // Summenbildung unten, §8: Nicht-ITEM nie in Berechnung).

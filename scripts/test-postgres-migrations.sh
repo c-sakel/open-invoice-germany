@@ -245,7 +245,7 @@ npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >
 # — ebenso ausgeklammert, sonst P1014. Phase 12c: die Marken-Migration UND die Steuersatz-
 # Migration aendern ebenfalls Phase-7-Tabellen (BrandingSettings bzw. DocumentSettings) —
 # aus demselben Grund ausgeklammert.
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1002,7 +1002,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1047,7 +1047,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland|20261113090100_phase16e_oss)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1109,5 +1109,61 @@ FXSRC=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*
 COUNT27=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT27" = "53" ] || fail "erwartet 53 Tabellen nach Phase 16b, gefunden $COUNT27"
 echo "    ok — EUR-Rechnung 1900/10000, USD-Rechnung NULL, language=de ueberall, de+en je Vorlagenname moeglich, zweites de scheitert, 53 Tabellen"
+
+echo "==> Fall 28 (Phase 16e, Task 1): OSS-Schwelle — Zaehlmodus, Warnschwelle, Produkt-, Positions-, Angebots- und Abo-Positionskategorie"
+# Praeambel woertlich wie Fall 27, Ausschluss nur der Phase-16e-Migration. Bestand im
+# ALTEN Spaltenumfang: Einstellungen, Produkt, festgeschriebene Rechnung mit einer Position.
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261113090100_phase16e_oss)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org28','Bestand Achtundzwanzig GmbH','Weg 31','99931','Bestadt',NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust28','org28','Bestand Achtundzwanzig Kunde AG','Weg 32','99932','Bestadt',NOW());
+INSERT INTO "DocumentSettings" ("id","orgId","onQuoteAccept","shareLinkDays","storeAcceptIp","updatedAt")
+  VALUES ('ds28','org28','NONE',30,false,NOW());
+INSERT INTO "Product" ("id","orgId","name","netPriceCents","updatedAt")
+  VALUES ('prod28','org28','Bestandsprodukt',1000,NOW());
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
+  VALUES ('inv28','org28','cust28','RE-2028-00001','FINALIZED',NOW());
+INSERT INTO "InvoiceLine" ("id","invoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate","lineNetCents")
+  VALUES ('line28','inv28',1,'Bestandsposition',1000,1000,19,1000);
+INSERT INTO "Quote" ("id","orgId","customerId","updatedAt")
+  VALUES ('quo28','org28','cust28',NOW());
+INSERT INTO "QuoteLine" ("id","quoteId","position","description","quantityMilli","unitNetPriceCents","taxRate","lineNetCents")
+  VALUES ('qline28','quo28',1,'Angebotsposition',1000,1000,19,1000);
+INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
+  VALUES ('rec28','org28','cust28','Abo28',NOW(),NOW(),NOW());
+INSERT INTO "RecurringInvoiceLine" ("id","recurringInvoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate")
+  VALUES ('rline28','rec28',1,'Abopos',1000,1000,19);
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org28b','Bestand Achtundzwanzig B GmbH','Weg 33','99933','Bestadt',NOW());
+INSERT INTO "NotificationSettings" ("id","orgId","enabledTypesJson","updatedAt")
+  VALUES ('ns28','org28','["INVOICE_OVERDUE","QUOTE_EXPIRING"]',NOW()),
+         ('ns28b','org28b','[]',NOW());
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-16e-Migration ist auf der Bestands-DB fehlgeschlagen"
+DSVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"ossCountMode\" || '|' || \"ossWarnPercent\" from \"DocumentSettings\" where id='ds28'")
+[ "$DSVAL" = "ALL_EU_B2C|80" ] || fail "DocumentSettings-Bestandszeile abweichend ('$DSVAL'), erwartet ALL_EU_B2C|80"
+PRODVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"ossCategory\" from \"Product\" where id='prod28'")
+[ "$PRODVAL" = "NONE" ] || fail "Product.ossCategory abweichend ('$PRODVAL'), erwartet NONE"
+LINEVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(\"ossCategory\",'<null>') from \"InvoiceLine\" where id='line28'")
+[ "$LINEVAL" = "<null>" ] || fail "InvoiceLine.ossCategory abweichend ('$LINEVAL'), erwartet <null>"
+SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(q.\"ossCategory\",'<null>') || '|' || coalesce(r.\"ossCategory\",'<null>') from \"QuoteLine\" q, \"RecurringInvoiceLine\" r where q.id='qline28' and r.id='rline28'")
+[ "$SRCVAL" = "<null>|<null>" ] || fail "QuoteLine/RecurringInvoiceLine.ossCategory abweichend ('$SRCVAL'), erwartet <null>|<null>"
+NSVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select string_agg(\"enabledTypesJson\", ' ' order by id) from \"NotificationSettings\" where id in ('ns28','ns28b')")
+[ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD"] ["OSS_THRESHOLD"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD ergaenzt ('$NSVAL')"
+COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT28" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
+echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, OSS_THRESHOLD in NotificationSettings ergaenzt, 53 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"

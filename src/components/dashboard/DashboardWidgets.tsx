@@ -14,6 +14,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { BelegStreckeMini } from "@/components/BelegStreckeMini";
 import { ResponsiveBarChart } from "@/components/dashboard/ResponsiveBarChart";
+import type { OssThreshold } from "@/domain/reporting/oss";
+import { OssCard } from "@/components/dashboard/OssCard";
 import type { DashboardNotice } from "@/components/dashboard/notices";
 import {
   cashInChartData,
@@ -54,6 +56,7 @@ export function DashboardWidgets({
   top,
   currency,
   notices,
+  oss,
 }: {
   summary: DashboardSummary;
   revenue24: MonthlyRevenuePoint[];
@@ -62,6 +65,8 @@ export function DashboardWidgets({
   top: TopCustomer[];
   currency: string;
   notices: DashboardNotice[];
+  /** Phase 16e: OSS-Schwelle; die Karte erscheint nur bei EU-Privatkunden-Umsätzen oder Warnstufe. */
+  oss?: OssThreshold | null;
 }) {
   const openTotal = openTotalCents(summary);
   if (summary.recentDocuments.length === 0 && openTotal === 0) {
@@ -141,6 +146,8 @@ export function DashboardWidgets({
           </p>
         )}
       </Card>
+
+      {oss && (oss.current.documentCount + oss.previous.documentCount + oss.current.skippedWithoutEur + oss.previous.skippedWithoutEur > 0 || oss.level !== "OK") && <OssCard oss={oss} />}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

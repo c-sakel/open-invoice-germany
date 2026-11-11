@@ -728,3 +728,68 @@ describe("Waehrungskette in create_invoice / create_document / create_recurring"
     expect(rec.currency).toBe("USD");
   });
 });
+
+describe("OSS-Kategorie in MCP-Positionen (Phase 16e, Fix-Welle)", () => {
+  let customerName: string;
+  const PRODUCT = "MCP-OSS-Dienst";
+
+  beforeAll(async () => {
+    const c = await dbInternal.customer.create({
+      data: { orgId, name: "MCP-OSS-Kunde AG", addressLine1: "OSS-Weg 1", postalCode: "50667", city: "Köln", type: "BUSINESS" },
+    });
+    customerName = c.name;
+    await dbInternal.product.create({ data: { orgId, name: PRODUCT, netPriceCents: 10000, taxRate: 19, ossCategory: "ELECTRONIC_SERVICE" } });
+  });
+
+  it("create_document: Produkt-Snapshot und explizite Kategorie je Position", async () => {
+    const res = await callTool("create_document", {
+      kind: "ANGEBOT",
+      customer: customerName,
+      lines: [
+        { description: "Mit Produkt", quantity: 1, unitPriceEuro: 5, productName: PRODUCT, taxRatePercent: 19 },
+        { description: "Explizit", quantity: 1, unitPriceEuro: 5, ossCategory: "GOODS_DISTANCE", taxRatePercent: 19 },
+        { description: "Ohne", quantity: 1, unitPriceEuro: 5, taxRatePercent: 19 },
+      ],
+    });
+    expect(res.isError).toBeFalsy();
+    const q = await dbInternal.quote.findFirstOrThrow({ where: { orgId, customer: { name: customerName } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    const rows = await dbInternal.quoteLine.findMany({ where: { quoteId: q.id }, orderBy: { position: "asc" }, select: { ossCategory: true } });
+    expect(rows.map((r) => r.ossCategory)).toEqual(["ELECTRONIC_SERVICE", "GOODS_DISTANCE", null]);
+  });
+
+  it("create_recurring: Produkt-Snapshot und explizite Kategorie je Position", async () => {
+    const res = await callTool("create_recurring", {
+      customer: customerName,
+      title: "MCP-OSS-Abo",
+      startDate: "2069-05-01",
+      lines: [
+        { description: "Mit Produkt", quantity: 1, productName: PRODUCT, taxRatePercent: 19 },
+        { description: "Explizit", quantity: 1, unitPriceEuro: 5, ossCategory: "GOODS_DISTANCE", taxRatePercent: 19 },
+      ],
+    });
+    expect(res.isError).toBeFalsy();
+    const rec = await dbInternal.recurringInvoice.findFirstOrThrow({ where: { orgId, title: "MCP-OSS-Abo" }, select: { id: true } });
+    const rows = await dbInternal.recurringInvoiceLine.findMany({ where: { recurringInvoiceId: rec.id }, orderBy: { position: "asc" }, select: { ossCategory: true } });
+    expect(rows.map((r) => r.ossCategory)).toEqual(["ELECTRONIC_SERVICE", "GOODS_DISTANCE"]);
+  });
+
+  it("update_invoice_draft: Positionen behalten bzw. setzen die Kategorie (kein Verlust des Snapshots)", async () => {
+    const created = await callTool("create_invoice", {
+      customer: customerName,
+      lines: [{ description: "Dienst", quantity: 1, productName: PRODUCT, taxRatePercent: 19 }],
+      deliveryDate: "heute",
+    });
+    expect(created.isError).toBeFalsy();
+    const draft = await dbInternal.invoice.findFirstOrThrow({ where: { orgId, customer: { name: customerName }, status: "DRAFT" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    const res = await callTool("update_invoice_draft", {
+      invoice: draft.id,
+      lines: [
+        { description: "Dienst", quantity: 2, productName: PRODUCT, taxRatePercent: 19 },
+        { description: "Ware", quantity: 1, unitPriceEuro: 7, ossCategory: "GOODS_DISTANCE", taxRatePercent: 19 },
+      ],
+    });
+    expect(res.isError).toBeFalsy();
+    const rows = await dbInternal.invoiceLine.findMany({ where: { invoiceId: draft.id }, orderBy: { position: "asc" }, select: { ossCategory: true } });
+    expect(rows.map((r) => r.ossCategory)).toEqual(["ELECTRONIC_SERVICE", "GOODS_DISTANCE"]);
+  });
+});

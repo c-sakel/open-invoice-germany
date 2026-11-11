@@ -35,6 +35,8 @@ export interface DraftLine {
   discountPercent: string;
   discountAmount: string;
   productId?: string | null;
+  /** Phase 16e: OSS-Kategorie-Snapshot der Position (aus dem gespeicherten Beleg); `undefined` = aus Produkt ableiten. */
+  ossCategory?: string;
 }
 
 export interface DraftState {
@@ -432,6 +434,8 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
             taxRate: clampTaxRate(action.product.taxRate, state.allowedTaxRates),
             articleNumber: action.product.articleNumber ?? "",
             productId: action.product.id,
+            // Produktwahl: Kategorie wird beim Speichern frisch aus dem Produkt uebernommen.
+            ossCategory: undefined,
           };
         }),
         dirty: true,
@@ -475,6 +479,7 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     taxCategory: SCHEME_CATEGORY[d.taxScheme] ?? "S",
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
     discountCents: l.lineType === "ITEM" ? centsOrZero(l.discountAmount) : 0,
+    ossCategory: l.lineType === "ITEM" ? l.ossCategory : undefined,
   }));
 
   const shared: Record<string, unknown> = {
@@ -546,6 +551,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
     taxCategory: "S",
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
     discountCents: l.lineType === "ITEM" ? centsOrZero(l.discountAmount) : 0,
+    ossCategory: l.lineType === "ITEM" ? l.ossCategory : undefined,
   }));
 
   const shared: Record<string, unknown> = {
@@ -686,6 +692,8 @@ interface InitialLineLike {
   taxRate: number;
   discountPercent: string;
   discountAmount: string;
+  /** Phase 16e: gespeicherte OSS-Kategorie der Position (bleibt beim Bearbeiten erhalten). */
+  ossCategory?: string | null;
 }
 
 /** Shape, das `src/app/rechnungen/[id]/bearbeiten/page.tsx` aus der geladenen Rechnung baut und an `draftFromInvoice` uebergibt. */
@@ -792,6 +800,7 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
     discountPercent: roundTrip(l.discountPercent, toPermille, fromPermille),
     discountAmount: roundTrip(l.discountAmount, toCents, fromCents),
     productId: null,
+    ossCategory: l.ossCategory ?? undefined,
   };
 }
 

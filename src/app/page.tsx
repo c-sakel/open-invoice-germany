@@ -6,6 +6,7 @@ import { monthlyRevenue } from "@/domain/reporting/revenue";
 import { monthlyCashIn } from "@/domain/reporting/cash-in";
 import { quoteOutcome } from "@/domain/reporting/quote-outcome";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { ossThreshold } from "@/domain/reporting/oss";
 import { topCustomers } from "@/domain/reporting/customers";
 import { DashboardWidgets } from "@/components/dashboard/DashboardWidgets";
 
@@ -91,12 +92,13 @@ export default async function Home() {
   const org = await getActiveOrg();
   const settings = await loadDocumentSettings(org.id);
   const currency = settings.defaultCurrency;
-  const [summary, revenue24, cashIn, quotes, top] = await Promise.all([
+  const [summary, revenue24, cashIn, quotes, top, oss] = await Promise.all([
     dashboardSummary(org.id, new Date(), { currency }),
     monthlyRevenue(org.id, { months: 24, currency }),
     monthlyCashIn(org.id),
     quoteOutcome(org.id),
     topCustomers(org.id, { currency }),
+    ossThreshold(org.id, new Date().getUTCFullYear()),
   ]);
 
   return (
@@ -115,6 +117,7 @@ export default async function Home() {
         top={top}
         currency={currency}
         notices={[]}
+        oss={oss}
       />
     </div>
   );

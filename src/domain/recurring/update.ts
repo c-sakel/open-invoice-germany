@@ -5,6 +5,7 @@
  * GoBD-Beleg (kein Hash-Chain-Eintrag noetig) — nur die daraus erzeugten Rechnungen sind
  * festgeschrieben und bleiben von dieser Aenderung unberuehrt.
  */
+import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
 import { normalizeToNoon } from "@/lib/recurring";
 import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
@@ -62,6 +63,8 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
   const nextRunDate = startDate !== undefined && existing.issuedCount === 0 ? startDate : undefined;
 
   return dbInternal.$transaction(async (tx) => {
+    // Phase 16e: OSS-Kategorie-Snapshot (explizit > Produkt der Org > null) fuer den Abo-Lauf.
+    const ossCategories = input.lines ? await resolveLineOssCategories(tx, orgId, input.lines) : [];
     if (input.lines) {
       await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: ratesOfLines(existing.lines) });
       await tx.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: id } });
@@ -91,6 +94,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
           ? {
               lines: {
                 create: resolveLineCategories(input.lines, existing.taxScheme as TaxSchemeValue).map((l, i) => ({
+                  ossCategory: ossCategories[i],
                   position: i + 1,
                   description: l.description,
                   quantityMilli: l.quantityMilli,

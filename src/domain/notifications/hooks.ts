@@ -11,6 +11,10 @@
  * Hook laedt jetzt selbst `loadNotificationSettings` und ueberspringt die Benachrichtigung,
  * wenn ihr Typ deaktiviert ist (Selbstheilung inklusive, wie beim Scheduler-Job).
  */
+import { dbInternal } from "@/lib/db";
+import { buyerSnapshotSchema } from "@/schemas";
+import { isOssBuyer } from "@/domain/reporting/oss-calc";
+import { checkOssNotifications } from "@/domain/reporting/oss-notify";
 import { createNotification } from "@/domain/notifications/create";
 import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
@@ -131,4 +135,22 @@ export async function onChainBroken(orgId: string, input: { brokenEntryId: numbe
       at: input.at,
     }),
   );
+}
+
+/**
+ * Phase 16e: eine Rechnung wurde festgeschrieben. Nur bei einem OSS-Kaeufer (EU-Privatkunde laut
+ * Snapshot) wird die Schwelle neu ausgewertet. Fehler werden geloggt, nie geworfen; aufzurufen
+ * erst nach dem Commit der Festschreibung.
+ */
+export async function onInvoiceFinalizedOss(orgId: string, invoiceId: string, now: Date = new Date()): Promise<void> {
+  try {
+    const inv = await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, select: { buyerSnapshotJson: true } });
+    if (!inv?.buyerSnapshotJson) return;
+    const parsed = buyerSnapshotSchema.safeParse(JSON.parse(inv.buyerSnapshotJson));
+    if (!parsed.success || !isOssBuyer({ countryCode: parsed.data.countryCode, vatId: parsed.data.vatId })) return;
+  } catch (e) {
+    console.error("notifications hook: OSS-Pruefung fehlgeschlagen", e);
+    return;
+  }
+  await safeNotify(orgId, "OSS_THRESHOLD", () => checkOssNotifications(orgId, now));
 }

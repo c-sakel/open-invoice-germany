@@ -25,6 +25,8 @@ function toCreateData(v: ProductInput) {
     taxRate: v.taxRate,
     taxCategory: v.taxCategory,
     differential: v.differential,
+    // undefined -> DB-Default NONE
+    ossCategory: v.ossCategory,
   };
 }
 

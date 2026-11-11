@@ -38,6 +38,7 @@ export function serializeInvoiceLine(l: InvoiceLine) {
     discountPermille: l.discountPermille,
     discountCents: l.discountCents,
     lineNetCents: l.lineNetCents,
+    ossCategory: l.ossCategory,
   };
 }
 
@@ -81,6 +82,7 @@ export const quoteLineSchema = z.object({
 
 export const invoiceLineSchema = quoteLineSchema.extend({
   productId: z.string().nullable(),
+  ossCategory: z.string().nullable(),
 });
 
 export const deliveryNoteLineSchema = z.object({
