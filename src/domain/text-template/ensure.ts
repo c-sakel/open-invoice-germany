@@ -16,7 +16,7 @@ export async function ensureOrgTextTemplates(db: Db, orgId: string): Promise<voi
       where: { orgId, docType: t.docType, position: t.position, isDefault: true },
     });
     await db.textTemplate.upsert({
-      where: { orgId_docType_position_name: { orgId, docType: t.docType, position: t.position, name: t.name } },
+      where: { orgId_docType_position_language_name: { orgId, docType: t.docType, position: t.position, language: "de", name: t.name } },
       create: {
         orgId,
         docType: t.docType,

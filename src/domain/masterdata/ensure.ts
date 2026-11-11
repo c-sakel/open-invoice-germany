@@ -58,7 +58,7 @@ export async function ensureOrgEmailTemplates(db: Db, orgId: string): Promise<vo
       ? await db.emailTemplate.count({ where: { orgId, docType: t.docType, isDefault: true } })
       : 0;
     const tpl = await db.emailTemplate.upsert({
-      where: { orgId_docType_name: { orgId, docType: t.docType, name: t.name } },
+      where: { orgId_docType_language_name: { orgId, docType: t.docType, language: "de", name: t.name } },
       create: {
         orgId,
         docType: t.docType,
