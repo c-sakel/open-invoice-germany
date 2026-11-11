@@ -389,7 +389,19 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
 
 ## Währung (`currency`)
 
-`currency` ist ein optionaler ISO-4217-Code aus drei Großbuchstaben (z. B. `USD`; Kleinbuchstaben werden mit 400 abgelehnt) an Rechnung, Dokument (Angebot/AB/Proforma) und Abo. Ohne Angabe gilt die Kette Kunde (`defaultCurrency`) > Einstellung > `EUR`. Alle Beträge des Belegs sind in dieser Währung (Integer-Cent); Fremdwährungsbelege haben keinen GiroCode.
+`currency` ist ein optionaler ISO-4217-Code aus drei Großbuchstaben (z. B. `USD`; Kleinbuchstaben werden zu Großbuchstaben normalisiert) an Rechnung, Dokument (Angebot/AB/Proforma) und Abo. Ohne Angabe gilt die Kette Kunde (`defaultCurrency`) > Einstellung > `EUR`. Alle Beträge des Belegs sind in dieser Währung (Integer-Cent); Fremdwährungsbelege haben keinen GiroCode.
+
+`language` (`de` | `en`) ist optional an Rechnung, Dokument und Abo; ohne Angabe gilt die Kundensprache, sonst `de`. Die Sprache wird am Beleg eingefroren und steuert PDF, E-Rechnungs-Hinweise und Mails. `fxOverrideRate` (Dezimalzahl, Einheiten Fremdwährung je 1 EUR, höchstens 6 Nachkommastellen, höchstens 2000) überschreibt die Kurstabelle beim Festschreiben, bei Storno und Teilgutschrift (Reihenfolge: Originalkurs > Override > Tabelle).
+
+### Wechselkurse (`/api/v1/ExchangeRate`)
+
+| Methode, Pfad | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/ExchangeRate?currency=USD&date=2026-11-12` | read | Kurs, der für Währung und Stichtag gemäß Kursquelle der Organisation gilt (`fxRateSource`: `BMF_MONTHLY` Monatsdurchschnitt, Standard; `ECB_DAILY` Tageskurs nur mit Gestattung des Finanzamts). Fehlt der Monatskurs, gilt der Vormonat (Antwort nennt das Kursdatum). 404 ohne Kurs. |
+| `POST /api/v1/ExchangeRate` | admin | Kurs pflegen (Upsert): `source` `MONTHLY` (rateDate = Monatserster) oder `ECB` (Tageskurs), `currency`, `rateDate`, `rate`, `note`. Wirkt nur auf danach festgeschriebene Belege. |
+| `POST /api/v1/ExchangeRate/refresh` | admin | EZB-Referenzkurse sofort abrufen und Monatsmittel (nur bei mindestens 15 Tageskursen) berechnen; 409 `reason=disabled` bei `FX_AUTO_FETCH=0`, 502 `reason=fetch_failed`. |
+
+Die Kursquelle (`fxRateSource`) steht in den Belegeinstellungen (`/api/settings/documents`). Rechnungen liefern `fxRate`, `fxRateDate`, `fxRateSource`, `fxOverrideRate`, `netTotalEurCents`, `taxTotalEurCents` (befüllt ab Festschreiben bei Fremdwährung) und `language`.
 
 ## Storno (`POST /api/v1/Invoice/{id}/cancel`)
 
