@@ -582,9 +582,29 @@ export function validateDraft(d: DraftState): string[] {
     }
     const unitNetPriceCents = toCents(l.price);
     if (unitNetPriceCents === null) {
-      problems.push(`Position ${idx + 1}: Preis ist ungültig.`);
+      problems.push(`Position ${idx + 1}: Preis ist ungültig (z. B. 1.234,56).`);
+    }
+    if (l.discountPercent.trim() && toPermille(l.discountPercent) === null) {
+      problems.push(`Position ${idx + 1}: Rabatt in % ist ungültig (z. B. 2,5).`);
+    }
+    if (l.discountAmount.trim() && toCents(l.discountAmount) === null) {
+      problems.push(`Position ${idx + 1}: Rabatt in € ist ungültig (z. B. 1.234,56).`);
     }
   });
+
+  // Hotfix Betragseingabe: die Payload-Mapper machen aus nicht lesbaren Werten still 0
+  // (permilleOrZero/centsOrZero) — deshalb hier vorab sichtbar melden.
+  const headerFields: Array<[string, string, (s: string) => number | null]> = [
+    ["Belegrabatt in %", d.documentDiscountPercent, toPermille],
+    ["Belegrabatt in €", d.documentDiscountAmount, toCents],
+    ["Zuschlag in %", d.documentChargePercent, toPermille],
+    ["Zuschlag in €", d.documentChargeAmount, toCents],
+    ["Skonto 1 in %", d.skonto1Percent, toPermille],
+    ["Skonto 2 in %", d.skonto2Percent, toPermille],
+  ];
+  for (const [label, value, parse] of headerFields) {
+    if (value.trim() && parse(value) === null) problems.push(`${label} ist ungültig (z. B. 2,5 bzw. 1.234,56).`);
+  }
 
   // I4 (Abschluss-Review): ITEM/HEADING/TEXT verlangen serverseitig eine Beschreibung
   // (invoiceLineInputSchema/deliveryNoteLineInputSchema: description z.string().min(1)) —

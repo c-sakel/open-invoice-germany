@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatCents } from "@/lib/money";
+import { formatCents, parseDecimalInput } from "@/lib/money";
 
 interface SkontoSuggestion {
   permille: number;
@@ -55,7 +55,7 @@ export function PaymentForm({
   // Vorschau der Skontofrist bei jeder Aenderung von Betrag/Datum — kein Schreibvorgang,
   // GET /api/invoices/[id]/skonto-check. Debounce vermeidet eine Anfrage pro Tastenanschlag.
   useEffect(() => {
-    const cents = Math.round((parseFloat(amount.replace(",", ".")) || 0) * 100);
+    const cents = parseDecimalInput(amount, 2) ?? 0;
     const t = setTimeout(async () => {
       if (cents <= 0) {
         setSuggestion(null);
@@ -83,7 +83,12 @@ export function PaymentForm({
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const cents = Math.round((parseFloat(amount.replace(",", ".")) || 0) * 100);
+    const cents = parseDecimalInput(amount, 2);
+    if (cents === null || cents <= 0) {
+      setError("Betrag nicht lesbar – bitte z. B. 1.234,56 oder 1234.56 eingeben (höchstens 2 Nachkommastellen).");
+      setBusy(false);
+      return;
+    }
     const res = await fetch(`/api/invoices/${invoiceId}/payment`, {
       method: "POST",
       headers: { "content-type": "application/json" },

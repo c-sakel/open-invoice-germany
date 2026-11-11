@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatCents } from "@/lib/money";
+import { formatCents, parseDecimalInput } from "@/lib/money";
 import { taxRateOptions } from "@/lib/editor/constants";
 import { UnitSelect } from "@/components/editor/blocks/UnitSelect";
 
@@ -62,8 +62,8 @@ export function PartialCreditForm({
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ id: string; number: string; offsetCents: number; refundDueCents: number } | null>(null);
 
-  const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
-  const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
+  const toCents = (s: string) => parseDecimalInput(s, 2) ?? 0;
+  const toMilli = (s: string) => parseDecimalInput(s, 3) ?? 0;
   const netCents = lines.reduce((sum, l) => sum + Math.round((toMilli(l.quantity) * toCents(l.price)) / 1000), 0);
 
   function patchLine(i: number, patch: Partial<LineState>) {
@@ -74,6 +74,11 @@ export function PartialCreditForm({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    if (lines.some((l) => parseDecimalInput(l.price, 2) === null || parseDecimalInput(l.quantity, 3) === null)) {
+      setError("Betrag oder Menge nicht lesbar – bitte z. B. 1.234,56 oder 1234.56 eingeben (Geld höchstens 2, Mengen höchstens 3 Nachkommastellen).");
+      setBusy(false);
+      return;
+    }
     const body = {
       notes: notes || undefined,
       lines: lines.map((l) => ({
