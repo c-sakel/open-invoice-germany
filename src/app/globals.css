@@ -1,11 +1,61 @@
 @import "tailwindcss";
 
+/* Phase 16f: Design-Tokens (Spec 3.1). Bewusst ohne inline-Variante des Theme-Blocks, damit die Variablen zur Laufzeit ueberschreibbar bleiben. */
+@theme {
+  --color-paper: #fbfaf7;
+  --color-sheet: #ffffff;
+  --color-sheet-raised: #ffffff;
+  --color-well: #f3f2ee;
+  --color-ink: #1c2230;
+  --color-ink-soft: #4a5263;
+  --color-ink-muted: #6b7280;
+  --color-rule: rgb(28 34 48 / 0.1);
+  --color-rule-strong: rgb(28 34 48 / 0.18);
+  --color-pen: #3341b0;
+  --color-pen-wash: #eef0fb;
+  --color-stamp: #b42330;
+  --color-seal: #b4561b;
+  --color-ledger: #1f7a4d;
+  --color-focus: #3341b0;
+
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-dialog: 14px;
+
+  --shadow-card: 0 1px 2px rgb(28 34 48 / 0.06), 0 1px 3px rgb(28 34 48 / 0.08);
+}
+
+/* Dunkelmodus: bis Task 8 per data-dark="on" gesperrt (T8 entfernt das Gate). */
+@media (prefers-color-scheme: dark) {
+  :root[data-dark="on"] {
+    --color-paper: #14171d;
+    --color-sheet: #1b1f27;
+    --color-sheet-raised: #222733;
+    --color-well: #101318;
+    --color-ink: #e7e9ee;
+    --color-ink-soft: #a9b0bd;
+    --color-ink-muted: #8a92a1;
+    --color-rule: rgb(255 255 255 / 0.08);
+    --color-rule-strong: rgb(255 255 255 / 0.14);
+    --color-pen: #8f9bff;
+    --color-pen-wash: #232a4a;
+    --color-stamp: #f07a80;
+    --color-seal: #e8a15c;
+    --color-ledger: #5fc493;
+    --color-focus: #8f9bff;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .tabular {
@@ -28,9 +78,24 @@ body {
  * `max-w-*` aus `@layer utilities` wieder gewinnt.
  */
 @layer base {
+  :focus-visible,
+  summary:focus-visible,
+  [role="tab"]:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
   dialog:modal {
     margin: auto;
     max-height: calc(100dvh - 2rem);
     max-width: calc(100vw - 2rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0ms !important;
   }
 }
