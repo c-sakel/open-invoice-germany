@@ -14,7 +14,8 @@ export class TemplateNotFoundError extends Error {}
  *  den Dokumenttyp ohne jede Vorlage zurueckwerfen (ensureOrgEmailTemplates legt sie
  *  beim naechsten Aufruf zwar neu an, aber erst nach einem Zwischenzustand ohne Vorlage). */
 export class SystemTemplateProtectedError extends Error {}
-/** orgId/docType/name ist eindeutig (G6) — statt des rohen Prisma-P2002-Fehlertexts eine
+/** orgId/docType/language/name ist eindeutig (G6) — derselbe Name in einer anderen Sprache
+ *  ist kein Konflikt; statt des rohen Prisma-P2002-Fehlertexts eine
  *  fuer Anwender verstaendliche Meldung. */
 export class TemplateNameConflictError extends Error {}
 
@@ -37,12 +38,14 @@ async function saveEmailTemplateTx(orgId: string, input: EmailTemplateInput): Pr
   return dbInternal.$transaction(async (tx) => {
     let templateId = input.id;
     let docType: EmailDocType = input.docType;
+    let language: string = input.language ?? "de";
 
     if (templateId) {
       const existing = await tx.emailTemplate.findFirst({ where: { id: templateId, orgId } });
       if (!existing) throw new Error("Vorlage nicht gefunden.");
       // docType ist unveraenderlich: der bestehende Wert gewinnt, der Eingabewert wird ignoriert.
       docType = existing.docType as EmailDocType;
+      language = existing.language; // wie docType unveraenderlich
       await tx.emailTemplate.update({
         where: { id: templateId },
         data: {
@@ -58,6 +61,7 @@ async function saveEmailTemplateTx(orgId: string, input: EmailTemplateInput): Pr
         data: {
           orgId,
           docType,
+          language,
           name: input.name,
           subject: input.subject,
           body: input.body,
@@ -70,7 +74,7 @@ async function saveEmailTemplateTx(orgId: string, input: EmailTemplateInput): Pr
 
     if (input.isDefault) {
       await tx.emailTemplate.updateMany({
-        where: { orgId, docType, id: { not: templateId } },
+        where: { orgId, docType, language, id: { not: templateId } },
         data: { isDefault: false },
       });
     }
@@ -94,7 +98,7 @@ export async function deleteEmailTemplate(orgId: string, id: string): Promise<vo
 
     if (tpl.isSystem) {
       const otherDefault = await tx.emailTemplate.count({
-        where: { orgId, docType: tpl.docType, isDefault: true, id: { not: tpl.id } },
+        where: { orgId, docType: tpl.docType, language: tpl.language, isDefault: true, id: { not: tpl.id } },
       });
       if (otherDefault === 0) {
         throw new SystemTemplateProtectedError(
@@ -107,7 +111,7 @@ export async function deleteEmailTemplate(orgId: string, id: string): Promise<vo
 
     if (tpl.isDefault) {
       const successor = await tx.emailTemplate.findFirst({
-        where: { orgId, docType: tpl.docType },
+        where: { orgId, docType: tpl.docType, language: tpl.language },
         orderBy: [{ isSystem: "desc" }, { createdAt: "asc" }],
       });
       if (successor) {

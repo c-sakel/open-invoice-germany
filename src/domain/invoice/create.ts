@@ -12,10 +12,12 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { NotFoundError } from "@/domain/errors";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -91,6 +93,7 @@ export async function createDraftInvoiceWithinTx(
       defaultDiscountPermille: true,
       orderReference: true,
       paymentTermsText: true,
+      language: true,
     },
   });
   // NotFoundError statt generischem Error (Review-Fund Task 6, Phase 13d): REST/MCP
@@ -103,6 +106,7 @@ export async function createDraftInvoiceWithinTx(
   // Waehrung (§28): Eingabe > Customer.defaultCurrency > DocumentSettings.defaultCurrency
   // (selbstheilend geladen, Default darin bereits "EUR") > "EUR".
   const currency = input.currency ?? customer.defaultCurrency ?? settings.defaultCurrency ?? "EUR";
+  assertOverrideAllowed(currency, input.fxOverrideRate);
 
   // Fehlt die Zahlungsmethode, greift zuerst die Standard-Zahlungsmethode des Kunden
   // (Selbstheilung), danach die Org-weite Standard-Zahlungsmethode aus den Einstellungen
@@ -177,9 +181,12 @@ export async function createDraftInvoiceWithinTx(
   // eigenes Kopf-/Fusstext-Kundenfeld) > TextTemplate. createDraftInvoiceWithinTx wandte
   // bislang GAR KEINE Textvorlage an (anders als createBusinessDocumentWithinTx) — mit
   // Phase 8a nachgezogen.
-  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD")) ?? undefined;
-  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT")) ?? undefined;
-  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT")) ?? undefined;
+  // Belegsprache (Phase 16b): Eingabe > Kundensprache; Snapshot am Beleg, spaetere
+  // Aenderungen der Kundensprache wirken nie auf bestehende Belege.
+  const language = input.language ?? resolveDocLanguage(customer.language);
+  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD", language)) ?? undefined;
+  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT", language)) ?? undefined;
+  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT", language)) ?? undefined;
 
   const totals = computeTaxBreakdown(
     itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
@@ -195,6 +202,7 @@ export async function createDraftInvoiceWithinTx(
     data: {
       orgId,
       customerId: input.customerId,
+      language,
       type: input.type,
       taxScheme: input.taxScheme,
       currency,
@@ -215,6 +223,8 @@ export async function createDraftInvoiceWithinTx(
       internalNotes: input.internalNotes,
       // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
       consumerRetentionHint: input.consumerRetentionHint ?? false,
+      // Phase 16b: manueller Kurs je Beleg (Quelle MANUAL beim Festschreiben).
+      fxOverrideMicros: input.fxOverrideRate ?? null,
       headerText,
       footerText,
       documentDiscountPermille,
@@ -244,7 +254,7 @@ export async function createDraftInvoiceWithinTx(
     action: "CREATE",
     actor,
     at: now,
-    diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents, ...opts.changeLogExtra },
+    diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents, ...(input.fxOverrideRate != null ? { fxOverrideMicros: input.fxOverrideRate } : {}), ...opts.changeLogExtra },
   });
   await logActivity(tx, {
     orgId,

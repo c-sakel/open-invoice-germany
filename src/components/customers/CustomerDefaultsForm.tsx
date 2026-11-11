@@ -103,8 +103,13 @@ export function CustomerDefaultsForm({ customerId, initial }: { customerId: stri
           <input className={input} value={orderReference} onChange={(e) => setOrderReference(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-ink-soft">Sprache (ISO-639-1)</span>
-          <input className={input} value={language} onChange={(e) => setLanguage(e.target.value.toLowerCase())} />
+          <span className="font-medium text-ink-soft">Belegsprache</span>
+          <select className={input} value={language} onChange={(e) => setLanguage(e.target.value)}>
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+            {language !== "de" && language !== "en" && <option value={language}>{language} (Belege auf Deutsch)</option>}
+          </select>
+          <span className="text-xs text-ink-muted">Neue Belege, E-Mails und Vorlagen für diesen Kunden folgen dieser Sprache (am Beleg änderbar).</span>
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={eInvoicePreferred} onChange={(e) => setEInvoicePreferred(e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />

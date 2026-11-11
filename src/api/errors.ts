@@ -82,6 +82,7 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "PAYLOAD_TOO_LARGE"
+  | "UNPROCESSABLE"
   | "RATE_LIMITED"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS"
@@ -116,6 +117,8 @@ function statusToCode(status: number): ApiErrorCode | null {
       return "CONFLICT";
     case 413:
       return "PAYLOAD_TOO_LARGE";
+    case 422:
+      return "UNPROCESSABLE";
     case 429:
       return "RATE_LIMITED";
     default:

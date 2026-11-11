@@ -11,10 +11,12 @@ import { resolvePayeeName } from "@/lib/payee-name";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { BuyerSnapshot } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
+import { docStrings, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import type {
   EInvoiceData,
   EInvoiceDeduction,
   EInvoiceDocumentAllowanceCharge,
+  EInvoiceFx,
   EInvoiceLine,
   EInvoicePaymentMeans,
 } from "./types";
@@ -46,6 +48,13 @@ export interface MapInput {
   deliveryEnd?: Date | null;           // BT-74 (BG-14)
   deliverToCountryCode?: string | null; // BT-80 (BG-15), Default: Land des Kaeufers
   currency: string;
+  // Phase 16b — Belegsprache (de | en) und eingefrorener EUR-Snapshot (BT-6/BT-111).
+  language?: string | null;
+  fxRateMicros?: number | null;
+  fxRateDate?: Date | null;
+  fxRateSource?: string | null;
+  taxTotalEurCents?: number | null;
+  netTotalEurCents?: number | null;
   buyerReference: string | null;
   // Phase 4b — Bestellnummer des Kunden (BT-13); optional, da Alt-Belege das Feld nicht kennen.
   orderNumber?: string | null;
@@ -146,7 +155,31 @@ export interface MapInput {
   }>;
 }
 
+const FX_SOURCES = new Set<string>(["BMF_MONTHLY", "ECB_DAILY", "MANUAL"]);
+
+/** BT-6/BT-111: nur Fremdwaehrungsbelege mit vollstaendigem Snapshot tragen EUR-Daten. */
+function toEInvoiceFx(invoice: MapInput): EInvoiceFx | null {
+  const { fxRateMicros, fxRateDate, fxRateSource, taxTotalEurCents, netTotalEurCents } = invoice;
+  if (invoice.currency === "EUR") return null;
+  if (fxRateMicros == null || !fxRateDate || taxTotalEurCents == null || netTotalEurCents == null) return null;
+  if (!fxRateSource || !FX_SOURCES.has(fxRateSource)) return null;
+  return {
+    rateMicros: fxRateMicros,
+    rateDate: fxRateDate,
+    source: fxRateSource as EInvoiceFx["source"],
+    taxTotalEurCents,
+    netTotalEurCents,
+  };
+}
+
+/** BT-20-Ersatztext fuer Gutschriften ohne Zahlungsbedingungen (BR-CO-25). */
+const CREDIT_FALLBACK_NOTE: Record<DocLanguage, string> = {
+  de: "Gutschrift – Verrechnung bzw. Erstattung",
+  en: "Credit note – offset or refund",
+};
+
 export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
+  const lang = resolveDocLanguage(invoice.language);
   const ctx = invoice.id ?? invoice.number ?? "unbekannt";
   const breakdownParsed = taxBreakdownSchema.safeParse(tryParseJson(invoice.taxBreakdownJson));
   if (!breakdownParsed.success) {
@@ -169,7 +202,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       baseCents: Math.abs(b.baseNetCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
-      reason: "Rabatt",
+      reason: docStrings(lang).notes.allowanceReason,
     }));
   const documentCharges: EInvoiceDocumentAllowanceCharge[] = breakdown
     .filter((b) => b.chargeCents !== 0)
@@ -178,7 +211,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       baseCents: Math.abs(b.baseNetCents - b.allowanceCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
-      reason: invoice.documentChargeReason || "Aufschlag",
+      reason: invoice.documentChargeReason || docStrings(lang).notes.chargeReason,
     }));
   const lineTotalCents = invoice.lines.reduce((s, l) => s + l.lineNetCents, 0);
   const allowanceTotalCents = breakdown.reduce((s, b) => s + b.allowanceCents, 0);
@@ -216,7 +249,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // Fix-Welle (W3): ist ZUSAETZLICH ein Freitext-Zahlungsziel gesetzt, ergaenzt der
   // Skonto-Klartext per Zeilenumbruch, statt ihn zu verschlucken (bisher liess `??`
   // den Skonto-Hinweis komplett entfallen, sobald `paymentTerms` gesetzt war).
-  const skontoHumanText = skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate) : null;
+  const skontoHumanText = skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate, lang, invoice.currency) : null;
   const paymentTermsHuman =
     invoice.paymentTerms && skontoHumanText
       ? `${invoice.paymentTerms}\n${skontoHumanText}`
@@ -227,7 +260,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // CII-Ausgabe kennt BT-9 fuer Gutschriften nicht. Nur XML (BT-20); das PDF zeigt weiterhin
   // keinen Zahlungsbedingungstext.
   const creditFallbackNote =
-    invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? "Gutschrift – Verrechnung bzw. Erstattung" : null;
+    invoice.type === "CREDIT_NOTE" && !paymentTermsHuman ? CREDIT_FALLBACK_NOTE[lang] : null;
   const paymentTermsNote =
     skTerms.length > 0 && paymentTermsHuman ? xrechnungSkontoNote(skTerms, paymentTermsHuman) : (paymentTermsHuman ?? creditFallbackNote);
 
@@ -293,6 +326,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     seller: org,
     buyer: customer,
     contact,
+    language: lang,
   });
   const headerText = invoice.headerText ? renderTemplate(invoice.headerText, textCtx).text : null;
   const footerText = invoice.footerText ? renderTemplate(invoice.footerText, textCtx).text : null;
@@ -328,6 +362,8 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
         }
       : {}),
     currency: invoice.currency,
+    language: lang,
+    fx: toEInvoiceFx(invoice),
     // B2G: Leitweg-ID des Kunden als Buyer reference (BT-10), sonst explizit gesetzter Wert.
     buyerReference: invoice.buyerReference ?? customer.leitwegId,
     orderNumber: invoice.orderNumber ?? null,

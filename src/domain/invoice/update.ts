@@ -9,6 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
@@ -76,6 +77,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     // Fix-Runde 1: `type` ist bewusst NICHT im Schema (updateInvoiceSchema.omit({type:true}))
     // und wird hier deshalb nie gesetzt — die Rechnungsart aendert sich beim Bearbeiten nicht.
     if (input.taxScheme !== undefined) { data.taxScheme = input.taxScheme; changedFields.push("taxScheme"); }
+    if (input.language !== undefined) { data.language = input.language; changedFields.push("language"); }
     if (input.currency !== undefined) { data.currency = input.currency; changedFields.push("currency"); }
     if (input.issueDate !== undefined) { data.issueDate = input.issueDate; changedFields.push("issueDate"); }
     if (input.deliveryDate !== undefined) { data.deliveryDate = input.deliveryDate; changedFields.push("deliveryDate"); }
@@ -116,6 +118,22 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     if (input.internalNotes !== undefined) { data.internalNotes = input.internalNotes; changedFields.push("internalNotes"); }
     // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
     if (input.consumerRetentionHint !== undefined) { data.consumerRetentionHint = input.consumerRetentionHint; changedFields.push("consumerRetentionHint"); }
+
+    // Phase 16b: manueller Kurs nur im Entwurf (Statuspruefung oben); null loescht den Override.
+    // Der Wert steht im UPDATE-Diff der Hash-Kette (Nachvollziehbarkeit der Kursuebersteuerung).
+    let fxOverrideChange: { fxOverrideMicrosBefore: number | null; fxOverrideMicros: number | null } | null = null;
+    const effectiveCurrency = input.currency ?? invoice.currency;
+    assertOverrideAllowed(effectiveCurrency, input.fxOverrideRate);
+    if (input.fxOverrideRate !== undefined) {
+      data.fxOverrideMicros = input.fxOverrideRate;
+      changedFields.push("fxOverrideMicros");
+      fxOverrideChange = { fxOverrideMicrosBefore: invoice.fxOverrideMicros, fxOverrideMicros: input.fxOverrideRate };
+    } else if (effectiveCurrency === "EUR" && invoice.fxOverrideMicros !== null) {
+      // Wechsel auf EUR ohne Kursangabe: ein alter Override wird sinnlos und entfaellt.
+      data.fxOverrideMicros = null;
+      changedFields.push("fxOverrideMicros");
+      fxOverrideChange = { fxOverrideMicrosBefore: invoice.fxOverrideMicros, fxOverrideMicros: null };
+    }
 
     if (input.skonto1Permille !== undefined) { data.skonto1Permille = input.skonto1Permille; changedFields.push("skonto1Permille"); }
     if (input.skonto1Days !== undefined) { data.skonto1Days = input.skonto1Days; changedFields.push("skonto1Days"); }
@@ -229,7 +247,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       action: "UPDATE",
       actor,
       at: now,
-      diff: { changedFields, lineCount: input.lines?.length ?? null },
+      diff: { changedFields, lineCount: input.lines?.length ?? null, ...(fxOverrideChange ?? {}) },
     });
     await logActivity(tx, { orgId, entityType: "INVOICE", entityId: id, type: "UPDATED", actor, at: now, data: { changedFields } });
 

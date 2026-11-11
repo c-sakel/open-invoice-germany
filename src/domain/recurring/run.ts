@@ -32,6 +32,7 @@ import { sendDocumentEmail } from "@/domain/email/send";
 import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
 import { RecurringError } from "./create";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -155,6 +156,7 @@ async function emitOne(
     // die jeweilige Kundenvorgabe (§28-§30).
     const input: CreateInvoiceInput = {
       customerId: rec.customerId,
+      language: resolveDocLanguage(rec.language),
       type: "INVOICE",
       taxScheme: rec.taxScheme as CreateInvoiceInput["taxScheme"],
       currency: rec.currency,

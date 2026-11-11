@@ -25,6 +25,7 @@ import { inputCls } from "@/components/forms/fields";
 import type { RecipientCustomerOption } from "./RecipientBlock";
 import { currencyOptions } from "@/lib/currencies";
 import { useEditorCurrency } from "../currency-context";
+import { FxPreview } from "@/components/fx/FxPreview";
 
 export interface PaymentMethodOption {
   id: string;
@@ -40,6 +41,7 @@ export function MetaBlock({
   customers = [],
   paymentMethods = [],
   invoiceDueDays,
+  taxCents = 0,
 }: {
   mode: EditorMode;
   isEdit: boolean;
@@ -53,6 +55,8 @@ export function MetaBlock({
    *  Kette (`resolveDueDays`), fehlt nur, wenn der Aufrufer sie nicht laedt (dann greift
    *  dort ohnehin der Systemdefault 14). */
   invoiceDueDays?: number;
+  /** Phase 16b: USt des Belegs in Belegwaehrung (Live-Summen) — Grundlage der "USt in EUR"-Vorschau. */
+  taxCents?: number;
 }) {
   const displayCurrency = useEditorCurrency();
   const selectedMethod = paymentMethods.find((m) => m.id === draft.paymentMethodId);
@@ -136,7 +140,7 @@ export function MetaBlock({
         {(mode === "INVOICE" || mode === "DOCUMENT") && (
           <EditorField
             label="Währung"
-            hint={displayCurrency !== "EUR" ? "Fremdwährung: kein GiroCode; USt-Betrag in EUR und Wechselkurs werden nicht ausgewiesen (Art. 230 MwStSystRL, § 16 Abs. 6 UStG)." : undefined}
+            hint={displayCurrency !== "EUR" ? "Fremdwährung: kein GiroCode; bei Rechnungen werden Kurs und USt in EUR ausgewiesen (Art. 230 MwStSystRL, § 16 Abs. 6 UStG)." : undefined}
           >
             {(id) => (
               <select id={id} className={inputCls} value={displayCurrency} onChange={(e) => dispatch({ type: "set", field: "currency", value: e.target.value })}>
@@ -149,6 +153,18 @@ export function MetaBlock({
             )}
           </EditorField>
         )}
+
+        <EditorField label="Belegsprache" hint="Sprache von PDF, XML-Hinweisen und Pflichthinweis; leer = Sprache des Kunden">
+          {(id) => (
+            <select id={id} className={inputCls} value={draft.language} onChange={(e) => dispatch({ type: "set", field: "language", value: e.target.value === "en" ? "en" : e.target.value === "de" ? "de" : "" })}>
+              <option value="">Wie Kunde</option>
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+          )}
+        </EditorField>
+
+        {mode === "INVOICE" && displayCurrency !== "EUR" && <FxPreview draft={draft} currency={displayCurrency} taxCents={taxCents} dispatch={dispatch} />}
 
         {mode === "INVOICE" && (
           <EditorField label="Rechnungsdatum" hint="leer = Datum der Anlage">

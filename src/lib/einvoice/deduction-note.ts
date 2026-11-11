@@ -3,24 +3,28 @@
  * (Phase 5, §14 Abs. 5 Satz 2 UStG). Wird von xrechnung.ts UND cii.ts als ZUSÄTZLICHES
  * Note-Element ausgegeben (mehrere Note-Elemente sind in beiden Formaten zulässig) —
  * ein bereits vorhandener Freitext-Hinweis (z. B. Kleinunternehmer) bleibt unangetastet.
+ * Wortlaut je Belegsprache aus docStrings(lang).notes.
  */
+import { docLocale, docStrings } from "@/lib/i18n/doc";
+import type { DocLanguage } from "@/lib/i18n/doc/types";
 import type { EInvoiceDeduction } from "./types";
 
-function deMoney(cents: number): string {
-  return new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cents / 100);
+function money(cents: number, lang: DocLanguage): string {
+  return new Intl.NumberFormat(docLocale(lang), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cents / 100);
 }
 
-function deDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${d}.${m}.${y}`;
+function date(d: Date, lang: DocLanguage): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return lang === "en" ? `${day}/${m}/${y}` : `${day}.${m}.${y}`;
 }
 
-/** "Abzüge: RE-001 vom 01.02.2040: 3.000,00 netto + 570,00 USt = 3.570,00; ...". */
-export function deductionsNoteText(deductions: EInvoiceDeduction[]): string {
-  const parts = deductions.map(
-    (d) => `${d.number} vom ${deDate(d.issueDate)}: ${deMoney(d.netCents)} netto + ${deMoney(d.taxCents)} USt = ${deMoney(d.grossCents)}`,
+/** "Abzüge: RE-001 vom 01.02.2040: 3.000,00 netto + 570,00 USt = 3.570,00; ..." bzw. englisch. */
+export function deductionsNoteText(deductions: EInvoiceDeduction[], lang: DocLanguage = "de"): string {
+  const n = docStrings(lang).notes;
+  const parts = deductions.map((d) =>
+    n.deductionLine(d.number, date(d.issueDate, lang), money(d.netCents, lang), money(d.taxCents, lang), money(d.grossCents, lang)),
   );
-  return `Abzüge: ${parts.join("; ")}`;
+  return `${n.deductionsPrefix}${parts.join("; ")}`;
 }

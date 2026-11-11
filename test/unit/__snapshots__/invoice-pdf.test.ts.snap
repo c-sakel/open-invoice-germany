@@ -1,0 +1,41 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`invoice-pdf — Phase 16b: Belegsprache und Kurszeile > EUR-Rechnung de: keine Kurszeile, Text identisch zum Stand vor Phase 16b 1`] = `
+"
+
+Muster GmbH · Hauptstr. 1 · 12345 Berlin · DEUTSCHLAND
+Kunde AG
+Kundenweg 2
+54321 Stadt
+DEUTSCHLAND
+Rechnung
+Rechnungsnummer: RE-2073-00099
+Rechnungsdatum: 02.05.2073
+Pos.BeschreibungMengeEinzelUStNetto
+1MARKERSTART Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text Sehr lange
+Positionsbeschreibung mit viel Text
+1 Stk10,00 €19%10,00 €
+2MARKERITEM21 Stk10,00 €19%10,00 €
+Nettobetrag20,00 €
+zzgl. 19% USt3,80 €
+Gesamtbetrag23,80 €
+Muster GmbH
+Hauptstr. 1
+12345 Berlin
+Deutschland
+Seite 1 von 1"
+`;

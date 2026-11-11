@@ -38,6 +38,8 @@ export interface CustomerOption {
   defaultPaymentTermsDays?: number | null;
   /** Kundenvorgabe-Waehrung (ISO 4217) — Vorbelegung der Belegwaehrung bei Neuanlage. */
   defaultCurrency?: string | null;
+  /** Belegsprache des Kunden (ISO 639-1) — Vorbelegung der Belegsprache bei Neuanlage (Phase 16b). */
+  language?: string | null;
 }
 
 const MAX_HITS = 30;

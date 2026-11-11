@@ -16,6 +16,7 @@ import { payableBaseCents } from "@/domain/invoice/amounts";
 import { parseSellerSnapshot, parseBuyerSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { interestSegmentsSchema } from "@/schemas";
 import type { DunningPdfData } from "./dunning-pdf";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 
 /**
  * Phase 14a, Task 3 (R8): `interestSegmentsJson` ist ein Snapshot (geschrieben beim
@@ -66,6 +67,7 @@ export function buildDunningPdfData(d: DunningRow, inv: InvoiceRow): DunningPdfD
   return {
     number: d.number ?? "",
     level: d.level,
+    language: resolveDocLanguage(d.language),
     stageName: d.stage?.name ?? null,
     sentDate: d.sentAt,
     newDueDate: d.dueDate ?? d.sentAt,

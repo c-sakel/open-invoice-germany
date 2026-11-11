@@ -26,6 +26,7 @@ export function PartialCreditForm({
   remainingCents,
   openCents,
   currency,
+  fxRateMissing = false,
 }: {
   invoiceId: string;
   /** Noch gutschreibbarer Restbetrag (brutto) dieser Rechnung (Obergrenze der Teilgutschriften). */
@@ -33,6 +34,8 @@ export function PartialCreditForm({
   /** Aktuell offener Rest der Rechnung (brutto) — wird zuerst mit der Gutschrift verrechnet. */
   openCents: number;
   currency: string;
+  /** Fremdwaehrungs-Altbeleg ohne Kurs-Snapshot: Kursfeld anbieten. */
+  fxRateMissing?: boolean;
   initialLines: LineState[];
   /** Org-eigene Steuersatz-Liste (Phase 12c, Fix-Welle I2) — dieselbe Quelle
    *  (`taxRateOptions`, `@/lib/editor/constants`) wie der Beleg-Editor; die Server-Seite
@@ -58,6 +61,7 @@ export function PartialCreditForm({
   }
   const [lines, setLines] = useState<LineState[]>(initialLines.length ? initialLines : [emptyLine(defaultTaxRate)]);
   const [notes, setNotes] = useState("");
+  const [fxRate, setFxRate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ id: string; number: string; offsetCents: number; refundDueCents: number } | null>(null);
@@ -81,6 +85,7 @@ export function PartialCreditForm({
     }
     const body = {
       notes: notes || undefined,
+      fxOverrideRate: fxRateMissing && fxRate.trim() ? fxRate.trim() : undefined,
       lines: lines.map((l) => ({
         description: l.description,
         quantityMilli: toMilli(l.quantity),
@@ -161,6 +166,14 @@ export function PartialCreditForm({
           </div>
         ))}
       </div>
+
+      {fxRateMissing && (
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-ink-soft">Kurs (Altbeleg ohne Kurs)</span>
+          <input className={input} inputMode="decimal" value={fxRate} onChange={(e) => setFxRate(e.target.value)} placeholder={`${currency} je 1 EUR, z. B. 1,25`} />
+          <span className="text-xs text-ink-muted">Dieser Beleg trägt keinen Wechselkurs. Ohne Tabellenkurs für den Leistungsmonat bitte den Kurs eintragen (§ 16 Abs. 6 UStG).</span>
+        </label>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-ink-soft">Grund / Notiz</span>

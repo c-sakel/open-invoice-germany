@@ -164,7 +164,14 @@ describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
     expect((xml.match(/<Table>/g) ?? []).length).toBe(7);
     const dir = mkdtempSync(path.join(workDir, "idx-"));
     writeFileSync(path.join(dir, "index.xml"), xml);
-    writeFileSync(path.join(dir, "gdpdu-01-09-2004.dtd"), z.read("gdpdu-01-09-2004.dtd"));
+    // Die amtliche DTD (unveraendert ausgeliefert) hat ein nicht deterministisches Media-Modell;
+    // libxml2 >= 2.15 (CI ubuntu-26.04) lehnt es als Validierungsfehler ab, aeltere Versionen warnen nur.
+    // Geprueft wird deshalb gegen das sprachgleiche deterministische Modell: Name C* T* C* A? == Name C* (T+ C*)? A?
+    const officialDtd = z.read("gdpdu-01-09-2004.dtd").toString("latin1");
+    const nonDeterministic = "<!ELEMENT Media (Name, Command*, Table*, Command*, AcceptNoTables?)>";
+    expect(officialDtd).toContain(nonDeterministic);
+    const testDtd = officialDtd.replace(nonDeterministic, "<!ELEMENT Media (Name, Command*, (Table+, Command*)?, AcceptNoTables?)>");
+    writeFileSync(path.join(dir, "gdpdu-01-09-2004.dtd"), testDtd, "latin1");
     execFileSync("xmllint", ["--noout", "--dtdvalid", path.join(dir, "gdpdu-01-09-2004.dtd"), path.join(dir, "index.xml")]);
   });
 

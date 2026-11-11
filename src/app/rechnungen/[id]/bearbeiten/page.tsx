@@ -8,6 +8,7 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
+import { formatRate } from "@/domain/fx/decimal";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
         defaultPaymentMethodId: true,
         defaultDiscountPermille: true,
         defaultCurrency: true,
+        language: true,
         addressLine1: true,
         postalCode: true,
         city: true,
@@ -69,6 +71,8 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     customerId: inv.customerId,
     taxScheme: inv.taxScheme,
     currency: inv.currency,
+    language: inv.language,
+    fxOverrideRate: inv.fxOverrideMicros ? formatRate(inv.fxOverrideMicros, "de-DE") : "",
     subject: inv.subject ?? "",
     orderNumber: inv.orderNumber ?? "",
     internalReference: inv.internalReference ?? "",

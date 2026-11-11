@@ -18,6 +18,8 @@ export interface CancelPreview {
   refundDueCents: number;
   /** Hoechste laufende Mahnstufe (Name) oder null. */
   dunningLabel: string | null;
+  /** Fremdwaehrungs-Altbeleg ohne Kurs-Snapshot: der Storno braucht einen manuellen Kurs. */
+  fxRateMissing: boolean;
   /** Der Storno ist moeglich (nicht Entwurf/storniert/Gutschrift). */
   cancellable: boolean;
 }
@@ -27,7 +29,7 @@ export async function getCancelPreview(invoiceId: string, orgId: string): Promis
   const inv = await prisma.invoice.findFirst({
     where: { id: invoiceId, orgId },
     select: {
-      id: true, number: true, currency: true, type: true, status: true,
+      id: true, number: true, currency: true, type: true, status: true, fxRateMicros: true,
       grossTotalCents: true, payableCents: true,
       payments: { select: { amountCents: true, method: true, isSkonto: true } },
       dunnings: { select: { level: true, stage: { select: { name: true, order: true } } } },
@@ -59,6 +61,7 @@ export async function getCancelPreview(invoiceId: string, orgId: string): Promis
     paidCents,
     refundDueCents: paidCents,
     dunningLabel,
+    fxRateMissing: inv.currency !== "EUR" && inv.fxRateMicros == null,
     cancellable: inv.status !== "DRAFT" && inv.status !== "CANCELLED" && inv.type !== "CREDIT_NOTE",
   };
 }

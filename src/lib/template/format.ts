@@ -1,7 +1,20 @@
+import { formatDocDate, formatDocMoney, type DocLanguage } from "@/lib/i18n/doc";
+
 /** Deutsche Formatierung fuer Platzhalter (Datum dd.MM.yyyy, Geld 1.234,56 €). */
 export function formatDateDe(d: Date | null | undefined): string {
   if (!d) return "";
   return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }).format(d);
+}
+
+/** Datum in der Belegsprache (de: tt.mm.jjjj, en: dd/mm/yyyy), Europe/Berlin; leer bei null. */
+export function formatDateLang(d: Date | null | undefined, lang: DocLanguage): string {
+  return d ? formatDocDate(d, lang) : "";
+}
+
+/** Betrag in der Belegsprache und -waehrung (de: unveraendert formatMoneyDe, en: Intl en-GB). */
+export function formatMoneyLang(cents: number | null | undefined, currency: string, lang: DocLanguage): string {
+  if (cents === null || cents === undefined) return "";
+  return lang === "de" ? formatMoneyDe(cents, currency) : formatDocMoney(cents, currency, lang);
 }
 
 /** Tausendertrennung nach de-DE (Punkt); Fallback, falls Intl nur small-icu hat. */

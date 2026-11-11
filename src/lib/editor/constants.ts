@@ -6,8 +6,9 @@
  * (`@/domain/invoice/mandatory`, dort bereits von `validateMandatoryFields` geprüft).
  */
 import { TaxScheme as TaxSchemeSchema, type TaxScheme, type TaxCategory } from "@/schemas";
+import type { DocLanguage } from "@/lib/i18n/doc/types";
 import { defaultCategoryForScheme } from "@/lib/tax";
-import { SCHEME_NOTICE as MANDATORY_SCHEME_NOTICE } from "@/domain/invoice/mandatory";
+import { SCHEME_NOTICE as MANDATORY_SCHEME_NOTICE, SCHEME_NOTICE_BY_LANG } from "@/domain/invoice/mandatory";
 
 export type EditorMode = "INVOICE" | "DOCUMENT" | "DELIVERY_NOTE";
 
@@ -57,6 +58,11 @@ export const SCHEME_CATEGORY: Record<TaxScheme, TaxCategory> = Object.fromEntrie
 // Pflichthinweistexte (§ 14a UStG) — identisch mit src/domain/invoice/mandatory.ts
 // (dort die massgebliche Quelle, siehe validateMandatoryFields).
 export const SCHEME_NOTICE: Partial<Record<TaxScheme, string>> = MANDATORY_SCHEME_NOTICE as Partial<Record<TaxScheme, string>>;
+
+/** Pflichthinweis je Schema in der Belegsprache (en: mit deutschem Wortlaut in Klammern). */
+export function schemeNoticeFor(scheme: TaxScheme, lang: DocLanguage): string | undefined {
+  return SCHEME_NOTICE_BY_LANG[lang][scheme];
+}
 
 /** Phase 12a — Grenze fuer Kopf-/Fusstext. Keine eigene Regel, sondern Spiegel von
  *  `z.string().max(5000)` in `invoiceHeaderFields` (headerText/footerText,

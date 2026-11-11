@@ -126,7 +126,7 @@ export function drawTableHeaderRow(frame: LayoutFrame, layout: PdfLayout, column
 // Anschrift, Freitext) werden als letzte Stufe an Leerzeichen umgebrochen.
 // Unumbrechbar: Feldzeilen mit bekanntem Label (AUTO-Spalten) oder ein einzelnes Token mit @ bzw. ://
 // (E-Mail/URL). Eine Freitextzeile mit @ oder :// MIT Leerzeichen ist frei umbrechbar.
-const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Web|USt-IdNr\.|Steuer-Nr\.|Inhaber\/-in|IBAN|BIC)\s|^\S*(@|:\/\/)\S*$/;
+const FIXED_FOOTER_LINE = /^(Tel\.|E-Mail|Email|Web|USt-IdNr\.|VAT ID|Steuer-Nr\.|Tax no\.|Inhaber\/-in|Owner|IBAN|BIC)\s|^\S*(@|:\/\/)\S*$/;
 const IBAN_FOOTER_LINE = /^(IBAN )([A-Z0-9 ]+)$/;
 const FOOTER_LINE_GAP = 1;
 

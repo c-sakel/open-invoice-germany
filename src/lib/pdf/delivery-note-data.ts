@@ -9,6 +9,7 @@ import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot, buildSel
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { DeliveryNotePdfData } from "./delivery-note-pdf";
+import { docStrings, resolveDocLanguage } from "@/lib/i18n/doc";
 
 export type DeliveryNoteRow = Prisma.DeliveryNoteGetPayload<{ include: { lines: true } }>;
 export type OrgRow = Prisma.OrganizationGetPayload<Record<string, never>>;
@@ -35,6 +36,7 @@ export function buildDeliveryNotePdfData(
   shippingAddressFallback: ShippingAddressRow | null = null,
 ): DeliveryNotePdfData {
   const ctx = dn.id;
+  const language = resolveDocLanguage(dn.language);
   const seller = parseSellerSnapshot(dn.sellerSnapshotJson, buildSellerSnapshot(org), ctx);
   const buyer = parseBuyerSnapshot(dn.buyerSnapshotJson, buildBuyerSnapshot(customer), ctx);
   const contact = parseContactSnapshot(dn.contactSnapshotJson, null, ctx);
@@ -51,12 +53,14 @@ export function buildDeliveryNotePdfData(
     seller,
     buyer,
     contact,
+    language,
   });
   const headerText = dn.headerText ? renderTemplate(dn.headerText, textCtx).text : null;
   const footerText = dn.footerText ? renderTemplate(dn.footerText, textCtx).text : null;
 
   return {
-    number: dn.number ?? "ENTWURF",
+    number: dn.number ?? docStrings(language).system.draftNumber,
+    language,
     issueDate: dn.issueDate,
     deliveryDate: dn.deliveryDate,
     shippingDate: dn.shippingDate,

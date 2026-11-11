@@ -12,8 +12,9 @@
  * Beleg-Rabatt (Kundenkomfort-Facts).
  */
 import { optionalSelectValue } from "@/lib/forms/optional-select";
-import { SCHEME_CATEGORY, SCHEME_NOTICE, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
-import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
+import { SCHEME_CATEGORY, schemeNoticeFor, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
+import type { DocLanguage } from "@/lib/i18n/doc/types";
+import { SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
 import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
@@ -50,6 +51,16 @@ export interface DraftState {
   /** `true`, sobald der Nutzer die Waehrung selbst gewaehlt hat (Reducer `set`/`currency`) —
    *  dann ueberschreibt ein spaeterer Kundenwechsel sie nicht mehr. */
   currencyTouched: boolean;
+  /** Phase 16b: Belegsprache. Leer = Sprache des Kunden (Server-Kette, Snapshot am Beleg). */
+  language: "" | DocLanguage;
+  /** `true`, sobald der Nutzer die Sprache selbst gewaehlt hat — dann ueberschreibt ein spaeterer
+   *  Kundenwechsel sie nicht mehr (analog `currencyTouched`). */
+  languageTouched: boolean;
+  /** Phase 16b (nur INVOICE, Fremdwaehrung): Kurs manuell, Einheiten Fremdwaehrung je 1 EUR
+   *  (Anzeigeform, z. B. "1,25"); leer = Kurs aus der Kurstabelle. */
+  fxOverride: string;
+  /** Beim Laden gespeicherter manueller Kurs — nur dann sendet das Bearbeiten `null` zum Loeschen. */
+  fxOverrideSaved: string;
   subject: string;
   headerText: string;
   footerText: string;
@@ -157,6 +168,7 @@ export type DraftAction =
   | { type: "replace"; state: DraftState }
   /** Kundenvorgabe uebernehmen (Neuanlage, Waehrung noch nicht selbst gewaehlt); leer = Server-Kette. */
   | { type: "suggestCurrency"; value: string }
+  | { type: "suggestLanguage"; value: "" | DocLanguage }
   | { type: "markSaved" };
 
 /** Phase 12c — haelt einen Satz in der org-eigenen Liste. Unbekannte Werte (z. B. aus einem
@@ -249,6 +261,10 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     taxScheme: "REGULAR",
     currency: "",
     currencyTouched: false,
+    language: "",
+    languageTouched: false,
+    fxOverride: "",
+    fxOverrideSaved: "",
     subject: "",
     headerText: "",
     footerText: "",
@@ -300,6 +316,26 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
   return defaults ? { ...base, ...defaults } : base;
 }
 
+const effectiveLanguage = (l: "" | DocLanguage): DocLanguage => (l === "en" ? "en" : "de");
+
+/**
+ * Sprachwechsel: ersetzt NUR den automatisch gesetzten Pflichthinweis (exakt der Hinweis der alten
+ * Sprache, allein oder als Praefix `<Hinweis> — <Nutzertext>`), nie Nutzertext. Ein leerer Hinweistext
+ * bekommt beim Wechsel auf Englisch den englischen Pflichthinweis; auf Deutsch ergaenzt ihn
+ * `toInvoicePayload` beim Speichern.
+ */
+function withLanguage(state: DraftState, next: "" | DocLanguage): DraftState {
+  const from = effectiveLanguage(state.language);
+  const to = effectiveLanguage(next);
+  let notes = state.notes;
+  if (state.mode === "INVOICE" && from !== to) {
+    notes = swapSchemeNotice(notes, state.taxScheme, from, to);
+    const newNotice = schemeNoticeFor(state.taxScheme, to);
+    if (newNotice && notes.trim() === "" && to === "en") notes = newNotice;
+  }
+  return { ...state, language: next, notes };
+}
+
 export function draftReducer(state: DraftState, action: DraftAction): DraftState {
   switch (action.type) {
     case "replace":
@@ -309,7 +345,13 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "suggestCurrency":
       if (state.id || state.currencyTouched) return state;
       return { ...state, currency: action.value, dirty: true };
+    case "suggestLanguage":
+      if (state.id || state.languageTouched) return state;
+      return { ...withLanguage(state, action.value), dirty: true };
     case "set":
+      if (action.field === "language") {
+        return { ...withLanguage(state, action.value as "" | DocLanguage), languageTouched: true, dirty: true };
+      }
       // Phase 13b: das Leistungsdatum folgt dem Rechnungsdatum, solange der Nutzer die
       // Kopplung nicht geloest hat. Bewusst hier und nicht in MetaBlock: sonst muesste
       // jede weitere Stelle, die `issueDate` setzt (z. B. eine Vorlage in 13d), die
@@ -411,7 +453,7 @@ function daysOrUndefined(s: string): number | undefined {
 
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {
   const isRegular = d.taxScheme === "REGULAR";
-  const notice = SCHEME_NOTICE[d.taxScheme];
+  const notice = schemeNoticeFor(d.taxScheme, effectiveLanguage(d.language));
   // Fix 1 (Koordinator, Task 5): notice nur voranstellen, wenn `notes` noch KEINE fuer das
   // Schema zulaessige Formulierung enthaelt (SCHEME_NOTICE_ACCEPTED, dieselbe Pruefung wie
   // validateMandatoryFields und der "Pflichthinweis einfuegen"-Knopf in MoreOptions.tsx) —
@@ -439,6 +481,9 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     customerId: d.customerId,
     taxScheme: d.taxScheme,
     currency: d.currency || undefined,
+    language: d.language || undefined,
+    // Phase 16b: manueller Kurs nur bei Fremdwaehrung; beim Bearbeiten loescht null ihn.
+    fxOverrideRate: d.fxOverride.trim() && d.currency !== "EUR" ? d.fxOverride.trim() : isEdit && d.fxOverrideSaved ? null : undefined,
     subject: d.subject || undefined,
     orderNumber: d.orderNumber || undefined,
     internalReference: d.internalReference || undefined,
@@ -507,6 +552,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
     customerId: d.customerId,
     taxScheme: "REGULAR",
     currency: d.currency || undefined,
+    language: d.language || undefined,
     subject: d.subject || undefined,
     customerReference: d.customerReference || undefined,
     contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
@@ -532,6 +578,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
 export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
   return {
     customerId: d.customerId,
+    language: d.language || undefined,
     contactPersonId: optionalSelectValue(d.contactPersonId, false),
     shippingAddressId: optionalSelectValue(d.shippingAddressId, false),
     deliveryDate: d.deliveryDate || undefined,
@@ -648,6 +695,10 @@ export interface InvoiceInitialLike {
   taxScheme: string;
   /** ISO-4217-Code des gespeicherten Belegs. */
   currency?: string;
+  /** Belegsprache (Snapshot). */
+  language?: string;
+  /** Manueller Kurs (Anzeigeform, z. B. "1,25"), leer = keiner. */
+  fxOverrideRate?: string;
 
   subject: string;
   orderNumber: string;
@@ -692,6 +743,8 @@ export interface DocumentInitialLike {
   customerId: string;
   /** ISO-4217-Code des gespeicherten Dokuments. */
   currency?: string;
+  /** Belegsprache (Snapshot). */
+  language?: string;
   subject: string;
   customerReference: string;
   contactPersonId: string;
@@ -756,6 +809,10 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     taxScheme: (initial.taxScheme as TaxScheme) ?? "REGULAR",
     currency: initial.currency ?? "",
     currencyTouched: true,
+    language: initial.language === "en" ? "en" : "de",
+    languageTouched: true,
+    fxOverride: initial.fxOverrideRate ?? "",
+    fxOverrideSaved: initial.fxOverrideRate ?? "",
     subject: initial.subject ?? "",
     orderNumber: initial.orderNumber ?? "",
     internalReference: initial.internalReference ?? "",
@@ -811,6 +868,8 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     customerId: initial.customerId ?? "",
     currency: initial.currency ?? "",
     currencyTouched: true,
+    language: initial.language === "en" ? "en" : "de",
+    languageTouched: true,
     subject: initial.subject ?? "",
     customerReference: initial.customerReference ?? "",
     contactPersonId: initial.contactPersonId ?? "",

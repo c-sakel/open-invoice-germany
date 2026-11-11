@@ -8,7 +8,13 @@
  */
 import { dbInternal } from "@/lib/db";
 import { openAmountCents } from "@/domain/invoice/amounts";
-import { buildEInvoiceData } from "./mapper";
+import { docStrings, resolveDocLanguage } from "@/lib/i18n/doc";
+import { toEurCents } from "@/domain/fx/convert";
+import { fxStichtag } from "@/domain/fx/pick-rate";
+import { rateFor } from "@/domain/fx/rate-for";
+import { loadDeductedTaxEurCents } from "@/domain/fx/snapshot";
+import { taxBreakdownSchema } from "@/schemas";
+import { buildEInvoiceData, type MapInput } from "./mapper";
 
 const INCLUDE = {
   lines: { orderBy: { position: "asc" as const } },
@@ -17,11 +23,56 @@ const INCLUDE = {
   finalDeductions: { orderBy: { issueDate: "asc" as const } },
 } as const;
 
-const SOURCE_LABELS: Record<string, string> = {
-  ANGEBOT: "Angebot",
-  AUFTRAGSBESTAETIGUNG: "Auftrag",
-  PROFORMA: "Proforma-Rechnung",
-};
+/**
+ * Entwurf in Fremdwaehrung: Kurs live per rateFor (Vorschau, nicht festgeschrieben; das Ergebnis
+ * wird als `fx.preview` markiert und nie gespeichert — beim Festschreiben friert
+ * resolveFxSnapshot den verbindlichen Kurs ein, der von der Vorschau abweichen kann).
+ * Kein Kurs oder nicht abbildbar -> kein EUR-Block (die Vorschau darf nicht scheitern).
+ * Unlesbares taxBreakdownJson wird protokolliert und ebenfalls ohne EUR-Block behandelt.
+ */
+async function previewFx(invoice: {
+  orgId: string;
+  currency: string;
+  fxOverrideMicros: number | null;
+  deliveryDate: Date | null;
+  deliveryEnd: Date | null;
+  issueDate: Date;
+  netTotalCents: number;
+  taxBreakdownJson: string;
+}): Promise<Pick<MapInput, "fxRateMicros" | "fxRateDate" | "fxRateSource" | "taxTotalEurCents" | "netTotalEurCents">> {
+  const none = { fxRateMicros: null, fxRateDate: null, fxRateSource: null, taxTotalEurCents: null, netTotalEurCents: null };
+  if (invoice.currency === "EUR") return none;
+  const stichtag = fxStichtag(invoice);
+  const pick =
+    invoice.fxOverrideMicros != null
+      ? { rateMicros: invoice.fxOverrideMicros, rateDate: stichtag, source: "MANUAL" as const }
+      : await rateFor(invoice.orgId, invoice.currency, stichtag, undefined, new Date());
+  if (!pick) return none;
+  let rawBreakdown: unknown;
+  try {
+    rawBreakdown = JSON.parse(invoice.taxBreakdownJson);
+  } catch {
+    console.warn("load: taxBreakdownJson des Entwurfs nicht lesbar (kein JSON), EUR-Vorschau entfaellt");
+    return none;
+  }
+  const breakdown = taxBreakdownSchema.safeParse(rawBreakdown);
+  if (!breakdown.success) {
+    console.warn("load: taxBreakdownJson des Entwurfs ungueltig, EUR-Vorschau entfaellt");
+    return none;
+  }
+  try {
+    return {
+      fxRateMicros: pick.rateMicros,
+      fxRateDate: pick.rateDate,
+      fxRateSource: pick.source,
+      taxTotalEurCents: breakdown.data.reduce((sum, b) => sum + toEurCents(b.taxCents, pick.rateMicros), 0),
+      netTotalEurCents: toEurCents(invoice.netTotalCents, pick.rateMicros),
+    };
+  } catch (e) {
+    if (e instanceof RangeError) return none;
+    throw e;
+  }
+}
 
 /** Aggregiert die (ggf. je Steuersatz mehrfachen) Abzugs-Snapshot-Zeilen einer
  * Abschlagsrechnung zu EINEM Eintrag über alle Steuersätze (netCents/taxCents/grossCents
@@ -53,19 +104,21 @@ export async function loadEInvoiceData(invoiceId: string) {
   const invoice = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, include: INCLUDE });
   if (!invoice) return null;
 
+  const lang = resolveDocLanguage(invoice.language);
+  const sourceLabels = docStrings(lang).sourceLabels;
   let sourceNumber: string | null = null;
   let sourceLabel: string | null = null;
   if (invoice.sourceType === "QUOTE" && invoice.sourceId) {
     const quote = await dbInternal.quote.findUnique({ where: { id: invoice.sourceId }, select: { number: true, kind: true } });
     if (quote) {
       sourceNumber = quote.number;
-      sourceLabel = SOURCE_LABELS[quote.kind] ?? "Angebot";
+      sourceLabel = (sourceLabels as Record<string, string>)[quote.kind] ?? sourceLabels.ANGEBOT;
     }
   } else if (invoice.sourceType === "DELIVERY_NOTE" && invoice.sourceId) {
     const deliveryNote = await dbInternal.deliveryNote.findUnique({ where: { id: invoice.sourceId }, select: { number: true } });
     if (deliveryNote) {
       sourceNumber = deliveryNote.number;
-      sourceLabel = "Lieferschein";
+      sourceLabel = sourceLabels.DELIVERY_NOTE;
     }
   }
 
@@ -75,8 +128,11 @@ export async function loadEInvoiceData(invoiceId: string) {
     where: { invoiceId: invoice.id, method: "CREDIT_NOTE" },
     _sum: { amountCents: true },
   });
+  // Nur Entwuerfe rechnen live; festgeschriebene Belege tragen den eingefrorenen Snapshot.
+  const draftFx = invoice.status === "DRAFT" && invoice.fxRateMicros == null ? await previewFx(invoice) : null;
   const data = buildEInvoiceData({
     ...invoice,
+    ...draftFx,
     paidAmountCents: invoice.paidAmountCents - (offsets._sum.amountCents ?? 0),
     deductions: invoice.type === "FINAL" ? aggregateDeductions(invoice.finalDeductions) : undefined,
     sourceNumber,
@@ -87,6 +143,8 @@ export async function loadEInvoiceData(invoiceId: string) {
   // XML-BT-115 payableCents). Fix-Runde 1 (Koordinator): bestehende Domain-Funktion
   // wiederverwenden statt sie hier erneut abzuleiten.
   data.giroAmountCents = openAmountCents(invoice);
+  if (draftFx && data.fx) data.fx.preview = true;
+  if (data.fx && invoice.type === "FINAL" && !draftFx) data.fx.deductedTaxEurCents = await loadDeductedTaxEurCents(dbInternal, invoice.id);
 
   if (invoice.correctsInvoiceId) {
     const original = await dbInternal.invoice.findUnique({

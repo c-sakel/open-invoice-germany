@@ -18,6 +18,7 @@ export const NOTIFICATION_TYPES = {
   ARCHIVE_TAMPERED: "Archivierter Beleg fehlt oder wurde veraendert",
   ARCHIVE_FAILED: "Archivierung fehlgeschlagen",
   CHAIN_BROKEN: "Aenderungsprotokoll: Hash-Kette gebrochen",
+  FX_FETCH_FAILED: "Wechselkurs-Abruf fehlgeschlagen",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
@@ -29,7 +30,7 @@ export const ALL_NOTIFICATION_TYPES = Object.keys(NOTIFICATION_TYPES) as Notific
  * von gespeicherten `enabledTypes` (auch fuer Bestandszeilen, die diese Typen nie kannten),
  * und sind in der Einstellungs-UI nicht abwaehlbar.
  */
-export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN"];
+export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED"];
 
 export function isMandatoryNotificationType(type: NotificationType): boolean {
   return MANDATORY_NOTIFICATION_TYPES.includes(type);

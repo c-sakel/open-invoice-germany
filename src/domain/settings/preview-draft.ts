@@ -22,6 +22,7 @@
  * gespeicherten Stammdaten-Bezuege, die `renderTemplate` zuverlaessig aufloesen koennte;
  * LIMITATION, kein Bug).
  */
+import { docStrings, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 import { computeLineNet } from "@/lib/pricing/line";
@@ -48,8 +49,6 @@ export interface PreviewBody {
   layoutId?: LayoutId;
 }
 
-const DRAFT_NUMBER = "ENTWURF";
-const PREVIEW_WATERMARK = "VORSCHAU";
 
 async function loadPreviewOrg(orgId: string) {
   const org = await dbInternal.organization.findUnique({
@@ -94,6 +93,7 @@ async function loadPreviewCustomer(orgId: string, customerId: string) {
       leitwegId: true,
       customerNumber: true,
       defaultCurrency: true,
+      language: true,
     },
   });
   if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
@@ -125,10 +125,10 @@ function toEInvoiceLines(rawLines: InvoiceLineInput[]) {
   }));
 }
 
-async function loadPreviewTheme(orgId: string, docType: LayoutDocType, layoutId: LayoutId | undefined, compress: boolean | undefined): Promise<PdfTheme> {
+async function loadPreviewTheme(orgId: string, docType: LayoutDocType, layoutId: LayoutId | undefined, compress: boolean | undefined, lang: DocLanguage): Promise<PdfTheme> {
   const theme = await loadPdfTheme(orgId, null, docType);
   if (layoutId) theme.layoutId = layoutId;
-  theme.watermark = PREVIEW_WATERMARK;
+  theme.watermark = docStrings(lang).system.previewWatermark;
   if (compress === false) theme.compress = false;
   return theme;
 }
@@ -136,10 +136,12 @@ async function loadPreviewTheme(orgId: string, docType: LayoutDocType, layoutId:
 async function buildInvoicePreview(orgId: string, org: Awaited<ReturnType<typeof loadPreviewOrg>>, body: PreviewBody, compress: boolean | undefined): Promise<Buffer> {
   const payload = createInvoiceSchema.parse(body.payload);
   const customer = await loadPreviewCustomer(orgId, payload.customerId);
-  const theme = await loadPreviewTheme(orgId, invoiceTypeToLayoutDocType(payload.type), body.layoutId, compress);
+  const lang = payload.language ?? resolveDocLanguage(customer.language);
+  const theme = await loadPreviewTheme(orgId, invoiceTypeToLayoutDocType(payload.type), body.layoutId, compress, lang);
 
   const data = buildDocEInvoiceData({
     number: null,
+    language: lang,
     kind: payload.type,
     issueDate: new Date(),
     currency: await resolvePreviewCurrency(orgId, payload.currency, customer.defaultCurrency),
@@ -154,7 +156,7 @@ async function buildInvoicePreview(orgId: string, org: Awaited<ReturnType<typeof
     documentChargeReason: payload.documentChargeReason ?? null,
   });
 
-  data.number = DRAFT_NUMBER;
+  data.number = docStrings(lang).system.draftNumber;
   data.type = payload.type;
   // Roh aus dem Payload — KEINE Platzhalteraufloesung (siehe Datei-Kommentar).
   data.headerText = payload.headerText ?? null;
@@ -175,10 +177,12 @@ async function buildInvoicePreview(orgId: string, org: Awaited<ReturnType<typeof
 async function buildDocumentPreview(orgId: string, org: Awaited<ReturnType<typeof loadPreviewOrg>>, body: PreviewBody, compress: boolean | undefined): Promise<Buffer> {
   const payload = createDocumentSchema.parse(body.payload);
   const customer = await loadPreviewCustomer(orgId, payload.customerId);
-  const theme = await loadPreviewTheme(orgId, invoiceTypeToLayoutDocType(payload.kind), body.layoutId, compress);
+  const lang = payload.language ?? resolveDocLanguage(customer.language);
+  const theme = await loadPreviewTheme(orgId, invoiceTypeToLayoutDocType(payload.kind), body.layoutId, compress, lang);
 
   const data = buildDocEInvoiceData({
     number: null,
+    language: lang,
     kind: payload.kind,
     issueDate: new Date(),
     validUntil: payload.validUntil ?? null,
@@ -194,7 +198,7 @@ async function buildDocumentPreview(orgId: string, org: Awaited<ReturnType<typeo
     documentChargeReason: payload.documentChargeReason ?? null,
   });
 
-  data.number = DRAFT_NUMBER;
+  data.number = docStrings(lang).system.draftNumber;
   data.type = payload.kind;
   // Roh aus dem Payload — KEINE Platzhalteraufloesung (siehe Datei-Kommentar).
   data.headerText = payload.headerText ?? null;
@@ -208,7 +212,8 @@ async function buildDocumentPreview(orgId: string, org: Awaited<ReturnType<typeo
 async function buildDeliveryNotePreview(orgId: string, org: Awaited<ReturnType<typeof loadPreviewOrg>>, body: PreviewBody, compress: boolean | undefined): Promise<Buffer> {
   const payload = createDeliveryNoteSchema.parse(body.payload);
   const customer = await loadPreviewCustomer(orgId, payload.customerId);
-  const theme = await loadPreviewTheme(orgId, "DELIVERY_NOTE", body.layoutId, compress);
+  const lang = payload.language ?? resolveDocLanguage(customer.language);
+  const theme = await loadPreviewTheme(orgId, "DELIVERY_NOTE", body.layoutId, compress, lang);
   // Fix Round 1, Wichtig — dieselben Anzeige-Defaults wie die echte Anlage
   // (`createDeliveryNoteWithinTx`, src/domain/delivery-note/create.ts ~L95-105): fehlt
   // ein Flag im Payload, greift die Org-Einstellung (dnShowPrices/dnShowArticleNumber/
@@ -218,7 +223,8 @@ async function buildDeliveryNotePreview(orgId: string, org: Awaited<ReturnType<t
   const docSettings = await loadDocumentSettings(orgId);
 
   const data: DeliveryNotePdfData = {
-    number: DRAFT_NUMBER,
+    number: docStrings(lang).system.draftNumber,
+    language: lang,
     issueDate: new Date(),
     deliveryDate: payload.deliveryDate ?? null,
     shippingDate: payload.shippingDate ?? null,

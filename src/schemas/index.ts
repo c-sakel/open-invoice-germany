@@ -8,12 +8,32 @@ import { z } from "zod";
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
+import { parseRateMicros } from "@/domain/fx/decimal";
+import { DOC_LANGUAGES } from "@/lib/i18n/doc";
+
+/** Belegsprache (Phase 16b): de | en. */
+export const DocLanguageSchema = z.enum(DOC_LANGUAGES);
 
 /** ISO-4217-Waehrungscode: Eingabe wird getrimmt und in Grossbuchstaben normalisiert ("eur" -> "EUR"), danach genau 3 Buchstaben. */
 export const currencyCodeSchema = z
   .string()
   .transform((s) => s.trim().toUpperCase())
   .pipe(z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Buchstaben (ISO 4217)"));
+
+/** Kurs als Dezimalstring (Punkt oder Komma, max. 6 Nachkommastellen) -> Integer-Micros, 1..2e9.
+ *  Hier statt in schemas/fx.ts, weil fx.ts diese Datei importiert (kein Importzyklus). */
+export const rateDecimalSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{1,4}([.,]\d{1,6})?$/, "Kurs: bis 4 Vorkomma- und 6 Nachkommastellen")
+  .transform((s, ctx) => {
+    try {
+      return parseRateMicros(s);
+    } catch (e) {
+      ctx.addIssue({ code: "custom", message: e instanceof Error ? e.message : "Kurs ungueltig" });
+      return z.NEVER;
+    }
+  });
 
 /** IBAN-Eingabe (BT-84): Leerzeichen raus, Grossbuchstaben, MOD-97-10-Pruefsumme. Leer bleibt erlaubt.
  * Nur fuer Eingaben — Snapshot-Schemas festgeschriebener Belege bleiben bewusst ungeprueft. */
@@ -407,6 +427,10 @@ const invoiceHeaderFields = {
   /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
    *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
   consumerRetentionHint: z.boolean().optional(),
+  /** Phase 16b: Belegsprache; ohne Angabe die Sprache des Kunden (Snapshot am Beleg). */
+  language: DocLanguageSchema.optional(),
+  /** Phase 16b: Kurs je Beleg manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. "1,25"); null loescht. */
+  fxOverrideRate: rateDecimalSchema.nullable().optional(),
   ...documentAdjustmentFields,
   ...skontoFields,
 };
@@ -520,6 +544,7 @@ export const QuoteStatus = z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXP
 export type QuoteStatus = z.infer<typeof QuoteStatus>;
 
 const documentTextFields = {
+  language: DocLanguageSchema.optional(),
   subject: z.string().max(200).optional(),
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
@@ -592,9 +617,15 @@ export const partialCreditSchema = z.object({
       }),
     )
     .min(1),
+  /** Phase 16b: Kurs fuer die Gutschrift, nur wenn das Original (Altbeleg) keinen Kurs-Snapshot hat. */
+  fxOverrideRate: rateDecimalSchema.optional(),
 });
 // ── Storno ──────────────────────────────────────────────────────────────────
-export const cancelInvoiceSchema = z.object({ reason: z.string().trim().max(500).optional() });
+export const cancelInvoiceSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+  /** Phase 16b: Kurs fuer den Storno, nur wenn das Original (Altbeleg) keinen Kurs-Snapshot hat. */
+  fxOverrideRate: rateDecimalSchema.optional(),
+});
 export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
 
 /** Server-Action `cancelAction` (Storno-Dialog): Formularfelder -> validierte Eingabe. */
@@ -602,16 +633,20 @@ export const cancelActionSchema = z.object({
   id: z.string().trim().min(1),
   reason: z.string().trim().max(500).optional(),
   sendAfter: z.boolean(),
+  /** Phase 16b: Kurs nur fuer Fremdwaehrungs-Altbelege ohne Kurs-Snapshot (gleiche Grenzen wie REST). */
+  fxOverrideRate: rateDecimalSchema.optional(),
 });
 export type CancelActionInput = z.infer<typeof cancelActionSchema>;
 
 export function parseCancelFormData(formData: FormData): CancelActionInput {
   const reason = formData.get("reason");
   const send = formData.get("sendAfter");
+  const fx = formData.get("fxOverrideRate");
   return cancelActionSchema.parse({
     id: formData.get("id"),
     reason: typeof reason === "string" && reason.trim() !== "" ? reason : undefined,
     sendAfter: send === "1" || send === "on" || send === "true",
+    fxOverrideRate: typeof fx === "string" && fx.trim() !== "" ? fx : undefined,
   });
 }
 
@@ -701,6 +736,7 @@ const recurringObjectSchema = z.object({
   // Bewusst KEIN `.default()` — createRecurring() setzt den Settings-Default nur, wenn
   // der Aufrufer das Feld nicht selbst gesetzt hat (Task-1-Facts).
   showPeriodText: z.boolean().optional(),
+  language: DocLanguageSchema.optional(),
   notes: z.string().optional(),
   lines: z.array(invoiceLineDerivableSchema).min(1),
 });
@@ -733,6 +769,7 @@ export const updateRecurringSchema = z.object({
   autoSend: z.boolean().optional(),
   emailTemplateId: z.string().min(1).nullable().optional(),
   showPeriodText: z.boolean().optional(),
+  language: DocLanguageSchema.optional(),
   notes: z.string().nullable().optional(),
   currency: currencyCodeSchema.optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
@@ -785,6 +822,7 @@ export const createDeliveryNoteSchema = z.object({
   showArticleNumber: z.boolean().optional(),
   showDescription: z.boolean().optional(),
   showDeliveryAddress: z.boolean().optional(),
+  language: DocLanguageSchema.optional(),
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   notes: z.string().optional(),
@@ -957,12 +995,14 @@ export const textTemplateInputSchema = z.object({
   position: TextTemplatePosition,
   body: z.string().min(1).max(5000),
   isDefault: z.boolean().default(false),
+  language: DocLanguageSchema.optional(),
 });
 export type TextTemplateInput = z.infer<typeof textTemplateInputSchema>;
 
 export const textTemplatePickQuerySchema = z.object({
   docType: z.string().min(1),
   position: TextTemplatePosition,
+  language: DocLanguageSchema.optional(),
 });
 
 export * from "./email";

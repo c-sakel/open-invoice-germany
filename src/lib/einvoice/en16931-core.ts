@@ -107,6 +107,14 @@ export function validateXRechnung(data: EInvoiceData, xml: string): ValidationRe
   if (data.payableCents !== expectedPayable)
     errors.push("BR-CO-16: Zahlbetrag ≠ Bruttobetrag − Anzahlung.");
 
+  // BR-53: mit TaxCurrencyCode (BT-6) muss ein TaxTotal in genau dieser Waehrung vorliegen (BT-111).
+  const taxCurrency = xml.match(/<cbc:TaxCurrencyCode>([^<]+)<\/cbc:TaxCurrencyCode>/)?.[1];
+  if (taxCurrency) {
+    const inTaxCurrency = [...xml.matchAll(/<cac:TaxTotal>\s*<cbc:TaxAmount currencyID="([^"]+)">/g)].filter((m) => m[1] === taxCurrency);
+    if (inTaxCurrency.length !== 1)
+      errors.push(`BR-53: TaxCurrencyCode ${taxCurrency} verlangt genau einen TaxTotal in ${taxCurrency} (gefunden: ${inTaxCurrency.length}).`);
+  }
+
   // XML-Querprüfung: bindet die Validierung an die tatsächliche Ausgabe.
   // Gutschriften (CreditNote) werden mit positiven Beträgen ausgegeben.
   const payableInXmlExpected = data.type === "CREDIT_NOTE" ? Math.abs(data.payableCents) : data.payableCents;

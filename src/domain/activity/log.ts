@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -73,6 +73,8 @@ export const ACTIVITY_TYPES = {
   LOGIN_FAILED: "Anmeldung fehlgeschlagen",
   LOGIN_LOCKED: "Konto gesperrt",
   PASSWORD_CHANGED: "Passwort geaendert",
+  // Phase 16b: manuell gepflegter Wechselkurs (src/domain/fx/store.ts#upsertManualRate), entityId = ExchangeRate.id.
+  FX_RATE_SET: "Wechselkurs gesetzt",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

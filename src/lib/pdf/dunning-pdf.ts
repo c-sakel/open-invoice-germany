@@ -8,6 +8,7 @@
  */
 import { formatCents } from "@/lib/money";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
+import { docStrings, docLocale, formatDocDate, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import type { InterestSegment } from "@/schemas";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
@@ -29,6 +30,8 @@ export interface DunningPdfData {
   sentDate: Date;
   newDueDate: Date;
   currency: string;
+  /** Belegsprache (Snapshot); fehlt sie, gilt Deutsch. */
+  language?: DocLanguage;
   seller: {
     name: string;
     addressLine1: string;
@@ -73,22 +76,6 @@ export interface DunningPdfData {
   daysOverdue: number;
 }
 
-// Fix-Welle (Phase 14a, Task nach Task 3): ohne `timeZone` interpretiert Intl das Datum
-// im Server-Lauf (UTC in CI/Produktion, siehe CLAUDE.md) statt in Europe/Berlin — anders
-// als `formatDateDe` (src/lib/template/format.ts). Bei einem Segment-Enddatum kurz vor
-// Mitternacht Berliner Zeit (z. B. 23:30 UTC im Winter = 00:30 CET des Folgetags) zeigte
-// das PDF dadurch ein um einen Tag zu frühes Datum. Dieselbe Zeitzonenbehandlung wie
-// `formatDateDe`, kein neues Datumsformat.
-function deDate(d: Date): string {
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }).format(d);
-}
-
-const INTRO: Record<number, (n: string) => string> = {
-  0: (n) => `bei der Durchsicht unserer Unterlagen ist uns aufgefallen, dass die Rechnung ${n} bislang nicht ausgeglichen wurde. Vermutlich ist Ihnen dies entgangen — wir bitten höflich um Begleichung.`,
-  1: (n) => `trotz Fälligkeit ist die Rechnung ${n} bis heute nicht beglichen. Wir fordern Sie auf, den offenen Betrag zuzüglich der entstandenen Verzugskosten bis zum unten genannten Datum zu zahlen.`,
-  2: (n) => `auch nach unserer ersten Mahnung ist die Rechnung ${n} weiterhin offen. Wir setzen Ihnen letztmalig eine Frist zur Zahlung, bevor wir weitere Schritte einleiten.`,
-};
-
 export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const margins = pdfMargins(theme);
@@ -103,9 +90,19 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     doc.on("end", () => resolve(concatPdfChunks(chunks)));
     doc.on("error", reject);
     const cur = data.currency;
+    const lang = resolveDocLanguage(data.language);
+    const t = docStrings(lang);
+    const locale = docLocale(lang);
+    const deDate = (d: Date): string => formatDocDate(d, lang);
+    const money = (cents: number): string => formatCents(cents, cur, locale);
     const left = margins.left;
     const right = doc.page.width - margins.right;
-    const title = data.stageName || DUNNING_LEVEL_TITLE[data.level] || `${data.level}. Mahnung`;
+    // Stufennamen sind frei pflegbare Stammdaten (Deutsch); die Standardnamen werden in der Belegsprache angezeigt.
+    const stageNameIsDefault = !data.stageName || Object.values(DUNNING_LEVEL_TITLE).includes(data.stageName);
+    const title =
+      lang !== "de" && stageNameIsDefault
+        ? (t.titles.DUNNING[data.level] ?? t.titles.dunningLevel(data.level))
+        : data.stageName || DUNNING_LEVEL_TITLE[data.level] || `${data.level}. Mahnung`;
 
     // Phase 11b — Layout-Hooks statt eigener Kopie der Zeichenlogik.
     const layout = getLayout(theme.layoutId);
@@ -137,16 +134,16 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
 
     let y = layout.drawKopf(frame, {
       title,
-      numberLabel: "Nr.",
+      numberLabel: t.numberLabels.DUNNING,
       number: data.number,
-      meta: [{ label: "Datum", value: deDate(data.sentDate) }],
-      recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode) },
-      senderFallback: senderLineFallback(data.seller),
+      meta: [{ label: t.meta.date, value: deDate(data.sentDate) }],
+      recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode, lang) },
+      senderFallback: senderLineFallback(data.seller, lang),
     });
 
-    doc.fontSize(11).fillColor("#000").text("Sehr geehrte Damen und Herren,", left, y);
+    doc.fontSize(11).fillColor("#000").text(t.dunning.salutation, left, y);
     doc.moveDown(0.5);
-    doc.fontSize(10).fillColor("#333").text((INTRO[data.level] ?? INTRO[2])(data.invoiceNumber), { width: right - left });
+    doc.fontSize(10).fillColor("#333").text(t.dunning.intro[(data.level in t.dunning.intro ? data.level : 2) as 0 | 1 | 2](data.invoiceNumber), { width: right - left });
 
     // Fix-Runde 2 (Koordinator, Guard b): die Mahnung ueberlaesst Seitenumbrueche sonst
     // vollstaendig pdfkits eigener Logik (siehe Kommentar zu `pageAdded` oben) — bei vielen
@@ -168,6 +165,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
         ...theme.footerFacts,
       },
       theme.brand,
+      lang,
     );
     const footerZone = footerZoneHeight(frame, layout, footerColumns);
     const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
@@ -194,7 +192,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       doc.font(font).fontSize(10).text(value, left + 360, y, { width: right - left - 360, align: "right", lineBreak: false });
       y += h;
     };
-    row(`Rechnung ${data.invoiceNumber} vom ${deDate(data.invoiceDate)} — offener Betrag`, formatCents(data.openAmountCents, cur));
+    row(t.dunning.invoiceRow(data.invoiceNumber, deDate(data.invoiceDate)), money(data.openAmountCents));
     if (data.interestCents > 0) {
       // Phase 14a, Task 3 (R7/R8): liegt die Verzugsperiode ueber einer Basiszins-
       // Halbjahresgrenze, zeigt jede Zeile ihren eigenen Abschnitt samt dort gueltigem
@@ -206,22 +204,19 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
         for (const seg of data.interestSegments) {
           const ratePct = (seg.baseRateBp / 100).toFixed(2).replace(".", ",");
           const points = (seg.pointsBp / 100).toFixed(0);
-          row(
-            `Verzugszinsen vom ${deDate(new Date(seg.from))} bis ${deDate(new Date(seg.to))} (${seg.days} Tage, ${ratePct} % + ${points} Pp)`,
-            formatCents(seg.interestCents, cur),
-          );
+          row(t.dunning.interestSegment(deDate(new Date(seg.from)), deDate(new Date(seg.to)), seg.days, ratePct, points), money(seg.interestCents));
         }
       } else {
-        row(`Verzugszinsen (${data.daysOverdue} Tage)`, formatCents(data.interestCents, cur));
+        row(t.dunning.interestSingle(data.daysOverdue), money(data.interestCents));
       }
     }
-    if (data.flatFee40Cents > 0) row("Verzugspauschale (§ 288 Abs. 5 BGB)", formatCents(data.flatFee40Cents, cur));
-    if (data.feeCents > 0) row("Mahnkosten", formatCents(data.feeCents, cur));
-    if (data.lateFeeCents > 0) row("Sonstige Auslagen", formatCents(data.lateFeeCents, cur));
+    if (data.flatFee40Cents > 0) row(t.dunning.flatFee, money(data.flatFee40Cents));
+    if (data.feeCents > 0) row(t.dunning.fee, money(data.feeCents));
+    if (data.lateFeeCents > 0) row(t.dunning.otherCosts, money(data.lateFeeCents));
     y += 4;
     layout.drawTotalsRule(frame, left, y);
     y += 6;
-    row("Zahlbarer Gesamtbetrag", formatCents(data.totalCents, cur), true);
+    row(t.dunning.total, money(data.totalCents), true);
     doc.font("Helvetica");
 
     y += 16;
@@ -231,7 +226,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // Paginierung kennt nur `margins.bottom`, nicht die zusaetzlichen `footerHeight + 6`
     // Reservierung von `pageBottom`).
     y = ensurePlainSpace(y, 30);
-    renderPlainTextPdf(doc, `Bitte überweisen Sie den Gesamtbetrag bis spätestens ${deDate(data.newDueDate)}.`, y, {
+    renderPlainTextPdf(doc, t.dunning.payBy(deDate(data.newDueDate)), y, {
       x: left,
       width: right - left,
       fontSize: 10,
@@ -252,7 +247,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       if (theme.options.punchMarks) drawPunchMark(doc);
       if (theme.watermark) drawWatermark(doc, theme.watermark);
     }
-    if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
+    if (theme.options.showPageNumbers) drawPageNumbers(doc, theme, lang);
 
     doc.end();
   });

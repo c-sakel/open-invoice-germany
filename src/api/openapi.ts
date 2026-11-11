@@ -56,6 +56,7 @@ import { apiRequestLogSchema } from "./serializers/api-request-log";
 import { tagSchema } from "./serializers/tag";
 import { documentTemplateSchema } from "./serializers/document-template";
 import { baseInterestRateSchema } from "./serializers/base-interest-rate";
+import { exchangeRateSchema } from "./serializers/exchange-rate";
 
 const V1_ROOT = path.resolve(process.cwd(), "src/app/api/v1");
 
@@ -129,6 +130,7 @@ export const RESOURCE_SCHEMAS: Record<string, z.ZodTypeAny> = {
   Tag: tagSchema,
   DocumentTemplate: documentTemplateSchema,
   BaseInterestRate: baseInterestRateSchema,
+  ExchangeRate: exchangeRateSchema,
 };
 
 /** `/api/v1/Invoice` oder `/api/v1/Invoice/{id}` -> "Invoice"; alles Tiefere (Aktionen,
@@ -262,6 +264,7 @@ const ERROR_INFO: Record<number, { code: string; message: string }> = {
   404: { code: "NOT_FOUND", message: "Nicht gefunden." },
   409: { code: "CONFLICT", message: "Zustandskonflikt (z. B. bereits festgeschrieben)." },
   413: { code: "PAYLOAD_TOO_LARGE", message: "Request-Body ueberschreitet das Limit." },
+  422: { code: "UNPROCESSABLE", message: "Fachlich nicht verarbeitbar (z. B. fehlender Wechselkurs zum Leistungsdatum)." },
   429: { code: "RATE_LIMITED", message: "Rate-Limit ueberschritten (600/Minute je Schluessel)." },
 };
 
@@ -272,7 +275,9 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   404: "Ressource nicht gefunden oder gehoert nicht zur Organisation des Schluessels.",
   409: "Zustandskonflikt (GoBD-Regel, Idempotenz-Konflikt oder EN-16931-Validierung).",
   413: "Request-Body ueberschreitet das Groessenlimit (2 MB allgemein, 16 MB fuer /Attachment).",
+  422: "Fachlich nicht verarbeitbar (z. B. fehlender oder nicht abbildbarer Wechselkurs beim Festschreiben).",
   429: "Rate-Limit ueberschritten — `Retry-After`-Header beachten.",
+  502: "Die Kursquelle (EZB) war nicht erreichbar oder lieferte ein unerwartetes Format.",
 };
 
 const BINARY_CONTENT_TYPE: Record<string, string> = {

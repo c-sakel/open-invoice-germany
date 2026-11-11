@@ -6,7 +6,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { topProducts } from "@/domain/reporting/top-products";
-import type { CreateInvoiceInput } from "@/schemas";
+import { createInvoiceSchema } from "@/schemas";
 
 const NOW = new Date(Date.UTC(2106, 5, 15, 10));
 const MARCH = new Date(Date.UTC(2106, 2, 10, 10));
@@ -38,7 +38,7 @@ function ln(productId: string | undefined, netCents: number, description = "Post
 async function invoice(o: Org, lines: ReturnType<typeof ln>[], issueDate: Date, opts: { currency?: string; finalize?: boolean } = {}) {
   const inv = await createDraftInvoice(
     o.orgId,
-    { customerId: o.customerId, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines } as CreateInvoiceInput,
+    createInvoiceSchema.parse({ customerId: o.customerId, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines, ...(opts.currency && opts.currency !== "EUR" ? { fxOverrideRate: "1,1" } : {}) }),
     { now: issueDate },
   );
   if (opts.finalize !== false) await finalizeInvoice(inv.id, { now: issueDate });

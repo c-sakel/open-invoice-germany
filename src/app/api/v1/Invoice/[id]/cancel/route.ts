@@ -26,7 +26,7 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const input = cancelInvoiceSchema.parse(ctx.body ?? {});
   const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true } });
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
-  const result = await cancelInvoice(ctx.params.id, { actor: ctx.actor, orgId: ctx.orgId, reason: input.reason });
+  const result = await cancelInvoice(ctx.params.id, { actor: ctx.actor, orgId: ctx.orgId, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
   return apiData(serializeInvoice(result.creditNote, new Set()));
 }, { scope: "write" });
 

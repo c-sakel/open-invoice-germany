@@ -37,6 +37,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
         defaultPaymentMethodId: true,
         defaultDiscountPermille: true,
         defaultCurrency: true,
+        language: true,
         // Fix-Welle 1, M2 (Abschluss-Review Phase 13b): Grundlage fuer MetaBlocks
         // Faelligkeits-Vorbelegung (resolveDueDays) — dieselbe Kundenvorgabe wie
         // createDraftInvoice (invoice/create.ts:109).
@@ -95,6 +96,8 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
     ? emptyDraft("INVOICE", {
         customerId: presetCustomer.id,
         currency: presetCustomer.defaultCurrency ?? "",
+        // Phase 16b: Sprache des vorgewaehlten Kunden (de/en) — der Pflichthinweis folgt ihr.
+        language: presetCustomer.language === "en" ? "en" : "",
         allowedTaxRates: documentSettings.taxRates,
         deliveryDateFollowsIssue: documentSettings.autoDeliveryDate,
       })

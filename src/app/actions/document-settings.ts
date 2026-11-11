@@ -67,6 +67,8 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     recurringAutoFinalizeDefault: fd.get("recurringAutoFinalizeDefault") === "on",
     recurringAutoSendDefault: fd.get("recurringAutoSendDefault") === "on",
     taxRates,
+    fxRateSource: fd.get("fxRateSource") ?? "BMF_MONTHLY",
+    fxEcbConfirmed: fd.get("fxEcbConfirmed") === "on",
   };
 
   try {

@@ -9,7 +9,8 @@ import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
-import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
+import { docStrings } from "@/lib/i18n/doc";
+import { fxOf, fxRateNoteText } from "./fx-note";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -97,6 +98,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
   const cur = data.currency;
   const isCredit = data.type === "CREDIT_NOTE";
   const amt = (cents: number) => money(isCredit ? Math.abs(cents) : cents);
+  const fx = fxOf(data);
 
   const root = create({ version: "1.0", encoding: "UTF-8" }).ele("rsm:CrossIndustryInvoice", {
     "xmlns:rsm": NS.rsm,
@@ -131,10 +133,12 @@ export function buildFacturXCII(data: EInvoiceData): string {
   if (subjectTrimmed) doc.ele("ram:IncludedNote").ele("ram:Content").txt(subjectTrimmed).up().ele("ram:SubjectCode").txt("AAI").up().up();
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
   // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
-  if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();
+  if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions, data.language ?? "de")).up().up();
   // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
   // IncludedNote-Element (mehrfach zulaessig), Phase 12b Task 5.
-  if (data.consumerRetentionHint) doc.ele("ram:IncludedNote").ele("ram:Content").txt(CONSUMER_RETENTION_HINT).up().up();
+  if (data.consumerRetentionHint) doc.ele("ram:IncludedNote").ele("ram:Content").txt(docStrings(data.language ?? "de").notes.consumerRetentionHint).up().up();
+  // Phase 16b — Umrechnungskurs als BT-22 (zusaetzliche IncludedNote), nur bei Fremdwaehrung.
+  if (fx) doc.ele("ram:IncludedNote").ele("ram:Content").txt(fxRateNoteText(data, fx)).up().up();
   doc.up();
 
   const tx = root.ele("rsm:SupplyChainTradeTransaction");
@@ -182,7 +186,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
         isCharge: false,
         amountCents: Math.abs(line.discountCents),
         baseCents: Math.abs(line.grossLineCents ?? line.lineNetCents),
-        reason: "Rabatt",
+        reason: docStrings(data.language ?? "de").notes.allowanceReason,
         reasonCode: "95",
         calculationPercent: line.discountPermille,
       });
@@ -271,6 +275,8 @@ export function buildFacturXCII(data: EInvoiceData): string {
 
   // Abrechnung
   const set = tx.ele("ram:ApplicableHeaderTradeSettlement");
+  // BT-6 — Steuerwaehrung EUR; CII-XSD: TaxCurrencyCode unmittelbar VOR InvoiceCurrencyCode.
+  if (fx) set.ele("ram:TaxCurrencyCode").txt("EUR").up();
   set.ele("ram:InvoiceCurrencyCode").txt(cur).up();
   // Zahlungsweg (BT-81 ff.) — Phase 4a: data.paymentMeans, sonst der bisherige
   // reine IBAN-Fallback (byte-identisch zum bisherigen Verhalten).
@@ -301,7 +307,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const t = set.ele("ram:ApplicableTradeTax");
     t.ele("ram:CalculatedAmount").txt(amt(sub.taxCents)).up();
     t.ele("ram:TypeCode").txt("VAT").up();
-    const reason = exemptionReasonText(sub.taxCategory);
+    const reason = exemptionReasonText(sub.taxCategory, data.language ?? "de");
     if (reason) t.ele("ram:ExemptionReason").txt(reason).up();
     t.ele("ram:BasisAmount").txt(amt(sub.netCents)).up();
     t.ele("ram:CategoryCode").txt(sub.taxCategory).up();
@@ -357,6 +363,8 @@ export function buildFacturXCII(data: EInvoiceData): string {
   if (allowanceTotal !== 0) sum.ele("ram:AllowanceTotalAmount").txt(money(Math.abs(allowanceTotal))).up();
   sum.ele("ram:TaxBasisTotalAmount").txt(amt(data.netTotalCents)).up();
   sum.ele("ram:TaxTotalAmount", { currencyID: cur }).txt(amt(data.taxTotalCents)).up();
+  // BT-111 — USt-Gesamtbetrag in EUR (zweites TaxTotalAmount direkt nach dem ersten).
+  if (fx) sum.ele("ram:TaxTotalAmount", { currencyID: "EUR" }).txt(amt(fx.taxTotalEurCents)).up();
   sum.ele("ram:GrandTotalAmount").txt(amt(data.grossTotalCents)).up();
   if (data.paidCents) sum.ele("ram:TotalPrepaidAmount").txt(amt(data.paidCents)).up();
   sum.ele("ram:DuePayableAmount").txt(amt(data.payableCents)).up();

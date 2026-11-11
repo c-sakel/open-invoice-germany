@@ -19,7 +19,7 @@ import { duplicateDocument, type DuplicatableType } from "@/domain/document/dupl
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
 import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import { getDocumentFile } from "@/api/files";
-import { currencyCodeSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
+import { currencyCodeSchema, DocLanguageSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
@@ -44,6 +44,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         documentChargePercent: z.number().min(0).max(100).optional().describe("Belegaufschlag in Prozent (nach Rabatt berechnet)"),
         documentChargeEuro: z.number().min(0).optional().describe("Zusaetzlicher Belegaufschlag als Festbetrag in Euro"),
         documentChargeReason: z.string().max(500).optional(),
+        language: DocLanguageSchema.optional().describe("Belegsprache de|en (Snapshot am Beleg); ohne Angabe die Sprache des Kunden, sonst de."),
       },
     },
     async (args): Promise<Result> => {
@@ -52,6 +53,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const customer = await ctx.resolveCustomer(org.id, args.customer);
         const lines = await ctx.buildSimpleLines(org.id, args.lines);
         const input = createDocumentSchema.parse({
+          language: args.language,
           kind: args.kind,
           customerId: customer.id,
           taxScheme: "REGULAR",
@@ -314,6 +316,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         lines: z.array(docLineSchema).min(1),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
         notes: z.string().optional(),
+        language: DocLanguageSchema.optional().describe("Belegsprache de|en (Snapshot am Beleg); ohne Angabe die Sprache des Kunden, sonst de."),
       },
     },
     async (args): Promise<Result> => {
@@ -325,6 +328,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           customerId: customer.id,
           deliveryDate: ctx.parseDateInput(args.deliveryDate),
           notes: args.notes,
+          language: args.language,
           lines: lines.map((l) => ({
             description: l.description,
             quantityMilli: l.quantityMilli,

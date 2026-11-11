@@ -27,6 +27,7 @@ export default async function NeuesDokumentPage() {
         email: true,
         defaultDiscountPermille: true,
         defaultCurrency: true,
+        language: true,
         addressLine1: true,
         postalCode: true,
         city: true,

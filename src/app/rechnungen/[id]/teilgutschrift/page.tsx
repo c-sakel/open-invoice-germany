@@ -60,7 +60,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Teilgutschrift</h1>
       </div>
-      <PartialCreditForm invoiceId={id} remainingCents={remainingCents} openCents={openAmountCents(inv)} currency={inv.currency} initialLines={initialLines} taxRates={taxRates} />
+      <PartialCreditForm invoiceId={id} remainingCents={remainingCents} openCents={openAmountCents(inv)} currency={inv.currency} fxRateMissing={inv.currency !== "EUR" && inv.fxRateMicros == null} initialLines={initialLines} taxRates={taxRates} />
     </div>
   );
 }

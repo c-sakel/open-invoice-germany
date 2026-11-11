@@ -8,6 +8,7 @@ import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot } from "@
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
+import { docStrings, resolveDocLanguage } from "@/lib/i18n/doc";
 import type { EInvoiceData, EInvoiceDocumentAllowanceCharge, EInvoiceLine } from "@/lib/einvoice/types";
 
 const LINE_TYPES = new Set<NonNullable<EInvoiceLine["lineType"]>>(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
@@ -19,14 +20,14 @@ function toLineType(value: string | undefined): NonNullable<EInvoiceLine["lineTy
     : "ITEM";
 }
 
-const PROFORMA_NOTE = "Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG. Berechtigt nicht zum Vorsteuerabzug.";
-
 interface DocInput {
   number: string | null;
   kind: string;
   issueDate: Date;
   validUntil?: Date | null;
   currency: string;
+  /** Belegsprache (Snapshot, Quote.language); fehlt/unbekannt -> Deutsch. */
+  language?: string | null;
   notes: string | null;
   // Phase 13b — Betreff (BT-22 mit Subjektcode BT-21 "AAI"); Geschaeftsdokumente
   // erzeugen keine E-Rechnung, der Betreff geht hier nur ins PDF.
@@ -92,6 +93,8 @@ interface DocInput {
 }
 
 export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
+  const lang = resolveDocLanguage(q.language);
+  const t = docStrings(lang);
   // G1 (Fix-Welle): Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL) tragen keinen Betrag und
   // gehen nie in die Steueraufschluesselung ein (§8) — Fehlt lineType (Alt-Fixtures),
   // wird ITEM angenommen (gleiche Regel wie isItemLine in xrechnung.ts).
@@ -113,7 +116,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
       baseCents: Math.abs(b.baseNetCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
-      reason: "Rabatt",
+      reason: t.notes.allowanceReason,
     }));
   const documentCharges: EInvoiceDocumentAllowanceCharge[] = totals.breakdown
     .filter((b) => b.chargeCents !== 0)
@@ -122,9 +125,9 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
       baseCents: Math.abs(b.baseNetCents - b.allowanceCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
-      reason: q.documentChargeReason || "Aufschlag",
+      reason: q.documentChargeReason || t.notes.chargeReason,
     }));
-  const notes = q.kind === "PROFORMA" ? `${PROFORMA_NOTE}${q.notes ? " " + q.notes : ""}` : q.notes;
+  const notes = q.kind === "PROFORMA" ? `${t.notes.proformaHint}${q.notes ? " " + q.notes : ""}` : q.notes;
   const ctx = q.id ?? q.number ?? "unbekannt";
   const org = parseSellerSnapshot(q.sellerSnapshotJson, q.org, ctx);
   const customer = parseBuyerSnapshot(q.buyerSnapshotJson, q.customer, ctx);
@@ -144,13 +147,15 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
     seller: org,
     buyer: customer,
     contact,
+    language: lang,
   });
   const headerText = q.headerText ? renderTemplate(q.headerText, textCtx).text : null;
   const footerText = q.footerText ? renderTemplate(q.footerText, textCtx).text : null;
 
   return {
-    number: q.number ?? "ENTWURF",
+    number: q.number ?? t.system.draftNumber,
     type: q.kind,
+    language: lang,
     issueDate: q.issueDate,
     dueDate: null,
     deliveryDate: null,

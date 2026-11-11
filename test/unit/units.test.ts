@@ -22,3 +22,13 @@ describe("unitLabel", () => {
     expect(unitLabel("")).toBe("");
   });
 });
+
+describe("unitLabel (en)", () => {
+  it("englische Kürzel, Default bleibt deutsch, Unbekanntes unverändert", () => {
+    expect(unitLabel("HUR", "en")).toBe("h");
+    expect(unitLabel("C62", "en")).toBe("pcs");
+    expect(unitLabel("H87", "en")).toBe("flat rate");
+    expect(unitLabel("C62")).toBe("Stk");
+    expect(unitLabel("Kiste", "en")).toBe("Kiste");
+  });
+});

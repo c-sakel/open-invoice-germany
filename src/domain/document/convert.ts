@@ -13,6 +13,7 @@ import { createBusinessDocumentWithinTx } from "@/domain/document/create";
 import { createDeliveryNoteWithinTx } from "@/domain/delivery-note/create";
 import { remainingQuantities, assertNoOverDelivery, loadSourceLines, type DeliverySourceType } from "@/domain/delivery-note/quantities";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { setQuoteStatusWithinTx, effectiveQuoteStatus } from "@/domain/document/status";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
@@ -83,9 +84,11 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
 
     // Kopf-/Fusstext und Zahlungsbedingungen vom Dokument uebernehmen; fehlen sie, aus der
     // INVOICE-Textvorlage vorbelegen (Selbstheilung, wie bei createBusinessDocument).
-    const headerText = q.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD"));
-    const footerText = q.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT"));
-    const paymentTerms = q.paymentTerms ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT"));
+    // Belegsprache (Phase 16b): die Rechnung erbt die Sprache des Angebots/der AB.
+    const language = resolveDocLanguage(q.language);
+    const headerText = q.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD", language));
+    const footerText = q.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT", language));
+    const paymentTerms = q.paymentTerms ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT", language));
 
     const settings = await loadDocumentSettings(orgId);
 
@@ -112,6 +115,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
       data: {
         orgId: q.orgId,
         customerId: q.customerId,
+        language,
         type: "INVOICE",
         status: "DRAFT",
         taxScheme: q.taxScheme,
@@ -203,6 +207,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
       {
         kind: "AUFTRAGSBESTAETIGUNG",
         customerId: src.customerId,
+        language: resolveDocLanguage(src.language),
         taxScheme: src.taxScheme,
         currency: src.currency,
         subject: src.subject ?? undefined,
@@ -258,16 +263,19 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
   const fromId = input.fromId;
 
   return dbInternal.$transaction(async (tx) => {
+    let sourceLanguage: string | undefined;
     if (fromType === "QUOTE") {
-      const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, select: { status: true, validUntil: true } });
+      const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, select: { status: true, validUntil: true, language: true } });
       if (!src) throw new ConvertError("Dokument nicht gefunden.");
+      sourceLanguage = src.language;
       const eff = effectiveQuoteStatus({ status: src.status, validUntil: src.validUntil }, opts.now);
       if (!QUOTE_TO_DELIVERY_NOTE_STATUSES.has(eff)) {
         throw new ConvertError(`Dokument im Status "${eff}" kann nicht in einen Lieferschein umgewandelt werden.`);
       }
     } else {
-      const src = await tx.invoice.findFirst({ where: { id: fromId, orgId }, select: { status: true } });
+      const src = await tx.invoice.findFirst({ where: { id: fromId, orgId }, select: { status: true, language: true } });
       if (!src) throw new ConvertError("Rechnung nicht gefunden.");
+      sourceLanguage = src.language;
       if (src.status === "CANCELLED") {
         throw new ConvertError("Stornierte Rechnung kann nicht in einen Lieferschein umgewandelt werden.");
       }
@@ -302,6 +310,7 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
       orgId,
       {
         customerId,
+        language: resolveDocLanguage(sourceLanguage),
         sourceType: fromType,
         sourceId: fromId,
         deliveryDate: input.deliveryDate,

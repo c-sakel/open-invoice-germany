@@ -342,7 +342,7 @@ export function DocumentEditor({
           addresses={addresses}
           offerLastDocument={offerLastDocument}
         />
-        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} customers={customers} paymentMethods={paymentMethods} invoiceDueDays={invoiceDueDays} />
+        <MetaBlock mode={mode} isEdit={isEdit} draft={draft} dispatch={dispatch} customers={customers} paymentMethods={paymentMethods} invoiceDueDays={invoiceDueDays} taxCents={totals.taxCents} />
 
         <HeadTextBlock mode={mode} draft={draft} dispatch={dispatch} />
 

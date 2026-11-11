@@ -5,6 +5,10 @@ import { serializeInvoiceLine, invoiceLineSchema } from "./lines";
 import type { Invoice, InvoiceLine, Customer, Payment } from "@/generated/prisma/client";
 import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 import { serializePayment, paymentSchema } from "./payment";
+import { formatRate } from "@/domain/fx/decimal";
+
+/** Kurs als Dezimalstring mit Punkt (z. B. "1.1214"), null ohne Kurs. */
+const rateString = (micros: number | null | undefined): string | null => (micros == null ? null : formatRate(micros, "en-GB"));
 
 export type InvoiceWithOptionalRelations = Invoice & { lines?: InvoiceLine[]; customer?: Customer; payments?: Payment[] };
 
@@ -46,6 +50,13 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     netTotalCents: inv.netTotalCents,
     taxTotalCents: inv.taxTotalCents,
     grossTotalCents: inv.grossTotalCents,
+    fxRate: rateString(inv.fxRateMicros),
+    fxRateDate: iso(inv.fxRateDate),
+    fxRateSource: inv.fxRateSource ?? null,
+    fxOverrideRate: rateString(inv.fxOverrideMicros),
+    taxTotalEurCents: inv.taxTotalEurCents ?? null,
+    netTotalEurCents: inv.netTotalEurCents ?? null,
+    language: inv.language,
     paidAmountCents: inv.paidAmountCents,
     payableCents: inv.payableCents,
     payableTotalCents: payableBaseCents(inv),
@@ -112,6 +123,16 @@ export const invoiceSchema = z.object({
   netTotalCents: z.number().int(),
   taxTotalCents: z.number().int(),
   grossTotalCents: z.number().int(),
+  fxRate: z
+    .string()
+    .nullable()
+    .describe("Eingefrorener Wechselkurs (Einheiten der Belegwaehrung je 1 EUR, Dezimalpunkt), ab Festschreibung; null bei EUR."),
+  fxRateDate: z.string().nullable().describe("Datum des Kurses (Monatserster bei BMF_MONTHLY)."),
+  fxRateSource: z.string().nullable().describe("BMF_MONTHLY | ECB_DAILY | MANUAL; null bei EUR."),
+  fxOverrideRate: z.string().nullable().describe("Manuell gesetzter Kurs am Entwurf (Quelle MANUAL beim Festschreiben)."),
+  taxTotalEurCents: z.number().int().nullable().describe("Umsatzsteuer in EUR-Cent (§ 16 Abs. 6 UStG, Summe je Steuersatz), ab Festschreibung."),
+  netTotalEurCents: z.number().int().nullable().describe("Nettobetrag in EUR-Cent, ab Festschreibung."),
+  language: z.string().describe("Belegsprache (de | en)."),
   paidAmountCents: z.number().int(),
   payableCents: z
     .number()

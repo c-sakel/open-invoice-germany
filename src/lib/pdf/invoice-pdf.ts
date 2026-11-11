@@ -25,7 +25,9 @@ import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
 import { addressCountryLine } from "../countries";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
-import { CONSUMER_RETENTION_HINT, categoryNoticesToPrint } from "@/domain/invoice/mandatory";
+import { categoryNoticesToPrint } from "@/domain/invoice/mandatory";
+import { docStrings, docLocale, formatDocDate, formatDocMoney, resolveDocLanguage, type DocLanguage, type DocStrings } from "@/lib/i18n/doc";
+import { fxOf, fxPdfRateLine } from "@/lib/einvoice/fx-note";
 import { getLayout } from "./layouts/registry";
 import { drawTableHeaderRow, footerZoneHeight } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
@@ -47,51 +49,9 @@ export interface RenderInvoicePdfOptions {
   attachments?: InvoicePdfAttachment[];
 }
 
-/** Kurzbezeichnung der Steuerkategorie fuer die 0-%-Steuerzeile im Summenblock (A2). */
-const ZERO_RATE_TAX_ROW_LABEL: Record<string, string> = {
-  G: "steuerfreie Ausfuhr",
-  K: "ig. Lieferung",
-  AE: "Reverse Charge",
-  Z: "Nullsatz",
-  O: "nicht steuerbar",
-};
-
 function lineType(line: EInvoiceLine): "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL" {
   return line.lineType ?? "ITEM";
 }
-
-const TYPE_TITLE: Record<string, string> = {
-  INVOICE: "Rechnung",
-  CREDIT_NOTE: "Stornorechnung",
-  // M4 (Fix-Welle Final-Review): "Rechnungskorrektur" statt "Korrekturrechnung" — dasselbe
-  // Wort wie documentTitle() unten fuer creditNoteKind === "KORREKTUR" verwendet.
-  CORRECTION: "Rechnungskorrektur",
-  ANGEBOT: "Angebot",
-  AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
-  PROFORMA: "Proforma-Rechnung",
-  // Phase 5 (§13-15 UStG)
-  PARTIAL: "Teilrechnung",
-  DOWNPAYMENT: "Abschlagsrechnung",
-  FINAL: "Schlussrechnung",
-};
-
-const NUMBER_LABEL: Record<string, string> = {
-  INVOICE: "Rechnungsnummer",
-  CREDIT_NOTE: "Gutschriftnummer",
-  CORRECTION: "Korrekturnummer",
-  ANGEBOT: "Angebotsnummer",
-  AUFTRAGSBESTAETIGUNG: "Auftragsnummer",
-  PROFORMA: "Proforma-Nr.",
-  // Phase 5
-  PARTIAL: "Rechnungsnummer",
-  DOWNPAYMENT: "Rechnungsnummer",
-  FINAL: "Rechnungsnummer",
-};
-
-// Phase 5 (§13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG) — Hinweis auf Abschlagsrechnungen:
-// die Steuer entsteht mit Vereinnahmung des Entgelts, nicht mit Leistungserbringung.
-const DOWNPAYMENT_TAX_HINT =
-  "Anzahlung, Steuer wird mit Vereinnahmung geschuldet (§ 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG).";
 
 /**
  * Phase 12b (COMPLIANCE.md § 11): "Gutschrift" ist umsatzsteuerlich die Selbstabrechnung
@@ -100,22 +60,22 @@ const DOWNPAYMENT_TAX_HINT =
  * Nummernkreis CREDIT_NOTE bleibt unveraendert. Ohne aufloesbares Original faellt der
  * Titel auf "Stornorechnung" zurueck (der weit haeufigere Fall).
  */
-function documentTitle(data: EInvoiceData): string {
-  if (data.type === "CREDIT_NOTE") return data.creditNoteKind === "KORREKTUR" ? "Rechnungskorrektur" : "Stornorechnung";
-  return TYPE_TITLE[data.type] ?? "Beleg";
+function documentTitle(data: EInvoiceData, t: DocStrings): string {
+  if (data.type === "CREDIT_NOTE") return data.creditNoteKind === "KORREKTUR" ? t.titles.CREDIT_NOTE_CORRECTION : t.titles.CREDIT_NOTE;
+  return (t.titles as unknown as Record<string, string>)[data.type] ?? t.titles.DOCUMENT;
 }
-function documentNumberLabel(data: EInvoiceData): string {
-  if (data.type === "CREDIT_NOTE") return data.creditNoteKind === "KORREKTUR" ? "Korrekturnummer" : "Stornonummer";
-  return NUMBER_LABEL[data.type] ?? "Belegnummer";
+function documentNumberLabel(data: EInvoiceData, t: DocStrings): string {
+  if (data.type === "CREDIT_NOTE") return data.creditNoteKind === "KORREKTUR" ? t.numberLabels.CREDIT_NOTE_CORRECTION : t.numberLabels.CANCELLATION;
+  return (t.numberLabels as unknown as Record<string, string>)[data.type] ?? t.numberLabels.DOCUMENT;
 }
 
 // Phase 7 (§37) — GiroCode nur für die Rechnungs-Familie, nie für Gutschrift oder
 // Geschäftsdokumente (Angebot/AB/Proforma erzeugen ohnehin kein giroAmountCents).
 const GIRO_ELIGIBLE_TYPES = new Set(["INVOICE", "PARTIAL", "DOWNPAYMENT", "FINAL", "CORRECTION"]);
 
-function deDate(date: Date | null | undefined): string {
-  if (!date) return "—";
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+/** Datum in der Belegsprache; fehlt es, "—". */
+function docDate(date: Date | null | undefined, lang: DocLanguage): string {
+  return date ? formatDocDate(date, lang) : "—";
 }
 
 interface ItemColumn {
@@ -134,21 +94,22 @@ function buildItemColumns(
   options: PdfTheme["options"],
   contentWidth: number,
   labels: PdfLayout["labels"],
+  t: DocStrings,
 ): { columns: ItemColumn[]; x: Partial<Record<ItemColumn["key"], number>> } {
   const showArticleNumber = options.showArticleNumber && data.lines.some((l) => lineType(l) === "ITEM" && l.articleNumber);
   const showTax = options.showTaxRatePerLine;
   const showNetto = options.showLineTotals;
 
-  const columns: ItemColumn[] = [{ key: "pos", header: "Pos.", width: 28 }];
-  if (showArticleNumber) columns.push({ key: "artNr", header: "Art.-Nr.", width: 55 });
-  columns.push({ key: "desc", header: "Beschreibung", width: 0 }); // Breite unten aufgefüllt
-  columns.push({ key: "menge", header: "Menge", width: 50, align: "right" });
+  const columns: ItemColumn[] = [{ key: "pos", header: t.columns.pos, width: 28 }];
+  if (showArticleNumber) columns.push({ key: "artNr", header: t.columns.articleNumber, width: 55 });
+  columns.push({ key: "desc", header: t.columns.description, width: 0 }); // Breite unten aufgefüllt
+  columns.push({ key: "menge", header: t.columns.quantity, width: 50, align: "right" });
   // Fix-Welle (Abschluss-Review, Block 3 — `schlicht` vs. Referenzbeleg): Spaltenkoepfe
   // "Einzel"/"Netto" sind jetzt ueber `layout.labels` ueberschreibbar (`schlicht` nutzt
   // "Einzelpreis"/"Gesamtpreis", siehe schlicht.ts).
-  columns.push({ key: "einzel", header: labels?.colEinzel ?? "Einzel", width: 70, align: "right" });
-  if (showTax) columns.push({ key: "ust", header: "USt", width: 35, align: "right" });
-  if (showNetto) columns.push({ key: "netto", header: labels?.colNetto ?? "Netto", width: 70, align: "right" });
+  columns.push({ key: "einzel", header: labels?.colEinzel ?? t.columns.unitPrice, width: 70, align: "right" });
+  if (showTax) columns.push({ key: "ust", header: t.columns.vat, width: 35, align: "right" });
+  if (showNetto) columns.push({ key: "netto", header: labels?.colNetto ?? t.columns.net, width: 70, align: "right" });
 
   const GAP = 8;
   const fixedSum = columns.reduce((sum, c) => sum + (c.key === "desc" ? 0 : c.width), 0);
@@ -186,6 +147,11 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   drawBackground(doc, theme);
 
   const cur = data.currency;
+  const lang = resolveDocLanguage(data.language);
+  const t = docStrings(lang);
+  const locale = docLocale(lang);
+  const fx = fxOf(data);
+  const money = (cents: number): string => formatCents(cents, cur, locale);
   const left = margins.left;
   const right = doc.page.width - margins.right;
 
@@ -203,6 +169,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // Phase 11b — Layout-Hooks (Kopf/Tabellenstil/Summenlinie/Fusszeile) statt fest
   // verdrahteter Zeichenlogik; `standard` reproduziert das bisherige Layout exakt.
   const layout = getLayout(theme.layoutId);
+  // Layout-Beschriftungen (schlicht) gelten nur fuer Deutsch; andere Sprachen nutzen die Tabelle der Belegsprache.
+  const labels = lang === "de" ? layout.labels : layout.id === "schlicht" ? t.layoutLabels.schlicht : undefined;
   const base = theme.brand.fontSizePt + layout.fontDelta; // Phase 11b: fontSizePt wird erstmals konsumiert
   const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
   // Phase 11b, Task 5 — Zeilenhoehe der Positionstabelle war bisher fest 16pt (passend
@@ -236,21 +204,21 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     chromeStartY = typeof chromeResult === "number" ? chromeResult : undefined;
   });
 
-  const meta: KopfMetaRow[] = [{ label: "Rechnungsdatum", value: deDate(data.issueDate) }];
-  if (data.deliveryDate) meta.push({ label: "Leistungsdatum", value: deDate(data.deliveryDate) });
-  if (data.dueDate) meta.push({ label: "Fällig am", value: deDate(data.dueDate) });
+  const meta: KopfMetaRow[] = [{ label: t.meta.invoiceDate, value: docDate(data.issueDate, lang) }];
+  if (data.deliveryDate) meta.push({ label: t.meta.deliveryDate, value: docDate(data.deliveryDate, lang) });
+  if (data.dueDate) meta.push({ label: t.meta.dueDate, value: docDate(data.dueDate, lang) });
   // Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-2026-0001): nach den
   // Nummer-/Datumszeilen, fuer ALLE Layouts (die `meta`-Zeilen werden von jedem
   // `layout.drawKopf` gemeinsam genutzt) — "Ihre Kundennummer" nur, wenn der Kaeufer eine
   // hat (Customer.customerNumber, Phase 7 §34); "Ihr Ansprechpartner" nur, wenn der
   // Verkaeufer-Snapshot einen Kontaktnamen traegt (`data.seller.contactName`, aktuell ohne
   // eigene Datenquelle in den Buildern — siehe mapper.ts/pdf-data.ts).
-  if (data.buyer.customerNumber) meta.push({ label: "Ihre Kundennummer", value: data.buyer.customerNumber });
-  if (data.seller.contactName) meta.push({ label: "Ihr Ansprechpartner", value: data.seller.contactName });
-  if (data.buyer.vatId) meta.push({ label: "USt-IdNr. Empfänger", value: data.buyer.vatId });
+  if (data.buyer.customerNumber) meta.push({ label: t.meta.customerNumber, value: data.buyer.customerNumber });
+  if (data.seller.contactName) meta.push({ label: t.meta.contactPerson, value: data.seller.contactName });
+  if (data.buyer.vatId) meta.push({ label: t.meta.buyerVatId, value: data.buyer.vatId });
   // Phase 5 — Bezug zur Quelle (Angebot/Auftrag/Lieferschein) bei Teil-/Abschlags-/
   // Schlussrechnung, NUR fürs PDF-Layout (kein XML-Feld).
-  if (data.sourceNumber) meta.push({ label: "Bezug", value: `zu ${data.sourceLabel ?? "Beleg"} ${data.sourceNumber}` });
+  if (data.sourceNumber) meta.push({ label: t.meta.reference, value: t.meta.referenceValue(data.sourceLabel ?? t.meta.genericDocument, data.sourceNumber) });
 
   // Kopf: Logo, Absenderzeile, Empfänger, Titel, Meta, Kopftext (Platzhalter bereits
   // aufgeloest, siehe buildEInvoiceData/buildDocEInvoiceData) — y danach dynamisch
@@ -261,10 +229,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // (data.deliverTo) — generischer extraRecipientBlock-Mechanismus, den alle Layouts
   // bereits fuer den Lieferschein-Lieferadressblock zeichnen (siehe delivery-note-pdf.ts).
   const deliverTo = data.deliverTo;
-  const deliverToCountry = deliverTo ? addressCountryLine(deliverTo.countryCode) : null;
+  const deliverToCountry = deliverTo ? addressCountryLine(deliverTo.countryCode, lang) : null;
   const extraRecipientBlock = deliverTo
     ? {
-        heading: "Lieferanschrift:",
+        heading: t.meta.deliveryAddress,
         lines: [
           ...(deliverTo.name ? [deliverTo.name] : []),
           deliverTo.addressLine1,
@@ -276,19 +244,19 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     : undefined;
 
   let y = layout.drawKopf(frame, {
-    title: documentTitle(data),
-    numberLabel: documentNumberLabel(data),
+    title: documentTitle(data, t),
+    numberLabel: documentNumberLabel(data, t),
     number: data.number,
     meta,
-    recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode) },
+    recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode, lang) },
     extraRecipientBlock,
-    senderFallback: senderLineFallback(data.seller),
+    senderFallback: senderLineFallback(data.seller, lang),
     intro: data.headerText,
     subject: data.subject,
   });
 
   // Positions-Tabelle — Spalten nach Druckoptionen (§36).
-  const { columns, x: colX } = buildItemColumns(data, theme.options, right - left - 4, layout.labels);
+  const { columns, x: colX } = buildItemColumns(data, theme.options, right - left - 4, labels, t);
   const tableX = left + 4;
 
   // Manuelle Paginierung: pdfkit bricht bei einem `doc.text(...)` nahe dem unteren Rand
@@ -311,6 +279,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   const footerColumns = buildFooterColumns(
     { seller: data.seller, iban: data.iban, bic: data.bic, bankName: data.bankName, accountHolder: data.accountHolder, ...theme.footerFacts },
     theme.brand,
+    lang,
   );
   const footerZone = footerZoneHeight(frame, layout, footerColumns);
   const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
@@ -374,7 +343,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       doc.font("Helvetica-Bold").fontSize(base - 1).fillColor("#000");
       doc.text(line.description, sumLabelX, y, { width: sumLabelWidth, align: "right" });
       if (theme.options.showLineTotals) {
-        doc.text(formatCents(subtotals[i] ?? 0, cur), sumValueX, y, { width: sumValueWidth, align: "right" });
+        doc.text(money(subtotals[i] ?? 0), sumValueX, y, { width: sumValueWidth, align: "right" });
       }
       doc.font("Helvetica").fontSize(base - 1);
       y += rowH;
@@ -417,17 +386,17 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     }
     // Fix-Welle (Abschluss-Review, Block 3): `schlicht` nummeriert die Referenz-Positionen
     // "1." statt "1" — `labels.colPosSuffix` haengt ein optionales Suffix an.
-    doc.text(`${itemPos}${layout.labels?.colPosSuffix ?? ""}`, tableX + colX.pos!, y, { width: 28 });
+    doc.text(`${itemPos}${labels?.colPosSuffix ?? ""}`, tableX + colX.pos!, y, { width: 28 });
     if (colX.artNr != null) doc.text(line.articleNumber ?? "", tableX + colX.artNr, y, { width: 55 });
     if (showDescription) {
       if (layout.table.boldTitle) doc.font("Helvetica-Bold");
       titleLines.forEach((tl, ti) => drawWrappedLine(doc, tl, descX, y + ti * lineHeight, base - 1));
       if (layout.table.boldTitle) doc.font("Helvetica");
     }
-    doc.text(`${formatQuantity(line.quantityMilli)} ${unitLabel(line.unit)}`, tableX + colX.menge!, y, { width: 50, align: "right" });
-    doc.text(formatCents(line.unitNetPriceCents, cur), tableX + colX.einzel!, y, { width: 70, align: "right" });
+    doc.text(`${formatQuantity(line.quantityMilli, locale)} ${unitLabel(line.unit, lang)}`, tableX + colX.menge!, y, { width: 50, align: "right" });
+    doc.text(money(line.unitNetPriceCents), tableX + colX.einzel!, y, { width: 70, align: "right" });
     if (colX.ust != null) doc.text(`${line.taxRate}%`, tableX + colX.ust, y, { width: 35, align: "right" });
-    if (colX.netto != null) doc.text(formatCents(line.lineNetCents, cur), tableX + colX.netto, y, { width: 70, align: "right" });
+    if (colX.netto != null) doc.text(money(line.lineNetCents), tableX + colX.netto, y, { width: 70, align: "right" });
     y += h;
     if (layout.table.rowRule) {
       doc.save();
@@ -443,8 +412,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       y = ensureSpace(y, discountRowH);
       const pct = line.discountPermille ? ` ${(line.discountPermille / 10).toFixed(2).replace(/\.00$/, "")} %` : "";
       doc.fontSize(base - 2).fillColor("#555");
-      if (showDescription) doc.text(`abzgl.${pct} Rabatt`, descX, y, { width: descWidth });
-      if (colX.netto != null) doc.text(`–${formatCents(Math.abs(line.discountCents), cur)}`, tableX + colX.netto, y, { width: 70, align: "right" });
+      if (showDescription) doc.text(t.totals.lineDiscount(pct), descX, y, { width: descWidth });
+      if (colX.netto != null) doc.text(`–${money(Math.abs(line.discountCents))}`, tableX + colX.netto, y, { width: 70, align: "right" });
       doc.fillColor("#000").fontSize(base - 1);
       y += discountRowH;
     }
@@ -469,7 +438,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     // `drawPageChrome`-Aufrufs.
     return typeof chromeStartY === "number" ? chromeStartY : margins.top;
   };
-  y = ensurePlainSpace(y, 40);
+  y = ensurePlainSpace(y, 40 + (fx ? 30 : 0));
   y += 10;
   layout.drawTotalsRule(frame, sumLabelX, y);
   y += 6;
@@ -495,11 +464,11 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // vorzeichenrichtig ausgegeben (Zwischensumme -100,00 / Rabatt +10,00 / Netto -90,00),
   // nur die Sichtbarkeit prueft den Betrag.
   if (allowanceTotal !== 0 || chargeTotal !== 0) {
-    sumRow("Zwischensumme netto", formatCents(lineTotal, cur));
-    if (allowanceTotal !== 0) sumRow("abzgl. Rabatt", formatCents(-allowanceTotal, cur));
+    sumRow(t.totals.subtotalNet, money(lineTotal));
+    if (allowanceTotal !== 0) sumRow(t.totals.lessDiscount, money(-allowanceTotal));
     if (chargeTotal !== 0) {
       const chargeReason = data.documentCharges?.[0]?.reason;
-      sumRow(chargeReason ? `zzgl. Aufschlag (${chargeReason})` : "zzgl. Aufschlag", formatCents(chargeTotal, cur));
+      sumRow(chargeReason ? t.totals.surchargeWithReason(chargeReason) : t.totals.surcharge, money(chargeTotal));
     }
   }
   // Phase 5 — Schlussrechnung: der Summenblock weist die GESAMTLEISTUNG aus (alle
@@ -507,15 +476,16 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // (Fix-Welle, Abschluss-Review Block 3) unveraendert bleibt, auch bei einem Layout mit
   // eigenen `labels` (z. B. `schlicht`) — nur der Nicht-FINAL-Wortlaut ist ueberschreibbar.
   const isFinal = data.type === "FINAL";
-  const labels = layout.labels;
-  sumRow(isFinal ? "Gesamtleistung netto" : (labels?.net ?? "Nettobetrag"), formatCents(data.netTotalCents, cur));
-  for (const t of data.taxSubtotals) {
-    if (t.taxCents > 0) sumRow(labels?.taxRow?.(t.taxRate) ?? `zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
+  sumRow(isFinal ? t.totals.finalNet : (labels?.net ?? t.totals.net), money(data.netTotalCents));
+  for (const tx of data.taxSubtotals) {
+    if (tx.taxCents > 0) sumRow(labels?.taxRow?.(tx.taxRate) ?? t.totals.taxRow(tx.taxRate), money(tx.taxCents));
     // A2: 0-%-Gruppe mit Befreiungs-/Nichtsteuerbarkeitsgrund -> Zeile mit benannter Kategorie
     // statt keiner Steuerzeile. E (Kleinunternehmer § 19 / § 25a) bleibt ohne USt-Zeile ("kein Ausweis").
-    else if (ZERO_RATE_TAX_ROW_LABEL[t.taxCategory]) sumRow(`Umsatzsteuer 0 % (${ZERO_RATE_TAX_ROW_LABEL[t.taxCategory]})`, formatCents(0, cur), false, true);
+    else if (tx.taxCategory !== "E" && tx.taxCategory !== "S" && t.totals.zeroRateLabel[tx.taxCategory as keyof typeof t.totals.zeroRateLabel]) {
+      sumRow(t.totals.zeroRateRow(t.totals.zeroRateLabel[tx.taxCategory as keyof typeof t.totals.zeroRateLabel]), money(0), false, true);
+    }
   }
-  sumRow(isFinal ? "Gesamtleistung brutto" : (labels?.gross ?? "Gesamtbetrag"), formatCents(data.grossTotalCents, cur), true);
+  sumRow(isFinal ? t.totals.finalGross : (labels?.gross ?? t.totals.gross), money(data.grossTotalCents), true);
 
   // Phase 5 (§14 Abs. 5 S. 2 UStG) — je abgesetzter Abschlagsrechnung eine Abzugszeile,
   // dann fett der Restbetrag (= data.payableCents, aus dem Abzugs-Snapshot berechnet).
@@ -524,7 +494,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     for (const d of data.deductions) {
       // Fix-Runde 1, Punkt 7 — "–" (En-Dash, U+2013) statt "−" (Minuszeichen, U+2212):
       // Letzteres fehlt im Glyphensatz von Helvetica (pdfkit-Standardschrift).
-      const deductionText = `abzüglich Abschlagsrechnung ${d.number} vom ${deDate(d.issueDate)} –${formatCents(d.grossCents, cur)} (enthaltene USt ${formatCents(d.taxCents, cur)})`;
+      const deductionText = t.totals.deduction(d.number, docDate(d.issueDate, lang), money(d.grossCents), money(d.taxCents));
       y = ensurePlainSpace(y, 16);
       y =
         renderPlainTextPdf(doc, deductionText, y, {
@@ -537,7 +507,20 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
         }) + 4;
     }
     doc.fillColor("#000").fontSize(base);
-    sumRow("Restbetrag", formatCents(data.payableCents, cur), true);
+    sumRow(t.totals.remaining, money(data.payableCents), true);
+  }
+  // Phase 16b: Fremdwaehrungsbeleg — Kurs und USt in EUR direkt unter dem Summenblock
+  // (§ 14 Abs. 4 Satz 2 UStG i. V. m. § 16 Abs. 6 UStG); beim Entwurf live ermittelt.
+  if (fx) {
+    const fxText = (text: string): void => {
+      y = ensurePlainSpace(y, 14);
+      doc.font("Helvetica").fontSize(base - 1).fillColor("#333");
+      y = renderPlainTextPdf(doc, text, y, { x: left, width: right - left, fontSize: base - 1, align: "right", ensureSpace: ensurePlainSpace, color: "#333" }) + 2;
+    };
+    y += 2;
+    fxText(fxPdfRateLine(lang, cur, fx));
+    fxText(t.fx.taxEurLine(formatDocMoney(fx.taxTotalEurCents, "EUR", lang)));
+    if (isFinal && fx.deductedTaxEurCents) fxText(t.fx.deductedTaxEurLine(formatDocMoney(fx.deductedTaxEurCents, "EUR", lang)));
   }
   doc.font("Helvetica");
 
@@ -580,7 +563,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       const giroSize = mm(giroSizeMm);
       // fix/pdf-umbrueche (B1): die Bildunterschrift bricht in der schmalen GiroCode-Breite
       // auf mehrere Zeilen um — Hoehe messen statt fest 13 pt anzunehmen.
-      const captionText = layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen";
+      const captionText = labels?.giroCaption ?? t.giro.caption;
       const captionH = giroCaptionHeight(captionText, giroSize);
       y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH + 6);
       const giroY = y + 8;
@@ -624,19 +607,19 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // Hinweis auf jeder Abschlagsrechnung, vor den übrigen Hinweisen.
   if (data.type === "DOWNPAYMENT") {
     y = ensurePlainSpace(y, 30);
-    y = renderPlainTextPdf(doc, DOWNPAYMENT_TAX_HINT, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
+    y = renderPlainTextPdf(doc, t.totals.downpaymentTaxHint, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
   }
   // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis fuer den privaten
   // Leistungsempfaenger (Bauleistung am Grundstueck). Nur auf ausdruecklichen Schalter:
   // "Bauleistung" ist maschinell nicht erkennbar.
   if (data.consumerRetentionHint) {
     y = ensurePlainSpace(y, 30);
-    y = renderPlainTextPdf(doc, CONSUMER_RETENTION_HINT, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
+    y = renderPlainTextPdf(doc, t.notes.consumerRetentionHint, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
   }
   // A2 (§ 14 Abs. 4 Satz 1 Nr. 8 UStG): Grund der Steuerfreiheit/Nichtsteuerbarkeit je
   // vorkommender Nicht-S-Kategorie, auch bei Regelbesteuerung — nur wenn der Hinweistext
   // (notes, z. B. Schemahinweis) den Grund nicht bereits nennt. Gutschriften/Stornos wie das Original.
-  const categoryNotices = categoryNoticesToPrint(data.taxSubtotals.map((t) => t.taxCategory), data.notes);
+  const categoryNotices = categoryNoticesToPrint(data.taxSubtotals.map((x) => x.taxCategory), data.notes, lang);
   for (const text of categoryNotices) {
     y = ensurePlainSpace(y, 30);
     y = renderPlainTextPdf(doc, text, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" }) + 4;
@@ -689,7 +672,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       // Fix-Runde 1 (Koordinator, Punkt 8): 14 -> 22pt Abstand zu `footY` — bei Layouts mit
       // `footerHeight` > 32 (z. B. `schlicht`/`standard` seit der AUTO-Fusszeile, 44/46pt)
       // kollidierte die GiroCode-Bildunterschrift sonst mit der vierten Fusszeilen-Spalte.
-      const captionText = layout.labels?.giroCaption ?? "GiroCode – mit Banking-App scannen";
+      const captionText = labels?.giroCaption ?? t.giro.caption;
       const captionH = giroCaptionHeight(captionText, giroSize);
       // fix/pdf-umbrueche (B1): Unterkante der (mehrzeiligen) Bildunterschrift bleibt 10 pt
       // ueber der Fusszeile (vorher fest 22 pt Abstand fuer eine einzeilige Unterschrift).
@@ -723,7 +706,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     if (theme.options.punchMarks) drawPunchMark(doc);
     if (theme.watermark) drawWatermark(doc, theme.watermark);
   }
-  if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
+  if (theme.options.showPageNumbers) drawPageNumbers(doc, theme, lang);
 
   // Task 6 (ZUGFeRD-Hybrid): Anhang + Factur-X-XMP-Erweiterungsschema nur, wenn der
   // Aufrufer (renderZugferdPdf) welche mitgibt — Rechnung/Angebot/Auftragsbestaetigung

@@ -71,6 +71,17 @@ export const documentSettingsInputSchema = z.object({
   // Phase 12c, §33 — nur ganze Prozentwerte; alle taxRate-Spalten sind Int und die
   // Rechenkette arbeitet mit net * rate / 100.
   taxRates: taxRatesSchema.default([19, 7, 0]),
+  /**
+   * Phase 16b: Kursquelle fuer Fremdwaehrungsbelege (§ 16 Abs. 6 UStG). `BMF_MONTHLY` = amtlicher
+   * Monatsdurchschnitt (Standard); `ECB_DAILY` = EZB-Tageskurs, nur mit Gestattung des Finanzamts.
+   */
+  fxRateSource: z.enum(["BMF_MONTHLY", "ECB_DAILY"]).default("BMF_MONTHLY"),
+  /**
+   * Nur Eingabe, wird nie gespeichert: Bestaetigung, dass das Finanzamt die Umrechnung mit dem
+   * EZB-Tageskurs gestattet hat. Ein Wechsel der Kursquelle auf ECB_DAILY braucht `true`
+   * (`saveDocumentSettings`, gilt fuer Oberflaeche, REST und MCP gleich).
+   */
+  fxEcbConfirmed: z.boolean().optional(),
 });
 export type DocumentSettingsInput = z.infer<typeof documentSettingsInputSchema>;
 

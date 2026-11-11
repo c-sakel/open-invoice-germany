@@ -21,7 +21,7 @@
 import { useId } from "react";
 import type { DraftState, DraftAction } from "@/lib/editor/draft";
 import type { EditorMode } from "@/lib/editor/constants";
-import { SCHEME_NOTICE } from "@/lib/editor/constants";
+import { schemeNoticeFor } from "@/lib/editor/constants";
 import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 import type { PrintOptionsOverride } from "@/schemas";
@@ -93,7 +93,7 @@ export function MoreOptions({
   // `headerText` (jetzt `HeadTextBlock`) unabhaengiges Feld. Bei INVOICE zusaetzlich der
   // bestehende Pflichthinweis-Automatismus (Kleinunternehmer/Reverse-Charge/
   // Differenzbesteuerung, `toInvoicePayload` haengt ihn vor `notes`).
-  const notice = mode === "INVOICE" ? SCHEME_NOTICE[draft.taxScheme] : undefined;
+  const notice = mode === "INVOICE" ? schemeNoticeFor(draft.taxScheme, draft.language === "en" ? "en" : "de") : undefined;
 
   return (
     <details className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">

@@ -14,8 +14,9 @@ export async function GET(req: Request) {
     const query = textTemplatePickQuerySchema.parse({
       docType: searchParams.get("docType") ?? "",
       position: searchParams.get("position") ?? "",
+      language: searchParams.get("language") ?? undefined,
     });
-    const body = await pickTextTemplate(dbInternal, org.id, query.docType, query.position);
+    const body = await pickTextTemplate(dbInternal, org.id, query.docType, query.position, query.language);
     return NextResponse.json({ body });
   } catch (e) {
     if (e instanceof z.ZodError) {

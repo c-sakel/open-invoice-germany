@@ -6,6 +6,7 @@
 import { dbInternal } from "@/lib/db";
 import { normalizeToNoon } from "@/lib/recurring";
 import { loadDocumentSettings } from "@/domain/document/settings";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import type { CreateRecurringInput } from "@/schemas";
 
@@ -17,7 +18,7 @@ export class RecurringError extends Error {
 }
 
 export async function createRecurring(orgId: string, input: CreateRecurringInput) {
-  const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true } });
+  const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true, language: true } });
   if (!customer) throw new RecurringError("Kunde nicht gefunden.");
   if (input.endDate && input.endDate < input.startDate) throw new RecurringError("Enddatum liegt vor dem Startdatum.");
 
@@ -56,6 +57,7 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
     data: {
       orgId,
       customerId: input.customerId,
+      language: input.language ?? resolveDocLanguage(customer.language),
       title: input.title,
       status: "ACTIVE",
       interval: input.interval,

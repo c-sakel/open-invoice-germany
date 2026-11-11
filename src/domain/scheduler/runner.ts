@@ -1,6 +1,6 @@
 /**
  * Scheduler-Runner (Phase 6, Task 3) — fuehrt die registrierten Jobs (`jobs.ts`) seriell in
- * fester Reihenfolge (`recurring` -> `dunning` -> `archive` -> `notifications`) aus und protokolliert jeden Lauf in
+ * fester Reihenfolge (`fx` -> `recurring` -> `dunning` -> `archive` -> `notifications`) aus und protokolliert jeden Lauf in
  * `SchedulerRun`. Wird sowohl vom Intervall-Loop (`loop.ts`/`instrumentation.ts`) als auch
  * von den Cron-Routen, der manuellen API-Route und den CLI-Skripten aufgerufen — EINE
  * Implementierung, kein zweiter Ausfuehrungspfad.
@@ -23,7 +23,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { jobs } from "./jobs";
 
-export type SchedulerJob = "dunning" | "recurring" | "archive" | "notifications" | "webhooks" | "audit" | "cleanup";
+export type SchedulerJob = "fx" | "dunning" | "recurring" | "archive" | "notifications" | "webhooks" | "audit" | "cleanup";
 
 export interface JobResult {
   job: SchedulerJob;
@@ -34,7 +34,8 @@ export interface JobResult {
   runId?: string;
 }
 
-// Reihenfolge (Task-3-Facts, erweitert um Task-5-Facts): recurring -> dunning ->
+// "fx" (Phase 16b) laeuft als ERSTER Job: aktuelle Wechselkurse liegen vor, bevor Abo-Rechnungen
+// in Fremdwaehrung erzeugt werden. Reihenfolge (Task-3-Facts, erweitert um Task-5-Facts): recurring -> dunning ->
 // notifications -> webhooks — Benachrichtigungen (faellig/ueberfaellig/Mahnstufe) sollen
 // den Stand NACH den beiden vorgelagerten Jobs desselben Laufs widerspiegeln (frisch
 // erzeugte Abo-Rechnungen/Mahnungen); "webhooks" (Zustellung der Outbox) laeuft zuletzt,
@@ -43,7 +44,7 @@ export interface JobResult {
 // "webhooks" liefert hier nur die bereits angelegten Outbox-Zeilen aus). "cleanup" (Fix-
 // Welle, Should-fix 7) laeuft als LETZTER Job — raeumt WebhookDelivery/ApiIdempotency auf,
 // nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
-export const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "archive", "notifications", "webhooks", "audit", "cleanup"];
+export const JOB_ORDER: SchedulerJob[] = ["fx", "recurring", "dunning", "archive", "notifications", "webhooks", "audit", "cleanup"];
 const STALE_MS = 30 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {

@@ -8,6 +8,8 @@
  * `paidAt <= endOfDay(dueDate)`.
  */
 import { formatCents, roundHalfUp } from "../money";
+import { docLocale, docStrings } from "../i18n/doc";
+import type { DocLanguage } from "../i18n/doc/types";
 
 export interface SkontoTerm {
   /** Skonto-Satz in Promille (0..1000 = 0..100 %). */
@@ -57,6 +59,12 @@ function formatDateDE(d: Date): string {
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
   const year = d.getUTCFullYear();
   return `${day}.${month}.${year}`;
+}
+
+function formatDateEn(d: Date): string {
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${d.getUTCFullYear()}`;
 }
 
 /** Prozent mit maximal 2 Nachkommastellen, ohne überflüssige Nullen (Menschentext). */
@@ -125,14 +133,16 @@ export function detectSkonto(
  * Menschenlesbarer Zahlungsbedingungstext, z. B.:
  * "2 % Skonto bei Zahlung bis 10.06.2034 (Skontobetrag 23,80 €), zahlbar netto bis 17.06.2034."
  */
-export function paymentTermsText(terms: readonly SkontoTerm[], netDueDate: Date | null): string {
-  const parts = terms.map(
-    (t) =>
-      `${formatPercentDE(t.permille)} Skonto bei Zahlung bis ${formatDateDE(t.dueDate)} ` +
-      `(Skontobetrag ${formatCents(t.amountCents)})`,
+export function paymentTermsText(terms: readonly SkontoTerm[], netDueDate: Date | null, lang: DocLanguage = "de", currency = "EUR"): string {
+  const t = docStrings(lang).paymentTerms;
+  const fmtDate = (d: Date): string => (lang === "de" ? formatDateDE(d) : formatDateEn(d));
+  const fmtPercent = (permille: number): string =>
+    lang === "de" ? formatPercentDE(permille) : `${new Intl.NumberFormat(docLocale(lang), { maximumFractionDigits: 2 }).format(permille / 10)}%`;
+  const parts = terms.map((term) =>
+    t.skontoClause(fmtPercent(term.permille), fmtDate(term.dueDate), formatCents(term.amountCents, currency, docLocale(lang))),
   );
   if (netDueDate) {
-    parts.push(`zahlbar netto bis ${formatDateDE(netDueDate)}`);
+    parts.push(t.netDue(fmtDate(netDueDate)));
   }
   return `${parts.join(", ")}.`;
 }

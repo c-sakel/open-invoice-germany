@@ -24,7 +24,7 @@ function zeroRated(category: string): EInvoiceData {
 
 describe("BT-120 / BT-121 (Phase 12b)", () => {
   it("Text fuer alle befreiten Kategorien, nichts fuer S; VATEX-Code nur fuer AE/K/G/O", () => {
-    expect(["AE", "K", "G", "E", "Z", "O"].map(exemptionReasonText)).toEqual([
+    expect(["AE", "K", "G", "E", "Z", "O"].map((c) => exemptionReasonText(c))).toEqual([
       "Steuerschuldnerschaft des Leistungsempfängers", "Innergemeinschaftliche Lieferung",
       "Ausfuhrlieferung", "Steuerbefreit", "Nullsatz", "Nicht steuerbar",
     ]);
@@ -58,5 +58,14 @@ describe("BT-120 / BT-121 (Phase 12b)", () => {
     const ubl = buildXRechnungUBL(zeroRated("E"));
     expect(ubl).toContain("<cbc:TaxExemptionReason>Steuerbefreit</cbc:TaxExemptionReason>");
     expect(ubl).not.toContain("TaxExemptionReasonCode");
+  });
+});
+
+describe("BT-120 Klartext je Belegsprache (Phase 16b)", () => {
+  it("en: Reverse charge / Intra-Community supply; Default und S bleiben unveraendert", () => {
+    expect(exemptionReasonText("AE", "en")).toBe("Reverse charge");
+    expect(exemptionReasonText("K", "en")).toBe("Intra-Community supply");
+    expect(exemptionReasonText("S", "en")).toBeNull();
+    expect(exemptionReasonText("AE", "de")).toBe(exemptionReasonText("AE"));
   });
 });

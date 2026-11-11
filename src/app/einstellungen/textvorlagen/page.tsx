@@ -4,6 +4,8 @@ import { dbInternal } from "@/lib/db";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 import { TextTemplateRowActions } from "@/components/forms/TextTemplateRowActions";
+import { LanguageFilter } from "@/components/forms/LanguageFilter";
+import { DOC_LANGUAGES, DOC_LANGUAGE_LABEL, type DocLanguage } from "@/lib/i18n/doc";
 import type { EmailDocType } from "@/schemas/email";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +18,12 @@ const POSITION_LABEL: Record<string, string> = {
   TERMS_PAYMENT: "Zahlungsbedingungen",
 };
 
-export default async function TextTemplatesPage() {
+export default async function TextTemplatesPage({ searchParams }: { searchParams: Promise<{ sprache?: string }> }) {
   const org = await getActiveOrg();
+  const { sprache } = await searchParams;
+  const language = DOC_LANGUAGES.find((l) => l === sprache);
   const templates = await dbInternal.textTemplate.findMany({
-    where: { orgId: org.id },
+    where: { orgId: org.id, ...(language ? { language } : {}) },
     orderBy: [{ docType: "asc" }, { position: "asc" }, { name: "asc" }],
   });
 
@@ -43,6 +47,8 @@ export default async function TextTemplatesPage() {
         gespeichert — spätere Änderungen an der Vorlage wirken sich nur auf neue Belege aus.
       </p>
 
+      <LanguageFilter active={language} />
+
       {DOC_TYPES.map((docType) => {
         const positions = Object.keys(POSITION_LABEL).filter((p) => (byCombo.get(`${docType}|${p}`) ?? []).length > 0);
         if (positions.length === 0) return null;
@@ -59,6 +65,7 @@ export default async function TextTemplatesPage() {
                       <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-ink">{t.name}</span>
+                          <span className="rounded bg-well px-1.5 py-0.5 text-xs font-medium text-ink-soft">{DOC_LANGUAGE_LABEL[(t.language === "en" ? "en" : "de") as DocLanguage]}</span>
                           {t.isDefault && <span className="rounded bg-ledger/10 px-1.5 py-0.5 text-xs font-medium text-ledger">Standard</span>}
                         </div>
                         <div className="flex items-center gap-3">

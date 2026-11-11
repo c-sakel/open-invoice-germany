@@ -11,7 +11,8 @@ import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
-import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
+import { docStrings } from "@/lib/i18n/doc";
+import { fxOf, fxRateNoteText } from "./fx-note";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -172,6 +173,7 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     : "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
   const amt = (cents: number) => money(isCredit ? Math.abs(cents) : cents);
   const qty = (milli: number) => quantity(Math.abs(milli));
+  const fx = fxOf(data);
 
   const root = create({ version: "1.0", encoding: "UTF-8" }).ele(rootName, {
     xmlns: rootNs,
@@ -202,11 +204,16 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES Note-Element
   // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
   // Freitext-Hinweis, statt ihn zu ersetzen.
-  if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions)).up();
+  if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions, data.language ?? "de")).up();
   // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
   // Note-Element (mehrere cbc:Note sind laut UBL-XSD zulaessig), Phase 12b Task 5.
-  if (data.consumerRetentionHint) root.ele("cbc:Note").txt(CONSUMER_RETENTION_HINT).up();
+  if (data.consumerRetentionHint) root.ele("cbc:Note").txt(docStrings(data.language ?? "de").notes.consumerRetentionHint).up();
+  // Phase 16b — Umrechnungskurs als BT-22 (zusaetzliche Note), nur bei Fremdwaehrung.
+  if (fx) root.ele("cbc:Note").txt(fxRateNoteText(data, fx)).up();
   root.ele("cbc:DocumentCurrencyCode").txt(cur).up();
+  // BT-6 — Steuerwaehrung EUR bei Fremdwaehrungsbelegen (§ 16 Abs. 6 UStG). UBL-XSD:
+  // TaxCurrencyCode folgt unmittelbar auf DocumentCurrencyCode.
+  if (fx) root.ele("cbc:TaxCurrencyCode").txt("EUR").up();
   // XRechnung: BT-10 Buyer reference Pflicht (Leitweg-ID im B2G); Fallback Belegnummer
   root.ele("cbc:BuyerReference").txt(data.buyerReference || data.number).up();
 
@@ -362,13 +369,18 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     // UBL-XSD (TaxCategoryType): ReasonCode steht VOR Reason.
     const reasonCode = exemptionReasonCode(sub.taxCategory);
     if (reasonCode) cat.ele("cbc:TaxExemptionReasonCode").txt(reasonCode).up();
-    const reason = exemptionReasonText(sub.taxCategory);
+    const reason = exemptionReasonText(sub.taxCategory, data.language ?? "de");
     if (reason) cat.ele("cbc:TaxExemptionReason").txt(reason).up();
     cat.ele("cac:TaxScheme").ele("cbc:ID").txt("VAT").up().up();
     cat.up();
     st.up();
   }
   taxTotal.up();
+  // BT-111 — USt-Gesamtbetrag in EUR als zweites TaxTotal, nur TaxAmount, ohne TaxSubtotal
+  // (BR-53). Vorzeichen wie die Hauptbetraege (bei CreditNote positiv).
+  if (fx) {
+    root.ele("cac:TaxTotal").ele("cbc:TaxAmount", { currencyID: "EUR" }).txt(amt(fx.taxTotalEurCents)).up().up();
+  }
 
   // BG-22 — Gesamtsummen. Reihenfolge laut UBL-XSD (LegalMonetaryTotalType):
   // LineExtensionAmount, TaxExclusiveAmount, TaxInclusiveAmount, AllowanceTotalAmount,
@@ -408,7 +420,7 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
         isCharge: false,
         amountCents: Math.abs(line.discountCents),
         baseCents: Math.abs(line.grossLineCents ?? line.lineNetCents),
-        reason: "Rabatt",
+        reason: docStrings(data.language ?? "de").notes.allowanceReason,
         reasonCode: "95",
         multiplierPermille: line.discountPermille,
         currency: cur,

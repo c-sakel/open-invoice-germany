@@ -5,6 +5,7 @@ import { saveEmailTemplateAction } from "@/app/actions/templates";
 import type { ActionResult } from "@/app/actions/result";
 import { EMAIL_DOC_TYPES, type EmailDocType } from "@/schemas/email";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
+import { DOC_LANGUAGES, DOC_LANGUAGE_LABEL, type DocLanguage } from "@/lib/i18n/doc";
 import { TEMPLATE_PLACEHOLDERS } from "@/lib/template/placeholders";
 import { TextField, SelectField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
 
@@ -12,6 +13,7 @@ export interface EmailTemplateFormData {
   id?: string;
   name: string;
   docType: EmailDocType;
+  language?: string;
   subject: string;
   body: string;
   signature: string | null;
@@ -82,6 +84,23 @@ export function EmailTemplateForm({
             />
           )}
         </div>
+
+        {template?.id ? (
+          <>
+            <input type="hidden" name="language" value={template.language ?? "de"} />
+            <p className="text-sm text-ink-soft">
+              Sprache: <strong>{DOC_LANGUAGE_LABEL[(template.language === "en" ? "en" : "de") as DocLanguage]}</strong> (nach dem Anlegen nicht mehr änderbar)
+            </p>
+          </>
+        ) : (
+          <SelectField
+            label="Sprache"
+            name="language"
+            defaultValue="de"
+            options={DOC_LANGUAGES.map((l) => ({ value: l, label: DOC_LANGUAGE_LABEL[l] }))}
+            hint="Die Vorlage wird für Belege in dieser Sprache vorgeschlagen."
+          />
+        )}
 
         <TextField label="Betreff" name="subject" defaultValue={subject} required onChange={(e) => setSubject(e.target.value)} />
 

@@ -77,6 +77,7 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
     if (input.internalNotes !== undefined) { data.internalNotes = input.internalNotes; changedFields.push("internalNotes"); }
     if (input.validUntil !== undefined) { data.validUntil = input.validUntil; changedFields.push("validUntil"); }
     if (input.taxScheme !== undefined) { data.taxScheme = input.taxScheme; changedFields.push("taxScheme"); }
+    if (input.language !== undefined) { data.language = input.language; changedFields.push("language"); }
     if (input.currency !== undefined) { data.currency = input.currency; changedFields.push("currency"); }
 
     const adjustmentFieldChanged =

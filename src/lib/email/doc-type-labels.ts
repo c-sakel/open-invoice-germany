@@ -12,3 +12,18 @@ export const DOC_TYPE_LABEL: Record<EmailDocType, string> = {
   DUNNING: "Mahnung",
   DELIVERY_NOTE: "Lieferschein",
 };
+
+const DOC_TYPE_LABEL_EN: Record<EmailDocType, string> = {
+  ANGEBOT: "Quotation",
+  AUFTRAGSBESTAETIGUNG: "Order confirmation",
+  PROFORMA: "Proforma invoice",
+  INVOICE: "Invoice",
+  CREDIT_NOTE: "Credit note",
+  DUNNING: "Payment reminder",
+  DELIVERY_NOTE: "Delivery note",
+};
+
+/** Anzeigename des Belegtyps in der Belegsprache (de: DOC_TYPE_LABEL). */
+export function docTypeLabel(type: EmailDocType, lang: "de" | "en"): string {
+  return lang === "en" ? DOC_TYPE_LABEL_EN[type] : DOC_TYPE_LABEL[type];
+}

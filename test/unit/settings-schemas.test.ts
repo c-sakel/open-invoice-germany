@@ -33,7 +33,13 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
       recurringAutoFinalizeDefault: false,
       recurringAutoSendDefault: false,
       taxRates: [19, 7, 0],
+      fxRateSource: "BMF_MONTHLY",
     });
+  });
+
+  it("fxRateSource: nur BMF_MONTHLY oder ECB_DAILY", () => {
+    expect(documentSettingsInputSchema.parse({ fxRateSource: "ECB_DAILY" }).fxRateSource).toBe("ECB_DAILY");
+    expect(documentSettingsInputSchema.safeParse({ fxRateSource: "X" }).success).toBe(false);
   });
 
   it("lehnt Tage ausserhalb 0..365 ab (quoteValidityDays, invoiceDueDays)", () => {

@@ -35,6 +35,7 @@ export const SETTINGS_KEYS = [
   "stammdaten",
   "belege",
   "nummernkreise",
+  "kurse",
   "briefpapier",
   "marke",
   "email",
@@ -105,6 +106,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen", label: "Stammdaten", key: "stammdaten", exact: true },
   { href: "/einstellungen/belege", label: "Belege", key: "belege" },
   { href: "/einstellungen/nummernkreise", label: "Nummernkreise", key: "nummernkreise" },
+  { href: "/einstellungen/kurse", label: "Wechselkurse", key: "kurse" },
   { href: "/einstellungen/briefpapier", label: "Briefpapier", key: "briefpapier" },
   { href: "/einstellungen/marke", label: "Marke", key: "marke" },
   { href: "/einstellungen/email", label: "E-Mail-Versand", key: "email" },
@@ -131,7 +133,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
  */
 export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsKey[] }[] = [
   { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden"] },
-  { label: "Belege", keys: ["belege", "nummernkreise", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
+  { label: "Belege", keys: ["belege", "nummernkreise", "kurse", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
   { label: "Kommunikation", keys: ["email", "benachrichtigungen"] },
   { label: "System", keys: ["automatisierung", "api", "webhooks", "pruefung", "konto"] },
 ];
