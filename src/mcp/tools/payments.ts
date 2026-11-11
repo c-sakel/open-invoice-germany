@@ -5,6 +5,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { formatCents } from "@/lib/money";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
+import { reversePayment } from "@/domain/invoice/payment-reversal";
+import { reversePaymentInputSchema } from "@/schemas/payment-correction";
 import { NotFoundError } from "@/domain/errors";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { recordPaymentSchema, PaymentMethod } from "@/schemas";
@@ -55,6 +57,39 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
             : "";
         return ctx.ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}`);
       } catch (e) {
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
+        if (e instanceof PaymentError) return ctx.fail(e.message);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── reverse_payment ──────────────────────────────────────────────────────────
+  server.registerTool(
+    "reverse_payment",
+    {
+      title: "Zahlung per Gegenbuchung korrigieren",
+      description:
+        "Korrigiert eine erfasste Zahlung per Gegenbuchung (GoBD: die Zahlung bleibt sichtbar, es entsteht eine negative Zahlungszeile). " +
+        "Ohne amountCents wird der noch nicht gegengebuchte Rest zurueckgebucht. Der Grund ist Pflicht (mind. 3 Zeichen).",
+      inputSchema: {
+        paymentId: z.string().describe("ID der zu korrigierenden Zahlung"),
+        amountCents: z.number().optional().describe("Betrag der Gegenbuchung in Cent (positiv); Default: noch nicht gegengebuchter Rest"),
+        reason: z.string().describe("Begruendung der Korrektur (Pflicht)"),
+      },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const input = reversePaymentInputSchema.parse({ amountCents: args.amountCents, reason: args.reason });
+        const result = await reversePayment(args.paymentId, input, { actor: "mcp", orgId: org.id, createdBy: "mcp" });
+                const skontoNote = result.skontoReversal ? ` Skontobuchung ${formatCents(-result.skontoReversal.amountCents)} mitgebucht.` : "";
+        return ctx.ok(
+          `Gegenbuchung ${formatCents(-result.reversal.amountCents)} erfasst (ID ${result.reversal.id}). Status: ${result.invoiceStatus} · gebucht: ${formatCents(result.paidAmountCents)}.${skontoNote}`,
+        );
+      } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof PaymentError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);

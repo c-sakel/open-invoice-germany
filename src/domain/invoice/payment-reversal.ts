@@ -163,7 +163,7 @@ export async function reversePayment(
         type: "payment.reversed",
         objectName: "Payment",
         objectId: row.id,
-        data: { ...serializePayment(row), kind: row.kind, reversesPaymentId: row.reversesPaymentId, reason: row.reason },
+        data: serializePayment(row),
         now,
       });
     }

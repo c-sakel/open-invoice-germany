@@ -93,6 +93,53 @@ describe("record_payment (Fehlerpfad — Erfolgspfad in mcp-workflow.test.ts)", 
   });
 });
 
+describe("reverse_payment", () => {
+  async function paid() {
+    const customer = await makeCustomer("Gegenbuchung");
+    const draft = await createDraftInvoice(orgId, {
+      customerId: customer.id,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      deliveryDate: FIX_DATE,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput);
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    const pay = await callTool("record_payment", { invoice: finalized.number!, amountEuro: 119 });
+    expect(pay.isError).toBeFalsy();
+    const payment = await dbInternal.payment.findFirstOrThrow({ where: { invoiceId: finalized.id } });
+    return { invoiceId: finalized.id, paymentId: payment.id };
+  }
+
+  it("bucht gegen: negative Zeile kind REVERSAL, createdBy mcp, Rechnung wieder offen", async () => {
+    const { invoiceId, paymentId } = await paid();
+    const res = await callTool("reverse_payment", { paymentId, reason: "Falsch zugeordnet" });
+    expect(res.isError).toBeFalsy();
+    expect(text(res)).toContain("Gegenbuchung");
+    const rows = await dbInternal.payment.findMany({ where: { invoiceId, kind: "REVERSAL" } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amountCents: -11900, reversesPaymentId: paymentId, createdBy: "mcp", reason: "Falsch zugeordnet" });
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(inv.paidAmountCents).toBe(0);
+  });
+
+  it("zu kurzer Grund: gleiche Zod-Meldung wie die REST-Route", async () => {
+    const { paymentId } = await paid();
+    const res = await callTool("reverse_payment", { paymentId, reason: "x" });
+    expect(res.isError).toBe(true);
+    const { reversePaymentInputSchema } = await import("@/schemas/payment-correction");
+    const parsed = reversePaymentInputSchema.safeParse({ reason: "x" });
+    expect(parsed.success).toBe(false);
+    const message = parsed.success ? "" : parsed.error.issues.map((i) => i.message).join("; ");
+    expect(text(res)).toContain(message);
+  });
+
+  it("unbekannte Zahlung -> Fehler", async () => {
+    const res = await callTool("reverse_payment", { paymentId: "gibt-es-nicht", reason: "Test Grund" });
+    expect(res.isError).toBe(true);
+  });
+});
+
 describe("list_payment_methods", () => {
   it("listet die von ensureOrgMasterdata angelegten Standard-Zahlungsmethoden", async () => {
     const res = await callTool("list_payment_methods", {});
