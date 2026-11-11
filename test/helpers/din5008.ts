@@ -18,6 +18,7 @@ export interface RecordedBox {
 interface TextOptions {
   width?: number;
   height?: number;
+  lineGap?: number;
 }
 
 /** Spy auf `doc.text`/`doc.image`; `stop()` stellt die Originale wieder her und liefert die Boxen. */
@@ -32,7 +33,10 @@ export function recordTextBoxes(doc: PDFKit.PDFDocument): { stop(): RecordedBox[
     const y = typeof a === "number" && typeof b === "number" ? b : docState.y;
     const options: TextOptions = (typeof a === "object" ? a : typeof b === "object" ? b : c) ?? {};
     const widthPt = options.width ?? doc.widthOfString(String(text));
-    const measured = doc.heightOfString(String(text), options.width === undefined ? {} : { width: options.width });
+    const measureOptions: TextOptions = {};
+    if (options.width !== undefined) measureOptions.width = options.width;
+    if (options.lineGap !== undefined) measureOptions.lineGap = options.lineGap;
+    const measured = doc.heightOfString(String(text), measureOptions);
     boxes.push({ text: String(text), xPt: x, yPt: y, widthPt, heightPt: options.height ?? measured });
     return originalText(text, a as number, b as number, c);
   }) as typeof doc.text;

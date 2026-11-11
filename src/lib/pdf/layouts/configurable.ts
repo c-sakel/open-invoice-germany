@@ -7,32 +7,93 @@
 import type { LayoutDesignConfig } from "@/schemas/layout-design";
 import { DIN5008_FORM_B } from "../din5008";
 import { mm } from "../marks";
-import type { KopfInput, LayoutFrame, PdfLayout } from "./types";
+import { createPdfDocument } from "../document";
+import { marginsFromMm } from "../layout";
+import type { KopfInput, PdfLayout } from "./types";
 import { drawFooterColumns, drawMetaTable, drawRecipient, drawSubject } from "./shared";
 
 const WHITE = "#ffffff";
 const ZEBRA = "#f5f5f5";
 
 const RECIPIENT_MAX_PT = 10;
-const RECIPIENT_MIN_PT = 7;
+const RECIPIENT_MIN_PT = 8;
+/** Kleinster Zeilenabstand-Zuschlag (pt), wenn auch 8 pt nicht passen. */
+const RECIPIENT_MIN_LINE_GAP = -2;
+
+export interface RecipientFit {
+  size: number;
+  /** Nur gesetzt, wenn der Zeilenabstand verringert werden musste. */
+  lineGap?: number;
+}
+
+function recipientLines(input: KopfInput): string[] {
+  const r = input.recipient;
+  return [r.name, r.contactName, r.addressLine1, r.addressLine2, `${r.postalCode} ${r.city}`, r.countryLine].filter((l): l is string => Boolean(l));
+}
+
+/** Hoehe des Empfaengerblocks inkl. Zusatzblock, gemessen wie `drawRecipient` ihn zeichnet. */
+function recipientHeight(doc: PDFKit.PDFDocument, input: KopfInput, size: number, width: number, lineGap: number | undefined): number {
+  const opts = lineGap === undefined ? { width } : { width, lineGap };
+  doc.font("Helvetica").fontSize(size);
+  let height = recipientLines(input).reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
+  const extra = input.extraRecipientBlock;
+  if (extra) {
+    doc.fontSize(size - 2);
+    height += 8 + doc.heightOfString(extra.heading, opts);
+    doc.fontSize(size);
+    height += extra.lines.reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
+  }
+  return height;
+}
 
 /**
- * Groesste Empfaengerschrift (10 pt abwaerts, Schritte 0,5 pt), mit der die Anschriftzeilen
- * ab `top` noch im Anschriftfeld (bis 90 mm) enden — Schriften mit grosser Zeilenhoehe
- * wuerden sechs Zeilen sonst ueber die Fensterunterkante schieben.
+ * Groesste Empfaengerschrift (10 pt abwaerts bis 8 pt, Schritte 0,5 pt), mit der Anschrift und
+ * Zusatzblock ab `top` noch im Anschriftfeld (bis 90 mm) enden. Passt es bei 8 pt nicht, wird
+ * der Zeilenabstand stufenweise verringert; ohne Erfolg Rueckfall auf 8 pt mit dem Mindestabstand.
+ * Wirft nie. `fits` meldet, ob das Fenster tatsaechlich eingehalten wird.
  */
-function fitRecipientSize(frame: LayoutFrame, input: KopfInput, top: number, width: number): number {
-  const { doc } = frame;
-  const r = input.recipient;
-  const lines = [r.name, r.contactName, r.addressLine1, r.addressLine2, `${r.postalCode} ${r.city}`, r.countryLine].filter((l): l is string => Boolean(l));
+export function fitRecipient(doc: PDFKit.PDFDocument, input: KopfInput, top: number, width: number): RecipientFit & { fits: boolean } {
   const maxHeight = mm(DIN5008_FORM_B.fieldTopMm + DIN5008_FORM_B.fieldHeightMm) - top;
-  doc.font("Helvetica");
-  for (let size = RECIPIENT_MAX_PT; size > RECIPIENT_MIN_PT; size -= 0.5) {
-    doc.fontSize(size);
-    const height = lines.reduce((sum, line) => sum + doc.heightOfString(line, { width }), 0);
-    if (height <= maxHeight) return size;
+  for (let size = RECIPIENT_MAX_PT; size >= RECIPIENT_MIN_PT; size -= 0.5) {
+    if (recipientHeight(doc, input, size, width, undefined) <= maxHeight) return { size, fits: true };
   }
-  return RECIPIENT_MIN_PT;
+  for (let gap = -0.5; gap >= RECIPIENT_MIN_LINE_GAP; gap -= 0.5) {
+    if (recipientHeight(doc, input, RECIPIENT_MIN_PT, width, gap) <= maxHeight) return { size: RECIPIENT_MIN_PT, lineGap: gap, fits: true };
+  }
+  return { size: RECIPIENT_MIN_PT, lineGap: RECIPIENT_MIN_LINE_GAP, fits: false };
+}
+
+const WORST_CASE_INPUT: KopfInput = {
+  title: "",
+  numberLabel: "",
+  number: "",
+  meta: [],
+  senderFallback: "",
+  recipient: {
+    name: "Beispiel Automotive GmbH",
+    contactName: "Frau Erika Musterfrau",
+    addressLine1: "Kundenstraße 13",
+    addressLine2: "Hinterhaus, 3. Etage",
+    postalCode: "12345",
+    city: "Musterstadt",
+    countryLine: "ÖSTERREICH",
+  },
+  extraRecipientBlock: { heading: "Lieferanschrift", lines: ["Lager Nord, Hafenstraße 1"] },
+};
+
+/**
+ * Prueft zur Speicherzeit, ob die Anschrift im DIN-5008-Fenster bleibt: sechs Anschriftzeilen
+ * plus Lieferanschrift-Zusatzblock mit der gewaehlten Schrift. `null` = passt, sonst Fehlertext.
+ */
+export function checkRecipientWindow(config: LayoutDesignConfig): string | null {
+  const margins = marginsFromMm(config.marginsMm);
+  const doc = createPdfDocument({ size: "A4", margins, compress: false, pdfa: true, fontFamily: config.font });
+  const zoneTop = mm(DIN5008_FORM_B.addressZoneTopMm);
+  const zoneWidth = mm(DIN5008_FORM_B.fieldLeftMm + DIN5008_FORM_B.fieldWidthMm) - margins.left;
+  const fit = fitRecipient(doc, WORST_CASE_INPUT, zoneTop, zoneWidth);
+  doc.end();
+  if (fit.fits) return null;
+  return `Mit der Schrift „${config.font}“ passt eine sechszeilige Anschrift mit Lieferanschrift nicht in das Anschriftfeld (bis 90 mm). Wählen Sie eine andere Schrift.`;
 }
 
 export function buildLayout(config: LayoutDesignConfig): PdfLayout {
@@ -66,7 +127,8 @@ export function buildLayout(config: LayoutDesignConfig): PdfLayout {
         const lineH = doc.currentLineHeight(true);
         doc.text(text, left, zoneTop - lineH, { width: zoneWidth, height: lineH, ellipsis: true });
       }
-      const recipientBottom = drawRecipient(frame, input, zoneTop, fitRecipientSize(frame, input, zoneTop, zoneWidth), zoneWidth);
+      const fit = fitRecipient(doc, input, zoneTop, zoneWidth);
+      const recipientBottom = drawRecipient(frame, input, zoneTop, fit.size, zoneWidth, fit.lineGap);
       const metaBottom = drawMetaTable(
         frame,
         [{ label: input.numberLabel, value: input.number }, ...input.meta],

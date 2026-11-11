@@ -97,6 +97,8 @@ export const layoutDesignConfigSchema: z.ZodType<LayoutDesignConfig> = baseSchem
   const iGiro = blocks.indexOf("giro");
   if (iLines >= 0 && iTotals >= 0 && iLines > iTotals) add(["blocks"], "Die Positionen stehen vor den Summen.");
   if (iGiro >= 0 && iTotals >= 0 && iGiro < iTotals) add(["blocks"], "Der GiroCode steht nach den Summen.");
+  const iPayment = blocks.indexOf("payment");
+  if (iPayment >= 0 && iTotals >= 0 && iPayment < iTotals) add(["blocks"], "Die Zahlungshinweise stehen nach den Summen.");
 
   // Spalten
   const keys = cfg.columns.map((c) => c.key);

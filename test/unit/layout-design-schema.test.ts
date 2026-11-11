@@ -56,6 +56,11 @@ describe("layoutDesignConfigSchema", () => {
     c.blocks = ["sender", "recipient", "meta", "subject", "intro", "totals", "lines", "outro", "payment"];
     expectIssue(c, "blocks", "Positionen stehen vor den Summen");
   });
+  it("Bloecke: payment vor totals", () => {
+    const c = base();
+    c.blocks = ["sender", "recipient", "meta", "subject", "intro", "lines", "payment", "totals", "outro"];
+    expectIssue(c, "blocks", "Zahlungshinweise stehen nach den Summen");
+  });
   it("Bloecke: giro vor totals", () => {
     const c = base();
     c.blocks = ["sender", "recipient", "meta", "subject", "intro", "lines", "giro", "totals", "outro", "payment"];

@@ -101,6 +101,8 @@ function buildItemColumns(
 ): { columns: ItemColumn[]; x: Partial<Record<ItemColumn["key"], number>> } {
   const showArticleNumber = options.showArticleNumber && data.lines.some((l) => lineType(l) === "ITEM" && l.articleNumber);
   const showTax = options.showTaxRatePerLine;
+  // Rabattspalte nur, wenn mindestens eine Position einen Rabatt traegt.
+  const showDiscount = data.lines.some((l) => lineType(l) === "ITEM" && Boolean(l.discountCents));
   const showNetto = options.showLineTotals;
 
   const GAP = 8;
@@ -114,7 +116,7 @@ function buildItemColumns(
       unit: true,
       unitPrice: true,
       taxRate: showTax,
-      discount: true,
+      discount: showDiscount,
       total: showNetto,
     };
     const itemKey: Record<LayoutColumnKey, ItemColumn["key"]> = {
@@ -356,6 +358,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     return drawTableHeader(typeof chromeStartY === "number" ? chromeStartY : margins.top);
   };
 
+  const cellInk = layout.colors?.text ?? "#000"; // Bestandslayouts: schwarz
   const drawLines = (): void => {
     y = drawTableHeader(y);
 
@@ -369,14 +372,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
     const descWidth = columns.find((c) => c.key === "desc")!.width;
     const showDescription = theme.options.showDescription;
 
-    doc.fillColor("#000").fontSize(base - 1);
+    doc.fillColor(cellInk).fontSize(base - 1);
     let itemPos = 0;
     data.lines.forEach((line, i) => {
       const type = lineType(line);
 
       if (type === "HEADING") {
         y = ensureSpace(y, headingRowH);
-        doc.font("Helvetica-Bold").fontSize(base).fillColor("#000");
+        doc.font("Helvetica-Bold").fontSize(base).fillColor(cellInk);
         doc.text(line.description, left, y, { width: right - left });
         doc.font("Helvetica").fontSize(base - 1);
         y = doc.y + 6;
@@ -385,18 +388,18 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
 
       if (type === "TEXT") {
         const blocks = parseRichText(line.descriptionLong ?? line.description);
-        doc.fillColor("#000");
+        doc.fillColor(cellInk);
         // renderRichTextPdf schreibt ab doc.y (pdfkit-Cursor) — mit der eigenen
         // Layout-Variablen y synchronisieren, bevor gerendert wird.
         doc.y = y;
-        renderRichTextPdf(doc, blocks, { x: left, width: right - left, fontSize: base - 1, ensureSpace, color: "#000" });
+        renderRichTextPdf(doc, blocks, { x: left, width: right - left, fontSize: base - 1, ensureSpace, color: cellInk });
         y = doc.y + 4;
         return;
       }
 
       if (type === "SUBTOTAL") {
         y = ensureSpace(y, rowH);
-        doc.font("Helvetica-Bold").fontSize(base - 1).fillColor("#000");
+        doc.font("Helvetica-Bold").fontSize(base - 1).fillColor(cellInk);
         doc.text(line.description, sumLabelX, y, { width: sumLabelWidth, align: "right" });
         if (theme.options.showLineTotals) {
           doc.text(money(subtotals[i] ?? 0), sumValueX, y, { width: sumValueWidth, align: "right" });
@@ -435,8 +438,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       const longOpts = { x: descX, width: right - descX, fontSize: base - 2 };
       const lead = longBlocks.length > 0 ? measureRichTextPdf(doc, longBlocks, longOpts).leadHeight : 0;
       doc.font("Helvetica").fontSize(base - 1);
-      // Phase 16g: mit Rabattspalte und Prozentwert entfaellt die eigene Rabattzeile.
-      const discountRow = Boolean(line.discountCents) && !(colX.rabatt != null && line.discountPermille);
+      // Phase 16g: mit sichtbarer Rabattspalte entfaellt die eigene Rabattzeile.
+      const discountRow = Boolean(line.discountCents) && colX.rabatt == null;
       y = ensureSpace(y, h + (discountRow ? discountRowH : 0) + lead);
       if (layout.table.zebra && itemPos % 2 === 0) {
         doc.rect(left, y - 2, right - left, h).fill(layout.table.zebra);
@@ -444,7 +447,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       }
       // Fix-Welle (Abschluss-Review, Block 3): `schlicht` nummeriert die Referenz-Positionen
       // "1." statt "1" — `labels.colPosSuffix` haengt ein optionales Suffix an.
-      doc.text(`${itemPos}${labels?.colPosSuffix ?? ""}`, tableX + colX.pos!, y, { width: colWidth.pos });
+      if (colX.pos != null) doc.text(`${itemPos}${labels?.colPosSuffix ?? ""}`, tableX + colX.pos, y, { width: colWidth.pos });
       if (colX.artNr != null) doc.text(line.articleNumber ?? "", tableX + colX.artNr, y, { width: colWidth.artNr });
       if (showDescription) {
         if (layout.table.boldTitle) doc.font("Helvetica-Bold");
@@ -453,10 +456,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       }
       doc.text(`${formatQuantity(line.quantityMilli, locale)}${colX.einheit == null ? ` ${unitLabel(line.unit, lang)}` : ""}`, tableX + colX.menge!, y, { width: colWidth.menge, align: "right" });
       if (colX.einheit != null) doc.text(unitLabel(line.unit, lang), tableX + colX.einheit, y, { width: colWidth.einheit });
-      doc.text(money(line.unitNetPriceCents), tableX + colX.einzel!, y, { width: colWidth.einzel, align: "right" });
+      if (colX.einzel != null) doc.text(money(line.unitNetPriceCents), tableX + colX.einzel, y, { width: colWidth.einzel, align: "right" });
       if (colX.ust != null) doc.text(`${line.taxRate}%`, tableX + colX.ust, y, { width: colWidth.ust, align: "right" });
       if (colX.rabatt != null && line.discountCents) {
-        const cell = line.discountPermille ? `${(line.discountPermille / 10).toFixed(2).replace(/\.00$/, "")} %` : `–${money(Math.abs(line.discountCents))}`;
+        const cell = line.discountPermille ? `${formatQuantity(line.discountPermille * 100, locale)} %` : `–${money(Math.abs(line.discountCents))}`;
         doc.text(cell, tableX + colX.rabatt, y, { width: colWidth.rabatt, align: "right" });
       }
       if (colX.netto != null) doc.text(money(line.lineNetCents), tableX + colX.netto, y, { width: colWidth.netto, align: "right" });
@@ -477,7 +480,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
         doc.fontSize(base - 2).fillColor("#555");
         if (showDescription) doc.text(t.totals.lineDiscount(pct), descX, y, { width: descWidth });
         if (colX.netto != null) doc.text(`–${money(Math.abs(line.discountCents ?? 0))}`, tableX + colX.netto, y, { width: colWidth.netto, align: "right" });
-        doc.fillColor("#000").fontSize(base - 1);
+        doc.fillColor(cellInk).fontSize(base - 1);
         y += discountRowH;
       }
       // Langtext (BT-154) als Rich-Text unter der Bezeichnung, kleinere Schrift.
@@ -485,11 +488,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
         doc.fillColor(ink);
         doc.y = y;
         renderRichTextPdf(doc, longBlocks, { ...longOpts, ensureSpace, color: ink });
-        doc.fillColor("#000").fontSize(base - 1);
+        doc.fillColor(cellInk).fontSize(base - 1);
         y = doc.y + 2;
       }
     });
-
   };
 
   // Summen: Zwischensumme netto / Rabatt / Aufschlag (je vor der Steuer),
@@ -589,7 +591,6 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       if (isFinal && fx.deductedTaxEurCents) fxText(t.fx.deductedTaxEurLine(formatDocMoney(fx.deductedTaxEurCents, "EUR", lang)));
     }
     doc.font("Helvetica");
-
   };
 
   // GiroCode (§37) — Eligibilitaet EINMAL geprueft, fuer beide Platzierungen (siehe unten
@@ -620,30 +621,30 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // tatsaechlich LETZTE Seite, die erst nach Fusstext/notes/paymentTermsHuman feststeht).
   const drawGiroInline = async (): Promise<void> => {
     if (!giroEligible) return;
-      try {
-        const payload = buildEpcPayload({
-          name: giroPayeeName,
-          iban: data.iban!,
-          bic: data.bic,
-          amountCents: data.giroAmountCents!,
-          remittance: data.number,
-        });
-        const giroSizeMm = theme.options.giroSizeMm;
-        const giroSize = mm(giroSizeMm);
-        // fix/pdf-umbrueche (B1): die Bildunterschrift bricht in der schmalen GiroCode-Breite
-        // auf mehrere Zeilen um — Hoehe messen statt fest 13 pt anzunehmen.
-        const captionText = labels?.giroCaption ?? t.giro.caption;
-        const captionH = giroCaptionHeight(captionText, giroSize);
-        y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH + 6);
-        const giroY = y + 8;
-        await renderGiroCode(doc, payload, { x: left, y: giroY, sizeMm: giroSizeMm });
-        renderPlainTextPdf(doc, captionText, giroY + giroSize + 3, { x: left, width: giroSize, fontSize: base - 3, align: "center", color: mutedColor });
-        y = giroY + giroSize + 3 + captionH + 6;
-      } catch (e) {
-        // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
-        // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
-        if (!(e instanceof EpcError)) throw e;
-      }
+    try {
+      const payload = buildEpcPayload({
+        name: giroPayeeName,
+        iban: data.iban!,
+        bic: data.bic,
+        amountCents: data.giroAmountCents!,
+        remittance: data.number,
+      });
+      const giroSizeMm = theme.options.giroSizeMm;
+      const giroSize = mm(giroSizeMm);
+      // fix/pdf-umbrueche (B1): die Bildunterschrift bricht in der schmalen GiroCode-Breite
+      // auf mehrere Zeilen um — Hoehe messen statt fest 13 pt anzunehmen.
+      const captionText = labels?.giroCaption ?? t.giro.caption;
+      const captionH = giroCaptionHeight(captionText, giroSize);
+      y = ensurePlainSpace(y, 8 + giroSize + 3 + captionH + 6);
+      const giroY = y + 8;
+      await renderGiroCode(doc, payload, { x: left, y: giroY, sizeMm: giroSizeMm });
+      renderPlainTextPdf(doc, captionText, giroY + giroSize + 3, { x: left, width: giroSize, fontSize: base - 3, align: "center", color: mutedColor });
+      y = giroY + giroSize + 3 + captionH + 6;
+    } catch (e) {
+      // EpcError (Name > 70 Zeichen, Betrag ausserhalb des SEPA-Rahmens, Payload > 331 Byte)
+      // ist kein Grund, das PDF scheitern zu lassen — der Beleg wird ohne GiroCode gerendert.
+      if (!(e instanceof EpcError)) throw e;
+    }
   };
 
   // Fusstext (Platzhalter bereits aufgeloest) — nach den Summen, vor notes/paymentTerms.
@@ -667,7 +668,6 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       doc.fontSize(base - 1).fillColor(ink);
       y = renderPlainTextPdf(doc, data.footerText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
     }
-
   };
 
   const drawPayment = (): void => {
@@ -716,7 +716,6 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       y += 5;
       y = renderPlainTextPdf(doc, data.paymentMethodText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
     }
-
   };
 
   // Phase 16g: Rumpfbloecke in der Reihenfolge des Layouts (Designs); ohne `layout.blocks`

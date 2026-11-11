@@ -25,20 +25,22 @@ import { wrapPlain } from "../text-wrap";
  * verlassen), analog zu `schlicht`/`modern`, die ihre eigene (schmalere, weiter links
  * beginnende) Infoblock-Breite durchreichen (Infoblock-x minus 10pt Abstand minus `left`).
  */
-export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11, maxWidth = 240): number {
+export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11, maxWidth = 240, lineGap?: number): number {
   const { doc, left } = frame;
   const r = input.recipient;
+  // `lineGap` nur Designs (Phase 16g); ohne Angabe bleibt die Optionsform unveraendert.
+  const opts = (width: number): { width: number; lineGap?: number } => (lineGap === undefined ? { width } : { width, lineGap });
   doc.fillColor("#000").font("Helvetica").fontSize(size);
-  doc.text(r.name, left, y, { width: maxWidth });
-  if (r.contactName) doc.text(r.contactName, { width: maxWidth });
-  doc.text(r.addressLine1, { width: maxWidth });
-  if (r.addressLine2) doc.text(r.addressLine2, { width: maxWidth });
-  doc.text(`${r.postalCode} ${r.city}`, { width: maxWidth });
-  if (r.countryLine) doc.text(r.countryLine, { width: maxWidth });
+  doc.text(r.name, left, y, opts(maxWidth));
+  if (r.contactName) doc.text(r.contactName, opts(maxWidth));
+  doc.text(r.addressLine1, opts(maxWidth));
+  if (r.addressLine2) doc.text(r.addressLine2, opts(maxWidth));
+  doc.text(`${r.postalCode} ${r.city}`, opts(maxWidth));
+  if (r.countryLine) doc.text(r.countryLine, opts(maxWidth));
   if (input.extraRecipientBlock) {
-    doc.fontSize(size - 2).fillColor("#555").text(input.extraRecipientBlock.heading, left, doc.y + 8, { width: maxWidth });
+    doc.fontSize(size - 2).fillColor("#555").text(input.extraRecipientBlock.heading, left, doc.y + 8, opts(maxWidth));
     doc.fontSize(size).fillColor("#000");
-    for (const l of input.extraRecipientBlock.lines) doc.text(l, { width: maxWidth });
+    for (const l of input.extraRecipientBlock.lines) doc.text(l, opts(maxWidth));
   }
   return doc.y;
 }

@@ -35,6 +35,7 @@ async function render(config: LayoutDesignConfig, data: EInvoiceData = referenzI
 type TextCall = { text: string; x: number | undefined };
 const captured: TextCall[] = [];
 function captureTexts(): void {
+  vi.restoreAllMocks();
   captured.length = 0;
   const original = PDFDocument.prototype.text;
   vi.spyOn(PDFDocument.prototype, "text").mockImplementation(function (this: PDFKit.PDFDocument, ...args: unknown[]) {
@@ -130,6 +131,130 @@ describe("Schrift und Raender", () => {
     const xs = captured.map((c) => c.x).filter((x): x is number => x !== undefined && x > 0);
     expect(xs.length).toBeGreaterThan(10);
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(70.8);
+  });
+});
+
+describe("Spalten ausblenden und weglassen", () => {
+  const discounted = (): EInvoiceData => {
+    const base = referenzInvoice();
+    return { ...base, lines: base.lines.map((l, i) => (i === 0 ? { ...l, discountCents: 19500, discountPermille: 100 } : l)) };
+  };
+
+  it("Design ohne pos und unitPrice rendert ohne NaN", async () => {
+    const base = presetConfig("standard");
+    const columns = [
+      { key: "article" as const, widthPct: 10 },
+      { key: "description" as const, widthPct: 58 },
+      { key: "qty" as const, widthPct: 16 },
+      { key: "total" as const, widthPct: 16 },
+    ];
+    const pdf = await render({ ...base, columns });
+    expect(pdf.toString("latin1")).not.toContain("NaN");
+    const { text } = await parsePdf(pdf);
+    expect(text).not.toContain("NaN");
+    expect(text).toContain("RE-2073-00042");
+  });
+
+  it("Rabattspalte nur mit Rabattposition; dann ohne eigene Rabattzeile", async () => {
+    captureTexts();
+    await render(withColumns({ discount: 8, description: 30 }));
+    expect(captured.map((c) => c.text)).not.toContain("Rabatt");
+    captureTexts();
+    await render(withColumns({ discount: 8, description: 30 }), discounted());
+    const texts = captured.map((c) => c.text);
+    expect(texts).toContain("Rabatt");
+    expect(texts).toContain("10 %");
+    expect(texts.some((t) => t.startsWith("abzgl."))).toBe(false);
+  });
+
+  it("Festbetrag-Rabatt ohne Prozent: Betrag in der Zelle, keine Doppelung", async () => {
+    const base = referenzInvoice();
+    const data = { ...base, lines: base.lines.map((l, i) => (i === 0 ? { ...l, discountCents: 5000 } : l)) };
+    captureTexts();
+    await render(withColumns({ discount: 10, description: 28 }), data);
+    const texts = captured.map((c) => c.text);
+    expect(texts.filter((t) => t.startsWith("–") && t.includes("50,00"))).toHaveLength(1);
+  });
+
+  it("englische Beschriftungen Unit und Discount, Prozent mit Punkt", async () => {
+    const base = discounted();
+    const line = base.lines[0]!;
+    const data: EInvoiceData = { ...base, language: "en", lines: [{ ...line, discountPermille: 125, discountCents: 24375 }, ...base.lines.slice(1)] };
+    captureTexts();
+    await render(withColumns({ unit: 8, discount: 9, description: 21 }), data);
+    const texts = captured.map((c) => c.text);
+    expect(texts).toContain("Unit");
+    expect(texts).toContain("Discount");
+    expect(texts).toContain("12.5 %");
+  });
+
+  it("Druckoption blendet USt-Spalte aus: kein Kopf, keine NaN, Breite fuellt die Tabelle", async () => {
+    captureTexts();
+    const pdf = await render(presetConfig("standard"), referenzInvoice(), (t) => {
+      t.options = { ...t.options, showTaxRatePerLine: false, showArticleNumber: false };
+    });
+    const texts = captured.map((c) => c.text);
+    expect(texts).not.toContain("USt");
+    expect(texts).not.toContain("Art.-Nr.");
+    expect(pdf.toString("latin1")).not.toContain("NaN");
+  });
+});
+
+describe("Mehrseitiger Beleg", () => {
+  it("Umbruch, Summenblock und Zahlungsblock auf den Folgeseiten", async () => {
+    const base = referenzInvoice();
+    const lines = Array.from({ length: 4 }, (_, k) => base.lines.map((l) => ({ ...l, id: `${l.id}-${k}` }))).flat();
+    const net = lines.reduce((s, l) => s + l.lineNetCents, 0);
+    const tax = Math.round(net * 0.19);
+    const data: EInvoiceData = {
+      ...base, lines, netTotalCents: net, taxTotalCents: tax, grossTotalCents: net + tax, payableCents: net + tax, giroAmountCents: net + tax,
+      taxSubtotals: [{ taxRate: 19, taxCategory: "S", netCents: net, taxCents: tax }], notes: "Hinweis zur Zahlung.",
+    };
+    const { text, numpages } = await parsePdf(await render(presetConfig("standard"), data));
+    expect(numpages).toBeGreaterThanOrEqual(3);
+    expect(text).toContain(de.totals.gross);
+    expect(text).toContain("Hinweis zur Zahlung.");
+    expect(text.indexOf(de.totals.gross)).toBeLessThan(text.indexOf("Hinweis zur Zahlung."));
+  }, 60_000);
+});
+
+describe("Fusszeile und Farben", () => {
+  const footerXs = async (config: LayoutDesignConfig): Promise<{ tel?: number; iban?: number }> => {
+    captureTexts();
+    await render(config);
+    return {
+      tel: captured.find((c) => /^Tel\./.test(c.text))?.x,
+      iban: captured.find((c) => /^IBAN /.test(c.text))?.x,
+    };
+  };
+
+  it("footerColumnCount 1 legt alle Fusszeilenfakten in eine Spalte", async () => {
+    const base = presetConfig("standard");
+    const one = await footerXs({ ...base, footer: { ...base.footer, columns: 1 } });
+    expect(one.tel).toBeDefined();
+    expect(one.tel).toBe(one.iban);
+    const four = await footerXs({ ...base, footer: { ...base.footer, columns: 4 } });
+    expect(four.tel).not.toBe(four.iban);
+  });
+
+  it("footerMode CUSTOM zeigt den eigenen Fusstext", async () => {
+    const base = presetConfig("standard");
+    const config = { ...base, footer: { ...base.footer, mode: "CUSTOM" as const } };
+    const { text } = await parsePdf(await render(config, referenzInvoice(), (t) => {
+      t.brand = { ...t.brand, footerLeft: "Eigene Fusszeile Links", footerMode: "AUTO" };
+    }));
+    expect(text).toContain("Eigene Fusszeile Links");
+    const auto = await parsePdf(await render(base, referenzInvoice(), (t) => {
+      t.brand = { ...t.brand, footerLeft: "Eigene Fusszeile Links", footerMode: "AUTO" };
+    }));
+    expect(auto.text).not.toContain("Eigene Fusszeile Links");
+  });
+
+  it("colors.text wirkt auf Tabellenzellen", async () => {
+    const base = presetConfig("standard");
+    const tinted = (await render({ ...base, colors: { ...base.colors, text: "#336699" } })).toString("latin1");
+    expect(tinted).toContain("0.2 0.4 0.6 scn");
+    expect((await render(base)).toString("latin1")).not.toContain("0.2 0.4 0.6 scn");
   });
 });
 
