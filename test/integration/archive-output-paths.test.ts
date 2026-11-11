@@ -1,5 +1,5 @@
 /**
- * Phase 16a, Task 5 — alle Ausgabewege liefern das Belegarchiv. Testjahr 2099, eigene
+ * Phase 16a, Task 5 — alle Ausgabewege liefern das Belegarchiv. Testjahr 2101, eigene
  * Nummernpraefixe (Invoice.number ist global @unique). ARCHIVE_DIR zeigt auf ein Tempverzeichnis.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -54,8 +54,8 @@ let customerId: string;
 let token: string;
 let tmpDir: string;
 let prevEnv: string | undefined;
-const FIX_DATE = new Date("2099-03-01T10:00:00.000Z");
-const DUNNING_DATE = new Date("2099-04-15T10:00:00.000Z");
+const FIX_DATE = new Date("2101-03-01T10:00:00.000Z");
+const DUNNING_DATE = new Date("2101-04-15T10:00:00.000Z");
 const ctxFor = (id: string) => ({ params: Promise.resolve({ id }) });
 const bytes = async (res: Response) => Buffer.from(await res.arrayBuffer());
 
@@ -92,7 +92,7 @@ function input(): CreateInvoiceInput {
   return {
     customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR",
     documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0,
-    issueDate: FIX_DATE, deliveryDate: new Date("2099-02-25"), dueDate: new Date("2099-03-15"),
+    issueDate: FIX_DATE, deliveryDate: new Date("2101-02-25"), dueDate: new Date("2101-03-15"),
     lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
   } as CreateInvoiceInput;
 }

@@ -1,5 +1,5 @@
 /**
- * Gegenbuchung ueber REST und Session-Route (Phase 16a, Task 3). Eigenes Jahr (2098):
+ * Gegenbuchung ueber REST und Session-Route (Phase 16a, Task 3). Eigenes Jahr (2102):
  * Invoice.number ist global @unique und test.db wird ueber die Testlaufzeit geteilt.
  */
 import { beforeAll, describe, it, expect, vi } from "vitest";
@@ -23,7 +23,7 @@ import type { CreateInvoiceInput } from "@/schemas";
 import { POST as ReverseV1 } from "@/app/api/v1/Payment/[id]/reverse/route";
 import { POST as ReverseSession } from "@/app/api/invoices/[id]/payment/[pid]/reverse/route";
 
-const FIX_DATE = new Date("2098-03-01T10:00:00.000Z");
+const FIX_DATE = new Date("2102-03-01T10:00:00.000Z");
 let orgId: string;
 let otherOrgId: string;
 let customerId: string;
@@ -55,7 +55,7 @@ async function paidInvoice(): Promise<{ invoiceId: string; paymentId: string }> 
   const input = {
     customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR",
     documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0,
-    issueDate: FIX_DATE, deliveryDate: new Date("2098-02-25"),
+    issueDate: FIX_DATE, deliveryDate: new Date("2102-02-25"),
     lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
   } as CreateInvoiceInput;
   const draft = await createDraftInvoice(orgId, input, { now: FIX_DATE });

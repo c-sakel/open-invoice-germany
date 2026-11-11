@@ -1,6 +1,6 @@
 /**
  * Phase 16a, Task 6 — Kettenpruefung im Betrieb (REST, Session-Route, MCP, Scheduler, CLI).
- * Eigenes Jahr 2097 (Invoice.number ist global @unique).
+ * Eigenes Jahr 2103 (Invoice.number ist global @unique).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
@@ -31,7 +31,7 @@ import { POST as VerifyV1 } from "@/app/api/v1/AuditChain/verify/route";
 import { POST as VerifySession, GET as ListSession } from "@/app/api/settings/audit/chain/route";
 
 const execFileAsync = promisify(execFile);
-const FIX_DATE = new Date("2097-03-01T10:00:00.000Z");
+const FIX_DATE = new Date("2103-03-01T10:00:00.000Z");
 let orgId: string;
 let adminToken: string;
 let readToken: string;
@@ -55,7 +55,7 @@ beforeAll(async () => {
   const input = {
     customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR",
     documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0,
-    issueDate: FIX_DATE, deliveryDate: new Date("2097-02-25"),
+    issueDate: FIX_DATE, deliveryDate: new Date("2103-02-25"),
     lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
   } as CreateInvoiceInput;
   const draft = await createDraftInvoice(orgId, input, { now: FIX_DATE });

@@ -27,7 +27,7 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
    `BACKUP_KEEP_REMOTE=90`, `BACKUP_STATUS_FILE`. Ausserdem `DATABASE_URL`, `ATTACHMENTS_DIR`, `ARCHIVE_DIR`
    (Pfade des Hosts bzw. der gemounteten Volumes) und optional `BACKUP_DIR`, `ENV_FILE`.
 5. **Werkzeuge auf dem Host**: `pg_dump` (passend zur Serverversion), `tar`, `openssl`, `gzip`,
-   `rsync` bzw. `aws`/`rclone`. Fuer den Restore-Test zusaetzlich `docker`, `node`/`npx`, `sha256sum`.
+   `rsync` bzw. `aws`/`rclone`. Fuer den Restore-Test zusaetzlich `docker`, `node`/`npx`, `sha256sum` sowie einen fuer PostgreSQL generierten Prisma-Client (`npx prisma generate --schema prisma/schema.postgres.prisma`); `pg_dump` darf nicht neuer sein als der PostgreSQL-16-Container des Restore-Tests (sonst scheitert das Einspielen an `transaction_timeout`).
 6. **Cron**:
 
        15 2 * * * cd /opt/open-invoice-germany && set -a && . ./.env && set +a && scripts/ops/backup.sh >> /var/log/oig-backup.log 2>&1

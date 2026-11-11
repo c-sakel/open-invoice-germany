@@ -383,6 +383,20 @@ die API mit 409. Eine Abschlagsrechnung, die in einer nicht stornierten Schlussr
 verrechnet ist, lässt sich nicht stornieren (409). Die Storno-Gutschrift trägt keine
 Zahlungsbedingungen des Originals.
 
+## Gegenbuchung, Archiv, Prüfung, Health (Phase 16a)
+
+| Route | Scope | Zweck |
+|---|---|---|
+| `POST /api/v1/Payment/{id}/reverse` | `write` | Zahlung per Gegenbuchung korrigieren. Body `{ "reason": "…" (3–500 Zeichen), "amountCents": 1000 (optional, positiv; Standard: noch nicht gegengebuchter Rest) }`, Antwort die Gegenbuchung (`kind: "REVERSAL"`, `reversesPaymentId`, negativer Betrag). Zahlungen werden nie gelöscht. 409 bei Überschreitung des Restbetrags. Löst den Webhook `payment.reversed` aus. |
+| `GET /api/v1/Invoice/{id}/archive` | `read` | Archivstand der Rechnung (Dateien mit SHA-256, Quelle, Zeitpunkt); archiviert nicht selbst. |
+| `GET /api/v1/AuditChain` | `read` | Letzte Kettenprüfungen (`limit`). |
+| `POST /api/v1/AuditChain/verify` | `admin` | Hash-Kette sofort prüfen, Ergebnis protokollieren, bei Bruch alarmieren. |
+| `GET /api/v1/AuditExport?from=YYYY-MM-DD&to=YYYY-MM-DD` | `admin` | Prüfer-Export (§ 147 Abs. 6 AO) als ZIP; höchstens 3 Jahre, 20.000 Belege. CSV unverändert — nicht in einer Tabellenkalkulation mit Formelauswertung öffnen. |
+| `GET /api/v1/System/health` | `admin` | Datenbank, Scheduler-Jobs, Belegarchiv, Kettenprüfung, letzte Sicherung. |
+| `GET /api/health` | öffentlich | `{"status":"ok"}` bzw. 503; 60 Aufrufe/Minute je IP, nie zwischengespeichert. |
+
+Das PDF/XML einer archivierten Rechnung (`GET /api/v1/Invoice/{id}/pdf`) liefert bei jedem Abruf dieselben Bytes (Stand der ersten Ausgabe).
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,
