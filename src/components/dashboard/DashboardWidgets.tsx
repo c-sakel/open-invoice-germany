@@ -147,7 +147,7 @@ export function DashboardWidgets({
         )}
       </Card>
 
-      {oss && (oss.current.documentCount + oss.previous.documentCount > 0 || oss.level !== "OK") && <OssCard oss={oss} />}
+      {oss && (oss.current.documentCount + oss.previous.documentCount + oss.current.skippedWithoutEur + oss.previous.skippedWithoutEur > 0 || oss.level !== "OK") && <OssCard oss={oss} />}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
