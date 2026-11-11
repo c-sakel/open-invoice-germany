@@ -328,7 +328,7 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(changeLog).not.toBeNull();
   });
 
-  it("Guard: dunning.update ueber den geschuetzten Client verweigert alles ausser sentAt/pdfPath", async () => {
+  it("Guard: dunning.update ueber den geschuetzten Client verweigert alles ausser sentAt", async () => {
     const customerId = await makeCustomer("BUSINESS");
     const fin = await makeFinalizedInvoice(customerId);
     const r0 = await createDunning(fin.id, { now: FIX_DATE });

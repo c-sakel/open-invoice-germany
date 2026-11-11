@@ -1,5 +1,18 @@
 /** Phase 16a, Task 5 — Nachlauf des Belegarchivs im Scheduler. Testjahr 2014. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// Beleg-IDs, deren Archivierung dauerhaft fehlschlaegt (simulierter Render-/Ablagefehler).
+const failingIds = vi.hoisted(() => new Set<string>());
+vi.mock("@/domain/invoice/archive", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/invoice/archive")>();
+  return {
+    ...actual,
+    ensureInvoiceArchive: (...args: Parameters<typeof actual.ensureInvoiceArchive>) => {
+      if (failingIds.has(args[1])) return Promise.reject(new Error("simulierter Archivfehler"));
+      return actual.ensureInvoiceArchive(...args);
+    },
+  };
+});
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +22,7 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { updateNumberRange } from "@/domain/numbering/ranges";
 import { ARCHIVE_BATCH, runArchiveJob } from "@/domain/scheduler/archive-job";
+import { onArchiveFailed } from "@/domain/notifications/hooks";
 import { runScheduledJobs } from "@/domain/scheduler/runner";
 import type { CreateInvoiceInput } from "@/schemas";
 
@@ -55,17 +69,22 @@ const draft = async () => (await createDraftInvoice(orgId, input(), { now: FIX_D
 // liegt migrationsbedingt nach 2014 und wird von invoice-archive.test.ts zeitweise verschoben —
 // daher wird finalizedAt hier testintern auf ein Datum weit nach der Epoche gesetzt.
 const AFTER_EPOCH = new Date("2098-01-01T00:00:00.000Z");
-const finalized = async () => {
+const finalized = async (finalizedAt: Date = AFTER_EPOCH) => {
   const id = (await finalizeInvoice(await draft(), { now: FIX_DATE })).id;
-  await dbInternal.invoice.update({ where: { id }, data: { finalizedAt: AFTER_EPOCH }, select: { id: true } });
+  await dbInternal.invoice.update({ where: { id }, data: { finalizedAt }, select: { id: true } });
   return id;
 };
+/** Nachlauf leeren (Altlasten anderer Testdateien), mit Obergrenze gegen Endlosschleifen. */
+async function drain(): Promise<void> {
+  for (let i = 0; i < 20; i++) if ((await runArchiveJob(NOW)).archived === 0) return;
+  throw new Error("Nachlauf wird nicht leer");
+}
 const archivedCount = (ids: string[]) => dbInternal.archivedDocument.count({ where: { invoiceId: { in: ids }, kind: "PDF" } });
 
 describe("runArchiveJob", () => {
   it("archiviert festgeschriebene Rechnungen mit Quelle SCHEDULER, Entwuerfe nicht; zweiter Lauf archiviert nichts", async () => {
     // Erst die Altlasten anderer Testdateien nachholen, damit die Zaehlung exakt ist.
-    while ((await runArchiveJob(NOW)).archived > 0);
+    await drain();
     const ids = [await finalized(), await finalized(), await finalized()];
     const d = await draft();
     const result = await runArchiveJob(NOW);
@@ -78,12 +97,32 @@ describe("runArchiveJob", () => {
   });
 
   it("Limit: batch 2 bei 3 offenen Belegen archiviert 2, Default-Batch ist 50", async () => {
-    while ((await runArchiveJob(NOW)).archived > 0);
+    await drain();
     const ids = [await finalized(), await finalized(), await finalized()];
     expect(ARCHIVE_BATCH).toBe(50);
     expect((await runArchiveJob(NOW, { batch: 2 })).archived).toBe(2);
     expect(await archivedCount(ids)).toBe(2);
     expect((await runArchiveJob(NOW, { batch: 2 })).archived).toBe(1);
+  });
+
+  it("dauerhaft fehlschlagender Beleg vor gueltigen blockiert den Lauf nicht; ARCHIVE_FAILED je Beleg und Tag nur einmal", async () => {
+    await drain();
+    const bad = await finalized(new Date("2097-01-01T00:00:00.000Z")); // aeltester -> steht ganz vorn
+    failingIds.add(bad);
+    try {
+      const good = [await finalized(), await finalized()];
+      expect(await runArchiveJob(NOW, { batch: 2 })).toEqual({ archived: 2, failed: 1 });
+      expect(await archivedCount(good)).toBe(2);
+      expect(await archivedCount([bad])).toBe(0);
+      // zweiter Lauf: der fehlerhafte Beleg wird erneut versucht, blockiert aber nichts
+      expect(await runArchiveJob(NOW, { batch: 2 })).toEqual({ archived: 0, failed: 1 });
+    } finally {
+      failingIds.delete(bad);
+    }
+    // Alarm-Dedupe: derselbe Beleg am selben Tag erzeugt genau eine Benachrichtigung
+    await onArchiveFailed(orgId, { invoiceId: bad, message: "x", at: NOW });
+    await onArchiveFailed(orgId, { invoiceId: bad, message: "x", at: NOW });
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: bad } })).toBe(1);
   });
 
   it("laeuft als Scheduler-Job 'archive' im Runner", async () => {

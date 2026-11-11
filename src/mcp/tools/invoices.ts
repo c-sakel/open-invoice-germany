@@ -364,10 +364,9 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const base = (inv.number ?? `entwurf-${inv.id.slice(0, 8)}`).replace(/[^A-Za-z0-9._-]/g, "_");
         const written: string[] = [];
         let validation: { valid: boolean; errors: string[] } | null = null;
-        const theme = await loadPdfTheme(org.id, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
 
         if (format === "both" || format === "pdf") {
-          const pdf = inv.status === "DRAFT" ? await renderInvoiceDocumentPdf(data, theme, inv.status) : await getArchivedInvoiceFile(org.id, inv.id, "PDF");
+          const pdf = inv.status === "DRAFT" ? await renderInvoiceDocumentPdf(data, await loadPdfTheme(org.id, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type)), inv.status) : await getArchivedInvoiceFile(org.id, inv.id, "PDF");
           const pdfPath = path.join(dir, `${base}.pdf`);
           writeFileSync(pdfPath, pdf);
           written.push(pdfPath);

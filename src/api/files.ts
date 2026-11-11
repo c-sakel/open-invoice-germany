@@ -137,6 +137,6 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     select: { id: true, number: true },
   });
   if (!d) throw new NotFoundError(`Mahnung "${document}" nicht gefunden.`);
-  const buffer = await getArchivedDunningPdf(d.id);
+  const buffer = await getArchivedDunningPdf(orgId, d.id);
   return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(d.number ?? "mahnung") };
 }

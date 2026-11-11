@@ -97,20 +97,20 @@ async function guardLineWhere(where: unknown): Promise<void> {
 
 /**
  * Phase 6: `Dunning` ist ein Geschaeftsbrief (GoBD) — nach Erstellung unveraenderlich,
- * analog `FinalInvoiceDeduction`. Zwei Ausnahmen bleiben ueber den geschuetzten Client
- * erlaubt, weil sie keinen inhaltlichen Beleg-Bestandteil aendern: `sentAt` (tatsaechlicher
- * Versandzeitpunkt, erst nach dem Mailversand bekannt), `pdfPath` (Ablagepfad des
- * einmalig erzeugten PDFs, erst nach dessen Erstellung bekannt) und `pdfSha256`
- * (Pruefsumme dieses PDFs, Phase 16a). Jeder andere Schluessel
+ * analog `FinalInvoiceDeduction`. Eine Ausnahme bleibt ueber den geschuetzten Client
+ * erlaubt: `sentAt` (tatsaechlicher Versandzeitpunkt, erst nach dem Mailversand bekannt).
+ * `pdfPath`/`pdfSha256` (Mahnungsarchiv, Phase 16a) sind write-once und werden
+ * ausschliesslich in `src/domain/dunning/archive.ts` per `dbInternal.dunning.updateMany`
+ * mit `where: { pdfPath: null }` gesetzt — ueber den geschuetzten Client verboten. Jeder andere Schluessel
  * in `data` wird verweigert; delete/deleteMany sind — wie bei FinalInvoiceDeduction —
  * IMMER verboten.
  */
-const DUNNING_MUTABLE_KEYS = new Set(["sentAt", "pdfPath", "pdfSha256"]);
+const DUNNING_MUTABLE_KEYS = new Set(["sentAt"]);
 
 class DunningImmutabilityError extends Error {
   constructor(badKeys: string[]) {
     super(
-      `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt/pdfPath/pdfSha256 ` +
+      `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt ` +
         `duerfen nachtraeglich gesetzt werden, nicht: ${badKeys.join(", ")}.`,
     );
     this.name = "DunningImmutabilityError";

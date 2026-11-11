@@ -18,6 +18,9 @@ vi.mock("@/lib/org", () => ({
 import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { recordPayment } from "@/domain/invoice/payment";
+import { getArchivedDunningPdf } from "@/domain/dunning/archive";
+import { ArchiveTamperedError, NotFoundError } from "@/domain/errors";
 import { createDunning } from "@/domain/dunning/create";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { updateNumberRange } from "@/domain/numbering/ranges";
@@ -198,5 +201,56 @@ describe("Ausgabewege liefern das Belegarchiv", () => {
     const id = await finalized();
     const res = await V1Archive(new Request("http://x", { headers: { authorization: `Bearer ${otherToken}` } }), ctxFor(id));
     expect(res.status).toBe(404);
+  });
+
+  it("Webshop-Fluss: festschreiben, voll zahlen, erster Abruf -> archiviertes CII zeigt den bezahlten Stand und bleibt bytegleich", async () => {
+    const id = await finalized();
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { grossTotalCents: true } });
+    await recordPayment(id, { amountCents: inv.grossTotalCents, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId, now: DUNNING_DATE });
+    expect(await dbInternal.archivedDocument.count({ where: { invoiceId: id } })).toBe(0);
+
+    const first = await getDocumentFile(orgId, "INVOICE", id, "pdf");
+    const cii = (await archivedBytes(id, "CII")).toString("utf8");
+    const gross = (inv.grossTotalCents / 100).toFixed(2);
+    expect(cii).toMatch(new RegExp(`<ram:TotalPrepaidAmount>${gross}</ram:TotalPrepaidAmount>`));
+    expect(cii).toMatch(/<ram:DuePayableAmount>0\.00<\/ram:DuePayableAmount>/);
+
+    await dbInternal.customer.update({ where: { id: customerId }, data: { name: "Spaeter umbenannt AG" } });
+    const second = await getDocumentFile(orgId, "INVOICE", id, "pdf");
+    expect(Buffer.compare(second.buffer, first.buffer)).toBe(0);
+    expect(Buffer.compare(await archivedBytes(id, "CII"), Buffer.from(cii, "utf8"))).toBe(0);
+    await dbInternal.customer.update({ where: { id: customerId }, data: { name: "Ausgabe-Kunde AG" } });
+  });
+
+  it("Mahnung: veraenderte oder fehlende Archivdatei -> ArchiveTamperedError und ARCHIVE_TAMPERED, kein Neurendern", async () => {
+    const id = await finalized();
+    const { dunning } = await createDunning(id, { now: DUNNING_DATE });
+    await getArchivedDunningPdf(orgId, dunning.id);
+    const row = await dbInternal.dunning.findUniqueOrThrow({ where: { id: dunning.id }, select: { pdfPath: true } });
+    const abs = path.join(tmpDir, ...row.pdfPath!.split("/"));
+    await fs.writeFile(abs, Buffer.from("manipuliert"));
+    await expect(getArchivedDunningPdf(orgId, dunning.id)).rejects.toBeInstanceOf(ArchiveTamperedError);
+    await fs.rm(abs);
+    await expect(getArchivedDunningPdf(orgId, dunning.id)).rejects.toBeInstanceOf(ArchiveTamperedError);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    expect(await readArchiveFile(row.pdfPath!)).toBeNull();
+  });
+
+  it("Org-Scope: fremde Organisation erhaelt 404 auf /pdf, /zugferd, /xrechnung und Mahn-PDF; Mahnungsarchiv wirft NotFound", async () => {
+    const id = await finalized();
+    const { dunning } = await createDunning(id, { now: DUNNING_DATE });
+    const other = await dbInternal.organization.create({ data: { legalName: "Scope GmbH", addressLine1: "Weg 4", postalCode: "21339", city: "Lüneburg" } });
+    orgStore.id = other.id;
+    try {
+      for (const route of [SessionPdf, SessionZugferd, SessionXRechnung]) {
+        expect((await route(new Request("http://x"), ctxFor(id))).status).toBe(404);
+      }
+      expect((await SessionDunningPdf(new Request("http://x"), ctxFor(dunning.id))).status).toBe(404);
+      await expect(getArchivedDunningPdf(other.id, dunning.id)).rejects.toBeInstanceOf(NotFoundError);
+    } finally {
+      orgStore.id = orgId;
+    }
+    expect(await dbInternal.archivedDocument.count({ where: { invoiceId: id } })).toBe(0);
+    expect((await SessionPdf(new Request("http://x"), ctxFor(id))).status).toBe(200);
   });
 });

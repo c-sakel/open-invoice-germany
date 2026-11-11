@@ -1,8 +1,7 @@
 /**
- * Phase 16a, Task 1 — Mahnungs-Guard in src/lib/db.ts: `pdfSha256` (Pruefsumme des
- * archivierten Mahn-PDFs) darf wie `sentAt`/`pdfPath` nachtraeglich gesetzt werden, jede
- * inhaltliche Aenderung bleibt verboten. Rohdaten ueber dbInternal, Update ueber den
- * geschuetzten Client.
+ * Phase 16a — Mahnungs-Guard in src/lib/db.ts: `pdfPath`/`pdfSha256` (Mahnungsarchiv) sind
+ * ueber den geschuetzten Client verboten (write-once nur in src/domain/dunning/archive.ts
+ * per dbInternal), nur `sentAt` bleibt erlaubt; jede inhaltliche Aenderung bleibt verboten.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { dbInternal, prisma } from "@/lib/db";
@@ -30,10 +29,15 @@ beforeAll(async () => {
 });
 
 describe("Dunning-Guard (Phase 16a)", () => {
-  it("erlaubt das nachtraegliche Setzen von pdfSha256", async () => {
-    await prisma.dunning.update({ where: { id: dunningId }, data: { pdfSha256: "x" } });
-    const row = await dbInternal.dunning.findUniqueOrThrow({ where: { id: dunningId }, select: { pdfSha256: true } });
-    expect(row.pdfSha256).toBe("x");
+  it("verweigert pdfPath/pdfSha256 ueber den geschuetzten Client (write-once nur ueber das Archiv)", async () => {
+    await expect(prisma.dunning.update({ where: { id: dunningId }, data: { pdfSha256: "x" } })).rejects.toThrow(/unveraenderlich/);
+    await expect(prisma.dunning.updateMany({ where: { id: dunningId }, data: { pdfPath: "x" } })).rejects.toThrow(/unveraenderlich/);
+    const row = await dbInternal.dunning.findUniqueOrThrow({ where: { id: dunningId }, select: { pdfSha256: true, pdfPath: true } });
+    expect(row).toEqual({ pdfSha256: null, pdfPath: null });
+  });
+
+  it("erlaubt sentAt", async () => {
+    await prisma.dunning.update({ where: { id: dunningId }, data: { sentAt: new Date("2045-01-01") } });
   });
 
   it("verweigert weiterhin inhaltliche Aenderungen (level)", async () => {

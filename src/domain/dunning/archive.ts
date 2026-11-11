@@ -19,15 +19,14 @@ export interface DunningArchiveEntry {
 }
 
 /** Stellt sicher, dass das Mahn-PDF archiviert ist; liefert Pfad und SHA-256. */
-export async function ensureDunningArchive(dunningId: string): Promise<DunningArchiveEntry> {
-  const d = await dbInternal.dunning.findUnique({
-    where: { id: dunningId },
+export async function ensureDunningArchive(orgId: string, dunningId: string): Promise<DunningArchiveEntry> {
+  const d = await dbInternal.dunning.findFirst({
+    where: { id: dunningId, invoice: { orgId } },
     include: { invoice: { include: { org: true, customer: true } }, stage: true },
   });
   if (!d) throw new NotFoundError("Mahnung nicht gefunden.");
   if (d.pdfPath && d.pdfSha256) return { path: d.pdfPath, sha256: d.pdfSha256 };
 
-  const orgId = d.invoice.orgId;
   try {
     const theme = await loadPdfTheme(orgId, null, "DUNNING");
     const bytes = await renderDunningPdf(buildDunningPdfData(d, d.invoice), theme);
@@ -48,11 +47,13 @@ export async function ensureDunningArchive(dunningId: string): Promise<DunningAr
 }
 
 /** Liefert das archivierte Mahn-PDF mit Hashpruefung (nie Neu-Rendern). */
-export async function getArchivedDunningPdf(dunningId: string): Promise<Buffer> {
-  const entry = await ensureDunningArchive(dunningId);
+export async function getArchivedDunningPdf(orgId: string, dunningId: string): Promise<Buffer> {
+  const entry = await ensureDunningArchive(orgId, dunningId);
   const bytes = await readArchiveFile(entry.path);
   if (bytes && sha256Hex(bytes) === entry.sha256) return bytes;
-  const d = await dbInternal.dunning.findUnique({ where: { id: dunningId }, select: { invoiceId: true, invoice: { select: { orgId: true } } } });
-  if (d) await onArchiveTampered(d.invoice.orgId, { invoiceId: d.invoiceId, kind: "DUNNING-PDF" });
-  throw new ArchiveTamperedError(d?.invoiceId ?? dunningId, "PDF", bytes ? "hash-mismatch" : "missing");
+  const d = await dbInternal.dunning.findFirst({ where: { id: dunningId, invoice: { orgId } }, select: { invoiceId: true } });
+  const invoiceId = d?.invoiceId ?? dunningId;
+  // Kennung "MAHNUNG-PDF" in der Benachrichtigung; der Fehler traegt die Dateiart PDF.
+  await onArchiveTampered(orgId, { invoiceId, kind: "MAHNUNG-PDF" });
+  throw new ArchiveTamperedError(invoiceId, "PDF", bytes ? "hash-mismatch" : "missing");
 }

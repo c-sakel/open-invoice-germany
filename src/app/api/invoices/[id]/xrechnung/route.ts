@@ -1,3 +1,4 @@
+import { getActiveOrg } from "@/lib/org";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
@@ -8,7 +9,8 @@ export const runtime = "nodejs";
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const loaded = await loadEInvoiceData(id);
-  if (!loaded) return new Response("Rechnung nicht gefunden", { status: 404 });
+  const org = await getActiveOrg();
+  if (!loaded || loaded.invoice.orgId !== org.id) return new Response("Rechnung nicht gefunden", { status: 404 });
   if (loaded.invoice.status === "DRAFT")
     return new Response("Entwürfe können nicht als E-Rechnung exportiert werden. Bitte zuerst festschreiben.", { status: 422 });
 

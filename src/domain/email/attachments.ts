@@ -91,12 +91,12 @@ export async function buildStandardAttachments(
     const loaded = await loadEInvoiceData(docId);
     if (!loaded || loaded.invoice.orgId !== orgId || !okTypes.includes(loaded.invoice.type)) return [];
     const { invoice, data } = loaded;
-    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
     const base = safe(invoice.number ?? "Entwurf");
     // Jeder Nicht-Entwurf (festgeschrieben, versendet, (teil)bezahlt, storniert) -> das
     // rechtsverbindliche ZUGFeRD-PDF; nur echte Entwuerfe bekommen den Entwurfs-Hinweis.
     const finalized = invoice.status !== "DRAFT";
     if (!finalized) {
+      const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
       return [{ filename: `${base}-ENTWURF.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoicePdf(data, theme)) }];
     }
     const out: Attachment[] = [{ filename: `${base}.pdf`, contentType: "application/pdf", content: await lazy(() => getArchivedInvoiceFile(orgId, invoice.id, "PDF")) }];
@@ -125,7 +125,7 @@ export async function buildStandardAttachments(
     });
     if (!d) return [];
     const out: Attachment[] = [
-      { filename: `${safe(d.number ?? "Mahnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => getArchivedDunningPdf(d.id)) },
+      { filename: `${safe(d.number ?? "Mahnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => getArchivedDunningPdf(orgId, d.id)) },
     ];
     const inv = await loadEInvoiceData(d.invoiceId);
     if (inv) {
