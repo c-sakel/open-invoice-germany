@@ -169,6 +169,26 @@ describe("create_invoice mit Belegsprache", () => {
     expect(inv.notes).toBe("Steuerschuldnerschaft des Leistungsempfängers");
   });
 
+  it("create_delivery_note, create_recurring, update_recurring_invoice nehmen language an", async () => {
+    const line = { description: "Consulting", quantity: 1, unitPriceEuro: 10, unit: "HUR" };
+    const dn = await callTool("create_delivery_note", { customer: "Dublin Ltd", lines: [line], language: "de" });
+    expect(dn.isError).toBeUndefined();
+    const note = await dbInternal.deliveryNote.findFirstOrThrow({ where: { orgId }, orderBy: { createdAt: "desc" }, select: { language: true } });
+    expect(note.language).toBe("de");
+
+    const rec = await callTool("create_recurring", { customer: "Dublin Ltd", title: "Wartung", lines: [line], startDate: "2111-04-01", language: "de" });
+    expect(rec.isError).toBeUndefined();
+    const id = /ID: ([^\s.]+)/.exec(text(rec))?.[1];
+    expect((await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: id! }, select: { language: true } })).language).toBe("de");
+
+    const upd = await callTool("update_recurring_invoice", { recurring: id!, language: "en" });
+    expect(upd.isError).toBeUndefined();
+    expect((await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: id! }, select: { language: true } })).language).toBe("en");
+
+    const bad = await callTool("create_delivery_note", { customer: "Dublin Ltd", lines: [line], language: "fr" });
+    expect(bad.isError).toBe(true);
+  });
+
   it("fxOverrideRate bei Fremdwaehrung wird am Entwurf gespeichert; bei EUR abgelehnt", async () => {
     const ok = await callTool("create_invoice", {
       customer: "Dublin Ltd",

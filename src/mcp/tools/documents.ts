@@ -316,6 +316,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         lines: z.array(docLineSchema).min(1),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
         notes: z.string().optional(),
+        language: DocLanguageSchema.optional().describe("Belegsprache de|en (Snapshot am Beleg); ohne Angabe die Sprache des Kunden, sonst de."),
       },
     },
     async (args): Promise<Result> => {
@@ -327,6 +328,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           customerId: customer.id,
           deliveryDate: ctx.parseDateInput(args.deliveryDate),
           notes: args.notes,
+          language: args.language,
           lines: lines.map((l) => ({
             description: l.description,
             quantityMilli: l.quantityMilli,

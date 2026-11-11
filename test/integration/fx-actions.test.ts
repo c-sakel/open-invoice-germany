@@ -30,12 +30,16 @@ async function cleanRates(): Promise<void> {
 }
 
 beforeAll(async () => {
+  // Vorschau wertet Vorausrechnung relativ zu "jetzt" aus: Datum auf den Testzeitraum einfrieren.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2112-03-20T10:00:00.000Z"));
   const org = await dbInternal.organization.create({ data: { legalName: "Kurs-Action GmbH", addressLine1: "Weg 1", postalCode: "10115", city: "Berlin" } });
   orgStore.id = org.id;
   await cleanRates();
 });
 
 afterAll(async () => {
+  vi.useRealTimers();
   await cleanRates();
   await dbInternal.$disconnect();
 });

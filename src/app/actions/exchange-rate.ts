@@ -28,7 +28,7 @@ export async function previewFxRateAction(input: { currency: string; stichtag: s
   const query = exchangeRateQuerySchema.safeParse({ currency: input.currency, date: input.stichtag });
   if (!query.success) return { found: false };
   const org = await getActiveOrg();
-  const pick = await rateFor(org.id, query.data.currency, query.data.date);
+  const pick = await rateFor(org.id, query.data.currency, query.data.date, undefined, new Date());
   if (!pick) return { found: false };
   const label = pick.source === "BMF_MONTHLY" ? `Monatsdurchschnitt ${MONTH_FORMAT.format(pick.rateDate)}` : `EZB-Tageskurs vom ${DAY_FORMAT.format(pick.rateDate)}`;
   return { found: true, rateMicros: pick.rateMicros, label };

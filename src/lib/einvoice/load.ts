@@ -46,7 +46,7 @@ async function previewFx(invoice: {
   const pick =
     invoice.fxOverrideMicros != null
       ? { rateMicros: invoice.fxOverrideMicros, rateDate: stichtag, source: "MANUAL" as const }
-      : await rateFor(invoice.orgId, invoice.currency, stichtag);
+      : await rateFor(invoice.orgId, invoice.currency, stichtag, undefined, new Date());
   if (!pick) return none;
   let rawBreakdown: unknown;
   try {

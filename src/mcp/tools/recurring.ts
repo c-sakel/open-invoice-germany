@@ -16,7 +16,7 @@ import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
-import { currencyCodeSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
+import { currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerRecurringTools(server: McpServer, ctx: McpToolsContext): void {
@@ -40,6 +40,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         autoFinalize: z.boolean().optional().describe("true = erzeugte Rechnungen sofort festschreiben (ohne Angabe: Org-Standard aus den Einstellungen)"),
         autoSend: z.boolean().optional().describe("true = erzeugte Rechnungen automatisch per E-Mail versenden (ohne Angabe: Org-Standard aus den Einstellungen)"),
         currency: currencyCodeSchema.optional().describe("ISO-4217-Code (3 Grossbuchstaben, z. B. USD); ohne Angabe: Kunde > Einstellung > EUR"),
+        language: DocLanguageSchema.optional().describe("Belegsprache de|en der erzeugten Rechnungen; ohne Angabe die Sprache des Kunden, sonst de."),
         notes: z.string().optional(),
       },
     },
@@ -63,6 +64,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
           autoSend: args.autoSend,
           taxScheme: "REGULAR",
           currency: args.currency,
+          language: args.language,
           notes: args.notes,
           lines,
         });

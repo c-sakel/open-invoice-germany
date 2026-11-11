@@ -3,7 +3,7 @@
  * Entwurf live per rateFor (preview), festgeschriebener Beleg aus dem eingefrorenen Snapshot,
  * EUR-Beleg ohne Block. Eigenes Testjahr (2110): Invoice.number und ExchangeRate sind instanzweit eindeutig.
  */
-import { beforeAll, describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
@@ -21,6 +21,9 @@ let orgId: string;
 let customerId: string;
 
 beforeAll(async () => {
+  // Vorschau wertet Vorausrechnung relativ zu "jetzt" aus: Datum auf den Testzeitraum einfrieren.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
   const org = await dbInternal.organization.create({
     data: { legalName: "Lade GmbH", addressLine1: "Kursweg 1", postalCode: "10115", city: "Berlin", vatId: "DE211021101", taxNumber: "21/110/00000" },
   });
@@ -34,6 +37,10 @@ beforeAll(async () => {
   });
   customerId = (await dbInternal.customer.create({ data: { orgId, name: "Overseas Ltd", addressLine1: "1 Main Street", postalCode: "10001", city: "Dublin", type: "BUSINESS" } })).id;
   await upsertManualRate(exchangeRateUpsertSchema.parse({ source: "MONTHLY", currency: "USD", rateDate: "2110-03-01", rate: "1,1214" }), "test", orgId);
+});
+
+afterAll(() => {
+  vi.useRealTimers();
 });
 
 const draft = (currency: string, language?: string) =>
