@@ -135,6 +135,33 @@ export class LayoutDesignVersionImmutabilityError extends Error {
   }
 }
 
+/**
+ * Phase 16g (R7): `printOptionsJson` von Angebot/AB/Proforma (`quote`) und Lieferschein ist ab
+ * dem Verlassen des Entwurfs eingefroren (Druckoptionen + Layout-Version). Der Guard prueft nur
+ * den Schluessel `printOptionsJson`; alle anderen Felder (z. B. archivedAt) bleiben unberuehrt.
+ * Das Einfrieren selbst laeuft ueber den Transaktions-Client von `dbInternal` (freeze-layout.ts).
+ */
+export class FrozenPrintOptionsError extends Error {
+  constructor(ref: string) {
+    super(`GoBD: Die Druckoptionen von "${ref}" sind nach dem Verlassen des Entwurfs eingefroren.`);
+    this.name = "FrozenPrintOptionsError";
+  }
+}
+
+function touchesPrintOptions(data: unknown): boolean {
+  return typeof data === "object" && data !== null && "printOptionsJson" in data;
+}
+
+async function guardPrintOptions(model: "quote" | "deliveryNote", where: unknown, data: unknown): Promise<void> {
+  if (!touchesPrintOptions(data)) return;
+  const filter = { AND: [(where ?? {}) as never, { status: { not: "DRAFT" } }] } as never;
+  const row =
+    model === "quote"
+      ? await base.quote.findFirst({ where: filter, select: { id: true, number: true } })
+      : await base.deliveryNote.findFirst({ where: filter, select: { id: true, number: true } });
+  if (row) throw new FrozenPrintOptionsError(row.number ?? row.id);
+}
+
 export class LayoutDesignDeleteError extends Error {
   constructor() {
     super("Layout-Designs werden nie geloescht (eingefrorene Belege verweisen auf Versionen), nur archiviert.");
@@ -255,6 +282,34 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new LayoutDesignVersionImmutabilityError();
+      },
+    },
+    quote: {
+      async update({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.update);
+        return query(args);
+      },
+    },
+    deliveryNote: {
+      async update({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.update);
+        return query(args);
       },
     },
     layoutDesign: {

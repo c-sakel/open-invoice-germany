@@ -14,6 +14,8 @@ import { buildSellerSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
+import { freezeDocumentLayout } from "@/domain/document/freeze-layout";
+import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
 
@@ -116,6 +118,11 @@ export async function setQuoteStatusWithinTx(
     data.decisionNote = opts.note ?? null;
   }
 
+  // Phase 16g (R7): beim ersten Wechsel aus DRAFT Druckoptionen + Layout-Version einfrieren.
+  if (from === "DRAFT") {
+    data.printOptionsJson = await freezeDocumentLayout(tx, orgId, { docType: invoiceTypeToLayoutDocType(quote.kind), printOptionsJson: quote.printOptionsJson });
+  }
+
   const updated = await tx.quote.update({ where: { id: quoteId }, data });
 
   await appendChangeLog(tx, {
@@ -204,6 +211,11 @@ export async function setDeliveryNoteStatus(
     if (target === "CREATED" && !note.number) {
       // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
       data.number = await assignDocumentNumber(tx, orgId, "DELIVERY_NOTE", now);
+    }
+
+    // Phase 16g (R7): Lieferschein friert beim Verlassen des Entwurfs ein (Nummer in Nicht-Entwurfsstatus).
+    if (from === "DRAFT") {
+      data.printOptionsJson = await freezeDocumentLayout(tx, orgId, { docType: "DELIVERY_NOTE", printOptionsJson: note.printOptionsJson });
     }
 
     const updated = await tx.deliveryNote.update({ where: { id }, data });

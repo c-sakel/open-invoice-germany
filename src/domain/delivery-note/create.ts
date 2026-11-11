@@ -23,6 +23,7 @@ import { pickTextTemplate } from "@/domain/text-template/pick";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
+import { freezeDocumentLayout } from "@/domain/document/freeze-layout";
 import { createDeliveryNoteSchema, type SnapshotSource } from "@/schemas";
 
 export class DeliveryNoteError extends Error {
@@ -145,6 +146,8 @@ export async function createDeliveryNoteWithinTx(
   await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: opts.inheritedTaxRates });
 
   const source: SnapshotSource = "CREATE";
+  // Phase 16g (R7): Anlage direkt als CREATED (Nummer vergeben) -> Layout und Druckoptionen einfrieren.
+  const printOptionsJson = await freezeDocumentLayout(tx, orgId, { docType: "DELIVERY_NOTE", printOptionsJson: null });
   const note = await tx.deliveryNote.create({
     data: {
       orgId,
@@ -152,6 +155,7 @@ export async function createDeliveryNoteWithinTx(
       language,
       number,
       status: "CREATED",
+      printOptionsJson,
       issueDate: now,
       deliveryDate: input.deliveryDate,
       shippingDate: input.shippingDate,
