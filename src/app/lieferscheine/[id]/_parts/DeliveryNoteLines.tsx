@@ -1,6 +1,7 @@
 // src/app/lieferscheine/[id]/_parts/DeliveryNoteLines.tsx
 import { formatCents, formatQuantity } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
+import { DataTable, type DataColumn } from "@/components/ui/DataTable";
 
 export interface DeliveryNoteLineRow {
   id: string;
@@ -31,32 +32,33 @@ export function DeliveryNoteLines({
   showPrices: boolean;
   showTax: boolean;
 }) {
+  const columns: DataColumn<DeliveryNoteLineRow>[] = [];
+  if (showArticleNumber) {
+    columns.push({
+      key: "article",
+      header: "Art.-Nr.",
+      mobile: showDescription ? "meta" : "title",
+      cell: (l) => <span className="text-ink-muted">{l.articleNumber ?? ""}</span>,
+    });
+  }
+  if (showDescription) {
+    columns.push({ key: "description", header: "Beschreibung", mobile: "title", cell: (l) => <span className="break-words text-ink-soft">{l.description}</span> });
+  }
+  columns.push({
+    key: "quantity",
+    header: "Menge",
+    mobile: "amount",
+    cell: (l) => `${formatQuantity(l.quantityMilli)} ${unitLabel(l.unit)}`,
+  });
+  if (showPrices) {
+    columns.push({ key: "price", header: "Einzel", align: "right", mobile: "meta", cell: (l) => (l.unitNetPriceCents != null ? formatCents(l.unitNetPriceCents) : "") });
+    if (showTax) {
+      columns.push({ key: "tax", header: "USt", align: "right", mobile: "meta", cell: (l) => (l.taxRate != null ? `${l.taxRate}%` : "") });
+    }
+  }
   return (
-    <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
-      <table className="w-full text-sm">
-        <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
-          <tr>
-            {showArticleNumber && <th className="px-4 py-2">Art.-Nr.</th>}
-            {showDescription && <th className="px-4 py-2">Beschreibung</th>}
-            <th className="px-4 py-2 text-right">Menge</th>
-            {showPrices && <th className="px-4 py-2 text-right">Einzel</th>}
-            {showPrices && showTax && <th className="px-4 py-2 text-right">USt</th>}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-rule">
-          {lines.map((l) => (
-            <tr key={l.id}>
-              {showArticleNumber && <td className="px-4 py-2 text-ink-muted">{l.articleNumber ?? ""}</td>}
-              {showDescription && <td className="px-4 py-2 text-ink-soft">{l.description}</td>}
-              <td className="tabular px-4 py-2 text-right">
-                {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
-              </td>
-              {showPrices && <td className="tabular px-4 py-2 text-right">{l.unitNetPriceCents != null ? formatCents(l.unitNetPriceCents) : ""}</td>}
-              {showPrices && showTax && <td className="tabular px-4 py-2 text-right">{l.taxRate != null ? `${l.taxRate}%` : ""}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+      <DataTable caption="Positionen" rows={lines} rowKey={(l) => l.id} empty={{ text: "Keine Positionen." }} columns={columns} />
     </div>
   );
 }

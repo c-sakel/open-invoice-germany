@@ -7,8 +7,13 @@ import { monthlyRevenue } from "@/domain/reporting/revenue";
 import { paymentBehaviour } from "@/domain/reporting/payment-behaviour";
 import { CustomerTabs } from "@/components/customers/CustomerTabs";
 import { StatusBadge } from "@/components/StatusBadge";
-import { LineChart } from "@/components/charts/LineChart";
-import { revenueChartData } from "@/components/dashboard/chart-data";
+import { StackedBar, type StackedSegment } from "@/components/charts/StackedBar";
+import { CHART_COLORS } from "@/components/charts/types";
+import { ResponsiveBarChart } from "@/components/dashboard/ResponsiveBarChart";
+import { revenueWithPriorYear } from "@/components/dashboard/chart-data";
+import { DataTable } from "@/components/ui/DataTable";
+import { Card } from "@/components/ui/Card";
+import { Kpi } from "@/components/ui/Kpi";
 import { formatCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -35,20 +40,30 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
   }
 
   const [revenue, behaviour] = await Promise.all([
-    monthlyRevenue(org.id, { customerId: id }),
+    monthlyRevenue(org.id, { customerId: id, months: 24 }),
     paymentBehaviour(org.id, { customerId: id }),
   ]);
 
   const { customer, kpis } = overview;
+  const { current, prior } = revenueWithPriorYear(revenue);
+  // Puenktlich/verspaetet als Anzahl bezahlter Rechnungen (onTimeShare ist ein Anteil 0..1).
+  const onTime = behaviour.onTimeShare === null ? 0 : Math.round(behaviour.onTimeShare * behaviour.paidCount);
+  const punctuality: StackedSegment[] =
+    behaviour.onTimeShare === null
+      ? []
+      : [
+          { key: "ontime", label: "Pünktlich", value: onTime, valueLabel: String(onTime), color: CHART_COLORS.ledger },
+          { key: "late", label: "Verspätet", value: behaviour.paidCount - onTime, valueLabel: String(behaviour.paidCount - onTime), color: CHART_COLORS.due },
+        ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <Link href="/kunden" className="text-sm text-ink-muted hover:text-ink">
             ← Kunden
           </Link>
-          <h1 className="text-2xl font-bold tracking-tight">{customer.name}</h1>
+          <h1 className="min-w-0 break-words text-2xl font-bold tracking-tight">{customer.name}</h1>
           {customer.customerNumber && <span className="text-sm text-ink-muted">{customer.customerNumber}</span>}
           {customer.isArchived && <StatusBadge status="ARCHIVED" />}
         </div>
@@ -57,66 +72,42 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Offener Betrag</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(kpis.openCents)}</div>
-        </div>
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Davon überfällig</div>
-          <div className={`mt-1 text-xl font-semibold ${kpis.overdueCents > 0 ? "text-stamp" : "text-ink"}`}>{formatCents(kpis.overdueCents)}</div>
-        </div>
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Nettoumsatz</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(kpis.totalRevenueCents)}</div>
-        </div>
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Ø Zahlungsdauer</div>
-          <div className="mt-1 text-xl font-semibold text-ink">
-            {behaviour.avgDaysToPay === null ? "—" : `${behaviour.avgDaysToPay} Tage`}
-          </div>
-        </div>
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Pünktlich bezahlt</div>
-          <div
-            className={`mt-1 text-xl font-semibold ${
-              behaviour.onTimeShare === null
-                ? "text-ink"
-                : behaviour.onTimeShare >= 0.8
-                  ? "text-ledger"
-                  : "text-seal"
-            }`}
-          >
-            {behaviour.onTimeShare === null ? "—" : `${Math.round(behaviour.onTimeShare * 100)} %`}
-          </div>
-          {/* Fix M12 (Abschluss-Review): null neutral statt amber (sah wie ein schlechter Wert
-              aus) + Stichprobengroesse als Unterzeile — "100 %" aus einer einzigen bezahlten
-              Rechnung ist sonst nicht von "100 % aus 50 Rechnungen" zu unterscheiden. */}
-          <div className="text-xs text-ink-muted">
-            {behaviour.paidCount === 0 ? "keine bezahlten Rechnungen" : `${behaviour.paidCount} bezahlte Rechnung(en)`}
-          </div>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <Kpi label="Offener Betrag" value={formatCents(kpis.openCents)} />
+        </Card>
+        <Card>
+          <Kpi label="Davon überfällig" value={formatCents(kpis.overdueCents)} tone={kpis.overdueCents > 0 ? "stamp" : "default"} />
+        </Card>
+        <Card>
+          <Kpi label="Nettoumsatz" value={formatCents(kpis.totalRevenueCents)} />
+        </Card>
       </div>
 
-      {/* Fix I6 (Nachtrag, Screenshot-Review): zwei Varianten wie beim Dashboard-Balken —
-          volle viewBoxWidth (640) ab `sm`, reduziert (340) darunter (siehe
-          DashboardWidgets.tsx fuer die vollstaendige Begruendung: SVG font-size laesst
-          sich ohne Client-JS nicht per Breakpoint responsiv machen). */}
-      <div className="hidden rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:block">
-        <LineChart
+      <Card title="Zahlungsverhalten">
+        <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-8">
+          <Kpi
+            label="Ø Tage bis zur Zahlung"
+            value={behaviour.avgDaysToPay === null ? "—" : `${behaviour.avgDaysToPay} Tage`}
+            hint={behaviour.paidCount === 0 ? "keine bezahlten Rechnungen" : `${behaviour.paidCount} bezahlte Rechnung(en)`}
+          />
+          {punctuality.length > 0 ? (
+            <StackedBar title="Pünktlich bezahlt" segments={punctuality} totalLabel={`${Math.round((behaviour.onTimeShare ?? 0) * 100)} %`} />
+          ) : (
+            <p className="text-sm text-ink-soft">Noch keine Zahlungen, aus denen sich ein Verhalten ableiten lässt.</p>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Umsatz je Monat (netto) mit Vorjahr">
+        <ResponsiveBarChart
           title="Umsatz je Monat (netto, 12 Monate)"
-          data={revenueChartData(revenue)}
+          data={current}
+          compare={prior}
+          compareLabel="Vorjahr"
           emptyMessage="Noch keine Umsätze im Zeitraum."
         />
-      </div>
-      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:hidden">
-        <LineChart
-          title="Umsatz je Monat (netto, 12 Monate)"
-          data={revenueChartData(revenue)}
-          emptyMessage="Noch keine Umsätze im Zeitraum."
-          viewBoxWidth={340}
-        />
-      </div>
+      </Card>
 
       <CustomerTabs
         tabs={[
@@ -124,76 +115,113 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
             key: "rechnungen",
             label: `Rechnungen (${overview.invoices.length})`,
             content: (
-              <ul className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule bg-sheet">
-                {overview.invoices.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <Link href={`/rechnungen/${r.id}`} className="font-medium text-pen hover:underline">
-                      {r.number ?? "Entwurf"}
-                    </Link>
-                    <span className="text-ink-muted">{deDate(r.issueDate)}</span>
-                    <span className="text-ink-soft">{formatCents(r.grossTotalCents)}</span>
-                    <StatusBadge status={r.effectiveStatus} />
-                  </li>
-                ))}
-                {overview.invoices.length === 0 && <li className="px-4 py-6 text-center text-ink-muted">Keine Rechnungen.</li>}
-              </ul>
+              <DocTable
+                caption="Rechnungen"
+                emptyText="Keine Rechnungen."
+                rows={overview.invoices.map((r) => ({
+                  id: r.id,
+                  href: `/rechnungen/${r.id}`,
+                  title: r.number ?? "Entwurf",
+                  date: deDate(r.issueDate),
+                  amount: formatCents(r.grossTotalCents),
+                  status: r.effectiveStatus,
+                }))}
+              />
             ),
           },
           {
             key: "angebote",
             label: `Angebote (${overview.quotes.length})`,
             content: (
-              <ul className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule bg-sheet">
-                {overview.quotes.map((q) => (
-                  <li key={q.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <Link href={`/dokumente/${q.id}`} className="font-medium text-pen hover:underline">
-                      {q.number ?? "Entwurf"}
-                    </Link>
-                    <span className="text-ink-muted">{deDate(q.issueDate)}</span>
-                    <span className="text-ink-soft">{formatCents(q.grossTotalCents)}</span>
-                    <StatusBadge status={q.effectiveStatus} />
-                  </li>
-                ))}
-                {overview.quotes.length === 0 && <li className="px-4 py-6 text-center text-ink-muted">Keine Angebote.</li>}
-              </ul>
+              <DocTable
+                caption="Angebote"
+                emptyText="Keine Angebote."
+                rows={overview.quotes.map((q) => ({
+                  id: q.id,
+                  href: `/dokumente/${q.id}`,
+                  title: q.number ?? "Entwurf",
+                  date: deDate(q.issueDate),
+                  amount: formatCents(q.grossTotalCents),
+                  status: q.effectiveStatus,
+                }))}
+              />
             ),
           },
           {
             key: "lieferscheine",
             label: `Lieferscheine (${overview.deliveryNotes.length})`,
             content: (
-              <ul className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule bg-sheet">
-                {overview.deliveryNotes.map((n) => (
-                  <li key={n.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <Link href={`/lieferscheine/${n.id}`} className="font-medium text-pen hover:underline">
-                      {n.number ?? "Entwurf"}
-                    </Link>
-                    <span className="text-ink-muted">{deDate(n.issueDate)}</span>
-                    <StatusBadge status={n.status} />
-                  </li>
-                ))}
-                {overview.deliveryNotes.length === 0 && <li className="px-4 py-6 text-center text-ink-muted">Keine Lieferscheine.</li>}
-              </ul>
+              <DocTable
+                caption="Lieferscheine"
+                emptyText="Keine Lieferscheine."
+                rows={overview.deliveryNotes.map((n) => ({
+                  id: n.id,
+                  href: `/lieferscheine/${n.id}`,
+                  title: n.number ?? "Entwurf",
+                  date: deDate(n.issueDate),
+                  amount: null,
+                  status: n.status,
+                }))}
+              />
             ),
           },
           {
             key: "abos",
             label: `Abos (${overview.recurring.length})`,
             content: (
-              <ul className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule bg-sheet">
-                {overview.recurring.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <Link href={`/abos/${r.id}`} className="font-medium text-pen hover:underline">
-                      {r.title}
-                    </Link>
-                    <span className="text-ink-muted">nächste Ausführung {deDate(r.nextRunDate)}</span>
-                    <StatusBadge status={r.status} />
-                  </li>
-                ))}
-                {overview.recurring.length === 0 && <li className="px-4 py-6 text-center text-ink-muted">Keine Abos.</li>}
-              </ul>
+              <DocTable
+                caption="Abos"
+                emptyText="Keine Abos."
+                dateHeader="Nächste Ausführung"
+                rows={overview.recurring.map((r) => ({
+                  id: r.id,
+                  href: `/abos/${r.id}`,
+                  title: r.title,
+                  date: deDate(r.nextRunDate),
+                  amount: null,
+                  status: r.status,
+                }))}
+              />
             ),
           },
+        ]}
+      />
+    </div>
+  );
+}
+
+interface DocRow {
+  id: string;
+  href: string;
+  title: string;
+  date: string;
+  amount: string | null;
+  status: string;
+}
+
+/** Belegliste eines Kunden-Tabs: Tabelle ab `sm`, darunter Karten (DataTable). */
+function DocTable({ rows, caption, emptyText, dateHeader = "Datum" }: { rows: DocRow[]; caption: string; emptyText: string; dateHeader?: string }) {
+  return (
+    <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+      <DataTable
+        caption={caption}
+        rows={rows}
+        rowKey={(r) => r.id}
+        empty={{ text: emptyText }}
+        columns={[
+          {
+            key: "title",
+            header: "Nummer",
+            mobile: "title",
+            cell: (r) => (
+              <Link href={r.href} className="break-words font-medium text-pen hover:underline">
+                {r.title}
+              </Link>
+            ),
+          },
+          { key: "date", header: dateHeader, mobile: "meta", cell: (r) => <span className="text-ink-muted">{r.date}</span> },
+          { key: "amount", header: "Brutto", mobile: "amount", cell: (r) => r.amount ?? "" },
+          { key: "status", header: "Status", mobile: "meta", cell: (r) => <StatusBadge status={r.status} /> },
         ]}
       />
     </div>

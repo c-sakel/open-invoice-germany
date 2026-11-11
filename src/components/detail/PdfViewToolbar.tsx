@@ -26,7 +26,7 @@ export function PdfViewToolbar({ src, title }: { src: string; title: string }) {
         </a>
       </div>
       <div className="overflow-hidden rounded-lg border border-rule bg-well shadow-sm">
-        <iframe src={`${src}#view=FitH`} title={title} className="block w-full" style={{ aspectRatio: "1 / 1.4142" }} />
+        <iframe src={`${src}#view=FitH`} title={title} className="block w-full bg-white" style={{ aspectRatio: "1 / 1.4142", colorScheme: "light" }} />
       </div>
     </div>
   );

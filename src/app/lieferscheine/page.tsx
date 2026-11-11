@@ -7,6 +7,7 @@ import {
   deliveryNoteStatusTabCounts,
   deliveryNoteListHeadline,
   type DeliveryNoteListResult,
+  type DeliveryNoteListRow,
   type DeliveryNoteListHeadline,
 } from "@/domain/document/list";
 import { availableActions } from "@/domain/document/actions";
@@ -19,6 +20,7 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs, type StatusTab } from "@/components/list/StatusTabs";
+import { DataTable, type DataColumn } from "@/components/ui/DataTable";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
 import { originsFor } from "@/domain/document/origin";
 import { parseListQuery, runListFilter } from "@/lib/list-query";
@@ -120,6 +122,83 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
 
   const headlineItems: HeadlineItem[] = [{ label: "Belege", value: String(headline.count) }];
 
+  const columns: DataColumn<DeliveryNoteListRow>[] = [
+    {
+      key: "number",
+      header: "Nummer",
+      mobile: "title",
+      cell: (n) => {
+        const origin = origins.get(n.id);
+        const rowTags = tagsByDocId.get(n.id) ?? [];
+        return (
+          <>
+            <Link href={detailHref(n.id)} className="font-medium text-pen hover:underline">
+              {n.number ?? "(Entwurf)"}
+            </Link>
+            {origin && (
+              <span className="block">
+                <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
+                  {origin.label}
+                </Link>
+              </span>
+            )}
+            {rowTags.length > 0 && (
+              <span className="mt-1 block">
+                <TagChips tags={rowTags} size="xs" />
+              </span>
+            )}
+          </>
+        );
+      },
+    },
+    { key: "customer", header: "Kunde", mobile: "meta", cell: (n) => <span className="break-words text-ink-soft">{n.customerName}</span> },
+    { key: "date", header: "Belegdatum", mobile: "meta", cell: (n) => <span className="text-ink-soft">{deDate(n.issueDate)}</span> },
+    {
+      key: "status",
+      header: "Status",
+      mobile: "meta",
+      cell: (n) => (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={n.status} />
+          {n.archivedAt && <span className="text-xs text-ink-muted">archiviert</span>}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Aktionen",
+      align: "right",
+      mobile: "meta",
+      cell: (n) => {
+        const actions = availableActions({
+          kind: "DELIVERY_NOTE",
+          type: "DELIVERY_NOTE",
+          status: n.status,
+          isDraft: n.status === "DRAFT",
+          hasEmailLog: n.hasEmailLog,
+        });
+        return (
+          <RowActionsMenu
+            kind="DELIVERY_NOTE"
+            id={n.id}
+            actions={actions}
+            openHref={`/lieferscheine/${n.id}`}
+            // Keine Bearbeiten-Seite fuer Lieferscheine (vorbestehende Luecke) — EDIT wird trotz ActionKey nicht gerendert.
+            pdfHref={`/api/delivery-notes/${n.id}/pdf`}
+            emailDocType="DELIVERY_NOTE"
+            hasEmailLog={n.hasEmailLog}
+            duplicateRoute={`/api/delivery-notes/${n.id}/duplicate`}
+            duplicateRedirect="/lieferscheine/{id}"
+            cancelRoute={`/api/delivery-notes/${n.id}/status`}
+            cancelBody={{ action: "CANCEL" }}
+            cancelInfo={{ noun: "Lieferschein", number: n.number }}
+            templateName={n.number ?? undefined}
+          />
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -144,87 +223,16 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
 
       <ListHeadline items={headlineItems} />
 
-      {result.rows.length === 0 ? (
-        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
-          Keine Lieferscheine gefunden.{" "}
-          <Link href="/lieferscheine/neu" className="font-medium text-pen hover:underline">
-            Lege den ersten Lieferschein an.
-          </Link>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
-          <table className="w-full text-sm">
-            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
-              <tr>
-                <th className="px-4 py-3">Nummer</th>
-                <th className="px-4 py-3">Kunde</th>
-                <th className="px-4 py-3">Belegdatum</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-rule">
-              {result.rows.map((n) => {
-                const actions = availableActions({
-                  kind: "DELIVERY_NOTE",
-                  type: "DELIVERY_NOTE",
-                  status: n.status,
-                  isDraft: n.status === "DRAFT",
-                  hasEmailLog: n.hasEmailLog,
-                });
-                const origin = origins.get(n.id);
-                return (
-                  <tr key={n.id} className={`hover:bg-paper ${n.archivedAt ? "opacity-60" : ""}`}>
-                    <td className="px-4 py-3">
-                      <Link href={detailHref(n.id)} className="font-medium text-pen hover:underline">
-                        {n.number ?? "(Entwurf)"}
-                      </Link>
-                      {origin && (
-                        <div>
-                          <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
-                            {origin.label}
-                          </Link>
-                        </div>
-                      )}
-                      {(tagsByDocId.get(n.id) ?? []).length > 0 && (
-                        <div className="mt-1">
-                          <TagChips tags={tagsByDocId.get(n.id) ?? []} size="xs" />
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-ink-soft">{n.customerName}</td>
-                    <td className="px-4 py-3 text-ink-soft">{deDate(n.issueDate)}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={n.status} />
-                      {n.archivedAt && <span className="ml-2 text-xs text-ink-muted">archiviert</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <RowActionsMenu
-                        kind="DELIVERY_NOTE"
-                        id={n.id}
-                        actions={actions}
-                        openHref={`/lieferscheine/${n.id}`}
-                        // Keine Bearbeiten-Seite fuer Lieferscheine (vorbestehende Luecke,
-                        // nicht Teil dieses Tasks) — EDIT wird trotz ActionKey nicht gerendert.
-                        pdfHref={`/api/delivery-notes/${n.id}/pdf`}
-                        emailDocType="DELIVERY_NOTE"
-                        hasEmailLog={n.hasEmailLog}
-                        duplicateRoute={`/api/delivery-notes/${n.id}/duplicate`}
-                        duplicateRedirect="/lieferscheine/{id}"
-                        cancelRoute={`/api/delivery-notes/${n.id}/status`}
-                        cancelBody={{ action: "CANCEL" }}
-                        cancelInfo={{ noun: "Lieferschein", number: n.number }}
-                        templateName={n.number ?? undefined}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <Pagination basePath="/lieferscheine" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
-        </div>
-      )}
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Lieferscheine"
+          rows={result.rows}
+          rowKey={(n) => n.id}
+          empty={{ text: "Keine Lieferscheine gefunden.", action: { label: "Ersten Lieferschein anlegen", href: "/lieferscheine/neu" } }}
+          columns={columns}
+        />
+        <Pagination basePath="/lieferscheine" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
+      </div>
     </div>
   );
 }

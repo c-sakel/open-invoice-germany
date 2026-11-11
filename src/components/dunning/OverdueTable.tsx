@@ -1,21 +1,18 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { formatCents } from "@/lib/money";
 import { DunningActions } from "@/components/dunning/DunningActions";
 import { PaymentForm } from "@/components/PaymentForm";
+import { DataTable } from "@/components/ui/DataTable";
+import { Card } from "@/components/ui/Card";
+import { StatusBadge } from "@/components/StatusBadge";
 import type { DunningOverviewRow } from "@/domain/dunning/overview";
 
 function deDate(iso: string | null) {
   return iso ? new Intl.DateTimeFormat("de-DE").format(new Date(iso)) : "—";
 }
-
-const STATE_LABEL: Record<string, { label: string; cls: string }> = {
-  ACTIVE: { label: "Aktiv", cls: "bg-well text-ink-soft" },
-  PAUSED: { label: "Pausiert", cls: "bg-seal/10 text-seal" },
-  STOPPED: { label: "Beendet", cls: "bg-stamp/10 text-stamp" },
-};
 
 /** Zeilen der /mahnwesen-Uebersicht — serverseitig gerendete Daten (loadDunningOverview),
  *  Client-Komponente nur wegen der interaktiven Aktionen (Zahlung erfassen aufklappen,
@@ -34,83 +31,109 @@ export function OverdueTable({
 }) {
   const [paymentRowId, setPaymentRowId] = useState<string | null>(null);
 
-  if (rows.length === 0) {
-    return <p className="rounded-[var(--radius-card)] border border-rule bg-sheet p-6 text-center text-sm text-ink-muted">Keine überfälligen Rechnungen.</p>;
-  }
+  const paymentRow = rows.find((r) => r.invoiceId === paymentRowId) ?? null;
 
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-sheet">
-      <table className="w-full text-sm">
-        <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
-          <tr>
-            <th className="px-3 py-2">Rechnung</th>
-            <th className="px-3 py-2">Kunde</th>
-            <th className="px-3 py-2 text-right">Offen</th>
-            <th className="px-3 py-2">Fällig seit</th>
-            <th className="px-3 py-2">Aktuelle Stufe</th>
-            <th className="px-3 py-2">Nächste Stufe</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Letzter Kontakt</th>
-            <th className="px-3 py-2 text-right">Aktionen</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-rule">
-          {rows.map((r) => {
-            const state = STATE_LABEL[r.dunningState] ?? STATE_LABEL.ACTIVE;
-            return (
-              <Fragment key={r.invoiceId}>
-                <tr>
-                  <td className="px-3 py-2">
-                    <Link href={`/rechnungen/${r.invoiceId}`} className="font-medium text-pen hover:underline">
-                      {r.number ?? r.invoiceId}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-ink-soft">{r.customerName}</td>
-                  <td className="px-3 py-2 text-right font-medium text-ink">{formatCents(r.openCents)}</td>
-                  <td className="px-3 py-2 text-ink-soft">
-                    {deDate(r.dueDate)} <span className="text-xs text-ink-muted">({r.daysOverdue} Tage)</span>
-                  </td>
-                  <td className="px-3 py-2 text-ink-soft">{r.currentStage?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-ink-soft">
-                    {r.nextStage ? (
-                      <>
-                        {r.nextStage.name}
-                        {r.nextDunningAt && <span className="ml-1 text-xs text-ink-muted">ab {deDate(r.nextDunningAt)}</span>}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${state.cls}`}>{state.label}</span>
-                    {r.dunningState === "PAUSED" && r.pausedUntil && <span className="ml-1 text-xs text-ink-muted">bis {deDate(r.pausedUntil)}</span>}
-                  </td>
-                  <td className="px-3 py-2 text-ink-muted">{deDate(r.lastContactAt)}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentRowId(paymentRowId === r.invoiceId ? null : r.invoiceId)}
-                        className="rounded-md border border-ledger/30 bg-sheet px-2.5 py-1 text-xs font-medium text-ledger hover:bg-ledger/10"
-                      >
-                        Zahlung erfassen
-                      </button>
-                      <DunningActions invoiceId={r.invoiceId} dunningState={r.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"} hasNextStage={r.nextStage != null} />
-                    </div>
-                  </td>
-                </tr>
-                {paymentRowId === r.invoiceId && (
-                  <tr>
-                    <td colSpan={9} className="bg-paper px-3 py-3">
-                      <PaymentForm invoiceId={r.invoiceId} openCents={r.openCents} methods={paymentMethods} defaultMethod={paymentMethods[0]?.code ?? "TRANSFER"} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {paymentRow && (
+        <Card
+          title={`Zahlung erfassen — ${paymentRow.number ?? "Rechnung"}`}
+          action={
+            <button type="button" onClick={() => setPaymentRowId(null)} className="text-sm text-ink-muted hover:text-ink">
+              Schließen
+            </button>
+          }
+        >
+          <PaymentForm
+            invoiceId={paymentRow.invoiceId}
+            openCents={paymentRow.openCents}
+            methods={paymentMethods}
+            defaultMethod={paymentMethods[0]?.code ?? "TRANSFER"}
+          />
+        </Card>
+      )}
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Überfällige Rechnungen"
+          rows={rows}
+          rowKey={(r) => r.invoiceId}
+          empty={{ text: "Keine überfälligen Rechnungen." }}
+          columns={[
+            {
+              key: "number",
+              header: "Rechnung",
+              mobile: "title",
+              cell: (r) => (
+                <Link href={`/rechnungen/${r.invoiceId}`} className="font-medium text-pen hover:underline">
+                  {r.number ?? "Entwurf"}
+                </Link>
+              ),
+            },
+            { key: "customer", header: "Kunde", mobile: "meta", cell: (r) => <span className="break-words text-ink-soft">{r.customerName}</span> },
+            { key: "open", header: "Offen", mobile: "amount", cell: (r) => formatCents(r.openCents) },
+            {
+              key: "due",
+              header: "Fällig seit",
+              mobile: "meta",
+              cell: (r) => (
+                <span className="text-ink-soft">
+                  {deDate(r.dueDate)} <span className="text-xs text-ink-muted">({r.daysOverdue} Tage)</span>
+                </span>
+              ),
+            },
+            { key: "stage", header: "Aktuelle Stufe", mobile: "meta", cell: (r) => <span className="text-ink-soft">{r.currentStage?.name ?? "—"}</span> },
+            {
+              key: "next",
+              header: "Nächste Stufe",
+              mobile: "hidden",
+              cell: (r) =>
+                r.nextStage ? (
+                  <span className="text-ink-soft">
+                    {r.nextStage.name}
+                    {r.nextDunningAt && <span className="ml-1 text-xs text-ink-muted">ab {deDate(r.nextDunningAt)}</span>}
+                  </span>
+                ) : (
+                  "—"
+                ),
+            },
+            {
+              key: "state",
+              header: "Status",
+              mobile: "meta",
+              cell: (r) => (
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <StatusBadge status={r.dunningState} />
+                  {r.dunningState === "PAUSED" && r.pausedUntil && <span className="text-xs text-ink-muted">bis {deDate(r.pausedUntil)}</span>}
+                </span>
+              ),
+            },
+            { key: "contact", header: "Letzter Kontakt", mobile: "hidden", cell: (r) => <span className="text-ink-muted">{deDate(r.lastContactAt)}</span> },
+            {
+              key: "actions",
+              header: "Aktionen",
+              align: "right",
+              mobile: "meta",
+              cell: (r) => (
+                <DunningActions
+                  layout="menu"
+                  invoiceId={r.invoiceId}
+                  dunningState={r.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
+                  hasNextStage={r.nextStage != null}
+                  extra={
+                    <button
+                      type="button"
+                      onClick={() => setPaymentRowId(paymentRowId === r.invoiceId ? null : r.invoiceId)}
+                      className="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-ledger hover:bg-paper"
+                    >
+                      Zahlung erfassen
+                    </button>
+                  }
+                />
+              ),
+            },
+          ]}
+        />
+      </div>
     </div>
   );
 }

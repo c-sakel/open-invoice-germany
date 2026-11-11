@@ -5,6 +5,8 @@ import { AuditChainPanel } from "@/components/settings/AuditChainPanel";
 import { listChainVerifications } from "@/domain/audit/verify-chain";
 import { formatDateTimeDe } from "@/domain/audit/export-csv";
 import { AUDIT_EXPORT_MAX_PENDING } from "@/domain/audit/export";
+import { Card } from "@/components/ui/Card";
+import { DataTable } from "@/components/ui/DataTable";
 
 export const dynamic = "force-dynamic";
 
@@ -24,49 +26,41 @@ export default async function PruefungSettingsPage() {
       <SettingsTabs active="pruefung" />
       <h1 className="text-2xl font-bold tracking-tight">Prüfung</h1>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-ink">Hash-Kette des Änderungsprotokolls</h2>
+      <Card title="Hash-Kette des Änderungsprotokolls">
+        <div className="space-y-3">
         <p className="text-sm text-ink-soft">
           Das Änderungsprotokoll ist hash-verkettet (GoBD). Die Prüfung wird wöchentlich automatisch ausgeführt und kann hier sofort gestartet werden.
         </p>
         <AuditChainPanel />
-        <div className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-sheet">
-          <table className="min-w-full text-sm">
-            <thead className="bg-paper text-left text-ink-soft">
-              <tr>
-                <th className="px-3 py-2">Zeitpunkt (UTC)</th>
-                <th className="px-3 py-2">Ergebnis</th>
-                <th className="px-3 py-2 text-right">Einträge</th>
-                <th className="px-3 py-2">Auslöser</th>
-                <th className="px-3 py-2 text-right">Dauer</th>
-              </tr>
-            </thead>
-            <tbody>
-              {verifications.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-3 text-ink-muted">
-                    Noch keine Prüfung durchgeführt.
-                  </td>
-                </tr>
-              )}
-              {verifications.map((v) => (
-                <tr key={v.id} className="border-t border-rule">
-                  <td className="px-3 py-2">{formatDateTimeDe(v.checkedAt)}</td>
-                  <td className={`px-3 py-2 font-medium ${v.valid ? "text-ledger" : "text-stamp"}`}>
+        <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+          <DataTable
+            caption="Letzte Prüfungen der Hash-Kette"
+            rows={verifications}
+            rowKey={(v) => v.id}
+            empty={{ text: "Noch keine Prüfung durchgeführt." }}
+            columns={[
+              { key: "at", header: "Zeitpunkt (UTC)", mobile: "title", cell: (v) => formatDateTimeDe(v.checkedAt) },
+              {
+                key: "result",
+                header: "Ergebnis",
+                mobile: "meta",
+                cell: (v) => (
+                  <span className={`font-medium ${v.valid ? "text-ledger" : "text-stamp"}`}>
                     {v.valid ? "gültig" : `unterbrochen (Eintrag ${v.brokenEntryId ?? "?"})`}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{v.entries}</td>
-                  <td className="px-3 py-2">{v.trigger}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{v.durationMs} ms</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                ),
+              },
+              { key: "entries", header: "Einträge", align: "right", mobile: "amount", cell: (v) => String(v.entries) },
+              { key: "trigger", header: "Auslöser", mobile: "meta", cell: (v) => v.trigger },
+              { key: "duration", header: "Dauer", align: "right", mobile: "meta", cell: (v) => `${v.durationMs} ms` },
+            ]}
+          />
         </div>
-      </section>
+        </div>
+      </Card>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-ink">Prüfer-Export (§ 147 Abs. 6 AO)</h2>
+      <Card title="Prüfer-Export (§ 147 Abs. 6 AO)">
+        <div className="space-y-3">
         <p className="text-sm text-ink-soft">
           ZIP mit CSV-Tabellen, Beschreibungsdatei <code className="rounded bg-well px-1">index.xml</code>, Kettenprüfung und den archivierten Belegen
           (PDF und XML). Noch nicht archivierte Belege des Zeitraums werden dabei archiviert. Zeitraum höchstens drei Jahre.
@@ -93,7 +87,8 @@ export default async function PruefungSettingsPage() {
             Export herunterladen
           </button>
         </form>
-      </section>
+        </div>
+      </Card>
     </div>
   );
 }

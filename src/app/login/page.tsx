@@ -9,5 +9,5 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { from } = await searchParams;
   if ((await dbInternal.user.count()) === 0) redirect("/setup");
   const brand = await safeBrand();
-  return <AuthForm mode="login" redirectTo={from || "/rechnungen"} appName={brand.appName} />;
+  return <AuthForm mode="login" redirectTo={from || "/rechnungen"} appName={brand.appName} appShortName={brand.appShortName} hasAppLogo={brand.hasAppLogo} />;
 }

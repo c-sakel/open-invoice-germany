@@ -193,7 +193,8 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
             key={`${docType}-${selection}`}
             src={`/api/settings/branding/preview?docType=${previewDocType}&layoutId=${selection}`}
             title="Layout-Vorschau"
-            className="aspect-[1/1.414] w-full rounded border border-rule bg-sheet"
+            className="aspect-[1/1.414] w-full rounded border border-rule bg-white"
+          style={{ colorScheme: "light" }}
           />
           <div className="flex flex-col gap-2">
             <p className="text-xs text-ink-soft">

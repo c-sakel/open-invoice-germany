@@ -35,6 +35,8 @@ const MAP: Record<string, { label: string; tone: StatusTone }> = {
   ACTIVE: { label: "Aktiv", tone: "ledger" },
   PAUSED: { label: "Pausiert", tone: "seal" },
   ENDED: { label: "Beendet", tone: "neutral" },
+  // DunningState (Mahnsperre je Rechnung): ACTIVE/PAUSED siehe oben.
+  STOPPED: { label: "Beendet", tone: "stamp" },
 };
 
 /** Ton eines Status; unbekannte Werte sind neutral. */

@@ -95,7 +95,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     return (
       <html lang="de">
         <body className="min-h-screen bg-paper text-ink font-sans antialiased">
-          <SlimShell brand={brand}>{children}</SlimShell>
+          <SlimShell brand={brand} hideHeader>{children}</SlimShell>
         </body>
       </html>
     );

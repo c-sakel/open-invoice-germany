@@ -286,7 +286,7 @@ export function PreviewSheet({
           ) : showLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-ink-muted">Vorschau wird geladen…</div>
           ) : showIframe && state.status === "ready" ? (
-            <iframe src={state.url} title="Beleg-Vorschau" className="h-full w-full" />
+            <iframe src={state.url} title="Beleg-Vorschau" className="h-full w-full bg-white" style={{ colorScheme: "light" }} />
           ) : null}
         </div>
       </div>

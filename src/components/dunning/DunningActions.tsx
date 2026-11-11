@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { PauseDialog } from "@/components/dunning/PauseDialog";
 
@@ -14,11 +14,17 @@ export function DunningActions({
   invoiceId,
   dunningState,
   hasNextStage,
+  layout = "inline",
+  extra,
 }: {
   invoiceId: string;
   dunningState: "ACTIVE" | "PAUSED" | "STOPPED";
   /** Ob ueberhaupt eine weitere (aktivierte) Mahnstufe konfiguriert ist. */
   hasNextStage: boolean;
+  /** `inline`: Einzelknoepfe nebeneinander; `menu`: `<details>`-Disclosure (Trefferflaeche 40 px) fuer enge Tabellenzeilen. */
+  layout?: "inline" | "menu";
+  /** Zusaetzliche Eintraege am Anfang des Menues (nur `layout="menu"`). */
+  extra?: ReactNode;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -65,14 +71,18 @@ export function DunningActions({
     router.refresh();
   }
 
-  return (
-    <span className="inline-flex flex-wrap items-center gap-2">
+  const menu = layout === "menu";
+  const item = "w-full rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-paper disabled:opacity-60";
+  const outline = "rounded-md border bg-sheet px-2.5 py-1 text-xs font-medium disabled:opacity-60";
+
+  const buttons = (
+    <>
       {dunningState === "ACTIVE" && hasNextStage && (
         <button
           type="button"
           onClick={() => createNext(false)}
           disabled={busy === "create"}
-          className="rounded-md border border-seal/30 bg-sheet px-2.5 py-1 text-xs font-medium text-seal hover:bg-seal/10 disabled:opacity-60"
+          className={menu ? `${item} text-seal` : `${outline} border-seal/30 text-seal hover:bg-seal/10`}
         >
           {busy === "create" ? "…" : "Nächste Mahnstufe"}
         </button>
@@ -82,23 +92,37 @@ export function DunningActions({
           type="button"
           onClick={() => setState("ACTIVE")}
           disabled={busy === "ACTIVE"}
-          className="rounded-md border border-ledger/30 bg-sheet px-2.5 py-1 text-xs font-medium text-ledger hover:bg-ledger/10 disabled:opacity-60"
+          className={menu ? `${item} text-ledger` : `${outline} border-ledger/30 text-ledger hover:bg-ledger/10`}
         >
           Fortsetzen
         </button>
       )}
-      {dunningState === "ACTIVE" && <PauseDialog invoiceId={invoiceId} />}
+      {dunningState === "ACTIVE" && <PauseDialog invoiceId={invoiceId} triggerClassName={menu ? `${item} text-ink-soft` : undefined} />}
       {dunningState !== "STOPPED" && (
         <button
           type="button"
           onClick={() => setState("STOPPED")}
           disabled={busy === "STOPPED"}
-          className="rounded-md border border-stamp/30 bg-sheet px-2.5 py-1 text-xs font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60"
+          className={menu ? `${item} text-stamp` : `${outline} border-stamp/30 text-stamp hover:bg-stamp/10`}
         >
           Beenden
         </button>
       )}
-      {error && <span className="text-xs text-stamp">{error}</span>}
-    </span>
+      {error && <span className="block px-3 py-1 text-xs text-stamp">{error}</span>}
+    </>
+  );
+
+  if (!menu) return <span className="inline-flex flex-wrap items-center gap-2">{buttons}</span>;
+
+  return (
+    <details className="relative inline-block text-left">
+      <summary className="flex min-h-10 min-w-10 cursor-pointer list-none items-center justify-center rounded-md border border-rule-strong bg-sheet px-3 text-sm font-medium text-ink-soft hover:bg-well [&::-webkit-details-marker]:hidden">
+        Aktionen
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-md border border-rule bg-sheet p-1.5 shadow-lg">
+        {extra}
+        {buttons}
+      </div>
+    </details>
   );
 }

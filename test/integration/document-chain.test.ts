@@ -121,6 +121,9 @@ describe("buildDocumentChain", () => {
     const paymentNode = invoiceNode!.children.find((c) => c.type === "PAYMENT");
     expect(paymentNode).toBeDefined();
     expect(paymentNode!.href).toBeNull();
+    // Anzeigename: Referenz oder "Zahlung vom <Datum>" — nie die ID.
+    expect(paymentNode!.number).toBeTruthy();
+    expect(paymentNode!.number).not.toContain(paymentNode!.id.slice(0, 8));
 
     const dunningNode = invoiceNode!.children.find((c) => c.type === "DUNNING");
     expect(dunningNode?.id).toBe(dunning.id);

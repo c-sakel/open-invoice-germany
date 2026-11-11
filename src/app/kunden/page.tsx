@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
 import { archiveCustomer } from "@/app/actions/masterdata";
+import { DataTable } from "@/components/ui/DataTable";
 
 export const dynamic = "force-dynamic";
 
@@ -62,49 +63,48 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         </button>
       </form>
 
-      {customers.length === 0 ? (
-        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
-          Noch keine Kunden. Lege deinen ersten Kunden an.
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
-          <table className="w-full text-sm">
-            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
-              <tr>
-                <th className="px-4 py-3">Nr.</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Ort</th>
-                <th className="px-4 py-3">Typ</th>
-                <th className="px-4 py-3">Standardkontakt</th>
-                <th className="px-4 py-3">USt-IdNr.</th>
-                <th className="px-4 py-3 text-right">Aktion</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-rule">
-              {customers.map((c) => (
-                <tr key={c.id} className="hover:bg-paper">
-                  <td className="px-4 py-3 text-ink-muted">{c.customerNumber ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Link href={`/kunden/${c.id}`} className="font-medium text-pen hover:underline">
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-ink-soft">{c.city}</td>
-                  <td className="px-4 py-3 text-ink-soft">{c.type === "BUSINESS" ? "B2B" : "B2C"}</td>
-                  <td className="px-4 py-3 text-ink-soft">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</td>
-                  <td className="px-4 py-3 text-ink-muted">{c.vatId ?? "—"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <form action={archiveCustomer} className="inline">
-                      <input type="hidden" name="id" value={c.id} />
-                      <button className="text-xs text-ink-muted hover:text-stamp">Archivieren</button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Kunden"
+          rows={customers}
+          rowKey={(c) => c.id}
+          empty={{ text: "Noch keine Kunden. Lege deinen ersten Kunden an.", action: { label: "Neu anlegen", href: "/kunden/neu" } }}
+          columns={[
+            { key: "nr", header: "Nr.", mobile: "meta", cell: (c) => <span className="text-ink-muted">{c.customerNumber ?? "—"}</span> },
+            {
+              key: "name",
+              header: "Name",
+              mobile: "title",
+              cell: (c) => (
+                <Link href={`/kunden/${c.id}`} className="break-words font-medium text-pen hover:underline">
+                  {c.name}
+                </Link>
+              ),
+            },
+            { key: "city", header: "Ort", mobile: "meta", cell: (c) => <span className="text-ink-soft">{c.city}</span> },
+            { key: "type", header: "Typ", mobile: "meta", cell: (c) => <span className="text-ink-soft">{c.type === "BUSINESS" ? "B2B" : "B2C"}</span> },
+            {
+              key: "contact",
+              header: "Standardkontakt",
+              mobile: "hidden",
+              cell: (c) => <span className="text-ink-soft">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</span>,
+            },
+            { key: "vat", header: "USt-IdNr.", mobile: "hidden", cell: (c) => <span className="text-ink-muted">{c.vatId ?? "—"}</span> },
+            {
+              key: "action",
+              header: "Aktion",
+              align: "right",
+              mobile: "meta",
+              cell: (c) => (
+                <form action={archiveCustomer} className="inline">
+                  <input type="hidden" name="id" value={c.id} />
+                  <button className="inline-flex min-h-8 items-center text-xs text-ink-muted hover:text-stamp">Archivieren</button>
+                </form>
+              ),
+            },
+          ]}
+        />
+      </div>
     </div>
   );
 }

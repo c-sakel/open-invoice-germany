@@ -23,8 +23,8 @@ export function CorrectionSection({
   canDuplicate: boolean;
 }) {
   return (
-    <section className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
-      <h2 className="font-semibold text-ink">Korrektur &amp; Vervielfältigung (§14c, §17 UStG)</h2>
+    <div className="space-y-3 rounded-[var(--radius-card)] bg-sheet p-5 text-sm shadow-[var(--shadow-card)]">
+      <h3 className="font-semibold text-ink">Korrektur &amp; Vervielfältigung (§14c, §17 UStG)</h3>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1">
           <p className="font-medium text-ink">Stornieren</p>
@@ -84,6 +84,6 @@ export function CorrectionSection({
           />
         </div>
       </div>
-    </section>
+    </div>
   );
 }

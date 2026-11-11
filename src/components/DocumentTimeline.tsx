@@ -58,7 +58,11 @@ export function DocumentTimeline({ kind, docId }: { kind: TimelineKind; docId: s
   if (entries.length === 0) return <p className="text-sm text-ink-muted">Noch keine Ereignisse.</p>;
 
   return (
-    <ol className="space-y-3">
+    <details open={entries.length <= 5} className="rounded-[var(--radius-card)] bg-sheet px-4 py-3 shadow-[var(--shadow-card)]">
+      <summary className="cursor-pointer list-none text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
+        Zeitstrahl <span className="font-normal text-ink-muted">({entries.length} Ereignisse)</span>
+      </summary>
+      <ol className="mt-3 space-y-3">
       {[...entries].reverse().map((e, i) => (
         <li key={i} className="flex items-start gap-3">
           <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${KIND_DOT[e.kind]}`} />
@@ -74,6 +78,7 @@ export function DocumentTimeline({ kind, docId }: { kind: TimelineKind; docId: s
           </div>
         </li>
       ))}
-    </ol>
+      </ol>
+    </details>
   );
 }

@@ -40,8 +40,8 @@ export function PaymentSection({
   if (!showProcess && dunnings.length === 0) return null;
 
   return (
-    <section className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
-      <h2 className="font-semibold text-ink">Mahnwesen</h2>
+    <div className="space-y-3 rounded-[var(--radius-card)] bg-sheet p-5 text-sm shadow-[var(--shadow-card)]">
+      <h3 className="font-semibold text-ink">Mahnwesen</h3>
 
       {showProcess && dunningSchedule && (
         <div className="space-y-2 rounded-md border border-rule bg-paper p-3">
@@ -88,6 +88,6 @@ export function PaymentSection({
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }

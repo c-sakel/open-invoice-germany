@@ -28,9 +28,10 @@
   --shadow-card: 0 1px 2px rgb(28 34 48 / 0.06), 0 1px 3px rgb(28 34 48 / 0.08);
 }
 
-/* Dunkelmodus: bis Task 8 per data-dark="on" gesperrt (T8 entfernt das Gate). */
+/* Dunkelmodus: folgt ausschliesslich der Systemeinstellung (prefers-color-scheme). */
 @media (prefers-color-scheme: dark) {
-  :root[data-dark="on"] {
+  :root {
+    color-scheme: dark;
     --color-paper: #14171d;
     --color-sheet: #1b1f27;
     --color-sheet-raised: #222733;

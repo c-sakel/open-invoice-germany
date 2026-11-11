@@ -22,10 +22,22 @@ const WIDTH = {
  * der Fusszeile ist davon UNBERUEHRT — sie nennt immer "OpenInvoice Germany" (§13 AGPL,
  * COMPLIANCE.md) und ist durch keine Einstellung abschaltbar.
  */
-export function SlimShell({ brand, children, maxWidth = "5xl" }: { brand: Brand; children: ReactNode; maxWidth?: keyof typeof WIDTH }) {
+export function SlimShell({
+  brand,
+  children,
+  maxWidth = "5xl",
+  hideHeader = false,
+}: {
+  brand: Brand;
+  children: ReactNode;
+  maxWidth?: keyof typeof WIDTH;
+  /** Login/Setup zeigen die Markenzeile selbst ueber der Karte (AuthForm). */
+  hideHeader?: boolean;
+}) {
   const width = WIDTH[maxWidth];
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
+      {!hideHeader && (
       <header className="border-b border-rule bg-sheet">
         <div className={`mx-auto flex ${width} items-center px-6 py-4`}>
           <span className="flex items-center gap-2 font-semibold tracking-tight">
@@ -44,8 +56,9 @@ export function SlimShell({ brand, children, maxWidth = "5xl" }: { brand: Brand;
           </span>
         </div>
       </header>
-      <main className={`mx-auto ${width} px-6 py-10`}>{children}</main>
-      <footer className={`mx-auto ${width} px-6 py-10 text-xs text-ink-muted`}>
+      )}
+      <main className={`mx-auto w-full flex-1 ${width} px-6 py-10`}>{children}</main>
+      <footer className={`mx-auto mt-auto w-full ${width} px-6 py-10 text-xs text-ink-muted`}>
         {/* M1 (Fix-Welle 12c): siehe AppShell.tsx — ohne eigenen Instanznamen doppelte
             Produktnennung vermeiden. Betreiber-Ruling (2026-09-09): Beratungs-Hinweis aus
             der Fusszeile entfernt (steht bereits in COMPLIANCE.md) — die AGPL-Zeile bleibt
@@ -53,6 +66,6 @@ export function SlimShell({ brand, children, maxWidth = "5xl" }: { brand: Brand;
         {brand.appName !== DEFAULT_APP_NAME && `${brand.appName} · `}powered by OpenInvoice Germany · AGPL-3.0 ·{" "}
         <a href={SOURCE_URL} className="underline hover:text-ink-soft">Quellcode</a>
       </footer>
-    </>
+    </div>
   );
 }

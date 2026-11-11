@@ -2,6 +2,7 @@
 import { paymentMethodLabel } from "@/lib/payment-method-label";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { StatusCard, type StatusRow } from "@/components/detail/StatusCard";
 import { TagPicker, type TagPickerItem } from "@/components/tags/TagPicker";
 import { formatCents } from "@/lib/money";
@@ -184,7 +185,15 @@ export function InvoiceStatusCard({
           </>
         }
         rows={customerRows}
-      />
+      >
+        {showPaymentBlock && (
+          <ProgressBar
+            valueCents={invoice.paidAmountCents}
+            totalCents={invoice.payableCents ?? invoice.grossTotalCents}
+            label="Bezahlt"
+          />
+        )}
+      </StatusCard>
       <StatusCard title="Details" status={null} rows={detailRows}>
         {(showPaymentBlock || showPaymentList) && (
           <div className="space-y-4">

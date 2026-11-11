@@ -16,7 +16,7 @@ function isoInDays(days: number): string {
  * abgelaufen gewesen waere) und `min` = morgen, damit der Dialog kein ungueltiges Datum
  * mehr vorschlagen kann.
  */
-export function PauseDialog({ invoiceId }: { invoiceId: string }) {
+export function PauseDialog({ invoiceId, triggerClassName }: { invoiceId: string; triggerClassName?: string }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [pausedUntil, setPausedUntil] = useState(isoInDays(14));
@@ -48,7 +48,7 @@ export function PauseDialog({ invoiceId }: { invoiceId: string }) {
       <button
         type="button"
         onClick={() => dialogRef.current?.showModal()}
-        className="rounded-md border border-rule-strong bg-sheet px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-paper"
+        className={triggerClassName ?? "rounded-md border border-rule-strong bg-sheet px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-paper"}
       >
         Pausieren
       </button>

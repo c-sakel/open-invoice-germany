@@ -2,6 +2,24 @@ import Link from "next/link";
 import { buildDocumentChain, type ChainNode } from "@/domain/document/chain";
 import { StatusBadge } from "@/components/StatusBadge";
 
+/** Anzeigename eines Knotens: Belegnummer, sonst nie die ID. */
+function nodeName(node: ChainNode): string {
+  if (node.number) return node.number;
+  if (node.status === "UNBEKANNT") return "Beleg nicht verfügbar";
+  return node.type === "RECURRING" ? "Abo" : "Entwurf";
+}
+
+/** Status je Knoten: Mahnungen/Zahlungen tragen Klartext statt eines Status-Enums. */
+function NodeStatus({ node }: { node: ChainNode }) {
+  if (node.type === "DUNNING") {
+    const level = /^MAHNSTUFE_(\d+)$/.exec(node.status)?.[1];
+    return <span className="text-xs text-ink-muted">{level ? `${level}. Stufe` : "Mahnung"}</span>;
+  }
+  if (node.type === "PAYMENT") return <span className="text-xs text-ink-muted">{node.status}</span>;
+  if (node.status === "UNBEKANNT") return null;
+  return <StatusBadge status={node.status} />;
+}
+
 function NodeRow({ node, currentId, depth }: { node: ChainNode; currentId: string; depth: number }) {
   const isCurrent = node.id === currentId;
   return (
@@ -15,12 +33,12 @@ function NodeRow({ node, currentId, depth }: { node: ChainNode; currentId: strin
         <span className="text-ink-muted">{node.label}</span>
         {node.href && !isCurrent ? (
           <Link href={node.href} className="text-pen hover:underline">
-            {node.number ?? node.id.slice(0, 8)}
+            {nodeName(node)}
           </Link>
         ) : (
-          <span>{node.number ?? node.id.slice(0, 8)}</span>
+          <span>{nodeName(node)}</span>
         )}
-        <StatusBadge status={node.status} />
+        <NodeStatus node={node} />
         {node.relation && <span className="text-xs text-ink-muted">({node.relation})</span>}
         {isCurrent && <span className="text-xs text-pen">← aktuell</span>}
       </div>
@@ -48,7 +66,7 @@ export async function DocumentChain({ orgId, type, id }: { orgId: string; type: 
   if (!chain) return null;
 
   return (
-    <div className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm">
+    <div className="space-y-3 rounded-[var(--radius-card)] bg-sheet p-4 text-sm shadow-[var(--shadow-card)]">
       <h2 className="font-semibold text-ink">Dokumentenkette</h2>
       <ul>
         <NodeRow node={chain.root} currentId={chain.currentId} depth={0} />

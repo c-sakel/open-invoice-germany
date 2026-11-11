@@ -1,20 +1,20 @@
-/** Belegstrecke einer Rechnung (statusbasiert): fuenf Punkte, der erreichte Schritt ist gefuellt. */
-const STEPS = [
-  { status: "DRAFT", label: "Entwurf" },
-  { status: "FINALIZED", label: "Festgeschrieben" },
-  { status: "SENT", label: "Versendet" },
-  { status: "PARTIALLY_PAID", label: "Teilbezahlt" },
-  { status: "PAID", label: "Bezahlt" },
-] as const;
+import { BelegStrecke } from "@/components/BelegStrecke";
+import { belegStrecke } from "@/domain/timeline/belegstrecke";
 
-export function BelegStreckeMini({ status }: { status: string }) {
-  const index = STEPS.findIndex((s) => s.status === status);
-  if (index < 0) return null;
-  return (
-    <span role="img" aria-label={`Belegstrecke: ${STEPS[index].label}`} className="inline-flex items-center gap-1">
-      {STEPS.map((s, i) => (
-        <span key={s.status} aria-hidden="true" className={`size-1.5 rounded-full ${i <= index ? "bg-pen" : "bg-rule-strong"}`} />
-      ))}
-    </span>
-  );
+const KNOWN = new Set(["DRAFT", "FINALIZED", "SENT", "PARTIALLY_PAID", "PAID", "CANCELLED"]);
+
+/** Kleine Belegstrecke einer Rechnung (Listenkarte, Dashboard) — nur der aktuelle Schritt als Text. */
+export function BelegStreckeMini({
+  status,
+  sent = false,
+  paidAmountCents = 0,
+  payableCents = 0,
+}: {
+  status: string;
+  sent?: boolean;
+  paidAmountCents?: number;
+  payableCents?: number;
+}) {
+  if (!KNOWN.has(status)) return null;
+  return <BelegStrecke size="sm" steps={belegStrecke({ status, sent: sent || status === "SENT", paidAmountCents, payableCents })} />;
 }
