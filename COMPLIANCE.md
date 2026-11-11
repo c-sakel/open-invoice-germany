@@ -657,7 +657,7 @@ Die Software wertet die Bagatellgrenze des § 3c Abs. 4 UStG selbst aus (Dashboa
 
 | Aspekt | Umsetzung |
 |--------|-----------|
-| Schwelle | 10.000,00 € netto; „überschritten“ ist strikt `> 10.000,00 €` (genau 10.000,00 € ist nicht überschritten, 10.000,01 € schon). Summe aus **Vorjahr und laufendem Jahr**, Warnstufe ab einstellbarem Prozentsatz (Standard 80 %). |
+| Schwelle | 10.000,00 € netto; „überschritten“ ist strikt `> 10.000,00 €` (genau 10.000,00 € ist nicht überschritten, 10.000,01 € schon). Geprüft **getrennt für Vorjahr und laufendes Jahr** (§ 3c Abs. 4 UStG), jedes Jahr für sich gegen 10.000,00 € — keine Summe beider Jahre; überschritten, wenn eines der beiden Jahre > 10.000,00 € ist. Warnstufe ab einstellbarem Prozentsatz (Standard 80 %). |
 | Erwerber | Käufer laut **Beleg-Snapshot**: Land in der EU, nicht DE, **ohne USt-IdNr.** Ohne Snapshot zählt der Beleg nicht; spätere Stammdatenänderungen ändern die Zählung nicht. |
 | Jahreszuordnung | Leistungszeitpunkt (`deliveryDate`, sonst `deliveryEnd`, sonst Rechnungsdatum), Jahr in UTC. Leistung im Dezember, Rechnung im Januar zählt im Vorjahr. |
 | Beträge | Eingefrorene EUR-Werte (`netTotalEurCents`, § 16 Abs. 6 UStG, Phase 16b); Fremdwährungs-Altbelege ohne EUR-Betrag werden nicht gezählt, die Karte nennt deren Anzahl. |
