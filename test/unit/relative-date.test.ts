@@ -45,3 +45,20 @@ describe("relativeDueLabel (Phase 13a, Task 2)", () => {
     expect(relativeDueLabel(d(2064, 2, 15), new Date(Date.UTC(2064, 2, 15, 23, 59))).days).toBe(0);
   });
 });
+
+describe("relativeDueLabel mit Status (Phase 16a, Task 8)", () => {
+  const past = d(2064, 2, 1);
+
+  it.each(["DRAFT", "PAID", "CANCELLED"])("%s -> null (nie ueberfaellig)", (status) => {
+    expect(relativeDueLabel(past, NOW, status)).toBeNull();
+  });
+
+  it.each(["FINALIZED", "SENT", "PARTIALLY_PAID"])("%s ueberfaellig wie bisher", (status) => {
+    expect(relativeDueLabel(past, NOW, status)).toEqual({ text: "seit 14 Tagen überfällig", overdue: true, days: -14 });
+  });
+
+  it("ohne Status unveraendert", () => {
+    expect(relativeDueLabel(past, NOW)?.overdue).toBe(true);
+  });
+});
+

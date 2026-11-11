@@ -16,7 +16,7 @@ jobs:
           cache: npm
       - run: npm install --no-audit --no-fund # nicht npm ci: saxon-js zieht plattformspezifische optionale Deps
       - run: npx prisma generate
-      - run: sudo apt-get install -y libxml2-utils # xmllint fuer den Pruefer-Export-Test (index.xml gegen DTD)
+      - run: sudo apt-get update && sudo apt-get install -y libxml2-utils # xmllint fuer den Pruefer-Export-Test (index.xml gegen DTD)
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

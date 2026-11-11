@@ -43,7 +43,7 @@ export interface JobResult {
 // "webhooks" liefert hier nur die bereits angelegten Outbox-Zeilen aus). "cleanup" (Fix-
 // Welle, Should-fix 7) laeuft als LETZTER Job — raeumt WebhookDelivery/ApiIdempotency auf,
 // nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
-const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "archive", "notifications", "webhooks", "audit", "cleanup"];
+export const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "archive", "notifications", "webhooks", "audit", "cleanup"];
 const STALE_MS = 30 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {

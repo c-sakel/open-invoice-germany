@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { PUBLIC_PREFIXES } from "@/proxy";
+import { NextRequest } from "next/server";
+import { PUBLIC_PREFIXES, proxy } from "@/proxy";
 
 describe("PUBLIC_PREFIXES", () => {
   it("enthaelt genau die oeffentlichen Praefixe fuer die Angebotsannahme", () => {
@@ -31,5 +32,25 @@ describe("PUBLIC_PREFIXES", () => {
 
   it("enthaelt /api/branding (Phase 12c, Task 2: Favicon/App-Logo vor der Session)", () => {
     expect(PUBLIC_PREFIXES).toContain("/api/branding");
+  });
+});
+
+describe("/api/health (Phase 16a, Task 8)", () => {
+  async function pass(pathname: string): Promise<boolean> {
+    const res = await proxy(new NextRequest(`http://localhost${pathname}`));
+    // Oeffentlich = durchgereicht (kein 401/Redirect).
+    return res.status === 200 && res.headers.get("x-middleware-next") === "1";
+  }
+
+  it("ist exakt oeffentlich, nicht als Praefix", async () => {
+    expect(PUBLIC_PREFIXES).not.toContain("/api/health");
+    expect(await pass("/api/health")).toBe(true);
+  });
+
+  it("/api/health/x und /api/healthz bleiben geschuetzt (ohne Sitzung 401)", async () => {
+    for (const p of ["/api/health/x", "/api/healthz"]) {
+      const res = await proxy(new NextRequest(`http://localhost${p}`));
+      expect(res.status, p).toBe(401);
+    }
   });
 });

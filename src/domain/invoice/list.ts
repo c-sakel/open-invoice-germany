@@ -26,6 +26,8 @@ export interface InvoiceListRow {
   openCents: number;
   currency: string;
   effectiveStatus: EffectiveInvoiceStatus;
+  /** Rohstatus der Datenbank (Phase 16a, Task 8): steuert, ob eine Faelligkeit ueberhaupt angezeigt wird. */
+  status: string;
   /** Fix-Runde 1 (Ruling b): true, wenn mindestens ein EmailLog fuer diesen Beleg
    *  existiert — steuert SEND/RESEND in availableActions (Task 1). */
   hasEmailLog: boolean;
@@ -308,6 +310,7 @@ export async function listInvoices(
       }),
       currency: r.currency,
       effectiveStatus: effectiveInvoiceStatus({ status: r.status, type: r.type, dueDate: r.dueDate, issueDate: r.issueDate }, now),
+      status: r.status,
       hasEmailLog: emailLogDocIds.has(r.id),
       partiallyPaid: isPartiallyPaid(r.status),
       dunningState: r.dunningState as "ACTIVE" | "PAUSED" | "STOPPED",

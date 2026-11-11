@@ -124,13 +124,13 @@ export function InvoiceStatusCard({
     );
   }
 
-  const due = relativeDueLabel(invoice.dueDate, new Date());
+  const due = relativeDueLabel(invoice.dueDate, new Date(), invoice.status);
   const detailRows: StatusRow[] = [
     {
       label: "Fällig",
       value: (
-        <span title={deDate(invoice.dueDate)} className={due.overdue ? "text-rose-700" : undefined}>
-          {due.text}
+        <span title={deDate(invoice.dueDate)} className={due?.overdue ? "text-rose-700" : undefined}>
+          {due ? due.text : "—"}
         </span>
       ),
     },

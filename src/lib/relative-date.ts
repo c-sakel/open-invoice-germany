@@ -16,7 +16,17 @@ export interface RelativeDue {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function relativeDueLabel(due: Date | null | undefined, now: Date = new Date()): RelativeDue {
+/** Nur diese Status koennen ueberfaellig sein; Entwuerfe, bezahlte und stornierte Belege nie. */
+const OPEN_DUE_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID"]);
+
+/**
+ * Ist `status` gesetzt und nicht offen (FINALIZED | SENT | PARTIALLY_PAID), liefert die Funktion
+ * `null` — Aufrufer zeigen dann "—" ohne Ueberfaellig-Hinweis. Ohne `status` Verhalten wie bisher.
+ */
+export function relativeDueLabel(due: Date | null | undefined, now?: Date): RelativeDue;
+export function relativeDueLabel(due: Date | null | undefined, now: Date | undefined, status: string): RelativeDue | null;
+export function relativeDueLabel(due: Date | null | undefined, now: Date = new Date(), status?: string): RelativeDue | null {
+  if (status !== undefined && !OPEN_DUE_STATUSES.has(status)) return null;
   if (!due) return { text: "—", overdue: false, days: null };
   const days = Math.round((utcDateOnly(due) - utcDateOnly(now)) / DAY_MS);
   if (days === 0) return { text: "heute fällig", overdue: false, days };

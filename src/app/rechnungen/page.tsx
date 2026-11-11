@@ -257,7 +257,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                   hasEmailLog: inv.hasEmailLog,
                   dunningState: inv.dunningState,
                 });
-                const due = relativeDueLabel(inv.dueDate, now);
+                const due = relativeDueLabel(inv.dueDate, now, inv.status);
                 const origin = origins.get(inv.id);
                 const rowTags = tagsByDocId.get(inv.id) ?? [];
                 return (
@@ -282,8 +282,8 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                     <td className="px-4 py-3 text-slate-600">{TYPE_LABEL[inv.type] ?? inv.type}</td>
                     <td className="px-4 py-3 text-slate-600">{inv.customerName}</td>
                     <td className="px-4 py-3">
-                      <span title={deDate(inv.dueDate)} className={due.overdue ? "text-rose-700" : "text-slate-600"}>
-                        {due.text}
+                      <span title={deDate(inv.dueDate)} className={due?.overdue ? "text-rose-700" : "text-slate-600"}>
+                        {due ? due.text : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
