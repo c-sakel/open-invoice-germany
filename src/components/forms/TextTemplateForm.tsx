@@ -72,7 +72,7 @@ export function TextTemplateForm({
                   value={`${DOC_TYPE_LABEL[docType]} — ${POSITIONS.find((p) => p.value === template.position)?.label ?? template.position}`}
                   disabled
                   readOnly
-                  className="rounded-md border border-rule-strong bg-well px-3 py-2 text-sm text-ink-muted"
+                  className="rounded-md border border-rule-strong bg-well px-3 py-2 text-sm text-ink-soft"
                 />
                 <span className="text-xs text-ink-muted">Dokumenttyp und Position koennen nach dem Anlegen nicht mehr geaendert werden.</span>
               </label>

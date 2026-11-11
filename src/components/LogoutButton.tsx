@@ -19,7 +19,7 @@ export function LogoutButton({ iconOnly = false }: { iconOnly?: boolean }) {
         onClick={logout}
         aria-label="Abmelden"
         title="Abmelden"
-        className="rounded-md p-1.5 text-ink-muted hover:bg-well hover:text-ink"
+        className="rounded-md p-1.5 text-ink-muted hover:bg-well hover:text-ink-soft"
       >
         <NavIcon name="logout" className="h-4 w-4" />
       </button>

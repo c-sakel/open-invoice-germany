@@ -67,7 +67,7 @@ export function EmailTemplateForm({
                 value={DOC_TYPE_LABEL[docType]}
                 disabled
                 readOnly
-                className="rounded-md border border-rule-strong bg-well px-3 py-2 text-sm text-ink-muted"
+                className="rounded-md border border-rule-strong bg-well px-3 py-2 text-sm text-ink-soft"
               />
               <input type="hidden" name="docType" value={docType} />
               <span className="text-xs text-ink-muted">Der Dokumenttyp kann nach dem Anlegen nicht mehr geändert werden.</span>

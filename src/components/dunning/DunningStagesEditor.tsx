@@ -181,7 +181,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       disabled={!feeAllowed}
                       value={(d.feeCents / 100).toFixed(2)}
                       onChange={(e) => setDraft(s.id, { feeCents: parseDecimalInput(e.target.value, 2) ?? 0 })}
-                      className="w-20 rounded border border-rule-strong px-2 py-1 disabled:bg-well disabled:text-ink-muted"
+                      className="w-20 rounded border border-rule-strong px-2 py-1 disabled:bg-well disabled:text-ink-soft"
                       title={feeAllowed ? "" : "Mahnkosten erst ab Stufe 3 (order ≥ 2, COMPLIANCE §12)"}
                       aria-label={`Mahnkosten in Euro — Mahnstufe ${s.order}`}
                     />

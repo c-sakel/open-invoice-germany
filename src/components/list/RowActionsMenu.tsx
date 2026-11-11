@@ -206,7 +206,7 @@ export function RowActionsMenu({
       )}
       <details className="relative inline-block text-left" open={detailsOpen} onToggle={(e) => setDetailsOpen(e.currentTarget.open)}>
         <summary
-          className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-ink-muted hover:bg-well [&::-webkit-details-marker]:hidden"
+          className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-ink-muted hover:bg-well hover:text-ink-soft [&::-webkit-details-marker]:hidden"
           aria-label="Aktionen"
         >
           ⋯

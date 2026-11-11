@@ -60,7 +60,7 @@ export default async function ProduktePage() {
                     <Link href={`/produkte/${p.id}`} className="font-medium text-pen hover:underline">
                       {p.name}
                     </Link>
-                    {p.differential && <span className="ml-2 rounded bg-well px-1.5 py-0.5 text-xs text-ink-muted">§ 25a</span>}
+                    {p.differential && <span className="ml-2 rounded bg-well px-1.5 py-0.5 text-xs text-ink-soft">§ 25a</span>}
                   </td>
                   <td className="px-4 py-3 text-ink-soft">{unitLabel(p.unit)}</td>
                   <td className="tabular px-4 py-3 text-right">{formatCents(p.netPriceCents)}</td>

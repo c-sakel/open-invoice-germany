@@ -77,7 +77,7 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
           {!collapsed && !brand.hasAppLogo && <span>{brand.appName}</span>}
         </Link>
         {drawer && (
-          <button type="button" aria-label="Menü schließen" onClick={onClose} className="ml-auto rounded-md p-1 text-ink-muted hover:bg-well">
+          <button type="button" aria-label="Menü schließen" onClick={onClose} className="ml-auto rounded-md p-1 text-ink-muted hover:bg-well hover:text-ink-soft">
             <NavIcon name="close" />
           </button>
         )}
@@ -101,7 +101,7 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
         <div className="flex items-center justify-between">
           <LogoutButton iconOnly={collapsed} />
           {!drawer && (
-            <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} title={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} className="rounded-md p-1 text-ink-muted hover:bg-well">
+            <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} title={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} className="rounded-md p-1 text-ink-muted hover:bg-well hover:text-ink-soft">
               <NavIcon name={collapsed ? "chevron-right" : "chevron-left"} />
             </button>
           )}
