@@ -72,11 +72,27 @@ done
 
 # Passwort nie in argv (Prozess-Listing): aus der URL herausloesen und per PGPASSWORD uebergeben.
 PG_URL="$DATABASE_URL"
-if [[ "$DATABASE_URL" =~ ^(postgres(ql)?://[^:@/]*):([^@]*)@(.*)$ ]]; then
-  PG_URL="${BASH_REMATCH[1]}@${BASH_REMATCH[4]}"
-  PGPASSWORD="$(printf '%b' "$(printf '%s' "${BASH_REMATCH[3]}" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')")"
-  export PGPASSWORD
+[[ "$DATABASE_URL" =~ ^postgres(ql)?://(.*)$ ]] || fail "DATABASE_URL ist keine postgresql://-URL"
+URL_REST="${BASH_REMATCH[2]}"
+URL_AUTH="${URL_REST%%/*}"
+URL_PREFIX="${DATABASE_URL%"$URL_REST"}"
+if [[ "$URL_AUTH" == *@* ]]; then
+  # Trennung am LETZTEN "@" der Autoritaet (ein rohes "@" im Passwort bleibt Teil des Passworts).
+  URL_USERINFO="${URL_AUTH%@*}"
+  URL_AFTER="${URL_REST#"$URL_USERINFO"@}"
+  [ -n "$URL_AFTER" ] || fail "DATABASE_URL nicht zerlegbar"
+  if [[ "$URL_USERINFO" == *:* ]]; then
+    URL_USER="${URL_USERINFO%%:*}"
+    URL_PASS="${URL_USERINFO#*:}"
+    PG_URL="${URL_PREFIX}${URL_USER}@${URL_AFTER}"
+    PGPASSWORD="$(printf '%b' "$(printf '%s' "$URL_PASS" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')")"
+    export PGPASSWORD
+  fi
 fi
+# Sicherheitsnetz: bleibt ein Passwort (user:pass@) in der URL, nie an pg_dump uebergeben.
+PG_AUTH="${PG_URL#*://}"
+PG_AUTH="${PG_AUTH%%/*}"
+case "$PG_AUTH" in *:*@*) fail "DATABASE_URL nicht zerlegbar (Passwort verbleibt in der URL)" ;; esac
 # libpq kennt den Prisma-Parameter "schema" nicht — entfernen.
 PG_URL="$(printf '%s' "$PG_URL" | sed -E 's/([?&])schema=[^&]*&?/\1/; s/[?&]$//')"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
@@ -100,15 +116,16 @@ tar -czf "$STAGE/archive.tar.gz" -C "$([ -d "$ARC_DIR" ] && echo "$ARC_DIR" || e
 if [ -f "$ENV_FILE" ]; then cp "$ENV_FILE" "$STAGE/env.copy"; chmod 600 "$STAGE/env.copy"; fi
 
 # Manifest aus dem Dump selbst (derselbe Snapshot): Zeilen der COPY-Bloecke je Tabelle.
-{
-  echo "created=$(now_iso)"
-  gunzip -c "$STAGE/db.sql.gz" | awk '
-    BEGIN { split("Invoice Payment ChangeLog ArchivedDocument Dunning", names, " "); for (i in names) count[names[i]] = 0 }
-    /^COPY / { t = $2; sub(/^public\./, "", t); gsub(/"/, "", t); if (t in count) cur = t; else cur = ""; next }
+MANIFEST_COUNTS="$(gunzip -c "$STAGE/db.sql.gz" | awk '
+    BEGIN { n = split("Invoice Payment ChangeLog ArchivedDocument Dunning", names, " "); for (i = 1; i <= n; i++) count[names[i]] = 0 }
+    /^COPY / { t = $2; sub(/^public\./, "", t); gsub(/"/, "", t); if (t in count) { cur = t; seen[t] = 1 } else cur = ""; next }
     /^\\\.$/ { cur = ""; next }
     cur != "" { count[cur]++ }
-    END { for (i = 1; i <= 5; i++) print names[i] "=" count[names[i]] }'
-} > "$STAGE/manifest.txt"
+    END {
+      for (i = 1; i <= n; i++) if (!(names[i] in seen)) { print "Tabelle fehlt im Dump: " names[i] > "/dev/stderr"; exit 3 }
+      for (i = 1; i <= n; i++) print names[i] "=" count[names[i]]
+    }')" || fail "erwartete Tabelle fehlt im Dump (Manifest nicht erstellbar)"
+{ echo "created=$(now_iso)"; echo "$MANIFEST_COUNTS"; } > "$STAGE/manifest.txt"
 
 tar -cf "$WORK/payload.tar" -C "$STAGE" .
 openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:$PASS_FILE" -in "$WORK/payload.tar" -out "$BACKUP_DIR/$NAME"

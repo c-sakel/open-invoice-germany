@@ -62,11 +62,16 @@ describe("GET /api/health", () => {
 });
 
 describe("Health: Healthcheck-Aufrufer und Timeout", () => {
-  it("Aufrufe ohne Client-IP-Header (Docker-Healthcheck) und von Loopback werden nicht begrenzt", async () => {
-    for (let i = 0; i < 70; i++) {
-      expect((await healthGet(new Request("http://localhost/api/health"))).status).toBe(200);
-      expect((await healthGet(healthReq("127.0.0.1"))).status).toBe(200);
-    }
+  it("ohne IP-Header: eigener Bucket mit 600/min (Docker-Healthcheck); 601. -> 429", async () => {
+    for (let i = 0; i < 600; i++) expect((await healthGet(new Request("http://localhost/api/health"))).status).toBe(200);
+    expect((await healthGet(new Request("http://localhost/api/health"))).status).toBe(429);
+    // Bucket mit IP bleibt davon unberuehrt.
+    expect((await healthGet(healthReq("198.51.100.9"))).status).toBe(200);
+  });
+
+  it("auch Loopback/gespoofte 127.0.0.1 ist je IP auf 60/min begrenzt", async () => {
+    for (let i = 0; i < 60; i++) expect((await healthGet(healthReq("127.0.0.1"))).status).toBe(200);
+    expect((await healthGet(healthReq("127.0.0.1"))).status).toBe(429);
   });
 
   it("checkDb: haengende Abfrage -> false nach Timeout", async () => {

@@ -11,16 +11,16 @@ import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(req: Request) {
   const ip = clientIpFromHeaders(req.headers);
   try {
-    // Ohne Client-IP-Header (Docker-HEALTHCHECK per Loopback, lokale Pruefungen) wird nicht
-    // begrenzt: ein Sammel-Bucket wuerde den Healthcheck mit beliebigen Aufrufern teilen.
-    // Ueber den Reverse-Proxy kommende Anfragen tragen immer cf-connecting-ip/x-forwarded-for.
-    if (ip !== null && !LOOPBACK.has(ip)) rateLimit(`health:${ip}`, { limit: 60, windowMs: 60_000 });
+    // Mit Client-IP: 60/min je IP (auch Loopback/gespoofte Werte). Ohne IP-Header (Docker-HEALTHCHECK
+    // per Loopback, direkter Port-Zugriff): eigener Bucket "noip" mit 600/min — genug fuer den
+    // Healthcheck im 30-s-Takt, begrenzt aber direkten Zugriff.
+    if (ip !== null) rateLimit(`health:${ip}`, { limit: 60, windowMs: 60_000 });
+    else rateLimit("health:noip", { limit: 600, windowMs: 60_000 });
   } catch (e) {
     if (e instanceof RateLimitError) {
       return NextResponse.json(

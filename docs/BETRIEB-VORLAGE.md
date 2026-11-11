@@ -7,7 +7,7 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
 ## Health-Check
 
 - `GET /api/health` (ohne Anmeldung): `200 {"status":"ok"}` oder `503 {"status":"error"}`, nie zwischengespeichert,
-  60 Aufrufe je Client-IP und Minute (Aufrufe ohne Client-IP-Header oder von Loopback, etwa der Docker-Healthcheck, sind nicht begrenzt); die Datenbankabfrage hat ein Timeout von 2 s (dann 503). Geeignet fuer Monitoring und den Docker-Healthcheck.
+  60 Aufrufe je Client-IP und Minute (Aufrufe ohne Client-IP-Header, etwa der Docker-Healthcheck, teilen sich einen eigenen Bucket mit 600 Aufrufen je Minute); die Datenbankabfrage hat ein Timeout von 2 s (dann 503). Geeignet fuer Monitoring und den Docker-Healthcheck.
 - `GET /api/v1/System/health` (API-Schluessel mit Scope `admin`): Datenbank, letzter erfolgreicher Lauf je
   Scheduler-Job, freier Platz und Anzahl nicht archivierter Belege im Belegarchiv, letzte Hash-Ketten-Pruefung,
   letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`).
@@ -44,7 +44,7 @@ ermittelt (derselbe Snapshot, keine Abweichung durch parallele Buchungen). Der D
 (Rollen der Produktion existieren im Restore-Container nicht); das Passwort aus `DATABASE_URL` wird per `PGPASSWORD`
 uebergeben, nie als Argument, und der Prisma-Parameter `schema` fuer libpq entfernt. Dateien entstehen mit `umask 077`. Bricht ab, wenn die Passphrasen-Datei nicht Modus 600 hat.
 Letzte Ausgabezeile `OK <datei>` bzw. `FEHLER <grund>`. Rotation lokal nach Anzahl, am Ziel nach Alter.
-Eine fehlgeschlagene entfernte Rotation wird als Warnung gemeldet und bricht die Sicherung nicht ab.
+Schlaegt der Upload oder das Listing der entfernten Sicherungen fehl, endet der Lauf mit `FEHLER` (Exit 1); die lokale Sicherung bleibt erhalten. Nur das Loeschen einzelner alter Dateien am Ziel wird als Warnung gemeldet.
 
 ## Restore-Test (`scripts/ops/restore-test.sh <datei>`)
 

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, readFileSync, mkdirSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -79,3 +79,65 @@ describe("Betriebsskripte", () => {
     expect(lastLine(r.stdout)).toMatch(/^FEHLER /);
   });
 });
+
+describe("backup.sh mit Stub-pg_dump", () => {
+  function setup(dump: string) {
+    const root = mkdtempSync(path.join(dir, "stub-"));
+    const bin = path.join(root, "bin");
+    mkdirSync(bin);
+    const argvLog = path.join(root, "argv.txt");
+    const pwLog = path.join(root, "pw.txt");
+    writeFileSync(path.join(root, "dump.sql"), dump);
+    writeFileSync(
+      path.join(bin, "pg_dump"),
+      `#!/bin/sh\necho "$@" > "${argvLog}"\nprintf '%s' "$PGPASSWORD" > "${pwLog}"\ncat "${root}/dump.sql"\n`,
+    );
+    chmodSync(path.join(bin, "pg_dump"), 0o755);
+    const backups = path.join(root, "backups");
+    return { root, bin, argvLog, pwLog, backups };
+  }
+  const fullDump = ["Invoice", "Payment", "ChangeLog", "ArchivedDocument", "Dunning"]
+    .map((t, i) => `COPY public."${t}" (id) FROM stdin;\n${"x\n".repeat(i)}\\.\n`)
+    .join("\n");
+
+  function runStub(st: ReturnType<typeof setup>, url: string) {
+    return run(BACKUP, {
+      PATH: `${st.bin}:${process.env.PATH ?? ""}`,
+      BACKUP_PASSPHRASE_FILE: pass600,
+      BACKUP_DIR: st.backups,
+      DATABASE_URL: url,
+      ATTACHMENTS_DIR: path.join(st.root, "att"),
+      ARCHIVE_DIR: path.join(st.root, "arc"),
+      ENV_FILE: path.join(st.root, "none.env"),
+    });
+  }
+
+  it("Passwort mit rohem @ und %-Kodierung: nicht in argv, korrekt in PGPASSWORD, schema entfernt", () => {
+    const st = setup(fullDump);
+    const r = runStub(st, "postgresql://oig:p@ss%25w@db:5432/openinvoice?schema=public");
+    expect(lastLine(r.stdout)).toMatch(/^OK /);
+    const argv = readFileSync(st.argvLog, "utf8");
+    expect(argv).toContain("postgresql://oig@db:5432/openinvoice");
+    expect(argv).not.toContain("p@ss");
+    expect(argv).not.toContain("schema=");
+    expect(readFileSync(st.pwLog, "utf8")).toBe("p@ss%w");
+    expect(readdirSync(st.backups).filter((f) => f.endsWith(".tar.enc"))).toHaveLength(1);
+  });
+
+  it("nicht zerlegbare URL -> FEHLER, pg_dump nie aufgerufen", () => {
+    const st = setup(fullDump);
+    const r = runStub(st, "mysql://oig:geheim@db/x");
+    expect(r.status).not.toBe(0);
+    expect(lastLine(r.stdout)).toMatch(/^FEHLER /);
+    expect(() => readFileSync(st.argvLog)).toThrow();
+  });
+
+  it("fehlende erwartete Tabelle im Dump -> FEHLER statt 0", () => {
+    const st = setup(fullDump.replace(/COPY public\."Dunning"[\s\S]*$/, ""));
+    const r = runStub(st, "postgresql://oig@db/x");
+    expect(r.status).not.toBe(0);
+    expect(lastLine(r.stdout)).toMatch(/^FEHLER .*Tabelle/);
+    expect(() => readdirSync(st.backups).some((f) => f.endsWith(".tar.enc")) || (() => { throw new Error(); })()).toThrow();
+  });
+});
+
