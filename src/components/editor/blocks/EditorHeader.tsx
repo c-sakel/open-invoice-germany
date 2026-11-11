@@ -100,7 +100,7 @@ export function EditorHeader({
   }, [dirty]);
 
   return (
-    <div className="sticky top-0 z-20 -mx-6 mb-6 border-b border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
+    <div className="sticky top-0 z-20 -mx-6 mb-6 border-b border-rule bg-sheet/95 px-6 py-3 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {dirty ? (
@@ -110,18 +110,18 @@ export function EditorHeader({
                 setPendingHref(null);
                 dialogRef.current?.open();
               }}
-              className="shrink-0 text-sm text-slate-500 hover:text-slate-800"
+              className="shrink-0 text-sm text-ink-muted hover:text-ink"
             >
               ← Zurück
             </button>
           ) : (
-            <Link href={backHref} className="shrink-0 text-sm text-slate-500 hover:text-slate-800">
+            <Link href={backHref} className="shrink-0 text-sm text-ink-muted hover:text-ink">
               ← Zurück
             </Link>
           )}
-          <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">{title}</h1>
-          <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Entwurf</span>
-          {dirty && <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">ungespeichert</span>}
+          <h1 className="truncate text-lg font-bold tracking-tight text-ink sm:text-xl">{title}</h1>
+          <span className="shrink-0 rounded bg-well px-2 py-0.5 text-xs font-medium text-ink-soft">Entwurf</span>
+          {dirty && <span className="shrink-0 rounded bg-seal/10 px-2 py-0.5 text-xs font-medium text-seal">ungespeichert</span>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -129,7 +129,7 @@ export function EditorHeader({
             onClick={onPreview}
             disabled={previewDisabled}
             title={previewDisabled ? "Vorschau folgt" : undefined}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-rule-strong px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
             Vorschau
           </button>
@@ -137,7 +137,7 @@ export function EditorHeader({
             type="button"
             onClick={onSave}
             disabled={saving}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+            className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
           >
             {saving ? "Speichern…" : primaryLabel}
           </button>

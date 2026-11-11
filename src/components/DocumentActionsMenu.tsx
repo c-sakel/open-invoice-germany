@@ -59,7 +59,7 @@ export function DocumentActionsMenuItems({
           {busy === "DUPLICATE" ? "…" : "Duplizieren"}
         </button>
       </li>
-      {error && <li className="px-3 py-1 text-xs text-rose-600">{error}</li>}
+      {error && <li className="px-3 py-1 text-xs text-stamp">{error}</li>}
       <li className="contents">
         <NoteDialog dialogRef={noteDialogRef} pendingNoteAction={pendingNoteAction} note={note} setNote={setNote} onConfirm={confirmNoteDialog} />
         <CancelDocumentDialog

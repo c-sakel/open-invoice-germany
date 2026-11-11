@@ -19,17 +19,17 @@ export default async function DunningSettingsPage() {
       <h1 className="text-2xl font-bold tracking-tight">Mahnwesen</h1>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">Einstellungen</h2>
+        <h2 className="text-sm font-semibold text-ink">Einstellungen</h2>
         <DunningSettingsForm initial={settings} />
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB)</h2>
+        <h2 className="text-sm font-semibold text-ink">Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB)</h2>
         <BaseRateTable initial={baseRates.map((r) => ({ id: r.id, validFrom: r.validFrom.toISOString().slice(0, 10), rateBp: r.rateBp, source: r.source }))} />
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">Mahnstufen</h2>
+        <h2 className="text-sm font-semibold text-ink">Mahnstufen</h2>
         <DunningStagesEditor initialStages={stages} />
       </section>
     </div>

@@ -25,10 +25,10 @@ export function MailSettingsForm({ settings }: { settings?: MailSettingsFormData
   return (
     <form action={action} className="space-y-6">
       <ErrorBanner message={state.error} />
-      {state.ok && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
+      {state.ok && <p className="text-sm text-ledger">Einstellungen gespeichert.</p>}
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">SMTP-Server</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">SMTP-Server</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Host" name="host" defaultValue={settings?.host} required />
           <TextField label="Port" name="port" defaultValue={String(settings?.port ?? 587)} required />
@@ -53,8 +53,8 @@ export function MailSettingsForm({ settings }: { settings?: MailSettingsFormData
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Absender & Empfänger</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Absender & Empfänger</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Absendername" name="fromName" defaultValue={settings?.fromName} required />
           <TextField label="Absenderadresse" name="fromEmail" type="email" defaultValue={settings?.fromEmail} required />

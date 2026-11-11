@@ -13,7 +13,7 @@ export default async function KundenfelderSettingsPage() {
     <div className="space-y-6">
       <SettingsTabs active="kundenfelder" />
       <h1 className="text-2xl font-bold tracking-tight">Kundenfelder</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Benutzerdefinierte Felder je Kunde (§31) — als Platzhalter <code>customField.&lt;Schlüssel&gt;</code> in Vorlagen verfügbar.
       </p>
       <CustomFieldsEditor

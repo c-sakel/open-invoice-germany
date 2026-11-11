@@ -44,7 +44,7 @@ export function CustomerForm({
       <ErrorBanner message={state.error} />
       {customer && <input type="hidden" name="id" value={customer.id} />}
 
-      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:grid-cols-2">
         <SelectField
           label="Typ"
           name="type"

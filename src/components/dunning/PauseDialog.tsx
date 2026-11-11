@@ -48,27 +48,27 @@ export function PauseDialog({ invoiceId }: { invoiceId: string }) {
       <button
         type="button"
         onClick={() => dialogRef.current?.showModal()}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        className="rounded-md border border-rule-strong bg-sheet px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-paper"
       >
         Pausieren
       </button>
-      <dialog ref={dialogRef} className="w-full max-w-sm rounded-lg border border-slate-200 p-5 backdrop:bg-slate-900/40">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">Mahnprozess pausieren</h2>
+      <dialog ref={dialogRef} className="w-full max-w-sm rounded-lg border border-rule p-5 backdrop:bg-ink/40">
+        <h2 className="mb-3 text-sm font-semibold text-ink">Mahnprozess pausieren</h2>
         <div className="space-y-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Pausiert bis</span>
-            <input type="date" min={isoInDays(1)} value={pausedUntil} onChange={(e) => setPausedUntil(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+            <span className="font-medium text-ink-soft">Pausiert bis</span>
+            <input type="date" min={isoInDays(1)} value={pausedUntil} onChange={(e) => setPausedUntil(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Notiz</span>
-            <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="z. B. Ratenzahlung vereinbart" />
+            <span className="font-medium text-ink-soft">Notiz</span>
+            <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" placeholder="z. B. Ratenzahlung vereinbart" />
           </label>
-          {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
+          {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{error}</div>}
           <div className="flex items-center gap-3 pt-1">
-            <button type="button" onClick={submit} disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+            <button type="button" onClick={submit} disabled={busy} className="rounded-md bg-pen px-3 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
               {busy ? "…" : "Pausieren"}
             </button>
-            <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
+            <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-ink-muted hover:text-ink">
               Abbrechen
             </button>
           </div>

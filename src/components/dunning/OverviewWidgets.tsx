@@ -11,21 +11,21 @@ const BUCKET_LABEL: Record<keyof DunningOverview["widgets"]["aging"], string> = 
 export function OverviewWidgets({ widgets }: { widgets: DunningOverview["widgets"] }) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Überfällige Rechnungen</p>
-        <p className="mt-1 text-2xl font-bold text-slate-900">{widgets.overdueCount}</p>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Überfällige Rechnungen</p>
+        <p className="mt-1 text-2xl font-bold text-ink">{widgets.overdueCount}</p>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Offener Gesamtbetrag</p>
-        <p className="mt-1 text-2xl font-bold text-slate-900">{formatCents(widgets.openTotalCents)}</p>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Offener Gesamtbetrag</p>
+        <p className="mt-1 text-2xl font-bold text-ink">{formatCents(widgets.openTotalCents)}</p>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4 sm:col-span-1">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Alterstruktur</p>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 sm:col-span-1">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">Alterstruktur</p>
         <div className="space-y-1 text-sm">
           {(Object.keys(widgets.aging) as (keyof DunningOverview["widgets"]["aging"])[]).map((k) => (
             <div key={k} className="flex items-center justify-between">
-              <span className="text-slate-600">{BUCKET_LABEL[k]}</span>
-              <span className="font-medium text-slate-800">
+              <span className="text-ink-soft">{BUCKET_LABEL[k]}</span>
+              <span className="font-medium text-ink">
                 {widgets.aging[k].count} · {formatCents(widgets.aging[k].cents)}
               </span>
             </div>

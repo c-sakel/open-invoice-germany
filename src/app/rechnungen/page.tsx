@@ -213,7 +213,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/rechnungen/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
             Neue Rechnung
           </Link>
         }
@@ -226,16 +226,16 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       <ListHeadline items={headlineItems} />
 
       {result.rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
           Keine Rechnungen gefunden.{" "}
-          <Link href="/rechnungen/neu" className="font-medium text-indigo-600 hover:underline">
+          <Link href="/rechnungen/neu" className="font-medium text-pen hover:underline">
             Lege deine erste Rechnung an.
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Typ</th>
@@ -247,7 +247,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-rule">
               {result.rows.map((inv) => {
                 const actions = availableActions({
                   kind: "INVOICE",
@@ -261,14 +261,14 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                 const origin = origins.get(inv.id);
                 const rowTags = tagsByDocId.get(inv.id) ?? [];
                 return (
-                  <tr key={inv.id} className="hover:bg-slate-50">
+                  <tr key={inv.id} className="hover:bg-paper">
                     <td className="px-4 py-3">
-                      <Link href={detailHref(inv.id)} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(inv.id)} className="font-medium text-pen hover:underline">
                         {inv.number ?? "Entwurf"}
                       </Link>
                       {origin && (
                         <div>
-                          <Link href={origin.href} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">
+                          <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
                             {origin.label}
                           </Link>
                         </div>
@@ -279,10 +279,10 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{TYPE_LABEL[inv.type] ?? inv.type}</td>
-                    <td className="px-4 py-3 text-slate-600">{inv.customerName}</td>
+                    <td className="px-4 py-3 text-ink-soft">{TYPE_LABEL[inv.type] ?? inv.type}</td>
+                    <td className="px-4 py-3 text-ink-soft">{inv.customerName}</td>
                     <td className="px-4 py-3">
-                      <span title={deDate(inv.dueDate)} className={due?.overdue ? "text-rose-700" : "text-slate-600"}>
+                      <span title={deDate(inv.dueDate)} className={due?.overdue ? "text-stamp" : "text-ink-soft"}>
                         {due ? due.text : "—"}
                       </span>
                     </td>
@@ -290,7 +290,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
                       <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
                     </td>
                     <td className="tabular px-4 py-3 text-right font-medium">{formatCents(inv.grossTotalCents, inv.currency)}</td>
-                    <td className="tabular px-4 py-3 text-right text-slate-600">{formatCents(inv.openCents, inv.currency)}</td>
+                    <td className="tabular px-4 py-3 text-right text-ink-soft">{formatCents(inv.openCents, inv.currency)}</td>
                     <td className="px-4 py-3 text-right">
                       <RowActionsMenu
                         kind="INVOICE"

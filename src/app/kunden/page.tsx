@@ -43,7 +43,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         title="Kunden"
         subtitle={`${customers.length} Kunden`}
         actions={
-          <Link href="/kunden/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
             Neuer Kunde
           </Link>
         }
@@ -55,21 +55,21 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
           name="q"
           defaultValue={query}
           placeholder="Suche nach Name oder Kundennummer…"
-          className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none sm:w-80"
+          className="w-full max-w-sm rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none sm:w-80"
         />
-        <button type="submit" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        <button type="submit" className="rounded-md border border-rule-strong px-4 py-2 text-sm font-medium text-ink-soft hover:bg-paper">
           Suchen
         </button>
       </form>
 
       {customers.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
           Noch keine Kunden. Lege deinen ersten Kunden an.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Nr.</th>
                 <th className="px-4 py-3">Name</th>
@@ -80,23 +80,23 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
                 <th className="px-4 py-3 text-right">Aktion</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-rule">
               {customers.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-500">{c.customerNumber ?? "—"}</td>
+                <tr key={c.id} className="hover:bg-paper">
+                  <td className="px-4 py-3 text-ink-muted">{c.customerNumber ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <Link href={`/kunden/${c.id}`} className="font-medium text-indigo-600 hover:underline">
+                    <Link href={`/kunden/${c.id}`} className="font-medium text-pen hover:underline">
                       {c.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{c.city}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.type === "BUSINESS" ? "B2B" : "B2C"}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</td>
-                  <td className="px-4 py-3 text-slate-500">{c.vatId ?? "—"}</td>
+                  <td className="px-4 py-3 text-ink-soft">{c.city}</td>
+                  <td className="px-4 py-3 text-ink-soft">{c.type === "BUSINESS" ? "B2B" : "B2C"}</td>
+                  <td className="px-4 py-3 text-ink-soft">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</td>
+                  <td className="px-4 py-3 text-ink-muted">{c.vatId ?? "—"}</td>
                   <td className="px-4 py-3 text-right">
                     <form action={archiveCustomer} className="inline">
                       <input type="hidden" name="id" value={c.id} />
-                      <button className="text-xs text-slate-400 hover:text-rose-600">Archivieren</button>
+                      <button className="text-xs text-ink-muted hover:text-stamp">Archivieren</button>
                     </form>
                   </td>
                 </tr>

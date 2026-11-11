@@ -11,26 +11,26 @@ export function DecisionForm({ token }: { token: string }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(boundAction, initialState);
 
   return (
-    <form action={action} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-      <h2 className="font-semibold text-slate-900">Ihre Entscheidung</h2>
+    <form action={action} className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+      <h2 className="font-semibold text-ink">Ihre Entscheidung</h2>
 
-      {state.error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{state.error}</div>}
+      {state.error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{state.error}</div>}
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">
-          Name <span className="text-rose-500">*</span>
+        <span className="font-medium text-ink-soft">
+          Name <span className="text-stamp">*</span>
         </span>
-        <input name="name" required className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <input name="name" required className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">E-Mail</span>
-        <input name="email" type="email" className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <span className="font-medium text-ink-soft">E-Mail</span>
+        <input name="email" type="email" className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Kommentar</span>
-        <textarea name="comment" rows={3} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <span className="font-medium text-ink-soft">Kommentar</span>
+        <textarea name="comment" rows={3} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
       </label>
 
       <div className="flex flex-wrap gap-3 pt-2">
@@ -39,7 +39,7 @@ export function DecisionForm({ token }: { token: string }) {
           name="decision"
           value="ACCEPTED"
           disabled={pending}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+          className="rounded-md bg-ledger px-4 py-2 text-sm font-medium text-white hover:bg-ledger disabled:opacity-60"
         >
           {pending ? "Wird gespeichert…" : "Angebot annehmen"}
         </button>
@@ -48,7 +48,7 @@ export function DecisionForm({ token }: { token: string }) {
           name="decision"
           value="REJECTED"
           disabled={pending}
-          className="rounded-md border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+          className="rounded-md border border-stamp/30 bg-sheet px-4 py-2 text-sm font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60"
         >
           {pending ? "Wird gespeichert…" : "Angebot ablehnen"}
         </button>

@@ -165,7 +165,7 @@ export function LineRow({
   const fieldCls = `${inputDenseCls} w-full min-w-0`;
   // Schmale Container (< 56rem): jede Zeile ist eine Karte im 6-Spalten-Raster, die Zellen
   // tragen ihr Label per `data-label`. Ab `@4xl` klassische Tabellenzeile (table-fixed).
-  const cell = "@4xl:table-cell @4xl:py-1.5 @4xl:pr-2 before:mb-0.5 before:block before:text-[11px] before:text-slate-500 before:content-[attr(data-label)] @4xl:before:hidden";
+  const cell = "@4xl:table-cell @4xl:py-1.5 @4xl:pr-2 before:mb-0.5 before:block before:text-[11px] before:text-ink-muted before:content-[attr(data-label)] @4xl:before:hidden";
   // Beschreibung…Betrag (ohne Rabatt bei DELIVERY_NOTE, siehe Modulkommentar).
   const middleColSpan = showDiscount ? 7 : 6;
 
@@ -174,14 +174,14 @@ export function LineRow({
       <tr
         ref={rowRef}
         onKeyDown={onRowKeyDown}
-        className={`${dragging ? "bg-sky-50 opacity-50 outline outline-2 -outline-offset-2 outline-sky-400 " : ""}grid grid-cols-6 gap-x-2 gap-y-2 border-b border-slate-100 py-3 align-top @4xl:table-row @4xl:py-0`}
+        className={`${dragging ? "bg-pen-wash opacity-50 outline outline-2 -outline-offset-2 outline-pen " : ""}grid grid-cols-6 gap-x-2 gap-y-2 border-b border-rule py-3 align-top @4xl:table-row @4xl:py-0`}
       >
-        <td className="order-1 col-span-5 text-xs text-slate-400 @4xl:table-cell @4xl:py-1.5 @4xl:pr-2">
+        <td className="order-1 col-span-5 text-xs text-ink-muted @4xl:table-cell @4xl:py-1.5 @4xl:pr-2">
           <button
             type="button"
             {...handleProps}
             title="Ziehen zum Sortieren, oder Leertaste und Pfeiltasten (Alt+Pfeil verschiebt direkt)"
-            className="mr-1 inline-flex h-8 w-8 cursor-grab touch-none select-none items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
+            className="mr-1 inline-flex h-8 w-8 cursor-grab touch-none select-none items-center justify-center rounded text-ink-muted hover:bg-well hover:text-ink-soft [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
           >
             ⠿
           </button>
@@ -212,7 +212,7 @@ export function LineRow({
                   onChange={(e) => patch({ description: e.target.value })}
                   onKeyDown={onDescKeyDown}
                 />
-                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-slate-600">{fromCents(subtotalCents)} {sym}</span>}
+                {line.lineType === "SUBTOTAL" && <span className="whitespace-nowrap text-xs font-medium text-ink-soft">{fromCents(subtotalCents)} {sym}</span>}
               </div>
             )}
           </td>
@@ -281,7 +281,7 @@ export function LineRow({
             </td>
             <td data-label={grossDisplay ? "Preis (brutto)" : "Preis (netto)"} className={`order-3 col-span-2 ${cell}`}>
               <input className={fieldCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
-              {grossHint && <div className="mt-0.5 text-[11px] text-slate-400">{grossHint}</div>}
+              {grossHint && <div className="mt-0.5 text-[11px] text-ink-muted">{grossHint}</div>}
             </td>
             <td data-label="USt." className={`order-3 col-span-2 ${cell}`}>
               <select

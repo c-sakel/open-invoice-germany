@@ -92,7 +92,7 @@ export function LineRowMenu({
     closeAndRestoreFocus();
   }
 
-  const itemCls = "block w-full px-3 py-1.5 text-left hover:bg-slate-50 focus:bg-slate-100 focus:outline-none";
+  const itemCls = "block w-full px-3 py-1.5 text-left hover:bg-paper focus:bg-well focus:outline-none";
 
   return (
     <div className="inline-block text-left">
@@ -104,7 +104,7 @@ export function LineRowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Zeilenaktionen"
-        className="rounded px-1.5 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        className="rounded px-1.5 py-1 text-ink-muted hover:bg-well hover:text-ink-soft"
       >
         ⋯
       </button>
@@ -117,7 +117,7 @@ export function LineRowMenu({
         role="menu"
         aria-label="Zeilenaktionen"
         onKeyDown={onMenuKeyDown}
-        className="rounded-md border border-slate-200 bg-white py-1 text-xs shadow-lg"
+        className="rounded-md border border-rule bg-sheet py-1 text-xs shadow-lg"
       >
         <div ref={panelRef}>
           <button type="button" role="menuitem" className={itemCls} onClick={() => pick(onDuplicate)}>
@@ -130,7 +130,7 @@ export function LineRowMenu({
                 type="button"
                 role="menuitem"
                 disabled={canMove ? !canMove(kind) : false}
-                className={`${itemCls} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent`}
+                className={`${itemCls} disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-transparent`}
                 onClick={() => pick(() => onMove(kind))}
               >
                 {label}
@@ -138,14 +138,14 @@ export function LineRowMenu({
             ))}
           {currentType && onChangeType && (
             <>
-              <div className="mt-1 border-t border-slate-100 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Typ ändern</div>
+              <div className="mt-1 border-t border-rule px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Typ ändern</div>
               {TYPE_ORDER.map((t) => (
                 <button
                   key={t}
                   type="button"
                   role="menuitem"
                   disabled={t === currentType}
-                  className={`${itemCls} disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent`}
+                  className={`${itemCls} disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-transparent`}
                   onClick={() => pick(() => onChangeType(t))}
                 >
                   {LINE_TYPE_LABEL[t]}
@@ -157,7 +157,7 @@ export function LineRowMenu({
             type="button"
             role="menuitem"
             disabled={!canRemove}
-            className="block w-full px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50 focus:bg-rose-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            className="block w-full px-3 py-1.5 text-left text-stamp hover:bg-stamp/10 focus:bg-stamp/10 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => pick(onRemove)}
           >
             Entfernen

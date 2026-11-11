@@ -38,46 +38,46 @@ function skontoHint(draft: DraftState): string | null {
 export function TotalsBlock({ totals, draft }: { totals: DraftTotals; draft: DraftState }) {
   const sym = useEditorCurrencySymbol();
   if (totals.error) {
-    return <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{totals.error}</div>;
+    return <div className="rounded-lg border border-stamp/30 bg-stamp/10 p-4 text-sm text-stamp">{totals.error}</div>;
   }
 
   const hint = draft.mode === "INVOICE" ? skontoHint(draft) : null;
 
   return (
-    <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
+    <div className="space-y-1 rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm text-ink-soft">
       <div className="flex justify-between">
         <span>Zwischensumme (Positionen)</span>
         <span className="tabular-nums">{euro(sym, totals.lineNetCents)}</span>
       </div>
       {totals.allowanceCents > 0 && (
-        <div className="flex justify-between text-slate-500">
+        <div className="flex justify-between text-ink-muted">
           <span>Rabatt</span>
           <span className="tabular-nums">− {euro(sym, totals.allowanceCents)}</span>
         </div>
       )}
       {totals.chargeCents > 0 && (
-        <div className="flex justify-between text-slate-500">
+        <div className="flex justify-between text-ink-muted">
           <span>Aufschlag</span>
           <span className="tabular-nums">+ {euro(sym, totals.chargeCents)}</span>
         </div>
       )}
-      <div className="flex justify-between border-t border-slate-100 pt-1">
+      <div className="flex justify-between border-t border-rule pt-1">
         <span>Netto</span>
         <span className="tabular-nums font-medium">{euro(sym, totals.netCents)}</span>
       </div>
       {totals.taxRows.map((r) => (
-        <div key={r.rate} className="flex justify-between text-slate-500">
+        <div key={r.rate} className="flex justify-between text-ink-muted">
           <span>
-            USt {r.rate} % <span className="text-slate-400">(Basis {euro(sym, r.baseCents)})</span>
+            USt {r.rate} % <span className="text-ink-muted">(Basis {euro(sym, r.baseCents)})</span>
           </span>
           <span className="tabular-nums">{euro(sym, r.taxCents)}</span>
         </div>
       ))}
-      <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold text-slate-900">
+      <div className="flex justify-between border-t border-rule pt-1 text-base font-semibold text-ink">
         <span>Brutto</span>
         <span className="tabular-nums">{euro(sym, totals.grossCents)}</span>
       </div>
-      {hint && <p className="border-t border-slate-100 pt-1 text-xs text-slate-500">{hint}</p>}
+      {hint && <p className="border-t border-rule pt-1 text-xs text-ink-muted">{hint}</p>}
     </div>
   );
 }

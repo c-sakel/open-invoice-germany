@@ -72,7 +72,7 @@ export function DunningActions({
           type="button"
           onClick={() => createNext(false)}
           disabled={busy === "create"}
-          className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+          className="rounded-md border border-seal/30 bg-sheet px-2.5 py-1 text-xs font-medium text-seal hover:bg-seal/10 disabled:opacity-60"
         >
           {busy === "create" ? "…" : "Nächste Mahnstufe"}
         </button>
@@ -82,7 +82,7 @@ export function DunningActions({
           type="button"
           onClick={() => setState("ACTIVE")}
           disabled={busy === "ACTIVE"}
-          className="rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+          className="rounded-md border border-ledger/30 bg-sheet px-2.5 py-1 text-xs font-medium text-ledger hover:bg-ledger/10 disabled:opacity-60"
         >
           Fortsetzen
         </button>
@@ -93,12 +93,12 @@ export function DunningActions({
           type="button"
           onClick={() => setState("STOPPED")}
           disabled={busy === "STOPPED"}
-          className="rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+          className="rounded-md border border-stamp/30 bg-sheet px-2.5 py-1 text-xs font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60"
         >
           Beenden
         </button>
       )}
-      {error && <span className="text-xs text-rose-600">{error}</span>}
+      {error && <span className="text-xs text-stamp">{error}</span>}
     </span>
   );
 }

@@ -32,9 +32,9 @@ export function DeliveryNoteLines({
   showTax: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
           <tr>
             {showArticleNumber && <th className="px-4 py-2">Art.-Nr.</th>}
             {showDescription && <th className="px-4 py-2">Beschreibung</th>}
@@ -43,11 +43,11 @@ export function DeliveryNoteLines({
             {showPrices && showTax && <th className="px-4 py-2 text-right">USt</th>}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-rule">
           {lines.map((l) => (
             <tr key={l.id}>
-              {showArticleNumber && <td className="px-4 py-2 text-slate-500">{l.articleNumber ?? ""}</td>}
-              {showDescription && <td className="px-4 py-2 text-slate-700">{l.description}</td>}
+              {showArticleNumber && <td className="px-4 py-2 text-ink-muted">{l.articleNumber ?? ""}</td>}
+              {showDescription && <td className="px-4 py-2 text-ink-soft">{l.description}</td>}
               <td className="tabular px-4 py-2 text-right">
                 {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
               </td>

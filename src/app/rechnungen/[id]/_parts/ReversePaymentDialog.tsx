@@ -76,22 +76,22 @@ export function ReversePaymentDialog({
 
   return (
     <>
-      <button type="button" onClick={openDialog} className="text-xs text-indigo-600 hover:underline">
+      <button type="button" onClick={openDialog} className="text-xs text-pen hover:underline">
         Korrigieren
       </button>
       <RowPaymentDialog open={open} onClose={close} title="Zahlung korrigieren">
         <form onSubmit={submit} className="space-y-3 text-sm">
-          <p className="text-slate-500">
+          <p className="text-ink-muted">
             Gegenbuchung: Die Zahlung bleibt sichtbar, es wird eine negative Zahlungszeile ergänzt. Noch nicht korrigiert: {formatCents(restCents, currency)}.
           </p>
           <label className="flex flex-col gap-1">
-            <span className="font-medium text-slate-700">Betrag (€)</span>
-            <input className="w-32 rounded-md border border-slate-300 px-3 py-2" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
+            <span className="font-medium text-ink-soft">Betrag (€)</span>
+            <input className="w-32 rounded-md border border-rule-strong px-3 py-2" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="font-medium text-slate-700">Grund (Pflicht)</span>
+            <span className="font-medium text-ink-soft">Grund (Pflicht)</span>
             <textarea
-              className="rounded-md border border-slate-300 px-3 py-2"
+              className="rounded-md border border-rule-strong px-3 py-2"
               rows={2}
               maxLength={500}
               value={reason}
@@ -99,12 +99,12 @@ export function ReversePaymentDialog({
               required
             />
           </label>
-          {error && <p className="text-red-600">{error}</p>}
+          {error && <p className="text-stamp">{error}</p>}
           <div className="flex gap-2">
-            <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            <button type="submit" disabled={busy} className="rounded-md bg-pen px-3 py-1.5 font-medium text-white hover:bg-pen disabled:opacity-50">
               {busy ? "Buche…" : "Gegenbuchung erfassen"}
             </button>
-            <button type="button" onClick={close} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-50">
+            <button type="button" onClick={close} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-ink-soft hover:bg-paper">
               Abbrechen
             </button>
           </div>

@@ -47,7 +47,7 @@ export default async function EmailDetailPage({ params }: { params: Promise<{ id
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         {back && (
-          <Link href={back} className="text-sm text-slate-500 hover:text-slate-800">
+          <Link href={back} className="text-sm text-ink-muted hover:text-ink">
             ← Zurück zum Beleg
           </Link>
         )}
@@ -55,9 +55,9 @@ export default async function EmailDetailPage({ params }: { params: Promise<{ id
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Kopfdaten</h2>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-slate-600">
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          <h2 className="mb-2 font-semibold text-ink">Kopfdaten</h2>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-ink-soft">
             <dt>Status</dt>
             <dd>{STATUS_LABEL[log.status] ?? log.status}</dd>
             <dt>Gesendet am</dt>
@@ -74,33 +74,33 @@ export default async function EmailDetailPage({ params }: { params: Promise<{ id
             <dd>{log.subject}</dd>
           </dl>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Anhänge</h2>
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          <h2 className="mb-2 font-semibold text-ink">Anhänge</h2>
           {attachments.length === 0 ? (
-            <p className="text-slate-500">Keine Anhänge.</p>
+            <p className="text-ink-muted">Keine Anhänge.</p>
           ) : (
-            <ul className="space-y-1 text-slate-600">
+            <ul className="space-y-1 text-ink-soft">
               {attachments.map((a) => (
                 <li key={a.sha256}>
                   {a.filename} ({formatKb(a.size)}) —{" "}
-                  <code className="text-xs text-slate-400">{a.sha256}</code>
+                  <code className="text-xs text-ink-muted">{a.sha256}</code>
                 </li>
               ))}
             </ul>
           )}
           {log.status === "FAILED" && log.error && (
-            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">Fehler: {log.error}</p>
+            <p className="mt-3 rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">Fehler: {log.error}</p>
           )}
         </div>
       </div>
 
       {warnings.length > 0 && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{warnings.join(", ")}</div>
+        <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">{warnings.join(", ")}</div>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="mb-2 font-semibold text-slate-900">Nachricht</h2>
-        <pre className="whitespace-pre-wrap text-sm text-slate-700">{log.bodySnapshot}</pre>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="mb-2 font-semibold text-ink">Nachricht</h2>
+        <pre className="whitespace-pre-wrap text-sm text-ink-soft">{log.bodySnapshot}</pre>
       </div>
     </div>
   );

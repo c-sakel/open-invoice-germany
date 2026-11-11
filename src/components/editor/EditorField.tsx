@@ -31,12 +31,12 @@ export function EditorField({
   const id = useId();
   return (
     <label htmlFor={id} className={`flex flex-col gap-1 text-sm ${className ?? ""}`}>
-      <span className="font-medium text-slate-700">
+      <span className="font-medium text-ink-soft">
         {label}
-        {required && <span className="text-rose-500"> *</span>}
+        {required && <span className="text-stamp"> *</span>}
       </span>
       {children(id)}
-      {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
     </label>
   );
 }

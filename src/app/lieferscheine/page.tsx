@@ -126,14 +126,14 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
         title="Lieferscheine"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/lieferscheine/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/lieferscheine/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
             Neuer Lieferschein
           </Link>
         }
       />
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">Kein Steuerbeleg — Nachweis des Leistungszeitpunkts.</p>
-        <Link href={showArchived ? "/lieferscheine" : "/lieferscheine?archiviert=1"} className="text-sm font-medium text-indigo-600 hover:underline">
+        <p className="text-sm text-ink-muted">Kein Steuerbeleg — Nachweis des Leistungszeitpunkts.</p>
+        <Link href={showArchived ? "/lieferscheine" : "/lieferscheine?archiviert=1"} className="text-sm font-medium text-pen hover:underline">
           {showArchived ? "Archivierte ausblenden" : "Archivierte anzeigen"}
         </Link>
       </div>
@@ -145,16 +145,16 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
       <ListHeadline items={headlineItems} />
 
       {result.rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
           Keine Lieferscheine gefunden.{" "}
-          <Link href="/lieferscheine/neu" className="font-medium text-indigo-600 hover:underline">
+          <Link href="/lieferscheine/neu" className="font-medium text-pen hover:underline">
             Lege den ersten Lieferschein an.
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Kunde</th>
@@ -163,7 +163,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-rule">
               {result.rows.map((n) => {
                 const actions = availableActions({
                   kind: "DELIVERY_NOTE",
@@ -174,14 +174,14 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                 });
                 const origin = origins.get(n.id);
                 return (
-                  <tr key={n.id} className={`hover:bg-slate-50 ${n.archivedAt ? "opacity-60" : ""}`}>
+                  <tr key={n.id} className={`hover:bg-paper ${n.archivedAt ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
-                      <Link href={detailHref(n.id)} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(n.id)} className="font-medium text-pen hover:underline">
                         {n.number ?? "(Entwurf)"}
                       </Link>
                       {origin && (
                         <div>
-                          <Link href={origin.href} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">
+                          <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
                             {origin.label}
                           </Link>
                         </div>
@@ -192,11 +192,11 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{n.customerName}</td>
-                    <td className="px-4 py-3 text-slate-600">{deDate(n.issueDate)}</td>
+                    <td className="px-4 py-3 text-ink-soft">{n.customerName}</td>
+                    <td className="px-4 py-3 text-ink-soft">{deDate(n.issueDate)}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={n.status} />
-                      {n.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
+                      {n.archivedAt && <span className="ml-2 text-xs text-ink-muted">archiviert</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <RowActionsMenu

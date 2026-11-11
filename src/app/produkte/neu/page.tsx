@@ -16,7 +16,7 @@ export default async function NeuesProduktPage() {
     <PageContainer width="form">
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Link href="/produkte" className="text-sm text-slate-500 hover:text-slate-800">
+          <Link href="/produkte" className="text-sm text-ink-muted hover:text-ink">
             ← Produkte
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Neues Produkt</h1>

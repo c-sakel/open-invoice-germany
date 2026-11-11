@@ -55,9 +55,9 @@ export function ChartFrame({
 
   return (
     <figure className="m-0">
-      <figcaption className="mb-3 text-sm font-semibold text-slate-800">{title}</figcaption>
+      <figcaption className="mb-3 text-sm font-semibold text-ink">{title}</figcaption>
       {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-400">{emptyMessage ?? "Keine Daten im gewählten Zeitraum."}</p>
+        <p className="py-8 text-center text-sm text-ink-muted">{emptyMessage ?? "Keine Daten im gewählten Zeitraum."}</p>
       ) : (
         <>
           <svg

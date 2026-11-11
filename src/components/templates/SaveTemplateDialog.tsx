@@ -63,20 +63,20 @@ export function SaveTemplateDialog({
       <button
         type="button"
         onClick={open}
-        className={asMenuItem ? "block w-full px-3 py-1.5 text-left hover:bg-slate-50" : "text-sm font-medium text-slate-700 hover:underline"}
+        className={asMenuItem ? "block w-full px-3 py-1.5 text-left hover:bg-paper" : "text-sm font-medium text-ink-soft hover:underline"}
       >
         Als Vorlage speichern
       </button>
-      <dialog ref={dialogRef} aria-labelledby={titleId} className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <dialog ref={dialogRef} aria-labelledby={titleId} className="w-full max-w-sm rounded-lg border border-rule p-0 backdrop:bg-ink/40">
         <div className="space-y-3 p-5">
-          <h2 id={titleId} className="text-sm font-semibold text-slate-900">
+          <h2 id={titleId} className="text-sm font-semibold text-ink">
             Als Vorlage speichern
           </h2>
           {saved ? (
             <>
-              <p className="text-sm text-emerald-700">Vorlage „{name.trim()}“ gespeichert.</p>
+              <p className="text-sm text-ledger">Vorlage „{name.trim()}“ gespeichert.</p>
               <div className="flex justify-end">
-                <button type="button" onClick={close} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
+                <button type="button" onClick={close} className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen">
                   Schließen
                 </button>
               </div>
@@ -84,8 +84,8 @@ export function SaveTemplateDialog({
           ) : (
             <>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">
-                  Name <span className="text-rose-500">*</span>
+                <span className="font-medium text-ink-soft">
+                  Name <span className="text-stamp">*</span>
                 </span>
                 <input
                   autoFocus
@@ -101,16 +101,16 @@ export function SaveTemplateDialog({
                   }}
                 />
               </label>
-              {error && <p className="text-xs text-rose-600">{error}</p>}
+              {error && <p className="text-xs text-stamp">{error}</p>}
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={close} className="text-sm text-slate-500 hover:text-slate-800">
+                <button type="button" onClick={close} className="text-sm text-ink-muted hover:text-ink">
                   Abbrechen
                 </button>
                 <button
                   type="button"
                   onClick={() => void submit()}
                   disabled={busy}
-                  className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {busy ? "Speichert…" : "Speichern"}
                 </button>

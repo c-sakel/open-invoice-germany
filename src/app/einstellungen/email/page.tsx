@@ -21,15 +21,15 @@ export default async function MailSettingsPage() {
       <h1 className="text-2xl font-bold tracking-tight">E-Mail-Versand</h1>
 
       {authSecretMissing && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
           AUTH_SECRET ist nicht gesetzt — das SMTP-Passwort kann nicht verschlüsselt gespeichert werden.
         </div>
       )}
 
       {settings?.lastTestAt && (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-ink-soft">
           Letzter Test: {deDateTime(settings.lastTestAt)}{" "}
-          {settings.lastTestOk ? <span className="font-medium text-emerald-700">erfolgreich</span> : <span className="font-medium text-rose-700">fehlgeschlagen</span>}
+          {settings.lastTestOk ? <span className="font-medium text-ledger">erfolgreich</span> : <span className="font-medium text-stamp">fehlgeschlagen</span>}
         </p>
       )}
 

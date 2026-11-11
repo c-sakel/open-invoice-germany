@@ -26,8 +26,8 @@ interface BilledLine {
 type PartialMode = "PERCENT" | "NET_AMOUNT" | "GROSS_AMOUNT" | "POSITIONS" | "QUANTITIES";
 type DownpaymentMode = "PERCENT" | "AMOUNT";
 
-const btnCls = "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60";
-const btnOutlineCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60";
+const btnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60";
+const btnOutlineCls = "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60";
 
 function parseEuroToCents(v: string): number {
   return parseDecimalInput(v, 2) ?? 0;
@@ -332,7 +332,7 @@ export function ConvertMenu({
   const selectableLinesForPositions = (billed ?? []).filter((l) => l.billedMilli === 0);
   // M13 (Fix-Welle): als Menuepunkte alle Trigger auf dieselbe borderlose volle-Breite-Zeile
   // ziehen (deckungsgleich mit `ActionMenuItem`), statt der gerahmten/gefuellten Knoepfe.
-  const triggerCls = asMenuItem ? "block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-60" : undefined;
+  const triggerCls = asMenuItem ? "block w-full px-3 py-1.5 text-left hover:bg-paper disabled:opacity-60" : undefined;
 
   return (
     <span className={asMenuItem ? "block w-full" : "inline-flex flex-col items-end gap-1"}>
@@ -368,31 +368,31 @@ export function ConvertMenu({
           </button>
         )}
       </span>
-      {error && <span className={asMenuItem ? "block px-3 py-1 text-xs text-rose-600" : "text-xs text-rose-600"}>{error}</span>}
+      {error && <span className={asMenuItem ? "block px-3 py-1 text-xs text-stamp" : "text-xs text-stamp"}>{error}</span>}
 
-      <dialog ref={dialogRef} className="w-full max-w-2xl rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <dialog ref={dialogRef} className="w-full max-w-2xl rounded-lg border border-rule p-0 backdrop:bg-ink/40">
         <div className="max-h-[85vh] overflow-y-auto p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Lieferschein erzeugen</h2>
-            <button type="button" onClick={closeDialog} className="text-slate-400 hover:text-slate-700">
+            <h2 className="text-lg font-semibold text-ink">Lieferschein erzeugen</h2>
+            <button type="button" onClick={closeDialog} className="text-ink-muted hover:text-ink-soft">
               ✕
             </button>
           </div>
 
-          {dialogError && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{dialogError}</div>}
+          {dialogError && <div className="mb-3 rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{dialogError}</div>}
 
           {!remaining ? (
-            <p className="text-sm text-slate-500">Lade Restmengen…</p>
+            <p className="text-sm text-ink-muted">Lade Restmengen…</p>
           ) : (
             <div className="space-y-4">
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Lieferdatum (optional)</span>
-                <input type="date" className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+                <span className="font-medium text-ink-soft">Lieferdatum (optional)</span>
+                <input type="date" className="rounded-md border border-rule-strong px-3 py-2 text-sm" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
               </label>
 
-              <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="overflow-hidden rounded-lg border border-rule">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-3 py-2">Beschreibung</th>
                       <th className="px-3 py-2 text-right">Bestellt</th>
@@ -401,22 +401,22 @@ export function ConvertMenu({
                       <th className="px-3 py-2 text-right">Menge jetzt</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-rule">
                     {remaining.map((l) => (
                       <tr key={l.sourceLineId}>
-                        <td className="px-3 py-2 text-slate-700">{l.description}</td>
-                        <td className="tabular px-3 py-2 text-right text-slate-500">
+                        <td className="px-3 py-2 text-ink-soft">{l.description}</td>
+                        <td className="tabular px-3 py-2 text-right text-ink-muted">
                           {formatQuantity(l.orderedMilli)} {unitLabel(l.unit)}
                         </td>
-                        <td className="tabular px-3 py-2 text-right text-slate-500">
+                        <td className="tabular px-3 py-2 text-right text-ink-muted">
                           {formatQuantity(l.deliveredMilli)} {unitLabel(l.unit)}
                         </td>
-                        <td className="tabular px-3 py-2 text-right text-slate-500">
+                        <td className="tabular px-3 py-2 text-right text-ink-muted">
                           {formatQuantity(l.remainingMilli)} {unitLabel(l.unit)}
                         </td>
                         <td className="px-3 py-2 text-right">
                           <input
-                            className="w-24 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
+                            className="w-24 rounded-md border border-rule-strong px-2 py-1 text-right text-sm"
                             value={quantities[l.sourceLineId] ?? ""}
                             onChange={(e) => setQuantities((q) => ({ ...q, [l.sourceLineId]: e.target.value }))}
                           />
@@ -431,7 +431,7 @@ export function ConvertMenu({
                 <button type="button" onClick={submitDeliveryNote} disabled={dialogBusy} className={btnCls}>
                   {dialogBusy ? "…" : "Lieferschein anlegen"}
                 </button>
-                <button type="button" onClick={closeDialog} className="text-sm text-slate-500 hover:text-slate-800">
+                <button type="button" onClick={closeDialog} className="text-sm text-ink-muted hover:text-ink">
                   Abbrechen
                 </button>
               </div>
@@ -441,24 +441,24 @@ export function ConvertMenu({
       </dialog>
 
       {/* Task 4: Teilrechnung */}
-      <dialog ref={partialDialogRef} className="w-full max-w-2xl rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <dialog ref={partialDialogRef} className="w-full max-w-2xl rounded-lg border border-rule p-0 backdrop:bg-ink/40">
         <div className="max-h-[85vh] overflow-y-auto p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Teilrechnung erzeugen</h2>
-            <button type="button" onClick={closePartialDialog} className="text-slate-400 hover:text-slate-700">
+            <h2 className="text-lg font-semibold text-ink">Teilrechnung erzeugen</h2>
+            <button type="button" onClick={closePartialDialog} className="text-ink-muted hover:text-ink-soft">
               ✕
             </button>
           </div>
 
-          {partialError && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{partialError}</div>}
+          {partialError && <div className="mb-3 rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{partialError}</div>}
 
           {!billed ? (
-            <p className="text-sm text-slate-500">Lade Abrechnungsstand…</p>
+            <p className="text-sm text-ink-muted">Lade Abrechnungsstand…</p>
           ) : (
             <div className="space-y-4">
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Art der Teilrechnung</span>
-                <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={partialMode} onChange={(e) => setPartialMode(e.target.value as PartialMode)}>
+                <span className="font-medium text-ink-soft">Art der Teilrechnung</span>
+                <select className="rounded-md border border-rule-strong px-3 py-2 text-sm" value={partialMode} onChange={(e) => setPartialMode(e.target.value as PartialMode)}>
                   {/* B11 (Fix-Welle): Anteils-Modi nur, wenn alle Quellpositionen einen
                       Preis tragen (preisloser Lieferschein -> nur POSITIONS/QUANTITIES). */}
                   {allowShareModesInPartialInvoice && <option value="PERCENT">Prozentualer Anteil</option>}
@@ -471,43 +471,43 @@ export function ConvertMenu({
 
               {partialMode === "PERCENT" && (
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-slate-700">Anteil in %</span>
-                  <input className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm" value={partialPercent} onChange={(e) => setPartialPercent(e.target.value)} placeholder="z. B. 40" />
+                  <span className="font-medium text-ink-soft">Anteil in %</span>
+                  <input className="w-32 rounded-md border border-rule-strong px-3 py-2 text-sm" value={partialPercent} onChange={(e) => setPartialPercent(e.target.value)} placeholder="z. B. 40" />
                 </label>
               )}
 
               {(partialMode === "NET_AMOUNT" || partialMode === "GROSS_AMOUNT") && (
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-slate-700">Betrag in € ({partialMode === "NET_AMOUNT" ? "netto" : "brutto"})</span>
-                  <input className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm" value={partialAmount} onChange={(e) => setPartialAmount(e.target.value)} placeholder="z. B. 1000,00" />
+                  <span className="font-medium text-ink-soft">Betrag in € ({partialMode === "NET_AMOUNT" ? "netto" : "brutto"})</span>
+                  <input className="w-32 rounded-md border border-rule-strong px-3 py-2 text-sm" value={partialAmount} onChange={(e) => setPartialAmount(e.target.value)} placeholder="z. B. 1000,00" />
                 </label>
               )}
 
               {partialMode === "POSITIONS" && (
-                <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="overflow-hidden rounded-lg border border-rule">
                   <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
                       <tr>
                         <th className="px-3 py-2"></th>
                         <th className="px-3 py-2">Beschreibung</th>
                         <th className="px-3 py-2 text-right">Menge</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-rule">
                       {selectableLinesForPositions.map((l) => (
                         <tr key={l.sourceLineId}>
                           <td className="px-3 py-2">
                             <input type="checkbox" checked={partialSelectedLines[l.sourceLineId] ?? false} onChange={(e) => setPartialSelectedLines((s) => ({ ...s, [l.sourceLineId]: e.target.checked }))} />
                           </td>
-                          <td className="px-3 py-2 text-slate-700">{l.description}</td>
-                          <td className="tabular px-3 py-2 text-right text-slate-500">
+                          <td className="px-3 py-2 text-ink-soft">{l.description}</td>
+                          <td className="tabular px-3 py-2 text-right text-ink-muted">
                             {formatQuantity(l.orderedMilli)} {unitLabel(l.unit)}
                           </td>
                         </tr>
                       ))}
                       {selectableLinesForPositions.length === 0 && (
                         <tr>
-                          <td className="px-3 py-2 text-slate-500" colSpan={3}>
+                          <td className="px-3 py-2 text-ink-muted" colSpan={3}>
                             Keine vollstaendig unabgerechneten Positionen mehr.
                           </td>
                         </tr>
@@ -518,9 +518,9 @@ export function ConvertMenu({
               )}
 
               {partialMode === "QUANTITIES" && (
-                <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="overflow-hidden rounded-lg border border-rule">
                   <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
                       <tr>
                         <th className="px-3 py-2">Beschreibung</th>
                         <th className="px-3 py-2 text-right">Bestellt</th>
@@ -529,22 +529,22 @@ export function ConvertMenu({
                         <th className="px-3 py-2 text-right">Menge jetzt</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-rule">
                       {billed.map((l) => (
                         <tr key={l.sourceLineId}>
-                          <td className="px-3 py-2 text-slate-700">{l.description}</td>
-                          <td className="tabular px-3 py-2 text-right text-slate-500">
+                          <td className="px-3 py-2 text-ink-soft">{l.description}</td>
+                          <td className="tabular px-3 py-2 text-right text-ink-muted">
                             {formatQuantity(l.orderedMilli)} {unitLabel(l.unit)}
                           </td>
-                          <td className="tabular px-3 py-2 text-right text-slate-500">
+                          <td className="tabular px-3 py-2 text-right text-ink-muted">
                             {formatQuantity(l.billedMilli)} {unitLabel(l.unit)}
                           </td>
-                          <td className="tabular px-3 py-2 text-right text-slate-500">
+                          <td className="tabular px-3 py-2 text-right text-ink-muted">
                             {formatQuantity(l.remainingMilli)} {unitLabel(l.unit)}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <input
-                              className="w-24 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
+                              className="w-24 rounded-md border border-rule-strong px-2 py-1 text-right text-sm"
                               value={partialQuantities[l.sourceLineId] ?? ""}
                               onChange={(e) => setPartialQuantities((q) => ({ ...q, [l.sourceLineId]: e.target.value }))}
                             />
@@ -560,7 +560,7 @@ export function ConvertMenu({
                 <button type="button" onClick={submitPartialInvoice} disabled={partialBusy} className={btnCls}>
                   {partialBusy ? "…" : "Teilrechnung anlegen"}
                 </button>
-                <button type="button" onClick={closePartialDialog} className="text-sm text-slate-500 hover:text-slate-800">
+                <button type="button" onClick={closePartialDialog} className="text-sm text-ink-muted hover:text-ink">
                   Abbrechen
                 </button>
               </div>
@@ -570,21 +570,21 @@ export function ConvertMenu({
       </dialog>
 
       {/* Task 4: Abschlagsrechnung */}
-      <dialog ref={downpaymentDialogRef} className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <dialog ref={downpaymentDialogRef} className="w-full max-w-md rounded-lg border border-rule p-0 backdrop:bg-ink/40">
         <div className="p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Abschlagsrechnung erzeugen</h2>
-            <button type="button" onClick={closeDownpaymentDialog} className="text-slate-400 hover:text-slate-700">
+            <h2 className="text-lg font-semibold text-ink">Abschlagsrechnung erzeugen</h2>
+            <button type="button" onClick={closeDownpaymentDialog} className="text-ink-muted hover:text-ink-soft">
               ✕
             </button>
           </div>
 
-          {downpaymentError && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{downpaymentError}</div>}
+          {downpaymentError && <div className="mb-3 rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{downpaymentError}</div>}
 
           <div className="space-y-4">
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">Art des Abschlags</span>
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={downpaymentMode} onChange={(e) => setDownpaymentMode(e.target.value as DownpaymentMode)}>
+              <span className="font-medium text-ink-soft">Art des Abschlags</span>
+              <select className="rounded-md border border-rule-strong px-3 py-2 text-sm" value={downpaymentMode} onChange={(e) => setDownpaymentMode(e.target.value as DownpaymentMode)}>
                 <option value="PERCENT">Prozentualer Anteil</option>
                 <option value="AMOUNT">Fester Betrag</option>
               </select>
@@ -592,16 +592,16 @@ export function ConvertMenu({
 
             {downpaymentMode === "PERCENT" ? (
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Anteil in %</span>
-                <input className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm" value={downpaymentPercent} onChange={(e) => setDownpaymentPercent(e.target.value)} placeholder="z. B. 30" />
+                <span className="font-medium text-ink-soft">Anteil in %</span>
+                <input className="w-32 rounded-md border border-rule-strong px-3 py-2 text-sm" value={downpaymentPercent} onChange={(e) => setDownpaymentPercent(e.target.value)} placeholder="z. B. 30" />
               </label>
             ) : (
               <>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-slate-700">Betrag in €</span>
-                  <input className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm" value={downpaymentAmount} onChange={(e) => setDownpaymentAmount(e.target.value)} placeholder="z. B. 3000,00" />
+                  <span className="font-medium text-ink-soft">Betrag in €</span>
+                  <input className="w-32 rounded-md border border-rule-strong px-3 py-2 text-sm" value={downpaymentAmount} onChange={(e) => setDownpaymentAmount(e.target.value)} placeholder="z. B. 3000,00" />
                 </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
+                <label className="flex items-center gap-2 text-sm text-ink-soft">
                   <input type="checkbox" checked={downpaymentAmountIsGross} onChange={(e) => setDownpaymentAmountIsGross(e.target.checked)} />
                   Betrag ist brutto (inkl. USt)
                 </label>
@@ -612,7 +612,7 @@ export function ConvertMenu({
               <button type="button" onClick={submitDownpaymentInvoice} disabled={downpaymentBusy} className={btnCls}>
                 {downpaymentBusy ? "…" : "Abschlagsrechnung anlegen"}
               </button>
-              <button type="button" onClick={closeDownpaymentDialog} className="text-sm text-slate-500 hover:text-slate-800">
+              <button type="button" onClick={closeDownpaymentDialog} className="text-sm text-ink-muted hover:text-ink">
                 Abbrechen
               </button>
             </div>

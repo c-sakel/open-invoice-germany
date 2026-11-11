@@ -132,22 +132,22 @@ export function CustomFieldsEditor({ initialDefinitions }: { initialDefinitions:
     await refresh();
   }
 
-  const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+  const input = "rounded-md border border-rule-strong px-2 py-1.5 text-sm";
 
   return (
     <div className="space-y-4">
-      {reorderError && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{reorderError}</div>}
+      {reorderError && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{reorderError}</div>}
       <div className="space-y-3">
         {defs.map((d, i) => {
           const f = drafts[d.id];
           if (!f) return null;
           return (
-            <div key={d.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded border border-slate-300 px-1.5 py-0.5 disabled:opacity-40">
+            <div key={d.id} className="space-y-2 rounded-[var(--radius-card)] border border-rule bg-sheet p-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded-[var(--radius-control)] border border-rule-strong px-1.5 py-0.5 disabled:opacity-40">
                   ↑
                 </button>
-                <button type="button" onClick={() => move(i, 1)} disabled={i === defs.length - 1} className="rounded border border-slate-300 px-1.5 py-0.5 disabled:opacity-40">
+                <button type="button" onClick={() => move(i, 1)} disabled={i === defs.length - 1} className="rounded-[var(--radius-control)] border border-rule-strong px-1.5 py-0.5 disabled:opacity-40">
                   ↓
                 </button>
                 <span>Schlüssel: {d.key}</span>
@@ -170,31 +170,31 @@ export function CustomFieldsEditor({ initialDefinitions }: { initialDefinitions:
                   />
                 )}
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={f.required} onChange={(e) => setDraft(d.id, { required: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                  <input type="checkbox" checked={f.required} onChange={(e) => setDraft(d.id, { required: e.target.checked })} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
                   Pflichtfeld
                 </label>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={f.isActive} onChange={(e) => setDraft(d.id, { isActive: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+                  <input type="checkbox" checked={f.isActive} onChange={(e) => setDraft(d.id, { isActive: e.target.checked })} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
                   Aktiv
                 </label>
               </div>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => save(d.id, d.sortOrder)} disabled={busyId === d.id} className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                <button type="button" onClick={() => save(d.id, d.sortOrder)} disabled={busyId === d.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-white hover:bg-pen disabled:opacity-60">
                   Speichern
                 </button>
-                <button type="button" onClick={() => remove(d.id)} disabled={busyId === d.id} className="text-xs font-medium text-rose-600 hover:underline">
+                <button type="button" onClick={() => remove(d.id)} disabled={busyId === d.id} className="text-xs font-medium text-stamp hover:underline">
                   Löschen
                 </button>
-                {errors[d.id] && <span className="text-xs text-rose-600">{errors[d.id]}</span>}
+                {errors[d.id] && <span className="text-xs text-stamp">{errors[d.id]}</span>}
               </div>
             </div>
           );
         })}
-        {defs.length === 0 && <p className="text-sm text-slate-500">Noch keine Kundenfelder definiert.</p>}
+        {defs.length === 0 && <p className="text-sm text-ink-muted">Noch keine Kundenfelder definiert.</p>}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">Neues Kundenfeld</h3>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+        <h3 className="mb-2 text-sm font-semibold text-ink">Neues Kundenfeld</h3>
         <div className="grid gap-2 sm:grid-cols-2">
           <input
             className={input}
@@ -219,7 +219,7 @@ export function CustomFieldsEditor({ initialDefinitions }: { initialDefinitions:
             />
           )}
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={newFields.required} onChange={(e) => setNewFields((f) => ({ ...f, required: e.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
+            <input type="checkbox" checked={newFields.required} onChange={(e) => setNewFields((f) => ({ ...f, required: e.target.checked }))} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
             Pflichtfeld
           </label>
         </div>
@@ -227,11 +227,11 @@ export function CustomFieldsEditor({ initialDefinitions }: { initialDefinitions:
           type="button"
           onClick={create}
           disabled={creating || !newFields.key.trim() || !newFields.label.trim()}
-          className="mt-3 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
         >
           {creating ? "…" : "Kundenfeld anlegen"}
         </button>
-        {newError && <p className="mt-2 text-xs text-rose-600">{newError}</p>}
+        {newError && <p className="mt-2 text-xs text-stamp">{newError}</p>}
       </div>
     </div>
   );

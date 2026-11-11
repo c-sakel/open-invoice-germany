@@ -108,7 +108,7 @@ export function DocumentStatusCard({
     {
       label: "Kunde",
       value: (
-        <Link href={`/kunden/${q.customer.id}`} className="text-indigo-600 hover:underline">
+        <Link href={`/kunden/${q.customer.id}`} className="text-pen hover:underline">
           {q.customer.name}
         </Link>
       ),

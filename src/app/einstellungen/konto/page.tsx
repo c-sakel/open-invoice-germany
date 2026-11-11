@@ -15,7 +15,7 @@ export default function AccountSettingsPage() {
       <h1 className="text-2xl font-bold tracking-tight">Konto</h1>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900">Passwort ändern</h2>
+        <h2 className="text-sm font-semibold text-ink">Passwort ändern</h2>
         <PasswordChangeForm />
       </section>
     </div>

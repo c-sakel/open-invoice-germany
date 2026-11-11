@@ -17,7 +17,7 @@ export default async function NeuerKundePage() {
     <PageContainer width="form">
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Link href="/kunden" className="text-sm text-slate-500 hover:text-slate-800">
+          <Link href="/kunden" className="text-sm text-ink-muted hover:text-ink">
             ← Kunden
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">Neuer Kunde</h1>

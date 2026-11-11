@@ -147,10 +147,10 @@ describe("BarChart", () => {
     expectNoNaN(horizontal);
   });
 
-  it("Achsen-/Wertebeschriftung nutzt die AA-Kontrastfarbe slate-600, nicht slate-400", () => {
+  it("Achsen-/Wertebeschriftung nutzt das Token ink-soft, nicht die Achsenfarbe", () => {
     const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
-    expect(html).toContain('fill="#475569"');
-    expect(html).not.toContain('fill="#94a3b8"');
+    expect(html).toContain('fill="var(--color-ink-soft)"');
+    expect(html).not.toContain('fill="var(--color-rule-strong)"');
   });
 
   it("Fix I5: die senkrechte Ansicht zeigt eine y-Achse mit 3 formatierten Ticks (formatCentsShort)", () => {

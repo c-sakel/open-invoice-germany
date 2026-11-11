@@ -129,21 +129,21 @@ export function PrintOptionsPanel({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-slate-900">
+    <div className="rounded-[var(--radius-card)] border border-rule bg-sheet">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-ink">
         <span>Druckoptionen (nur dieser Beleg)</span>
-        <span className="text-slate-400">{open ? "▲" : "▼"}</span>
+        <span className="text-ink-muted">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
-        <div className="space-y-3 border-t border-slate-100 p-4">
-          {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
-          {saved && <p className="text-xs text-emerald-700">Gespeichert.</p>}
-          <label className="flex max-w-xs flex-col gap-1 text-xs text-slate-600">
+        <div className="space-y-3 border-t border-rule p-4">
+          {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{error}</div>}
+          {saved && <p className="text-xs text-ledger">Gespeichert.</p>}
+          <label className="flex max-w-xs flex-col gap-1 text-xs text-ink-soft">
             <span>Layout</span>
             <select
               value={overrides.layoutId ?? ""}
               onChange={(e) => setLayoutOverride(e.target.value)}
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+              className="rounded-md border border-rule-strong px-2 py-1.5 text-sm text-ink"
             >
               <option value="">Organisationsstandard</option>
               {layouts.map((l) => (
@@ -159,8 +159,8 @@ export function PrintOptionsPanel({
               const value = isOverridden ? (overrides[key] as boolean) : effective[key];
               return (
                 <div key={key} className="flex items-center gap-3 text-sm">
-                  <label className="flex items-center gap-1 text-xs text-slate-500" title="abweichend von der globalen Einstellung">
-                    <input type="checkbox" checked={isOverridden} onChange={(e) => toggleOverride(key, e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                  <label className="flex items-center gap-1 text-xs text-ink-muted" title="abweichend von der globalen Einstellung">
+                    <input type="checkbox" checked={isOverridden} onChange={(e) => toggleOverride(key, e.target.checked)} className="h-3.5 w-3.5 rounded-[var(--radius-control)] border-rule-strong" />
                     abweichend
                   </label>
                   <label className="flex items-center gap-2">
@@ -169,21 +169,21 @@ export function PrintOptionsPanel({
                       checked={value}
                       disabled={!isOverridden}
                       onChange={(e) => setOverrideValue(key, e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 disabled:opacity-50"
+                      className="h-4 w-4 rounded border-rule-strong disabled:opacity-50"
                     />
-                    <span className={isOverridden ? "font-medium text-slate-900" : "text-slate-500"}>{LABELS[key]}</span>
+                    <span className={isOverridden ? "font-medium text-ink" : "text-ink-muted"}>{LABELS[key]}</span>
                   </label>
                 </div>
               );
             })}
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <label className="flex items-center gap-1 text-xs text-slate-500" title="abweichend von der globalen Einstellung">
+            <label className="flex items-center gap-1 text-xs text-ink-muted" title="abweichend von der globalen Einstellung">
               <input
                 type="checkbox"
                 checked={"giroSizeMm" in overrides}
                 onChange={(e) => toggleGiroSizeOverride(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300"
+                className="h-3.5 w-3.5 rounded border-rule-strong"
               />
               abweichend
             </label>
@@ -201,12 +201,12 @@ export function PrintOptionsPanel({
                     setGiroDraft(null);
                   }
                 }}
-                className="w-20 rounded border border-slate-300 px-2 py-1 disabled:opacity-50"
+                className="w-20 rounded border border-rule-strong px-2 py-1 disabled:opacity-50"
               />
-              <span className={"giroSizeMm" in overrides ? "font-medium text-slate-900" : "text-slate-500"}>GiroCode-Größe (mm)</span>
+              <span className={"giroSizeMm" in overrides ? "font-medium text-ink" : "text-ink-muted"}>GiroCode-Größe (mm)</span>
             </label>
           </div>
-          <button type="button" onClick={save} disabled={saving} className="rounded-md bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+          <button type="button" onClick={save} disabled={saving} className="rounded-md bg-pen px-4 py-2 text-xs font-medium text-white hover:bg-pen disabled:opacity-60">
             {saving ? "Speichern…" : "Druckoptionen speichern"}
           </button>
         </div>

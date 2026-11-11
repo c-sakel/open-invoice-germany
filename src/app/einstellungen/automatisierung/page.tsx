@@ -16,7 +16,7 @@ export default async function AutomatisierungPage() {
     <div className="space-y-6">
       <SettingsTabs active="automatisierung" />
       <h1 className="text-2xl font-bold tracking-tight">Automatisierung</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Der Scheduler prüft automatisch fällige Mahnungen, wiederkehrende Rechnungen und erzeugt In-App-Benachrichtigungen (Job „notifications“ — fällige/überfällige Rechnungen, Mahnstufen, ablaufende Angebote
         usw., siehe Einstellungen → Benachrichtigungen; Standardintervall siehe Umgebungsvariablen). Hier lässt sich ein Lauf manuell anstoßen und das Protokoll der letzten Läufe einsehen.
       </p>

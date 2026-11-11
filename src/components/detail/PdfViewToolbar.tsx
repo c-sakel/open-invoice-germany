@@ -1,4 +1,4 @@
-const btn = "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50";
+const btn = "rounded-md border border-rule-strong bg-sheet px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-paper";
 
 /**
  * Phase 13c (Ruling "Kein PDF.js"): Seitenzahl, Blaettern, Zoom, Suche und Drucken liefert
@@ -25,7 +25,7 @@ export function PdfViewToolbar({ src, title }: { src: string; title: string }) {
           Herunterladen
         </a>
       </div>
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm">
+      <div className="overflow-hidden rounded-lg border border-rule bg-well shadow-sm">
         <iframe src={`${src}#view=FitH`} title={title} className="block w-full" style={{ aspectRatio: "1 / 1.4142" }} />
       </div>
     </div>

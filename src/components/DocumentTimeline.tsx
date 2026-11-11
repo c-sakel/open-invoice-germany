@@ -19,11 +19,11 @@ const ROUTE: Record<TimelineKind, (id: string) => string> = {
 };
 
 const KIND_DOT: Record<TimelineEntry["kind"], string> = {
-  activity: "bg-slate-400",
-  email: "bg-sky-500",
-  payment: "bg-emerald-500",
-  dunning: "bg-rose-500",
-  milestone: "bg-amber-500",
+  activity: "bg-ink-muted",
+  email: "bg-pen",
+  payment: "bg-ledger",
+  dunning: "bg-stamp",
+  milestone: "bg-seal",
 };
 
 function deDateTime(iso: string) {
@@ -53,9 +53,9 @@ export function DocumentTimeline({ kind, docId }: { kind: TimelineKind; docId: s
     };
   }, [kind, docId]);
 
-  if (error) return <p className="text-sm text-rose-600">{error}</p>;
-  if (!entries) return <p className="text-sm text-slate-400">Lade Zeitstrahl…</p>;
-  if (entries.length === 0) return <p className="text-sm text-slate-400">Noch keine Ereignisse.</p>;
+  if (error) return <p className="text-sm text-stamp">{error}</p>;
+  if (!entries) return <p className="text-sm text-ink-muted">Lade Zeitstrahl…</p>;
+  if (entries.length === 0) return <p className="text-sm text-ink-muted">Noch keine Ereignisse.</p>;
 
   return (
     <ol className="space-y-3">
@@ -63,11 +63,11 @@ export function DocumentTimeline({ kind, docId }: { kind: TimelineKind; docId: s
         <li key={i} className="flex items-start gap-3">
           <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${KIND_DOT[e.kind]}`} />
           <div className="text-sm">
-            <div className="text-slate-800">
+            <div className="text-ink">
               {e.label}
-              {e.detail && <span className="text-slate-500"> — {e.detail}</span>}
+              {e.detail && <span className="text-ink-muted"> — {e.detail}</span>}
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-ink-muted">
               {deDateTime(e.at)}
               {e.actor && ` · ${e.actor}`}
             </div>

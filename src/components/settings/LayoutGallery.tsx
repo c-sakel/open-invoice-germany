@@ -134,18 +134,18 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   return (
     <div className="space-y-4">
       {error && (
-        <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+        <div role="alert" className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">
           {error}
         </div>
       )}
-      {saved && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
+      {saved && <p className="text-sm text-ledger">Einstellungen gespeichert.</p>}
 
       <label className="flex max-w-xs flex-col gap-1 text-sm">
-        <span className="text-slate-700">Belegtyp</span>
+        <span className="text-ink-soft">Belegtyp</span>
         <select
           value={docType}
           onChange={(e) => changeDocType(e.target.value as LayoutDocType)}
-          className="rounded-md border border-slate-300 px-2 py-2"
+          className="rounded-md border border-rule-strong px-2 py-2"
         >
           {LAYOUT_DOC_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -170,18 +170,18 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
                 onClick={() => selectTile(l.id)}
                 aria-pressed={isSelected}
                 className={`relative flex flex-col gap-2 rounded-lg border p-3 text-left transition ${
-                  isSelected ? "border-indigo-600 ring-2 ring-indigo-600" : "border-slate-200 hover:border-slate-300"
+                  isSelected ? "border-pen ring-2 ring-pen" : "border-rule hover:border-rule-strong"
                 }`}
               >
                 {isEffective && (
-                  <span className="absolute right-2 top-2 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white">
+                  <span className="absolute right-2 top-2 rounded-full bg-pen px-2 py-0.5 text-[10px] font-medium text-white">
                     {typeOverride ? `Für ${docLabel}` : "Standard"}
                   </span>
                 )}
-                <img src={`/layouts/${l.id}.svg`} alt="" className="w-full rounded border border-slate-100" />
+                <img src={`/layouts/${l.id}.svg`} alt="" className="w-full rounded border border-rule" />
                 <div>
-                  <div className="text-sm font-bold text-slate-900">{l.name}</div>
-                  <p className="text-xs text-slate-500">{l.description}</p>
+                  <div className="text-sm font-bold text-ink">{l.name}</div>
+                  <p className="text-xs text-ink-muted">{l.description}</p>
                 </div>
               </button>
             );
@@ -193,17 +193,17 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
             key={`${docType}-${selection}`}
             src={`/api/settings/branding/preview?docType=${previewDocType}&layoutId=${selection}`}
             title="Layout-Vorschau"
-            className="aspect-[1/1.414] w-full rounded border border-slate-200 bg-white"
+            className="aspect-[1/1.414] w-full rounded border border-rule bg-sheet"
           />
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-ink-soft">
               Kachel anklicken = Layout für <span className="font-medium">{docLabel}</span> übernehmen.
             </p>
             {typeOverride && (
               <button
                 type="button"
                 onClick={useOrgDefaultForType}
-                className="rounded-md border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50"
+                className="rounded-md border border-rule px-3 py-2 text-xs font-medium text-ink-muted hover:bg-paper"
               >
                 Organisationsstandard verwenden
               </button>
@@ -211,26 +211,26 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
             <button
               type="button"
               onClick={applyAsDefault}
-              className="rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-rule-strong px-3 py-2 text-xs font-medium text-ink-soft hover:bg-paper"
             >
               Als Standard für alle
             </button>
-            <p className="text-[11px] text-slate-500">Typ-Zuordnungen bleiben erhalten.</p>
+            <p className="text-[11px] text-ink-muted">Typ-Zuordnungen bleiben erhalten.</p>
           </div>
         </div>
       </div>
 
-      <div className={`flex flex-wrap items-center gap-3 rounded-md border p-3 ${dirty ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+      <div className={`flex flex-wrap items-center gap-3 rounded-md border p-3 ${dirty ? "border-seal/30 bg-seal/10" : "border-rule bg-sheet"}`}>
         <button
           type="button"
           onClick={save}
           disabled={saving || !dirty}
-          className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
         >
           {saving ? "Speichern…" : "Einstellungen speichern"}
         </button>
-        {dirty && <span className="text-sm text-amber-800">Ungespeicherte Änderungen — erst nach dem Speichern wirken sie auf neue PDFs.</span>}
-        {!dirty && saved && <span className="text-sm text-emerald-700">Gespeichert.</span>}
+        {dirty && <span className="text-sm text-seal">Ungespeicherte Änderungen — erst nach dem Speichern wirken sie auf neue PDFs.</span>}
+        {!dirty && saved && <span className="text-sm text-ledger">Gespeichert.</span>}
       </div>
     </div>
   );

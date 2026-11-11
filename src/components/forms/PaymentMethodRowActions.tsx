@@ -21,16 +21,16 @@ export function PaymentMethodRowActions({ id, isSystem }: { id: string; isSystem
   const [state, action] = useActionState<ActionResult, FormData>(deletePaymentMethodAction, { ok: false });
 
   if (isSystem) {
-    return <span className="text-xs text-slate-400">Systemmethode</span>;
+    return <span className="text-xs text-ink-muted">Systemmethode</span>;
   }
 
   return (
     <div className="flex flex-col items-end gap-1">
       <form action={action}>
         <input type="hidden" name="id" value={id} />
-        <RowSubmitButton className="text-rose-600 hover:underline">Löschen</RowSubmitButton>
+        <RowSubmitButton className="text-stamp hover:underline">Löschen</RowSubmitButton>
       </form>
-      {state.error && <p className="text-xs text-rose-700">{state.error}</p>}
+      {state.error && <p className="text-xs text-stamp">{state.error}</p>}
     </div>
   );
 }

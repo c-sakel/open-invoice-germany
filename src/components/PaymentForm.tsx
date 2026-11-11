@@ -115,15 +115,15 @@ export function PaymentForm({
     <form onSubmit={submit} className="space-y-2">
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Zahlung erfassen (€)</span>
+          <span className="font-medium text-ink-soft">Zahlung erfassen (€)</span>
           <span className="flex items-center gap-1">
-            <input className="w-28 rounded-md border border-slate-300 px-3 py-2 text-sm" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input className="w-28 rounded-md border border-rule-strong px-3 py-2 text-sm" value={amount} onChange={(e) => setAmount(e.target.value)} />
             {/* Phase 8b (§42): "Restbetrag uebernehmen" — setzt den vollen offenen Betrag,
                 falls der Nutzer vorher einen anderen Wert eingetragen hatte. */}
             <button
               type="button"
               onClick={() => setAmount((openCents / 100).toFixed(2))}
-              className="rounded-md border border-slate-300 bg-white px-2 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              className="rounded-md border border-rule-strong bg-sheet px-2 py-2 text-xs font-medium text-ink-soft hover:bg-paper"
               title="Restbetrag übernehmen"
             >
               Rest
@@ -131,12 +131,12 @@ export function PaymentForm({
           </span>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Zahlungsdatum</span>
-          <input type="date" className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+          <span className="font-medium text-ink-soft">Zahlungsdatum</span>
+          <input type="date" className="rounded-md border border-rule-strong px-3 py-2 text-sm" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Zahlungsart</span>
-          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={method} onChange={(e) => setMethod(e.target.value)}>
+          <span className="font-medium text-ink-soft">Zahlungsart</span>
+          <select className="rounded-md border border-rule-strong px-3 py-2 text-sm" value={method} onChange={(e) => setMethod(e.target.value)}>
             {methods.map((m) => (
               <option key={m.code} value={m.code}>
                 {m.name}
@@ -145,32 +145,32 @@ export function PaymentForm({
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Referenz</span>
+          <span className="font-medium text-ink-soft">Referenz</span>
           <input
-            className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="w-32 rounded-md border border-rule-strong px-3 py-2 text-sm"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
             placeholder="z. B. Belegnr."
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Notiz</span>
+          <span className="font-medium text-ink-soft">Notiz</span>
           <input
-            className="w-40 rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="w-40 rounded-md border border-rule-strong px-3 py-2 text-sm"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="z. B. per Scheck"
           />
         </label>
-        <button type="submit" disabled={busy} className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-ledger px-3 py-2 text-sm font-medium text-white hover:bg-ledger disabled:opacity-60">
           {busy ? "…" : "Buchen"}
         </button>
-        {error && <span className="text-xs text-rose-600">{error}</span>}
+        {error && <span className="text-xs text-stamp">{error}</span>}
       </div>
 
       {suggestion && (
-        <label className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" checked={applySkonto} onChange={(e) => setApplySkonto(e.target.checked)} />
+        <label className="flex items-start gap-2 rounded-md border border-ledger/30 bg-ledger/10 p-2 text-xs text-ledger">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" checked={applySkonto} onChange={(e) => setApplySkonto(e.target.checked)} />
           <span>
             {(suggestion.permille / 10).toString().replace(".", ",")} % Skonto möglich (Frist {new Intl.DateTimeFormat("de-DE").format(new Date(suggestion.dueDate))}). Rest{" "}
             {formatCents(suggestion.restCents)} als Skonto verbuchen?

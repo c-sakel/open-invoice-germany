@@ -8,9 +8,9 @@
 export function InternalNotesBox({ notes }: { notes: string | null }) {
   if (!notes) return null;
   return (
-    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+    <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
       <span className="mr-2 font-medium">Interne Notiz</span>
-      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
+      <span className="rounded bg-seal/10 px-1.5 py-0.5 text-xs">nur intern sichtbar</span>
       <p className="mt-1 whitespace-pre-line">{notes}</p>
     </div>
   );

@@ -253,17 +253,17 @@ export function PreviewSheet({
   return (
     // Escape faengt der document-Listener oben ab (unabhaengig vom Fokusziel) — das
     // Overlay-`onKeyDown` bleibt bewusst weg, um `onClose` nicht doppelt auszuloesen.
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" role="dialog" aria-modal="true" aria-label="Vorschau">
+    <div className="fixed inset-0 z-50 flex justify-end bg-ink/40" role="dialog" aria-modal="true" aria-label="Vorschau">
       <button type="button" aria-label="Schließen" tabIndex={-1} className="absolute inset-0 cursor-default" onClick={onClose} />
-      <div ref={panelRef} className={`relative flex h-full flex-col bg-white shadow-2xl ${previewPanelClass(wide)}`}>
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-900">Vorschau</h2>
+      <div ref={panelRef} className={`relative flex h-full flex-col bg-sheet shadow-2xl ${previewPanelClass(wide)}`}>
+        <div className="flex items-center justify-between border-b border-rule px-4 py-3">
+          <h2 className="text-sm font-semibold text-ink">Vorschau</h2>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
               disabled={state.status === "loading"}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-md border border-rule-strong px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-paper disabled:opacity-50"
             >
               Neu laden
             </button>
@@ -271,20 +271,20 @@ export function PreviewSheet({
               type="button"
               onClick={toggleWide}
               aria-pressed={wide}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-rule-strong px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-paper"
             >
               {wide ? "Schmal" : "Breit"}
             </button>
-            <button ref={closeBtnRef} type="button" onClick={onClose} aria-label="Schließen" className="rounded-md px-2 py-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <button ref={closeBtnRef} type="button" onClick={onClose} aria-label="Schließen" className="rounded-md px-2 py-1.5 text-ink-muted hover:bg-well hover:text-ink-soft">
               ✕
             </button>
           </div>
         </div>
         <div className="flex-1 overflow-auto">
           {displayError ? (
-            <div className="m-4 whitespace-pre-line rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{displayError}</div>
+            <div className="m-4 whitespace-pre-line rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{displayError}</div>
           ) : showLoading ? (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">Vorschau wird geladen…</div>
+            <div className="flex h-full items-center justify-center text-sm text-ink-muted">Vorschau wird geladen…</div>
           ) : showIframe && state.status === "ready" ? (
             <iframe src={state.url} title="Beleg-Vorschau" className="h-full w-full" />
           ) : null}

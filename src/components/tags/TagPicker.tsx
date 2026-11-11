@@ -68,9 +68,9 @@ export function TagPicker({
   }
 
   return (
-    <div className="space-y-2 border-t border-slate-100 pt-3">
+    <div className="space-y-2 border-t border-rule pt-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        {tags.length === 0 && <span className="text-xs text-slate-400">Keine Tags</span>}
+        {tags.length === 0 && <span className="text-xs text-ink-muted">Keine Tags</span>}
         {tags.map((t) => (
           <span key={t.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${tagColorClass(t.color)}`}>
             {t.name}
@@ -87,9 +87,9 @@ export function TagPicker({
         ))}
       </div>
       {options.length === 0 ? (
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-ink-muted">
           Noch keine Tags angelegt —{" "}
-          <Link href="/einstellungen/tags" className="text-indigo-600 hover:underline">
+          <Link href="/einstellungen/tags" className="text-pen hover:underline">
             in den Einstellungen anlegen
           </Link>
           .
@@ -113,14 +113,14 @@ export function TagPicker({
             type="button"
             onClick={() => void add()}
             disabled={!selected || busy !== null}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-md border border-rule-strong bg-sheet px-2 py-1 text-xs font-medium text-ink-soft hover:bg-paper disabled:opacity-60"
           >
             {busy === selected && selected ? "…" : "Hinzufügen"}
           </button>
         </div>
       ) : null}
       {error && (
-        <p role="alert" className="text-xs text-rose-600">
+        <p role="alert" className="text-xs text-stamp">
           {error}
         </p>
       )}

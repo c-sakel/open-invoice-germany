@@ -49,7 +49,7 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+    <div className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
       <div className="space-y-2">
         {allTypes.map(([key, label]) => {
           // Fix-Welle (S4): EMAIL_BOUNCED hat aktuell keinen Erzeuger im laufenden System
@@ -59,22 +59,22 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
           const mandatory = mandatoryTypes.includes(key);
           const disabled = key === "EMAIL_BOUNCED" || mandatory;
           return (
-            <label key={key} className={`flex items-center gap-2 text-sm ${disabled && !mandatory ? "text-slate-400" : "text-slate-700"}`}>
+            <label key={key} className={`flex items-center gap-2 text-sm ${disabled && !mandatory ? "text-ink-muted" : "text-ink-soft"}`}>
               <input
                 type="checkbox"
                 checked={mandatory || enabled.has(key)}
                 onChange={() => toggle(key)}
                 disabled={disabled}
-                className="h-4 w-4 rounded border-slate-300"
+                className="h-4 w-4 rounded border-rule-strong"
               />
               {label}
-              {mandatory && <span className="text-xs italic text-slate-500">(immer aktiv — GoBD-Pflicht-Alarm)</span>}
+              {mandatory && <span className="text-xs italic text-ink-muted">(immer aktiv — GoBD-Pflicht-Alarm)</span>}
               {key === "EMAIL_BOUNCED" && <span className="text-xs italic">(noch nicht aktiv — kein Bounce-Empfang angebunden)</span>}
             </label>
           );
         })}
       </div>
-      <label className="flex items-center gap-2 border-t border-slate-100 pt-4 text-sm text-slate-700">
+      <label className="flex items-center gap-2 border-t border-rule pt-4 text-sm text-ink-soft">
         <input
           type="checkbox"
           checked={emailDigest}
@@ -82,16 +82,16 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
             setEmailDigest(e.target.checked);
             setSaved(false);
           }}
-          className="h-4 w-4 rounded border-slate-300"
+          className="h-4 w-4 rounded border-rule-strong"
         />
         Täglichen E-Mail-Digest versenden
       </label>
       <div className="flex items-center gap-3">
-        <button type="button" onClick={() => void save()} disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
           {busy ? "Speichert…" : "Speichern"}
         </button>
-        {saved && <span className="text-xs text-emerald-600">Gespeichert.</span>}
-        {error && <span className="text-xs text-rose-600">{error}</span>}
+        {saved && <span className="text-xs text-ledger">Gespeichert.</span>}
+        {error && <span className="text-xs text-stamp">{error}</span>}
       </div>
     </div>
   );

@@ -14,9 +14,9 @@ import { parseListQuery, runListFilter } from "@/lib/list-query";
 export const dynamic = "force-dynamic";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  ACTIVE: { text: "aktiv", cls: "bg-emerald-100 text-emerald-800" },
-  PAUSED: { text: "pausiert", cls: "bg-amber-100 text-amber-800" },
-  ENDED: { text: "beendet", cls: "bg-slate-200 text-slate-600" },
+  ACTIVE: { text: "aktiv", cls: "bg-ledger/10 text-ledger" },
+  PAUSED: { text: "pausiert", cls: "bg-seal/10 text-seal" },
+  ENDED: { text: "beendet", cls: "bg-rule-strong text-ink-soft" },
 };
 
 const STATUS_TAB_LABEL: Record<string, string> = {
@@ -92,12 +92,12 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
         title="Abos / Wiederkehrende Rechnungen"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/abos/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/abos/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
             Neues Abo
           </Link>
         }
       />
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-ink-muted">
         Vorlagen, aus denen automatisch Rechnungen erzeugt werden — wöchentlich bis jährlich. Erzeugte Rechnungen durchlaufen Festschreibung,
         Nummernkreis und Audit wie jede andere Rechnung.
       </p>
@@ -107,16 +107,16 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
       <FilterBar basePath="/abos" fields={fields} values={values} />
 
       {result.rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
           Keine Abos gefunden.{" "}
-          <Link href="/abos/neu" className="font-medium text-indigo-600 hover:underline">
+          <Link href="/abos/neu" className="font-medium text-pen hover:underline">
             Lege dein erstes Abo an.
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Bezeichnung</th>
                 <th className="px-4 py-3">Kunde</th>
@@ -125,19 +125,19 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-rule">
               {result.rows.map((r) => {
-                const s = STATUS_LABEL[r.status] ?? { text: r.status, cls: "bg-slate-100 text-slate-600" };
+                const s = STATUS_LABEL[r.status] ?? { text: r.status, cls: "bg-well text-ink-soft" };
                 const actions = availableActions({ kind: "RECURRING", type: "RECURRING", status: r.status, isDraft: false });
                 return (
-                  <tr key={r.id} className="hover:bg-slate-50">
+                  <tr key={r.id} className="hover:bg-paper">
                     <td className="px-4 py-3">
-                      <Link href={`/abos/${r.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={`/abos/${r.id}`} className="font-medium text-pen hover:underline">
                         {r.title}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{r.customerName}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.status === "ENDED" ? "—" : deDate(r.nextRunDate)}</td>
+                    <td className="px-4 py-3 text-ink-soft">{r.customerName}</td>
+                    <td className="px-4 py-3 text-ink-soft">{r.status === "ENDED" ? "—" : deDate(r.nextRunDate)}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>
                     </td>

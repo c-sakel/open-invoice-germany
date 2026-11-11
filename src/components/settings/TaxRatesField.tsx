@@ -54,13 +54,13 @@ export function TaxRatesField({ initial }: { initial: number[] }) {
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {rates.map((r) => (
-          <span key={r} className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-sm text-slate-700">
+          <span key={r} className="inline-flex items-center gap-1 rounded-full border border-rule-strong bg-paper px-3 py-1 text-sm text-ink-soft">
             {r}%
             <button
               type="button"
               onClick={() => removeRate(r)}
               disabled={rates.length <= MIN_RATES}
-              className="text-slate-400 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="text-ink-muted hover:text-stamp disabled:cursor-not-allowed disabled:opacity-40"
               aria-label={`${r}% entfernen`}
             >
               ×
@@ -91,14 +91,14 @@ export function TaxRatesField({ initial }: { initial: number[] }) {
           type="button"
           onClick={addRate}
           disabled={rates.length >= MAX_RATES}
-          className="text-sm font-medium text-indigo-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+          className="text-sm font-medium text-pen hover:underline disabled:cursor-not-allowed disabled:text-ink-muted disabled:no-underline"
         >
           Hinzufügen
         </button>
       </div>
 
-      {error && <p className="text-xs text-rose-600">{error}</p>}
-      <p className="text-xs text-slate-400">Bereits ausgestellte Belege behalten ihren Satz.</p>
+      {error && <p className="text-xs text-stamp">{error}</p>}
+      <p className="text-xs text-ink-muted">Bereits ausgestellte Belege behalten ihren Satz.</p>
 
       <input type="hidden" name="taxRates" value={JSON.stringify(rates)} />
     </div>

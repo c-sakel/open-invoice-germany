@@ -106,7 +106,7 @@ export function FilterBar({
   }
 
   return (
-    <form method="get" action={basePath} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+    <form method="get" action={basePath} className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
       {/* Task 4: Werte, die nicht als sichtbares Filterfeld existieren (z. B. `type` aus
          der Gutschriften-Navigation, `/rechnungen?type=CREDIT_NOTE`), bleiben beim
          JS-freien Absenden des Formulars ueber ein verstecktes Feld erhalten (`navigate`
@@ -122,7 +122,7 @@ export function FilterBar({
         if (f.type === "select") {
           return (
             <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">{f.label}</span>
+              <span className="font-medium text-ink-soft">{f.label}</span>
               <select name={f.name} value={value} onChange={(e) => change(f.name, e.target.value, false)} className={inputCls}>
                 <option value="">Alle</option>
                 {f.options.map((o) => (
@@ -137,7 +137,7 @@ export function FilterBar({
         if (f.type === "date") {
           return (
             <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">{f.label}</span>
+              <span className="font-medium text-ink-soft">{f.label}</span>
               <input type="date" name={f.name} value={value} onChange={(e) => change(f.name, e.target.value, false)} className={inputCls} />
             </label>
           );
@@ -145,7 +145,7 @@ export function FilterBar({
         if (f.type === "number") {
           return (
             <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">{f.label}</span>
+              <span className="font-medium text-ink-soft">{f.label}</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -162,7 +162,7 @@ export function FilterBar({
           const datalistId = `${f.name}-optionen`;
           return (
             <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">{f.label}</span>
+              <span className="font-medium text-ink-soft">{f.label}</span>
               <input
                 type="text"
                 name={f.name}
@@ -181,7 +181,7 @@ export function FilterBar({
         }
         return (
           <label key={f.name} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">{f.label}</span>
+            <span className="font-medium text-ink-soft">{f.label}</span>
             <input
               type="text"
               name={f.name}
@@ -198,7 +198,7 @@ export function FilterBar({
       <button type="submit" className="sr-only">
         Filtern
       </button>
-      <a href={basePath} className="text-sm font-medium text-slate-500 hover:text-slate-800">
+      <a href={basePath} className="text-sm font-medium text-ink-muted hover:text-ink">
         Zurücksetzen
       </a>
     </form>

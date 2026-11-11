@@ -8,21 +8,21 @@ function NodeRow({ node, currentId, depth }: { node: ChainNode; currentId: strin
     <li>
       <div
         className={`flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-          isCurrent ? "bg-indigo-50 font-semibold text-indigo-900" : "text-slate-700"
+          isCurrent ? "bg-pen-wash font-semibold text-pen" : "text-ink-soft"
         }`}
         style={{ marginLeft: depth * 16 }}
       >
-        <span className="text-slate-400">{node.label}</span>
+        <span className="text-ink-muted">{node.label}</span>
         {node.href && !isCurrent ? (
-          <Link href={node.href} className="text-indigo-600 hover:underline">
+          <Link href={node.href} className="text-pen hover:underline">
             {node.number ?? node.id.slice(0, 8)}
           </Link>
         ) : (
           <span>{node.number ?? node.id.slice(0, 8)}</span>
         )}
         <StatusBadge status={node.status} />
-        {node.relation && <span className="text-xs text-slate-400">({node.relation})</span>}
-        {isCurrent && <span className="text-xs text-indigo-600">← aktuell</span>}
+        {node.relation && <span className="text-xs text-ink-muted">({node.relation})</span>}
+        {isCurrent && <span className="text-xs text-pen">← aktuell</span>}
       </div>
       {node.children.length > 0 && (
         <ul>
@@ -48,8 +48,8 @@ export async function DocumentChain({ orgId, type, id }: { orgId: string; type: 
   if (!chain) return null;
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm">
-      <h2 className="font-semibold text-slate-900">Dokumentenkette</h2>
+    <div className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm">
+      <h2 className="font-semibold text-ink">Dokumentenkette</h2>
       <ul>
         <NodeRow node={chain.root} currentId={chain.currentId} depth={0} />
       </ul>

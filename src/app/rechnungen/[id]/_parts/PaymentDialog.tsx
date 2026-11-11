@@ -66,12 +66,12 @@ export function PaymentDialog({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
       >
         Zahlung erfassen
       </button>
       <RowPaymentDialog open={open} onClose={close} title="Zahlung erfassen" wide>
-        <p className="mb-3 text-sm text-slate-500">Offen: {formatCents(openCents)}</p>
+        <p className="mb-3 text-sm text-ink-muted">Offen: {formatCents(openCents)}</p>
         <PaymentForm invoiceId={invoiceId} openCents={openCents} methods={methods} defaultMethod={defaultMethod} onDone={close} />
       </RowPaymentDialog>
     </>

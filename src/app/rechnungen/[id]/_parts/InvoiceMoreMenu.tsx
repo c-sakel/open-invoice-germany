@@ -84,7 +84,7 @@ export function InvoiceMoreMenu({
 
       {canCancelOrCredit && (
         <ActionMenuItem>
-          <CancelInvoiceDialog invoiceId={invoiceId} className="text-rose-700">
+          <CancelInvoiceDialog invoiceId={invoiceId} className="text-stamp">
             Stornieren
           </CancelInvoiceDialog>
         </ActionMenuItem>

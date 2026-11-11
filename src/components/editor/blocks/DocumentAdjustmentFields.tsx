@@ -43,15 +43,15 @@ export function DocumentAdjustmentFields({ draft, dispatch }: { draft: DraftStat
 
   if (!expanded) {
     return (
-      <button type="button" onClick={() => setExpanded(true)} className="text-sm font-medium text-indigo-600 hover:underline">
+      <button type="button" onClick={() => setExpanded(true)} className="text-sm font-medium text-pen hover:underline">
         + Gesamtrabatt
       </button>
     );
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Beleg-Rabatt / -Aufschlag</h3>
+    <div className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+      <h3 className="text-sm font-semibold text-ink">Beleg-Rabatt / -Aufschlag</h3>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <EditorField label="Rabatt %" hint="leer = Kundenvorgabe">
           {(id) => <input id={id} className={inputCls} value={draft.documentDiscountPercent} onChange={(e) => set(dispatch, "documentDiscountPercent", e.target.value)} />}

@@ -29,7 +29,7 @@ export function DuplicateInvoiceButton({
 
   if (disabled) {
     return (
-      <span className={asMenuItem ? "block px-3 py-1.5 text-xs text-slate-400" : "text-xs text-slate-400"} title={disabledReason}>
+      <span className={asMenuItem ? "block px-3 py-1.5 text-xs text-ink-muted" : "text-xs text-ink-muted"} title={disabledReason}>
         Duplizieren nicht möglich{disabledReason ? ` (${disabledReason})` : ""}
       </span>
     );
@@ -59,13 +59,13 @@ export function DuplicateInvoiceButton({
         disabled={busy}
         className={
           asMenuItem
-            ? "block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-60"
-            : "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            ? "block w-full px-3 py-1.5 text-left hover:bg-paper disabled:opacity-60"
+            : "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60"
         }
       >
         {busy ? "…" : "Duplizieren"}
       </button>
-      {error && <span className={asMenuItem ? "block px-3 py-1 text-xs text-rose-600" : "text-xs text-rose-600"}>{error}</span>}
+      {error && <span className={asMenuItem ? "block px-3 py-1 text-xs text-stamp" : "text-xs text-stamp"}>{error}</span>}
     </span>
   );
 }

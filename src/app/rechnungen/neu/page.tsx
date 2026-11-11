@@ -74,7 +74,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
 
   if (customers.length === 0) {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+      <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-sm text-seal">
         Noch keine Kunden angelegt. Lege zuerst einen{" "}
         <Link href="/kunden/neu" className="font-medium underline">
           Kunden an

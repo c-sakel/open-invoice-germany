@@ -15,9 +15,9 @@ interface Run {
 }
 
 const STATUS_CLS: Record<string, string> = {
-  RUNNING: "bg-sky-100 text-sky-800",
-  OK: "bg-emerald-100 text-emerald-800",
-  FAILED: "bg-rose-100 text-rose-700",
+  RUNNING: "bg-pen-wash text-pen",
+  OK: "bg-ledger/10 text-ledger",
+  FAILED: "bg-stamp/10 text-stamp",
 };
 
 function deDateTime(iso: string | null) {
@@ -54,15 +54,15 @@ export function SchedulerRunsTable({ initialRuns }: { initialRuns: Run[] }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
-        <button type="button" onClick={runNow} disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="button" onClick={runNow} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
           {busy ? "Läuft…" : "Jetzt prüfen"}
         </button>
-        {error && <span className="text-xs text-rose-600">{error}</span>}
+        {error && <span className="text-xs text-stamp">{error}</span>}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-sheet">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-3 py-2">Job</th>
               <th className="px-3 py-2">Auslöser</th>
@@ -72,24 +72,24 @@ export function SchedulerRunsTable({ initialRuns }: { initialRuns: Run[] }) {
               <th className="px-3 py-2">Ergebnis</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-rule">
             {runs.map((r) => (
               <tr key={r.id}>
-                <td className="px-3 py-2 font-medium text-slate-800">{r.job}</td>
-                <td className="px-3 py-2 text-slate-600">{r.trigger}</td>
+                <td className="px-3 py-2 font-medium text-ink">{r.job}</td>
+                <td className="px-3 py-2 text-ink-soft">{r.trigger}</td>
                 <td className="px-3 py-2">
-                  <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLS[r.status] ?? "bg-slate-100 text-slate-700"}`}>{r.status}</span>
+                  <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLS[r.status] ?? "bg-well text-ink-soft"}`}>{r.status}</span>
                 </td>
-                <td className="px-3 py-2 text-slate-600">{deDateTime(r.startedAt)}</td>
-                <td className="px-3 py-2 text-slate-600">{deDateTime(r.finishedAt)}</td>
-                <td className="px-3 py-2 text-xs text-slate-500">
+                <td className="px-3 py-2 text-ink-soft">{deDateTime(r.startedAt)}</td>
+                <td className="px-3 py-2 text-ink-soft">{deDateTime(r.finishedAt)}</td>
+                <td className="px-3 py-2 text-xs text-ink-muted">
                   <span className="line-clamp-2 break-all">{r.error ?? r.summaryJson ?? "—"}</span>
                 </td>
               </tr>
             ))}
             {runs.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-3 py-6 text-center text-ink-muted">
                   Noch keine Läufe protokolliert.
                 </td>
               </tr>

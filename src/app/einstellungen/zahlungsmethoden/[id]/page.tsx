@@ -18,7 +18,7 @@ export default async function PaymentMethodEditPage({ params }: { params: Promis
     <div className="space-y-6">
       <SettingsTabs active="zahlungsmethoden" />
       <div className="flex items-center gap-3">
-        <Link href="/einstellungen/zahlungsmethoden" className="text-sm text-slate-500 hover:text-slate-800">
+        <Link href="/einstellungen/zahlungsmethoden" className="text-sm text-ink-muted hover:text-ink">
           ← Zahlungsmethoden
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">{method ? "Zahlungsmethode bearbeiten" : "Neue Zahlungsmethode"}</h1>

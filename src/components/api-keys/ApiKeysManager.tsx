@@ -90,27 +90,27 @@ export function ApiKeysManager({ initialKeys }: { initialKeys: KeyRow[] }) {
   return (
     <div className="space-y-4">
       {newToken && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
-          <p className="font-semibold text-amber-900">Token — nur jetzt sichtbar, danach nicht mehr abrufbar:</p>
-          <code className="mt-1 block break-all rounded bg-white p-2 text-xs">{newToken}</code>
-          <button type="button" onClick={() => setNewToken(null)} className="mt-2 text-xs font-medium text-amber-800 underline">
+        <div className="rounded border border-seal/30 bg-seal/10 p-3 text-sm">
+          <p className="font-semibold text-seal">Token — nur jetzt sichtbar, danach nicht mehr abrufbar:</p>
+          <code className="mt-1 block break-all rounded bg-sheet p-2 text-xs">{newToken}</code>
+          <button type="button" onClick={() => setNewToken(null)} className="mt-2 text-xs font-medium text-seal underline">
             Verstanden, ausblenden
           </button>
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-3 rounded border border-slate-200 p-3">
+      <div className="flex flex-wrap items-end gap-3 rounded border border-rule p-3">
         <div>
-          <label className="block text-xs font-medium text-slate-600">Name</label>
+          <label className="block text-xs font-medium text-ink-soft">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="z. B. Buchhaltungs-Integration"
-            className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
+            className="mt-1 rounded border border-rule-strong px-2 py-1 text-sm"
           />
         </div>
         <div>
-          <span className="block text-xs font-medium text-slate-600">Scopes</span>
+          <span className="block text-xs font-medium text-ink-soft">Scopes</span>
           <div className="mt-1 flex gap-2">
             {ALL_SCOPES.map((s) => (
               <label key={s} className="flex items-center gap-1 text-xs">
@@ -121,23 +121,23 @@ export function ApiKeysManager({ initialKeys }: { initialKeys: KeyRow[] }) {
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600">Ablauf (optional)</label>
-          <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+          <label className="block text-xs font-medium text-ink-soft">Ablauf (optional)</label>
+          <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="mt-1 rounded-[var(--radius-control)] border border-rule-strong px-2 py-1 text-sm" />
         </div>
         <button
           type="button"
           onClick={create}
           disabled={creating}
-          className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-pen px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
           {creating ? "Wird angelegt…" : "Anlegen"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-stamp">{error}</p>}
 
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+          <tr className="border-b border-rule text-left text-xs text-ink-muted">
             <th className="py-1 pr-2">Name</th>
             <th className="py-1 pr-2">Praefix</th>
             <th className="py-1 pr-2">Scopes</th>
@@ -149,7 +149,7 @@ export function ApiKeysManager({ initialKeys }: { initialKeys: KeyRow[] }) {
         </thead>
         <tbody>
           {keys.map((k) => (
-            <tr key={k.id} className="border-b border-slate-100">
+            <tr key={k.id} className="border-b border-rule">
               <td className="py-1 pr-2">{k.name}</td>
               <td className="py-1 pr-2 font-mono text-xs">oig_{k.prefix}…</td>
               <td className="py-1 pr-2">{k.scopes.join(", ")}</td>
@@ -158,7 +158,7 @@ export function ApiKeysManager({ initialKeys }: { initialKeys: KeyRow[] }) {
               <td className="py-1 pr-2">{k.revokedAt ? "widerrufen" : "aktiv"}</td>
               <td className="py-1 text-right">
                 {!k.revokedAt && (
-                  <button type="button" onClick={() => revoke(k.id)} disabled={busyId === k.id} className="text-xs font-medium text-red-600 underline disabled:opacity-50">
+                  <button type="button" onClick={() => revoke(k.id)} disabled={busyId === k.id} className="text-xs font-medium text-stamp underline disabled:opacity-50">
                     Widerrufen
                   </button>
                 )}
@@ -167,7 +167,7 @@ export function ApiKeysManager({ initialKeys }: { initialKeys: KeyRow[] }) {
           ))}
           {keys.length === 0 && (
             <tr>
-              <td colSpan={7} className="py-3 text-center text-slate-400">
+              <td colSpan={7} className="py-3 text-center text-ink-muted">
                 Noch keine API-Schluessel.
               </td>
             </tr>

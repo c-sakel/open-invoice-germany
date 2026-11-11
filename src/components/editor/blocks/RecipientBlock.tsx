@@ -164,8 +164,8 @@ export function RecipientBlock({
   const takeOverBasePath = TAKE_OVER_BASE_PATH[mode];
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-      <h2 className="font-semibold text-slate-900">Empfänger</h2>
+    <div className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+      <h2 className="font-semibold text-ink">Empfänger</h2>
 
       <EditorField label="Kunde" required>
         {/* Kein `disabled={isEdit}`: auch bei Belegen mit Status DRAFT (der einzige
@@ -175,7 +175,7 @@ export function RecipientBlock({
       </EditorField>
 
       {selectedCustomer && (selectedCustomer.addressLine1 || selectedCustomer.city) && (
-        <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        <div className="rounded-md border border-rule bg-paper px-3 py-2 text-xs text-ink-muted">
           {selectedCustomer.addressLine1}
           {selectedCustomer.addressLine1 && <br />}
           {[selectedCustomer.postalCode, selectedCustomer.city].filter(Boolean).join(" ")}

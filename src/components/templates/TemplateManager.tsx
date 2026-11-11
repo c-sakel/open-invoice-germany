@@ -102,9 +102,9 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
 
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Art</th>
@@ -114,10 +114,10 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
               <th className="px-4 py-2 text-right">Aktionen</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-rule">
             {templates.map((t) => (
               <tr key={t.id}>
-                <td className="px-4 py-2 font-medium text-slate-800">
+                <td className="px-4 py-2 font-medium text-ink">
                   {editingId === t.id ? (
                     <input
                       value={editName}
@@ -130,30 +130,30 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
                     t.name
                   )}
                 </td>
-                <td className="px-4 py-2 text-slate-600">{artLabel(t)}</td>
-                <td className="px-4 py-2 text-slate-600">{t.customerName ?? "—"}</td>
-                <td className="px-4 py-2 text-slate-600">{deDate(t.lastUsedAt)}</td>
-                <td className="px-4 py-2 text-right text-slate-600">{t.usageCount}</td>
+                <td className="px-4 py-2 text-ink-soft">{artLabel(t)}</td>
+                <td className="px-4 py-2 text-ink-soft">{t.customerName ?? "—"}</td>
+                <td className="px-4 py-2 text-ink-soft">{deDate(t.lastUsedAt)}</td>
+                <td className="px-4 py-2 text-right text-ink-soft">{t.usageCount}</td>
                 <td className="px-4 py-2 text-right">
                   <div className="flex justify-end gap-3">
                     {editingId === t.id ? (
                       <>
-                        <button type="button" onClick={() => void saveRename(t)} disabled={busy === t.id} className="font-medium text-indigo-600 hover:underline disabled:opacity-60">
+                        <button type="button" onClick={() => void saveRename(t)} disabled={busy === t.id} className="font-medium text-pen hover:underline disabled:opacity-60">
                           {busy === t.id ? "…" : "Speichern"}
                         </button>
-                        <button type="button" onClick={() => setEditingId(null)} className="text-slate-500 hover:text-slate-800">
+                        <button type="button" onClick={() => setEditingId(null)} className="text-ink-muted hover:text-ink">
                           Abbrechen
                         </button>
                       </>
                     ) : (
                       <>
-                        <button type="button" onClick={() => void generate(t)} disabled={busy === t.id} className="font-medium text-indigo-600 hover:underline disabled:opacity-60">
+                        <button type="button" onClick={() => void generate(t)} disabled={busy === t.id} className="font-medium text-pen hover:underline disabled:opacity-60">
                           {busy === t.id ? "…" : "Beleg erzeugen"}
                         </button>
-                        <button type="button" onClick={() => startEdit(t)} className="font-medium text-slate-700 hover:underline">
+                        <button type="button" onClick={() => startEdit(t)} className="font-medium text-ink-soft hover:underline">
                           Umbenennen
                         </button>
-                        <button type="button" onClick={() => askDelete(t)} className="font-medium text-rose-600 hover:underline">
+                        <button type="button" onClick={() => askDelete(t)} className="font-medium text-stamp hover:underline">
                           Löschen
                         </button>
                       </>
@@ -164,7 +164,7 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
             ))}
             {templates.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-6 text-center text-ink-muted">
                   Noch keine Vorlagen — über „Als Vorlage speichern“ im Beleg-Menü anlegen.
                 </td>
               </tr>
@@ -174,7 +174,7 @@ export function TemplateManager({ templates }: { templates: TemplateManagerItem[
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-rose-600">
+        <p role="alert" className="text-sm text-stamp">
           {error}
         </p>
       )}

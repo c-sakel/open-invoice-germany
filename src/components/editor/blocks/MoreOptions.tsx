@@ -60,7 +60,7 @@ function TermsField({
   return (
     <div className="flex flex-col gap-1 text-sm sm:col-span-2">
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="font-medium text-slate-700">
+        <label htmlFor={id} className="font-medium text-ink-soft">
           {label}
         </label>
         <TextTemplatePicker docType={docType} position={position} onPick={onChange} />
@@ -96,8 +96,8 @@ export function MoreOptions({
   const notice = mode === "INVOICE" ? SCHEME_NOTICE[draft.taxScheme] : undefined;
 
   return (
-    <details className="rounded-lg border border-slate-200 bg-white p-4">
-      <summary className="cursor-pointer select-none font-semibold text-slate-900">Weitere Optionen</summary>
+    <details className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+      <summary className="cursor-pointer select-none font-semibold text-ink">Weitere Optionen</summary>
       <div className="mt-4 space-y-4">
         {mode === "INVOICE" && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -141,8 +141,8 @@ export function MoreOptions({
         )}
 
         {mode === "INVOICE" && (
-          <div className="space-y-3 border-t border-slate-100 pt-4">
-            <h3 className="text-sm font-semibold text-slate-900">Skonto</h3>
+          <div className="space-y-3 border-t border-rule pt-4">
+            <h3 className="text-sm font-semibold text-ink">Skonto</h3>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <EditorField label="Skonto 1 — Prozent" hint="z. B. 2">
                 {(id) => <input id={id} className={inputCls} value={draft.skonto1Percent} onChange={(e) => set(dispatch, "skonto1Percent", e.target.value)} />}
@@ -161,21 +161,21 @@ export function MoreOptions({
         )}
 
         {mode === "DELIVERY_NOTE" && (
-          <div className="flex flex-wrap gap-4 border-t border-slate-100 pt-4 text-sm">
+          <div className="flex flex-wrap gap-4 border-t border-rule pt-4 text-sm">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={draft.showArticleNumber} onChange={(e) => set(dispatch, "showArticleNumber", e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              <input type="checkbox" checked={draft.showArticleNumber} onChange={(e) => set(dispatch, "showArticleNumber", e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
               Artikelnummer anzeigen
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={draft.showDescription} onChange={(e) => set(dispatch, "showDescription", e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              <input type="checkbox" checked={draft.showDescription} onChange={(e) => set(dispatch, "showDescription", e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
               Beschreibung anzeigen
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={draft.showPrices} onChange={(e) => set(dispatch, "showPrices", e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              <input type="checkbox" checked={draft.showPrices} onChange={(e) => set(dispatch, "showPrices", e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
               Preise anzeigen
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={draft.showTax} disabled={!draft.showPrices} onChange={(e) => set(dispatch, "showTax", e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              <input type="checkbox" checked={draft.showTax} disabled={!draft.showPrices} onChange={(e) => set(dispatch, "showTax", e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
               USt anzeigen
             </label>
             <label className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export function MoreOptions({
                 type="checkbox"
                 checked={draft.showDeliveryAddress}
                 onChange={(e) => set(dispatch, "showDeliveryAddress", e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
+                className="h-4 w-4 rounded border-rule-strong"
               />
               Lieferadresse anzeigen
             </label>
@@ -196,11 +196,11 @@ export function MoreOptions({
               type="checkbox"
               checked={draft.consumerRetentionHint}
               onChange={(e) => set(dispatch, "consumerRetentionHint", e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-slate-300"
+              className="mt-1 h-4 w-4 rounded border-rule-strong"
             />
             <span>
-              <span className="font-medium text-slate-700">Hinweis auf Aufbewahrungspflicht (§ 14b)</span>
-              <span className="block text-xs text-slate-400">Bauleistung an eine Privatperson: „Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren.“</span>
+              <span className="font-medium text-ink-soft">Hinweis auf Aufbewahrungspflicht (§ 14b)</span>
+              <span className="block text-xs text-ink-muted">Bauleistung an eine Privatperson: „Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren.“</span>
             </span>
           </label>
         )}
@@ -212,7 +212,7 @@ export function MoreOptions({
           <button
             type="button"
             onClick={() => set(dispatch, "notes", draft.notes ? `${notice} — ${draft.notes}` : notice)}
-            className="text-xs text-indigo-600 hover:underline"
+            className="text-xs text-pen hover:underline"
           >
             Pflichthinweis einfügen
           </button>
@@ -220,7 +220,7 @@ export function MoreOptions({
 
         <EditorField
           label="Interne Notiz"
-          hint={<span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-800">nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails</span>}
+          hint={<span className="rounded bg-seal/10 px-1.5 py-0.5 text-xs font-normal text-seal">nur intern sichtbar — nie in PDF, XRechnung, ZUGFeRD oder Mails</span>}
         >
           {(id) => <textarea id={id} className={inputCls} rows={2} value={draft.internalNotes} onChange={(e) => set(dispatch, "internalNotes", e.target.value)} />}
         </EditorField>
@@ -229,7 +229,7 @@ export function MoreOptions({
           (isEdit && draft.id && effectivePrintOptions ? (
             <PrintOptionsPanel docId={draft.id} apiKind={printApiKind} effective={effectivePrintOptions} initialOverride={printOverride ?? {}} layouts={layouts} />
           ) : (
-            <p className="text-xs text-slate-500">Druckoptionen (Logo-/Layout-Overrides je Beleg) lassen sich erst nach dem Speichern einstellen.</p>
+            <p className="text-xs text-ink-muted">Druckoptionen (Logo-/Layout-Overrides je Beleg) lassen sich erst nach dem Speichern einstellen.</p>
           ))}
       </div>
     </details>

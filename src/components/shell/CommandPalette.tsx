@@ -196,7 +196,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 pt-[12vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-ink/40 p-4 pt-[12vh]"
       role="dialog"
       aria-modal="true"
       aria-label="Suche"
@@ -209,9 +209,9 @@ export function CommandPalette() {
       }}
     >
       <button type="button" aria-label="Schließen" onClick={close} className="absolute inset-0 cursor-default" />
-      <div ref={panelRef} className="relative w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-2xl">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-3">
-          <NavIcon name="search" className="h-4 w-4 text-slate-400" />
+      <div ref={panelRef} className="relative w-full max-w-xl overflow-hidden rounded-[var(--radius-card)] bg-sheet shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-rule px-3">
+          <NavIcon name="search" className="h-4 w-4 text-ink-muted" />
           <input
             ref={inputRef}
             value={q}
@@ -221,15 +221,15 @@ export function CommandPalette() {
             className="w-full py-3 text-sm outline-none"
             aria-label="Suchbegriff"
           />
-          {loading && <span className="text-xs text-slate-400">…</span>}
+          {loading && <span className="text-xs text-ink-muted">…</span>}
         </div>
         <div className="max-h-[60vh] overflow-y-auto py-2">
           {q.trim().length < 2 ? (
             <Section label="Schnellaktionen" hits={QUICK_ACTIONS} offset={0} cursor={safeCursor} onPick={go} />
           ) : flat.length === 0 && loading ? (
-            <div className="px-4 py-6 text-center text-sm text-slate-400">Suche läuft …</div>
+            <div className="px-4 py-6 text-center text-sm text-ink-muted">Suche läuft …</div>
           ) : flat.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-slate-500">Keine Treffer für „{q}“</div>
+            <div className="px-4 py-6 text-center text-sm text-ink-muted">Keine Treffer für „{q}“</div>
           ) : (
             groups.reduce<{ nodes: React.ReactNode[]; offset: number }>(
               (acc, g) => {
@@ -257,7 +257,7 @@ export function CommandPalette() {
 function Section({ label, hits, offset, cursor, onPick }: { label: string; hits: Hit[]; offset: number; cursor: number; onPick: (h: Hit) => void }) {
   return (
     <div>
-      <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</div>
       {hits.map((h, i) => {
         const idx = offset + i;
         return (
@@ -266,10 +266,10 @@ function Section({ label, hits, offset, cursor, onPick }: { label: string; hits:
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onPick(h)}
-            className={`flex w-full items-baseline gap-3 px-4 py-2 text-left text-sm ${idx === cursor ? "bg-indigo-50 text-indigo-700" : "text-slate-700 hover:bg-slate-50"}`}
+            className={`flex w-full items-baseline gap-3 px-4 py-2 text-left text-sm ${idx === cursor ? "bg-pen-wash text-pen" : "text-ink-soft hover:bg-paper"}`}
           >
             <span className="font-medium">{h.title}</span>
-            {h.subtitle && <span className="truncate text-xs text-slate-500">{h.subtitle}</span>}
+            {h.subtitle && <span className="truncate text-xs text-ink-muted">{h.subtitle}</span>}
           </button>
         );
       })}

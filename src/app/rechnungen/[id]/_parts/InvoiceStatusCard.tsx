@@ -101,7 +101,7 @@ export function InvoiceStatusCard({
     {
       label: "Kunde",
       value: (
-        <Link href={`/kunden/${invoice.customer.id}`} className="text-indigo-600 hover:underline">
+        <Link href={`/kunden/${invoice.customer.id}`} className="text-pen hover:underline">
           {invoice.customer.name}
         </Link>
       ),
@@ -133,7 +133,7 @@ export function InvoiceStatusCard({
     {
       label: "Fällig",
       value: (
-        <span title={deDate(invoice.dueDate)} className={due?.overdue ? "text-rose-700" : undefined}>
+        <span title={deDate(invoice.dueDate)} className={due?.overdue ? "text-stamp" : undefined}>
           {due ? due.text : "—"}
         </span>
       ),
@@ -151,7 +151,7 @@ export function InvoiceStatusCard({
     detailRows.push({
       label: "E-Rechnung",
       value: (
-        <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-800">
+        <span className="rounded bg-pen-wash px-1.5 py-0.5 text-xs font-medium text-pen">
           {XML_FORMAT_LABEL[invoice.xmlFormat] ?? invoice.xmlFormat}
         </span>
       ),
@@ -166,7 +166,7 @@ export function InvoiceStatusCard({
           Archiviert am {deDate(archive.createdAt)} · SHA-256 {archive.sha256.slice(0, 8)}…
         </span>
       ) : (
-        <span className="text-slate-500">Noch nicht archiviert — wird bei der ersten Ausgabe eingefroren</span>
+        <span className="text-ink-muted">Noch nicht archiviert — wird bei der ersten Ausgabe eingefroren</span>
       ),
     });
   }
@@ -180,7 +180,7 @@ export function InvoiceStatusCard({
         status={
           <>
             <StatusBadge status={invoice.status} />
-            {isOverdue && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">überfällig</span>}
+            {isOverdue && <span className="rounded bg-seal/10 px-1.5 py-0.5 text-xs text-seal">überfällig</span>}
           </>
         }
         rows={customerRows}
@@ -196,19 +196,19 @@ export function InvoiceStatusCard({
               <div className="space-y-1 text-sm">
                 {/* S8 (Fix-Welle 1): Ueberschrift ergaenzt — ohne sie war nicht erkennbar,
                     dass die nackten Zeilen darunter die gebuchten Zahlungen sind. */}
-                <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">Zahlungen</p>
+                <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">Zahlungen</p>
                 {invoice.payments.map((p) => {
                   if (p.kind === "REVERSAL") {
                     const original = invoice.payments.find((o) => o.id === p.reversesPaymentId);
                     return (
-                      <div key={p.id} className="space-y-0.5 border-t border-slate-100 pt-1 text-slate-600">
+                      <div key={p.id} className="space-y-0.5 border-t border-rule pt-1 text-ink-soft">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span>
-                            {deDate(p.paidAt)} · <span className="text-red-700">{formatCents(p.amountCents, invoice.currency)}</span> · {paymentMethodLabel(p.method)}
-                            <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">Gegenbuchung</span>
+                            {deDate(p.paidAt)} · <span className="text-stamp">{formatCents(p.amountCents, invoice.currency)}</span> · {paymentMethodLabel(p.method)}
+                            <span className="ml-2 rounded bg-stamp/10 px-1.5 py-0.5 text-xs font-medium text-stamp">Gegenbuchung</span>
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-ink-muted">
                           {original ? `korrigiert Zahlung vom ${deDate(original.paidAt)}` : "korrigiert eine Zahlung"}
                           {p.reason ? ` · Grund: ${p.reason}` : ""}
                         </p>
@@ -219,15 +219,15 @@ export function InvoiceStatusCard({
                   const restCents = p.amountCents - reversed;
                   const canReverse = p.kind === "PAYMENT" && p.method !== "CREDIT_NOTE" && !p.skontoForPaymentId && restCents > 0;
                   return (
-                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-1 text-slate-600">
-                      <span className={restCents <= 0 ? "line-through decoration-slate-400" : undefined}>
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-1 text-ink-soft">
+                      <span className={restCents <= 0 ? "line-through decoration-ink-muted" : undefined}>
                         {deDate(p.paidAt)} · {formatCents(p.amountCents, invoice.currency)} · {paymentMethodLabel(p.method)}
                         {p.isSkonto && (
-                          <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">Skonto</span>
+                          <span className="ml-2 rounded bg-ledger/10 px-1.5 py-0.5 text-xs font-medium text-ledger">Skonto</span>
                         )}
                       </span>
                       <span className="flex items-center gap-3">
-                        {p.reference && <span className="text-xs text-slate-400">{p.reference}</span>}
+                        {p.reference && <span className="text-xs text-ink-muted">{p.reference}</span>}
                         {canReverse && <ReversePaymentDialog invoiceId={invoice.id} paymentId={p.id} restCents={restCents} currency={invoice.currency} />}
                       </span>
                     </div>

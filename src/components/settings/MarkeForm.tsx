@@ -125,39 +125,39 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
   return (
     <div className="space-y-6">
       <ErrorBanner message={error ?? undefined} />
-      {saved && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
+      {saved && <p className="text-sm text-ledger">Einstellungen gespeichert.</p>}
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Name</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Name</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Name der Instanz</span>
+            <span className="text-ink-soft">Name der Instanz</span>
             <input
               value={values.appName ?? ""}
               onChange={(e) => setField("appName", nameOrNull(e.target.value))}
               maxLength={40}
               placeholder={FALLBACK_APP_NAME}
-              className="rounded border border-slate-300 px-2 py-1"
+              className="rounded border border-rule-strong px-2 py-1"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Kurzname (Kürzel)</span>
+            <span className="text-ink-soft">Kurzname (Kürzel)</span>
             <input
               value={values.appShortName ?? ""}
               onChange={(e) => setField("appShortName", nameOrNull(e.target.value))}
               maxLength={12}
               placeholder={FALLBACK_APP_SHORT_NAME}
-              className="rounded border border-slate-300 px-2 py-1"
+              className="rounded border border-rule-strong px-2 py-1"
             />
           </label>
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Favicon &amp; App-Logo</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Favicon &amp; App-Logo</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
-            <label htmlFor="marke-favicon-upload" className="text-sm font-medium text-slate-700">
+            <label htmlFor="marke-favicon-upload" className="text-sm font-medium text-ink-soft">
               Favicon
             </label>
             <input
@@ -176,19 +176,19 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
               // trotzdem anzuzeigen ueberlief die Spalte. "min-w-0" + "flex-wrap" statt
               // "truncate", damit "entfernen" auf schmalen Spalten in die naechste Zeile
               // faellt, statt vom Text verdraengt zu werden.
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
                 <span className="min-w-0">Favicon hinterlegt</span>
-                <button type="button" onClick={() => removeFile("favicon")} className="text-rose-600 hover:underline">
+                <button type="button" onClick={() => removeFile("favicon")} className="text-stamp hover:underline">
                   entfernen
                 </button>
               </div>
             )}
-            {uploading === "favicon" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
-            <span className="text-xs text-slate-400">Favicon: quadratisches PNG, 32–512 px, max. 512 KB.</span>
+            {uploading === "favicon" && <span className="text-xs text-ink-muted">wird hochgeladen…</span>}
+            <span className="text-xs text-ink-muted">Favicon: quadratisches PNG, 32–512 px, max. 512 KB.</span>
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="marke-applogo-upload" className="text-sm font-medium text-slate-700">
+            <label htmlFor="marke-applogo-upload" className="text-sm font-medium text-ink-soft">
               App-Logo
             </label>
             <input
@@ -202,28 +202,28 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
               className="text-sm"
             />
             {values.appLogoPath && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
                 <span className="min-w-0">Logo hinterlegt</span>
-                <button type="button" onClick={() => removeFile("applogo")} className="text-rose-600 hover:underline">
+                <button type="button" onClick={() => removeFile("applogo")} className="text-stamp hover:underline">
                   entfernen
                 </button>
               </div>
             )}
-            {uploading === "applogo" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
-            <span className="text-xs text-slate-400">Logo: PNG oder JPEG, max. 1 MB, wird auf 28 px Höhe angezeigt.</span>
+            {uploading === "applogo" && <span className="text-xs text-ink-muted">wird hochgeladen…</span>}
+            <span className="text-xs text-ink-muted">Logo: PNG oder JPEG, max. 1 MB, wird auf 28 px Höhe angezeigt.</span>
           </div>
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Vorschau der Kopfzeile</h2>
-        <span className="flex items-center gap-2 font-semibold tracking-tight text-slate-900">
+      <section className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Vorschau der Kopfzeile</h2>
+        <span className="flex items-center gap-2 font-semibold tracking-tight text-ink">
           {values.appLogoPath ? (
             // eslint-disable-next-line @next/next/no-img-element -- kein optimierbares statisches Asset (Route liefert dynamisch aus der DB)
             <img src={`/api/branding/appLogo?v=${previewBust}`} alt={previewName} className="h-7 w-auto" />
           ) : (
             <>
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm font-bold text-white">{previewShort}</span>
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-pen text-sm font-bold text-white">{previewShort}</span>
               {previewName}
             </>
           )}
@@ -234,7 +234,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
         type="button"
         onClick={save}
         disabled={saving}
-        className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+        className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
       >
         {saving ? "Speichern…" : "Einstellungen speichern"}
       </button>

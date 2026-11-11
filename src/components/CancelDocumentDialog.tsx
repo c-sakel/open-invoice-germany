@@ -39,7 +39,7 @@ export const CancelDocumentDialog = forwardRef<
             rückgängig machen.
           </p>
           {linkedInvoices && (
-            <p className="text-amber-700">
+            <p className="text-seal">
               Bereits erstellte Rechnungen bleiben bestehen und müssen bei
               Bedarf einzeln storniert werden.
             </p>

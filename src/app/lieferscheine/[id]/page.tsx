@@ -106,7 +106,7 @@ export default async function LieferscheinDetail({
       badges={
         <>
           <StatusBadge status={dn.status} />
-          {archived && <span className="inline-block rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Archiviert</span>}
+          {archived && <span className="inline-block rounded bg-rule-strong px-2 py-0.5 text-xs font-medium text-ink-soft">Archiviert</span>}
         </>
       }
       actions={
@@ -118,7 +118,7 @@ export default async function LieferscheinDetail({
             <a
               href={`/api/delivery-notes/${dn.id}/pdf`}
               target="_blank"
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
             >
               PDF
             </a>
@@ -129,7 +129,7 @@ export default async function LieferscheinDetail({
               auf der Rechnungsseite selbst umgesetzt. */}
           <Link
             href={`/rechnungen/neu?customerId=${dn.customer.id}`}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
           >
             Neue Rechnung
           </Link>
@@ -171,14 +171,14 @@ export default async function LieferscheinDetail({
       notice={
         <>
           {dn.status === "DRAFT" && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
               Entwurf — noch keine Nummer. Erst mit „Lieferschein erstellen&rdquo; wird eine Belegnummer vergeben.
             </div>
           )}
           {sourceLabel && (
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-ink-soft">
               Bezugsbeleg:{" "}
-              <Link href={sourceLabel.href} className="font-medium text-indigo-600 hover:underline">
+              <Link href={sourceLabel.href} className="font-medium text-pen hover:underline">
                 {sourceLabel.text}
               </Link>
             </p>
@@ -208,7 +208,7 @@ export default async function LieferscheinDetail({
 
       <CollapsibleSection title="Positionen" summary={`${dn.lines.length} ${dn.lines.length === 1 ? "Position" : "Positionen"}`}>
         <div className="space-y-4">
-          {dn.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{dn.headerText}</p>}
+          {dn.headerText && <p className="whitespace-pre-line text-sm text-ink-soft">{dn.headerText}</p>}
           <DeliveryNoteLines
             lines={dn.lines}
             showArticleNumber={dn.showArticleNumber}
@@ -216,8 +216,8 @@ export default async function LieferscheinDetail({
             showPrices={dn.showPrices}
             showTax={dn.showTax}
           />
-          {dn.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{dn.footerText}</p>}
-          {dn.notes && <p className="text-sm text-slate-600">{dn.notes}</p>}
+          {dn.footerText && <p className="whitespace-pre-line text-sm text-ink-soft">{dn.footerText}</p>}
+          {dn.notes && <p className="text-sm text-ink-soft">{dn.notes}</p>}
         </div>
       </CollapsibleSection>
 
@@ -230,7 +230,7 @@ export default async function LieferscheinDetail({
       <EmailHistory docType="DELIVERY_NOTE" docId={dn.id} />
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+        <h2 className="font-semibold text-ink">Zeitstrahl</h2>
         <DocumentTimeline kind="DELIVERY_NOTE" docId={dn.id} />
       </section>
     </DocumentDetailLayout>

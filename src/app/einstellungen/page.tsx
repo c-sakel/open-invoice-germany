@@ -15,7 +15,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
       <h1 className="text-2xl font-bold tracking-tight">Stammdaten</h1>
 
       {saved && (
-        <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+        <div className="flex items-center justify-between rounded-md border border-ledger/30 bg-ledger/10 p-3 text-sm text-ledger">
           <span>Gespeichert.</span>
           <Link href="/kunden/neu" className="font-medium underline">
             Weiter: ersten Kunden anlegen →
@@ -24,7 +24,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
       )}
 
       {!org && (
-        <div className="rounded-md border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+        <div className="rounded-md border border-pen/30 bg-pen-wash p-4 text-sm text-pen">
           <strong>Willkommen!</strong> Lege zuerst dein Unternehmen an — diese Angaben erscheinen als Absender und
           Pflichtangaben auf jeder Rechnung (§ 14 UStG).
         </div>

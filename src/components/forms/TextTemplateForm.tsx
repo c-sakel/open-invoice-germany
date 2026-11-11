@@ -56,9 +56,9 @@ export function TextTemplateForm({
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
-      <form action={action} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 lg:col-span-2">
+      <form action={action} className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 lg:col-span-2">
         <ErrorBanner message={state.error} />
-        {state.ok && <p className="text-sm text-emerald-700">Vorlage gespeichert.</p>}
+        {state.ok && <p className="text-sm text-ledger">Vorlage gespeichert.</p>}
         {template?.id && <input type="hidden" name="id" value={template.id} />}
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -66,15 +66,15 @@ export function TextTemplateForm({
           {template?.id ? (
             <>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Dokumenttyp / Position</span>
+                <span className="font-medium text-ink-soft">Dokumenttyp / Position</span>
                 <input
                   type="text"
                   value={`${DOC_TYPE_LABEL[docType]} — ${POSITIONS.find((p) => p.value === template.position)?.label ?? template.position}`}
                   disabled
                   readOnly
-                  className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-500"
+                  className="rounded-md border border-rule-strong bg-well px-3 py-2 text-sm text-ink-muted"
                 />
-                <span className="text-xs text-slate-400">Dokumenttyp und Position koennen nach dem Anlegen nicht mehr geaendert werden.</span>
+                <span className="text-xs text-ink-muted">Dokumenttyp und Position koennen nach dem Anlegen nicht mehr geaendert werden.</span>
               </label>
               <input type="hidden" name="docType" value={docType} />
               <input type="hidden" name="position" value={template.position} />
@@ -94,14 +94,14 @@ export function TextTemplateForm({
         </div>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">
-            Text<span className="text-rose-500"> *</span>
+          <span className="font-medium text-ink-soft">
+            Text<span className="text-stamp"> *</span>
           </span>
           <textarea
             rows={8}
             name="body"
             required
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none"
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="Text mit Platzhaltern, z. B. {{document.number}}"
@@ -112,42 +112,42 @@ export function TextTemplateForm({
 
         <div className="flex items-center gap-3">
           <SubmitButton>Vorlage speichern</SubmitButton>
-          <button type="button" onClick={loadPreview} disabled={previewBusy} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+          <button type="button" onClick={loadPreview} disabled={previewBusy} className="rounded-md border border-rule-strong bg-sheet px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60">
             {previewBusy ? "…" : "Vorschau"}
           </button>
         </div>
 
         {preview && (
-          <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
-            <pre className="whitespace-pre-wrap font-sans text-slate-700">{preview.body}</pre>
+          <div className="space-y-2 rounded-md border border-rule bg-paper p-3 text-sm">
+            <pre className="whitespace-pre-wrap font-sans text-ink-soft">{preview.body}</pre>
             {preview.warnings.length > 0 && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">{preview.warnings.join(", ")}</div>
+              <div className="rounded-md border border-seal/30 bg-seal/10 p-2 text-xs text-seal">{preview.warnings.join(", ")}</div>
             )}
           </div>
         )}
       </form>
 
-      <aside className="space-y-2 rounded-lg border border-slate-200 bg-white p-5 text-sm">
-        <h3 className="font-semibold text-slate-900">Platzhalter (Auswahl)</h3>
-        <ul className="space-y-1 text-xs text-slate-500">
+      <aside className="space-y-2 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+        <h3 className="font-semibold text-ink">Platzhalter (Auswahl)</h3>
+        <ul className="space-y-1 text-xs text-ink-muted">
           <li>
-            <code className="rounded bg-slate-100 px-1.5 py-0.5">{"{{document.number}}"}</code> Belegnummer
+            <code className="rounded bg-well px-1.5 py-0.5">{"{{document.number}}"}</code> Belegnummer
           </li>
           <li>
-            <code className="rounded bg-slate-100 px-1.5 py-0.5">{"{{document.date}}"}</code> Datum
+            <code className="rounded bg-well px-1.5 py-0.5">{"{{document.date}}"}</code> Datum
           </li>
           <li>
-            <code className="rounded bg-slate-100 px-1.5 py-0.5">{"{{customer.name}}"}</code> Kundenname
+            <code className="rounded bg-well px-1.5 py-0.5">{"{{customer.name}}"}</code> Kundenname
           </li>
           <li>
-            <code className="rounded bg-slate-100 px-1.5 py-0.5">{"{{offer.validUntil}}"}</code> Gültig bis (Angebot)
+            <code className="rounded bg-well px-1.5 py-0.5">{"{{offer.validUntil}}"}</code> Gültig bis (Angebot)
           </li>
           <li>
-            <code className="rounded bg-slate-100 px-1.5 py-0.5">{"{{company.name}}"}</code> Eigene Firma
+            <code className="rounded bg-well px-1.5 py-0.5">{"{{company.name}}"}</code> Eigene Firma
           </li>
           {customFieldPlaceholders.map((p) => (
             <li key={p.path}>
-              <code className="rounded bg-slate-100 px-1.5 py-0.5">{`{{${p.path}}}`}</code> {p.label}
+              <code className="rounded bg-well px-1.5 py-0.5">{`{{${p.path}}}`}</code> {p.label}
             </li>
           ))}
         </ul>

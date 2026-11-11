@@ -62,14 +62,14 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
   const width = collapsed ? "w-14" : "w-60";
 
   return (
-    <aside className={`flex h-full ${width} shrink-0 flex-col border-r border-slate-200 bg-white transition-[width]`} aria-label="Hauptnavigation">
+    <aside className={`flex h-full ${width} shrink-0 flex-col border-r border-rule bg-sheet transition-[width]`} aria-label="Hauptnavigation">
       <div className="flex items-center gap-2 px-3 py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight" onClick={onClose}>
           {brand.hasAppLogo ? (
             // eslint-disable-next-line @next/next/no-img-element -- kein optimierbares statisches Asset (Route liefert dynamisch aus der DB)
             <img src="/api/branding/appLogo" alt={brand.appName} className="h-7 w-auto shrink-0" />
           ) : (
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-sm font-bold text-white">{brand.appShortName}</span>
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-pen text-sm font-bold text-white">{brand.appShortName}</span>
           )}
           {/* Betreiber-Ruling (2026-09-09): mit hinterlegtem Logo NUR das Bild, kein
               zusaetzlicher Name daneben — der Name bleibt fuer Screenreader am `alt` des
@@ -77,7 +77,7 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
           {!collapsed && !brand.hasAppLogo && <span>{brand.appName}</span>}
         </Link>
         {drawer && (
-          <button type="button" aria-label="Menü schließen" onClick={onClose} className="ml-auto rounded-md p-1 text-slate-500 hover:bg-slate-100">
+          <button type="button" aria-label="Menü schließen" onClick={onClose} className="ml-auto rounded-md p-1 text-ink-muted hover:bg-well">
             <NavIcon name="close" />
           </button>
         )}
@@ -91,17 +91,17 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
         ))}
       </nav>
 
-      <div className="border-t border-slate-200 px-3 py-3 text-xs text-slate-500">
+      <div className="border-t border-rule px-3 py-3 text-xs text-ink-muted">
         {!collapsed && orgName && (
-          <div className="mb-2 truncate font-medium text-slate-700" title={orgName}>
+          <div className="mb-2 truncate font-medium text-ink-soft" title={orgName}>
             {orgName}
           </div>
         )}
-        {!collapsed && <div className="mb-2 text-[11px] text-slate-400">v{appVersion}</div>}
+        {!collapsed && <div className="mb-2 text-[11px] text-ink-muted">v{appVersion}</div>}
         <div className="flex items-center justify-between">
           <LogoutButton iconOnly={collapsed} />
           {!drawer && (
-            <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} title={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
+            <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} title={collapsed ? "Navigation ausklappen" : "Navigation einklappen"} className="rounded-md p-1 text-ink-muted hover:bg-well">
               <NavIcon name={collapsed ? "chevron-right" : "chevron-left"} />
             </button>
           )}

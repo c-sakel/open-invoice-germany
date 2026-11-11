@@ -25,7 +25,7 @@ function ItemLink({ item, active, collapsed, badge, onNavigate, indent }: { item
       title={collapsed ? item.label : undefined}
       aria-current={active ? "page" : undefined}
       className={`relative flex items-center gap-2.5 rounded-md py-1.5 text-sm ${indent ? "pl-9 pr-2" : "px-2"} ${
-        active ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        active ? "bg-pen-wash font-medium text-pen" : "text-ink-soft hover:bg-well hover:text-ink"
       }`}
     >
       {item.icon && <NavIcon name={item.icon} className="h-4 w-4 shrink-0" />}
@@ -106,13 +106,13 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
           onClick={toggleOpen}
           aria-expanded={effectiveOpen}
           aria-controls={itemsId}
-          className="flex w-full items-center justify-between rounded-md px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600"
+          className="flex w-full items-center justify-between rounded-md px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-muted hover:text-ink-soft"
         >
           <span>{group.label}</span>
           <NavIcon name="chevron-right" className={`h-3 w-3 shrink-0 transition-transform ${effectiveOpen ? "rotate-90" : ""}`} />
         </button>
       )}
-      {collapsed && <div className="my-2 border-t border-slate-200" />}
+      {collapsed && <div className="my-2 border-t border-rule" />}
       {effectiveOpen && (
         <div id={itemsId} className="space-y-0.5">
           {group.items.map((item) => {

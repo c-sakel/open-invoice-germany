@@ -107,15 +107,15 @@ export function PartialCreditForm({
     router.refresh();
   }
 
-  const input = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none";
 
   if (done) {
     return (
-      <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
+      <div className="space-y-3 rounded-lg border border-ledger/30 bg-ledger/10 p-5 text-sm text-ledger">
         <p className="font-semibold">Teilgutschrift {done.number} erstellt.</p>
         {done.offsetCents > 0 && <p>{formatCents(done.offsetCents, currency)} wurden mit dem offenen Rest der Rechnung verrechnet.</p>}
         {done.refundDueCents > 0 && <p>Erstattung fällig: {formatCents(done.refundDueCents, currency)} (bereits bezahlter Anteil).</p>}
-        <Link href={`/rechnungen/${done.id}`} className="inline-block font-medium text-indigo-700 hover:underline">
+        <Link href={`/rechnungen/${done.id}`} className="inline-block font-medium text-pen hover:underline">
           Zur Gutschrift →
         </Link>
       </div>
@@ -124,24 +124,24 @@ export function PartialCreditForm({
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
-      <p className="text-sm text-slate-500">
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{error}</div>}
+      <p className="text-sm text-ink-muted">
         Gib die zu erstattenden Positionen/Beträge an (positiv). Entferne oder kürze, was nicht gutgeschrieben werden soll. Die Original-Rechnung bleibt erhalten.
       </p>
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+      <div className="rounded-md border border-rule bg-paper p-3 text-sm text-ink-soft">
         Noch gutschreibbar: <strong>{formatCents(remainingCents, currency)}</strong> (brutto). Die Gutschrift mindert zuerst den offenen Rest
         ({formatCents(Math.max(openCents, 0), currency)}); ein darüber hinausgehender Betrag ist zu erstatten.
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-900">Gutschrift-Positionen</h2>
-          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine(defaultTaxRate)])} className="text-sm font-medium text-indigo-600 hover:underline">
+          <h2 className="font-semibold text-ink">Gutschrift-Positionen</h2>
+          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine(defaultTaxRate)])} className="text-sm font-medium text-pen hover:underline">
             + Position
           </button>
         </div>
         {lines.map((line, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <div key={i} className="grid grid-cols-12 gap-2 rounded-[var(--radius-card)] border border-rule bg-sheet p-3">
             <input className={`${input} col-span-12 sm:col-span-5`} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
             <input className={`${input} col-span-4 sm:col-span-2`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
             <div className="col-span-3 sm:col-span-1">
@@ -155,7 +155,7 @@ export function PartialCreditForm({
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
+            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-stamp hover:underline sm:col-span-1" disabled={lines.length === 1}>
               ✕
             </button>
           </div>
@@ -163,15 +163,15 @@ export function PartialCreditForm({
       </div>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Grund / Notiz</span>
+        <span className="font-medium text-ink-soft">Grund / Notiz</span>
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="z. B. Rückgabe Position 2" />
       </label>
 
-      <div className="flex items-center justify-between border-t border-slate-200 pt-4">
-        <span className="text-sm text-slate-500">
-          Gutschrift netto: <span className="tabular font-medium text-slate-800">{(netCents / 100).toFixed(2)} €</span>
+      <div className="flex items-center justify-between border-t border-rule pt-4">
+        <span className="text-sm text-ink-muted">
+          Gutschrift netto: <span className="tabular font-medium text-ink">{(netCents / 100).toFixed(2)} €</span>
         </span>
-        <button type="submit" disabled={busy} className="rounded-md bg-rose-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-stamp px-5 py-2.5 text-sm font-medium text-white hover:bg-stamp disabled:opacity-60">
           {busy ? "…" : "Teilgutschrift erstellen"}
         </button>
       </div>

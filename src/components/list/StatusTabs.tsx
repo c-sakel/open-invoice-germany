@@ -33,7 +33,7 @@ export function StatusTabs({
   }
 
   return (
-    <nav aria-label="Status" className="flex flex-wrap gap-1 border-b border-slate-200">
+    <nav aria-label="Status" className="flex flex-wrap gap-1 border-b border-rule">
       {tabs.map((tab) => {
         const isActive = tab.value === active;
         return (
@@ -43,12 +43,12 @@ export function StatusTabs({
             aria-current={isActive ? "page" : undefined}
             className={
               isActive
-                ? "-mb-px border-b-2 border-indigo-600 px-3 py-2 text-sm font-medium text-indigo-700"
-                : "-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-800"
+                ? "-mb-px border-b-2 border-pen px-3 py-2 text-sm font-medium text-pen"
+                : "-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-ink-muted hover:border-rule-strong hover:text-ink"
             }
           >
             {tab.label}
-            {tab.count != null && <span className="tabular ml-1.5 text-xs text-slate-400">{tab.count}</span>}
+            {tab.count != null && <span className="tabular ml-1.5 text-xs text-ink-muted">{tab.count}</span>}
           </Link>
         );
       })}

@@ -48,28 +48,28 @@ export function RecurringActions({ id, status }: { id: string; status: string })
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {status === "ACTIVE" && (
-          <button onClick={runNow} disabled={busy !== null} className={`${btn} border-indigo-300 bg-indigo-600 text-white hover:bg-indigo-700`}>
+          <button onClick={runNow} disabled={busy !== null} className={`${btn} border-pen/30 bg-pen text-white hover:bg-pen`}>
             {busy === "run" ? "Erzeuge…" : "Jetzt Rechnung erzeugen"}
           </button>
         )}
         {status === "ACTIVE" && (
-          <button onClick={() => setStatus("PAUSED")} disabled={busy !== null} className={`${btn} border-amber-300 bg-white text-amber-700 hover:bg-amber-50`}>
+          <button onClick={() => setStatus("PAUSED")} disabled={busy !== null} className={`${btn} border-seal/30 bg-sheet text-seal hover:bg-seal/10`}>
             Pausieren
           </button>
         )}
         {status === "PAUSED" && (
-          <button onClick={() => setStatus("ACTIVE")} disabled={busy !== null} className={`${btn} border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50`}>
+          <button onClick={() => setStatus("ACTIVE")} disabled={busy !== null} className={`${btn} border-ledger/30 bg-sheet text-ledger hover:bg-ledger/10`}>
             Fortsetzen
           </button>
         )}
         {status !== "ENDED" && (
-          <button onClick={() => setStatus("ENDED")} disabled={busy !== null} className={`${btn} border-slate-300 bg-white text-slate-600 hover:bg-slate-50`}>
+          <button onClick={() => setStatus("ENDED")} disabled={busy !== null} className={`${btn} border-rule-strong bg-sheet text-ink-soft hover:bg-paper`}>
             Beenden
           </button>
         )}
       </div>
-      {info && <p className="text-xs text-emerald-600">{info}</p>}
-      {error && <p className="text-xs text-rose-600">{error}</p>}
+      {info && <p className="text-xs text-ledger">{info}</p>}
+      {error && <p className="text-xs text-stamp">{error}</p>}
     </div>
   );
 }

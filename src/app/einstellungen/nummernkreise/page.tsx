@@ -14,7 +14,7 @@ export default async function NumberRangesPage() {
     <div className="space-y-6">
       <SettingsTabs active="nummernkreise" />
       <h1 className="text-2xl font-bold tracking-tight">Nummernkreise</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Präfix, Muster und nächste Nummer je Belegtyp sowie Kunden-/Artikelnummern ({year}). Nummern können nie zurückgedreht werden (§14 Abs. 4 Nr. 4 UStG).
       </p>
       <NumberRangesEditor initialRanges={ranges} />

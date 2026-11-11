@@ -44,13 +44,13 @@ export function RowPaymentDialog({
     <dialog
       ref={ref}
       onClose={onClose}
-      className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
+      className="w-full max-w-md rounded-lg border border-rule p-0 backdrop:bg-ink/40"
       style={wide ? { maxWidth: "42rem" } : undefined}
     >
       <div className="p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Schließen" className="text-slate-400 hover:text-slate-700">
+          <h2 className="text-lg font-semibold text-ink">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Schließen" className="text-ink-muted hover:text-ink-soft">
             ✕
           </button>
         </div>

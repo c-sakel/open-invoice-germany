@@ -36,12 +36,12 @@ export function AuditChainPanel() {
         type="button"
         onClick={run}
         disabled={busy}
-        className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+        className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-50"
       >
         {busy ? "Prüfe …" : "Jetzt prüfen"}
       </button>
       {message && (
-        <span role="status" className={`text-sm ${message.ok ? "text-emerald-700" : "text-red-700"}`}>
+        <span role="status" className={`text-sm ${message.ok ? "text-ledger" : "text-stamp"}`}>
           {message.text}
         </span>
       )}

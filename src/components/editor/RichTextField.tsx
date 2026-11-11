@@ -80,15 +80,15 @@ export function RichTextField({
 
   const html = showPreview ? renderRichTextHtml(parseRichText(value)) : "";
 
-  const btn = "rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50";
+  const btn = "rounded border border-rule-strong bg-sheet px-2 py-1 text-xs font-medium text-ink-soft hover:bg-paper";
 
   return (
     <div className={`group flex min-w-0 flex-col gap-1 text-sm ${compact ? "relative text-xs" : ""}`}>
       <div className={compact ? "contents" : "flex items-center justify-between"}>
-        <label htmlFor={id} className={compact ? "sr-only" : "font-medium text-slate-700"}>
+        <label htmlFor={id} className={compact ? "sr-only" : "font-medium text-ink-soft"}>
           {label}
         </label>
-        <div className={compact ? "absolute right-0 top-full z-20 mt-0.5 hidden flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-md group-focus-within:flex" : "flex gap-1"}>
+        <div className={compact ? "absolute right-0 top-full z-20 mt-0.5 hidden flex-wrap gap-1 rounded-md border border-rule bg-sheet p-1 shadow-md group-focus-within:flex" : "flex gap-1"}>
           <button type="button" className={btn} title="Fett" onClick={() => wrap("**", "**")}>
             <strong>F</strong>
           </button>
@@ -111,8 +111,8 @@ export function RichTextField({
       </div>
       {showPreview ? (
         <div
-          className="min-h-[6rem] rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800 [&_a]:text-indigo-600 [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-          dangerouslySetInnerHTML={{ __html: html || "<p class=\"text-slate-400\">(leer)</p>" }}
+          className="min-h-[6rem] rounded-md border border-rule-strong bg-paper px-3 py-2 text-sm text-ink [&_a]:text-pen [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+          dangerouslySetInnerHTML={{ __html: html || "<p class=\"text-ink-muted\">(leer)</p>" }}
         />
       ) : (
         <textarea
@@ -121,8 +121,8 @@ export function RichTextField({
           rows={rows}
           className={
             compact
-              ? "w-full min-w-0 resize-none overflow-hidden rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-indigo-500 focus:outline-none"
-              : "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              ? "w-full min-w-0 resize-none overflow-hidden rounded-md border border-rule px-2 py-1 text-xs text-ink-soft focus:border-pen focus:outline-none"
+              : "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none"
           }
           value={value}
           onChange={(e) => onChange(e.target.value)}

@@ -62,7 +62,7 @@ export function DonutChart({ title, data }: { title: string; data: ChartDatum[] 
         </text>
       </ChartFrame>
       {data.length > 0 && (
-        <ul aria-hidden="true" className="mt-3 space-y-1 text-sm text-slate-600">
+        <ul aria-hidden="true" className="mt-3 space-y-1 text-sm text-ink-soft">
           {data.map((d, i) => (
             <li key={`${i}-${d.label}`} className="flex items-center gap-2">
               <span
@@ -70,7 +70,7 @@ export function DonutChart({ title, data }: { title: string; data: ChartDatum[] 
                 style={{ backgroundColor: d.color ?? CHART_COLORS.primary }}
               />
               <span>{d.label}</span>
-              <span className="tabular-nums ml-auto text-slate-500">{d.valueLabel}</span>
+              <span className="tabular-nums ml-auto text-ink-muted">{d.valueLabel}</span>
             </li>
           ))}
         </ul>

@@ -35,8 +35,8 @@ export const dynamic = "force-dynamic";
 
 // Phase 13c, Task 4: Klassen der Primaer-/Sekundaeraktion in der Kopfzeile — dieselben
 // Farben wie die bisherigen Einzelknoepfe (PDF/Bearbeiten sekundaer, Festschreiben primaer).
-const primaryBtnCls = "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700";
-const secondaryBtnCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50";
+const primaryBtnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen";
+const secondaryBtnCls = "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper";
 
 export default async function InvoiceDetail({
   params,
@@ -163,12 +163,12 @@ export default async function InvoiceDetail({
         <>
           <StatusBadge status={invoice.status} />
           {sourceLabel && (
-            <Link href={sourceLabel.href} className="text-sm text-indigo-600 hover:underline">
+            <Link href={sourceLabel.href} className="text-sm text-pen hover:underline">
               zu {sourceLabel.text}
             </Link>
           )}
           {invoice.snapshotSource === "MIGRATION" && (
-            <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            <span className="inline-block rounded bg-seal/10 px-2 py-0.5 text-xs font-medium text-seal">
               Adressstand per Migration eingefroren
             </span>
           )}
@@ -177,12 +177,12 @@ export default async function InvoiceDetail({
       actions={
         <>
           {/* I1 (Fix-Welle): PDF-Knopf wie auf Dokument-/Lieferscheinseite — rendert auch Entwuerfe. */}
-          <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
             PDF
           </a>
           <SendEmailDialog docType={vm.emailDocType} docId={invoice.id} label={vm.isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} autoOpen={send === "1" && invoice.type === "CREDIT_NOTE"} />
           {vm.isDraft && (
-            <Link href={`/rechnungen/${invoice.id}/bearbeiten`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            <Link href={`/rechnungen/${invoice.id}/bearbeiten`} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
               Bearbeiten
             </Link>
           )}
@@ -224,14 +224,14 @@ export default async function InvoiceDetail({
       }
       notice={
         <>
-          {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm whitespace-pre-line text-rose-800">{error}</div>}
+          {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-4 text-sm whitespace-pre-line text-stamp">{error}</div>}
           {vm.isCancelled && refundDueCents > 0 && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <div className="rounded-md border border-rule bg-paper p-3 text-sm text-ink-soft">
               Erfasste Zahlungen: {formatCents(refundDueCents, invoice.currency)} — falls noch nicht geschehen, an den Kunden zurückzahlen (Skonto und Verrechnungen mit Gutschriften sind nicht enthalten).
             </div>
           )}
           {vm.isDraft && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
               Entwurf — noch keine Rechnungsnummer vergeben. Mit „Festschreiben“ wird die Rechnung GoBD-konform unveränderbar.
             </div>
           )}
@@ -269,7 +269,7 @@ export default async function InvoiceDetail({
 
       <CollapsibleSection title="Positionen" summary={`${invoice.lines.length} ${invoice.lines.length === 1 ? "Position" : "Positionen"} · Netto ${formatCents(invoice.netTotalCents, invoice.currency)}`}>
         <div className="space-y-4">
-          {invoice.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.headerText}</p>}
+          {invoice.headerText && <p className="whitespace-pre-line text-sm text-ink-soft">{invoice.headerText}</p>}
           <LineItemsTable lines={invoice.lines} currency={invoice.currency} />
           <InvoiceTotals
             currency={invoice.currency}
@@ -284,8 +284,8 @@ export default async function InvoiceDetail({
             payableBase={vm.payableBase}
             deductionsByInvoice={vm.deductionsByInvoice}
           />
-          {invoice.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.footerText}</p>}
-          {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
+          {invoice.footerText && <p className="whitespace-pre-line text-sm text-ink-soft">{invoice.footerText}</p>}
+          {invoice.notes && <p className="text-sm text-ink-soft">{invoice.notes}</p>}
         </div>
       </CollapsibleSection>
 
@@ -314,7 +314,7 @@ export default async function InvoiceDetail({
       <EmailHistory docType={vm.emailDocType} docId={invoice.id} />
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+        <h2 className="font-semibold text-ink">Zeitstrahl</h2>
         <DocumentTimeline kind="INVOICE" docId={invoice.id} />
       </section>
     </DocumentDetailLayout>

@@ -41,7 +41,7 @@ function NumberField({ label, draft, setDraft, committed, commit, min, max }: Nu
   };
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <span className="text-xs font-medium text-ink-soft">{label}</span>
       <input type="number" min={min} max={max} value={draft ?? String(committed)} onChange={(e) => setDraft(e.target.value)} onBlur={onBlur} className={`w-24 ${inputCls}`} />
     </label>
   );
@@ -97,7 +97,7 @@ export function ApiRequestLogPanel({ initialSettings, initialKeys }: { initialSe
 
   return (
     <div className="space-y-4">
-      <div className="space-y-3 rounded border border-slate-200 p-3">
+      <div className="space-y-3 rounded border border-rule p-3">
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2">
             {/* m13: logBodies geht mit logRequests=false immer auf false (vorher blieb es
@@ -113,19 +113,19 @@ export function ApiRequestLogPanel({ initialSettings, initialKeys }: { initialSe
             <input type="checkbox" checked={settings.logBodies} disabled={!settings.logRequests} onChange={(e) => setSettings((s) => ({ ...s, logBodies: e.target.checked }))} className="disabled:opacity-50" /> Bodies mitschreiben
           </label>
         </div>
-        <p className="text-xs text-slate-500">{PRIVACY_NOTE}</p>
+        <p className="text-xs text-ink-muted">{PRIVACY_NOTE}</p>
         <div className="flex flex-wrap items-end gap-4 text-sm">
           <NumberField label="Aufbewahrung (Tage)" draft={retentionDraft} setDraft={setRetentionDraft} committed={settings.retentionDays} commit={(n) => setSettings((s) => ({ ...s, retentionDays: n }))} min={1} max={90} />
           <NumberField label="Maximale Zeilen je Organisation" draft={maxRowsDraft} setDraft={setMaxRowsDraft} committed={settings.maxRows} commit={(n) => setSettings((s) => ({ ...s, maxRows: n }))} min={100} max={20000} />
-          <button type="button" onClick={save} disabled={saving} className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+          <button type="button" onClick={save} disabled={saving} className="rounded-[var(--radius-control)] bg-pen px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
             {saving ? "Speichern…" : "Speichern"}
           </button>
-          <button type="button" onClick={() => clearDialogRef.current?.open()} className="rounded border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-600">
+          <button type="button" onClick={() => clearDialogRef.current?.open()} className="rounded-[var(--radius-control)] border border-stamp/30 px-3 py-1.5 text-sm font-medium text-stamp">
             Protokoll leeren
           </button>
         </div>
-        {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-        {saved && !saveError && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
+        {saveError && <p className="text-sm text-stamp">{saveError}</p>}
+        {saved && !saveError && <p className="text-sm text-ledger">Einstellungen gespeichert.</p>}
       </div>
 
       <ApiRequestLogTable

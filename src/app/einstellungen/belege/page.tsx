@@ -15,7 +15,7 @@ export default async function BelegSettingsPage() {
     <div className="space-y-6">
       <SettingsTabs active="belege" />
       <h1 className="text-2xl font-bold tracking-tight">Belege</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Org-weite Vorgaben für neue Angebote, Rechnungen, Lieferscheine und wiederkehrende Rechnungen sowie die Online-Annahme von Angeboten.
       </p>
 

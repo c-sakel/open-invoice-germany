@@ -68,9 +68,9 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-sheet">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
           <tr>
             <th className="px-3 py-2">Typ</th>
             <th className="px-3 py-2">Präfix</th>
@@ -82,18 +82,18 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
             <th className="px-3 py-2 text-right">Aktion</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-rule">
           {rows.map((r) => {
             const d = drafts[r.docType];
             const label = LABELS[r.docType] ?? r.docType;
             return (
               <tr key={r.docType}>
-                <td className="px-3 py-2 font-medium text-slate-700">{label}</td>
+                <td className="px-3 py-2 font-medium text-ink-soft">{label}</td>
                 <td className="px-3 py-2">
                   <input
                     value={d.prefix}
                     onChange={(e) => setDraft(r.docType, { prefix: e.target.value })}
-                    className="w-20 rounded border border-slate-300 px-2 py-1"
+                    className="w-20 rounded border border-rule-strong px-2 py-1"
                     aria-label={`Präfix — ${label}`}
                   />
                 </td>
@@ -101,7 +101,7 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                   <input
                     value={d.pattern}
                     onChange={(e) => setDraft(r.docType, { pattern: e.target.value })}
-                    className="w-40 rounded border border-slate-300 px-2 py-1"
+                    className="w-40 rounded border border-rule-strong px-2 py-1"
                     aria-label={`Muster — ${label}`}
                   />
                 </td>
@@ -112,7 +112,7 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                     max={8}
                     value={d.seqPadding}
                     onChange={(e) => setDraft(r.docType, { seqPadding: Number(e.target.value) })}
-                    className="w-16 rounded border border-slate-300 px-2 py-1"
+                    className="w-16 rounded border border-rule-strong px-2 py-1"
                     aria-label={`Stellen der laufenden Nummer — ${label}`}
                   />
                 </td>
@@ -121,7 +121,7 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                     type="checkbox"
                     checked={d.yearlyReset}
                     onChange={(e) => setDraft(r.docType, { yearlyReset: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300"
+                    className="h-4 w-4 rounded border-rule-strong"
                     aria-label={`Jährlich zurücksetzen — ${label}`}
                   />
                 </td>
@@ -131,22 +131,22 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                     min={1}
                     value={d.nextValue}
                     onChange={(e) => setDraft(r.docType, { nextValue: Number(e.target.value) })}
-                    className="w-24 rounded border border-slate-300 px-2 py-1"
+                    className="w-24 rounded border border-rule-strong px-2 py-1"
                     aria-label={`Nächste Nummer — ${label}`}
                   />
                 </td>
-                <td className="px-3 py-2 text-slate-500">{r.nextNumberPreview}</td>
+                <td className="px-3 py-2 text-ink-muted">{r.nextNumberPreview}</td>
                 <td className="px-3 py-2">
                   <div className="flex flex-col items-end gap-1">
                     <button
                       type="button"
                       onClick={() => save(r.docType)}
                       disabled={busy === r.docType}
-                      className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                      className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-white hover:bg-pen disabled:opacity-60"
                     >
                       Speichern
                     </button>
-                    {errors[r.docType] && <span className="text-right text-xs text-rose-600">{errors[r.docType]}</span>}
+                    {errors[r.docType] && <span className="text-right text-xs text-stamp">{errors[r.docType]}</span>}
                   </div>
                 </td>
               </tr>

@@ -37,10 +37,10 @@ export function DetailNav({
     return () => document.removeEventListener("keydown", onKey);
   }, [prevHref, nextHref, router]);
   const arrow =
-    "rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-600 hover:bg-slate-50 aria-disabled:opacity-40 aria-disabled:pointer-events-none";
+    "rounded-md border border-rule-strong bg-sheet px-2 py-1 text-sm text-ink-soft hover:bg-paper aria-disabled:opacity-40 aria-disabled:pointer-events-none";
   return (
     <div className="flex items-center gap-2">
-      <Link href={backHref} className="text-sm text-slate-500 hover:text-slate-800">
+      <Link href={backHref} className="text-sm text-ink-muted hover:text-ink">
         ← {backLabel}
       </Link>
       <span className="ml-2 inline-flex gap-1">

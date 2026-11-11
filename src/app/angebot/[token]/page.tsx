@@ -39,9 +39,9 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
     } catch (e) {
       if (e instanceof RateLimitError) {
         return (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
-            <p className="text-lg font-medium text-amber-900">Zu viele Anfragen</p>
-            <p className="mt-2 text-sm text-amber-700">Bitte versuchen Sie es in Kuerze erneut.</p>
+          <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-center">
+            <p className="text-lg font-medium text-seal">Zu viele Anfragen</p>
+            <p className="mt-2 text-sm text-seal">Bitte versuchen Sie es in Kuerze erneut.</p>
           </div>
         );
       }
@@ -62,11 +62,11 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
         <h1 className="text-2xl font-bold tracking-tight">
           {KIND_TITLE[quote.kind] ?? "Dokument"} {data.number}
         </h1>
-        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center">
-          <p className="text-lg font-medium text-slate-900">
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-6 text-center">
+          <p className="text-lg font-medium text-ink">
             Vielen Dank, Ihr Angebot wurde am {formatDateDe(link.decidedAt)} {decisionLabel}.
           </p>
-          <p className="mt-2 text-sm text-slate-500">Eine weitere Entscheidung ueber diesen Link ist nicht mehr moeglich.</p>
+          <p className="mt-2 text-sm text-ink-muted">Eine weitere Entscheidung ueber diesen Link ist nicht mehr moeglich.</p>
         </div>
       </div>
     );
@@ -80,25 +80,25 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
         </h1>
         <a
           href={`/api/public/angebot/${token}/pdf`}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
         >
           PDF herunterladen
         </a>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Absender</h2>
-          <p className="text-slate-700">{data.seller.name}</p>
-          <p className="text-slate-600">{data.seller.addressLine1}</p>
-          <p className="text-slate-600">
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          <h2 className="mb-2 font-semibold text-ink">Absender</h2>
+          <p className="text-ink-soft">{data.seller.name}</p>
+          <p className="text-ink-soft">{data.seller.addressLine1}</p>
+          <p className="text-ink-soft">
             {data.seller.postalCode} {data.seller.city}
           </p>
-          {data.seller.email && <p className="text-slate-600">{data.seller.email}</p>}
+          {data.seller.email && <p className="text-ink-soft">{data.seller.email}</p>}
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Eckdaten</h2>
-          <dl className="grid grid-cols-2 gap-y-1 text-slate-600">
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          <h2 className="mb-2 font-semibold text-ink">Eckdaten</h2>
+          <dl className="grid grid-cols-2 gap-y-1 text-ink-soft">
             <dt>Angebotsnummer</dt>
             <dd className="text-right">{data.number}</dd>
             <dt>Datum</dt>
@@ -113,26 +113,26 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
         </div>
       </div>
 
-      {data.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{data.headerText}</p>}
+      {data.headerText && <p className="whitespace-pre-line text-sm text-ink-soft">{data.headerText}</p>}
 
       <LineItemsTable lines={data.lines} currency={data.currency} />
 
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         <div className="flex justify-between">
-          <span className="text-slate-600">Netto</span>
+          <span className="text-ink-soft">Netto</span>
           <span className="tabular font-medium">{formatCents(data.netTotalCents, data.currency)}</span>
         </div>
-        <div className="flex justify-between text-slate-600">
+        <div className="flex justify-between text-ink-soft">
           <span>zzgl. USt</span>
           <span className="tabular">{formatCents(data.taxTotalCents, data.currency)}</span>
         </div>
-        <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
+        <div className="flex justify-between border-t border-rule pt-1 text-base font-semibold">
           <span>Gesamt</span>
           <span className="tabular">{formatCents(data.grossTotalCents, data.currency)}</span>
         </div>
       </div>
 
-      {data.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{data.footerText}</p>}
+      {data.footerText && <p className="whitespace-pre-line text-sm text-ink-soft">{data.footerText}</p>}
 
       <DecisionForm token={token} />
     </div>

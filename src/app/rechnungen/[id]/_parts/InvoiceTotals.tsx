@@ -37,13 +37,13 @@ export function InvoiceTotals({
           {/* Gutschriften spiegeln die Betraege (negativ). Anzeige vorzeichenrichtig
               (analog invoice-pdf.ts); der Grund gehoert nur zum Aufschlag. */}
           {documentDiscountTotalCents !== 0 && (
-            <div className="flex justify-between text-slate-600">
+            <div className="flex justify-between text-ink-soft">
               <span>Belegrabatt</span>
               <span className="tabular">{formatCents(-documentDiscountTotalCents, currency)}</span>
             </div>
           )}
           {documentChargeTotalCents !== 0 && (
-            <div className="flex justify-between text-slate-600">
+            <div className="flex justify-between text-ink-soft">
               <span>Belegaufschlag{documentChargeReason ? ` (${documentChargeReason})` : ""}</span>
               <span className="tabular">{formatCents(documentChargeTotalCents, currency)}</span>
             </div>
@@ -51,25 +51,25 @@ export function InvoiceTotals({
         </>
       )}
       <div className="flex justify-between">
-        <span className="text-slate-600">Netto</span>
+        <span className="text-ink-soft">Netto</span>
         <span className="tabular font-medium">{formatCents(netTotalCents, currency)}</span>
       </div>
       {breakdown
         .filter((b) => b.taxCents > 0)
         .map((b) => (
-          <div key={b.taxRate} className="flex justify-between text-slate-600">
+          <div key={b.taxRate} className="flex justify-between text-ink-soft">
             <span>zzgl. {b.taxRate}% USt</span>
             <span className="tabular">{formatCents(b.taxCents, currency)}</span>
           </div>
         ))}
-      <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
+      <div className="flex justify-between border-t border-rule pt-1 text-base font-semibold">
         <span>{type === "FINAL" ? "Gesamtleistung" : "Gesamt"}</span>
         <span className="tabular">{formatCents(grossTotalCents, currency)}</span>
       </div>
       {type === "FINAL" && deductionsByInvoice.size > 0 && (
         <>
           {[...deductionsByInvoice.values()].map((d) => (
-            <div key={d.number} className="flex justify-between text-slate-600">
+            <div key={d.number} className="flex justify-between text-ink-soft">
               <span>
                 abzüglich Abschlagsrechnung {d.number} vom {deDate(d.issueDate)}
               </span>
@@ -78,7 +78,7 @@ export function InvoiceTotals({
               </span>
             </div>
           ))}
-          <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
+          <div className="flex justify-between border-t border-rule pt-1 text-base font-semibold">
             <span>Restbetrag</span>
             <span className="tabular">{formatCents(payableBase, currency)}</span>
           </div>

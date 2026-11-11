@@ -20,7 +20,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
 
   if (inv.status === "CANCELLED") {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+      <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-sm text-seal">
         Die Rechnung {inv.number} ist storniert — eine Teilgutschrift ist nicht mehr möglich.
       </div>
     );
@@ -28,7 +28,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
 
   if (inv.status === "DRAFT") {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+      <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-sm text-seal">
         Eine Teilgutschrift ist erst nach dem Festschreiben möglich.
       </div>
     );
@@ -55,7 +55,7 @@ export default async function TeilgutschriftPage({ params }: { params: Promise<{
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link href={`/rechnungen/${id}`} className="text-sm text-slate-500 hover:text-slate-800">
+        <Link href={`/rechnungen/${id}`} className="text-sm text-ink-muted hover:text-ink">
           ← Rechnung {inv.number}
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Teilgutschrift</h1>

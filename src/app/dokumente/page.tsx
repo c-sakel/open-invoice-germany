@@ -174,14 +174,14 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         title="Dokumente"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/dokumente/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/dokumente/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
             Neues Dokument
           </Link>
         }
       />
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">Angebote, Auftragsbestätigungen und Proforma-Rechnungen — keine Steuerbelege; jederzeit in eine Rechnung umwandelbar.</p>
-        <Link href={showArchived ? "/dokumente" : "/dokumente?archiviert=1"} className="text-sm font-medium text-indigo-600 hover:underline">
+        <p className="text-sm text-ink-muted">Angebote, Auftragsbestätigungen und Proforma-Rechnungen — keine Steuerbelege; jederzeit in eine Rechnung umwandelbar.</p>
+        <Link href={showArchived ? "/dokumente" : "/dokumente?archiviert=1"} className="text-sm font-medium text-pen hover:underline">
           {showArchived ? "Archivierte ausblenden" : "Archivierte anzeigen"}
         </Link>
       </div>
@@ -193,16 +193,16 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
       <ListHeadline items={headlineItems} />
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+        <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-ink-muted">
           Keine Dokumente gefunden.{" "}
-          <Link href="/dokumente/neu" className="font-medium text-indigo-600 hover:underline">
+          <Link href="/dokumente/neu" className="font-medium text-pen hover:underline">
             Lege dein erstes Angebot an.
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Art</th>
@@ -212,7 +212,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-rule">
               {rows.map((d) => {
                 const actions = availableActions({
                   kind: "QUOTE",
@@ -234,9 +234,9 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                   billingFull: billingState === "FULL",
                 });
                 return (
-                  <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
+                  <tr key={d.id} className={`hover:bg-paper ${d.archivedAt ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
-                      <Link href={detailHref(d.id)} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={detailHref(d.id)} className="font-medium text-pen hover:underline">
                         {d.number ?? "—"}
                       </Link>
                       {(tagsByDocId.get(d.id) ?? []).length > 0 && (
@@ -245,8 +245,8 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{KIND_LABEL[d.kind] ?? d.kind}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.customerName}</td>
+                    <td className="px-4 py-3 text-ink-soft">{KIND_LABEL[d.kind] ?? d.kind}</td>
+                    <td className="px-4 py-3 text-ink-soft">{d.customerName}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={d.effectiveStatus} />
                       {/* Fix-Welle S1: ohne verfuegbaren Index (Obergrenze ueberschritten)
@@ -255,7 +255,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
                          Angebote faelschlich "Nicht berechnet" zeigen. Ohne Index ganz
                          ausblenden (die Tabs verschwinden bereits, siehe StatusTabValues). */}
                       {d.kind !== "PROFORMA" && index.available && <BillingStateBadge state={billingState} />}
-                      {d.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
+                      {d.archivedAt && <span className="ml-2 text-xs text-ink-muted">archiviert</span>}
                     </td>
                     <td className="tabular px-4 py-3 text-right font-medium">{formatCents(d.grossTotalCents, d.currency)}</td>
                     <td className="px-4 py-3 text-right">
