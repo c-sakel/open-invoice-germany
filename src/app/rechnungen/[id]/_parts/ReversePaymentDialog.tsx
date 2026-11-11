@@ -29,6 +29,12 @@ export function ReversePaymentDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function openDialog() {
+    // Rest kann sich durch frueher gebuchte Teilkorrekturen geaendert haben.
+    setAmount((restCents / 100).toFixed(2).replace(".", ","));
+    setOpen(true);
+  }
+
   function close() {
     setOpen(false);
     setError(null);
@@ -63,13 +69,14 @@ export function ReversePaymentDialog({
       return;
     }
     setBusy(false);
+    setReason("");
     close();
     router.refresh();
   }
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="text-xs text-indigo-600 hover:underline">
+      <button type="button" onClick={openDialog} className="text-xs text-indigo-600 hover:underline">
         Korrigieren
       </button>
       <RowPaymentDialog open={open} onClose={close} title="Zahlung korrigieren">

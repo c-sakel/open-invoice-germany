@@ -152,6 +152,19 @@ describe("reversePayment", () => {
     const d = await dbInternal.webhookDelivery.findMany({ where: { endpointId: ep.id, event: "payment.reversed" } });
     expect(d).toHaveLength(1);
     expect(d[0].objectId).toBe(reversal.id);
+    const payload = JSON.parse(d[0].dataJson) as Record<string, unknown>;
+    expect(payload).toMatchObject({ kind: "REVERSAL", reversesPaymentId: p.id, reason: "Fehlbuchung", amountCents: -11900 });
+  });
+
+  it("Belegkette kennzeichnet Gegenbuchungen", async () => {
+    const id = await invoice();
+    const p = await pay(id, 11900);
+    await reversePayment(p.id, { reason: "Fehlbuchung" }, { actor: "t", orgId, now: LATER });
+    const { buildDocumentChain } = await import("@/domain/document/chain");
+    const { root } = await buildDocumentChain(orgId, "INVOICE", id);
+    const labels = root.children.filter((c) => c.type === "PAYMENT").map((c) => c.label);
+    expect(labels.some((l) => l.startsWith("Gegenbuchung"))).toBe(true);
+    expect(labels.some((l) => l.startsWith("Zahlung"))).toBe(true);
   });
 
   it("Mahnwesen: Rechnung ist nach voller Gegenbuchung wieder Mahnkandidat", async () => {

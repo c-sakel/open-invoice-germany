@@ -75,7 +75,7 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
         "Ohne amountCents wird der noch nicht gegengebuchte Rest zurueckgebucht. Der Grund ist Pflicht (mind. 3 Zeichen).",
       inputSchema: {
         paymentId: z.string().describe("ID der zu korrigierenden Zahlung"),
-        amountCents: z.number().optional().describe("Betrag der Gegenbuchung in Cent (positiv); Default: noch nicht gegengebuchter Rest"),
+        amountCents: z.number().int().positive().optional().describe("Betrag der Gegenbuchung in Cent (positiv); Default: noch nicht gegengebuchter Rest"),
         reason: z.string().describe("Begruendung der Korrektur (Pflicht)"),
       },
     },
@@ -86,7 +86,8 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
         const result = await reversePayment(args.paymentId, input, { actor: "mcp", orgId: org.id, createdBy: "mcp" });
                 const skontoNote = result.skontoReversal ? ` Skontobuchung ${formatCents(-result.skontoReversal.amountCents)} mitgebucht.` : "";
         return ctx.ok(
-          `Gegenbuchung ${formatCents(-result.reversal.amountCents)} erfasst (ID ${result.reversal.id}). Status: ${result.invoiceStatus} · gebucht: ${formatCents(result.paidAmountCents)}.${skontoNote}`,
+          `Gegenbuchung ${formatCents(-result.reversal.amountCents)} erfasst (ID ${result.reversal.id}). ` +
+            `Status: ${result.invoiceStatus} · gebucht: ${formatCents(result.paidAmountCents)}.${skontoNote}`,
         );
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
