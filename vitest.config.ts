@@ -1,5 +1,7 @@
 import { configDefaults, defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
+import path from "node:path";
 
 export default defineConfig({
   test: {
@@ -12,6 +14,8 @@ export default defineConfig({
     env: {
       // Separate Test-DB (löst relativ zum Schema-Verzeichnis auf -> prisma/test.db)
       DATABASE_URL: "file:./test.db",
+      // Phase 16a: Belegarchiv der Tests nie unter ./data/archive ablegen.
+      ARCHIVE_DIR: path.join(os.tmpdir(), "oig-test-archive"),
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell
     fileParallelism: false,

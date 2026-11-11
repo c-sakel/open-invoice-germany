@@ -356,7 +356,8 @@ describe("GET/PUT /api/notification-settings", () => {
     );
     expect(putRes.status).toBe(200);
     const putJson = (await putRes.json()) as { settings: { enabledTypes: string[]; emailDigest: boolean } };
-    expect(putJson.settings.enabledTypes).toEqual(["INVOICE_OVERDUE"]);
+    // Phase 16a: Pflicht-Alarme sind immer enthalten und nicht abwaehlbar.
+    expect(putJson.settings.enabledTypes).toEqual(["INVOICE_OVERDUE", "ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN"]);
     expect(putJson.settings.emailDigest).toBe(true);
   });
 

@@ -123,6 +123,18 @@ function assertDunningUpdateAllowed(data: unknown): void {
   if (badKeys.length > 0) throw new DunningImmutabilityError(badKeys);
 }
 
+/**
+ * Phase 16a: `ArchivedDocument` ist write-once (GoBD-Belegarchiv). Zeilen entstehen
+ * ausschliesslich in `src/domain/invoice/archive.ts` per `create` auf dem Transaktions-
+ * Client; ueber den geschuetzten `prisma`-Client sind update/upsert/delete IMMER verboten.
+ */
+class ArchivedDocumentImmutabilityError extends Error {
+  constructor() {
+    super("GoBD: Archivierte Belege (ArchivedDocument) sind write-once und koennen nicht geaendert oder geloescht werden.");
+    this.name = "ArchivedDocumentImmutabilityError";
+  }
+}
+
 export const prisma = base.$extends({
   query: {
     invoice: {
@@ -177,6 +189,26 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new FinalInvoiceDeductionImmutabilityError();
+      },
+    },
+    archivedDocument: {
+      async update() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async updateMany() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async upsert() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async delete() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async deleteMany() {
+        throw new ArchivedDocumentImmutabilityError();
       },
     },
     dunning: {

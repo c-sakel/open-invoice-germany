@@ -12,12 +12,15 @@
  * wenn ihr Typ deaktiviert ist (Selbstheilung inklusive, wie beim Scheduler-Job).
  */
 import { createNotification } from "@/domain/notifications/create";
-import { loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
+import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
 async function safeNotify(orgId: string, type: NotificationType, fn: () => Promise<unknown>): Promise<void> {
   try {
-    const settings = await loadNotificationSettings(orgId);
-    if (!settings.enabledTypes.includes(type)) return;
+    // Pflicht-Alarme (Phase 16a) umgehen den Einstellungsfilter.
+    if (!isMandatoryNotificationType(type)) {
+      const settings = await loadNotificationSettings(orgId);
+      if (!settings.enabledTypes.includes(type)) return;
+    }
     await fn();
   } catch (e) {
     console.error("notifications hook: Erzeugen fehlgeschlagen", e);

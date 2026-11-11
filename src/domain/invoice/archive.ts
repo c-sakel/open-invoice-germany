@@ -80,6 +80,8 @@ interface RenderedFile {
   path: string;
   sha256: string;
   bytes: Buffer;
+  /** true, wenn dieser Aufruf die Datei neu angelegt hat (sonst lag sie schon vor). */
+  created: boolean;
 }
 
 async function resolveSource(finalizedAt: Date | null, requested: ArchiveSource): Promise<string> {
@@ -89,15 +91,15 @@ async function resolveSource(finalizedAt: Date | null, requested: ArchiveSource)
 }
 
 /**
- * Loescht die eigenen Dateien des Verlierers, soweit der Satz des Gewinners sie nicht
- * referenziert (CII/UBL sind deterministisch und liegen oft unter demselben Pfad).
- * Ohne Gewinner-Satz wird nichts geloescht: ein paralleler Schreiber koennte denselben
- * Pfad gerade committen — eine verwaiste Datei ist harmlos, eine fehlende nicht.
+ * Raeumt die Dateien dieses Aufrufs auf: geloescht wird nur, was dieser Aufruf selbst neu
+ * angelegt hat (`created`) und was der gespeicherte Satz (falls vorhanden) nicht
+ * referenziert. CII/UBL sind deterministisch und liegen beim Gewinner oft unter demselben
+ * Pfad — eine bereits vorhandene Datei gehoert dann einem anderen Aufruf.
  */
-async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet): Promise<void> {
-  const kept = new Set(ARCHIVE_KINDS.map((k) => keep[k].path));
+async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet | null): Promise<void> {
+  const kept = new Set(keep ? ARCHIVE_KINDS.map((k) => keep[k].path) : []);
   for (const f of files) {
-    if (kept.has(f.path)) continue;
+    if (!f.created || kept.has(f.path)) continue;
     try {
       await removeArchiveFile(f.path);
     } catch (e) {
@@ -106,44 +108,63 @@ async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet): Pro
   }
 }
 
+async function loadArchivedSetSafe(invoiceId: string): Promise<ArchivedSet | null> {
+  try {
+    return await loadArchivedSet(invoiceId);
+  } catch {
+    return null;
+  }
+}
+
+/** Fehlerpfad: Benachrichtigung `ARCHIVE_FAILED`, eigene verwaiste Dateien entfernen. */
+async function failArchive(orgId: string, invoiceId: string, files: RenderedFile[], e: unknown, now: Date): Promise<never> {
+  await removeUnreferenced(files, await loadArchivedSetSafe(invoiceId));
+  await onArchiveFailed(orgId, { invoiceId, message: e instanceof Error ? e.message : String(e), at: now });
+  throw e;
+}
+
 /**
- * Stellt sicher, dass die festgeschriebene Rechnung archiviert ist, und liefert den Satz.
- * Wirft `NotFoundError` (unbekannte ID), `InvalidOperationError` (Entwurf); Render- oder
- * Ablagefehler benachrichtigen (`ARCHIVE_FAILED`) und werden weitergereicht.
+ * Stellt sicher, dass die festgeschriebene Rechnung der Organisation archiviert ist, und
+ * liefert den Satz. Wirft `NotFoundError` (unbekannte ID oder fremde Organisation),
+ * `InvalidOperationError` (Entwurf); Render-, Ablage- und Transaktionsfehler benachrichtigen
+ * (`ARCHIVE_FAILED`) und werden weitergereicht.
  */
-export async function ensureInvoiceArchive(invoiceId: string, source: ArchiveSource, now: Date = new Date()): Promise<ArchivedSet> {
+export async function ensureInvoiceArchive(orgId: string, invoiceId: string, source: ArchiveSource, now: Date = new Date()): Promise<ArchivedSet> {
+  const ref = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true, status: true, number: true } });
+  if (!ref || ref.orgId !== orgId) throw new NotFoundError("Rechnung nicht gefunden.");
+  if (ref.status === "DRAFT" || !ref.number) {
+    throw new InvalidOperationError("Entwuerfe werden nicht archiviert. Zuerst finalisieren.");
+  }
+
   const existing = await loadArchivedSet(invoiceId);
   if (existing) return existing;
 
   const loaded = await loadEInvoiceData(invoiceId);
   if (!loaded) throw new NotFoundError("Rechnung nicht gefunden.");
   const { invoice, data } = loaded;
-  if (invoice.status === "DRAFT" || !invoice.number) {
-    throw new InvalidOperationError("Entwuerfe werden nicht archiviert. Zuerst finalisieren.");
-  }
-  const number = invoice.number;
+  const number = invoice.number ?? ref.number;
 
-  let files: RenderedFile[];
+  const files: RenderedFile[] = [];
   try {
-    const theme = await loadPdfTheme(invoice.orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
+    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
     const cii = buildFacturXCII(data);
     const ubl = buildXRechnungUBL(data);
     const pdf = await renderZugferdPdf(data, theme, cii);
-    const dir = `${invoice.orgId}/${invoice.issueDate.getUTCFullYear()}`;
+    const dir = `${orgId}/${invoice.issueDate.getUTCFullYear()}`;
     const stem = safeFileStem(number);
     const parts: Array<[ArchiveKind, Buffer]> = [
       ["PDF", pdf],
       ["CII", Buffer.from(cii, "utf8")],
       ["UBL", Buffer.from(ubl, "utf8")],
     ];
-    files = parts.map(([kind, bytes]) => {
+    for (const [kind, bytes] of parts) {
       const sha256 = sha256Hex(bytes);
-      return { kind, bytes, sha256, path: `${dir}/${stem}-${sha256.slice(0, 12)}.${EXTENSIONS[kind]}` };
-    });
-    for (const f of files) await writeArchiveFile(f.path, f.bytes);
+      const file: RenderedFile = { kind, bytes, sha256, path: `${dir}/${stem}-${sha256.slice(0, 12)}.${EXTENSIONS[kind]}`, created: false };
+      files.push(file);
+      file.created = await writeArchiveFile(file.path, bytes);
+    }
   } catch (e) {
-    await onArchiveFailed(invoice.orgId, { invoiceId, message: e instanceof Error ? e.message : String(e), at: now });
-    throw e;
+    return failArchive(orgId, invoiceId, files, e, now);
   }
 
   const effectiveSource = await resolveSource(invoice.finalizedAt, source);
@@ -161,7 +182,7 @@ export async function ensureInvoiceArchive(invoiceId: string, source: ArchiveSou
         }
         await tx.invoice.updateMany({ where: { id: invoiceId, xmlHash: null }, data: { xmlHash } });
         await appendChangeLog(tx, {
-          orgId: invoice.orgId,
+          orgId,
           entity: "INVOICE",
           entityId: invoiceId,
           action: "ARCHIVE",
@@ -176,14 +197,14 @@ export async function ensureInvoiceArchive(invoiceId: string, source: ArchiveSou
         UBL: { path: byKind.UBL.path, sha256: byKind.UBL.sha256, source: effectiveSource, createdAt: now },
       };
     } catch (e) {
-      if (!isUniqueConflict(e)) throw e;
-      const winner = await loadArchivedSet(invoiceId);
+      if (!isUniqueConflict(e)) return failArchive(orgId, invoiceId, files, e, now);
+      const winner = await loadArchivedSetSafe(invoiceId);
       if (winner) {
         await removeUnreferenced(files, winner);
         return winner;
       }
       // Kettenkonflikt mit einem anderen ChangeLog-Schreiber, noch kein Satz: einmal wiederholen.
-      if (attempt >= 1) throw e;
+      if (attempt >= 1) return failArchive(orgId, invoiceId, files, e, now);
     }
   }
 }

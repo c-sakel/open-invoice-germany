@@ -5,8 +5,9 @@
  * ein Umzug des Verzeichnisses bestehende Zeilen nicht invalidiert. `ARCHIVE_DIR` wird bei
  * jedem Aufruf frisch gelesen (Tests setzen ein temporaeres Verzeichnis).
  *
- * Schreiben ist atomar: Temp-Datei im Zielordner, danach `rename` — ein Leser sieht nie eine
- * halb geschriebene Datei, und ein Abbruch hinterlaesst hoechstens eine `.tmp`-Datei.
+ * Schreiben ist atomar und write-once: Temp-Datei im Zielordner, danach `link` auf den
+ * Zielnamen — ein Leser sieht nie eine halb geschriebene Datei, bestehende Dateien werden
+ * nie ueberschrieben.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -23,7 +24,7 @@ function resolveInsideRoot(relPath: string): string {
   if (relPath.length === 0 || path.isAbsolute(relPath)) throw new Error(`Ungueltiger Archivpfad: ${relPath}`);
   const abs = path.resolve(root, ...relPath.split("/"));
   const rel = path.relative(root, abs);
-  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`Archivpfad ausserhalb des Archivs: ${relPath}`);
+  if (rel === "" || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) throw new Error(`Archivpfad ausserhalb des Archivs: ${relPath}`);
   return abs;
 }
 
@@ -31,17 +32,30 @@ export function sha256Hex(b: Buffer): string {
   return createHash("sha256").update(b).digest("hex");
 }
 
-export async function writeArchiveFile(relPath: string, bytes: Buffer): Promise<void> {
+/**
+ * Schreibt eine Archivdatei write-once: Temp-Datei im Zielordner, dann `link` auf den
+ * Zielnamen (schlaegt fehl, wenn er existiert — nie ueberschreiben). Existiert die Datei
+ * bereits mit identischem Inhalt (deterministisches CII/UBL eines parallelen Aufrufs), ist
+ * das in Ordnung; abweichender Inhalt wirft. Liefert `true`, wenn die Datei neu angelegt wurde.
+ */
+export async function writeArchiveFile(relPath: string, bytes: Buffer): Promise<boolean> {
   const abs = resolveInsideRoot(relPath);
   const dir = path.dirname(abs);
   await fs.mkdir(dir, { recursive: true });
   const tmp = path.join(dir, `.${path.basename(abs)}.${randomBytes(6).toString("hex")}.tmp`);
   try {
     await fs.writeFile(tmp, bytes, { flag: "wx" });
-    await fs.rename(tmp, abs);
-  } catch (e) {
+    try {
+      await fs.link(tmp, abs);
+      return true;
+    } catch (e) {
+      if (!(e instanceof Error && (e as NodeJS.ErrnoException).code === "EEXIST")) throw e;
+      const existing = await fs.readFile(abs);
+      if (sha256Hex(existing) !== sha256Hex(bytes)) throw new Error(`Archivdatei existiert bereits mit anderem Inhalt: ${relPath}`);
+      return false;
+    }
+  } finally {
     await fs.rm(tmp, { force: true });
-    throw e;
   }
 }
 

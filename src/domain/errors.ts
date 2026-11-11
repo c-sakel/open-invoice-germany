@@ -1,3 +1,5 @@
+import type { ArchiveKind } from "@/domain/invoice/archive";
+
 /**
  * Gemeinsame Domain-Fehlerklasse fuer "nicht gefunden" (mandantengeprueft oder
  * schlicht unbekannte ID). Ersetzt generische `new Error("... nicht gefunden")`-Wuerfe
@@ -62,8 +64,8 @@ export class ValidationError extends Error {
 export class ArchiveTamperedError extends Error {
   readonly status = 500;
   readonly invoiceId: string;
-  readonly kind: string;
-  constructor(invoiceId: string, kind: string, reason: "missing" | "hash-mismatch") {
+  readonly kind: ArchiveKind;
+  constructor(invoiceId: string, kind: ArchiveKind, reason: "missing" | "hash-mismatch") {
     super(
       reason === "missing"
         ? `Archivierte Belegdatei (${kind}) fehlt — Beleg wird nicht neu erzeugt.`

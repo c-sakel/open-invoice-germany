@@ -43,6 +43,19 @@ describe("archive storage", () => {
     expect(files).toContain(path.join("org1", "2099", "RE-1-abc.pdf"));
   });
 
+  it("write-once: bestehende Datei wird nie ueberschrieben", async () => {
+    expect(await writeArchiveFile("o/2099/a.xml", Buffer.from("eins"))).toBe(true);
+    expect(await writeArchiveFile("o/2099/a.xml", Buffer.from("eins"))).toBe(false);
+    await expect(writeArchiveFile("o/2099/a.xml", Buffer.from("zwei"))).rejects.toThrow(/anderem Inhalt/);
+    expect((await readArchiveFile("o/2099/a.xml"))?.toString()).toBe("eins");
+    expect((await listRecursive(tmpDir)).some((f) => f.endsWith(".tmp"))).toBe(false);
+  });
+
+  it("Namen, die nur mit .. beginnen, sind innerhalb des Archivs erlaubt", async () => {
+    expect(await writeArchiveFile("..x", Buffer.from("ok"))).toBe(true);
+    expect((await readArchiveFile("..x"))?.toString()).toBe("ok");
+  });
+
   it("fehlende Datei liefert null", async () => {
     expect(await readArchiveFile("org1/2099/fehlt.pdf")).toBeNull();
   });
