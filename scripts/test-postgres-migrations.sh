@@ -1144,6 +1144,11 @@ INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","n
   VALUES ('rec28','org28','cust28','Abo28',NOW(),NOW(),NOW());
 INSERT INTO "RecurringInvoiceLine" ("id","recurringInvoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate")
   VALUES ('rline28','rec28',1,'Abopos',1000,1000,19);
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org28b','Bestand Achtundzwanzig B GmbH','Weg 33','99933','Bestadt',NOW());
+INSERT INTO "NotificationSettings" ("id","orgId","enabledTypesJson","updatedAt")
+  VALUES ('ns28','org28','["INVOICE_OVERDUE","QUOTE_EXPIRING"]',NOW()),
+         ('ns28b','org28b','[]',NOW());
 SQL
 npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
   || fail "Phase-16e-Migration ist auf der Bestands-DB fehlgeschlagen"
@@ -1155,8 +1160,10 @@ LINEVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coale
 [ "$LINEVAL" = "<null>" ] || fail "InvoiceLine.ossCategory abweichend ('$LINEVAL'), erwartet <null>"
 SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(q.\"ossCategory\",'<null>') || '|' || coalesce(r.\"ossCategory\",'<null>') from \"QuoteLine\" q, \"RecurringInvoiceLine\" r where q.id='qline28' and r.id='rline28'")
 [ "$SRCVAL" = "<null>|<null>" ] || fail "QuoteLine/RecurringInvoiceLine.ossCategory abweichend ('$SRCVAL'), erwartet <null>|<null>"
+NSVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select string_agg(\"enabledTypesJson\", ' ' order by id) from \"NotificationSettings\" where id in ('ns28','ns28b')")
+[ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD"] ["OSS_THRESHOLD"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD ergaenzt ('$NSVAL')"
 COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT28" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
-echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, 53 Tabellen"
+echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, OSS_THRESHOLD in NotificationSettings ergaenzt, 53 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"
