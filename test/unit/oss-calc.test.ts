@@ -173,6 +173,7 @@ describe("aggregateOssYear", () => {
     const p = (n: number) => aggregateOssYear([doc({ netTotalEurCents: n })], none, "ALL_EU_B2C", 2116).percent;
     expect(p(950000)).toBe(95);
     expect(p(1500000)).toBe(150);
+    expect(p(290000)).toBe(29);
     expect(p(-5)).toBe(0);
   });
 });

@@ -674,6 +674,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               taxRatePercent: TaxRate.optional(),
               discountPercent: z.number().min(0).max(100).optional(),
               discountAmount: z.number().min(0).optional(),
+              ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie der Position (nur Zaehlmodus BY_PRODUCT); ohne Angabe aus dem Produkt"),
             }),
           )
           .optional(),

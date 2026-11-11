@@ -161,7 +161,7 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         </div>
         {ossMode === "BY_PRODUCT" && (
           <p className="text-sm text-ink-soft">
-            Gezählt werden nur Positionen, deren Produkt oder Position eine OSS-Kategorie trägt. Neue Produkte haben „Keine“ — Kategorien in den Produkten pflegen. Rechnungen per API ohne Produkt brauchen das Feld ossCategory je Position.
+            Gezählt werden nur Positionen, deren Produkt oder Position eine OSS-Kategorie trägt. Neue Produkte haben „Keine“ — Kategorien in den Produkten pflegen. Rechnungen per API ohne Produkt brauchen das Feld ossCategory je Position. Anteils-Teilrechnungen zählen hier nie, Abschläge erst mit der Schlussrechnung, Belege von vor Phase 16e gar nicht — für das Einführungsjahr und das Vorjahr gilt die Standard-Zählweise.
           </p>
         )}
         <p className="text-xs text-ink-muted">{OSS_NOTICE}</p>

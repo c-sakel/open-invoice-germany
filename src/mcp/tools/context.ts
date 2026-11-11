@@ -12,6 +12,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { roundHalfUp } from "@/lib/money";
 import { TaxRate } from "@/schemas";
+import { OssCategorySchema, type OssCategory } from "@/schemas/oss";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
 import type { MailProvider } from "@/lib/mail/provider";
 
@@ -153,6 +154,7 @@ export async function buildSimpleLines(
     taxRatePercent?: number;
     discountPercent?: number;
     discountAmount?: number;
+    ossCategory?: OssCategory;
   }[],
 ) {
   const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
@@ -161,16 +163,23 @@ export async function buildSimpleLines(
     let unit = l.unit;
     let taxRate = l.taxRatePercent;
     let description = l.description;
-    if (unitPriceEuro == null && l.productName) {
+    let productId: string | undefined;
+    if (l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-      if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
-      unitPriceEuro = p.netPriceCents / 100;
-      unit = unit ?? p.unit;
-      taxRate = taxRate ?? p.taxRate;
-      description = description || p.name;
+      // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie create_invoice).
+      if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt
+      if (p && unitPriceEuro == null) {
+        unitPriceEuro = p.netPriceCents / 100;
+        unit = unit ?? p.unit;
+        taxRate = taxRate ?? p.taxRate;
+        description = description || p.name;
+      }
     }
     if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
     return {
+      productId,
+      ossCategory: l.ossCategory,
       description,
       quantityMilli: qtyToMilli(l.quantity),
       unit: unit ?? "C62",
@@ -200,6 +209,7 @@ export async function buildEditorLines(
     taxRatePercent?: number;
     discountPercent?: number;
     discountAmount?: number;
+    ossCategory?: OssCategory;
   }[],
 ) {
   const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
@@ -224,18 +234,25 @@ export async function buildEditorLines(
     let unit = l.unit;
     let taxRate = l.taxRatePercent;
     let description = l.description;
-    if (unitPriceEuro == null && l.productName) {
+    let productId: string | undefined;
+    if (l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-      if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
-      unitPriceEuro = p.netPriceCents / 100;
-      unit = unit ?? p.unit;
-      taxRate = taxRate ?? p.taxRate;
-      description = description || p.name;
+      // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie create_invoice).
+      if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt
+      if (p && unitPriceEuro == null) {
+        unitPriceEuro = p.netPriceCents / 100;
+        unit = unit ?? p.unit;
+        taxRate = taxRate ?? p.taxRate;
+        description = description || p.name;
+      }
     }
     if (l.quantity == null) throw new ToolError(`Position ${idx + 1} (ITEM) braucht "quantity".`);
     if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
     return {
       lineType: "ITEM" as const,
+      productId,
+      ossCategory: l.ossCategory,
       description,
       descriptionLong: l.descriptionLong,
       articleNumber: l.articleNumber,
@@ -261,6 +278,7 @@ export const docLineSchema = z.object({
   taxRatePercent: TaxRate.optional(),
   discountPercent: z.number().min(0).max(100).optional().describe("Positionsrabatt in Prozent"),
   discountAmount: z.number().min(0).optional().describe("Zusätzlicher Festbetragsrabatt je Position in Euro"),
+  ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie der Position (nur Zaehlmodus BY_PRODUCT); ohne Angabe aus dem Produkt"),
 });
 
 /**

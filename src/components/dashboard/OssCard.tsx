@@ -14,12 +14,11 @@ const LEVEL_TONE: Record<OssThreshold["level"], string> = {
 export function OssCard({ oss }: { oss: OssThreshold }) {
   const { current, previous } = oss;
   const skipped = current.skippedWithoutEur + previous.skippedWithoutEur;
-  const percent = Math.floor((current.netEurCents / oss.thresholdCents) * 100);
   return (
     <Card title="EU-Fernverkäufe / OSS-Schwelle">
       <ProgressBar valueCents={current.netEurCents} totalCents={oss.thresholdCents} label="Anteil an der OSS-Schwelle" />
       <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-        <span className={`tabular font-semibold ${LEVEL_TONE[oss.level]}`}>{percent} %</span>
+        <span className={`tabular font-semibold ${LEVEL_TONE[oss.level]}`}>{current.percent} %</span>
         <span className="tabular text-ink-muted">
           Vorjahr: {formatCents(previous.netEurCents, "EUR")}
         </span>

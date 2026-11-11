@@ -34,6 +34,12 @@ describe("OssCard", () => {
     expect(t).not.toContain("Schwelle im Vorjahr überschritten");
   });
 
+  it("zeigt die Prozentzahl aus der Domain ohne Float-Rechnung (2.900 EUR = 29 %)", () => {
+    const t = text(renderToStaticMarkup(<OssCard oss={fixture({ level: "OK" }, { netEurCents: 290000, percent: 29 })} />));
+    expect(t).toContain("29 %");
+    expect(t).not.toContain("28 %");
+  });
+
   it("weist auf nicht gezaehlte Fremdwaehrungsbelege hin", () => {
     const t = text(renderToStaticMarkup(<OssCard oss={fixture({}, { skippedWithoutEur: 2 })} />));
     expect(t).toContain("2 Fremdwährungsbelege ohne EUR-Betrag nicht gezählt");
