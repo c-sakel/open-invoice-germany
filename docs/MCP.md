@@ -71,7 +71,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ## 3. Verfügbare Tools
 
-101 Tools, registriert in `src/mcp/server.ts` über 16 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
+105 Tools, registriert in `src/mcp/server.ts` über 16 Bereichsmodule unter `src/mcp/tools/` (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md) für die Modulstruktur). Alle Tools rufen dieselben Domain-Funktionen und Zod-Schemas wie UI/API auf — keine Bypass-Pfade (§55).
 
 ### System
 
@@ -80,6 +80,10 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `get_status` | Zustand der aktiven Organisation (Unternehmen eingerichtet? Kunden-/Produkt-/Rechnungszähler) | „Wie ist der Status meiner Instanz?" |
 | `list_api_requests` | Protokollierte REST-API-Anfragen auflisten (Phase 12d) — Zeit, Methode, Pfad, Status, Dauer, Schlüssel; standardmäßig leer, bis „Einstellungen → API → Anfrageprotokoll" eingeschaltet ist | „Zeig mir die letzten fehlgeschlagenen API-Aufrufe." |
 | `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
+| `verify_audit_chain` | Hash-Kette des Änderungsprotokolls lückenlos prüfen, Prüfung protokollieren, bei Bruch alarmieren (Phase 16a) | „Prüfe die Hash-Kette des Änderungsprotokolls." |
+| `create_audit_export` | Prüfer-Export nach § 147 Abs. 6 AO (ZIP: CSV-Tabellen, `index.xml`, DTD, Kettenprüfung, archivierte Belege PDF/XML) für einen Zeitraum von höchstens drei Jahren in `exports/` schreiben | „Erzeuge den Prüfer-Export für 2025." |
+| `get_invoice_archive` | Archivstand einer Rechnung (PDF/CII/UBL mit SHA-256, Quelle, Zeitpunkt); archiviert nicht selbst | „Ist die Rechnung RE-50001 archiviert?" |
+| `reverse_payment` | Zahlung per Gegenbuchung korrigieren (negative Zahlungszeile mit Begründung; Zahlungen werden nie gelöscht) | „Storniere die Zahlung vom 03.03. bei RE-50001, falsch gebucht." |
 
 ### Kunden
 

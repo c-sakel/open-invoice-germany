@@ -13,7 +13,7 @@ import { onChainBroken } from "@/domain/notifications/hooks";
 export const CHAIN_VERIFY_BLOCK = 1000;
 export const AUDIT_JOB_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type ChainVerificationTrigger = "UI" | "API" | "MCP" | "SCHEDULER" | "CLI";
+export type ChainVerificationTrigger = "UI" | "API" | "MCP" | "SCHEDULER" | "CLI" | "EXPORT";
 
 export interface ChainVerificationResult {
   valid: boolean;
