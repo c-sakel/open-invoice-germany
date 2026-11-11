@@ -119,4 +119,22 @@ describe("LayoutDesigner", () => {
     const body = JSON.parse((fetchMock.mock.calls[0] as [string, { body: string }])[1].body) as { config: LayoutDesignConfig };
     expect(body.config).toEqual(presetConfig("klassik"));
   });
+
+  it("fragt bei ungespeicherten Aenderungen vor „Aus Vorlage“ nach", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const showModal = vi.fn();
+    HTMLDialogElement.prototype.showModal = showModal;
+    HTMLDialogElement.prototype.close = vi.fn();
+    mount();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Geaendert" } });
+    await act(async () => void vi.advanceTimersByTime(500));
+    fetchMock.mockClear();
+    fireEvent.change(screen.getByLabelText("Aus Vorlage"), { target: { value: "klassik" } });
+    expect(showModal).toHaveBeenCalledTimes(1);
+    await act(async () => void vi.advanceTimersByTime(500));
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Vorlage übernehmen", hidden: true }));
+    await act(async () => void vi.advanceTimersByTime(500));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

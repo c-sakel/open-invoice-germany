@@ -200,6 +200,15 @@ describe("Einfrieren", () => {
 });
 
 describe("Festes Layout und archivierte Designs", () => {
+  it("Mahnung mit unbekannter eingefrorener Version rendert ohne Fehler mit der aktuellen Zuordnung", async () => {
+    const design = await saveLayoutDesign(orgId, { name: "Fehlendes Ziel" }, "tester");
+    await assign({ DUNNING: design.ref });
+    const current = await loadPdfTheme(orgId, null, "DUNNING");
+    const missing = await loadPdfTheme(orgId, null, "DUNNING", { layoutVersionId: "cnichtvorhanden00000000000" });
+    expect(missing.layoutConfig).toEqual(current.layoutConfig);
+    await assign({});
+  });
+
   it("Mahnung ohne eingefrorene Version rendert nie mit einem spaeter zugeordneten Design", async () => {
     await assign({});
     const draft = await createDraftInvoice(orgId, invoiceInput(), { now: ISSUE });

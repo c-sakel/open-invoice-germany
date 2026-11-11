@@ -51,6 +51,8 @@ const control = "rounded-[var(--radius-control)] border border-rule-strong bg-sh
 export function LayoutDesigner({ design, initialConfig, presets, versions, drafts }: LayoutDesignerProps) {
   const router = useRouter();
   const archiveDialog = useRef<ConfirmDialogHandle>(null);
+  const presetDialog = useRef<ConfirmDialogHandle>(null);
+  const [pendingPreset, setPendingPreset] = useState<string | null>(null);
   const [name, setName] = useState(design?.name ?? "");
   const [baseLayoutId, setBaseLayoutId] = useState<LayoutId>(design?.baseLayoutId ?? "standard");
   const [config, setConfig] = useState<LayoutDesignConfig>(initialConfig);
@@ -85,6 +87,15 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
     const presetId = id as LayoutId;
     setBaseLayoutId(presetId);
     update(() => presetConfig(presetId));
+  }
+
+  function requestPreset(id: string) {
+    if (!dirty) {
+      applyPreset(id);
+      return;
+    }
+    setPendingPreset(id);
+    presetDialog.current?.open();
   }
 
   async function save() {
@@ -162,7 +173,7 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
             <select
               value=""
               onChange={(e) => {
-                if (e.target.value) applyPreset(e.target.value);
+                if (e.target.value) requestPreset(e.target.value);
               }}
               className={control}
             >
@@ -257,6 +268,17 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
         confirmLabel="Archivieren"
         tone="danger"
         onConfirm={() => void setArchived(true)}
+      />
+
+      <ConfirmDialog
+        ref={presetDialog}
+        title="Vorlage übernehmen?"
+        message="Die Vorlage ersetzt alle ungespeicherten Änderungen an diesem Design."
+        confirmLabel="Vorlage übernehmen"
+        onConfirm={() => {
+          if (pendingPreset) applyPreset(pendingPreset);
+          setPendingPreset(null);
+        }}
       />
     </div>
   );
