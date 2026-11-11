@@ -126,6 +126,10 @@ describe("contributionEurCents", () => {
     const c = doc({ type: "CREDIT_NOTE", correctsInvoiceId: "fehlt", lines: [line(-7000, "GOODS_DISTANCE")], netTotalCents: -7000 });
     expect(contributionEurCents(c, "BY_PRODUCT", none)).toBeNull();
   });
+  it("Gutschrift ohne Original in related zaehlt im ALL_EU_B2C den eigenen Betrag", () => {
+    const c = doc({ type: "CREDIT_NOTE", correctsInvoiceId: "fehlt", lines: [line(-7000, "GOODS_DISTANCE")], netTotalEurCents: -7000, netTotalCents: -7000 });
+    expect(contributionEurCents(c, "ALL_EU_B2C", none)).toBe(-7000);
+  });
   it("Original-ALL-Beitrag 0 -> 0", () => {
     const orig = doc({ netTotalEurCents: 0, netTotalCents: 0, lines: [] });
     const c = doc({ type: "CREDIT_NOTE", correctsInvoiceId: orig.id, netTotalEurCents: -5, netTotalCents: -5 });
