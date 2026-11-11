@@ -136,7 +136,7 @@ jobs:
           XML
           INSTALLER_JAR=$(find verapdf-installer -name "verapdf-izpack-installer-*.jar" | head -1)
           java -jar "$INSTALLER_JAR" verapdf-auto-install.xml
-      - name: PDF/A-3b pruefen (veraPDF, Profil 3b — Rechnung, Lieferschein, Mahnung)
+      - name: PDF/A-3b pruefen (veraPDF, Profil 3b — Rechnung, Lieferschein, Mahnung und Designs mit allen Schriften)
         run: /tmp/verapdf/verapdf -f 3b tmp/pdfa-samples/*.pdf
 
   # Die beiden Schemadateien sind bis auf die Provider-Zeile zeichengleich.
