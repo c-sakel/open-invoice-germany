@@ -16,7 +16,14 @@ jobs:
           cache: npm
       - run: npm install --no-audit --no-fund # nicht npm ci: saxon-js zieht plattformspezifische optionale Deps
       - run: npx prisma generate
-      - run: sudo apt-get update && sudo apt-get install -y libxml2-utils # xmllint fuer den Pruefer-Export-Test (index.xml gegen DTD)
+      # xmllint fuer den Pruefer-Export-Test (index.xml gegen DTD). Spiegel-Ausfaelle duerfen den Lauf nicht
+      # abbrechen: ohne xmllint ueberspringt sich der DTD-Test selbst (it.skipIf).
+      - run: |
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y -o Acquire::Retries=3 libxml2-utils && break
+            echo "apt-Versuch $i fehlgeschlagen"; sleep 15
+          done
+          command -v xmllint || echo "::warning::xmllint nicht installiert - DTD-Test wird uebersprungen"
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
