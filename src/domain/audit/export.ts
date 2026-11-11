@@ -162,8 +162,7 @@ const README = [
   "belege/<nr>.xml ist immer die archivierte XRechnung (UBL), auch bei ZUGFeRD-Belegen; deren",
   "CII steckt eingebettet im PDF, ihr SHA-256 steht in archiv.csv.",
   "",
-  "Die mitgelieferte DTD (gdpdu-01-09-2004.dtd) ist eine Nachbildung der GDPdU-Struktur und",
-  "nicht die amtliche Datei der Finanzverwaltung.",
+  "Die amtliche GDPdU-DTD (Version 01.09.2004) ist mitgeliefert (gdpdu-01-09-2004.dtd).",
   "",
 ].join("\r\n");
 

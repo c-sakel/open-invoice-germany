@@ -233,12 +233,12 @@ describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
     expect(bad.isError).toBe(true);
   });
 
-  it("liesmich.txt warnt vor Tabellenkalkulation und nennt die DTD-Nachbildung", async () => {
+  it("liesmich.txt warnt vor Tabellenkalkulation und nennt die amtliche DTD", async () => {
     const z = await unzipTo(await ExportV1(v1(adminToken, "?from=2013-01-01&to=2013-12-31"), ctx()));
     const text = z.read("liesmich.txt").toString("utf8");
     expect(text).toContain("Formelauswertung");
     expect(text).toContain("IDEA");
-    expect(text).toContain("Nachbildung");
+    expect(text).toContain("amtliche GDPdU-DTD (Version 01.09.2004)");
     expect(text).toContain("XRechnung (UBL)");
   });
 
