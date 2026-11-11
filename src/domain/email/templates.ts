@@ -14,7 +14,8 @@ export class TemplateNotFoundError extends Error {}
  *  den Dokumenttyp ohne jede Vorlage zurueckwerfen (ensureOrgEmailTemplates legt sie
  *  beim naechsten Aufruf zwar neu an, aber erst nach einem Zwischenzustand ohne Vorlage). */
 export class SystemTemplateProtectedError extends Error {}
-/** orgId/docType/name ist eindeutig (G6) — statt des rohen Prisma-P2002-Fehlertexts eine
+/** orgId/docType/language/name ist eindeutig (G6) — derselbe Name in einer anderen Sprache
+ *  ist kein Konflikt; statt des rohen Prisma-P2002-Fehlertexts eine
  *  fuer Anwender verstaendliche Meldung. */
 export class TemplateNameConflictError extends Error {}
 

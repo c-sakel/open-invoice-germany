@@ -246,7 +246,7 @@ model Quote {
   decisionNote             String?
   archivedAt               DateTime?
   createdAt                DateTime         @default(now())
-  language String @default("de") // Belegsprache (ISO-639-1): de | en
+  language                 String           @default("de") // Belegsprache (ISO-639-1): de | en
   updatedAt                DateTime         @updatedAt
 
   lines      QuoteLine[]
@@ -550,27 +550,27 @@ model Dunning {
   invoiceDueDate           DateTime? // Snapshot der Rechnungsfaelligkeit zum Erstellungszeitpunkt
   createdBy                String    @default("user") // user | scheduler | mcp | api
 
-  stageId String?
-  stage   DunningStage? @relation(fields: [stageId], references: [id])
+  stageId  String?
+  stage    DunningStage? @relation(fields: [stageId], references: [id])
+  language String        @default("de") // Belegsprache (ISO-639-1): de | en
 
   @@unique([invoiceId, stageId])
   @@index([invoiceId])
-  language String @default("de") // Belegsprache (ISO-639-1): de | en
 }
 
 /// Wiederkehrende Rechnung / Abo — Vorlage, aus der nach Plan reguläre Rechnungs-
 /// ENTWÜRFE erzeugt werden. Selbst KEIN Beleg (frei editierbar). Die erzeugten
 /// Invoices durchlaufen Festschreibung/Nummernkreis/Hash-Chain wie jede Rechnung.
 model RecurringInvoice {
-  id               String       @id @default(cuid())
+  id               String         @id @default(cuid())
   orgId            String
-  org              Organization @relation(fields: [orgId], references: [id])
+  org              Organization   @relation(fields: [orgId], references: [id])
   customerId       String
-  customer         Customer     @relation(fields: [customerId], references: [id])
+  customer         Customer       @relation(fields: [customerId], references: [id])
   title            String // interne Bezeichnung, z. B. "Wartungsvertrag Mustermann"
-  status           String       @default("ACTIVE") // ACTIVE | PAUSED | ENDED
-  interval         String       @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
-  intervalCount    Int          @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
+  status           String         @default("ACTIVE") // ACTIVE | PAUSED | ENDED
+  interval         String         @default("MONTHLY") // DAY | WEEKLY | MONTHLY | QUARTERLY | YEARLY
+  intervalCount    Int            @default(1) // alle N Intervalle (z. B. 2 = alle 2 Monate)
   anchorDay        Int? // fixer Tag im Monat (1..28) für MONTHLY/QUARTERLY/YEARLY
   startDate        DateTime
   nextRunDate      DateTime // Stichtag der nächsten Erzeugung
@@ -578,24 +578,24 @@ model RecurringInvoice {
   // Phase 8b (§43): harte Obergrenze der Laeufe — nach issuedCount >= maxRuns (nach dem
   // jeweiligen Lauf) wechselt das Abo auf ENDED, zusaetzlich/alternativ zu endDate.
   maxRuns          Int?
-  taxScheme        String       @default("REGULAR")
-  currency         String       @default("EUR")
-  paymentTermsDays Int          @default(14)
+  taxScheme        String         @default("REGULAR")
+  currency         String         @default("EUR")
+  paymentTermsDays Int            @default(14)
   notes            String?
-  autoFinalize     Boolean      @default(false) // true = erzeugte Rechnung sofort festschreiben
-  autoSend         Boolean      @default(false) // Phase 7, Task 1 — true = erzeugte Rechnung nach Festschreibung automatisch versenden
+  autoFinalize     Boolean        @default(false) // true = erzeugte Rechnung sofort festschreiben
+  autoSend         Boolean        @default(false) // Phase 7, Task 1 — true = erzeugte Rechnung nach Festschreibung automatisch versenden
   // Phase 8b (§43): Vorlage fuer den automatischen Versand (autoSend); NULL = weiterhin
   // die Standardvorlage INVOICE (prefillEmail-Default).
   emailTemplateId  String?
   emailTemplate    EmailTemplate? @relation(fields: [emailTemplateId], references: [id], onDelete: SetNull)
   // Phase 8b (§43): ueberstimmt je Abo den Settings-Default (recurringInsertPeriodText).
   // Default true = uebernimmt den bisherigen Settings-Default beim Anlegen (createRecurring).
-  showPeriodText   Boolean      @default(true)
+  showPeriodText   Boolean        @default(true)
   lastRunAt        DateTime?
-  issuedCount      Int          @default(0)
-  createdAt        DateTime     @default(now())
-  language String @default("de") // Belegsprache (ISO-639-1): de | en
-  updatedAt        DateTime     @updatedAt
+  issuedCount      Int            @default(0)
+  createdAt        DateTime       @default(now())
+  language         String         @default("de") // Belegsprache (ISO-639-1): de | en
+  updatedAt        DateTime       @updatedAt
 
   lines    RecurringInvoiceLine[]
   invoices Invoice[]
@@ -681,7 +681,7 @@ model DeliveryNote {
   deliveredAt         DateTime?
   archivedAt          DateTime?
   createdAt           DateTime         @default(now())
-  language String @default("de") // Belegsprache (ISO-639-1): de | en
+  language            String           @default("de") // Belegsprache (ISO-639-1): de | en
   updatedAt           DateTime         @updatedAt
 
   lines DeliveryNoteLine[]
@@ -722,7 +722,7 @@ model TextTemplate {
   body      String
   isDefault Boolean      @default(false)
   createdAt DateTime     @default(now())
-  language String @default("de") // Belegsprache (ISO-639-1): de | en
+  language  String       @default("de") // Belegsprache (ISO-639-1): de | en
   updatedAt DateTime     @updatedAt
 
   @@unique([orgId, docType, position, language, name])
@@ -741,7 +741,7 @@ model EmailTemplate {
   isDefault Boolean      @default(false)
   isSystem  Boolean      @default(false)
   createdAt DateTime     @default(now())
-  language String @default("de") // Belegsprache (ISO-639-1): de | en
+  language  String       @default("de") // Belegsprache (ISO-639-1): de | en
   updatedAt DateTime     @updatedAt
 
   dunningStages     DunningStage[]
@@ -1251,22 +1251,22 @@ model ApiIdempotency {
 /// KEIN Belegereignis -> geht NICHT in den ChangeLog (Audit-Ruling K5).
 /// `orgId` ohne Relationsfeld — wie ApiIdempotency/WebhookDelivery (Infrastrukturtabelle).
 model ApiRequestLog {
-  id             String   @id @default(cuid())
-  orgId          String
-  apiKeyId       String?
-  requestId      String
-  method         String
-  path           String
-  query          String?
-  status         Int
-  durationMs     Int
-  errorCode      String?
-  ip             String?
-  userAgent      String?
-  requestBody    String?
-  responseBody   String?
-  bodyTruncated  Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  id            String   @id @default(cuid())
+  orgId         String
+  apiKeyId      String?
+  requestId     String
+  method        String
+  path          String
+  query         String?
+  status        Int
+  durationMs    Int
+  errorCode     String?
+  ip            String?
+  userAgent     String?
+  requestBody   String?
+  responseBody  String?
+  bodyTruncated Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
   @@index([orgId, createdAt])
   @@index([orgId, status, createdAt])
@@ -1406,14 +1406,14 @@ model DocumentTag {
 /// Phase 16b: amtliche Umrechnungskurse (BMF-Monatskurs, EZB-Referenzkurs). Instanzweit, nicht je Org.
 /// rateMicros = Mikro-Einheiten der Fremdwaehrung je 1 EUR (§ 16 Abs. 6 UStG, Art. 230 MwStSystRL).
 model ExchangeRate {
-  id        String   @id @default(cuid())
-  source    String // BMF_MONTHLY | ECB_DAILY
-  currency  String
-  rateDate  DateTime
+  id         String   @id @default(cuid())
+  source     String // BMF_MONTHLY | ECB_DAILY
+  currency   String
+  rateDate   DateTime
   rateMicros Int
-  origin    String   @default("COMPUTED") // COMPUTED | IMPORTED | MANUAL
-  note      String?
-  fetchedAt DateTime @default(now())
+  origin     String   @default("COMPUTED") // COMPUTED | IMPORTED | MANUAL
+  note       String?
+  fetchedAt  DateTime @default(now())
 
   @@unique([source, currency, rateDate])
   @@index([currency, rateDate])

@@ -89,8 +89,11 @@ MAILSETTINGS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select to_regclass('\"MailSettings\"') is not null")
 [ "$MAILSETTINGS" = "t" ] || fail "Tabelle MailSettings fehlt nach deploy"
 IDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
+  "select count(*) from pg_indexes where indexname='EmailTemplate_orgId_docType_language_name_key'")
+[ "$IDX" = "1" ] || fail "Index EmailTemplate_orgId_docType_language_name_key fehlt nach deploy"
+OLDIDX1=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from pg_indexes where indexname='EmailTemplate_orgId_docType_name_key'")
-[ "$IDX" = "1" ] || fail "Index EmailTemplate_orgId_docType_name_key fehlt nach deploy"
+[ "$OLDIDX1" = "0" ] || fail "alter Index EmailTemplate_orgId_docType_name_key nach deploy noch vorhanden"
 # Phase 5: zwei Migrationen (phase5_partial_invoices + invoice_line_source_line_id) muessen
 # beide angewendet sein (FinalInvoiceDeduction-Tabelle + InvoiceLine.sourceLineId-Spalte).
 FID=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
@@ -1060,6 +1063,15 @@ INSERT INTO "Invoice" ("id","orgId","customerId","number","status","currency","n
   VALUES ('inv27usd','org27','cust27','RE-2027-00002','FINALIZED','USD',10000,1900,11900,NOW());
 INSERT INTO "EmailTemplate" ("id","orgId","name","docType","subject","body","updatedAt")
   VALUES ('et27','org27','Standard','INVOICE','Betreff','Text',NOW());
+INSERT INTO "TextTemplate" ("id","orgId","name","docType","position","body","updatedAt")
+  VALUES ('tt27','org27','Standard','INVOICE','HEAD','Kopf',NOW());
+INSERT INTO "Quote" ("id","orgId","customerId","status","updatedAt") VALUES ('q27','org27','cust27','DRAFT',NOW());
+INSERT INTO "DeliveryNote" ("id","orgId","customerId","status","updatedAt") VALUES ('dn27','org27','cust27','DRAFT',NOW());
+INSERT INTO "Dunning" ("id","invoiceId","level") VALUES ('dun27','inv27eur',1);
+INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
+  VALUES ('rec27','org27','cust27','Abo','2026-01-01','2026-02-01',NOW());
+INSERT INTO "DocumentSettings" ("id","orgId","onQuoteAccept","shareLinkDays","storeAcceptIp","updatedAt")
+  VALUES ('ds27','org27','NONE',30,false,NOW());
 SQL
 npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
   || fail "Phase-16b-Migration ist auf der Bestands-DB fehlgeschlagen"
@@ -1069,12 +1081,25 @@ USDVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coales
 [ "$USDVAL" = "<null>|<null>|de" ] || fail "USD-Rechnung abweichend ('$USDVAL'), erwartet <null>|<null>|de"
 ETLANG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"language\" from \"EmailTemplate\" where id='et27'")
 [ "$ETLANG" = "de" ] || fail "EmailTemplate.language abweichend ('$ETLANG'), erwartet de"
+for ROW in "Quote:q27" "DeliveryNote:dn27" "Dunning:dun27" "RecurringInvoice:rec27" "TextTemplate:tt27"; do
+  TBL="${ROW%%:*}"; RID="${ROW##*:}"
+  LANGV=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"language\" from \"$TBL\" where id='$RID'")
+  [ "$LANGV" = "de" ] || fail "$TBL.language abweichend ('$LANGV'), erwartet de"
+done
+FXDEF=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"fxRateSource\" from \"DocumentSettings\" where id='ds27'")
+[ "$FXDEF" = "BMF_MONTHLY" ] || fail "DocumentSettings.fxRateSource-Default abweichend ('$FXDEF'), erwartet BMF_MONTHLY"
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "EmailTemplate" ("id","orgId","name","docType","subject","body","language","updatedAt")
   VALUES ('et27en','org27','Standard','INVOICE','Subject','Text','en',NOW());
 SQL
 DUPET=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "insert into \"EmailTemplate\" (\"id\",\"orgId\",\"name\",\"docType\",\"subject\",\"body\",\"language\",\"updatedAt\") values ('et27dup','org27','Standard','INVOICE','X','Y','de',NOW())" 2>&1 || true)
 echo "$DUPET" | grep -q "duplicate key" || fail "Unique (orgId, docType, language, name) auf EmailTemplate greift nicht"
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "TextTemplate" ("id","orgId","name","docType","position","body","language","updatedAt")
+  VALUES ('tt27en','org27','Standard','INVOICE','HEAD','Dear','en',NOW());
+SQL
+DUPTT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "insert into \"TextTemplate\" (\"id\",\"orgId\",\"name\",\"docType\",\"position\",\"body\",\"language\",\"updatedAt\") values ('tt27dup','org27','Standard','INVOICE','HEAD','X','de',NOW())" 2>&1 || true)
+echo "$DUPTT" | grep -q "duplicate key" || fail "Unique (orgId, docType, position, language, name) auf TextTemplate greift nicht"
 OLDIDX=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from pg_indexes where indexname in ('EmailTemplate_orgId_docType_name_key','TextTemplate_orgId_docType_position_name_key')")
 [ "$OLDIDX" = "0" ] || fail "alte Vorlagen-Indizes noch vorhanden"
 EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_regclass('\"ExchangeRate\"') is not null")

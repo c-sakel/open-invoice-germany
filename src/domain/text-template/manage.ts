@@ -14,7 +14,8 @@ export class TemplateNotFoundError extends Error {}
 /** Die Systemvorlage (Name "Standard") ist die letzte Vorlage ihrer (docType, position)
  *  -Kombination — Loeschen wuerde die Kombination ohne jede Vorlage zurueckwerfen. */
 export class SystemTemplateProtectedError extends Error {}
-/** orgId/docType/position/name ist eindeutig — statt des rohen Prisma-P2002-Fehlertexts
+/** orgId/docType/position/language/name ist eindeutig (derselbe Name in einer anderen
+ *  Sprache ist kein Konflikt) — statt des rohen Prisma-P2002-Fehlertexts
  *  eine fuer Anwender verstaendliche Meldung. */
 export class TemplateNameConflictError extends Error {}
 
