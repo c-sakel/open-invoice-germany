@@ -25,7 +25,7 @@ export const spec = {
   get: {
     path: "/api/v1/Report",
     method: "GET",
-    summary: "Auswertung abrufen (revenue | top-customers | status | payment-behaviour)",
+    summary: "Auswertung abrufen (revenue | top-customers | status | payment-behaviour | cash-in | quote-outcome | top-products | recurring-run-rate)",
     scope: "read",
     request: { query: reportQuerySchema },
     response: apiDataResponseSchema(z.unknown()),

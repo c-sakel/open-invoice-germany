@@ -222,9 +222,9 @@ Parameter (Query):
 
 | Parameter | Pflicht | Bedeutung |
 |---|---|---|
-| `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` |
-| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue` und `top-customers` zulässig** (Fix 2, ehem. M8) |
-| `limit` | nein | Anzahl Kunden (1–50, Default 5) — **nur bei `top-customers` zulässig** |
+| `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` \| `cash-in` \| `quote-outcome` \| `top-products` \| `recurring-run-rate` |
+| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue`, `top-customers`, `cash-in`, `quote-outcome` und `top-products` zulässig** (Fix 2, ehem. M8) |
+| `limit` | nein | Anzahl Zeilen (1–50, Default 5; bei `top-products` Default 10, je Währung) — **nur bei `top-customers` und `top-products` zulässig** |
 | `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
 
 Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
@@ -245,6 +245,24 @@ Fehler, kein No-op mehr.
   über als `PAID` abgeschlossene Rechnungen; beide Felder sind `null` ohne
   auswertbare Datengrundlage (keine bezahlte Rechnung bzw. keine mit
   Fälligkeitsdatum).
+- **`cash-in`** — Zahlungseingang je Kalendermonat (UTC) und Währung, lückenlos:
+  `paidCents` (Summe der Zahlungen nach `paidAt`; Gegenbuchungen negativ im Monat der
+  Gegenbuchung; Skonto und Verrechnungen mit Gutschriften zählen nicht) und
+  `invoicedGrossCents` (festgeschriebene Rechnungen nach Belegdatum, Brutto bzw.
+  zahlbarer Betrag, Gutschriften negativ, Entwürfe ausgeschlossen).
+- **`quote-outcome`** — Angebotsquote je Währung: `accepted`/`rejected`/`expired`/`open`
+  je `{ count, netCents }` (nur `ANGEBOT`, Belegdatum im Zeitraum, ohne Entwurf und
+  Storno; ein versendetes Angebot mit abgelaufener Gültigkeit zählt als `expired`) und
+  `acceptedPermille` (angenommen ÷ entschieden, ‰, `null` ohne Entscheidung).
+- **`top-products`** — Nettoumsatz und Menge (Milli-Einheiten) je Produkt und Währung
+  (nur Positionen mit Produktbezug, ohne Entwürfe, Gutschriften/Stornos negativ,
+  Schlussrechnungen anteilig zum zahlbaren Betrag), absteigend nach Netto, `limit` je
+  Währung.
+- **`recurring-run-rate`** — monatlich wiederkehrender Netto-Umsatz je Währung
+  (`monthlyNetCents`, `activeCount`) über aktive Abos; Intervalle werden auf einen Monat
+  umgerechnet, je Abo einmal kaufmännisch gerundet. Kein Zeitraumparameter.
+
+Währungen werden bei allen vier neuen Typen nie gemischt: je Währung eigene Zeilen.
 
 Beispiel:
 
