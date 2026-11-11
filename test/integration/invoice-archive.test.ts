@@ -264,7 +264,7 @@ describe("Belegarchiv", () => {
 });
 
 describe("Belegarchiv P2002-Pfad", () => {
-  it("Gewinner-Satz nicht lesbar: nichts geloescht, ARCHIVE_FAILED, Fehler weitergereicht", async () => {
+  it("Gewinner-Satz unvollstaendig: nichts geloescht, ARCHIVE_TAMPERED, ArchiveTamperedError", async () => {
     const id = await finalized();
     // Unvollstaendiger "Gewinner" (nur eine Zeile) erzwingt P2002 beim eigenen Insert und
     // macht den Satz unlesbar.
@@ -277,15 +277,50 @@ describe("Belegarchiv P2002-Pfad", () => {
       return calls === 1 ? Promise.resolve([]) : findMany(args);
     }) as unknown as typeof findMany);
     try {
-      await expect(ensureInvoiceArchive(orgId, id, "SCHEDULER")).rejects.toThrow(/unvollstaendig/);
+      const err = await ensureInvoiceArchive(orgId, id, "SCHEDULER").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ArchiveTamperedError);
+      expect((err as Error).message).toMatch(/unvollstaendig/);
     } finally {
       spy.mockRestore();
     }
-    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
     const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
     const files = (await fs.readdir(path.join(tmpDir, orgId, "2099"))).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));
     expect(files.map((f) => f.slice(f.indexOf(".") + 1)).sort()).toEqual(["cii.xml", "pdf", "ubl.xml"]);
     expect(await dbInternal.archivedDocument.count({ where: { invoiceId: id } })).toBe(1);
+  });
+});
+
+describe("Belegarchiv: geloeschte Archivzeilen (Final-Fix)", () => {
+  it("Zeilen an der Anwendung vorbei geloescht, ChangeLog traegt ARCHIVE: kein Neurendern, ARCHIVE_TAMPERED", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    const saved = await dbInternal.archivedDocument.findMany({ where: { invoiceId: id }, select: { invoiceId: true, kind: true, path: true, sha256: true, source: true, createdAt: true } });
+    // Direkt in der DB geloescht (an Guard und Anwendung vorbei).
+    await dbInternal.$executeRaw`DELETE FROM "ArchivedDocument" WHERE "invoiceId" = ${id}`;
+    const err = await getArchivedInvoiceFile(orgId, id, "PDF").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveTamperedError);
+    expect((err as ArchiveTamperedError).status).toBe(500);
+    expect((err as Error).message).toMatch(/Aenderungsprotokoll/);
+    expect(await rows(id)).toHaveLength(0);
+    expect(await archiveLogs(id)).toHaveLength(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    // Wiederherstellen (wie aus der Sicherung), damit der globale Archiv-Nachlauf anderer Tests nicht darueber stolpert.
+    await dbInternal.archivedDocument.createMany({ data: saved });
+    expect((await getArchivedInvoiceFile(orgId, id, "PDF")).length).toBeGreaterThan(0);
+  });
+
+  it("unvollstaendiger Satz beim Abruf: ArchiveTamperedError statt generischem Fehler, ARCHIVE_TAMPERED", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    const ubl = await dbInternal.archivedDocument.findFirstOrThrow({ where: { invoiceId: id, kind: "UBL" }, select: { invoiceId: true, kind: true, path: true, sha256: true, source: true, createdAt: true } });
+    await dbInternal.$executeRaw`DELETE FROM "ArchivedDocument" WHERE "invoiceId" = ${id} AND "kind" = 'UBL'`;
+    const err = await getArchivedInvoiceFile(orgId, id, "PDF").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveTamperedError);
+    expect((err as ArchiveTamperedError).kind).toBe("UBL");
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(0);
+    await dbInternal.archivedDocument.create({ data: ubl });
   });
 });
 

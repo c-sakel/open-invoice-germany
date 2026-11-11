@@ -140,7 +140,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 | `create_invoice` | Rechnung als Entwurf (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
 | `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar | „Schreib die Rechnung fest." |
 | `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType`; Rechnungstyp bleibt unveränderbar | „Setze bei der Entwurfsrechnung die Bestellnummer auf PO-4711." |
-| `get_invoice` | Rechnung anzeigen | „Zeig mir Rechnung RE-2026-00342." |
+| `get_invoice` | Rechnung anzeigen, inkl. Zahlungen mit ID (für `reverse_payment`) | „Zeig mir Rechnung RE-2026-00342." |
 | `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig, Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung) | „Welche Rechnungen sind überfällig?" |
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei (`exports/`) + Validierungsreport | „Exportier die XRechnung und das PDF." |
 | `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben); verrechnet sich mit dem offenen Rest (Zahlungsart `CREDIT_NOTE`, kein Geldeingang), Summe aller Gutschriften höchstens Rechnungsbetrag | „Erstelle eine Teilgutschrift über 50 Euro zu RE-2026-00342." |
@@ -159,7 +159,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `record_payment` | Zahlungseingang erfassen → Status (bezahlt/teilbezahlt); optional `note` (Freitext) | „Buche auf RE-2026-00342 eine Zahlung von 500 Euro." |
+| `record_payment` | Zahlungseingang erfassen → Status (bezahlt/teilbezahlt) und Zahlungs-ID; optional `note` (Freitext) | „Buche auf RE-2026-00342 eine Zahlung von 500 Euro." |
 | `list_payment_methods` | Zahlungsmethoden der Organisation auflisten (Code, Name, Zahlungsziel, aktiv/System) — nützlich für Codes bei `create_invoice`/`record_payment` | „Welche Zahlungsmethoden habe ich hinterlegt?" |
 
 ### Mahnwesen

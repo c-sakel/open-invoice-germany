@@ -4,6 +4,7 @@ import { SettingsTabs } from "@/components/SettingsTabs";
 import { AuditChainPanel } from "@/components/settings/AuditChainPanel";
 import { listChainVerifications } from "@/domain/audit/verify-chain";
 import { formatDateTimeDe } from "@/domain/audit/export-csv";
+import { AUDIT_EXPORT_MAX_PENDING } from "@/domain/audit/export";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,12 @@ export default async function PruefungSettingsPage() {
         <p className="text-sm text-slate-700" data-testid="archive-status">
           Belegarchiv: {archived} archiviert · {total - archived} ausstehend
         </p>
+        {total - archived > AUDIT_EXPORT_MAX_PENDING && (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="archive-pending-hint">
+            Der Archiv-Nachlauf ist noch nicht abgeschlossen. Ein Export wird abgelehnt, solange im Zeitraum mehr als {AUDIT_EXPORT_MAX_PENDING} Belege
+            ausstehen — bitte nach Abschluss des nächtlichen Nachlaufs exportieren oder den Zeitraum verkleinern.
+          </p>
+        )}
         <form method="GET" action="/api/settings/audit/export" className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-slate-700">Von</span>

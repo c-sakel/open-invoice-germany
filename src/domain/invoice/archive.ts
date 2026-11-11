@@ -13,14 +13,15 @@
  * zurueck. Ein reiner Kettenkonflikt (anderer ChangeLog-Schreiber, kein Satz vorhanden)
  * wird genau einmal wiederholt.
  *
- * Einzige `dbInternal`-Schreibstelle an `Invoice` in Phase 16a: `xmlHash` per
- * `updateMany({ where: { id, xmlHash: null } })` — ein bereits gesetzter Hash bleibt.
+ * Einzige Archiv-Schreibstelle an `Invoice` (neben den Zahlstand-Updates von recordPayment
+ * und payment-reversal.ts): `xmlHash` per `updateMany({ where: { id, xmlHash: null } })` —
+ * ein bereits gesetzter Hash bleibt.
  */
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
-import { InvalidOperationError, NotFoundError } from "@/domain/errors";
-import { onArchiveFailed } from "@/domain/notifications/hooks";
+import { ArchiveTamperedError, InvalidOperationError, NotFoundError } from "@/domain/errors";
+import { onArchiveFailed, onArchiveTampered } from "@/domain/notifications/hooks";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
@@ -59,8 +60,12 @@ function safeFileStem(number: string): string {
   return number.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
-/** Liest den vollstaendigen Archivsatz; `null`, wenn keine Zeile existiert. */
-async function loadArchivedSet(invoiceId: string): Promise<ArchivedSet | null> {
+/**
+ * Liest den vollstaendigen Archivsatz; `null`, wenn keine Zeile existiert. Ein nur teilweise
+ * vorhandener Satz bedeutet geloeschte oder manipulierte Zeilen: Pflicht-Alarm
+ * `ARCHIVE_TAMPERED` und `ArchiveTamperedError` (nie Neuerzeugung).
+ */
+async function loadArchivedSet(orgId: string, invoiceId: string): Promise<ArchivedSet | null> {
   const rows = await dbInternal.archivedDocument.findMany({
     where: { invoiceId },
     select: { kind: true, path: true, sha256: true, source: true, createdAt: true },
@@ -71,7 +76,11 @@ async function loadArchivedSet(invoiceId: string): Promise<ArchivedSet | null> {
     if (isArchiveKind(r.kind)) set[r.kind] = { path: r.path, sha256: r.sha256, source: r.source, createdAt: r.createdAt };
   }
   const missing = ARCHIVE_KINDS.filter((k) => !set[k]);
-  if (missing.length > 0) throw new Error(`Archivsatz der Rechnung ${invoiceId} ist unvollstaendig (fehlt: ${missing.join(", ")}).`);
+  const firstMissing = missing[0];
+  if (firstMissing) {
+    await onArchiveTampered(orgId, { invoiceId, kind: firstMissing });
+    throw new ArchiveTamperedError(invoiceId, firstMissing, "incomplete");
+  }
   return set as ArchivedSet;
 }
 
@@ -84,9 +93,10 @@ interface RenderedFile {
   created: boolean;
 }
 
-async function resolveSource(finalizedAt: Date | null, requested: ArchiveSource): Promise<string> {
+async function resolveSource(finalizedAt: Date | null, issueDate: Date, requested: ArchiveSource): Promise<string> {
   const marker = await dbInternal.systemMarker.findUnique({ where: { key: ARCHIVE_EPOCH_KEY }, select: { at: true } });
-  if (marker && finalizedAt && finalizedAt.getTime() < marker.at.getTime()) return "BACKFILL";
+  const fixedAt = finalizedAt ?? issueDate;
+  if (marker && fixedAt.getTime() < marker.at.getTime()) return "BACKFILL";
   return requested;
 }
 
@@ -132,8 +142,19 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
     throw new InvalidOperationError("Entwuerfe werden nicht archiviert. Zuerst finalisieren.");
   }
 
-  const existing = await loadArchivedSet(invoiceId);
+  const existing = await loadArchivedSet(orgId, invoiceId);
   if (existing) return existing;
+
+  // Kein Archivsatz, aber die Kette traegt bereits ein ARCHIVE: die Zeilen wurden an der
+  // Anwendung vorbei geloescht. Nie still neu rendern (GoBD) — Pflicht-Alarm und 500.
+  const archivedBefore = await dbInternal.changeLog.findFirst({
+    where: { orgId, entity: "INVOICE", entityId: invoiceId, action: "ARCHIVE" },
+    select: { id: true },
+  });
+  if (archivedBefore) {
+    await onArchiveTampered(orgId, { invoiceId, kind: "PDF" });
+    throw new ArchiveTamperedError(invoiceId, "PDF", "record-missing");
+  }
 
   const loaded = await loadEInvoiceData(invoiceId);
   if (!loaded) throw new NotFoundError("Rechnung nicht gefunden.");
@@ -163,7 +184,7 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
     return failArchive(orgId, invoiceId, e, now);
   }
 
-  const effectiveSource = await resolveSource(invoice.finalizedAt, source);
+  const effectiveSource = await resolveSource(invoice.finalizedAt, invoice.issueDate, source);
   const byKind = Object.fromEntries(files.map((f) => [f.kind, f])) as Record<ArchiveKind, RenderedFile>;
   const xmlHash = invoice.xmlFormat === "ZUGFERD" ? byKind.CII.sha256 : byKind.UBL.sha256;
 
@@ -197,8 +218,9 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
       // Gewinner-Satz nicht sicher lesbar (z. B. unvollstaendig) -> nichts loeschen, Fehler melden.
       let winner: ArchivedSet | null;
       try {
-        winner = await loadArchivedSet(invoiceId);
+        winner = await loadArchivedSet(orgId, invoiceId);
       } catch (readErr) {
+        if (readErr instanceof ArchiveTamperedError) throw readErr;
         return failArchive(orgId, invoiceId, readErr, now);
       }
       if (winner) {

@@ -280,10 +280,11 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 
 ## GoBD-Betrieb (Phase 16a)
 
-- **Archiv = Stand der ersten Ausgabe.** Archivierte Rechnungen (PDF, CII, UBL) ändern sich nie mehr, auch nicht durch Layout-, Briefpapier- oder Betreffänderungen. Altbelege (Quelle `BACKFILL`) zeigen den Stand der Nacharchivierung, nicht der ersten Ausgabe.
+- **Archiv = Stand der ersten Ausgabe.** Archivierte Rechnungen (PDF, CII, UBL) ändern sich nie mehr, auch nicht durch Layout-, Briefpapier- oder Betreffänderungen. Altbelege (Quelle `BACKFILL`) zeigen den Stand der Nacharchivierung, nicht der ersten Ausgabe. Das gilt auch für **Bestandsmahnungen**: sie werden mit den Stammdaten und dem Zahlstand zum Zeitpunkt der Nacharchivierung gerendert (ChangeLog `DUNNING/ARCHIVE` mit `source = BACKFILL`).
+- **Backfill nach der Einführung** läuft in Schritten von `ARCHIVE_JOB_BATCH` (Default 50) alle 15 min im Web-Prozess (Latenzspitzen möglich); bis zum Abschluss lehnt der Prüfer-Export Zeiträume mit mehr als 200 unarchivierten Belegen ab (409).
 - **`ARCHIVE_DIR` braucht ein Hardlink-fähiges Dateisystem** (kein SMB/NFS) und muss persistent und gesichert sein (Docker: Volume `oig-archive`). Fehlt oder ändert sich eine Archivdatei, bricht die Ausgabe ab und `ARCHIVE_TAMPERED` alarmiert.
 - **Kettenprüfung:** Der Anker liegt in derselben Datenbank; ein externer Anker ist nicht umgesetzt.
-- **Prüfer-Export:** höchstens 3 Jahre und 20.000 Belege je Export, läuft synchron im Request, kein ZIP64 (Grenzen 4 GiB bzw. 65.535 Dateien). CSV-Zellen sind unverändert (keine Formel-Präfixe) — nicht in einer Tabellenkalkulation mit Formelauswertung öffnen. Die GDPdU-DTD ist eine Nachbildung; vor einer Betriebsprüfung mit der amtlichen Fassung abgleichen und `index.xml` vom Steuerberater abnehmen lassen.
+- **Prüfer-Export:** höchstens 3 Jahre und 20.000 Belege je Export, läuft synchron im Request (fehlende Archive höchstens 200 je Export werden dabei nachgeholt), kein ZIP64 (Grenzen 4 GiB bzw. 65.535 Dateien). CSV-Zellen sind unverändert (keine Formel-Präfixe) — nicht in einer Tabellenkalkulation mit Formelauswertung öffnen. Die GDPdU-DTD ist eine Nachbildung; vor einer Betriebsprüfung mit der amtlichen Fassung abgleichen und `index.xml` vom Steuerberater abnehmen lassen.
 - **Gegenbuchung:** Zahlungen lassen sich nicht löschen, nur gegenbuchen. Keine Gegenbuchung einer Gegenbuchung, einer Gutschrift-Verrechnung oder einer Skontobuchung (Skonto über die zugehörige Zahlung).
 - **Sicherung:** Vorlage, keine fertige Installation. Offsite-Ziel und Passphrase-Verwahrung legt der Betreiber fest; ohne Ziel bleibt die Sicherung lokal. Die Skripte haben keine automatisierten Round-Trip-Tests, der Restore-Test läuft manuell/per Cron.
 

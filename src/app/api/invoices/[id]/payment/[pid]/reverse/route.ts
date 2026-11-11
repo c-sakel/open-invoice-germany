@@ -35,7 +35,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pi
     }
     if (e instanceof SyntaxError) return NextResponse.json({ error: "Ungültiges JSON im Request-Body." }, { status: 400 });
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
-    const status = e instanceof PaymentError ? 422 : 500;
-    return NextResponse.json({ error: (e as Error).message }, { status });
+    // Fachlicher Konflikt wie REST (Spec: 409); sonst generische Meldung ohne interne Details.
+    if (e instanceof PaymentError) return NextResponse.json({ error: e.message }, { status: 409 });
+    console.error("payment reverse: unerwarteter Fehler", e);
+    return NextResponse.json({ error: "Interner Fehler bei der Gegenbuchung." }, { status: 500 });
   }
 }

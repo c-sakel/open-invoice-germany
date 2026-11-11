@@ -236,6 +236,26 @@ describe("Ausgabewege liefern das Belegarchiv", () => {
     expect(await readArchiveFile(row.pdfPath!)).toBeNull();
   });
 
+  it("Mahnung: Archivierung schreibt ChangeLog DUNNING/ARCHIVE; zurueckgesetzter Pfad -> kein Neurendern", async () => {
+    const id = await finalized();
+    const { dunning } = await createDunning(id, { now: DUNNING_DATE });
+    await getArchivedDunningPdf(orgId, dunning.id);
+    await getArchivedDunningPdf(orgId, dunning.id);
+    const row = await dbInternal.dunning.findUniqueOrThrow({ where: { id: dunning.id }, select: { pdfSha256: true, pdfPath: true } });
+    const logs = await dbInternal.changeLog.findMany({ where: { orgId, entity: "DUNNING", entityId: dunning.id, action: "ARCHIVE" }, select: { diffJson: true } });
+    expect(logs).toHaveLength(1);
+    const diff = JSON.parse(logs[0]!.diffJson) as { pdf: string; source: string; invoiceId: string };
+    expect(diff).toMatchObject({ pdf: row.pdfSha256, invoiceId: id });
+    expect(["OUTPUT", "BACKFILL"]).toContain(diff.source);
+    // An der Anwendung vorbei zurueckgesetzt:
+    await dbInternal.$executeRaw`UPDATE "Dunning" SET "pdfPath" = NULL, "pdfSha256" = NULL WHERE "id" = ${dunning.id}`;
+    await expect(getArchivedDunningPdf(orgId, dunning.id)).rejects.toBeInstanceOf(ArchiveTamperedError);
+    const after = await dbInternal.dunning.findUniqueOrThrow({ where: { id: dunning.id }, select: { pdfPath: true } });
+    expect(after.pdfPath).toBeNull();
+    // Wiederherstellen, damit der globale Archiv-Nachlauf anderer Tests nicht darueber stolpert.
+    await dbInternal.$executeRaw`UPDATE "Dunning" SET "pdfPath" = ${row.pdfPath}, "pdfSha256" = ${row.pdfSha256} WHERE "id" = ${dunning.id}`;
+  });
+
   it("Org-Scope: fremde Organisation erhaelt 404 auf /pdf, /zugferd, /xrechnung und Mahn-PDF; Mahnungsarchiv wirft NotFound", async () => {
     const id = await finalized();
     const { dunning } = await createDunning(id, { now: DUNNING_DATE });

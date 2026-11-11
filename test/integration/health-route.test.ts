@@ -8,16 +8,11 @@ import path from "node:path";
 
 import { dbInternal } from "@/lib/db";
 import { createApiKey } from "@/domain/api-key/create";
-import { resetRateLimits } from "@/lib/rate-limit";
 import * as health from "@/lib/health";
 import { GET as healthGet } from "@/app/api/health/route";
 import { GET as systemHealthGet } from "@/app/api/v1/System/health/route";
 
 let orgId: string;
-
-function healthReq(ip = "203.0.113.7") {
-  return new Request("http://localhost/api/health", { headers: { "x-forwarded-for": ip } });
-}
 
 beforeAll(async () => {
   const org = await dbInternal.organization.create({
@@ -27,7 +22,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  resetRateLimits();
+  health.resetHealthCache();
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -36,7 +31,7 @@ afterEach(() => {
 
 describe("GET /api/health", () => {
   it("ohne Cookie 200 {status: ok}, genau ein Schluessel, no-store", async () => {
-    const res = await healthGet(healthReq());
+    const res = await healthGet();
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = (await res.json()) as Record<string, unknown>;
@@ -44,34 +39,37 @@ describe("GET /api/health", () => {
     expect(Object.keys(body)).toEqual(["status"]);
   });
 
-  it("checkDb false -> 503 {status: error}", async () => {
-    vi.spyOn(health, "checkDb").mockResolvedValue(false);
-    const res = await healthGet(healthReq());
+  it("DB nicht erreichbar -> 503 {status: error}", async () => {
+    vi.spyOn(dbInternal, "$queryRaw").mockRejectedValue(new Error("down") as never);
+    const res = await healthGet();
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ status: "error" });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
-
-  it("61. Aufruf derselben IP innerhalb einer Minute -> 429, andere IP unberuehrt", async () => {
-    for (let i = 0; i < 60; i++) expect((await healthGet(healthReq())).status).toBe(200);
-    const blocked = await healthGet(healthReq());
-    expect(blocked.status).toBe(429);
-    expect(blocked.headers.get("cache-control")).toBe("no-store");
-    expect((await healthGet(healthReq("198.51.100.9"))).status).toBe(200);
-  });
 });
 
-describe("Health: Healthcheck-Aufrufer und Timeout", () => {
-  it("ohne IP-Header: eigener Bucket mit 600/min (Docker-Healthcheck); 601. -> 429", async () => {
-    for (let i = 0; i < 600; i++) expect((await healthGet(new Request("http://localhost/api/health"))).status).toBe(200);
-    expect((await healthGet(new Request("http://localhost/api/health"))).status).toBe(429);
-    // Bucket mit IP bleibt davon unberuehrt.
-    expect((await healthGet(healthReq("198.51.100.9"))).status).toBe(200);
+describe("Health: Cache statt Rate-Limit (Ruling 16a)", () => {
+  it("kein 429: 700 Aufrufe in Folge bleiben 200, DB nur einmal gefragt", async () => {
+    const spy = vi.spyOn(dbInternal, "$queryRaw");
+    for (let i = 0; i < 700; i++) expect((await healthGet()).status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it("auch Loopback/gespoofte 127.0.0.1 ist je IP auf 60/min begrenzt", async () => {
-    for (let i = 0; i < 60; i++) expect((await healthGet(healthReq("127.0.0.1"))).status).toBe(200);
-    expect((await healthGet(healthReq("127.0.0.1"))).status).toBe(429);
+  it("gleichzeitige Aufrufe teilen eine laufende Abfrage", async () => {
+    const spy = vi.spyOn(dbInternal, "$queryRaw");
+    const results = await Promise.all(Array.from({ length: 20 }, () => healthGet()));
+    expect(results.every((r) => r.status === 200)).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("nach Ablauf der 5 s wird die DB erneut gefragt", async () => {
+    const spy = vi.spyOn(dbInternal, "$queryRaw");
+    const t0 = Date.now();
+    expect(await health.cachedDbStatus(t0)).toBe(true);
+    expect(await health.cachedDbStatus(t0 + 4000)).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(await health.cachedDbStatus(t0 + health.HEALTH_CACHE_TTL_MS + 1000)).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it("checkDb: haengende Abfrage -> false nach Timeout", async () => {

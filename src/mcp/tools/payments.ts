@@ -55,7 +55,10 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
           : result.skontoSuggestion
             ? ` Skonto moeglich bis ${result.skontoSuggestion.dueDate.toISOString().slice(0, 10)} (${formatCents(result.skontoSuggestion.restCents)}) — mit applySkonto=true buchen.`
             : "";
-        return ctx.ok(`Zahlung erfasst. Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}`);
+        const skontoId = result.skontoPayment ? ` (Skonto-ID ${result.skontoPayment.id})` : "";
+        return ctx.ok(
+          `Zahlung erfasst (ID ${result.recorded.id}). Status: ${updated.status} · offen: ${formatCents(open)}.${skontoNote}${skontoId}`,
+        );
       } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof PaymentError) return ctx.fail(e.message);
@@ -84,7 +87,7 @@ export function registerPaymentTools(server: McpServer, ctx: McpToolsContext): v
         const org = await ctx.requireOrg();
         const input = reversePaymentInputSchema.parse({ amountCents: args.amountCents, reason: args.reason });
         const result = await reversePayment(args.paymentId, input, { actor: "mcp", orgId: org.id, createdBy: "mcp" });
-                const skontoNote = result.skontoReversal ? ` Skontobuchung ${formatCents(-result.skontoReversal.amountCents)} mitgebucht.` : "";
+        const skontoNote = result.skontoReversal ? ` Skontobuchung ${formatCents(-result.skontoReversal.amountCents)} mitgebucht.` : "";
         return ctx.ok(
           `Gegenbuchung ${formatCents(-result.reversal.amountCents)} erfasst (ID ${result.reversal.id}). ` +
             `Status: ${result.invoiceStatus} · gebucht: ${formatCents(result.paidAmountCents)}.${skontoNote}`,

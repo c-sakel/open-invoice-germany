@@ -224,7 +224,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
     "get_invoice",
     {
       title: "Rechnung anzeigen",
-      description: "Zeigt Details einer Rechnung (Status, Nummer, Positionen, Summen).",
+      description:
+        "Zeigt Details einer Rechnung (Status, Nummer, Positionen, Summen, Zahlungen mit ID — die ID dient reverse_payment).",
       inputSchema: { invoice: z.string().describe("Rechnungs-ID oder -Nummer") },
     },
     async ({ invoice }): Promise<Result> => {
@@ -233,7 +234,14 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const ref = await ctx.resolveInvoice(org.id, invoice);
         const inv = await dbInternal.invoice.findUnique({
           where: { id: ref.id },
-          include: { lines: { orderBy: { position: "asc" } }, customer: true },
+          include: {
+            lines: { orderBy: { position: "asc" } },
+            customer: true,
+            payments: {
+              orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
+              select: { id: true, kind: true, amountCents: true, paidAt: true, method: true, reversesPaymentId: true },
+            },
+          },
         });
         if (!inv) return ctx.fail("Nicht gefunden.");
         return ctx.ok(
@@ -249,6 +257,14 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               tax: formatCents(inv.taxTotalCents),
               gross: formatCents(inv.grossTotalCents),
               lines: inv.lines.map((l) => ({ description: l.description, qty: l.quantityMilli / 1000, unit: l.unit, net: formatCents(l.lineNetCents) })),
+              payments: inv.payments.map((p) => ({
+                id: p.id,
+                kind: p.kind,
+                amountCents: p.amountCents,
+                paidAt: p.paidAt.toISOString().slice(0, 10),
+                method: p.method,
+                reversesPaymentId: p.reversesPaymentId,
+              })),
             },
             null,
             2,

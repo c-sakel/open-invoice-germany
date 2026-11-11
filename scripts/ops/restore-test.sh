@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Restore-Test (Phase 16a, Vorlage): spielt eine verschluesselte Sicherung in einen temporaeren
-# postgres:16-Container ein und prueft sie. Der Container wird IMMER entfernt (trap).
+# temporaeren PostgreSQL-Container ein und prueft sie. Der Container wird IMMER entfernt (trap).
 #
 #   restore-test.sh <backup-datei.tar.enc>
 #   BACKUP_PASSPHRASE_FILE  Passphrasen-Datei (Pflicht, Modus 600)
+#   PG_IMAGE                Image des Restore-Containers (Default postgres:16 = Serverversion;
+#                           muss zur pg_dump-Version der Sicherung passen)
+#   RESTORE_READY_TIMEOUT   Sekunden bis die Datenbank stabil bereit ist (Default 60)
 #
 # Pruefungen: Migrationsstand (prisma migrate status), Zeilenzahlen gegen manifest.txt,
 # Hash-Kette (scripts/verify-chain.ts), 5 zufaellige Archivdateien per sha256sum gegen die Datenbank.
@@ -40,15 +43,28 @@ tar -xf "$WORK/payload.tar" -C "$WORK/x"
 for f in db.sql.gz archive.tar.gz manifest.txt; do [ -f "$WORK/x/$f" ] || fail "Sicherung unvollstaendig: $f fehlt"; done
 tar -xzf "$WORK/x/archive.tar.gz" -C "$WORK/archive"
 
+PG_IMAGE="${PG_IMAGE:-postgres:16}"
+READY_TIMEOUT="${RESTORE_READY_TIMEOUT:-60}"
+[[ "$READY_TIMEOUT" =~ ^[0-9]+$ ]] || fail "RESTORE_READY_TIMEOUT muss eine Ganzzahl sein"
 PGPASS="restore-$(date +%s)"
 CONTAINER="oig-restore-test-$$"
-docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PGPASS" -e POSTGRES_DB=restore -p 127.0.0.1::5432 postgres:16 >/dev/null \
+docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PGPASS" -e POSTGRES_DB=restore -p 127.0.0.1::5432 "$PG_IMAGE" >/dev/null \
   || fail "Container konnte nicht gestartet werden"
-for _ in $(seq 1 60); do
-  docker exec "$CONTAINER" pg_isready -U postgres -d restore >/dev/null 2>&1 && break
+# Das Image startet waehrend der Initialisierung einen temporaeren Server (nur Unix-Socket) und
+# danach neu — pg_isready meldet deshalb kurz "bereit", bevor die DB wirklich steht. Erst bereit,
+# wenn "select 1" ueber TCP dreimal in Folge gelingt (TCP ist erst nach dem Init-Neustart offen).
+ok_in_row=0
+deadline=$(( $(date +%s) + READY_TIMEOUT ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  if [ "$(docker exec "$CONTAINER" psql -h 127.0.0.1 -U postgres -d restore -Atc 'select 1' 2>/dev/null || true)" = "1" ]; then
+    ok_in_row=$((ok_in_row + 1))
+    [ "$ok_in_row" -ge 3 ] && break
+  else
+    ok_in_row=0
+  fi
   sleep 1
 done
-docker exec "$CONTAINER" pg_isready -U postgres -d restore >/dev/null 2>&1 || fail "temporaere Datenbank nicht bereit"
+[ "$ok_in_row" -ge 3 ] || fail "temporaere Datenbank nicht bereit (nach ${READY_TIMEOUT} s)"
 PORT="$(docker port "$CONTAINER" 5432/tcp | head -n1 | sed 's/.*://')"
 export DATABASE_URL="postgresql://postgres:${PGPASS}@127.0.0.1:${PORT}/restore?schema=public"
 psql_q() { docker exec -i "$CONTAINER" psql -U postgres -d restore -Atc "$1"; }

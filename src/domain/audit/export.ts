@@ -42,6 +42,26 @@ export class AuditExportTooLargeError extends Error {
   }
 }
 
+/**
+ * Hoechstzahl noch nicht archivierter Belege im Zeitraum, die ein Export synchron archiviert.
+ * Darueber (z. B. vor Abschluss des Backfills nach dem ersten Deploy) wird mit 409 abgelehnt,
+ * statt minutenlang im HTTP-Request zu rendern (Proxy-Timeout).
+ */
+export const AUDIT_EXPORT_MAX_PENDING = 200;
+
+export class AuditExportPendingError extends Error {
+  readonly status = 409;
+  readonly pending: number;
+  constructor(pending: number, max: number) {
+    super(
+      `Für den Zeitraum sind noch ${pending} Belege nicht archiviert (Grenze ${max}). ` +
+        "Der nächtliche Archiv-Nachlauf holt das nach — bitte nach Abschluss erneut exportieren oder den Zeitraum verkleinern.",
+    );
+    this.name = "AuditExportPendingError";
+    this.pending = pending;
+  }
+}
+
 const t = (name: string): CsvColumn => ({ name, type: "text" });
 const amount = (name: string): CsvColumn => ({ name, type: "amount" });
 const date = (name: string): CsvColumn => ({ name, type: "date" });
@@ -139,6 +159,9 @@ const README = [
   "sie sind fuer Pruefsoftware (IDEA) ueber index.xml vorgesehen. Inhalte sind unveraendert",
   "aus den Belegen uebernommen (keine Neutralisierung von Formelzeichen).",
   "",
+  "belege/<nr>.xml ist immer die archivierte XRechnung (UBL), auch bei ZUGFeRD-Belegen; deren",
+  "CII steckt eingebettet im PDF, ihr SHA-256 steht in archiv.csv.",
+  "",
   "Die mitgelieferte DTD (gdpdu-01-09-2004.dtd) ist eine Nachbildung der GDPdU-Struktur und",
   "nicht die amtliche Datei der Finanzverwaltung.",
   "",
@@ -173,12 +196,15 @@ export async function buildAuditExport(
   orgId: string,
   range: { from: Date; to: Date },
   out: Writable,
-  opts: { maxInvoices?: number } = {},
+  opts: { maxInvoices?: number; maxPending?: number } = {},
 ): Promise<{ invoices: number }> {
   const max = opts.maxInvoices ?? AUDIT_EXPORT_MAX_INVOICES;
+  const maxPending = opts.maxPending ?? AUDIT_EXPORT_MAX_PENDING;
   const where = { orgId, status: { not: "DRAFT" }, number: { not: null }, issueDate: { gte: range.from, lte: range.to } };
   const count = await dbInternal.invoice.count({ where });
   if (count > max) throw new AuditExportTooLargeError(count, max);
+  const pending = await dbInternal.invoice.count({ where: { ...where, archivedDocuments: { none: {} } } });
+  if (pending > maxPending) throw new AuditExportPendingError(pending, maxPending);
 
   const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { legalName: true, city: true } });
   const zip = new ZipWriter(out);
@@ -360,7 +386,7 @@ export async function buildAuditExport(
 export async function buildAuditExportFile(
   orgId: string,
   range: { from: Date; to: Date },
-  opts: { maxInvoices?: number } = {},
+  opts: { maxInvoices?: number; maxPending?: number } = {},
 ): Promise<{ path: string; invoices: number }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "oig-audit-export-"));
   const file = path.join(dir, "export.zip");

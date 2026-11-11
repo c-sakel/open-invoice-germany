@@ -476,7 +476,7 @@ model ArchivedDocument {
   id        String   @id @default(cuid())
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
-  kind      String // z. B. PDF | XML
+  kind      String // PDF | CII | UBL
   path      String
   sha256    String
   source    String // OUTPUT | SCHEDULER | BACKFILL

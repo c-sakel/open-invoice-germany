@@ -3,7 +3,7 @@
 # Aufruf aus dem Projektverzeichnis (siehe docs/BETRIEB-VORLAGE.md). Konfiguration per Umgebung
 # bzw. .env — KEINE Zugangsdaten in diesem Skript.
 #
-#   DATABASE_URL            PostgreSQL-URL (Pflicht)
+#   DATABASE_URL            PostgreSQL-URL (Pflicht; Sonderzeichen im Passwort prozent-kodiert)
 #   ATTACHMENTS_DIR         Default ./data/attachments
 #   ARCHIVE_DIR             Default ./data/archive
 #   ENV_FILE                Default ./.env (wird mitgesichert, falls vorhanden)
@@ -13,6 +13,8 @@
 #   BACKUP_KEEP_LOCAL       Anzahl lokaler Sicherungen (Default 30)
 #   BACKUP_KEEP_REMOTE      Aufbewahrung am Ziel in Tagen (Default 90)
 #   BACKUP_STATUS_FILE      optional: Statusdatei, je Lauf eine Zeile "OK <ISO>" bzw. "FEHLER <ISO> <grund>"
+#   PG_DUMP_CONTAINER       optional: Name des DB-Containers; pg_dump laeuft dann dort
+#                           (passende Server-Version), Verbindungsdaten nur per -e PG* (nie in argv)
 # Letzte Ausgabezeile: "OK <datei>" bzw. "FEHLER <grund>" (Exit 0 / 1).
 set -euo pipefail
 umask 077
@@ -65,36 +67,70 @@ KEEP_REMOTE="${BACKUP_KEEP_REMOTE:-90}"
 [[ "$KEEP_REMOTE" =~ ^[0-9]+$ ]] || fail "BACKUP_KEEP_REMOTE muss eine Ganzzahl sein"
 
 [ -n "${DATABASE_URL:-}" ] || fail "DATABASE_URL ist nicht gesetzt"
-for tool in pg_dump tar openssl gzip; do
+PG_DUMP_CONTAINER="${PG_DUMP_CONTAINER:-}"
+DUMP_TOOL="pg_dump"
+[ -z "$PG_DUMP_CONTAINER" ] || DUMP_TOOL="docker"
+for tool in "$DUMP_TOOL" tar openssl gzip; do
   command -v "$tool" >/dev/null 2>&1 || fail "Werkzeug fehlt: $tool"
 done
 
 
-# Passwort nie in argv (Prozess-Listing): aus der URL herausloesen und per PGPASSWORD uebergeben.
-PG_URL="$DATABASE_URL"
+# Verbindung NIE als URL in argv (Prozess-Listing): DATABASE_URL einmal zerlegen und ausschliesslich
+# per Umgebung (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, ggf. PGSSLMODE) an pg_dump geben.
+# Rohe "/", "?", "#" (und "@") in Benutzer/Passwort muessen prozent-kodiert sein (%2F, %3F, %23, %40).
+url_decode() { printf '%b' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"; }
+URL_HINT="Sonderzeichen in Benutzer/Passwort prozent-kodieren (/ = %2F, ? = %3F, # = %23, @ = %40)"
 [[ "$DATABASE_URL" =~ ^postgres(ql)?://(.*)$ ]] || fail "DATABASE_URL ist keine postgresql://-URL"
 URL_REST="${BASH_REMATCH[2]}"
-URL_AUTH="${URL_REST%%/*}"
-URL_PREFIX="${DATABASE_URL%"$URL_REST"}"
+# Autoritaet = bis zum ersten "/", "?" oder "#".
+URL_AUTH="${URL_REST%%[/?#]*}"
+URL_AFTER_AUTH="${URL_REST#"$URL_AUTH"}"
+# Steht danach noch ein "@", enthielt die Userinfo ein rohes "/", "?" oder "#" -> nicht eindeutig zerlegbar.
+[[ "$URL_AFTER_AUTH" != *@* ]] || fail "DATABASE_URL nicht zerlegbar: $URL_HINT"
+URL_USERINFO=""
+URL_HOSTPORT="$URL_AUTH"
 if [[ "$URL_AUTH" == *@* ]]; then
-  # Trennung am LETZTEN "@" der Autoritaet (ein rohes "@" im Passwort bleibt Teil des Passworts).
   URL_USERINFO="${URL_AUTH%@*}"
-  URL_AFTER="${URL_REST#"$URL_USERINFO"@}"
-  [ -n "$URL_AFTER" ] || fail "DATABASE_URL nicht zerlegbar"
+  URL_HOSTPORT="${URL_AUTH##*@}"
+fi
+URL_PORT=""
+if [[ "$URL_HOSTPORT" =~ ^\[([^]]+)\](:([0-9]*))?$ ]]; then
+  URL_HOST="${BASH_REMATCH[1]}"; URL_PORT="${BASH_REMATCH[3]}"
+elif [[ "$URL_HOSTPORT" =~ ^([^:]*)(:([0-9]*))?$ ]]; then
+  URL_HOST="${BASH_REMATCH[1]}"; URL_PORT="${BASH_REMATCH[3]}"
+else
+  fail "DATABASE_URL nicht zerlegbar (Host/Port): $URL_HINT"
+fi
+URL_PATH="${URL_AFTER_AUTH%%[?#]*}"
+URL_QUERY=""
+case "$URL_AFTER_AUTH" in *\?*) URL_QUERY="${URL_AFTER_AUTH#*\?}"; URL_QUERY="${URL_QUERY%%#*}" ;; esac
+URL_DB="${URL_PATH#/}"
+[[ "$URL_DB" != */* ]] || fail "DATABASE_URL nicht zerlegbar (Datenbankname): $URL_HINT"
+unset PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE
+[ -z "$URL_HOST" ] || export PGHOST="$(url_decode "$URL_HOST")"
+[ -z "$URL_PORT" ] || export PGPORT="$URL_PORT"
+[ -z "$URL_DB" ] || export PGDATABASE="$(url_decode "$URL_DB")"
+if [ -n "$URL_USERINFO" ]; then
   if [[ "$URL_USERINFO" == *:* ]]; then
-    URL_USER="${URL_USERINFO%%:*}"
-    URL_PASS="${URL_USERINFO#*:}"
-    PG_URL="${URL_PREFIX}${URL_USER}@${URL_AFTER}"
-    PGPASSWORD="$(printf '%b' "$(printf '%s' "$URL_PASS" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')")"
-    export PGPASSWORD
+    export PGUSER="$(url_decode "${URL_USERINFO%%:*}")"
+    export PGPASSWORD="$(url_decode "${URL_USERINFO#*:}")"
+  else
+    export PGUSER="$(url_decode "$URL_USERINFO")"
   fi
 fi
-# Sicherheitsnetz: bleibt ein Passwort (user:pass@) in der URL, nie an pg_dump uebergeben.
-PG_AUTH="${PG_URL#*://}"
-PG_AUTH="${PG_AUTH%%/*}"
-case "$PG_AUTH" in *:*@*) fail "DATABASE_URL nicht zerlegbar (Passwort verbleibt in der URL)" ;; esac
-# libpq kennt den Prisma-Parameter "schema" nicht — entfernen.
-PG_URL="$(printf '%s' "$PG_URL" | sed -E 's/([?&])schema=[^&]*&?/\1/; s/[?&]$//')"
+# Query: sslmode und host (Unix-Socket) uebernehmen; schema (Prisma) und Rest ignorieren.
+if [ -n "$URL_QUERY" ]; then
+  IFS='&' read -r -a URL_PARAMS <<< "$URL_QUERY"
+  for kv in "${URL_PARAMS[@]}"; do
+    case "$kv" in
+      sslmode=*) export PGSSLMODE="$(url_decode "${kv#sslmode=}")" ;;
+      host=*) export PGHOST="$(url_decode "${kv#host=}")" ;;
+      schema=* | "") ;;
+      *) echo "Hinweis: URL-Parameter ignoriert: ${kv%%=*}" >&2 ;;
+    esac
+  done
+fi
+PG_ENV_NAMES=(PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE)
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 ATT_DIR="${ATTACHMENTS_DIR:-./data/attachments}"
 ARC_DIR="${ARCHIVE_DIR:-./data/archive}"
@@ -108,7 +144,14 @@ STAGE="$WORK/stage"
 mkdir -p "$STAGE"
 
 # ------------------------------------------------------------------ Inhalt
-pg_dump --no-owner --no-privileges "$PG_URL" | gzip > "$STAGE/db.sql.gz"
+if [ -n "$PG_DUMP_CONTAINER" ]; then
+  # "-e NAME" ohne Wert: docker uebernimmt den Wert aus der Umgebung, nicht aus argv.
+  DOCKER_ENV=()
+  for n in "${PG_ENV_NAMES[@]}"; do [ -z "${!n:-}" ] || DOCKER_ENV+=(-e "$n"); done
+  docker exec -i "${DOCKER_ENV[@]}" "$PG_DUMP_CONTAINER" pg_dump --no-owner --no-privileges | gzip > "$STAGE/db.sql.gz"
+else
+  pg_dump --no-owner --no-privileges | gzip > "$STAGE/db.sql.gz"
+fi
 [ -d "$ATT_DIR" ] || mkdir -p "$WORK/empty-att"
 tar -czf "$STAGE/attachments.tar.gz" -C "$([ -d "$ATT_DIR" ] && echo "$ATT_DIR" || echo "$WORK/empty-att")" .
 [ -d "$ARC_DIR" ] || mkdir -p "$WORK/empty-arc"

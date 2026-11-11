@@ -37,6 +37,8 @@ export class PaymentError extends Error {
 export interface RecordPaymentResult {
   /** Die Rechnung NACH der Zahlung (inkl. automatischer Skontobuchung, falls erfolgt). */
   payment: Invoice;
+  /** Die neu gebuchte Zahlungszeile (ID z. B. fuer reverse_payment). */
+  recorded: Payment;
   /** Erkannte, aber (noch) nicht gebuchte Skontofrist — nur ohne `applySkonto`. */
   skontoSuggestion?: SkontoTerm & { restCents: number };
   /** Die zweite Zahlung (method "SKONTO"), falls der Skontoabzug gebucht wurde. */
@@ -173,7 +175,7 @@ export async function recordPayment(
 
     // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —
     // ein exakt/vollstaendig bezahlter Betrag hat keinen Skontoabzug mehr zu buchen.
-    const result: RecordPaymentResult = { payment: updated };
+    const result: RecordPaymentResult = { payment: updated, recorded: payment };
     const restCents = baseCents - newPaid;
 
     if (restCents > 0) {

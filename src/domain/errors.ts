@@ -61,16 +61,25 @@ export class ValidationError extends Error {
  * vom Archivsatz ab. Nie still neu rendern — der Abruf scheitert mit HTTP 500, und die
  * Organisation wird benachrichtigt (`ARCHIVE_TAMPERED`).
  */
+/**
+ * missing: Datei fehlt; hash-mismatch: Datei veraendert; record-missing: Archivzeilen fehlen,
+ * obwohl der ChangeLog ein ARCHIVE traegt; incomplete: Archivsatz nur teilweise vorhanden.
+ */
+export type ArchiveTamperReason = "missing" | "hash-mismatch" | "record-missing" | "incomplete";
+
+const TAMPER_MESSAGES: Record<ArchiveTamperReason, (kind: string) => string> = {
+  missing: (kind) => `Archivierte Belegdatei (${kind}) fehlt — Beleg wird nicht neu erzeugt.`,
+  "hash-mismatch": (kind) => `Archivierte Belegdatei (${kind}) wurde veraendert (SHA-256 weicht ab) — Beleg wird nicht neu erzeugt.`,
+  "record-missing": (kind) => `Archiveintrag (${kind}) fehlt, obwohl der Beleg laut Aenderungsprotokoll archiviert wurde — Beleg wird nicht neu erzeugt.`,
+  incomplete: (kind) => `Archivsatz ist unvollstaendig (fehlt: ${kind}) — Beleg wird nicht neu erzeugt.`,
+};
+
 export class ArchiveTamperedError extends Error {
   readonly status = 500;
   readonly invoiceId: string;
   readonly kind: ArchiveKind;
-  constructor(invoiceId: string, kind: ArchiveKind, reason: "missing" | "hash-mismatch") {
-    super(
-      reason === "missing"
-        ? `Archivierte Belegdatei (${kind}) fehlt — Beleg wird nicht neu erzeugt.`
-        : `Archivierte Belegdatei (${kind}) wurde veraendert (SHA-256 weicht ab) — Beleg wird nicht neu erzeugt.`,
-    );
+  constructor(invoiceId: string, kind: ArchiveKind, reason: ArchiveTamperReason) {
+    super(TAMPER_MESSAGES[reason](kind));
     this.name = "ArchiveTamperedError";
     this.invoiceId = invoiceId;
     this.kind = kind;

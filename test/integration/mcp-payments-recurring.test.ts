@@ -123,6 +123,29 @@ describe("reverse_payment", () => {
     expect(inv.paidAmountCents).toBe(0);
   });
 
+  it("Zahlungs-ID ueber MCP ermittelbar: record_payment nennt sie, get_invoice listet Zahlungen", async () => {
+    const customer = await makeCustomer("IDs");
+    const draft = await createDraftInvoice(orgId, {
+      customerId: customer.id,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      deliveryDate: FIX_DATE,
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput);
+    const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
+    const pay = await callTool("record_payment", { invoice: finalized.number!, amountEuro: 119 });
+    const idFromRecord = /\(ID ([^)\s]+)\)/.exec(text(pay))?.[1];
+    expect(idFromRecord).toBeTruthy();
+    const rev = await callTool("reverse_payment", { paymentId: idFromRecord, reason: "Falsch zugeordnet" });
+    expect(rev.isError).toBeFalsy();
+    const got = await callTool("get_invoice", { invoice: finalized.number! });
+    const body = JSON.parse(text(got)) as { payments: Array<{ id: string; kind: string; amountCents: number; reversesPaymentId: string | null; method: string; paidAt: string }> };
+    expect(body.payments).toHaveLength(2);
+    expect(body.payments.find((p) => p.kind === "PAYMENT")).toMatchObject({ id: idFromRecord, amountCents: 11900 });
+    expect(body.payments.find((p) => p.kind === "REVERSAL")).toMatchObject({ amountCents: -11900, reversesPaymentId: idFromRecord });
+  });
+
   it("zu kurzer Grund: gleiche Zod-Meldung wie die REST-Route", async () => {
     const { paymentId } = await paid();
     const res = await callTool("reverse_payment", { paymentId, reason: "x" });

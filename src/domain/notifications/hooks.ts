@@ -82,9 +82,11 @@ export async function onEInvoiceInvalid(orgId: string, input: { invoiceId: strin
 
 /**
  * Phase 16a (Belegarchiv): eine archivierte Belegdatei fehlt oder ihr SHA-256 weicht ab.
- * Dedupliziert je Rechnung und Dateiart — wiederholte Abrufe erzeugen keine Flut.
+ * Dedupliziert je Rechnung, Dateiart und Tag — wiederholte Abrufe erzeugen keine Flut, ein
+ * erneuter Verlust nach einer Wiederherstellung meldet sich aber wieder.
  */
-export async function onArchiveTampered(orgId: string, input: { invoiceId: string; kind: string }): Promise<void> {
+export async function onArchiveTampered(orgId: string, input: { invoiceId: string; kind: string; at?: Date }): Promise<void> {
+  const at = input.at ?? new Date();
   await safeNotify(orgId, "ARCHIVE_TAMPERED", () =>
     createNotification({
       orgId,
@@ -93,7 +95,8 @@ export async function onArchiveTampered(orgId: string, input: { invoiceId: strin
       body: `Die archivierte ${input.kind}-Datei der Rechnung ist nicht mehr unveraendert vorhanden. Der Beleg wird nicht neu erzeugt; bitte aus der Sicherung wiederherstellen.`,
       entityType: "INVOICE",
       entityId: input.invoiceId,
-      dedupeKey: `ARCHIVE_TAMPERED:${input.invoiceId}:${input.kind}`,
+      dedupeKey: `ARCHIVE_TAMPERED:${input.invoiceId}:${input.kind}:${at.toISOString().slice(0, 10)}`,
+      at,
     }),
   );
 }

@@ -24,6 +24,6 @@ export const spec = {
     request: { query: auditExportQuerySchema },
     // ZIP-Bytes statt {data}-Umschlag.
     response: z.unknown(),
-    errors: [400, 401, 403, 413, 429],
+    errors: [400, 401, 403, 409, 413, 429],
   },
 } satisfies Record<string, RouteSpec>;

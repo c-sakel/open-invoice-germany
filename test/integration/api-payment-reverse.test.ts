@@ -138,6 +138,24 @@ describe("POST /api/invoices/[id]/payment/[pid]/reverse (Session)", () => {
     expect((await res.json()).paidAmountCents).toBe(7900);
   });
 
+  it("bereits vollstaendig gegengebucht -> 409 wie REST; unerwarteter Fehler -> 500 mit generischer Meldung", async () => {
+    const { invoiceId, paymentId } = await paidInvoice();
+    expect((await session(invoiceId, paymentId, { reason: "Erstattet" })).status).toBe(200);
+    expect((await session(invoiceId, paymentId, { reason: "Erstattet" })).status).toBe(409);
+    const other = await paidInvoice();
+    const spy = vi.spyOn(dbInternal, "$transaction").mockRejectedValueOnce(new Error("interne DB-Details xyz"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await session(other.invoiceId, other.paymentId, { reason: "Erstattet" });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).not.toContain("xyz");
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+  });
+
   it("kurzer Grund -> 400", async () => {
     const { invoiceId, paymentId } = await paidInvoice();
     expect((await session(invoiceId, paymentId, { reason: "x" })).status).toBe(400);

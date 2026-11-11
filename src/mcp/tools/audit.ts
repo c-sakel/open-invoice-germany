@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { AuditExportTooLargeError, buildAuditExportFile, removeAuditExportFile } from "@/domain/audit/export";
+import { AuditExportPendingError, AuditExportTooLargeError, buildAuditExportFile, removeAuditExportFile } from "@/domain/audit/export";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { auditChainVerifyInputSchema, auditExportQuerySchema, auditExportRange } from "@/schemas/audit";
 import { z } from "zod";
@@ -62,7 +62,7 @@ export function registerAuditTools(server: McpServer, ctx: McpToolsContext): voi
         }
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(e.issues.map((x) => x.message).join("; "));
-        if (e instanceof AuditExportTooLargeError) return ctx.fail(e.message);
+        if (e instanceof AuditExportTooLargeError || e instanceof AuditExportPendingError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
     },

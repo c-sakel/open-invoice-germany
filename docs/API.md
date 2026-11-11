@@ -391,9 +391,9 @@ Zahlungsbedingungen des Originals.
 | `GET /api/v1/Invoice/{id}/archive` | `read` | Archivstand der Rechnung (Dateien mit SHA-256, Quelle, Zeitpunkt); archiviert nicht selbst. |
 | `GET /api/v1/AuditChain` | `read` | Letzte Kettenprüfungen (`limit`). |
 | `POST /api/v1/AuditChain/verify` | `admin` | Hash-Kette sofort prüfen, Ergebnis protokollieren, bei Bruch alarmieren. |
-| `GET /api/v1/AuditExport?from=YYYY-MM-DD&to=YYYY-MM-DD` | `admin` | Prüfer-Export (§ 147 Abs. 6 AO) als ZIP; höchstens 3 Jahre, 20.000 Belege. CSV unverändert — nicht in einer Tabellenkalkulation mit Formelauswertung öffnen. |
+| `GET /api/v1/AuditExport?from=YYYY-MM-DD&to=YYYY-MM-DD` | `admin` | Prüfer-Export (§ 147 Abs. 6 AO) als ZIP; höchstens 3 Jahre, 20.000 Belege (sonst 413). 409, solange im Zeitraum mehr als 200 Belege noch nicht archiviert sind (Backfill abwarten oder Zeitraum verkleinern). CSV unverändert — nicht in einer Tabellenkalkulation mit Formelauswertung öffnen. |
 | `GET /api/v1/System/health` | `admin` | Datenbank, Scheduler-Jobs, Belegarchiv, Kettenprüfung, letzte Sicherung. |
-| `GET /api/health` | öffentlich | `{"status":"ok"}` bzw. 503; 60 Aufrufe/Minute je IP, nie zwischengespeichert. |
+| `GET /api/health` | öffentlich | `{"status":"ok"}` bzw. 503; kein Rate-Limit, das Datenbank-Ergebnis wird serverseitig 5 s zwischengespeichert (Antwort `Cache-Control: no-store`). |
 
 Das PDF/XML einer archivierten Rechnung (`GET /api/v1/Invoice/{id}/pdf`) liefert bei jedem Abruf dieselben Bytes (Stand der ersten Ausgabe).
 

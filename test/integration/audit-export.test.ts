@@ -28,7 +28,8 @@ import { recordPayment } from "@/domain/invoice/payment";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { createDunning } from "@/domain/dunning/create";
 import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
-import { AuditExportTooLargeError, buildAuditExport, buildAuditExportFile } from "@/domain/audit/export";
+import { AuditExportPendingError, AuditExportTooLargeError, buildAuditExport, buildAuditExportFile } from "@/domain/audit/export";
+import { mapApiError } from "@/api/errors";
 import { server } from "@/mcp/server";
 import type { CreateInvoiceInput } from "@/schemas";
 import { GET as ExportV1 } from "@/app/api/v1/AuditExport/route";
@@ -238,6 +239,7 @@ describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
     expect(text).toContain("Formelauswertung");
     expect(text).toContain("IDEA");
     expect(text).toContain("Nachbildung");
+    expect(text).toContain("XRechnung (UBL)");
   });
 
   it("Schreibfehler im Ausgabestrom: Export bricht mit Fehler ab (kein Hang, kein uncaught error)", async () => {
@@ -252,5 +254,23 @@ describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
     const range = { from: new Date("2013-01-01T00:00:00Z"), to: new Date("2013-12-31T23:59:59.999Z") };
     await expect(buildAuditExportFile(orgId, range, { maxInvoices: 0 })).rejects.toBeInstanceOf(AuditExportTooLargeError);
     expect(count()).toBe(before);
+  });
+  it("zu viele unarchivierte Belege im Zeitraum -> AuditExportPendingError (409), nichts archiviert", async () => {
+    const customerId = (await dbInternal.customer.findFirstOrThrow({ where: { orgId }, select: { id: true } })).id;
+    const input = {
+      customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR",
+      documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0,
+      issueDate: new Date("2013-11-15T10:00:00.000Z"), deliveryDate: new Date("2013-11-10"),
+      lines: [{ description: "Nachlauf", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 1000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput;
+    const fin = await finalizeInvoice((await createDraftInvoice(orgId, input, { now: input.issueDate })).id, { now: input.issueDate });
+    const range = { from: new Date("2013-11-01T00:00:00Z"), to: new Date("2013-11-30T23:59:59.999Z") };
+    const out = createWriteStream(path.join(workDir, "pending.zip"));
+    const err = await buildAuditExport(orgId, range, out, { maxPending: 0 }).catch((e: unknown) => e);
+    out.destroy();
+    expect(err).toBeInstanceOf(AuditExportPendingError);
+    expect((err as AuditExportPendingError).pending).toBe(1);
+    expect(mapApiError(err).status).toBe(409);
+    expect(await dbInternal.archivedDocument.count({ where: { invoiceId: fin.id } })).toBe(0);
   });
 });

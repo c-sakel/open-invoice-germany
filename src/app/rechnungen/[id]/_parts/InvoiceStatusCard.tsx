@@ -54,6 +54,7 @@ export function InvoiceStatusCard({
   paymentMethodName,
   hasSkonto,
   showPaymentBlock,
+  showPaymentList,
   canPay,
   paymentMethods,
   defaultPaymentMethod,
@@ -69,6 +70,9 @@ export function InvoiceStatusCard({
   hasSkonto: boolean;
   /** isInvoiceType && !isDraft && !isCancelled — schaltet Zahlung/Mahnwesen frei. */
   showPaymentBlock: boolean;
+  /** isInvoiceType && !isDraft (auch storniert) — Zahlungsliste mit "Zahlung korrigieren":
+   *  nach Storno einer bezahlten Rechnung wird die Gegenbuchung (Erstattung) gerade dort gebraucht. */
+  showPaymentList: boolean;
   /** !isDraft && !isCancelled && isInvoiceType && openCents > 0 — schaltet PaymentDialog frei. */
   canPay: boolean;
   paymentMethods: { code: string; name: string }[];
@@ -182,7 +186,7 @@ export function InvoiceStatusCard({
         rows={customerRows}
       />
       <StatusCard title="Details" status={null} rows={detailRows}>
-        {showPaymentBlock && (
+        {(showPaymentBlock || showPaymentList) && (
           <div className="space-y-4">
             {canPay && (
               <PaymentDialog invoiceId={invoice.id} openCents={openCents} methods={paymentMethods} defaultMethod={defaultPaymentMethod} />

@@ -135,6 +135,13 @@ class ArchivedDocumentImmutabilityError extends Error {
   }
 }
 
+class PaymentImmutabilityError extends Error {
+  constructor() {
+    super("GoBD: Zahlungen werden nie geaendert oder geloescht — Korrektur nur per Gegenbuchung (reversePayment).");
+    this.name = "PaymentImmutabilityError";
+  }
+}
+
 export const prisma = base.$extends({
   query: {
     invoice: {
@@ -209,6 +216,26 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new ArchivedDocumentImmutabilityError();
+      },
+    },
+    payment: {
+      async update() {
+        throw new PaymentImmutabilityError();
+      },
+      async updateMany() {
+        throw new PaymentImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new PaymentImmutabilityError();
+      },
+      async upsert() {
+        throw new PaymentImmutabilityError();
+      },
+      async delete() {
+        throw new PaymentImmutabilityError();
+      },
+      async deleteMany() {
+        throw new PaymentImmutabilityError();
       },
     },
     dunning: {
