@@ -25,7 +25,7 @@ async function main() {
     return;
   }
   for (const org of orgs) {
-    const r = await verifyOrgChain(org.id, "SCHEDULER");
+    const r = await verifyOrgChain(org.id, "CLI");
     if (r.valid) console.log(`OK ${org.id} ${r.entries}`);
     else {
       console.log(`FEHLER ${org.id} broken=${r.brokenEntryId}`);

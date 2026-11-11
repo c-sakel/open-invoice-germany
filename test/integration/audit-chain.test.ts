@@ -137,6 +137,7 @@ describe("Kettenpruefung", () => {
     const bad = await run();
     expect(bad.code).toBe(1);
     expect(bad.out).toContain(`FEHLER ${orgId} broken=${victim.id}`);
+    expect((await dbInternal.chainVerification.findFirstOrThrow({ where: { orgId, trigger: "CLI" } })).valid).toBe(true);
   }, 120_000);
 
   it("manipulierter Eintrag: invalid und Pflicht-Alarm CHAIN_BROKEN", async () => {
@@ -146,5 +147,45 @@ describe("Kettenpruefung", () => {
     const n = await dbInternal.notification.findFirst({ where: { orgId, type: "CHAIN_BROKEN" } });
     expect(n).not.toBeNull();
     expect((await dbInternal.chainVerification.findFirstOrThrow({ where: { orgId }, orderBy: { checkedAt: "desc" } })).valid).toBe(false);
+  });
+
+  it("Org-Isolation: kaputte Kette einer fremden Org beeinflusst die eigene Pruefung nicht", async () => {
+    const other = (
+      await dbInternal.organization.create({
+        data: { legalName: "Fremd-Kette GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
+      })
+    ).id;
+    await dbInternal.customer.create({ data: { orgId: other, name: "Fremd AG", addressLine1: "Weg 1", postalCode: "20095", city: "Hamburg", type: "BUSINESS" } });
+    await dbInternal.changeLog.create({ data: { orgId: other, entity: "X", entityId: "1", action: "CREATE", actor: "t", at: FIX_DATE, diffJson: "{}", prevHash: "", hash: "kaputt" } });
+    expect((await verifyOrgChain(other, "API")).valid).toBe(false);
+    const third = (
+      await dbInternal.organization.create({
+        data: { legalName: "Sauber GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
+      })
+    ).id;
+    const r = await verifyOrgChain(third, "API");
+    expect(r).toMatchObject({ valid: true, entries: 0 });
+    expect(await dbInternal.notification.count({ where: { orgId: third, type: "CHAIN_BROKEN" } })).toBe(0);
+  });
+
+  it("runAuditJob: Fehler bei einer Org stoppt die uebrigen nicht", async () => {
+    const orgs = await dbInternal.organization.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+    await dbInternal.chainVerification.deleteMany({});
+    const real = dbInternal.chainVerification.create.bind(dbInternal.chainVerification);
+    const failFor = orgs[0].id;
+    const spy = vi.spyOn(dbInternal.chainVerification, "create").mockImplementation(((args: { data: { orgId: string } }) => {
+      if (args.data.orgId === failFor) throw new Error("simuliert");
+      return real(args as never);
+    }) as never);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await runAuditJob(new Date());
+      expect(res.checked).toBe(orgs.length - 1);
+      expect(await dbInternal.chainVerification.count({ where: { orgId: failFor } })).toBe(0);
+      expect(await dbInternal.chainVerification.count()).toBe(orgs.length - 1);
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });

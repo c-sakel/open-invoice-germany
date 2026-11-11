@@ -35,14 +35,17 @@ function build(n: number): Row[] {
   return rows;
 }
 
-function fakeDb(rows: Row[]) {
-  const created: unknown[] = [];
+function fakeDb(rows: Row[], previous: { valid: boolean; entries: number; lastHash: string }[] = []) {
+  const created: unknown[] = [...previous];
   const db = {
     changeLog: {
       findMany: async (args: { where: { id: { gt: number } }; take: number }) =>
         rows.filter((r) => r.id > args.where.id.gt).sort((a, b) => a.id - b.id).slice(0, args.take),
     },
-    chainVerification: { create: async (args: { data: unknown }) => void created.push(args.data) },
+    chainVerification: {
+      create: async (args: { data: unknown }) => void created.push(args.data),
+      findFirst: async () => [...(previous as { valid: boolean }[])].reverse().find((p) => p.valid) ?? null,
+    },
   };
   return { db: db as unknown as typeof dbInternal, created };
 }
@@ -102,5 +105,53 @@ describe("verifyOrgChain", () => {
     rows[idx] = { ...rows[idx], diffJson: "{}" };
     const r = await verifyOrgChain("o", "SCHEDULER", fakeDb(rows).db);
     expect(r).toMatchObject({ valid: false, brokenEntryId: rows[idx].id, entries: idx });
+  });
+
+  it("unparsebarer diffJson ist sofort ein Bruch", async () => {
+    const rows = build(4);
+    rows[1] = { ...rows[1], diffJson: "{kaputt" };
+    const r = await verifyOrgChain("o", "API", fakeDb(rows).db);
+    expect(r).toMatchObject({ valid: false, brokenEntryId: rows[1].id, entries: 1 });
+  });
+
+  describe("Abschneiden gegenueber der letzten gueltigen Pruefung", () => {
+    it("letzte Zeilen geloescht -> Bruch an der letzten verbleibenden Zeile, Alarm", async () => {
+      const rows = build(6);
+      const prevOk = { valid: true, entries: 6, lastHash: rows[5].hash };
+      const truncated = rows.slice(0, 4);
+      broken.mockClear();
+      const r = await verifyOrgChain("o", "SCHEDULER", fakeDb(truncated, [prevOk]).db);
+      expect(r).toMatchObject({ valid: false, brokenEntryId: truncated[3].id, entries: 4 });
+      expect(broken).toHaveBeenCalledTimes(1);
+    });
+
+    it("alle Zeilen geloescht -> Bruch (id 0)", async () => {
+      const rows = build(3);
+      const r = await verifyOrgChain("o", "SCHEDULER", fakeDb([], [{ valid: true, entries: 3, lastHash: rows[2].hash }]).db);
+      expect(r).toMatchObject({ valid: false, brokenEntryId: 0, entries: 0 });
+    });
+
+    it("mittlere Zeile geloescht -> Bruch", async () => {
+      const rows = build(6);
+      const prevOk = { valid: true, entries: 6, lastHash: rows[5].hash };
+      const folge = rows[3].id;
+      rows.splice(2, 1);
+      const r = await verifyOrgChain("o", "SCHEDULER", fakeDb(rows, [prevOk]).db);
+      expect(r).toMatchObject({ valid: false, brokenEntryId: folge });
+    });
+
+    it("anderer Hash an der frueheren Endposition -> Bruch; gewachsene Kette bleibt gueltig", async () => {
+      const rows = build(6);
+      const wrong = await verifyOrgChain("o", "API", fakeDb(rows, [{ valid: true, entries: 4, lastHash: "falsch" }]).db);
+      expect(wrong).toMatchObject({ valid: false, brokenEntryId: rows[3].id, entries: 3 });
+      const grown = await verifyOrgChain("o", "API", fakeDb(rows, [{ valid: true, entries: 4, lastHash: rows[3].hash }]).db);
+      expect(grown).toMatchObject({ valid: true, entries: 6 });
+    });
+
+    it("eine fruehere ungueltige Pruefung dient nicht als Anker", async () => {
+      const rows = build(3);
+      const r = await verifyOrgChain("o", "API", fakeDb(rows, [{ valid: false, entries: 9, lastHash: "x" }]).db);
+      expect(r.valid).toBe(true);
+    });
   });
 });

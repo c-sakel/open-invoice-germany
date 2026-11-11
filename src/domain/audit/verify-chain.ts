@@ -13,7 +13,7 @@ import { onChainBroken } from "@/domain/notifications/hooks";
 export const CHAIN_VERIFY_BLOCK = 1000;
 export const AUDIT_JOB_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type ChainVerificationTrigger = "UI" | "API" | "MCP" | "SCHEDULER";
+export type ChainVerificationTrigger = "UI" | "API" | "MCP" | "SCHEDULER" | "CLI";
 
 export interface ChainVerificationResult {
   valid: boolean;
@@ -26,12 +26,12 @@ export interface ChainVerificationResult {
 
 type Db = typeof dbInternal;
 
-function parseDiff(diffJson: string): unknown {
+/** `ok: false` bei unlesbarem Diff-Text — gilt sofort als Bruch (nie als `null` weiterhashen). */
+function parseDiff(diffJson: string): { ok: true; value: unknown } | { ok: false } {
   try {
-    return JSON.parse(diffJson);
+    return { ok: true, value: JSON.parse(diffJson) };
   } catch {
-    // Unlesbarer Diff-Text: Hash passt dann nicht -> Bruch wird gemeldet.
-    return Symbol("unparseable");
+    return { ok: false };
   }
 }
 
@@ -45,6 +45,14 @@ export async function verifyOrgChain(
   let entries = 0;
   let brokenEntryId: number | null = null;
   let cursor = 0;
+  let lastId = 0;
+
+  // Endabschneiden erkennen: Stand der letzten gueltigen Pruefung (Anzahl + Hash an dieser Position).
+  const anchor = await db.chainVerification.findFirst({
+    where: { orgId, valid: true },
+    orderBy: { checkedAt: "desc" },
+    select: { entries: true, lastHash: true },
+  });
 
   outer: for (;;) {
     const block = await db.changeLog.findMany({
@@ -55,13 +63,18 @@ export async function verifyOrgChain(
     });
     if (block.length === 0) break;
     for (const row of block) {
+      const diff = parseDiff(row.diffJson);
+      if (!diff.ok) {
+        brokenEntryId = row.id;
+        break outer;
+      }
       const payload: ChangeLogPayload = {
         entity: row.entity,
         entityId: row.entityId,
         action: row.action,
         actor: row.actor,
         at: row.at.toISOString(),
-        diff: parseDiff(row.diffJson),
+        diff: diff.value,
       };
       if (row.prevHash !== prev || computeEntryHash(prev, payload) !== row.hash) {
         brokenEntryId = row.id;
@@ -69,10 +82,19 @@ export async function verifyOrgChain(
       }
       prev = row.hash;
       entries++;
+      lastId = row.id;
+      if (anchor && anchor.entries > 0 && entries === anchor.entries && row.hash !== anchor.lastHash) {
+        entries--;
+        brokenEntryId = row.id;
+        break outer;
+      }
     }
     cursor = block[block.length - 1].id;
     if (block.length < CHAIN_VERIFY_BLOCK) break;
   }
+
+  // Weniger Eintraege als bei der letzten gueltigen Pruefung: Kettenende wurde abgeschnitten.
+  if (brokenEntryId === null && anchor && entries < anchor.entries) brokenEntryId = lastId;
 
   const checkedAt = new Date();
   const result: ChainVerificationResult = {
@@ -111,8 +133,12 @@ export async function runAuditJob(now: Date, db: Db = dbInternal): Promise<{ che
       select: { checkedAt: true },
     });
     if (last && last.checkedAt > threshold) continue;
-    await verifyOrgChain(org.id, "SCHEDULER", db);
-    checked++;
+    try {
+      await verifyOrgChain(org.id, "SCHEDULER", db);
+      checked++;
+    } catch (e) {
+      console.error("audit-job: Kettenpruefung fehlgeschlagen", org.id, e instanceof Error ? e.message : e);
+    }
   }
   return { checked };
 }
