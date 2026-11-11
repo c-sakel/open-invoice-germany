@@ -40,26 +40,38 @@ export class ZipWriter {
   private finished = false;
   private readonly stamp: { time: number; date: number };
 
+  private failure: Error | null = null;
+
   constructor(private readonly out: Writable, modified: Date = new Date()) {
     this.stamp = dosDateTime(modified);
+    // Dauerhaft: ein Fehler zwischen zwei Schreibvorgaengen darf weder unbehandelt bleiben noch haengen lassen.
+    out.on("error", (e: Error) => {
+      this.failure = e;
+    });
   }
 
   private async write(chunk: Buffer): Promise<void> {
+    this.assertWritable();
     this.offset += chunk.length;
     if (this.offset > LIMIT) throw new Error("ZIP64 wird nicht unterstuetzt: Archiv waere groesser als 4 GiB.");
     if (this.out.write(chunk)) return;
-    await new Promise<void>((resolve, reject) => {
-      const onError = (e: Error) => {
-        this.out.off("drain", onDrain);
-        reject(e);
-      };
-      const onDrain = () => {
-        this.out.off("error", onError);
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        this.out.off("drain", done);
+        this.out.off("close", done);
+        this.out.off("error", done);
         resolve();
       };
-      this.out.once("drain", onDrain);
-      this.out.once("error", onError);
+      this.out.once("drain", done);
+      this.out.once("close", done);
+      this.out.once("error", done);
     });
+    this.assertWritable();
+  }
+
+  private assertWritable(): void {
+    if (this.failure) throw this.failure;
+    if (this.out.destroyed) throw new Error("Ausgabestrom des ZIP wurde geschlossen.");
   }
 
   private localHeader(name: Buffer, flags: number, crc: number, compressedSize: number, size: number): Buffer {
@@ -170,9 +182,12 @@ export class ZipWriter {
     eocd.writeUInt32LE(cdSize, 12);
     eocd.writeUInt32LE(cdStart, 16);
     await this.write(eocd);
-    await new Promise<void>((resolve, reject) => {
-      this.out.once("error", reject);
-      this.out.end(() => resolve());
+    this.assertWritable();
+    await new Promise<void>((resolve) => {
+      this.out.once("finish", () => resolve());
+      this.out.once("error", () => resolve());
+      this.out.end();
     });
+    if (this.failure) throw this.failure;
   }
 }

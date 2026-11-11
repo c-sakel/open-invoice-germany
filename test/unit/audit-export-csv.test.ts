@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { uniqueFileStem } from "@/domain/audit/export";
 import { csvRow, formatCentsDe, formatDateDe, formatMilliDe } from "@/domain/audit/export-csv";
 import { buildIndexXml, GDPDU_DTD } from "@/domain/audit/gdpdu/index-xml";
 import { auditExportQuerySchema, auditExportRange } from "@/schemas/audit";
@@ -48,5 +49,16 @@ describe("GDPdU", () => {
     });
     expect(xml).toContain("A &amp; B &lt;GmbH&gt;");
     expect(xml).toContain("<Accuracy>2</Accuracy>");
+  });
+});
+
+describe("Dateinamen im Export", () => {
+  it("kollidierende Belegnummern (RE/1 und RE_1) bekommen eindeutige Namen", () => {
+    const used = new Set<string>();
+    const a = uniqueFileStem("RE/1", "aaaaaaaa1111", used);
+    const b = uniqueFileStem("RE_1", "bbbbbbbb2222", used);
+    expect(a).toBe("RE_1");
+    expect(b).toBe("RE_1-bbbbbbbb");
+    expect(uniqueFileStem("re_1", "cccccccc3333", used)).not.toBe("re_1");
   });
 });

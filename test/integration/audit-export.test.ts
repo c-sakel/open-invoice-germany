@@ -3,8 +3,9 @@
  * (Invoice.number ist global @unique). ARCHIVE_DIR zeigt auf ein temporaeres Verzeichnis.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { execFileSync } from "node:child_process";
-import { createWriteStream, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { Writable } from "node:stream";
+import { createWriteStream, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -27,11 +28,15 @@ import { recordPayment } from "@/domain/invoice/payment";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { createDunning } from "@/domain/dunning/create";
 import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
-import { AuditExportTooLargeError, buildAuditExport } from "@/domain/audit/export";
+import { AuditExportTooLargeError, buildAuditExport, buildAuditExportFile } from "@/domain/audit/export";
 import { server } from "@/mcp/server";
 import type { CreateInvoiceInput } from "@/schemas";
 import { GET as ExportV1 } from "@/app/api/v1/AuditExport/route";
 import { GET as ExportSession } from "@/app/api/settings/audit/export/route";
+
+const have = (cmd: string, arg: string) => spawnSync(cmd, [arg]).status === 0;
+const hasUnzip = have("unzip", "-v");
+const hasXmllint = have("xmllint", "--version");
 
 const FIX_DATE = new Date("2013-03-01T10:00:00.000Z");
 const FILES = [
@@ -111,14 +116,14 @@ afterAll(async () => {
   rmSync(workDir, { recursive: true, force: true });
 });
 
-describe("Pruefer-Export", () => {
+describe.skipIf(!hasUnzip)("Pruefer-Export", () => {
   it("REST liefert ein gueltiges ZIP mit allen festen Dateien, ohne interne Notizen", async () => {
     const res = await ExportV1(v1(adminToken, "?from=2013-01-01&to=2013-12-31"), ctx());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
     expect(res.headers.get("content-disposition")).toContain('filename="pruefer-export-2013-01-01-2013-12-31.zip"');
     const z = await unzipTo(res);
-    for (const f of FILES) expect(z.names).toContain(f);
+    for (const f of [...FILES, "liesmich.txt"]) expect(z.names).toContain(f);
     const safe = invoiceNumber.replace(/[^A-Za-z0-9._-]/g, "_");
     expect(z.names).toContain(`belege/${safe}.pdf`);
     expect(z.names).toContain(`belege/${safe}.xml`);
@@ -150,7 +155,7 @@ describe("Pruefer-Export", () => {
     expect(lines.slice(1).some((l) => col(l, "art") === "PAYMENT" && col(l, "betrag") === "119,00")).toBe(true);
   });
 
-  it("index.xml referenziert jede CSV und die DTD, ist wohlgeformt und DTD-gueltig", async () => {
+  it.skipIf(!hasXmllint)("index.xml referenziert jede CSV und die DTD, ist wohlgeformt und DTD-gueltig", async () => {
     const z = await unzipTo(await ExportV1(v1(adminToken, "?from=2013-01-01&to=2013-12-31"), ctx()));
     const xml = z.read("index.xml").toString("utf8");
     expect(xml).toContain('<!DOCTYPE DataSet SYSTEM "gdpdu-01-09-2004.dtd">');
@@ -225,5 +230,27 @@ describe("Pruefer-Export", () => {
     execFileSync("unzip", ["-t", file]);
     const bad = await tools["create_audit_export"].handler({ from: "2013-01-01", to: "2020-01-01", outputDir: outDir });
     expect(bad.isError).toBe(true);
+  });
+
+  it("liesmich.txt warnt vor Tabellenkalkulation und nennt die DTD-Nachbildung", async () => {
+    const z = await unzipTo(await ExportV1(v1(adminToken, "?from=2013-01-01&to=2013-12-31"), ctx()));
+    const text = z.read("liesmich.txt").toString("utf8");
+    expect(text).toContain("Formelauswertung");
+    expect(text).toContain("IDEA");
+    expect(text).toContain("Nachbildung");
+  });
+
+  it("Schreibfehler im Ausgabestrom: Export bricht mit Fehler ab (kein Hang, kein uncaught error)", async () => {
+    const out = new Writable({ write(_c, _e, cb) { cb(new Error("Platte voll")); } });
+    const range = { from: new Date("2013-01-01T00:00:00Z"), to: new Date("2013-12-31T23:59:59.999Z") };
+    await expect(buildAuditExport(orgId, range, out)).rejects.toThrow();
+  });
+
+  it("buildAuditExportFile raeumt das Temp-Verzeichnis im Fehlerfall auf", async () => {
+    const count = () => readdirSync(os.tmpdir()).filter((n) => n.startsWith("oig-audit-export-") || n.startsWith("oig-audit-csv-")).length;
+    const before = count();
+    const range = { from: new Date("2013-01-01T00:00:00Z"), to: new Date("2013-12-31T23:59:59.999Z") };
+    await expect(buildAuditExportFile(orgId, range, { maxInvoices: 0 })).rejects.toBeInstanceOf(AuditExportTooLargeError);
+    expect(count()).toBe(before);
   });
 });

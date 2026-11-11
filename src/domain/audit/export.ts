@@ -8,7 +8,7 @@
  * - Speicher: Belege je einzeln, das Aenderungsprotokoll als Datenstrom; die uebrigen Tabellen
  *   sind durch `maxInvoices` begrenzt (Standard 20.000).
  */
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,7 +31,7 @@ import {
 import { buildIndexXml, GDPDU_DTD, GDPDU_DTD_FILENAME } from "./gdpdu/index-xml";
 
 export const AUDIT_EXPORT_MAX_INVOICES = 20000;
-const INVOICE_PAGE = 200;
+const INVOICE_PAGE = 500;
 const CHANGELOG_PAGE = 1000;
 
 export class AuditExportTooLargeError extends Error {
@@ -78,8 +78,83 @@ const TABLES: ReadonlyArray<{ file: string; name: string; description: string; c
   { file: "archiv.csv", name: "Belegarchiv", description: "Archivierte Belegdateien mit SHA-256", columns: ARCHIVE_COLUMNS },
 ];
 
+/** Schreibt CSV-Zeilen gepuffert in eine Temp-Datei (Speicher bleibt unabhaengig von der Belegzahl flach). */
+class CsvSink {
+  private readonly stream: WriteStream;
+  private pending = "";
+  private failure: Error | null = null;
+
+  constructor(readonly filePath: string, header: string) {
+    this.stream = createWriteStream(filePath);
+    this.stream.on("error", (e: Error) => {
+      this.failure = e;
+    });
+    this.pending = header;
+  }
+
+  async add(line: string): Promise<void> {
+    this.pending += line;
+    if (this.pending.length >= 65536) await this.flush();
+  }
+
+  private async flush(): Promise<void> {
+    if (this.failure) throw this.failure;
+    if (this.pending === "") return;
+    const chunk = this.pending;
+    this.pending = "";
+    if (!this.stream.write(chunk, "utf8")) {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          this.stream.off("drain", done);
+          this.stream.off("close", done);
+          this.stream.off("error", done);
+          resolve();
+        };
+        this.stream.once("drain", done);
+        this.stream.once("close", done);
+        this.stream.once("error", done);
+      });
+    }
+    if (this.failure) throw this.failure;
+  }
+
+  async close(): Promise<void> {
+    await this.flush();
+    await new Promise<void>((resolve) => {
+      this.stream.once("error", () => resolve());
+      this.stream.end(() => resolve());
+    });
+    if (this.failure) throw this.failure;
+  }
+
+  destroy(): void {
+    this.stream.destroy();
+  }
+}
+
+const README = [
+  "Pruefer-Export (Z3-Datentraegerueberlassung, Paragraph 147 Abs. 6 AO)",
+  "",
+  "Die CSV-Dateien nicht in einer Tabellenkalkulation mit Formelauswertung oeffnen;",
+  "sie sind fuer Pruefsoftware (IDEA) ueber index.xml vorgesehen. Inhalte sind unveraendert",
+  "aus den Belegen uebernommen (keine Neutralisierung von Formelzeichen).",
+  "",
+  "Die mitgelieferte DTD (gdpdu-01-09-2004.dtd) ist eine Nachbildung der GDPdU-Struktur und",
+  "nicht die amtliche Datei der Finanzverwaltung.",
+  "",
+].join("\r\n");
+
 function fileStem(number: string): string {
   return number.replace(/[^A-Za-z0-9._-]/g, "_");
+}
+
+/** Eindeutiger Dateiname je Beleg (RE/1 und RE_1 kollidieren sonst); bei Kollision Suffix mit gekuerzter Beleg-ID. */
+export function uniqueFileStem(number: string, id: string, used: Set<string>): string {
+  let stem = fileStem(number);
+  if (used.has(stem.toLowerCase())) stem = `${stem}-${id.slice(0, 8)}`;
+  while (used.has(stem.toLowerCase())) stem += "_";
+  used.add(stem.toLowerCase());
+  return stem;
 }
 
 function parseBuyer(json: string | null) {
@@ -107,8 +182,14 @@ export async function buildAuditExport(
 
   const org = await dbInternal.organization.findUnique({ where: { id: orgId }, select: { legalName: true, city: true } });
   const zip = new ZipWriter(out);
-  const csv: Record<string, string> = {};
-  for (const tbl of TABLES) csv[tbl.file] = csvHeader(tbl.columns);
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "oig-audit-csv-"));
+  const sinks: Record<string, CsvSink> = {};
+  try {
+  for (const tbl of TABLES) {
+    if (tbl.file !== "aenderungsprotokoll.csv") sinks[tbl.file] = new CsvSink(path.join(workDir, tbl.file), csvHeader(tbl.columns));
+  }
+  const add = (file: string, values: CsvValue[]) => sinks[file].add(csvRow(values));
+  const usedStems = new Set<string>();
 
   let cursor: string | undefined;
   for (;;) {
@@ -149,7 +230,7 @@ export async function buildAuditExport(
 
     // Belege zuerst: archiviert bei Bedarf (Quelle SCHEDULER) und liefert nur Archivbytes.
     for (const inv of page) {
-      const stem = fileStem(inv.number ?? inv.id);
+      const stem = uniqueFileStem(inv.number ?? inv.id, inv.id, usedStems);
       await zip.addFile(`belege/${stem}.pdf`, await getArchivedInvoiceFile(orgId, inv.id, "PDF", { source: "SCHEDULER" }));
       await zip.addFile(`belege/${stem}.xml`, await getArchivedInvoiceFile(orgId, inv.id, "UBL", { source: "SCHEDULER" }));
     }
@@ -167,7 +248,7 @@ export async function buildAuditExport(
 
     for (const inv of page) {
       const nr = inv.number ?? inv.id;
-      csv["rechnungen.csv"] += csvRow([
+      await add("rechnungen.csv", [
         nr, inv.type, inv.status, inv.taxScheme, inv.currency, formatDateDe(inv.issueDate), d(inv.deliveryDate), d(inv.dueDate),
         formatCentsDe(inv.netTotalCents), formatCentsDe(inv.taxTotalCents), formatCentsDe(inv.grossTotalCents), formatCentsDe(inv.paidAmountCents),
         formatCentsDe(inv.payableCents ?? inv.grossTotalCents),
@@ -176,32 +257,32 @@ export async function buildAuditExport(
         inv.xmlFormat, inv.finalizedAt ? formatDateTimeDe(inv.finalizedAt) : null,
       ]);
       for (const l of inv.lines) {
-        csv["positionen.csv"] += csvRow([
+        await add("positionen.csv", [
           nr, l.position, l.lineType, l.articleNumber, l.description, formatMilliDe(l.quantityMilli), l.unit, formatCentsDe(l.unitNetPriceCents),
           l.taxRate, l.taxCategory, l.discountPermille, formatCentsDe(l.discountCents), formatCentsDe(l.lineNetCents),
         ]);
       }
       for (const p of inv.payments) {
-        csv["zahlungen.csv"] += csvRow([
+        await add("zahlungen.csv", [
           nr, p.id, p.kind, formatCentsDe(p.amountCents), formatDateDe(p.paidAt), p.method, p.reference, p.isSkonto ? "ja" : "nein", p.reversesPaymentId, p.reason,
           p.createdBy, p.provider, formatDateTimeDe(p.createdAt),
         ]);
       }
       for (const m of inv.dunnings) {
-        csv["mahnungen.csv"] += csvRow([
+        await add("mahnungen.csv", [
           nr, m.number, m.level, formatDateDe(m.sentAt), d(m.dueDate), formatCentsDe(m.interestAmountCents), formatCentsDe(m.feeCents), formatCentsDe(m.lateFeeCents),
           formatCentsDe(m.flatFee40Cents), m.pdfSha256, m.createdBy,
         ]);
       }
       const b = parseBuyer(inv.buyerSnapshotJson);
       if (b) {
-        csv["kunden.csv"] += csvRow([
+        await add("kunden.csv", [
           nr, inv.customerId, b.customerNumber ?? null, b.name, b.contactName, b.addressLine1, b.addressLine2, b.postalCode, b.city, b.countryCode, b.vatId, b.email, b.leitwegId,
         ]);
       }
     }
     for (const a of archived) {
-      csv["archiv.csv"] += csvRow([numberOf.get(a.invoiceId) ?? a.invoiceId, a.kind, a.sha256, a.source, formatDateTimeDe(a.createdAt)]);
+      await add("archiv.csv", [numberOf.get(a.invoiceId) ?? a.invoiceId, a.kind, a.sha256, a.source, formatDateTimeDe(a.createdAt)]);
     }
     if (page.length < INVOICE_PAGE) break;
   }
@@ -219,9 +300,11 @@ export async function buildAuditExport(
     "",
   ].join("\r\n");
 
+  await zip.addFile("liesmich.txt", Buffer.from(README, "utf8"));
   for (const tbl of TABLES) {
     if (tbl.file === "aenderungsprotokoll.csv") continue;
-    await zip.addFile(tbl.file, Buffer.from(csv[tbl.file], "utf8"));
+    await sinks[tbl.file].close();
+    await zip.addFile(tbl.file, createReadStream(sinks[tbl.file].filePath));
   }
   await zip.addFile("kettenpruefung.txt", Buffer.from(chainText, "utf8"));
 
@@ -263,6 +346,10 @@ export async function buildAuditExport(
   );
   await zip.finish();
   return { invoices: count };
+  } finally {
+    for (const sink of Object.values(sinks)) sink.destroy();
+    await rm(workDir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -279,8 +366,14 @@ export async function buildAuditExportFile(
   const file = path.join(dir, "export.zip");
   try {
     const out = createWriteStream(file);
-    const { invoices } = await buildAuditExport(orgId, range, out, opts);
-    return { path: file, invoices };
+    out.on("error", () => undefined); // Fehler erfasst der ZipWriter; hier nur gegen uncaught 'error' absichern
+    try {
+      const { invoices } = await buildAuditExport(orgId, range, out, opts);
+      return { path: file, invoices };
+    } catch (e) {
+      out.destroy();
+      throw e;
+    }
   } catch (e) {
     await rm(dir, { recursive: true, force: true });
     throw e;

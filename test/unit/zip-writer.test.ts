@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { createWriteStream, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { ZipWriter } from "@/lib/zip/writer";
 
@@ -17,8 +18,10 @@ async function build(fill: (zip: ZipWriter) => Promise<void>): Promise<{ dir: st
   return { dir, file };
 }
 
+const hasUnzip = spawnSync("unzip", ["-v"]).status === 0;
+
 describe("ZipWriter", () => {
-  it("schreibt Buffer- und Stream-Dateien (Umlaut im Namen), unzip -t und -p stimmen", async () => {
+  it.skipIf(!hasUnzip)("schreibt Buffer- und Stream-Dateien (Umlaut im Namen), unzip -t und -p stimmen", async () => {
     const big = randomBytes(300_000).toString("base64");
     const { dir, file } = await build(async (zip) => {
       await zip.addFile("belege/Rechnung-Müller.txt", Buffer.from("Grüße aus Lüneburg\r\n", "utf8"));
@@ -56,7 +59,7 @@ describe("ZipWriter", () => {
     }
   });
 
-  it("erkennt eigene Dateien nicht als beschaedigt (Roundtrip ueber Datei)", async () => {
+  it.skipIf(!hasUnzip)("erkennt eigene Dateien nicht als beschaedigt (Roundtrip ueber Datei)", async () => {
     const { dir, file } = await build(async (zip) => zip.addFile("a.txt", Buffer.from("x")));
     try {
       writeFileSync(path.join(dir, "copy.zip"), readFileSync(file));
@@ -64,5 +67,33 @@ describe("ZipWriter", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("Schreibfehler des Ausgabestroms bricht ab statt zu haengen (auch zwischen zwei Writes)", async () => {
+    let calls = 0;
+    const out = new Writable({
+      highWaterMark: 1,
+      write(_c, _e, cb) {
+        calls++;
+        if (calls >= 2) cb(new Error("Platte voll"));
+        else cb();
+      },
+    });
+    const zip = new ZipWriter(out);
+    await expect(
+      (async () => {
+        await zip.addFile("a.txt", Buffer.from("a"));
+        await zip.addFile("b.txt", Buffer.from("b"));
+        await zip.addFile("c.txt", Buffer.from("c"));
+        await zip.finish();
+      })(),
+    ).rejects.toThrow();
+  });
+
+  it("zerstoerter Ausgabestrom fuehrt zu Fehler, nicht zum Haengen", async () => {
+    const out = new Writable({ write(_c, _e, cb) { cb(); } });
+    const zip = new ZipWriter(out);
+    out.destroy();
+    await expect(zip.addFile("a.txt", Buffer.from("a"))).rejects.toThrow("geschlossen");
   });
 });
