@@ -18,6 +18,7 @@ export const NOTIFICATION_TYPES = {
   ARCHIVE_TAMPERED: "Archivierter Beleg fehlt oder wurde veraendert",
   ARCHIVE_FAILED: "Archivierung fehlgeschlagen",
   CHAIN_BROKEN: "Aenderungsprotokoll: Hash-Kette gebrochen",
+  FX_FETCH_FAILED: "Wechselkurs-Abruf fehlgeschlagen",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

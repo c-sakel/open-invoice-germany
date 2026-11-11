@@ -9,11 +9,13 @@ import { runDunningJob } from "@/domain/dunning/auto";
 import { runNotificationsJob } from "@/domain/notifications/job";
 import { runWebhookDeliveries } from "@/domain/webhook/deliver";
 import { runAuditJob } from "@/domain/audit/verify-chain";
+import { runFxJob } from "@/domain/fx/job";
 import { runCleanupJob } from "./cleanup";
 import { runArchiveJob } from "./archive-job";
 import type { SchedulerJob } from "./runner";
 
 export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, unknown>>> = {
+  fx: (now) => runFxJob(now),
   recurring: async (now) => {
     const summaries = await runDueRecurring({ now });
     const generated = summaries.reduce((n, s) => n + s.emitted.length, 0);

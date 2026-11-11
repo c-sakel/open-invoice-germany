@@ -15,6 +15,8 @@ export default defineConfig({
       // Separate Test-DB (löst relativ zum Schema-Verzeichnis auf -> prisma/test.db)
       DATABASE_URL: "file:./test.db",
       // Phase 16a: Belegarchiv der Tests nie unter ./data/archive ablegen.
+      // Phase 16b: Wechselkurs-Abruf (EZB) nie aus der Testsuite heraus ins Netz.
+      FX_AUTO_FETCH: "0",
       ARCHIVE_DIR: path.join(os.tmpdir(), "oig-test-archive"),
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell
