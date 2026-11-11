@@ -4,6 +4,7 @@
  * Eingabe selbst (Lastenheft 50/55) — kein Bypass ueber Route oder MCP.
  */
 import { z } from "zod";
+import { OssCountModeSchema } from "./oss";
 
 /** Automatik nach Online-Annahme eines Angebots. */
 export const OnQuoteAccept = z.enum(["NONE", "ORDER_CONFIRMATION", "INVOICE"]);
@@ -76,6 +77,9 @@ export const documentSettingsInputSchema = z.object({
    * Monatsdurchschnitt (Standard); `ECB_DAILY` = EZB-Tageskurs, nur mit Gestattung des Finanzamts.
    */
   fxRateSource: z.enum(["BMF_MONTHLY", "ECB_DAILY"]).default("BMF_MONTHLY"),
+  /** Phase 16e: Zaehlmodus der OSS-Schwelle (§ 3c Abs. 4 UStG) und Warnschwelle in Prozent. */
+  ossCountMode: OssCountModeSchema.default("ALL_EU_B2C"),
+  ossWarnPercent: z.number().int().min(1).max(99).default(80),
   /**
    * Nur Eingabe, wird nie gespeichert: Bestaetigung, dass das Finanzamt die Umrechnung mit dem
    * EZB-Tageskurs gestattet hat. Ein Wechsel der Kursquelle auf ECB_DAILY braucht `true`

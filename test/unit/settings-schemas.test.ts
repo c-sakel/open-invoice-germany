@@ -34,7 +34,16 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
       recurringAutoSendDefault: false,
       taxRates: [19, 7, 0],
       fxRateSource: "BMF_MONTHLY",
+      ossCountMode: "ALL_EU_B2C",
+      ossWarnPercent: 80,
     });
+  });
+
+  it("OSS: Modus und Warnschwelle werden validiert", () => {
+    expect(documentSettingsInputSchema.parse({ ossCountMode: "BY_PRODUCT", ossWarnPercent: 75 })).toMatchObject({ ossCountMode: "BY_PRODUCT", ossWarnPercent: 75 });
+    expect(documentSettingsInputSchema.safeParse({ ossWarnPercent: 100 }).success).toBe(false);
+    expect(documentSettingsInputSchema.safeParse({ ossWarnPercent: 0 }).success).toBe(false);
+    expect(documentSettingsInputSchema.safeParse({ ossCountMode: "X" }).success).toBe(false);
   });
 
   it("fxRateSource: nur BMF_MONTHLY oder ECB_DAILY", () => {

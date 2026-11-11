@@ -12,6 +12,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
+import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
@@ -155,8 +156,13 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     // Rabatt/Aufschlag wirken auf ALLE Positionen — Summen auch neu berechnen, wenn NUR
     // die Beleg-Anpassung geaendert wurde (ohne neue Positionen), analog updateDraftDocument.
     if (input.lines || adjustmentFieldChanged) {
-      const lines = input.lines
-        ? normalizeLines(resolveLineCategories(input.lines, input.taxScheme ?? invoice.taxScheme as TaxSchemeValue)).map((l) => ({
+      const normalizedInput = input.lines
+        ? normalizeLines(resolveLineCategories(input.lines, input.taxScheme ?? invoice.taxScheme as TaxSchemeValue))
+        : null;
+      // Phase 16e: OSS-Kategorie-Snapshot neu aufloesen (explizit > Produkt der Org > null).
+      const ossCategories = normalizedInput ? await resolveLineOssCategories(tx, orgId, normalizedInput) : [];
+      const lines = normalizedInput
+        ? normalizedInput.map((l, i) => ({
             position: l.position,
             lineType: l.lineType,
             productId: l.productId,
@@ -170,6 +176,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
+            ossCategory: l.lineType === "ITEM" ? ossCategories[i] : null,
             lineNetCents: l.lineType === "ITEM" ? computeLineNet(l).lineNetCents : 0,
           }))
         : invoice.lines.map((l) => ({
@@ -186,6 +193,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
+            ossCategory: l.ossCategory,
             lineNetCents: l.lineNetCents,
           }));
       // Nicht-ITEM-Zeilen gehen nie in Summen/Steuerberechnung ein (§8).

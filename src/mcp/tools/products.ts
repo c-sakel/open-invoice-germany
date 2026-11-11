@@ -67,7 +67,7 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
     "upsert_product",
     {
       title: "Produkt/Leistung speichern",
-      description: "Speichert eine wiederkehrende Leistung/ein Produkt im Katalog (Match per exaktem Namen).",
+      description: "Speichert eine wiederkehrende Leistung/ein Produkt im Katalog (Match per exaktem Namen). ossCategory (NONE | GOODS_DISTANCE | ELECTRONIC_SERVICE) steuert die Zaehlung in der OSS-Schwelle (Modus BY_PRODUCT).",
       // Fix-Welle Punkt 8: Feldliste aus productSchema komponiert statt handgepflegtem
       // inline-Zod (analog update_product) — sonst driften upsert_product und productSchema
       // auseinander. netPriceCents/taxRate/taxCategory bleiben ausgenommen: der MCP-

@@ -38,6 +38,7 @@ interface StornoCreateLine {
   discountPermille: number;
   discountCents: number;
   lineNetCents: number;
+  ossCategory?: string | null;
 }
 
 /**
@@ -45,7 +46,7 @@ interface StornoCreateLine {
  * 1:1-Abbild aller Original-Zeilen (Zeilentyp/Langtext/Artikelnummer erhalten, damit die
  * Struktur der Rechnung im Storno erkennbar bleibt — §8).
  */
-function mirrorLines(original: { lines: readonly { position: number; lineType: string; productId: string | null; description: string; descriptionLong: string | null; articleNumber: string | null; quantityMilli: number; unit: string; unitNetPriceCents: number; taxRate: number; taxCategory: string; discountPermille: number; discountCents: number; lineNetCents: number }[] }): StornoCreateLine[] {
+function mirrorLines(original: { lines: readonly { position: number; lineType: string; productId: string | null; description: string; descriptionLong: string | null; articleNumber: string | null; quantityMilli: number; unit: string; unitNetPriceCents: number; taxRate: number; taxCategory: string; discountPermille: number; discountCents: number; lineNetCents: number; ossCategory: string | null }[] }): StornoCreateLine[] {
   return original.lines.map((l) => {
     const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
     return {
@@ -63,6 +64,8 @@ function mirrorLines(original: { lines: readonly { position: number; lineType: s
       discountPermille: l.discountPermille,
       discountCents: l.discountCents,
       lineNetCents: isItem ? -l.lineNetCents : 0,
+      // Phase 16e: Kategorie-Snapshot des Originals (Storno zieht in derselben Kategorie ab).
+      ossCategory: l.ossCategory,
     };
   });
 }
