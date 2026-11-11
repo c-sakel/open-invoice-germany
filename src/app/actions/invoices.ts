@@ -35,14 +35,14 @@ export async function cancelAction(formData: FormData) {
     id = input.id;
     sendAfter = input.sendAfter;
     const org = await getActiveOrg();
-    const res = await cancelInvoice(input.id, { orgId: org.id, reason: input.reason });
+    const res = await cancelInvoice(input.id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
     creditId = res.creditNote.id;
   } catch (e) {
     errorMessage =
-      e instanceof CancelError || e instanceof NotFoundError
+      e instanceof CancelError || e instanceof FinalizeError || e instanceof NotFoundError
         ? e.message
         : e instanceof ZodError
-          ? "Ungültige Eingabe für das Storno."
+          ? `Ungültige Eingabe für das Storno: ${e.issues.map((i) => i.message).join("; ")}`
           : "Storno fehlgeschlagen.";
   }
   if (errorMessage) {

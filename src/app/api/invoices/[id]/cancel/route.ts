@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
+import { FinalizeError } from "@/domain/invoice/finalize-error";
 import { NotFoundError } from "@/domain/errors";
 import { cancelInvoiceSchema } from "@/schemas";
 import { getActiveOrg } from "@/lib/org";
@@ -27,7 +28,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     if (e instanceof SyntaxError) return NextResponse.json({ error: "Ungültiges JSON im Request-Body." }, { status: 400 });
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
-    const status = e instanceof CancelError ? 422 : 500;
+    const status = e instanceof CancelError || e instanceof FinalizeError ? 422 : 500;
     return NextResponse.json({ error: (e as Error).message }, { status });
   }
 }

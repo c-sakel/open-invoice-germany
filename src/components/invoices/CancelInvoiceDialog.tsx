@@ -32,6 +32,7 @@ export function CancelInvoiceDialog({
   const [loading, setLoading] = useState(false);
   const [reason, setReason] = useState("");
   const [sendAfter, setSendAfter] = useState(false);
+  const [fxRate, setFxRate] = useState("");
   const [pending, startTransition] = useTransition();
 
   async function open() {
@@ -57,6 +58,7 @@ export function CancelInvoiceDialog({
     fd.set("id", invoiceId);
     fd.set("reason", reason);
     if (sendAfter) fd.set("sendAfter", "1");
+    if (preview?.fxRateMissing && fxRate.trim()) fd.set("fxOverrideRate", fxRate.trim());
     startTransition(() => {
       void cancelAction(fd);
     });
@@ -121,6 +123,21 @@ export function CancelInvoiceDialog({
                 Achtung: Der Grund steht in den Notizen der Stornorechnung und ist damit für den Kunden sichtbar (PDF/XML).
               </span>
             </label>
+            {preview?.fxRateMissing && (
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-ink-soft">Kurs (Altbeleg ohne Kurs)</span>
+                <input
+                  value={fxRate}
+                  onChange={(e) => setFxRate(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={`${preview.currency} je 1 EUR, z. B. 1,25`}
+                  className="w-full rounded-md border border-rule-strong px-2 py-1.5 text-sm focus:border-pen"
+                />
+                <span className="block text-xs text-ink-muted">
+                  Dieser Beleg trägt keinen Wechselkurs. Ohne Tabellenkurs für den Leistungsmonat bitte hier den Kurs eintragen (§ 16 Abs. 6 UStG).
+                </span>
+              </label>
+            )}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={sendAfter} onChange={(e) => setSendAfter(e.target.checked)} />
               Stornorechnung danach per E-Mail senden

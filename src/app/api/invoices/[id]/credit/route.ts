@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { partialCreditSchema } from "@/schemas";
 import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
+import { FinalizeError } from "@/domain/invoice/finalize-error";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
@@ -30,7 +31,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // nicht unterscheiden (Controller-Ruling).
     if (e instanceof NotFoundError) return NextResponse.json({ error: e.message }, { status: 404 });
     if (e instanceof TaxRateNotAllowedError) return NextResponse.json({ error: e.message }, { status: 409 });
-    const status = e instanceof CreditError ? 422 : 500;
+    const status = e instanceof CreditError || e instanceof FinalizeError ? 422 : 500;
     return NextResponse.json({ error: (e as Error).message }, { status });
   }
 }

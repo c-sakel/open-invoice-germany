@@ -633,16 +633,20 @@ export const cancelActionSchema = z.object({
   id: z.string().trim().min(1),
   reason: z.string().trim().max(500).optional(),
   sendAfter: z.boolean(),
+  /** Phase 16b: Kurs nur fuer Fremdwaehrungs-Altbelege ohne Kurs-Snapshot (gleiche Grenzen wie REST). */
+  fxOverrideRate: rateDecimalSchema.optional(),
 });
 export type CancelActionInput = z.infer<typeof cancelActionSchema>;
 
 export function parseCancelFormData(formData: FormData): CancelActionInput {
   const reason = formData.get("reason");
   const send = formData.get("sendAfter");
+  const fx = formData.get("fxOverrideRate");
   return cancelActionSchema.parse({
     id: formData.get("id"),
     reason: typeof reason === "string" && reason.trim() !== "" ? reason : undefined,
     sendAfter: send === "1" || send === "on" || send === "true",
+    fxOverrideRate: typeof fx === "string" && fx.trim() !== "" ? fx : undefined,
   });
 }
 
