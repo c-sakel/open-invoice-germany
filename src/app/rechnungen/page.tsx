@@ -150,6 +150,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   const ids = result.rows.map((r) => r.id);
   const [origins, tagsByDocId] = await Promise.all([originsFor(org.id, "INVOICE", ids), tagsForDocuments(org.id, "INVOICE", ids)]);
 
+  const bandSegments = invoiceListBand(headline);
   const headlineItems: HeadlineItem[] = [
     { label: "Belege", value: String(headline.count) },
     {
@@ -350,14 +351,14 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
       <FilterBar basePath="/rechnungen" fields={fields} values={values} />
 
-      {headline.mixedCurrency ? (
+      {headline.mixedCurrency || bandSegments.every((seg) => seg.value === 0) ? (
         <ListHeadline items={headlineItems} />
       ) : (
         <Card>
           <StackedBar
             title="Geldfluss"
-            segments={invoiceListBand(headline)}
-            totalLabel={`${headline.count} Belege · Brutto ${formatCents(headline.grossCents, headline.currency)}`}
+            segments={bandSegments}
+            totalLabel={`${headline.count - headline.draftCount} festgeschriebene Belege${headline.draftCount > 0 ? ` · ${headline.draftCount} Entwürfe (nicht im Band)` : ""}`}
           />
         </Card>
       )}

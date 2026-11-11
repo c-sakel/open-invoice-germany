@@ -3,33 +3,30 @@ import { CHART_COLORS } from "@/components/charts/types";
 import { formatCents } from "@/lib/money";
 
 export interface InvoiceListBandInput {
-  grossCents: number;
-  openCents: number;
+  paidCents: number;
+  notDueCents: number;
+  dueCents: number;
   overdueCents: number;
   currency: string;
   mixedCurrency: boolean;
 }
 
 /**
- * Geldfluss-Band ueber der Rechnungsliste: bezahlt (gross - open), offen (open - overdue),
- * ueberfaellig. Negative Werte werden zu 0; bei gemischten Waehrungen gibt es kein Band.
+ * Geldfluss-Band ueber der Rechnungsliste. Basis sind NUR festgeschriebene Rechnungen
+ * (kein Entwurf, kein Storno, keine Gutschrift): Bezahlt = erfasste Zahlungen, Offen,
+ * Faellig, Ueberfaellig = jeweils offener Rest. Negative Werte werden zu 0; bei gemischten
+ * Waehrungen gibt es kein Band.
  */
 export function invoiceListBand(h: InvoiceListBandInput): StackedSegment[] {
   if (h.mixedCurrency) return [];
-  const open = Math.max(0, h.openCents);
-  const overdue = Math.min(Math.max(0, h.overdueCents), open);
-  const paid = Math.max(0, h.grossCents - open);
-  const notDue = open - overdue;
-  const seg = (key: string, label: string, value: number, color: string): StackedSegment => ({
-    key,
-    label,
-    value,
-    valueLabel: formatCents(value, h.currency),
-    color,
-  });
+  const seg = (key: string, label: string, raw: number, color: string): StackedSegment => {
+    const value = Math.max(0, raw);
+    return { key, label, value, valueLabel: formatCents(value, h.currency), color };
+  };
   return [
-    seg("paid", "Bezahlt", paid, CHART_COLORS.ledger),
-    seg("open", "Offen", notDue, CHART_COLORS.primary),
-    seg("overdue", "Überfällig", overdue, CHART_COLORS.overdue),
+    seg("paid", "Bezahlt", h.paidCents, CHART_COLORS.ledger),
+    seg("open", "Offen", h.notDueCents, CHART_COLORS.primary),
+    seg("due", "Fällig", h.dueCents, CHART_COLORS.second),
+    seg("overdue", "Überfällig", h.overdueCents, CHART_COLORS.overdue),
   ];
 }
