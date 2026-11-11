@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 /**
  * Status-Tabs ueber einer Liste (Phase 13a, §40) — Links auf `?status=…`. `offset` faellt
@@ -32,19 +35,26 @@ export function StatusTabs({
     return params.toString() ? `${basePath}?${params.toString()}` : basePath;
   }
 
+  const activeRef = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    // Aktiven Tab in der einzeiligen, scrollbaren Leiste sichtbar halten (mobil).
+    activeRef.current?.scrollIntoView?.({ inline: "center", block: "nearest" });
+  }, [active]);
+
   return (
-    <nav aria-label="Status" className="flex flex-wrap gap-1 border-b border-rule">
+    <nav aria-label="Status" className="flex snap-x gap-1 overflow-x-auto whitespace-nowrap border-b border-rule">
       {tabs.map((tab) => {
         const isActive = tab.value === active;
         return (
           <Link
             key={tab.value}
             href={hrefFor(tab.value)}
+            ref={isActive ? activeRef : undefined}
             aria-current={isActive ? "page" : undefined}
             className={
               isActive
-                ? "-mb-px border-b-2 border-pen px-3 py-2 text-sm font-medium text-pen"
-                : "-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-ink-muted hover:border-rule-strong hover:text-ink"
+                ? "-mb-px inline-flex min-h-10 shrink-0 snap-center items-center border-b-2 border-pen px-3 text-sm font-medium text-pen"
+                : "-mb-px inline-flex min-h-10 shrink-0 snap-center items-center border-b-2 border-transparent px-3 text-sm font-medium text-ink-muted hover:border-rule-strong hover:text-ink"
             }
           >
             {tab.label}

@@ -93,8 +93,8 @@ export function Topbar({ orgName, unreadCount, appVersion, brand }: Props) {
 
   return (
     <>
-      <header className="flex items-center gap-3 border-b border-rule bg-sheet px-4 py-2 lg:hidden">
-        <button type="button" aria-label="Menü" onClick={() => setOpen(true)} className="rounded-md p-1 text-ink-soft hover:bg-well">
+      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-rule bg-paper px-4 py-2 lg:hidden">
+        <button type="button" aria-label="Menü" onClick={() => setOpen(true)} className="grid h-10 w-10 place-items-center rounded-md text-ink-soft hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-pen">
           <NavIcon name="menu" className="h-5 w-5" />
         </button>
         <Link href="/" className="flex items-center font-semibold tracking-tight">

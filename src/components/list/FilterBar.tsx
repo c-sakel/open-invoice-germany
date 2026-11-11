@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { inputCls } from "@/components/forms/fields";
+import { FloatingPanel } from "@/components/ui/FloatingPanel";
 
 /**
  * Filterleiste (Phase 8b, umgebaut in Phase 13a, Fix-Welle 1 M1+M2): jede Aenderung
@@ -40,6 +42,16 @@ export type FilterField =
     }; // Name-Text, serverseitig -> Id (M2)
 
 const DEBOUNCE_MS = 300;
+const SEARCH_FIELD = "q";
+
+/**
+ * Anzahl gesetzter Filter (Phase 16f, Task 7) — Grundlage fuer "Filter (n)". Zaehlt nur
+ * Felder der Leiste (`fields`) mit nicht-leerem Wert; das Suchfeld `q` zaehlt nicht mit,
+ * weil es immer sichtbar ist.
+ */
+export function activeFilterCount(values: Record<string, string | undefined>, fields: FilterField[]): number {
+  return fields.filter((f) => f.name !== SEARCH_FIELD && (values[f.name] ?? "") !== "").length;
+}
 
 export function FilterBar({
   basePath,
@@ -105,102 +117,165 @@ export function FilterBar({
     }
   }
 
+  const searchField = fields.find((f) => f.name === SEARCH_FIELD);
+  const otherFields = fields.filter((f) => f.name !== SEARCH_FIELD);
+  const primary = otherFields.slice(0, 2);
+  const more = otherFields.slice(2);
+  const count = activeFilterCount(values, fields);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const panelAnchor = useRef<HTMLButtonElement>(null);
+  const moreActive = more.some((f) => (values[f.name] ?? "") !== "");
+  const [moreOpen, setMoreOpen] = useState(moreActive);
+
+  function chipLabel(f: FilterField, raw: string): string {
+    if (f.type === "select") return f.options.find((o) => o.value === raw)?.label ?? raw;
+    if (f.type === "combo" && f.displayValue && values[f.name] === raw) return f.displayValue;
+    return raw;
+  }
+  function hrefWithout(name: string): string {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(values)) if (v && k !== "offset" && k !== name) p.set(k, v);
+    return p.toString() ? `${basePath}?${p.toString()}` : basePath;
+  }
+  const chips = otherFields.filter((f) => (values[f.name] ?? "") !== "");
+
+  function renderField(f: FilterField, idPrefix: string) {
+    const value = local[f.name] ?? "";
+    const wrap = "flex min-w-0 flex-col gap-1 text-sm";
+    const label = <span className="font-medium text-ink-soft">{f.label}</span>;
+    if (f.type === "select") {
+      return (
+        <label key={f.name} className={wrap}>
+          {label}
+          <select name={f.name} value={value} onChange={(e) => change(f.name, e.target.value, false)} className={inputCls}>
+            <option value="">Alle</option>
+            {f.options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      );
+    }
+    if (f.type === "date") {
+      return (
+        <label key={f.name} className={wrap}>
+          {label}
+          <input type="date" name={f.name} value={value} onChange={(e) => change(f.name, e.target.value, false)} className={inputCls} />
+        </label>
+      );
+    }
+    if (f.type === "combo") {
+      const datalistId = `${idPrefix}${f.name}-optionen`;
+      return (
+        <label key={f.name} className={wrap}>
+          {label}
+          <input type="text" name={f.name} list={datalistId} value={value} onChange={(e) => change(f.name, e.target.value, true)} className={inputCls} />
+          <datalist id={datalistId}>
+            {f.options.map((o) => (
+              <option key={o.value} value={o.label} />
+            ))}
+          </datalist>
+        </label>
+      );
+    }
+    return (
+      <label key={f.name} className={wrap}>
+        {label}
+        <input
+          type="text"
+          inputMode={f.type === "number" ? "decimal" : undefined}
+          name={f.name}
+          value={value}
+          placeholder={f.placeholder}
+          onChange={(e) => change(f.name, e.target.value, true)}
+          className={inputCls}
+        />
+      </label>
+    );
+  }
+
   return (
-    <form method="get" action={basePath} className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-      {/* Task 4: Werte, die nicht als sichtbares Filterfeld existieren (z. B. `type` aus
-         der Gutschriften-Navigation, `/rechnungen?type=CREDIT_NOTE`), bleiben beim
-         JS-freien Absenden des Formulars ueber ein verstecktes Feld erhalten (`navigate`
-         oben deckt denselben Fall fuer den JS-Pfad ab). `offset` NICHT uebernehmen — eine
-         neue Filterung soll wieder bei Seite 1 beginnen. */}
+    <form method="get" action={basePath} className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-3 sm:p-4">
+      {/* Task 4: Werte ohne sichtbares Filterfeld (z. B. `type`, `archiviert`) bleiben beim
+         JS-freien Absenden ueber ein verstecktes Feld erhalten (`navigate` deckt den JS-Pfad ab).
+         `offset` NICHT uebernehmen — eine neue Filterung beginnt wieder bei Seite 1. */}
       {Object.entries(values)
         .filter(([key, v]) => v && key !== "offset" && !fields.some((f) => f.name === key))
         .map(([key, v]) => (
           <input key={key} type="hidden" name={key} value={v} />
         ))}
-      {fields.map((f) => {
-        const value = local[f.name] ?? "";
-        if (f.type === "select") {
-          return (
-            <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-ink-soft">{f.label}</span>
-              <select name={f.name} value={value} onChange={(e) => change(f.name, e.target.value, false)} className={inputCls}>
-                <option value="">Alle</option>
-                {f.options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          );
-        }
-        if (f.type === "date") {
-          return (
-            <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-ink-soft">{f.label}</span>
-              <input type="date" name={f.name} value={value} onChange={(e) => change(f.name, e.target.value, false)} className={inputCls} />
-            </label>
-          );
-        }
-        if (f.type === "number") {
-          return (
-            <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-ink-soft">{f.label}</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                name={f.name}
-                value={value}
-                placeholder={f.placeholder}
-                onChange={(e) => change(f.name, e.target.value, true)}
-                className={inputCls}
-              />
-            </label>
-          );
-        }
-        if (f.type === "combo") {
-          const datalistId = `${f.name}-optionen`;
-          return (
-            <label key={f.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-ink-soft">{f.label}</span>
-              <input
-                type="text"
-                name={f.name}
-                list={datalistId}
-                value={value}
-                onChange={(e) => change(f.name, e.target.value, true)}
-                className={inputCls}
-              />
-              <datalist id={datalistId}>
-                {f.options.map((o) => (
-                  <option key={o.value} value={o.label} />
-                ))}
-              </datalist>
-            </label>
-          );
-        }
-        return (
-          <label key={f.name} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-ink-soft">{f.label}</span>
-            <input
-              type="text"
-              name={f.name}
-              value={value}
-              placeholder={f.placeholder}
-              onChange={(e) => change(f.name, e.target.value, true)}
-              className={inputCls}
-            />
-          </label>
-        );
-      })}
-      {/* Kein sichtbarer Knopf mehr (Task 6) — jedes Feld navigiert selbst. Der Submit
-         bleibt fuer Tastaturbedienung/ohne JS erreichbar (sr-only, nicht ausgeblendet). */}
-      <button type="submit" className="sr-only">
-        Filtern
-      </button>
-      <a href={basePath} className="text-sm font-medium text-ink-muted hover:text-ink">
-        Zurücksetzen
-      </a>
+      <div className="flex flex-wrap items-end gap-3">
+        {searchField && <div className="min-w-0 flex-1 basis-48 lg:max-w-sm">{renderField(searchField, "bar-")}</div>}
+        {/* Mobil: ein Knopf oeffnet alle uebrigen Felder im Panel (Phase 16f). */}
+        {otherFields.length > 0 && (
+          <button
+            ref={panelAnchor}
+            type="button"
+            aria-expanded={panelOpen}
+            aria-haspopup="dialog"
+            onClick={() => setPanelOpen((v) => !v)}
+            className="min-h-10 rounded-md border border-rule-strong bg-sheet px-3 text-sm font-medium text-ink-soft hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-pen lg:hidden"
+          >
+            {`Filter (${count})`}
+          </button>
+        )}
+        {/* Desktop: erste zwei Felder in der Zeile, Rest hinter "Weitere Filter". */}
+        <div className="hidden flex-wrap items-end gap-3 lg:flex">{primary.map((f) => renderField(f, "bar-"))}</div>
+        {more.length > 0 && (
+          <button
+            type="button"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((v) => !v)}
+            className="hidden min-h-10 rounded-md px-2 text-sm font-medium text-ink-muted hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-pen lg:block"
+          >
+            {moreOpen ? "Weniger Filter" : "Weitere Filter"}
+          </button>
+        )}
+        {/* Kein sichtbarer Knopf (Task 6) — jedes Feld navigiert selbst; der Submit bleibt
+           fuer Tastaturbedienung/ohne JS erreichbar (sr-only). */}
+        <button type="submit" className="sr-only">
+          Filtern
+        </button>
+        <Link href={basePath} className="inline-flex min-h-10 items-center text-sm font-medium text-ink-muted hover:text-ink">
+          Zurücksetzen
+        </Link>
+      </div>
+      {moreOpen && more.length > 0 && <div className="hidden flex-wrap items-end gap-3 lg:flex">{more.map((f) => renderField(f, "bar-"))}</div>}
+      {chips.length > 0 && (
+        <ul className="flex flex-wrap gap-2" aria-label="Aktive Filter">
+          {chips.map((f) => (
+            <li key={f.name}>
+              <Link
+                href={hrefWithout(f.name)}
+                aria-label={`Filter ${f.label} entfernen`}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-pen-wash px-3 text-xs font-medium text-pen hover:bg-well"
+              >
+                <span className="text-ink-muted">{f.label}:</span>
+                <span className="max-w-40 truncate">{chipLabel(f, values[f.name] ?? "")}</span>
+                <span aria-hidden="true">×</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <FloatingPanel
+        anchorRef={panelAnchor}
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        role="dialog"
+        aria-label="Filter"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setPanelOpen(false);
+            panelAnchor.current?.focus();
+          }
+        }}
+        className="w-[min(22rem,calc(100vw-1rem))] space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4 shadow-lg lg:hidden"
+      >
+        {otherFields.map((f) => renderField(f, "panel-"))}
+      </FloatingPanel>
     </form>
   );
 }

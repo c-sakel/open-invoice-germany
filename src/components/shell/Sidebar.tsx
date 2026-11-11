@@ -62,7 +62,7 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
   const width = collapsed ? "w-14" : "w-60";
 
   return (
-    <aside className={`flex h-full ${width} shrink-0 flex-col border-r border-rule bg-sheet transition-[width]`} aria-label="Hauptnavigation">
+    <aside className={`flex h-full ${width} shrink-0 flex-col border-r border-rule bg-paper transition-[width]`} aria-label="Hauptnavigation">
       <div className="flex items-center gap-2 px-3 py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight" onClick={onClose}>
           {brand.hasAppLogo ? (
@@ -91,7 +91,7 @@ export function Sidebar({ orgName, unreadCount, appVersion, brand, drawer = fals
         ))}
       </nav>
 
-      <div className="border-t border-rule px-3 py-3 text-xs text-ink-muted">
+      <div className="sticky bottom-0 border-t border-rule bg-paper px-3 py-3 text-xs text-ink-muted">
         {!collapsed && orgName && (
           <div className="mb-2 truncate font-medium text-ink-soft" title={orgName}>
             {orgName}
