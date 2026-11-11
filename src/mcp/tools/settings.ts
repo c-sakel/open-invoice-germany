@@ -152,6 +152,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Briefpapier-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof ValidationError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

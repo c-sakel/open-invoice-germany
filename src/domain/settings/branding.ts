@@ -9,7 +9,7 @@
 import { dbInternal } from "@/lib/db";
 import { brandingSettingsInputSchema, type BrandingSettingsInput } from "@/schemas/settings";
 import { parseLayoutByType } from "@/domain/settings/layout";
-import { InvalidOperationError } from "@/domain/errors";
+import { ValidationError } from "@/domain/errors";
 import { designIdOf } from "@/lib/pdf/layouts/ids";
 
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettingsInput = brandingSettingsInputSchema.parse({});
@@ -54,7 +54,7 @@ export async function saveBrandingSettings(orgId: string, rawInput: unknown): Pr
     const found = await dbInternal.layoutDesign.findMany({ where: { orgId, archived: false, id: { in: ids } }, select: { id: true } });
     const ok = new Set(found.map((d) => d.id));
     const missing = ids.find((id) => !ok.has(id));
-    if (missing) throw new InvalidOperationError(`Layout-Design ${missing} nicht gefunden oder archiviert.`);
+    if (missing) throw new ValidationError(`Layout-Design ${missing} nicht gefunden oder archiviert.`);
   }
   const data = { ...rest, layoutByTypeJson: JSON.stringify(layoutByType) };
   await dbInternal.brandingSettings.upsert({

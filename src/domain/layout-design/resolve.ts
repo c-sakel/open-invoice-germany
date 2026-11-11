@@ -1,6 +1,7 @@
 /**
  * Aufloesung eines Layout-Designs (Phase 16g): eingefrorene Version > Design der Zuordnung
- * (aktuelle Version, auch archiviert) > festes Layout. Wirft nie — der Renderpfad faellt bei
+ * (aktuelle Version, auch archiviert) > festes Layout. Eine eingefrorene, nicht aufloesbare Version
+ * ergibt immer ein festes Layout, nie die Zuordnung. Wirft nie — der Renderpfad faellt bei
  * fehlendem oder ungueltigem Design auf das Basislayout zurueck.
  */
 import type { Prisma } from "@/generated/prisma/client";
@@ -43,7 +44,13 @@ export async function resolveLayoutSelection(
         console.error(`[layout-design] Version ${v.id}: ungueltige Konfiguration, Rueckfall auf das Basislayout.`);
         return { layoutId: baseOf(v.design.baseLayoutId), layoutVersionId: null, config: null };
       }
-      console.error(`[layout-design] Eingefrorene Version ${args.frozenVersionId} nicht gefunden (Organisation ${orgId}).`);
+      // Eingefroren, aber nicht aufloesbar: nie die aktuelle Design-Zuordnung, nur ein festes Layout
+      // (Basis des zugeordneten Designs bzw. ref bzw. standard).
+      console.error(`[layout-design] Eingefrorene Version ${args.frozenVersionId} nicht gefunden (Organisation ${orgId}), festes Layout.`);
+      const assigned = designIdOf(args.ref);
+      if (!assigned) return { layoutId: fixed, layoutVersionId: null, config: null };
+      const design = await db.layoutDesign.findFirst({ where: { id: assigned, orgId }, select: { baseLayoutId: true } });
+      return { layoutId: baseOf(design?.baseLayoutId), layoutVersionId: null, config: null };
     }
     const designId = designIdOf(args.ref);
     if (!designId) return { layoutId: fixed, layoutVersionId: null, config: null };

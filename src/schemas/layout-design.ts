@@ -126,6 +126,8 @@ const CONTRAST_MIN = 4.5;
 export function contrastWarnings(colors: LayoutDesignConfig["colors"]): { key: "primary" | "text" | "muted" | "tableHeader"; ratio: number }[] {
   const out: { key: "primary" | "text" | "muted" | "tableHeader"; ratio: number }[] = [];
   for (const key of ["primary", "text", "muted", "tableHeader"] as const) {
+    // Unvollstaendige Eingaben (Textfeld mitten im Tippen) erzeugen nur den Feldfehler, keine Warnung.
+    if (!/^#[0-9a-fA-F]{6}$/.test(colors[key])) continue;
     const ratio = contrastRatio(colors[key], "#ffffff");
     if (ratio < CONTRAST_MIN) out.push({ key, ratio });
   }

@@ -288,3 +288,29 @@ describe("MCP-Werkzeuge", () => {
     expect(res.isError).toBe(true);
   });
 });
+
+describe("Ungueltige design:-Zuordnung (Final-Review should 3)", () => {
+  const FOREIGN = "design:cnichtvorhandenabcdefghi";
+
+  it("REST PATCH /api/v1/Settings: 400 statt 409", async () => {
+    const { PATCH } = await import("@/app/api/v1/Settings/route");
+    const adminToken = (await createApiKey(orgId, { name: "Settings Admin", scopes: ["read", "write", "admin"], expiresAt: null })).token;
+    const res = await PATCH(req("http://x/api/v1/Settings", { method: "PATCH", token: adminToken, body: { branding: { layoutId: FOREIGN } } }), undefined);
+    expect(res.status).toBe(400);
+    expect((await json(res)).error?.message).toMatch(/nicht gefunden oder archiviert/);
+  });
+
+  it("UI-Route PUT /api/settings/branding: 400 mit Meldung statt 500", async () => {
+    const { PUT } = await import("@/app/api/settings/branding/route");
+    const res = await PUT(req("http://x/api/settings/branding", { method: "PUT", body: { layoutId: FOREIGN } }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/nicht gefunden oder archiviert/);
+  });
+
+  it("MCP update_branding_settings: klare Meldung statt Unerwarteter Fehler", async () => {
+    const res = await callTool("update_branding_settings", { layoutId: FOREIGN });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toMatch(/nicht gefunden oder archiviert/);
+    expect(text(res)).not.toMatch(/Unerwarteter Fehler/);
+  });
+});

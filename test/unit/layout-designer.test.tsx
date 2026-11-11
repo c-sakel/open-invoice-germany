@@ -91,6 +91,13 @@ describe("LayoutDesigner", () => {
     expect((screen.getByRole("button", { name: "Speichern" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("stuerzt bei unvollstaendigem Hex-Wert nicht ab und zeigt den Feldfehler", () => {
+    mount();
+    fireEvent.change(screen.getByLabelText("Textfarbe"), { target: { value: "#12" } });
+    expect(screen.getByText("Farbe im Format #rrggbb angeben.")).toBeTruthy();
+    expect(screen.getByLabelText("Textfarbe")).toBeTruthy();
+  });
+
   it("entprellt die Vorschau: drei Aenderungen innerhalb 300 ms ergeben genau einen fetch 500 ms nach der letzten", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     mount();
