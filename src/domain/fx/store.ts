@@ -4,6 +4,7 @@
  * Konvention: Monatszeile (`source = "MONTHLY"`) ist auf den 1. des Monats (UTC) datiert.
  * Gepflegte Werte (`origin = "MANUAL"`) werden von keinem Import/keiner Berechnung ueberschrieben.
  */
+import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { logActivity } from "@/domain/activity/log";
 import type { exchangeRateUpsertSchema } from "@/schemas/fx";
@@ -59,15 +60,20 @@ export async function storeDailyRates(rows: FxRow[], now: Date): Promise<{ inser
   return { inserted };
 }
 
+/** Mindestanzahl vorhandener EZB-Tageskurse einer Waehrung, damit ein Monatsmittel berechnet wird. */
+export const MIN_DAILY_RATES_FOR_MONTH = 15;
+
 /**
  * Monatsmittel je Waehrung aus den vorhandenen EZB-Tageskursen des Monats (nur tatsaechlich
- * vorhandene Tage, keine Luecken-/Nullwerte). Nur fuer abgeschlossene Monate; vorhandene
- * gepflegte oder importierte Monatswerte bleiben unberuehrt.
+ * vorhandene Tage, keine Luecken-/Nullwerte). Nur fuer abgeschlossene Monate und nur bei
+ * mindestens MIN_DAILY_RATES_FOR_MONTH Tageskursen (sonst `incompleteCurrencies`). Eine bereits
+ * vorhandene Monatszeile (egal welcher Herkunft) wird nie neu berechnet oder ueberschrieben:
+ * ein einmal geschriebener Monatswert ist fix (spaeter eintreffende Tageskurse aendern ihn nicht).
  */
-export async function computeMonthlyAverages(month: Date, now: Date): Promise<{ written: number }> {
+export async function computeMonthlyAverages(month: Date, now: Date): Promise<{ written: number; incompleteCurrencies: string[] }> {
   const start = monthStart(month);
   const end = nextMonthStart(month);
-  if (end.getTime() > now.getTime()) return { written: 0 };
+  if (end.getTime() > now.getTime()) return { written: 0, incompleteCurrencies: [] };
   const daily = await dbInternal.exchangeRate.findMany({
     where: { source: "ECB", rateDate: { gte: start, lt: end } },
     select: { currency: true, rateMicros: true },
@@ -79,22 +85,35 @@ export async function computeMonthlyAverages(month: Date, now: Date): Promise<{ 
     byCurrency.set(d.currency, list);
   }
   let written = 0;
+  const incompleteCurrencies: string[] = [];
   for (const [currency, values] of byCurrency) {
-    const avg = monthlyAverageMicros(values);
     const where = { source_currency_rateDate: { source: "MONTHLY", currency, rateDate: start } };
-    const current = await dbInternal.exchangeRate.findUnique({ where, select: { origin: true, rateMicros: true } });
-    if (current && current.origin !== "COMPUTED") continue;
-    if (current && current.rateMicros === avg) continue;
-    const note = `Mittel aus ${values.length} EZB-Tageskursen`;
-    await dbInternal.exchangeRate.upsert({
-      where,
-      create: { source: "MONTHLY", currency, rateDate: start, rateMicros: avg, origin: "COMPUTED", note, fetchedAt: now },
-      update: { rateMicros: avg, note, fetchedAt: now },
-      select: { id: true },
-    });
-    written += 1;
+    const current = await dbInternal.exchangeRate.findUnique({ where, select: { id: true } });
+    if (current) continue;
+    if (values.length < MIN_DAILY_RATES_FOR_MONTH) {
+      incompleteCurrencies.push(currency);
+      continue;
+    }
+    try {
+      await dbInternal.exchangeRate.create({
+        data: {
+          source: "MONTHLY",
+          currency,
+          rateDate: start,
+          rateMicros: monthlyAverageMicros(values),
+          origin: "COMPUTED",
+          note: `Mittel aus ${values.length} EZB-Tageskursen`,
+          fetchedAt: now,
+        },
+        select: { id: true },
+      });
+      written += 1;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue; // parallel geschrieben
+      throw e;
+    }
   }
-  return { written };
+  return { written, incompleteCurrencies: incompleteCurrencies.sort() };
 }
 
 /** Anzahl Werktage (Mo-Fr) im Intervall (von, bis], jeweils als UTC-Kalendertage. */
@@ -115,6 +134,8 @@ export interface RefreshResult {
   months: number;
   /** Nicht abbildbare Kurse (z. B. IDR), je Waehrung einmal. */
   skippedCurrencies: string[];
+  /** Monate (YYYY-MM) ohne Monatsmittel, weil zu wenige Tageskurse vorliegen. */
+  incompleteMonths: string[];
 }
 
 /**
@@ -140,7 +161,9 @@ export async function refreshExchangeRates(now: Date, fetchImpl?: typeof fetch):
   }
 
   const averages = await computeMonthlyAverages(prevMonthStart(now), now);
-  return { inserted, months: averages.written > 0 ? 1 : 0, skippedCurrencies: [...skipped].sort() };
+  const prev = prevMonthStart(now);
+  const incompleteMonths = averages.incompleteCurrencies.length > 0 ? [prev.toISOString().slice(0, 7)] : [];
+  return { inserted, months: averages.written > 0 ? 1 : 0, skippedCurrencies: [...skipped].sort(), incompleteMonths };
 }
 
 /** Pflegt einen Kurs manuell (z. B. amtlicher BMF-Monatswert); ueberschreibt Importe und Berechnungen. */

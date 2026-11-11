@@ -51,35 +51,57 @@ describe("storeDailyRates", () => {
   });
 });
 
+/** n Tageskurse im Feb 2108 (Tag 1..n), Werte base, base+10_000, ... */
+const febSeries = (n: number, base: number, currency = "USD"): FxRow[] =>
+  Array.from({ length: n }, (_, i) => feb(String(i + 1).padStart(2, "0"), base + i * 10_000, currency));
+
 describe("computeMonthlyAverages", () => {
   const monthly = () => dbInternal.exchangeRate.findMany({ where: { source: "MONTHLY" }, select: { currency: true, rateDate: true, rateMicros: true, origin: true } });
 
   it("schreibt das Mittel der vorhandenen Tageskurse auf den 1. des Monats", async () => {
-    await storeDailyRates([feb("02", 1_000_000), feb("03", 1_100_000), feb("04", 1_200_000)], NOW_MAR);
-    expect(await computeMonthlyAverages(d("2108-02-15"), NOW_MAR)).toEqual({ written: 1 });
-    expect(await monthly()).toEqual([{ currency: "USD", rateDate: d("2108-02-01"), rateMicros: 1_100_000, origin: "COMPUTED" }]);
-    expect(await computeMonthlyAverages(d("2108-02-15"), NOW_MAR)).toEqual({ written: 0 });
+    await storeDailyRates(febSeries(15, 1_000_000), NOW_MAR); // Mittel: 1_000_000 + 7 * 10_000
+    expect(await computeMonthlyAverages(d("2108-02-15"), NOW_MAR)).toEqual({ written: 1, incompleteCurrencies: [] });
+    expect(await monthly()).toEqual([{ currency: "USD", rateDate: d("2108-02-01"), rateMicros: 1_070_000, origin: "COMPUTED" }]);
+    expect(await computeMonthlyAverages(d("2108-02-15"), NOW_MAR)).toEqual({ written: 0, incompleteCurrencies: [] });
+  });
+
+  it("ein geschriebener Monatswert ist fix: spaeter eintreffende Tageskurse aendern ihn nicht", async () => {
+    await storeDailyRates(febSeries(15, 1_000_000), NOW_MAR);
+    await computeMonthlyAverages(d("2108-02-01"), NOW_MAR);
+    await storeDailyRates(febSeries(29, 1_000_000).slice(15).map((r) => ({ ...r, rateMicros: 2_000_000 })), NOW_MAR);
+    expect(await computeMonthlyAverages(d("2108-02-01"), NOW_MAR)).toEqual({ written: 0, incompleteCurrencies: [] });
+    expect((await monthly())[0].rateMicros).toBe(1_070_000);
+  });
+
+  it("schreibt unter 15 Tageskursen nichts und meldet die Waehrung als unvollstaendig", async () => {
+    await storeDailyRates(febSeries(14, 1_000_000), NOW_MAR);
+    expect(await computeMonthlyAverages(d("2108-02-01"), NOW_MAR)).toEqual({ written: 0, incompleteCurrencies: ["USD"] });
+    expect(await monthly()).toEqual([]);
   });
 
   it("laesst gepflegte Monatswerte unberuehrt", async () => {
-    await storeDailyRates([feb("02", 1_000_000), feb("03", 1_100_000)], NOW_MAR);
+    await storeDailyRates(febSeries(20, 1_000_000), NOW_MAR);
     await upsertManualRate({ source: "MONTHLY", currency: "USD", rateDate: d("2108-02-01"), rate: 1_999_999 }, "tester", orgId);
-    expect(await computeMonthlyAverages(d("2108-02-01"), NOW_MAR)).toEqual({ written: 0 });
+    expect(await computeMonthlyAverages(d("2108-02-01"), NOW_MAR)).toEqual({ written: 0, incompleteCurrencies: [] });
     expect((await monthly())[0]).toMatchObject({ rateMicros: 1_999_999, origin: "MANUAL" });
   });
 
   it("rechnet den laufenden Monat nicht", async () => {
-    await storeDailyRates([{ source: "ECB", currency: "USD", rateDate: d("2108-03-02"), rateMicros: 1_000_000 }], NOW_MAR);
-    expect(await computeMonthlyAverages(d("2108-03-01"), NOW_MAR)).toEqual({ written: 0 });
+    await storeDailyRates(
+      Array.from({ length: 4 }, (_, i) => ({ source: "ECB" as const, currency: "USD", rateDate: d(`2108-03-0${i + 1}`), rateMicros: 1_000_000 })),
+      NOW_MAR,
+    );
+    expect(await computeMonthlyAverages(d("2108-03-01"), NOW_MAR)).toEqual({ written: 0, incompleteCurrencies: [] });
     expect(await monthly()).toEqual([]);
   });
 
-  it("mittelt nur vorhandene Tage (keine Luecken, keine anderen Waehrungen)", async () => {
-    await storeDailyRates([feb("02", 1_000_000), feb("20", 1_300_000), feb("02", 830_000, "GBP")], NOW_MAR);
-    await computeMonthlyAverages(d("2108-02-01"), NOW_MAR);
+  it("mittelt je Waehrung getrennt; Waehrung mit zu wenigen Tagen bleibt aus", async () => {
+    await storeDailyRates([...febSeries(16, 1_000_000), ...febSeries(5, 830_000, "GBP")], NOW_MAR);
+    const res = await computeMonthlyAverages(d("2108-02-01"), NOW_MAR);
+    expect(res).toEqual({ written: 1, incompleteCurrencies: ["GBP"] });
     const rows = await monthly();
-    expect(rows.find((r) => r.currency === "USD")?.rateMicros).toBe(1_150_000);
-    expect(rows.find((r) => r.currency === "GBP")?.rateMicros).toBe(830_000);
+    expect(rows.map((r) => r.currency)).toEqual(["USD"]);
+    expect(rows[0].rateMicros).toBe(1_075_000);
   });
 });
 
@@ -102,11 +124,12 @@ describe("refreshExchangeRates", () => {
     expect(first.inserted).toBeGreaterThan(100);
     expect(first.skippedCurrencies).toEqual(["IDR"]);
     expect(new Set(calls)).toEqual(new Set([ECB_DAILY_URL, ECB_HIST90_URL]));
-    // Vormonat Oktober liegt (hist-Datei) nur teilweise vor, wird aber aus vorhandenen Tagen gemittelt.
+    // Vormonat Oktober liegt in der hist-Datei vollstaendig vor (>= 15 Tageskurse).
     expect(first.months).toBe(1);
+    expect(first.incompleteMonths).toEqual([]);
     calls.length = 0;
     const second = await refreshExchangeRates(now, fakeFetch);
-    expect(second).toEqual({ inserted: 0, months: 0, skippedCurrencies: ["IDR"] });
+    expect(second).toEqual({ inserted: 0, months: 0, skippedCurrencies: ["IDR"], incompleteMonths: [] });
     expect(calls).toEqual([ECB_DAILY_URL]);
     const usd = await rateFor(orgId, "USD", d("2026-11-11"));
     // Quelle der Org ist BMF_MONTHLY (Standard): Novembermittel gibt es noch nicht -> Oktober.
@@ -154,6 +177,67 @@ describe("runFxJob", () => {
     } finally {
       process.env.FX_AUTO_FETCH = prev;
     }
+  });
+});
+
+describe("runFxJob: Fenster, Backoff, Pflicht-Alarm", () => {
+  const failing: typeof fetch = async () => new Response("", { status: 503 });
+  const okFetch: typeof fetch = async (input) => new Response(String(input) === ECB_DAILY_URL ? daily : hist, { status: 200 });
+  const run = (startedAt: string, summary: object) =>
+    dbInternal.schedulerRun.create({ data: { job: "fx", trigger: "MANUAL", status: "OK", startedAt: new Date(startedAt), summaryJson: JSON.stringify(summary) }, select: { id: true } });
+  let prev: string | undefined;
+  beforeEach(async () => {
+    prev = process.env.FX_AUTO_FETCH;
+    process.env.FX_AUTO_FETCH = "1";
+    await dbInternal.schedulerRun.deleteMany({ where: { job: "fx" } });
+  });
+  afterAll(async () => {
+    process.env.FX_AUTO_FETCH = prev;
+    await dbInternal.schedulerRun.deleteMany({ where: { job: "fx" } });
+  });
+
+  it("Fenster: Abruf heute nach 16:15 schon erfolgt -> nicht faellig; vom Vortag -> Abruf", async () => {
+    await run("2108-03-05T15:30:00Z", { fetched: true });
+    expect(await runFxJob(new Date("2108-03-05T16:00:00Z"), failing)).toEqual({ skipped: "not-due" });
+    await dbInternal.schedulerRun.deleteMany({ where: { job: "fx" } });
+    await run("2108-03-04T15:30:00Z", { fetched: true });
+    expect(await runFxJob(new Date("2108-03-05T16:00:00Z"), failing)).toMatchObject({ error: expect.stringContaining("503") });
+  });
+
+  it("findet den letzten Abruf auch hinter vielen spaeteren Nicht-Abruf-Laeufen", async () => {
+    await run("2108-03-05T15:30:00Z", { fetched: true });
+    for (let i = 0; i < 25; i += 1) await run(`2108-03-05T15:${String(31 + (i % 20)).padStart(2, "0")}:${String(i).padStart(2, "0")}Z`, { skipped: "not-due" });
+    expect(await runFxJob(new Date("2108-03-05T16:30:00Z"), failing)).toEqual({ skipped: "not-due" });
+  });
+
+  it("Backoff: Fehler vor < 30 Minuten -> uebersprungen, danach neuer Versuch", async () => {
+    await run("2108-03-04T15:30:00Z", { fetched: true });
+    await run("2108-03-05T15:30:00Z", { error: "HTTP 503" });
+    expect(await runFxJob(new Date("2108-03-05T15:50:00Z"), failing)).toEqual({ skipped: "backoff" });
+    expect(await runFxJob(new Date("2108-03-05T16:10:00Z"), failing)).toMatchObject({ error: expect.any(String) });
+  });
+
+  it("FX_FETCH_FAILED ist Pflicht-Alarm: auch Bestandsorg ohne den Typ in den Einstellungen bekommt ihn", async () => {
+    await dbInternal.notificationSettings.upsert({
+      where: { orgId },
+      create: { orgId, enabledTypesJson: JSON.stringify(["INVOICE_OVERDUE"]) },
+      update: { enabledTypesJson: JSON.stringify(["INVOICE_OVERDUE"]) },
+      select: { id: true },
+    });
+    await dbInternal.notification.deleteMany({ where: { orgId, type: "FX_FETCH_FAILED" } });
+    await runFxJob(new Date("2108-04-05T16:00:00Z"), failing);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "FX_FETCH_FAILED" } })).toBe(1);
+  });
+
+  it("unvollstaendiger Vormonat: Benachrichtigung mit Hinweis, Lauf gilt trotzdem als Abruf", async () => {
+    await dbInternal.notification.deleteMany({ where: { orgId, type: "FX_FETCH_FAILED" } });
+    // Vormonat August: die hist-Datei beginnt am 14.8. (< 15 Tageskurse je Waehrung).
+    const res = await runFxJob(new Date("2026-09-05T16:30:00Z"), okFetch);
+    expect(res).toMatchObject({ fetched: true, incompleteMonths: ["2026-08"] });
+    const n = await dbInternal.notification.findMany({ where: { orgId, type: "FX_FETCH_FAILED" }, select: { dedupeKey: true, body: true } });
+    expect(n).toHaveLength(1);
+    expect(n[0].dedupeKey).toBe("fx-month-incomplete:2026-08");
+    expect(n[0].body).toContain("zu wenige");
   });
 });
 
