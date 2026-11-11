@@ -294,6 +294,15 @@ export const prisma = base.$extends({
         assertDunningUpdateAllowed(args.data);
         return query(args);
       },
+      async updateManyAndReturn({ args, query }) {
+        assertDunningUpdateAllowed(args.data);
+        return query(args);
+      },
+      // upsert: Anlage frei, der Update-Zweig unterliegt denselben Regeln wie update.
+      async upsert({ args, query }) {
+        assertDunningUpdateAllowed(args.update);
+        return query(args);
+      },
       async delete() {
         throw new DunningImmutabilityError(["delete"]);
       },

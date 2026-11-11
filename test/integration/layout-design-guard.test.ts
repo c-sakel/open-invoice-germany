@@ -100,4 +100,17 @@ describe("Dunning.layoutVersionId ist ueber den geschuetzten Client nicht setzba
       DunningImmutabilityError,
     );
   });
+  it("updateManyAndReturn mit layoutVersionId", async () => {
+    await expect(
+      prisma.dunning.updateManyAndReturn({ where: { id: dunningId }, data: { layoutVersionId: versionId } }),
+    ).rejects.toBeInstanceOf(DunningImmutabilityError);
+  });
+  it("upsert mit layoutVersionId im Update-Zweig", async () => {
+    const existing = await dbInternal.dunning.findUniqueOrThrow({ where: { id: dunningId } });
+    const { id: _id, ...create } = existing;
+    void _id;
+    await expect(
+      prisma.dunning.upsert({ where: { id: dunningId }, create, update: { layoutVersionId: versionId } }),
+    ).rejects.toBeInstanceOf(DunningImmutabilityError);
+  });
 });
