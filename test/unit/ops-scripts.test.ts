@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -58,6 +58,19 @@ describe("Betriebsskripte", () => {
     expect(lastLine(r.stdout)).toMatch(/^FEHLER /);
     const written = spawnSync("cat", [status], { encoding: "utf8" }).stdout;
     expect(written).toMatch(/^FEHLER \d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("backup.sh: BACKUP_KEEP_REMOTE keine Ganzzahl -> FEHLER", () => {
+    const r = run(BACKUP, { BACKUP_PASSPHRASE_FILE: pass600, DATABASE_URL: "postgresql://x", BACKUP_KEEP_REMOTE: "1; rm -rf /" });
+    expect(r.status).not.toBe(0);
+    expect(lastLine(r.stdout)).toMatch(/^FEHLER .*Ganzzahl/);
+  });
+
+  it("backup.sh: nutzt --no-owner/--no-privileges, kein Passwort in argv", () => {
+    const src = readFileSync(BACKUP, "utf8");
+    expect(src).toContain("pg_dump --no-owner --no-privileges \"$PG_URL\"");
+    expect(src).toContain("umask 077");
+    expect(src).not.toMatch(/pg_dump[^\n]*\$DATABASE_URL/);
   });
 
   it("restore-test.sh: ohne Argument -> FEHLER", () => {

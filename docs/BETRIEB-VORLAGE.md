@@ -7,7 +7,7 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
 ## Health-Check
 
 - `GET /api/health` (ohne Anmeldung): `200 {"status":"ok"}` oder `503 {"status":"error"}`, nie zwischengespeichert,
-  60 Aufrufe je IP und Minute. Geeignet fuer Monitoring und den Docker-Healthcheck.
+  60 Aufrufe je Client-IP und Minute (Aufrufe ohne Client-IP-Header oder von Loopback, etwa der Docker-Healthcheck, sind nicht begrenzt); die Datenbankabfrage hat ein Timeout von 2 s (dann 503). Geeignet fuer Monitoring und den Docker-Healthcheck.
 - `GET /api/v1/System/health` (API-Schluessel mit Scope `admin`): Datenbank, letzter erfolgreicher Lauf je
   Scheduler-Job, freier Platz und Anzahl nicht archivierter Belege im Belegarchiv, letzte Hash-Ketten-Pruefung,
   letzte erfolgreiche Sicherung (aus `BACKUP_STATUS_FILE`).
@@ -26,7 +26,7 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
 4. **Variablen** (siehe `.env.example`): `BACKUP_PASSPHRASE_FILE`, `BACKUP_TARGET`, `BACKUP_KEEP_LOCAL=30`,
    `BACKUP_KEEP_REMOTE=90`, `BACKUP_STATUS_FILE`. Ausserdem `DATABASE_URL`, `ATTACHMENTS_DIR`, `ARCHIVE_DIR`
    (Pfade des Hosts bzw. der gemounteten Volumes) und optional `BACKUP_DIR`, `ENV_FILE`.
-5. **Werkzeuge auf dem Host**: `pg_dump`/`psql` (passend zur Serverversion), `tar`, `openssl`, `gzip`,
+5. **Werkzeuge auf dem Host**: `pg_dump` (passend zur Serverversion), `tar`, `openssl`, `gzip`,
    `rsync` bzw. `aws`/`rclone`. Fuer den Restore-Test zusaetzlich `docker`, `node`/`npx`, `sha256sum`.
 6. **Cron**:
 
@@ -39,7 +39,10 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
 
 Erzeugt `oig-backup-<UTC>.tar.enc` (AES-256-CBC, PBKDF2) mit: PostgreSQL-Dump, Beleganhaenge, Belegarchiv,
 Kopie der `.env` (enthaelt Geheimnisse, daher nur verschluesselt ablegen) und `manifest.txt` (Zeilenzahlen von
-Invoice, Payment, ChangeLog, ArchivedDocument, Dunning). Bricht ab, wenn die Passphrasen-Datei nicht Modus 600 hat.
+Invoice, Payment, ChangeLog, ArchivedDocument, Dunning). Das Manifest wird aus den COPY-Bloecken des Dumps selbst
+ermittelt (derselbe Snapshot, keine Abweichung durch parallele Buchungen). Der Dump entsteht mit `--no-owner --no-privileges`
+(Rollen der Produktion existieren im Restore-Container nicht); das Passwort aus `DATABASE_URL` wird per `PGPASSWORD`
+uebergeben, nie als Argument, und der Prisma-Parameter `schema` fuer libpq entfernt. Dateien entstehen mit `umask 077`. Bricht ab, wenn die Passphrasen-Datei nicht Modus 600 hat.
 Letzte Ausgabezeile `OK <datei>` bzw. `FEHLER <grund>`. Rotation lokal nach Anzahl, am Ziel nach Alter.
 Eine fehlgeschlagene entfernte Rotation wird als Warnung gemeldet und bricht die Sicherung nicht ab.
 

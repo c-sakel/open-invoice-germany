@@ -4,11 +4,19 @@
  */
 import { dbInternal } from "@/lib/db";
 
-export async function checkDb(): Promise<boolean> {
+export const DB_CHECK_TIMEOUT_MS = 2000;
+
+export async function checkDb(timeoutMs: number = DB_CHECK_TIMEOUT_MS): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await dbInternal.$queryRaw`SELECT 1`;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+    });
+    await Promise.race([dbInternal.$queryRaw`SELECT 1`, timeout]);
     return true;
   } catch {
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

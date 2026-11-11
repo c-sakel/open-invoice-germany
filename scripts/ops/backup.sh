@@ -15,6 +15,7 @@
 #   BACKUP_STATUS_FILE      optional: Statusdatei, je Lauf eine Zeile "OK <ISO>" bzw. "FEHLER <ISO> <grund>"
 # Letzte Ausgabezeile: "OK <datei>" bzw. "FEHLER <grund>" (Exit 0 / 1).
 set -euo pipefail
+umask 077
 
 STATUS_FILE="${BACKUP_STATUS_FILE:-}"
 WORK=""
@@ -58,13 +59,26 @@ case "$TARGET" in
   *) fail "unbekanntes BACKUP_TARGET (erlaubt: rsync:user@host:/pfad, s3:bucket/prefix)" ;;
 esac
 
+KEEP_LOCAL="${BACKUP_KEEP_LOCAL:-30}"
+KEEP_REMOTE="${BACKUP_KEEP_REMOTE:-90}"
+[[ "$KEEP_LOCAL" =~ ^[0-9]+$ ]] || fail "BACKUP_KEEP_LOCAL muss eine Ganzzahl sein"
+[[ "$KEEP_REMOTE" =~ ^[0-9]+$ ]] || fail "BACKUP_KEEP_REMOTE muss eine Ganzzahl sein"
+
 [ -n "${DATABASE_URL:-}" ] || fail "DATABASE_URL ist nicht gesetzt"
-for tool in pg_dump psql tar openssl gzip; do
+for tool in pg_dump tar openssl gzip; do
   command -v "$tool" >/dev/null 2>&1 || fail "Werkzeug fehlt: $tool"
 done
 
-KEEP_LOCAL="${BACKUP_KEEP_LOCAL:-30}"
-KEEP_REMOTE="${BACKUP_KEEP_REMOTE:-90}"
+
+# Passwort nie in argv (Prozess-Listing): aus der URL herausloesen und per PGPASSWORD uebergeben.
+PG_URL="$DATABASE_URL"
+if [[ "$DATABASE_URL" =~ ^(postgres(ql)?://[^:@/]*):([^@]*)@(.*)$ ]]; then
+  PG_URL="${BASH_REMATCH[1]}@${BASH_REMATCH[4]}"
+  PGPASSWORD="$(printf '%b' "$(printf '%s' "${BASH_REMATCH[3]}" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')")"
+  export PGPASSWORD
+fi
+# libpq kennt den Prisma-Parameter "schema" nicht — entfernen.
+PG_URL="$(printf '%s' "$PG_URL" | sed -E 's/([?&])schema=[^&]*&?/\1/; s/[?&]$//')"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 ATT_DIR="${ATTACHMENTS_DIR:-./data/attachments}"
 ARC_DIR="${ARCHIVE_DIR:-./data/archive}"
@@ -78,19 +92,22 @@ STAGE="$WORK/stage"
 mkdir -p "$STAGE"
 
 # ------------------------------------------------------------------ Inhalt
-pg_dump "$DATABASE_URL" | gzip > "$STAGE/db.sql.gz"
+pg_dump --no-owner --no-privileges "$PG_URL" | gzip > "$STAGE/db.sql.gz"
 [ -d "$ATT_DIR" ] || mkdir -p "$WORK/empty-att"
 tar -czf "$STAGE/attachments.tar.gz" -C "$([ -d "$ATT_DIR" ] && echo "$ATT_DIR" || echo "$WORK/empty-att")" .
 [ -d "$ARC_DIR" ] || mkdir -p "$WORK/empty-arc"
 tar -czf "$STAGE/archive.tar.gz" -C "$([ -d "$ARC_DIR" ] && echo "$ARC_DIR" || echo "$WORK/empty-arc")" .
 if [ -f "$ENV_FILE" ]; then cp "$ENV_FILE" "$STAGE/env.copy"; chmod 600 "$STAGE/env.copy"; fi
 
+# Manifest aus dem Dump selbst (derselbe Snapshot): Zeilen der COPY-Bloecke je Tabelle.
 {
   echo "created=$(now_iso)"
-  for t in Invoice Payment ChangeLog ArchivedDocument Dunning; do
-    n="$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM \"$t\"")"
-    echo "$t=$n"
-  done
+  gunzip -c "$STAGE/db.sql.gz" | awk '
+    BEGIN { split("Invoice Payment ChangeLog ArchivedDocument Dunning", names, " "); for (i in names) count[names[i]] = 0 }
+    /^COPY / { t = $2; sub(/^public\./, "", t); gsub(/"/, "", t); if (t in count) cur = t; else cur = ""; next }
+    /^\\\.$/ { cur = ""; next }
+    cur != "" { count[cur]++ }
+    END { for (i = 1; i <= 5; i++) print names[i] "=" count[names[i]] }'
 } > "$STAGE/manifest.txt"
 
 tar -cf "$WORK/payload.tar" -C "$STAGE" .
@@ -99,13 +116,14 @@ chmod 600 "$BACKUP_DIR/$NAME"
 
 # ----------------------------------------------------------- Offsite-Ziel
 rotate_remote_by_listing() { # $1 = Listing-Befehl (Namen je Zeile), $2 = Loesch-Befehl-Praefix
-  local cutoff n
+  local cutoff n listing
+  listing="$($1)" || fail "Listing der entfernten Sicherungen fehlgeschlagen"
   cutoff="oig-backup-$(cutoff_stamp "$KEEP_REMOTE").tar.enc"
   while IFS= read -r n; do
     case "$n" in
       oig-backup-*.tar.enc) if [[ "$n" < "$cutoff" ]]; then $2 "$n"; fi ;;
     esac
-  done < <($1)
+  done <<< "$listing"
   return 0
 }
 
@@ -135,7 +153,7 @@ if [ -n "$TARGET" ]; then
       else
         fail "kein S3-Werkzeug (aws oder rclone erforderlich)"
       fi
-      rotate_remote_by_listing s3_list s3_del || echo "WARNUNG entfernte Rotation fehlgeschlagen" >&2
+      rotate_remote_by_listing s3_list s3_del
       ;;
   esac
 fi

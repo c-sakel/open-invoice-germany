@@ -61,6 +61,23 @@ describe("GET /api/health", () => {
   });
 });
 
+describe("Health: Healthcheck-Aufrufer und Timeout", () => {
+  it("Aufrufe ohne Client-IP-Header (Docker-Healthcheck) und von Loopback werden nicht begrenzt", async () => {
+    for (let i = 0; i < 70; i++) {
+      expect((await healthGet(new Request("http://localhost/api/health"))).status).toBe(200);
+      expect((await healthGet(healthReq("127.0.0.1"))).status).toBe(200);
+    }
+  });
+
+  it("checkDb: haengende Abfrage -> false nach Timeout", async () => {
+    const { dbInternal: db } = await import("@/lib/db");
+    vi.spyOn(db, "$queryRaw").mockImplementation((() => new Promise(() => {})) as never);
+    const t0 = Date.now();
+    expect(await health.checkDb(50)).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});
+
 describe("GET /api/v1/System/health", () => {
   async function call(scopes: ("read" | "write" | "send" | "admin")[]) {
     const key = await createApiKey(orgId, { name: `Health-Key ${Math.random().toString(36).slice(2)}`, scopes, expiresAt: null });
