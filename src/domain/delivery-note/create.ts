@@ -20,6 +20,7 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializeDeliveryNote } from "@/api/serializers/delivery-note";
 import { assertDocExists } from "@/domain/relations";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { createDeliveryNoteSchema, type SnapshotSource } from "@/schemas";
@@ -92,8 +93,10 @@ export async function createDeliveryNoteWithinTx(
   // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
   const number = await assignDocumentNumber(tx, orgId, docType, now);
 
-  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD"));
-  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT"));
+  // Belegsprache (Phase 16b): Eingabe > Kundensprache (Snapshot am Beleg).
+  const language = input.language ?? resolveDocLanguage(customer.language);
+  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD", language));
+  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT", language));
 
   // dnShow*-Defaults + showDeliveryAddress (Phase 7, §33): fehlt ein Anzeige-Flag am
   // Aufruf, greift die Org-Einstellung statt eines hart codierten Werts.
@@ -146,6 +149,7 @@ export async function createDeliveryNoteWithinTx(
     data: {
       orgId,
       customerId: input.customerId,
+      language,
       number,
       status: "CREATED",
       issueDate: now,

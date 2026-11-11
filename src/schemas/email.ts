@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOC_LANGUAGES } from "@/lib/i18n/doc";
 
 /** Dokumenttypen, die per E-Mail versendet werden koennen. */
 export const EMAIL_DOC_TYPES = ["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA", "INVOICE", "CREDIT_NOTE", "DUNNING", "DELIVERY_NOTE"] as const;
@@ -38,6 +39,7 @@ export const emailTemplateInputSchema = z.object({
   body: z.string().min(1).max(20000),
   signature: z.string().max(5000).optional(),
   isDefault: z.boolean().default(false),
+  language: z.enum(DOC_LANGUAGES).optional(),
 });
 export type EmailTemplateInput = z.infer<typeof emailTemplateInputSchema>;
 

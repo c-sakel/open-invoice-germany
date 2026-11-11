@@ -9,6 +9,10 @@ import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
 import { parseRateMicros } from "@/domain/fx/decimal";
+import { DOC_LANGUAGES } from "@/lib/i18n/doc";
+
+/** Belegsprache (Phase 16b): de | en. */
+export const DocLanguageSchema = z.enum(DOC_LANGUAGES);
 
 /** ISO-4217-Waehrungscode: Eingabe wird getrimmt und in Grossbuchstaben normalisiert ("eur" -> "EUR"), danach genau 3 Buchstaben. */
 export const currencyCodeSchema = z
@@ -423,6 +427,8 @@ const invoiceHeaderFields = {
   /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
    *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
   consumerRetentionHint: z.boolean().optional(),
+  /** Phase 16b: Belegsprache; ohne Angabe die Sprache des Kunden (Snapshot am Beleg). */
+  language: DocLanguageSchema.optional(),
   /** Phase 16b: Kurs je Beleg manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. "1,25"); null loescht. */
   fxOverrideRate: rateDecimalSchema.nullable().optional(),
   ...documentAdjustmentFields,
@@ -538,6 +544,7 @@ export const QuoteStatus = z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXP
 export type QuoteStatus = z.infer<typeof QuoteStatus>;
 
 const documentTextFields = {
+  language: DocLanguageSchema.optional(),
   subject: z.string().max(200).optional(),
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
@@ -725,6 +732,7 @@ const recurringObjectSchema = z.object({
   // Bewusst KEIN `.default()` — createRecurring() setzt den Settings-Default nur, wenn
   // der Aufrufer das Feld nicht selbst gesetzt hat (Task-1-Facts).
   showPeriodText: z.boolean().optional(),
+  language: DocLanguageSchema.optional(),
   notes: z.string().optional(),
   lines: z.array(invoiceLineDerivableSchema).min(1),
 });
@@ -757,6 +765,7 @@ export const updateRecurringSchema = z.object({
   autoSend: z.boolean().optional(),
   emailTemplateId: z.string().min(1).nullable().optional(),
   showPeriodText: z.boolean().optional(),
+  language: DocLanguageSchema.optional(),
   notes: z.string().nullable().optional(),
   currency: currencyCodeSchema.optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
@@ -809,6 +818,7 @@ export const createDeliveryNoteSchema = z.object({
   showArticleNumber: z.boolean().optional(),
   showDescription: z.boolean().optional(),
   showDeliveryAddress: z.boolean().optional(),
+  language: DocLanguageSchema.optional(),
   headerText: z.string().max(5000).optional(),
   footerText: z.string().max(5000).optional(),
   notes: z.string().optional(),
@@ -981,12 +991,14 @@ export const textTemplateInputSchema = z.object({
   position: TextTemplatePosition,
   body: z.string().min(1).max(5000),
   isDefault: z.boolean().default(false),
+  language: DocLanguageSchema.optional(),
 });
 export type TextTemplateInput = z.infer<typeof textTemplateInputSchema>;
 
 export const textTemplatePickQuerySchema = z.object({
   docType: z.string().min(1),
   position: TextTemplatePosition,
+  language: DocLanguageSchema.optional(),
 });
 
 export * from "./email";

@@ -189,6 +189,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     const dunning = await tx.dunning.create({
       data: {
         invoiceId,
+        language: inv.language,
         number,
         level: stage.order,
         stageId: stage.id,

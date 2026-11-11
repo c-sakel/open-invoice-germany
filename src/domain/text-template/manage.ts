@@ -36,6 +36,7 @@ export async function saveTextTemplate(orgId: string, rawInput: unknown): Promis
     return await dbInternal.$transaction(async (tx) => {
       let docType = input.docType;
       let position = input.position;
+      let language: string = input.language ?? "de";
 
       if (input.id) {
         const existing = await tx.textTemplate.findFirst({ where: { id: input.id, orgId } });
@@ -43,9 +44,10 @@ export async function saveTextTemplate(orgId: string, rawInput: unknown): Promis
         // docType/position sind unveraenderlich: der bestehende Wert gewinnt.
         docType = existing.docType as TextTemplateInput["docType"];
         position = existing.position as TextTemplateInput["position"];
+        language = existing.language; // wie docType/position unveraenderlich
 
         if (input.isDefault) {
-          await tx.textTemplate.updateMany({ where: { orgId, docType, position }, data: { isDefault: false } });
+          await tx.textTemplate.updateMany({ where: { orgId, docType, position, language }, data: { isDefault: false } });
         }
         return tx.textTemplate.update({
           where: { id: input.id },
@@ -54,10 +56,10 @@ export async function saveTextTemplate(orgId: string, rawInput: unknown): Promis
       }
 
       if (input.isDefault) {
-        await tx.textTemplate.updateMany({ where: { orgId, docType, position }, data: { isDefault: false } });
+        await tx.textTemplate.updateMany({ where: { orgId, docType, position, language }, data: { isDefault: false } });
       }
       return tx.textTemplate.create({
-        data: { orgId, docType, position, name: input.name, body: input.body, isDefault: input.isDefault },
+        data: { orgId, docType, position, language, name: input.name, body: input.body, isDefault: input.isDefault },
       });
     });
   } catch (e) {
@@ -79,7 +81,7 @@ export async function deleteTextTemplate(orgId: string, id: string): Promise<voi
 
     if (isSystemTemplate(tpl)) {
       const otherDefault = await tx.textTemplate.count({
-        where: { orgId, docType: tpl.docType, position: tpl.position, isDefault: true, id: { not: tpl.id } },
+        where: { orgId, docType: tpl.docType, position: tpl.position, language: tpl.language, isDefault: true, id: { not: tpl.id } },
       });
       if (otherDefault === 0) {
         throw new SystemTemplateProtectedError(
@@ -92,7 +94,7 @@ export async function deleteTextTemplate(orgId: string, id: string): Promise<voi
 
     if (tpl.isDefault) {
       const successor = await tx.textTemplate.findFirst({
-        where: { orgId, docType: tpl.docType, position: tpl.position },
+        where: { orgId, docType: tpl.docType, position: tpl.position, language: tpl.language },
         orderBy: { createdAt: "asc" },
       });
       if (successor) {
@@ -109,7 +111,7 @@ export async function setDefaultTextTemplate(orgId: string, id: string): Promise
   await dbInternal.$transaction(async (tx) => {
     const tpl = await tx.textTemplate.findFirst({ where: { id, orgId } });
     if (!tpl) throw new TemplateNotFoundError("Vorlage nicht gefunden.");
-    await tx.textTemplate.updateMany({ where: { orgId, docType: tpl.docType, position: tpl.position }, data: { isDefault: false } });
+    await tx.textTemplate.updateMany({ where: { orgId, docType: tpl.docType, position: tpl.position, language: tpl.language }, data: { isDefault: false } });
     await tx.textTemplate.update({ where: { id: tpl.id }, data: { isDefault: true } });
   });
 }

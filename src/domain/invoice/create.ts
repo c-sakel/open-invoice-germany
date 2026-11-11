@@ -17,6 +17,7 @@ import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { NotFoundError } from "@/domain/errors";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -92,6 +93,7 @@ export async function createDraftInvoiceWithinTx(
       defaultDiscountPermille: true,
       orderReference: true,
       paymentTermsText: true,
+      language: true,
     },
   });
   // NotFoundError statt generischem Error (Review-Fund Task 6, Phase 13d): REST/MCP
@@ -179,9 +181,12 @@ export async function createDraftInvoiceWithinTx(
   // eigenes Kopf-/Fusstext-Kundenfeld) > TextTemplate. createDraftInvoiceWithinTx wandte
   // bislang GAR KEINE Textvorlage an (anders als createBusinessDocumentWithinTx) — mit
   // Phase 8a nachgezogen.
-  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD")) ?? undefined;
-  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT")) ?? undefined;
-  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT")) ?? undefined;
+  // Belegsprache (Phase 16b): Eingabe > Kundensprache; Snapshot am Beleg, spaetere
+  // Aenderungen der Kundensprache wirken nie auf bestehende Belege.
+  const language = input.language ?? resolveDocLanguage(customer.language);
+  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "HEAD", language)) ?? undefined;
+  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT", language)) ?? undefined;
+  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT", language)) ?? undefined;
 
   const totals = computeTaxBreakdown(
     itemLines.map((l) => ({ lineNetCents: l.lineNetCents, taxRate: l.taxRate, taxCategory: l.taxCategory })),
@@ -197,6 +202,7 @@ export async function createDraftInvoiceWithinTx(
     data: {
       orgId,
       customerId: input.customerId,
+      language,
       type: input.type,
       taxScheme: input.taxScheme,
       currency,

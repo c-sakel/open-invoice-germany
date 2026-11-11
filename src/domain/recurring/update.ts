@@ -85,6 +85,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.showPeriodText !== undefined ? { showPeriodText: input.showPeriodText } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(input.currency !== undefined ? { currency: input.currency } : {}),
+        ...(input.language !== undefined ? { language: input.language } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.lines
           ? {

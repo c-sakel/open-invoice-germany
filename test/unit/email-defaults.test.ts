@@ -24,7 +24,7 @@ afterAll(async () => {
 
 describe("Selbstheilung: Standard-E-Mail-Vorlagen", () => {
   it("legt alle Standardvorlagen an", async () => {
-    const templates = await dbInternal.emailTemplate.findMany({ where: { orgId } });
+    const templates = await dbInternal.emailTemplate.findMany({ where: { orgId, language: "de" } });
     expect(templates).toHaveLength(DEFAULT_EMAIL_TEMPLATES.length);
     expect(templates).toHaveLength(10);
   });
@@ -32,7 +32,7 @@ describe("Selbstheilung: Standard-E-Mail-Vorlagen", () => {
   it("je Nicht-DUNNING-Typ genau eine Vorlage mit isDefault", async () => {
     const nonDunningTypes = [...new Set(DEFAULT_EMAIL_TEMPLATES.filter((t) => t.docType !== "DUNNING").map((t) => t.docType))];
     for (const docType of nonDunningTypes) {
-      const defaults = await dbInternal.emailTemplate.findMany({ where: { orgId, docType, isDefault: true } });
+      const defaults = await dbInternal.emailTemplate.findMany({ where: { orgId, docType, language: "de", isDefault: true } });
       expect(defaults).toHaveLength(1);
     }
   });
@@ -49,7 +49,7 @@ describe("Selbstheilung: Standard-E-Mail-Vorlagen", () => {
 
   it("zweiter Aufruf aendert die Anzahl nicht", async () => {
     await ensureOrgMasterdata(dbInternal, orgId);
-    const templates = await dbInternal.emailTemplate.findMany({ where: { orgId } });
+    const templates = await dbInternal.emailTemplate.findMany({ where: { orgId, language: "de" } });
     expect(templates).toHaveLength(10);
   });
 

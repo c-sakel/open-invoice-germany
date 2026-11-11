@@ -37,6 +37,7 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
       data: {
         orgId,
         customerId: src.customerId,
+        language: src.language,
         kind: src.kind,
         number: null,
         status: "DRAFT",
@@ -99,6 +100,7 @@ async function duplicateDeliveryNote(orgId: string, id: string, actor: string, n
       data: {
         orgId,
         customerId: src.customerId,
+        language: src.language,
         number: null,
         status: "DRAFT",
         issueDate: now,

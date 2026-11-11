@@ -21,6 +21,7 @@ import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { pickTextTemplate } from "@/domain/text-template/pick";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
@@ -108,10 +109,12 @@ export async function createBusinessDocumentWithinTx(
   // Fehlende Texte/Bedingungen: Eingabe > Kunden-Text (nur Liefer-/Zahlungsbedingungen,
   // §28) > Textvorlage der Organisation (Selbstheilung) — der Beleg speichert den Text,
   // kein Live-Bezug auf Kunde oder Vorlage.
-  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD"));
-  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT"));
-  const deliveryTerms = input.deliveryTerms ?? customer.deliveryTermsText ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_DELIVERY"));
-  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_PAYMENT"));
+  // Belegsprache (Phase 16b): Eingabe > Kundensprache (Snapshot am Beleg).
+  const language = input.language ?? resolveDocLanguage(customer.language);
+  const headerText = input.headerText ?? (await pickTextTemplate(tx, orgId, docType, "HEAD", language));
+  const footerText = input.footerText ?? (await pickTextTemplate(tx, orgId, docType, "FOOT", language));
+  const deliveryTerms = input.deliveryTerms ?? customer.deliveryTermsText ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_DELIVERY", language));
+  const paymentTerms = input.paymentTerms ?? customer.paymentTermsText ?? (await pickTextTemplate(tx, orgId, docType, "TERMS_PAYMENT", language));
 
   // Phase 14a (Task 5, BG-13/BG-15): kein shippingAddressId — Quote/Geschaeftsdokument
   // kennt keine eigene Lieferadresse (kein Feld auf dem Modell); Verhalten unveraendert.
@@ -166,6 +169,7 @@ export async function createBusinessDocumentWithinTx(
     data: {
       orgId,
       customerId: input.customerId,
+      language,
       kind: input.kind,
       number,
       status: "DRAFT",

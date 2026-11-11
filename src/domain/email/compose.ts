@@ -10,7 +10,8 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { ensureOrgEmailTemplates } from "@/domain/masterdata/ensure";
-import { DEFAULT_DUNNING_STAGES } from "@/domain/masterdata/defaults";
+import { DEFAULT_DUNNING_STAGES, EN_DUNNING_TEMPLATE_NAME_BY_ORDER } from "@/domain/masterdata/defaults";
+import { resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import { renderTemplate } from "@/lib/template/render";
 import { revealShareLinkToken, createShareLink } from "@/domain/quote-share/link";
 import { effectiveQuoteStatus } from "@/domain/document/status";
@@ -112,25 +113,53 @@ async function templatesOf(orgId: string, docType: EmailDocType) {
   });
 }
 
-/** Waehlt die Vorlage fuer eine Mahnung: 1) `stage.emailTemplateId` (direkt an der Stufe
- *  hinterlegt), 2) Fallback ueber den NAMEN der Stufe (Phase 6: Stufen sind frei
+/** Belegsprache des Dokuments (Snapshot am Beleg); unbekannte Dokumente fallen auf Deutsch. */
+async function docLanguageOf(orgId: string, docType: EmailDocType, docId: string): Promise<DocLanguage> {
+  let code: string | undefined;
+  if (docType === "INVOICE" || docType === "CREDIT_NOTE") {
+    code = (await dbInternal.invoice.findFirst({ where: { id: docId, orgId }, select: { language: true } }))?.language;
+  } else if (docType === "DELIVERY_NOTE") {
+    code = (await dbInternal.deliveryNote.findFirst({ where: { id: docId, orgId }, select: { language: true } }))?.language;
+  } else if (docType === "DUNNING") {
+    code = (await dbInternal.dunning.findFirst({ where: { id: docId, invoice: { orgId } }, select: { language: true } }))?.language;
+  } else {
+    code = (await dbInternal.quote.findFirst({ where: { id: docId, orgId }, select: { language: true } }))?.language;
+  }
+  return resolveDocLanguage(code);
+}
+
+/** Waehlt die Vorlage fuer eine Mahnung. Deutsch: 1) `stage.emailTemplateId` (direkt an der
+ *  Stufe hinterlegt), 2) Fallback ueber den NAMEN der Stufe (Phase 6: Stufen sind frei
  *  konfigurierbar, `stage.name` statt der fest verdrahteten `DEFAULT_DUNNING_STAGES`-Liste
  *  — sonst faende eine umbenannte/eigene Stufe nie ihre Vorlage), 3) irgendeine
- *  DUNNING-Vorlage. */
-async function pickDunningTemplate(orgId: string, docId: string) {
+ *  DUNNING-Vorlage. Andere Belegsprache (Phase 16b): zuerst die Stufenvorlage, falls sie
+ *  selbst in dieser Sprache vorliegt, sonst gleichnamige Vorlage bzw. englische
+ *  Systemvorlage der Stufe, sonst Standard der Sprache, zuletzt die deutsche Kette. */
+async function pickDunningTemplate(orgId: string, docId: string, language: DocLanguage) {
   const d = await dbInternal.dunning.findFirst({
     where: { id: docId, invoice: { orgId } },
     include: { stage: { include: { emailTemplate: true } } },
   });
-  if (d?.stage?.emailTemplate) return d.stage.emailTemplate;
-
   const stageName = d?.stage?.name ?? DEFAULT_DUNNING_STAGES.find((s) => s.order === d?.level)?.name;
+
+  if (language !== "de") {
+    if (d?.stage?.emailTemplate?.language === language) return d.stage.emailTemplate;
+    const names = [stageName, EN_DUNNING_TEMPLATE_NAME_BY_ORDER[d?.stage?.order ?? d?.level ?? -1]].filter((n): n is string => Boolean(n));
+    for (const name of names) {
+      const byName = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING", language, name } });
+      if (byName) return byName;
+    }
+    const langDefault = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING", language, isDefault: true }, orderBy: { createdAt: "asc" } });
+    if (langDefault) return langDefault;
+  }
+
+  if (d?.stage?.emailTemplate) return d.stage.emailTemplate;
   if (stageName) {
-    const byName = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING", name: stageName } });
+    const byName = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType: "DUNNING", language: "de", name: stageName } });
     if (byName) return byName;
   }
   return dbInternal.emailTemplate.findFirst({
-    where: { orgId, docType: "DUNNING" },
+    where: { orgId, docType: "DUNNING", language: "de" },
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
   });
 }
@@ -140,8 +169,12 @@ async function pickTemplate(orgId: string, docType: EmailDocType, docId: string,
     const explicit = await dbInternal.emailTemplate.findFirst({ where: { id: templateId, orgId, docType } });
     if (explicit) return explicit;
   }
-  if (docType === "DUNNING") return pickDunningTemplate(orgId, docId);
-  return dbInternal.emailTemplate.findFirst({ where: { orgId, docType, isDefault: true }, orderBy: { createdAt: "asc" } });
+  const language = await docLanguageOf(orgId, docType, docId);
+  if (docType === "DUNNING") return pickDunningTemplate(orgId, docId, language);
+  // Auswahl: (docType, Belegsprache, Standard) -> (docType, de, Standard).
+  const inLanguage = await dbInternal.emailTemplate.findFirst({ where: { orgId, docType, language, isDefault: true }, orderBy: { createdAt: "asc" } });
+  if (inLanguage || language === "de") return inLanguage;
+  return dbInternal.emailTemplate.findFirst({ where: { orgId, docType, language: "de", isDefault: true }, orderBy: { createdAt: "asc" } });
 }
 
 /** Baut die Vorbelegung entweder aus einem Beleg (docType/docId) oder aus einem

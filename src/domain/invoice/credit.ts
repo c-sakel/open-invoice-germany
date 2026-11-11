@@ -67,7 +67,7 @@ export async function createPartialCreditNote(
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
       select: {
-        id: true, orgId: true, customerId: true, number: true, taxScheme: true, currency: true, status: true, type: true, fxRateMicros: true,
+        id: true, orgId: true, customerId: true, language: true, number: true, taxScheme: true, currency: true, status: true, type: true, fxRateMicros: true,
         grossTotalCents: true, paidAmountCents: true, payableCents: true,
         sellerSnapshotJson: true, buyerSnapshotJson: true, contactSnapshotJson: true,
         documentDiscountPermille: true, documentDiscountCents: true,
@@ -118,6 +118,7 @@ export async function createPartialCreditNote(
       data: {
         orgId: original.orgId,
         customerId: original.customerId,
+        language: original.language,
         type: "CREDIT_NOTE",
         status: "DRAFT",
         taxScheme: original.taxScheme,

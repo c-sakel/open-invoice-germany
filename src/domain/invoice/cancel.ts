@@ -275,6 +275,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
       data: {
         orgId: original.orgId,
         customerId: original.customerId,
+        language: original.language,
         type: "CREDIT_NOTE",
         status: "DRAFT",
         taxScheme: original.taxScheme,

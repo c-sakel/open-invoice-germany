@@ -37,7 +37,7 @@ describe("ensureOrgTextTemplates", () => {
     await ensureOrgTextTemplates(dbInternal, org.id);
     await ensureOrgTextTemplates(dbInternal, org.id); // zweiter Lauf: idempotent, kein Duplikat
 
-    const all = await dbInternal.textTemplate.findMany({ where: { orgId: org.id } });
+    const all = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, language: "de" } });
     expect(all).toHaveLength(DEFAULT_TEXT_TEMPLATES.length);
 
     for (const t of DEFAULT_TEXT_TEMPLATES) {
@@ -53,7 +53,7 @@ describe("ensureOrgTextTemplates", () => {
     });
     await ensureOrgTextTemplates(dbInternal, org.id);
 
-    const rows = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD" } });
+    const rows = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD", language: "de" } });
     expect(rows.find((r) => r.name === "Eigene")!.isDefault).toBe(true);
     expect(rows.find((r) => r.name === "Standard")!.isDefault).toBe(false);
   });
@@ -62,12 +62,12 @@ describe("ensureOrgTextTemplates", () => {
     const org = await makeOrg("Heal GmbH");
     await ensureOrgTextTemplates(dbInternal, org.id);
 
-    const head = await dbInternal.textTemplate.findFirstOrThrow({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD" } });
+    const head = await dbInternal.textTemplate.findFirstOrThrow({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD", language: "de" } });
     await dbInternal.textTemplate.delete({ where: { id: head.id } }); // Standardvorlage geloescht -> kein Default mehr
 
     await ensureOrgTextTemplates(dbInternal, org.id); // Selbstheilung: Systemvorlage wird neu angelegt
 
-    const remaining = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD" } });
+    const remaining = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD", language: "de" } });
     expect(remaining).toHaveLength(1);
     expect(remaining[0]!.isDefault).toBe(true);
   });
@@ -82,7 +82,7 @@ describe("ensureOrgTextTemplates", () => {
 
     await ensureOrgTextTemplates(dbInternal, org.id);
 
-    const rows = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD" } });
+    const rows = await dbInternal.textTemplate.findMany({ where: { orgId: org.id, docType: "ANGEBOT", position: "HEAD", language: "de" } });
     expect(rows).toHaveLength(1); // Upsert legt nichts doppelt an
     expect(rows[0]!.isDefault).toBe(true); // Selbstheilung zieht den fehlenden Default nach
   });
