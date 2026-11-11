@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { saveProduct } from "@/app/actions/masterdata";
 import type { ActionResult } from "@/app/actions/result";
+import { OSS_CATEGORY_LABELS, type OssCategory } from "@/schemas/oss";
 import { taxRateOptions } from "@/lib/editor/constants";
 import { TextField, SelectField, TextAreaField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
 
@@ -15,6 +16,7 @@ export interface ProductFormData {
   netPriceCents: number;
   taxRate: number;
   differential: boolean;
+  ossCategory?: string;
 }
 
 export function ProductForm({
@@ -67,6 +69,14 @@ export function ProductForm({
           options={options}
         />
         <CheckboxField label="Differenzbesteuerung (§ 25a)" name="differential" defaultChecked={product?.differential} hint="Für Gebrauchtwaren/Refurb." />
+        <SelectField
+          label="OSS-Kategorie"
+          name="ossCategory"
+          defaultValue={product?.ossCategory ?? "NONE"}
+          options={(Object.keys(OSS_CATEGORY_LABELS) as OssCategory[]).map((value) => ({ value, label: OSS_CATEGORY_LABELS[value] }))}
+          hint="Für die OSS-Schwelle bei EU-Privatkunden (Zählweise „Nur Positionen mit OSS-Kategorie“)."
+          className="sm:col-span-2"
+        />
       </div>
 
       <SubmitButton>Produkt speichern</SubmitButton>

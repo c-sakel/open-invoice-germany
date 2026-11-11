@@ -93,6 +93,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
       taxRate: l.taxRate,
       discountPercent: (l.discountPermille / 10).toString(),
       discountAmount: (l.discountCents / 100).toFixed(2),
+      ossCategory: l.ossCategory,
     })),
   };
 

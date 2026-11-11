@@ -233,6 +233,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
     taxRate,
     taxCategory: taxRate === 0 ? "Z" : "S",
     differential: fd.get("differential") === "on",
+    ossCategory: str(fd, "ossCategory"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
   const v = parsed.data;
