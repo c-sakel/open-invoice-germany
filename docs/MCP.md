@@ -120,7 +120,7 @@ Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_
 
 ### Wechselkurse (Phase 16b)
 
-Kursquelle ist standardmäßig der amtliche Monatsdurchschnitt (`fxRateSource = BMF_MONTHLY`, § 16 Abs. 6 Satz 1 UStG); der EZB-Tageskurs (`ECB_DAILY`) nur mit Gestattung des Finanzamts (`update_document_settings`). Fehlt der Monatskurs, gilt der Vormonat (der Monat wird genannt). Das Monatsmittel entsteht nur bei mindestens 15 Tageskursen; Kurse über 2000 je EUR werden abgelehnt. `create_invoice` und `create_document` nehmen zusätzlich `language` (`de`/`en`, sonst Kundensprache) an; `create_invoice` auch `fxOverrideRate`. Die MCP-Tools laufen wie alle anderen ohne Scope-Modell (lokaler Admin-Zugang).
+Kursquelle ist standardmäßig der amtliche Monatsdurchschnitt (`fxRateSource = BMF_MONTHLY`, § 16 Abs. 6 Satz 1 UStG); der EZB-Tageskurs (`ECB_DAILY`) nur mit Gestattung des Finanzamts (`update_document_settings`). Fehlt der Monatskurs, gilt der Vormonat (der Monat wird genannt). Das Monatsmittel entsteht nur bei mindestens 15 Tageskursen; Kurse über 2000 je EUR werden abgelehnt. `create_invoice` und `create_document` nehmen zusätzlich `language` (`de`/`en`, sonst Kundensprache) an; `create_invoice` auch `fxOverrideRate`; `create_delivery_note`, `create_recurring` und `update_recurring_invoice` nehmen `language` an, `update_invoice_draft` zusätzlich `fxOverrideRate`, `cancel_invoice` und `credit_invoice` `fxOverrideRate` (nur für Altbelege ohne Kurs). Die MCP-Tools laufen wie alle anderen ohne Scope-Modell (lokaler Admin-Zugang).
 
 | Tool | Zweck | Beispiel |
 |---|---|---|

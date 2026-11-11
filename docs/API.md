@@ -391,7 +391,7 @@ Event-getriebene Zustellung (Outbox, HMAC-Signatur, Retry) über
 
 `currency` ist ein optionaler ISO-4217-Code aus drei Großbuchstaben (z. B. `USD`; Kleinbuchstaben werden zu Großbuchstaben normalisiert) an Rechnung, Dokument (Angebot/AB/Proforma) und Abo. Ohne Angabe gilt die Kette Kunde (`defaultCurrency`) > Einstellung > `EUR`. Alle Beträge des Belegs sind in dieser Währung (Integer-Cent); Fremdwährungsbelege haben keinen GiroCode.
 
-`language` (`de` | `en`) ist optional an Rechnung, Dokument und Abo; ohne Angabe gilt die Kundensprache, sonst `de`. Die Sprache wird am Beleg eingefroren und steuert PDF, E-Rechnungs-Hinweise und Mails. `fxOverrideRate` (Dezimalzahl, Einheiten Fremdwährung je 1 EUR, höchstens 6 Nachkommastellen, höchstens 2000) überschreibt die Kurstabelle beim Festschreiben, bei Storno und Teilgutschrift (Reihenfolge: Originalkurs > Override > Tabelle).
+`language` (`de` | `en`) ist optional an Rechnung, Dokument, Lieferschein und Abo und steht in allen Antworten (auch an E-Mail- und Textvorlagen); ohne Angabe gilt die Kundensprache, sonst `de`. Die Sprache wird am Beleg eingefroren und steuert PDF, E-Rechnungs-Hinweise und Mails. `fxOverrideRate` (Dezimalzahl, Einheiten Fremdwährung je 1 EUR, höchstens 6 Nachkommastellen, höchstens 2000) überschreibt die Kurstabelle beim Festschreiben, bei Storno und Teilgutschrift (Reihenfolge: Originalkurs > Override > Tabelle).
 
 ### Wechselkurse (`/api/v1/ExchangeRate`)
 
