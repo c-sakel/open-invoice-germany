@@ -23,7 +23,7 @@
   "schlicht/delivery": "ede7988ff5a245c3df883a0f2bd452a576076582d8847b3b3edd71c8e6902bfc",
   "schlicht/dunning": "2094becd4979906d102c4f636e459aa9f00bafe9d52dfb6404e5c2f53b04fc67",
   "schlicht/invoice": "6999f872fe5fe7ca18e6967dd1c31f140c2708e414a98cc9ea69933289563d76",
-  "schlicht/invoice-giro": "6999f872fe5fe7ca18e6967dd1c31f140c2708e414a98cc9ea69933289563d76",
+  "schlicht/invoice-nogiro": "9d52e97b51790ba419cb3b77dd37365c79c71084f73f8d24a446813cbf530b65",
   "schlicht/quote": "8daf091f8e07ea29df8be62b7be84951b298481417d0fc7d95ece096249920fe",
   "schwarz/credit": "14c947f43006409dc5af6114b6d5d4b39b434e6fb25ff880f30834dbe67d6634",
   "schwarz/delivery": "4bd67cbcf5203bd71c437ee33450e402eb3326211cf90eda36dab55bea39e918",
@@ -35,6 +35,6 @@
   "standard/dunning": "812dc7a2ee2b0f2df9b33fa48e6e297f4b124f81e17360779b007c8341a8920a",
   "standard/invoice": "6c7b6f4a8bf873b1097e0cdf97e764c8e2a79087a4de5c3db00c7768ae97fe91",
   "standard/invoice-en": "4cb3764b38e4d7903bbe40787e2a73bd0e92e2b89ba333c786885e483534746a",
-  "standard/invoice-giro": "6c7b6f4a8bf873b1097e0cdf97e764c8e2a79087a4de5c3db00c7768ae97fe91",
+  "standard/invoice-nogiro": "58907758dfbf2bca9f2aeb365202922544b856c3d9124b86d6156ab9c53fe32d",
   "standard/quote": "d0ae06ec51bb18097e8c7c713e9c58913ff31fa6da4e2b5f490305b9ef69a7d6"
 }

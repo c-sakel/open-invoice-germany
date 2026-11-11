@@ -19,9 +19,10 @@ const FIXTURE = path.join(process.cwd(), "test/fixtures/pdf-regression.json");
 
 type Case = { key: string; render: () => Promise<Buffer> };
 
-function giroTheme(layoutId: LayoutId) {
+// GiroCode ist im Standard an (DEFAULT_PRINT_SETTINGS) — der Sonderfall ist "aus".
+function noGiroTheme(layoutId: LayoutId) {
   const theme = referenzTheme({ compress: false, layoutId });
-  theme.options = { ...theme.options, showGiroCode: true };
+  theme.options = { ...theme.options, showGiroCode: false };
   return theme;
 }
 
@@ -45,8 +46,8 @@ function buildCases(): Case[] {
     key: "standard/invoice-en",
     render: () => renderInvoicePdf({ ...referenzInvoice(), language: "en" }, referenzTheme({ compress: false, layoutId: "standard" })),
   });
-  cases.push({ key: "standard/invoice-giro", render: () => renderInvoicePdf(referenzInvoice(), giroTheme("standard")) });
-  cases.push({ key: "schlicht/invoice-giro", render: () => renderInvoicePdf(referenzInvoice(), giroTheme("schlicht")) });
+  cases.push({ key: "standard/invoice-nogiro", render: () => renderInvoicePdf(referenzInvoice(), noGiroTheme("standard")) });
+  cases.push({ key: "schlicht/invoice-nogiro", render: () => renderInvoicePdf(referenzInvoice(), noGiroTheme("schlicht")) });
   return cases;
 }
 
@@ -72,6 +73,6 @@ describe("PDF-Regression der festen Layouts", () => {
     expect(existsSync(FIXTURE)).toBe(true);
     const expected = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<string, string>;
     expect(Object.keys(expected)).toHaveLength(38);
-    for (const key of Object.keys(sorted)) expect(sorted[key], key).toBe(expected[key]);
+    expect(sorted).toEqual(expected); // Sammelmeldung aller abweichenden Schluessel
   }, 120_000);
 });
