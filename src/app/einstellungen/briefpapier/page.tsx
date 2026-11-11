@@ -3,6 +3,7 @@ import { loadBrandingSettings } from "@/domain/settings/branding";
 import { loadPrintSettings } from "@/domain/settings/print";
 import { getActiveOrg } from "@/lib/org";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
+import { listLayoutDesigns } from "@/domain/layout-design/list";
 import { readFile } from "@/lib/attachments/storage";
 import { jpegComponents } from "@/lib/images/jpeg-info";
 import { SettingsTabs } from "@/components/SettingsTabs";
@@ -43,6 +44,10 @@ export default async function BriefpapierPage({ searchParams }: { searchParams: 
   if (tab && tab !== active) redirect("/einstellungen/briefpapier");
   const org = await getActiveOrg();
   const [branding, print] = await Promise.all([loadBrandingSettings(org.id), loadPrintSettings(org.id)]);
+  const designs =
+    active === "layouts"
+      ? (await listLayoutDesigns(org.id)).map((d) => ({ id: d.ref, name: d.name, description: "Eigenes Design", kind: "design" as const }))
+      : [];
   const cmykWarning =
     active === "briefpapier"
       ? { logo: await isCmykJpeg(branding.logoPath), background: await isCmykJpeg(branding.backgroundPath) }
@@ -53,7 +58,7 @@ export default async function BriefpapierPage({ searchParams }: { searchParams: 
       <PageHeader title="Briefpapier" subtitle="Layout, Logo, Farben und Druckoptionen für alle Belege." />
       <BriefpapierTabs active={active} />
       {active === "briefpapier" && <BrandingForm initial={branding} cmykWarning={cmykWarning} />}
-      {active === "layouts" && <LayoutGallery initial={branding} layouts={listLayouts()} />}
+      {active === "layouts" && <LayoutGallery initial={branding} layouts={listLayouts().map((l) => ({ ...l, kind: "preset" as const }))} designs={designs} />}
       {active === "druckoptionen" && <PrintSettingsForm initial={print} />}
     </div>
   );

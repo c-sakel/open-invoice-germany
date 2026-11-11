@@ -1,11 +1,12 @@
 import Link from "next/link";
 
-export type BriefpapierTab = "briefpapier" | "layouts" | "druckoptionen";
+export type BriefpapierTab = "briefpapier" | "layouts" | "designer" | "druckoptionen";
 
-const TABS: { tab: BriefpapierTab; label: string }[] = [
-  { tab: "briefpapier", label: "Briefpapier" },
-  { tab: "layouts", label: "Layouts" },
-  { tab: "druckoptionen", label: "Druckoptionen" },
+const TABS: { tab: BriefpapierTab; label: string; href: string }[] = [
+  { tab: "briefpapier", label: "Briefpapier", href: "/einstellungen/briefpapier?tab=briefpapier" },
+  { tab: "layouts", label: "Layouts", href: "/einstellungen/briefpapier?tab=layouts" },
+  { tab: "designer", label: "Designer", href: "/einstellungen/briefpapier/designer" },
+  { tab: "druckoptionen", label: "Druckoptionen", href: "/einstellungen/briefpapier?tab=druckoptionen" },
 ];
 
 /**
@@ -21,7 +22,7 @@ export function BriefpapierTabs({ active }: { active: BriefpapierTab }) {
       {TABS.map((t) => (
         <Link
           key={t.tab}
-          href={`/einstellungen/briefpapier?tab=${t.tab}`}
+          href={t.href}
           className={`-mb-px border-b-2 px-1 py-2 font-medium ${
             active === t.tab ? "border-pen text-pen" : "border-transparent text-ink-muted hover:text-ink"
           }`}
