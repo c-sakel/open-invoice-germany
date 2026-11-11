@@ -22,6 +22,7 @@ import { createPdfDocument } from "./document";
 import { buildFooterColumns } from "./footer";
 import { renderPlainTextPdf } from "@/lib/richtext";
 import { drawWrappedLine, wrapRuns } from "./text-wrap";
+import { docStrings, docLocale, formatDocDate, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 
 export interface DeliveryNotePdfLine {
   pos: number;
@@ -77,6 +78,8 @@ export interface DeliveryNotePdfData {
   deliveryDate?: Date | null;
   shippingDate?: Date | null;
   currency: string;
+  /** Belegsprache (Snapshot); fehlt sie, gilt Deutsch. */
+  language?: DocLanguage;
   seller: DeliveryNotePdfSeller;
   buyer: DeliveryNotePdfParty;
   lines: DeliveryNotePdfLine[];
@@ -100,9 +103,8 @@ export interface DeliveryNotePdfData {
   sourceNumber?: string | null;
 }
 
-function deDate(date: Date | null | undefined): string {
-  if (!date) return "—";
-  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+function docDate(date: Date | null | undefined, lang: DocLanguage): string {
+  return date ? formatDocDate(date, lang) : "—";
 }
 
 function lineNetCents(line: DeliveryNotePdfLine): number {
@@ -137,24 +139,27 @@ const COLUMN_GAP = 8;
  */
 export function buildColumns(data: DeliveryNotePdfData, contentWidth: number): Column[] {
   const cur = data.currency;
-  const columns: Column[] = [{ header: "Pos.", width: 28, render: (l) => String(l.pos) }];
+  const lang = resolveDocLanguage(data.language);
+  const t = docStrings(lang).columns;
+  const locale = docLocale(lang);
+  const columns: Column[] = [{ header: t.pos, width: 28, render: (l) => String(l.pos) }];
   if (data.showArticleNumber) {
-    columns.push({ header: "Art.-Nr.", width: 70, render: (l) => l.articleNumber ?? "" });
+    columns.push({ header: t.articleNumber, width: 70, render: (l) => l.articleNumber ?? "" });
   }
-  const descColumn: Column | null = data.showDescription ? { header: "Beschreibung", width: 0, isDescription: true, render: (l) => l.description } : null;
+  const descColumn: Column | null = data.showDescription ? { header: t.description, width: 0, isDescription: true, render: (l) => l.description } : null;
   if (descColumn) columns.push(descColumn);
-  columns.push({ header: "Menge", width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli)} ${unitLabel(l.unit)}` });
+  columns.push({ header: t.quantity, width: 70, align: "right", render: (l) => `${formatQuantity(l.quantityMilli, locale)} ${unitLabel(l.unit, lang)}` });
   if (data.showPrices) {
     columns.push({
-      header: "Einzel",
+      header: t.unitPrice,
       width: 70,
       align: "right",
-      render: (l) => (l.unitNetPriceCents != null ? formatCents(l.unitNetPriceCents, cur) : ""),
+      render: (l) => (l.unitNetPriceCents != null ? formatCents(l.unitNetPriceCents, cur, locale) : ""),
     });
     if (data.showTax) {
-      columns.push({ header: "USt", width: 35, align: "right", render: (l) => (l.taxRate != null ? `${l.taxRate}%` : "") });
+      columns.push({ header: t.vat, width: 35, align: "right", render: (l) => (l.taxRate != null ? `${l.taxRate}%` : "") });
     }
-    columns.push({ header: "Netto", width: 70, align: "right", render: (l) => (l.unitNetPriceCents != null ? formatCents(lineNetCents(l), cur) : "") });
+    columns.push({ header: t.net, width: 70, align: "right", render: (l) => (l.unitNetPriceCents != null ? formatCents(lineNetCents(l), cur, locale) : "") });
   }
   if (descColumn) {
     const fixedSum = columns.reduce((sum, c) => sum + (c === descColumn ? 0 : c.width), 0);
@@ -183,6 +188,9 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     drawBackground(doc, theme);
 
     const cur = data.currency;
+    const lang = resolveDocLanguage(data.language);
+    const t = docStrings(lang);
+    const money = (cents: number): string => formatCents(cents, cur, docLocale(lang));
     const left = margins.left;
     const right = doc.page.width - margins.right;
 
@@ -216,25 +224,25 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
       chromeStartY = typeof chromeResult === "number" ? chromeResult : undefined;
     });
 
-    const meta: KopfMetaRow[] = [{ label: "Datum", value: deDate(data.issueDate) }];
-    if (data.deliveryDate) meta.push({ label: "Lieferdatum", value: deDate(data.deliveryDate) });
-    if (data.shippingDate) meta.push({ label: "Versanddatum", value: deDate(data.shippingDate) });
-    if (data.sourceNumber) meta.push({ label: "Bezugsbeleg", value: data.sourceNumber });
+    const meta: KopfMetaRow[] = [{ label: t.meta.date, value: docDate(data.issueDate, lang) }];
+    if (data.deliveryDate) meta.push({ label: t.meta.deliveryNoteDate, value: docDate(data.deliveryDate, lang) });
+    if (data.shippingDate) meta.push({ label: t.meta.shippingDate, value: docDate(data.shippingDate, lang) });
+    if (data.sourceNumber) meta.push({ label: t.meta.referenceDocument, value: data.sourceNumber });
 
     // Lieferadresse — S7 (Fix-Welle, §36): zusaetzlicher Block aus der Standard-SHIPPING-
     // Adresse des Kunden, NUR wenn showDeliveryAddress an ist UND eine solche Adresse
     // existiert (ohne sie kein Block, kein leeres "Lieferadresse:"). Der Empfaengerblock
     // (`recipient`) wird davon unabhaengig IMMER gedruckt (siehe `KopfInput`).
     const da = data.showDeliveryAddress ? data.deliveryAddress : null;
-    const daCountry = da ? addressCountryLine(da.countryCode) : null;
+    const daCountry = da ? addressCountryLine(da.countryCode, lang) : null;
     let y = layout.drawKopf(frame, {
-      title: "Lieferschein",
-      numberLabel: "Lieferscheinnummer",
+      title: t.titles.DELIVERY_NOTE,
+      numberLabel: t.numberLabels.DELIVERY_NOTE,
       number: data.number,
       meta,
-      recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode) },
-      extraRecipientBlock: da ? { heading: "Lieferadresse:", lines: [da.addressLine1, ...(da.addressLine2 ? [da.addressLine2] : []), `${da.postalCode} ${da.city}`, ...(daCountry ? [daCountry] : [])] } : undefined,
-      senderFallback: senderLineFallback(data.seller),
+      recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode, lang) },
+      extraRecipientBlock: da ? { heading: t.meta.deliveryNoteAddress, lines: [da.addressLine1, ...(da.addressLine2 ? [da.addressLine2] : []), `${da.postalCode} ${da.city}`, ...(daCountry ? [daCountry] : [])] } : undefined,
+      senderFallback: senderLineFallback(data.seller, lang),
       intro: data.headerText,
     });
 
@@ -259,6 +267,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
         ...theme.footerFacts,
       },
       theme.brand,
+    lang,
     );
     const footerZone = footerZoneHeight(frame, layout, footerColumns);
     const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
@@ -344,14 +353,14 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
             .filter((l) => l.unitNetPriceCents != null && l.taxRate != null)
             .map((l) => ({ lineNetCents: lineNetCents(l), taxRate: l.taxRate!, taxCategory: "S" })),
         );
-        sumRow("Nettobetrag", formatCents(breakdown.netTotalCents, cur));
-        for (const t of breakdown.breakdown) {
-          if (t.taxCents > 0) sumRow(`zzgl. ${t.taxRate}% USt`, formatCents(t.taxCents, cur));
+        sumRow(t.totals.net, money(breakdown.netTotalCents));
+        for (const tx of breakdown.breakdown) {
+          if (tx.taxCents > 0) sumRow(t.totals.taxRow(tx.taxRate), money(tx.taxCents));
         }
-        sumRow("Gesamtbetrag", formatCents(breakdown.grossTotalCents, cur), true);
+        sumRow(t.totals.gross, money(breakdown.grossTotalCents), true);
       } else {
         const net = data.lines.reduce((sum, l) => sum + lineNetCents(l), 0);
-        sumRow("Nettobetrag", formatCents(net, cur), true);
+        sumRow(t.totals.net, money(net), true);
       }
       doc.font("Helvetica");
     }
@@ -380,7 +389,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
       if (theme.options.punchMarks) drawPunchMark(doc);
       if (theme.watermark) drawWatermark(doc, theme.watermark);
     }
-    if (theme.options.showPageNumbers) drawPageNumbers(doc, theme);
+    if (theme.options.showPageNumbers) drawPageNumbers(doc, theme, lang);
 
     doc.end();
   });

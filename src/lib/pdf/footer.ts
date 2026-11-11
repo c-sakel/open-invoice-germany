@@ -16,7 +16,8 @@
  */
 import type { BrandingSettingsInput } from "@/schemas/settings";
 import type { FooterColumn } from "./layouts/types";
-import { countryNameDe } from "../countries";
+import { countryName } from "../countries";
+import { docStrings, type DocLanguage } from "@/lib/i18n/doc";
 
 export interface FooterFacts {
   seller: {
@@ -52,7 +53,8 @@ function compact(lines: (string | null | undefined | false)[]): string[] {
   return lines.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
 }
 
-export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsInput): FooterColumn[] {
+export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsInput, lang: DocLanguage = "de"): FooterColumn[] {
+  const f = docStrings(lang).footer;
   if (brand.footerMode === "CUSTOM") {
     const custom = compact([brand.footerLeft, brand.footerCenter, brand.footerRight]).map((t) => ({ lines: [t] }));
     if (custom.length > 0) return custom;
@@ -62,19 +64,19 @@ export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsIn
   const accountHolder = facts.accountHolder?.trim();
   const showAccountHolder = Boolean(accountHolder && accountHolder !== s.name.trim());
   const columns: FooterColumn[] = [
-    { lines: compact([s.name, s.addressLine1, s.addressLine2, `${s.postalCode} ${s.city}`, countryNameDe(s.countryCode ?? "DE")]) },
-    { lines: compact([s.phone && `Tel. ${s.phone}`, s.email && `E-Mail ${s.email}`, facts.website && `Web ${facts.website}`]) },
-    { lines: compact([s.vatId && `USt-IdNr. ${s.vatId}`, s.taxNumber && `Steuer-Nr. ${s.taxNumber}`, facts.ownerName && `Inhaber/-in ${facts.ownerName}`]) },
+    { lines: compact([s.name, s.addressLine1, s.addressLine2, `${s.postalCode} ${s.city}`, countryName(s.countryCode ?? "DE", lang)]) },
+    { lines: compact([s.phone && `${f.phone} ${s.phone}`, s.email && `${f.email} ${s.email}`, facts.website && `${f.web} ${facts.website}`]) },
+    { lines: compact([s.vatId && `${f.vatId} ${s.vatId}`, s.taxNumber && `${f.taxNumber} ${s.taxNumber}`, facts.ownerName && `${f.owner} ${facts.ownerName}`]) },
     {
       lines: compact([
-        facts.bankName && `Bank ${facts.bankName}`,
-        facts.iban && `IBAN ${groupIban(facts.iban)}`,
-        facts.bic && `BIC ${facts.bic}`,
+        facts.bankName && `${f.bank} ${facts.bankName}`,
+        facts.iban && `${f.iban} ${groupIban(facts.iban)}`,
+        facts.bic && `${f.bic} ${facts.bic}`,
       ]),
     },
   ];
   // Kontoinhaber: bevorzugt in der Bank-Spalte (vor der IBAN); passt das Raster dann nicht mehr
   // (breiteste Zeile erzwaenge Umbrueche in den anderen Spalten), als Vollbreite-Zeile darunter.
-  if (showAccountHolder) columns.push({ lines: [`Kontoinhaber ${accountHolder}`], fullWidth: true, preferBankColumn: true });
+  if (showAccountHolder) columns.push({ lines: [`${f.accountHolder} ${accountHolder}`], fullWidth: true, preferBankColumn: true });
   return columns.filter((c) => c.lines.length > 0);
 }

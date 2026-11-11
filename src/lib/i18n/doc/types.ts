@@ -130,9 +130,12 @@ export interface DocStrings {
     downpaymentTaxHint: string;
   };
   fx: {
-    /** `rate` ist bereits locale-formatiert, `date` ebenso. */
+    /** `rate` ist bereits locale-formatiert, `date` ebenso; ein leeres `date` laesst die Datumsangabe weg
+     *  (Monatsdurchschnitt: das Label nennt den Monat bereits). */
     rateLine: (rate: string, currency: string, sourceLabel: string, date: string) => string;
     taxEurLine: (amount: string) => string;
+    /** Schlussrechnung: EUR-Steuer der bereits mit Abschlaegen abgerechneten Betraege (Betrag formatiert). */
+    deductedTaxEurLine: (amount: string) => string;
     sourceLabel: Record<FxSource, string>;
     /** "Monatsdurchschnittskurs <Monat> <Jahr>" (Monat 1..12). */
     monthlyRateLabel: (year: number, month: number) => string;
@@ -143,6 +146,8 @@ export interface DocStrings {
   exemptionReason: Record<NoticeCategory, string>;
   /** Texte, die ins E-Rechnungs-XML (BT-22, Rabatt-/Aufschlaggruende) gehen. */
   notes: {
+    /** Pflichthinweis auf Proforma-Rechnungen (PDF). */
+    proformaHint: string;
     /** § 14b Abs. 1 Satz 5 UStG (PDF und XML). */
     consumerRetentionHint: string;
     /** BG-20/BG-27 Grund eines Rabatts. */

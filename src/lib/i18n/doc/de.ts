@@ -102,7 +102,8 @@ export const de: DocStrings = {
     downpaymentTaxHint: "Anzahlung, Steuer wird mit Vereinnahmung geschuldet (§ 13 Abs. 1 Nr. 1 Buchst. a Satz 4 UStG).",
   },
   fx: {
-    rateLine: (rate, currency, sourceLabel, date) => `Umrechnungskurs: 1 EUR = ${rate} ${currency} (${sourceLabel} vom ${date})`,
+    rateLine: (rate, currency, sourceLabel, date) => `Umrechnungskurs: 1 EUR = ${rate} ${currency} (${sourceLabel}${date ? ` vom ${date}` : ""})`,
+    deductedTaxEurLine: (amount) => `davon mit Abschlägen abgerechnet: ${amount}`,
     taxEurLine: (amount) => `Umsatzsteuer in EUR: ${amount}`,
     sourceLabel: {
       BMF_MONTHLY: "BMF-Monatsdurchschnittskurs",
@@ -141,6 +142,7 @@ export const de: DocStrings = {
     O: "Nicht steuerbar",
   },
   notes: {
+    proformaHint: "Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG. Berechtigt nicht zum Vorsteuerabzug.",
     consumerRetentionHint: "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).",
     allowanceReason: "Rabatt",
     chargeReason: "Aufschlag",

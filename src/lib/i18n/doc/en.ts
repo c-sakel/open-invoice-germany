@@ -105,7 +105,8 @@ export const en: DocStrings = {
     downpaymentTaxHint: "Down payment, tax is due upon receipt of payment (section 13 (1) no. 1 lit. a sentence 4 UStG).",
   },
   fx: {
-    rateLine: (rate, currency, sourceLabel, date) => `Exchange rate: 1 EUR = ${rate} ${currency} (${sourceLabel} of ${date})`,
+    rateLine: (rate, currency, sourceLabel, date) => `Exchange rate: 1 EUR = ${rate} ${currency} (${sourceLabel}${date ? ` of ${date}` : ""})`,
+    deductedTaxEurLine: (amount) => `thereof settled with down payments: ${amount}`,
     taxEurLine: (amount) => `VAT in EUR: ${amount}`,
     sourceLabel: {
       BMF_MONTHLY: "BMF monthly average rate",
@@ -140,6 +141,7 @@ export const en: DocStrings = {
     O: "Not subject to VAT",
   },
   notes: {
+    proformaHint: "Proforma invoice — not an invoice within the meaning of § 14 UStG (German VAT Act). Does not entitle to input tax deduction.",
     consumerRetentionHint: "You are required to retain this invoice for two years (§ 14b (1) sentence 5 UStG).",
     allowanceReason: "Discount",
     chargeReason: "Surcharge",

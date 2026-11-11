@@ -6,6 +6,7 @@
 import { docLocale, docStrings, formatDocDate } from "@/lib/i18n/doc";
 import { formatRate } from "@/domain/fx/decimal";
 import type { EInvoiceData, EInvoiceFx } from "./types";
+import type { DocLanguage } from "@/lib/i18n/doc";
 
 /** Der Fremdwaehrungsblock, sofern der Beleg wirklich in Fremdwaehrung lautet; sonst null. */
 export function fxOf(data: EInvoiceData): EInvoiceFx | null {
@@ -17,4 +18,18 @@ export function fxRateNoteText(data: EInvoiceData, fx: EInvoiceFx): string {
   const lang = data.language ?? "de";
   const t = docStrings(lang).fx;
   return t.rateLine(formatRate(fx.rateMicros, docLocale(lang)), data.currency, t.sourceLabel[fx.source], formatDocDate(fx.rateDate, lang));
+}
+
+/**
+ * PDF-Kurszeile: beim Monatsdurchschnitt nennt das Label den Monat ("Monatsdurchschnittskurs
+ * März 2109", Monat des tatsaechlich verwendeten Kurses, auch beim Vormonats-Fallback), sonst
+ * Quelle plus Kursdatum. Der Kurs selbst ist der eingefrorene Beleg-Kurs.
+ */
+export function fxPdfRateLine(lang: DocLanguage, currency: string, fx: EInvoiceFx): string {
+  const t = docStrings(lang).fx;
+  const rate = formatRate(fx.rateMicros, docLocale(lang));
+  if (fx.source === "BMF_MONTHLY") {
+    return t.rateLine(rate, currency, t.monthlyRateLabel(fx.rateDate.getUTCFullYear(), fx.rateDate.getUTCMonth() + 1), "");
+  }
+  return t.rateLine(rate, currency, t.sourceLabel[fx.source], formatDocDate(fx.rateDate, lang));
 }

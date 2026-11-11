@@ -10,11 +10,12 @@ import { dbInternal } from "@/lib/db";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot, buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { parseCustomerCustomFields } from "@/domain/customer/custom-fields";
-import { formatDateDe, formatMoneyDe } from "@/lib/template/format";
+import { formatDateDe, formatMoneyDe, formatDateLang, formatMoneyLang } from "@/lib/template/format";
+import { resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import type { TemplateContext } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
 import type { BuyerSnapshot, SellerSnapshot, ContactSnapshot } from "@/schemas";
-import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
+import { DOC_TYPE_LABEL, docTypeLabel } from "@/lib/email/doc-type-labels";
 
 export { DOC_TYPE_LABEL };
 
@@ -100,15 +101,16 @@ function docCtx(
   netCents: number | null,
   taxCents: number | null,
   currency: string,
+  lang: DocLanguage = "de",
 ) {
   return {
-    type: DOC_TYPE_LABEL[type],
+    type: docTypeLabel(type, lang),
     number: number ?? "",
-    date: formatDateDe(date),
-    dueDate: formatDateDe(dueDate),
-    total: grossCents !== null ? formatMoneyDe(grossCents, currency) : "",
-    netTotal: netCents !== null ? formatMoneyDe(netCents, currency) : "",
-    taxTotal: taxCents !== null ? formatMoneyDe(taxCents, currency) : "",
+    date: formatDateLang(date, lang),
+    dueDate: formatDateLang(dueDate, lang),
+    total: grossCents !== null ? formatMoneyLang(grossCents, currency, lang) : "",
+    netTotal: netCents !== null ? formatMoneyLang(netCents, currency, lang) : "",
+    taxTotal: taxCents !== null ? formatMoneyLang(taxCents, currency, lang) : "",
   };
 }
 
@@ -124,6 +126,8 @@ export interface DocumentTextContextInput {
   buyer: BuyerSnapshot;
   /** Ansprechpartner-Snapshot (Phase 8a, §30) — optional, Aufrufer ohne Kontaktbezug lassen es weg. */
   contact?: ContactSnapshot | null;
+  /** Belegsprache (Snapshot) fuer Datum, Betraege und Belegtyp; fehlt sie, gilt Deutsch. */
+  language?: DocLanguage;
 }
 
 /**
@@ -158,6 +162,7 @@ export function buildDocumentTextContext(input: DocumentTextContextInput): Templ
       input.totals?.netCents ?? null,
       input.totals?.taxCents ?? null,
       input.currency,
+      input.language ?? "de",
     ),
     contact: contactCtx(input.contact ?? null, input.buyer),
   };
@@ -193,6 +198,7 @@ export async function buildTemplateContext(
     const okTypes = docType === "CREDIT_NOTE" ? ["CREDIT_NOTE"] : ["INVOICE", "CORRECTION", "PARTIAL", "DOWNPAYMENT", "FINAL"];
     const inv = await dbInternal.invoice.findFirst({ where: { id: docId, orgId, type: { in: okTypes } }, include: { customer: true } });
     if (!inv) throw new DocumentNotFoundError("Rechnung nicht gefunden");
+    const lang = resolveDocLanguage(inv.language);
     const snapshotCtx = `email:${docType}:${docId}`;
     const buyer = parseBuyerSnapshot(inv.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);
     const seller = parseSellerSnapshot(inv.sellerSnapshotJson, buildSellerSnapshot(org), snapshotCtx);
@@ -209,13 +215,13 @@ export async function buildTemplateContext(
         customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
-        document: docCtx(docType, inv.number, inv.issueDate, inv.dueDate, inv.grossTotalCents, inv.netTotalCents, inv.taxTotalCents, inv.currency),
+        document: docCtx(docType, inv.number, inv.issueDate, inv.dueDate, inv.grossTotalCents, inv.netTotalCents, inv.taxTotalCents, inv.currency, lang),
         invoice: {
           number: inv.number ?? "",
-          date: formatDateDe(inv.issueDate),
-          total: formatMoneyDe(inv.grossTotalCents, inv.currency),
-          dueDate: formatDateDe(inv.dueDate),
-          openAmount: formatMoneyDe(open, inv.currency),
+          date: formatDateLang(inv.issueDate, lang),
+          total: formatMoneyLang(inv.grossTotalCents, inv.currency, lang),
+          dueDate: formatDateLang(inv.dueDate, lang),
+          openAmount: formatMoneyLang(open, inv.currency, lang),
         },
         contact: contactCtx(contact, buyer),
       },
@@ -233,6 +239,7 @@ export async function buildTemplateContext(
     });
     if (!d) throw new DocumentNotFoundError("Mahnung nicht gefunden");
     const inv = d.invoice;
+    const lang = resolveDocLanguage(d.language);
     const snapshotCtx = `email:DUNNING:${docId}`;
     const buyer = parseBuyerSnapshot(inv.buyerSnapshotJson, buildBuyerSnapshot(inv.customer), snapshotCtx);
     const seller = parseSellerSnapshot(inv.sellerSnapshotJson, buildSellerSnapshot(org), snapshotCtx);
@@ -256,22 +263,22 @@ export async function buildTemplateContext(
         customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
-        document: docCtx("DUNNING", d.number, d.sentAt, d.dueDate, total, null, null, inv.currency),
+        document: docCtx("DUNNING", d.number, d.sentAt, d.dueDate, total, null, null, inv.currency, lang),
         invoice: {
           number: inv.number ?? "",
-          date: formatDateDe(inv.issueDate),
-          total: formatMoneyDe(inv.grossTotalCents, inv.currency),
-          dueDate: formatDateDe(inv.dueDate),
-          openAmount: formatMoneyDe(open, inv.currency),
+          date: formatDateLang(inv.issueDate, lang),
+          total: formatMoneyLang(inv.grossTotalCents, inv.currency, lang),
+          dueDate: formatDateLang(inv.dueDate, lang),
+          openAmount: formatMoneyLang(open, inv.currency, lang),
         },
         dunning: {
           level: d.level,
           stageName: d.stage?.name ?? "",
           number: d.number ?? "",
-          newDueDate: formatDateDe(d.dueDate),
-          fee: formatMoneyDe(fees, inv.currency),
-          interest: formatMoneyDe(d.interestAmountCents, inv.currency),
-          total: formatMoneyDe(total, inv.currency),
+          newDueDate: formatDateLang(d.dueDate, lang),
+          fee: formatMoneyLang(fees, inv.currency, lang),
+          interest: formatMoneyLang(d.interestAmountCents, inv.currency, lang),
+          total: formatMoneyLang(total, inv.currency, lang),
         },
         contact: contactCtx(contact, buyer),
       },
@@ -295,7 +302,7 @@ export async function buildTemplateContext(
         customField: customFields,
         company: { ...company, name: seller.legalName },
         payment,
-        document: docCtx("DELIVERY_NOTE", dn.number, dn.issueDate, dn.deliveryDate, null, null, null, "EUR"),
+        document: docCtx("DELIVERY_NOTE", dn.number, dn.issueDate, dn.deliveryDate, null, null, null, "EUR", resolveDocLanguage(dn.language)),
         contact: contactCtx(contact, buyer),
       },
       // Lieferschein kennt keine eigene invoiceEmail/quoteEmail-Kundenvorgabe.
@@ -319,8 +326,8 @@ export async function buildTemplateContext(
       customField: customFields,
       company: { ...company, name: seller.legalName },
       payment,
-      document: docCtx(docType, q.number, q.issueDate, q.validUntil, q.grossTotalCents, q.netTotalCents, q.taxTotalCents, q.currency),
-      offer: { number: q.number ?? "", validUntil: formatDateDe(q.validUntil), link: docType === "ANGEBOT" ? (opts.offerLink ?? "") : "" },
+      document: docCtx(docType, q.number, q.issueDate, q.validUntil, q.grossTotalCents, q.netTotalCents, q.taxTotalCents, q.currency, resolveDocLanguage(q.language)),
+      offer: { number: q.number ?? "", validUntil: formatDateLang(q.validUntil, resolveDocLanguage(q.language)), link: docType === "ANGEBOT" ? (opts.offerLink ?? "") : "" },
       contact: contactCtx(contact, buyer),
     },
     // Empfaenger-Prioritaet (§28): Ansprechpartner-E-Mail > Customer.quoteEmail > Customer.email.

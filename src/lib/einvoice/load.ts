@@ -12,6 +12,7 @@ import { docStrings, resolveDocLanguage } from "@/lib/i18n/doc";
 import { toEurCents } from "@/domain/fx/convert";
 import { fxStichtag } from "@/domain/fx/pick-rate";
 import { rateFor } from "@/domain/fx/rate-for";
+import { loadDeductedTaxEurCents } from "@/domain/fx/snapshot";
 import { taxBreakdownSchema } from "@/schemas";
 import { buildEInvoiceData, type MapInput } from "./mapper";
 
@@ -143,6 +144,7 @@ export async function loadEInvoiceData(invoiceId: string) {
   // wiederverwenden statt sie hier erneut abzuleiten.
   data.giroAmountCents = openAmountCents(invoice);
   if (draftFx && data.fx) data.fx.preview = true;
+  if (data.fx && invoice.type === "FINAL" && !draftFx) data.fx.deductedTaxEurCents = await loadDeductedTaxEurCents(dbInternal, invoice.id);
 
   if (invoice.correctsInvoiceId) {
     const original = await dbInternal.invoice.findUnique({

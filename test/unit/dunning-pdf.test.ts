@@ -60,3 +60,16 @@ describe("renderDunningPdf — deDate Zeitzone (Fix nach Task 3)", () => {
     expect(text).not.toContain("05.01.2026");
   });
 });
+
+describe("renderDunningPdf — Phase 16b: Belegsprache", () => {
+  it("Mahnung en: Titel, englische Aufstellung, Seitenzahl", async () => {
+    const data = baseData({ language: "en", level: 0, stageName: "Zahlungserinnerung", interestCents: 500, totalCents: 10500, daysOverdue: 30 });
+    const { text } = await parsePdf(await renderDunningPdf(data, testPdfTheme()));
+    expect(text).toContain("Payment reminder");
+    expect(text).toContain("Dear Sir or Madam,");
+    expect(text).toContain("01/06/2026");
+    expect(text).toContain("€105.00");
+    expect(text).toContain("Page 1 of 1");
+    expect(text).not.toContain("Seite");
+  });
+});

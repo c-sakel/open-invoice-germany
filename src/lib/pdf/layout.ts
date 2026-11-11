@@ -6,6 +6,7 @@
  */
 import type { PdfTheme } from "./theme";
 import { addressCountryLine } from "../countries";
+import type { DocLanguage } from "@/lib/i18n/doc";
 
 export { mm, MM_TO_PT } from "./marks";
 import { mm } from "./marks";
@@ -68,8 +69,9 @@ export function drawSenderLine(doc: PDFKit.PDFDocument, theme: PdfTheme, left: n
  */
 export function senderLineFallback(
   seller: { name: string; addressLine1: string; postalCode: string; city: string; countryCode?: string | null },
+  lang: DocLanguage = "de",
 ): string {
   const base = `${seller.name} · ${seller.addressLine1} · ${seller.postalCode} ${seller.city}`;
-  const own = addressCountryLine(seller.countryCode ?? "DE");
+  const own = addressCountryLine(seller.countryCode ?? "DE", lang);
   return own ? `${base} · ${own}` : base;
 }

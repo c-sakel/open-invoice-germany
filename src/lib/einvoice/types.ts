@@ -229,4 +229,6 @@ export interface EInvoiceFx {
   netTotalEurCents: number;
   /** Entwurfs-Vorschau: Kurs live per rateFor, noch nicht festgeschrieben. */
   preview?: boolean;
+  /** Schlussrechnung: EUR-Steuer der mit Abschlaegen abgerechneten Betraege (je Abschlagskurs, PDF-Ausweis). */
+  deductedTaxEurCents?: number | null;
 }

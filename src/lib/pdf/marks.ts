@@ -3,6 +3,7 @@
  * DIN 5008 orientiert (Falzmarken bei 105 mm/210 mm ab Oberkante, Lochmarke bei 148,5 mm).
  */
 import type { PdfTheme } from "./theme";
+import { docStrings, type DocLanguage } from "@/lib/i18n/doc";
 
 /**
  * Fuegt die von pdfkit gestreamten Chunks zu einem fertigen PDF-Buffer zusammen — NICHT
@@ -62,14 +63,14 @@ export function drawPunchMark(doc: PDFKit.PDFDocument): void {
  * gesamten Inhalt aufgerufen werden (pdfkit `bufferPages: true`), da erst dann die
  * Gesamtseitenzahl feststeht.
  */
-export function drawPageNumbers(doc: PDFKit.PDFDocument, theme: PdfTheme): void {
+export function drawPageNumbers(doc: PDFKit.PDFDocument, theme: PdfTheme, lang: DocLanguage = "de"): void {
   const range = doc.bufferedPageRange();
   const marginRight = mm(theme.brand.marginRightMm);
   const marginBottom = mm(theme.brand.marginBottomMm);
   for (let i = 0; i < range.count; i++) {
     const pageIndex = range.start + i;
     doc.switchToPage(pageIndex);
-    const label = `Seite ${i + 1} von ${range.count}`;
+    const label = docStrings(lang).page(i + 1, range.count);
     const y = doc.page.height - marginBottom + mm(2);
     doc.save();
     doc.fontSize(8).fillColor("#666666");

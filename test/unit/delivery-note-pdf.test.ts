@@ -319,3 +319,15 @@ describe("buildColumns — Hotfix A2: Spaltenbreiten ueberschreiten den Inhaltsb
     expect(columns.map((c) => c.header)).toEqual(["Pos.", "Art.-Nr.", "Menge", "Einzel", "USt", "Netto"]);
   });
 });
+
+describe("renderDeliveryNotePdf — Phase 16b: Belegsprache", () => {
+  it("Lieferschein en: Titel, Spaltenkoepfe, Seitenzahl", async () => {
+    const data = buildDeliveryNotePdfData(deliveryNote({ language: "en" } as Partial<DeliveryNoteRow>), org, customer);
+    expect(data.language).toBe("en");
+    const { text } = await parsePdf(await renderDeliveryNotePdf(data, testPdfTheme()));
+    expect(text).toContain("Delivery note");
+    expect(text).toContain("Qty");
+    expect(text).toContain("Page 1 of 1");
+    expect(text).not.toContain("Lieferschein");
+  });
+});

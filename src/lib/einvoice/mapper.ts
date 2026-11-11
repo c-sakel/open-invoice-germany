@@ -326,6 +326,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
     seller: org,
     buyer: customer,
     contact,
+    language: lang,
   });
   const headerText = invoice.headerText ? renderTemplate(invoice.headerText, textCtx).text : null;
   const footerText = invoice.footerText ? renderTemplate(invoice.footerText, textCtx).text : null;
