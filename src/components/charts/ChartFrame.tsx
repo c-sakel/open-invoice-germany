@@ -36,6 +36,9 @@ export function ChartFrame({
   height,
   viewBoxWidth,
   emptyMessage,
+  emptyFallback,
+  extraColumns,
+  valueHeader,
   children,
 }: {
   title: string;
@@ -47,6 +50,12 @@ export function ChartFrame({
   viewBoxWidth?: number;
   /** Ueberschreibt den Standardtext des Leerzustands ("Keine Daten im gewählten Zeitraum."). */
   emptyMessage?: string;
+  /** Kennzahl statt Achse: ersetzt das Diagramm, wenn weniger als 2 Datenpunkte ungleich 0 vorliegen. */
+  emptyFallback?: ReactNode;
+  /** Zusaetzliche Spalten der sr-only-Tabelle (z. B. Vergleichsreihe), je Spalte ein Wert je Datenzeile. */
+  extraColumns?: { header: string; values: string[] }[];
+  /** Spaltenkopf der Hauptreihe (Default "Wert"). */
+  valueHeader?: string;
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -56,8 +65,12 @@ export function ChartFrame({
   return (
     <figure className="m-0">
       <figcaption className="mb-3 text-sm font-semibold text-ink">{title}</figcaption>
-      {data.length === 0 ? (
+      {data.length === 0 || (emptyFallback !== undefined && data.filter((d) => d.value !== 0).length < 2) ? (
+        data.length > 0 && emptyFallback !== undefined ? (
+          <>{emptyFallback}</>
+        ) : (
         <p className="py-8 text-center text-sm text-ink-muted">{emptyMessage ?? "Keine Daten im gewählten Zeitraum."}</p>
+        )
       ) : (
         <>
           <svg
@@ -77,7 +90,12 @@ export function ChartFrame({
             <thead>
               <tr>
                 <th scope="col">Bezeichnung</th>
-                <th scope="col">Wert</th>
+                <th scope="col">{valueHeader ?? "Wert"}</th>
+                {extraColumns?.map((c) => (
+                  <th key={c.header} scope="col">
+                    {c.header}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -85,6 +103,9 @@ export function ChartFrame({
                 <tr key={`${i}-${d.label}`}>
                   <td>{d.label}</td>
                   <td>{d.valueLabel}</td>
+                  {extraColumns?.map((c) => (
+                    <td key={c.header}>{c.values[i] ?? ""}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>

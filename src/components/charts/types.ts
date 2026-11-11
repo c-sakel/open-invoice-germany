@@ -31,3 +31,6 @@ export const CHART_COLORS = {
   centerText: "var(--color-ink)", // DonutChart-Mittelwert
   ledger: "var(--color-ledger)",
 } as const;
+
+/** Diagrammschrift in viewBox-Einheiten: fest 12, die Breite kommt per ResponsiveChart in echten Pixeln. */
+export const CHART_FONT_SIZE = 12;
