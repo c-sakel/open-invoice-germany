@@ -188,7 +188,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Auswertung abrufen",
       description:
-        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status), payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil), cash-in (Zahlungseingang je Monat/Waehrung), quote-outcome (Angebotsquote), top-products (Nettoumsatz je Produkt) oder recurring-run-rate (monatlich wiederkehrender Netto-Umsatz aktiver Abos). Optional je Kunde (customer) und ueber n Monate (months, Default 12).",
+        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status), payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil), cash-in (Zahlungseingang je Monat/Waehrung), quote-outcome (Angebotsquote), top-products (Nettoumsatz je Produkt) oder recurring-run-rate (monatlich wiederkehrender Netto-Umsatz aktiver Abos). Optional je Kunde (customer) und ueber n Monate (months, Default 12; nicht bei status/payment-behaviour/recurring-run-rate) und Zeilenzahl (limit, nur bei top-customers und top-products).",
       // Fix M7 (Abschluss-Review): `reportQueryFieldsSchema.shape` als einzige Quelle fuer
       // type/months/limit (kein zweites, redundant getipptes Feld-Set mehr) — nur
       // `customerId` wird durch `customer` ersetzt: jedes andere Tool nimmt eine Kunden-ID

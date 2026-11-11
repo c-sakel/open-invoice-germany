@@ -260,7 +260,7 @@ Fehler, kein No-op mehr.
   Währung.
 - **`recurring-run-rate`** — monatlich wiederkehrender Netto-Umsatz je Währung
   (`monthlyNetCents`, `activeCount`) über aktive Abos; Intervalle werden auf einen Monat
-  umgerechnet, je Abo einmal kaufmännisch gerundet. Kein Zeitraumparameter.
+  umgerechnet, je Abo einmal kaufmännisch gerundet. Abos mit abgelaufenem Enddatum zählen nicht; ein Abo mit unbekanntem Intervall wird übersprungen und in `skipped` gezählt. Kein Zeitraumparameter.
 
 Währungen werden bei allen vier neuen Typen nie gemischt: je Währung eigene Zeilen.
 

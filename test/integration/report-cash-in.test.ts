@@ -128,4 +128,14 @@ describe("monthlyCashIn", () => {
     expect(row(rows, "2104-03")?.invoicedGrossCents).toBe(11900);
     expect(row(rows, "2104-04")?.invoicedGrossCents).toBe(-1190);
   });
+
+  it("Fensterrand: Monat vor dem Start ist ausgeschlossen", async () => {
+    const o = await mkOrg("CashIn Fenster GmbH", "DE811111117");
+    const inv = await invoice(o.orgId, o.customerId, 10000, MARCH);
+    await recordPayment(inv.id, { amountCents: 1000, paidAt: new Date(Date.UTC(2104, 0, 31, 23, 59)), method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: o.orgId, now: MARCH });
+    await recordPayment(inv.id, { amountCents: 2000, paidAt: new Date(Date.UTC(2104, 1, 1)), method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: o.orgId, now: MARCH });
+    const rows = await monthlyCashIn(o.orgId, { months: 5, now: NOW }); // Februar bis Juni
+    expect(rows.filter((r) => r.currency === "EUR").map((r) => r.month)).toEqual(["2104-02", "2104-03", "2104-04", "2104-05", "2104-06"]);
+    expect(rows.reduce((sum, r) => sum + r.paidCents, 0)).toBe(2000);
+  });
 });
