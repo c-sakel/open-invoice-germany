@@ -68,12 +68,18 @@ async function paymentEntries(orgId: string, invoiceId: string): Promise<Timelin
   const inv = await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, select: { currency: true } });
   const currency = inv?.currency ?? "EUR";
   const rows = await dbInternal.payment.findMany({ where: { invoiceId }, orderBy: { paidAt: "asc" } });
-  return rows.map((p) => ({
-    at: p.paidAt,
-    kind: "payment" as const,
-    label: p.isSkonto ? "Skontoabzug gebucht" : "Zahlung erfasst",
-    detail: `${formatCents(p.amountCents, currency)} (${paymentMethodLabel(p.method)})`,
-  }));
+  return rows.map((p) => {
+    const base = `${formatCents(p.amountCents, currency)} (${paymentMethodLabel(p.method)})`;
+    if (p.kind === "REVERSAL") {
+      return {
+        at: p.paidAt,
+        kind: "payment" as const,
+        label: "Zahlung korrigiert (Gegenbuchung)",
+        detail: p.reason ? `${base} — ${p.reason}` : base,
+      };
+    }
+    return { at: p.paidAt, kind: "payment" as const, label: p.isSkonto ? "Skontoabzug gebucht" : "Zahlung erfasst", detail: base };
+  });
 }
 
 async function dunningEntries(invoiceId: string): Promise<TimelineEntry[]> {

@@ -14,6 +14,7 @@ import { dunningCandidates } from "@/domain/dunning/auto";
 import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { NotFoundError } from "@/domain/errors";
+import { buildTimeline } from "@/domain/timeline/build";
 import type { CreateInvoiceInput } from "@/schemas";
 
 let orgId: string;
@@ -172,5 +173,54 @@ describe("reversePayment", () => {
     const preview = await getCancelPreview(id, orgId);
     expect(preview.paidCents).toBe(0);
     expect(preview.refundDueCents).toBe(0);
+  });
+
+  it("parallele Gegenbuchungen derselben Zahlung: Summe ueberschreitet den Betrag nie", async () => {
+    const id = await invoice();
+    const p = await pay(id, 11900);
+    const results = await Promise.allSettled([
+      reversePayment(p.id, { amountCents: 8000, reason: "parallel A" }, { actor: "t", orgId, now: LATER }),
+      reversePayment(p.id, { amountCents: 8000, reason: "parallel B" }, { actor: "t", orgId, now: LATER }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const sum = await dbInternal.payment.aggregate({ where: { reversesPaymentId: p.id }, _sum: { amountCents: true } });
+    expect(sum._sum.amountCents).toBe(-8000);
+    expect((await inv(id)).paidAmountCents).toBe(3900);
+  });
+
+  it("createdBy: recordPayment setzt api/mcp, Gegenbuchung uebernimmt createdBy", async () => {
+    const id = await invoice();
+    await recordPayment(id, { amountCents: 1000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId, now: FIX_DATE, createdBy: "api" });
+    await recordPayment(id, { amountCents: 2000, method: "CASH", isSkonto: false, applySkonto: false }, { orgId, now: FIX_DATE, createdBy: "mcp" });
+    const rows = await dbInternal.payment.findMany({ where: { invoiceId: id }, select: { id: true, method: true, createdBy: true } });
+    expect(rows.find((r) => r.method === "TRANSFER")?.createdBy).toBe("api");
+    const cash = rows.find((r) => r.method === "CASH");
+    expect(cash?.createdBy).toBe("mcp");
+    const res = await reversePayment(cash!.id, { reason: "Fehlbuchung" }, { actor: "t", orgId, createdBy: "mcp" });
+    expect(res.reversal.createdBy).toBe("mcp");
+  });
+
+  it("Skonto: Webhook je Gegenbuchungszeile; Teil-Gegenbuchung laesst die Skontobuchung stehen", async () => {
+    const ep = await createWebhookEndpoint(orgId, { url: "https://93.184.216.35/hook", events: ["payment.reversed"] }, { now: FIX_DATE });
+    const id = await invoice(true);
+    const p = await pay(id, 11662, { applySkonto: true, paidAt: new Date("2049-03-05T00:00:00.000Z") });
+    const part = await reversePayment(p.id, { amountCents: 1000, reason: "Teilerstattung" }, { actor: "t", orgId, now: LATER });
+    expect(part.skontoReversal).toBeUndefined();
+    expect(part.paidAmountCents).toBe(10900);
+    expect(await dbInternal.webhookDelivery.count({ where: { endpointId: ep.id } })).toBe(1);
+    const rest = await reversePayment(p.id, { reason: "Rest" }, { actor: "t", orgId, now: LATER });
+    expect(rest.skontoReversal?.amountCents).toBe(-238);
+    expect(rest.paidAmountCents).toBe(0);
+    const deliveries = await dbInternal.webhookDelivery.findMany({ where: { endpointId: ep.id }, select: { objectId: true } });
+    expect(deliveries.map((d) => d.objectId).sort()).toEqual([part.reversal.id, rest.reversal.id, rest.skontoReversal!.id].sort());
+  });
+
+  it("Zeitleiste: Gegenbuchung als 'Zahlung korrigiert (Gegenbuchung)' mit Grund", async () => {
+    const id = await invoice();
+    const p = await pay(id, 11900);
+    await reversePayment(p.id, { reason: "Fehlbuchung" }, { actor: "t", orgId, now: LATER });
+    const entries = (await buildTimeline(orgId, { kind: "INVOICE", id }, LATER)).filter((e) => e.kind === "payment");
+    expect(entries.map((e) => e.label)).toEqual(["Zahlung erfasst", "Zahlung korrigiert (Gegenbuchung)"]);
+    expect(entries[1].detail).toContain("Fehlbuchung");
   });
 });

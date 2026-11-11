@@ -82,3 +82,14 @@ describe("paymentBehaviour — Verrechnung", () => {
     expect(await paymentBehaviour(orgId, { customerId })).toEqual(before);
   });
 });
+
+describe("paymentBehaviour — Gegenbuchung", () => {
+  it("REVERSAL-Zeilen zaehlen nicht als Begleichungsdatum", async () => {
+    const inv = await make(6000, new Date(Date.UTC(2086, 2, 25)), new Date(Date.UTC(2086, 2, 20)));
+    const before = await paymentBehaviour(orgId, { customerId });
+    await dbInternal.payment.create({
+      data: { invoiceId: inv.id, amountCents: -1, paidAt: new Date(Date.UTC(2086, 3, 15)), method: "TRANSFER", kind: "REVERSAL", reason: "Test" },
+    });
+    expect(await paymentBehaviour(orgId, { customerId })).toEqual(before);
+  });
+});

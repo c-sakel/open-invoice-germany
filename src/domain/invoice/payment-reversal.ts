@@ -95,6 +95,12 @@ export async function reversePayment(
       throw new PaymentError("Eine Skontobuchung wird ueber die zugehoerige Zahlung gegengebucht.");
     }
 
+    // Serialisierung paralleler Gegenbuchungen: no-op-Schreibzugriff sperrt die Rechnungszeile
+    // (Postgres: Zeilensperre, SQLite: Schreibsperre) BEVOR die bisherigen Gegenbuchungen gelesen
+    // werden — sonst koennten zwei Transaktionen denselben Rest sehen und zusammen ueber den
+    // Zahlungsbetrag hinaus gegenbuchen. Die Summe wird zusaetzlich nach dem Insert geprueft.
+    await tx.invoice.updateMany({ where: { id: inv.id }, data: { paidAmountCents: { increment: 0 } } });
+
     const reversed = await alreadyReversedCents(tx, payment.id);
     const restCents = payment.amountCents - reversed;
     if (restCents <= 0) throw new PaymentError("Die Zahlung ist bereits vollstaendig gegengebucht.");
@@ -104,9 +110,14 @@ export async function reversePayment(
     }
 
     const reversal = await createReversalRow(tx, inv.id, payment, amountCents, input.reason, now, createdBy);
+    if ((await alreadyReversedCents(tx, payment.id)) > payment.amountCents) {
+      throw new PaymentError("Die Zahlung wurde parallel bereits gegengebucht.");
+    }
     let totalDelta = amountCents;
 
-    // Skonto-Zahlung zur Zahlung: wird mit dem letzten Rest der Hauptzahlung zurueckgebucht.
+    // Skonto-Zahlung zur Zahlung: wird NUR mit dem letzten Rest der Hauptzahlung (volle
+    // Gegenbuchung) zurueckgebucht. Eine Teil-Gegenbuchung laesst die Skontobuchung stehen,
+    // weil unklar ist, welcher Skontoanteil zum erstatteten Teilbetrag gehoert.
     let skontoReversal: Payment | undefined;
     if (amountCents === restCents) {
       const skonto = await tx.payment.findFirst({
@@ -160,15 +171,20 @@ export async function reversePayment(
     return { reversal, skontoReversal, invoiceStatus: status, paidAmountCents: newPaid, orgId: inv.orgId, invoiceId: inv.id, totalDelta };
   });
 
-  await logActivity(dbInternal, {
-    orgId: result.orgId,
-    entityType: "INVOICE",
-    entityId: result.invoiceId,
-    type: "PAYMENT_REVERSED",
-    actor: opts.actor,
-    at: now,
-    data: { paymentId, amountCents: result.totalDelta, reason: input.reason, status: result.invoiceStatus },
-  });
+  try {
+    await logActivity(dbInternal, {
+      orgId: result.orgId,
+      entityType: "INVOICE",
+      entityId: result.invoiceId,
+      type: "PAYMENT_REVERSED",
+      actor: opts.actor,
+      at: now,
+      data: { paymentId, amountCents: result.totalDelta, reason: input.reason, status: result.invoiceStatus },
+    });
+  } catch (e) {
+    // Die Gegenbuchung ist bereits festgeschrieben; ein Protokollfehler darf sie nicht melden als gescheitert.
+    console.error("reversePayment: Aktivitaetsprotokoll fehlgeschlagen", e);
+  }
 
   return {
     reversal: result.reversal,
