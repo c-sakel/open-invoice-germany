@@ -38,7 +38,7 @@ function ln(productId: string | undefined, netCents: number, description = "Post
 async function invoice(o: Org, lines: ReturnType<typeof ln>[], issueDate: Date, opts: { currency?: string; finalize?: boolean } = {}) {
   const inv = await createDraftInvoice(
     o.orgId,
-    { customerId: o.customerId, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines } as CreateInvoiceInput,
+    { customerId: o.customerId, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines, ...(opts.currency && opts.currency !== "EUR" ? { fxOverrideRate: 1100000 } : {}) } as CreateInvoiceInput,
     { now: issueDate },
   );
   if (opts.finalize !== false) await finalizeInvoice(inv.id, { now: issueDate });

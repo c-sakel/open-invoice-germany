@@ -8,12 +8,28 @@ import { z } from "zod";
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
+import { parseRateMicros } from "@/domain/fx/decimal";
 
 /** ISO-4217-Waehrungscode: Eingabe wird getrimmt und in Grossbuchstaben normalisiert ("eur" -> "EUR"), danach genau 3 Buchstaben. */
 export const currencyCodeSchema = z
   .string()
   .transform((s) => s.trim().toUpperCase())
   .pipe(z.string().regex(/^[A-Z]{3}$/, "Waehrung: 3 Buchstaben (ISO 4217)"));
+
+/** Kurs als Dezimalstring (Punkt oder Komma, max. 6 Nachkommastellen) -> Integer-Micros, 1..2e9.
+ *  Hier statt in schemas/fx.ts, weil fx.ts diese Datei importiert (kein Importzyklus). */
+export const rateDecimalSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{1,4}([.,]\d{1,6})?$/, "Kurs: bis 4 Vorkomma- und 6 Nachkommastellen")
+  .transform((s, ctx) => {
+    try {
+      return parseRateMicros(s);
+    } catch (e) {
+      ctx.addIssue({ code: "custom", message: e instanceof Error ? e.message : "Kurs ungueltig" });
+      return z.NEVER;
+    }
+  });
 
 /** IBAN-Eingabe (BT-84): Leerzeichen raus, Grossbuchstaben, MOD-97-10-Pruefsumme. Leer bleibt erlaubt.
  * Nur fuer Eingaben — Snapshot-Schemas festgeschriebener Belege bleiben bewusst ungeprueft. */
@@ -407,6 +423,8 @@ const invoiceHeaderFields = {
   /** § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Hinweis auf die zweijaehrige
    *  Aufbewahrungspflicht des privaten Empfaengers bei Bauleistungen am Grundstueck. */
   consumerRetentionHint: z.boolean().optional(),
+  /** Phase 16b: Kurs je Beleg manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. "1,25"); null loescht. */
+  fxOverrideRate: rateDecimalSchema.nullable().optional(),
   ...documentAdjustmentFields,
   ...skontoFields,
 };

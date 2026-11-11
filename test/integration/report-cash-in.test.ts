@@ -25,7 +25,7 @@ function line(netCents: number) {
 async function invoice(org: string, cust: string, netCents: number, issueDate: Date, opts: { currency?: string; finalize?: boolean } = {}) {
   const inv = await createDraftInvoice(
     org,
-    { customerId: cust, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines: [line(netCents)] } as CreateInvoiceInput,
+    { customerId: cust, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines: [line(netCents)], ...(opts.currency && opts.currency !== "EUR" ? { fxOverrideRate: 1100000 } : {}) } as CreateInvoiceInput,
     { now: issueDate },
   );
   if (opts.finalize !== false) await finalizeInvoice(inv.id, { now: issueDate });

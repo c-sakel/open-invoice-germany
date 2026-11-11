@@ -117,6 +117,15 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
     if (input.consumerRetentionHint !== undefined) { data.consumerRetentionHint = input.consumerRetentionHint; changedFields.push("consumerRetentionHint"); }
 
+    // Phase 16b: manueller Kurs nur im Entwurf (Statuspruefung oben); null loescht den Override.
+    // Der Wert steht im UPDATE-Diff der Hash-Kette (Nachvollziehbarkeit der Kursuebersteuerung).
+    let fxOverrideChange: { fxOverrideMicrosBefore: number | null; fxOverrideMicros: number | null } | null = null;
+    if (input.fxOverrideRate !== undefined) {
+      data.fxOverrideMicros = input.fxOverrideRate;
+      changedFields.push("fxOverrideMicros");
+      fxOverrideChange = { fxOverrideMicrosBefore: invoice.fxOverrideMicros, fxOverrideMicros: input.fxOverrideRate };
+    }
+
     if (input.skonto1Permille !== undefined) { data.skonto1Permille = input.skonto1Permille; changedFields.push("skonto1Permille"); }
     if (input.skonto1Days !== undefined) { data.skonto1Days = input.skonto1Days; changedFields.push("skonto1Days"); }
     if (input.skonto2Permille !== undefined) { data.skonto2Permille = input.skonto2Permille; changedFields.push("skonto2Permille"); }
@@ -229,7 +238,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       action: "UPDATE",
       actor,
       at: now,
-      diff: { changedFields, lineCount: input.lines?.length ?? null },
+      diff: { changedFields, lineCount: input.lines?.length ?? null, ...(fxOverrideChange ?? {}) },
     });
     await logActivity(tx, { orgId, entityType: "INVOICE", entityId: id, type: "UPDATED", actor, at: now, data: { changedFields } });
 

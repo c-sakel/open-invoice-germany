@@ -331,6 +331,8 @@ describe("buildTimeline — Reihenfolge + Meilensteine", () => {
   // Fix-Welle (Nit): der Zahlungs-Eintrag hardcodete "EUR" unabhaengig von Invoice.currency.
   it("Zahlungs-Eintrag zeigt die tatsaechliche Waehrung des Belegs, nicht hartkodiert EUR", async () => {
     const draft = await createDraftInvoice(orgId, invoiceInput({ currency: "USD", dueDate: new Date("2065-06-01") }), { now: FIX_DATE });
+    // Phase 16b: Fremdwaehrung braucht beim Festschreiben einen Kurs (hier manuell am Entwurf).
+    await dbInternal.invoice.update({ where: { id: draft.id }, data: { fxOverrideMicros: 1100000 } });
     const finalized = await finalizeInvoice(draft.id, { now: FIX_DATE });
     await recordPayment(finalized.id, { amountCents: 5000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { now: new Date("2065-06-05T10:00:00.000Z") });
 

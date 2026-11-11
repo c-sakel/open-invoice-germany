@@ -35,6 +35,6 @@ export const spec = {
     summary: "Rechnung festschreiben (Rechnungsnummer, GoBD-unveraenderbar)",
     scope: "write",
     response: apiDataResponseSchema(invoiceSchema),
-    errors: [401, 403, 404, 409, 429],
+    errors: [401, 403, 404, 409, 422, 429],
   },
 } satisfies Record<string, RouteSpec>;

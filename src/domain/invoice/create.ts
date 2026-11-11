@@ -215,6 +215,8 @@ export async function createDraftInvoiceWithinTx(
       internalNotes: input.internalNotes,
       // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 S. 5 UStG — Aufbewahrungshinweis (Phase 12b, Task 5).
       consumerRetentionHint: input.consumerRetentionHint ?? false,
+      // Phase 16b: manueller Kurs je Beleg (Quelle MANUAL beim Festschreiben).
+      fxOverrideMicros: input.fxOverrideRate ?? null,
       headerText,
       footerText,
       documentDiscountPermille,
@@ -244,7 +246,7 @@ export async function createDraftInvoiceWithinTx(
     action: "CREATE",
     actor,
     at: now,
-    diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents, ...opts.changeLogExtra },
+    diff: { type: input.type, taxScheme: input.taxScheme, grossTotalCents: totals.grossTotalCents, ...(input.fxOverrideRate != null ? { fxOverrideMicros: input.fxOverrideRate } : {}), ...opts.changeLogExtra },
   });
   await logActivity(tx, {
     orgId,

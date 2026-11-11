@@ -29,6 +29,8 @@ import { loadPrintSettings, freezePrintOptionsJson, effectivePrintOptions } from
 import { loadBrandingSettings } from "@/domain/settings/branding";
 import { resolveLayoutId, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { validateMandatoryFields } from "./mandatory";
+import { FinalizeError } from "./finalize-error";
+import { resolveFxSnapshot } from "@/domain/fx/snapshot";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -40,12 +42,7 @@ function utcDateOnly(d: Date): number {
 
 const FINALIZED_DOWNPAYMENT_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
 
-export class FinalizeError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "FinalizeError";
-  }
-}
+export { FinalizeError };
 
 export interface FinalizeOptions {
   actor?: string;
@@ -321,6 +318,22 @@ export async function finalizeWithinTx(
     }));
   }
 
+  // 2c) Phase 16b: Kurs + EUR-Summen einfrieren (§ 16 Abs. 6 UStG). VOR dem Claim, damit ein
+  // fehlender Kurs keine Nummer verbraucht; die Werte landen in derselben Claim-Zeile, also vor
+  // jeder Archivierung (16a friert PDF/XML erst bei der ersten Ausgabe ein).
+  const fx = await resolveFxSnapshot(tx, {
+    orgId: invoice.orgId,
+    currency: invoice.currency,
+    fxOverrideMicros: invoice.fxOverrideMicros,
+    correctsInvoiceId: invoice.correctsInvoiceId,
+    deliveryDate: invoice.deliveryDate,
+    deliveryEnd: invoice.deliveryEnd,
+    issueDate,
+    taxTotalCents: totals.taxTotalCents,
+    netTotalCents: totals.netTotalCents,
+    taxBreakdown: totals.breakdown,
+  });
+
   // 3) Atomarer Status-Claim: nur wenn noch DRAFT. Verhindert unter Nebenläufigkeit
   //    (Postgres READ COMMITTED) doppelte Festschreibung + doppelten Nummern-Verbrauch.
   const claim = await tx.invoice.updateMany({
@@ -341,6 +354,11 @@ export async function finalizeWithinTx(
       snapshotAt: now,
       paymentMethodSnapshotJson,
       printOptionsJson: frozenPrintOptionsJson,
+      fxRateMicros: fx.fxRateMicros,
+      fxRateDate: fx.fxRateDate,
+      fxRateSource: fx.fxRateSource,
+      taxTotalEurCents: fx.taxTotalEurCents,
+      netTotalEurCents: fx.netTotalEurCents,
       ...(invoice.type === "FINAL" ? { prepaidCents, payableCents } : {}),
     },
   });
@@ -375,6 +393,17 @@ export async function finalizeWithinTx(
       status: "FINALIZED",
       grossTotalCents: totals.grossTotalCents,
       snapshotSource,
+      // Phase 16b: eingefrorener Kurs in der Hash-Kette (nur Fremdwaehrung; EUR ohne Kurs).
+      ...(fx.fxRateMicros !== null
+        ? {
+            currency: invoice.currency,
+            fxRateMicros: fx.fxRateMicros,
+            fxRateDate: fx.fxRateDate?.toISOString() ?? null,
+            fxRateSource: fx.fxRateSource,
+            taxTotalEurCents: fx.taxTotalEurCents,
+            netTotalEurCents: fx.netTotalEurCents,
+          }
+        : {}),
       ...(issueDateBefore
         ? { issueDateBefore: issueDateBefore.toISOString(), issueDateAfter: issueDate.toISOString() }
         : {}),

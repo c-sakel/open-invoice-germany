@@ -262,6 +262,7 @@ const ERROR_INFO: Record<number, { code: string; message: string }> = {
   404: { code: "NOT_FOUND", message: "Nicht gefunden." },
   409: { code: "CONFLICT", message: "Zustandskonflikt (z. B. bereits festgeschrieben)." },
   413: { code: "PAYLOAD_TOO_LARGE", message: "Request-Body ueberschreitet das Limit." },
+  422: { code: "UNPROCESSABLE", message: "Kein Wechselkurs für USD zum 12.03.2026 — Kurs manuell eintragen." },
   429: { code: "RATE_LIMITED", message: "Rate-Limit ueberschritten (600/Minute je Schluessel)." },
 };
 
@@ -272,6 +273,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   404: "Ressource nicht gefunden oder gehoert nicht zur Organisation des Schluessels.",
   409: "Zustandskonflikt (GoBD-Regel, Idempotenz-Konflikt oder EN-16931-Validierung).",
   413: "Request-Body ueberschreitet das Groessenlimit (2 MB allgemein, 16 MB fuer /Attachment).",
+  422: "Fachlich nicht verarbeitbar (z. B. fehlender oder nicht abbildbarer Wechselkurs beim Festschreiben).",
   429: "Rate-Limit ueberschritten — `Retry-After`-Header beachten.",
 };
 

@@ -1,22 +1,9 @@
 import { z } from "zod";
-import { currencyCodeSchema } from "@/schemas";
-import { parseRateMicros } from "@/domain/fx/decimal";
+import { currencyCodeSchema, rateDecimalSchema } from "@/schemas";
 
 export const FxRateSource = z.enum(["BMF_MONTHLY", "ECB_DAILY"]);
 
-/** Kurs als Dezimalstring (Punkt oder Komma, max. 6 Nachkommastellen) -> Integer-Micros, 1..2e9. */
-export const rateDecimalSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{1,4}([.,]\d{1,6})?$/, "Kurs: bis 4 Vorkomma- und 6 Nachkommastellen")
-  .transform((s, ctx) => {
-    try {
-      return parseRateMicros(s);
-    } catch (e) {
-      ctx.addIssue({ code: "custom", message: e instanceof Error ? e.message : "Kurs ungueltig" });
-      return z.NEVER;
-    }
-  });
+export { rateDecimalSchema };
 
 /** Kalendertag YYYY-MM-DD als UTC-Mitternacht. */
 const utcDateSchema = z

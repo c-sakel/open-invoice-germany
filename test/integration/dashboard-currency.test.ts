@@ -32,7 +32,7 @@ describe("Dashboard nur Standardwaehrung", () => {
     for (const [currency, cents] of [["EUR", 10000], ["USD", 50000]] as const) {
       const inv = await createDraftInvoice(
         org.id,
-        { customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency, issueDate: NOW, lines: [line(cents)] } as CreateInvoiceInput,
+        { customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency, issueDate: NOW, lines: [line(cents)], ...(currency === "EUR" ? {} : { fxOverrideRate: 1100000 }) } as CreateInvoiceInput,
         { now: NOW },
       );
       await finalizeInvoice(inv.id, { now: NOW });
