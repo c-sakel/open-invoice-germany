@@ -24,8 +24,8 @@ import { PricingError } from "@/lib/pricing/errors";
 import { listInvoices } from "@/domain/invoice/list";
 import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
-import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
-import { renderInvoiceDocumentPdf, renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { getArchivedInvoiceFile, getInvoiceArchiveInfo } from "@/domain/invoice/archive-read";
+import { renderInvoiceDocumentPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
@@ -317,6 +317,27 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
     },
   );
 
+  // ── get_invoice_archive ──────────────────────────────────────────────────────
+  server.registerTool(
+    "get_invoice_archive",
+    {
+      title: "Archivstand einer Rechnung",
+      description: "Zeigt, ob die Rechnung im Belegarchiv eingefroren ist (je Dokument Art, SHA-256, Quelle, Zeitpunkt; keine Pfade).",
+      inputSchema: { invoice: z.string().describe("Rechnungs-ID oder -Nummer") },
+    },
+    async ({ invoice }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const ref = await ctx.resolveInvoice(org.id, invoice);
+        const info = await getInvoiceArchiveInfo(org.id, ref.id);
+        return ctx.ok(JSON.stringify({ archived: info.archived, documents: info.documents.map((d) => ({ ...d, createdAt: d.createdAt.toISOString() })) }, null, 2));
+      } catch (e) {
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
   // ── export_invoice ───────────────────────────────────────────────────────────
   server.registerTool(
     "export_invoice",
@@ -346,7 +367,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const theme = await loadPdfTheme(org.id, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
 
         if (format === "both" || format === "pdf") {
-          const pdf = await renderInvoiceDocumentPdf(data, theme, inv.status);
+          const pdf = inv.status === "DRAFT" ? await renderInvoiceDocumentPdf(data, theme, inv.status) : await getArchivedInvoiceFile(org.id, inv.id, "PDF");
           const pdfPath = path.join(dir, `${base}.pdf`);
           writeFileSync(pdfPath, pdf);
           written.push(pdfPath);
@@ -355,7 +376,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           if (inv.status === "DRAFT") {
             if (format === "xrechnung") return ctx.fail("XRechnung nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
           } else {
-            const xml = buildXRechnungUBL(data);
+            const xml = (await getArchivedInvoiceFile(org.id, inv.id, "UBL")).toString("utf8");
             validation = validateXRechnung(data, xml);
             const xmlPath = path.join(dir, `${base}.xml`);
             writeFileSync(xmlPath, xml, "utf8");
@@ -364,7 +385,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         }
         if (format === "zugferd") {
           if (inv.status === "DRAFT") return ctx.fail("ZUGFeRD nur für festgeschriebene Rechnungen. Zuerst finalize_invoice.");
-          const zpdf = await renderZugferdPdf(data, theme);
+          const zpdf = await getArchivedInvoiceFile(org.id, inv.id, "PDF");
           const zpath = path.join(dir, `${base}-zugferd.pdf`);
           writeFileSync(zpath, zpdf);
           written.push(zpath);

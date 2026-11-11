@@ -1,5 +1,5 @@
 import { loadEInvoiceData } from "@/lib/einvoice/load";
-import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
+import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 
@@ -13,7 +13,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return new Response("Entwürfe können nicht als E-Rechnung exportiert werden. Bitte zuerst festschreiben.", { status: 422 });
 
   const { data } = loaded;
-  const xml = buildXRechnungUBL(data);
+  const xml = (await getArchivedInvoiceFile(loaded.invoice.orgId, loaded.invoice.id, "UBL")).toString("utf8");
 
   // Selbstkontrolle: Kernregeln vor Auslieferung prüfen (?validate=1 -> JSON-Report)
   const report = validateXRechnung(data, xml);

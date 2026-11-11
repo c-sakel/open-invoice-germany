@@ -1,6 +1,6 @@
 /**
  * Scheduler-Runner (Phase 6, Task 3) — fuehrt die registrierten Jobs (`jobs.ts`) seriell in
- * fester Reihenfolge (`recurring` -> `dunning` -> `notifications`) aus und protokolliert jeden Lauf in
+ * fester Reihenfolge (`recurring` -> `dunning` -> `archive` -> `notifications`) aus und protokolliert jeden Lauf in
  * `SchedulerRun`. Wird sowohl vom Intervall-Loop (`loop.ts`/`instrumentation.ts`) als auch
  * von den Cron-Routen, der manuellen API-Route und den CLI-Skripten aufgerufen — EINE
  * Implementierung, kein zweiter Ausfuehrungspfad.
@@ -23,7 +23,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { jobs } from "./jobs";
 
-export type SchedulerJob = "dunning" | "recurring" | "notifications" | "webhooks" | "cleanup";
+export type SchedulerJob = "dunning" | "recurring" | "archive" | "notifications" | "webhooks" | "cleanup";
 
 export interface JobResult {
   job: SchedulerJob;
@@ -43,7 +43,7 @@ export interface JobResult {
 // "webhooks" liefert hier nur die bereits angelegten Outbox-Zeilen aus). "cleanup" (Fix-
 // Welle, Should-fix 7) laeuft als LETZTER Job — raeumt WebhookDelivery/ApiIdempotency auf,
 // nie eine Zeile, die derselbe Lauf gerade erst als faellig behandelt hat.
-const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "notifications", "webhooks", "cleanup"];
+const JOB_ORDER: SchedulerJob[] = ["recurring", "dunning", "archive", "notifications", "webhooks", "cleanup"];
 const STALE_MS = 30 * 60 * 1000;
 
 export interface RunScheduledJobsOptions {

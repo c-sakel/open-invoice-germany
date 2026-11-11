@@ -17,17 +17,16 @@
  */
 import { dbInternal } from "@/lib/db";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
-import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
-import { renderInvoiceDocumentPdf, renderZugferdPdf } from "@/lib/einvoice/zugferd";
+import { renderInvoiceDocumentPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
-import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
-import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
+import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
+import { getArchivedDunningPdf } from "@/domain/dunning/archive";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import type { EInvoiceData } from "@/lib/einvoice/types";
@@ -51,8 +50,8 @@ function sanitizeFilename(name: string): string {
  * wirft `EInvoiceInvalidError` UND benachrichtigt (`onEInvoiceInvalid`), BEVOR die Datei
  * zurueckgegeben wird. Dieselbe `validateXRechnung()` wie die beiden Session-Routen.
  */
-async function assertXRechnungValid(orgId: string, invoiceId: string, data: EInvoiceData): Promise<void> {
-  const report = validateXRechnung(data, buildXRechnungUBL(data));
+async function assertXRechnungValid(orgId: string, invoiceId: string, data: EInvoiceData, ubl: Buffer): Promise<void> {
+  const report = validateXRechnung(data, ubl.toString("utf8"));
   if (report.valid) return;
   await onEInvoiceInvalid(orgId, { invoiceId, errors: report.errors });
   throw new EInvoiceInvalidError(report.errors);
@@ -77,18 +76,23 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     if (!loaded) throw new NotFoundError("Rechnung nicht gefunden.");
     const { invoice: inv, data } = loaded;
     const filenameBase = sanitizeFilename(inv.number ?? `entwurf-${inv.id.slice(0, 8)}`);
-    const theme = await loadPdfTheme(orgId, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
     if (format === "pdf") {
-      return { buffer: await renderInvoiceDocumentPdf(data, theme, inv.status), mimeType: "application/pdf", filenameBase };
+      // Nicht-Entwurf: archiviertes PDF (Phase 16a); nur der Entwurf wird live gerendert.
+      if (inv.status === "DRAFT") {
+        const theme = await loadPdfTheme(orgId, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
+        return { buffer: await renderInvoiceDocumentPdf(data, theme, inv.status), mimeType: "application/pdf", filenameBase };
+      }
+      return { buffer: await getArchivedInvoiceFile(orgId, inv.id, "PDF"), mimeType: "application/pdf", filenameBase };
     }
     if (format === "xrechnung") {
       if (inv.status === "DRAFT") throw new InvalidOperationError("XRechnung nur fuer festgeschriebene Rechnungen. Zuerst finalisieren.");
-      await assertXRechnungValid(orgId, inv.id, data);
-      return { buffer: Buffer.from(buildXRechnungUBL(data), "utf8"), mimeType: "application/xml", filenameBase };
+      const ubl = await getArchivedInvoiceFile(orgId, inv.id, "UBL");
+      await assertXRechnungValid(orgId, inv.id, data, ubl);
+      return { buffer: ubl, mimeType: "application/xml", filenameBase };
     }
     if (inv.status === "DRAFT") throw new InvalidOperationError("ZUGFeRD nur fuer festgeschriebene Rechnungen. Zuerst finalisieren.");
-    await assertXRechnungValid(orgId, inv.id, data);
-    return { buffer: await renderZugferdPdf(data, theme), mimeType: "application/pdf", filenameBase };
+    await assertXRechnungValid(orgId, inv.id, data, await getArchivedInvoiceFile(orgId, inv.id, "UBL"));
+    return { buffer: await getArchivedInvoiceFile(orgId, inv.id, "PDF"), mimeType: "application/pdf", filenameBase };
   }
 
   if (kind === "QUOTE") {
@@ -130,10 +134,9 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
   // DUNNING
   const d = await dbInternal.dunning.findFirst({
     where: { invoice: { orgId }, OR: [{ id: document }, { number: document }] },
-    include: { invoice: { include: { org: true, customer: true } }, stage: true },
+    select: { id: true, number: true },
   });
   if (!d) throw new NotFoundError(`Mahnung "${document}" nicht gefunden.`);
-  const theme = await loadPdfTheme(orgId, null, "DUNNING");
-  const buffer = await renderDunningPdf(buildDunningPdfData(d, d.invoice), theme);
+  const buffer = await getArchivedDunningPdf(d.id);
   return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(d.number ?? "mahnung") };
 }

@@ -60,6 +60,7 @@ export function InvoiceStatusCard({
   lastSentAt,
   tags,
   tagOptions,
+  archive,
 }: {
   invoice: InvoiceDetail;
   openCents: number;
@@ -79,6 +80,8 @@ export function InvoiceStatusCard({
    *  Details-Karte statt im `nav`-Slot (page.tsx). */
   tags: TagPickerItem[];
   tagOptions: TagPickerItem[];
+  /** Phase 16a: PDF-Eintrag des Belegarchivs (`null` = noch nicht archiviert). */
+  archive: { createdAt: Date; sha256: string } | null;
 }) {
   // Fix 1 (Review): Bezahlt/Offen gehoerten frueher zum guarded "Zahlung & Mahnwesen"-
   // Abschnitt (isInvoiceType && !isDraft && !isCancelled) — fuer Entwuerfe, Gutschriften und
@@ -151,6 +154,18 @@ export function InvoiceStatusCard({
     });
   }
   if (invoice.finalizedAt) detailRows.push({ label: "Festgeschrieben am", value: deDate(invoice.finalizedAt) });
+  if (invoice.status !== "DRAFT") {
+    detailRows.push({
+      label: "Archiv",
+      value: archive ? (
+        <span title={archive.sha256}>
+          Archiviert am {deDate(archive.createdAt)} · SHA-256 {archive.sha256.slice(0, 8)}…
+        </span>
+      ) : (
+        <span className="text-slate-500">Noch nicht archiviert — wird bei der ersten Ausgabe eingefroren</span>
+      ),
+    });
+  }
 
   const reversedCents = reversedCentsByPayment(invoice.payments);
 

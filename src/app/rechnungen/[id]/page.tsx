@@ -69,6 +69,10 @@ export default async function InvoiceDetail({
   if (!invoice) notFound();
 
   const vm = buildInvoiceViewModel(invoice);
+  const archive = await prisma.archivedDocument.findFirst({
+    where: { invoiceId: invoice.id, kind: "PDF", invoice: { orgId: org.id } },
+    select: { createdAt: true, sha256: true },
+  });
   // T7: nach einem Storno zurueckzuzahlender Betrag = echte Zahlungen (ohne Verrechnungen mit Teilgutschriften).
   const refundDueCents = vm.isCancelled
     ? refundablePaidCents(invoice.payments)
@@ -247,6 +251,7 @@ export default async function InvoiceDetail({
             lastSentAt={lastSentAt}
             tags={invoiceTags}
             tagOptions={allTags}
+            archive={archive}
           />
           <AttachmentPanel
             docType="INVOICE"
