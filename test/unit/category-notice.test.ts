@@ -3,7 +3,7 @@
  * (Kategorie O), PDF-Ausdruck je Kategorie, E-Rechnung-Konsistenz (BT-120/BT-121).
  */
 import { describe, it, expect } from "vitest";
-import { CATEGORY_NOTICE, SCHEME_NOTICE, categoryNoticesToPrint, validateMandatoryFields, type MandatoryInvoice } from "@/domain/invoice/mandatory";
+import { CATEGORY_NOTICE, SCHEME_NOTICE, SCHEME_NOTICE_BY_LANG, categoryNoticesToPrint, validateMandatoryFields, type MandatoryInvoice } from "@/domain/invoice/mandatory";
 import { defaultCategoryForScheme, ZERO_TAX_SCHEMES } from "@/lib/tax";
 import { exemptionReasonCode, exemptionReasonText } from "@/lib/einvoice/exemption";
 import { TaxScheme } from "@/schemas";
@@ -107,5 +107,19 @@ describe("PDF-Ausdruck des Kategorie-Hinweises", () => {
   it("Regelbesteuerung (S, 19 %): kein zusaetzlicher Hinweis", async () => {
     const text = await parsePdf(await renderInvoicePdf(referenzInvoice(), referenzTheme({ layoutId: "standard" })));
     expect(text.text).not.toMatch(/Steuerfreie|Nicht im Inland|Nullsatz/);
+  });
+});
+
+describe("englische Pflichthinweise (Phase 16b)", () => {
+  it("SCHEME_NOTICE bleibt der deutsche Alias; en liegt in SCHEME_NOTICE_BY_LANG", () => {
+    expect(SCHEME_NOTICE).toBe(SCHEME_NOTICE_BY_LANG.de);
+    expect(SCHEME_NOTICE_BY_LANG.en.REVERSE_CHARGE).toBe("Reverse charge (Steuerschuldnerschaft des Leistungsempfängers)");
+  });
+
+  it("categoryNoticesToPrint(lang en) druckt englische Texte, keine Dublette bei englischem Schemahinweis", () => {
+    expect(categoryNoticesToPrint(["K"], null, "en")).toEqual([SCHEME_NOTICE_BY_LANG.en.IG_LIEFERUNG]);
+    for (const [cat, scheme] of [["G", "AUSFUHR"], ["O", "NICHT_STEUERBAR"], ["K", "IG_LIEFERUNG"], ["AE", "REVERSE_CHARGE"], ["E", "KLEINUNTERNEHMER"], ["E", "DIFFERENZ"]] as const) {
+      expect(categoryNoticesToPrint([cat], SCHEME_NOTICE_BY_LANG.en[scheme], "en")).toEqual([]);
+    }
   });
 });

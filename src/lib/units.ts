@@ -23,9 +23,23 @@ const UNIT_LABELS: Record<string, string> = {
   H87: "Pauschale",
 };
 
+import type { DocLanguage } from "@/lib/i18n/doc/types";
+
+/** Englische Kürzel (Belegsprache en) — gleiche Codes, nur andere Anzeigeform. */
+const UNIT_LABELS_EN: Record<string, string> = {
+  C62: "pcs",
+  HUR: "h",
+  DAY: "day",
+  KGM: "kg",
+  MTR: "m",
+  LTR: "l",
+  MTK: "m²",
+  H87: "flat rate",
+};
+
 /** Klarname für einen UN/ECE-Einheitencode. Unbekannte Codes kommen unverändert zurück
  *  (z. B. Freitext-Einheiten aus "andere…"), eine leere Eingabe bleibt leer. */
-export function unitLabel(code: string): string {
+export function unitLabel(code: string, lang: DocLanguage = "de"): string {
   if (!code) return "";
-  return UNIT_LABELS[code] ?? code;
+  return (lang === "en" ? UNIT_LABELS_EN : UNIT_LABELS)[code] ?? code;
 }

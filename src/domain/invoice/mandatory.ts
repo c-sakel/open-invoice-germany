@@ -6,6 +6,10 @@
  * Festschreiben (finalize), wenn Pflichtangaben fehlen.
  */
 
+import { de } from "@/lib/i18n/doc/de";
+import { en } from "@/lib/i18n/doc/en";
+import { docStrings } from "@/lib/i18n/doc";
+import type { DocLanguage } from "@/lib/i18n/doc/types";
 import { ZERO_TAX_SCHEMES, EU_COUNTRY_CODES, EU_VAT_PREFIXES } from "@/lib/tax";
 
 export interface MandatoryOrg {
@@ -51,24 +55,19 @@ export interface MandatoryInvoice {
 }
 
 /**
- * Pflichthinweis-Texte je Steuerschema (§ 14 Abs. 4 Nr. 8, § 14a UStG). EINZIGE Quelle
- * im Projekt — src/lib/editor/constants.ts und src/mcp/tools/invoices.ts importieren von
- * hier. Quellen: COMPLIANCE.md § 1 (§ 14a), § 3 (§ 34a UStDV), § 8 (§ 13b/§ 6a), § 9 (§ 25a).
+ * Pflichthinweis-Texte je Steuerschema (§ 14 Abs. 4 Nr. 8, § 14a UStG) — deutsche Alias-
+ * Sicht auf `de.schemeNotice` (src/lib/i18n/doc/de.ts, EINZIGE Quelle des Wortlauts).
+ * src/lib/editor/constants.ts und src/mcp/tools/invoices.ts importieren von hier.
+ * Quellen: COMPLIANCE.md § 1 (§ 14a), § 3 (§ 34a UStDV), § 8 (§ 13b/§ 6a), § 9 (§ 25a).
+ * Englische Fassungen (mit deutschem Wortlaut in Klammern) in `SCHEME_NOTICE_BY_LANG`.
  */
-export const SCHEME_NOTICE: Record<string, string> = {
-  // § 14a Abs. 5 UStG — wortgleich vorgeschrieben.
-  REVERSE_CHARGE: "Steuerschuldnerschaft des Leistungsempfängers",
-  // § 3a Abs. 2 UStG (Leistungsort beim Empfaenger) i. V. m. § 14a Abs. 1/5 UStG.
-  IG_LEISTUNG: "Steuerschuldnerschaft des Leistungsempfängers",
-  IG_LIEFERUNG: "Steuerfreie innergemeinschaftliche Lieferung (§ 4 Nr. 1 Buchst. b i. V. m. § 6a UStG)",
-  AUSFUHR: "Steuerfreie Ausfuhrlieferung (§ 4 Nr. 1 Buchst. a i. V. m. § 6 UStG)",
-  // § 3a Abs. 2/4/5 UStG (Leistungsort ausserhalb Deutschlands, z. B. Drittland), UNTDID 5305
-  // Kategorie O (EN 16931), VATEX-EU-O — Dienstleistungen an Empfaenger im Drittland.
-  NICHT_STEUERBAR: "Nicht im Inland steuerbare Leistung (Leistungsort außerhalb Deutschlands, § 3a UStG)",
-  // § 34a UStDV (Fassung ab 1.1.2025).
-  KLEINUNTERNEHMER: "Kleinunternehmer gemäß § 19 UStG, kein Ausweis von Umsatzsteuer",
-  // § 14a Abs. 6 Satz 1 UStG — eine der drei zulaessigen Formulierungen.
-  DIFFERENZ: "Gebrauchtgegenstände/Sonderregelung (§ 25a UStG)",
+export const SCHEME_NOTICE: Record<string, string> = de.schemeNotice;
+
+/** Pflichthinweise je Belegsprache; die Pruefung (SCHEME_NOTICE_ACCEPTED) bleibt deutsch,
+ *  die englischen Texte enthalten den deutschen Wortlaut deshalb in Klammern. */
+export const SCHEME_NOTICE_BY_LANG: Record<DocLanguage, Record<string, string>> = {
+  de: de.schemeNotice,
+  en: en.schemeNotice,
 };
 
 /** § 14b Abs. 1 Satz 5 UStG (§ 14 Abs. 4 Nr. 9) — Text fuer PDF UND beide XML-Formate. */
@@ -112,14 +111,7 @@ export const SCHEME_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
  * Z: § 12 Abs. 3 UStG (Nullsatz, z. B. Photovoltaikanlagen). E: allgemeine Steuerbefreiung —
  * Kleinunternehmer (§ 19) und § 25a tragen ihren eigenen Schemahinweis (siehe unten).
  */
-export const CATEGORY_NOTICE: Record<string, string> = {
-  AE: SCHEME_NOTICE.REVERSE_CHARGE!,
-  K: SCHEME_NOTICE.IG_LIEFERUNG!,
-  G: SCHEME_NOTICE.AUSFUHR!,
-  E: "Steuerfreie Leistung",
-  Z: "Umsatzsteuersatz 0 % (§ 12 Abs. 3 UStG)",
-  O: SCHEME_NOTICE.NICHT_STEUERBAR!,
-};
+export const CATEGORY_NOTICE: Record<string, string> = de.categoryNotice;
 
 /** Formulierungen (normalizeNotice-Text), die den Kategorie-Hinweis im Hinweistext bereits abdecken. */
 const CATEGORY_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
@@ -140,11 +132,12 @@ const CATEGORY_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
  * gruppen vorkommender Nicht-S-Kategorie genau eine Zeile — ausser der Hinweistext (`notes`,
  * z. B. der Schemahinweis) nennt den Grund bereits (keine Dublette). Reihenfolge stabil.
  */
-export function categoryNoticesToPrint(categories: Iterable<string>, notes: string | null | undefined): string[] {
+export function categoryNoticesToPrint(categories: Iterable<string>, notes: string | null | undefined, lang: DocLanguage = "de"): string[] {
+  const notices: Record<string, string> = docStrings(lang).categoryNotice;
   const normalized = normalizeNotice(notes ?? "");
   const out: string[] = [];
   for (const cat of new Set(categories)) {
-    const text = CATEGORY_NOTICE[cat];
+    const text = notices[cat];
     if (!text) continue;
     if ((CATEGORY_NOTICE_ACCEPTED[cat] ?? []).some((re) => re.test(normalized))) continue;
     out.push(text);

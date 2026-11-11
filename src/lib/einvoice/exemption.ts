@@ -9,18 +9,8 @@
  * existiert kein EU-Code fuer die Margenbesteuerung von VERKAEUFEN — die VATEX-Codes
  * D/F/I/J betreffen innergemeinschaftliche ERWERBE und passen hier nicht.
  */
-const REASON_TEXT: Record<string, string> = {
-  // M11 (Fix-Welle Final-Review): wortgleich mit SCHEME_NOTICE.REVERSE_CHARGE
-  // (src/domain/invoice/mandatory.ts) — hier BT-120 (TaxExemptionReason, EN 16931), dort der
-  // Pflichthinweis nach § 14a Abs. 5 UStG. Zwei verschiedene Felder mit zufaellig identischem
-  // Wortlaut, keine gemeinsame Quelle noetig — nicht verwechseln.
-  AE: "Steuerschuldnerschaft des Leistungsempfängers",
-  K: "Innergemeinschaftliche Lieferung",
-  G: "Ausfuhrlieferung",
-  E: "Steuerbefreit",
-  Z: "Nullsatz",
-  O: "Nicht steuerbar",
-};
+import { docStrings } from "@/lib/i18n/doc";
+import type { DocLanguage } from "@/lib/i18n/doc/types";
 
 const REASON_CODE: Record<string, string> = {
   AE: "VATEX-EU-AE",
@@ -29,8 +19,15 @@ const REASON_CODE: Record<string, string> = {
   O: "VATEX-EU-O",
 };
 
-export function exemptionReasonText(category: string): string | null {
-  return REASON_TEXT[category] ?? null;
+/**
+ * Klartext der Steuerbefreiung (BT-120) je Belegsprache; die Texte stehen in
+ * src/lib/i18n/doc/{de,en}.ts (`exemptionReason`). Deutsch bleibt der Default, die
+ * E-Rechnungs-Builder rufen ohne Sprache auf (Bestandsfixtures unveraendert).
+ * Fuer Kategorie S (und unbekannte Kategorien) gibt es keinen Text.
+ */
+export function exemptionReasonText(category: string, lang: DocLanguage = "de"): string | null {
+  const table: Record<string, string> = docStrings(lang).exemptionReason;
+  return table[category] ?? null;
 }
 
 export function exemptionReasonCode(category: string): string | null {

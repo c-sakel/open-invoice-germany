@@ -1,0 +1,146 @@
+/**
+ * Typen der Beleg-Uebersetzungen (Phase 16b, Task 5). Festtexte und Pflichthinweise je
+ * Belegsprache; die PDF-Renderer und E-Rechnungs-Builder bekommen fertige Strings und
+ * enthalten keine Sprachlogik. Deutsch ist die Referenz (de.ts uebernimmt die bisherigen
+ * Literale woertlich), en.ts muss strukturgleich sein (Test: doc-strings.test.ts).
+ */
+import type { TaxScheme, TaxCategory } from "@/schemas";
+
+export type DocLanguage = "de" | "en";
+
+/** Steuerkategorien mit Hinweis-/Befreiungstext (S = Regelsteuersatz hat keinen). */
+export type NoticeCategory = Exclude<TaxCategory, "S">;
+/** Schemata mit Pflichthinweis (REGULAR hat keinen). */
+export type NoticeScheme = Exclude<TaxScheme, "REGULAR">;
+export type FxSource = "BMF_MONTHLY" | "ECB_DAILY" | "MANUAL";
+
+export interface DocStrings {
+  titles: {
+    INVOICE: string;
+    CREDIT_NOTE: string;
+    /** Titel einer Korrektur ueber Gutschrift (creditNoteKind KORREKTUR). */
+    CREDIT_NOTE_CORRECTION: string;
+    CORRECTION: string;
+    ANGEBOT: string;
+    AUFTRAGSBESTAETIGUNG: string;
+    PROFORMA: string;
+    PARTIAL: string;
+    DOWNPAYMENT: string;
+    FINAL: string;
+    DELIVERY_NOTE: string;
+    /** Fallback, wenn der Belegtyp unbekannt ist. */
+    DOCUMENT: string;
+    /** Mahnstufen 0 (Zahlungserinnerung) bis 3. */
+    DUNNING: Record<number, string>;
+    /** Fallback-Titel fuer eine Mahnstufe ohne Eintrag. */
+    dunningLevel: (level: number) => string;
+  };
+  numberLabels: {
+    INVOICE: string;
+    CREDIT_NOTE: string;
+    CORRECTION: string;
+    ANGEBOT: string;
+    AUFTRAGSBESTAETIGUNG: string;
+    PROFORMA: string;
+    PARTIAL: string;
+    DOWNPAYMENT: string;
+    FINAL: string;
+    /** Storno (CREDIT_NOTE, Art STORNO). */
+    CANCELLATION: string;
+    CREDIT_NOTE_CORRECTION: string;
+    DELIVERY_NOTE: string;
+    DOCUMENT: string;
+    /** Kurzform im Mahnungskopf. */
+    DUNNING: string;
+  };
+  meta: {
+    invoiceDate: string;
+    /** Datum bei Mahnung/Lieferschein. */
+    date: string;
+    deliveryDate: string;
+    /** Lieferdatum (Lieferschein). */
+    deliveryNoteDate: string;
+    shippingDate: string;
+    dueDate: string;
+    customerNumber: string;
+    contactPerson: string;
+    buyerVatId: string;
+    reference: string;
+    referenceDocument: string;
+    /** "zu <Beleg> <Nummer>" */
+    referenceValue: (sourceLabel: string, number: string) => string;
+    /** Fallback fuer den Namen des Bezugsbelegs. */
+    genericDocument: string;
+    deliveryAddress: string;
+  };
+  columns: {
+    pos: string;
+    articleNumber: string;
+    description: string;
+    quantity: string;
+    unitPrice: string;
+    vat: string;
+    net: string;
+  };
+  totals: {
+    subtotalNet: string;
+    lessDiscount: string;
+    surcharge: string;
+    surchargeWithReason: (reason: string) => string;
+    net: string;
+    gross: string;
+    finalNet: string;
+    finalGross: string;
+    taxRow: (rate: number) => string;
+    /** Umsatzsteuer-0-%-Zeile je Befreiungskategorie. */
+    zeroRateRow: (label: string) => string;
+    zeroRateLabel: Record<NoticeCategory, string>;
+    lineDiscount: (pct: string) => string;
+    deduction: (number: string, date: string, gross: string, tax: string) => string;
+    remaining: string;
+    downpaymentTaxHint: string;
+  };
+  fx: {
+    /** `rate` ist bereits locale-formatiert, `date` ebenso. */
+    rateLine: (rate: string, currency: string, sourceLabel: string, date: string) => string;
+    taxEurLine: (amount: string) => string;
+    sourceLabel: Record<FxSource, string>;
+    /** "Monatsdurchschnittskurs <Monat> <Jahr>" (Monat 1..12). */
+    monthlyRateLabel: (year: number, month: number) => string;
+  };
+  schemeNotice: Record<NoticeScheme, string>;
+  categoryNotice: Record<NoticeCategory, string>;
+  /** BT-120 (Klartext der Steuerbefreiung). */
+  exemptionReason: Record<NoticeCategory, string>;
+  paymentTerms: {
+    /** Skonto-Satz bereits formatiert ("2 %"). */
+    skontoClause: (percent: string, date: string, amount: string) => string;
+    netDue: (date: string) => string;
+  };
+  footer: {
+    phone: string;
+    email: string;
+    web: string;
+    vatId: string;
+    taxNumber: string;
+    owner: string;
+    bank: string;
+    iban: string;
+    bic: string;
+    accountHolder: string;
+  };
+  giro: { caption: string; captionShort: string };
+  page: (n: number, total: number) => string;
+  dunning: {
+    salutation: string;
+    intro: Record<0 | 1 | 2, (invoiceNumber: string) => string>;
+    invoiceRow: (number: string, date: string) => string;
+    interestSegment: (from: string, to: string, days: number, ratePct: string, points: string) => string;
+    interestSingle: (days: number) => string;
+    flatFee: string;
+    fee: string;
+    otherCosts: string;
+    total: string;
+    payBy: (date: string) => string;
+  };
+}
