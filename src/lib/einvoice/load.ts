@@ -22,8 +22,13 @@ const INCLUDE = {
   finalDeductions: { orderBy: { issueDate: "asc" as const } },
 } as const;
 
-/** Entwurf in Fremdwaehrung: Kurs live per rateFor (Vorschau, nicht festgeschrieben). Kein Kurs
- * oder nicht abbildbar -> kein EUR-Block (die Vorschau darf nicht scheitern). */
+/**
+ * Entwurf in Fremdwaehrung: Kurs live per rateFor (Vorschau, nicht festgeschrieben; das Ergebnis
+ * wird als `fx.preview` markiert und nie gespeichert — beim Festschreiben friert
+ * resolveFxSnapshot den verbindlichen Kurs ein, der von der Vorschau abweichen kann).
+ * Kein Kurs oder nicht abbildbar -> kein EUR-Block (die Vorschau darf nicht scheitern).
+ * Unlesbares taxBreakdownJson wird protokolliert und ebenfalls ohne EUR-Block behandelt.
+ */
 async function previewFx(invoice: {
   orgId: string;
   currency: string;
@@ -46,10 +51,14 @@ async function previewFx(invoice: {
   try {
     rawBreakdown = JSON.parse(invoice.taxBreakdownJson);
   } catch {
+    console.warn("load: taxBreakdownJson des Entwurfs nicht lesbar (kein JSON), EUR-Vorschau entfaellt");
     return none;
   }
   const breakdown = taxBreakdownSchema.safeParse(rawBreakdown);
-  if (!breakdown.success) return none;
+  if (!breakdown.success) {
+    console.warn("load: taxBreakdownJson des Entwurfs ungueltig, EUR-Vorschau entfaellt");
+    return none;
+  }
   try {
     return {
       fxRateMicros: pick.rateMicros,

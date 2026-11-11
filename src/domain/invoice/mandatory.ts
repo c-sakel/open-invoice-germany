@@ -68,8 +68,7 @@ export const SCHEME_NOTICE_BY_LANG: Record<DocLanguage, Record<string, string>> 
 };
 
 /** § 14b Abs. 1 Satz 5 UStG (§ 14 Abs. 4 Nr. 9) — Text fuer PDF UND beide XML-Formate. */
-export const CONSUMER_RETENTION_HINT =
-  "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).";
+export const CONSUMER_RETENTION_HINT = docStrings("de").notes.consumerRetentionHint;
 
 /** Vergleichsform: klein, Umlaute/ß gefaltet, Whitespace normalisiert. */
 export function normalizeNotice(text: string): string {

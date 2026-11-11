@@ -9,7 +9,7 @@ import { create } from "xmlbuilder2";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
-import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
+import { docStrings } from "@/lib/i18n/doc";
 import { fxOf, fxRateNoteText } from "./fx-note";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
@@ -133,10 +133,10 @@ export function buildFacturXCII(data: EInvoiceData): string {
   if (subjectTrimmed) doc.ele("ram:IncludedNote").ele("ram:Content").txt(subjectTrimmed).up().ele("ram:SubjectCode").txt("AAI").up().up();
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES
   // IncludedNote-Element (mehrfach zulässig), ergänzt einen ggf. vorhandenen Hinweis.
-  if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions)).up().up();
+  if (data.deductions?.length) doc.ele("ram:IncludedNote").ele("ram:Content").txt(deductionsNoteText(data.deductions, data.language ?? "de")).up().up();
   // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
   // IncludedNote-Element (mehrfach zulaessig), Phase 12b Task 5.
-  if (data.consumerRetentionHint) doc.ele("ram:IncludedNote").ele("ram:Content").txt(CONSUMER_RETENTION_HINT).up().up();
+  if (data.consumerRetentionHint) doc.ele("ram:IncludedNote").ele("ram:Content").txt(docStrings(data.language ?? "de").notes.consumerRetentionHint).up().up();
   // Phase 16b — Umrechnungskurs als BT-22 (zusaetzliche IncludedNote), nur bei Fremdwaehrung.
   if (fx) doc.ele("ram:IncludedNote").ele("ram:Content").txt(fxRateNoteText(data, fx)).up().up();
   doc.up();
@@ -186,7 +186,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
         isCharge: false,
         amountCents: Math.abs(line.discountCents),
         baseCents: Math.abs(line.grossLineCents ?? line.lineNetCents),
-        reason: "Rabatt",
+        reason: docStrings(data.language ?? "de").notes.allowanceReason,
         reasonCode: "95",
         calculationPercent: line.discountPermille,
       });

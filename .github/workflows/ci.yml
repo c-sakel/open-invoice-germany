@@ -69,7 +69,7 @@ jobs:
           java-version: "17"
       - run: npm install --no-audit --no-fund # nicht npm ci: saxon-js zieht plattformspezifische optionale Deps
       - run: npx prisma generate
-      - name: Alle Beispiel-XRechnungen erzeugen (28 Fixtures, UBL + CII)
+      - name: Alle Beispiel-XRechnungen erzeugen (27 Fixtures, UBL + CII)
         run: |
           mkdir -p tmp/xrechnung-samples
           # Dieselbe Fixture-Liste wie SAMPLE_NAMES in scripts/validate-erechnung.ts

@@ -8,6 +8,7 @@ import { buildEInvoiceData, type MapInput } from "@/lib/einvoice/mapper";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
+import { deductionsNoteText } from "@/lib/einvoice/deduction-note";
 import { de } from "@/lib/i18n/doc/de";
 import { en } from "@/lib/i18n/doc/en";
 
@@ -156,5 +157,37 @@ describe("Belegsprache im XML", () => {
     const ubl = buildXRechnungUBL(data);
     expect(ubl).toContain(en.fx.rateLine("1.1214", "USD", en.fx.sourceLabel.BMF_MONTHLY, "01/03/2044"));
     expect(ubl).toContain("Credit note – offset or refund");
+  });
+});
+
+describe("Belegsprache: weitere XML-Texte (Fix-Runde 1)", () => {
+  it("Skonto-Betrag in der Belegwaehrung (USD)", () => {
+    const data = buildEInvoiceData(input({ paymentTerms: null, skonto1Permille: 20, skonto1Days: 10 }));
+    expect(data.paymentTermsHuman).toMatch(/2,67\s\$/);
+    expect(data.paymentTermsHuman).not.toContain("€");
+  });
+  it("en: Aufbewahrungshinweis, Rabatt- und Aufschlaggrund englisch; de unveraendert", () => {
+    const withAdjust = (language: string) =>
+      buildEInvoiceData(
+        input({
+          currency: "EUR", language, fxRateMicros: null, fxRateDate: null, fxRateSource: null, taxTotalEurCents: null, netTotalEurCents: null,
+          consumerRetentionHint: true,
+          taxBreakdownJson: JSON.stringify([{ taxCategory: "S", taxRate: 19, netCents: 11214, taxCents: 2131, baseNetCents: 12000, allowanceCents: 1000, chargeCents: 214 }]),
+        }),
+      );
+    const enXml = buildXRechnungUBL(withAdjust("en"));
+    expect(enXml).toContain("You are required to retain this invoice for two years");
+    expect(enXml).toContain("<cbc:AllowanceChargeReason>Discount</cbc:AllowanceChargeReason>");
+    expect(enXml).toContain("<cbc:AllowanceChargeReason>Surcharge</cbc:AllowanceChargeReason>");
+    expect(buildFacturXCII(withAdjust("en"))).toContain("<ram:Reason>Discount</ram:Reason>");
+    const deXml = buildXRechnungUBL(withAdjust("de"));
+    expect(deXml).toContain("Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).");
+    expect(deXml).toContain("<cbc:AllowanceChargeReason>Rabatt</cbc:AllowanceChargeReason>");
+    expect(deXml).toContain("<cbc:AllowanceChargeReason>Aufschlag</cbc:AllowanceChargeReason>");
+  });
+  it("Abzugsaufstellung je Sprache", () => {
+    const ded = [{ number: "AR-1", issueDate: new Date(2044, 1, 1), netCents: 300000, taxCents: 57000, grossCents: 357000 }];
+    expect(deductionsNoteText(ded)).toBe("Abzüge: AR-1 vom 01.02.2044: 3.000,00 netto + 570,00 USt = 3.570,00");
+    expect(deductionsNoteText(ded, "en")).toBe("Deductions: AR-1 dated 01/02/2044: 3,000.00 net + 570.00 VAT = 3,570.00");
   });
 });

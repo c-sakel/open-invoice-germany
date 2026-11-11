@@ -140,6 +140,13 @@ export const de: DocStrings = {
     Z: "Nullsatz",
     O: "Nicht steuerbar",
   },
+  notes: {
+    consumerRetentionHint: "Sie sind verpflichtet, diese Rechnung zwei Jahre aufzubewahren (§ 14b Abs. 1 Satz 5 UStG).",
+    allowanceReason: "Rabatt",
+    chargeReason: "Aufschlag",
+    deductionsPrefix: "Abzüge: ",
+    deductionLine: (number, date, net, tax, gross) => `${number} vom ${date}: ${net} netto + ${tax} USt = ${gross}`,
+  },
   paymentTerms: {
     skontoClause: (percent, date, amount) => `${percent} Skonto bei Zahlung bis ${date} (Skontobetrag ${amount})`,
     netDue: (date) => `zahlbar netto bis ${date}`,

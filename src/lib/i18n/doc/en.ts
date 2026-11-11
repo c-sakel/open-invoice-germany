@@ -139,6 +139,13 @@ export const en: DocStrings = {
     Z: "Zero rated",
     O: "Not subject to VAT",
   },
+  notes: {
+    consumerRetentionHint: "You are required to retain this invoice for two years (§ 14b (1) sentence 5 UStG).",
+    allowanceReason: "Discount",
+    chargeReason: "Surcharge",
+    deductionsPrefix: "Deductions: ",
+    deductionLine: (number, date, net, tax, gross) => `${number} dated ${date}: ${net} net + ${tax} VAT = ${gross}`,
+  },
   paymentTerms: {
     skontoClause: (percent, date, amount) => `${percent} cash discount if paid by ${date} (discount amount ${amount})`,
     netDue: (date) => `payable net by ${date}`,

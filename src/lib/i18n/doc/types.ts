@@ -141,6 +141,18 @@ export interface DocStrings {
   categoryNotice: Record<NoticeCategory, string>;
   /** BT-120 (Klartext der Steuerbefreiung). */
   exemptionReason: Record<NoticeCategory, string>;
+  /** Texte, die ins E-Rechnungs-XML (BT-22, Rabatt-/Aufschlaggruende) gehen. */
+  notes: {
+    /** § 14b Abs. 1 Satz 5 UStG (PDF und XML). */
+    consumerRetentionHint: string;
+    /** BG-20/BG-27 Grund eines Rabatts. */
+    allowanceReason: string;
+    /** BG-21 Grund eines Aufschlags ohne eigenen Freitext. */
+    chargeReason: string;
+    /** BT-22-Abzugsaufstellung: Praefix, Betraege/Datum bereits formatiert. */
+    deductionsPrefix: string;
+    deductionLine: (number: string, date: string, net: string, tax: string, gross: string) => string;
+  };
   paymentTerms: {
     /** Skonto-Satz bereits formatiert ("2 %"). */
     skontoClause: (percent: string, date: string, amount: string) => string;

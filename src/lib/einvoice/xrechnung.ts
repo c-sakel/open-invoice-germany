@@ -11,7 +11,7 @@ import { roundHalfUp } from "@/lib/money";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
-import { CONSUMER_RETENTION_HINT } from "@/domain/invoice/mandatory";
+import { docStrings } from "@/lib/i18n/doc";
 import { fxOf, fxRateNoteText } from "./fx-note";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
@@ -204,10 +204,10 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
   // BT-22 (Phase 5) — Abzugsaufstellung der Schlussrechnung als ZUSÄTZLICHES Note-Element
   // (mehrere cbc:Note sind laut UBL-XSD zulässig) — ergänzt einen ggf. vorhandenen
   // Freitext-Hinweis, statt ihn zu ersetzen.
-  if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions)).up();
+  if (data.deductions?.length) root.ele("cbc:Note").txt(deductionsNoteText(data.deductions, data.language ?? "de")).up();
   // § 14 Abs. 4 Nr. 9 / § 14b Abs. 1 Satz 5 UStG — Aufbewahrungshinweis, als ZUSAETZLICHES
   // Note-Element (mehrere cbc:Note sind laut UBL-XSD zulaessig), Phase 12b Task 5.
-  if (data.consumerRetentionHint) root.ele("cbc:Note").txt(CONSUMER_RETENTION_HINT).up();
+  if (data.consumerRetentionHint) root.ele("cbc:Note").txt(docStrings(data.language ?? "de").notes.consumerRetentionHint).up();
   // Phase 16b — Umrechnungskurs als BT-22 (zusaetzliche Note), nur bei Fremdwaehrung.
   if (fx) root.ele("cbc:Note").txt(fxRateNoteText(data, fx)).up();
   root.ele("cbc:DocumentCurrencyCode").txt(cur).up();
@@ -420,7 +420,7 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
         isCharge: false,
         amountCents: Math.abs(line.discountCents),
         baseCents: Math.abs(line.grossLineCents ?? line.lineNetCents),
-        reason: "Rabatt",
+        reason: docStrings(data.language ?? "de").notes.allowanceReason,
         reasonCode: "95",
         multiplierPermille: line.discountPermille,
         currency: cur,

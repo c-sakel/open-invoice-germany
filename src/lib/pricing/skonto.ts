@@ -133,13 +133,13 @@ export function detectSkonto(
  * Menschenlesbarer Zahlungsbedingungstext, z. B.:
  * "2 % Skonto bei Zahlung bis 10.06.2034 (Skontobetrag 23,80 €), zahlbar netto bis 17.06.2034."
  */
-export function paymentTermsText(terms: readonly SkontoTerm[], netDueDate: Date | null, lang: DocLanguage = "de"): string {
+export function paymentTermsText(terms: readonly SkontoTerm[], netDueDate: Date | null, lang: DocLanguage = "de", currency = "EUR"): string {
   const t = docStrings(lang).paymentTerms;
   const fmtDate = (d: Date): string => (lang === "de" ? formatDateDE(d) : formatDateEn(d));
   const fmtPercent = (permille: number): string =>
     lang === "de" ? formatPercentDE(permille) : `${new Intl.NumberFormat(docLocale(lang), { maximumFractionDigits: 2 }).format(permille / 10)}%`;
   const parts = terms.map((term) =>
-    t.skontoClause(fmtPercent(term.permille), fmtDate(term.dueDate), formatCents(term.amountCents, "EUR", docLocale(lang))),
+    t.skontoClause(fmtPercent(term.permille), fmtDate(term.dueDate), formatCents(term.amountCents, currency, docLocale(lang))),
   );
   if (netDueDate) {
     parts.push(t.netDue(fmtDate(netDueDate)));

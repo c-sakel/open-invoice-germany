@@ -11,7 +11,7 @@ import { resolvePayeeName } from "@/lib/payee-name";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { BuyerSnapshot } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
-import { resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
+import { docStrings, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import type {
   EInvoiceData,
   EInvoiceDeduction,
@@ -202,7 +202,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       baseCents: Math.abs(b.baseNetCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
-      reason: "Rabatt",
+      reason: docStrings(lang).notes.allowanceReason,
     }));
   const documentCharges: EInvoiceDocumentAllowanceCharge[] = breakdown
     .filter((b) => b.chargeCents !== 0)
@@ -211,7 +211,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       baseCents: Math.abs(b.baseNetCents - b.allowanceCents),
       taxRate: b.taxRate,
       taxCategory: b.taxCategory,
-      reason: invoice.documentChargeReason || "Aufschlag",
+      reason: invoice.documentChargeReason || docStrings(lang).notes.chargeReason,
     }));
   const lineTotalCents = invoice.lines.reduce((s, l) => s + l.lineNetCents, 0);
   const allowanceTotalCents = breakdown.reduce((s, b) => s + b.allowanceCents, 0);
@@ -249,7 +249,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // Fix-Welle (W3): ist ZUSAETZLICH ein Freitext-Zahlungsziel gesetzt, ergaenzt der
   // Skonto-Klartext per Zeilenumbruch, statt ihn zu verschlucken (bisher liess `??`
   // den Skonto-Hinweis komplett entfallen, sobald `paymentTerms` gesetzt war).
-  const skontoHumanText = skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate, lang) : null;
+  const skontoHumanText = skTerms.length > 0 ? paymentTermsText(skTerms, invoice.dueDate, lang, invoice.currency) : null;
   const paymentTermsHuman =
     invoice.paymentTerms && skontoHumanText
       ? `${invoice.paymentTerms}\n${skontoHumanText}`
