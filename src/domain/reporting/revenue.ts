@@ -43,6 +43,8 @@ export interface MonthlyRevenuePoint {
 export interface MonthlyRevenueOptions {
   months?: number;
   customerId?: string;
+  /** Nur Belege dieser Waehrung (Dashboard: Standardwaehrung); ohne Angabe alle (Mischsumme!). */
+  currency?: string;
   now?: Date;
 }
 
@@ -100,6 +102,7 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
       status: { not: "DRAFT" },
       issueDate: { gte: start, lt: end },
       ...(opts.customerId ? { customerId: opts.customerId } : {}),
+      ...(opts.currency ? { currency: opts.currency } : {}),
     },
     select: { issueDate: true, netTotalCents: true, grossTotalCents: true, payableCents: true, type: true },
   });

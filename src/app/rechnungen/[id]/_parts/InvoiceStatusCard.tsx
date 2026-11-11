@@ -1,4 +1,5 @@
 // src/app/rechnungen/[id]/_parts/InvoiceStatusCard.tsx
+import { taxSchemeLabel } from "@/lib/tax-scheme-label";
 import { paymentMethodLabel } from "@/lib/payment-method-label";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -145,7 +146,7 @@ export function InvoiceStatusCard({
   // angehaengt statt aus einem eigenen Feld gelesen.
   if (lastSentAt) detailRows.push({ label: "Versendet am", value: `${deDate(lastSentAt)} · E-Mail` });
   if (paymentMethodName) detailRows.push({ label: "Zahlungsmethode", value: paymentMethodName });
-  detailRows.push({ label: "Steuerschema", value: invoice.taxScheme });
+  detailRows.push({ label: "Steuerschema", value: taxSchemeLabel(invoice.taxScheme) });
   if (invoice.customer.vatId) detailRows.push({ label: "USt-IdNr.", value: invoice.customer.vatId });
   if (hasSkonto) detailRows.push({ label: "Skonto", value: skontoText(invoice) });
   if (invoice.xmlFormat) {
@@ -181,7 +182,7 @@ export function InvoiceStatusCard({
         status={
           <>
             <StatusBadge status={invoice.status} />
-            {isOverdue && <span className="rounded bg-seal/10 px-1.5 py-0.5 text-xs text-seal">überfällig</span>}
+            {isOverdue && <span className="rounded bg-stamp/10 px-1.5 py-0.5 text-xs text-stamp">überfällig</span>}
           </>
         }
         rows={customerRows}
@@ -191,6 +192,7 @@ export function InvoiceStatusCard({
             valueCents={invoice.paidAmountCents}
             totalCents={invoice.payableCents ?? invoice.grossTotalCents}
             label="Bezahlt"
+            currency={invoice.currency}
           />
         )}
       </StatusCard>

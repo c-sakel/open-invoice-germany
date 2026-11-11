@@ -97,15 +97,24 @@ export function agingChartData(buckets: AgingBucket[]): ChartDatum[] {
   }));
 }
 
-/** Farben der fuenf Alters-Buckets: pen -> seal -> seal -> stamp -> stamp. */
-const AGING_COLORS = [CHART_COLORS.primary, CHART_COLORS.due, CHART_COLORS.due, CHART_COLORS.overdue, CHART_COLORS.overdue];
+/**
+ * Farben der fuenf Alters-Buckets: seal -> stamp, je Stufe dunkler (Deckkraft), damit
+ * benachbarte Segmente auch ohne Tooltip unterscheidbar sind (WCAG 1.4.1).
+ */
+const AGING_COLORS = [
+  "color-mix(in srgb, var(--color-seal) 55%, transparent)",
+  CHART_COLORS.due,
+  "color-mix(in srgb, var(--color-stamp) 55%, transparent)",
+  "color-mix(in srgb, var(--color-stamp) 80%, transparent)",
+  CHART_COLORS.overdue,
+];
 
 /** Gesamtbetrag der offenen Forderungen (offen + heute faellig + ueberfaellig). */
 export function openTotalCents(summary: DashboardSummary): number {
   return summary.openInvoices.cents + summary.dueInvoices.cents + summary.overdueInvoices.cents;
 }
 
-/** Geldfluss-Band: "Noch nicht faellig" (gruen) plus die Alters-Buckets der faelligen Posten. */
+/** Geldfluss-Band: "Noch nicht faellig" (pen) plus die Alters-Buckets der faelligen Posten. */
 export function openBandSegments(summary: DashboardSummary, currency = "EUR"): StackedSegment[] {
   return [
     {
@@ -113,7 +122,7 @@ export function openBandSegments(summary: DashboardSummary, currency = "EUR"): S
       label: "Noch nicht fällig",
       value: summary.openInvoices.cents,
       valueLabel: formatCents(summary.openInvoices.cents, currency),
-      color: CHART_COLORS.ledger,
+      color: CHART_COLORS.primary,
     },
     ...summary.aging.map((b, i) => ({
       key: `aging-${i}`,

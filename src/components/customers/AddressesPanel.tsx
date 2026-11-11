@@ -144,7 +144,7 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
                 <input className={input} placeholder="Land (ISO-2)" value={d.countryCode} onChange={(e) => setDraft(a.id, { countryCode: e.target.value.toUpperCase() })} />
               </div>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => save(a.id)} disabled={busyId === a.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60">
+                <button type="button" onClick={() => save(a.id)} disabled={busyId === a.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
                   Speichern
                 </button>
                 {!a.isDefault && (
@@ -187,7 +187,7 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
           type="button"
           onClick={create}
           disabled={creating || !newFields.addressLine1.trim() || !newFields.postalCode.trim() || !newFields.city.trim()}
-          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
+          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
         >
           {creating ? "…" : "Adresse anlegen"}
         </button>

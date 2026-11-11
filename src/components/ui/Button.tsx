@@ -7,7 +7,7 @@ const BASE =
   "inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-pen text-on-accent hover:bg-pen/90",
+  primary: "bg-pen text-on-accent hover:bg-pen-strong/90",
   secondary: "bg-sheet text-ink ring-1 ring-inset ring-rule-strong hover:bg-well",
   quiet: "text-ink-soft hover:bg-well hover:text-ink",
   "danger-quiet": "text-stamp hover:bg-well",

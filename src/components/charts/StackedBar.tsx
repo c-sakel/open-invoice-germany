@@ -46,7 +46,7 @@ export function StackedBar({
         <svg role="img" aria-labelledby={titleId} width="100%" height={height} className="block overflow-hidden rounded-sm">
           <title id={titleId}>{`${title}: ${totalLabel}`}</title>
           {rects.map(({ s, x, pct }) => (
-            <rect key={s.key} x={`${x}%`} y={0} width={`${pct}%`} height={height} fill={s.color}>
+            <rect key={s.key} x={`${x}%`} y={0} width={`${pct}%`} height={height} fill={s.color} stroke="var(--color-sheet)" strokeWidth={1}>
               <title>{`${s.label}: ${s.valueLabel}`}</title>
             </rect>
           ))}

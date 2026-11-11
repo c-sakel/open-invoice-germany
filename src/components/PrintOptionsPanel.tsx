@@ -206,7 +206,7 @@ export function PrintOptionsPanel({
               <span className={"giroSizeMm" in overrides ? "font-medium text-ink" : "text-ink-muted"}>GiroCode-Größe (mm)</span>
             </label>
           </div>
-          <button type="button" onClick={save} disabled={saving} className="rounded-md bg-pen px-4 py-2 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60">
+          <button type="button" onClick={save} disabled={saving} className="rounded-md bg-pen px-4 py-2 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
             {saving ? "Speichern…" : "Druckoptionen speichern"}
           </button>
         </div>

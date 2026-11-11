@@ -226,7 +226,7 @@ async function buildNode(orgId: string, type: RefType, id: string, relation: str
         id: p.id,
         label: `${p.kind === "REVERSAL" ? "Gegenbuchung" : "Zahlung"} ${formatCents(p.amountCents)}`,
         // Anzeigename statt ID: Referenz der Zahlung, sonst "Zahlung vom <Datum>".
-        number: p.reference ?? `Zahlung vom ${new Intl.DateTimeFormat("de-DE", { timeZone: "UTC" }).format(p.paidAt)}`,
+        number: p.reference ?? `${p.kind === "REVERSAL" ? "Gegenbuchung" : "Zahlung"} vom ${new Intl.DateTimeFormat("de-DE", { timeZone: "UTC" }).format(p.paidAt)}`,
         status: paymentMethodLabel(p.method),
         href: null,
         children: [],

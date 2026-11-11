@@ -436,7 +436,7 @@ export function NewRecurringForm({
         <span className="text-sm text-ink-muted">
           Nettosumme je Rechnung: <span className="tabular font-medium text-ink">{(netCents / 100).toFixed(2)} {currencySymbol(currency)}</span>
         </span>
-        <button type="submit" disabled={busy} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "Speichert…" : mode === "edit" ? "Änderungen speichern" : "Abo anlegen"}
         </button>
       </div>

@@ -263,15 +263,15 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       mobile: "meta",
       cell: (inv) => (
         <>
-          <span className="hidden sm:inline">
+          <span className={inv.type === "CREDIT_NOTE" ? undefined : "hidden sm:inline"}>
             <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
           </span>
-          <span className="sm:hidden">
+          <span className={inv.type === "CREDIT_NOTE" ? "hidden" : "sm:hidden"}>
             <BelegStreckeMini
               status={inv.status}
               sent={inv.hasEmailLog}
               paidAmountCents={inv.paidAmountCents}
-              payableCents={inv.grossTotalCents}
+              payableCents={inv.payableCents ?? inv.grossTotalCents}
             />
           </span>
         </>
@@ -282,8 +282,15 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       key: "open",
       header: "Offen",
       align: "right",
-      mobile: "hidden",
-      cell: (inv) => <span className="text-ink-soft">{formatCents(inv.openCents, inv.currency)}</span>,
+      mobile: "meta",
+      cell: (inv) => (
+        <>
+          <span className="hidden text-ink-soft sm:inline">{formatCents(inv.openCents, inv.currency)}</span>
+          {inv.openCents !== inv.grossTotalCents && inv.type !== "CREDIT_NOTE" && (
+            <span className="sm:hidden">Offen {formatCents(inv.openCents, inv.currency)}</span>
+          )}
+        </>
+      ),
     },
     {
       key: "actions",
@@ -341,7 +348,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
+          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neue Rechnung
           </Link>
         }
@@ -358,7 +365,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
           <StackedBar
             title="Geldfluss"
             segments={bandSegments}
-            totalLabel={`${headline.count - headline.draftCount} festgeschriebene Belege${headline.draftCount > 0 ? ` · ${headline.draftCount} Entwürfe (nicht im Band)` : ""}`}
+            totalLabel={`${headline.bandCount} festgeschriebene Belege${headline.draftCount > 0 ? ` · ${headline.draftCount} Entwürfe (nicht im Band)` : ""}`}
           />
         </Card>
       )}

@@ -125,7 +125,7 @@ export function TakeOverPrompt({
         type="button"
         onClick={apply}
         disabled={busy}
-        className="rounded-md bg-pen px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60"
+        className="rounded-md bg-pen px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
       >
         {busy ? "…" : "Übernehmen"}
       </button>

@@ -26,7 +26,7 @@ export function invoiceListBand(h: InvoiceListBandInput): StackedSegment[] {
   return [
     seg("paid", "Bezahlt", h.paidCents, CHART_COLORS.ledger),
     seg("open", "Offen", h.notDueCents, CHART_COLORS.primary),
-    seg("due", "Fällig", h.dueCents, CHART_COLORS.second),
+    seg("due", "Fällig", h.dueCents, CHART_COLORS.due),
     seg("overdue", "Überfällig", h.overdueCents, CHART_COLORS.overdue),
   ];
 }

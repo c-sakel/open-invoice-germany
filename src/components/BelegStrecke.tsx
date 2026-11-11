@@ -14,7 +14,7 @@ export function BelegStrecke({ steps, size, hideText = false }: { steps: BelegSt
           s.key === "CANCELLED"
             ? "bg-stamp"
             : s.state === "todo"
-              ? "bg-rule-strong"
+              ? "bg-ink-muted/40"
               : s.stamp
                 ? "bg-pen ring-2 ring-pen/30"
                 : "bg-pen";

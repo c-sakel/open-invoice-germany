@@ -54,7 +54,7 @@ export function SchedulerRunsTable({ initialRuns }: { initialRuns: Run[] }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
-        <button type="button" onClick={runNow} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
+        <button type="button" onClick={runNow} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "Läuft…" : "Jetzt prüfen"}
         </button>
         {error && <span className="text-xs text-stamp">{error}</span>}

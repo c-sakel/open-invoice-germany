@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { buildDocumentChain, type ChainNode } from "@/domain/document/chain";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 
 /** Anzeigename eines Knotens: Belegnummer, sonst nie die ID. */
 function nodeName(node: ChainNode): string {
@@ -13,7 +14,8 @@ function nodeName(node: ChainNode): string {
 function NodeStatus({ node }: { node: ChainNode }) {
   if (node.type === "DUNNING") {
     const level = /^MAHNSTUFE_(\d+)$/.exec(node.status)?.[1];
-    return <span className="text-xs text-ink-muted">{level ? `${level}. Stufe` : "Mahnung"}</span>;
+    const title = level !== undefined ? (DUNNING_LEVEL_TITLE[Number(level)] ?? `${level}. Mahnung`) : "Mahnung";
+    return <span className="text-xs text-ink-muted">{title}</span>;
   }
   if (node.type === "PAYMENT") return <span className="text-xs text-ink-muted">{node.status}</span>;
   if (node.status === "UNBEKANNT") return null;

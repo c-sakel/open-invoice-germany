@@ -78,6 +78,7 @@ export function DashboardWidgets({
       ? `${quoteTotal} Angebote`
       : `Quote ${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(quoteRow.acceptedPermille / 10)} %`;
   const paidThisMonth = cash.paid.at(-1)?.value ?? 0;
+  const otherCurrencies = Math.max(summary.otherCurrencyCount, cash.otherCurrencyCount);
 
   return (
     <div className="space-y-4">
@@ -102,6 +103,12 @@ export function DashboardWidgets({
             );
           })}
         </section>
+      )}
+
+      {otherCurrencies > 0 && (
+        <p className="text-sm text-ink-soft">
+          Beträge in {otherCurrencies} weiteren {otherCurrencies === 1 ? "Währung" : "Währungen"} sind nicht enthalten.
+        </p>
       )}
 
       <Card>
@@ -177,9 +184,6 @@ export function DashboardWidgets({
             color={CHART_COLORS.ledger}
             emptyMessage="Noch keine Zahlungen im Zeitraum."
           />
-          {cash.otherCurrencyCount > 0 && (
-            <p className="mt-2 text-xs text-ink-soft">Beträge in {cash.otherCurrencyCount} weiteren {cash.otherCurrencyCount === 1 ? "Währung" : "Währungen"} sind nicht enthalten</p>
-          )}
         </Card>
         <Card title="Angebotsquote (12 Monate)">
           {quoteTotal > 0 ? (
@@ -203,14 +207,18 @@ export function DashboardWidgets({
         <Card title="Letzte Belege">
           <ul className="divide-y divide-rule">
             {summary.recentDocuments.map((d) => (
-              <li key={`${d.kind}-${d.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
-                <a href={DOC_HREF[d.kind](d.id)} className="font-medium text-pen hover:underline">
-                  {d.number ?? "Entwurf"}
-                </a>
-                <span className="min-w-[6rem] flex-1 truncate text-ink-muted">{d.customerName}</span>
-                <span className="shrink-0 text-ink-muted">{deDate(d.date)}</span>
-                {d.kind === "INVOICE" && <BelegStreckeMini status={d.status} hideText />}
-                <StatusBadge status={d.status} />
+              <li key={`${d.kind}-${d.id}`} className="py-2 text-sm sm:flex sm:items-center sm:gap-x-3">
+                <div className="flex items-center gap-x-3 sm:contents">
+                  <a href={DOC_HREF[d.kind](d.id)} className="font-medium text-pen hover:underline">
+                    {d.number ?? "Entwurf"}
+                  </a>
+                  <span className="shrink-0 text-ink-muted sm:order-3">{deDate(d.date)}</span>
+                  <span className="ml-auto flex items-center gap-2 sm:order-4 sm:ml-0">
+                    {d.kind === "INVOICE" && <BelegStreckeMini status={d.status} hideText />}
+                    <StatusBadge status={d.status} />
+                  </span>
+                </div>
+                <div className="mt-0.5 break-words text-ink-muted sm:order-2 sm:mt-0 sm:min-w-0 sm:flex-1 sm:truncate">{d.customerName}</div>
               </li>
             ))}
             {summary.recentDocuments.length === 0 && <li className="py-6 text-center text-ink-muted">Noch keine Belege.</li>}

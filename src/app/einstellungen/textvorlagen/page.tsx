@@ -34,7 +34,7 @@ export default async function TextTemplatesPage() {
       <SettingsTabs active="textvorlagen" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Dokumenttexte</h1>
-        <Link href="/einstellungen/textvorlagen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
+        <Link href="/einstellungen/textvorlagen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
           Neue Vorlage
         </Link>
       </div>

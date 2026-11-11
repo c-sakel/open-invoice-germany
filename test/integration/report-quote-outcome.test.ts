@@ -76,4 +76,15 @@ describe("quoteOutcome", () => {
     expect(rows.map((r) => [r.currency, r.accepted.netCents])).toEqual([["EUR", 100], ["USD", 200]]);
     expect(await quoteOutcome(other.orgId, { months: 6, now: NOW })).toEqual([]);
   });
+
+  it("in Rechnung umgewandeltes Angebot (SENT, abgelaufen) zählt als angenommen", async () => {
+    const o = await mkOrg("Quote H GmbH");
+    const q = await quote(o, "SENT", 700, { validUntil: new Date(Date.UTC(2105, 4, 1)) });
+    await dbInternal.quote.update({ where: { id: q.id }, data: { convertedToInvoiceId: "inv-umgewandelt" } });
+    await quote(o, "REJECTED", 100);
+    const [r] = await quoteOutcome(o.orgId, { months: 6, now: NOW });
+    expect(r.accepted).toEqual({ count: 1, netCents: 700 });
+    expect(r.expired.count).toBe(0);
+    expect(r.acceptedPermille).toBe(500);
+  });
 });

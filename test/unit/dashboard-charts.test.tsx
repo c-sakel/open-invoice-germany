@@ -36,6 +36,7 @@ function summaryFixture(over: Partial<DashboardSummary> = {}): DashboardSummary 
     ],
     recentDocuments: [{ kind: "INVOICE", id: "i1", number: "RE-1", customerName: "Kunde", date: new Date("2026-01-01T00:00:00Z"), grossCents: 100, status: "SENT" }],
     openQuotes: zero,
+    otherCurrencyCount: 0,
     ...over,
   };
 }
@@ -50,7 +51,7 @@ describe("Dashboard Geldfluss und Vergleichsreihen", () => {
   it("Band-Segmente ergeben den offenen Gesamtbetrag", () => {
     const summary = summaryFixture();
     const segments = openBandSegments(summary);
-    expect(segments[0]).toMatchObject({ key: "not-due", label: "Noch nicht fällig", value: 10000, color: "var(--color-ledger)" });
+    expect(segments[0]).toMatchObject({ key: "not-due", label: "Noch nicht fällig", value: 10000, color: "var(--color-pen)" });
     expect(segments).toHaveLength(6);
     expect(segments.reduce((sum, s) => sum + s.value, 0)).toBe(openTotalCents(summary));
     expect(openTotalCents(summary)).toBe(17000);

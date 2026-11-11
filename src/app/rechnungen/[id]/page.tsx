@@ -38,7 +38,7 @@ export const dynamic = "force-dynamic";
 
 // Phase 13c, Task 4: Klassen der Primaer-/Sekundaeraktion in der Kopfzeile — dieselben
 // Farben wie die bisherigen Einzelknoepfe (PDF/Bearbeiten sekundaer, Festschreiben primaer).
-const primaryBtnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen";
+const primaryBtnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen-strong";
 const secondaryBtnCls = "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper";
 
 export default async function InvoiceDetail({

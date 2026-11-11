@@ -271,7 +271,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         title="Dokumente"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/dokumente/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
+          <Link href="/dokumente/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neues Dokument
           </Link>
         }

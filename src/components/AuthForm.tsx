@@ -93,7 +93,7 @@ export function AuthForm({
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-md bg-pen px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
+          className="w-full rounded-md bg-pen px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
         >
           {busy ? "…" : isSetup ? "Konto erstellen" : "Anmelden"}
         </button>

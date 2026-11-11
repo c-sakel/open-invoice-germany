@@ -4,10 +4,12 @@ interface ProgressBarProps {
   valueCents: number;
   totalCents: number;
   label: string;
+  /** Waehrung der Betraege (Default EUR). */
+  currency?: string;
 }
 
 /** Fortschritt in Cent (z. B. bezahlt von gesamt); ARIA-Wert in Prozent 0-100, abgeschnitten. */
-export function ProgressBar({ valueCents, totalCents, label }: ProgressBarProps) {
+export function ProgressBar({ valueCents, totalCents, label, currency = "EUR" }: ProgressBarProps) {
   const raw = totalCents > 0 ? Math.floor((valueCents / totalCents) * 100) : 0;
   const percent = Math.min(100, Math.max(0, raw));
   return (
@@ -23,7 +25,7 @@ export function ProgressBar({ valueCents, totalCents, label }: ProgressBarProps)
         <div className="h-full rounded-full bg-ledger" style={{ width: `${percent}%` }} />
       </div>
       <div className="tabular mt-1 text-[13px] text-ink-muted">
-        {formatCents(valueCents)} von {formatCents(totalCents)}
+        {formatCents(valueCents, currency)} von {formatCents(totalCents, currency)}
       </div>
     </div>
   );

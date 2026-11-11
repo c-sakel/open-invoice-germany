@@ -47,7 +47,7 @@ export default async function ProduktePage() {
         title="Produkte & Leistungen"
         subtitle={`${products.length} Produkte`}
         actions={
-          <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
+          <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neues Produkt
           </Link>
         }
@@ -81,7 +81,7 @@ export default async function ProduktePage() {
             { key: "tax", header: "USt", align: "right", mobile: "meta", cell: (p) => `${p.taxRate}%` },
             {
               key: "revenue",
-              header: "Umsatz 12 M",
+              header: "Umsatz 12 M (Top 10)",
               align: "right",
               mobile: "meta",
               cell: (p) => {

@@ -49,7 +49,7 @@ function MarketingPage() {
         <div className="flex flex-wrap gap-3">
           <Link
             href="/login"
-            className="rounded-md bg-pen px-5 py-2.5 font-medium text-on-accent hover:bg-pen"
+            className="rounded-md bg-pen px-5 py-2.5 font-medium text-on-accent hover:bg-pen-strong"
           >
             Anmelden
           </Link>
@@ -89,20 +89,21 @@ export default async function Home() {
   if (!userId) return <MarketingPage />;
 
   const org = await getActiveOrg();
-  const [summary, revenue24, cashIn, quotes, top, settings] = await Promise.all([
-    dashboardSummary(org.id),
-    monthlyRevenue(org.id, { months: 24 }),
+  const settings = await loadDocumentSettings(org.id);
+  const currency = settings.defaultCurrency;
+  const [summary, revenue24, cashIn, quotes, top] = await Promise.all([
+    dashboardSummary(org.id, new Date(), { currency }),
+    monthlyRevenue(org.id, { months: 24, currency }),
     monthlyCashIn(org.id),
     quoteOutcome(org.id),
-    topCustomers(org.id),
-    loadDocumentSettings(org.id),
+    topCustomers(org.id, { currency }),
   ]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
+        <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
           Neue Rechnung
         </Link>
       </div>
@@ -112,7 +113,7 @@ export default async function Home() {
         cashIn={cashIn}
         quotes={quotes}
         top={top}
-        currency={settings.defaultCurrency}
+        currency={currency}
         notices={[]}
       />
     </div>

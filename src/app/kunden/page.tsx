@@ -44,7 +44,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         title="Kunden"
         subtitle={`${customers.length} Kunden`}
         actions={
-          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
+          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neuer Kunde
           </Link>
         }

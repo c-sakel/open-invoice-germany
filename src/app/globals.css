@@ -13,6 +13,7 @@
   --color-rule-strong: rgb(28 34 48 / 0.18);
   --color-pen: #3341b0;
   --color-pen-wash: #eef0fb;
+  --color-pen-strong: #28348f;
   --color-stamp: #b42330;
   --color-seal: #a34c14;
   --color-ledger: #1f7a4d;
@@ -44,6 +45,7 @@
     --color-rule-strong: rgb(255 255 255 / 0.14);
     --color-pen: #8f9bff;
     --color-pen-wash: #232a4a;
+    --color-pen-strong: #b4bcff;
     --color-stamp: #f07a80;
     --color-seal: #e8a15c;
     --color-ledger: #5fc493;

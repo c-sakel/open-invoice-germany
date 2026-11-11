@@ -38,7 +38,7 @@ type ConfirmDialogProps = {
 } & ({ onConfirm: () => void; confirmHref?: never } | { confirmHref: string; onConfirm?: never });
 
 const TONE_CLS: Record<"default" | "danger", string> = {
-  default: "bg-pen hover:bg-pen",
+  default: "bg-pen hover:bg-pen-strong",
   danger: "bg-stamp hover:bg-stamp",
 };
 

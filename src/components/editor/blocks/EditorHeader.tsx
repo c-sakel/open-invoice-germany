@@ -137,7 +137,7 @@ export function EditorHeader({
             type="button"
             onClick={onSave}
             disabled={saving}
-            className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
+            className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
           >
             {saving ? "Speichern…" : primaryLabel}
           </button>

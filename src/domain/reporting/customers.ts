@@ -25,6 +25,8 @@ export interface TopCustomer {
 export interface TopCustomersOptions {
   months?: number;
   limit?: number;
+  /** Nur Belege dieser Waehrung (Dashboard: Standardwaehrung). */
+  currency?: string;
   now?: Date;
 }
 
@@ -47,6 +49,7 @@ export async function topCustomers(orgId: string, opts: TopCustomersOptions = {}
       orgId,
       status: { not: "DRAFT" },
       issueDate: { gte: start, lt: end },
+      ...(opts.currency ? { currency: opts.currency } : {}),
     },
     select: {
       customerId: true,

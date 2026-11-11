@@ -124,7 +124,7 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
               <div key={item.href}>
                 <ItemLink item={item} active={isActive} collapsed={collapsed} badge={unreadCount} onNavigate={onNavigate} />
                 {showSettings && (
-                  <div className="mt-0.5 max-h-[50vh] space-y-1 overflow-y-auto" role="group" aria-label="Einstellungen">
+                  <div className="mt-0.5 space-y-1" role="group" aria-label="Einstellungen">
                     {SETTINGS_GROUPS.map((sg) => (
                       <div key={sg.label} className="space-y-0.5">
                         <div className="pl-9 pr-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{sg.label}</div>

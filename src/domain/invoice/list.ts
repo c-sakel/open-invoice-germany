@@ -24,6 +24,8 @@ export interface InvoiceListRow {
   grossTotalCents: number;
   paidAmountCents: number;
   openCents: number;
+  /** Zahlbarer Betrag (Abschlag-/Schlussrechnung), null = Brutto. */
+  payableCents: number | null;
   currency: string;
   effectiveStatus: EffectiveInvoiceStatus;
   /** Rohstatus der Datenbank (Phase 16a, Task 8): steuert, ob eine Faelligkeit ueberhaupt angezeigt wird. */
@@ -191,6 +193,8 @@ export interface InvoiceListHeadline {
   dueCents: number;
   /** Entwuerfe in der gefilterten Menge — nie Teil des Bands. */
   draftCount: number;
+  /** Anzahl der Belege im Geldfluss-Band (festgeschriebene Rechnungen ohne Gutschriften/Stornos/Entwuerfe). */
+  bandCount: number;
   currency: string;
   mixedCurrency: boolean;
 }
@@ -256,6 +260,7 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
     notDueCents,
     dueCents,
     draftCount,
+    bandCount: openish.length,
     currency: leading?.currency ?? "EUR",
     mixedCurrency: groups.length > 1,
   };
@@ -326,6 +331,7 @@ export async function listInvoices(
         paidAmountCents: r.paidAmountCents,
         payableCents: r.payableCents,
       }),
+      payableCents: r.payableCents,
       currency: r.currency,
       effectiveStatus: effectiveInvoiceStatus({ status: r.status, type: r.type, dueDate: r.dueDate, issueDate: r.issueDate }, now),
       status: r.status,
