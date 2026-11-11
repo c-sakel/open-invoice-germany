@@ -142,7 +142,7 @@ describe("ossThreshold", () => {
     expect((await ossThreshold(c.orgId, 2116)).current.netEurCents).toBe(1000000);
     const legacy = await invoice(c.orgId, c.at, { netCents: 1250000, currency: "USD", fx: "1,25" });
     // Testaufbau: Altbeleg vor 16b simulieren; dbInternal umgeht den GoBD-Guard bewusst.
-    await dbInternal.invoice.update({ where: { id: legacy.id }, data: { netTotalEurCents: null } });
+    await dbInternal.invoice.update({ where: { id: legacy.id }, data: { netTotalEurCents: null, fxRateMicros: null } });
     const r = await ossThreshold(c.orgId, 2116);
     expect(r.current.skippedWithoutEur).toBe(1);
     expect(r.current.netEurCents).toBe(1000000);

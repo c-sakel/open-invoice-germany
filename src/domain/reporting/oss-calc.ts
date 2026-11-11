@@ -52,7 +52,7 @@ function mulDivRound(a: number, b: number, c: number): number {
   const absC = BigInt(Math.abs(c));
   const q = (absA * absB * BigInt(2) + absC) / (BigInt(2) * absC);
   const out = Number(q);
-  return neg ? -out : out;
+  return neg && out !== 0 ? -out : out;
 }
 
 /** EU-Kaeufer ohne USt-IdNr. (B2C) mit Land ≠ DE laut Beleg-Snapshot. */
@@ -81,7 +81,7 @@ function toEur(doc: OssDoc, cents: number): number | null {
 export function ownEurCents(doc: OssDoc, mode: OssCountMode): number | null {
   if (mode === "ALL_EU_B2C") {
     if (doc.netTotalEurCents !== null) return doc.netTotalEurCents;
-    return doc.currency === "EUR" ? doc.netTotalCents : null;
+    return toEur(doc, doc.netTotalCents);
   }
   let ossRaw = 0;
   let otherRaw = 0;
@@ -130,21 +130,30 @@ function contribution(
     if (own === null) return null;
     let deducted = 0;
     for (const id of doc.deductedDownpaymentIds) {
+      // Fehlender oder nicht umrechenbarer Abschlag: nie still 0 abziehen, Beleg wird gemeldet (null).
       const dp = related.get(id);
-      if (!dp) continue;
-      deducted += ownEurCents(dp, mode) ?? 0;
+      const dpOwn = dp ? ownEurCents(dp, mode) : null;
+      if (dpOwn === null) return null;
+      deducted += dpOwn;
     }
     return own - deducted;
   }
-  if (followOriginal && mode === "BY_PRODUCT" && doc.type === "CREDIT_NOTE" && doc.correctsInvoiceId !== null) {
+  // Gutschrift/Korrektur tragen nur Summenzeilen ohne Kategorie: Anteil des Originals uebernehmen.
+  // Das Original wird nur eine Ebene weit verfolgt (followOriginal=false beim Aufruf fuer das Original),
+  // das verhindert Zyklen; ein Original vom Typ Gutschrift/Korrektur faellt auf eigene Zeilen zurueck.
+  if (
+    followOriginal &&
+    mode === "BY_PRODUCT" &&
+    (doc.type === "CREDIT_NOTE" || doc.type === "CORRECTION") &&
+    doc.correctsInvoiceId !== null
+  ) {
     const orig = related.get(doc.correctsInvoiceId);
-    if (orig) {
-      const creditAll = ownEurCents(doc, "ALL_EU_B2C");
-      const origBy = contribution(orig, "BY_PRODUCT", related, false);
-      const origAll = contribution(orig, "ALL_EU_B2C", related, false);
-      if (creditAll === null || origBy === null || origAll === null) return null;
-      return mulDivRound(creditAll, origBy, origAll);
-    }
+    if (!orig) return null; // Original nicht geladen: nie still 0, Beleg wird gemeldet
+    const creditAll = ownEurCents(doc, "ALL_EU_B2C");
+    const origBy = contribution(orig, "BY_PRODUCT", related, false);
+    const origAll = contribution(orig, "ALL_EU_B2C", related, false);
+    if (creditAll === null || origBy === null || origAll === null) return null;
+    return mulDivRound(creditAll, origBy, origAll);
   }
   return ownEurCents(doc, mode);
 }
@@ -176,12 +185,14 @@ export function aggregateOssYear(
       continue;
     }
     net += c;
+    if (c === 0) continue;
     documentCount += 1;
     const cc = doc.buyer!.countryCode;
     perCountry.set(cc, (perCountry.get(cc) ?? 0) + c);
   }
   const byCountry = [...perCountry.entries()]
     .map(([countryCode, netEurCents]) => ({ countryCode, netEurCents }))
+    .filter((e) => e.netEurCents !== 0)
     .sort((a, b) => b.netEurCents - a.netEurCents || a.countryCode.localeCompare(b.countryCode));
   return {
     year,

@@ -122,9 +122,9 @@ describe("contributionEurCents", () => {
     expect(contributionEurCents(full, "BY_PRODUCT", rel(orig))).toBe(-54000);
     expect(contributionEurCents(part, "BY_PRODUCT", rel(orig))).toBe(-13500);
   });
-  it("Gutschrift ohne Original in related nutzt eigene Zeilen", () => {
+  it("Gutschrift ohne Original in related -> null (gemeldet statt still 0)", () => {
     const c = doc({ type: "CREDIT_NOTE", correctsInvoiceId: "fehlt", lines: [line(-7000, "GOODS_DISTANCE")], netTotalCents: -7000 });
-    expect(contributionEurCents(c, "BY_PRODUCT", none)).toBe(-7000);
+    expect(contributionEurCents(c, "BY_PRODUCT", none)).toBeNull();
   });
   it("Original-ALL-Beitrag 0 -> 0", () => {
     const orig = doc({ netTotalEurCents: 0, netTotalCents: 0, lines: [] });
@@ -181,5 +181,57 @@ describe("ossLevel", () => {
     expect(ossLevel(1_000_001, 0, 80)).toBe("EXCEEDED");
     expect(ossLevel(0, 1_000_001, 80)).toBe("EXCEEDED");
     expect(ossLevel(700_000, 0, 70)).toBe("WARN");
+  });
+});
+
+describe("Nachbesserungen Review Task 3", () => {
+  it("FINAL im BY_PRODUCT mit kategorisiertem Abschlag", () => {
+    const dp = doc({ type: "DOWNPAYMENT", lines: [line(30000, "GOODS_DISTANCE")], netTotalCents: 30000, netTotalEurCents: 30000 });
+    const fin = doc({ type: "FINAL", lines: [line(100000, "GOODS_DISTANCE")], netTotalCents: 100000, netTotalEurCents: 100000, deductedDownpaymentIds: [dp.id] });
+    expect(contributionEurCents(fin, "BY_PRODUCT", rel(dp))).toBe(70000);
+  });
+  it("Abschlag ohne EUR oder nicht geladen -> null und skipped", () => {
+    const dp = doc({ type: "DOWNPAYMENT", currency: "USD", netTotalEurCents: null, fxRateMicros: null });
+    const fin = doc({ type: "FINAL", netTotalEurCents: 100000, deductedDownpaymentIds: [dp.id] });
+    expect(contributionEurCents(fin, "ALL_EU_B2C", rel(dp))).toBeNull();
+    expect(contributionEurCents(fin, "ALL_EU_B2C", none)).toBeNull();
+    const s = aggregateOssYear([fin], rel(dp), "ALL_EU_B2C", 2116);
+    expect(s.skippedWithoutEur).toBe(1);
+    expect(s.netEurCents).toBe(0);
+  });
+  it("mulDivRound jenseits 2^53 und ohne -0", () => {
+    const orig = doc({ netTotalEurCents: 2_000_000_000_000, netTotalCents: 2_000_000_000_000, lines: [line(1_000_000_000_000, "GOODS_DISTANCE")] });
+    const c = doc({ type: "CREDIT_NOTE", correctsInvoiceId: orig.id, netTotalEurCents: -9_000_000_000_000, netTotalCents: -9_000_000_000_000 });
+    expect(contributionEurCents(c, "BY_PRODUCT", rel(orig))).toBe(-4_500_000_000_000);
+    const orig0 = doc({ netTotalEurCents: 5000, lines: [line(5000, null)] });
+    const c0 = doc({ type: "CREDIT_NOTE", correctsInvoiceId: orig0.id, netTotalEurCents: -5000 });
+    expect(Object.is(contributionEurCents(c0, "BY_PRODUCT", rel(orig0)), 0)).toBe(true);
+  });
+  it("documentCount und byCountry ohne Beitrag 0", () => {
+    const docs = [
+      doc({ lines: [line(5000, "NONE")], netTotalCents: 5000 }),
+      doc({ lines: [line(4000, "GOODS_DISTANCE")], netTotalCents: 4000, buyer: { countryCode: "FR", vatId: null } }),
+    ];
+    const s = aggregateOssYear(docs, none, "BY_PRODUCT", 2116);
+    expect(s.documentCount).toBe(1);
+    expect(s.byCountry).toEqual([{ countryCode: "FR", netEurCents: 4000 }]);
+  });
+  it("Jahreszuordnung auf Aggregat-Ebene (Leistung im Vorjahr)", () => {
+    const d = doc({ issueDate: new Date("2116-01-05T00:00:00Z"), deliveryDate: new Date("2115-12-20T00:00:00Z"), netTotalEurCents: 4000 });
+    expect(aggregateOssYear([d], none, "ALL_EU_B2C", 2115).netEurCents).toBe(4000);
+    expect(aggregateOssYear([d], none, "ALL_EU_B2C", 2116).netEurCents).toBe(0);
+  });
+  it("Gutschrift BY_PRODUCT ohne correctsInvoiceId nutzt eigene Zeilen", () => {
+    const c = doc({ type: "CREDIT_NOTE", lines: [line(-3000, "ELECTRONIC_SERVICE")], netTotalCents: -3000 });
+    expect(contributionEurCents(c, "BY_PRODUCT", none)).toBe(-3000);
+  });
+  it("CORRECTION anteilig; Original fehlt -> null", () => {
+    const orig = doc({ netTotalEurCents: 100000, netTotalCents: 100000, lines: [line(54000, "GOODS_DISTANCE"), line(46000, null)] });
+    const corr = doc({ type: "CORRECTION", correctsInvoiceId: orig.id, netTotalEurCents: -25000, netTotalCents: -25000 });
+    expect(contributionEurCents(corr, "BY_PRODUCT", rel(orig))).toBe(-13500);
+    expect(contributionEurCents(corr, "BY_PRODUCT", none)).toBeNull();
+  });
+  it("ALL: Fremdwaehrung ohne EUR-Feld mit Kurs wird umgerechnet", () => {
+    expect(ownEurCents(doc({ currency: "USD", netTotalCents: 12500, netTotalEurCents: null, fxRateMicros: 1_250_000 }), "ALL_EU_B2C")).toBe(10000);
   });
 });
