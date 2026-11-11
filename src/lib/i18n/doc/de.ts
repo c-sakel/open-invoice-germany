@@ -52,7 +52,21 @@ export const de: DocStrings = {
     referenceDocument: "Bezugsbeleg",
     referenceValue: (sourceLabel, number) => `zu ${sourceLabel} ${number}`,
     genericDocument: "Beleg",
-    deliveryAddress: "Lieferanschrift",
+    deliveryAddress: "Lieferanschrift:",
+    deliveryNoteAddress: "Lieferadresse:",
+  },
+  sourceLabels: { ANGEBOT: "Angebot", AUFTRAGSBESTAETIGUNG: "Auftrag", PROFORMA: "Proforma-Rechnung", DELIVERY_NOTE: "Lieferschein" },
+  system: { draftNumber: "ENTWURF", previewWatermark: "VORSCHAU" },
+  layoutLabels: {
+    schlicht: {
+      colEinzel: "Einzelpreis",
+      colNetto: "Gesamtpreis",
+      colPosSuffix: ".",
+      net: "Gesamtbetrag netto",
+      taxRow: (rate) => `zzgl. Umsatzsteuer ${rate}%`,
+      gross: "Gesamtbetrag brutto",
+      giroCaption: "GiroCode",
+    },
   },
   columns: {
     pos: "Pos.",

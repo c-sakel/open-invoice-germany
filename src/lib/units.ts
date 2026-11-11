@@ -1,3 +1,5 @@
+import type { DocLanguage } from "@/lib/i18n/doc/types";
+
 /**
  * Klarnamen für UN/ECE-Rec.20-Einheitencodes (Menge-Spalte in PDF/UI). Der Code selbst
  * bleibt überall unverändert gespeichert/übertragen — er ist Pflichtangabe für BT-130
@@ -22,8 +24,6 @@ const UNIT_LABELS: Record<string, string> = {
   MTK: "m²",
   H87: "Pauschale",
 };
-
-import type { DocLanguage } from "@/lib/i18n/doc/types";
 
 /** Englische Kürzel (Belegsprache en) — gleiche Codes, nur andere Anzeigeform. */
 const UNIT_LABELS_EN: Record<string, string> = {

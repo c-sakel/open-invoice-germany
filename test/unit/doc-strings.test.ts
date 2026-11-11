@@ -4,6 +4,7 @@ import { en } from "@/lib/i18n/doc/en";
 import { DOC_LANGUAGES, docStrings, docLocale, formatDocDate, formatDocMoney, resolveDocLanguage } from "@/lib/i18n/doc";
 import { SCHEME_NOTICE_BY_LANG, validateMandatoryFields, type MandatoryInvoice } from "@/domain/invoice/mandatory";
 import { paymentTermsText, skontoTerms } from "@/lib/pricing/skonto";
+import { countryName, countryNameDe, addressCountryLine } from "@/lib/countries";
 import { TaxScheme } from "@/schemas";
 
 /** Beispielargumente je Funktion: Strings fuer alle Positionen, Zahlen fuer number-Parameter. */
@@ -118,5 +119,28 @@ describe("Belegtexte de/en", () => {
     expect(en.titles.INVOICE).toBe("Invoice");
     expect(de.page(1, 3)).toBe("Seite 1 von 3");
     expect(en.page(1, 3)).toBe("Page 1 of 3");
+  });
+
+  it("feste Layout-/Quell-/System-Labels de byte-identisch zu den bisherigen Literalen", () => {
+    expect(de.layoutLabels.schlicht).toMatchObject({ colEinzel: "Einzelpreis", colNetto: "Gesamtpreis", colPosSuffix: ".", net: "Gesamtbetrag netto", gross: "Gesamtbetrag brutto", giroCaption: "GiroCode" });
+    expect(de.layoutLabels.schlicht.taxRow(19)).toBe("zzgl. Umsatzsteuer 19%");
+    expect(de.meta.deliveryAddress).toBe("Lieferanschrift:");
+    expect(de.meta.deliveryNoteAddress).toBe("Lieferadresse:");
+    expect(de.sourceLabels).toEqual({ ANGEBOT: "Angebot", AUFTRAGSBESTAETIGUNG: "Auftrag", PROFORMA: "Proforma-Rechnung", DELIVERY_NOTE: "Lieferschein" });
+    expect(de.system).toEqual({ draftNumber: "ENTWURF", previewWatermark: "VORSCHAU" });
+    expect(en.system.previewWatermark).toBe("PREVIEW");
+  });
+
+  it("countryName je Sprache; de identisch zu countryNameDe", () => {
+    expect(countryName("DE", "de")).toBe(countryNameDe("DE"));
+    expect(countryName("AT", "de")).toBe("Österreich");
+    expect(countryName("DE", "en")).toBe("Germany");
+    expect(countryName("AT", "en")).toBe("Austria");
+    expect(countryName("US", "en")).toBe("United States");
+    expect(countryName("GB", "en")).toBe("United Kingdom");
+    expect(countryName("US", "de")).toBe("Vereinigte Staaten");
+    expect(countryName("xx1", "en")).toBeNull();
+    expect(addressCountryLine("AT", "en")).toBe("AUSTRIA");
+    expect(addressCountryLine("AT")).toBe("ÖSTERREICH");
   });
 });

@@ -6,10 +6,7 @@
  * Festschreiben (finalize), wenn Pflichtangaben fehlen.
  */
 
-import { de } from "@/lib/i18n/doc/de";
-import { en } from "@/lib/i18n/doc/en";
-import { docStrings } from "@/lib/i18n/doc";
-import type { DocLanguage } from "@/lib/i18n/doc/types";
+import { docStrings, type DocLanguage } from "@/lib/i18n/doc";
 import { ZERO_TAX_SCHEMES, EU_COUNTRY_CODES, EU_VAT_PREFIXES } from "@/lib/tax";
 
 export interface MandatoryOrg {
@@ -56,18 +53,18 @@ export interface MandatoryInvoice {
 
 /**
  * Pflichthinweis-Texte je Steuerschema (§ 14 Abs. 4 Nr. 8, § 14a UStG) — deutsche Alias-
- * Sicht auf `de.schemeNotice` (src/lib/i18n/doc/de.ts, EINZIGE Quelle des Wortlauts).
+ * Sicht auf `docStrings("de").schemeNotice` (src/lib/i18n/doc/de.ts, EINZIGE Quelle des Wortlauts).
  * src/lib/editor/constants.ts und src/mcp/tools/invoices.ts importieren von hier.
  * Quellen: COMPLIANCE.md § 1 (§ 14a), § 3 (§ 34a UStDV), § 8 (§ 13b/§ 6a), § 9 (§ 25a).
  * Englische Fassungen (mit deutschem Wortlaut in Klammern) in `SCHEME_NOTICE_BY_LANG`.
  */
-export const SCHEME_NOTICE: Record<string, string> = de.schemeNotice;
+export const SCHEME_NOTICE: Record<string, string> = docStrings("de").schemeNotice;
 
 /** Pflichthinweise je Belegsprache; die Pruefung (SCHEME_NOTICE_ACCEPTED) bleibt deutsch,
  *  die englischen Texte enthalten den deutschen Wortlaut deshalb in Klammern. */
 export const SCHEME_NOTICE_BY_LANG: Record<DocLanguage, Record<string, string>> = {
-  de: de.schemeNotice,
-  en: en.schemeNotice,
+  de: docStrings("de").schemeNotice,
+  en: docStrings("en").schemeNotice,
 };
 
 /** § 14b Abs. 1 Satz 5 UStG (§ 14 Abs. 4 Nr. 9) — Text fuer PDF UND beide XML-Formate. */
@@ -111,7 +108,7 @@ export const SCHEME_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
  * Z: § 12 Abs. 3 UStG (Nullsatz, z. B. Photovoltaikanlagen). E: allgemeine Steuerbefreiung —
  * Kleinunternehmer (§ 19) und § 25a tragen ihren eigenen Schemahinweis (siehe unten).
  */
-export const CATEGORY_NOTICE: Record<string, string> = de.categoryNotice;
+export const CATEGORY_NOTICE: Record<string, string> = docStrings("de").categoryNotice;
 
 /** Formulierungen (normalizeNotice-Text), die den Kategorie-Hinweis im Hinweistext bereits abdecken. */
 const CATEGORY_NOTICE_ACCEPTED: Record<string, RegExp[]> = {

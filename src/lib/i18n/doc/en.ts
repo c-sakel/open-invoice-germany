@@ -55,7 +55,21 @@ export const en: DocStrings = {
     referenceDocument: "Reference document",
     referenceValue: (sourceLabel, number) => `to ${sourceLabel} ${number}`,
     genericDocument: "document",
-    deliveryAddress: "Delivery address",
+    deliveryAddress: "Delivery address:",
+    deliveryNoteAddress: "Delivery address:",
+  },
+  sourceLabels: { ANGEBOT: "quotation", AUFTRAGSBESTAETIGUNG: "order", PROFORMA: "proforma invoice", DELIVERY_NOTE: "delivery note" },
+  system: { draftNumber: "DRAFT", previewWatermark: "PREVIEW" },
+  layoutLabels: {
+    schlicht: {
+      colEinzel: "Unit price",
+      colNetto: "Total price",
+      colPosSuffix: ".",
+      net: "Total net",
+      taxRow: (rate) => `plus VAT ${rate}%`,
+      gross: "Total gross",
+      giroCaption: "GiroCode",
+    },
   },
   columns: {
     pos: "Item",

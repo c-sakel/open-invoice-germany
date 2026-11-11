@@ -71,7 +71,36 @@ export interface DocStrings {
     referenceValue: (sourceLabel: string, number: string) => string;
     /** Fallback fuer den Namen des Bezugsbelegs. */
     genericDocument: string;
+    /** Kopf des Lieferanschrift-Blocks im Rechnungs-PDF (inkl. Doppelpunkt). */
     deliveryAddress: string;
+    /** Kopf des Lieferanschrift-Blocks im Lieferschein-PDF (inkl. Doppelpunkt). */
+    deliveryNoteAddress: string;
+  };
+  /** Bezugsbeleg-Namen im Meta-Block "Bezug: zu <Beleg> <Nr.>" (je Quelltyp). */
+  sourceLabels: {
+    ANGEBOT: string;
+    AUFTRAGSBESTAETIGUNG: string;
+    PROFORMA: string;
+    DELIVERY_NOTE: string;
+  };
+  /** Feste Systemtexte im PDF (frei eingegebene Texte bleiben unuebersetzt). */
+  system: {
+    /** Platzhalternummer einer Vorschau/eines Entwurfs. */
+    draftNumber: string;
+    /** Wasserzeichen der Layout-Vorschau (PdfTheme.watermark, preview-draft.ts). */
+    previewWatermark: string;
+  };
+  /** Layout-spezifische Beschriftungen (PdfLayout#labels), derzeit nur "schlicht". */
+  layoutLabels: {
+    schlicht: {
+      colEinzel: string;
+      colNetto: string;
+      colPosSuffix: string;
+      net: string;
+      taxRow: (rate: number) => string;
+      gross: string;
+      giroCaption: string;
+    };
   };
   columns: {
     pos: string;
