@@ -9,6 +9,8 @@
 import { dbInternal } from "@/lib/db";
 import { brandingSettingsInputSchema, type BrandingSettingsInput } from "@/schemas/settings";
 import { parseLayoutByType } from "@/domain/settings/layout";
+import { InvalidOperationError } from "@/domain/errors";
+import { designIdOf } from "@/lib/pdf/layouts/ids";
 
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettingsInput = brandingSettingsInputSchema.parse({});
 
@@ -45,6 +47,15 @@ export async function loadBrandingSettings(orgId: string): Promise<BrandingSetti
 export async function saveBrandingSettings(orgId: string, rawInput: unknown): Promise<BrandingSettingsInput> {
   const input = brandingSettingsInputSchema.parse(rawInput);
   const { layoutByType, ...rest } = input;
+  // Phase 16g: jede `design:`-Zuordnung muss ein nicht archiviertes Design der eigenen Organisation sein.
+  const refs = new Set<string>([input.layoutId, ...Object.values(layoutByType)].filter((v) => v !== undefined && designIdOf(v) !== null));
+  if (refs.size > 0) {
+    const ids = [...refs].map((r) => designIdOf(r) as string);
+    const found = await dbInternal.layoutDesign.findMany({ where: { orgId, archived: false, id: { in: ids } }, select: { id: true } });
+    const ok = new Set(found.map((d) => d.id));
+    const missing = ids.find((id) => !ok.has(id));
+    if (missing) throw new InvalidOperationError(`Layout-Design ${missing} nicht gefunden oder archiviert.`);
+  }
   const data = { ...rest, layoutByTypeJson: JSON.stringify(layoutByType) };
   await dbInternal.brandingSettings.upsert({
     where: { orgId },

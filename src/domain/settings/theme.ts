@@ -9,6 +9,7 @@ import { loadBrandingSettings } from "@/domain/settings/branding";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { resolveLayoutId } from "@/domain/settings/layout";
+import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 import type { LayoutDocType } from "@/lib/pdf/layouts/ids";
 import type { PdfTheme } from "@/lib/pdf/theme";
 
@@ -37,7 +38,7 @@ async function readOptionalFile(storagePath: string | null): Promise<Buffer | un
  * (bestehende Aufrufer bleiben unveraendert lauffaehig). `footerFacts` kommt aus
  * `Organization.website`/`.ownerName` (Phase 11b, Task 1).
  */
-export async function loadPdfTheme(orgId: string, overrideJson?: string | null, docType: LayoutDocType = "INVOICE"): Promise<PdfTheme> {
+export async function loadPdfTheme(orgId: string, overrideJson?: string | null, docType: LayoutDocType = "INVOICE", opts: { layoutVersionId?: string | null } = {}): Promise<PdfTheme> {
   const [brand, printSettings, documentSettings, org] = await Promise.all([
     loadBrandingSettings(orgId),
     loadPrintSettings(orgId),
@@ -45,12 +46,14 @@ export async function loadPdfTheme(orgId: string, overrideJson?: string | null, 
     dbInternal.organization.findUnique({ where: { id: orgId }, select: { website: true, ownerName: true } }),
   ]);
   const options = effectivePrintOptions(printSettings, overrideJson);
-  const layoutId = resolveLayoutId({
+  const layoutRef = resolveLayoutId({
     overrideLayoutId: options.layoutId ?? null,
     layoutByType: brand.layoutByType,
     orgDefault: brand.layoutId,
     docType,
   });
+  // Phase 16g: eingefrorene Version (Beleg/Mahnung) > Design der Zuordnung > festes Layout.
+  const selection = await resolveLayoutSelection(dbInternal, orgId, { ref: layoutRef, frozenVersionId: opts.layoutVersionId ?? options.layoutVersionId ?? null });
 
   const [logoBuffer, backgroundBuffer] = await Promise.all([
     readOptionalFile(brand.logoPath),
@@ -60,7 +63,9 @@ export async function loadPdfTheme(orgId: string, overrideJson?: string | null, 
   return {
     brand,
     options,
-    layoutId,
+    layoutId: selection.layoutId,
+    ...(selection.config ? { layoutConfig: selection.config } : {}),
+    ...(selection.layoutVersionId ? { layoutVersionId: selection.layoutVersionId } : {}),
     footerFacts: { website: org?.website ?? null, ownerName: org?.ownerName ?? null },
     logoBuffer,
     backgroundBuffer,

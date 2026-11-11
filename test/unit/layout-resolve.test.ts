@@ -60,3 +60,28 @@ describe("freezePrintOptionsJson mit layoutId", () => {
     expect(frozen.layoutId).toBe("blau");
   });
 });
+
+describe("Layout-Designs in der Aufloesung (Phase 16g)", () => {
+  const DESIGN = "design:cabcdefghijklmnopqrstu" as const;
+  it("ein design:-Ref aus der Typ-Map wird durchgereicht", () => {
+    expect(resolveLayoutId({ layoutByType: { DUNNING: DESIGN }, orgDefault: "standard", docType: "DUNNING" })).toBe(DESIGN);
+    expect(resolveLayoutId({ layoutByType: {}, orgDefault: DESIGN, docType: "INVOICE" })).toBe(DESIGN);
+  });
+  it("ein Beleg-Override (festes Layout) schlaegt das Design", () => {
+    expect(resolveLayoutId({ overrideLayoutId: "blau", layoutByType: { INVOICE: DESIGN }, orgDefault: DESIGN, docType: "INVOICE" })).toBe("blau");
+  });
+  it("Zod: design:-Ref gueltig, falsche Form abgelehnt", () => {
+    expect(brandingSettingsInputSchema.safeParse({ layoutByType: { INVOICE: DESIGN }, layoutId: DESIGN }).success).toBe(true);
+    expect(brandingSettingsInputSchema.safeParse({ layoutByType: { INVOICE: "design:x" } }).success).toBe(false);
+    expect(brandingSettingsInputSchema.safeParse({ layoutId: "design:" }).success).toBe(false);
+  });
+  it("freezePrintOptionsJson ergaenzt layoutVersionId, behaelt einen vorhandenen und liefert ohne viertes Argument das bisherige JSON", () => {
+    const first = JSON.parse(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, null, "klassik", "v1")) as { layoutVersionId?: string };
+    expect(first.layoutVersionId).toBe("v1");
+    const again = JSON.parse(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, JSON.stringify(first), "klassik", "v2")) as { layoutVersionId?: string };
+    expect(again.layoutVersionId).toBe("v1");
+    const legacy = JSON.parse(freezePrintOptionsJson(DEFAULT_PRINT_SETTINGS, null, "klassik")) as Record<string, unknown>;
+    expect("layoutVersionId" in legacy).toBe(false);
+    expect(legacy).toEqual({ ...DEFAULT_PRINT_SETTINGS, layoutId: "klassik" });
+  });
+});

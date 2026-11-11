@@ -29,6 +29,7 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { loadPrintSettings, freezePrintOptionsJson, effectivePrintOptions } from "@/domain/settings/print";
 import { loadBrandingSettings } from "@/domain/settings/branding";
 import { resolveLayoutId, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
+import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 import { validateMandatoryFields } from "./mandatory";
 import { FinalizeError } from "./finalize-error";
 import { resolveFxSnapshot, deductedTaxEurCents, type DeductionFxEntry } from "@/domain/fx/snapshot";
@@ -233,13 +234,16 @@ export async function finalizeWithinTx(
   // nicht mehr veraendern (analog den zehn Druckoptions-Schaltern oben).
   const globalPrintSettings = await loadPrintSettings(invoice.orgId);
   const brand = await loadBrandingSettings(invoice.orgId);
-  const layoutId = resolveLayoutId({
-    overrideLayoutId: effectivePrintOptions(globalPrintSettings, invoice.printOptionsJson).layoutId ?? null,
+  const effectiveOptions = effectivePrintOptions(globalPrintSettings, invoice.printOptionsJson);
+  const layoutRef = resolveLayoutId({
+    overrideLayoutId: effectiveOptions.layoutId ?? null,
     layoutByType: brand.layoutByType,
     orgDefault: brand.layoutId,
     docType: invoiceTypeToLayoutDocType(invoice.type),
   });
-  const frozenPrintOptionsJson = freezePrintOptionsJson(globalPrintSettings, invoice.printOptionsJson, layoutId);
+  // Phase 16g: ein zugeordnetes Design wird mit seiner aktuellen Version eingefroren (in derselben Tx).
+  const layoutSelection = await resolveLayoutSelection(tx, invoice.orgId, { ref: layoutRef, frozenVersionId: effectiveOptions.layoutVersionId ?? null });
+  const frozenPrintOptionsJson = freezePrintOptionsJson(globalPrintSettings, invoice.printOptionsJson, layoutSelection.layoutId, layoutSelection.layoutVersionId);
 
   // 2b) Phase 5 (§14 Abs.5 S.2 UStG): Schlussrechnung -> Abzugs-Snapshot je Abschlagsrechnung/
   // Steuersatz. Laeuft VOR dem Claim, damit eine unzulaessige Ueberdeckung (Abschlaege >

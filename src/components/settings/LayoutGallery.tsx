@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BrandingSettingsInput } from "@/schemas";
-import { LAYOUT_DOC_TYPES, LAYOUT_DOC_TYPE_LABEL, type LayoutDocType, type LayoutId } from "@/lib/pdf/layouts/ids";
+import { LAYOUT_DOC_TYPES, LAYOUT_DOC_TYPE_LABEL, type LayoutDocType, type LayoutId, type LayoutRef } from "@/lib/pdf/layouts/ids";
 
 interface LayoutInfo {
   id: LayoutId;
@@ -53,14 +53,14 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   // `selection` ist der lokale Entwurf (welche Kachel gerade als Vorschau angezeigt wird) —
   // getrennt vom tatsaechlich WIRKSAMEN Layout (`effective` unten), das erst durch „Für
   // <Typ> übernehmen“/„Als Standard für alle“ + „Speichern“ uebernommen wird.
-  const [selection, setSelection] = useState<LayoutId>(initial.layoutByType[docType] ?? initial.layoutId);
+  const [selection, setSelection] = useState<LayoutRef>(initial.layoutByType[docType] ?? initial.layoutId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const docLabel = LAYOUT_DOC_TYPE_LABEL[docType];
   const typeOverride = values.layoutByType[docType];
-  const effective: LayoutId = typeOverride ?? values.layoutId;
+  const effective: LayoutRef = typeOverride ?? values.layoutId;
 
   function changeDocType(next: LayoutDocType) {
     setDocType(next);

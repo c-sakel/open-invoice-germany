@@ -12,7 +12,7 @@ import type { LayoutDesignConfig } from "@/schemas/layout-design";
  *  `effectivePrintOptions` in `src/domain/settings/print.ts`. Phase 11b — `layoutId` ist
  *  der optionale Beleg-Override (`printOptionsOverrideSchema.layoutId`), den
  *  `loadPdfTheme` in `resolveLayoutId` einspeist; ohne Override bleibt er `undefined`. */
-export type EffectivePrintOptions = PrintSettingsInput & { layoutId?: LayoutId };
+export type EffectivePrintOptions = PrintSettingsInput & { layoutId?: LayoutId; layoutVersionId?: string };
 
 /** Phase 11b — Zusatzfakten fuer die automatische Fusszeile (`footer.ts#buildFooterColumns`),
  *  die nicht Teil von `EInvoiceData`/`DeliveryNotePdfData`/`DunningPdfData` sind, sondern aus
