@@ -651,6 +651,23 @@ Bei OSS-Teilnahme **entfällt** die Rechnungsausstellungspflicht für die betrof
 **Quellen:** [§ 18j UStG](https://www.gesetze-im-internet.de/ustg_1980/__18j.html) · [§ 3c UStG](https://www.gesetze-im-internet.de/ustg_1980/__3c.html) · [§ 3a UStG](https://www.gesetze-im-internet.de/ustg_1980/__3a.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [BZSt — One-Stop-Shop EU](https://www.bzst.de/DE/Unternehmen/Umsatzsteuer/One-Stop-Shop_EU/one_stop_shop_eu_node.html)
 **Stand:** 2026-06-09
 
+### Schwellenrechner (Phase 16e)
+
+Die Software wertet die Bagatellgrenze des § 3c Abs. 4 UStG selbst aus (Dashboard-Karte, Benachrichtigung, `GET /api/v1/Report/oss`, MCP `get_oss_threshold`). Sie erzeugt **keine** OSS-Meldung (§ 18j UStG) und ersetzt keine Prüfung des Steuerberaters.
+
+| Aspekt | Umsetzung |
+|--------|-----------|
+| Schwelle | 10.000,00 € netto; „überschritten“ ist strikt `> 10.000,00 €` (genau 10.000,00 € ist nicht überschritten, 10.000,01 € schon). Summe aus **Vorjahr und laufendem Jahr**, Warnstufe ab einstellbarem Prozentsatz (Standard 80 %). |
+| Erwerber | Käufer laut **Beleg-Snapshot**: Land in der EU, nicht DE, **ohne USt-IdNr.** Ohne Snapshot zählt der Beleg nicht; spätere Stammdatenänderungen ändern die Zählung nicht. |
+| Jahreszuordnung | Leistungszeitpunkt (`deliveryDate`, sonst `deliveryEnd`, sonst Rechnungsdatum), Jahr in UTC. Leistung im Dezember, Rechnung im Januar zählt im Vorjahr. |
+| Beträge | Eingefrorene EUR-Werte (`netTotalEurCents`, § 16 Abs. 6 UStG, Phase 16b); Fremdwährungs-Altbelege ohne EUR-Betrag werden nicht gezählt, die Karte nennt deren Anzahl. |
+| Belegarten | Alle festgeschriebenen Rechnungsarten außer Entwurf. Schlussrechnungen zählen ohne bereits abgerechnete Abschläge, Gutschriften, Korrekturen und Stornos mindern (Teilgutschriften im Modus „Nach Produkt“ anteilig nach dem OSS-Anteil des Originals). |
+| Zählmodus | Standard `ALL_EU_B2C`: alle EU-B2C-Umsätze. Das ist **vorsichtiger als das Gesetz**, das nur Fernverkäufe (§ 3c) und Leistungen nach § 3a Abs. 5 Satz 2 (v. a. Telekommunikations-, Rundfunk-, Fernseh- und elektronische Dienstleistungen) zählt. `BY_PRODUCT`: nur Positionen mit Produktkategorie `GOODS_DISTANCE` oder `ELECTRONIC_SERVICE`. **Offen für den Steuerberater**, welcher Modus zum Geschäftsmodell passt. |
+
+Hinweistext in der Oberfläche (wörtlich): „Hinweis zur Orientierung, keine steuerliche Beratung; maßgeblich sind Ihre Aufzeichnungen.“ Die Benachrichtigung „OSS-Schwelle“ ist für Bestands-Organisationen per Migration aktiviert, aber abwählbar (kein Pflicht-Alarm).
+
+**Quelle:** [§ 3c UStG](https://www.gesetze-im-internet.de/ustg_1980/__3c.html) · [§ 16 Abs. 6 UStG](https://www.gesetze-im-internet.de/ustg_1980/__16.html)
+
 ---
 
 ## 11. Storno/Korrektur/Gutschrift + § 14c + Skonto in E-Rechnung

@@ -287,6 +287,12 @@ curl -s "$BASE/api/v1/Report?type=revenue&months=6" -H "$AUTH"
 (`[{ avgDaysToPay, onTimeShare, paidCount }]`) — dieselbe Form wie die anderen drei
 Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden müssen.
 
+### OSS-Schwelle (`GET /api/v1/Report/oss`, Phase 16e)
+
+`GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles UTC-Jahr). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
+
+Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`) an `Product` (Standard `NONE`) und an Positionen (Lese- und Schreibfeld; ohne Angabe übernimmt eine Position mit `productId` die Kategorie des Produkts als Snapshot, ohne Produkt bleibt sie leer). Die Belegeinstellungen (`/api/settings/documents`) tragen `ossCountMode` (Standard `ALL_EU_B2C`) und `ossWarnPercent` (ganze Zahl 1–99, Standard 80).
+
 ## Weitere Ressourcen
 
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,
