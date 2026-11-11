@@ -25,6 +25,7 @@ import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
+import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { NotFoundError } from "@/domain/errors";
@@ -54,7 +55,9 @@ export async function createBusinessDocumentWithinTx(
   // erzwungene Null-Betraege bei Nicht-ITEM-Zeilen (HEADING/TEXT/SUBTOTAL).
   const normalized = normalizeLines(input.lines);
   await assertAllowedTaxRates(tx, orgId, ratesOfLines(normalized), { existing: opts.inheritedTaxRates });
-  const lines = normalized.map((l) => ({
+  // Phase 16e: OSS-Kategorie-Snapshot (explizit > Produkt der Org > null), wird bei Umwandlung uebernommen.
+  const ossCategories = await resolveLineOssCategories(tx, orgId, normalized);
+  const lines = normalized.map((l, i) => ({
     position: l.position,
     lineType: l.lineType,
     description: l.description,
@@ -67,6 +70,7 @@ export async function createBusinessDocumentWithinTx(
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
     discountCents: l.discountCents,
+    ossCategory: l.lineType === "ITEM" ? ossCategories[i] : null,
     lineNetCents: l.lineType === "ITEM" ? computeLineNet(l).lineNetCents : 0,
   }));
   // Nicht-ITEM-Zeilen gehen nie in Summen/Steuerberechnung ein (§8).

@@ -990,7 +990,7 @@ npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
 USERVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"failedLoginCount\", coalesce(\"lockedUntil\"::text,'<null>'), coalesce(\"lastLoginAt\"::text,'<null>'), coalesce(\"passwordChangedAt\"::text,'<null>') from \"User\" where id='user25'")
 [ "$USERVAL" = "0|<null>|<null>|<null>" ] || fail "User-Bestandszeile user25 abweichend ('$USERVAL'), erwartet 0|<null>|<null>|<null>"
 COUNT25=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT25" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach der Login-Haertung-Migration (nur vier Spalten), gefunden $COUNT25"
+[ "$COUNT25" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach der Login-Haertung-Migration (nur sechs Spalten), gefunden $COUNT25"
 echo "    ok — User.failedLoginCount=0, lockedUntil/lastLoginAt/passwordChangedAt NULL auf Bestandszeile, 53 Tabellen"
 
 echo "==> Fall 26 (Phase 16a, Task 1): Gegenbuchung/Belegarchiv/Kettenpruefung — additive Payment-Spalten, drei neue Tabellen"
@@ -1136,6 +1136,14 @@ INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
   VALUES ('inv28','org28','cust28','RE-2028-00001','FINALIZED',NOW());
 INSERT INTO "InvoiceLine" ("id","invoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate","lineNetCents")
   VALUES ('line28','inv28',1,'Bestandsposition',1000,1000,19,1000);
+INSERT INTO "Quote" ("id","orgId","customerId","updatedAt")
+  VALUES ('quo28','org28','cust28',NOW());
+INSERT INTO "QuoteLine" ("id","quoteId","position","description","quantityMilli","unitNetPriceCents","taxRate","lineNetCents")
+  VALUES ('qline28','quo28',1,'Angebotsposition',1000,1000,19,1000);
+INSERT INTO "RecurringInvoice" ("id","orgId","customerId","title","startDate","nextRunDate","updatedAt")
+  VALUES ('rec28','org28','cust28','Abo28',NOW(),NOW(),NOW());
+INSERT INTO "RecurringInvoiceLine" ("id","recurringInvoiceId","position","description","quantityMilli","unitNetPriceCents","taxRate")
+  VALUES ('rline28','rec28',1,'Abopos',1000,1000,19);
 SQL
 npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
   || fail "Phase-16e-Migration ist auf der Bestands-DB fehlgeschlagen"
@@ -1145,6 +1153,8 @@ PRODVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"oss
 [ "$PRODVAL" = "NONE" ] || fail "Product.ossCategory abweichend ('$PRODVAL'), erwartet NONE"
 LINEVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(\"ossCategory\",'<null>') from \"InvoiceLine\" where id='line28'")
 [ "$LINEVAL" = "<null>" ] || fail "InvoiceLine.ossCategory abweichend ('$LINEVAL'), erwartet <null>"
+SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(q.\"ossCategory\",'<null>') || '|' || coalesce(r.\"ossCategory\",'<null>') from \"QuoteLine\" q, \"RecurringInvoiceLine\" r where q.id='qline28' and r.id='rline28'")
+[ "$SRCVAL" = "<null>|<null>" ] || fail "QuoteLine/RecurringInvoiceLine.ossCategory abweichend ('$SRCVAL'), erwartet <null>|<null>"
 COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT28" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 16e (nur vier Spalten), gefunden $COUNT28"
 echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, 53 Tabellen"

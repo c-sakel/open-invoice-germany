@@ -23,6 +23,15 @@ import { createProduct, updateProduct } from "@/domain/product/save";
 import { loadDocumentSettings, saveDocumentSettings } from "@/domain/document/settings";
 import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
+import { createRecurring } from "@/domain/recurring/create";
+import { emitRecurringNow } from "@/domain/recurring/run";
+import { createBusinessDocument } from "@/domain/document/create";
+import { convertDocumentToInvoice } from "@/domain/document/convert";
+import { duplicateDocument } from "@/domain/document/duplicate";
+import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
+import { createFinalInvoice } from "@/domain/invoice/final";
+import { createPartialInvoice } from "@/domain/invoice/partial";
+import { createDocumentSchema } from "@/schemas";
 import { server } from "@/mcp/server";
 import { createInvoiceSchema, type CreateInvoiceInput } from "@/schemas";
 import { POST as InvoiceCreate } from "@/app/api/v1/Invoice/route";
@@ -120,6 +129,98 @@ describe("OSS-Kategorie-Snapshot an der Position", () => {
   });
 });
 
+describe("Weitergabe ueber Folgebelege", () => {
+  async function quoteWithOss() {
+    return createBusinessDocument(
+      orgId,
+      createDocumentSchema.parse({ kind: "ANGEBOT", customerId, taxScheme: "REGULAR", lines: [line({ productId }), line({ ossCategory: "GOODS_DISTANCE" }), line()] }),
+      { now: NOW },
+    );
+  }
+  const EXPECTED = ["ELECTRONIC_SERVICE", "GOODS_DISTANCE", null];
+
+  it("Angebot speichert den Snapshot an der Position", async () => {
+    const q = await quoteWithOss();
+    const rows = await dbInternal.quoteLine.findMany({ where: { quoteId: q.id }, orderBy: { position: "asc" }, select: { ossCategory: true } });
+    expect(rows.map((r) => r.ossCategory)).toEqual(EXPECTED);
+  });
+
+  it("Angebot -> Rechnung uebernimmt die Kategorie (auch nach Produktaenderung)", async () => {
+    const q = await quoteWithOss();
+    await updateProduct(orgId, productId, { ossCategory: "NONE" });
+    const inv = await convertDocumentToInvoice(orgId, q.id, { now: NOW });
+    await updateProduct(orgId, productId, { ossCategory: "ELECTRONIC_SERVICE" });
+    expect((await linesOf(inv.id)).map((l) => l.ossCategory)).toEqual(EXPECTED);
+  });
+
+  it("Schlussrechnung aus Angebot uebernimmt die Kategorie", async () => {
+    const q = await quoteWithOss();
+    const down = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: q.id, mode: "PERCENT", permille: 100 }, { now: NOW });
+    await finalizeInvoice(down.id, { now: NOW });
+    const inv = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: q.id }, { now: NOW });
+    expect((await linesOf(inv.id)).map((l) => l.ossCategory)).toEqual(EXPECTED);
+  });
+
+  it("Teilrechnung (Positionen) aus Angebot uebernimmt die Kategorie", async () => {
+    const q = await quoteWithOss();
+    const src = await dbInternal.quoteLine.findMany({ where: { quoteId: q.id }, orderBy: { position: "asc" }, select: { id: true } });
+    const inv = await createPartialInvoice(orgId, { sourceType: "QUOTE", sourceId: q.id, mode: "POSITIONS", lineIds: src.map((r) => r.id) }, { now: NOW });
+    expect((await linesOf(inv.id)).map((l) => l.ossCategory)).toEqual(EXPECTED);
+  });
+
+  it("Abo speichert den Snapshot und der Abo-Lauf gibt ihn an die Rechnung weiter", async () => {
+    const rec = await createRecurring(orgId, {
+      customerId, title: "OSS-Abo", interval: "MONTHLY", intervalCount: 1, startDate: new Date("2114-05-01T09:00:00"),
+      taxScheme: "REGULAR", currency: "EUR", paymentTermsDays: 14, autoFinalize: false,
+      lines: [line({ productId, lineType: "ITEM" }), line({ ossCategory: "GOODS_DISTANCE" }), line()],
+    } as Parameters<typeof createRecurring>[1]);
+    const saved = await dbInternal.recurringInvoiceLine.findMany({ where: { recurringInvoiceId: rec.id }, orderBy: { position: "asc" }, select: { ossCategory: true } });
+    expect(saved.map((r) => r.ossCategory)).toEqual(EXPECTED);
+    await updateProduct(orgId, productId, { ossCategory: "NONE" });
+    const emitted = await emitRecurringNow(rec.id, { now: NOW });
+    await updateProduct(orgId, productId, { ossCategory: "ELECTRONIC_SERVICE" });
+    const invoiceId = (emitted as { invoiceId?: string; id?: string }).invoiceId ?? (emitted as { id?: string }).id!;
+    expect((await linesOf(invoiceId)).map((l) => l.ossCategory)).toEqual(EXPECTED);
+  });
+
+  it("Duplizieren einer Rechnung uebernimmt die Kategorie der Quellposition", async () => {
+    const src = await createDraftInvoiceFor([line({ productId }), line({ ossCategory: "GOODS_DISTANCE" }), line()]);
+    await updateProduct(orgId, productId, { ossCategory: "NONE" });
+    const copy = await duplicateDocument(orgId, "INVOICE", src, "test", NOW);
+    await updateProduct(orgId, productId, { ossCategory: "ELECTRONIC_SERVICE" });
+    expect((await linesOf(copy.id)).map((l) => l.ossCategory)).toEqual(EXPECTED);
+  });
+
+  it("Duplizieren eines Angebots uebernimmt die Kategorie", async () => {
+    const q = await quoteWithOss();
+    const copy = await duplicateDocument(orgId, "QUOTE", q.id, "test", NOW);
+    const rows = await dbInternal.quoteLine.findMany({ where: { quoteId: copy.id }, orderBy: { position: "asc" }, select: { ossCategory: true } });
+    expect(rows.map((r) => r.ossCategory)).toEqual(EXPECTED);
+  });
+});
+
+async function createDraftInvoiceFor(lines: Record<string, unknown>[]): Promise<string> {
+  return (await createDraftInvoice(orgId, input(lines), { now: NOW })).id;
+}
+
+describe("Entwurf: Randfaelle (Review F3)", () => {
+  it("updateDraftInvoice ohne lines behaelt den Snapshot", async () => {
+    const id = await createDraftInvoiceFor([line({ productId })]);
+    await updateProduct(orgId, productId, { ossCategory: "NONE" });
+    await updateDraftInvoice(orgId, id, { subject: "Neuer Betreff", documentDiscountPermille: 100 }, "test");
+    await updateProduct(orgId, productId, { ossCategory: "ELECTRONIC_SERVICE" });
+    expect((await linesOf(id)).map((l) => l.ossCategory)).toEqual(["ELECTRONIC_SERVICE"]);
+  });
+
+  it("Nicht-ITEM-Zeilen bekommen null, auch mit ossCategory im Input", async () => {
+    const id = await createDraftInvoiceFor([
+      line({ productId }),
+      { lineType: "HEADING", description: "Ueberschrift", quantityMilli: 0, unitNetPriceCents: 0, taxRate: 0, ossCategory: "GOODS_DISTANCE" },
+    ]);
+    expect((await linesOf(id)).map((l) => l.ossCategory)).toEqual(["ELECTRONIC_SERVICE", null]);
+  });
+});
+
 describe("REST und MCP", () => {
   it("POST /Invoice mit ossCategory ohne productId wird gespeichert und ausgeliefert; FOO -> 400", async () => {
     const res = await InvoiceCreate(
@@ -151,6 +252,17 @@ describe("REST und MCP", () => {
     const ok = await callTool("upsert_product", { name: "MCP-OSS", netPriceEuro: 10, ossCategory: "GOODS_DISTANCE" });
     expect(ok.isError).toBeFalsy();
     expect((await dbInternal.product.findFirstOrThrow({ where: { orgId, name: "MCP-OSS" } })).ossCategory).toBe("GOODS_DISTANCE");
+  });
+
+  it("MCP create_invoice: productName mit eigenem Preis setzt trotzdem den Produkt-Snapshot (Review F2)", async () => {
+    const res = await callTool("create_invoice", {
+      customer: "OSS-Kunde",
+      lines: [{ description: "Eigener Preis", quantity: 1, unitPriceEuro: 77, productName: "OSS-Dienst" }],
+    });
+    expect(res.isError).toBeFalsy();
+    const id = /ID: (\S+)/.exec(res.content[0].text)![1];
+    const row = await dbInternal.invoiceLine.findFirstOrThrow({ where: { invoiceId: id }, select: { ossCategory: true, unitNetPriceCents: true } });
+    expect(row).toEqual({ ossCategory: "ELECTRONIC_SERVICE", unitNetPriceCents: 7700 });
   });
 
   it("MCP create_invoice: productName -> Snapshot aus dem Produkt, explizite ossCategory gewinnt", async () => {

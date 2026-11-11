@@ -21,3 +21,9 @@ export async function resolveLineOssCategories(
   }
   return lines.map((l) => l.ossCategory ?? (l.productId ? (byId.get(l.productId) ?? null) : null));
 }
+
+/** Gespeicherten Kategorie-Text (Quell-Position) fuer die Weitergabe an createDraftInvoice pruefen; unbekannt/leer -> undefined. */
+export function parseOss(value: string | null | undefined): OssCategory | undefined {
+  const parsed = OssCategorySchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}

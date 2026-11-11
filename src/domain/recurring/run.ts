@@ -25,6 +25,7 @@ import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { parseOss } from "@/domain/product/oss-snapshot";
 import { advanceDate, periodRange, type RecurInterval } from "@/lib/recurring";
 import { formatDateDe } from "@/lib/template/format";
 import { prefillEmail } from "@/domain/email/compose";
@@ -128,6 +129,7 @@ async function emitOne(
       taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
       discountPermille: l.discountPermille,
       discountCents: 0,
+      ossCategory: parseOss(l.ossCategory),
     }));
 
     // recurringInsertPeriodText (Phase 7, §33): Kopftext "Abrechnungszeitraum dd.mm.yyyy –

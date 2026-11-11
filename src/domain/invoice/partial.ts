@@ -30,6 +30,7 @@ import { setQuoteStatusWithinTx } from "@/domain/document/status";
 import { billedQuantities, type PartialSourceType } from "@/domain/invoice/billed-quantities";
 import { NotFoundError } from "@/domain/errors";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { parseOss } from "@/domain/product/oss-snapshot";
 import { createPartialInvoiceSchema, type CreatePartialInvoiceInput } from "@/schemas";
 import type { CreateInvoiceInput } from "@/schemas";
 
@@ -58,6 +59,8 @@ interface PartialSourceLine {
   taxRate: number | null;
   taxCategory: string;
   lineNetCents: number;
+  /** Phase 16e: OSS-Kategorie der Quellposition (Angebot); Lieferschein: null. */
+  ossCategory?: string | null;
   // Fix-Welle (B1): Positionsrabatt der Quellzeile — ohne diese Felder wuerden
   // POSITIONS/QUANTITIES-Teilrechnungen einen Zeilenrabatt der Quelle stillschweigend
   // fallen lassen und den Kunden ueberhoeht abrechnen (Ruling Koordinator).
@@ -150,6 +153,7 @@ async function loadPartialSource(
           lineNetCents: l.lineNetCents,
           discountPermille: l.discountPermille,
           discountCents: l.discountCents,
+          ossCategory: l.ossCategory,
         })),
     };
   }
@@ -211,6 +215,7 @@ interface BuiltLine {
   taxRate: number;
   taxCategory: string;
   sourceLineId?: string;
+  ossCategory?: string | null;
   // Fix-Welle (B1): Positionsrabatt, der auf die gebaute Zeile uebertragen wird
   // (0 bei den Anteils-Modi PERCENT/NET_AMOUNT/GROSS_AMOUNT, dort steckt der einzige
   // Rabatt/Aufschlag bereits in den Bucket-Nettobetraegen).
@@ -401,6 +406,7 @@ function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialS
         taxRate: src.taxRate,
         taxCategory: src.taxCategory,
         sourceLineId: lineId,
+        ossCategory: src.ossCategory,
         // B1: volle Position -> Zeilenrabatt unveraendert uebernommen.
         discountPermille: src.discountPermille,
         discountCents: src.discountCents,
@@ -426,6 +432,7 @@ function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialS
         taxRate: src.taxRate,
         taxCategory: src.taxCategory,
         sourceLineId: q.sourceLineId,
+        ossCategory: src.ossCategory,
         // B1: Teilmenge -> Prozentrabatt 1:1 (skaliert automatisch mit der kleineren
         // Menge ueber computeLineNet), Festbetragsrabatt proportional zur abgerechneten
         // Menge (discountCents gilt fuer die GESAMTE Quellzeile, nicht je Einheit).
@@ -514,6 +521,7 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,
         discountCents: l.discountCents,
+        ossCategory: parseOss(l.ossCategory),
       })),
     };
 

@@ -113,14 +113,17 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           let taxRatePercent: number | undefined = l.taxRatePercent;
           let description = l.description;
           let productId: string | undefined;
-          if (unitPriceEuro == null && l.productName) {
+          if (l.productName) {
             const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
-            if (!p) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
-            unitPriceEuro = p.netPriceCents / 100;
-            unit = unit ?? p.unit;
-            taxRatePercent = taxRatePercent ?? p.taxRate;
-            description = description || p.name;
-            productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt
+            // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie bisher).
+            if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+            if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt (auch bei eigenem Preis)
+            if (p && unitPriceEuro == null) {
+              unitPriceEuro = p.netPriceCents / 100;
+              unit = unit ?? p.unit;
+              taxRatePercent = taxRatePercent ?? p.taxRate;
+              description = description || p.name;
+            }
           }
           if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
           return {

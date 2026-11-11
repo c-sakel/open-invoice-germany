@@ -17,6 +17,7 @@ import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { setQuoteStatusWithinTx, effectiveQuoteStatus } from "@/domain/document/status";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
+import { parseOss } from "@/domain/product/oss-snapshot";
 import { convertDocumentSchema, type ConvertDocumentInput, type TaxCategory } from "@/schemas";
 import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
 
@@ -153,6 +154,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
             lineNetCents: l.lineNetCents,
+            ossCategory: l.lineType === "ITEM" ? l.ossCategory : null,
           })),
         },
       },
@@ -236,6 +238,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
           taxCategory: l.taxCategory as TaxCategory,
           discountPermille: l.discountPermille,
           discountCents: l.discountCents,
+          ossCategory: parseOss(l.ossCategory),
         })),
       },
       { actor, now, inheritedTaxRates: ratesOfLines(src.lines) },

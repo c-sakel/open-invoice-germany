@@ -276,6 +276,7 @@ model QuoteLine {
   discountPermille  Int     @default(0) // 0..1000 (= 0..100 %)
   discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
   lineNetCents      Int
+  ossCategory       String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
 
   @@index([quoteId])
 }
@@ -622,6 +623,7 @@ model RecurringInvoiceLine {
   taxRate            Int
   taxCategory        String           @default("S")
   discountPermille   Int              @default(0)
+  ossCategory        String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
 
   @@index([recurringInvoiceId])
 }

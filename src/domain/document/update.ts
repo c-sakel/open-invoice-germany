@@ -11,6 +11,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { StatusTransitionError } from "@/domain/document/status";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { normalizeLines } from "@/domain/document/lines";
+import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { NotFoundError } from "@/domain/errors";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { updateDocumentSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue } from "@/schemas";
@@ -97,8 +98,12 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
       // normalizeLines (§8, zweite Verteidigungslinie neben Zod) fuer neue Positionen;
       // bleiben die Positionen unveraendert (nur Beleg-Anpassung geaendert), werden die
       // bereits gespeicherten Zeilen samt lineType uebernommen.
-      const lines = input.lines
-        ? normalizeLines(resolveLineCategories(input.lines, input.taxScheme ?? quote.taxScheme as TaxSchemeValue)).map((l) => ({
+      const normalizedInput = input.lines
+        ? normalizeLines(resolveLineCategories(input.lines, input.taxScheme ?? quote.taxScheme as TaxSchemeValue))
+        : null;
+      const ossCategories = normalizedInput ? await resolveLineOssCategories(tx, orgId, normalizedInput) : [];
+      const lines = normalizedInput
+        ? normalizedInput.map((l, i) => ({
             position: l.position,
             lineType: l.lineType,
             description: l.description,
@@ -111,6 +116,7 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
+            ossCategory: l.lineType === "ITEM" ? ossCategories[i] : null,
             lineNetCents: l.lineType === "ITEM" ? computeLineNet(l).lineNetCents : 0,
           }))
         : quote.lines.map((l) => ({
@@ -126,6 +132,7 @@ export async function updateDraftDocument(orgId: string, id: string, rawInput: u
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
+            ossCategory: l.ossCategory,
             lineNetCents: l.lineNetCents,
           }));
       // Nicht-ITEM-Zeilen gehen nie in Summen/Steuerberechnung ein (§8).

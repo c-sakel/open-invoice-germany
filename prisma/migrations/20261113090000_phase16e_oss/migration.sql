@@ -5,3 +5,6 @@ ALTER TABLE "DocumentSettings" ADD COLUMN "ossCountMode" TEXT NOT NULL DEFAULT '
 ALTER TABLE "DocumentSettings" ADD COLUMN "ossWarnPercent" INTEGER NOT NULL DEFAULT 80;
 ALTER TABLE "Product" ADD COLUMN "ossCategory" TEXT NOT NULL DEFAULT 'NONE';
 ALTER TABLE "InvoiceLine" ADD COLUMN "ossCategory" TEXT;
+-- Angebots- und Abo-Positionen tragen die Kategorie, damit Abo-Lauf und Angebot -> Rechnung sie uebernehmen.
+ALTER TABLE "QuoteLine" ADD COLUMN "ossCategory" TEXT;
+ALTER TABLE "RecurringInvoiceLine" ADD COLUMN "ossCategory" TEXT;
