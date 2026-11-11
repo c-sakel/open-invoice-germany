@@ -29,7 +29,7 @@ const paymentActionResponseSchema = z.object({ payment: paymentSchema, invoice: 
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const input = recordPaymentSchema.parse(ctx.body);
-  const result = await recordPayment(ctx.params.id, input, { actor: ctx.actor, orgId: ctx.orgId });
+  const result = await recordPayment(ctx.params.id, input, { actor: ctx.actor, orgId: ctx.orgId, createdBy: "api" });
   const created = await prisma.payment.findFirstOrThrow({ where: { invoiceId: ctx.params.id }, orderBy: { createdAt: "desc" } });
   return apiData(
     { payment: serializePayment(created), invoice: serializeInvoice(result.payment, new Set()) },

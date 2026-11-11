@@ -22,3 +22,22 @@ export async function incrementPaidAmount(
   const row = await tx.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { paidAmountCents: true } });
   return row.paidAmountCents;
 }
+
+/**
+ * Gegenstueck zu `incrementPaidAmount` fuer Gegenbuchungen (Phase 16a): verringert
+ * `paidAmountCents` atomar, die Untergrenze 0 steht in der WHERE-Klausel.
+ * Gibt den neuen Stand zurueck oder `null` bei Unterlauf.
+ */
+export async function decrementPaidAmount(
+  tx: Prisma.TransactionClient,
+  invoiceId: string,
+  deltaCents: number,
+): Promise<number | null> {
+  const res = await tx.invoice.updateMany({
+    where: { id: invoiceId, paidAmountCents: { gte: deltaCents } },
+    data: { paidAmountCents: { decrement: deltaCents } },
+  });
+  if (res.count === 0) return null;
+  const row = await tx.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { paidAmountCents: true } });
+  return row.paidAmountCents;
+}
