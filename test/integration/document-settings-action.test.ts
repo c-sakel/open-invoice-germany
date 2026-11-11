@@ -62,3 +62,31 @@ describe("saveDocumentSettingsAction — taxRates (M5)", () => {
     expect((await loadDocumentSettings(orgStore.id!)).taxRates).toEqual([0, 9, 21]);
   });
 });
+
+describe("saveDocumentSettingsAction — Kursquelle (Phase 16b)", () => {
+  function fxForm(source: string, confirmed: boolean): FormData {
+    const f = fd(JSON.stringify([19, 7, 0]));
+    f.set("fxRateSource", source);
+    if (confirmed) f.set("fxEcbConfirmed", "on");
+    return f;
+  }
+
+  it("EZB-Tageskurs ohne bestaetigte Gestattung -> Fehler, Quelle bleibt unveraendert", async () => {
+    const res = await saveDocumentSettingsAction({ ok: false }, fxForm("ECB_DAILY", false));
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("Gestattung des Finanzamts");
+    expect((await loadDocumentSettings(orgStore.id!)).fxRateSource).toBe("BMF_MONTHLY");
+  });
+
+  it("EZB-Tageskurs mit Bestaetigung wird gespeichert, Monatsdurchschnitt braucht keine", async () => {
+    expect((await saveDocumentSettingsAction({ ok: false }, fxForm("ECB_DAILY", true))).ok).toBe(true);
+    expect((await loadDocumentSettings(orgStore.id!)).fxRateSource).toBe("ECB_DAILY");
+    expect((await saveDocumentSettingsAction({ ok: false }, fxForm("BMF_MONTHLY", false))).ok).toBe(true);
+    expect((await loadDocumentSettings(orgStore.id!)).fxRateSource).toBe("BMF_MONTHLY");
+  });
+
+  it("unbekannte Quelle -> Validierungsfehler", async () => {
+    const res = await saveDocumentSettingsAction({ ok: false }, fxForm("XYZ", true));
+    expect(res.ok).toBe(false);
+  });
+});

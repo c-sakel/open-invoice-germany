@@ -30,6 +30,7 @@ export async function saveEmailTemplateAction(_prev: ActionResult, fd: FormData)
     id: str(fd, "id"),
     name: str(fd, "name"),
     docType: str(fd, "docType"),
+    language: str(fd, "language"),
     subject: str(fd, "subject"),
     body: str(fd, "body"),
     signature: str(fd, "signature"),

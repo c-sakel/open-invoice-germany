@@ -10,7 +10,8 @@ import { PROJECT_ROOT } from "../bootstrap";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { defaultCategoryForScheme } from "@/lib/tax";
-import { SCHEME_NOTICE, SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
+import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
@@ -43,6 +44,7 @@ import {
   currencyCodeSchema,
   cancelInvoiceSchema,
   partialCreditSchema,
+  DocLanguageSchema,
 } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -87,6 +89,11 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         skonto2Days: z.number().int().min(1).max(365).optional(),
         paymentMethod: z.string().optional().describe("Name oder Code einer Zahlungsmethode (Default: Kunden-Standard)"),
         consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
+        language: DocLanguageSchema.optional().describe("Belegsprache de|en (Snapshot am Beleg); ohne Angabe die Sprache des Kunden, sonst de. Der Pflichthinweis folgt der Sprache."),
+        fxOverrideRate: z
+          .string()
+          .optional()
+          .describe("Kurs manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. \"1,25\"), nur bei Fremdwaehrung; ersetzt die Kurstabelle, Quelle wird MANUAL (§ 16 Abs. 6 UStG)."),
       },
     },
     async (args): Promise<Result> => {
@@ -129,7 +136,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         // src/lib/editor/draft.ts#toInvoicePayload (Fix 1, Task 5) — nur voranstellen, wenn
         // `args.notes` noch KEINE fuer das Schema zulaessige Formulierung enthaelt, sonst
         // wuerde ein MCP-Aufruf mit bereits korrektem Hinweistext ihn verdoppeln.
-        const notice = SCHEME_NOTICE[scheme];
+        const language = args.language ?? resolveDocLanguage(customer.language);
+        const notice = SCHEME_NOTICE_BY_LANG[language][scheme];
         const noticeAccepted = (SCHEME_NOTICE_ACCEPTED[scheme] ?? []).some((re) => re.test(normalizeNotice(args.notes ?? "")));
         const notes = notice && !noticeAccepted ? `${notice}${args.notes ? " — " + args.notes : ""}` : args.notes;
         const paymentMethod = args.paymentMethod ? await ctx.resolvePaymentMethod(org.id, args.paymentMethod) : null;
@@ -154,6 +162,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           skonto2Days: args.skonto2Days,
           paymentMethodId: paymentMethod?.id,
           consumerRetentionHint: args.consumerRetentionHint,
+          language,
+          fxOverrideRate: args.fxOverrideRate,
           lines,
         });
         const invoice = await createDraftInvoice(org.id, input);
@@ -163,6 +173,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             `Nächster Schritt: finalize_invoice (vergibt die Rechnungsnummer, macht GoBD-konform unveränderbar).`,
         );
       } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
@@ -638,6 +649,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         dueDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD oder 'heute'"),
         consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
+        language: DocLanguageSchema.optional().describe("Belegsprache de|en des Entwurfs"),
+        fxOverrideRate: z.string().nullable().optional().describe("Kurs manuell (z. B. \"1,25\"); null entfernt den manuellen Kurs. Nur bei Fremdwaehrung."),
         lines: z
           .array(
             z.object({
@@ -672,6 +685,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.dueDate !== undefined) patch.dueDate = ctx.parseDateInput(args.dueDate);
         if (args.deliveryDate !== undefined) patch.deliveryDate = ctx.parseDateInput(args.deliveryDate);
         if (args.consumerRetentionHint !== undefined) patch.consumerRetentionHint = args.consumerRetentionHint;
+        if (args.language !== undefined) patch.language = args.language;
+        if (args.fxOverrideRate !== undefined) patch.fxOverrideRate = args.fxOverrideRate;
         if (args.lines) patch.lines = await ctx.buildEditorLines(org.id, args.lines);
 
         const updated = await updateDraftInvoice(org.id, inv.id, patch, "mcp");

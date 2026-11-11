@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveDocumentSettingsAction } from "@/app/actions/document-settings";
 import type { ActionResult } from "@/app/actions/result";
 import { SelectField, TextField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
@@ -14,6 +14,7 @@ export interface PaymentMethodOption {
 
 export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settings: DocumentSettingsInput; paymentMethods?: PaymentMethodOption[] }) {
   const [state, action] = useActionState<ActionResult, FormData>(saveDocumentSettingsAction, { ok: false });
+  const [fxSource, setFxSource] = useState(settings.fxRateSource);
 
   return (
     <form action={action} className="space-y-6">
@@ -72,6 +73,25 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
             options={[{ value: "", label: "— keine —" }, ...paymentMethods.map((m) => ({ value: m.id, label: m.name }))]}
           />
         </div>
+        <SelectField
+          label="Kursquelle für Fremdwährungsrechnungen"
+          name="fxRateSource"
+          defaultValue={settings.fxRateSource}
+          onChange={(e) => setFxSource(e.target.value === "ECB_DAILY" ? "ECB_DAILY" : "BMF_MONTHLY")}
+          options={[
+            { value: "BMF_MONTHLY", label: "Amtlicher Monatsdurchschnitt (§ 16 Abs. 6 UStG)" },
+            { value: "ECB_DAILY", label: "EZB-Tageskurs (Gestattung des Finanzamts liegt vor)" },
+          ]}
+          hint="Der Kurs wird beim Festschreiben eingefroren. Je Beleg ist ein manueller Kurs möglich."
+        />
+        {fxSource === "ECB_DAILY" && (
+          <CheckboxField
+            label="Das Finanzamt hat die Umrechnung mit dem EZB-Tageskurs gestattet"
+            name="fxEcbConfirmed"
+            defaultChecked={settings.fxRateSource === "ECB_DAILY"}
+            hint="Ohne Gestattung des Finanzamts ist nach § 16 Abs. 6 UStG der Monatsdurchschnitt zu verwenden. Bitte bestätigen, bevor der EZB-Tageskurs gespeichert wird."
+          />
+        )}
         <CheckboxField
           label="Rechnung nach dem Versand automatisch festschreiben"
           name="autoFinalizeOnSend"

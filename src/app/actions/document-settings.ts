@@ -67,7 +67,11 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     recurringAutoFinalizeDefault: fd.get("recurringAutoFinalizeDefault") === "on",
     recurringAutoSendDefault: fd.get("recurringAutoSendDefault") === "on",
     taxRates,
+    fxRateSource: fd.get("fxRateSource") ?? "BMF_MONTHLY",
   };
+  if (raw.fxRateSource === "ECB_DAILY" && fd.get("fxEcbConfirmed") !== "on") {
+    return { ok: false, error: "EZB-Tageskurs nur mit bestätigter Gestattung des Finanzamts (§ 16 Abs. 6 UStG)." };
+  }
 
   try {
     const org = await getActiveOrg();

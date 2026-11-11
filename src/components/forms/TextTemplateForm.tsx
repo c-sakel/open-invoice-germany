@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveTextTemplateAction } from "@/app/actions/text-templates";
 import type { ActionResult } from "@/app/actions/result";
+import { DOC_LANGUAGES, DOC_LANGUAGE_LABEL, type DocLanguage } from "@/lib/i18n/doc";
 import { DOC_TYPE_LABEL } from "@/lib/email/doc-type-labels";
 import type { EmailDocType } from "@/schemas/email";
 import { TextField, SelectField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
@@ -20,6 +21,7 @@ export interface TextTemplateFormData {
   name: string;
   docType: EmailDocType;
   position: string;
+  language?: string;
   body: string;
   isDefault: boolean;
 }
@@ -92,6 +94,23 @@ export function TextTemplateForm({
             </div>
           )}
         </div>
+
+        {template?.id ? (
+          <>
+            <input type="hidden" name="language" value={template.language ?? "de"} />
+            <p className="text-sm text-ink-soft">
+              Sprache: <strong>{DOC_LANGUAGE_LABEL[(template.language === "en" ? "en" : "de") as DocLanguage]}</strong> (nach dem Anlegen nicht mehr änderbar)
+            </p>
+          </>
+        ) : (
+          <SelectField
+            label="Sprache"
+            name="language"
+            defaultValue="de"
+            options={DOC_LANGUAGES.map((l) => ({ value: l, label: DOC_LANGUAGE_LABEL[l] }))}
+            hint="Die Vorlage wird für Belege in dieser Sprache vorbelegt."
+          />
+        )}
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-ink-soft">

@@ -128,6 +128,9 @@ export function RecipientBlock({
       if (mode === "INVOICE" || mode === "DOCUMENT") {
         dispatch({ type: "suggestCurrency", value: customer?.defaultCurrency ?? "" });
       }
+      // Phase 16b: Belegsprache folgt dem Kunden (Server-Kette: Kunde, sonst de); eine vom
+      // Nutzer gewaehlte Sprache bleibt (languageTouched).
+      dispatch({ type: "suggestLanguage", value: customer?.language === "en" ? "en" : "" });
       if (mode === "INVOICE") {
         dispatch({ type: "set", field: "paymentMethodId", value: customer?.defaultPaymentMethodId ?? "" });
       }

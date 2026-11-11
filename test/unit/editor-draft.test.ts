@@ -413,4 +413,66 @@ describe("editor/draft", () => {
     const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "USD", lines: [] } as never);
     expect(draftReducer(inv, { type: "suggestCurrency", value: "CHF" })).toBe(inv);
   });
+
+  // ── Phase 16b, Task 9: Belegsprache und manueller Kurs ───────────────────────
+  const EN_RC = "Reverse charge (Steuerschuldnerschaft des Leistungsempfängers)";
+  const DE_RC = "Steuerschuldnerschaft des Leistungsempfängers";
+  const rcDraft = () => draftReducer(invoiceDraft(), { type: "set", field: "taxScheme", value: "REVERSE_CHARGE" });
+
+  it("Sprache en setzt den englischen Pflichthinweis in den Hinweistext", () => {
+    const r = draftReducer(rcDraft(), { type: "set", field: "language", value: "en" });
+    expect(r.language).toBe("en");
+    expect(r.languageTouched).toBe(true);
+    expect(r.notes).toBe(EN_RC);
+    expect(toInvoicePayload(r, false).notes).toBe(EN_RC); // nicht doppelt vorangestellt
+    expect(toInvoicePayload(r, false).language).toBe("en");
+  });
+  it("Wechsel en -> de ersetzt nur den automatisch gesetzten Hinweis", () => {
+    const en = draftReducer(rcDraft(), { type: "set", field: "language", value: "en" });
+    expect(draftReducer(en, { type: "set", field: "language", value: "de" }).notes).toBe(DE_RC);
+    // Hinweis plus Nutzertext: nur der Hinweis-Praefix wird ersetzt
+    const mixed = draftReducer(en, { type: "set", field: "notes", value: `${EN_RC} — Bitte Rechnungsnummer angeben.` });
+    expect(draftReducer(mixed, { type: "set", field: "language", value: "de" }).notes).toBe(`${DE_RC} — Bitte Rechnungsnummer angeben.`);
+    // reiner Nutzertext bleibt unangetastet
+    const custom = draftReducer(en, { type: "set", field: "notes", value: "Eigener Text" });
+    expect(draftReducer(custom, { type: "set", field: "language", value: "de" }).notes).toBe("Eigener Text");
+    expect(draftReducer(rcDraft(), { type: "set", field: "language", value: "en" }).notes).toBe(EN_RC);
+  });
+  it("Payload ohne Notiz: der Pflichthinweis folgt der Belegsprache", () => {
+    const en = { ...rcDraft(), language: "en" as const };
+    expect(toInvoicePayload(en, false).notes).toBe(EN_RC);
+    expect(toInvoicePayload({ ...en, notes: "Hallo" }, false).notes).toBe(`${EN_RC} — Hallo`);
+    expect(toInvoicePayload({ ...en, language: "de" as const }, false).notes).toBe(DE_RC);
+    expect(toInvoicePayload({ ...en, language: "" as const }, false).language).toBeUndefined();
+  });
+  it("suggestLanguage: folgt dem Kunden, aber nicht nach manueller Wahl oder beim Bearbeiten", () => {
+    const sug = draftReducer(emptyDraft("INVOICE"), { type: "suggestLanguage", value: "en" });
+    expect(sug.language).toBe("en");
+    expect(sug.languageTouched).toBe(false);
+    const manual = draftReducer(emptyDraft("INVOICE"), { type: "set", field: "language", value: "de" });
+    expect(draftReducer(manual, { type: "suggestLanguage", value: "en" }).language).toBe("de");
+    const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "EUR", language: "de", lines: [] } as never);
+    expect(draftReducer(inv, { type: "suggestLanguage", value: "en" })).toBe(inv);
+  });
+  it("Bearbeiten: gespeicherte Sprache und Kurs werden geladen; Kurs wird nur zum Loeschen als null gesendet", () => {
+    const inv = draftFromInvoice({ id: "i1", customerId: "c1", taxScheme: "REGULAR", currency: "USD", language: "en", fxOverrideRate: "1,25", lines: [] } as never);
+    expect(inv.language).toBe("en");
+    expect(inv.fxOverride).toBe("1,25");
+    expect(toInvoicePayload(inv, true).fxOverrideRate).toBe("1,25");
+    const cleared = draftReducer(inv, { type: "set", field: "fxOverride", value: "" });
+    expect(toInvoicePayload(cleared, true).fxOverrideRate).toBeNull();
+    const noOverride = draftFromInvoice({ id: "i2", customerId: "c1", taxScheme: "REGULAR", currency: "USD", language: "de", lines: [] } as never);
+    expect(toInvoicePayload(noOverride, true).fxOverrideRate).toBeUndefined();
+    expect(draftFromDocument({ id: "q1", kind: "ANGEBOT", customerId: "c1", language: "en", lines: [] } as never).language).toBe("en");
+  });
+  it("Payload: fxOverrideRate nur bei Fremdwaehrung, language auch fuer Dokument und Lieferschein", () => {
+    const usd = { ...invoiceDraft(), currency: "USD", fxOverride: " 1,25 " };
+    expect(toInvoicePayload(usd, false).fxOverrideRate).toBe("1,25");
+    expect(toInvoicePayload({ ...usd, currency: "EUR" }, false).fxOverrideRate).toBeUndefined();
+    expect(toInvoicePayload(invoiceDraft(), false).fxOverrideRate).toBeUndefined();
+    expect(createInvoiceSchema.parse({ ...toInvoicePayload({ ...usd, language: "en" }, false) }).fxOverrideRate).toBe(1_250_000);
+    const doc = { ...emptyDraft("DOCUMENT"), customerId: "c1", language: "en" as const };
+    expect(toDocumentPayload(doc, false).language).toBe("en");
+    expect(toDeliveryNotePayload({ ...emptyDraft("DELIVERY_NOTE"), customerId: "c1", language: "en" as const }).language).toBe("en");
+  });
 });

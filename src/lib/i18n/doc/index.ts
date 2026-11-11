@@ -10,6 +10,9 @@ export type { DocLanguage, DocStrings, NoticeCategory, NoticeScheme, FxSource } 
 
 export const DOC_LANGUAGES: readonly DocLanguage[] = ["de", "en"];
 
+/** Anzeigename je Belegsprache (Einstellungsseiten, Auswahllisten). */
+export const DOC_LANGUAGE_LABEL: Record<DocLanguage, string> = { de: "Deutsch", en: "English" };
+
 const STRINGS = { de, en } satisfies Record<DocLanguage, DocStrings>;
 
 export function resolveDocLanguage(code: string | null | undefined): DocLanguage {

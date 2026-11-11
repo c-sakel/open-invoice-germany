@@ -295,7 +295,7 @@ export function NewRecurringForm({
           </select>
           {currency !== "EUR" && (
             <span className="text-xs text-seal">
-              Fremdwährung: kein GiroCode; USt-Betrag in EUR (Art. 230 MwStSystRL, § 16 Abs. 6 UStG) wird nicht ausgewiesen.
+              Fremdwährung: kein GiroCode. Der Kurs wird beim Festschreiben jeder erzeugten Rechnung eingefroren; die USt wird zusätzlich in EUR ausgewiesen (Art. 230 MwStSystRL, § 16 Abs. 6 UStG).
             </span>
           )}
         </label>

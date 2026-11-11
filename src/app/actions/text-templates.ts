@@ -30,6 +30,7 @@ export async function saveTextTemplateAction(_prev: ActionResult, fd: FormData):
     name: str(fd, "name"),
     docType: str(fd, "docType"),
     position: str(fd, "position"),
+    language: str(fd, "language"),
     body: str(fd, "body"),
     isDefault: fd.get("isDefault") === "on",
   };

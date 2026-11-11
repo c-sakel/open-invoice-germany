@@ -40,6 +40,7 @@ import { registerWebhookTools } from "./tools/webhooks";
 import { registerTemplateTools } from "./tools/templates";
 import { registerTagTools } from "./tools/tags";
 import { registerAuditTools } from "./tools/audit";
+import { registerFxTools } from "./tools/fx";
 
 // Exportiert fuer Integrationstests (test/integration/mcp-*.test.ts): erlaubt,
 // registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
@@ -71,6 +72,7 @@ registerWebhookTools(server, mcpContext);
 registerTemplateTools(server, mcpContext);
 registerTagTools(server, mcpContext);
 registerAuditTools(server, mcpContext);
+registerFxTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function main() {

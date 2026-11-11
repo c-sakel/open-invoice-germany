@@ -176,10 +176,13 @@ export async function upsertManualRate(
   assertSupportedRate(data.rate);
   const now = new Date();
   const note = data.note ?? null;
-  const where = { source_currency_rateDate: { source: data.source, currency: data.currency, rateDate: data.rateDate } };
+  // Konvention (siehe Kopfkommentar): Monatszeilen sind auf den 1. des Monats datiert — ein
+  // anderer Tag im Monat landet sonst in einer Zeile, die die Kurswahl nie findet.
+  const rateDate = data.source === "MONTHLY" ? monthStart(data.rateDate) : data.rateDate;
+  const where = { source_currency_rateDate: { source: data.source, currency: data.currency, rateDate } };
   const row = await dbInternal.exchangeRate.upsert({
     where,
-    create: { source: data.source, currency: data.currency, rateDate: data.rateDate, rateMicros: data.rate, origin: "MANUAL", note, fetchedAt: now },
+    create: { source: data.source, currency: data.currency, rateDate, rateMicros: data.rate, origin: "MANUAL", note, fetchedAt: now },
     update: { rateMicros: data.rate, origin: "MANUAL", note, fetchedAt: now },
     select: rateSelect,
   });
@@ -192,7 +195,7 @@ export async function upsertManualRate(
       type: "FX_RATE_SET",
       actor,
       at: now,
-      data: { source: data.source, currency: data.currency, rateDate: data.rateDate.toISOString().slice(0, 10), rateMicros: data.rate },
+      data: { source: data.source, currency: data.currency, rateDate: rateDate.toISOString().slice(0, 10), rateMicros: data.rate },
     });
   }
   return row;
