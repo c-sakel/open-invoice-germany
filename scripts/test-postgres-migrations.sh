@@ -990,7 +990,7 @@ npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
 USERVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"failedLoginCount\", coalesce(\"lockedUntil\"::text,'<null>'), coalesce(\"lastLoginAt\"::text,'<null>'), coalesce(\"passwordChangedAt\"::text,'<null>') from \"User\" where id='user25'")
 [ "$USERVAL" = "0|<null>|<null>|<null>" ] || fail "User-Bestandszeile user25 abweichend ('$USERVAL'), erwartet 0|<null>|<null>|<null>"
 COUNT25=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT25" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach der Login-Haertung-Migration (nur sechs Spalten), gefunden $COUNT25"
+[ "$COUNT25" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach der Login-Haertung-Migration (nur vier Spalten), gefunden $COUNT25"
 echo "    ok — User.failedLoginCount=0, lockedUntil/lastLoginAt/passwordChangedAt NULL auf Bestandszeile, 53 Tabellen"
 
 echo "==> Fall 26 (Phase 16a, Task 1): Gegenbuchung/Belegarchiv/Kettenpruefung — additive Payment-Spalten, drei neue Tabellen"
@@ -1110,7 +1110,7 @@ COUNT27=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count
 [ "$COUNT27" = "53" ] || fail "erwartet 53 Tabellen nach Phase 16b, gefunden $COUNT27"
 echo "    ok — EUR-Rechnung 1900/10000, USD-Rechnung NULL, language=de ueberall, de+en je Vorlagenname moeglich, zweites de scheitert, 53 Tabellen"
 
-echo "==> Fall 28 (Phase 16e, Task 1): OSS-Schwelle — Zaehlmodus, Warnschwelle, Produkt- und Positionskategorie"
+echo "==> Fall 28 (Phase 16e, Task 1): OSS-Schwelle — Zaehlmodus, Warnschwelle, Produkt-, Positions-, Angebots- und Abo-Positionskategorie"
 # Praeambel woertlich wie Fall 27, Ausschluss nur der Phase-16e-Migration. Bestand im
 # ALTEN Spaltenumfang: Einstellungen, Produkt, festgeschriebene Rechnung mit einer Position.
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -1156,7 +1156,7 @@ LINEVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coale
 SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(q.\"ossCategory\",'<null>') || '|' || coalesce(r.\"ossCategory\",'<null>') from \"QuoteLine\" q, \"RecurringInvoiceLine\" r where q.id='qline28' and r.id='rline28'")
 [ "$SRCVAL" = "<null>|<null>" ] || fail "QuoteLine/RecurringInvoiceLine.ossCategory abweichend ('$SRCVAL'), erwartet <null>|<null>"
 COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT28" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 16e (nur vier Spalten), gefunden $COUNT28"
+[ "$COUNT28" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
 echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, 53 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"
