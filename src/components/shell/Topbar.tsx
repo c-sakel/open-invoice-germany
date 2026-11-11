@@ -93,8 +93,8 @@ export function Topbar({ orgName, unreadCount, appVersion, brand }: Props) {
 
   return (
     <>
-      <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2 lg:hidden">
-        <button type="button" aria-label="Menü" onClick={() => setOpen(true)} className="rounded-md p-1 text-slate-600 hover:bg-slate-100">
+      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-rule bg-paper px-4 py-2 lg:hidden">
+        <button type="button" aria-label="Menü" onClick={() => setOpen(true)} className="grid h-10 w-10 place-items-center rounded-md text-ink-soft hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-pen">
           <NavIcon name="menu" className="h-5 w-5" />
         </button>
         <Link href="/" className="flex items-center font-semibold tracking-tight">
@@ -114,7 +114,7 @@ export function Topbar({ orgName, unreadCount, appVersion, brand }: Props) {
       </header>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
-          <button type="button" aria-label="Menü schließen" onClick={close} className="absolute inset-0 bg-slate-900/40" />
+          <button type="button" aria-label="Menü schließen" onClick={close} className="absolute inset-0 bg-ink/40" />
           <div ref={panelRef} className="absolute inset-y-0 left-0 shadow-xl">
             <Sidebar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} brand={brand} drawer onClose={close} />
           </div>

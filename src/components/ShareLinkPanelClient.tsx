@@ -104,26 +104,26 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+    <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-semibold text-slate-900">Annahme-Link</h2>
+        <h2 className="font-semibold text-ink">Annahme-Link</h2>
         <button
           type="button"
           onClick={createLink}
           disabled={creating}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60"
         >
           {creating ? "Erzeuge…" : "Link erzeugen"}
         </button>
       </div>
 
-      {error && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+      {error && <div className="mb-3 rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{error}</div>}
 
       {initialLinks.length === 0 ? (
-        <p className="text-slate-500">Noch kein Link erzeugt.</p>
+        <p className="text-ink-muted">Noch kein Link erzeugt.</p>
       ) : (
         <table className="w-full text-xs">
-          <thead className="text-left uppercase tracking-wide text-slate-500">
+          <thead className="text-left uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="py-1 pr-2">Erstellt</th>
               <th className="py-1 pr-2">Läuft ab</th>
@@ -133,27 +133,27 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
               <th className="py-1"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-rule">
             {initialLinks.map((l) => (
               <tr key={l.id}>
-                <td className="py-1.5 pr-2 text-slate-600">{deDateTime(l.createdAt)}</td>
-                <td className="py-1.5 pr-2 text-slate-600">{deDateTime(l.expiresAt)}</td>
-                <td className="tabular py-1.5 pr-2 text-slate-600">{l.viewCount}</td>
-                <td className="py-1.5 pr-2 text-slate-600">{statusLabel(l)}</td>
-                <td className="py-1.5 pr-2 text-slate-600">{l.deciderName ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-ink-soft">{deDateTime(l.createdAt)}</td>
+                <td className="py-1.5 pr-2 text-ink-soft">{deDateTime(l.expiresAt)}</td>
+                <td className="tabular py-1.5 pr-2 text-ink-soft">{l.viewCount}</td>
+                <td className="py-1.5 pr-2 text-ink-soft">{statusLabel(l)}</td>
+                <td className="py-1.5 pr-2 text-ink-soft">{l.deciderName ?? "—"}</td>
                 <td className="py-1.5 text-right space-x-3">
                   {statusLabel(l) === "Aktiv" && (
                     <button
                       type="button"
                       onClick={() => reveal(l.id)}
                       disabled={revealing === l.id}
-                      className="text-indigo-600 hover:underline disabled:opacity-60"
+                      className="text-pen hover:underline disabled:opacity-60"
                     >
                       {revealing === l.id ? "Lade…" : "Link anzeigen"}
                     </button>
                   )}
                   {!l.revokedAt && !l.decidedAt && (
-                    <button type="button" onClick={() => revoke(l.id)} className="text-rose-600 hover:underline">
+                    <button type="button" onClick={() => revoke(l.id)} className="text-stamp hover:underline">
                       Widerrufen
                     </button>
                   )}
@@ -164,9 +164,9 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
         </table>
       )}
 
-      <dialog ref={dialogRef} className="w-full max-w-lg rounded-lg border border-slate-200 p-5 backdrop:bg-slate-900/40">
-        <h3 className="mb-2 font-semibold text-slate-900">Annahme-Link</h3>
-        <p className="mb-3 text-sm text-slate-600">
+      <dialog ref={dialogRef} className="w-full max-w-lg rounded-lg border border-rule p-5 backdrop:bg-ink/40">
+        <h3 className="mb-2 font-semibold text-ink">Annahme-Link</h3>
+        <p className="mb-3 text-sm text-ink-soft">
           Solange der Link gültig ist, kann er hier jederzeit erneut angezeigt werden (Klartext-Token verschlüsselt gespeichert).
         </p>
         <div className="mb-3 flex items-center gap-2">
@@ -174,14 +174,14 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
             ref={inputRef}
             readOnly
             value={newUrl ?? ""}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm"
             onFocus={(e) => e.currentTarget.select()}
           />
-          <button type="button" onClick={copy} className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <button type="button" onClick={copy} className="whitespace-nowrap rounded-md border border-rule-strong bg-sheet px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper">
             {copied ? "Kopiert" : "Kopieren"}
           </button>
         </div>
-        <button type="button" onClick={() => dialogRef.current?.close()} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        <button type="button" onClick={() => dialogRef.current?.close()} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
           Schließen
         </button>
       </dialog>

@@ -47,11 +47,19 @@ import { monthlyRevenue } from "./revenue";
 import { topCustomers } from "./customers";
 import { statusCounts } from "./status";
 import { paymentBehaviour } from "./payment-behaviour";
+import { monthlyCashIn } from "./cash-in";
+import { quoteOutcome } from "./quote-outcome";
+import { topProducts } from "./top-products";
+import { recurringRunRate } from "./recurring-run-rate";
 
 export const reportQueryFieldsSchema = z.object({
-  type: z.enum(["revenue", "top-customers", "status", "payment-behaviour"]).describe("Art der Auswertung."),
-  months: z.coerce.number().int().min(1).max(36).optional().describe("Anzahl Kalendermonate rückwirkend (1–36, Default 12) — nur bei revenue und top-customers zulässig."),
-  limit: z.coerce.number().int().min(1).max(50).optional().describe("Maximale Anzahl Zeilen (1–50, Default 5) — nur bei top-customers zulässig."),
+  type: z
+    .enum(["revenue", "top-customers", "status", "payment-behaviour", "cash-in", "quote-outcome", "top-products", "recurring-run-rate"])
+    .describe(
+      "Art der Auswertung: revenue (Umsatz je Monat), top-customers, status (Belege je Status), payment-behaviour, cash-in (Zahlungseingang je Monat und Währung, ohne Skonto/Gutschrift-Verrechnung, Gegenbuchungen negativ), quote-outcome (Angebotsquote), top-products (Nettoumsatz je Produkt), recurring-run-rate (monatlich wiederkehrender Netto-Umsatz aktiver Abos).",
+    ),
+  months: z.coerce.number().int().min(1).max(36).optional().describe("Anzahl Kalendermonate rückwirkend (1–36, Default 12) — nur bei revenue, top-customers, cash-in, quote-outcome und top-products zulässig."),
+  limit: z.coerce.number().int().min(1).max(50).optional().describe("Maximale Anzahl Zeilen (1–50, Default 5; bei top-products Default 10, je Währung) — nur bei top-customers und top-products zulässig."),
   customerId: z.string().min(1).optional().describe("Auf einen Kunden einschränken — nur bei revenue und payment-behaviour zulässig."),
 });
 
@@ -64,6 +72,10 @@ const APPLICABLE_PARAMS: Record<ReportType, ReadonlySet<ApplicableParam>> = {
   "top-customers": new Set(["months", "limit"]),
   status: new Set([]),
   "payment-behaviour": new Set(["customerId"]),
+  "cash-in": new Set(["months"]),
+  "quote-outcome": new Set(["months"]),
+  "top-products": new Set(["months", "limit"]),
+  "recurring-run-rate": new Set([]),
 };
 
 export const reportQuerySchema = reportQueryFieldsSchema.superRefine((q, ctx) => {
@@ -107,6 +119,22 @@ export async function runReport(orgId: string, raw: unknown, now?: Date): Promis
     case "payment-behaviour": {
       const behaviour = await paymentBehaviour(orgId, { customerId: q.customerId });
       return { objectName: "Report", type: q.type, rows: [behaviour] };
+    }
+    case "cash-in": {
+      const rows = await monthlyCashIn(orgId, { months, now });
+      return { objectName: "Report", type: q.type, rows };
+    }
+    case "quote-outcome": {
+      const rows = await quoteOutcome(orgId, { months, now });
+      return { objectName: "Report", type: q.type, rows };
+    }
+    case "top-products": {
+      const rows = await topProducts(orgId, { months, limit: q.limit ?? 10, now });
+      return { objectName: "Report", type: q.type, rows };
+    }
+    case "recurring-run-rate": {
+      const rows = await recurringRunRate(orgId);
+      return { objectName: "Report", type: q.type, rows };
     }
   }
 }

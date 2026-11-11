@@ -26,7 +26,7 @@ export default async function TextTemplateEditPage({ params }: { params: Promise
     <div className="space-y-6">
       <SettingsTabs active="textvorlagen" />
       <div className="flex items-center gap-3">
-        <Link href="/einstellungen/textvorlagen" className="text-sm text-slate-500 hover:text-slate-800">
+        <Link href="/einstellungen/textvorlagen" className="text-sm text-ink-muted hover:text-ink">
           ← Dokumenttexte
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">{template ? "Vorlage bearbeiten" : "Neue Vorlage"}</h1>

@@ -72,58 +72,58 @@ export function CustomerDefaultsForm({ customerId, initial }: { customerId: stri
     router.refresh();
   }
 
-  const input = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
+    <form onSubmit={submit} className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{error}</div>}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Standard-Währung (ISO 4217)</span>
+          <span className="font-medium text-ink-soft">Standard-Währung (ISO 4217)</span>
           <input className={input} value={defaultCurrency} onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())} placeholder="Systemvorgabe" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Standard-Rabatt (%)</span>
+          <span className="font-medium text-ink-soft">Standard-Rabatt (%)</span>
           <input className={input} value={defaultDiscountPercent} onChange={(e) => setDefaultDiscountPercent(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Rechnungs-E-Mail</span>
+          <span className="font-medium text-ink-soft">Rechnungs-E-Mail</span>
           <input className={input} value={invoiceEmail} onChange={(e) => setInvoiceEmail(e.target.value)} placeholder="Standard des Kunden" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Rechnungs-CC (bis 5, kommagetrennt)</span>
+          <span className="font-medium text-ink-soft">Rechnungs-CC (bis 5, kommagetrennt)</span>
           <input className={input} value={invoiceCc} onChange={(e) => setInvoiceCc(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Angebots-E-Mail</span>
+          <span className="font-medium text-ink-soft">Angebots-E-Mail</span>
           <input className={input} value={quoteEmail} onChange={(e) => setQuoteEmail(e.target.value)} placeholder="Standard des Kunden" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Bestellreferenz</span>
+          <span className="font-medium text-ink-soft">Bestellreferenz</span>
           <input className={input} value={orderReference} onChange={(e) => setOrderReference(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Sprache (ISO-639-1)</span>
+          <span className="font-medium text-ink-soft">Sprache (ISO-639-1)</span>
           <input className={input} value={language} onChange={(e) => setLanguage(e.target.value.toLowerCase())} />
         </label>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={eInvoicePreferred} onChange={(e) => setEInvoicePreferred(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-          <span className="font-medium text-slate-700">E-Rechnung bevorzugt (kann die Org-Vorbelegung nur einschalten)</span>
+          <input type="checkbox" checked={eInvoicePreferred} onChange={(e) => setEInvoicePreferred(e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
+          <span className="font-medium text-ink-soft">E-Rechnung bevorzugt (kann die Org-Vorbelegung nur einschalten)</span>
         </label>
       </div>
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Lieferbedingungen (Angebote)</span>
+        <span className="font-medium text-ink-soft">Lieferbedingungen (Angebote)</span>
         <textarea className={input} rows={2} value={deliveryTermsText} onChange={(e) => setDeliveryTermsText(e.target.value)} />
       </label>
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Zahlungsbedingungen</span>
+        <span className="font-medium text-ink-soft">Zahlungsbedingungen</span>
         <textarea className={input} rows={2} value={paymentTermsText} onChange={(e) => setPaymentTermsText(e.target.value)} />
       </label>
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "Speichern…" : "Vorgaben speichern"}
         </button>
-        {saved && <span className="text-xs text-emerald-700">Gespeichert.</span>}
+        {saved && <span className="text-xs text-ledger">Gespeichert.</span>}
       </div>
     </form>
   );

@@ -1,7 +1,7 @@
 import type { ChartDatum } from "./types";
-import { CHART_COLORS, CHAR_WIDTH_FACTOR } from "./types";
+import { CHART_COLORS, CHART_FONT_SIZE, CHAR_WIDTH_FACTOR } from "./types";
+import { useId } from "react";
 import { ChartFrame } from "./ChartFrame";
-import { formatCentsShort } from "@/lib/money";
 
 /**
  * Saeulendiagramm (Phase 12e, Task 1): senkrecht fuer generische Reihen (Dashboard),
@@ -21,83 +21,183 @@ import { formatCentsShort } from "@/lib/money";
  * konfigurierbar, damit `fontSize`-Angaben in schmaleren Karten (Dashboard-Grid, halbe
  * Spaltenbreite) nicht auf ~7 px herunterskaliert werden — Aufrufer in halben Karten
  * uebergeben einen kleineren Wert. Die senkrechte Ansicht bekommt eine y-Achse mit 3
- * formatierten Ticks (`formatCentsShort`); Beschriftungs-/Wertespalten der waagerechten
+ * formatierten Ticks (runde Werte, `niceTicks`); Beschriftungs-/Wertespalten der waagerechten
  * Ansicht messen sich jetzt an der tatsaechlich laengsten Beschriftung (statt fixer 150/90-
  * Konstanten) und werden zur Not gestaucht, damit mindestens 30 % der Breite fuer die
  * Balken selbst bleiben — funktioniert dadurch sowohl fuer kurze Aging-Bucket-Label als auch
  * fuer lange Kundennamen, bei voller UND reduzierter `viewBoxWidth`.
+ *
+ * Phase 16f: Schrift fest 12 (kein Mitskalieren; lange Beschriftungen werden gekuerzt, der
+ * volle Text bleibt im <title>/der Tabelle), optionale Vergleichsreihe (schmaler, schraffierter
+ * Balken links), `hideZero` blendet Nullwerte aus.
  */
 export function BarChart({
   title,
-  data,
+  data: rawData,
+  compare: rawCompare,
+  compareLabel = "Vergleich",
+  seriesLabel,
   orientation = "vertical",
   color,
   viewBoxWidth = 640,
   emptyMessage,
+  hideZero = false,
+  hideTitle = false,
 }: {
   title: string;
   data: ChartDatum[];
+  /** Vergleichsreihe, positionsgleich zu `data` (z. B. Vorjahr). */
+  compare?: ChartDatum[];
+  compareLabel?: string;
+  /** Spaltenkopf der Hauptreihe in der sr-only-Tabelle. */
+  seriesLabel?: string;
   orientation?: "vertical" | "horizontal";
   color?: string;
   viewBoxWidth?: number;
   emptyMessage?: string;
+  hideZero?: boolean;
+  /** Diagrammtitel nur fuer Screenreader (die Karte traegt den sichtbaren Titel). */
+  hideTitle?: boolean;
 }) {
-  const domainMin = Math.min(0, ...data.map((d) => d.value));
-  const domainMax = Math.max(0, ...data.map((d) => d.value));
+  const keep = rawData.map((d) => !hideZero || d.value !== 0);
+  const data = rawData.filter((_, i) => keep[i]);
+  const compare = rawCompare?.filter((_, i) => keep[i]);
+  const patternId = useId();
+  const compareValues = compare?.map((c) => c.value) ?? [];
+  const domainMin = Math.min(0, ...data.map((d) => d.value), ...compareValues);
+  const domainMax = Math.max(0, ...data.map((d) => d.value), ...compareValues);
   const width = viewBoxWidth;
-  const height = orientation === "horizontal" ? data.length * 34 + 20 : 240;
+  const height = orientation === "horizontal" ? data.length * (compare ? 44 : 34) + 20 : 240;
+  const extraColumns = compare ? [{ header: compareLabel, values: data.map((_, i) => compare[i]?.valueLabel ?? "") }] : undefined;
+  const geometry = { domainMin, domainMax, width, color, compare, compareLabel, patternId };
 
   return (
-    <ChartFrame title={title} ariaLabel={title} data={data} width={width} height={height} emptyMessage={emptyMessage}>
-      {orientation === "horizontal"
-        ? renderHorizontal(data, domainMin, domainMax, width, color)
-        : renderVertical(data, domainMin, domainMax, width, height, color)}
+    <ChartFrame
+      title={title}
+      ariaLabel={title}
+      data={data}
+      width={width}
+      height={height}
+      emptyMessage={emptyMessage}
+      extraColumns={extraColumns}
+      valueHeader={seriesLabel}
+      hideTitle={hideTitle}
+      legend={
+        compare && orientation === "vertical"
+          ? [
+              { label: seriesLabel ?? "Aktuell", color: color ?? CHART_COLORS.primary },
+              { label: compareLabel, color: CHART_COLORS.second, hatched: true },
+            ]
+          : undefined
+      }
+    >
+      {compare && (
+        <defs>
+          <pattern id={patternId} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="4" height="4" fill={CHART_COLORS.second} fillOpacity={0.4} />
+            <line x1="0" y1="0" x2="0" y2="4" stroke={CHART_COLORS.second} strokeWidth={2} />
+          </pattern>
+        </defs>
+      )}
+      {orientation === "horizontal" ? renderHorizontal(data, geometry) : renderVertical(data, { ...geometry, height })}
     </ChartFrame>
   );
 }
 
-function renderVertical(
-  data: ChartDatum[],
-  domainMin: number,
-  domainMax: number,
-  width: number,
-  height: number,
-  color?: string,
-) {
-  const fontSize = 12;
+interface Geometry {
+  domainMin: number;
+  domainMax: number;
+  width: number;
+  color?: string;
+  compare?: ChartDatum[];
+  compareLabel: string;
+  patternId: string;
+}
+
+/** Runde Tickwerte (Cent) ueber [min, max]: Schrittweite 1/2/5 x 10^n Euro, inklusive 0. */
+export function niceTicks(minCents: number, maxCents: number, target = 4): { value: number }[] {
+  const min = Math.min(0, minCents) / 100;
+  const max = Math.max(0, maxCents) / 100;
+  const span = max - min;
+  if (span <= 0) return [{ value: 0 }, { value: 100 }];
+  const rough = span / target;
+  const pow = 10 ** Math.floor(Math.log10(rough));
+  const f = rough / pow;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+  const first = Math.floor(min / step + 1e-9) * step;
+  const last = Math.ceil(max / step - 1e-9) * step;
+  const out: { value: number }[] = [];
+  for (let v = first; v <= last + step / 2; v += step) out.push({ value: Math.round(v * 100) });
+  return out;
+}
+
+function formatTick(cents: number): string {
+  const euros = cents / 100;
+  const nf = (n: number, frac: number) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: frac }).format(n);
+  return Math.abs(euros) >= 1000 ? `${nf(euros / 1000, 1)} k€` : `${nf(euros, 2)} €`;
+}
+
+function truncate(text: string, maxChars: number): string {
+  return text.length <= maxChars ? text : `${text.slice(0, Math.max(1, maxChars - 1))}\u2026`;
+}
+
+function CompareRect({
+  datum,
+  compareLabel,
+  patternId,
+  ...rect
+}: {
+  datum: ChartDatum;
+  compareLabel: string;
+  patternId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}) {
+  return (
+    <rect {...rect} fill={`url(#${patternId})`} stroke={CHART_COLORS.second} strokeOpacity={0.4} opacity={0.4}>
+      <title>{`${compareLabel} ${datum.label}: ${datum.valueLabel}`}</title>
+    </rect>
+  );
+}
+
+function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
+  const { domainMin, domainMax, width, height, color, compare, compareLabel, patternId } = g;
+  const fontSize = CHART_FONT_SIZE;
   const padTop = 10;
   const padBottom = 30;
   const padRight = 10;
-  const range = domainMax - domainMin || 1;
-  const ticks = [
-    { f: 0, value: domainMax },
-    { f: 0.5, value: (domainMax + domainMin) / 2 },
-    { f: 1, value: domainMin },
-  ];
-  const tickLabels = ticks.map((t) => formatCentsShort(Math.round(t.value)));
-  // y-Achse (Fix I5): padLeft misst sich an der laengsten Tick-Beschriftung statt einer
-  // festen Konstante — "-1.234,5 k€" braucht mehr Platz als "0,00 €".
+  // Runde Achsenwerte (1/2/5 x 10^n in Euro); die Skala reicht bis zum aeussersten Tick.
+  const ticks = niceTicks(domainMin, domainMax);
+  const axisMin = ticks[0].value;
+  const axisMax = ticks[ticks.length - 1].value;
+  const range = axisMax - axisMin || 1;
+  const tickLabels = ticks.map((t) => formatTick(t.value));
+  // y-Achse (Fix I5): padLeft misst sich an der laengsten Tick-Beschriftung.
   const padLeft = Math.max(36, Math.max(...tickLabels.map((l) => l.length)) * fontSize * CHAR_WIDTH_FACTOR + 14);
   const plotHeight = height - padTop - padBottom;
   const plotWidth = width - padLeft - padRight;
   const step = data.length > 0 ? plotWidth / data.length : 0;
-  const barWidth = Math.max(2, step * 0.6);
-  // Wert -> y-Position: 0 faellt auf die Nulllinie, nicht mehr fest auf den Plot-Rand.
-  const scaleY = (v: number) => padTop + ((domainMax - v) / range) * plotHeight;
+  const groupWidth = Math.max(2, step * 0.7);
+  const mainWidth = compare ? groupWidth * 0.55 : groupWidth;
+  const compareWidth = compare ? groupWidth * 0.4 : 0;
+  const scaleY = (v: number) => padTop + ((axisMax - v) / range) * plotHeight;
+  const tickY = (v: number) => scaleY(v);
   const zeroY = scaleY(0);
-  // Fix I6: bei vielen Datenpunkten (z. B. 12 Monate) nur jedes zweite Monatslabel zeigen,
-  // dieselbe Regel wie LineChart — reduziert Ueberlappung bei kleiner Schrift.
-  const skipLabels = data.length > 6;
+  // Beschriftungen nur so dicht, dass sie bei fester Schrift nicht ueberlappen.
+  const maxLabelChars = Math.max(1, ...data.map((d) => d.label.length));
+  const labelStep = Math.max(1, Math.ceil((maxLabelChars * fontSize * CHAR_WIDTH_FACTOR + 8) / Math.max(1, step)));
 
   return (
     <>
       {ticks.map((t, i) => (
         <line
-          key={t.f}
+          key={t.value}
           x1={padLeft}
           x2={width - padRight}
-          y1={padTop + t.f * plotHeight}
-          y2={padTop + t.f * plotHeight}
+          y1={tickY(t.value)}
+          y2={tickY(t.value)}
           stroke={CHART_COLORS.grid}
         >
           <title>{tickLabels[i]}</title>
@@ -105,9 +205,9 @@ function renderVertical(
       ))}
       {ticks.map((t, i) => (
         <text
-          key={`label-${t.f}`}
+          key={`label-${t.value}`}
           x={padLeft - 8}
-          y={padTop + t.f * plotHeight}
+          y={tickY(t.value)}
           textAnchor="end"
           dominantBaseline="middle"
           fontSize={fontSize}
@@ -116,32 +216,45 @@ function renderVertical(
           {tickLabels[i]}
         </text>
       ))}
-      {domainMin < 0 && <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke={CHART_COLORS.axis} />}
+      {axisMin < 0 && <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke={CHART_COLORS.zero} strokeWidth={1.5} />}
       {data.map((d, i) => {
         const barTop = scaleY(Math.max(0, d.value));
         const barBottom = scaleY(Math.min(0, d.value));
-        const x = padLeft + i * step + (step - barWidth) / 2;
+        const groupX = padLeft + i * step + (step - groupWidth) / 2;
+        const x = compare ? groupX + compareWidth + groupWidth * 0.05 : groupX;
+        const c = compare?.[i];
         return (
           <g key={`${i}-${d.label}`}>
+            {c && (
+              <CompareRect
+                datum={c}
+                compareLabel={compareLabel}
+                patternId={patternId}
+                x={groupX}
+                y={scaleY(Math.max(0, c.value))}
+                width={compareWidth}
+                height={scaleY(Math.min(0, c.value)) - scaleY(Math.max(0, c.value))}
+              />
+            )}
             <rect
               x={x}
               y={barTop}
-              width={barWidth}
+              width={mainWidth}
               height={barBottom - barTop}
               fill={d.color ?? color ?? CHART_COLORS.primary}
               className="transition-opacity hover:opacity-80"
             >
               <title>{`${d.label}: ${d.valueLabel}`}</title>
             </rect>
-            {(!skipLabels || i % 2 === 0) && (
+            {(data.length - 1 - i) % labelStep === 0 && (
               <text
-                x={x + barWidth / 2}
+                x={groupX + groupWidth / 2}
                 y={height - 12}
                 textAnchor="middle"
                 fontSize={fontSize}
                 fill={CHART_COLORS.label}
                 paintOrder="stroke"
-                stroke="#ffffff"
+                stroke="var(--color-sheet)"
                 strokeWidth={3}
               >
                 {d.label}
@@ -154,39 +267,28 @@ function renderVertical(
   );
 }
 
-function renderHorizontal(data: ChartDatum[], domainMin: number, domainMax: number, width: number, color?: string) {
-  const fontSize = 12;
-  const rowHeight = 34;
+function renderHorizontal(data: ChartDatum[], g: Geometry) {
+  const { domainMin, domainMax, width, color, compare, compareLabel, patternId } = g;
+  const fontSize = CHART_FONT_SIZE;
+  const rowHeight = compare ? 44 : 34;
   const padTop = 10;
-  // Fix I6 (Abschluss-Review): Beschriftungs-/Wertespalten messen sich an der tatsaechlich
-  // laengsten Zeichenkette in `data` statt fixer Konstanten (vorher 150/90, siehe Fix 2 des
-  // Task-5-Review-Vorlaufs) — funktioniert dadurch sowohl fuer kurze Aging-Bucket-Label
-  // ("> 90 Tage") als auch fuer lange, mit `truncateName` gekuerzte Kundennamen, und bleibt
-  // auch bei einer reduzierten `viewBoxWidth` (halbe Dashboard-Karte) proportional stimmig.
-  // Mindestens 30 % der Breite bleiben den Balken vorbehalten (sonst wuerden sie bei sehr
-  // langen Labels auf einer schmalen viewBox unsichtbar).
-  const maxLabelChars = Math.max(...data.map((d) => d.label.length));
-  const maxValueChars = Math.max(...data.map((d) => d.valueLabel.length));
-  const rawLabelWidth = maxLabelChars * fontSize * CHAR_WIDTH_FACTOR + 16;
-  const rawValueWidth = maxValueChars * fontSize * CHAR_WIDTH_FACTOR + 16;
+  // Spalten messen sich an der laengsten Zeichenkette; die Schrift bleibt fest 12, bei Platzmangel
+  // wird die Beschriftung gekuerzt (voller Text im <title> und in der Tabelle). Mindestens 30 %
+  // der Breite bleiben den Balken.
+  const maxLabelChars = Math.max(1, ...data.map((d) => d.label.length));
+  const maxValueChars = Math.max(1, ...data.map((d) => d.valueLabel.length));
+  const charWidth = fontSize * CHAR_WIDTH_FACTOR;
+  const rawLabelWidth = maxLabelChars * charWidth + 16;
+  const rawValueWidth = maxValueChars * charWidth + 16;
   const maxColumnsWidth = width * 0.7;
-  const columnScale = rawLabelWidth + rawValueWidth > maxColumnsWidth ? maxColumnsWidth / (rawLabelWidth + rawValueWidth) : 1;
-  const labelWidth = Math.max(40, Math.min(170, rawLabelWidth * columnScale));
-  const valueWidth = Math.max(40, Math.min(120, rawValueWidth * columnScale));
-  // Fix (Screenshot-Review, 12e-fix-01): `labelWidth`/`valueWidth` duerfen kleiner als
-  // `rawLabelWidth`/`rawValueWidth` werden (Stauchung ODER die 40er-Untergrenze) — ohne
-  // eine passende Verkleinerung der Schrift ragte ein langer Name dann ueber den linken
-  // SVG-Rand hinaus (im Screenshot als abgeschnittenes "S" sichtbar). `fontScale` schrumpft
-  // die Schrift im selben Verhaeltnis wie die tatsaechlich zugeteilte Spalte gegenueber dem
-  // bei `fontSize` berechneten Platzbedarf.
-  const labelFontSize = fontSize * Math.min(1, labelWidth / rawLabelWidth);
-  const valueFontSize = fontSize * Math.min(1, valueWidth / rawValueWidth);
+  const valueWidth = Math.min(rawValueWidth, maxColumnsWidth * 0.4);
+  const labelWidth = Math.max(40, Math.min(170, rawLabelWidth, maxColumnsWidth - valueWidth));
+  const labelChars = Math.max(3, Math.floor((labelWidth - 16) / charWidth));
   const plotLeft = labelWidth + 10;
   const plotRight = width - valueWidth;
   const plotWidth = plotRight - plotLeft;
-  const barHeight = 18;
+  const barHeight = compare ? 14 : 18;
   const range = domainMax - domainMin || 1;
-  // Wert -> x-Position: 0 faellt auf die Nulllinie, nicht mehr fest auf `plotLeft`.
   const scaleX = (v: number) => plotLeft + ((v - domainMin) / range) * plotWidth;
   const zeroX = scaleX(0);
   const bottom = padTop + data.length * rowHeight;
@@ -198,9 +300,11 @@ function renderHorizontal(data: ChartDatum[], domainMin: number, domainMax: numb
       )}
       {data.map((d, i) => {
         const centerY = padTop + i * rowHeight + rowHeight / 2;
+        const barY = compare ? centerY - barHeight - 1 : centerY - barHeight / 2;
         const barStart = scaleX(Math.min(0, d.value));
         const barEnd = scaleX(Math.max(0, d.value));
         const isNegative = d.value < 0;
+        const c = compare?.[i];
         return (
           <g key={`${i}-${d.label}`}>
             <text
@@ -208,17 +312,17 @@ function renderHorizontal(data: ChartDatum[], domainMin: number, domainMax: numb
               y={centerY}
               textAnchor="end"
               dominantBaseline="middle"
-              fontSize={labelFontSize}
+              fontSize={fontSize}
               fill={CHART_COLORS.label}
               paintOrder="stroke"
-              stroke="#ffffff"
+              stroke="var(--color-sheet)"
               strokeWidth={3}
             >
-              {d.label}
+              {truncate(d.label, labelChars)}
             </text>
             <rect
               x={barStart}
-              y={centerY - barHeight / 2}
+              y={barY}
               width={barEnd - barStart}
               height={barHeight}
               fill={d.color ?? color ?? CHART_COLORS.primary}
@@ -226,15 +330,26 @@ function renderHorizontal(data: ChartDatum[], domainMin: number, domainMax: numb
             >
               <title>{`${d.label}: ${d.valueLabel}`}</title>
             </rect>
+            {c && (
+              <CompareRect
+                datum={c}
+                compareLabel={compareLabel}
+                patternId={patternId}
+                x={scaleX(Math.min(0, c.value))}
+                y={centerY + 1}
+                width={scaleX(Math.max(0, c.value)) - scaleX(Math.min(0, c.value))}
+                height={barHeight - 4}
+              />
+            )}
             <text
               x={isNegative ? barStart - 8 : barEnd + 8}
-              y={centerY}
+              y={barY + barHeight / 2}
               textAnchor={isNegative ? "end" : "start"}
               dominantBaseline="middle"
-              fontSize={valueFontSize}
+              fontSize={fontSize}
               fill={CHART_COLORS.label}
               paintOrder="stroke"
-              stroke="#ffffff"
+              stroke="var(--color-sheet)"
               strokeWidth={3}
             >
               {d.valueLabel}

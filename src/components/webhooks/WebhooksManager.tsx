@@ -161,28 +161,28 @@ export function WebhooksManager({ initialEndpoints, availableEvents }: { initial
   return (
     <div className="space-y-6">
       {newSecret && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
-          <p className="font-semibold text-amber-900">Secret — nur jetzt sichtbar, danach nicht mehr abrufbar:</p>
-          <code className="mt-1 block break-all rounded bg-white p-2 text-xs">{newSecret.secret}</code>
-          <button type="button" onClick={() => setNewSecret(null)} className="mt-2 text-xs font-medium text-amber-800 underline">
+        <div className="rounded border border-seal/30 bg-seal/10 p-3 text-sm">
+          <p className="font-semibold text-seal">Secret — nur jetzt sichtbar, danach nicht mehr abrufbar:</p>
+          <code className="mt-1 block break-all rounded bg-sheet p-2 text-xs">{newSecret.secret}</code>
+          <button type="button" onClick={() => setNewSecret(null)} className="mt-2 text-xs font-medium text-seal underline">
             Verstanden, ausblenden
           </button>
         </div>
       )}
 
-      <div className="space-y-3 rounded border border-slate-200 p-3">
-        <h2 className="text-sm font-semibold text-slate-900">Neuer Endpunkt</h2>
+      <div className="space-y-3 rounded border border-rule p-3">
+        <h2 className="text-sm font-semibold text-ink">Neuer Endpunkt</h2>
         <div>
-          <label className="block text-xs font-medium text-slate-600">Ziel-URL (https)</label>
+          <label className="block text-xs font-medium text-ink-soft">Ziel-URL (https)</label>
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://beispiel.example/webhook"
-            className="mt-1 w-full max-w-md rounded border border-slate-300 px-2 py-1 text-sm"
+            className="mt-1 w-full max-w-md rounded border border-rule-strong px-2 py-1 text-sm"
           />
         </div>
         <div>
-          <span className="block text-xs font-medium text-slate-600">Ereignisse</span>
+          <span className="block text-xs font-medium text-ink-soft">Ereignisse</span>
           <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-3">
             {availableEvents.map((ev) => (
               <label key={ev} className="flex items-center gap-1 text-xs">
@@ -192,51 +192,51 @@ export function WebhooksManager({ initialEndpoints, availableEvents }: { initial
             ))}
           </div>
         </div>
-        {createError && <p className="text-sm text-red-600">{createError}</p>}
+        {createError && <p className="text-sm text-stamp">{createError}</p>}
         <button
           type="button"
           onClick={create}
           disabled={creating}
-          className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-pen px-3 py-1.5 text-sm font-medium text-on-accent disabled:opacity-50"
         >
           {creating ? "Wird angelegt…" : "Anlegen"}
         </button>
       </div>
 
       <div className="space-y-3">
-        {endpoints.length === 0 && <p className="text-sm text-slate-400">Noch keine Webhook-Endpunkte.</p>}
+        {endpoints.length === 0 && <p className="text-sm text-ink-muted">Noch keine Webhook-Endpunkte.</p>}
         {endpoints.map((ep) => (
-          <div key={ep.id} className="rounded border border-slate-200 p-3 text-sm">
+          <div key={ep.id} className="rounded border border-rule p-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-mono text-xs">{ep.url}</p>
-                <p className="mt-1 text-xs text-slate-500">{ep.events.join(", ")}</p>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-ink-muted">{ep.events.join(", ")}</p>
+                <p className="mt-1 text-xs text-ink-muted">
                   {ep.active ? "aktiv" : "deaktiviert"} · angelegt {fmt(ep.createdAt)}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => toggleActive(ep)} disabled={busyId === ep.id} className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-50">
+                <button type="button" onClick={() => toggleActive(ep)} disabled={busyId === ep.id} className="rounded-[var(--radius-control)] border border-rule-strong px-2 py-1 text-xs disabled:opacity-50">
                   {ep.active ? "Deaktivieren" : "Aktivieren"}
                 </button>
-                <button type="button" onClick={() => rotateSecret(ep)} disabled={busyId === ep.id} className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-50">
+                <button type="button" onClick={() => rotateSecret(ep)} disabled={busyId === ep.id} className="rounded-[var(--radius-control)] border border-rule-strong px-2 py-1 text-xs disabled:opacity-50">
                   Secret erneuern
                 </button>
-                <button type="button" onClick={() => testDelivery(ep)} disabled={busyId === ep.id} className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-50">
+                <button type="button" onClick={() => testDelivery(ep)} disabled={busyId === ep.id} className="rounded-[var(--radius-control)] border border-rule-strong px-2 py-1 text-xs disabled:opacity-50">
                   Test-Zustellung
                 </button>
-                <button type="button" onClick={() => toggleDeliveries(ep)} className="rounded border border-slate-300 px-2 py-1 text-xs">
+                <button type="button" onClick={() => toggleDeliveries(ep)} className="rounded-[var(--radius-control)] border border-rule-strong px-2 py-1 text-xs">
                   {openDeliveries[ep.id] ? "Protokoll ausblenden" : "Zustellprotokoll"}
                 </button>
               </div>
             </div>
-            {rowError[ep.id] && <p className="mt-2 text-xs text-red-600">{rowError[ep.id]}</p>}
-            {testResult[ep.id] && <p className="mt-2 text-xs text-slate-700">{testResult[ep.id]}</p>}
+            {rowError[ep.id] && <p className="mt-2 text-xs text-stamp">{rowError[ep.id]}</p>}
+            {testResult[ep.id] && <p className="mt-2 text-xs text-ink-soft">{testResult[ep.id]}</p>}
 
             {openDeliveries[ep.id] && (
-              <div className="mt-3 overflow-x-auto rounded border border-slate-100">
+              <div className="mt-3 overflow-x-auto rounded border border-rule">
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                  <thead className="bg-paper text-left uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-2 py-1">Ereignis</th>
                       <th className="px-2 py-1">Status</th>
@@ -247,7 +247,7 @@ export function WebhooksManager({ initialEndpoints, availableEvents }: { initial
                       <th className="px-2 py-1" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-rule">
                     {(openDeliveries[ep.id] ?? []).map((d) => (
                       <tr key={d.id}>
                         <td className="px-2 py-1">{d.event}</td>
@@ -261,7 +261,7 @@ export function WebhooksManager({ initialEndpoints, availableEvents }: { initial
                             type="button"
                             onClick={() => replay(ep, d.id)}
                             disabled={busyId === d.id}
-                            className="text-xs font-medium text-indigo-600 underline disabled:opacity-50"
+                            className="text-xs font-medium text-pen underline disabled:opacity-50"
                           >
                             Replay
                           </button>
@@ -270,7 +270,7 @@ export function WebhooksManager({ initialEndpoints, availableEvents }: { initial
                     ))}
                     {(openDeliveries[ep.id] ?? []).length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-2 py-2 text-center text-slate-400">
+                        <td colSpan={7} className="px-2 py-2 text-center text-ink-muted">
                           Noch keine Zustellungen.
                         </td>
                       </tr>

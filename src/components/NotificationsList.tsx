@@ -46,39 +46,39 @@ export function NotificationsList({ initial }: { initial: Notification[] }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">{unreadCount} ungelesen</span>
+        <span className="text-sm text-ink-muted">{unreadCount} ungelesen</span>
         <button
           type="button"
           onClick={() => void markRead()}
           disabled={busy || unreadCount === 0}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-50"
         >
           Alle als gelesen markieren
         </button>
       </div>
 
-      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+      <ul className="divide-y divide-rule rounded-[var(--radius-card)] border border-rule bg-sheet">
         {items.map((n) => (
-          <li key={n.id} className={`flex items-start justify-between gap-3 px-4 py-3 text-sm ${n.readAt ? "" : "bg-indigo-50/50"}`}>
+          <li key={n.id} className={`flex items-start justify-between gap-3 px-4 py-3 text-sm ${n.readAt ? "" : "bg-pen-wash/50"}`}>
             <div>
               {n.link ? (
-                <a href={n.link} className="font-medium text-slate-800 hover:underline">
+                <a href={n.link} className="font-medium text-ink hover:underline">
                   {n.title}
                 </a>
               ) : (
-                <div className="font-medium text-slate-800">{n.title}</div>
+                <div className="font-medium text-ink">{n.title}</div>
               )}
-              {n.body && <div className="text-slate-500">{n.body}</div>}
-              <div className="text-xs text-slate-400">{deDateTime(n.createdAt)}</div>
+              {n.body && <div className="text-ink-muted">{n.body}</div>}
+              <div className="text-xs text-ink-muted">{deDateTime(n.createdAt)}</div>
             </div>
             {!n.readAt && (
-              <button type="button" onClick={() => void markRead([n.id])} className="shrink-0 text-xs text-indigo-600 hover:underline">
+              <button type="button" onClick={() => void markRead([n.id])} className="shrink-0 text-xs text-pen hover:underline">
                 gelesen
               </button>
             )}
           </li>
         ))}
-        {items.length === 0 && <li className="px-4 py-8 text-center text-slate-400">Keine Benachrichtigungen.</li>}
+        {items.length === 0 && <li className="px-4 py-8 text-center text-ink-muted">Keine Benachrichtigungen.</li>}
       </ul>
     </div>
   );

@@ -39,7 +39,7 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Mahnwesen" />
 
       {!settings.autoCreate && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-md border border-seal/30 bg-seal/10 px-3 py-2 text-sm text-seal">
           Automatische Erstellung ist aus — fällige Mahnungen werden nicht automatisch angelegt, nur manuell über die Rechnung.{" "}
           <Link href="/einstellungen/mahnwesen" className="font-medium underline">
             In den Einstellungen prüfen und aktivieren
@@ -55,13 +55,13 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
           <a
             key={s}
             href={`/mahnwesen?state=${s}`}
-            className={`rounded-md border px-2.5 py-1 ${filter.state === s ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}
+            className={`rounded-md border px-2.5 py-1 ${filter.state === s ? "border-pen/30 bg-pen-wash text-pen" : "border-rule-strong bg-sheet text-ink-soft hover:bg-paper"}`}
           >
             {s === "ACTIVE" ? "Aktiv" : s === "PAUSED" ? "Pausiert" : "Beendet"}
           </a>
         ))}
         {filter.state && (
-          <a href="/mahnwesen" className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-slate-500 hover:bg-slate-50">
+          <a href="/mahnwesen" className="rounded-md border border-rule-strong bg-sheet px-2.5 py-1 text-ink-muted hover:bg-paper">
             Filter zurücksetzen
           </a>
         )}

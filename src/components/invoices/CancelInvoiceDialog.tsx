@@ -79,45 +79,45 @@ export function CancelInvoiceDialog({
         onConfirm={confirm}
         message={
           <div className="space-y-3">
-            {loading && <p className="text-slate-500">Lade Angaben …</p>}
-            {loadError && <p className="text-rose-700">{loadError}</p>}
-            {preview && !preview.cancellable && <p className="text-rose-700">Dieser Beleg kann nicht storniert werden.</p>}
+            {loading && <p className="text-ink-muted">Lade Angaben …</p>}
+            {loadError && <p className="text-stamp">{loadError}</p>}
+            {preview && !preview.cancellable && <p className="text-stamp">Dieser Beleg kann nicht storniert werden.</p>}
             {preview && (
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-                <dt className="text-slate-500">Stornobetrag</dt>
+                <dt className="text-ink-muted">Stornobetrag</dt>
                 <dd className="text-right font-medium">
                   {formatCents(preview.stornoCents, preview.currency)}
                   {preview.creditedCents > 0 && (
-                    <span className="block text-xs font-normal text-slate-500">
+                    <span className="block text-xs font-normal text-ink-muted">
                       Rest nach Teilgutschriften ({formatCents(preview.creditedCents, preview.currency)} bereits gutgeschrieben)
                     </span>
                   )}
                 </dd>
-                <dt className="text-slate-500">Bereits bezahlt</dt>
+                <dt className="text-ink-muted">Bereits bezahlt</dt>
                 <dd className="text-right">{formatCents(preview.paidCents, preview.currency)}</dd>
-                <dt className="text-slate-500">Erstattung fällig</dt>
-                <dd className={`text-right ${preview.refundDueCents > 0 ? "font-medium text-amber-700" : ""}`}>
+                <dt className="text-ink-muted">Erstattung fällig</dt>
+                <dd className={`text-right ${preview.refundDueCents > 0 ? "font-medium text-seal" : ""}`}>
                   {formatCents(preview.refundDueCents, preview.currency)}
                 </dd>
                 {preview.dunningLabel && (
                   <>
-                    <dt className="text-slate-500">Laufende Mahnstufe</dt>
+                    <dt className="text-ink-muted">Laufende Mahnstufe</dt>
                     <dd className="text-right">{preview.dunningLabel}</dd>
                   </>
                 )}
               </dl>
             )}
-            <p className="text-xs text-slate-500">Das Original bleibt unverändert erhalten (GoBD); es entsteht eine Stornorechnung.</p>
+            <p className="text-xs text-ink-muted">Das Original bleibt unverändert erhalten (GoBD); es entsteht eine Stornorechnung.</p>
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-slate-700">Grund (optional)</span>
+              <span className="text-xs font-medium text-ink-soft">Grund (optional)</span>
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={500}
                 rows={2}
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-md border border-rule-strong px-2 py-1.5 text-sm focus:border-pen"
               />
-              <span className="block text-xs text-amber-700">
+              <span className="block text-xs text-seal">
                 Achtung: Der Grund steht in den Notizen der Stornorechnung und ist damit für den Kunden sichtbar (PDF/XML).
               </span>
             </label>

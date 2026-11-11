@@ -137,13 +137,13 @@ export function CustomerPicker({
   if (selected && !open) {
     const sub = subtitle(selected);
     return (
-      <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+      <div className="flex items-center gap-2 rounded-md border border-rule bg-paper px-3 py-2 text-sm">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium text-slate-900">{selected.name}</div>
-          {sub && <div className="truncate text-xs text-slate-500">{sub}</div>}
+          <div className="truncate font-medium text-ink">{selected.name}</div>
+          {sub && <div className="truncate text-xs text-ink-muted">{sub}</div>}
         </div>
         {!disabled && (
-          <button ref={changeButtonRef} type="button" className="shrink-0 text-xs font-medium text-indigo-600 hover:underline" onClick={startSearch}>
+          <button ref={changeButtonRef} type="button" className="shrink-0 text-xs font-medium text-pen hover:underline" onClick={startSearch}>
             ändern
           </button>
         )}
@@ -176,9 +176,9 @@ export function CustomerPicker({
         {!disabled && <NewCustomerDialog onCreated={handleCreated} />}
       </div>
       {open && !disabled && (
-        <ul id={listboxId} role="listbox" aria-label="Kundenvorschläge" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-slate-200 bg-white text-sm shadow-lg">
+        <ul id={listboxId} role="listbox" aria-label="Kundenvorschläge" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-rule bg-sheet text-sm shadow-lg">
           {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-slate-400">Keine Treffer</li>
+            <li className="px-3 py-2 text-ink-muted">Keine Treffer</li>
           ) : (
             filtered.map((c, i) => (
               <li key={c.id} id={optionId(c.id)} role="option" aria-selected={i === safeCursor}>
@@ -186,11 +186,11 @@ export function CustomerPicker({
                   type="button"
                   tabIndex={-1}
                   onMouseDown={(e) => e.preventDefault()}
-                  className={`block w-full px-3 py-1.5 text-left ${i === safeCursor ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50"}`}
+                  className={`block w-full px-3 py-1.5 text-left ${i === safeCursor ? "bg-pen-wash text-pen" : "hover:bg-paper"}`}
                   onClick={() => pick(c)}
                 >
                   <span className="font-medium">{c.name}</span>
-                  {subtitle(c) && <span className="ml-2 text-xs text-slate-400">{subtitle(c)}</span>}
+                  {subtitle(c) && <span className="ml-2 text-xs text-ink-muted">{subtitle(c)}</span>}
                 </button>
               </li>
             ))

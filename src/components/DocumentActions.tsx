@@ -38,9 +38,9 @@ export const ACTION_LABEL: Record<Action, string> = {
   UNARCHIVE: "Aus Archiv holen",
 };
 
-const btnCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60";
+const btnCls = "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60";
 /** Menuezeile, optisch deckungsgleich mit `ActionMenuItem` (`src/components/detail/ActionMenu.tsx`) — auch von `DocumentActionsMenu.tsx` genutzt. */
-export const documentActionItemCls = "block w-full px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-60";
+export const documentActionItemCls = "block w-full px-3 py-1.5 text-left hover:bg-paper disabled:opacity-60";
 
 /**
  * Gemeinsame Zustands-/Netzwerklogik von `DocumentActions` und `DocumentActionsMenuItems`
@@ -146,23 +146,23 @@ export function NoteDialog({
   onConfirm: () => void;
 }) {
   return (
-    <dialog ref={dialogRef} className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+    <dialog ref={dialogRef} className="w-full max-w-md rounded-lg border border-rule p-0 backdrop:bg-ink/40">
       <div className="p-5">
-        <h2 className="mb-3 text-base font-semibold text-slate-900">
+        <h2 className="mb-3 text-base font-semibold text-ink">
           {pendingNoteAction === "MARK_REJECTED" ? "Ablehnen" : "Annehmen"} — Notiz (optional)
         </h2>
         <textarea
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm"
           rows={3}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="z. B. telefonisch zugesagt am ..."
         />
         <div className="mt-4 flex items-center gap-3">
-          <button type="button" onClick={onConfirm} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <button type="button" onClick={onConfirm} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Bestätigen
           </button>
-          <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
+          <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-ink-muted hover:text-ink">
             Abbrechen
           </button>
         </div>
@@ -236,7 +236,7 @@ export function DocumentActions({
           </>
         )}
       </span>
-      {error && <span className="text-xs text-rose-600">{error}</span>}
+      {error && <span className="text-xs text-stamp">{error}</span>}
       <NoteDialog dialogRef={noteDialogRef} pendingNoteAction={pendingNoteAction} note={note} setNote={setNote} onConfirm={confirmNoteDialog} />
       <CancelDocumentDialog
         ref={cancelDialogRef}

@@ -17,7 +17,7 @@ export function PdfStack({
 }) {
   if (!src) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+      <div className="rounded-[var(--radius-card)] border border-dashed border-rule-strong bg-sheet p-10 text-center text-sm text-ink-muted">
         {emptyText ?? "Noch kein PDF verfügbar."}
       </div>
     );
@@ -25,9 +25,9 @@ export function PdfStack({
   return (
     <div className="space-y-2">
       <PdfViewToolbar src={src} title={title} />
-      <p className="text-right text-xs text-slate-500">
+      <p className="text-right text-xs text-ink-muted">
         Wird das PDF nicht angezeigt:{" "}
-        <a href={src} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+        <a href={src} target="_blank" rel="noreferrer" className="text-pen underline">
           PDF öffnen
         </a>
       </p>

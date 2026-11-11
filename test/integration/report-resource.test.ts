@@ -155,4 +155,31 @@ describe("GET /api/v1/Report", () => {
     // keine eigenen Rechnungen hat, ist die einzig korrekte Antwort eine leere Zeilenliste.
     expect(j.data.rows).toEqual([]);
   });
+
+  // Phase 16f, Task 5: vier neue Auswertungen.
+  it("neue Typen über GET /api/v1/Report", async () => {
+    for (const type of ["cash-in", "quote-outcome", "top-products", "recurring-run-rate"]) {
+      const res = await GET(req(`http://x/api/v1/Report?type=${type}`));
+      expect(res.status).toBe(200);
+      const j = await res.json();
+      expect(j.data.type).toBe(type);
+      expect(Array.isArray(j.data.rows)).toBe(true);
+    }
+  });
+
+  it("limit bei cash-in -> 400 VALIDATION", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=cash-in&limit=5"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION");
+  });
+
+  it("customerId bei top-products -> 400", async () => {
+    const res = await GET(req("http://x/api/v1/Report?type=top-products&customerId=x"));
+    expect(res.status).toBe(400);
+  });
+
+  it("limit > 50 bei top-products -> 400, months bei recurring-run-rate -> 400", async () => {
+    expect((await GET(req("http://x/api/v1/Report?type=top-products&limit=51"))).status).toBe(400);
+    expect((await GET(req("http://x/api/v1/Report?type=recurring-run-rate&months=3"))).status).toBe(400);
+  });
 });

@@ -10,7 +10,10 @@ import { CHART_COLORS } from "@/components/charts/types";
 import type { MonthlyRevenuePoint } from "@/domain/reporting/revenue";
 import type { TopCustomer } from "@/domain/reporting/customers";
 import type { StatusCount } from "@/domain/reporting/status";
-import type { AgingBucket } from "@/domain/dashboard/summary";
+import type { AgingBucket, DashboardSummary } from "@/domain/dashboard/summary";
+import type { CashInPoint } from "@/domain/reporting/cash-in";
+import type { QuoteOutcomeRow } from "@/domain/reporting/quote-outcome";
+import type { StackedSegment } from "@/components/charts/StackedBar";
 import { formatCents } from "@/lib/money";
 
 /**
@@ -92,4 +95,94 @@ export function agingChartData(buckets: AgingBucket[]): ChartDatum[] {
     valueLabel: `${formatCents(b.cents)} (${b.count})`,
     color: CHART_COLORS.due,
   }));
+}
+
+/**
+ * Farben der fuenf Alters-Buckets: seal -> stamp, je Stufe dunkler (Deckkraft), damit
+ * benachbarte Segmente auch ohne Tooltip unterscheidbar sind (WCAG 1.4.1).
+ */
+const AGING_COLORS = [
+  "color-mix(in srgb, var(--color-seal) 55%, transparent)",
+  CHART_COLORS.due,
+  "color-mix(in srgb, var(--color-stamp) 55%, transparent)",
+  "color-mix(in srgb, var(--color-stamp) 80%, transparent)",
+  CHART_COLORS.overdue,
+];
+
+/** Gesamtbetrag der offenen Forderungen (offen + heute faellig + ueberfaellig). */
+export function openTotalCents(summary: DashboardSummary): number {
+  return summary.openInvoices.cents + summary.dueInvoices.cents + summary.overdueInvoices.cents;
+}
+
+/** Geldfluss-Band: "Noch nicht faellig" (pen) plus die Alters-Buckets der faelligen Posten. */
+export function openBandSegments(summary: DashboardSummary, currency = "EUR"): StackedSegment[] {
+  return [
+    {
+      key: "not-due",
+      label: "Noch nicht fällig",
+      value: summary.openInvoices.cents,
+      valueLabel: formatCents(summary.openInvoices.cents, currency),
+      color: CHART_COLORS.primary,
+    },
+    ...summary.aging.map((b, i) => ({
+      key: `aging-${i}`,
+      label: b.label,
+      value: b.cents,
+      valueLabel: formatCents(b.cents, currency),
+      color: AGING_COLORS[i] ?? CHART_COLORS.overdue,
+    })),
+  ];
+}
+
+/** 24 Monate -> letzte 12 = aktuell, erste 12 = Vorjahr (Label = Label des aktuellen Monats). */
+export function revenueWithPriorYear(
+  points24: MonthlyRevenuePoint[],
+  currency = "EUR",
+): { current: ChartDatum[]; prior: ChartDatum[] } {
+  if (points24.every((p) => p.count === 0 && p.netCents === 0)) return { current: [], prior: [] };
+  const currentPoints = points24.slice(-12);
+  const priorPoints = points24.slice(-24, -12);
+  const toDatum = (p: MonthlyRevenuePoint, label: string): ChartDatum => ({
+    label,
+    value: p.netCents,
+    valueLabel: formatCents(p.netCents, currency),
+  });
+  const current = currentPoints.map((p) => toDatum(p, monthLabel(p.month)));
+  const prior = priorPoints.map((p, i) => toDatum(p, current[i]?.label ?? monthLabel(p.month)));
+  return { current, prior };
+}
+
+/** Zahlungseingang (paid) und Rechnungsausgang brutto (invoiced) der Standardwaehrung; andere Waehrungen werden nur gezaehlt. */
+export function cashInChartData(
+  points: CashInPoint[],
+  currency: string,
+): { paid: ChartDatum[]; invoiced: ChartDatum[]; otherCurrencyCount: number } {
+  const own = points.filter((p) => p.currency === currency);
+  const otherCurrencyCount = new Set(points.filter((p) => p.currency !== currency).map((p) => p.currency)).size;
+  const paid = own.map((p) => ({ label: monthLabel(p.month), value: p.paidCents, valueLabel: formatCents(p.paidCents, currency) }));
+  const invoiced = own.map((p) => ({
+    label: monthLabel(p.month),
+    value: p.invoicedGrossCents,
+    valueLabel: formatCents(p.invoicedGrossCents, currency),
+  }));
+  if (own.every((p) => p.paidCents === 0 && p.invoicedGrossCents === 0)) return { paid: [], invoiced: [], otherCurrencyCount };
+  return { paid, invoiced, otherCurrencyCount };
+}
+
+/** Angebotsausgang als Anteile nach Anzahl (angenommen/abgelehnt/abgelaufen/offen). */
+export function quoteOutcomeSegments(row: QuoteOutcomeRow | undefined): StackedSegment[] {
+  if (!row) return [];
+  const seg = (key: string, label: string, bucket: QuoteOutcomeRow["open"], color: string): StackedSegment => ({
+    key,
+    label,
+    value: bucket.count,
+    valueLabel: `${bucket.count} (${formatCents(bucket.netCents, row.currency)})`,
+    color,
+  });
+  return [
+    seg("accepted", "Angenommen", row.accepted, CHART_COLORS.ledger),
+    seg("rejected", "Abgelehnt", row.rejected, CHART_COLORS.overdue),
+    seg("expired", "Abgelaufen", row.expired, CHART_COLORS.due),
+    seg("open", "Offen", row.open, CHART_COLORS.primary),
+  ];
 }

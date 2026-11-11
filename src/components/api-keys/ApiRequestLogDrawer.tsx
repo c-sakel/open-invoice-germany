@@ -114,30 +114,30 @@ export function ApiRequestLogDrawer({ id, onClose }: { id: string | null; onClos
       role="dialog"
       aria-modal="true"
       aria-label="Anfrage-Details"
-      className="fixed inset-y-0 right-0 z-40 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl"
+      className="fixed inset-y-0 right-0 z-40 w-full max-w-md overflow-y-auto border-l border-rule bg-sheet p-4 shadow-xl"
     >
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-900">Anfrage-Details</h3>
-        <button ref={closeBtnRef} type="button" onClick={onClose} className="text-sm text-slate-500 hover:text-slate-800">
+        <h3 className="text-sm font-semibold text-ink">Anfrage-Details</h3>
+        <button ref={closeBtnRef} type="button" onClick={onClose} className="text-sm text-ink-muted hover:text-ink">
           Schließen
         </button>
       </div>
       {!detail ? (
-        <p className="mt-4 text-sm text-slate-400">Lädt…</p>
+        <p className="mt-4 text-sm text-ink-muted">Lädt…</p>
       ) : (
         <dl className="mt-4 space-y-3 text-xs">
           {fields.map(([label, value]) => (
             <div key={label}>
-              <dt className="font-medium text-slate-600">{label}</dt>
+              <dt className="font-medium text-ink-soft">{label}</dt>
               <dd className={`break-all font-mono ${label === "Status" ? `font-semibold ${statusCls(detail.status)}` : ""}`}>{value}</dd>
             </div>
           ))}
-          {detail.bodyTruncated && <p className="text-amber-700">Hinweis: gekürzt.</p>}
+          {detail.bodyTruncated && <p className="text-seal">Hinweis: gekürzt.</p>}
           {(["Request-Body", "Response-Body"] as const).map((label, i) => (
             <div key={label}>
-              <dt className="font-medium text-slate-600">{label}</dt>
+              <dt className="font-medium text-ink-soft">{label}</dt>
               <dd>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2">{(i === 0 ? detail.requestBody : detail.responseBody) ?? "—"}</pre>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-paper p-2">{(i === 0 ? detail.requestBody : detail.responseBody) ?? "—"}</pre>
               </dd>
             </div>
           ))}

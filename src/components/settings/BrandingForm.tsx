@@ -96,14 +96,14 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
 
   return (
     <div className="space-y-6">
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
-      {saved && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{error}</div>}
+      {saved && <p className="text-sm text-ledger">Einstellungen gespeichert.</p>}
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Logo &amp; Hintergrund</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Logo &amp; Hintergrund</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-slate-700">Logo (PNG/JPEG, max. 2 MB)</span>
+            <span className="text-sm font-medium text-ink-soft">Logo (PNG/JPEG, max. 2 MB)</span>
             <input
               ref={logoInputRef}
               type="file"
@@ -115,22 +115,22 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
               className="text-sm"
             />
             {values.logoPath && (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2 text-xs text-ink-muted">
                 <span>Aktuell: {values.logoPath.split("/").pop()}</span>
-                <button type="button" onClick={() => removeFile("logo")} className="text-rose-600 hover:underline">
+                <button type="button" onClick={() => removeFile("logo")} className="text-stamp hover:underline">
                   entfernen
                 </button>
               </div>
             )}
             {cmykWarning?.logo && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+              <p className="rounded-md border border-seal/30 bg-seal/10 p-2 text-xs text-seal">
                 Dieses Logo ist ein CMYK-JPEG — es wird weiterhin gedruckt, verhindert aber die PDF/A-3b-Konformität
                 (ISO 19005) aller Belege mit diesem Logo. Bitte durch ein RGB-JPEG oder PNG ersetzen.
               </p>
             )}
-            {uploading === "logo" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
+            {uploading === "logo" && <span className="text-xs text-ink-muted">wird hochgeladen…</span>}
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-slate-600">Breite im PDF (mm)</span>
+              <span className="text-ink-soft">Breite im PDF (mm)</span>
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -158,15 +158,15 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
                     setValues((v) => ({ ...v, logoWidthMm: parseClampedNumberInput(logoWidthDraft ?? String(v.logoWidthMm), 10, 140, v.logoWidthMm) }));
                     setLogoWidthDraft(null);
                   }}
-                  className="w-24 rounded border border-slate-300 px-2 py-1"
+                  className="w-24 rounded border border-rule-strong px-2 py-1"
                 />
               </div>
-              <span className="text-xs text-slate-400">10–140 mm; die Höhe wird auf 35 mm begrenzt, damit hohe Logos nicht in den Adressblock laufen.</span>
+              <span className="text-xs text-ink-muted">10–140 mm; die Höhe wird auf 35 mm begrenzt, damit hohe Logos nicht in den Adressblock laufen.</span>
             </label>
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-slate-700">Hintergrundbild (PNG/JPEG, max. 5 MB)</span>
+            <span className="text-sm font-medium text-ink-soft">Hintergrundbild (PNG/JPEG, max. 5 MB)</span>
             <input
               ref={bgInputRef}
               type="file"
@@ -178,77 +178,77 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
               className="text-sm"
             />
             {values.backgroundPath && (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2 text-xs text-ink-muted">
                 <span>Aktuell: {values.backgroundPath.split("/").pop()}</span>
-                <button type="button" onClick={() => removeFile("background")} className="text-rose-600 hover:underline">
+                <button type="button" onClick={() => removeFile("background")} className="text-stamp hover:underline">
                   entfernen
                 </button>
               </div>
             )}
             {cmykWarning?.background && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+              <p className="rounded-md border border-seal/30 bg-seal/10 p-2 text-xs text-seal">
                 Dieses Hintergrundbild ist ein CMYK-JPEG — es wird weiterhin gedruckt, verhindert aber die
                 PDF/A-3b-Konformität (ISO 19005) aller Belege mit diesem Hintergrund. Bitte durch ein RGB-JPEG oder
                 PNG ersetzen.
               </p>
             )}
-            {uploading === "background" && <span className="text-xs text-slate-400">wird hochgeladen…</span>}
+            {uploading === "background" && <span className="text-xs text-ink-muted">wird hochgeladen…</span>}
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={values.showBackground} onChange={(e) => setField("showBackground", e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-              <span className="text-slate-700">Hintergrundbild auf Belegen anzeigen</span>
+              <input type="checkbox" checked={values.showBackground} onChange={(e) => setField("showBackground", e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
+              <span className="text-ink-soft">Hintergrundbild auf Belegen anzeigen</span>
             </label>
           </div>
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Farbe &amp; Schrift</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Farbe &amp; Schrift</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Primärfarbe</span>
-            <input type="color" value={values.primaryColor} onChange={(e) => setField("primaryColor", e.target.value)} className="h-10 w-20 rounded border border-slate-300" />
+            <span className="text-ink-soft">Primärfarbe</span>
+            <input type="color" value={values.primaryColor} onChange={(e) => setField("primaryColor", e.target.value)} className="h-10 w-20 rounded-[var(--radius-control)] border border-rule-strong" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-700">Schriftgröße (pt)</span>
-            <input type="number" value={values.fontSizePt} onChange={(e) => setField("fontSizePt", Number(e.target.value))} className="w-24 rounded border border-slate-300 px-2 py-1" />
+            <span className="text-ink-soft">Schriftgröße (pt)</span>
+            <input type="number" value={values.fontSizePt} onChange={(e) => setField("fontSizePt", Number(e.target.value))} className="w-24 rounded-[var(--radius-control)] border border-rule-strong px-2 py-1" />
           </label>
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Ränder (mm)</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Ränder (mm)</h2>
         <div className="grid gap-4 sm:grid-cols-4">
           {(["marginTopMm", "marginRightMm", "marginBottomMm", "marginLeftMm"] as const).map((k) => (
             <label key={k} className="flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">{{ marginTopMm: "Oben", marginRightMm: "Rechts", marginBottomMm: "Unten", marginLeftMm: "Links" }[k]}</span>
-              <input type="number" value={values[k]} onChange={(e) => setField(k, Number(e.target.value))} className="w-20 rounded border border-slate-300 px-2 py-1" />
+              <span className="text-ink-soft">{{ marginTopMm: "Oben", marginRightMm: "Rechts", marginBottomMm: "Unten", marginLeftMm: "Links" }[k]}</span>
+              <input type="number" value={values[k]} onChange={(e) => setField(k, Number(e.target.value))} className="w-20 rounded-[var(--radius-control)] border border-rule-strong px-2 py-1" />
             </label>
           ))}
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Absenderzeile &amp; Fußzeile</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Absenderzeile &amp; Fußzeile</h2>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-700">Absenderzeile</span>
+          <span className="text-ink-soft">Absenderzeile</span>
           <input
             value={values.senderLine ?? ""}
             onChange={(e) => setField("senderLine", e.target.value || null)}
-            className="rounded border border-slate-300 px-2 py-1"
+            className="rounded border border-rule-strong px-2 py-1"
             placeholder="Firma · Straße · PLZ Ort"
           />
         </label>
         <fieldset className="flex flex-col gap-2 text-sm">
-          <legend className="font-medium text-slate-700">Fußzeile</legend>
+          <legend className="font-medium text-ink-soft">Fußzeile</legend>
           <label className="flex items-center gap-2">
             <input
               type="radio"
               name="footerMode"
               checked={values.footerMode === "AUTO"}
               onChange={() => setField("footerMode", "AUTO")}
-              className="h-4 w-4 border-slate-300"
+              className="h-4 w-4 border-rule-strong"
             />
-            <span className="text-slate-700">automatisch aus den Stammdaten (vierspaltig)</span>
+            <span className="text-ink-soft">automatisch aus den Stammdaten (vierspaltig)</span>
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -256,21 +256,21 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
               name="footerMode"
               checked={values.footerMode === "CUSTOM"}
               onChange={() => setField("footerMode", "CUSTOM")}
-              className="h-4 w-4 border-slate-300"
+              className="h-4 w-4 border-rule-strong"
             />
-            <span className="text-slate-700">eigene Texte (drei Spalten)</span>
+            <span className="text-ink-soft">eigene Texte (drei Spalten)</span>
           </label>
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-3">
           {(["footerLeft", "footerCenter", "footerRight"] as const).map((k) => (
             <label key={k} className="flex flex-col gap-1 text-sm">
-              <span className="text-slate-700">{{ footerLeft: "Fußzeile links", footerCenter: "Fußzeile Mitte", footerRight: "Fußzeile rechts" }[k]}</span>
+              <span className="text-ink-soft">{{ footerLeft: "Fußzeile links", footerCenter: "Fußzeile Mitte", footerRight: "Fußzeile rechts" }[k]}</span>
               <textarea
                 value={values[k] ?? ""}
                 onChange={(e) => setField(k, e.target.value || null)}
                 rows={2}
                 disabled={values.footerMode !== "CUSTOM"}
-                className="rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-400"
+                className="rounded border border-rule-strong px-2 py-1 disabled:bg-paper disabled:text-ink-muted"
               />
             </label>
           ))}
@@ -278,18 +278,18 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
       </section>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={save} disabled={saving} className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="button" onClick={save} disabled={saving} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {saving ? "Speichern…" : "Einstellungen speichern"}
         </button>
 
         <Link
           href="/einstellungen/briefpapier?tab=layouts"
-          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-rule-strong px-4 py-2 text-sm font-medium text-ink-soft hover:bg-paper"
         >
           Layout &amp; Live-Vorschau →
         </Link>
       </div>
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-ink-muted">
         Layout-Auswahl je Belegtyp und eine Live-Vorschau finden Sie im Reiter „Layouts“.
       </p>
     </div>

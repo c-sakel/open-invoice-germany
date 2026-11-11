@@ -29,9 +29,9 @@ export function FootTextBlock({ mode, draft, dispatch }: { mode: EditorMode; dra
   const docType = mode === "DOCUMENT" ? draft.kind : mode === "INVOICE" ? "INVOICE" : "DELIVERY_NOTE";
 
   return (
-    <div className="space-y-1 rounded-lg border border-slate-200 bg-white p-4">
+    <div className="space-y-1 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="text-sm font-medium text-slate-700">
+        <label htmlFor={id} className="text-sm font-medium text-ink-soft">
           Fußtext
         </label>
         <TextTemplatePicker docType={docType} position="FOOT" onPick={(body) => dispatch({ type: "set", field: "footerText", value: insertTemplate(value, body) })} />

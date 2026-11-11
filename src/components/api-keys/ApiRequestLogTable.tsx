@@ -46,15 +46,15 @@ const PATH_DEBOUNCE_MS = 250;
 const TABLE_HEADERS = ["Zeit", "Methode", "Pfad", "Status", "Dauer (ms)", "Schlüssel"];
 
 export function statusCls(status: number): string {
-  if (status >= 500) return "text-rose-600";
-  if (status >= 400) return "text-amber-600";
-  return "text-emerald-600";
+  if (status >= 500) return "text-stamp";
+  if (status >= 400) return "text-seal";
+  return "text-ledger";
 }
 
 function TextFilter({ label, ...props }: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <span className="text-xs font-medium text-ink-soft">{label}</span>
       <input {...props} className={inputCls} />
     </label>
   );
@@ -125,7 +125,7 @@ export function ApiRequestLogTable({
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3 text-sm">
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-slate-600">Schlüssel</span>
+          <span className="text-xs font-medium text-ink-soft">Schlüssel</span>
           <select value={apiKeyId} onChange={(e) => setApiKeyId(e.target.value)} className={inputCls}>
             <option value="">Alle</option>
             {initialKeys.map((k) => (
@@ -141,17 +141,17 @@ export function ApiRequestLogTable({
         <TextFilter label="Pfad enthält" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/api/v1/Invoice" />
         <TextFilter label="Von" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         <TextFilter label="Bis" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        <span className="text-xs text-slate-400">{loading ? "Lädt…" : `${total} Einträge`}</span>
+        <span className="text-xs text-ink-muted">{loading ? "Lädt…" : `${total} Einträge`}</span>
       </div>
 
       {!enabled ? (
-        <p className="text-sm text-slate-400">Das Protokoll ist ausgeschaltet.</p>
+        <p className="text-sm text-ink-muted">Das Protokoll ist ausgeschaltet.</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400">Noch keine Anfragen protokolliert.</p>
+        <p className="text-sm text-ink-muted">Noch keine Anfragen protokolliert.</p>
       ) : (
-        <div className="overflow-x-auto rounded border border-slate-100">
+        <div className="overflow-x-auto rounded border border-rule">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+            <thead className="bg-paper text-left uppercase tracking-wide text-ink-muted">
               <tr>
                 {TABLE_HEADERS.map((h) => (
                   <th key={h} className="px-2 py-1">
@@ -160,7 +160,7 @@ export function ApiRequestLogTable({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-rule">
               {rows.map((r) => (
                 <tr
                   key={r.id}
@@ -173,7 +173,7 @@ export function ApiRequestLogTable({
                       onSelectRow(r.id, e.currentTarget);
                     }
                   }}
-                  className="cursor-pointer hover:bg-slate-50 focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-indigo-400"
+                  className="cursor-pointer hover:bg-paper focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-pen"
                 >
                   <td className="px-2 py-1">{new Date(r.createdAt).toLocaleString("de-DE")}</td>
                   <td className="px-2 py-1 font-mono">{r.method}</td>

@@ -9,7 +9,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma, ciContains } from "@/lib/db";
 import { invoiceListFilterSchema, InvoiceListStatusFilter, type InvoiceListFilter } from "@/schemas";
 import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } from "@/domain/invoice/status";
-import { openAmountCents } from "@/domain/invoice/amounts";
+import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
 import { docIdsForTag } from "@/domain/tag/list";
 
@@ -24,6 +24,8 @@ export interface InvoiceListRow {
   grossTotalCents: number;
   paidAmountCents: number;
   openCents: number;
+  /** Zahlbarer Betrag (Abschlag-/Schlussrechnung), null = Brutto. */
+  payableCents: number | null;
   currency: string;
   effectiveStatus: EffectiveInvoiceStatus;
   /** Rohstatus der Datenbank (Phase 16a, Task 8): steuert, ob eine Faelligkeit ueberhaupt angezeigt wird. */
@@ -185,6 +187,14 @@ export interface InvoiceListHeadline {
   grossCents: number;
   openCents: number;
   overdueCents: number;
+  /** Band-Basis (nur festgeschriebene Rechnungen, ohne DRAFT/CANCELLED/Gutschriften): eingegangen, offen nicht faellig, faellig, ueberfaellig. */
+  paidCents: number;
+  notDueCents: number;
+  dueCents: number;
+  /** Entwuerfe in der gefilterten Menge — nie Teil des Bands. */
+  draftCount: number;
+  /** Anzahl der Belege im Geldfluss-Band (festgeschriebene Rechnungen ohne Gutschriften/Stornos/Entwuerfe). */
+  bandCount: number;
   currency: string;
   mixedCurrency: boolean;
 }
@@ -206,18 +216,26 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
   const statusCond = statusWhere(filter.status, now);
   const and = statusCond ? [...base, statusCond] : base;
 
-  const [groups, openish] = await Promise.all([
+  const [groups, openish, draftCount] = await Promise.all([
     prisma.invoice.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } }),
     prisma.invoice.findMany({
-      where: { AND: [...and, { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } }] },
+      where: { AND: [...and, { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"] } }] },
       select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
     }),
+    prisma.invoice.count({ where: { AND: [...and, { status: "DRAFT" }] } }),
   ]);
 
   let openCents = 0;
   let overdueCents = 0;
+  let paidCents = 0;
+  let notDueCents = 0;
+  let dueCents = 0;
   for (const inv of openish) {
     const status = effectiveInvoiceStatus({ status: inv.status, type: inv.type, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+    // Band: eingegangen = paidAmountCents (hoechstens der zahlbare Betrag), nie Entwuerfe.
+    paidCents += Math.max(0, Math.min(inv.paidAmountCents, payableBaseCents(inv)));
+    if (status === "OPEN") notDueCents += Math.max(0, openAmountCents(inv));
+    if (status === "DUE") dueCents += Math.max(0, openAmountCents(inv));
     if (status !== "OPEN" && status !== "DUE" && status !== "OVERDUE") continue;
     // openAmountCents rechnet vorzeichenbehaftet (payableBaseCents - paidAmountCents) — bei
     // einer ueberzahlten Rechnung waere das Ergebnis negativ. Lokal geklemmt statt die
@@ -238,6 +256,11 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
     grossCents: groups.reduce((sum, g) => sum + (g._sum.grossTotalCents ?? 0), 0),
     openCents,
     overdueCents,
+    paidCents,
+    notDueCents,
+    dueCents,
+    draftCount,
+    bandCount: openish.length,
     currency: leading?.currency ?? "EUR",
     mixedCurrency: groups.length > 1,
   };
@@ -308,6 +331,7 @@ export async function listInvoices(
         paidAmountCents: r.paidAmountCents,
         payableCents: r.payableCents,
       }),
+      payableCents: r.payableCents,
       currency: r.currency,
       effectiveStatus: effectiveInvoiceStatus({ status: r.status, type: r.type, dueDate: r.dueDate, issueDate: r.issueDate }, now),
       status: r.status,

@@ -9,8 +9,8 @@ import type { ReactNode } from "react";
  *  nur noch fuer die Belegkarte ("Beleg", `DocumentDetailLayout`) im Einsatz. */
 export function DetailCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm">
-      <h2 className="font-semibold text-slate-900">{title}</h2>
+    <section className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm">
+      <h2 className="font-semibold text-ink">{title}</h2>
       {children}
     </section>
   );

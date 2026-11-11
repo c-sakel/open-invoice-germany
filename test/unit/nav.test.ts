@@ -1,6 +1,6 @@
 // test/unit/nav.test.ts
 import { describe, it, expect } from "vitest";
-import { NAV_GROUPS, SETTINGS_ITEMS, activeGroupKey, itemMatches } from "@/lib/nav";
+import { NAV_GROUPS, SETTINGS_GROUPS, SETTINGS_ITEMS, activeGroupKey, itemMatches } from "@/lib/nav";
 
 describe("nav — aktive Gruppe/Item aus Pfad", () => {
   it("Übersicht nur bei exakt '/'", () => {
@@ -51,5 +51,13 @@ describe("nav — aktive Gruppe/Item aus Pfad", () => {
     const angebote = verkauf.items.find((i) => i.label === "Angebote")!;
     expect(itemMatches(ab, "/dokumente", "?kind=AUFTRAGSBESTAETIGUNG")).toBe(true);
     expect(itemMatches(angebote, "/dokumente", "?kind=AUFTRAGSBESTAETIGUNG")).toBe(false);
+  });
+});
+
+describe("SETTINGS_GROUPS", () => {
+  it("enthält jeden Einstellungsschlüssel (auch Prüfung) genau einmal", () => {
+    const grouped = SETTINGS_GROUPS.flatMap((g) => g.keys);
+    expect([...grouped].sort()).toEqual(SETTINGS_ITEMS.map((i) => i.key).sort());
+    expect(grouped).toContain("pruefung");
   });
 });

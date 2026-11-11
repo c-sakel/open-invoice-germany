@@ -49,9 +49,9 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
   const totalColumns = showArticleNumber ? 6 : 5;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
           <tr>
             <th className="px-4 py-2">Beschreibung</th>
             {showArticleNumber && <th className="px-4 py-2">Art.-Nr.</th>}
@@ -61,12 +61,12 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
             <th className="px-4 py-2 text-right">Netto</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-rule">
           {normalized.map((l, i) => {
             if (l.lineType === "HEADING") {
               return (
                 <tr key={l.id}>
-                  <td className="px-4 py-2 font-semibold text-slate-900" colSpan={totalColumns}>
+                  <td className="px-4 py-2 font-semibold text-ink" colSpan={totalColumns}>
                     {l.description}
                   </td>
                 </tr>
@@ -75,10 +75,10 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
             if (l.lineType === "TEXT") {
               return (
                 <tr key={l.id}>
-                  <td className="px-4 py-2 text-slate-600" colSpan={totalColumns}>
+                  <td className="px-4 py-2 text-ink-soft" colSpan={totalColumns}>
                     {l.description && <p className="mb-1">{l.description}</p>}
                     {l.descriptionLong && (
-                      <div className="rich-text text-slate-600" dangerouslySetInnerHTML={{ __html: richTextHtml(l.descriptionLong) }} />
+                      <div className="rich-text text-ink-soft" dangerouslySetInnerHTML={{ __html: richTextHtml(l.descriptionLong) }} />
                     )}
                   </td>
                 </tr>
@@ -86,7 +86,7 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
             }
             if (l.lineType === "SUBTOTAL") {
               return (
-                <tr key={l.id} className="font-medium text-slate-800">
+                <tr key={l.id} className="font-medium text-ink">
                   <td className="px-4 py-2" colSpan={totalColumns - 1}>
                     {l.description}
                   </td>
@@ -97,16 +97,16 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
             // ITEM
             return (
               <tr key={l.id}>
-                <td className="px-4 py-2 text-slate-700">
+                <td className="px-4 py-2 text-ink-soft">
                   {l.description}
                   {l.descriptionLong && (
                     <div
-                      className="rich-text mt-1 text-xs text-slate-500"
+                      className="rich-text mt-1 text-xs text-ink-muted"
                       dangerouslySetInnerHTML={{ __html: richTextHtml(l.descriptionLong) }}
                     />
                   )}
                 </td>
-                {showArticleNumber && <td className="px-4 py-2 text-slate-500">{l.articleNumber}</td>}
+                {showArticleNumber && <td className="px-4 py-2 text-ink-muted">{l.articleNumber}</td>}
                 <td className="tabular px-4 py-2 text-right">
                   {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
                 </td>

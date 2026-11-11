@@ -60,7 +60,7 @@ export function ProductPicker({
       <div ref={anchorRef} className="flex items-center gap-2 whitespace-nowrap">
         <input
           ref={inputRef}
-          className="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+          className="w-full min-w-0 rounded border border-rule px-2 py-1 text-xs text-ink-soft"
           placeholder="Produkt suchen…"
           value={query}
           onFocus={() => setOpen(true)}
@@ -93,21 +93,21 @@ export function ProductPicker({
         open={open && filtered.length > 0}
         onClose={() => setOpen(false)}
         matchAnchorWidth
-        className="max-h-48 rounded-md border border-slate-200 bg-white text-xs shadow-lg"
+        className="max-h-48 rounded-md border border-rule bg-sheet text-xs shadow-lg"
       >
         <ul>
           {filtered.slice(0, 30).map((p) => (
             <li key={p.id}>
               <button
                 type="button"
-                className="block w-full px-2 py-1.5 text-left hover:bg-indigo-50"
+                className="block w-full px-2 py-1.5 text-left hover:bg-pen-wash"
                 onClick={() => {
                   onPick(p);
                   setQuery("");
                   setOpen(false);
                 }}
               >
-                {p.name} <span className="text-slate-400">— {(p.netPriceCents / 100).toFixed(2)} € / {unitLabel(p.unit)}</span>
+                {p.name} <span className="text-ink-muted">— {(p.netPriceCents / 100).toFixed(2)} € / {unitLabel(p.unit)}</span>
               </button>
             </li>
           ))}

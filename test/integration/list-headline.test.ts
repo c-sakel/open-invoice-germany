@@ -139,3 +139,24 @@ describe("invoiceListHeadline", () => {
     expect(h.mixedCurrency).toBe(true);
   });
 });
+
+describe("invoiceListHeadline: Band-Basis", () => {
+  it("6 Entwuerfe + 2 ueberfaellig, 0 bezahlt: Entwuerfe zaehlen nicht, bezahlt 0", async () => {
+    for (let i = 1; i <= 6; i++) await rawInvoice({ number: `HL65-BAND-D${i}`, status: "DRAFT", grossTotalCents: 20000 + i });
+    await rawInvoice({ number: "HL65-BAND-O1", status: "FINALIZED", dueDate: YESTERDAY, grossTotalCents: 10000 });
+    await rawInvoice({ number: "HL65-BAND-O2", status: "SENT", dueDate: YESTERDAY, grossTotalCents: 5000 });
+    await rawInvoice({ number: "HL65-BAND-X", status: "CANCELLED", grossTotalCents: 7777, paidAmountCents: 7777 });
+    const h = await invoiceListHeadline(orgId, { customerId: baseCustomerId, number: "HL65-BAND-" }, NOW);
+    expect(h.draftCount).toBe(6);
+    expect(h.paidCents).toBe(0);
+    expect(h.notDueCents).toBe(0);
+    expect(h.dueCents).toBe(0);
+    expect(h.overdueCents).toBe(15000);
+  });
+
+  it("Bezahlt = erfasste Zahlungen festgeschriebener Rechnungen (PAID und teilbezahlt)", async () => {
+    const h = await invoiceListHeadline(orgId, { customerId: baseCustomerId, number: "HL65-BASE-" }, NOW);
+    expect(h.paidCents).toBe(30000 + 5000);
+    expect(h.draftCount).toBe(1);
+  });
+});

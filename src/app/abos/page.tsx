@@ -9,15 +9,16 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs, type StatusTab } from "@/components/list/StatusTabs";
+import { DataTable } from "@/components/ui/DataTable";
+import { Card } from "@/components/ui/Card";
+import { Kpi } from "@/components/ui/Kpi";
+import { StatusBadge } from "@/components/StatusBadge";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { recurringRunRate } from "@/domain/reporting/recurring-run-rate";
+import { formatCents } from "@/lib/money";
 import { parseListQuery, runListFilter } from "@/lib/list-query";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  ACTIVE: { text: "aktiv", cls: "bg-emerald-100 text-emerald-800" },
-  PAUSED: { text: "pausiert", cls: "bg-amber-100 text-amber-800" },
-  ENDED: { text: "beendet", cls: "bg-slate-200 text-slate-600" },
-};
 
 const STATUS_TAB_LABEL: Record<string, string> = {
   all: "Alle",
@@ -67,6 +68,17 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
     return Promise.all([listRecurring(org.id, f), recurringStatusTabCounts(org.id, tabFilter)]);
   });
 
+  // G13: Run-Rate aktiver Abos; Standardwaehrung gross, weitere Waehrungen als Hinweis (nie Mischsumme).
+  const [runRate, docSettings] = await Promise.all([recurringRunRate(org.id), loadDocumentSettings(org.id)]);
+  const defaultCurrency = docSettings.defaultCurrency;
+  const mainRate = runRate.find((r) => r.currency === defaultCurrency);
+  const others = runRate.filter((r) => r.currency !== defaultCurrency);
+  const hintParts = [
+    ...others.map((r) => `+ ${formatCents(r.monthlyNetCents, r.currency)}`),
+    ...(runRate.some((r) => r.skipped > 0) ? ["einzelne Abos mit unbekanntem Intervall nicht enthalten"] : []),
+  ];
+  const hint = hintParts.length > 0 ? hintParts.join(" · ") : undefined;
+
   const statusTabs: StatusTab[] = (["all", "ACTIVE", "PAUSED", "ENDED"] as const).map((value) => ({
     value,
     label: STATUS_TAB_LABEL[value],
@@ -92,66 +104,72 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
         title="Abos / Wiederkehrende Rechnungen"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/abos/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/abos/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neues Abo
           </Link>
         }
       />
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-ink-muted">
         Vorlagen, aus denen automatisch Rechnungen erzeugt werden — wöchentlich bis jährlich. Erzeugte Rechnungen durchlaufen Festschreibung,
         Nummernkreis und Audit wie jede andere Rechnung.
       </p>
+
+      <Card>
+        <Kpi
+          label="Monatlich wiederkehrend (netto)"
+          value={formatCents(mainRate?.monthlyNetCents ?? 0, defaultCurrency)}
+          hint={hint}
+        />
+      </Card>
 
       <StatusTabs basePath="/abos" searchParams={values} tabs={statusTabs} active={values.status ?? "all"} />
 
       <FilterBar basePath="/abos" fields={fields} values={values} />
 
-      {result.rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          Keine Abos gefunden.{" "}
-          <Link href="/abos/neu" className="font-medium text-indigo-600 hover:underline">
-            Lege dein erstes Abo an.
-          </Link>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Bezeichnung</th>
-                <th className="px-4 py-3">Kunde</th>
-                <th className="px-4 py-3">Nächste Rechnung</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {result.rows.map((r) => {
-                const s = STATUS_LABEL[r.status] ?? { text: r.status, cls: "bg-slate-100 text-slate-600" };
-                const actions = availableActions({ kind: "RECURRING", type: "RECURRING", status: r.status, isDraft: false });
-                return (
-                  <tr key={r.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <Link href={`/abos/${r.id}`} className="font-medium text-indigo-600 hover:underline">
-                        {r.title}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{r.customerName}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.status === "ENDED" ? "—" : deDate(r.nextRunDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <RowActionsMenu kind="RECURRING" id={r.id} actions={actions} openHref={`/abos/${r.id}`} editHref={`/abos/${r.id}/bearbeiten`} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <Pagination basePath="/abos" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
-        </div>
-      )}
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Abos"
+          rows={result.rows}
+          rowKey={(r) => r.id}
+          empty={{ text: "Keine Abos gefunden.", action: { label: "Neu anlegen", href: "/abos/neu" } }}
+          columns={[
+            {
+              key: "title",
+              header: "Bezeichnung",
+              mobile: "title",
+              cell: (r) => (
+                <Link href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
+                  {r.title}
+                </Link>
+              ),
+            },
+            { key: "customer", header: "Kunde", mobile: "meta", cell: (r) => <span className="break-words text-ink-soft">{r.customerName}</span> },
+            {
+              key: "next",
+              header: "Nächste Rechnung",
+              mobile: "meta",
+              cell: (r) => <span className="text-ink-soft">{r.status === "ENDED" ? "—" : deDate(r.nextRunDate)}</span>,
+            },
+            { key: "status", header: "Status", mobile: "meta", cell: (r) => <StatusBadge status={r.status} /> },
+            {
+              key: "actions",
+              header: "Aktionen",
+              align: "right",
+              mobile: "meta",
+              cell: (r) => (
+                <RowActionsMenu
+                  kind="RECURRING"
+                  id={r.id}
+                  actions={availableActions({ kind: "RECURRING", type: "RECURRING", status: r.status, isDraft: false })}
+                  openHref={`/abos/${r.id}`}
+                  editHref={`/abos/${r.id}/bearbeiten`}
+                />
+              ),
+            },
+          ]}
+        />
+        <Pagination basePath="/abos" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
+      </div>
     </div>
   );
 }

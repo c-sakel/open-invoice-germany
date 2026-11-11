@@ -75,7 +75,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
 
   return (
     <>
-      <button type="button" onClick={open} className="text-xs font-medium text-indigo-600 hover:underline">
+      <button type="button" onClick={open} className="text-xs font-medium text-pen hover:underline">
         + Neuen Kunden anlegen
       </button>
       {/* M5 (Abschluss-Review): `DocumentEditor` rendert seit Task 6 gar kein `<form>`
@@ -87,7 +87,7 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
           bewusst ueber einen normalen Button-Klick. */}
       <dialog
         ref={dialogRef}
-        className="w-full max-w-md rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40"
+        className="w-full max-w-md rounded-lg border border-rule p-0 backdrop:bg-ink/40"
         onKeyDown={(e) => {
           // M12 (Abschluss-Review): vorher fing der Dialog JEDES Enter ab, auch mit Fokus
           // auf „Abbrechen"/„✕" — `preventDefault()` unterdrueckte dort die native
@@ -100,52 +100,52 @@ export function NewCustomerDialog({ onCreated }: { onCreated: (c: InlineCustomer
       >
         <div className="space-y-3 p-5">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-900">Neuen Kunden anlegen</h3>
-            <button type="button" onClick={close} className="text-slate-400 hover:text-slate-700">
+            <h3 className="text-base font-semibold text-ink">Neuen Kunden anlegen</h3>
+            <button type="button" onClick={close} className="text-ink-muted hover:text-ink-soft">
               ✕
             </button>
           </div>
-          {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{error}</div>}
+          {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-sm text-stamp">{error}</div>}
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">Typ</span>
+              <span className="font-medium text-ink-soft">Typ</span>
               <select className={inputCls} value={type} onChange={(e) => setType(e.target.value as CustomerInput["type"])}>
                 <option value="BUSINESS">Firma</option>
                 <option value="CONSUMER">Privatperson</option>
               </select>
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">USt-IdNr. (optional)</span>
+              <span className="font-medium text-ink-soft">USt-IdNr. (optional)</span>
               <input className={inputCls} value={vatId} onChange={(e) => setVatId(e.target.value)} />
             </label>
           </div>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Name</span>
+            <span className="font-medium text-ink-soft">Name</span>
             <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Straße und Hausnummer</span>
+            <span className="font-medium text-ink-soft">Straße und Hausnummer</span>
             <input className={inputCls} value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} required />
           </label>
           <div className="grid grid-cols-3 gap-2">
             <label className="col-span-1 flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">PLZ</span>
+              <span className="font-medium text-ink-soft">PLZ</span>
               <input className={inputCls} value={postalCode} onChange={(e) => setPostalCode(e.target.value)} required />
             </label>
             <label className="col-span-2 flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-700">Ort</span>
+              <span className="font-medium text-ink-soft">Ort</span>
               <input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} required />
             </label>
           </div>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">E-Mail (optional)</span>
+            <span className="font-medium text-ink-soft">E-Mail (optional)</span>
             <input className={inputCls} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={close} className="text-sm text-slate-500 hover:text-slate-800">
+            <button type="button" onClick={close} className="text-sm text-ink-muted hover:text-ink">
               Abbrechen
             </button>
-            <button type="button" onClick={() => void submit()} disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+            <button type="button" onClick={() => void submit()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
               {busy ? "Speichern…" : "Anlegen und übernehmen"}
             </button>
           </div>

@@ -27,9 +27,15 @@ interface Props {
 export function AppShell({ orgName, unreadCount, appVersion, brand, children }: Props) {
   return (
     <ShellProvider>
+      <a
+        href="#hauptinhalt"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-sheet focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-pen focus:shadow-lg focus:outline focus:outline-2 focus:outline-pen"
+      >
+        Zum Hauptinhalt springen
+      </a>
       <div className="flex min-h-screen">
         <div className="sticky top-0 hidden h-screen lg:block">
-          <Suspense fallback={<div className="h-full w-60 border-r border-slate-200 bg-white" />}>
+          <Suspense fallback={<div className="h-full w-60 border-r border-rule bg-paper" />}>
             <Sidebar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} brand={brand} />
           </Suspense>
         </div>
@@ -37,8 +43,8 @@ export function AppShell({ orgName, unreadCount, appVersion, brand, children }: 
           <Suspense fallback={null}>
             <Topbar orgName={orgName} unreadCount={unreadCount} appVersion={appVersion} brand={brand} />
           </Suspense>
-          <main className="mx-auto w-full max-w-[1600px] flex-1 px-6 py-8">{children}</main>
-          <footer className="mx-auto w-full max-w-[1600px] px-6 py-6 text-xs text-slate-400">
+          <main id="hauptinhalt" tabIndex={-1} className="mx-auto w-full max-w-[1600px] flex-1 px-6 py-8">{children}</main>
+          <footer className="mx-auto w-full max-w-[1600px] px-6 py-6 text-xs text-ink-muted">
             {/* M1 (Fix-Welle 12c): ohne eigenen Instanznamen zeigte die Fusszeile den
                 Produktnamen doppelt ("OpenInvoice Germany · powered by OpenInvoice
                 Germany · AGPL-3.0") — der fuehrende Teil erscheint nur bei einer
@@ -46,7 +52,7 @@ export function AppShell({ orgName, unreadCount, appVersion, brand, children }: 
                 Beratungs-Hinweis aus der Fusszeile entfernt (steht bereits in
                 COMPLIANCE.md) — die AGPL-Zeile bleibt als Lizenzbedingung unveraendert. */}
             {brand.appName !== DEFAULT_APP_NAME && `${brand.appName} · `}powered by OpenInvoice Germany · AGPL-3.0 ·{" "}
-            <a href={SOURCE_URL} className="underline hover:text-slate-600">Quellcode</a>
+            <a href={SOURCE_URL} className="underline hover:text-ink-soft">Quellcode</a>
           </footer>
         </div>
       </div>

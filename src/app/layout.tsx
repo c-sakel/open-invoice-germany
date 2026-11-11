@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import "@fontsource-variable/ibm-plex-sans";
+import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { AppShell } from "@/components/shell/AppShell";
@@ -60,7 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const brand = await safeBrand();
     return (
       <html lang="de">
-        <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <body className="min-h-screen bg-paper text-ink font-sans antialiased">
           <SlimShell brand={brand} maxWidth="3xl">{children}</SlimShell>
         </body>
       </html>
@@ -92,8 +94,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const brand = await safeBrand();
     return (
       <html lang="de">
-        <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-          <SlimShell brand={brand}>{children}</SlimShell>
+        <body className="min-h-screen bg-paper text-ink font-sans antialiased">
+          <SlimShell brand={brand} hideHeader>{children}</SlimShell>
         </body>
       </html>
     );
@@ -118,7 +120,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="de">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+      <body className="min-h-screen bg-paper text-ink font-sans antialiased">
         <AppShell orgName={orgName} unreadCount={unread} appVersion={pkg.version} brand={brand}>
           {children}
         </AppShell>

@@ -21,8 +21,8 @@ function CompactSubmitButton({ children, tone = "primary" }: { children: React.R
   const { pending } = useFormStatus();
   const cls =
     tone === "danger"
-      ? "text-rose-600 hover:underline disabled:opacity-60"
-      : "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60";
+      ? "text-stamp hover:underline disabled:opacity-60"
+      : "rounded-md bg-pen px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60";
   return (
     <button type="submit" disabled={pending} className={cls}>
       {pending ? "…" : children}
@@ -41,8 +41,8 @@ function RateRow({ row, isLast }: { row: BaseRateRow; isLast: boolean }) {
   const [deleteState, deleteAction] = useActionState<ActionResult, FormData>(deleteBaseRateAction, { ok: false });
 
   return (
-    <tr className="border-b border-slate-100 align-top">
-      <td className="px-3 py-2 text-slate-700">{row.validFrom}</td>
+    <tr className="border-b border-rule align-top">
+      <td className="px-3 py-2 text-ink-soft">{row.validFrom}</td>
       <td className="px-3 py-2" colSpan={2}>
         <form action={saveAction} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="validFrom" value={row.validFrom} />
@@ -53,21 +53,21 @@ function RateRow({ row, isLast }: { row: BaseRateRow; isLast: boolean }) {
             min={0}
             max={20}
             defaultValue={percentOf(row.rateBp)}
-            className="w-20 rounded-md border border-slate-300 px-2 py-1 text-sm"
+            className="w-20 rounded-md border border-rule-strong px-2 py-1 text-sm"
             aria-label={`Basiszinssatz in Prozent — gültig ab ${row.validFrom}`}
           />
-          <span className="text-xs text-slate-500">%</span>
+          <span className="text-xs text-ink-muted">%</span>
           <input
             type="text"
             name="source"
             defaultValue={row.source ?? ""}
             placeholder="Quelle (optional)"
-            className="w-48 rounded-md border border-slate-300 px-2 py-1 text-sm"
+            className="w-48 rounded-md border border-rule-strong px-2 py-1 text-sm"
             aria-label={`Quelle — gültig ab ${row.validFrom}`}
           />
           <CompactSubmitButton>Speichern</CompactSubmitButton>
         </form>
-        {saveState.error && <p className="mt-1 text-xs text-rose-700">{saveState.error}</p>}
+        {saveState.error && <p className="mt-1 text-xs text-stamp">{saveState.error}</p>}
       </td>
       <td className="px-3 py-2 text-right">
         <form
@@ -79,7 +79,7 @@ function RateRow({ row, isLast }: { row: BaseRateRow; isLast: boolean }) {
           <input type="hidden" name="id" value={row.id} />
           <CompactSubmitButton tone="danger">{isLast ? "Löschen (letzter Eintrag)" : "Löschen"}</CompactSubmitButton>
         </form>
-        {deleteState.error && <p className="mt-1 text-xs text-rose-700">{deleteState.error}</p>}
+        {deleteState.error && <p className="mt-1 text-xs text-stamp">{deleteState.error}</p>}
       </td>
     </tr>
   );
@@ -88,21 +88,21 @@ function RateRow({ row, isLast }: { row: BaseRateRow; isLast: boolean }) {
 function NewRateForm() {
   const [state, action] = useActionState<ActionResult, FormData>(upsertBaseRateAction, { ok: false });
   return (
-    <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
-      <label className="flex flex-col gap-1 text-xs text-slate-600">
+    <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-rule-strong bg-paper p-3">
+      <label className="flex flex-col gap-1 text-xs text-ink-soft">
         Gültig ab
-        <input type="date" name="validFrom" required className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
+        <input type="date" name="validFrom" required className="rounded-md border border-rule-strong px-2 py-1 text-sm" />
       </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-600">
+      <label className="flex flex-col gap-1 text-xs text-ink-soft">
         Basiszinssatz (%)
-        <input type="number" name="ratePercent" step="0.01" min={0} max={20} required placeholder="1,27" className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+        <input type="number" name="ratePercent" step="0.01" min={0} max={20} required placeholder="1,27" className="w-24 rounded-md border border-rule-strong px-2 py-1 text-sm" />
       </label>
-      <label className="flex flex-col gap-1 text-xs text-slate-600">
+      <label className="flex flex-col gap-1 text-xs text-ink-soft">
         Quelle (optional)
-        <input type="text" name="source" placeholder="z. B. Deutsche Bundesbank" className="w-48 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+        <input type="text" name="source" placeholder="z. B. Deutsche Bundesbank" className="w-48 rounded-md border border-rule-strong px-2 py-1 text-sm" />
       </label>
       <CompactSubmitButton>Anlegen</CompactSubmitButton>
-      {state.error && <p className="w-full text-xs text-rose-700">{state.error}</p>}
+      {state.error && <p className="w-full text-xs text-stamp">{state.error}</p>}
     </form>
   );
 }
@@ -120,12 +120,12 @@ export function BaseRateTable({ initial }: { initial: BaseRateRow[] }) {
   const sorted = [...initial].sort((a, b) => a.validFrom.localeCompare(b.validFrom));
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-muted">
         Der für einen Tag gültige Satz ist der Eintrag mit dem größten „gültig ab“ ≤ diesem Tag; vor dem ersten Eintrag gilt der älteste (keine Zinslücke).
       </p>
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-sheet">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-3 py-2">Gültig ab</th>
               <th className="px-3 py-2" colSpan={2}>

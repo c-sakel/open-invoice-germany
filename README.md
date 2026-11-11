@@ -94,6 +94,9 @@ On a quote's detail page (**Documents → quote**), under "Acceptance link", gen
 ### Navigation and search
 The left sidebar groups the app into Overview, Sales (quotes, order confirmations, proforma invoices, delivery notes, invoices, credit notes, recurring invoices, dunning) and Administration (customers, products, notifications, settings). The sidebar can be collapsed to icons. The search field at the top (also ⌘K / Ctrl+K) finds documents by number or customer, plus customers and products, and offers quick actions.
 
+### Look and feel (Oberfläche)
+All colours, radii, shadows and fonts are design tokens in the `@theme` block of `src/app/globals.css` (`paper`, `sheet`, `ink`, `pen`, `stamp`, `seal`, `ledger`, …); components use the token classes (`bg-sheet`, `text-ink-soft`, …) instead of raw colours. Dark mode follows the system setting (`prefers-color-scheme`) — there is no manual switch. The fonts (IBM Plex Sans and Mono) are bundled locally via `@fontsource` (SIL OFL), so no request goes to an external font service. Lists render as cards on narrow screens, charts measure their container and keep a readable 11–13 px label size, and keyboard focus is shown as a 2 px outline.
+
 ## Tech stack
 
 Next.js 16 (App Router) · TypeScript (strict) · Prisma 6 · SQLite/PostgreSQL · TailwindCSS · Zod · Vitest.

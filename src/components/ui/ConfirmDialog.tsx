@@ -38,8 +38,8 @@ type ConfirmDialogProps = {
 } & ({ onConfirm: () => void; confirmHref?: never } | { confirmHref: string; onConfirm?: never });
 
 const TONE_CLS: Record<"default" | "danger", string> = {
-  default: "bg-indigo-600 hover:bg-indigo-700",
-  danger: "bg-rose-600 hover:bg-rose-700",
+  default: "bg-pen hover:bg-pen-strong",
+  danger: "bg-stamp hover:bg-stamp",
 };
 
 export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>(function ConfirmDialog(
@@ -62,7 +62,7 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
     close: () => dialogRef.current?.close(),
   }));
 
-  const confirmCls = `rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${TONE_CLS[tone]}`;
+  const confirmCls = `rounded-md px-3 py-1.5 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-60 ${TONE_CLS[tone]}`;
 
   return (
     <dialog
@@ -75,19 +75,19 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
       aria-label={title ? undefined : "Bestätigung"}
       aria-describedby={messageId}
       data-size={size}
-      className="w-full max-w-sm rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40 data-[size=md]:max-w-md"
+      className="w-full max-w-sm rounded-lg border border-rule p-0 backdrop:bg-ink/40 data-[size=md]:max-w-md"
     >
       <div className="space-y-3 p-5">
         {title && (
-          <h2 id={titleId} className="text-sm font-semibold text-slate-900">
+          <h2 id={titleId} className="text-sm font-semibold text-ink">
             {title}
           </h2>
         )}
-        <div id={messageId} className="text-sm text-slate-700">
+        <div id={messageId} className="text-sm text-ink-soft">
           {message}
         </div>
         <div className="flex justify-end gap-2">
-          <button ref={cancelRef} type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-slate-500 hover:text-slate-800">
+          <button ref={cancelRef} type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-ink-muted hover:text-ink">
             {cancelLabel}
           </button>
           {confirmHref ? (

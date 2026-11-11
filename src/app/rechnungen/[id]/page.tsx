@@ -14,6 +14,9 @@ import { DocumentChain } from "@/components/DocumentChain";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
 import { LineItemsTable } from "@/components/LineItemsTable";
+import { BelegStrecke } from "@/components/BelegStrecke";
+import { belegStrecke } from "@/domain/timeline/belegstrecke";
+import { DetailSection } from "@/components/detail/DetailSection";
 import { DocumentTimeline } from "@/components/DocumentTimeline";
 import { DocumentDetailLayout } from "@/components/detail/DocumentDetailLayout";
 import { DetailNav } from "@/components/detail/DetailNav";
@@ -35,8 +38,8 @@ export const dynamic = "force-dynamic";
 
 // Phase 13c, Task 4: Klassen der Primaer-/Sekundaeraktion in der Kopfzeile — dieselben
 // Farben wie die bisherigen Einzelknoepfe (PDF/Bearbeiten sekundaer, Festschreiben primaer).
-const primaryBtnCls = "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700";
-const secondaryBtnCls = "rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50";
+const primaryBtnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen-strong";
+const secondaryBtnCls = "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper";
 
 export default async function InvoiceDetail({
   params,
@@ -139,6 +142,13 @@ export default async function InvoiceDetail({
     select: { sentAt: true, createdAt: true },
   });
   const lastSentAt = lastEmailLog?.sentAt ?? lastEmailLog?.createdAt ?? null;
+  // Belegstrecke: "versendet" = es gibt einen erfolgreichen E-Mail-Eintrag (Zeitstrahl `email`) oder Status SENT.
+  const steps = belegStrecke({
+    status: invoice.status,
+    sent: lastEmailLog !== null || invoice.status === "SENT",
+    paidAmountCents: invoice.paidAmountCents,
+    payableCents: invoice.payableCents ?? invoice.grossTotalCents,
+  });
 
   const { prevId, nextId, backQuery } = await loadNeighbors("INVOICE", org.id, id, liste);
   const navHref = (targetId: string) => `/rechnungen/${targetId}${liste ? `?liste=${encodeURIComponent(liste)}` : ""}`;
@@ -147,6 +157,9 @@ export default async function InvoiceDetail({
   const showPaymentBlock = vm.isInvoiceType && !vm.isDraft && !vm.isCancelled;
   // Zahlungsliste (inkl. Gegenbuchung) auch bei stornierten Rechnungen; PaymentDialog bleibt ueber canPay aus.
   const showPaymentList = vm.isInvoiceType && !vm.isDraft;
+  // Abschnitt "Zahlung & Mahnung" nur, wenn PaymentSection etwas rendert (sonst stuende eine leere Ueberschrift).
+  const showPayment = showPaymentBlock && ((vm.openCents > 0 && dunningSchedule != null) || invoice.dunnings.length > 0);
+  const showCorrection = !vm.isDraft && !vm.isCancelled;
 
   return (
     <DocumentDetailLayout
@@ -163,12 +176,12 @@ export default async function InvoiceDetail({
         <>
           <StatusBadge status={invoice.status} />
           {sourceLabel && (
-            <Link href={sourceLabel.href} className="text-sm text-indigo-600 hover:underline">
+            <Link href={sourceLabel.href} className="text-sm text-pen hover:underline">
               zu {sourceLabel.text}
             </Link>
           )}
           {invoice.snapshotSource === "MIGRATION" && (
-            <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            <span className="inline-block rounded bg-seal/10 px-2 py-0.5 text-xs font-medium text-seal">
               Adressstand per Migration eingefroren
             </span>
           )}
@@ -177,12 +190,12 @@ export default async function InvoiceDetail({
       actions={
         <>
           {/* I1 (Fix-Welle): PDF-Knopf wie auf Dokument-/Lieferscheinseite — rendert auch Entwuerfe. */}
-          <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
             PDF
           </a>
           <SendEmailDialog docType={vm.emailDocType} docId={invoice.id} label={vm.isDraft ? "Entwurf per E-Mail senden" : "Per E-Mail senden"} autoOpen={send === "1" && invoice.type === "CREDIT_NOTE"} />
           {vm.isDraft && (
-            <Link href={`/rechnungen/${invoice.id}/bearbeiten`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            <Link href={`/rechnungen/${invoice.id}/bearbeiten`} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
               Bearbeiten
             </Link>
           )}
@@ -224,14 +237,19 @@ export default async function InvoiceDetail({
       }
       notice={
         <>
-          {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm whitespace-pre-line text-rose-800">{error}</div>}
+          {vm.isInvoiceType && (
+            <div className="rounded-[var(--radius-card)] bg-sheet px-4 py-3 shadow-[var(--shadow-card)]">
+              <BelegStrecke steps={steps} size="lg" />
+            </div>
+          )}
+          {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-4 text-sm whitespace-pre-line text-stamp">{error}</div>}
           {vm.isCancelled && refundDueCents > 0 && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <div className="rounded-md border border-rule bg-paper p-3 text-sm text-ink-soft">
               Erfasste Zahlungen: {formatCents(refundDueCents, invoice.currency)} — falls noch nicht geschehen, an den Kunden zurückzahlen (Skonto und Verrechnungen mit Gutschriften sind nicht enthalten).
             </div>
           )}
           {vm.isDraft && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
               Entwurf — noch keine Rechnungsnummer vergeben. Mit „Festschreiben“ wird die Rechnung GoBD-konform unveränderbar.
             </div>
           )}
@@ -265,58 +283,62 @@ export default async function InvoiceDetail({
         </>
       }
     >
-      <InternalNotesBox notes={invoice.internalNotes} />
+      <DetailSection id="beleg" title="Beleg">
+        <InternalNotesBox notes={invoice.internalNotes} />
 
-      <CollapsibleSection title="Positionen" summary={`${invoice.lines.length} ${invoice.lines.length === 1 ? "Position" : "Positionen"} · Netto ${formatCents(invoice.netTotalCents, invoice.currency)}`}>
-        <div className="space-y-4">
-          {invoice.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.headerText}</p>}
-          <LineItemsTable lines={invoice.lines} currency={invoice.currency} />
-          <InvoiceTotals
-            currency={invoice.currency}
-            type={invoice.type}
-            hasDocumentAdjustment={vm.hasDocumentAdjustment}
-            documentDiscountTotalCents={vm.documentDiscountTotalCents}
-            documentChargeTotalCents={vm.documentChargeTotalCents}
-            documentChargeReason={invoice.documentChargeReason}
-            netTotalCents={invoice.netTotalCents}
-            breakdown={vm.breakdown}
-            grossTotalCents={invoice.grossTotalCents}
-            payableBase={vm.payableBase}
-            deductionsByInvoice={vm.deductionsByInvoice}
-          />
-          {invoice.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{invoice.footerText}</p>}
-          {invoice.notes && <p className="text-sm text-slate-600">{invoice.notes}</p>}
-        </div>
-      </CollapsibleSection>
+        <CollapsibleSection title="Positionen" summary={`${invoice.lines.length} ${invoice.lines.length === 1 ? "Position" : "Positionen"} · Netto ${formatCents(invoice.netTotalCents, invoice.currency)}`}>
+          <div className="space-y-4">
+            {invoice.headerText && <p className="whitespace-pre-line text-sm text-ink-soft">{invoice.headerText}</p>}
+            <LineItemsTable lines={invoice.lines} currency={invoice.currency} />
+            <InvoiceTotals
+              currency={invoice.currency}
+              type={invoice.type}
+              hasDocumentAdjustment={vm.hasDocumentAdjustment}
+              documentDiscountTotalCents={vm.documentDiscountTotalCents}
+              documentChargeTotalCents={vm.documentChargeTotalCents}
+              documentChargeReason={invoice.documentChargeReason}
+              netTotalCents={invoice.netTotalCents}
+              breakdown={vm.breakdown}
+              grossTotalCents={invoice.grossTotalCents}
+              payableBase={vm.payableBase}
+              deductionsByInvoice={vm.deductionsByInvoice}
+            />
+            {invoice.footerText && <p className="whitespace-pre-line text-sm text-ink-soft">{invoice.footerText}</p>}
+            {invoice.notes && <p className="text-sm text-ink-soft">{invoice.notes}</p>}
+          </div>
+        </CollapsibleSection>
+      </DetailSection>
 
       {/* S7 (Fix-Welle 1, Spec C "Detail-Layout"): Mahnblock bleibt unter der Vorschau (volle
           Breite) statt sich in der 24rem-Statuskartenspalte einzuquetschen — PaymentSection
           rendert bei Bedarf selbst nichts, wenn weder ein faelliger Mahnschritt noch bereits
           verschickte Mahnungen vorliegen. */}
-      {showPaymentBlock && (
-        <PaymentSection
-          invoiceId={invoice.id}
-          currency={invoice.currency}
-          openCents={vm.openCents}
-          isOverdue={vm.isOverdue}
-          dueDate={vm.dueDate}
-          dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
-          dunningPausedUntil={invoice.dunningPausedUntil}
-          dunningSchedule={dunningSchedule}
-          dunnings={invoice.dunnings}
-        />
+      {showPayment && (
+        <DetailSection id="zahlung" title="Zahlung &amp; Mahnung">
+          <PaymentSection
+            invoiceId={invoice.id}
+            currency={invoice.currency}
+            openCents={vm.openCents}
+            isOverdue={vm.isOverdue}
+            dueDate={vm.dueDate}
+            dunningState={invoice.dunningState as "ACTIVE" | "PAUSED" | "STOPPED"}
+            dunningPausedUntil={invoice.dunningPausedUntil}
+            dunningSchedule={dunningSchedule}
+            dunnings={invoice.dunnings}
+          />
+        </DetailSection>
       )}
 
-      {!vm.isDraft && !vm.isCancelled && (
-        <CorrectionSection invoiceId={invoice.id} type={invoice.type} canCancelOrCredit={vm.canCancelOrCredit} canDuplicate={vm.canDuplicate} />
+      {showCorrection && (
+        <DetailSection id="korrektur" title="Korrektur">
+          <CorrectionSection invoiceId={invoice.id} type={invoice.type} canCancelOrCredit={vm.canCancelOrCredit} canDuplicate={vm.canDuplicate} />
+        </DetailSection>
       )}
 
-      <EmailHistory docType={vm.emailDocType} docId={invoice.id} />
-
-      <section className="space-y-3">
-        <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+      <DetailSection id="verlauf" title="Verlauf">
+        <EmailHistory docType={vm.emailDocType} docId={invoice.id} />
         <DocumentTimeline kind="INVOICE" docId={invoice.id} />
-      </section>
+      </DetailSection>
     </DocumentDetailLayout>
   );
 }

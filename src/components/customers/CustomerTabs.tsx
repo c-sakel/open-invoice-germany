@@ -19,14 +19,14 @@ export function CustomerTabs({ tabs, initial }: { tabs: TabDef[]; initial?: stri
 
   return (
     <div className="space-y-4">
-      <nav className="flex flex-wrap gap-4 border-b border-slate-200 text-sm">
+      <nav className="flex flex-wrap gap-4 border-b border-rule text-sm">
         {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setActive(t.key)}
             className={`-mb-px border-b-2 px-1 py-2 font-medium ${
-              active === t.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800"
+              active === t.key ? "border-pen text-pen" : "border-transparent text-ink-muted hover:text-ink"
             }`}
           >
             {t.label}

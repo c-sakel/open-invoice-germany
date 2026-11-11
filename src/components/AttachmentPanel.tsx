@@ -141,30 +141,30 @@ export function AttachmentPanel({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={`space-y-3 rounded-lg border p-4 transition-colors ${dragging ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white"}`}
+      className={`space-y-3 rounded-[var(--radius-card)] border p-4 transition-colors ${dragging ? "border-pen/30 bg-pen-wash" : "border-rule bg-sheet"}`}
     >
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-slate-900">Anhänge</h2>
-        <label className="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
+        <h2 className="font-semibold text-ink">Anhänge</h2>
+        <label className="cursor-pointer text-sm font-medium text-pen hover:underline">
           {uploading ? "Lädt hoch…" : "+ Datei hochladen"}
           <input ref={fileInputRef} type="file" multiple className="hidden" disabled={uploading} onChange={(e) => void upload(e.target.files)} />
         </label>
       </div>
 
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{error}</div>}
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-sm text-stamp">{error}</div>}
 
       {items.length === 0 ? (
-        <p className="text-sm text-slate-500">Keine Anhänge.</p>
+        <p className="text-sm text-ink-muted">Keine Anhänge.</p>
       ) : (
-        <ul className="divide-y divide-slate-100 text-sm">
+        <ul className="divide-y divide-rule text-sm">
           {items.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-3 py-2">
-              <a href={`/api/attachments/${a.id}`} className="truncate text-indigo-600 hover:underline" download>
+              <a href={`/api/attachments/${a.id}`} className="truncate text-pen hover:underline" download>
                 {a.filename}
               </a>
               <div className="flex shrink-0 items-center gap-3">
-                <span className="text-xs text-slate-400">{formatSize(a.sizeBytes)}</span>
-                <button type="button" onClick={() => askDelete(a)} className="text-xs font-medium text-rose-500 hover:underline">
+                <span className="text-xs text-ink-muted">{formatSize(a.sizeBytes)}</span>
+                <button type="button" onClick={() => askDelete(a)} className="text-xs font-medium text-stamp hover:underline">
                   Löschen
                 </button>
               </div>

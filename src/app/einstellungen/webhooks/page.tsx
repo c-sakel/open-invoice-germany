@@ -14,7 +14,7 @@ export default async function WebhooksSettingsPage() {
     <div className="space-y-6">
       <SettingsTabs active="webhooks" />
       <h1 className="text-2xl font-bold tracking-tight">Webhooks</h1>
-      <p className="max-w-2xl text-sm text-slate-600">
+      <p className="max-w-2xl text-sm text-ink-soft">
         Webhooks liefern Ereignisse (Rechnung festgeschrieben, Zahlung erfasst, Angebot
         angenommen, …) automatisch an eine eigene URL — signiert per HMAC-SHA256, mit
         Wiederholung bei Fehlschlag.

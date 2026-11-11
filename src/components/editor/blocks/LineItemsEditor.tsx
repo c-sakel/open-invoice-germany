@@ -124,20 +124,20 @@ export function LineItemsEditor({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+    <div className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold text-slate-900">Positionen</h2>
+        <h2 className="font-semibold text-ink">Positionen</h2>
         {/* Task 3 (Ruling): Kontrollkaestchen "Brutto anzeigen" ersetzt durch einen
             Segmentumschalter — gleiche Aktion (`grossDisplay`, reine Anzeige, Preisfeld
             bleibt immer netto), nur andere Bedienung. */}
-        <div className="flex items-center gap-2 text-xs text-slate-500" title="Reine Anzeige — die Eingabe bleibt immer netto.">
+        <div className="flex items-center gap-2 text-xs text-ink-muted" title="Reine Anzeige — die Eingabe bleibt immer netto.">
           <span>Preise:</span>
-          <div className="inline-flex overflow-hidden rounded-md border border-slate-300">
+          <div className="inline-flex overflow-hidden rounded-md border border-rule-strong">
             <button
               type="button"
               aria-pressed={!draft.grossDisplay}
               onClick={() => dispatch({ type: "set", field: "grossDisplay", value: false })}
-              className={`px-2 py-1 ${!draft.grossDisplay ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              className={`px-2 py-1 ${!draft.grossDisplay ? "bg-pen text-on-accent" : "bg-sheet text-ink-soft hover:bg-paper"}`}
             >
               netto
             </button>
@@ -145,7 +145,7 @@ export function LineItemsEditor({
               type="button"
               aria-pressed={draft.grossDisplay}
               onClick={() => dispatch({ type: "set", field: "grossDisplay", value: true })}
-              className={`border-l border-slate-300 px-2 py-1 ${draft.grossDisplay ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              className={`border-l border-rule-strong px-2 py-1 ${draft.grossDisplay ? "bg-pen text-on-accent" : "bg-sheet text-ink-soft hover:bg-paper"}`}
             >
               brutto
             </button>
@@ -158,7 +158,7 @@ export function LineItemsEditor({
       <div className="@container">
         <table className="block w-full border-collapse text-sm @4xl:table @4xl:table-fixed">
           <thead className="hidden @4xl:table-header-group">
-            <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+            <tr className="border-b border-rule text-left text-xs font-medium text-ink-muted">
               <th scope="col" className="w-12 py-1.5 pr-2">Pos.</th>
               <th scope="col" className="py-1.5 pr-2">Beschreibung</th>
               <th scope="col" className="w-20 py-1.5 pr-2">Menge</th>
@@ -209,7 +209,7 @@ export function LineItemsEditor({
       {reorder.indicator && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed z-40 h-0.5 bg-sky-500"
+          className="pointer-events-none fixed z-40 h-0.5 bg-pen"
           style={{ top: reorder.indicator.top - 1, left: reorder.indicator.left, width: reorder.indicator.width }}
         />
       )}
@@ -217,7 +217,7 @@ export function LineItemsEditor({
         {reorder.announcement}
       </div>
 
-      <div className="flex flex-wrap gap-3 text-sm font-medium text-indigo-600">
+      <div className="flex flex-wrap gap-3 text-sm font-medium text-pen">
         <button type="button" onClick={() => dispatch({ type: "addLine", lineType: "ITEM" })} className="hover:underline">
           + Position
         </button>

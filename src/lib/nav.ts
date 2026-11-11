@@ -124,6 +124,18 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/konto", label: "Konto", key: "konto" },
 ];
 
+/**
+ * Gruppierung der Einstellungen (Phase 16f, Task 7) fuer die Seitenleiste — die Reiter
+ * (`SettingsTabs`) bleiben nur mobil als flache Leiste. Jeder `SettingsKey` steht in genau
+ * einer Gruppe (siehe test/unit/nav.test.ts).
+ */
+export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsKey[] }[] = [
+  { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden"] },
+  { label: "Belege", keys: ["belege", "nummernkreise", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
+  { label: "Kommunikation", keys: ["email", "benachrichtigungen"] },
+  { label: "System", keys: ["automatisierung", "api", "webhooks", "pruefung", "konto"] },
+];
+
 function splitHref(href: string): { path: string; params: URLSearchParams } {
   const [path, query = ""] = href.split("?");
   return { path, params: new URLSearchParams(query) };

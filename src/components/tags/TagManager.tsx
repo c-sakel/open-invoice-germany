@@ -103,9 +103,9 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-4 py-2">Tag</th>
               <th className="px-4 py-2">Farbe</th>
@@ -113,7 +113,7 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
               <th className="px-4 py-2 text-right">Aktionen</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-rule">
             {tags.map((t) =>
               editingId === t.id ? (
                 <tr key={t.id}>
@@ -140,13 +140,13 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-2 text-right text-slate-500">{t.documentCount}</td>
+                  <td className="px-4 py-2 text-right text-ink-muted">{t.documentCount}</td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex justify-end gap-3">
-                      <button type="button" onClick={() => void saveEdit()} disabled={busy === t.id} className="font-medium text-indigo-600 hover:underline disabled:opacity-60">
+                      <button type="button" onClick={() => void saveEdit()} disabled={busy === t.id} className="font-medium text-pen hover:underline disabled:opacity-60">
                         {busy === t.id ? "…" : "Speichern"}
                       </button>
-                      <button type="button" onClick={() => setEditingId(null)} className="text-slate-500 hover:text-slate-800">
+                      <button type="button" onClick={() => setEditingId(null)} className="text-ink-muted hover:text-ink">
                         Abbrechen
                       </button>
                     </div>
@@ -157,14 +157,14 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
                   <td className="px-4 py-2">
                     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${tagColorClass(t.color)}`}>{t.name}</span>
                   </td>
-                  <td className="px-4 py-2 text-slate-500">{COLOR_LABEL[t.color] ?? t.color}</td>
-                  <td className="px-4 py-2 text-right text-slate-500">{t.documentCount}</td>
+                  <td className="px-4 py-2 text-ink-muted">{COLOR_LABEL[t.color] ?? t.color}</td>
+                  <td className="px-4 py-2 text-right text-ink-muted">{t.documentCount}</td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex justify-end gap-3">
-                      <button type="button" onClick={() => startEdit(t)} className="font-medium text-indigo-600 hover:underline">
+                      <button type="button" onClick={() => startEdit(t)} className="font-medium text-pen hover:underline">
                         Bearbeiten
                       </button>
-                      <button type="button" onClick={() => askDelete(t)} className="font-medium text-rose-600 hover:underline">
+                      <button type="button" onClick={() => askDelete(t)} className="font-medium text-stamp hover:underline">
                         Löschen
                       </button>
                     </div>
@@ -174,7 +174,7 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
             )}
             {tags.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-6 text-center text-ink-muted">
                   Noch keine Tags.
                 </td>
               </tr>
@@ -183,13 +183,13 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
         </table>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Neuer Tag</span>
+          <span className="font-medium text-ink-soft">Neuer Tag</span>
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="z. B. Wichtig" maxLength={40} className={inputCls} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Farbe</span>
+          <span className="font-medium text-ink-soft">Farbe</span>
           <select value={newColor} onChange={(e) => setNewColor(e.target.value as TagColor)} className={inputCls}>
             {TagColor.options.map((c) => (
               <option key={c} value={c}>
@@ -202,14 +202,14 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
           type="button"
           onClick={() => void create()}
           disabled={!newName.trim() || busy === "new"}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
         >
           {busy === "new" ? "…" : "Tag anlegen"}
         </button>
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-rose-600">
+        <p role="alert" className="text-sm text-stamp">
           {error}
         </p>
       )}

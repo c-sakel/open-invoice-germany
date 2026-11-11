@@ -36,7 +36,7 @@ export default async function VorlagenPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Vorlagen" subtitle={`${templates.length} ${templates.length === 1 ? "Vorlage" : "Vorlagen"}`} />
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-ink-muted">
         Wiederverwendbare Positionen und Kopf-Metadaten eines Belegs — über „Als Vorlage speichern“ im Beleg-Menü angelegt, hier zu einem neuen
         Entwurf verarbeitet.
       </p>

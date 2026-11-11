@@ -115,7 +115,7 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
     await refresh();
   }
 
-  const input = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+  const input = "rounded-md border border-rule-strong px-2 py-1.5 text-sm";
 
   return (
     <div className="space-y-4">
@@ -124,7 +124,7 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
           const d = drafts[a.id];
           if (!d) return null;
           return (
-            <div key={a.id} className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+            <div key={a.id} className="space-y-2 rounded-[var(--radius-card)] border border-rule bg-sheet p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <select className={input} value={d.type} onChange={(e) => setDraft(a.id, { type: e.target.value as AddressRow["type"] })}>
                   {Object.entries(TYPE_LABEL).map(([v, l]) => (
@@ -134,7 +134,7 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
                   ))}
                 </select>
                 <input className={input} placeholder="Bezeichnung (optional)" value={d.label} onChange={(e) => setDraft(a.id, { label: e.target.value })} />
-                {a.isDefault && <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">Standard ({TYPE_LABEL[a.type]})</span>}
+                {a.isDefault && <span className="rounded bg-pen-wash px-2 py-0.5 text-xs font-medium text-pen">Standard ({TYPE_LABEL[a.type]})</span>}
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <input className={input} placeholder="Straße & Nr." value={d.addressLine1} onChange={(e) => setDraft(a.id, { addressLine1: e.target.value })} />
@@ -144,27 +144,27 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
                 <input className={input} placeholder="Land (ISO-2)" value={d.countryCode} onChange={(e) => setDraft(a.id, { countryCode: e.target.value.toUpperCase() })} />
               </div>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => save(a.id)} disabled={busyId === a.id} className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                <button type="button" onClick={() => save(a.id)} disabled={busyId === a.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
                   Speichern
                 </button>
                 {!a.isDefault && (
-                  <button type="button" onClick={() => makeDefault(a.id)} disabled={busyId === a.id} className="text-xs font-medium text-indigo-600 hover:underline">
+                  <button type="button" onClick={() => makeDefault(a.id)} disabled={busyId === a.id} className="text-xs font-medium text-pen hover:underline">
                     Als Standard setzen
                   </button>
                 )}
-                <button type="button" onClick={() => remove(a.id)} disabled={busyId === a.id} className="text-xs font-medium text-rose-600 hover:underline">
+                <button type="button" onClick={() => remove(a.id)} disabled={busyId === a.id} className="text-xs font-medium text-stamp hover:underline">
                   Löschen
                 </button>
-                {errors[a.id] && <span className="text-xs text-rose-600">{errors[a.id]}</span>}
+                {errors[a.id] && <span className="text-xs text-stamp">{errors[a.id]}</span>}
               </div>
             </div>
           );
         })}
-        {addresses.length === 0 && <p className="text-sm text-slate-500">Noch keine Zusatzadressen.</p>}
+        {addresses.length === 0 && <p className="text-sm text-ink-muted">Noch keine Zusatzadressen.</p>}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">Neue Adresse</h3>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+        <h3 className="mb-2 text-sm font-semibold text-ink">Neue Adresse</h3>
         <div className="grid gap-2 sm:grid-cols-2">
           <select className={input} value={newFields.type} onChange={(e) => setNewFields((f) => ({ ...f, type: e.target.value as AddressRow["type"] }))}>
             {Object.entries(TYPE_LABEL).map(([v, l]) => (
@@ -179,7 +179,7 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
           <input className={input} placeholder="PLZ" value={newFields.postalCode} onChange={(e) => setNewFields((f) => ({ ...f, postalCode: e.target.value }))} />
           <input className={input} placeholder="Ort" value={newFields.city} onChange={(e) => setNewFields((f) => ({ ...f, city: e.target.value }))} />
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={newFields.isDefault} onChange={(e) => setNewFields((f) => ({ ...f, isDefault: e.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
+            <input type="checkbox" checked={newFields.isDefault} onChange={(e) => setNewFields((f) => ({ ...f, isDefault: e.target.checked }))} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
             als Standard setzen
           </label>
         </div>
@@ -187,11 +187,11 @@ export function AddressesPanel({ customerId, initialAddresses }: { customerId: s
           type="button"
           onClick={create}
           disabled={creating || !newFields.addressLine1.trim() || !newFields.postalCode.trim() || !newFields.city.trim()}
-          className="mt-3 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
         >
           {creating ? "…" : "Adresse anlegen"}
         </button>
-        {newError && <p className="mt-2 text-xs text-rose-600">{newError}</p>}
+        {newError && <p className="mt-2 text-xs text-stamp">{newError}</p>}
       </div>
     </div>
   );

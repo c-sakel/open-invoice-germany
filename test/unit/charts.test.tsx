@@ -12,9 +12,12 @@
  */
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BarChart } from "@/components/charts/BarChart";
+import { BarChart, niceTicks } from "@/components/charts/BarChart";
 import { LineChart } from "@/components/charts/LineChart";
 import { DonutChart } from "@/components/charts/DonutChart";
+import { StackedBar } from "@/components/charts/StackedBar";
+import { Sparkline } from "@/components/charts/Sparkline";
+import { ResponsiveChart } from "@/components/charts/ResponsiveChart";
 import type { ChartDatum } from "@/components/charts/types";
 
 const DATA: ChartDatum[] = [
@@ -147,20 +150,45 @@ describe("BarChart", () => {
     expectNoNaN(horizontal);
   });
 
-  it("Achsen-/Wertebeschriftung nutzt die AA-Kontrastfarbe slate-600, nicht slate-400", () => {
+  it("Achsen-/Wertebeschriftung nutzt das Token ink-soft, nicht die Achsenfarbe", () => {
     const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
-    expect(html).toContain('fill="#475569"');
-    expect(html).not.toContain('fill="#94a3b8"');
+    expect(html).toContain('fill="var(--color-ink-soft)"');
+    expect(html).not.toContain('fill="var(--color-rule-strong)"');
   });
 
-  it("Fix I5: die senkrechte Ansicht zeigt eine y-Achse mit 3 formatierten Ticks (formatCentsShort)", () => {
+  it("senkrechte Ansicht: runde y-Achsenwerte (niceTicks) statt Maximalwert", () => {
     const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
-    // DATA-Werte 0/100000/250000 -> domainMax 250000 ("2,5 k€"), domainMin 0 ("0,00 €"),
-    // Mitte 125000 ("1,3 k€", kaufmaennisch gerundet).
-    expect(html).toContain("2,5 k€");
-    expect(html).toContain("0,00 €");
+    // DATA-Werte 0/100000/250000 Cent -> Schritt 1.000 EUR? nein: Spanne 2.500 EUR / 4 -> 1/2/5-Schritt 1.000 EUR.
+    expect(html).toContain("3 k€");
+    expect(html).toContain("0 €");
+    expect(html).not.toContain("2,5 k€");
     expect(html.match(/font-size="12"/g)?.length).toBeGreaterThanOrEqual(3);
     expectNoNaN(html);
+  });
+
+  it("niceTicks: 1/2/5-Schritte, auch negativer Bereich, immer inklusive 0", () => {
+    expect(niceTicks(0, 52717).map((t) => t.value)).toEqual([0, 20000, 40000, 60000]);
+    expect(niceTicks(-10000, 52717).map((t) => t.value)).toEqual([-20000, 0, 20000, 40000, 60000]);
+    expect(niceTicks(-30000, -5000).map((t) => t.value)).toEqual([-30000, -20000, -10000, 0]);
+    expect(niceTicks(0, 0).map((t) => t.value)).toEqual([0, 100]);
+  });
+
+  it("x-Beschriftung: letzte Beschriftung immer sichtbar, keine direkt davor", () => {
+    const months = ["Dez 25", "Jan 26", "Feb 26", "März 26", "Apr 26", "Mai 26", "Juni 26", "Juli 26", "Aug 26", "Sept 26", "Okt 26", "Nov 26"];
+    const data: ChartDatum[] = months.map((label, i) => ({ label, value: 1000 * (i + 1), valueLabel: "x" }));
+    const html = renderToStaticMarkup(<BarChart title="T" data={data} viewBoxWidth={420} />);
+    const svg = html.slice(html.indexOf("<svg"), html.indexOf("</svg>"));
+    expect(svg).toContain(">Nov 26</text>");
+    expect(svg).not.toContain(">Okt 26</text>");
+  });
+
+  it("Legende bei Vergleichsreihe und Titel nur fuer Screenreader mit hideTitle", () => {
+    const html = renderToStaticMarkup(
+      <BarChart title="Zahlungen" data={DATA} compare={DATA} compareLabel="Rechnungsausgang" seriesLabel="Zahlungseingang" hideTitle />,
+    );
+    expect(html).toContain("Zahlungseingang");
+    expect(html).toContain("Rechnungsausgang");
+    expect(html).toContain('<figcaption class="sr-only">');
   });
 
   it("Fix I6: viewBoxWidth macht die Koordinatenbreite konfigurierbar (halbe Dashboard-Karte)", () => {
@@ -187,11 +215,7 @@ describe("BarChart", () => {
     expectNoNaN(html);
   });
 
-  it("Regression (Screenshot-Review): eine gestauchte Beschriftungsspalte schrumpft die Schrift mit, statt ueber den linken Rand hinauszuragen", () => {
-    // Nachgebaut aus dem echten Dashboard-Screenshot (12e-fix-01): ein sehr langer,
-    // getrennter Kundenname bei viewBoxWidth=320 liess "Smoke Test Kunde 178879…" als
-    // abgeschnittenes "š" statt "S" rendern, weil die Spalte gestaucht wurde, die Schrift
-    // aber bei fontSize 12 blieb.
+  it("Regression (Screenshot-Review): Schrift bleibt fest 12, die Beschriftung wird gekuerzt statt ueber den linken Rand zu ragen", () => {
     const CHAR_WIDTH_FACTOR = 0.6; // dieselbe Naeherung wie in BarChart.tsx
     const longLabel = "Smoke Test Kunde 178879364".slice(0, 24); // truncateName-Laenge
     const data: ChartDatum[] = [
@@ -201,18 +225,15 @@ describe("BarChart", () => {
     const html = renderToStaticMarkup(<BarChart title="Top 5" data={data} orientation="horizontal" viewBoxWidth={320} />);
     const groups = [...html.matchAll(/<g[^>]*>([\s\S]*?)<\/g>/g)];
     for (const group of groups) {
-      const labelText = /<text\b([^>]*)>/.exec(group[1]);
+      const labelText = /<text\b([^>]*)>([^<]*)<\/text>/.exec(group[1]);
       expect(labelText).not.toBeNull();
       const attrs = labelText![1];
       const x = Number(/\bx="(-?[\d.]+)"/.exec(attrs)?.[1]);
-      const fontSizeAttr = Number(/\bfont-size="([\d.]+)"/.exec(attrs)?.[1]);
-      expect(Number.isNaN(x)).toBe(false);
-      expect(Number.isNaN(fontSizeAttr)).toBe(false);
-      // textAnchor="end": das Label wächst von x aus NACH LINKS um ungefähr
-      // Zeichenzahl * fontSize * CHAR_WIDTH_FACTOR — das darf nicht unter 0 fallen.
-      const estimatedLeftEdge = x - longLabel.length * fontSizeAttr * CHAR_WIDTH_FACTOR;
+      expect(/\bfont-size="12"/.test(attrs)).toBe(true);
+      const estimatedLeftEdge = x - labelText![2].length * 12 * CHAR_WIDTH_FACTOR;
       expect(estimatedLeftEdge).toBeGreaterThanOrEqual(-1);
     }
+    expect(html).toContain(`<title>${longLabel}: 285,00 €</title>`);
     expectNoNaN(html);
   });
 
@@ -338,5 +359,81 @@ describe("DonutChart", () => {
     const html = renderToStaticMarkup(<DonutChart title="Leer" data={[{ label: "Offen", value: 0, valueLabel: "0" }]} />);
     expect(html.match(/<circle/g)?.length).toBe(1); // nur die Spur, kein Segment
     expectNoNaN(html);
+  });
+});
+
+describe("Phase 16f: Baukasten", () => {
+  const segs = [
+    { key: "a", label: "Offen", value: 100, valueLabel: "1,00 €", color: "var(--color-pen)" },
+    { key: "b", label: "Faellig", value: 300, valueLabel: "3,00 €", color: "var(--color-seal)" },
+    { key: "c", label: "Ueberfaellig", value: 600, valueLabel: "6,00 €", color: "var(--color-stamp)" },
+  ];
+
+  it("StackedBar: Segmentbreiten summieren auf 100 %", () => {
+    const html = renderToStaticMarkup(<StackedBar title="Forderungen" segments={segs} totalLabel="10,00 €" />);
+    const widths = [...html.matchAll(/<rect\b[^>]*\bwidth="([\d.]+)%"/g)].map((m) => Number(m[1]));
+    expect(html).toContain('width="10%"');
+    expect(html).toContain('width="30%"');
+    expect(html).toContain('width="60%"');
+    expect(widths.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 1);
+    expect(html).toContain("<ul");
+  });
+
+  it("StackedBar: Segment 0 entfällt in Balken, nicht in Legende", () => {
+    const html = renderToStaticMarkup(
+      <StackedBar title="F" segments={[...segs, { key: "z", label: "Nullsegment", value: 0, valueLabel: "0,00 €", color: "red" }]} totalLabel="10,00 €" />,
+    );
+    expect(html.match(/<rect\b/g)?.length).toBe(3);
+    expect(html).not.toContain("Nullsegment");
+  });
+
+  it("BarChart compare: eigenes <title> und sr-only-Tabelle mit beiden Reihen", () => {
+    const data: ChartDatum[] = [{ label: "Jan 26", value: 100000, valueLabel: "1.000,00 €" }];
+    const compare: ChartDatum[] = [{ label: "Jan 25", value: 90000, valueLabel: "900,00 €" }];
+    for (const orientation of ["vertical", "horizontal"] as const) {
+      const html = renderToStaticMarkup(
+        <BarChart title="Umsatz" data={data} compare={compare} compareLabel="Vorjahr" orientation={orientation} />,
+      );
+      expect(html).toContain("<title>Vorjahr Jan 25: 900,00 €</title>");
+      expect(html).toContain("Vorjahr</th>");
+      expect(html).toContain("<td>900,00 €</td>");
+      expect(html).toContain("<pattern");
+      expectNoNaN(html);
+    }
+  });
+
+  it("BarChart hideZero blendet Nullwerte aus", () => {
+    const html = renderToStaticMarkup(<BarChart title="U" data={DATA} hideZero />);
+    expect(html).not.toContain("Mär 26");
+  });
+
+  it("BarChart: Schriftgröße fest 12", () => {
+    for (const orientation of ["vertical", "horizontal"] as const) {
+      for (const viewBoxWidth of [320, 1100]) {
+        const html = renderToStaticMarkup(<BarChart title="U" data={DATA} orientation={orientation} viewBoxWidth={viewBoxWidth} />);
+        const sizes = [...html.matchAll(/font-size="([\d.]+)"/g)].map((m) => m[1]);
+        expect(sizes.length).toBeGreaterThan(0);
+        expect(new Set(sizes)).toEqual(new Set(["12"]));
+      }
+    }
+  });
+
+  it("ChartFrame/LineChart: emptyFallback ersetzt die Achse bei < 2 Punkten ungleich 0", () => {
+    const one: ChartDatum[] = [{ label: "Jan", value: 500, valueLabel: "5,00 €" }];
+    const html = renderToStaticMarkup(<LineChart title="L" data={one} emptyFallback={<p>Kennzahl 5,00 €</p>} />);
+    expect(html).toContain("Kennzahl 5,00 €");
+    expect(html).not.toContain("<svg");
+  });
+
+  it("Sparkline < 2 Punkte ≠ 0 rendert nichts", () => {
+    expect(renderToStaticMarkup(<Sparkline values={[0, 0, 500]} label="x" />)).toBe("");
+    const html = renderToStaticMarkup(<Sparkline values={[100, 200]} label="Verlauf" />);
+    expect(html).toContain("<polyline");
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain("Verlauf");
+  });
+
+  it("ResponsiveChart SSR nutzt 640", () => {
+    expect(renderToStaticMarkup(<ResponsiveChart>{(w) => <span>{w}</span>}</ResponsiveChart>)).toContain("640");
   });
 });

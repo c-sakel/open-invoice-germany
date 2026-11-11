@@ -17,11 +17,11 @@ import { shouldForceDunningRetry } from "@/lib/dunning-force";
 import type { EmailDocType } from "@/schemas/email";
 import type { TagDocType } from "@/schemas/tag";
 
-const itemCls = "block w-full rounded-md px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50";
+const itemCls = "block w-full rounded-md px-3 py-1.5 text-left text-sm text-ink-soft hover:bg-paper";
 const linkCls = `${itemCls} no-underline`;
 // Task 7: Direktknoepfe vor dem "..."-Menue (PDF/Zahlung) — kompakter als itemCls, fuer den
 // engen Platz in einer Tabellenzeile.
-const directBtnCls = "rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50";
+const directBtnCls = "rounded-md border border-rule-strong bg-sheet px-2 py-1 text-xs font-medium text-ink-soft hover:bg-paper";
 
 interface PaymentMethodOption {
   code: string;
@@ -206,12 +206,12 @@ export function RowActionsMenu({
       )}
       <details className="relative inline-block text-left" open={detailsOpen} onToggle={(e) => setDetailsOpen(e.currentTarget.open)}>
         <summary
-          className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 [&::-webkit-details-marker]:hidden"
+          className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-ink-muted hover:bg-well hover:text-ink-soft [&::-webkit-details-marker]:hidden"
           aria-label="Aktionen"
         >
           ⋯
         </summary>
-        <div className="absolute right-0 z-20 mt-1 w-64 space-y-0.5 rounded-md border border-slate-200 bg-white p-1.5 shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-64 space-y-0.5 rounded-md border border-rule bg-sheet p-1.5 shadow-lg">
           {has("OPEN") && (
             <Link href={openHref} className={linkCls} onClick={closeMenu}>
               Öffnen
@@ -246,8 +246,8 @@ export function RowActionsMenu({
             </div>
           )}
           {has("PAYMENT") && payment && (
-            <div className="border-t border-slate-100 px-3 py-2">
-              <p className="mb-1 text-xs font-medium text-slate-500">Zahlung erfassen</p>
+            <div className="border-t border-rule px-3 py-2">
+              <p className="mb-1 text-xs font-medium text-ink-muted">Zahlung erfassen</p>
               <PaymentForm invoiceId={id} openCents={payment.openCents} methods={payment.methods} defaultMethod={payment.defaultMethod} />
             </div>
           )}
@@ -309,12 +309,12 @@ export function RowActionsMenu({
           )}
           {has("CANCEL") && cancelRoute && kind === "INVOICE" && (
             // T7: Rechnungs-Storno nur nach Rueckfrage mit Betraegen, Grund und Versandoption.
-            <CancelInvoiceDialog invoiceId={id} className={`${itemCls} text-rose-700 hover:bg-rose-50`}>
+            <CancelInvoiceDialog invoiceId={id} className={`${itemCls} text-stamp hover:bg-stamp/10`}>
               Stornieren
             </CancelInvoiceDialog>
           )}
           {has("CANCEL") && cancelRoute && kind !== "INVOICE" && (
-            <button type="button" onClick={() => cancelDialogRef.current?.open()} disabled={busy === "CANCEL"} className={`${itemCls} text-rose-700 hover:bg-rose-50`}>
+            <button type="button" onClick={() => cancelDialogRef.current?.open()} disabled={busy === "CANCEL"} className={`${itemCls} text-stamp hover:bg-stamp/10`}>
               {busy === "CANCEL" ? "…" : "Stornieren"}
             </button>
           )}
@@ -327,11 +327,11 @@ export function RowActionsMenu({
             />
           )}
           {documentActions && (
-            <ul className="space-y-0.5 border-t border-slate-100 pt-1">
+            <ul className="space-y-0.5 border-t border-rule pt-1">
               <DocumentActionsMenuItems type={documentActions.type} id={id} status={documentActions.status} archived={documentActions.archived} />
             </ul>
           )}
-          {error && <p className="px-3 py-1 text-xs text-rose-600">{error}</p>}
+          {error && <p className="px-3 py-1 text-xs text-stamp">{error}</p>}
         </div>
       </details>
       {has("PAYMENT") && payment && (

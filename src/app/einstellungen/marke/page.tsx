@@ -19,7 +19,7 @@ export default async function MarkeSettingsPage() {
     <div className="space-y-6">
       <SettingsTabs active="marke" />
       <h1 className="text-2xl font-bold tracking-tight">Marke</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Name, Kurzname, Favicon und Logo dieser Instanz. Ohne Eintrag gilt „{DEFAULT_APP_NAME}“ (Kurzname „{DEFAULT_APP_SHORT_NAME}“).
         Die Herkunftszeile „powered by OpenInvoice Germany · AGPL-3.0“ bleibt in der Fußzeile — sie ist Bedingung der AGPL-3.0-Lizenz
         und lässt sich nicht abschalten (siehe COMPLIANCE.md).

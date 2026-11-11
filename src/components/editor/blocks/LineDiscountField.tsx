@@ -54,12 +54,12 @@ export function LineDiscountField({ line, dispatch }: { line: DraftLine; dispatc
           type="button"
           onClick={() => setMode((m) => (m === "percent" ? "amount" : "percent"))}
           title={`Rabatt-Art wechseln (% / ${sym})`}
-          className="shrink-0 rounded border border-slate-300 px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-50"
+          className="shrink-0 rounded border border-rule-strong px-1.5 py-1 text-xs text-ink-muted hover:bg-paper"
         >
           {mode === "percent" ? "%" : sym}
         </button>
       </div>
-      {hiddenHint && <div className="mt-0.5 text-[11px] text-slate-400">{hiddenHint}</div>}
+      {hiddenHint && <div className="mt-0.5 text-[11px] text-ink-muted">{hiddenHint}</div>}
     </div>
   );
 }

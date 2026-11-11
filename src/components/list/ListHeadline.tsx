@@ -15,10 +15,10 @@ export function ListHeadline({ items }: { items: HeadlineItem[] }) {
   return (
     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {items.map((item) => (
-        <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{item.label}</dt>
-          <dd className={`tabular mt-1 text-xl font-semibold ${item.tone === "danger" ? "text-rose-700" : "text-slate-900"}`}>{item.value}</dd>
-          {item.hint && <p className="mt-1 text-xs text-slate-500">{item.hint}</p>}
+        <div key={item.label} className="rounded-[var(--radius-card)] border border-rule bg-sheet px-4 py-3">
+          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{item.label}</dt>
+          <dd className={`tabular mt-1 text-xl font-semibold ${item.tone === "danger" ? "text-stamp" : "text-ink"}`}>{item.value}</dd>
+          {item.hint && <p className="mt-1 text-xs text-ink-muted">{item.hint}</p>}
         </div>
       ))}
     </dl>

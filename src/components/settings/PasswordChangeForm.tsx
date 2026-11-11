@@ -39,47 +39,47 @@ export function PasswordChangeForm() {
   }
 
   return (
-    <form onSubmit={submit} className="max-w-md space-y-3 rounded-lg border border-slate-200 bg-white p-5">
+    <form onSubmit={submit} className="max-w-md space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Aktuelles Passwort</span>
+        <span className="font-medium text-ink-soft">Aktuelles Passwort</span>
         <input
           type="password"
           autoComplete="current-password"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2"
+          className="rounded-md border border-rule-strong px-3 py-2"
           required
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Neues Passwort</span>
+        <span className="font-medium text-ink-soft">Neues Passwort</span>
         <input
           type="password"
           autoComplete="new-password"
           minLength={10}
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2"
+          className="rounded-md border border-rule-strong px-3 py-2"
           required
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Neues Passwort wiederholen</span>
+        <span className="font-medium text-ink-soft">Neues Passwort wiederholen</span>
         <input
           type="password"
           autoComplete="new-password"
           minLength={10}
           value={newPasswordRepeat}
           onChange={(e) => setNewPasswordRepeat(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2"
+          className="rounded-md border border-rule-strong px-3 py-2"
           required
         />
       </label>
-      <p className="text-xs text-slate-500">Mindestens 10 Zeichen. Nach dem Ändern werden alle anderen angemeldeten Sitzungen sofort beendet — nur dieser Browser bleibt angemeldet.</p>
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
-      {done && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">Passwort geändert. Andere angemeldete Sitzungen wurden beendet.</div>}
+      <p className="text-xs text-ink-muted">Mindestens 10 Zeichen. Nach dem Ändern werden alle anderen angemeldeten Sitzungen sofort beendet — nur dieser Browser bleibt angemeldet.</p>
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{error}</div>}
+      {done && <div className="rounded-md border border-ledger/30 bg-ledger/10 p-2 text-xs text-ledger">Passwort geändert. Andere angemeldete Sitzungen wurden beendet.</div>}
       <div className="flex items-center gap-3 pt-1">
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "…" : "Passwort ändern"}
         </button>
       </div>

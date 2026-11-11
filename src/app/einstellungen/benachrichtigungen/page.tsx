@@ -13,7 +13,7 @@ export default async function BenachrichtigungenEinstellungenPage() {
     <div className="space-y-6">
       <SettingsTabs active="benachrichtigungen" />
       <h1 className="text-2xl font-bold tracking-tight">Benachrichtigungen</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Steuert, welche Ereignisse In-App-Benachrichtigungen erzeugen (Glocke oben rechts, „/benachrichtigungen“). Der Scheduler-Job „notifications“ prüft dies bei jedem Lauf (siehe Einstellungen →
         Automatisierung).
       </p>

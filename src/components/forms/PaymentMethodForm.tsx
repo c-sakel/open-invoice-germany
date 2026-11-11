@@ -31,7 +31,7 @@ export function PaymentMethodForm({ method }: { method?: PaymentMethodFormData |
       <ErrorBanner message={state.error} />
       {method && <input type="hidden" name="id" value={method.id} />}
 
-      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:grid-cols-2">
         <TextField
           label="Code"
           name="code"

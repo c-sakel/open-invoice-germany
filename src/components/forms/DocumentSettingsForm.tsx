@@ -18,10 +18,10 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
   return (
     <form action={action} className="space-y-6">
       <ErrorBanner message={state.error} />
-      {state.ok && <p className="text-sm text-emerald-700">Einstellungen gespeichert.</p>}
+      {state.ok && <p className="text-sm text-ledger">Einstellungen gespeichert.</p>}
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Angebote</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Angebote</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             label="Automatik nach Online-Annahme"
@@ -60,8 +60,8 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         />
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Rechnungen</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Rechnungen</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Standard-Zahlungsziel (Tage)" name="invoiceDueDays" defaultValue={String(settings.invoiceDueDays)} />
           <TextField label="Standard-Währung" name="defaultCurrency" defaultValue={settings.defaultCurrency} placeholder="EUR" />
@@ -91,13 +91,13 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         <CheckboxField label="Neue Rechnungen standardmäßig als E-Rechnung markieren" name="eInvoiceDefault" defaultChecked={settings.eInvoiceDefault} />
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Steuersätze</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Steuersätze</h2>
         <TaxRatesField initial={settings.taxRates} />
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Lieferscheine</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Lieferscheine</h2>
         <CheckboxField label="Preise standardmäßig anzeigen" name="dnShowPrices" defaultChecked={settings.dnShowPrices} />
         <CheckboxField label="Artikelnummern standardmäßig anzeigen" name="dnShowArticleNumber" defaultChecked={settings.dnShowArticleNumber} />
         <CheckboxField
@@ -107,8 +107,8 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         />
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Wiederkehrende Rechnungen</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Wiederkehrende Rechnungen</h2>
         <CheckboxField
           label="Abrechnungszeitraum-Kopftext automatisch einfügen"
           name="recurringInsertPeriodText"

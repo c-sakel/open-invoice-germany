@@ -129,9 +129,9 @@ export default async function DokumentDetail({
           <>
             <StatusBadge status={status} />
             {billing && <BillingStateBadge state={billing.state} billedPermille={billing.billedPermille} />}
-            {archived && <span className="inline-block rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">Archiviert</span>}
+            {archived && <span className="inline-block rounded bg-rule-strong px-2 py-0.5 text-xs font-medium text-ink-soft">Archiviert</span>}
             {q.snapshotSource === "MIGRATION" && (
-              <span className="inline-block rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+              <span className="inline-block rounded bg-seal/10 px-2 py-0.5 text-xs font-medium text-seal">
                 Adressstand per Migration eingefroren
               </span>
             )}
@@ -147,7 +147,7 @@ export default async function DokumentDetail({
             <a
               href={`/api/documents/${q.id}/pdf`}
               target="_blank"
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
             >
               PDF
             </a>
@@ -157,7 +157,7 @@ export default async function DokumentDetail({
                 auf der Rechnungsseite selbst umgesetzt. */}
             <Link
               href={`/rechnungen/neu?customerId=${q.customer.id}`}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
             >
               Neue Rechnung
             </Link>
@@ -194,7 +194,7 @@ export default async function DokumentDetail({
         }
         notice={
           q.kind === "PROFORMA" ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
               Proforma-Rechnung — keine Rechnung im Sinne des § 14 UStG, berechtigt nicht zum Vorsteuerabzug.
             </div>
           ) : undefined
@@ -222,31 +222,31 @@ export default async function DokumentDetail({
           summary={`${q.lines.length} ${q.lines.length === 1 ? "Position" : "Positionen"} · Netto ${formatCents(q.netTotalCents, q.currency)}`}
         >
           <div className="space-y-4">
-            {q.headerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.headerText}</p>}
+            {q.headerText && <p className="whitespace-pre-line text-sm text-ink-soft">{q.headerText}</p>}
             <LineItemsTable lines={q.lines} currency={q.currency} />
             <div className="ml-auto max-w-xs space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-600">Netto</span>
+                <span className="text-ink-soft">Netto</span>
                 <span className="tabular font-medium">{formatCents(q.netTotalCents, q.currency)}</span>
               </div>
-              <div className="flex justify-between text-slate-600">
+              <div className="flex justify-between text-ink-soft">
                 <span>zzgl. USt</span>
                 <span className="tabular">{formatCents(q.taxTotalCents, q.currency)}</span>
               </div>
-              <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
+              <div className="flex justify-between border-t border-rule pt-1 text-base font-semibold">
                 <span>Gesamt</span>
                 <span className="tabular">{formatCents(q.grossTotalCents, q.currency)}</span>
               </div>
             </div>
-            {q.footerText && <p className="whitespace-pre-line text-sm text-slate-700">{q.footerText}</p>}
-            {q.notes && <p className="text-sm text-slate-600">{q.notes}</p>}
+            {q.footerText && <p className="whitespace-pre-line text-sm text-ink-soft">{q.footerText}</p>}
+            {q.notes && <p className="text-sm text-ink-soft">{q.notes}</p>}
           </div>
         </CollapsibleSection>
 
         <EmailHistory docType={q.kind as EmailDocType} docId={q.id} />
 
         <section className="space-y-3">
-          <h2 className="font-semibold text-slate-900">Zeitstrahl</h2>
+          <h2 className="font-semibold text-ink">Zeitstrahl</h2>
           <DocumentTimeline kind="QUOTE" docId={q.id} />
         </section>
       </DocumentDetailLayout>

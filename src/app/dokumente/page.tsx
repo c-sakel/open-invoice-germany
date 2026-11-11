@@ -15,6 +15,7 @@ import { FilterBar, type FilterField } from "@/components/list/FilterBar";
 import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs, type StatusTab } from "@/components/list/StatusTabs";
+import { DataTable, type DataColumn } from "@/components/ui/DataTable";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
 import { parseListQuery, runListFilter } from "@/lib/list-query";
 import { buildListeParam } from "@/domain/document/neighbors";
@@ -168,20 +169,116 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     { type: "select", name: "tag", label: "Tag", options: tags.map((t) => ({ value: t.id, label: t.name })) },
   ];
 
+  const columns: DataColumn<QuoteListResult["rows"][number]>[] = [
+    {
+      key: "number",
+      header: "Nummer",
+      mobile: "title",
+      cell: (d) => {
+        const rowTags = tagsByDocId.get(d.id) ?? [];
+        return (
+          <>
+            <Link href={detailHref(d.id)} className="font-medium text-pen hover:underline">
+              {d.number ?? "—"}
+            </Link>
+            {rowTags.length > 0 && (
+              <span className="mt-1 block">
+                <TagChips tags={rowTags} size="xs" />
+              </span>
+            )}
+          </>
+        );
+      },
+    },
+    { key: "kind", header: "Art", mobile: "meta", cell: (d) => <span className="text-ink-soft">{KIND_LABEL[d.kind] ?? d.kind}</span> },
+    { key: "customer", header: "Kunde", mobile: "meta", cell: (d) => <span className="break-words text-ink-soft">{d.customerName}</span> },
+    {
+      key: "status",
+      header: "Status",
+      mobile: "meta",
+      cell: (d) => {
+        const billingState = index.states.get(d.id) ?? "NONE";
+        return (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <StatusBadge status={d.effectiveStatus} />
+            {/* Fix-Welle S1: ohne verfuegbaren Index (Obergrenze ueberschritten) liefert
+               `index.states.get(d.id) ?? "NONE"` fuer JEDES Angebot "NONE" — der Chip wuerde
+               fuer laengst voll abgerechnete Angebote faelschlich "Nicht berechnet" zeigen.
+               Ohne Index ganz ausblenden (die Tabs verschwinden bereits, siehe StatusTabValues). */}
+            {d.kind !== "PROFORMA" && index.available && <BillingStateBadge state={billingState} />}
+            {d.archivedAt && <span className="text-xs text-ink-muted">archiviert</span>}
+          </span>
+        );
+      },
+    },
+    { key: "gross", header: "Brutto", mobile: "amount", cell: (d) => <span className="font-medium">{formatCents(d.grossTotalCents, d.currency)}</span> },
+    {
+      key: "actions",
+      header: "Aktionen",
+      align: "right",
+      mobile: "meta",
+      cell: (d) => {
+        const actions = availableActions({
+          kind: "QUOTE",
+          type: d.kind,
+          status: d.effectiveStatus,
+          isDraft: d.effectiveStatus === "DRAFT",
+          hasEmailLog: d.hasEmailLog,
+        });
+        // Nachtrag Punkt 1: convertedToInvoiceId/billingFull an convertTargets, damit CONVERT im
+        // Zeilenmenue erscheint — der alte "Lieferschein erzeugen"-Eintrag in RowActionsMenu ist
+        // mit `!convert` bewacht, es entsteht kein Doppeleintrag.
+        const billingState = index.states.get(d.id) ?? "NONE";
+        const convert = convertTargets({
+          kind: "QUOTE",
+          type: d.kind,
+          status: d.effectiveStatus,
+          isDraft: d.effectiveStatus === "DRAFT",
+          convertedToInvoiceId: d.convertedToInvoiceId,
+          billingFull: billingState === "FULL",
+        });
+        return (
+          <RowActionsMenu
+            kind="QUOTE"
+            id={d.id}
+            actions={actions}
+            openHref={`/dokumente/${d.id}`}
+            editHref={d.effectiveStatus === "DRAFT" ? `/dokumente/${d.id}/bearbeiten` : undefined}
+            pdfHref={`/api/documents/${d.id}/pdf`}
+            emailDocType={d.kind as "ANGEBOT" | "AUFTRAGSBESTAETIGUNG" | "PROFORMA"}
+            hasEmailLog={d.hasEmailLog}
+            duplicateRoute={`/api/documents/${d.id}/duplicate`}
+            duplicateRedirect="/dokumente/{id}"
+            cancelRoute={`/api/documents/${d.id}/status`}
+            cancelBody={{ action: "CANCEL" }}
+            cancelInfo={{
+              noun: KIND_LABEL[d.kind] ?? "Beleg",
+              number: d.number,
+              linkedInvoices: billingState !== "NONE" || d.convertedToInvoiceId !== null,
+            }}
+            convert={convert}
+            documentActions={{ type: "QUOTE", status: d.effectiveStatus, archived: d.archivedAt !== null }}
+            templateName={d.number ?? undefined}
+          />
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Dokumente"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/dokumente/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/dokumente/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neues Dokument
           </Link>
         }
       />
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">Angebote, Auftragsbestätigungen und Proforma-Rechnungen — keine Steuerbelege; jederzeit in eine Rechnung umwandelbar.</p>
-        <Link href={showArchived ? "/dokumente" : "/dokumente?archiviert=1"} className="text-sm font-medium text-indigo-600 hover:underline">
+        <p className="text-sm text-ink-muted">Angebote, Auftragsbestätigungen und Proforma-Rechnungen — keine Steuerbelege; jederzeit in eine Rechnung umwandelbar.</p>
+        <Link href={showArchived ? "/dokumente" : "/dokumente?archiviert=1"} className="text-sm font-medium text-pen hover:underline">
           {showArchived ? "Archivierte ausblenden" : "Archivierte anzeigen"}
         </Link>
       </div>
@@ -192,104 +289,16 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
 
       <ListHeadline items={headlineItems} />
 
-      {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          Keine Dokumente gefunden.{" "}
-          <Link href="/dokumente/neu" className="font-medium text-indigo-600 hover:underline">
-            Lege dein erstes Angebot an.
-          </Link>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Nummer</th>
-                <th className="px-4 py-3">Art</th>
-                <th className="px-4 py-3">Kunde</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Brutto</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((d) => {
-                const actions = availableActions({
-                  kind: "QUOTE",
-                  type: d.kind,
-                  status: d.effectiveStatus,
-                  isDraft: d.effectiveStatus === "DRAFT",
-                  hasEmailLog: d.hasEmailLog,
-                });
-                // Nachtrag Punkt 1: convertedToInvoiceId/billingFull an convertTargets, damit
-                // CONVERT im Zeilenmenue erscheint — der alte "Lieferschein erzeugen"-Eintrag
-                // in RowActionsMenu ist mit `!convert` bewacht, es entsteht kein Doppeleintrag.
-                const billingState = index.states.get(d.id) ?? "NONE";
-                const convert = convertTargets({
-                  kind: "QUOTE",
-                  type: d.kind,
-                  status: d.effectiveStatus,
-                  isDraft: d.effectiveStatus === "DRAFT",
-                  convertedToInvoiceId: d.convertedToInvoiceId,
-                  billingFull: billingState === "FULL",
-                });
-                return (
-                  <tr key={d.id} className={`hover:bg-slate-50 ${d.archivedAt ? "opacity-60" : ""}`}>
-                    <td className="px-4 py-3">
-                      <Link href={detailHref(d.id)} className="font-medium text-indigo-600 hover:underline">
-                        {d.number ?? "—"}
-                      </Link>
-                      {(tagsByDocId.get(d.id) ?? []).length > 0 && (
-                        <div className="mt-1">
-                          <TagChips tags={tagsByDocId.get(d.id) ?? []} size="xs" />
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{KIND_LABEL[d.kind] ?? d.kind}</td>
-                    <td className="px-4 py-3 text-slate-600">{d.customerName}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={d.effectiveStatus} />
-                      {/* Fix-Welle S1: ohne verfuegbaren Index (Obergrenze ueberschritten)
-                         liefert `index.states.get(d.id) ?? "NONE"` fuer JEDES Angebot
-                         "NONE" — der Zeilen-Chip wuerde dann fuer laengst voll abgerechnete
-                         Angebote faelschlich "Nicht berechnet" zeigen. Ohne Index ganz
-                         ausblenden (die Tabs verschwinden bereits, siehe StatusTabValues). */}
-                      {d.kind !== "PROFORMA" && index.available && <BillingStateBadge state={billingState} />}
-                      {d.archivedAt && <span className="ml-2 text-xs text-slate-400">archiviert</span>}
-                    </td>
-                    <td className="tabular px-4 py-3 text-right font-medium">{formatCents(d.grossTotalCents, d.currency)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <RowActionsMenu
-                        kind="QUOTE"
-                        id={d.id}
-                        actions={actions}
-                        openHref={`/dokumente/${d.id}`}
-                        editHref={d.effectiveStatus === "DRAFT" ? `/dokumente/${d.id}/bearbeiten` : undefined}
-                        pdfHref={`/api/documents/${d.id}/pdf`}
-                        emailDocType={d.kind as "ANGEBOT" | "AUFTRAGSBESTAETIGUNG" | "PROFORMA"}
-                        hasEmailLog={d.hasEmailLog}
-                        duplicateRoute={`/api/documents/${d.id}/duplicate`}
-                        duplicateRedirect="/dokumente/{id}"
-                        cancelRoute={`/api/documents/${d.id}/status`}
-                        cancelBody={{ action: "CANCEL" }}
-                        cancelInfo={{
-                          noun: KIND_LABEL[d.kind] ?? "Beleg",
-                          number: d.number,
-                          linkedInvoices: billingState !== "NONE" || d.convertedToInvoiceId !== null,
-                        }}
-                        convert={convert}
-                        documentActions={{ type: "QUOTE", status: d.effectiveStatus, archived: d.archivedAt !== null }}
-                        templateName={d.number ?? undefined}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <Pagination basePath="/dokumente" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
-        </div>
-      )}
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Dokumente"
+          rows={rows}
+          rowKey={(d) => d.id}
+          empty={{ text: "Keine Dokumente gefunden.", action: { label: "Erstes Angebot anlegen", href: "/dokumente/neu" } }}
+          columns={columns}
+        />
+        <Pagination basePath="/dokumente" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
+      </div>
     </div>
   );
 }

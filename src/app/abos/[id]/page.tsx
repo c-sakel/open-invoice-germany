@@ -11,9 +11,9 @@ import { RecurringActions } from "@/components/RecurringActions";
 export const dynamic = "force-dynamic";
 
 const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  ACTIVE: { text: "aktiv", cls: "bg-emerald-100 text-emerald-800" },
-  PAUSED: { text: "pausiert", cls: "bg-amber-100 text-amber-800" },
-  ENDED: { text: "beendet", cls: "bg-slate-200 text-slate-600" },
+  ACTIVE: { text: "aktiv", cls: "bg-ledger/10 text-ledger" },
+  PAUSED: { text: "pausiert", cls: "bg-seal/10 text-seal" },
+  ENDED: { text: "beendet", cls: "bg-rule-strong text-ink-soft" },
 };
 
 function deDate(d: Date | null) {
@@ -34,7 +34,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
   if (!rec) notFound();
 
   const net = rec.lines.reduce((s, l) => s + Math.round((l.quantityMilli * l.unitNetPriceCents) / 1000), 0);
-  const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-slate-100 text-slate-600" };
+  const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-well text-ink-soft" };
 
   // Phase 14a, Task 1 (R1/R2): rein darstellender Block "Aus den Kundenvorgaben
   // uebernommen" — jeder Lauf dieses Abos zieht diese Werte ab jetzt tatsaechlich aus dem
@@ -68,14 +68,14 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link href="/abos" className="text-sm text-slate-500 hover:text-slate-800">
+          <Link href="/abos" className="text-sm text-ink-muted hover:text-ink">
             ← Abos
           </Link>
           <h1 className="text-2xl font-bold tracking-tight">{rec.title}</h1>
           <span className={`rounded px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/abos/${rec.id}/bearbeiten`} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <Link href={`/abos/${rec.id}/bearbeiten`} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
             Bearbeiten
           </Link>
           <RecurringActions id={rec.id} status={rec.status} />
@@ -86,30 +86,30 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
           "Bearbeiten" gerade fehlschlaegt/fehlschlagen wuerde — sonst reine "409"-
           Fehlermeldung ohne Kontext, was zu tun ist. */}
       {rec.status === "ENDED" && rec.maxRuns != null && rec.issuedCount >= rec.maxRuns && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <p className="rounded-md border border-seal/30 bg-seal/10 px-4 py-2 text-sm text-seal">
           Dieses Abo wurde beendet, weil die maximale Anzahl Läufe erreicht ist ({rec.issuedCount}/{rec.maxRuns}). Eine Reaktivierung ist
           erst möglich, nachdem „Maximale Läufe“ unter „Bearbeiten“ erhöht oder entfernt wurde.
         </p>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Kunde</h2>
-          <p className="text-slate-700">{rec.customer.name}</p>
-          <p className="text-slate-600">{rec.customer.addressLine1}</p>
-          <p className="text-slate-600">
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          <h2 className="mb-2 font-semibold text-ink">Kunde</h2>
+          <p className="text-ink-soft">{rec.customer.name}</p>
+          <p className="text-ink-soft">{rec.customer.addressLine1}</p>
+          <p className="text-ink-soft">
             {rec.customer.postalCode} {rec.customer.city}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Plan</h2>
-          <dl className="grid grid-cols-2 gap-y-1 text-slate-600">
+        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+          <h2 className="mb-2 font-semibold text-ink">Plan</h2>
+          <dl className="grid grid-cols-2 gap-y-1 text-ink-soft">
             <dt>Rhythmus</dt>
             <dd className="text-right">{intervalLabel(rec.interval, rec.intervalCount)}</dd>
             <dt>Start</dt>
             <dd className="text-right">{deDate(rec.startDate)}</dd>
             <dt>Nächste Rechnung</dt>
-            <dd className="text-right font-medium text-slate-800">{rec.status === "ENDED" ? "—" : deDate(rec.nextRunDate)}</dd>
+            <dd className="text-right font-medium text-ink">{rec.status === "ENDED" ? "—" : deDate(rec.nextRunDate)}</dd>
             <dt>Ende</dt>
             <dd className="text-right">{deDate(rec.endDate)}</dd>
             <dt>Zahlungsziel</dt>
@@ -122,13 +122,13 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
-        <h2 className="mb-2 font-semibold text-slate-900">Aus den Kundenvorgaben übernommen</h2>
-        <p className="mb-3 text-xs text-slate-500">
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
+        <h2 className="mb-2 font-semibold text-ink">Aus den Kundenvorgaben übernommen</h2>
+        <p className="mb-3 text-xs text-ink-muted">
           Diese Werte führt das Abo selbst nicht — sie kommen bei jedem Rechnungslauf frisch vom Kunden (§28–§30). Ändert sich eine
           Kundenvorgabe, wirkt sich das ab dem nächsten Lauf aus.
         </p>
-        <dl className="grid grid-cols-1 gap-y-1 text-slate-600 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-y-1 text-ink-soft sm:grid-cols-2">
           <dt>Zahlungsart</dt>
           <dd className="text-right">{inherited.paymentMethod}</dd>
           <dt>Rechnungsadresse</dt>
@@ -144,9 +144,9 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
         </dl>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-4 py-2">Beschreibung</th>
               <th className="px-4 py-2 text-right">Menge</th>
@@ -154,10 +154,10 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
               <th className="px-4 py-2 text-right">USt</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-rule">
             {rec.lines.map((l) => (
               <tr key={l.id}>
-                <td className="px-4 py-2 text-slate-700">{l.description}</td>
+                <td className="px-4 py-2 text-ink-soft">{l.description}</td>
                 <td className="tabular px-4 py-2 text-right">
                   {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
                 </td>
@@ -169,22 +169,22 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
         </table>
       </div>
       <div className="ml-auto max-w-xs text-sm">
-        <div className="flex justify-between border-t border-slate-200 pt-1 font-semibold">
+        <div className="flex justify-between border-t border-rule pt-1 font-semibold">
           <span>Netto je Rechnung</span>
           <span className="tabular">{formatCents(net, rec.currency)}</span>
         </div>
       </div>
 
-      {rec.notes && <p className="text-sm text-slate-600">{rec.notes}</p>}
+      {rec.notes && <p className="text-sm text-ink-soft">{rec.notes}</p>}
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-slate-900">Erzeugte Rechnungen ({rec.invoices.length})</h2>
+        <h2 className="font-semibold text-ink">Erzeugte Rechnungen ({rec.invoices.length})</h2>
         {rec.invoices.length === 0 ? (
-          <p className="text-sm text-slate-500">Noch keine Rechnung erzeugt.</p>
+          <p className="text-sm text-ink-muted">Noch keine Rechnung erzeugt.</p>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-4 py-2">Nummer / Entwurf</th>
                   <th className="px-4 py-2">Rechnungsdatum</th>
@@ -193,16 +193,16 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
                   <th className="px-4 py-2 text-right">Brutto</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-rule">
                 {rec.invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-50">
+                  <tr key={inv.id} className="hover:bg-paper">
                     <td className="px-4 py-2">
-                      <Link href={`/rechnungen/${inv.id}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link href={`/rechnungen/${inv.id}`} className="font-medium text-pen hover:underline">
                         {inv.number ?? "Entwurf"}
                       </Link>
                     </td>
-                    <td className="px-4 py-2 text-slate-600">{deDate(inv.issueDate)}</td>
-                    <td className="px-4 py-2 text-slate-600">{deDate(inv.deliveryDate)}</td>
+                    <td className="px-4 py-2 text-ink-soft">{deDate(inv.issueDate)}</td>
+                    <td className="px-4 py-2 text-ink-soft">{deDate(inv.deliveryDate)}</td>
                     <td className="px-4 py-2">
                       <StatusBadge status={inv.status} />
                     </td>

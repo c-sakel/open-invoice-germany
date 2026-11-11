@@ -91,10 +91,10 @@ export function MetaBlock({
   }, [mode, isEdit, selectedCustomer, selectedMethod, invoiceDueDays, dispatch]);
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-      <h2 className="font-semibold text-slate-900">Belegdaten</h2>
+    <div className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+      <h2 className="font-semibold text-ink">Belegdaten</h2>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {mode === "INVOICE" && !isEdit && (
           <EditorField label="Typ">
             {(id) => (
@@ -176,10 +176,10 @@ export function MetaBlock({
                   disabled={draft.deliveryDateFollowsIssue}
                   onChange={(e) => dispatch({ type: "set", field: "deliveryDate", value: e.target.value })}
                 />
-                <label className="flex items-center gap-2 text-xs text-slate-500">
+                <label className="flex items-center gap-2 text-xs text-ink-muted">
                   <input
                     type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-slate-300"
+                    className="h-3.5 w-3.5 rounded border-rule-strong"
                     checked={draft.deliveryDateFollowsIssue}
                     onChange={(e) => {
                       const follows = e.target.checked;
@@ -207,7 +207,7 @@ export function MetaBlock({
                   value={draft.dueDate}
                   onChange={(e) => dispatch({ type: "set", field: "dueDate", value: e.target.value })}
                 />
-                <span className="text-xs text-slate-500">in</span>
+                <span className="text-xs text-ink-muted">in</span>
                 <input
                   type="number"
                   min={0}
@@ -217,7 +217,7 @@ export function MetaBlock({
                   value={dueDaysFrom(issueRef, draft.dueDate)}
                   onChange={(e) => dispatch({ type: "set", field: "dueDate", value: dueDateFromDays(issueRef, e.target.value) })}
                 />
-                <span className="text-xs text-slate-500">Tagen</span>
+                <span className="text-xs text-ink-muted">Tagen</span>
               </div>
             )}
           </EditorField>

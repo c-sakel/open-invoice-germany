@@ -35,8 +35,8 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
     <form action={action} className="space-y-6">
       <ErrorBanner message={state.error} />
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Unternehmen</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Unternehmen</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Firmenname" name="legalName" defaultValue={org?.legalName} required className="sm:col-span-2" />
           <TextField label="Inhaber/-in" name="ownerName" defaultValue={org?.ownerName} hint="Erscheint in der automatischen Fußzeile (optional)." />
@@ -51,8 +51,8 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Steuer</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Steuer</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Steuernummer" name="taxNumber" defaultValue={org?.taxNumber} hint="Steuernummer ODER USt-IdNr. ist Pflicht (§ 14 Abs. 4 Nr. 2)" />
           <TextField label="USt-IdNr." name="vatId" defaultValue={org?.vatId} placeholder="DE123456789" />
@@ -71,8 +71,8 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
         </div>
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold text-slate-900">Bank & E-Rechnung</h2>
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">Bank & E-Rechnung</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Kontoinhaber/-in" name="accountHolder" defaultValue={org?.accountHolder} hint="leer = Firmenname" />
           <TextField label="IBAN" name="iban" defaultValue={org?.iban} />

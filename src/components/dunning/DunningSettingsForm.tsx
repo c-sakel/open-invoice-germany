@@ -48,30 +48,30 @@ export function DunningSettingsForm({ initial }: { initial: Settings }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
+    <form onSubmit={submit} className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={settings.autoCreate} onChange={(e) => setSettings((s) => ({ ...s, autoCreate: e.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
-        <span className="font-medium text-slate-700">Mahnungen automatisch erstellen (Scheduler)</span>
+        <input type="checkbox" checked={settings.autoCreate} onChange={(e) => setSettings((s) => ({ ...s, autoCreate: e.target.checked }))} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
+        <span className="font-medium text-ink-soft">Mahnungen automatisch erstellen (Scheduler)</span>
       </label>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={settings.autoSend} onChange={(e) => setSettings((s) => ({ ...s, autoSend: e.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
-        <span className="font-medium text-slate-700">Mahnungen automatisch versenden (§26, zusätzlich je Stufe erforderlich)</span>
+        <input type="checkbox" checked={settings.autoSend} onChange={(e) => setSettings((s) => ({ ...s, autoSend: e.target.checked }))} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
+        <span className="font-medium text-ink-soft">Mahnungen automatisch versenden (§26, zusätzlich je Stufe erforderlich)</span>
       </label>
       <label className="flex flex-col gap-1 text-sm sm:w-64">
-        <span className="font-medium text-slate-700">Karenztage (nur erste Stufe)</span>
+        <span className="font-medium text-ink-soft">Karenztage (nur erste Stufe)</span>
         <input
           type="number"
           value={settings.gracePeriodDays}
           onChange={(e) => setSettings((s) => ({ ...s, gracePeriodDays: Number(e.target.value) }))}
-          className="rounded-md border border-slate-300 px-3 py-2"
+          className="rounded-md border border-rule-strong px-3 py-2"
         />
       </label>
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{error}</div>}
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{error}</div>}
       <div className="flex items-center gap-3 pt-1">
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "…" : "Speichern"}
         </button>
-        {saved && <span className="text-xs text-emerald-700">Gespeichert.</span>}
+        {saved && <span className="text-xs text-ledger">Gespeichert.</span>}
       </div>
     </form>
   );

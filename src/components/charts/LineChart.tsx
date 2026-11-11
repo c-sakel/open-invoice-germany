@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ChartDatum } from "./types";
 import { CHART_COLORS, CHAR_WIDTH_FACTOR } from "./types";
 import { ChartFrame } from "./ChartFrame";
@@ -30,18 +31,22 @@ import { ChartFrame } from "./ChartFrame";
  * wird jetzt aus dem tatsaechlichen Punktabstand und der laengsten Beschriftung berechnet
  * (mindestens 2, wie bisher) — der letzte Punkt bekommt zusaetzlich IMMER ein Label.
  */
+/** Nur noch fuer kumulierte Reihen (Phase 16f) — neue Aufrufer nutzen BarChart. */
 export function LineChart({
   title,
   data,
   color,
   viewBoxWidth = 640,
   emptyMessage,
+  emptyFallback,
 }: {
   title: string;
   data: ChartDatum[];
   color?: string;
   viewBoxWidth?: number;
   emptyMessage?: string;
+  /** Kennzahl statt Achse bei weniger als 2 Werten ungleich 0. */
+  emptyFallback?: ReactNode;
 }) {
   const width = viewBoxWidth;
   const height = 240;
@@ -81,7 +86,7 @@ export function LineChart({
   });
 
   return (
-    <ChartFrame title={title} ariaLabel={title} data={data} width={width} height={height} emptyMessage={emptyMessage}>
+    <ChartFrame title={title} ariaLabel={title} data={data} width={width} height={height} emptyMessage={emptyMessage} emptyFallback={emptyFallback}>
       {[0, 0.5, 1].map((f) => (
         <line
           key={f}
@@ -114,7 +119,7 @@ export function LineChart({
               fontSize={fontSize}
               fill={CHART_COLORS.label}
               paintOrder="stroke"
-              stroke="#ffffff"
+              stroke="var(--color-sheet)"
               strokeWidth={3}
             >
               {p.d.label}

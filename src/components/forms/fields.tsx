@@ -3,13 +3,13 @@
 import { useFormStatus } from "react-dom";
 
 export const inputCls =
-  "rounded-md border border-slate-300 px-3.5 py-2.5 text-[15px] focus:border-indigo-500 focus:outline-none disabled:bg-slate-100";
+  "rounded-md border border-rule-strong px-3.5 py-2.5 text-[15px] focus:border-pen disabled:bg-well";
 /** Dichte Variante NUR fuer die Positionstabelle des Editors (Phase 13b): dort stehen bis zu
  *  acht Eingaben nebeneinander in einer `min-w-[880px]`-Tabelle — mit `inputCls` bricht die
  *  Zeile um bzw. erzwingt waagerechtes Scrollen. Bewusst dieselbe Rahmen-/Fokusdefinition,
  *  nur kleinere Innenabstaende und Schrift. */
 export const inputDenseCls =
-  "rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-100";
+  "rounded-md border border-rule-strong px-2 py-1 text-sm focus:border-pen disabled:bg-well";
 
 interface BaseField {
   label: string;
@@ -34,9 +34,9 @@ export function TextField({
 }: BaseField & { type?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
   return (
     <label className={`flex flex-col gap-1 text-sm ${className ?? ""}`}>
-      <span className="font-medium text-slate-700">
+      <span className="font-medium text-ink-soft">
         {label}
-        {required && <span className="text-rose-500"> *</span>}
+        {required && <span className="text-stamp"> *</span>}
       </span>
       <input
         className={inputCls}
@@ -47,7 +47,7 @@ export function TextField({
         placeholder={placeholder}
         onChange={onChange}
       />
-      {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
     </label>
   );
 }
@@ -55,12 +55,12 @@ export function TextField({
 export function TextAreaField({ label, name, defaultValue, required, placeholder, hint, className }: BaseField) {
   return (
     <label className={`flex flex-col gap-1 text-sm ${className ?? ""}`}>
-      <span className="font-medium text-slate-700">
+      <span className="font-medium text-ink-soft">
         {label}
-        {required && <span className="text-rose-500"> *</span>}
+        {required && <span className="text-stamp"> *</span>}
       </span>
       <textarea className={inputCls} name={name} rows={2} defaultValue={defaultValue ?? undefined} required={required} placeholder={placeholder} />
-      {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
     </label>
   );
 }
@@ -76,7 +76,7 @@ export function SelectField({
 }: Omit<BaseField, "placeholder" | "required"> & { options: { value: string; label: string }[]; onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void }) {
   return (
     <label className={`flex flex-col gap-1 text-sm ${className ?? ""}`}>
-      <span className="font-medium text-slate-700">{label}</span>
+      <span className="font-medium text-ink-soft">{label}</span>
       <select className={inputCls} name={name} defaultValue={defaultValue ?? options[0]?.value} onChange={onChange}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -84,7 +84,7 @@ export function SelectField({
           </option>
         ))}
       </select>
-      {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
     </label>
   );
 }
@@ -92,10 +92,10 @@ export function SelectField({
 export function CheckboxField({ label, name, defaultChecked, hint }: { label: string; name: string; defaultChecked?: boolean; hint?: string }) {
   return (
     <label className="flex items-start gap-2 text-sm">
-      <input type="checkbox" name={name} defaultChecked={defaultChecked} className="mt-1 h-4 w-4 rounded border-slate-300" />
+      <input type="checkbox" name={name} defaultChecked={defaultChecked} className="mt-1 h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
       <span>
-        <span className="font-medium text-slate-700">{label}</span>
-        {hint && <span className="block text-xs text-slate-400">{hint}</span>}
+        <span className="font-medium text-ink-soft">{label}</span>
+        {hint && <span className="block text-xs text-ink-muted">{hint}</span>}
       </span>
     </label>
   );
@@ -107,7 +107,7 @@ export function SubmitButton({ children }: { children: React.ReactNode }) {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+      className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
     >
       {pending ? "Speichern…" : children}
     </button>
@@ -116,5 +116,5 @@ export function SubmitButton({ children }: { children: React.ReactNode }) {
 
 export function ErrorBanner({ message }: { message?: string }) {
   if (!message) return null;
-  return <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm whitespace-pre-line text-rose-800">{message}</div>;
+  return <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm whitespace-pre-line text-stamp">{message}</div>;
 }

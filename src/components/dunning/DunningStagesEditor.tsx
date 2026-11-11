@@ -124,10 +124,10 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
 
   return (
     <div className="space-y-4">
-      {reorderError && <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">{reorderError}</div>}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      {reorderError && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{reorderError}</div>}
+      <div className="overflow-x-auto rounded-[var(--radius-card)] border border-rule bg-sheet">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">Name</th>
@@ -141,18 +141,18 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
               <th className="px-3 py-2 text-right">Aktionen</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-rule">
             {stages.map((s, i) => {
               const d = drafts[s.id];
               const feeAllowed = s.order >= 2;
               return (
                 <tr key={s.id}>
-                  <td className="px-3 py-2 text-slate-500">{s.order}</td>
+                  <td className="px-3 py-2 text-ink-muted">{s.order}</td>
                   <td className="px-3 py-2">
                     <input
                       value={d.name}
                       onChange={(e) => setDraft(s.id, { name: e.target.value })}
-                      className="w-40 rounded border border-slate-300 px-2 py-1"
+                      className="w-40 rounded border border-rule-strong px-2 py-1"
                       aria-label={`Name der Mahnstufe ${s.order}`}
                     />
                   </td>
@@ -161,7 +161,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       type="number"
                       value={d.daysAfterDue}
                       onChange={(e) => setDraft(s.id, { daysAfterDue: Number(e.target.value) })}
-                      className="w-20 rounded border border-slate-300 px-2 py-1"
+                      className="w-20 rounded border border-rule-strong px-2 py-1"
                       aria-label={`Tage nach Fälligkeit — Mahnstufe ${s.order}`}
                     />
                   </td>
@@ -170,7 +170,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       type="number"
                       value={d.newDueDays}
                       onChange={(e) => setDraft(s.id, { newDueDays: Number(e.target.value) })}
-                      className="w-20 rounded border border-slate-300 px-2 py-1"
+                      className="w-20 rounded border border-rule-strong px-2 py-1"
                       aria-label={`Neue Zahlungsfrist in Tagen — Mahnstufe ${s.order}`}
                     />
                   </td>
@@ -181,7 +181,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       disabled={!feeAllowed}
                       value={(d.feeCents / 100).toFixed(2)}
                       onChange={(e) => setDraft(s.id, { feeCents: parseDecimalInput(e.target.value, 2) ?? 0 })}
-                      className="w-20 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400"
+                      className="w-20 rounded border border-rule-strong px-2 py-1 disabled:bg-well disabled:text-ink-soft"
                       title={feeAllowed ? "" : "Mahnkosten erst ab Stufe 3 (order ≥ 2, COMPLIANCE §12)"}
                       aria-label={`Mahnkosten in Euro — Mahnstufe ${s.order}`}
                     />
@@ -191,7 +191,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       type="checkbox"
                       checked={d.calculateInterest}
                       onChange={(e) => setDraft(s.id, { calculateInterest: e.target.checked })}
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded border-rule-strong"
                       aria-label={`Verzugszinsen berechnen — Mahnstufe ${s.order}`}
                     />
                   </td>
@@ -200,7 +200,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       type="checkbox"
                       checked={d.includeB2BFlatFee}
                       onChange={(e) => setDraft(s.id, { includeB2BFlatFee: e.target.checked })}
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded border-rule-strong"
                       aria-label={`40-€-Pauschale (B2B) — Mahnstufe ${s.order}`}
                     />
                   </td>
@@ -209,7 +209,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       type="checkbox"
                       checked={d.autoSend}
                       onChange={(e) => setDraft(s.id, { autoSend: e.target.checked })}
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded border-rule-strong"
                       aria-label={`Automatischer Versand — Mahnstufe ${s.order}`}
                     />
                   </td>
@@ -218,27 +218,27 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       type="checkbox"
                       checked={d.enabled}
                       onChange={(e) => setDraft(s.id, { enabled: e.target.checked })}
-                      className="h-4 w-4 rounded border-slate-300"
+                      className="h-4 w-4 rounded border-rule-strong"
                       aria-label={`Mahnstufe ${s.order} aktiv`}
                     />
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col items-end gap-1">
                       <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded border border-slate-300 px-1.5 py-0.5 text-xs disabled:opacity-40">
+                        <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="rounded-[var(--radius-control)] border border-rule-strong px-1.5 py-0.5 text-xs disabled:opacity-40">
                           ↑
                         </button>
-                        <button type="button" onClick={() => move(i, 1)} disabled={i === stages.length - 1} className="rounded border border-slate-300 px-1.5 py-0.5 text-xs disabled:opacity-40">
+                        <button type="button" onClick={() => move(i, 1)} disabled={i === stages.length - 1} className="rounded-[var(--radius-control)] border border-rule-strong px-1.5 py-0.5 text-xs disabled:opacity-40">
                           ↓
                         </button>
-                        <button type="button" onClick={() => save(s.id)} disabled={busyId === s.id} className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                        <button type="button" onClick={() => save(s.id)} disabled={busyId === s.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
                           Speichern
                         </button>
-                        <button type="button" onClick={() => remove(s.id)} disabled={busyId === s.id} className="rounded-md border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60">
+                        <button type="button" onClick={() => remove(s.id)} disabled={busyId === s.id} className="rounded-md border border-stamp/30 px-2 py-1 text-xs font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60">
                           Löschen
                         </button>
                       </div>
-                      {errors[s.id] && <span className="text-right text-xs text-rose-600">{errors[s.id]}</span>}
+                      {errors[s.id] && <span className="text-right text-xs text-stamp">{errors[s.id]}</span>}
                     </div>
                   </td>
                 </tr>
@@ -248,26 +248,26 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
         </table>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">Neue Mahnstufe</h3>
+      <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
+        <h3 className="mb-2 text-sm font-semibold text-ink">Neue Mahnstufe</h3>
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-600">Name</span>
-            <input value={newStage.name} onChange={(e) => setNewStage((s) => ({ ...s, name: e.target.value }))} className="w-40 rounded-md border border-slate-300 px-2 py-1.5" />
+            <span className="text-ink-soft">Name</span>
+            <input value={newStage.name} onChange={(e) => setNewStage((s) => ({ ...s, name: e.target.value }))} className="w-40 rounded-md border border-rule-strong px-2 py-1.5" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-600">Tage nach Fälligkeit</span>
-            <input type="number" value={newStage.daysAfterDue} onChange={(e) => setNewStage((s) => ({ ...s, daysAfterDue: Number(e.target.value) }))} className="w-24 rounded-md border border-slate-300 px-2 py-1.5" />
+            <span className="text-ink-soft">Tage nach Fälligkeit</span>
+            <input type="number" value={newStage.daysAfterDue} onChange={(e) => setNewStage((s) => ({ ...s, daysAfterDue: Number(e.target.value) }))} className="w-24 rounded-md border border-rule-strong px-2 py-1.5" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-600">Neue Frist (Tage)</span>
-            <input type="number" value={newStage.newDueDays} onChange={(e) => setNewStage((s) => ({ ...s, newDueDays: Number(e.target.value) }))} className="w-24 rounded-md border border-slate-300 px-2 py-1.5" />
+            <span className="text-ink-soft">Neue Frist (Tage)</span>
+            <input type="number" value={newStage.newDueDays} onChange={(e) => setNewStage((s) => ({ ...s, newDueDays: Number(e.target.value) }))} className="w-24 rounded-md border border-rule-strong px-2 py-1.5" />
           </label>
-          <button type="button" onClick={createStage} disabled={creating || !newStage.name.trim()} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+          <button type="button" onClick={createStage} disabled={creating || !newStage.name.trim()} className="rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
             {creating ? "…" : "Stufe anlegen"}
           </button>
         </div>
-        {newError && <p className="mt-2 text-xs text-rose-600">{newError}</p>}
+        {newError && <p className="mt-2 text-xs text-stamp">{newError}</p>}
       </div>
     </div>
   );

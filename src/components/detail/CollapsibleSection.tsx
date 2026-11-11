@@ -13,12 +13,12 @@ export function CollapsibleSection({
   children: ReactNode;
 }) {
   return (
-    <details open={defaultOpen} className="rounded-lg border border-slate-200 bg-white">
-      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-900">
+    <details open={defaultOpen} className="rounded-[var(--radius-card)] border border-rule bg-sheet">
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-ink">
         <span>{title}</span>
-        {summary && <span className="font-normal text-slate-500">{summary}</span>}
+        {summary && <span className="font-normal text-ink-muted">{summary}</span>}
       </summary>
-      <div className="border-t border-slate-100 p-4">{children}</div>
+      <div className="border-t border-rule p-4">{children}</div>
     </details>
   );
 }

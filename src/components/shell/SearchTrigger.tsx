@@ -39,7 +39,7 @@ export function SearchTrigger({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <button type="button" onClick={openSearch} aria-label="Suchen" title="Suchen" className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100">
+      <button type="button" onClick={openSearch} aria-label="Suchen" title="Suchen" className="rounded-md p-1.5 text-ink-soft hover:bg-well">
         <NavIcon name="search" className="h-5 w-5" />
       </button>
     );
@@ -49,12 +49,12 @@ export function SearchTrigger({ compact = false }: { compact?: boolean }) {
     <button
       type="button"
       onClick={openSearch}
-      className="flex w-full items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-sm text-slate-500 hover:bg-white"
+      className="flex w-full items-center gap-2 rounded-md border border-rule bg-paper px-2 py-1.5 text-left text-sm text-ink-muted hover:bg-sheet"
       aria-label="Suchen"
     >
       <NavIcon name="search" className="h-4 w-4" />
       <span className="flex-1">Suchen</span>
-      <kbd className="rounded border border-slate-200 bg-white px-1 text-[10px] text-slate-400">{isMac ? "⌘K" : "Strg K"}</kbd>
+      <kbd className="rounded border border-rule bg-sheet px-1 text-[10px] text-ink-muted">{isMac ? "⌘K" : "Strg K"}</kbd>
     </button>
   );
 }

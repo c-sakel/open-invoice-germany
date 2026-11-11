@@ -43,7 +43,7 @@ export function ProductForm({
       <ErrorBanner message={state.error} />
       {product && <input type="hidden" name="id" value={product.id} />}
 
-      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:grid-cols-2">
         <TextField label="Bezeichnung" name="name" defaultValue={product?.name} required className="sm:col-span-2" />
         <TextAreaField label="Beschreibung" name="description" defaultValue={product?.description} className="sm:col-span-2" />
         <TextField

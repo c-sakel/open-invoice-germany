@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { NavGroup, NavItem } from "@/lib/nav";
-import { activeGroupKey, itemMatches, SETTINGS_ITEMS } from "@/lib/nav";
+import { activeGroupKey, itemMatches, SETTINGS_GROUPS, SETTINGS_ITEMS } from "@/lib/nav";
 import { NavIcon } from "./NavIcons";
 import { UnreadBadge } from "./UnreadBadge";
 
@@ -24,8 +24,10 @@ function ItemLink({ item, active, collapsed, badge, onNavigate, indent }: { item
       onClick={onNavigate}
       title={collapsed ? item.label : undefined}
       aria-current={active ? "page" : undefined}
-      className={`relative flex items-center gap-2.5 rounded-md py-1.5 text-sm ${indent ? "pl-9 pr-2" : "px-2"} ${
-        active ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+      className={`relative flex min-h-9 items-center gap-2.5 rounded-md py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-pen ${indent ? "pl-9 pr-2" : "px-2"} ${
+        active
+          ? "bg-pen-wash font-medium text-pen before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-pen"
+          : "text-ink-soft hover:bg-well hover:text-ink"
       }`}
     >
       {item.icon && <NavIcon name={item.icon} className="h-4 w-4 shrink-0" />}
@@ -106,13 +108,13 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
           onClick={toggleOpen}
           aria-expanded={effectiveOpen}
           aria-controls={itemsId}
-          className="flex w-full items-center justify-between rounded-md px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600"
+          className="flex w-full items-center justify-between rounded-md px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-muted hover:text-ink-soft"
         >
           <span>{group.label}</span>
           <NavIcon name="chevron-right" className={`h-3 w-3 shrink-0 transition-transform ${effectiveOpen ? "rotate-90" : ""}`} />
         </button>
       )}
-      {collapsed && <div className="my-2 border-t border-slate-200" />}
+      {collapsed && <div className="my-2 border-t border-rule" />}
       {effectiveOpen && (
         <div id={itemsId} className="space-y-0.5">
           {group.items.map((item) => {
@@ -122,9 +124,15 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
               <div key={item.href}>
                 <ItemLink item={item} active={isActive} collapsed={collapsed} badge={unreadCount} onNavigate={onNavigate} />
                 {showSettings && (
-                  <div className="mt-0.5 space-y-0.5">
-                    {SETTINGS_ITEMS.map((s) => (
-                      <ItemLink key={s.href} item={s} active={itemMatches(s, pathname, search)} collapsed={false} badge={0} onNavigate={onNavigate} indent />
+                  <div className="mt-0.5 space-y-1" role="group" aria-label="Einstellungen">
+                    {SETTINGS_GROUPS.map((sg) => (
+                      <div key={sg.label} className="space-y-0.5">
+                        <div className="pl-9 pr-2 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{sg.label}</div>
+                        {sg.keys.map((k) => {
+                          const s = SETTINGS_ITEMS.find((i) => i.key === k);
+                          return s ? <ItemLink key={s.href} item={s} active={itemMatches(s, pathname, search)} collapsed={false} badge={0} onNavigate={onNavigate} indent /> : null;
+                        })}
+                      </div>
                     ))}
                   </div>
                 )}

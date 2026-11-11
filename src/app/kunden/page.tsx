@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
 import { archiveCustomer } from "@/app/actions/masterdata";
+import { DataTable } from "@/components/ui/DataTable";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         title="Kunden"
         subtitle={`${customers.length} Kunden`}
         actions={
-          <Link href="/kunden/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neuer Kunde
           </Link>
         }
@@ -55,56 +56,55 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
           name="q"
           defaultValue={query}
           placeholder="Suche nach Name oder Kundennummer…"
-          className="w-full max-w-sm rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none sm:w-80"
+          className="w-full max-w-sm rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen sm:w-80"
         />
-        <button type="submit" className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        <button type="submit" className="rounded-md border border-rule-strong px-4 py-2 text-sm font-medium text-ink-soft hover:bg-paper">
           Suchen
         </button>
       </form>
 
-      {customers.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          Noch keine Kunden. Lege deinen ersten Kunden an.
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Nr.</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Ort</th>
-                <th className="px-4 py-3">Typ</th>
-                <th className="px-4 py-3">Standardkontakt</th>
-                <th className="px-4 py-3">USt-IdNr.</th>
-                <th className="px-4 py-3 text-right">Aktion</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {customers.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-500">{c.customerNumber ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Link href={`/kunden/${c.id}`} className="font-medium text-indigo-600 hover:underline">
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{c.city}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.type === "BUSINESS" ? "B2B" : "B2C"}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</td>
-                  <td className="px-4 py-3 text-slate-500">{c.vatId ?? "—"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <form action={archiveCustomer} className="inline">
-                      <input type="hidden" name="id" value={c.id} />
-                      <button className="text-xs text-slate-400 hover:text-rose-600">Archivieren</button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Kunden"
+          rows={customers}
+          rowKey={(c) => c.id}
+          empty={{ text: "Noch keine Kunden. Lege deinen ersten Kunden an.", action: { label: "Neu anlegen", href: "/kunden/neu" } }}
+          columns={[
+            { key: "nr", header: "Nr.", mobile: "meta", cell: (c) => <span className="text-ink-muted">{c.customerNumber ?? "—"}</span> },
+            {
+              key: "name",
+              header: "Name",
+              mobile: "title",
+              cell: (c) => (
+                <Link href={`/kunden/${c.id}`} className="break-words font-medium text-pen hover:underline">
+                  {c.name}
+                </Link>
+              ),
+            },
+            { key: "city", header: "Ort", mobile: "meta", cell: (c) => <span className="text-ink-soft">{c.city}</span> },
+            { key: "type", header: "Typ", mobile: "meta", cell: (c) => <span className="text-ink-soft">{c.type === "BUSINESS" ? "B2B" : "B2C"}</span> },
+            {
+              key: "contact",
+              header: "Standardkontakt",
+              mobile: "hidden",
+              cell: (c) => <span className="text-ink-soft">{c.contacts[0] ? `${c.contacts[0].firstName} ${c.contacts[0].lastName}` : "—"}</span>,
+            },
+            { key: "vat", header: "USt-IdNr.", mobile: "hidden", cell: (c) => <span className="text-ink-muted">{c.vatId ?? "—"}</span> },
+            {
+              key: "action",
+              header: "Aktion",
+              align: "right",
+              mobile: "meta",
+              cell: (c) => (
+                <form action={archiveCustomer} className="inline">
+                  <input type="hidden" name="id" value={c.id} />
+                  <button className="inline-flex min-h-8 items-center text-xs text-ink-muted hover:text-stamp">Archivieren</button>
+                </form>
+              ),
+            },
+          ]}
+        />
+      </div>
     </div>
   );
 }

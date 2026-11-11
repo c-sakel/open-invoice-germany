@@ -15,7 +15,7 @@ export default async function TagsSettingsPage() {
     <div className="space-y-6">
       <SettingsTabs active="tags" />
       <h1 className="text-2xl font-bold tracking-tight">Tags</h1>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Ordnungsmerkmal über Rechnungen, Angeboten/Auftragsbestätigungen und Lieferscheinen — reine Metadaten, kein Belegbestandteil.
       </p>
       <TagManager tags={tags} />

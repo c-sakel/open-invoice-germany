@@ -26,16 +26,16 @@ export function TemplateRowActions({ id, isDefault }: { id: string; isDefault: b
         {!isDefault && (
           <form action={defaultAction}>
             <input type="hidden" name="id" value={id} />
-            <RowSubmitButton className="text-slate-600 hover:underline">Als Standard</RowSubmitButton>
+            <RowSubmitButton className="text-ink-soft hover:underline">Als Standard</RowSubmitButton>
           </form>
         )}
         <form action={deleteAction}>
           <input type="hidden" name="id" value={id} />
-          <RowSubmitButton className="text-rose-600 hover:underline">Löschen</RowSubmitButton>
+          <RowSubmitButton className="text-stamp hover:underline">Löschen</RowSubmitButton>
         </form>
       </div>
-      {deleteState.error && <p className="text-xs text-rose-700">{deleteState.error}</p>}
-      {defaultState.error && <p className="text-xs text-rose-700">{defaultState.error}</p>}
+      {deleteState.error && <p className="text-xs text-stamp">{deleteState.error}</p>}
+      {defaultState.error && <p className="text-xs text-stamp">{defaultState.error}</p>}
     </div>
   );
 }

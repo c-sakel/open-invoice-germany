@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
-import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline } from "@/domain/invoice/list";
+import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline, type InvoiceListRow } from "@/domain/invoice/list";
 import { availableActions } from "@/domain/document/actions";
 import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
@@ -18,6 +18,11 @@ import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs } from "@/components/list/StatusTabs";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
+import { DataTable, type DataColumn } from "@/components/ui/DataTable";
+import { Card } from "@/components/ui/Card";
+import { StackedBar } from "@/components/charts/StackedBar";
+import { BelegStreckeMini } from "@/components/BelegStreckeMini";
+import { invoiceListBand } from "@/components/list/list-band";
 import { relativeDueLabel } from "@/lib/relative-date";
 import { originsFor } from "@/domain/document/origin";
 import { parseListQuery, runListFilter } from "@/lib/list-query";
@@ -145,6 +150,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
   const ids = result.rows.map((r) => r.id);
   const [origins, tagsByDocId] = await Promise.all([originsFor(org.id, "INVOICE", ids), tagsForDocuments(org.id, "INVOICE", ids)]);
 
+  const bandSegments = invoiceListBand(headline);
   const headlineItems: HeadlineItem[] = [
     { label: "Belege", value: String(headline.count) },
     {
@@ -207,13 +213,142 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     { type: "select", name: "tag", label: "Tag", options: tags.map((t) => ({ value: t.id, label: t.name })) },
   ];
 
+  const columns: DataColumn<InvoiceListRow>[] = [
+    {
+      key: "number",
+      header: "Nummer",
+      mobile: "title",
+      cell: (inv) => {
+        const origin = origins.get(inv.id);
+        const rowTags = tagsByDocId.get(inv.id) ?? [];
+        return (
+          <>
+            <Link href={detailHref(inv.id)} className="font-medium text-pen hover:underline">
+              {inv.number ?? "Entwurf"}
+            </Link>
+            {origin && (
+              <span className="block">
+                <Link href={origin.href} className="text-xs text-ink-muted hover:text-ink-soft hover:underline">
+                  {origin.label}
+                </Link>
+              </span>
+            )}
+            {rowTags.length > 0 && (
+              <span className="mt-1 block">
+                <TagChips tags={rowTags} size="xs" />
+              </span>
+            )}
+          </>
+        );
+      },
+    },
+    { key: "type", header: "Typ", mobile: "hidden", cell: (inv) => <span className="text-ink-soft">{TYPE_LABEL[inv.type] ?? inv.type}</span> },
+    { key: "customer", header: "Kunde", mobile: "meta", cell: (inv) => <span className="break-words text-ink-soft">{inv.customerName}</span> },
+    {
+      key: "due",
+      header: "Fällig",
+      mobile: "meta",
+      cell: (inv) => {
+        const due = relativeDueLabel(inv.dueDate, now, inv.status);
+        return (
+          <span title={deDate(inv.dueDate)} className={due?.overdue ? "text-stamp" : "text-ink-soft"}>
+            {due ? due.text : "—"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      mobile: "meta",
+      cell: (inv) => (
+        <>
+          <span className={inv.type === "CREDIT_NOTE" ? undefined : "hidden sm:inline"}>
+            <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
+          </span>
+          <span className={inv.type === "CREDIT_NOTE" ? "hidden" : "sm:hidden"}>
+            <BelegStreckeMini
+              status={inv.status}
+              sent={inv.hasEmailLog}
+              paidAmountCents={inv.paidAmountCents}
+              payableCents={inv.payableCents ?? inv.grossTotalCents}
+            />
+          </span>
+        </>
+      ),
+    },
+    { key: "gross", header: "Brutto", mobile: "amount", cell: (inv) => <span className="font-medium">{formatCents(inv.grossTotalCents, inv.currency)}</span> },
+    {
+      key: "open",
+      header: "Offen",
+      align: "right",
+      mobile: "meta",
+      cell: (inv) => (
+        <>
+          <span className="hidden text-ink-soft sm:inline">{formatCents(inv.openCents, inv.currency)}</span>
+          {inv.openCents !== inv.grossTotalCents && inv.type !== "CREDIT_NOTE" && (
+            <span className="sm:hidden">Offen {formatCents(inv.openCents, inv.currency)}</span>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Aktionen",
+      align: "right",
+      mobile: "meta",
+      cell: (inv) => {
+        const actions = availableActions({
+          kind: "INVOICE",
+          type: inv.type,
+          status: inv.effectiveStatus,
+          isDraft: inv.effectiveStatus === "DRAFT",
+          hasEmailLog: inv.hasEmailLog,
+          dunningState: inv.dunningState,
+        });
+        return (
+          <RowActionsMenu
+            kind="INVOICE"
+            id={inv.id}
+            actions={actions}
+            openHref={`/rechnungen/${inv.id}`}
+            editHref={inv.effectiveStatus === "DRAFT" ? `/rechnungen/${inv.id}/bearbeiten` : undefined}
+            pdfHref={`/api/invoices/${inv.id}/pdf`}
+            xrechnungHref={`/api/invoices/${inv.id}/xrechnung`}
+            emailDocType={inv.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE"}
+            hasEmailLog={inv.hasEmailLog}
+            duplicateRoute={`/api/invoices/${inv.id}/duplicate`}
+            duplicateRedirect="/rechnungen/{id}/bearbeiten"
+            cancelRoute={`/api/invoices/${inv.id}/cancel`}
+            dunningRoute={`/api/invoices/${inv.id}/dunning`}
+            dunningCount={inv.dunningCount}
+            templateName={inv.number ?? undefined}
+            payment={
+              inv.openCents > 0
+                ? {
+                    openCents: inv.openCents,
+                    methods: paymentMethodOptions,
+                    defaultMethod: resolveDefaultPaymentMethodCode({
+                      customerDefaultCode: customerDefaultCodeById.get(inv.customerId),
+                      orgDefaultCode,
+                      activeMethods: paymentMethodOptions,
+                    }),
+                  }
+                : undefined
+            }
+          />
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/rechnungen/neu" className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
             Neue Rechnung
           </Link>
         }
@@ -223,114 +358,28 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
       <FilterBar basePath="/rechnungen" fields={fields} values={values} />
 
-      <ListHeadline items={headlineItems} />
-
-      {result.rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          Keine Rechnungen gefunden.{" "}
-          <Link href="/rechnungen/neu" className="font-medium text-indigo-600 hover:underline">
-            Lege deine erste Rechnung an.
-          </Link>
-        </div>
+      {headline.mixedCurrency || bandSegments.every((seg) => seg.value === 0) ? (
+        <ListHeadline items={headlineItems} />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Nummer</th>
-                <th className="px-4 py-3">Typ</th>
-                <th className="px-4 py-3">Kunde</th>
-                <th className="px-4 py-3">Fällig</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Brutto</th>
-                <th className="px-4 py-3 text-right">Offen</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {result.rows.map((inv) => {
-                const actions = availableActions({
-                  kind: "INVOICE",
-                  type: inv.type,
-                  status: inv.effectiveStatus,
-                  isDraft: inv.effectiveStatus === "DRAFT",
-                  hasEmailLog: inv.hasEmailLog,
-                  dunningState: inv.dunningState,
-                });
-                const due = relativeDueLabel(inv.dueDate, now, inv.status);
-                const origin = origins.get(inv.id);
-                const rowTags = tagsByDocId.get(inv.id) ?? [];
-                return (
-                  <tr key={inv.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <Link href={detailHref(inv.id)} className="font-medium text-indigo-600 hover:underline">
-                        {inv.number ?? "Entwurf"}
-                      </Link>
-                      {origin && (
-                        <div>
-                          <Link href={origin.href} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">
-                            {origin.label}
-                          </Link>
-                        </div>
-                      )}
-                      {rowTags.length > 0 && (
-                        <div className="mt-1">
-                          <TagChips tags={rowTags} size="xs" />
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{TYPE_LABEL[inv.type] ?? inv.type}</td>
-                    <td className="px-4 py-3 text-slate-600">{inv.customerName}</td>
-                    <td className="px-4 py-3">
-                      <span title={deDate(inv.dueDate)} className={due?.overdue ? "text-rose-700" : "text-slate-600"}>
-                        {due ? due.text : "—"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={inv.effectiveStatus} partiallyPaid={inv.partiallyPaid} />
-                    </td>
-                    <td className="tabular px-4 py-3 text-right font-medium">{formatCents(inv.grossTotalCents, inv.currency)}</td>
-                    <td className="tabular px-4 py-3 text-right text-slate-600">{formatCents(inv.openCents, inv.currency)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <RowActionsMenu
-                        kind="INVOICE"
-                        id={inv.id}
-                        actions={actions}
-                        openHref={`/rechnungen/${inv.id}`}
-                        editHref={inv.effectiveStatus === "DRAFT" ? `/rechnungen/${inv.id}/bearbeiten` : undefined}
-                        pdfHref={`/api/invoices/${inv.id}/pdf`}
-                        xrechnungHref={`/api/invoices/${inv.id}/xrechnung`}
-                        emailDocType={inv.type === "CREDIT_NOTE" ? "CREDIT_NOTE" : "INVOICE"}
-                        hasEmailLog={inv.hasEmailLog}
-                        duplicateRoute={`/api/invoices/${inv.id}/duplicate`}
-                        duplicateRedirect="/rechnungen/{id}/bearbeiten"
-                        cancelRoute={`/api/invoices/${inv.id}/cancel`}
-                        dunningRoute={`/api/invoices/${inv.id}/dunning`}
-                        dunningCount={inv.dunningCount}
-                        templateName={inv.number ?? undefined}
-                        payment={
-                          inv.openCents > 0
-                            ? {
-                                openCents: inv.openCents,
-                                methods: paymentMethodOptions,
-                                defaultMethod: resolveDefaultPaymentMethodCode({
-                                  customerDefaultCode: customerDefaultCodeById.get(inv.customerId),
-                                  orgDefaultCode,
-                                  activeMethods: paymentMethodOptions,
-                                }),
-                              }
-                            : undefined
-                        }
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <Pagination basePath="/rechnungen" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
-        </div>
+        <Card>
+          <StackedBar
+            title="Geldfluss"
+            segments={bandSegments}
+            totalLabel={`${headline.bandCount} festgeschriebene Belege${headline.draftCount > 0 ? ` · ${headline.draftCount} Entwürfe (nicht im Band)` : ""}`}
+          />
+        </Card>
       )}
+
+      <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <DataTable
+          caption="Rechnungen"
+          rows={result.rows}
+          rowKey={(inv) => inv.id}
+          empty={{ text: "Keine Rechnungen gefunden.", action: { label: "Erste Rechnung anlegen", href: "/rechnungen/neu" } }}
+          columns={columns}
+        />
+        <Pagination basePath="/rechnungen" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
+      </div>
     </div>
   );
 }

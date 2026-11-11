@@ -99,11 +99,11 @@ export function TakeOverPrompt({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm">
-      <span className="text-indigo-900">
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-pen/30 bg-pen-wash p-3 text-sm">
+      <span className="text-pen">
         Letzte {KIND_LABEL[last.kind]} <strong>{last.number}</strong> dieses Kunden als Vorlage übernehmen?
       </span>
-      <div className="flex flex-wrap items-center gap-3 text-xs text-indigo-800">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-pen">
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={lines} onChange={(e) => setLines(e.target.checked)} className="h-3.5 w-3.5" />
           Positionen
@@ -125,14 +125,14 @@ export function TakeOverPrompt({
         type="button"
         onClick={apply}
         disabled={busy}
-        className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+        className="rounded-md bg-pen px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60"
       >
         {busy ? "…" : "Übernehmen"}
       </button>
-      <Link href={`${documentDetailBasePath}/${last.id}`} className="text-xs font-medium text-indigo-700 hover:underline">
+      <Link href={`${documentDetailBasePath}/${last.id}`} className="text-xs font-medium text-pen hover:underline">
         Dokument duplizieren
       </Link>
-      <button type="button" onClick={() => setState((s) => (s ? { ...s, dismissed: true } : s))} className="ml-auto text-xs text-indigo-500 hover:underline">
+      <button type="button" onClick={() => setState((s) => (s ? { ...s, dismissed: true } : s))} className="ml-auto text-xs text-pen hover:underline">
         Nicht jetzt
       </button>
     </div>

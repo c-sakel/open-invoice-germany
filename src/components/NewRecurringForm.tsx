@@ -244,27 +244,27 @@ export function NewRecurringForm({
     router.push(`/abos/${j.id}`);
   }
 
-  const input = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
     <form onSubmit={submit} className="space-y-6">
-      {error && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+      {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{error}</div>}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Bezeichnung</span>
+          <span className="font-medium text-ink-soft">Bezeichnung</span>
           <input className={input} placeholder="z. B. Wartungsvertrag Mustermann" value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
         {mode === "edit" ? (
           // Fix-Runde 1: kein Kundenwechsel beim Bearbeiten (customerId ist nicht Teil
           // von updateRecurringSchema) — nur lesend anzeigen.
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Kunde</span>
-            <span className={`${input} bg-slate-50 text-slate-600`}>{customerName}</span>
+            <span className="font-medium text-ink-soft">Kunde</span>
+            <span className={`${input} bg-paper text-ink-soft`}>{customerName}</span>
           </label>
         ) : (
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">Kunde</span>
+            <span className="font-medium text-ink-soft">Kunde</span>
             <select className={input} value={customerId} onChange={(e) => selectCustomer(e.target.value)} required>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -278,7 +278,7 @@ export function NewRecurringForm({
 
       <div className="grid gap-4 sm:grid-cols-4">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Währung</span>
+          <span className="font-medium text-ink-soft">Währung</span>
           <select
             className={input}
             value={currency}
@@ -294,13 +294,13 @@ export function NewRecurringForm({
             ))}
           </select>
           {currency !== "EUR" && (
-            <span className="text-xs text-amber-700">
+            <span className="text-xs text-seal">
               Fremdwährung: kein GiroCode; USt-Betrag in EUR (Art. 230 MwStSystRL, § 16 Abs. 6 UStG) wird nicht ausgewiesen.
             </span>
           )}
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Rhythmus</span>
+          <span className="font-medium text-ink-soft">Rhythmus</span>
           <select className={input} value={interval} onChange={(e) => setInterval(e.target.value)}>
             {/* Phase 8b (§43): DAY ergaenzt WEEKLY/MONTHLY/QUARTERLY/YEARLY. */}
             <option value="DAY">täglich</option>
@@ -311,26 +311,26 @@ export function NewRecurringForm({
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">alle N Intervalle</span>
+          <span className="font-medium text-ink-soft">alle N Intervalle</span>
           <input className={input} type="number" min={1} max={48} value={intervalCount} onChange={(e) => setIntervalCount(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Startdatum</span>
+          <span className="font-medium text-ink-soft">Startdatum</span>
           <input className={input} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Enddatum (optional)</span>
+          <span className="font-medium text-ink-soft">Enddatum (optional)</span>
           <input className={input} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </label>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Zahlungsziel (Tage)</span>
+          <span className="font-medium text-ink-soft">Zahlungsziel (Tage)</span>
           <input className={input} type="number" min={0} max={365} value={paymentTermsDays} onChange={(e) => setPaymentTermsDays(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Maximale Laeufe (optional)</span>
+          <span className="font-medium text-ink-soft">Maximale Laeufe (optional)</span>
           <input
             className={input}
             type="number"
@@ -340,23 +340,23 @@ export function NewRecurringForm({
             placeholder="unbegrenzt"
           />
         </label>
-        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-rule bg-sheet px-3 py-2 text-sm">
           <input type="checkbox" checked={showPeriodText} onChange={(e) => setShowPeriodText(e.target.checked)} />
-          <span className="text-slate-700">Leistungszeitraum-Text auf der Rechnung einfügen</span>
+          <span className="text-ink-soft">Leistungszeitraum-Text auf der Rechnung einfügen</span>
         </label>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-rule bg-sheet px-3 py-2 text-sm">
           <input
             type="checkbox"
             checked={autoFinalize}
             disabled={autoSend}
             onChange={(e) => setAutoFinalize(e.target.checked)}
           />
-          <span className="text-slate-700">Rechnungen automatisch festschreiben (sofort GoBD-konform &amp; nummeriert)</span>
+          <span className="text-ink-soft">Rechnungen automatisch festschreiben (sofort GoBD-konform &amp; nummeriert)</span>
         </label>
-        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+        <label className="flex cursor-pointer items-center gap-2 self-end rounded-md border border-rule bg-sheet px-3 py-2 text-sm">
           <input
             type="checkbox"
             checked={autoSend}
@@ -368,14 +368,14 @@ export function NewRecurringForm({
               if (checked) setAutoFinalize(true);
             }}
           />
-          <span className="text-slate-700">
+          <span className="text-ink-soft">
             Rechnungen automatisch per E-Mail versenden
-            {autoSend && <span className="block text-xs text-slate-500">Versand setzt Festschreibung voraus.</span>}
+            {autoSend && <span className="block text-xs text-ink-muted">Versand setzt Festschreibung voraus.</span>}
           </span>
         </label>
         {autoSend && emailTemplates.length > 0 && (
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-slate-700">E-Mail-Vorlage (optional)</span>
+            <span className="font-medium text-ink-soft">E-Mail-Vorlage (optional)</span>
             <select className={input} value={emailTemplateId} onChange={(e) => setEmailTemplateId(e.target.value)}>
               <option value="">— Standardvorlage —</option>
               {emailTemplates.map((t) => (
@@ -390,17 +390,17 @@ export function NewRecurringForm({
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-900">Positionen</h2>
-          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine(defaultTaxRate)])} className="text-sm font-medium text-indigo-600 hover:underline">
+          <h2 className="font-semibold text-ink">Positionen</h2>
+          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine(defaultTaxRate)])} className="text-sm font-medium text-pen hover:underline">
             + Position
           </button>
         </div>
         {lines.map((line, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <div key={i} className="grid grid-cols-12 gap-2 rounded-[var(--radius-card)] border border-rule bg-sheet p-3">
             <div className="col-span-12 flex flex-col gap-1 sm:col-span-5">
               <input className={input} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
               {products.length > 0 && (
-                <select className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500" defaultValue="" onChange={(e) => applyProduct(i, e.target.value)}>
+                <select className="rounded-[var(--radius-control)] border border-rule px-2 py-1 text-xs text-ink-muted" defaultValue="" onChange={(e) => applyProduct(i, e.target.value)}>
                   <option value="">aus Katalog…</option>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -420,7 +420,7 @@ export function NewRecurringForm({
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-rose-500 hover:underline sm:col-span-1" disabled={lines.length === 1}>
+            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-stamp hover:underline sm:col-span-1" disabled={lines.length === 1}>
               ✕
             </button>
           </div>
@@ -428,15 +428,15 @@ export function NewRecurringForm({
       </div>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-slate-700">Hinweis / Notiz (erscheint auf jeder Rechnung)</span>
+        <span className="font-medium text-ink-soft">Hinweis / Notiz (erscheint auf jeder Rechnung)</span>
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
 
-      <div className="flex items-center justify-between border-t border-slate-200 pt-4">
-        <span className="text-sm text-slate-500">
-          Nettosumme je Rechnung: <span className="tabular font-medium text-slate-800">{(netCents / 100).toFixed(2)} {currencySymbol(currency)}</span>
+      <div className="flex items-center justify-between border-t border-rule pt-4">
+        <span className="text-sm text-ink-muted">
+          Nettosumme je Rechnung: <span className="tabular font-medium text-ink">{(netCents / 100).toFixed(2)} {currencySymbol(currency)}</span>
         </span>
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "Speichert…" : mode === "edit" ? "Änderungen speichern" : "Abo anlegen"}
         </button>
       </div>

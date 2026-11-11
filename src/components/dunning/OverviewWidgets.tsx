@@ -1,37 +1,42 @@
 import { formatCents } from "@/lib/money";
 import type { DunningOverview } from "@/domain/dunning/overview";
+import { Card } from "@/components/ui/Card";
+import { Kpi } from "@/components/ui/Kpi";
+import { StackedBar, type StackedSegment } from "@/components/charts/StackedBar";
+import { CHART_COLORS } from "@/components/charts/types";
 
-const BUCKET_LABEL: Record<keyof DunningOverview["widgets"]["aging"], string> = {
-  d1_7: "1–7 Tage",
-  d8_30: "8–30 Tage",
-  d31_60: "31–60 Tage",
-  d60plus: "> 60 Tage",
-};
+type Aging = DunningOverview["widgets"]["aging"];
+
+const BUCKETS: { key: keyof Aging; label: string; color: string }[] = [
+  { key: "d1_7", label: "1–7 Tage", color: CHART_COLORS.primary },
+  { key: "d8_30", label: "8–30 Tage", color: CHART_COLORS.due },
+  { key: "d31_60", label: "31–60 Tage", color: CHART_COLORS.overdue },
+  { key: "d60plus", label: "> 60 Tage", color: CHART_COLORS.second },
+];
+
+/** Alterstruktur der ueberfaelligen Rechnungen als Segmente (Betrag je Altersklasse, Anzahl im Label). */
+export function agingSegments(aging: Aging): StackedSegment[] {
+  return BUCKETS.map((b) => ({
+    key: b.key,
+    label: `${b.label} (${aging[b.key].count})`,
+    value: aging[b.key].cents,
+    valueLabel: formatCents(aging[b.key].cents),
+    color: b.color,
+  }));
+}
 
 export function OverviewWidgets({ widgets }: { widgets: DunningOverview["widgets"] }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Überfällige Rechnungen</p>
-        <p className="mt-1 text-2xl font-bold text-slate-900">{widgets.overdueCount}</p>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Offener Gesamtbetrag</p>
-        <p className="mt-1 text-2xl font-bold text-slate-900">{formatCents(widgets.openTotalCents)}</p>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4 sm:col-span-1">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Alterstruktur</p>
-        <div className="space-y-1 text-sm">
-          {(Object.keys(widgets.aging) as (keyof DunningOverview["widgets"]["aging"])[]).map((k) => (
-            <div key={k} className="flex items-center justify-between">
-              <span className="text-slate-600">{BUCKET_LABEL[k]}</span>
-              <span className="font-medium text-slate-800">
-                {widgets.aging[k].count} · {formatCents(widgets.aging[k].cents)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Card>
+        <Kpi label="Überfällige Rechnungen" value={widgets.overdueCount} />
+      </Card>
+      <Card>
+        <Kpi label="Offener Gesamtbetrag" value={formatCents(widgets.openTotalCents)} tone={widgets.openTotalCents > 0 ? "stamp" : "default"} />
+      </Card>
+      <Card className="sm:col-span-2 lg:col-span-1">
+        <StackedBar title="Alterstruktur" segments={agingSegments(widgets.aging)} totalLabel={formatCents(widgets.openTotalCents)} />
+      </Card>
     </div>
   );
 }

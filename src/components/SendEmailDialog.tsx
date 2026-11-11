@@ -231,25 +231,25 @@ export function SendEmailDialog({
         <button
           type="button"
           onClick={open}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
         >
           {label ?? "Per E-Mail senden"}
         </button>
       )}
 
-      <dialog ref={dialogRef} className="w-full max-w-2xl rounded-lg border border-slate-200 p-0 backdrop:bg-slate-900/40">
+      <dialog ref={dialogRef} className="w-full max-w-2xl rounded-lg border border-rule p-0 backdrop:bg-ink/40">
         <div className="max-h-[85vh] overflow-y-auto p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">{resendLogId ? "E-Mail erneut senden" : "E-Mail senden"}</h2>
-            <button type="button" onClick={close} className="text-slate-400 hover:text-slate-700">
+            <h2 className="text-lg font-semibold text-ink">{resendLogId ? "E-Mail erneut senden" : "E-Mail senden"}</h2>
+            <button type="button" onClick={close} className="text-ink-muted hover:text-ink-soft">
               ✕
             </button>
           </div>
 
-          {loading && <p className="text-sm text-slate-500">Lade Vorbelegung…</p>}
+          {loading && <p className="text-sm text-ink-muted">Lade Vorbelegung…</p>}
 
           {notConfigured && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-md border border-seal/30 bg-seal/10 p-3 text-sm text-seal">
               Für diese Organisation sind keine Mail-Einstellungen hinterlegt.{" "}
               <a href="/einstellungen/email" className="font-medium underline">
                 Jetzt einrichten
@@ -257,34 +257,34 @@ export function SendEmailDialog({
             </div>
           )}
 
-          {loadError && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{loadError}</div>}
+          {loadError && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{loadError}</div>}
 
           {data && !notConfigured && (
             <div className="space-y-3">
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Von</span>
-                <input readOnly value={`${data.from.name} <${data.from.address}>`} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500" />
+                <span className="font-medium text-ink-soft">Von</span>
+                <input readOnly value={`${data.from.name} <${data.from.address}>`} className="rounded-md border border-rule bg-paper px-3 py-2 text-sm text-ink-muted" />
               </label>
 
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">An</span>
-                <input value={to} onChange={(e) => setTo(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <span className="font-medium text-ink-soft">An</span>
+                <input value={to} onChange={(e) => setTo(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-slate-700">CC</span>
-                  <input value={cc} onChange={(e) => setCc(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                  <span className="font-medium text-ink-soft">CC</span>
+                  <input value={cc} onChange={(e) => setCc(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-slate-700">BCC</span>
-                  <input value={bcc} onChange={(e) => setBcc(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                  <span className="font-medium text-ink-soft">BCC</span>
+                  <input value={bcc} onChange={(e) => setBcc(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
                 </label>
               </div>
 
               {data.templates.length > 0 && (
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-slate-700">Vorlage</span>
-                  <select value={templateId} onChange={(e) => onTemplateChange(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <span className="font-medium text-ink-soft">Vorlage</span>
+                  <select value={templateId} onChange={(e) => onTemplateChange(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm">
                     <option value="">— keine —</option>
                     {data.templates.map((t) => (
                       <option key={t.id} value={t.id}>
@@ -296,28 +296,28 @@ export function SendEmailDialog({
               )}
 
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Betreff</span>
-                <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <span className="font-medium text-ink-soft">Betreff</span>
+                <input value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
               </label>
 
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Nachricht</span>
-                <textarea rows={12} value={body} onChange={(e) => setBody(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <span className="font-medium text-ink-soft">Nachricht</span>
+                <textarea rows={12} value={body} onChange={(e) => setBody(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
               </label>
 
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Signatur</span>
-                <textarea rows={3} value={signature} onChange={(e) => setSignature(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <span className="font-medium text-ink-soft">Signatur</span>
+                <textarea rows={3} value={signature} onChange={(e) => setSignature(e.target.value)} className="rounded-md border border-rule-strong px-3 py-2 text-sm" />
               </label>
 
               {data.attachments.length > 0 && (
                 <div className="space-y-1 text-sm">
-                  <span className="font-medium text-slate-700">Standardanhänge</span>
+                  <span className="font-medium text-ink-soft">Standardanhänge</span>
                   {data.attachments.map((a) => (
                     <label key={a.filename} className="flex items-center gap-2">
-                      <input type="checkbox" checked={selectedStandard.has(a.filename)} onChange={() => toggleStandard(a.filename)} className="h-4 w-4 rounded border-slate-300" />
+                      <input type="checkbox" checked={selectedStandard.has(a.filename)} onChange={() => toggleStandard(a.filename)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
                       <span>
-                        {a.filename} <span className="text-xs text-slate-400">({formatKb(a.size)})</span>
+                        {a.filename} <span className="text-xs text-ink-muted">({formatKb(a.size)})</span>
                       </span>
                     </label>
                   ))}
@@ -326,17 +326,17 @@ export function SendEmailDialog({
 
               {data.documentAttachments.length > 0 && (
                 <div className="space-y-1 text-sm">
-                  <span className="font-medium text-slate-700">Beleganhänge</span>
+                  <span className="font-medium text-ink-soft">Beleganhänge</span>
                   {data.documentAttachments.map((a) => (
                     <label key={a.id} className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={selectedDocAttachments.has(a.id)}
                         onChange={() => toggleDocAttachment(a.id)}
-                        className="h-4 w-4 rounded border-slate-300"
+                        className="h-4 w-4 rounded border-rule-strong"
                       />
                       <span>
-                        {a.filename} <span className="text-xs text-slate-400">({formatKb(a.sizeBytes)})</span>
+                        {a.filename} <span className="text-xs text-ink-muted">({formatKb(a.sizeBytes)})</span>
                       </span>
                     </label>
                   ))}
@@ -344,36 +344,36 @@ export function SendEmailDialog({
               )}
 
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Zusatzdateien</span>
+                <span className="font-medium text-ink-soft">Zusatzdateien</span>
                 <input type="file" multiple onChange={(e) => setExtraFiles(Array.from(e.target.files ?? []))} className="text-sm" />
               </label>
 
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={copyToSelf} onChange={(e) => setCopyToSelf(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-                <span className="font-medium text-slate-700">Kopie an mich</span>
+                <input type="checkbox" checked={copyToSelf} onChange={(e) => setCopyToSelf(e.target.checked)} className="h-4 w-4 rounded-[var(--radius-control)] border-rule-strong" />
+                <span className="font-medium text-ink-soft">Kopie an mich</span>
               </label>
 
               {data.warnings.length > 0 && (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">{data.warnings.join(", ")}</div>
+                <div className="rounded-md border border-seal/30 bg-seal/10 p-2 text-xs text-seal">{data.warnings.join(", ")}</div>
               )}
 
               {preview && (
-                <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <p className="font-medium text-slate-800">Betreff: {preview.subject}</p>
-                  <pre className="whitespace-pre-wrap font-sans text-slate-700">{preview.body}</pre>
+                <div className="space-y-1 rounded-md border border-rule bg-paper p-3 text-sm">
+                  <p className="font-medium text-ink">Betreff: {preview.subject}</p>
+                  <pre className="whitespace-pre-wrap font-sans text-ink-soft">{preview.body}</pre>
                 </div>
               )}
 
-              {sendError && <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{sendError}</div>}
+              {sendError && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{sendError}</div>}
 
               <div className="flex items-center gap-3 pt-2">
-                <button type="button" onClick={doPreview} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <button type="button" onClick={doPreview} className="rounded-md border border-rule-strong bg-sheet px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper">
                   Vorschau
                 </button>
-                <button type="button" onClick={doSend} disabled={sendBusy} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+                <button type="button" onClick={doSend} disabled={sendBusy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
                   {sendBusy ? "Sende…" : "Senden"}
                 </button>
-                <button type="button" onClick={close} className="text-sm text-slate-500 hover:text-slate-800">
+                <button type="button" onClick={close} className="text-sm text-ink-muted hover:text-ink">
                   Abbrechen
                 </button>
               </div>

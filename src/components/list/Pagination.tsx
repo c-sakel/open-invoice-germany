@@ -40,24 +40,24 @@ export function Pagination({
   const hasNext = offset + limit < total;
 
   return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
+    <div className="flex items-center justify-between border-t border-rule px-4 py-3 text-sm text-ink-soft">
       <span>
         {from}–{to} von {total} · Seite {page} / {pageCount}
       </span>
       <div className="flex items-center gap-2">
         {hasPrev ? (
-          <Link href={hrefFor(prevOffset)} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50">
+          <Link href={hrefFor(prevOffset)} className="rounded-md border border-rule-strong bg-sheet px-2.5 py-1 font-medium text-ink-soft hover:bg-paper">
             ← Zurück
           </Link>
         ) : (
-          <span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-400">← Zurück</span>
+          <span className="rounded-md border border-rule bg-paper px-2.5 py-1 text-ink-muted">← Zurück</span>
         )}
         {hasNext ? (
-          <Link href={hrefFor(nextOffset)} className="rounded-md border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50">
+          <Link href={hrefFor(nextOffset)} className="rounded-md border border-rule-strong bg-sheet px-2.5 py-1 font-medium text-ink-soft hover:bg-paper">
             Weiter →
           </Link>
         ) : (
-          <span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-400">Weiter →</span>
+          <span className="rounded-md border border-rule bg-paper px-2.5 py-1 text-ink-muted">Weiter →</span>
         )}
       </div>
     </div>

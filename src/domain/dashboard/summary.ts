@@ -99,13 +99,22 @@ export interface DashboardSummary {
   aging: AgingBucket[];
   recentDocuments: DashboardRecentDocument[];
   openQuotes: { count: number; cents: number };
+  /** Anzahl weiterer Waehrungen (Belege/offene Angebote), die bei gesetztem Waehrungsfilter nicht
+   *  in den Summen stehen; 0 ohne Filter. */
+  otherCurrencyCount: number;
 }
 
-export async function dashboardSummary(orgId: string, now: Date = new Date()): Promise<DashboardSummary> {
+export interface DashboardSummaryOptions {
+  /** Summiert nur Belege dieser Waehrung (Dashboard: Standardwaehrung) — keine Mischsummen. */
+  currency?: string;
+}
+
+export async function dashboardSummary(orgId: string, now: Date = new Date(), opts: DashboardSummaryOptions = {}): Promise<DashboardSummary> {
+  const currencyWhere = opts.currency ? { currency: opts.currency } : {};
   // Offene/faellige/ueberfaellige Rechnungen — nur FINALIZED/SENT/PARTIALLY_PAID koennen
   // effectiveInvoiceStatus OPEN/DUE/OVERDUE liefern (siehe status.ts).
   const openish = await dbInternal.invoice.findMany({
-    where: { orgId, type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } },
+    where: { orgId, ...currencyWhere, type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID"] } },
     select: { id: true, status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
   });
 
@@ -148,7 +157,7 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   const today = new Date(utcDateOnly(now));
   const weekEnd = new Date(utcDateOnlyPlusDays(now, 8)); // exklusiv: +7 Tage inklusive
   const dueThisWeekRows = await dbInternal.invoice.findMany({
-    where: { orgId, type: { not: "CREDIT_NOTE" }, status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: today, lt: weekEnd } },
+    where: { orgId, ...currencyWhere, type: { not: "CREDIT_NOTE" }, status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: today, lt: weekEnd } },
     select: { grossTotalCents: true, paidAmountCents: true, payableCents: true },
   });
   const dueThisWeek = { count: dueThisWeekRows.length, cents: dueThisWeekRows.reduce((sum, r) => sum + openAmountCents(r), 0) };
@@ -169,13 +178,13 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
   // Filter das stornierte Original raus, behielt aber die Storno-Gutschrift (status FINALIZED)
   // mit ihrem negativen Betrag, was die Kachel systematisch zu niedrig auswies (Review-Befund,
   // Screenshot 12e-03: 404,60 € Abweichung).
-  const revenueThisMonthCents = (await monthlyRevenue(orgId, { months: 1, now })).reduce((sum, p) => sum + p.netCents, 0);
+  const revenueThisMonthCents = (await monthlyRevenue(orgId, { months: 1, now, currency: opts.currency })).reduce((sum, p) => sum + p.netCents, 0);
 
   // Offene Angebote: NUR SENT (noch nicht abgelaufen) — Fix-Welle (Nit): die Kachel
   // verlinkt auf /dokumente?status=SENT, zaehlte aber vorher zusaetzlich DRAFT mit, was
   // Kachel-Zahl und Ziel-Liste auseinanderlaufen liess (Ruling: Kachel zaehlt nur SENT).
   const quotes = await dbInternal.quote.findMany({
-    where: { orgId, status: "SENT" },
+    where: { orgId, ...currencyWhere, status: "SENT" },
     select: { status: true, validUntil: true, grossTotalCents: true },
   });
   const openQuotes = { count: 0, cents: 0 };
@@ -243,6 +252,16 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
     .sort((a, b) => b.date.getTime() - a.date.getTime())
     .slice(0, 5);
 
+  // Weitere Waehrungen (nur bei Filter): Belege ausser Entwurf und offene Angebote.
+  let otherCurrencyCount = 0;
+  if (opts.currency) {
+    const [invCurrencies, quoteCurrencies] = await Promise.all([
+      dbInternal.invoice.findMany({ where: { orgId, status: { not: "DRAFT" }, currency: { not: opts.currency } }, select: { currency: true }, distinct: ["currency"] }),
+      dbInternal.quote.findMany({ where: { orgId, status: "SENT", currency: { not: opts.currency } }, select: { currency: true }, distinct: ["currency"] }),
+    ]);
+    otherCurrencyCount = new Set([...invCurrencies, ...quoteCurrencies].map((r) => r.currency)).size;
+  }
+
   return {
     openInvoices,
     dueInvoices,
@@ -254,5 +273,6 @@ export async function dashboardSummary(orgId: string, now: Date = new Date()): P
     aging,
     recentDocuments,
     openQuotes,
+    otherCurrencyCount,
   };
 }

@@ -61,7 +61,7 @@ export function DeliveryNoteStatusCard({
     {
       label: "Kunde",
       value: (
-        <Link href={`/kunden/${dn.customer.id}`} className="text-indigo-600 hover:underline">
+        <Link href={`/kunden/${dn.customer.id}`} className="text-pen hover:underline">
           {dn.customer.name}
         </Link>
       ),
@@ -95,7 +95,7 @@ export function DeliveryNoteStatusCard({
       value: (
         <span className="flex flex-wrap justify-end gap-1">
           {chips.map((c) => (
-            <span key={c} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+            <span key={c} className="rounded bg-well px-1.5 py-0.5 text-xs text-ink-soft">
               {c}
             </span>
           ))}

@@ -61,7 +61,7 @@ export function AttachmentsBlock({
   onEnsureDocId?: () => Promise<string | null>;
 }) {
   if (!canOfferAttachmentUpload(mode, docId)) {
-    return <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">Anhänge lassen sich nach dem Speichern hinzufügen.</div>;
+    return <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm text-ink-muted">Anhänge lassen sich nach dem Speichern hinzufügen.</div>;
   }
   // Fuer DELIVERY_NOTE ist `docId` an dieser Stelle bereits gesetzt (siehe Guard oben) —
   // `ensureDocId` wird trotzdem explizit nicht durchgereicht (kein Auto-Anlegen-Pfad fuer

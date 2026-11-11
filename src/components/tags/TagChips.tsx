@@ -11,14 +11,14 @@ export interface TagChipItem {
  *  unbekannter/fremder Wert (sollte durch die Zod-Aufzaehlung nicht vorkommen) faellt auf
  *  "slate" zurueck statt eine kaputte Klasse zu rendern. */
 const COLOR_CLS: Record<TagColor, string> = {
-  slate: "bg-slate-100 text-slate-700",
-  rose: "bg-rose-100 text-rose-700",
-  amber: "bg-amber-100 text-amber-800",
-  emerald: "bg-emerald-100 text-emerald-800",
-  sky: "bg-sky-100 text-sky-700",
-  indigo: "bg-indigo-100 text-indigo-700",
-  violet: "bg-violet-100 text-violet-700",
-  stone: "bg-stone-100 text-stone-700",
+  slate: "bg-well text-ink-soft",
+  rose: "bg-stamp/10 text-stamp",
+  amber: "bg-seal/10 text-seal",
+  emerald: "bg-ledger/10 text-ledger",
+  sky: "bg-pen-wash text-pen",
+  indigo: "bg-pen-wash text-pen",
+  violet: "bg-pen-wash text-pen",
+  stone: "bg-well text-ink-soft",
 };
 
 export function tagColorClass(color: string): string {
