@@ -8,6 +8,7 @@ import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { presetConfig } from "@/lib/pdf/layouts/presets";
 import { buildSampleDeliveryNoteData, buildSampleDunningData } from "@/domain/settings/preview";
 import { docStrings } from "@/lib/i18n/doc";
+import { senderLineFallback } from "@/lib/pdf/layout";
 import type { LayoutColumnKey, LayoutDesignConfig } from "@/schemas/layout-design";
 import { testPdfTheme, parsePdf } from "../helpers/pdf-theme";
 import { recordTextBoxes, expectInDinWindow, type RecordedBox } from "../helpers/din5008";
@@ -100,8 +101,35 @@ describe("Lieferschein mit Design", () => {
 
   it("showTax aus: kein USt-Kopf", async () => {
     const { text } = await note(config("inter", ["pos", "description", "qty", "unitPrice", "taxRate", "total"]), { ...NOTE(), showTax: false });
-    expect(text).not.toContain(`${de.columns.unitPrice}${de.columns.vat}`);
+    expect(text).not.toMatch(/USt(?!-)/);
+    const withTax = await note(config("inter", ["pos", "description", "qty", "unitPrice", "taxRate", "total"]));
+    expect(withTax.text).toMatch(/USt(?!-)/);
   });
+});
+
+describe("Lieferschein: DIN-5008-Fenster", () => {
+  for (const [font, size] of [["inter", 8], ["ibm-plex-serif", 12]] as const) {
+    it(`${font} ${size} pt mit Lieferanschrift-Zusatzblock: Kopf im Fenster`, async () => {
+      const data: DeliveryNotePdfData = {
+        ...NOTE(),
+        showDeliveryAddress: true,
+        deliveryAddress: { addressLine1: "Lager Nord, Hafenstraße 1", postalCode: "20095", city: "Hamburg", countryCode: "DE" },
+      };
+      await note({ ...presetConfig("standard"), font, fontSizePt: size }, data);
+      const boxes = recorded[0]!.stop();
+      const b = data.buyer;
+      expectInDinWindow(boxes, [
+        senderLineFallback(data.seller),
+        b.name,
+        b.contactName!,
+        b.addressLine1,
+        `${b.postalCode} ${b.city}`,
+        de.meta.deliveryNoteAddress,
+        "Lager Nord, Hafenstraße 1",
+        "20095 Hamburg",
+      ]);
+    });
+  }
 });
 
 describe("Mahnung mit Design", () => {
@@ -121,6 +149,15 @@ describe("Mahnung mit Design", () => {
     const boxes = recorded[0]!.stop();
     const b = data.buyer;
     expectInDinWindow(boxes, [b.name, b.addressLine1, `${b.postalCode} ${b.city}`]);
+  });
+
+  it("Kopf mit Absenderzeile bleibt im DIN-5008-Fenster (8 pt, Inter)", async () => {
+    const data = buildSampleDunningData(ORG);
+    const base = presetConfig("standard");
+    await renderDunningPdf(data, testPdfTheme({ layoutConfig: { ...base, font: "inter", fontSizePt: 8 } }));
+    const boxes = recorded[0]!.stop();
+    const b = data.buyer;
+    expectInDinWindow(boxes, [senderLineFallback(data.seller), b.name, b.contactName!, b.addressLine1, `${b.postalCode} ${b.city}`]);
   });
 
   it("Grundgroesse und Raender werden uebernommen: Text steht rechts vom linken Rand", async () => {
