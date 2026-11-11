@@ -159,3 +159,19 @@ describe("Korrekturbelege sind von den neuen Blockern befreit (C1, Fix-Welle)", 
     expect(validateMandatoryFields(data, { isCorrection: true }).join(" ")).toMatch(/USt-Satz > 0/);
   });
 });
+
+describe("englische Pflichthinweise (Phase 16b)", () => {
+  it("SCHEME_NOTICE_ACCEPTED akzeptiert den Hinweis jeder Sprache fuer jedes Schema", async () => {
+    const { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } = await import("@/domain/invoice/mandatory");
+    for (const lang of ["de", "en"] as const) {
+      for (const [scheme, notice] of Object.entries(SCHEME_NOTICE_BY_LANG[lang])) {
+        const ok = (SCHEME_NOTICE_ACCEPTED[scheme] ?? []).some((re) => re.test(normalizeNotice(notice)));
+        expect(ok, `${lang}/${scheme}`).toBe(true);
+        expect(ok && (SCHEME_NOTICE_ACCEPTED[scheme] ?? []).some((re) => re.test(normalizeNotice(`${notice} — Danke`)))).toBe(true);
+      }
+    }
+    expect(swapSchemeNotice(SCHEME_NOTICE_BY_LANG.en.AUSFUHR!, "AUSFUHR", "en", "de")).toBe(SCHEME_NOTICE_BY_LANG.de.AUSFUHR);
+    expect(swapSchemeNotice("Eigener Text", "AUSFUHR", "en", "de")).toBe("Eigener Text");
+    expect(swapSchemeNotice(SCHEME_NOTICE_BY_LANG.en.AUSFUHR!, "AUSFUHR", "en", "en")).toBe(SCHEME_NOTICE_BY_LANG.en.AUSFUHR);
+  });
+});

@@ -1,5 +1,8 @@
 import { SettingsTabs } from "@/components/SettingsTabs";
+import Link from "next/link";
 import { Card } from "@/components/ui/Card";
+import { Button, buttonClass } from "@/components/ui/Button";
+import { TextField } from "@/components/forms/fields";
 import { ExchangeRateTable } from "@/components/fx/ExchangeRateTable";
 import { ManualRateForm, RefreshRatesButton } from "@/components/fx/ExchangeRateForm";
 import { getActiveOrg } from "@/lib/org";
@@ -39,13 +42,15 @@ export default async function KursePage({ searchParams }: { searchParams: Promis
 
       <Card title={filter ? `Gespeicherte Kurse (${filter})` : "Gespeicherte Kurse (neueste zuerst)"}>
         <form className="mb-3 flex items-end gap-2" method="get">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-ink-soft">Währung filtern</span>
-            <input name="currency" defaultValue={filter ?? ""} placeholder="USD" maxLength={3} className="w-24 rounded-[var(--radius-control)] border border-rule-strong bg-sheet px-3 py-2 text-sm uppercase" />
-          </label>
-          <button type="submit" className="rounded-[var(--radius-control)] px-3 py-2 text-sm text-ink-soft ring-1 ring-inset ring-rule-strong hover:bg-well">
+          <TextField label="Währung filtern" name="currency" defaultValue={filter ?? ""} placeholder="USD" className="w-32" />
+          <Button type="submit" variant="secondary">
             Filtern
-          </button>
+          </Button>
+          {filter && (
+            <Link href="/einstellungen/kurse" className={buttonClass("quiet")}>
+              Zurücksetzen
+            </Link>
+          )}
         </form>
         <ExchangeRateTable rows={rows} />
       </Card>

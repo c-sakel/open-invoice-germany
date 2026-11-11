@@ -7,7 +7,7 @@
  * Reine Anzeige — gespeichert wird nur `fxOverride` im Entwurf; der Kurs wird erst beim
  * Festschreiben am Beleg eingefroren.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { previewFxRateAction, type FxPreviewResult } from "@/app/actions/exchange-rate";
 import { EditorField } from "@/components/editor/EditorField";
 import { inputCls } from "@/components/forms/fields";
@@ -42,6 +42,7 @@ export function FxPreview({
   const stichtag = draft.deliveryDate || draft.deliveryEnd || draft.issueDate || localDateOnly(new Date());
   const [lookup, setLookup] = useState<{ key: string; result: FxPreviewResult } | null>(null);
   const key = `${currency}|${stichtag}`;
+  const errorId = useId();
 
   useEffect(() => {
     if (currency === "EUR") return;
@@ -83,18 +84,27 @@ export function FxPreview({
         )}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <EditorField label="Kurs manuell" hint={invalidOverride ? "Kurs ungültig: Zahl mit höchstens 6 Nachkommastellen, z. B. 1,1214." : "leer = Kurs aus der Kurstabelle"}>
-          {(id) => (
-            <input
-              id={id}
-              inputMode="decimal"
-              className={inputCls}
-              placeholder="z. B. 1,1214"
-              value={draft.fxOverride}
-              onChange={(e) => dispatch({ type: "set", field: "fxOverride", value: e.target.value })}
-            />
+        <div className="space-y-1">
+          <EditorField label="Kurs manuell" hint={invalidOverride ? undefined : "leer = Kurs aus der Kurstabelle"}>
+            {(id) => (
+              <input
+                id={id}
+                inputMode="decimal"
+                className={inputCls}
+                placeholder="z. B. 1,1214"
+                value={draft.fxOverride}
+                aria-invalid={invalidOverride || undefined}
+                aria-describedby={invalidOverride ? errorId : undefined}
+                onChange={(e) => dispatch({ type: "set", field: "fxOverride", value: e.target.value })}
+              />
+            )}
+          </EditorField>
+          {invalidOverride && (
+            <p id={errorId} className="text-xs text-stamp">
+              Kurs ungültig: Zahl mit höchstens 6 Nachkommastellen, z. B. 1,1214.
+            </p>
           )}
-        </EditorField>
+        </div>
         <div className="text-sm text-ink-soft">
           <span className="block font-medium text-ink-soft">USt in EUR (Vorschau)</span>
           <span className="tabular block pt-2">{eurTax !== null ? formatCents(eurTax, "EUR") : "—"}</span>

@@ -14,7 +14,7 @@
 import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, schemeNoticeFor, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
 import type { DocLanguage } from "@/lib/i18n/doc/types";
-import { SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
+import { SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
 import { newLineKey } from "./ids";
 import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
@@ -329,14 +329,9 @@ function withLanguage(state: DraftState, next: "" | DocLanguage): DraftState {
   const to = effectiveLanguage(next);
   let notes = state.notes;
   if (state.mode === "INVOICE" && from !== to) {
-    const oldNotice = schemeNoticeFor(state.taxScheme, from);
+    notes = swapSchemeNotice(notes, state.taxScheme, from, to);
     const newNotice = schemeNoticeFor(state.taxScheme, to);
-    if (newNotice) {
-      const trimmed = notes.trim();
-      if (oldNotice && trimmed === oldNotice) notes = newNotice;
-      else if (oldNotice && trimmed.startsWith(`${oldNotice} — `)) notes = `${newNotice}${trimmed.slice(oldNotice.length)}`;
-      else if (trimmed === "" && to === "en") notes = newNotice;
-    }
+    if (newNotice && notes.trim() === "" && to === "en") notes = newNotice;
   }
   return { ...state, language: next, notes };
 }

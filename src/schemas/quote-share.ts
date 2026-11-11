@@ -76,6 +76,12 @@ export const documentSettingsInputSchema = z.object({
    * Monatsdurchschnitt (Standard); `ECB_DAILY` = EZB-Tageskurs, nur mit Gestattung des Finanzamts.
    */
   fxRateSource: z.enum(["BMF_MONTHLY", "ECB_DAILY"]).default("BMF_MONTHLY"),
+  /**
+   * Nur Eingabe, wird nie gespeichert: Bestaetigung, dass das Finanzamt die Umrechnung mit dem
+   * EZB-Tageskurs gestattet hat. Ein Wechsel der Kursquelle auf ECB_DAILY braucht `true`
+   * (`saveDocumentSettings`, gilt fuer Oberflaeche, REST und MCP gleich).
+   */
+  fxEcbConfirmed: z.boolean().optional(),
 });
 export type DocumentSettingsInput = z.infer<typeof documentSettingsInputSchema>;
 

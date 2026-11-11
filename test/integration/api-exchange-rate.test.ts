@@ -10,6 +10,7 @@ import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
 import { GET as RateGet, POST as RatePost } from "@/app/api/v1/ExchangeRate/route";
 import { POST as RateRefresh } from "@/app/api/v1/ExchangeRate/refresh/route";
+import { PATCH as SettingsPatch } from "@/app/api/v1/Settings/route";
 
 let orgId: string;
 let adminToken: string;
@@ -135,5 +136,25 @@ describe("POST /api/v1/ExchangeRate/refresh", () => {
     const body = await res.json();
     expect(body.error.code).toBe("CONFLICT");
     expect(body.error.reason).toBe("disabled");
+  });
+});
+
+describe("PATCH /api/v1/Settings: Kursquelle EZB-Tageskurs", () => {
+  const patch = (documents: Record<string, unknown>) =>
+    SettingsPatch(req("http://x/api/v1/Settings", { method: "PATCH", token: adminToken, body: { documents } }));
+
+  it("ohne fxEcbConfirmed -> 400, Quelle bleibt; mit Bestaetigung -> 200", async () => {
+    const res = await patch({ fxRateSource: "ECB_DAILY" });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain("Gestattung des Finanzamts");
+    expect((await dbInternal.documentSettings.findUniqueOrThrow({ where: { orgId }, select: { fxRateSource: true } })).fxRateSource).toBe("BMF_MONTHLY");
+
+    const ok = await patch({ fxRateSource: "ECB_DAILY", fxEcbConfirmed: true });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()).data;
+    expect(body.documents.fxRateSource).toBe("ECB_DAILY");
+    expect(body.documents.fxEcbConfirmed).toBeUndefined();
+
+    expect((await patch({ fxRateSource: "BMF_MONTHLY" })).status).toBe(200);
   });
 });

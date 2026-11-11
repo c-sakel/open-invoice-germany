@@ -226,14 +226,92 @@ describe("update_invoice_draft und create_document", () => {
 });
 
 describe("update_document_settings: fxRateSource", () => {
-  it("setzt die Kursquelle und liest sie wieder", async () => {
+  it("ECB_DAILY nur mit fxEcbConfirmed: ohne Bestaetigung Validierungsfehler, Quelle unveraendert", async () => {
     const res = await callTool("update_document_settings", { fxRateSource: "ECB_DAILY" });
-    expect(res.isError).toBeUndefined();
-    const get = JSON.parse(text(await callTool("get_settings", { area: "documents" }))) as { fxRateSource: string };
-    expect(get.fxRateSource).toBe("ECB_DAILY");
-    const reset = await callTool("update_document_settings", { fxRateSource: "BMF_MONTHLY" });
-    expect(reset.isError).toBeUndefined();
-    const bad = await callTool("update_document_settings", { fxRateSource: "XYZ" });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("Gestattung des Finanzamts");
+    const stored = JSON.parse(text(await callTool("get_settings", { area: "documents" }))) as { fxRateSource: string };
+    expect(stored.fxRateSource).toBe("BMF_MONTHLY");
+  });
+
+  it("mit Bestaetigung gesetzt; spaetere Teil-Updates brauchen sie nicht erneut; Rueckwechsel frei", async () => {
+    const ok = await callTool("update_document_settings", { fxRateSource: "ECB_DAILY", fxEcbConfirmed: true });
+    expect(ok.isError).toBeUndefined();
+    expect(text(ok)).not.toContain("fxEcbConfirmed");
+    expect(JSON.parse(text(await callTool("get_settings", { area: "documents" }))).fxRateSource).toBe("ECB_DAILY");
+    expect((await callTool("update_document_settings", { invoiceDueDays: 21 })).isError).toBeUndefined();
+    expect(JSON.parse(text(await callTool("get_settings", { area: "documents" }))).fxRateSource).toBe("ECB_DAILY");
+    expect((await callTool("update_document_settings", { fxRateSource: "BMF_MONTHLY" })).isError).toBeUndefined();
+    expect((await callTool("update_document_settings", { fxRateSource: "XYZ" })).isError).toBe(true);
+  });
+});
+
+describe("update_invoice_draft: Sprachwechsel und Pflichthinweis", () => {
+  const EN = "Reverse charge (Steuerschuldnerschaft des Leistungsempfängers)";
+  const DE = "Steuerschuldnerschaft des Leistungsempfängers";
+  async function rcDraft(language: string, notes?: string): Promise<string> {
+    const res = await callTool("create_invoice", {
+      customer: "Dublin Ltd",
+      taxScheme: "REVERSE_CHARGE",
+      language,
+      notes,
+      deliveryDate: "2111-03-05",
+      lines: [{ description: "Consulting", quantity: 1, unitPriceEuro: 10, unit: "HUR" }],
+    });
+    return /ID: (\S+)/.exec(text(res))![1]!;
+  }
+  const notesOf = async (id: string) => (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { notes: true } })).notes;
+
+  it("en -> de ersetzt den Hinweis, de -> en zurueck, nie doppelt", async () => {
+    const id = await rcDraft("en");
+    expect(await notesOf(id)).toBe(EN);
+    expect((await callTool("update_invoice_draft", { invoice: id, language: "de" })).isError).toBeUndefined();
+    expect(await notesOf(id)).toBe(DE);
+    await callTool("update_invoice_draft", { invoice: id, language: "en" });
+    expect(await notesOf(id)).toBe(EN);
+    await callTool("update_invoice_draft", { invoice: id, language: "en" });
+    expect(await notesOf(id)).toBe(EN);
+  });
+
+  it("Hinweis mit Nutzertext: nur der Hinweis wechselt, Nutzertext bleibt", async () => {
+    const id = await rcDraft("en", "Bitte Rechnungsnummer angeben.");
+    expect(await notesOf(id)).toBe(`${EN} — Bitte Rechnungsnummer angeben.`);
+    await callTool("update_invoice_draft", { invoice: id, language: "de" });
+    expect(await notesOf(id)).toBe(`${DE} — Bitte Rechnungsnummer angeben.`);
+  });
+
+  it("fehlender Hinweis wird in der neuen Sprache gesetzt; Nutzertext ohne Hinweis bekommt ihn vorangestellt", async () => {
+    const id = await rcDraft("de");
+    await callTool("update_invoice_draft", { invoice: id, notes: "Nur Text" });
+    expect(await notesOf(id)).toBe("Nur Text");
+    await callTool("update_invoice_draft", { invoice: id, language: "en" });
+    expect(await notesOf(id)).toBe(`${EN} — Nur Text`);
+  });
+
+  it("Sprachwechsel mit Schema ohne Hinweis (REGULAR) laesst die Notiz unveraendert", async () => {
+    const res = await callTool("create_invoice", { customer: "Dublin Ltd", deliveryDate: "2111-03-05", notes: "Danke", lines: [{ description: "X", quantity: 1, unitPriceEuro: 1, unit: "HUR" }] });
+    const id = /ID: (\S+)/.exec(text(res))![1]!;
+    await callTool("update_invoice_draft", { invoice: id, language: "de" });
+    expect(await notesOf(id)).toBe("Danke");
+  });
+});
+
+describe("update_invoice_draft: fxOverrideRate", () => {
+  it("EUR-Entwurf: Kurs abgelehnt, Entwurf unveraendert", async () => {
+    const res = await callTool("create_invoice", { customer: "Dublin Ltd", currency: "EUR", deliveryDate: "2111-03-06", lines: [{ description: "X", quantity: 1, unitPriceEuro: 1, unit: "HUR" }] });
+    const id = /ID: (\S+)/.exec(text(res))![1]!;
+    const upd = await callTool("update_invoice_draft", { invoice: id, fxOverrideRate: "1,25" });
+    expect(upd.isError).toBe(true);
+    expect((await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { fxOverrideMicros: true } })).fxOverrideMicros).toBeNull();
+  });
+
+  it("ungueltiger Kurs -> Validierungsfehler", async () => {
+    const res = await callTool("create_invoice", { customer: "Dublin Ltd", currency: "USD", deliveryDate: "2111-03-06", lines: [{ description: "X", quantity: 1, unitPriceEuro: 1, unit: "HUR" }] });
+    const id = /ID: (\S+)/.exec(text(res))![1]!;
+    const upd = await callTool("update_invoice_draft", { invoice: id, fxOverrideRate: "abc" });
+    expect(upd.isError).toBe(true);
+    expect(text(upd)).toContain("Validierung");
+    const bad = await callTool("create_invoice", { customer: "Dublin Ltd", currency: "USD", fxOverrideRate: "0", deliveryDate: "2111-03-06", lines: [{ description: "X", quantity: 1, unitPriceEuro: 1, unit: "HUR" }] });
     expect(bad.isError).toBe(true);
   });
 });

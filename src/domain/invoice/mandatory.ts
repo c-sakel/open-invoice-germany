@@ -67,6 +67,20 @@ export const SCHEME_NOTICE_BY_LANG: Record<DocLanguage, Record<string, string>> 
   en: docStrings("en").schemeNotice,
 };
 
+/**
+ * Sprachwechsel am Entwurf: ersetzt NUR den Pflichthinweis der alten Sprache (allein oder als
+ * Praefix `<Hinweis> — <Nutzertext>`) durch den der neuen; anderer Text bleibt unangetastet.
+ */
+export function swapSchemeNotice(notes: string, scheme: string, from: DocLanguage, to: DocLanguage): string {
+  const oldNotice = SCHEME_NOTICE_BY_LANG[from][scheme];
+  const newNotice = SCHEME_NOTICE_BY_LANG[to][scheme];
+  if (from === to || !oldNotice || !newNotice) return notes;
+  const trimmed = notes.trim();
+  if (trimmed === oldNotice) return newNotice;
+  if (trimmed.startsWith(`${oldNotice} — `)) return `${newNotice}${trimmed.slice(oldNotice.length)}`;
+  return notes;
+}
+
 /** § 14b Abs. 1 Satz 5 UStG (§ 14 Abs. 4 Nr. 9) — Text fuer PDF UND beide XML-Formate. */
 export const CONSUMER_RETENTION_HINT = docStrings("de").notes.consumerRetentionHint;
 

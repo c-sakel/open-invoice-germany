@@ -10,7 +10,7 @@ import { PROJECT_ROOT } from "../bootstrap";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { defaultCategoryForScheme } from "@/lib/tax";
-import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice } from "@/domain/invoice/mandatory";
+import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
@@ -685,7 +685,18 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.dueDate !== undefined) patch.dueDate = ctx.parseDateInput(args.dueDate);
         if (args.deliveryDate !== undefined) patch.deliveryDate = ctx.parseDateInput(args.deliveryDate);
         if (args.consumerRetentionHint !== undefined) patch.consumerRetentionHint = args.consumerRetentionHint;
-        if (args.language !== undefined) patch.language = args.language;
+        if (args.language !== undefined) {
+          patch.language = args.language;
+          // Sprachwechsel: der Pflichthinweis folgt der neuen Sprache (nur der automatisch gesetzte
+          // Hinweis wird ersetzt, nie doppelt vorangestellt, Nutzertext bleibt).
+          const before = args.notes ?? inv.notes ?? "";
+          let notes = swapSchemeNotice(before, inv.taxScheme, resolveDocLanguage(inv.language), args.language);
+          const notice = SCHEME_NOTICE_BY_LANG[args.language][inv.taxScheme];
+          if (notice && !(SCHEME_NOTICE_ACCEPTED[inv.taxScheme] ?? []).some((re) => re.test(normalizeNotice(notes)))) {
+            notes = `${notice}${notes ? " — " + notes : ""}`;
+          }
+          if (notes !== (inv.notes ?? "") || args.notes !== undefined) patch.notes = notes;
+        }
         if (args.fxOverrideRate !== undefined) patch.fxOverrideRate = args.fxOverrideRate;
         if (args.lines) patch.lines = await ctx.buildEditorLines(org.id, args.lines);
 

@@ -56,7 +56,11 @@ export function RefreshRatesButton({ disabled }: { disabled: boolean }) {
       </Button>
       {disabled && <p className="text-xs text-ink-muted">Der automatische Abruf ist abgeschaltet (FX_AUTO_FETCH=0).</p>}
       {result?.ok && <p className="text-sm text-ledger">{result.message}</p>}
-      {result && !result.ok && <p className="text-sm text-stamp">{result.error}</p>}
+      {result && !result.ok && (
+        <p role="alert" className="text-sm text-stamp">
+          {result.error}
+        </p>
+      )}
       <ConfirmDialog
         ref={dialog}
         title="EZB-Kurse jetzt abrufen?"
