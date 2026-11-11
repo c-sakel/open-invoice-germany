@@ -262,7 +262,7 @@ const ERROR_INFO: Record<number, { code: string; message: string }> = {
   404: { code: "NOT_FOUND", message: "Nicht gefunden." },
   409: { code: "CONFLICT", message: "Zustandskonflikt (z. B. bereits festgeschrieben)." },
   413: { code: "PAYLOAD_TOO_LARGE", message: "Request-Body ueberschreitet das Limit." },
-  422: { code: "UNPROCESSABLE", message: "Kein Wechselkurs für USD zum 12.03.2026 — Kurs manuell eintragen." },
+  422: { code: "UNPROCESSABLE", message: "Fachlich nicht verarbeitbar (z. B. fehlender Wechselkurs zum Leistungsdatum)." },
   429: { code: "RATE_LIMITED", message: "Rate-Limit ueberschritten (600/Minute je Schluessel)." },
 };
 

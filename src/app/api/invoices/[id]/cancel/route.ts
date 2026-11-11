@@ -14,7 +14,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // Body ist optional (nur `reason`); leerer/fehlender Body = kein Grund.
     const raw = await req.text();
     const input = cancelInvoiceSchema.parse(raw ? JSON.parse(raw) : {});
-    const result = await cancelInvoice(id, { orgId: org.id, reason: input.reason });
+    const result = await cancelInvoice(id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
     return NextResponse.json({
       originalNumber: result.originalNumber,
       creditNoteId: result.creditNote.id,

@@ -356,8 +356,8 @@ describe("GET/PUT /api/notification-settings", () => {
     );
     expect(putRes.status).toBe(200);
     const putJson = (await putRes.json()) as { settings: { enabledTypes: string[]; emailDigest: boolean } };
-    // Phase 16a: Pflicht-Alarme sind immer enthalten und nicht abwaehlbar.
-    expect(putJson.settings.enabledTypes).toEqual(["INVOICE_OVERDUE", "ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN"]);
+    // Phase 16a/16b: Pflicht-Alarme sind immer enthalten und nicht abwaehlbar (16b: FX_FETCH_FAILED).
+    expect(putJson.settings.enabledTypes).toEqual(["INVOICE_OVERDUE", "ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN", "FX_FETCH_FAILED"]);
     expect(putJson.settings.emailDigest).toBe(true);
   });
 

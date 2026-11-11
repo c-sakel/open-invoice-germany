@@ -8,7 +8,7 @@ import { recordPayment } from "@/domain/invoice/payment";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { monthlyCashIn } from "@/domain/reporting/cash-in";
-import type { CreateInvoiceInput } from "@/schemas";
+import { createInvoiceSchema } from "@/schemas";
 
 const NOW = new Date(Date.UTC(2104, 5, 15, 10));
 const MARCH = new Date(Date.UTC(2104, 2, 10, 10));
@@ -25,7 +25,7 @@ function line(netCents: number) {
 async function invoice(org: string, cust: string, netCents: number, issueDate: Date, opts: { currency?: string; finalize?: boolean } = {}) {
   const inv = await createDraftInvoice(
     org,
-    { customerId: cust, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines: [line(netCents)], ...(opts.currency && opts.currency !== "EUR" ? { fxOverrideRate: 1100000 } : {}) } as CreateInvoiceInput,
+    createInvoiceSchema.parse({ customerId: cust, type: "INVOICE", taxScheme: "REGULAR", currency: opts.currency ?? "EUR", issueDate, lines: [line(netCents)], ...(opts.currency && opts.currency !== "EUR" ? { fxOverrideRate: "1,1" } : {}) }),
     { now: issueDate },
   );
   if (opts.finalize !== false) await finalizeInvoice(inv.id, { now: issueDate });

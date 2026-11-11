@@ -12,6 +12,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { loadDocumentSettings } from "@/domain/document/settings";
@@ -103,6 +104,7 @@ export async function createDraftInvoiceWithinTx(
   // Waehrung (§28): Eingabe > Customer.defaultCurrency > DocumentSettings.defaultCurrency
   // (selbstheilend geladen, Default darin bereits "EUR") > "EUR".
   const currency = input.currency ?? customer.defaultCurrency ?? settings.defaultCurrency ?? "EUR";
+  assertOverrideAllowed(currency, input.fxOverrideRate);
 
   // Fehlt die Zahlungsmethode, greift zuerst die Standard-Zahlungsmethode des Kunden
   // (Selbstheilung), danach die Org-weite Standard-Zahlungsmethode aus den Einstellungen

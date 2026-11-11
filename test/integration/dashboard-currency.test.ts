@@ -7,7 +7,7 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { dashboardSummary } from "@/domain/dashboard/summary";
 import { monthlyRevenue } from "@/domain/reporting/revenue";
 import { topCustomers } from "@/domain/reporting/customers";
-import type { CreateInvoiceInput } from "@/schemas";
+import { createInvoiceSchema } from "@/schemas";
 
 const NOW = new Date(2112, 4, 15, 10, 0, 0);
 const line = (cents: number) => ({
@@ -32,7 +32,7 @@ describe("Dashboard nur Standardwaehrung", () => {
     for (const [currency, cents] of [["EUR", 10000], ["USD", 50000]] as const) {
       const inv = await createDraftInvoice(
         org.id,
-        { customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency, issueDate: NOW, lines: [line(cents)], ...(currency === "EUR" ? {} : { fxOverrideRate: 1100000 }) } as CreateInvoiceInput,
+        createInvoiceSchema.parse({ customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency, issueDate: NOW, lines: [line(cents)], ...(currency === "EUR" ? {} : { fxOverrideRate: "1,1" }) }),
         { now: NOW },
       );
       await finalizeInvoice(inv.id, { now: NOW });

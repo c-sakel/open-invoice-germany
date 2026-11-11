@@ -13,7 +13,15 @@
  * (BT-111 = diese Summe). Die Umrechnung der Gesamtsteuer in einem Schritt kann davon um
  * hoechstens (Anzahl Saetze - 1) Cent abweichen; massgeblich ist die Summe je Satz, weil die
  * Steuer je Satz geschuldet wird. Wegen symmetrischer Rundung (`toEurCents(-x) = -toEurCents(x)`)
- * hebt ein Vollstorno die EUR-Steuer des Originals exakt auf.
+ * hebt ein Vollstorno die EUR-Steuer des Originals exakt auf. Ein Rest-Storno nach Teilgutschrift
+ * rundet jede Gutschrift fuer sich: Original + Teilgutschrift(en) + Rest-Storno koennen in EUR je
+ * Steuersatz um bis zu 1 Cent je Gutschrift von 0 abweichen (COMPLIANCE.md, offener Punkt).
+ *
+ * Schlussrechnung (FINAL) in Fremdwaehrung: die volle Steuer (BT-110/BT-111) wird zum Kurs der
+ * Schlussrechnung umgerechnet. Die mit Abschlaegen bereits abgerechnete Steuer wird zusaetzlich
+ * je Abschlag zu DESSEN eingefrorenem Kurs ermittelt (`deductedTaxEurCents`, Ausweis "davon mit
+ * Abschlaegen abgerechnet"); die Differenz beider Kurse ist ein offener Punkt fuer den
+ * Steuerberater (COMPLIANCE.md). Abschlag ohne eigenen Kurs (Altbeleg) -> Kurs der Schlussrechnung.
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { FinalizeError } from "@/domain/invoice/finalize-error";
@@ -98,9 +106,41 @@ export async function resolveFxSnapshot(tx: Prisma.TransactionClient, input: FxS
     return { fxRateMicros: input.fxOverrideMicros, fxRateDate: stichtag, fxRateSource: "MANUAL", ...convert(input, input.fxOverrideMicros) };
   }
 
-  const pick = await rateFor(input.orgId, input.currency, stichtag);
+  const pick = await rateFor(input.orgId, input.currency, stichtag, tx);
   if (!pick) {
     throw new FxRateError(`Kein Wechselkurs für ${input.currency} zum ${ddmmyyyy(stichtag)} — Kurs manuell eintragen.`);
   }
   return { fxRateMicros: pick.rateMicros, fxRateDate: pick.rateDate, fxRateSource: pick.source, ...convert(input, pick.rateMicros) };
+}
+
+/** Steuerzeile eines Abschlags (FinalInvoiceDeduction) mit dem eingefrorenen Kurs des Abschlags (null = EUR/Altbeleg). */
+export type DeductionFxEntry = { taxCents: number; fxRateMicros: number | null };
+
+/** Summe der Abschlags-Steuer in EUR, je Abschlag-Steuerzeile zu dessen Kurs; ohne eigenen Kurs gilt `fallbackRateMicros`. */
+export function deductedTaxEurCents(entries: ReadonlyArray<DeductionFxEntry>, fallbackRateMicros: number): number {
+  return entries.reduce((sum, e) => sum + toEurCents(e.taxCents, e.fxRateMicros ?? fallbackRateMicros), 0);
+}
+
+/**
+ * Ausweis fuer PDF/API (Task 8): EUR-Steuer, die eine festgeschriebene Schlussrechnung in Fremdwaehrung
+ * bereits mit Abschlaegen abgerechnet hat. Liest nur eingefrorene Daten (Abzugs-Snapshot + Kurse der
+ * festgeschriebenen Abschlaege), ist also stabil. null, wenn keine Schlussrechnung in Fremdwaehrung.
+ */
+export async function loadDeductedTaxEurCents(
+  db: Prisma.TransactionClient,
+  finalInvoiceId: string,
+): Promise<number | null> {
+  const inv = await db.invoice.findUnique({
+    where: { id: finalInvoiceId },
+    select: {
+      type: true,
+      fxRateMicros: true,
+      finalDeductions: { select: { taxCents: true, downpaymentInvoice: { select: { fxRateMicros: true } } } },
+    },
+  });
+  if (!inv || inv.type !== "FINAL" || inv.fxRateMicros === null) return null;
+  return deductedTaxEurCents(
+    inv.finalDeductions.map((d) => ({ taxCents: d.taxCents, fxRateMicros: d.downpaymentInvoice.fxRateMicros })),
+    inv.fxRateMicros,
+  );
 }

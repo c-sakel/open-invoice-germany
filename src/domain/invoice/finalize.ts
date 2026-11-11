@@ -30,7 +30,7 @@ import { loadBrandingSettings } from "@/domain/settings/branding";
 import { resolveLayoutId, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { validateMandatoryFields } from "./mandatory";
 import { FinalizeError } from "./finalize-error";
-import { resolveFxSnapshot } from "@/domain/fx/snapshot";
+import { resolveFxSnapshot, deductedTaxEurCents, type DeductionFxEntry } from "@/domain/fx/snapshot";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -245,6 +245,8 @@ export async function finalizeWithinTx(
   // Gesamtleistung je Satz) die Rechnung nicht festschreibt und keine Nummer verbraucht.
   let prepaidCents = 0;
   let payableCents: number | null = null;
+  // Phase 16b: je Abschlag-Steuerzeile der eingefrorene Kurs DIESES Abschlags (EUR-Ausweis, siehe snapshot.ts).
+  const deductionFx: DeductionFxEntry[] = [];
   let finalDeductionRows: Array<{
     downpaymentInvoiceId: string;
     number: string;
@@ -283,6 +285,7 @@ export async function finalizeWithinTx(
           taxCents: entry.taxCents,
           grossCents: entry.netCents + entry.taxCents,
         });
+        deductionFx.push({ taxCents: entry.taxCents, fxRateMicros: dp.fxRateMicros });
       }
     }
 
@@ -333,6 +336,11 @@ export async function finalizeWithinTx(
     netTotalCents: totals.netTotalCents,
     taxBreakdown: totals.breakdown,
   });
+
+  // Schlussrechnung in Fremdwaehrung: volle Steuer (BT-110/111) zum Kurs der Schlussrechnung
+  // (oben); zusaetzlich die bereits mit Abschlaegen abgerechnete EUR-Steuer je Abschlag zu
+  // dessen eigenem Kurs (Hash-Kette; PDF-Ausweis ueber loadDeductedTaxEurCents).
+  const deductedTaxEur = invoice.type === "FINAL" && fx.fxRateMicros !== null ? deductedTaxEurCents(deductionFx, fx.fxRateMicros) : null;
 
   // 3) Atomarer Status-Claim: nur wenn noch DRAFT. Verhindert unter Nebenläufigkeit
   //    (Postgres READ COMMITTED) doppelte Festschreibung + doppelten Nummern-Verbrauch.
@@ -402,6 +410,7 @@ export async function finalizeWithinTx(
             fxRateSource: fx.fxRateSource,
             taxTotalEurCents: fx.taxTotalEurCents,
             netTotalEurCents: fx.netTotalEurCents,
+            ...(deductedTaxEur !== null ? { deductedTaxEurCents: deductedTaxEur } : {}),
           }
         : {}),
       ...(issueDateBefore

@@ -610,9 +610,15 @@ export const partialCreditSchema = z.object({
       }),
     )
     .min(1),
+  /** Phase 16b: Kurs fuer die Gutschrift, nur wenn das Original (Altbeleg) keinen Kurs-Snapshot hat. */
+  fxOverrideRate: rateDecimalSchema.optional(),
 });
 // ── Storno ──────────────────────────────────────────────────────────────────
-export const cancelInvoiceSchema = z.object({ reason: z.string().trim().max(500).optional() });
+export const cancelInvoiceSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+  /** Phase 16b: Kurs fuer den Storno, nur wenn das Original (Altbeleg) keinen Kurs-Snapshot hat. */
+  fxOverrideRate: rateDecimalSchema.optional(),
+});
 export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
 
 /** Server-Action `cancelAction` (Storno-Dialog): Formularfelder -> validierte Eingabe. */

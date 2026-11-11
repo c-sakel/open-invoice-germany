@@ -17,6 +17,7 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
 import { NotFoundError } from "@/domain/errors";
 import { finalizeWithinTx } from "./finalize";
+import { correctionFxOverride } from "@/domain/fx/correction";
 import { refundablePaidCents } from "./amounts";
 
 /** Zeilentypen, die keinen Betrag tragen (§8: HEADING/TEXT/SUBTOTAL nie in Summen/XML). */
@@ -184,6 +185,12 @@ export interface CancelOptions {
   orgId: string;
   /** Optionaler Stornogrund — landet in den Notizen des Stornobelegs und im ChangeLog-Diff. */
   reason?: string;
+  /**
+   * Phase 16b: Kurs (Micros) fuer den Storno eines Fremdwaehrungs-Altbelegs OHNE Kurs-Snapshot.
+   * Reihenfolge beim Festschreiben: Kurs des Originals > dieser Override > Kurstabelle.
+   * Traegt das Original einen Kurs, wird der Override nicht gespeichert (Originalkurs gilt).
+   */
+  fxOverrideRate?: number;
 }
 
 export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
@@ -201,6 +208,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
     if (original.status === "DRAFT") throw new CancelError("Entwürfe werden gelöscht, nicht storniert.");
     if (original.status === "CANCELLED") throw new CancelError("Rechnung ist bereits storniert.");
     if (original.type === "CREDIT_NOTE") throw new CancelError("Eine Gutschrift/Storno kann nicht erneut storniert werden.");
+    const fxOverrideMicros = correctionFxOverride(original, opts.fxOverrideRate, (m) => new CancelError(m));
 
     // B7: Abschlagsrechnung, die in einer nicht stornierten Schlussrechnung verrechnet ist,
     // darf nicht storniert werden (die Schlussrechnung zoege sonst einen stornierten Abschlag ab).
@@ -280,6 +288,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
         // B8: ein Storno traegt keine Zahlungsbedingungen des Originals.
         paymentTerms: null,
         correctsInvoiceId: original.id,
+        fxOverrideMicros,
         // Phase 5: Verweis auf dieselbe Quelle wie das Original (PARTIAL/DOWNPAYMENT/FINAL) —
         // rein informativ (denormalisierter Schnellzugriff, keine eigene Relation).
         sourceType: original.sourceType,

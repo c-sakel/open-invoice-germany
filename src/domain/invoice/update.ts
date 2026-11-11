@@ -9,6 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
+import { assertOverrideAllowed } from "@/domain/fx/correction";
 import { logActivity } from "@/domain/activity/log";
 import { normalizeLines } from "@/domain/document/lines";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
@@ -120,10 +121,17 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     // Phase 16b: manueller Kurs nur im Entwurf (Statuspruefung oben); null loescht den Override.
     // Der Wert steht im UPDATE-Diff der Hash-Kette (Nachvollziehbarkeit der Kursuebersteuerung).
     let fxOverrideChange: { fxOverrideMicrosBefore: number | null; fxOverrideMicros: number | null } | null = null;
+    const effectiveCurrency = input.currency ?? invoice.currency;
+    assertOverrideAllowed(effectiveCurrency, input.fxOverrideRate);
     if (input.fxOverrideRate !== undefined) {
       data.fxOverrideMicros = input.fxOverrideRate;
       changedFields.push("fxOverrideMicros");
       fxOverrideChange = { fxOverrideMicrosBefore: invoice.fxOverrideMicros, fxOverrideMicros: input.fxOverrideRate };
+    } else if (effectiveCurrency === "EUR" && invoice.fxOverrideMicros !== null) {
+      // Wechsel auf EUR ohne Kursangabe: ein alter Override wird sinnlos und entfaellt.
+      data.fxOverrideMicros = null;
+      changedFields.push("fxOverrideMicros");
+      fxOverrideChange = { fxOverrideMicrosBefore: invoice.fxOverrideMicros, fxOverrideMicros: null };
     }
 
     if (input.skonto1Permille !== undefined) { data.skonto1Permille = input.skonto1Permille; changedFields.push("skonto1Permille"); }

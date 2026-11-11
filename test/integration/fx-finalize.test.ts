@@ -9,17 +9,22 @@
  * Eigenes Testjahr (2109): Invoice.number ist global @unique; ExchangeRate ist instanzweit.
  */
 import { beforeAll, describe, it, expect } from "vitest";
-import { dbInternal } from "@/lib/db";
+import { z } from "zod";
+import { dbInternal, prisma } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { updateDraftInvoice, InvoiceUpdateError } from "@/domain/invoice/update";
-import { cancelInvoice } from "@/domain/invoice/cancel";
+import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
+import { createBusinessDocument } from "@/domain/document/create";
+import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
+import { createFinalInvoice } from "@/domain/invoice/final";
+import { loadDeductedTaxEurCents, FxRateError } from "@/domain/fx/snapshot";
 import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { upsertManualRate } from "@/domain/fx/store";
 import { createApiKey } from "@/domain/api-key/create";
 import { resetRateLimits } from "@/lib/rate-limit";
-import { createInvoiceSchema } from "@/schemas";
+import { createInvoiceSchema, cancelInvoiceSchema, partialCreditSchema } from "@/schemas";
 import { exchangeRateUpsertSchema } from "@/schemas/fx";
 import { POST as InvoiceFinalize } from "@/app/api/v1/Invoice/[id]/finalize/route";
 
@@ -58,7 +63,7 @@ beforeAll(async () => {
 });
 
 // Netto 112,14 USD @ 19 % -> USt 21,31 USD
-async function draft(opts: { org?: string; customer?: string; currency?: string; fxOverrideRate?: string; netCents?: number } = {}) {
+async function draft(opts: { org?: string; customer?: string; currency?: string; fxOverrideRate?: string; netCents?: number; deliveryDate?: Date } = {}) {
   return createDraftInvoice(
     opts.org ?? orgId,
     createInvoiceSchema.parse({
@@ -67,7 +72,7 @@ async function draft(opts: { org?: string; customer?: string; currency?: string;
       taxScheme: "REGULAR",
       currency: opts.currency ?? "USD",
       issueDate: NOW,
-      deliveryDate: DELIVERY,
+      deliveryDate: opts.deliveryDate ?? DELIVERY,
       paymentTerms: "Zahlbar innerhalb von 14 Tagen.",
       ...(opts.fxOverrideRate !== undefined ? { fxOverrideRate: opts.fxOverrideRate } : {}),
       lines: [{ description: "Beratung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: opts.netCents ?? 11214, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
@@ -237,6 +242,117 @@ describe("Kurs-Snapshot beim Festschreiben", () => {
       expect(fx.fxRateMicros).toBe(1100000);
       expect(fx.fxRateDate?.toISOString()).toBe("2109-03-11T00:00:00.000Z");
       expect(fx.netTotalEurCents).toBe(10195); // 11214 / 1,1 = 10194,5 -> 10195
+    });
+  });
+
+  describe("Fix-Runde 1", () => {
+    // Juli 2109: keine Tabellenkurse -> nur Original-Kurs oder Override koennen greifen.
+    const JULY = new Date("2109-07-12T00:00:00.000Z");
+
+    /** Altbeleg vor 16b simulieren: festgeschriebene USD-Rechnung ohne Kurs-Snapshot. */
+    async function legacyUsdInvoice() {
+      const d = await draft({ fxOverrideRate: "1,3", deliveryDate: JULY });
+      await finalizeInvoice(d.id, { now: NOW });
+      await dbInternal.invoice.update({
+        where: { id: d.id },
+        data: { fxRateMicros: null, fxRateDate: null, fxRateSource: null, fxOverrideMicros: null, taxTotalEurCents: null, netTotalEurCents: null },
+      });
+      return d.id;
+    }
+
+    it("Storno eines Altbelegs ohne Kurs: ohne Override 422, mit Override MANUAL", async () => {
+      const id = await legacyUsdInvoice();
+      const err = await cancelInvoice(id, { orgId, now: NOW }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(FxRateError);
+      expect((err as Error).message).toBe("Kein Wechselkurs für USD zum 12.07.2109 — Kurs manuell eintragen.");
+      const input = cancelInvoiceSchema.parse({ fxOverrideRate: "1,25" });
+      const res = await cancelInvoice(id, { orgId, now: NOW, fxOverrideRate: input.fxOverrideRate });
+      const credit = await fxOf(res.creditNote.id);
+      expect(credit.fxRateSource).toBe("MANUAL");
+      expect(credit.fxRateMicros).toBe(1250000);
+      expect(credit.taxTotalEurCents).toBe(-1705);
+    });
+
+    it("Teilgutschrift eines Altbelegs mit Override; Override wird bei vorhandenem Originalkurs ignoriert", async () => {
+      const legacy = await legacyUsdInvoice();
+      const input = partialCreditSchema.parse({
+        lines: [{ description: "Teilgutschrift", quantityMilli: 1000, unitNetPriceCents: 5607, taxRate: 19 }],
+        fxOverrideRate: "1,1214",
+      });
+      const res = await createPartialCreditNote(legacy, input, { orgId, now: NOW });
+      const credit = await fxOf(res.creditNote.id);
+      expect(credit.fxRateSource).toBe("MANUAL");
+      expect(credit.fxRateMicros).toBe(1121400);
+      expect(credit.netTotalEurCents).toBe(-5000);
+
+      // Original mit Kurs (1,3): Override 2,0 wird nicht gespeichert, Originalkurs gilt.
+      const withRate = await draft({ fxOverrideRate: "1,3", deliveryDate: JULY });
+      await finalizeInvoice(withRate.id, { now: NOW });
+      const res2 = await createPartialCreditNote(withRate.id, { ...input, fxOverrideRate: 2_000_000 }, { orgId, now: NOW });
+      const credit2 = await fxOf(res2.creditNote.id);
+      expect(credit2.fxRateMicros).toBe(1300000);
+      expect(credit2.fxOverrideMicros).toBeNull();
+    });
+
+    it("Storno einer EUR-Rechnung mit Kurs-Override wird abgelehnt", async () => {
+      const d = await draft({ currency: "EUR" });
+      await finalizeInvoice(d.id, { now: NOW });
+      await expect(cancelInvoice(d.id, { orgId, now: NOW, fxOverrideRate: 1_100_000 })).rejects.toBeInstanceOf(CancelError);
+      expect((await fxOf(d.id)).status).toBe("FINALIZED");
+    });
+
+    it("fxOverrideRate bei EUR: Anlegen und Bearbeiten abgelehnt, Wechsel auf EUR loescht den Override", async () => {
+      await expect(draft({ currency: "EUR", fxOverrideRate: "1,1" })).rejects.toBeInstanceOf(z.ZodError);
+      const eur = await draft({ currency: "EUR" });
+      await expect(updateDraftInvoice(orgId, eur.id, { fxOverrideRate: "1,1" }, "test")).rejects.toThrow("Wechselkurs nur bei Fremdwährung möglich");
+      const usd = await draft({ fxOverrideRate: "1,1" });
+      await updateDraftInvoice(orgId, usd.id, { currency: "EUR" }, "test");
+      expect((await fxOf(usd.id)).fxOverrideMicros).toBeNull();
+    });
+
+    it("Guard: fx-Felder einer FINALIZED-Rechnung sind ueber den geschuetzten Client unveraenderlich", async () => {
+      const d = await draft({ fxOverrideRate: "1,3", deliveryDate: JULY });
+      await finalizeInvoice(d.id, { now: NOW });
+      await expect(prisma.invoice.update({ where: { id: d.id }, data: { fxRateMicros: 1 } })).rejects.toThrow(/GoBD/);
+      await expect(prisma.invoice.updateMany({ where: { id: d.id }, data: { taxTotalEurCents: 0 } })).rejects.toThrow(/GoBD/);
+      const fx = await fxOf(d.id);
+      expect(fx.fxRateMicros).toBe(1300000);
+      expect(fx.taxTotalEurCents).toBe(1639); // 2131 / 1,3 = 1639,2
+    });
+
+    it("Schlussrechnung in USD: volle Steuer zum Schlusskurs, Abschlags-Steuer je Abschlag zu dessen Kurs", async () => {
+      const quote = await createBusinessDocument(
+        orgId,
+        {
+          kind: "ANGEBOT",
+          customerId,
+          taxScheme: "REGULAR",
+          currency: "USD",
+          lines: [{ lineType: "ITEM", description: "Projekt", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 1_000_000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+        },
+        { now: NOW },
+      );
+      const dpAt = async (rateMicros: number) => {
+        const dp = await createDownpaymentInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id, mode: "PERCENT", permille: 300 }, { now: NOW });
+        await dbInternal.invoice.update({ where: { id: dp.id }, data: { fxOverrideMicros: rateMicros } });
+        return finalizeInvoice(dp.id, { now: NOW });
+      };
+      const dp1 = await dpAt(1_200_000);
+      const dp2 = await dpAt(1_000_000);
+      expect((await fxOf(dp1.id)).taxTotalEurCents).toBe(47500); // 57.000 / 1,2
+      expect((await fxOf(dp2.id)).taxTotalEurCents).toBe(57000); // 57.000 / 1,0
+
+      const final = await createFinalInvoice(orgId, { sourceType: "QUOTE", sourceId: quote.id }, { now: NOW });
+      await dbInternal.invoice.update({ where: { id: final.id }, data: { fxOverrideMicros: 1_100_000 } });
+      await finalizeInvoice(final.id, { now: NOW });
+      const fx = await fxOf(final.id);
+      expect(fx.taxTotalCents).toBe(190000);
+      expect(fx.taxTotalEurCents).toBe(172727); // 190.000 / 1,1 = 172.727,27
+      expect(await loadDeductedTaxEurCents(dbInternal, final.id)).toBe(104500);
+      const log = await dbInternal.changeLog.findFirstOrThrow({ where: { entityId: final.id, action: "FINALIZE" }, select: { diffJson: true } });
+      expect((JSON.parse(log.diffJson) as Record<string, unknown>).deductedTaxEurCents).toBe(104500);
+      // Nicht-Schlussrechnung / EUR -> kein Ausweis
+      expect(await loadDeductedTaxEurCents(dbInternal, dp1.id)).toBeNull();
     });
   });
 });

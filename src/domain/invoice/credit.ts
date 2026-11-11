@@ -15,6 +15,7 @@ import { creditCapCents, openAmountCents, payableBaseCents } from "@/domain/invo
 import { incrementPaidAmount } from "./paid-amount";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { finalizeWithinTx } from "./finalize";
+import { correctionFxOverride } from "@/domain/fx/correction";
 
 export class CreditError extends Error {
   constructor(message: string) {
@@ -35,6 +36,8 @@ export interface PartialCreditLine {
 export interface PartialCreditInput {
   lines: PartialCreditLine[];
   notes?: string;
+  /** Phase 16b: Kurs (Micros) nur fuer Fremdwaehrungs-Altbelege ohne Kurs-Snapshot (siehe cancel.ts). */
+  fxOverrideRate?: number;
 }
 
 /**
@@ -64,7 +67,7 @@ export async function createPartialCreditNote(
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
       select: {
-        id: true, orgId: true, customerId: true, number: true, taxScheme: true, currency: true, status: true, type: true,
+        id: true, orgId: true, customerId: true, number: true, taxScheme: true, currency: true, status: true, type: true, fxRateMicros: true,
         grossTotalCents: true, paidAmountCents: true, payableCents: true,
         sellerSnapshotJson: true, buyerSnapshotJson: true, contactSnapshotJson: true,
         documentDiscountPermille: true, documentDiscountCents: true,
@@ -122,6 +125,7 @@ export async function createPartialCreditNote(
         issueDate: now,
         notes: `Teilgutschrift zu Rechnung ${original.number}.${input.notes ? " " + input.notes : ""}`,
         correctsInvoiceId: original.id,
+        fxOverrideMicros: correctionFxOverride(original, input.fxOverrideRate, (m) => new CreditError(m)),
         // Prozentwerte unveraendert uebernehmen (applyDocumentAdjustments ist vorzeichen-
         // invariant, siehe Ruling Task-1-Review); Festbetraege proportional zum Verhaeltnis
         // Teilgutschrift-/Original-Positionsnetto (Ruling Fix-Runde 1).

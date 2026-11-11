@@ -42,6 +42,7 @@ import {
   LineType,
   currencyCodeSchema,
   cancelInvoiceSchema,
+  partialCreditSchema,
 } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -200,18 +201,24 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       inputSchema: {
         invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
         reason: cancelInvoiceSchema.shape.reason.describe("Stornogrund (optional, max. 500 Zeichen) — landet in den Notizen des Stornobelegs"),
+        fxOverrideRate: z
+          .string()
+          .optional()
+          .describe("Wechselkurs je 1 EUR (z. B. \"1,1214\"), nur fuer Fremdwaehrungs-Altbelege ohne gespeicherten Kurs"),
       },
     },
-    async ({ invoice, reason }): Promise<Result> => {
+    async ({ invoice, reason, fxOverrideRate }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const input = cancelInvoiceSchema.parse({ reason });
-        const res = await cancelInvoice(inv.id, { orgId: org.id, reason: input.reason });
+        const input = cancelInvoiceSchema.parse({ reason, fxOverrideRate });
+        const res = await cancelInvoice(inv.id, { orgId: org.id, reason: input.reason, fxOverrideRate: input.fxOverrideRate });
         const refund = res.refundDueCents > 0 ? ` Erstattung fällig: ${(res.refundDueCents / 100).toFixed(2).replace(".", ",")} ${res.creditNote.currency}.` : "";
         return ctx.ok(`Storniert. Storno-Gutschrift ${res.creditNote.number} zu ${res.originalNumber} angelegt.${refund}`);
       } catch (e) {
         if (e instanceof CancelError) return ctx.fail(`Storno nicht möglich: ${e.message}`);
+        if (e instanceof FinalizeError) return ctx.fail(`Storno nicht möglich: ${e.message}`);
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
@@ -577,6 +584,10 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         invoice: z.string().describe("Rechnungs-ID oder -Nummer"),
         lines: z.array(docLineSchema).min(1).describe("Zu erstattende Positionen"),
         notes: z.string().optional().describe("Grund der Gutschrift"),
+        fxOverrideRate: z
+          .string()
+          .optional()
+          .describe("Wechselkurs je 1 EUR (z. B. \"1,1214\"), nur fuer Fremdwaehrungs-Altbelege ohne gespeicherten Kurs"),
       },
     },
     async (args): Promise<Result> => {
@@ -591,7 +602,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           taxRate: l.taxRate,
           taxCategory: l.taxCategory,
         }));
-        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes }, { orgId: org.id });
+        const fx = partialCreditSchema.shape.fxOverrideRate.parse(args.fxOverrideRate);
+        const res = await createPartialCreditNote(inv.id, { lines, notes: args.notes, fxOverrideRate: fx }, { orgId: org.id });
         return ctx.ok(`Teilgutschrift ${res.creditNote.number} zu ${res.originalNumber} erstellt · Brutto ${formatCents(res.creditNote.grossTotalCents)}${res.offsetCents > 0 ? ` · ${formatCents(res.offsetCents)} mit offenem Rest verrechnet` : ""}${res.refundDueCents > 0 ? ` · Erstattung fällig: ${formatCents(res.refundDueCents)}` : ""}.`);
       } catch (e) {
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
@@ -599,6 +611,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         // domain/settings/tax-rates.ts).
         if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof CreditError) return ctx.fail(e.message);
+        if (e instanceof FinalizeError) return ctx.fail(e.message);
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
