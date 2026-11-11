@@ -6,6 +6,7 @@
  */
 import type { BrandingSettingsInput, PrintSettingsInput } from "@/schemas/settings";
 import type { LayoutId } from "./layouts/ids";
+import type { LayoutDesignConfig } from "@/schemas/layout-design";
 
 /** Die effektiven (Global + Beleg-Override verschmolzenen) Druckoptionen, siehe
  *  `effectivePrintOptions` in `src/domain/settings/print.ts`. Phase 11b — `layoutId` ist
@@ -26,6 +27,9 @@ export interface PdfTheme {
   options: EffectivePrintOptions;
   /** Phase 11b — aufgeloeste Layout-Kennung (Beleg-Override > Typ-Map > Organisation). */
   layoutId: LayoutId;
+  /** Phase 16g — Design-Konfiguration (ersetzt das feste Layout); mit eingefrorener Version. */
+  layoutConfig?: LayoutDesignConfig;
+  layoutVersionId?: string;
   /** Phase 11b — Zusatzfakten fuer die AUTO-Fusszeile, die nicht in EInvoiceData stehen. */
   footerFacts: PdfFooterFacts;
   /** Logo-Bilddaten, wenn `brand.logoPath` gesetzt ist UND die Datei lesbar war. */

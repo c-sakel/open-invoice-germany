@@ -5,6 +5,8 @@
  */
 import { DEFAULT_LAYOUT_ID, LAYOUT_IDS, isLayoutId, type LayoutId } from "./ids";
 import type { PdfLayout } from "./types";
+import type { PdfTheme } from "../theme";
+import { buildLayout } from "./configurable";
 import { standardLayout } from "./standard";
 import { schlichtLayout } from "./schlicht";
 import { klassikLayout } from "./klassik";
@@ -28,4 +30,9 @@ export function getLayout(id: string | null | undefined): PdfLayout {
 
 export function listLayouts(): { id: LayoutId; name: string; description: string }[] {
   return LAYOUT_IDS.map((id) => ({ id, name: LAYOUTS[id].name, description: LAYOUTS[id].description }));
+}
+
+/** Layout eines Themes: Design-Konfiguration (Phase 16g) oder festes Layout. */
+export function layoutForTheme(theme: PdfTheme): PdfLayout {
+  return theme.layoutConfig ? buildLayout(theme.layoutConfig) : getLayout(theme.layoutId);
 }

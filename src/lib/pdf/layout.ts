@@ -28,6 +28,11 @@ export function pdfMargins(theme: PdfTheme): PdfMargins {
   };
 }
 
+/** Raender in mm (Design-Konfiguration) als pt. */
+export function marginsFromMm(m: { top: number; right: number; bottom: number; left: number }): PdfMargins {
+  return { top: mm(m.top), right: mm(m.right), bottom: mm(m.bottom), left: mm(m.left) };
+}
+
 /**
  * Zeichnet, sofern `brand.showBackground` an ist und ein Hintergrundbild geladen wurde,
  * dieses vollflächig (0,0 bis Seitenrand) — MUSS vor jedem übrigen Seiteninhalt gezeichnet

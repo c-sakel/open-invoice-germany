@@ -79,6 +79,8 @@ export const en: DocStrings = {
     unitPrice: "Unit price",
     vat: "VAT",
     net: "Net",
+    unit: "Unit",
+    discount: "Discount",
   },
   totals: {
     subtotalNet: "Subtotal (net)",
