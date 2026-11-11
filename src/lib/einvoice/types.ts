@@ -1,4 +1,5 @@
 /** Framework-/DB-freie Eingabe-Struktur für die E-Rechnungs-Erzeugung. */
+import type { DocLanguage } from "@/lib/i18n/doc/types";
 
 export interface EInvoiceParty {
   name: string;
@@ -115,6 +116,13 @@ export interface EInvoiceData {
     countryCode: string;
   } | null;
   currency: string; // BT-5
+  /** Belegsprache fuer Klartexte im XML (BT-120, BT-20, BT-22-Kursnotiz). Fehlt das Feld
+   *  (handgeschriebene Fixtures), gilt Deutsch. */
+  language?: DocLanguage;
+  /** Phase 16b — Fremdwaehrungsbeleg: Kurs und USt in EUR (BT-6/BT-111, § 16 Abs. 6 UStG).
+   *  NULL/fehlt bei EUR-Belegen -> weder TaxCurrencyCode noch zweites TaxTotal.
+   *  `rateMicros` = Mikro-Einheiten Fremdwaehrung je 1 EUR. `preview` = Entwurf, Kurs live. */
+  fx?: EInvoiceFx | null;
   buyerReference?: string | null; // BT-10 (Leitweg-ID im B2G)
   /** Phase 4b — Bestellnummer des Kunden (BT-13, cac:OrderReference/cbc:ID bzw.
    * ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID). Nicht mit buyerReference (BT-10)
@@ -210,4 +218,15 @@ export interface EInvoiceDeduction {
   netCents: number;
   taxCents: number;
   grossCents: number;
+}
+
+/** Eingefrorener (bzw. bei Entwuerfen live ermittelter) EUR-Umrechnungs-Snapshot. */
+export interface EInvoiceFx {
+  rateMicros: number;
+  rateDate: Date;
+  source: "BMF_MONTHLY" | "ECB_DAILY" | "MANUAL";
+  taxTotalEurCents: number;
+  netTotalEurCents: number;
+  /** Entwurfs-Vorschau: Kurs live per rateFor, noch nicht festgeschrieben. */
+  preview?: boolean;
 }

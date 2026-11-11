@@ -20,6 +20,7 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import type { DocumentAdjustments } from "@/lib/pricing/allocate";
 import type { EInvoiceData } from "@/lib/einvoice/types";
+import { toEurCents } from "@/domain/fx/convert";
 
 type SampleDeduction = { number: string; issueDate: Date; netCents: number; taxCents: number; grossCents: number };
 
@@ -194,6 +195,11 @@ function buildSample(opts: {
   subject?: string;
   // Storno-Belege tragen keine Zahlungsbedingungen des Originals (B8).
   noPaymentTerms?: boolean;
+  // Phase 16b — Belegwaehrung/-sprache und eingefrorener Kurs (BT-6/BT-111): die EUR-Betraege
+  // werden wie beim Festschreiben je Steuersatz-Zeile umgerechnet (Vorzeichen bleibt erhalten).
+  currency?: string;
+  language?: string;
+  fx?: { rateMicros: number; rateDate: Date; source: "BMF_MONTHLY" | "ECB_DAILY" | "MANUAL" };
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -225,7 +231,13 @@ function buildSample(opts: {
     deliveryDate: opts.deliveryDate ?? (opts.deliveryStart && opts.deliveryEnd ? null : new Date("2034-06-01")),
     deliveryStart: opts.deliveryStart ?? null,
     deliveryEnd: opts.deliveryEnd ?? null,
-    currency: "EUR",
+    currency: opts.currency ?? "EUR",
+    language: opts.language ?? "de",
+    fxRateMicros: opts.fx?.rateMicros ?? null,
+    fxRateDate: opts.fx?.rateDate ?? null,
+    fxRateSource: opts.fx?.source ?? null,
+    taxTotalEurCents: opts.fx ? totals.breakdown.reduce((sum, b) => sum + toEurCents(b.taxCents, opts.fx!.rateMicros), 0) : null,
+    netTotalEurCents: opts.fx ? toEurCents(totals.netTotalCents, opts.fx.rateMicros) : null,
     buyerReference: "04011000-12345-86",
     orderNumber: opts.orderNumber ?? null,
     paymentTerms: opts.skonto1 || opts.noPaymentTerms ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
@@ -593,6 +605,52 @@ const creditNoteRestStorno = () =>
     precedingInvoiceDate: new Date("2042-06-09"),
   });
 
+// 24) Phase 16b — Fremdwaehrung: USD-Rechnung, Kurs 1,1214 (BMF-Monatskurs), USt in EUR
+// (BT-6 TaxCurrencyCode, BT-111 zweites TaxTotal). 112,14 USD netto = 100,00 EUR, USt 21,31 USD = 19,00 EUR.
+const USD_FX = { rateMicros: 1121400, rateDate: new Date("2043-03-01"), source: "BMF_MONTHLY" as const };
+const foreignCurrencyUsd = () =>
+  buildSample({
+    number: "RE-2043-0001",
+    currency: "USD",
+    fx: USD_FX,
+    issueDate: new Date("2043-03-10"),
+    dueDate: new Date("2043-04-09"),
+    deliveryDate: new Date("2043-03-05"),
+    lines: [{ description: "Software consulting", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 11214, taxRate: 19, taxCategory: "S" }],
+  });
+
+// 25) Phase 16b — Storno der USD-Rechnung (CreditNote): zweites TaxTotal positiv, derselbe Kurs.
+const foreignCurrencyCreditNote = () =>
+  buildSample({
+    number: "GS-2043-0002",
+    type: "CREDIT_NOTE",
+    sign: -1,
+    noPaymentTerms: true,
+    currency: "USD",
+    fx: USD_FX,
+    issueDate: new Date("2043-03-20"),
+    dueDate: new Date("2043-04-19"),
+    deliveryDate: new Date("2043-03-05"),
+    lines: [{ description: "Software consulting", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 11214, taxRate: 19, taxCategory: "S" }],
+    precedingInvoiceNumber: "RE-2043-0001",
+    precedingInvoiceDate: new Date("2043-03-10"),
+  });
+
+// 26) Phase 16b — englische Belegsprache, Reverse Charge (EUR, Kunde NL): BT-120 "Reverse charge",
+// BT-121 unveraendert VATEX-EU-AE, BT-20 englisch.
+const languageEnReverseCharge = () =>
+  buildSample({
+    number: "RE-2043-0003",
+    language: "en",
+    customer: CUSTOMER_EU,
+    notes: "Reverse charge (Steuerschuldnerschaft des Leistungsempfängers)",
+    skonto1: { permille: 20, days: 10 },
+    issueDate: new Date("2043-03-10"),
+    dueDate: new Date("2043-04-09"),
+    deliveryDate: new Date("2043-03-05"),
+    lines: [{ description: "Construction services", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 250000, taxRate: 0, taxCategory: "AE" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -619,6 +677,9 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "betreff-note": betreffNote,
   "lieferanschrift-bg15": lieferanschriftBg15,
   "credit-note-rest-storno": creditNoteRestStorno,
+  "foreign-currency-usd": foreignCurrencyUsd,
+  "foreign-currency-credit-note": foreignCurrencyCreditNote,
+  "language-en-reverse-charge": languageEnReverseCharge,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

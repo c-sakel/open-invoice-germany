@@ -126,6 +126,9 @@ const SAMPLE_NAMES = [
   "betreff-note", // Phase 13b (Task 5): Betreff als BT-22-Note mit Subjektcode BT-21 "AAI" (UNTDID 4451)
   "lieferanschrift-bg15", // Phase 14a (Task 5): eigene Lieferanschrift (BG-13/BG-15), Label (BT-70), LineTwo (BT-76)
   "credit-note-rest-storno", // Storno nach Teilgutschrift: Summenzeile je Steuersatz, ohne Zahlungsbedingungen
+  "foreign-currency-usd", // Phase 16b: USD-Rechnung, BT-6 TaxCurrencyCode EUR + BT-111 (zweites TaxTotal)
+  "foreign-currency-credit-note", // Phase 16b: Storno der USD-Rechnung (CreditNote, positives BT-111)
+  "language-en-reverse-charge", // Phase 16b: Belegsprache en, BT-120 "Reverse charge", BT-20 englisch
 ];
 
 async function main(): Promise<void> {
