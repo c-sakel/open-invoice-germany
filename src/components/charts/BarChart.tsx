@@ -2,7 +2,6 @@ import type { ChartDatum } from "./types";
 import { CHART_COLORS, CHART_FONT_SIZE, CHAR_WIDTH_FACTOR } from "./types";
 import { useId } from "react";
 import { ChartFrame } from "./ChartFrame";
-import { formatCentsShort } from "@/lib/money";
 
 /**
  * Saeulendiagramm (Phase 12e, Task 1): senkrecht fuer generische Reihen (Dashboard),
@@ -22,7 +21,7 @@ import { formatCentsShort } from "@/lib/money";
  * konfigurierbar, damit `fontSize`-Angaben in schmaleren Karten (Dashboard-Grid, halbe
  * Spaltenbreite) nicht auf ~7 px herunterskaliert werden — Aufrufer in halben Karten
  * uebergeben einen kleineren Wert. Die senkrechte Ansicht bekommt eine y-Achse mit 3
- * formatierten Ticks (`formatCentsShort`); Beschriftungs-/Wertespalten der waagerechten
+ * formatierten Ticks (runde Werte, `niceTicks`); Beschriftungs-/Wertespalten der waagerechten
  * Ansicht messen sich jetzt an der tatsaechlich laengsten Beschriftung (statt fixer 150/90-
  * Konstanten) und werden zur Not gestaucht, damit mindestens 30 % der Breite fuer die
  * Balken selbst bleiben — funktioniert dadurch sowohl fuer kurze Aging-Bucket-Label als auch
@@ -43,6 +42,7 @@ export function BarChart({
   viewBoxWidth = 640,
   emptyMessage,
   hideZero = false,
+  hideTitle = false,
 }: {
   title: string;
   data: ChartDatum[];
@@ -56,6 +56,8 @@ export function BarChart({
   viewBoxWidth?: number;
   emptyMessage?: string;
   hideZero?: boolean;
+  /** Diagrammtitel nur fuer Screenreader (die Karte traegt den sichtbaren Titel). */
+  hideTitle?: boolean;
 }) {
   const keep = rawData.map((d) => !hideZero || d.value !== 0);
   const data = rawData.filter((_, i) => keep[i]);
@@ -79,6 +81,15 @@ export function BarChart({
       emptyMessage={emptyMessage}
       extraColumns={extraColumns}
       valueHeader={seriesLabel}
+      hideTitle={hideTitle}
+      legend={
+        compare && orientation === "vertical"
+          ? [
+              { label: seriesLabel ?? "Aktuell", color: color ?? CHART_COLORS.primary },
+              { label: compareLabel, color: CHART_COLORS.second, hatched: true },
+            ]
+          : undefined
+      }
     >
       {compare && (
         <defs>
@@ -101,6 +112,29 @@ interface Geometry {
   compare?: ChartDatum[];
   compareLabel: string;
   patternId: string;
+}
+
+/** Runde Tickwerte (Cent) ueber [min, max]: Schrittweite 1/2/5 x 10^n Euro, inklusive 0. */
+export function niceTicks(minCents: number, maxCents: number, target = 4): { value: number }[] {
+  const min = Math.min(0, minCents) / 100;
+  const max = Math.max(0, maxCents) / 100;
+  const span = max - min;
+  if (span <= 0) return [{ value: 0 }, { value: 100 }];
+  const rough = span / target;
+  const pow = 10 ** Math.floor(Math.log10(rough));
+  const f = rough / pow;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+  const first = Math.floor(min / step + 1e-9) * step;
+  const last = Math.ceil(max / step - 1e-9) * step;
+  const out: { value: number }[] = [];
+  for (let v = first; v <= last + step / 2; v += step) out.push({ value: Math.round(v * 100) });
+  return out;
+}
+
+function formatTick(cents: number): string {
+  const euros = cents / 100;
+  const nf = (n: number, frac: number) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: frac }).format(n);
+  return Math.abs(euros) >= 1000 ? `${nf(euros / 1000, 1)} k€` : `${nf(euros, 2)} €`;
 }
 
 function truncate(text: string, maxChars: number): string {
@@ -134,13 +168,12 @@ function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
   const padTop = 10;
   const padBottom = 30;
   const padRight = 10;
-  const range = domainMax - domainMin || 1;
-  const ticks = [
-    { f: 0, value: domainMax },
-    { f: 0.5, value: (domainMax + domainMin) / 2 },
-    { f: 1, value: domainMin },
-  ];
-  const tickLabels = ticks.map((t) => formatCentsShort(Math.round(t.value)));
+  // Runde Achsenwerte (1/2/5 x 10^n in Euro); die Skala reicht bis zum aeussersten Tick.
+  const ticks = niceTicks(domainMin, domainMax);
+  const axisMin = ticks[0].value;
+  const axisMax = ticks[ticks.length - 1].value;
+  const range = axisMax - axisMin || 1;
+  const tickLabels = ticks.map((t) => formatTick(t.value));
   // y-Achse (Fix I5): padLeft misst sich an der laengsten Tick-Beschriftung.
   const padLeft = Math.max(36, Math.max(...tickLabels.map((l) => l.length)) * fontSize * CHAR_WIDTH_FACTOR + 14);
   const plotHeight = height - padTop - padBottom;
@@ -149,7 +182,8 @@ function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
   const groupWidth = Math.max(2, step * 0.7);
   const mainWidth = compare ? groupWidth * 0.55 : groupWidth;
   const compareWidth = compare ? groupWidth * 0.4 : 0;
-  const scaleY = (v: number) => padTop + ((domainMax - v) / range) * plotHeight;
+  const scaleY = (v: number) => padTop + ((axisMax - v) / range) * plotHeight;
+  const tickY = (v: number) => scaleY(v);
   const zeroY = scaleY(0);
   // Beschriftungen nur so dicht, dass sie bei fester Schrift nicht ueberlappen.
   const maxLabelChars = Math.max(1, ...data.map((d) => d.label.length));
@@ -159,11 +193,11 @@ function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
     <>
       {ticks.map((t, i) => (
         <line
-          key={t.f}
+          key={t.value}
           x1={padLeft}
           x2={width - padRight}
-          y1={padTop + t.f * plotHeight}
-          y2={padTop + t.f * plotHeight}
+          y1={tickY(t.value)}
+          y2={tickY(t.value)}
           stroke={CHART_COLORS.grid}
         >
           <title>{tickLabels[i]}</title>
@@ -171,9 +205,9 @@ function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
       ))}
       {ticks.map((t, i) => (
         <text
-          key={`label-${t.f}`}
+          key={`label-${t.value}`}
           x={padLeft - 8}
-          y={padTop + t.f * plotHeight}
+          y={tickY(t.value)}
           textAnchor="end"
           dominantBaseline="middle"
           fontSize={fontSize}
@@ -182,7 +216,7 @@ function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
           {tickLabels[i]}
         </text>
       ))}
-      {domainMin < 0 && <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke={CHART_COLORS.axis} />}
+      {axisMin < 0 && <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke={CHART_COLORS.zero} strokeWidth={1.5} />}
       {data.map((d, i) => {
         const barTop = scaleY(Math.max(0, d.value));
         const barBottom = scaleY(Math.min(0, d.value));
@@ -212,7 +246,7 @@ function renderVertical(data: ChartDatum[], g: Geometry & { height: number }) {
             >
               <title>{`${d.label}: ${d.valueLabel}`}</title>
             </rect>
-            {(i % labelStep === 0 || i === data.length - 1) && (
+            {(data.length - 1 - i) % labelStep === 0 && (
               <text
                 x={groupX + groupWidth / 2}
                 y={height - 12}

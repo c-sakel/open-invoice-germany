@@ -39,6 +39,8 @@ export function ChartFrame({
   emptyFallback,
   extraColumns,
   valueHeader,
+  hideTitle = false,
+  legend,
   children,
 }: {
   title: string;
@@ -56,6 +58,10 @@ export function ChartFrame({
   extraColumns?: { header: string; values: string[] }[];
   /** Spaltenkopf der Hauptreihe (Default "Wert"). */
   valueHeader?: string;
+  /** Titel nur fuer Screenreader (Kartentitel steht bereits darueber). */
+  hideTitle?: boolean;
+  /** Sichtbare Legende unter dem Diagramm. */
+  legend?: { label: string; color: string; hatched?: boolean }[];
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -64,12 +70,22 @@ export function ChartFrame({
 
   return (
     <figure className="m-0">
-      <figcaption className="mb-3 text-sm font-semibold text-ink">{title}</figcaption>
-      {data.length === 0 || (emptyFallback !== undefined && data.filter((d) => d.value !== 0).length < 2) ? (
+      <figcaption
+        className={
+          hideTitle ? "sr-only" : "mb-3 text-sm font-semibold text-ink"
+        }
+      >
+        {title}
+      </figcaption>
+      {data.length === 0 ||
+      (emptyFallback !== undefined &&
+        data.filter((d) => d.value !== 0).length < 2) ? (
         data.length > 0 && emptyFallback !== undefined ? (
           <>{emptyFallback}</>
         ) : (
-        <p className="py-8 text-center text-sm text-ink-muted">{emptyMessage ?? "Keine Daten im gewählten Zeitraum."}</p>
+          <p className="py-8 text-center text-sm text-ink-muted">
+            {emptyMessage ?? "Keine Daten im gewählten Zeitraum."}
+          </p>
         )
       ) : (
         <>
@@ -82,34 +98,59 @@ export function ChartFrame({
             className="h-auto w-full"
           >
             <title id={titleId}>{ariaLabel}</title>
-            <desc id={descId}>{`Diagramm mit ${data.length} ${data.length === 1 ? "Datenpunkt" : "Datenpunkten"}. Details in der Tabelle unterhalb.`}</desc>
+            <desc
+              id={descId}
+            >{`Diagramm mit ${data.length} ${data.length === 1 ? "Datenpunkt" : "Datenpunkten"}. Details in der Tabelle unterhalb.`}</desc>
             {children}
           </svg>
-          <table className="sr-only">
-            <caption>{title}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Bezeichnung</th>
-                <th scope="col">{valueHeader ?? "Wert"}</th>
-                {extraColumns?.map((c) => (
-                  <th key={c.header} scope="col">
-                    {c.header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((d, i) => (
-                <tr key={`${i}-${d.label}`}>
-                  <td>{d.label}</td>
-                  <td>{d.valueLabel}</td>
+          {legend && legend.length > 0 && (
+            <ul className="mt-2 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-ink-soft">
+              {legend.map((l) => (
+                <li key={l.label} className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-3 rounded-sm"
+                    style={
+                      l.hatched
+                        ? {
+                            backgroundImage: `repeating-linear-gradient(45deg, ${l.color} 0 2px, transparent 2px 4px)`,
+                            border: `1px solid ${l.color}`,
+                          }
+                        : { backgroundColor: l.color }
+                    }
+                  />
+                  <span>{l.label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="sr-only">
+            <table>
+              <caption>{title}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Bezeichnung</th>
+                  <th scope="col">{valueHeader ?? "Wert"}</th>
                   {extraColumns?.map((c) => (
-                    <td key={c.header}>{c.values[i] ?? ""}</td>
+                    <th key={c.header} scope="col">
+                      {c.header}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.map((d, i) => (
+                  <tr key={`${i}-${d.label}`}>
+                    <td>{d.label}</td>
+                    <td>{d.valueLabel}</td>
+                    {extraColumns?.map((c) => (
+                      <td key={c.header}>{c.values[i] ?? ""}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </figure>

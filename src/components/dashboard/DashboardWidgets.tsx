@@ -104,49 +104,53 @@ export function DashboardWidgets({
         </section>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <Kpi
-            size="hero"
-            label="Offene Forderungen"
-            value={formatCents(openTotal, currency)}
-            hint={
-              <>
-                <Link href="/rechnungen?status=overdue" className="text-stamp hover:underline">
-                  Überfällig {formatCents(summary.overdueInvoices.cents, currency)}
-                </Link>
-                {" · "}
-                <Link href="/mahnwesen" className="hover:underline">
-                  Mahnung fällig: {summary.dunningRequired.count}
-                </Link>
-              </>
-            }
-          />
-          <div className="mt-4">
-            <StackedBar title="Geldfluss" segments={openBandSegments(summary, currency)} totalLabel={formatCents(openTotal, currency)} />
-          </div>
-        </Card>
-        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
-          <Card>
-            <Kpi label="Umsatz lfd. Monat" value={formatCents(summary.revenueThisMonthCents, currency)}>
-              <Sparkline values={current.map((d) => d.value)} label="Umsatz der letzten 12 Monate" />
-            </Kpi>
-          </Card>
-          <Card>
-            <Kpi label="Zahlungseingang lfd. Monat" value={formatCents(paidThisMonth, currency)}>
-              <Sparkline values={cash.paid.map((d) => d.value)} label="Zahlungseingang der letzten 12 Monate" />
-            </Kpi>
-          </Card>
-          <Link href="/dokumente?status=SENT" className="block">
-            <Card>
-              <Kpi
-                label="Offene Angebote"
-                value={formatCents(summary.openQuotes.cents, currency)}
-                hint={`${summary.openQuotes.count} Angebot(e)`}
-              />
-            </Card>
-          </Link>
+      <Card>
+        <Kpi
+          size="hero"
+          label="Offene Forderungen"
+          value={formatCents(openTotal, currency)}
+          hint={
+            <>
+              {summary.openInvoices.count + summary.dueInvoices.count + summary.overdueInvoices.count} offene Rechnungen
+              {" · "}
+              <Link href="/rechnungen?status=overdue" className="text-stamp hover:underline">
+                {summary.overdueInvoices.count} überfällig, {formatCents(summary.overdueInvoices.cents, currency)}
+              </Link>
+              {" · "}
+              <Link href="/mahnwesen" className="hover:underline">
+                Mahnung fällig: {summary.dunningRequired.count}
+              </Link>
+            </>
+          }
+        />
+        <div className="mt-4">
+          <StackedBar title="Geldfluss" segments={openBandSegments(summary, currency)} totalLabel={formatCents(openTotal, currency)} />
         </div>
+        {summary.overdueInvoices.count > 0 && (
+          <p className="mt-3 text-sm">
+            <Link href="/rechnungen?status=overdue" className="font-medium text-pen hover:underline">
+              Zu den überfälligen Rechnungen
+            </Link>
+          </p>
+        )}
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <Kpi label="Umsatz lfd. Monat" value={formatCents(summary.revenueThisMonthCents, currency)}>
+            <Sparkline values={current.map((d) => d.value)} label="Umsatz der letzten 12 Monate" />
+          </Kpi>
+        </Card>
+        <Card>
+          <Kpi label="Zahlungseingang lfd. Monat" value={formatCents(paidThisMonth, currency)}>
+            <Sparkline values={cash.paid.map((d) => d.value)} label="Zahlungseingang der letzten 12 Monate" />
+          </Kpi>
+        </Card>
+        <Link href="/dokumente?status=SENT" className="block">
+          <Card className="h-full">
+            <Kpi label="Offene Angebote" value={formatCents(summary.openQuotes.cents, currency)} hint={`${summary.openQuotes.count} Angebot(e)`} />
+          </Card>
+        </Link>
       </div>
 
       <Card title="Umsatz je Monat (netto) mit Vorjahr">
@@ -155,6 +159,8 @@ export function DashboardWidgets({
           data={current}
           compare={prior}
           compareLabel="Vorjahr"
+          seriesLabel="Umsatz"
+          hideTitle
           emptyMessage="Noch keine Umsätze im Zeitraum."
         />
       </Card>
@@ -166,6 +172,8 @@ export function DashboardWidgets({
             data={cash.paid}
             compare={cash.invoiced}
             compareLabel="Rechnungsausgang"
+            seriesLabel="Zahlungseingang"
+            hideTitle
             color={CHART_COLORS.ledger}
             emptyMessage="Noch keine Zahlungen im Zeitraum."
           />
@@ -188,6 +196,7 @@ export function DashboardWidgets({
             title="Top 5 Kunden (netto, 12 Monate)"
             data={topCustomerChartData(top)}
             orientation="horizontal"
+            hideTitle
             emptyMessage="Noch keine Umsätze im Zeitraum."
           />
         </Card>
@@ -198,9 +207,9 @@ export function DashboardWidgets({
                 <a href={DOC_HREF[d.kind](d.id)} className="font-medium text-pen hover:underline">
                   {d.number ?? "Entwurf"}
                 </a>
-                <span className="min-w-0 flex-1 truncate text-ink-muted">{d.customerName}</span>
+                <span className="min-w-[6rem] flex-1 truncate text-ink-muted">{d.customerName}</span>
                 <span className="shrink-0 text-ink-muted">{deDate(d.date)}</span>
-                {d.kind === "INVOICE" && <BelegStreckeMini status={d.status} />}
+                {d.kind === "INVOICE" && <BelegStreckeMini status={d.status} hideText />}
                 <StatusBadge status={d.status} />
               </li>
             ))}

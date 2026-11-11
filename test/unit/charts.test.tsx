@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BarChart } from "@/components/charts/BarChart";
+import { BarChart, niceTicks } from "@/components/charts/BarChart";
 import { LineChart } from "@/components/charts/LineChart";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { StackedBar } from "@/components/charts/StackedBar";
@@ -156,14 +156,39 @@ describe("BarChart", () => {
     expect(html).not.toContain('fill="var(--color-rule-strong)"');
   });
 
-  it("Fix I5: die senkrechte Ansicht zeigt eine y-Achse mit 3 formatierten Ticks (formatCentsShort)", () => {
+  it("senkrechte Ansicht: runde y-Achsenwerte (niceTicks) statt Maximalwert", () => {
     const html = renderToStaticMarkup(<BarChart title="Umsatz je Monat" data={DATA} />);
-    // DATA-Werte 0/100000/250000 -> domainMax 250000 ("2,5 k€"), domainMin 0 ("0,00 €"),
-    // Mitte 125000 ("1,3 k€", kaufmaennisch gerundet).
-    expect(html).toContain("2,5 k€");
-    expect(html).toContain("0,00 €");
+    // DATA-Werte 0/100000/250000 Cent -> Schritt 1.000 EUR? nein: Spanne 2.500 EUR / 4 -> 1/2/5-Schritt 1.000 EUR.
+    expect(html).toContain("3 k€");
+    expect(html).toContain("0 €");
+    expect(html).not.toContain("2,5 k€");
     expect(html.match(/font-size="12"/g)?.length).toBeGreaterThanOrEqual(3);
     expectNoNaN(html);
+  });
+
+  it("niceTicks: 1/2/5-Schritte, auch negativer Bereich, immer inklusive 0", () => {
+    expect(niceTicks(0, 52717).map((t) => t.value)).toEqual([0, 20000, 40000, 60000]);
+    expect(niceTicks(-10000, 52717).map((t) => t.value)).toEqual([-20000, 0, 20000, 40000, 60000]);
+    expect(niceTicks(-30000, -5000).map((t) => t.value)).toEqual([-30000, -20000, -10000, 0]);
+    expect(niceTicks(0, 0).map((t) => t.value)).toEqual([0, 100]);
+  });
+
+  it("x-Beschriftung: letzte Beschriftung immer sichtbar, keine direkt davor", () => {
+    const months = ["Dez 25", "Jan 26", "Feb 26", "März 26", "Apr 26", "Mai 26", "Juni 26", "Juli 26", "Aug 26", "Sept 26", "Okt 26", "Nov 26"];
+    const data: ChartDatum[] = months.map((label, i) => ({ label, value: 1000 * (i + 1), valueLabel: "x" }));
+    const html = renderToStaticMarkup(<BarChart title="T" data={data} viewBoxWidth={420} />);
+    const svg = html.slice(html.indexOf("<svg"), html.indexOf("</svg>"));
+    expect(svg).toContain(">Nov 26</text>");
+    expect(svg).not.toContain(">Okt 26</text>");
+  });
+
+  it("Legende bei Vergleichsreihe und Titel nur fuer Screenreader mit hideTitle", () => {
+    const html = renderToStaticMarkup(
+      <BarChart title="Zahlungen" data={DATA} compare={DATA} compareLabel="Rechnungsausgang" seriesLabel="Zahlungseingang" hideTitle />,
+    );
+    expect(html).toContain("Zahlungseingang");
+    expect(html).toContain("Rechnungsausgang");
+    expect(html).toContain('<figcaption class="sr-only">');
   });
 
   it("Fix I6: viewBoxWidth macht die Koordinatenbreite konfigurierbar (halbe Dashboard-Karte)", () => {

@@ -9,12 +9,15 @@ export function BelegStreckeMini({
   sent = false,
   paidAmountCents = 0,
   payableCents = 0,
+  hideText = false,
 }: {
   status: string;
   sent?: boolean;
   paidAmountCents?: number;
   payableCents?: number;
+  /** Nur Punkte, der Schritt steht als sr-only-Text (wenn daneben schon ein Status-Badge steht). */
+  hideText?: boolean;
 }) {
   if (!KNOWN.has(status)) return null;
-  return <BelegStrecke size="sm" steps={belegStrecke({ status, sent: sent || status === "SENT", paidAmountCents, payableCents })} />;
+  return <BelegStrecke size="sm" hideText={hideText} steps={belegStrecke({ status, sent: sent || status === "SENT", paidAmountCents, payableCents })} />;
 }

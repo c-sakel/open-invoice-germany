@@ -26,6 +26,7 @@ export const CHART_COLORS = {
   due: "var(--color-seal)",
   overdue: "var(--color-stamp)",
   grid: "var(--color-rule)", // Rasterlinien (dekorativ, keine Text-Kontrastpflicht)
+  zero: "var(--color-ink-muted)", // Nulllinie bei negativen Werten
   axis: "var(--color-rule-strong)", // Achsenlinien (dekorativ), NICHT fuer Text
   label: "var(--color-ink-soft)", // Achsen-/Wertebeschriftung (Text, AA)
   centerText: "var(--color-ink)", // DonutChart-Mittelwert
