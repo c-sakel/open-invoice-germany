@@ -170,7 +170,7 @@ export function DashboardWidgets({
             emptyMessage="Noch keine Zahlungen im Zeitraum."
           />
           {cash.otherCurrencyCount > 0 && (
-            <p className="mt-2 text-xs text-ink-soft">+ {cash.otherCurrencyCount} Belege in anderer Währung</p>
+            <p className="mt-2 text-xs text-ink-soft">Beträge in {cash.otherCurrencyCount} weiteren {cash.otherCurrencyCount === 1 ? "Währung" : "Währungen"} sind nicht enthalten</p>
           )}
         </Card>
         <Card title="Angebotsquote (12 Monate)">

@@ -70,11 +70,12 @@ describe("Dashboard Geldfluss und Vergleichsreihen", () => {
     expect(prior).toHaveLength(12);
   });
 
-  it("cashIn filtert Standardwährung und zählt andere", () => {
+  it("cashIn filtert Standardwährung und zählt weitere Währungen (distinct)", () => {
     const r = cashInChartData(
       [
         { month: "2026-01", currency: "EUR", paidCents: 500, invoicedGrossCents: 900 },
         { month: "2026-01", currency: "USD", paidCents: 700, invoicedGrossCents: 700 },
+        { month: "2026-02", currency: "USD", paidCents: 100, invoicedGrossCents: 100 },
       ],
       "EUR",
     );

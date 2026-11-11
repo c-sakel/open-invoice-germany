@@ -149,7 +149,7 @@ export function cashInChartData(
   currency: string,
 ): { paid: ChartDatum[]; invoiced: ChartDatum[]; otherCurrencyCount: number } {
   const own = points.filter((p) => p.currency === currency);
-  const otherCurrencyCount = points.length - own.length;
+  const otherCurrencyCount = new Set(points.filter((p) => p.currency !== currency).map((p) => p.currency)).size;
   const paid = own.map((p) => ({ label: monthLabel(p.month), value: p.paidCents, valueLabel: formatCents(p.paidCents, currency) }));
   const invoiced = own.map((p) => ({
     label: monthLabel(p.month),
