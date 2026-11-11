@@ -13,7 +13,7 @@ vi.mock("@/app/actions/layout-design", () => ({
 import { LayoutDesigner } from "@/components/settings/layout-designer/LayoutDesigner";
 
 const DESIGN = { id: "d1", name: "Test", baseLayoutId: "standard" as const, currentVersion: 1, archived: false };
-const PRESETS = ["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"].map((id) => ({ id: id as "standard", name: id }));
+const PRESETS = ["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"].map((id) => ({ id: id as "standard", name: id, config: presetConfig(id as "standard") }));
 
 function mount(config: LayoutDesignConfig = presetConfig("standard")) {
   return render(<LayoutDesigner design={DESIGN} initialConfig={config} presets={PRESETS} versions={[]} drafts={[]} />);

@@ -29,7 +29,7 @@ export default async function LayoutDesignerPage({ searchParams }: { searchParam
       take: 20,
     }),
   ]);
-  const presets = listLayouts().map((l) => ({ id: l.id, name: l.name }));
+  const presets = listLayouts().map((l) => ({ id: l.id, name: l.name, config: presetConfig(l.id) }));
 
   let current: Awaited<ReturnType<typeof getLayoutDesign>> | null = null;
   if (id) {

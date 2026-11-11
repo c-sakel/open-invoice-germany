@@ -13,7 +13,6 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog, type ConfirmDialogHandle } from "@/components/ui/ConfirmDialog";
 import { layoutDesignConfigSchema, type LayoutDesignConfig } from "@/schemas/layout-design";
 import { LAYOUT_IDS, type LayoutId } from "@/lib/pdf/layouts/ids";
-import { presetConfig } from "@/lib/pdf/layouts/presets";
 import { collectFieldErrors } from "@/lib/layout-design/editor";
 import { archiveLayoutDesignAction, saveLayoutDesignAction } from "@/app/actions/layout-design";
 import { BlockOrderList } from "./BlockOrderList";
@@ -33,7 +32,8 @@ export interface DesignerDesign {
 export interface LayoutDesignerProps {
   design: DesignerDesign | null;
   initialConfig: LayoutDesignConfig;
-  presets: { id: LayoutId; name: string }[];
+  /** Startkonfiguration je Vorlage (serverseitig abgeleitet; pdfkit gehoert nicht ins Client-Bundle). */
+  presets: { id: LayoutId; name: string; config: LayoutDesignConfig }[];
   versions: VersionInfo[];
   drafts: { id: string; label: string }[];
 }
@@ -84,9 +84,10 @@ export function LayoutDesigner({ design, initialConfig, presets, versions, draft
 
   function applyPreset(id: string) {
     if (!(LAYOUT_IDS as readonly string[]).includes(id)) return;
-    const presetId = id as LayoutId;
-    setBaseLayoutId(presetId);
-    update(() => presetConfig(presetId));
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    setBaseLayoutId(preset.id);
+    update(() => preset.config);
   }
 
   function requestPreset(id: string) {

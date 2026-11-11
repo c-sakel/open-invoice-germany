@@ -187,7 +187,7 @@ describe("REST /api/v1/Layout", () => {
     const draft = await createDraftInvoice(orgId, invoiceInput());
     const okDraft = await LayoutPreview(req(`http://x/api/v1/Layout/${designId}/preview`, { method: "POST", token: readToken, body: { draftInvoiceId: draft.id } }), ctxFor(designId));
     expect(okDraft.status).toBe(200);
-    await finalizeInvoice(draft.id);
+    await finalizeInvoice(draft.id, { now: new Date("2122-03-01T10:00:00.000Z") });
     const final = await LayoutPreview(req(`http://x/api/v1/Layout/${designId}/preview`, { method: "POST", token: readToken, body: { draftInvoiceId: draft.id } }), ctxFor(designId));
     expect(final.status).toBe(404);
   });
