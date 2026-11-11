@@ -13,9 +13,14 @@ export function fxOf(data: EInvoiceData): EInvoiceFx | null {
   return data.fx && data.currency !== "EUR" ? data.fx : null;
 }
 
-/** BT-22: "Umrechnungskurs: 1 EUR = 1,1214 USD (BMF-Monatsdurchschnittskurs vom 01.06.2034)". */
+/**
+ * BT-22: "Umrechnungskurs: 1 EUR = 1,1214 USD (Monatsdurchschnittskurs Juni 2034)" — beim
+ * Monatsdurchschnitt dieselbe neutrale Formulierung wie im PDF (`fxPdfRateLine`), ohne Behoerdenangabe:
+ * der Wert ist standardmaessig ein selbst berechnetes Mittel der EZB-Tageskurse.
+ */
 export function fxRateNoteText(data: EInvoiceData, fx: EInvoiceFx): string {
   const lang = data.language ?? "de";
+  if (fx.source === "BMF_MONTHLY") return fxPdfRateLine(lang, data.currency, fx);
   const t = docStrings(lang).fx;
   return t.rateLine(formatRate(fx.rateMicros, docLocale(lang)), data.currency, t.sourceLabel[fx.source], formatDocDate(fx.rateDate, lang));
 }

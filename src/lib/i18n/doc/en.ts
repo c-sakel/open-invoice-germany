@@ -109,7 +109,7 @@ export const en: DocStrings = {
     deductedTaxEurLine: (amount) => `thereof settled with down payments: ${amount}`,
     taxEurLine: (amount) => `VAT in EUR: ${amount}`,
     sourceLabel: {
-      BMF_MONTHLY: "BMF monthly average rate",
+      BMF_MONTHLY: "monthly average rate",
       ECB_DAILY: "ECB daily rate",
       MANUAL: "manually entered rate",
     },

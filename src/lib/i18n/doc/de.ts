@@ -106,7 +106,7 @@ export const de: DocStrings = {
     deductedTaxEurLine: (amount) => `davon mit Abschlägen abgerechnet: ${amount}`,
     taxEurLine: (amount) => `Umsatzsteuer in EUR: ${amount}`,
     sourceLabel: {
-      BMF_MONTHLY: "BMF-Monatsdurchschnittskurs",
+      BMF_MONTHLY: "Monatsdurchschnittskurs",
       ECB_DAILY: "EZB-Tageskurs",
       MANUAL: "manuell erfasster Kurs",
     },

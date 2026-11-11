@@ -37,7 +37,7 @@ function input(over: Partial<MapInput> = {}): MapInput {
   };
 }
 
-const RATE_NOTE_DE = de.fx.rateLine("1,1214", "USD", de.fx.sourceLabel.BMF_MONTHLY, "01.03.2044");
+const RATE_NOTE_DE = de.fx.rateLine("1,1214", "USD", de.fx.monthlyRateLabel(2044, 3), "");
 
 describe("BT-6 / BT-111 in UBL", () => {
   const xml = buildXRechnungUBL(buildEInvoiceData(input()));
@@ -155,7 +155,7 @@ describe("Belegsprache im XML", () => {
   it("en: Kursnotiz und Gutschrift-Ersatztext englisch", () => {
     const data = buildEInvoiceData(input({ language: "en", type: "CREDIT_NOTE", paymentTerms: null, netTotalCents: -11214, taxTotalCents: -2131, grossTotalCents: -13345, taxTotalEurCents: -1900, netTotalEurCents: -10000 }));
     const ubl = buildXRechnungUBL(data);
-    expect(ubl).toContain(en.fx.rateLine("1.1214", "USD", en.fx.sourceLabel.BMF_MONTHLY, "01/03/2044"));
+    expect(ubl).toContain(en.fx.rateLine("1.1214", "USD", en.fx.monthlyRateLabel(2044, 3), ""));
     expect(ubl).toContain("Credit note – offset or refund");
   });
 });
