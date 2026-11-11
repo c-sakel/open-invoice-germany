@@ -91,13 +91,13 @@ async function resolveSource(finalizedAt: Date | null, requested: ArchiveSource)
 }
 
 /**
- * Raeumt die Dateien dieses Aufrufs auf: geloescht wird nur, was dieser Aufruf selbst neu
- * angelegt hat (`created`) und was der gespeicherte Satz (falls vorhanden) nicht
- * referenziert. CII/UBL sind deterministisch und liegen beim Gewinner oft unter demselben
+ * Nur im P2002-Fall mit gelesenem Gewinner-Satz: raeumt die Dateien des Verlierers auf —
+ * geloescht wird nur, was dieser Aufruf selbst neu angelegt hat (`created`) und was der
+ * Gewinner-Satz nicht referenziert. CII/UBL sind deterministisch und liegen beim Gewinner oft unter demselben
  * Pfad — eine bereits vorhandene Datei gehoert dann einem anderen Aufruf.
  */
-async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet | null): Promise<void> {
-  const kept = new Set(keep ? ARCHIVE_KINDS.map((k) => keep[k].path) : []);
+async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet): Promise<void> {
+  const kept = new Set(ARCHIVE_KINDS.map((k) => keep[k].path));
   for (const f of files) {
     if (!f.created || kept.has(f.path)) continue;
     try {
@@ -108,17 +108,13 @@ async function removeUnreferenced(files: RenderedFile[], keep: ArchivedSet | nul
   }
 }
 
-async function loadArchivedSetSafe(invoiceId: string): Promise<ArchivedSet | null> {
-  try {
-    return await loadArchivedSet(invoiceId);
-  } catch {
-    return null;
-  }
-}
-
-/** Fehlerpfad: Benachrichtigung `ARCHIVE_FAILED`, eigene verwaiste Dateien entfernen. */
-async function failArchive(orgId: string, invoiceId: string, files: RenderedFile[], e: unknown, now: Date): Promise<never> {
-  await removeUnreferenced(files, await loadArchivedSetSafe(invoiceId));
+/**
+ * Fehlerpfad ohne committeten Gewinner-Satz: Benachrichtigung `ARCHIVE_FAILED`, Fehler
+ * weiterreichen. Bewusst KEIN Loeschen (Koordinator-Ruling): ein paralleler Aufruf koennte
+ * denselben deterministischen Pfad gerade committen — eine verwaiste Datei ist harmlos,
+ * eine geloeschte referenzierte waere ein GoBD-Verlust.
+ */
+async function failArchive(orgId: string, invoiceId: string, e: unknown, now: Date): Promise<never> {
   await onArchiveFailed(orgId, { invoiceId, message: e instanceof Error ? e.message : String(e), at: now });
   throw e;
 }
@@ -127,7 +123,7 @@ async function failArchive(orgId: string, invoiceId: string, files: RenderedFile
  * Stellt sicher, dass die festgeschriebene Rechnung der Organisation archiviert ist, und
  * liefert den Satz. Wirft `NotFoundError` (unbekannte ID oder fremde Organisation),
  * `InvalidOperationError` (Entwurf); Render-, Ablage- und Transaktionsfehler benachrichtigen
- * (`ARCHIVE_FAILED`) und werden weitergereicht.
+ * (`ARCHIVE_FAILED`) und werden weitergereicht; dabei bleiben geschriebene Dateien liegen.
  */
 export async function ensureInvoiceArchive(orgId: string, invoiceId: string, source: ArchiveSource, now: Date = new Date()): Promise<ArchivedSet> {
   const ref = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true, status: true, number: true } });
@@ -164,7 +160,7 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
       file.created = await writeArchiveFile(file.path, bytes);
     }
   } catch (e) {
-    return failArchive(orgId, invoiceId, files, e, now);
+    return failArchive(orgId, invoiceId, e, now);
   }
 
   const effectiveSource = await resolveSource(invoice.finalizedAt, source);
@@ -197,14 +193,20 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
         UBL: { path: byKind.UBL.path, sha256: byKind.UBL.sha256, source: effectiveSource, createdAt: now },
       };
     } catch (e) {
-      if (!isUniqueConflict(e)) return failArchive(orgId, invoiceId, files, e, now);
-      const winner = await loadArchivedSetSafe(invoiceId);
+      if (!isUniqueConflict(e)) return failArchive(orgId, invoiceId, e, now);
+      // Gewinner-Satz nicht sicher lesbar (z. B. unvollstaendig) -> nichts loeschen, Fehler melden.
+      let winner: ArchivedSet | null;
+      try {
+        winner = await loadArchivedSet(invoiceId);
+      } catch (readErr) {
+        return failArchive(orgId, invoiceId, readErr, now);
+      }
       if (winner) {
         await removeUnreferenced(files, winner);
         return winner;
       }
       // Kettenkonflikt mit einem anderen ChangeLog-Schreiber, noch kein Satz: einmal wiederholen.
-      if (attempt >= 1) return failArchive(orgId, invoiceId, files, e, now);
+      if (attempt >= 1) return failArchive(orgId, invoiceId, e, now);
     }
   }
 }

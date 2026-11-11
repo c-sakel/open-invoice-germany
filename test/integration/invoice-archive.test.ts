@@ -243,7 +243,7 @@ describe("Belegarchiv", () => {
     }
   });
 
-  it("Fehler in der Transaktion: ARCHIVE_FAILED, keine Zeilen, keine verwaisten Dateien", async () => {
+  it("Fehler in der Transaktion: ARCHIVE_FAILED, keine Zeilen, Dateien bleiben liegen (kein Loeschen ohne Gewinner)", async () => {
     const id = await finalized();
     const spy = vi.spyOn(dbInternal, "$transaction").mockRejectedValueOnce(new Error("Transaktion kaputt"));
     try {
@@ -256,7 +256,36 @@ describe("Belegarchiv", () => {
     const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
     const dir = path.join(tmpDir, orgId, "2099");
     const leftovers = (await fs.readdir(dir)).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));
-    expect(leftovers).toEqual([]);
+    expect(leftovers.map((f) => f.slice(f.indexOf(".") + 1)).sort()).toEqual(["cii.xml", "pdf", "ubl.xml"]);
+    // Danach gelingt die Archivierung regulaer und nutzt die vorhandenen CII/UBL-Dateien.
+    const set = await ensureInvoiceArchive(orgId, id, "SCHEDULER");
+    expect(await readArchiveFile(set.CII.path)).not.toBeNull();
+  });
+});
+
+describe("Belegarchiv P2002-Pfad", () => {
+  it("Gewinner-Satz nicht lesbar: nichts geloescht, ARCHIVE_FAILED, Fehler weitergereicht", async () => {
+    const id = await finalized();
+    // Unvollstaendiger "Gewinner" (nur eine Zeile) erzwingt P2002 beim eigenen Insert und
+    // macht den Satz unlesbar.
+    await dbInternal.archivedDocument.create({ data: { invoiceId: id, kind: "CII", path: `${orgId}/2099/fremd.cii.xml`, sha256: "0".repeat(64), source: "OUTPUT" } });
+    const findMany = dbInternal.archivedDocument.findMany.bind(dbInternal.archivedDocument);
+    let calls = 0;
+    // Erster Lesezugriff (Vorpruefung) sieht keinen Satz, damit gerendert und geschrieben wird.
+    const spy = vi.spyOn(dbInternal.archivedDocument, "findMany").mockImplementation(((args: Parameters<typeof findMany>[0]) => {
+      calls += 1;
+      return calls === 1 ? Promise.resolve([]) : findMany(args);
+    }) as unknown as typeof findMany);
+    try {
+      await expect(ensureInvoiceArchive(orgId, id, "SCHEDULER")).rejects.toThrow(/unvollstaendig/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(1);
+    const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
+    const files = (await fs.readdir(path.join(tmpDir, orgId, "2099"))).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));
+    expect(files.map((f) => f.slice(f.indexOf(".") + 1)).sort()).toEqual(["cii.xml", "pdf", "ubl.xml"]);
+    expect(await dbInternal.archivedDocument.count({ where: { invoiceId: id } })).toBe(1);
   });
 });
 
