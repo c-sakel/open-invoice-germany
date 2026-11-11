@@ -39,8 +39,8 @@ echo "==> Fall 1: frische Datenbank"
 run_with_timeout 120 ./scripts/db-prepare.sh >/dev/null
 COUNT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT" = "53" ] || fail "erwartet 53 Tabellen, gefunden $COUNT"
-echo "    ok — 53 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings; Phase 10: ApiKey, ApiIdempotency, WebhookEndpoint, WebhookDelivery; Phase 12d: ApiRequestLog, ApiSettings; Phase 13d: DocumentTemplate, Tag, DocumentTag; Phase 14a: BaseInterestRate; Phase 16a: ArchivedDocument, ChainVerification, SystemMarker; Phase 16b: ExchangeRate)"
+[ "$COUNT" = "55" ] || fail "erwartet 55 Tabellen, gefunden $COUNT"
+echo "    ok — 55 Tabellen angelegt (inkl. _prisma_migrations; Phase 7: BrandingSettings, PrintSettings; Phase 8a: CustomFieldDefinition; Phase 8b: ActivityLog, Notification, NotificationSettings; Phase 10: ApiKey, ApiIdempotency, WebhookEndpoint, WebhookDelivery; Phase 12d: ApiRequestLog, ApiSettings; Phase 13d: DocumentTemplate, Tag, DocumentTag; Phase 14a: BaseInterestRate; Phase 16a: ArchivedDocument, ChainVerification, SystemMarker; Phase 16b: ExchangeRate)"
 
 echo "==> Datenbank leeren und Bestandslage herstellen"
 docker exec "$CONTAINER" psql -U oig -d openinvoice \
@@ -245,7 +245,7 @@ npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >
 # — ebenso ausgeklammert, sonst P1014. Phase 12c: die Marken-Migration UND die Steuersatz-
 # Migration aendern ebenfalls Phase-7-Tabellen (BrandingSettings bzw. DocumentSettings) —
 # aus demselben Grund ausgeklammert.
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -518,7 +518,7 @@ for TBL in ApiKey ApiIdempotency WebhookEndpoint WebhookDelivery; do
 done
 COUNT10=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT10" = "53" ] || fail "erwartet 53 Tabellen nach allen Migrationen (inkl. Phase 10), gefunden $COUNT10"
+[ "$COUNT10" = "55" ] || fail "erwartet 55 Tabellen nach allen Migrationen (inkl. Phase 10), gefunden $COUNT10"
 # ApiKey.keyHash unique.
 APIKEYUNIQUE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from pg_indexes where indexname='ApiKey_keyHash_key'")
@@ -576,7 +576,7 @@ DELETE FROM "WebhookEndpoint" WHERE id = 'wh1';
 SQL
 WHDELROWS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"WebhookDelivery\" where id='whd1'")
 [ "$WHDELROWS" = "0" ] || fail "WebhookDelivery-Zeile haette per ON DELETE CASCADE mit dem Endpunkt geloescht werden muessen"
-echo "    ok — alle drei Phase-10-Migrationen angewendet, 53 Tabellen, ApiKey.keyHash-Unique erzwungen, ApiIdempotency(orgId,key)-Unique org-gescopt erzwungen, WebhookEndpoint-/WebhookDelivery-Indizes vorhanden, WebhookDelivery folgt WebhookEndpoint per ON DELETE CASCADE"
+echo "    ok — alle drei Phase-10-Migrationen angewendet, 55 Tabellen, ApiKey.keyHash-Unique erzwungen, ApiIdempotency(orgId,key)-Unique org-gescopt erzwungen, WebhookEndpoint-/WebhookDelivery-Indizes vorhanden, WebhookDelivery folgt WebhookEndpoint per ON DELETE CASCADE"
 
 echo "==> Fall 15 (Phase 11b): Layout-Spalten, footerMode-Backfill auf Bestandszeile, Organization.ownerName"
 # Eigenes Bestands-Szenario (analog Fall 13): alle Migrationen bis VOR Phase 11b einspielen,
@@ -620,8 +620,8 @@ OWNERCOL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$OWNERCOL" = "1" ] || fail "Spalte Organization.ownerName fehlt nach Phase 11b"
 COUNT15=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT15" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 11b (nur Spalten), gefunden $COUNT15"
-echo "    ok — Phase-11b-Migrationen angewendet, footerMode-Backfill CUSTOM/AUTO korrekt, layoutId-Default standard, Organization.ownerName vorhanden, 53 Tabellen"
+[ "$COUNT15" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach Phase 11b (nur Spalten), gefunden $COUNT15"
+echo "    ok — Phase-11b-Migrationen angewendet, footerMode-Backfill CUSTOM/AUTO korrekt, layoutId-Default standard, Organization.ownerName vorhanden, 55 Tabellen"
 
 echo "==> Fall 16 (Phase 12a): giroSizeMm-Default auf Bestandszeile"
 # Eigenes Bestands-Szenario (analog Fall 15): alle Migrationen bis VOR der Phase-12a-
@@ -653,8 +653,8 @@ GIRO=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"giroSi
 [ "$GIRO" = "22" ] || fail "Bestandszeile ps16: giroSizeMm ist '$GIRO', erwartet Default 22"
 COUNT16=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT16" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 12a (nur eine Spalte), gefunden $COUNT16"
-echo "    ok — giroSizeMm mit Default 22 auf Bestandszeile, 53 Tabellen"
+[ "$COUNT16" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach Phase 12a (nur eine Spalte), gefunden $COUNT16"
+echo "    ok — giroSizeMm mit Default 22 auf Bestandszeile, 55 Tabellen"
 
 echo "==> Fall 17 (Phase 12b): Differenzbesteuerung — taxCategory S -> E nur bei DRAFT-Belegen"
 # Eigenes Bestands-Szenario (analog Fall 16): alle Migrationen bis VOR der Phase-12b-
@@ -737,8 +737,8 @@ MARKECOLS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$MARKECOLS" = "4" ] || fail "erwartet 4 Marken-Spalten auf BrandingSettings, gefunden $MARKECOLS"
 COUNT18=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT18" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 12c/Marke (nur Spalten), gefunden $COUNT18"
-echo "    ok — vier Marken-Spalten NULL-bar, Bestandszeile unveraendert, 53 Tabellen"
+[ "$COUNT18" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach Phase 12c/Marke (nur Spalten), gefunden $COUNT18"
+echo "    ok — vier Marken-Spalten NULL-bar, Bestandszeile unveraendert, 55 Tabellen"
 
 echo "==> Fall 19 (Phase 12c): DocumentSettings.taxRatesJson-Default fuer Bestandszeile"
 # Eigenes Bestands-Szenario (analog Fall 18): alle Migrationen bis VOR der Phase-12c-
@@ -771,8 +771,8 @@ TAXJSON=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"tax
 [ "$TAXJSON" = "[19,7,0]" ] || fail "Bestandszeile ds19: taxRatesJson ist '$TAXJSON', erwartet Default [19,7,0]"
 COUNT19=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT19" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 12c/Steuersaetze, gefunden $COUNT19"
-echo "    ok — taxRatesJson mit Default [19,7,0] auf Bestandszeile, 53 Tabellen"
+[ "$COUNT19" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach Phase 12c/Steuersaetze, gefunden $COUNT19"
+echo "    ok — taxRatesJson mit Default [19,7,0] auf Bestandszeile, 55 Tabellen"
 
 echo "==> Fall 20 (Phase 12d): Anfrageprotokoll — zwei neue Tabellen, Indizes, Defaults"
 # Eigenes Bestands-Szenario (analog Fall 16/18): alle Migrationen bis VOR der Phase-12d-
@@ -814,8 +814,8 @@ DEFAULTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
 [ "$DEFAULTS" = "f|f|7|2000" ] || fail "ApiSettings-Defaults abweichend ('$DEFAULTS'), erwartet f|f|7|2000"
 COUNT20=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT20" = "53" ] || fail "erwartet 53 Tabellen nach Phase 12d, gefunden $COUNT20"
-echo "    ok — ApiRequestLog + ApiSettings mit vier Indizes, Protokoll standardmaessig AUS, 53 Tabellen"
+[ "$COUNT20" = "55" ] || fail "erwartet 55 Tabellen nach Phase 12d, gefunden $COUNT20"
+echo "    ok — ApiRequestLog + ApiSettings mit vier Indizes, Protokoll standardmaessig AUS, 55 Tabellen"
 
 echo "==> Fall 21 (fix/einheiten-kontoinhaber): Organization.accountHolder"
 # Eigenes Bestands-Szenario (analog Fall 15, ownerName): alle Migrationen bis VOR der
@@ -849,8 +849,8 @@ ACCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coales
 [ "$ACCVAL" = "<null>" ] || fail "Bestandszeile org21: accountHolder ist '$ACCVAL', erwartet NULL (kein Backfill)"
 COUNT21=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc \
   "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT21" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach der Kontoinhaber-Migration (nur eine Spalte), gefunden $COUNT21"
-echo "    ok — Organization.accountHolder vorhanden, NULL auf Bestandszeile, 53 Tabellen"
+[ "$COUNT21" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach der Kontoinhaber-Migration (nur eine Spalte), gefunden $COUNT21"
+echo "    ok — Organization.accountHolder vorhanden, NULL auf Bestandszeile, 55 Tabellen"
 
 echo "==> Fall 22 (Phase 13d): Belegvorlagen — Tabelle, Unique auf (orgId,name), Default usageCount"
 # Praeambel woertlich wie Fall 21, Ausschluss '20260913090100_phase13d_templates', Bestandszeile org22.
@@ -879,8 +879,8 @@ USAGE=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"usage
 DUP=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "insert into \"DocumentTemplate\" (\"id\",\"orgId\",\"name\",\"docType\",\"payloadJson\",\"updatedAt\") values ('tpl22b','org22','Wartung monatlich','QUOTE','{}',NOW())" 2>&1 || true)
 echo "$DUP" | grep -q "duplicate key" || fail "Unique (orgId,name) auf DocumentTemplate greift nicht"
 COUNT22=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT22" = "53" ] || fail "erwartet 53 Tabellen nach Phase 13d/Vorlagen, gefunden $COUNT22"
-echo "    ok — DocumentTemplate mit Unique (orgId,name) und usageCount-Default 0, 53 Tabellen"
+[ "$COUNT22" = "55" ] || fail "erwartet 55 Tabellen nach Phase 13d/Vorlagen, gefunden $COUNT22"
+echo "    ok — DocumentTemplate mit Unique (orgId,name) und usageCount-Default 0, 55 Tabellen"
 
 echo "==> Fall 23 (Phase 13d): Tags — Doppelzuordnung verboten, Cascade beim Tag-Loeschen"
 # Praeambel woertlich wie Fall 21, Ausschluss '20260913092100_phase13d_tags', Bestandszeile org23.
@@ -911,8 +911,8 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice -q -c "DELETE FROM \"Tag\" W
 LEFT=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"DocumentTag\" where \"tagId\"='tag23'")
 [ "$LEFT" = "0" ] || fail "Cascade fehlt: nach dem Tag-Loeschen bleiben $LEFT Zuordnungen"
 COUNT23=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT23" = "53" ] || fail "erwartet 53 Tabellen nach Phase 13d/Tags, gefunden $COUNT23"
-echo "    ok — Tag/DocumentTag mit Unique und ON DELETE CASCADE, 53 Tabellen"
+[ "$COUNT23" = "55" ] || fail "erwartet 55 Tabellen nach Phase 13d/Tags, gefunden $COUNT23"
+echo "    ok — Tag/DocumentTag mit Unique und ON DELETE CASCADE, 55 Tabellen"
 
 echo "==> Fall 24 (Phase 14a): Basiszins-Halbjahrestabelle — Backfill aus DunningSettings, Unique (orgId,validFrom); Dunning.interestSegmentsJson bleibt bei Bestandszeilen NULL"
 # Praeambel woertlich wie Fall 21, Ausschluss der beiden Phase-14a-Mahnwesen-Migrationen
@@ -965,8 +965,8 @@ echo "$DUP3" | grep -q "duplicate key" || fail "Unique (orgId, validFrom) auf Ba
 DUNSEG=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"interestSegmentsJson\" from \"Dunning\" where id='dun24'")
 [ -z "$DUNSEG" ] || fail "erwartet NULL interestSegmentsJson fuer Bestands-Dunning dun24, gefunden '$DUNSEG'"
 COUNT24=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT24" = "53" ] || fail "erwartet 53 Tabellen nach Phase 14a/Basiszins+Dunning-Segmente, gefunden $COUNT24"
-echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, Bestands-Dunning behaelt NULL interestSegmentsJson, 53 Tabellen, Hotfix-Quellenfeld-Migration liess nicht betroffene Zeile unveraendert"
+[ "$COUNT24" = "55" ] || fail "erwartet 55 Tabellen nach Phase 14a/Basiszins+Dunning-Segmente, gefunden $COUNT24"
+echo "    ok — BaseInterestRate-Backfill (188 bp, 1970-01-01) aus Bestands-DunningSettings, Unique (orgId,validFrom) erzwungen, Bestands-Dunning behaelt NULL interestSegmentsJson, 55 Tabellen, Hotfix-Quellenfeld-Migration liess nicht betroffene Zeile unveraendert"
 
 echo "==> Fall 25 (Phase 14a, Task 8): Anmeldung haerten — additive User-Spalten, Bestandszeile bleibt lauffaehig"
 # Praeambel woertlich wie Fall 21, Ausschluss der Login-Haertung-Migration, Bestandszeile
@@ -990,8 +990,8 @@ npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
 USERVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"failedLoginCount\", coalesce(\"lockedUntil\"::text,'<null>'), coalesce(\"lastLoginAt\"::text,'<null>'), coalesce(\"passwordChangedAt\"::text,'<null>') from \"User\" where id='user25'")
 [ "$USERVAL" = "0|<null>|<null>|<null>" ] || fail "User-Bestandszeile user25 abweichend ('$USERVAL'), erwartet 0|<null>|<null>|<null>"
 COUNT25=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT25" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach der Login-Haertung-Migration (nur vier Spalten), gefunden $COUNT25"
-echo "    ok — User.failedLoginCount=0, lockedUntil/lastLoginAt/passwordChangedAt NULL auf Bestandszeile, 53 Tabellen"
+[ "$COUNT25" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach der Login-Haertung-Migration (nur vier Spalten), gefunden $COUNT25"
+echo "    ok — User.failedLoginCount=0, lockedUntil/lastLoginAt/passwordChangedAt NULL auf Bestandszeile, 55 Tabellen"
 
 echo "==> Fall 26 (Phase 16a, Task 1): Gegenbuchung/Belegarchiv/Kettenpruefung — additive Payment-Spalten, drei neue Tabellen"
 # Praeambel woertlich wie Fall 21, Ausschluss der Phase-16a-Migration, Bestandszeile
@@ -1002,7 +1002,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1035,8 +1035,8 @@ done
 EPOCH=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"SystemMarker\" where \"key\"='archive-epoch'")
 [ "$EPOCH" = "1" ] || fail "SystemMarker archive-epoch fehlt nach der Phase-16a-Migration"
 COUNT26=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT26" = "53" ] || fail "erwartet 53 Tabellen nach Phase 16a, gefunden $COUNT26"
-echo "    ok — Payment.kind=PAYMENT/createdBy=user auf Bestandszeile, Unique (provider,providerPaymentId) erzwungen (NULL/NULL mehrfach erlaubt), ChainVerification/ArchivedDocument/SystemMarker vorhanden, archive-epoch gesetzt, 53 Tabellen"
+[ "$COUNT26" = "55" ] || fail "erwartet 55 Tabellen nach Phase 16a, gefunden $COUNT26"
+echo "    ok — Payment.kind=PAYMENT/createdBy=user auf Bestandszeile, Unique (provider,providerPaymentId) erzwungen (NULL/NULL mehrfach erlaubt), ChainVerification/ArchivedDocument/SystemMarker vorhanden, archive-epoch gesetzt, 55 Tabellen"
 
 echo "==> Fall 27 (Phase 16b, Task 1): Ausland — ExchangeRate, Kurs-/EUR-Felder am Beleg, Belegsprache, Vorlagen-Eindeutigkeit je Sprache"
 # Praeambel woertlich wie Fall 26, Ausschluss der Phase-16b-Migration (Fall 26 wendet
@@ -1047,7 +1047,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland|20261113090100_phase16e_oss)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1107,8 +1107,8 @@ EXISTS=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select to_reg
 FXSRC=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.columns where table_name='DocumentSettings' and column_name='fxRateSource'")
 [ "$FXSRC" = "1" ] || fail "DocumentSettings.fxRateSource fehlt"
 COUNT27=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT27" = "53" ] || fail "erwartet 53 Tabellen nach Phase 16b, gefunden $COUNT27"
-echo "    ok — EUR-Rechnung 1900/10000, USD-Rechnung NULL, language=de ueberall, de+en je Vorlagenname moeglich, zweites de scheitert, 53 Tabellen"
+[ "$COUNT27" = "55" ] || fail "erwartet 55 Tabellen nach Phase 16b, gefunden $COUNT27"
+echo "    ok — EUR-Rechnung 1900/10000, USD-Rechnung NULL, language=de ueberall, de+en je Vorlagenname moeglich, zweites de scheitert, 55 Tabellen"
 
 echo "==> Fall 28 (Phase 16e, Task 1): OSS-Schwelle — Zaehlmodus, Warnschwelle, Produkt-, Positions-, Angebots- und Abo-Positionskategorie"
 # Praeambel woertlich wie Fall 27, Ausschluss nur der Phase-16e-Migration. Bestand im
@@ -1118,7 +1118,7 @@ docker exec "$CONTAINER" psql -U oig -d openinvoice \
 npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
-for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261113090100_phase16e_oss)$' | sort); do
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261113090100_phase16e_oss|20261114090100_phase16g_layout)$' | sort); do
   npx prisma db execute --url "$DATABASE_URL" \
     --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
   npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
@@ -1163,7 +1163,53 @@ SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coales
 NSVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select string_agg(\"enabledTypesJson\", ' ' order by id) from \"NotificationSettings\" where id in ('ns28','ns28b')")
 [ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD"] ["OSS_THRESHOLD"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD ergaenzt ('$NSVAL')"
 COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
-[ "$COUNT28" = "53" ] || fail "erwartet weiterhin 53 Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
-echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, OSS_THRESHOLD in NotificationSettings ergaenzt, 53 Tabellen"
+[ "$COUNT28" = "55" ] || fail "erwartet weiterhin 55 Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
+echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, OSS_THRESHOLD in NotificationSettings ergaenzt, 55 Tabellen"
+
+echo "==> Fall 29 (Phase 16g, Task 2): Layout-Designer — LayoutDesign, unveraenderliche LayoutDesignVersion, Dunning.layoutVersionId"
+# Praeambel woertlich wie Fall 28, Ausschluss nur der Phase-16g-Migration. Bestand im
+# ALTEN Spaltenumfang: festgeschriebene Rechnung mit einer Mahnung.
+docker exec "$CONTAINER" psql -U oig -d openinvoice \
+  -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' >/dev/null
+npx prisma db execute --url "$DATABASE_URL" \
+  --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
+npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
+for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261114090100_phase16g_layout)$' | sort); do
+  npx prisma db execute --url "$DATABASE_URL" \
+    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
+  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+done
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
+  VALUES ('org29','Bestand Neunundzwanzig GmbH','Weg 41','99941','Bestadt',NOW());
+INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","updatedAt")
+  VALUES ('cust29','org29','Bestand Neunundzwanzig Kunde AG','Weg 42','99942','Bestadt',NOW());
+INSERT INTO "Invoice" ("id","orgId","customerId","number","status","updatedAt")
+  VALUES ('inv29','org29','cust29','RE-2029-00001','FINALIZED',NOW());
+INSERT INTO "Dunning" ("id","invoiceId","level")
+  VALUES ('dun29','inv29',1);
+SQL
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
+  || fail "Phase-16g-Migration ist auf der Bestands-DB fehlgeschlagen"
+DUNVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(\"layoutVersionId\",'<null>') from \"Dunning\" where id='dun29'")
+[ "$DUNVAL" = "<null>" ] || fail "Dunning.layoutVersionId abweichend ('$DUNVAL'), erwartet <null>"
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+INSERT INTO "LayoutDesign" ("id","orgId","name","updatedAt") VALUES ('ld29','org29','Hausdesign',NOW());
+INSERT INTO "LayoutDesignVersion" ("id","designId","version","configJson","configHash")
+  VALUES ('ldv29','ld29',1,'{"version":1}','hash29');
+SQL
+DEFVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"baseLayoutId\" || '|' || \"currentVersion\" || '|' || \"archived\" from \"LayoutDesign\" where id='ld29'")
+[ "$DEFVAL" = "standard|1|false" ] || fail "LayoutDesign-Defaults abweichend ('$DEFVAL'), erwartet standard|1|false"
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q \
+  -c "INSERT INTO \"LayoutDesignVersion\" (\"id\",\"designId\",\"version\",\"configJson\",\"configHash\") VALUES ('ldv29b','ld29',1,'{}','h')" >/dev/null 2>&1; then
+  fail "zweite LayoutDesignVersion mit gleichem (designId, version) haette scheitern muessen"
+fi
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q \
+  -c "INSERT INTO \"LayoutDesign\" (\"id\",\"orgId\",\"name\",\"updatedAt\") VALUES ('ld29b','org29','Hausdesign',NOW())" >/dev/null 2>&1; then
+  fail "zweites LayoutDesign mit gleichem Namen je Organisation haette scheitern muessen"
+fi
+COUNT29=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
+[ "$COUNT29" = "55" ] || fail "erwartet 55 Tabellen nach Phase 16g, gefunden $COUNT29"
+echo "    ok — Dunning.layoutVersionId NULL auf Bestand, Design + Version 1 einfuegbar, doppelte (designId, version) und doppelter Name je Organisation scheitern, 55 Tabellen"
 
 echo "ALLE TESTS BESTANDEN"

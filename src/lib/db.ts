@@ -107,7 +107,7 @@ async function guardLineWhere(where: unknown): Promise<void> {
  */
 const DUNNING_MUTABLE_KEYS = new Set(["sentAt"]);
 
-class DunningImmutabilityError extends Error {
+export class DunningImmutabilityError extends Error {
   constructor(badKeys: string[]) {
     super(
       `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt ` +
@@ -121,6 +121,25 @@ function assertDunningUpdateAllowed(data: unknown): void {
   const keys = Object.keys((data ?? {}) as Record<string, unknown>);
   const badKeys = keys.filter((k) => !DUNNING_MUTABLE_KEYS.has(k));
   if (badKeys.length > 0) throw new DunningImmutabilityError(badKeys);
+}
+
+/**
+ * Phase 16g: `LayoutDesignVersion` ist unveraenderlich (eingefrorene Belege verweisen darauf);
+ * jede Aenderung der Konfiguration ist eine neue Zeile. `LayoutDesign` wird nie geloescht,
+ * nur archiviert (`update` bleibt erlaubt: Name, archived, currentVersion).
+ */
+export class LayoutDesignVersionImmutabilityError extends Error {
+  constructor() {
+    super("GoBD: Layout-Design-Versionen sind unveraenderlich; Aenderungen erzeugen eine neue Version.");
+    this.name = "LayoutDesignVersionImmutabilityError";
+  }
+}
+
+export class LayoutDesignDeleteError extends Error {
+  constructor() {
+    super("Layout-Designs werden nie geloescht (eingefrorene Belege verweisen auf Versionen), nur archiviert.");
+    this.name = "LayoutDesignDeleteError";
+  }
 }
 
 /**
@@ -216,6 +235,34 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new ArchivedDocumentImmutabilityError();
+      },
+    },
+    layoutDesignVersion: {
+      async update() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async updateMany() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async upsert() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async delete() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async deleteMany() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+    },
+    layoutDesign: {
+      async delete() {
+        throw new LayoutDesignDeleteError();
+      },
+      async deleteMany() {
+        throw new LayoutDesignDeleteError();
       },
     },
     payment: {
