@@ -17,11 +17,19 @@ describe("parseDecimalInput (Formulareingaben Geld/Menge/Prozent)", () => {
     expect(parseDecimalInput("1.234.567", 2)).toBe(123456700);
   });
 
-  it("lehnt mehr Nachkommastellen als erlaubt ab statt still zu runden", () => {
-    // "1.234" bei Geld ist mehrdeutig (1234 EUR oder 1,234 EUR) -> Fehler statt 123 Cent
+  it("lehnt '1.234' ohne Komma bei weniger als 3 Nachkommastellen als mehrdeutig ab", () => {
+    // 1234 EUR oder 1,234 EUR? -> Fehler statt still 123 Cent
     expect(parseDecimalInput("1.234", 2)).toBeNull();
-    expect(parseDecimalInput("1,234", 2)).toBeNull();
-    expect(parseDecimalInput("1,2345", 3)).toBeNull();
+    expect(parseDecimalInput("12.500", 1)).toBeNull();
+  });
+
+  it("rundet eindeutige Eingaben mit mehr Nachkommastellen kaufmaennisch", () => {
+    expect(parseDecimalInput("1,234", 2)).toBe(123);
+    expect(parseDecimalInput("0,125", 2)).toBe(13);
+    expect(parseDecimalInput("2,55", 1)).toBe(26);
+    expect(parseDecimalInput("33,33", 1)).toBe(333);
+    expect(parseDecimalInput("1,2345", 3)).toBe(1235);
+    expect(parseDecimalInput("12.3456", 2)).toBe(1235);
   });
 
   it("Mengen mit drei Nachkommastellen", () => {

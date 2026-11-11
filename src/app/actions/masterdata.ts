@@ -221,7 +221,7 @@ export async function saveProduct(_prev: ActionResult, fd: FormData): Promise<Ac
   try {
     netPriceCents = parseEuroToCents(priceRaw);
   } catch {
-    return { ok: false, error: "Ungültiger Nettopreis." };
+    return { ok: false, error: "Ungültiger Nettopreis (z. B. 1.234,56 oder 1234.56)." };
   }
   const taxRate = Number(str(fd, "taxRate") ?? "19");
   const parsed = productSchema.safeParse({
@@ -285,7 +285,7 @@ export async function createProductInline(input: CreateProductInlineInput): Prom
   try {
     netPriceCents = parseEuroToCents(input.netPrice);
   } catch {
-    return { ok: false, error: "Ungültiger Nettopreis." };
+    return { ok: false, error: "Ungültiger Nettopreis (z. B. 1.234,56 oder 1234.56)." };
   }
   const parsed = productSchema.safeParse({
     name: input.name,

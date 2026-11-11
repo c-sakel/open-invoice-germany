@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { parseDecimalInput } from "@/lib/money";
 
 interface Stage {
   id: string;
@@ -179,7 +180,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       step="0.01"
                       disabled={!feeAllowed}
                       value={(d.feeCents / 100).toFixed(2)}
-                      onChange={(e) => setDraft(s.id, { feeCents: Math.round(parseFloat(e.target.value.replace(",", ".")) * 100) || 0 })}
+                      onChange={(e) => setDraft(s.id, { feeCents: parseDecimalInput(e.target.value, 2) ?? 0 })}
                       className="w-20 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100 disabled:text-slate-400"
                       title={feeAllowed ? "" : "Mahnkosten erst ab Stufe 3 (order ≥ 2, COMPLIANCE §12)"}
                       aria-label={`Mahnkosten in Euro — Mahnstufe ${s.order}`}

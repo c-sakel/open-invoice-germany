@@ -14,6 +14,11 @@ describe("money", () => {
     expect(roundHalfUp(2.4)).toBe(2);
   });
 
+  it("parseEuroToCents lehnt mehrdeutiges '1.234' ab statt 1,23 EUR zu liefern", () => {
+    expect(() => parseEuroToCents("1.234")).toThrow();
+    expect(parseEuroToCents("1.234.567")).toBe(123456700);
+    expect(() => parseEuroToCents("abc")).toThrow();
+  });
   it("parseEuroToCents akzeptiert DE- und EN-Format", () => {
     expect(parseEuroToCents("1.234,56")).toBe(123456);
     expect(parseEuroToCents("1234.56")).toBe(123456);

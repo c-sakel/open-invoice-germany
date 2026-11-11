@@ -256,6 +256,28 @@ describe("editor/draft", () => {
     t = draftReducer(t, { type: "addLine", lineType: "TEXT" });
     expect(validateDraft(t).join(" ")).toContain("Beschreibung");
   });
+  // Hotfix Betragseingabe (Final-Review must): nicht lesbare Rabatt-/Zuschlags-/Skontofelder
+  // duerfen nicht still als 0 gespeichert werden.
+  it("validateDraft meldet nicht lesbare Rabatt-, Zuschlags- und Skontofelder", () => {
+    let s = emptyDraft("INVOICE");
+    s = draftReducer(s, { type: "set", field: "customerId", value: "c1" });
+    s = draftReducer(s, { type: "setLine", key: s.lines[0]!.key, patch: { description: "x", quantity: "1", price: "10", discountAmount: "1.234", discountPercent: "abc" } });
+    s = draftReducer(s, { type: "set", field: "documentDiscountPercent", value: "1.500" });
+    s = draftReducer(s, { type: "set", field: "documentChargeAmount", value: "x" });
+    s = draftReducer(s, { type: "set", field: "skonto1Percent", value: "2.000" });
+    const p = validateDraft(s).join(" | ");
+    expect(p).toContain("Position 1: Rabatt");
+    expect(p).toContain("Belegrabatt");
+    expect(p).toContain("Zuschlag");
+    expect(p).toContain("Skonto");
+  });
+  it("validateDraft akzeptiert eindeutige Rabatte mit mehr Nachkommastellen (werden gerundet)", () => {
+    let s = emptyDraft("INVOICE");
+    s = draftReducer(s, { type: "set", field: "customerId", value: "c1" });
+    s = draftReducer(s, { type: "setLine", key: s.lines[0]!.key, patch: { description: "x", quantity: "1", price: "10", discountPercent: "2,55" } });
+    s = draftReducer(s, { type: "set", field: "skonto1Percent", value: "2,25" });
+    expect(validateDraft(s)).toEqual([]);
+  });
   it("validateDraft lehnt eine SUBTOTAL-Zeile ohne Beschreibung NICHT ab (Koordinator-Ruling)", () => {
     let s = emptyDraft("INVOICE");
     s = draftReducer(s, { type: "set", field: "customerId", value: "c1" });

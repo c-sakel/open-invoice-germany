@@ -35,6 +35,11 @@ function parseEuroToCents(v: string): number {
 function parsePercentToPermille(v: string): number {
   return parseDecimalInput(v, 1) ?? 0;
 }
+/** true, wenn eine nicht leere Eingabe nicht lesbar ist (sonst wuerde sie still zu 0 bzw. weggefiltert). */
+function unreadable(v: string | undefined, decimals: number): boolean {
+  return !!v && v.trim() !== "" && parseDecimalInput(v, decimals) === null;
+}
+const UNREADABLE_MSG = "Eingabe nicht lesbar – bitte z. B. 1.234,56 oder 2,5 eingeben.";
 
 /**
  * "Erzeugen"-Aktionen fuer ein Dokument (Angebot/AB) oder eine Rechnung: Auftrags-
@@ -163,6 +168,11 @@ export function ConvertMenu({
     if (!remaining) return;
     setDialogBusy(true);
     setDialogError(null);
+    if (remaining.some((l) => unreadable(quantities[l.sourceLineId], 3))) {
+      setDialogError(UNREADABLE_MSG);
+      setDialogBusy(false);
+      return;
+    }
     const parsed = remaining
       .map((l) => ({ sourceLineId: l.sourceLineId, quantityMilli: (parseDecimalInput(quantities[l.sourceLineId] ?? "0", 3) ?? 0) }))
       .filter((q) => q.quantityMilli > 0);
@@ -220,6 +230,19 @@ export function ConvertMenu({
   async function submitPartialInvoice() {
     setPartialBusy(true);
     setPartialError(null);
+    const partialUnreadable =
+      partialMode === "PERCENT"
+        ? unreadable(partialPercent, 1)
+        : partialMode === "NET_AMOUNT" || partialMode === "GROSS_AMOUNT"
+          ? unreadable(partialAmount, 2)
+          : partialMode === "QUANTITIES"
+            ? (billed ?? []).some((l) => unreadable(partialQuantities[l.sourceLineId], 3))
+            : false;
+    if (partialUnreadable) {
+      setPartialError(UNREADABLE_MSG);
+      setPartialBusy(false);
+      return;
+    }
     let body: Record<string, unknown>;
     if (partialMode === "PERCENT") {
       body = { mode: "PERCENT", permille: parsePercentToPermille(partialPercent) };
@@ -266,6 +289,11 @@ export function ConvertMenu({
   async function submitDownpaymentInvoice() {
     setDownpaymentBusy(true);
     setDownpaymentError(null);
+    if (downpaymentMode === "PERCENT" ? unreadable(downpaymentPercent, 1) : unreadable(downpaymentAmount, 2)) {
+      setDownpaymentError(UNREADABLE_MSG);
+      setDownpaymentBusy(false);
+      return;
+    }
     const body: Record<string, unknown> =
       downpaymentMode === "PERCENT"
         ? { mode: "PERCENT", permille: parsePercentToPermille(downpaymentPercent) }

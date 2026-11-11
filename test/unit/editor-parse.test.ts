@@ -23,7 +23,11 @@ describe("Editor-Parser: mehrdeutige Tausender-Eingaben (Hotfix Betragseingabe)"
   });
   it("Mengen mit Tausenderpunkten ohne Komma", () => {
     expect(toMilli("1.234.567")).toBe(1234567000);
-    expect(toMilli("1,2345")).toBeNull();
+    expect(toMilli("1,2345")).toBe(1235);
+  });
+  it("Rabatt-Prozent mit zwei Nachkommastellen wird gerundet statt verworfen", () => {
+    expect(toPermille("2,55")).toBe(26);
+    expect(toCents("0,125")).toBe(13);
   });
 });
 

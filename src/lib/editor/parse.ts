@@ -1,8 +1,7 @@
 /**
  * Reine Parse-/Format-Helfer für Editor-Eingabefelder (Anzeige-String <-> Integer).
  *
- * Anders als `parseEuroToCents`/`parseQuantityToMilli` (`@/lib/money`), die bei
- * ungültiger Eingabe werfen, liefern die `toX`-Funktionen hier `null` — der Editor
+ * Anders als `parseEuroToCents` (`@/lib/money`), das bei ungültiger Eingabe wirft, liefern die `toX`-Funktionen hier `null` — der Editor
  * muss ungültige Zwischenzustände beim Tippen abfangen können, ohne try/catch an
  * jeder Aufrufstelle (siehe `computeDraftTotals`/`validateDraft` in draft.ts/totals.ts).
  */
