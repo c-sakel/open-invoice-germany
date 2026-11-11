@@ -87,7 +87,7 @@ export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: 
         Täglichen E-Mail-Digest versenden
       </label>
       <div className="flex items-center gap-3">
-        <button type="button" onClick={() => void save()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
           {busy ? "Speichert…" : "Speichern"}
         </button>
         {saved && <span className="text-xs text-ledger">Gespeichert.</span>}

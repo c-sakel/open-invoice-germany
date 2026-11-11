@@ -60,5 +60,5 @@ export function UnreadBadge({ collapsed, initialCount }: { collapsed: boolean; i
   if (collapsed) {
     return <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-pen" aria-label={`${count} ungelesen`} />;
   }
-  return <span className="ml-auto rounded-full bg-pen px-1.5 text-[10px] font-semibold text-white">{count}</span>;
+  return <span className="ml-auto rounded-full bg-pen px-1.5 text-[10px] font-semibold text-on-accent">{count}</span>;
 }

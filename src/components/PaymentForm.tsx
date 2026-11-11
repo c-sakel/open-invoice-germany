@@ -162,7 +162,7 @@ export function PaymentForm({
             placeholder="z. B. per Scheck"
           />
         </label>
-        <button type="submit" disabled={busy} className="rounded-md bg-ledger px-3 py-2 text-sm font-medium text-white hover:bg-ledger disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-ledger px-3 py-2 text-sm font-medium text-on-accent hover:bg-ledger disabled:opacity-60">
           {busy ? "…" : "Buchen"}
         </button>
         {error && <span className="text-xs text-stamp">{error}</span>}

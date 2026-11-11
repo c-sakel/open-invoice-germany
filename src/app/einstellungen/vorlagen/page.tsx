@@ -26,7 +26,7 @@ export default async function EmailTemplatesPage() {
       <SettingsTabs active="vorlagen" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Textvorlagen</h1>
-        <Link href="/einstellungen/vorlagen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+        <Link href="/einstellungen/vorlagen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
           Neue Vorlage
         </Link>
       </div>

@@ -121,8 +121,8 @@ export function RichTextField({
           rows={rows}
           className={
             compact
-              ? "w-full min-w-0 resize-none overflow-hidden rounded-md border border-rule px-2 py-1 text-xs text-ink-soft focus:border-pen focus:outline-none"
-              : "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none"
+              ? "w-full min-w-0 resize-none overflow-hidden rounded-md border border-rule px-2 py-1 text-xs text-ink-soft focus:border-pen"
+              : "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen"
           }
           value={value}
           onChange={(e) => onChange(e.target.value)}

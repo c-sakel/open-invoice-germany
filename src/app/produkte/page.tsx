@@ -47,7 +47,7 @@ export default async function ProduktePage() {
         title="Produkte & Leistungen"
         subtitle={`${products.length} Produkte`}
         actions={
-          <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+          <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
             Neues Produkt
           </Link>
         }

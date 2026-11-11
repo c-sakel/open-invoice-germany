@@ -26,7 +26,7 @@ interface BilledLine {
 type PartialMode = "PERCENT" | "NET_AMOUNT" | "GROSS_AMOUNT" | "POSITIONS" | "QUANTITIES";
 type DownpaymentMode = "PERCENT" | "AMOUNT";
 
-const btnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60";
+const btnCls = "rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60";
 const btnOutlineCls = "rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60";
 
 function parseEuroToCents(v: string): number {

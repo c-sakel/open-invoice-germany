@@ -101,7 +101,7 @@ export function ReversePaymentDialog({
           </label>
           {error && <p className="text-stamp">{error}</p>}
           <div className="flex gap-2">
-            <button type="submit" disabled={busy} className="rounded-md bg-pen px-3 py-1.5 font-medium text-white hover:bg-pen disabled:opacity-50">
+            <button type="submit" disabled={busy} className="rounded-md bg-pen px-3 py-1.5 font-medium text-on-accent hover:bg-pen disabled:opacity-50">
               {busy ? "Buche…" : "Gegenbuchung erfassen"}
             </button>
             <button type="button" onClick={close} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-ink-soft hover:bg-paper">

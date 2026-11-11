@@ -27,7 +27,7 @@ export function PdfStack({
       <PdfViewToolbar src={src} title={title} />
       <p className="text-right text-xs text-ink-muted">
         Wird das PDF nicht angezeigt:{" "}
-        <a href={src} target="_blank" rel="noreferrer" className="text-pen hover:underline">
+        <a href={src} target="_blank" rel="noreferrer" className="text-pen underline">
           PDF öffnen
         </a>
       </p>

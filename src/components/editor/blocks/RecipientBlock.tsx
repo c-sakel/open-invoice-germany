@@ -192,7 +192,7 @@ export function RecipientBlock({
         <TakeOverPrompt enabled={offerLastDocument} customerId={draft.customerId} kind={takeOverKind} documentDetailBasePath={takeOverBasePath} onApply={applyTakeOver} />
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <EditorField label="Ansprechpartner">
           {(id) => (
             <select id={id} className={inputCls} value={draft.contactPersonId} onChange={(e) => dispatch({ type: "set", field: "contactPersonId", value: e.target.value })}>

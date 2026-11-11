@@ -340,7 +340,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
             Neue Rechnung
           </Link>
         }

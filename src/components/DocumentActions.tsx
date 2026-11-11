@@ -159,7 +159,7 @@ export function NoteDialog({
           placeholder="z. B. telefonisch zugesagt am ..."
         />
         <div className="mt-4 flex items-center gap-3">
-          <button type="button" onClick={onConfirm} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+          <button type="button" onClick={onConfirm} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
             Bestätigen
           </button>
           <button type="button" onClick={() => dialogRef.current?.close()} className="text-sm text-ink-muted hover:text-ink">

@@ -49,7 +49,7 @@ export function AuthForm({
     router.refresh();
   }
 
-  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
     <div className="mx-auto max-w-sm">
@@ -60,7 +60,7 @@ export function AuthForm({
           <img src="/api/branding/appLogo" alt={appName} className="h-9 w-auto" />
         ) : (
           <>
-            <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-md bg-pen text-base font-bold text-white">{appShortName}</span>
+            <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-md bg-pen text-base font-bold text-on-accent">{appShortName}</span>
             <span className="text-lg">{appName}</span>
           </>
         )}
@@ -93,7 +93,7 @@ export function AuthForm({
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-md bg-pen px-4 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+          className="w-full rounded-md bg-pen px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
         >
           {busy ? "…" : isSetup ? "Konto erstellen" : "Anmelden"}
         </button>

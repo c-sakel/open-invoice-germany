@@ -83,7 +83,7 @@ export default async function PruefungSettingsPage() {
             <span className="font-medium text-ink-soft">Bis</span>
             <input type="date" name="to" required defaultValue={today} className="rounded-md border border-rule-strong px-2 py-1.5" />
           </label>
-          <button type="submit" className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen">
+          <button type="submit" className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen">
             Export herunterladen
           </button>
         </form>

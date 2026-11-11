@@ -93,7 +93,7 @@ export function EmailTemplateForm({
             rows={12}
             name="body"
             required
-            className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm font-mono focus:border-pen focus:outline-none"
+            className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm font-mono focus:border-pen"
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="Nachrichtentext mit Platzhaltern, z. B. {{document.number}}"
@@ -105,7 +105,7 @@ export function EmailTemplateForm({
           <textarea
             rows={3}
             name="signature"
-            className="rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none"
+            className="rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen"
             value={signature}
             onChange={(e) => setSignature(e.target.value)}
           />

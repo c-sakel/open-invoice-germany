@@ -52,7 +52,7 @@ export function DocumentAdjustmentFields({ draft, dispatch }: { draft: DraftStat
   return (
     <div className="space-y-3 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
       <h3 className="text-sm font-semibold text-ink">Beleg-Rabatt / -Aufschlag</h3>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <EditorField label="Rabatt %" hint="leer = Kundenvorgabe">
           {(id) => <input id={id} className={inputCls} value={draft.documentDiscountPercent} onChange={(e) => set(dispatch, "documentDiscountPercent", e.target.value)} />}
         </EditorField>

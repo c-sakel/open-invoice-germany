@@ -174,7 +174,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
                 }`}
               >
                 {isEffective && (
-                  <span className="absolute right-2 top-2 rounded-full bg-pen px-2 py-0.5 text-[10px] font-medium text-white">
+                  <span className="absolute right-2 top-2 rounded-full bg-pen px-2 py-0.5 text-[10px] font-medium text-on-accent">
                     {typeOverride ? `Für ${docLabel}` : "Standard"}
                   </span>
                 )}
@@ -226,7 +226,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
           type="button"
           onClick={save}
           disabled={saving || !dirty}
-          className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+          className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
         >
           {saving ? "Speichern…" : "Einstellungen speichern"}
         </button>

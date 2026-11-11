@@ -181,7 +181,7 @@ export function ShareLinkPanelClient({ documentId, initialLinks }: { documentId:
             {copied ? "Kopiert" : "Kopieren"}
           </button>
         </div>
-        <button type="button" onClick={() => dialogRef.current?.close()} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+        <button type="button" onClick={() => dialogRef.current?.close()} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
           Schließen
         </button>
       </dialog>

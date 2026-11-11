@@ -133,7 +133,7 @@ export function ContactsPanel({ customerId, initialContacts }: { customerId: str
                 <input className={input} placeholder="Mobil" value={d.mobile} onChange={(e) => setDraft(c.id, { mobile: e.target.value })} />
               </div>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => save(c.id)} disabled={busyId === c.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-white hover:bg-pen disabled:opacity-60">
+                <button type="button" onClick={() => save(c.id)} disabled={busyId === c.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60">
                   Speichern
                 </button>
                 {!c.isDefault && (
@@ -170,7 +170,7 @@ export function ContactsPanel({ customerId, initialContacts }: { customerId: str
           type="button"
           onClick={create}
           disabled={creating || !newFields.firstName.trim() || !newFields.lastName.trim()}
-          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
         >
           {creating ? "…" : "Ansprechpartner anlegen"}
         </button>

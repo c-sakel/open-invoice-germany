@@ -8,15 +8,16 @@
   --color-well: #f3f2ee;
   --color-ink: #1c2230;
   --color-ink-soft: #4a5263;
-  --color-ink-muted: #6b7280;
+  --color-ink-muted: #5f6675;
   --color-rule: rgb(28 34 48 / 0.1);
   --color-rule-strong: rgb(28 34 48 / 0.18);
   --color-pen: #3341b0;
   --color-pen-wash: #eef0fb;
   --color-stamp: #b42330;
-  --color-seal: #b4561b;
+  --color-seal: #a34c14;
   --color-ledger: #1f7a4d;
   --color-focus: #3341b0;
+  --color-on-accent: #ffffff;
 
   --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -38,7 +39,7 @@
     --color-well: #101318;
     --color-ink: #e7e9ee;
     --color-ink-soft: #a9b0bd;
-    --color-ink-muted: #8a92a1;
+    --color-ink-muted: #9199a8;
     --color-rule: rgb(255 255 255 / 0.08);
     --color-rule-strong: rgb(255 255 255 / 0.14);
     --color-pen: #8f9bff;
@@ -47,6 +48,7 @@
     --color-seal: #e8a15c;
     --color-ledger: #5fc493;
     --color-focus: #8f9bff;
+    --color-on-accent: #14171d;
     --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
   }
 }

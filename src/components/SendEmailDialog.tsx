@@ -370,7 +370,7 @@ export function SendEmailDialog({
                 <button type="button" onClick={doPreview} className="rounded-md border border-rule-strong bg-sheet px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper">
                   Vorschau
                 </button>
-                <button type="button" onClick={doSend} disabled={sendBusy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+                <button type="button" onClick={doSend} disabled={sendBusy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
                   {sendBusy ? "Sende…" : "Senden"}
                 </button>
                 <button type="button" onClick={close} className="text-sm text-ink-muted hover:text-ink">

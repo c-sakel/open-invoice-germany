@@ -92,7 +92,7 @@ export function LineRowMenu({
     closeAndRestoreFocus();
   }
 
-  const itemCls = "block w-full px-3 py-1.5 text-left hover:bg-paper focus:bg-well focus:outline-none";
+  const itemCls = "block w-full px-3 py-1.5 text-left hover:bg-paper focus:bg-well";
 
   return (
     <div className="inline-block text-left">
@@ -157,7 +157,7 @@ export function LineRowMenu({
             type="button"
             role="menuitem"
             disabled={!canRemove}
-            className="block w-full px-3 py-1.5 text-left text-stamp hover:bg-stamp/10 focus:bg-stamp/10 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            className="block w-full px-3 py-1.5 text-left text-stamp hover:bg-stamp/10 focus:bg-stamp/10 disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => pick(onRemove)}
           >
             Entfernen

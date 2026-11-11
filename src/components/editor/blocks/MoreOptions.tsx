@@ -100,7 +100,7 @@ export function MoreOptions({
       <summary className="cursor-pointer select-none font-semibold text-ink">Weitere Optionen</summary>
       <div className="mt-4 space-y-4">
         {mode === "INVOICE" && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <EditorField label="Bestellnummer">
               {(id) => <input id={id} className={inputCls} value={draft.orderNumber} onChange={(e) => set(dispatch, "orderNumber", e.target.value)} />}
             </EditorField>
@@ -122,7 +122,7 @@ export function MoreOptions({
         )}
 
         {mode === "DOCUMENT" && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <TermsField
               label="Lieferbedingungen"
               value={draft.deliveryTerms}
@@ -143,7 +143,7 @@ export function MoreOptions({
         {mode === "INVOICE" && (
           <div className="space-y-3 border-t border-rule pt-4">
             <h3 className="text-sm font-semibold text-ink">Skonto</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <EditorField label="Skonto 1 — Prozent" hint="z. B. 2">
                 {(id) => <input id={id} className={inputCls} value={draft.skonto1Percent} onChange={(e) => set(dispatch, "skonto1Percent", e.target.value)} />}
               </EditorField>

@@ -36,7 +36,7 @@ export function AuditChainPanel() {
         type="button"
         onClick={run}
         disabled={busy}
-        className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-50"
+        className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-50"
       >
         {busy ? "Prüfe …" : "Jetzt prüfen"}
       </button>

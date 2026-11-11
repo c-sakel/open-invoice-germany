@@ -48,7 +48,7 @@ export function RecurringActions({ id, status }: { id: string; status: string })
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {status === "ACTIVE" && (
-          <button onClick={runNow} disabled={busy !== null} className={`${btn} border-pen/30 bg-pen text-white hover:bg-pen`}>
+          <button onClick={runNow} disabled={busy !== null} className={`${btn} border-pen/30 bg-pen text-on-accent hover:bg-pen`}>
             {busy === "run" ? "Erzeuge…" : "Jetzt Rechnung erzeugen"}
           </button>
         )}

@@ -117,7 +117,7 @@ export function ApiRequestLogPanel({ initialSettings, initialKeys }: { initialSe
         <div className="flex flex-wrap items-end gap-4 text-sm">
           <NumberField label="Aufbewahrung (Tage)" draft={retentionDraft} setDraft={setRetentionDraft} committed={settings.retentionDays} commit={(n) => setSettings((s) => ({ ...s, retentionDays: n }))} min={1} max={90} />
           <NumberField label="Maximale Zeilen je Organisation" draft={maxRowsDraft} setDraft={setMaxRowsDraft} committed={settings.maxRows} commit={(n) => setSettings((s) => ({ ...s, maxRows: n }))} min={100} max={20000} />
-          <button type="button" onClick={save} disabled={saving} className="rounded-[var(--radius-control)] bg-pen px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+          <button type="button" onClick={save} disabled={saving} className="rounded-[var(--radius-control)] bg-pen px-3 py-1.5 text-sm font-medium text-on-accent disabled:opacity-50">
             {saving ? "Speichern…" : "Speichern"}
           </button>
           <button type="button" onClick={() => clearDialogRef.current?.open()} className="rounded-[var(--radius-control)] border border-stamp/30 px-3 py-1.5 text-sm font-medium text-stamp">

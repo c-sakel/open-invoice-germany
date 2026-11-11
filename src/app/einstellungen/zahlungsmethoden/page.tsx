@@ -15,7 +15,7 @@ export default async function PaymentMethodsPage() {
       <SettingsTabs active="zahlungsmethoden" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Zahlungsmethoden</h1>
-        <Link href="/einstellungen/zahlungsmethoden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+        <Link href="/einstellungen/zahlungsmethoden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
           Neue Zahlungsmethode
         </Link>
       </div>

@@ -223,7 +223,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
             <img src={`/api/branding/appLogo?v=${previewBust}`} alt={previewName} className="h-7 w-auto" />
           ) : (
             <>
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-pen text-sm font-bold text-white">{previewShort}</span>
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-pen text-sm font-bold text-on-accent">{previewShort}</span>
               {previewName}
             </>
           )}
@@ -234,7 +234,7 @@ export function MarkeForm({ initial }: { initial: BrandingSettingsInput }) {
         type="button"
         onClick={save}
         disabled={saving}
-        className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+        className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
       >
         {saving ? "Speichern…" : "Einstellungen speichern"}
       </button>

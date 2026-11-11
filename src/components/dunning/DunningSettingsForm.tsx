@@ -68,7 +68,7 @@ export function DunningSettingsForm({ initial }: { initial: Settings }) {
       </label>
       {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-xs text-stamp">{error}</div>}
       <div className="flex items-center gap-3 pt-1">
-        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
           {busy ? "…" : "Speichern"}
         </button>
         {saved && <span className="text-xs text-ledger">Gespeichert.</span>}

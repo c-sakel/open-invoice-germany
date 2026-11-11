@@ -72,7 +72,7 @@ export function CustomerDefaultsForm({ customerId, initial }: { customerId: stri
     router.refresh();
   }
 
-  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
@@ -120,7 +120,7 @@ export function CustomerDefaultsForm({ customerId, initial }: { customerId: stri
         <textarea className={input} rows={2} value={paymentTermsText} onChange={(e) => setPaymentTermsText(e.target.value)} />
       </label>
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
           {busy ? "Speichern…" : "Vorgaben speichern"}
         </button>
         {saved && <span className="text-xs text-ledger">Gespeichert.</span>}

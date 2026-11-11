@@ -231,7 +231,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                         <button type="button" onClick={() => move(i, 1)} disabled={i === stages.length - 1} className="rounded-[var(--radius-control)] border border-rule-strong px-1.5 py-0.5 text-xs disabled:opacity-40">
                           ↓
                         </button>
-                        <button type="button" onClick={() => save(s.id)} disabled={busyId === s.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-white hover:bg-pen disabled:opacity-60">
+                        <button type="button" onClick={() => save(s.id)} disabled={busyId === s.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60">
                           Speichern
                         </button>
                         <button type="button" onClick={() => remove(s.id)} disabled={busyId === s.id} className="rounded-md border border-stamp/30 px-2 py-1 text-xs font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60">
@@ -263,7 +263,7 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
             <span className="text-ink-soft">Neue Frist (Tage)</span>
             <input type="number" value={newStage.newDueDays} onChange={(e) => setNewStage((s) => ({ ...s, newDueDays: Number(e.target.value) }))} className="w-24 rounded-md border border-rule-strong px-2 py-1.5" />
           </label>
-          <button type="button" onClick={createStage} disabled={creating || !newStage.name.trim()} className="rounded-md bg-pen px-3 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+          <button type="button" onClick={createStage} disabled={creating || !newStage.name.trim()} className="rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
             {creating ? "…" : "Stufe anlegen"}
           </button>
         </div>

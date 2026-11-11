@@ -142,7 +142,7 @@ export function NumberRangesEditor({ initialRanges }: { initialRanges: NumberRan
                       type="button"
                       onClick={() => save(r.docType)}
                       disabled={busy === r.docType}
-                      className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-white hover:bg-pen disabled:opacity-60"
+                      className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60"
                     >
                       Speichern
                     </button>

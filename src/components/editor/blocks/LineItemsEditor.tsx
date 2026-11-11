@@ -137,7 +137,7 @@ export function LineItemsEditor({
               type="button"
               aria-pressed={!draft.grossDisplay}
               onClick={() => dispatch({ type: "set", field: "grossDisplay", value: false })}
-              className={`px-2 py-1 ${!draft.grossDisplay ? "bg-pen text-white" : "bg-sheet text-ink-soft hover:bg-paper"}`}
+              className={`px-2 py-1 ${!draft.grossDisplay ? "bg-pen text-on-accent" : "bg-sheet text-ink-soft hover:bg-paper"}`}
             >
               netto
             </button>
@@ -145,7 +145,7 @@ export function LineItemsEditor({
               type="button"
               aria-pressed={draft.grossDisplay}
               onClick={() => dispatch({ type: "set", field: "grossDisplay", value: true })}
-              className={`border-l border-rule-strong px-2 py-1 ${draft.grossDisplay ? "bg-pen text-white" : "bg-sheet text-ink-soft hover:bg-paper"}`}
+              className={`border-l border-rule-strong px-2 py-1 ${draft.grossDisplay ? "bg-pen text-on-accent" : "bg-sheet text-ink-soft hover:bg-paper"}`}
             >
               brutto
             </button>

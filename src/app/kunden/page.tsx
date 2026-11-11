@@ -44,7 +44,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         title="Kunden"
         subtitle={`${customers.length} Kunden`}
         actions={
-          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
             Neuer Kunde
           </Link>
         }
@@ -56,7 +56,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
           name="q"
           defaultValue={query}
           placeholder="Suche nach Name oder Kundennummer…"
-          className="w-full max-w-sm rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none sm:w-80"
+          className="w-full max-w-sm rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen sm:w-80"
         />
         <button type="submit" className="rounded-md border border-rule-strong px-4 py-2 text-sm font-medium text-ink-soft hover:bg-paper">
           Suchen

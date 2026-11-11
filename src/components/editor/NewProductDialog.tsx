@@ -60,7 +60,7 @@ export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: Inlin
     close();
   }
 
-  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
     <>
@@ -124,7 +124,7 @@ export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: Inlin
             <button type="button" onClick={close} className="text-sm text-ink-muted hover:text-ink">
               Abbrechen
             </button>
-            <button type="button" onClick={() => void submit()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+            <button type="button" onClick={() => void submit()} disabled={busy} className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
               {busy ? "Speichern…" : "Anlegen und übernehmen"}
             </button>
           </div>

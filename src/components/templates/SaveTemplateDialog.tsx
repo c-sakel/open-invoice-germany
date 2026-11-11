@@ -76,7 +76,7 @@ export function SaveTemplateDialog({
             <>
               <p className="text-sm text-ledger">Vorlage „{name.trim()}“ gespeichert.</p>
               <div className="flex justify-end">
-                <button type="button" onClick={close} className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen">
+                <button type="button" onClick={close} className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen">
                   Schließen
                 </button>
               </div>
@@ -110,7 +110,7 @@ export function SaveTemplateDialog({
                   type="button"
                   onClick={() => void submit()}
                   disabled={busy}
-                  className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-white hover:bg-pen disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md bg-pen px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-pen disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {busy ? "Speichert…" : "Speichern"}
                 </button>

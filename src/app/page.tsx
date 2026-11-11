@@ -49,7 +49,7 @@ function MarketingPage() {
         <div className="flex flex-wrap gap-3">
           <Link
             href="/login"
-            className="rounded-md bg-pen px-5 py-2.5 font-medium text-white hover:bg-pen"
+            className="rounded-md bg-pen px-5 py-2.5 font-medium text-on-accent hover:bg-pen"
           >
             Anmelden
           </Link>
@@ -102,7 +102,7 @@ export default async function Home() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen">
+        <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen">
           Neue Rechnung
         </Link>
       </div>

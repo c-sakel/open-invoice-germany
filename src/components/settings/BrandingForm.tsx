@@ -278,7 +278,7 @@ export function BrandingForm({ initial, cmykWarning }: { initial: BrandingSettin
       </section>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={save} disabled={saving} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60">
+        <button type="button" onClick={save} disabled={saving} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60">
           {saving ? "Speichern…" : "Einstellungen speichern"}
         </button>
 

@@ -128,7 +128,7 @@ export function ApiKeysManager({ initialKeys }: { initialKeys: KeyRow[] }) {
           type="button"
           onClick={create}
           disabled={creating}
-          className="rounded bg-pen px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-pen px-3 py-1.5 text-sm font-medium text-on-accent disabled:opacity-50"
         >
           {creating ? "Wird angelegt…" : "Anlegen"}
         </button>

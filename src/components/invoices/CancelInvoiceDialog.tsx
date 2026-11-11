@@ -115,7 +115,7 @@ export function CancelInvoiceDialog({
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={500}
                 rows={2}
-                className="w-full rounded-md border border-rule-strong px-2 py-1.5 text-sm focus:border-pen focus:outline-none"
+                className="w-full rounded-md border border-rule-strong px-2 py-1.5 text-sm focus:border-pen"
               />
               <span className="block text-xs text-seal">
                 Achtung: Der Grund steht in den Notizen der Stornorechnung und ist damit für den Kunden sichtbar (PDF/XML).

@@ -107,7 +107,7 @@ export function PartialCreditForm({
     router.refresh();
   }
 
-  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none";
+  const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   if (done) {
     return (
@@ -171,7 +171,7 @@ export function PartialCreditForm({
         <span className="text-sm text-ink-muted">
           Gutschrift netto: <span className="tabular font-medium text-ink">{(netCents / 100).toFixed(2)} €</span>
         </span>
-        <button type="submit" disabled={busy} className="rounded-md bg-stamp px-5 py-2.5 text-sm font-medium text-white hover:bg-stamp disabled:opacity-60">
+        <button type="submit" disabled={busy} className="rounded-md bg-stamp px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-stamp disabled:opacity-60">
           {busy ? "…" : "Teilgutschrift erstellen"}
         </button>
       </div>

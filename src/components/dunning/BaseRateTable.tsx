@@ -22,7 +22,7 @@ function CompactSubmitButton({ children, tone = "primary" }: { children: React.R
   const cls =
     tone === "danger"
       ? "text-stamp hover:underline disabled:opacity-60"
-      : "rounded-md bg-pen px-3 py-1.5 text-xs font-medium text-white hover:bg-pen disabled:opacity-60";
+      : "rounded-md bg-pen px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60";
   return (
     <button type="submit" disabled={pending} className={cls}>
       {pending ? "…" : children}

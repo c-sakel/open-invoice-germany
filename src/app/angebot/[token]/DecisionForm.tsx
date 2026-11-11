@@ -39,7 +39,7 @@ export function DecisionForm({ token }: { token: string }) {
           name="decision"
           value="ACCEPTED"
           disabled={pending}
-          className="rounded-md bg-ledger px-4 py-2 text-sm font-medium text-white hover:bg-ledger disabled:opacity-60"
+          className="rounded-md bg-ledger px-4 py-2 text-sm font-medium text-on-accent hover:bg-ledger disabled:opacity-60"
         >
           {pending ? "Wird gespeichert…" : "Angebot annehmen"}
         </button>

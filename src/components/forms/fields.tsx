@@ -3,13 +3,13 @@
 import { useFormStatus } from "react-dom";
 
 export const inputCls =
-  "rounded-md border border-rule-strong px-3.5 py-2.5 text-[15px] focus:border-pen focus:outline-none disabled:bg-well";
+  "rounded-md border border-rule-strong px-3.5 py-2.5 text-[15px] focus:border-pen disabled:bg-well";
 /** Dichte Variante NUR fuer die Positionstabelle des Editors (Phase 13b): dort stehen bis zu
  *  acht Eingaben nebeneinander in einer `min-w-[880px]`-Tabelle — mit `inputCls` bricht die
  *  Zeile um bzw. erzwingt waagerechtes Scrollen. Bewusst dieselbe Rahmen-/Fokusdefinition,
  *  nur kleinere Innenabstaende und Schrift. */
 export const inputDenseCls =
-  "rounded-md border border-rule-strong px-2 py-1 text-sm focus:border-pen focus:outline-none disabled:bg-well";
+  "rounded-md border border-rule-strong px-2 py-1 text-sm focus:border-pen disabled:bg-well";
 
 interface BaseField {
   label: string;
@@ -107,7 +107,7 @@ export function SubmitButton({ children }: { children: React.ReactNode }) {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+      className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
     >
       {pending ? "Speichern…" : children}
     </button>

@@ -62,7 +62,7 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
     close: () => dialogRef.current?.close(),
   }));
 
-  const confirmCls = `rounded-md px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${TONE_CLS[tone]}`;
+  const confirmCls = `rounded-md px-3 py-1.5 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-60 ${TONE_CLS[tone]}`;
 
   return (
     <dialog

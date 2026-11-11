@@ -45,7 +45,7 @@ export function SlimShell({
               // eslint-disable-next-line @next/next/no-img-element -- kein optimierbares statisches Asset (Route liefert dynamisch aus der DB)
               <img src="/api/branding/appLogo" alt={brand.appName} className="h-7 w-auto" />
             ) : (
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-pen text-sm font-bold text-white">{brand.appShortName}</span>
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-pen text-sm font-bold text-on-accent">{brand.appShortName}</span>
             )}
             {/* Betreiber-Ruling (2026-09-09): mit hinterlegtem Logo NUR das Bild, kein
                 Name daneben (loest M6/Fix-Welle 12c ab, das hier den Namen zusaetzlich

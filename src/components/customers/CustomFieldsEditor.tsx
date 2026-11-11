@@ -179,7 +179,7 @@ export function CustomFieldsEditor({ initialDefinitions }: { initialDefinitions:
                 </label>
               </div>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => save(d.id, d.sortOrder)} disabled={busyId === d.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-white hover:bg-pen disabled:opacity-60">
+                <button type="button" onClick={() => save(d.id, d.sortOrder)} disabled={busyId === d.id} className="rounded-md bg-pen px-2 py-1 text-xs font-medium text-on-accent hover:bg-pen disabled:opacity-60">
                   Speichern
                 </button>
                 <button type="button" onClick={() => remove(d.id)} disabled={busyId === d.id} className="text-xs font-medium text-stamp hover:underline">
@@ -227,7 +227,7 @@ export function CustomFieldsEditor({ initialDefinitions }: { initialDefinitions:
           type="button"
           onClick={create}
           disabled={creating || !newFields.key.trim() || !newFields.label.trim()}
-          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+          className="mt-3 rounded-md bg-pen px-3 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
         >
           {creating ? "…" : "Kundenfeld anlegen"}
         </button>

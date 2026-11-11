@@ -101,7 +101,7 @@ export function TextTemplateForm({
             rows={8}
             name="body"
             required
-            className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen focus:outline-none"
+            className="w-full rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen"
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="Text mit Platzhaltern, z. B. {{document.number}}"

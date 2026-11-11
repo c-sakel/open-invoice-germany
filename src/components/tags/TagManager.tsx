@@ -202,7 +202,7 @@ export function TagManager({ tags }: { tags: TagManagerItem[] }) {
           type="button"
           onClick={() => void create()}
           disabled={!newName.trim() || busy === "new"}
-          className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-white hover:bg-pen disabled:opacity-60"
+          className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen disabled:opacity-60"
         >
           {busy === "new" ? "…" : "Tag anlegen"}
         </button>
