@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { parseDecimalInput } from "@/lib/money";
 
 export interface CustomerDefaultsData {
   defaultCurrency: string | null;
@@ -38,9 +39,14 @@ export function CustomerDefaultsForm({ customerId, initial }: { customerId: stri
     setBusy(true);
     setError(null);
     setSaved(false);
+    if (defaultDiscountPercent.trim() !== "" && parseDecimalInput(defaultDiscountPercent, 1) === null) {
+      setError("Rabatt nicht lesbar – bitte z. B. 2,5 eingeben (höchstens 1 Nachkommastelle).");
+      setBusy(false);
+      return;
+    }
     const body = {
       defaultCurrency: defaultCurrency || undefined,
-      defaultDiscountPermille: Math.max(0, Math.min(1000, Math.round((parseFloat(defaultDiscountPercent.replace(",", ".")) || 0) * 10))),
+      defaultDiscountPermille: Math.max(0, Math.min(1000, (parseDecimalInput(defaultDiscountPercent, 1) ?? 0))),
       invoiceEmail: invoiceEmail || undefined,
       invoiceCc: invoiceCc || undefined,
       quoteEmail: quoteEmail || undefined,

@@ -14,3 +14,26 @@ describe("editor/parse", () => {
     expect(permilleOrZero("-5")).toBe(0);
   });
 });
+
+describe("Editor-Parser: mehrdeutige Tausender-Eingaben (Hotfix Betragseingabe)", () => {
+  it("liest '1.234' bei Geld nicht still als 1,23 EUR", () => {
+    expect(toCents("1.234")).toBeNull();
+    expect(toCents("1.234.567")).toBe(123456700);
+    expect(toCents("1.234,5")).toBe(123450);
+  });
+  it("Mengen mit Tausenderpunkten ohne Komma", () => {
+    expect(toMilli("1.234.567")).toBe(1234567000);
+    expect(toMilli("1,2345")).toBeNull();
+  });
+});
+
+describe("Editor-Parser: Rundlauf Anzeige -> Eingabe", () => {
+  it("Mengen ab 1000 überleben fromMilli -> toMilli", () => {
+    expect(toMilli(fromMilli(1234000))).toBe(1234000);
+    expect(toMilli(fromMilli(1234500))).toBe(1234500);
+  });
+  it("Beträge ab 1000 überleben fromCents -> toCents", () => {
+    expect(toCents(fromCents(123456))).toBe(123456);
+    expect(toCents(fromCents(100000000))).toBe(100000000);
+  });
+});

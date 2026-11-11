@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { taxRateOptions } from "@/lib/editor/constants";
 import { currencyOptions, currencySymbol } from "@/lib/currencies";
+import { parseDecimalInput } from "@/lib/money";
 
 interface CustomerOption {
   id: string;
@@ -130,8 +131,8 @@ export function NewRecurringForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const toCents = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 100);
-  const toMilli = (s: string) => Math.round((parseFloat(s.replace(",", ".")) || 0) * 1000);
+  const toCents = (s: string) => parseDecimalInput(s, 2) ?? 0;
+  const toMilli = (s: string) => parseDecimalInput(s, 3) ?? 0;
   const netCents = lines.reduce((sum, l) => sum + Math.round((toMilli(l.quantity) * toCents(l.price)) / 1000), 0);
 
   function selectCustomer(id: string) {
@@ -158,6 +159,11 @@ export function NewRecurringForm({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    if (lines.some((l) => parseDecimalInput(l.price, 2) === null || parseDecimalInput(l.quantity, 3) === null)) {
+      setError("Betrag oder Menge nicht lesbar – bitte z. B. 1.234,56 oder 1234.56 eingeben (Geld höchstens 2, Mengen höchstens 3 Nachkommastellen).");
+      setBusy(false);
+      return;
+    }
 
     const lineInputs = lines.map((l) => ({
       description: l.description,

@@ -6,46 +6,24 @@
  * muss ungültige Zwischenzustände beim Tippen abfangen können, ohne try/catch an
  * jeder Aufrufstelle (siehe `computeDraftTotals`/`validateDraft` in draft.ts/totals.ts).
  */
-import { parseEuroToCents, parseQuantityToMilli } from "@/lib/money";
+import { parseDecimalInput } from "@/lib/money";
 
-function normalizePercent(input: string): number | null {
-  const cleaned = input.trim().replace(/\s/g, "");
-  if (!cleaned) return null;
-  // Wie parseEuroToCents/parseQuantityToMilli: Tausenderpunkte nur entfernen, wenn ein
-  // Komma als Dezimaltrenner vorhanden ist.
-  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
-  const value = Number(normalized);
-  return Number.isFinite(value) ? value : null;
-}
-
-/** Euro-Eingabe ("12,50", "1.234,56", "12.50") -> Cent, oder `null` bei leerer/ungültiger Eingabe. */
+/**
+ * Euro-Eingabe ("12,50", "1.234,56", "12.50") -> Cent, oder `null` bei leerer/ungültiger Eingabe.
+ * Mehr als zwei Nachkommastellen (z. B. "1.234" ohne Komma) sind mehrdeutig und ergeben `null`.
+ */
 export function toCents(input: string): number | null {
-  const t = input.trim();
-  if (!t) return null;
-  try {
-    const n = parseEuroToCents(t);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
+  return parseDecimalInput(input, 2);
 }
 
 /** Mengen-Eingabe ("2", "2,5") -> Milliunits, oder `null` bei leerer/ungültiger Eingabe. */
 export function toMilli(input: string): number | null {
-  const t = input.trim();
-  if (!t) return null;
-  try {
-    const n = parseQuantityToMilli(t);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
+  return parseDecimalInput(input, 3);
 }
 
 /** Prozent-Eingabe ("10", "2,5") -> Promille (0..1000 = 0..100 %), oder `null` bei ungültiger Eingabe. */
 export function toPermille(percent: string): number | null {
-  const value = normalizePercent(percent);
-  return value === null ? null : Math.round(value * 10);
+  return parseDecimalInput(percent, 1);
 }
 
 /** Cent -> lokalisierter Anzeige-String ohne Währungszeichen, immer 2 Nachkommastellen ("12,50"). */
@@ -55,7 +33,8 @@ export function fromCents(cents: number): string {
 
 /** Milliunits -> Anzeige-String mit bis zu 3 Nachkommastellen ohne überflüssige Nullen ("2" oder "2,5"). */
 export function fromMilli(milli: number): string {
-  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3 }).format(milli / 1000);
+  // Ohne Tausenderpunkt: "1.234" waere beim Zurueckparsen 1,234 (Mengen haben 3 Nachkommastellen).
+  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 3, useGrouping: false }).format(milli / 1000);
 }
 
 /** Promille -> Prozent-Anzeige-String mit bis zu einer Nachkommastelle ("2,5"). */
