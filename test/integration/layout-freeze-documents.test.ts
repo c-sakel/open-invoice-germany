@@ -1,7 +1,16 @@
 /**
  * Einfrierpunkt Angebot, AB, Lieferschein (Phase 16g, Task 7, R7). Eigenes Jahr 2121.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { ensureInvoiceArchive } from "@/domain/invoice/archive";
+import { readArchiveFile } from "@/lib/archive/storage";
+import { buildStandardAttachments } from "@/domain/email/attachments";
+import type { CreateInvoiceInput } from "@/schemas";
 import { dbInternal, prisma, FrozenPrintOptionsError } from "@/lib/db";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
@@ -35,7 +44,18 @@ async function newVersion(color: string): Promise<string> {
   return (await dbInternal.layoutDesignVersion.findFirstOrThrow({ where: { designId, version: saved.currentVersion }, select: { id: true } })).id;
 }
 
+let tmpDir: string;
+let prevEnv: string | undefined;
+afterAll(async () => {
+  if (prevEnv === undefined) delete process.env.ARCHIVE_DIR;
+  else process.env.ARCHIVE_DIR = prevEnv;
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
 beforeAll(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oig-freeze-docs-"));
+  prevEnv = process.env.ARCHIVE_DIR;
+  process.env.ARCHIVE_DIR = tmpDir;
   process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
   orgId = (await dbInternal.organization.create({ data: { legalName: "Freeze GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" } })).id;
   customerId = (await dbInternal.customer.create({ data: { orgId, name: "Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" } })).id;
@@ -144,5 +164,72 @@ describe("Guard printOptionsJson", () => {
     const dn = await createDeliveryNote(orgId, { customerId, lines: [{ description: "Ware", quantityMilli: 1000, unitNetPriceCents: 0, taxRate: 19 }] }, { now: NOW });
     await expect(prisma.deliveryNote.updateMany({ where: { id: dn.id }, data: { printOptionsJson: "{}" } })).rejects.toBeInstanceOf(FrozenPrintOptionsError);
     await expect(prisma.deliveryNote.update({ where: { id: dn.id }, data: { archivedAt: NOW } })).resolves.toBeDefined();
+  });
+});
+
+// Bestandsbelege (Status != DRAFT, keine eingefrorene Version) duerfen nachtraeglich nie ein Design bekommen.
+describe("Bestand ohne eingefrorene Version + spaeter zugeordnetes Design", () => {
+  const MARK = "IBMPlexSerif";
+  const has = (buf: Buffer | Uint8Array, needle: string) => Buffer.from(buf).includes(needle);
+  let serifRef: string;
+
+  beforeAll(async () => {
+    const base = presetConfig("standard");
+    const d = await saveLayoutDesign(orgId, { name: "Serif", baseLayoutId: "standard", config: { ...base, font: "ibm-plex-serif" } }, "tester", NOW);
+    serifRef = d.ref;
+  });
+  async function assignSerif() {
+    await saveBrandingSettings(orgId, { layoutByType: { QUOTE: serifRef, DELIVERY_NOTE: serifRef, INVOICE: serifRef } });
+  }
+
+  it("Kontrolle: Entwurf folgt dem Design (Schrift eingebettet)", async () => {
+    await assignSerif();
+    const q = await makeDoc();
+    const buf = (await buildStandardAttachments(orgId, "ANGEBOT", q.id))[0].content;
+    expect(has(buf, MARK)).toBe(true);
+  });
+
+  it("Angebot: oeffentliche Seite und Mail-Anhang ohne Design-Schrift", async () => {
+    await saveBrandingSettings(orgId, { layoutByType: { QUOTE: "klassik" } });
+    const q = await makeDoc();
+    const link = await createShareLink(orgId, q.id, {}, { now: NOW });
+    await dbInternal.quote.update({ where: { id: q.id }, data: { status: "SENT" } });
+    await assignSerif();
+    const res = await publicPdf(new Request("http://localhost/x"), { params: Promise.resolve({ token: link.token }) });
+    expect(res.status).toBe(200);
+    expect(has(Buffer.from(await res.arrayBuffer()), MARK)).toBe(false);
+    expect(has((await buildStandardAttachments(orgId, "ANGEBOT", q.id))[0].content, MARK)).toBe(false);
+  });
+
+  it("Lieferschein: Mail-Anhang ohne Design-Schrift", async () => {
+    const dn = await createDeliveryNote(orgId, { customerId, lines: [{ description: "Ware", quantityMilli: 1000, unitNetPriceCents: 0, taxRate: 19 }] }, { now: NOW });
+    await dbInternal.deliveryNote.update({ where: { id: dn.id }, data: { printOptionsJson: null } });
+    await assignSerif();
+    expect(has((await buildStandardAttachments(orgId, "DELIVERY_NOTE", dn.id))[0].content, MARK)).toBe(false);
+  });
+
+  it("Rechnung: Archiv-Ausgabe eines Bestandsbelegs ohne Design-Schrift", async () => {
+    await saveBrandingSettings(orgId, { layoutByType: { INVOICE: "standard" } });
+    const input = {
+      customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR",
+      documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0,
+      issueDate: NOW, deliveryDate: new Date("2121-02-25"), dueDate: new Date("2121-03-15"),
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput;
+    const draft = await createDraftInvoice(orgId, input, { now: NOW });
+    const fin = await finalizeInvoice(draft.id, { now: NOW });
+    await dbInternal.invoice.update({ where: { id: fin.id }, data: { printOptionsJson: null } });
+    await assignSerif();
+    const set = await ensureInvoiceArchive(orgId, fin.id, "OUTPUT", NOW);
+    expect(has((await readArchiveFile(set.PDF.path)) ?? Buffer.alloc(0), MARK)).toBe(false);
+  });
+});
+
+describe("setPrintOptions atomar", () => {
+  it("Angebot nach SENT: InvalidOperationError auch per bedingtem Update", async () => {
+    const q = await makeDoc();
+    await setQuoteStatus(orgId, q.id, "SENT", { now: NOW });
+    await expect(setPrintOptions(orgId, { kind: "QUOTE", id: q.id }, {})).rejects.toBeInstanceOf(InvalidOperationError);
+    await expect(prisma.quote.updateManyAndReturn({ where: { id: q.id }, data: { printOptionsJson: "{}" } })).rejects.toBeInstanceOf(FrozenPrintOptionsError);
   });
 });

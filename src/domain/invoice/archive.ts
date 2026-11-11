@@ -163,7 +163,7 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
 
   const files: RenderedFile[] = [];
   try {
-    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
+    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type), { issued: true });
     const cii = buildFacturXCII(data);
     const ubl = buildXRechnungUBL(data);
     const pdf = await renderZugferdPdf(data, theme, cii);

@@ -79,7 +79,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
     if (format === "pdf") {
       // Nicht-Entwurf: archiviertes PDF (Phase 16a); nur der Entwurf wird live gerendert.
       if (inv.status === "DRAFT") {
-        const theme = await loadPdfTheme(orgId, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type));
+        const theme = await loadPdfTheme(orgId, inv.printOptionsJson, invoiceTypeToLayoutDocType(inv.type), { issued: inv.status !== "DRAFT" });
         return { buffer: await renderInvoiceDocumentPdf(data, theme, inv.status), mimeType: "application/pdf", filenameBase };
       }
       return { buffer: await getArchivedInvoiceFile(orgId, inv.id, "PDF"), mimeType: "application/pdf", filenameBase };
@@ -101,7 +101,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
       include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
     });
     if (!q) throw new NotFoundError("Dokument nicht gefunden.");
-    const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind));
+    const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind), { issued: q.status !== "DRAFT" });
     const buffer = await renderInvoicePdf(buildDocEInvoiceData(q), theme);
     return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(q.number ?? "dokument") };
   }
@@ -126,7 +126,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
           select: { addressLine1: true, addressLine2: true, postalCode: true, city: true, countryCode: true },
         })
       : null;
-    const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE");
+    const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE", { issued: dn.status !== "DRAFT" });
     const buffer = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
     return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(dn.number ?? "lieferschein") };
   }

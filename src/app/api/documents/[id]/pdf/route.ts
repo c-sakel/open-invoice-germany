@@ -19,7 +19,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   });
   if (!q) return new Response("Dokument nicht gefunden", { status: 404 });
 
-  const theme = await loadPdfTheme(org.id, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind));
+  const theme = await loadPdfTheme(org.id, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind), { issued: q.status !== "DRAFT" });
   const pdf = await renderInvoicePdf(buildDocEInvoiceData(q), theme);
   const safe = (q.number ?? "dokument").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {

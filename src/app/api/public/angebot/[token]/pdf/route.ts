@@ -44,7 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   if (!resolved) return new Response("Nicht gefunden", { status: 404, headers: { "cache-control": "private, no-store" } });
 
   const { quote } = resolved;
-  const theme = await loadPdfTheme(quote.orgId, quote.printOptionsJson, invoiceTypeToLayoutDocType(quote.kind));
+  const theme = await loadPdfTheme(quote.orgId, quote.printOptionsJson, invoiceTypeToLayoutDocType(quote.kind), { issued: quote.status !== "DRAFT" });
   const pdf = await renderInvoicePdf(buildDocEInvoiceData(quote), theme);
   const safe = (quote.number ?? "angebot").replace(/[^A-Za-z0-9._-]/g, "_");
   return new Response(new Uint8Array(pdf), {

@@ -38,7 +38,7 @@ async function readOptionalFile(storagePath: string | null): Promise<Buffer | un
  * (bestehende Aufrufer bleiben unveraendert lauffaehig). `footerFacts` kommt aus
  * `Organization.website`/`.ownerName` (Phase 11b, Task 1).
  */
-export async function loadPdfTheme(orgId: string, overrideJson?: string | null, docType: LayoutDocType = "INVOICE", opts: { layoutVersionId?: string | null; fixedLayoutOnly?: boolean } = {}): Promise<PdfTheme> {
+export async function loadPdfTheme(orgId: string, overrideJson?: string | null, docType: LayoutDocType = "INVOICE", opts: { layoutVersionId?: string | null; fixedLayoutOnly?: boolean; issued?: boolean } = {}): Promise<PdfTheme> {
   const [brand, printSettings, documentSettings, org] = await Promise.all([
     loadBrandingSettings(orgId),
     loadPrintSettings(orgId),
@@ -54,8 +54,12 @@ export async function loadPdfTheme(orgId: string, overrideJson?: string | null, 
   });
   // Beleg ohne eingefrorene Design-Version (Bestand, festes Layout): nie ein Design aufloesen,
   // sonst bekaeme er nachtraeglich das aktuell zugeordnete Design. Basislayout des Designs bzw. standard.
+  // `issued`: Beleg hat den Entwurf verlassen (Rechnung festgeschrieben, Angebot/AB/Proforma != DRAFT,
+  // Lieferschein nummeriert) -> ohne eingefrorene Version gilt fixedLayoutOnly (R7).
+  const hasFrozenVersion = Boolean(opts.layoutVersionId ?? options.layoutVersionId);
+  const fixedOnly = opts.fixedLayoutOnly || (opts.issued === true && !hasFrozenVersion);
   const assignedDesignId = designIdOf(layoutRef);
-  if (opts.fixedLayoutOnly && assignedDesignId) {
+  if (fixedOnly && assignedDesignId) {
     const design = await dbInternal.layoutDesign.findFirst({ where: { id: assignedDesignId, orgId }, select: { baseLayoutId: true } });
     layoutRef = design && isLayoutId(design.baseLayoutId) ? design.baseLayoutId : DEFAULT_LAYOUT_ID;
   }

@@ -139,6 +139,8 @@ export class LayoutDesignVersionImmutabilityError extends Error {
  * Phase 16g (R7): `printOptionsJson` von Angebot/AB/Proforma (`quote`) und Lieferschein ist ab
  * dem Verlassen des Entwurfs eingefroren (Druckoptionen + Layout-Version). Der Guard prueft nur
  * den Schluessel `printOptionsJson`; alle anderen Felder (z. B. archivedAt) bleiben unberuehrt.
+ * Die Statuspruefung ist ein separates findFirst (nicht atomar); die Domain-Pfade (setPrintOptions)
+ * schreiben deshalb per bedingtem updateMany (status DRAFT) und sind selbst atomar.
  * Das Einfrieren selbst laeuft ueber den Transaktions-Client von `dbInternal` (freeze-layout.ts).
  */
 export class FrozenPrintOptionsError extends Error {
@@ -293,6 +295,10 @@ export const prisma = base.$extends({
         await guardPrintOptions("quote", args.where, args.data);
         return query(args);
       },
+      async updateManyAndReturn({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.data);
+        return query(args);
+      },
       async upsert({ args, query }) {
         await guardPrintOptions("quote", args.where, args.update);
         return query(args);
@@ -304,6 +310,10 @@ export const prisma = base.$extends({
         return query(args);
       },
       async updateMany({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
         await guardPrintOptions("deliveryNote", args.where, args.data);
         return query(args);
       },

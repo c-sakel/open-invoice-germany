@@ -96,7 +96,7 @@ export async function buildStandardAttachments(
     // rechtsverbindliche ZUGFeRD-PDF; nur echte Entwuerfe bekommen den Entwurfs-Hinweis.
     const finalized = invoice.status !== "DRAFT";
     if (!finalized) {
-      const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
+      const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type), { issued: invoice.status !== "DRAFT" });
       return [{ filename: `${base}-ENTWURF.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoicePdf(data, theme)) }];
     }
     const out: Attachment[] = [{ filename: `${base}.pdf`, contentType: "application/pdf", content: await lazy(() => getArchivedInvoiceFile(orgId, invoice.id, "PDF")) }];
@@ -129,7 +129,7 @@ export async function buildStandardAttachments(
     ];
     const inv = await loadEInvoiceData(d.invoiceId);
     if (inv) {
-      const invoiceTheme = await loadPdfTheme(orgId, inv.invoice.printOptionsJson, invoiceTypeToLayoutDocType(inv.invoice.type));
+      const invoiceTheme = await loadPdfTheme(orgId, inv.invoice.printOptionsJson, invoiceTypeToLayoutDocType(inv.invoice.type), { issued: inv.invoice.status !== "DRAFT" });
       // Nicht-Entwurf: archiviertes PDF (Phase 16a), nur ein Entwurf wird live gerendert.
       const invoicePdf = () =>
         inv.invoice.status === "DRAFT" ? renderInvoiceDocumentPdf(inv.data, invoiceTheme, inv.invoice.status) : getArchivedInvoiceFile(orgId, inv.invoice.id, "PDF");
@@ -153,7 +153,7 @@ export async function buildStandardAttachments(
           select: { addressLine1: true, addressLine2: true, postalCode: true, city: true, countryCode: true },
         })
       : null;
-    const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE");
+    const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE", { issued: dn.status !== "DRAFT" });
     const pdf = await lazy(() => renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, null, shippingAddress), theme));
     return [{ filename: `${safe(dn.number ?? "Lieferschein")}.pdf`, contentType: "application/pdf", content: pdf }];
   }
@@ -163,7 +163,7 @@ export async function buildStandardAttachments(
     include: { lines: { orderBy: { position: "asc" } }, org: true, customer: true },
   });
   if (!q) return [];
-  const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind));
+  const theme = await loadPdfTheme(orgId, q.printOptionsJson, invoiceTypeToLayoutDocType(q.kind), { issued: q.status !== "DRAFT" });
   return [{ filename: `${safe(q.number ?? "Dokument")}.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoicePdf(buildDocEInvoiceData(q), theme)) }];
 }
 
