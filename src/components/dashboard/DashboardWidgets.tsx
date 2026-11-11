@@ -1,14 +1,28 @@
 import Link from "next/link";
 import type { DashboardSummary } from "@/domain/dashboard/summary";
 import type { MonthlyRevenuePoint } from "@/domain/reporting/revenue";
-import type { StatusCount } from "@/domain/reporting/status";
 import type { TopCustomer } from "@/domain/reporting/customers";
+import type { CashInPoint } from "@/domain/reporting/cash-in";
+import type { QuoteOutcomeRow } from "@/domain/reporting/quote-outcome";
 import { formatCents } from "@/lib/money";
+import { CHART_COLORS } from "@/components/charts/types";
+import { StackedBar } from "@/components/charts/StackedBar";
+import { Sparkline } from "@/components/charts/Sparkline";
+import { Card } from "@/components/ui/Card";
+import { Kpi } from "@/components/ui/Kpi";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
-import { AgingChart } from "@/components/dashboard/AgingChart";
-import { BarChart } from "@/components/charts/BarChart";
-import { DonutChart } from "@/components/charts/DonutChart";
-import { revenueChartData, statusDonutData, topCustomerChartData } from "@/components/dashboard/chart-data";
+import { BelegStreckeMini } from "@/components/BelegStreckeMini";
+import { ResponsiveBarChart } from "@/components/dashboard/ResponsiveBarChart";
+import type { DashboardNotice } from "@/components/dashboard/notices";
+import {
+  cashInChartData,
+  openBandSegments,
+  openTotalCents,
+  quoteOutcomeSegments,
+  revenueWithPriorYear,
+  topCustomerChartData,
+} from "@/components/dashboard/chart-data";
 
 function deDate(d: Date) {
   return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(d);
@@ -20,141 +34,179 @@ const DOC_HREF: Record<string, (id: string) => string> = {
   DELIVERY_NOTE: (id) => `/lieferscheine/${id}`,
 };
 
+const NOTICE_TONE: Record<DashboardNotice["tone"], string> = {
+  pen: "border-pen/30 bg-pen-wash",
+  seal: "border-seal/30 bg-well",
+  stamp: "border-stamp/30 bg-well",
+};
+
 /**
- * Dashboard-Widgets (Task 4, `/`) — Kennzahlkacheln, Umsatzreihe, Statusring, Top-5-Kunden,
- * Aging und letzte Belege. `revenue`/`statuses`/`top` kommen aus src/domain/reporting/* —
- * dieselbe Aufteilung wie `summary` (dashboardSummary bleibt fuer die Kennzahlkacheln
- * zustaendig, kein Doppelbau, §1.4).
- *
- * Fix I5 (Abschluss-Review): `items-start` statt des Grid-Defaults `items-stretch` — die
- * vier Karten im unteren Raster haben unterschiedlich viel Inhalt (Donut ~240 px, Aging/
- * Top-5 je nach Zeilenzahl, "Letzte Belege" bis zu 5 Zeilen); vorher streckte das Grid jede
- * Karte auf die Hoehe der hoechsten, wodurch der Donut auf voller Spaltenbreite (~430 px)
- * rendern konnte und seine Mittelzahl effektiv ~50 px gross wurde. `min-h-*` je Karte haelt
- * das Layout trotzdem stabil (kein Sprung zwischen leerem und gefuelltem Zustand). Die
- * Donut-Karte bekommt zusaetzlich `max-w-[220px] mx-auto`, damit das SVG (`w-full`) nicht
- * ueber seine native 240er-viewBox hinaus gestreckt wird. Aging/Top-5 (`BarChart`,
- * waagerecht) bekommen `viewBoxWidth={320}` (Fix I6) — die halbe Spaltenbreite entspricht
- * ungefaehr dieser Koordinatenbreite, wodurch `fontSize`-Angaben dort nahe an ihrer
- * nominalen Pixelgroesse rendern statt auf ~7 px herunterskaliert zu werden.
- *
- * Fix I6 (Nachtrag, Screenshot-Review bei 400 px): die Umsatzreihe ganz oben ist IMMER
- * volle Kartenbreite (kein halbes Grid) — bei ~1100 px (Desktop) passt `viewBoxWidth`
- * 640 gut, bei ~370 px (Mobile, Karte unterhalb `sm`) skaliert dieselbe viewBox die Schrift
- * auf ~7 px herunter. Da SVG `font-size` (Attribut UND CSS) IMMER im lokalen, durch
- * `viewBox` skalierten Koordinatensystem gilt (keine per-Breakpoint-Ausnahme, empirisch
- * geprueft), gibt es dafuer ohne Client-JS nur einen Ausweg: zwei serverseitig gerenderte
- * Varianten, per `hidden`/`sm:hidden` (reines CSS) umgeschaltet — die unterhalb `sm`
- * ausgeblendete Variante ist ueber `display:none` bereits vollstaendig aus dem
- * Accessibility-Baum entfernt (keine doppelte sr-only-Tabelle fuer Screenreader).
+ * Dashboard (Phase 16f, T6): Hinweise, Hero "Offene Forderungen" mit Geldfluss-Band, Kacheln mit
+ * Verlauf, Umsatz mit Vorjahr, Zahlungseingang vs. Rechnungsausgang, Angebotsquote, Top 5 Kunden
+ * und letzte Belege. Beträge nur in der Standardwährung `currency`; andere Währungen erscheinen
+ * ausschließlich als Hinweis, nie als Mischsumme.
  */
 export function DashboardWidgets({
   summary,
-  revenue,
-  statuses,
+  revenue24,
+  cashIn,
+  quotes,
   top,
+  currency,
+  notices,
 }: {
   summary: DashboardSummary;
-  revenue: MonthlyRevenuePoint[];
-  statuses: StatusCount[];
+  revenue24: MonthlyRevenuePoint[];
+  cashIn: CashInPoint[];
+  quotes: QuoteOutcomeRow[];
   top: TopCustomer[];
+  currency: string;
+  notices: DashboardNotice[];
 }) {
+  const openTotal = openTotalCents(summary);
+  if (summary.recentDocuments.length === 0 && openTotal === 0) {
+    return <EmptyState text="Noch keine Belege. Lege die erste Rechnung an." action={{ label: "Neue Rechnung", href: "/rechnungen/neu" }} />;
+  }
+
+  const { current, prior } = revenueWithPriorYear(revenue24, currency);
+  const cash = cashInChartData(cashIn, currency);
+  const quoteRow = quotes.find((q) => q.currency === currency);
+  const quoteSegments = quoteOutcomeSegments(quoteRow);
+  const quoteTotal = quoteSegments.reduce((sum, s) => sum + s.value, 0);
+  const quoteLabel =
+    quoteRow?.acceptedPermille == null
+      ? `${quoteTotal} Angebote`
+      : `Quote ${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(quoteRow.acceptedPermille / 10)} %`;
+  const paidThisMonth = cash.paid.at(-1)?.value ?? 0;
+
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href="/rechnungen?status=open" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 hover:border-pen/30">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Offen</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(summary.openInvoices.cents)}</div>
-          <div className="text-xs text-ink-muted">{summary.openInvoices.count} Rechnung(en)</div>
-        </Link>
-        <Link href="/rechnungen?status=due" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 hover:border-pen/30">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Heute fällig</div>
-          <div className="mt-1 text-xl font-semibold text-seal">{formatCents(summary.dueInvoices.cents)}</div>
-          <div className="text-xs text-ink-muted">{summary.dueInvoices.count} Rechnung(en)</div>
-        </Link>
-        <Link href="/rechnungen?status=overdue" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 hover:border-pen/30">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Überfällig</div>
-          <div className="mt-1 text-xl font-semibold text-stamp">{formatCents(summary.overdueInvoices.cents)}</div>
-          <div className="text-xs text-ink-muted">{summary.overdueInvoices.count} Rechnung(en)</div>
-        </Link>
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Nettoumsatz (laufender Monat)</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(summary.revenueThisMonthCents)}</div>
-        </div>
-        <Link href="/dokumente?status=SENT" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 hover:border-pen/30">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Offene Angebote</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(summary.openQuotes.cents)}</div>
-          <div className="text-xs text-ink-muted">{summary.openQuotes.count} Angebot(e)</div>
-        </Link>
-        {/* Fix-Runde 1 (§45): drei zusaetzliche Kennzahlen. */}
-        <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Fällig in 7 Tagen</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(summary.dueThisWeek.cents)}</div>
-          <div className="text-xs text-ink-muted">{summary.dueThisWeek.count} Rechnung(en)</div>
-        </div>
-        <Link href="/rechnungen?status=partial" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 hover:border-pen/30">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Teilweise bezahlt</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{formatCents(summary.partiallyPaid.cents)}</div>
-          <div className="text-xs text-ink-muted">{summary.partiallyPaid.count} Rechnung(en)</div>
-        </Link>
-        <Link href="/mahnwesen" className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 hover:border-pen/30">
-          <div className="text-xs uppercase tracking-wide text-ink-muted">Mahnung fällig</div>
-          <div className="mt-1 text-xl font-semibold text-ink">{summary.dunningRequired.count}</div>
-          <div className="text-xs text-ink-muted">Rechnung(en)</div>
-        </Link>
-      </div>
+    <div className="space-y-4">
+      {notices.length > 0 && (
+        <section aria-label="Hinweise" className="grid gap-3 md:grid-cols-2">
+          {notices.map((n) => {
+            const body = (
+              <>
+                <div className="text-sm font-semibold text-ink">{n.title}</div>
+                <div className="mt-0.5 text-sm text-ink-soft">{n.body}</div>
+              </>
+            );
+            const cls = `block rounded-[var(--radius-card)] border p-4 ${NOTICE_TONE[n.tone]}`;
+            return n.href ? (
+              <Link key={n.id} href={n.href} className={cls}>
+                {body}
+              </Link>
+            ) : (
+              <div key={n.id} className={cls}>
+                {body}
+              </div>
+            );
+          })}
+        </section>
+      )}
 
-      <div className="hidden min-h-[280px] rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:block">
-        <BarChart
-          title="Umsatz je Monat (netto, 12 Monate)"
-          data={revenueChartData(revenue)}
-          emptyMessage="Noch keine Umsätze im Zeitraum."
-        />
-      </div>
-      <div className="min-h-[280px] rounded-[var(--radius-card)] border border-rule bg-sheet p-5 sm:hidden">
-        <BarChart
-          title="Umsatz je Monat (netto, 12 Monate)"
-          data={revenueChartData(revenue)}
-          emptyMessage="Noch keine Umsätze im Zeitraum."
-          viewBoxWidth={340}
-        />
-      </div>
-
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        <div className="min-h-[280px] rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
-          <AgingChart aging={summary.aging} viewBoxWidth={320} />
-        </div>
-
-        <div className="min-h-[280px] rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
-          <div className="mx-auto max-w-[220px]">
-            <DonutChart title="Rechnungsstatus (Anzahl)" data={statusDonutData(statuses)} />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <Kpi
+            size="hero"
+            label="Offene Forderungen"
+            value={formatCents(openTotal, currency)}
+            hint={
+              <>
+                <Link href="/rechnungen?status=overdue" className="text-stamp hover:underline">
+                  Überfällig {formatCents(summary.overdueInvoices.cents, currency)}
+                </Link>
+                {" · "}
+                <Link href="/mahnwesen" className="hover:underline">
+                  Mahnung fällig: {summary.dunningRequired.count}
+                </Link>
+              </>
+            }
+          />
+          <div className="mt-4">
+            <StackedBar title="Geldfluss" segments={openBandSegments(summary, currency)} totalLabel={formatCents(openTotal, currency)} />
           </div>
+        </Card>
+        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+          <Card>
+            <Kpi label="Umsatz lfd. Monat" value={formatCents(summary.revenueThisMonthCents, currency)}>
+              <Sparkline values={current.map((d) => d.value)} label="Umsatz der letzten 12 Monate" />
+            </Kpi>
+          </Card>
+          <Card>
+            <Kpi label="Zahlungseingang lfd. Monat" value={formatCents(paidThisMonth, currency)}>
+              <Sparkline values={cash.paid.map((d) => d.value)} label="Zahlungseingang der letzten 12 Monate" />
+            </Kpi>
+          </Card>
+          <Link href="/dokumente?status=SENT" className="block">
+            <Card>
+              <Kpi
+                label="Offene Angebote"
+                value={formatCents(summary.openQuotes.cents, currency)}
+                hint={`${summary.openQuotes.count} Angebot(e)`}
+              />
+            </Card>
+          </Link>
         </div>
+      </div>
 
-        <div className="min-h-[280px] rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
-          <BarChart title="Top 5 Kunden (netto, 12 Monate)" data={topCustomerChartData(top)} orientation="horizontal" viewBoxWidth={320} />
-        </div>
+      <Card title="Umsatz je Monat (netto) mit Vorjahr">
+        <ResponsiveBarChart
+          title="Umsatz je Monat (netto, 12 Monate)"
+          data={current}
+          compare={prior}
+          compareLabel="Vorjahr"
+          emptyMessage="Noch keine Umsätze im Zeitraum."
+        />
+      </Card>
 
-        <div className="min-h-[280px] rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Letzte Belege</h2>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Zahlungseingang und Rechnungsausgang">
+          <ResponsiveBarChart
+            title="Zahlungseingang je Monat"
+            data={cash.paid}
+            compare={cash.invoiced}
+            compareLabel="Rechnungsausgang"
+            color={CHART_COLORS.ledger}
+            emptyMessage="Noch keine Zahlungen im Zeitraum."
+          />
+          {cash.otherCurrencyCount > 0 && (
+            <p className="mt-2 text-xs text-ink-soft">+ {cash.otherCurrencyCount} Belege in anderer Währung</p>
+          )}
+        </Card>
+        <Card title="Angebotsquote (12 Monate)">
+          {quoteTotal > 0 ? (
+            <StackedBar title="Angebote nach Ausgang" segments={quoteSegments} totalLabel={quoteLabel} />
+          ) : (
+            <p className="py-6 text-center text-sm text-ink-muted">Noch keine Angebote im Zeitraum.</p>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Top 5 Kunden (netto, 12 Monate)">
+          <ResponsiveBarChart
+            title="Top 5 Kunden (netto, 12 Monate)"
+            data={topCustomerChartData(top)}
+            orientation="horizontal"
+            emptyMessage="Noch keine Umsätze im Zeitraum."
+          />
+        </Card>
+        <Card title="Letzte Belege">
           <ul className="divide-y divide-rule">
             {summary.recentDocuments.map((d) => (
-              /* Fix M2 (Minor, nicht von 12e verursacht — Vorbefund aus Task 4/Phase 8b):
-                 flex-wrap + min-w-0/truncate auf der Kundenspalte, sonst brechen lange
-                 Belegnummern/Kundennamen bei 400 px Viewport auf zwei Zeilen und
-                 ueberlappen Datum/Badge. */
               <li key={`${d.kind}-${d.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
                 <a href={DOC_HREF[d.kind](d.id)} className="font-medium text-pen hover:underline">
                   {d.number ?? "Entwurf"}
                 </a>
                 <span className="min-w-0 flex-1 truncate text-ink-muted">{d.customerName}</span>
                 <span className="shrink-0 text-ink-muted">{deDate(d.date)}</span>
+                {d.kind === "INVOICE" && <BelegStreckeMini status={d.status} />}
                 <StatusBadge status={d.status} />
               </li>
             ))}
             {summary.recentDocuments.length === 0 && <li className="py-6 text-center text-ink-muted">Noch keine Belege.</li>}
           </ul>
-        </div>
+        </Card>
       </div>
     </div>
   );

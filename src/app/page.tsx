@@ -3,7 +3,9 @@ import { getCurrentUserId } from "@/lib/auth/server";
 import { getActiveOrg } from "@/lib/org";
 import { dashboardSummary } from "@/domain/dashboard/summary";
 import { monthlyRevenue } from "@/domain/reporting/revenue";
-import { statusCounts } from "@/domain/reporting/status";
+import { monthlyCashIn } from "@/domain/reporting/cash-in";
+import { quoteOutcome } from "@/domain/reporting/quote-outcome";
+import { loadDocumentSettings } from "@/domain/document/settings";
 import { topCustomers } from "@/domain/reporting/customers";
 import { DashboardWidgets } from "@/components/dashboard/DashboardWidgets";
 
@@ -87,11 +89,13 @@ export default async function Home() {
   if (!userId) return <MarketingPage />;
 
   const org = await getActiveOrg();
-  const [summary, revenue, statuses, top] = await Promise.all([
+  const [summary, revenue24, cashIn, quotes, top, settings] = await Promise.all([
     dashboardSummary(org.id),
-    monthlyRevenue(org.id),
-    statusCounts(org.id),
+    monthlyRevenue(org.id, { months: 24 }),
+    monthlyCashIn(org.id),
+    quoteOutcome(org.id),
     topCustomers(org.id),
+    loadDocumentSettings(org.id),
   ]);
 
   return (
@@ -102,7 +106,15 @@ export default async function Home() {
           Neue Rechnung
         </Link>
       </div>
-      <DashboardWidgets summary={summary} revenue={revenue} statuses={statuses} top={top} />
+      <DashboardWidgets
+        summary={summary}
+        revenue24={revenue24}
+        cashIn={cashIn}
+        quotes={quotes}
+        top={top}
+        currency={settings.defaultCurrency}
+        notices={[]}
+      />
     </div>
   );
 }
