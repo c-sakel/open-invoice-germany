@@ -31,6 +31,10 @@ describe("pickRate BMF_MONTHLY", () => {
     const p = pickRate([mon("2108-02-01", 1), mon("2108-03-01", 2)], "USD", d("2108-03-15"), "BMF_MONTHLY");
     expect(p).toEqual({ rateMicros: 2, rateDate: d("2108-03-01"), source: "BMF_MONTHLY" });
   });
+  it("Konvention: Monatszeile am 1. wird vom Stichtag 15. (und 1.) gefunden", () => {
+    expect(pickRate([mon("2108-03-01", 2)], "USD", d("2108-03-15"), "BMF_MONTHLY")?.rateDate).toEqual(d("2108-03-01"));
+    expect(pickRate([mon("2108-03-01", 2)], "USD", d("2108-03-01"), "BMF_MONTHLY")?.rateMicros).toBe(2);
+  });
   it("Vormonat-Fallback, Vor-Vormonat null", () => {
     expect(pickRate([mon("2108-02-01", 1)], "USD", d("2108-03-15"), "BMF_MONTHLY")?.rateMicros).toBe(1);
     expect(pickRate([mon("2108-01-01", 1)], "USD", d("2108-03-15"), "BMF_MONTHLY")).toBeNull();

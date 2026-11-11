@@ -14,7 +14,8 @@ export function fxStichtag(inv: { deliveryDate: Date | null; deliveryEnd: Date |
 
 /**
  * ECB_DAILY: juengster Kurs am oder vor dem Stichtag, hoechstens 7 Tage alt.
- * BMF_MONTHLY: Monatskurs des Stichtagsmonats, sonst exakt des Vormonats. Sonst null.
+ * BMF_MONTHLY: Konvention: eine Monatszeile ist auf den 1. des Monats datiert (rateDate = 1.).
+ * Monatskurs des Stichtagsmonats, sonst exakt des Vormonats. Sonst null.
  */
 export function pickRate(
   rows: FxRow[],
