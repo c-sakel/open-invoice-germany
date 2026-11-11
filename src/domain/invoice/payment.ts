@@ -24,6 +24,9 @@ import { incrementPaidAmount } from "./paid-amount";
 import { NotFoundError } from "@/domain/errors";
 import type { RecordPaymentInput } from "@/schemas";
 
+/** Herkunft einer Zahlungszeile (`Payment.createdBy`, Phase 16a). */
+export type PaymentCreatedBy = "user" | "scheduler" | "mcp" | "api" | "webhook";
+
 export class PaymentError extends Error {
   constructor(message: string) {
     super(message);
@@ -34,6 +37,8 @@ export class PaymentError extends Error {
 export interface RecordPaymentResult {
   /** Die Rechnung NACH der Zahlung (inkl. automatischer Skontobuchung, falls erfolgt). */
   payment: Invoice;
+  /** Die neu gebuchte Zahlungszeile (ID z. B. fuer reverse_payment). */
+  recorded: Payment;
   /** Erkannte, aber (noch) nicht gebuchte Skontofrist — nur ohne `applySkonto`. */
   skontoSuggestion?: SkontoTerm & { restCents: number };
   /** Die zweite Zahlung (method "SKONTO"), falls der Skontoabzug gebucht wurde. */
@@ -55,10 +60,11 @@ async function resolvePaymentMethodId(tx: Prisma.TransactionClient, orgId: strin
 export async function recordPayment(
   invoiceId: string,
   input: RecordPaymentInput,
-  opts: { actor?: string; now?: Date; orgId?: string } = {},
+  opts: { actor?: string; now?: Date; orgId?: string; createdBy?: PaymentCreatedBy } = {},
 ): Promise<RecordPaymentResult> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
+  const createdBy = opts.createdBy ?? "user";
 
   return dbInternal.$transaction(async (tx) => {
     const inv = await tx.invoice.findUnique({
@@ -114,6 +120,7 @@ export async function recordPayment(
         isSkonto: input.isSkonto,
         // Phase 8b (§42): freie Notiz zur Zahlung.
         note: input.note ?? null,
+        createdBy,
       },
     });
 
@@ -168,7 +175,7 @@ export async function recordPayment(
 
     // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —
     // ein exakt/vollstaendig bezahlter Betrag hat keinen Skontoabzug mehr zu buchen.
-    const result: RecordPaymentResult = { payment: updated };
+    const result: RecordPaymentResult = { payment: updated, recorded: payment };
     const restCents = baseCents - newPaid;
 
     if (restCents > 0) {
@@ -198,6 +205,7 @@ export async function recordPayment(
               method: "SKONTO",
               isSkonto: true,
               skontoForPaymentId: payment.id,
+              createdBy,
             },
           });
 

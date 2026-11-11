@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GDPdU-Beschreibungsstandard, Version 01.09.2004 -->
+<!ELEMENT DataSet (Version, DataSupplier?, Command?, Media+)>
+<!ELEMENT Version (#PCDATA)>
+<!ELEMENT DataSupplier (Name, Location, Comment)>
+<!ELEMENT Command (Comment)>
+<!ELEMENT Media (Name, Table+)>
+<!ELEMENT Table (URL, Name, Description?, Validity?, DecimalSymbol?, DigitGroupingSymbol?, Range?, (VariableLength | FixedLength))>
+<!ELEMENT URL (#PCDATA)>
+<!ELEMENT Name (#PCDATA)>
+<!ELEMENT Description (#PCDATA)>
+<!ELEMENT Location (#PCDATA)>
+<!ELEMENT Comment (#PCDATA)>
+<!ELEMENT Validity (Range+)>
+<!ELEMENT Range (From, (To | Length)?)>
+<!ELEMENT From (#PCDATA)>
+<!ELEMENT To (#PCDATA)>
+<!ELEMENT Length (#PCDATA)>
+<!ELEMENT DecimalSymbol (#PCDATA)>
+<!ELEMENT DigitGroupingSymbol (#PCDATA)>
+<!ELEMENT VariableLength (ColumnDelimiter, RecordDelimiter, TextEncapsulator?, VariablePrimaryKey*, VariableColumn+, ForeignKey*)>
+<!ELEMENT FixedLength (RecordDelimiter?, FixedPrimaryKey*, FixedColumn+, ForeignKey*)>
+<!ELEMENT ColumnDelimiter (#PCDATA)>
+<!ELEMENT RecordDelimiter (#PCDATA)>
+<!ELEMENT TextEncapsulator (#PCDATA)>
+<!ELEMENT VariablePrimaryKey (Name)>
+<!ELEMENT FixedPrimaryKey (Name)>
+<!ELEMENT ForeignKey (Name+, References)>
+<!ELEMENT References (Name+)>
+<!ELEMENT VariableColumn (Name, Description?, (Numeric | AlphaNumeric | Date), MaxLength?)>
+<!ELEMENT FixedColumn (Name, Description?, (Numeric | AlphaNumeric | Date), FixedRange)>
+<!ELEMENT FixedRange (From, (To | Length))>
+<!ELEMENT MaxLength (#PCDATA)>
+<!ELEMENT Numeric (Accuracy?)>
+<!ELEMENT AlphaNumeric EMPTY>
+<!ELEMENT Date (Format?)>
+<!ELEMENT Accuracy (#PCDATA)>
+<!ELEMENT Format (#PCDATA)>

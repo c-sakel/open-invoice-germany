@@ -48,3 +48,14 @@ describe("Zahlungsdialog (Phase 13c)", () => {
     expect(card).toContain("PaymentDialog");
   });
 });
+
+describe("Zahlungsliste bei stornierten Rechnungen (Phase 16a Final-Fix)", () => {
+  const page = readFileSync(path.join(SRC, "app/rechnungen/[id]/page.tsx"), "utf8");
+  it("Zahlungsliste mit Korrektur-Aktion haengt nicht an !isCancelled, PaymentDialog bleibt an canPay", () => {
+    expect(page).toMatch(/const showPaymentList = vm\.isInvoiceType && !vm\.isDraft;/);
+    expect(page).toContain("showPaymentList={showPaymentList}");
+    expect(card).toContain("(showPaymentBlock || showPaymentList) &&");
+    expect(card).toMatch(/\{canPay && \(\s*<PaymentDialog/);
+    expect(card).toContain("<ReversePaymentDialog");
+  });
+});

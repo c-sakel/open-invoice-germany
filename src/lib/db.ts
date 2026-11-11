@@ -97,19 +97,20 @@ async function guardLineWhere(where: unknown): Promise<void> {
 
 /**
  * Phase 6: `Dunning` ist ein Geschaeftsbrief (GoBD) — nach Erstellung unveraenderlich,
- * analog `FinalInvoiceDeduction`. Zwei Ausnahmen bleiben ueber den geschuetzten Client
- * erlaubt, weil sie keinen inhaltlichen Beleg-Bestandteil aendern: `sentAt` (tatsaechlicher
- * Versandzeitpunkt, erst nach dem Mailversand bekannt) und `pdfPath` (Ablagepfad des
- * einmalig erzeugten PDFs, erst nach dessen Erstellung bekannt). Jeder andere Schluessel
+ * analog `FinalInvoiceDeduction`. Eine Ausnahme bleibt ueber den geschuetzten Client
+ * erlaubt: `sentAt` (tatsaechlicher Versandzeitpunkt, erst nach dem Mailversand bekannt).
+ * `pdfPath`/`pdfSha256` (Mahnungsarchiv, Phase 16a) sind write-once und werden
+ * ausschliesslich in `src/domain/dunning/archive.ts` per `dbInternal.dunning.updateMany`
+ * mit `where: { pdfPath: null }` gesetzt — ueber den geschuetzten Client verboten. Jeder andere Schluessel
  * in `data` wird verweigert; delete/deleteMany sind — wie bei FinalInvoiceDeduction —
  * IMMER verboten.
  */
-const DUNNING_MUTABLE_KEYS = new Set(["sentAt", "pdfPath"]);
+const DUNNING_MUTABLE_KEYS = new Set(["sentAt"]);
 
 class DunningImmutabilityError extends Error {
   constructor(badKeys: string[]) {
     super(
-      `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt/pdfPath ` +
+      `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt ` +
         `duerfen nachtraeglich gesetzt werden, nicht: ${badKeys.join(", ")}.`,
     );
     this.name = "DunningImmutabilityError";
@@ -120,6 +121,25 @@ function assertDunningUpdateAllowed(data: unknown): void {
   const keys = Object.keys((data ?? {}) as Record<string, unknown>);
   const badKeys = keys.filter((k) => !DUNNING_MUTABLE_KEYS.has(k));
   if (badKeys.length > 0) throw new DunningImmutabilityError(badKeys);
+}
+
+/**
+ * Phase 16a: `ArchivedDocument` ist write-once (GoBD-Belegarchiv). Zeilen entstehen
+ * ausschliesslich in `src/domain/invoice/archive.ts` per `create` auf dem Transaktions-
+ * Client; ueber den geschuetzten `prisma`-Client sind update/upsert/delete IMMER verboten.
+ */
+class ArchivedDocumentImmutabilityError extends Error {
+  constructor() {
+    super("GoBD: Archivierte Belege (ArchivedDocument) sind write-once und koennen nicht geaendert oder geloescht werden.");
+    this.name = "ArchivedDocumentImmutabilityError";
+  }
+}
+
+class PaymentImmutabilityError extends Error {
+  constructor() {
+    super("GoBD: Zahlungen werden nie geaendert oder geloescht — Korrektur nur per Gegenbuchung (reversePayment).");
+    this.name = "PaymentImmutabilityError";
+  }
 }
 
 export const prisma = base.$extends({
@@ -176,6 +196,46 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new FinalInvoiceDeductionImmutabilityError();
+      },
+    },
+    archivedDocument: {
+      async update() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async updateMany() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async upsert() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async delete() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+      async deleteMany() {
+        throw new ArchivedDocumentImmutabilityError();
+      },
+    },
+    payment: {
+      async update() {
+        throw new PaymentImmutabilityError();
+      },
+      async updateMany() {
+        throw new PaymentImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new PaymentImmutabilityError();
+      },
+      async upsert() {
+        throw new PaymentImmutabilityError();
+      },
+      async delete() {
+        throw new PaymentImmutabilityError();
+      },
+      async deleteMany() {
+        throw new PaymentImmutabilityError();
       },
     },
     dunning: {

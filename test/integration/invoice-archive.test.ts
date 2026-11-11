@@ -1,0 +1,333 @@
+/**
+ * Write-once-Belegarchiv (Phase 16a, GoBD). Eigenes Jahr (2099): Invoice.number ist global
+ * @unique und test.db wird ueber die Testlaufzeit geteilt. ARCHIVE_DIR zeigt auf ein
+ * temporaeres Verzeichnis.
+ */
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { dbInternal, prisma } from "@/lib/db";
+import { saveNotificationSettings } from "@/domain/notifications/settings";
+import { createDraftInvoice } from "@/domain/invoice/create";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { recordPayment } from "@/domain/invoice/payment";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
+import { ensureInvoiceArchive } from "@/domain/invoice/archive";
+import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
+import { ArchiveTamperedError, InvalidOperationError, NotFoundError } from "@/domain/errors";
+import { readArchiveFile, sha256Hex } from "@/lib/archive/storage";
+import { extractFirstEmbeddedFile } from "../helpers/pdf-fixtures";
+import type { CreateInvoiceInput } from "@/schemas";
+
+let orgId: string;
+let otherOrgId: string;
+let customerId: string;
+let tmpDir: string;
+let prevEnv: string | undefined;
+const FIX_DATE = new Date("2099-03-01T10:00:00.000Z");
+const LATER = new Date("2099-06-01T10:00:00.000Z");
+
+beforeAll(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oig-archive-int-"));
+  prevEnv = process.env.ARCHIVE_DIR;
+  process.env.ARCHIVE_DIR = tmpDir;
+  process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
+  orgId = (
+    await dbInternal.organization.create({
+      data: { legalName: "Archiv GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
+    })
+  ).id;
+  customerId = (
+    await dbInternal.customer.create({
+      data: { orgId, name: "Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    })
+  ).id;
+  await ensureOrgMasterdata(dbInternal, orgId);
+  otherOrgId = (
+    await dbInternal.organization.create({
+      data: { legalName: "Fremd GmbH", addressLine1: "Weg 3", postalCode: "21339", city: "Lüneburg", vatId: "DE987654321", taxNumber: "33/123/99999" },
+    })
+  ).id;
+});
+
+afterAll(async () => {
+  if (prevEnv === undefined) delete process.env.ARCHIVE_DIR;
+  else process.env.ARCHIVE_DIR = prevEnv;
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+function input(): CreateInvoiceInput {
+  return {
+    customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR",
+    documentDiscountPermille: 0, documentDiscountCents: 0, documentChargePermille: 0, documentChargeCents: 0,
+    issueDate: FIX_DATE, deliveryDate: new Date("2099-02-25"),
+    lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+  } as CreateInvoiceInput;
+}
+
+async function draft(): Promise<string> {
+  return (await createDraftInvoice(orgId, input(), { now: FIX_DATE })).id;
+}
+
+async function finalized(): Promise<string> {
+  return (await finalizeInvoice(await draft(), { now: FIX_DATE })).id;
+}
+
+const rows = (invoiceId: string) =>
+  dbInternal.archivedDocument.findMany({ where: { invoiceId }, select: { kind: true, path: true, sha256: true, source: true }, orderBy: { kind: "asc" } });
+const archiveLogs = (invoiceId: string) => dbInternal.changeLog.findMany({ where: { orgId, entityId: invoiceId, action: "ARCHIVE" }, select: { diffJson: true } });
+
+describe("Belegarchiv", () => {
+  it("erster Abruf archiviert PDF, CII und UBL (Quelle OUTPUT), zweiter Abruf liefert dieselben Bytes", async () => {
+    const id = await finalized();
+    const pdf = await getArchivedInvoiceFile(orgId, id, "PDF");
+    const archived = await rows(id);
+    expect(archived.map((r) => r.kind)).toEqual(["CII", "PDF", "UBL"]);
+    expect(archived.every((r) => r.source === "OUTPUT")).toBe(true);
+    const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
+    for (const r of archived) {
+      expect(r.path.startsWith(`${orgId}/2099/${number.replace(/[^A-Za-z0-9._-]/g, "_")}-${r.sha256.slice(0, 12)}.`)).toBe(true);
+    }
+    expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+
+    const again = await getArchivedInvoiceFile(orgId, id, "PDF");
+    expect(Buffer.compare(again, pdf)).toBe(0);
+    expect(await rows(id)).toEqual(archived);
+    expect(await archiveLogs(id)).toHaveLength(1);
+  });
+
+  it("das archivierte PDF traegt genau das archivierte CII eingebettet", async () => {
+    const id = await finalized();
+    const pdf = await getArchivedInvoiceFile(orgId, id, "PDF");
+    const cii = await getArchivedInvoiceFile(orgId, id, "CII");
+    expect(Buffer.compare(extractFirstEmbeddedFile(pdf), cii)).toBe(0);
+    const ubl = await getArchivedInvoiceFile(orgId, id, "UBL");
+    expect(ubl.toString("utf8")).toContain("<cbc:CustomizationID>");
+  });
+
+  it("ChangeLog ARCHIVE traegt alle drei Hashes, Invoice.xmlHash ist gesetzt", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "UBL");
+    const byKind = Object.fromEntries((await rows(id)).map((r) => [r.kind, r.sha256]));
+    const logs = await archiveLogs(id);
+    expect(logs).toHaveLength(1);
+    expect(JSON.parse(logs[0].diffJson ?? "{}")).toEqual({ pdf: byKind.PDF, cii: byKind.CII, ubl: byKind.UBL, source: "OUTPUT" });
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { xmlHash: true, xmlFormat: true } });
+    expect(inv.xmlHash).toBe(inv.xmlFormat === "ZUGFERD" ? byKind.CII : byKind.UBL);
+  });
+
+  it("Stammdaten-, Layout- und Zahlungsaenderungen nach der Archivierung aendern das PDF nicht", async () => {
+    const id = await finalized();
+    const before = await getArchivedInvoiceFile(orgId, id, "PDF");
+    await dbInternal.customer.update({ where: { id: customerId }, data: { name: "Umbenannt AG" } });
+    const branding = await loadBrandingSettings(orgId);
+    await saveBrandingSettings(orgId, { ...branding, primaryColor: "#aa0000" });
+    await recordPayment(id, { amountCents: 5000, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId, now: LATER });
+    const after = await getArchivedInvoiceFile(orgId, id, "PDF");
+    expect(Buffer.compare(after, before)).toBe(0);
+    await dbInternal.customer.update({ where: { id: customerId }, data: { name: "Kunde AG" } });
+  });
+
+  it("parallele Erstabrufe: genau drei Zeilen, beide Aufrufer erhalten dieselben Bytes, keine verwaisten Dateien", async () => {
+    const id = await finalized();
+    const [a, b] = await Promise.all([getArchivedInvoiceFile(orgId, id, "PDF"), getArchivedInvoiceFile(orgId, id, "PDF")]);
+    expect(Buffer.compare(a, b)).toBe(0);
+    const archived = await rows(id);
+    expect(archived).toHaveLength(3);
+    expect(await archiveLogs(id)).toHaveLength(1);
+    const dir = path.join(tmpDir, orgId, "2099");
+    const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
+    const files = (await fs.readdir(dir)).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));
+    expect(files.sort()).toEqual(archived.map((r) => path.posix.basename(r.path)).sort());
+  });
+
+  it("veraenderte Datei: ArchiveTamperedError und Benachrichtigung ARCHIVE_TAMPERED, kein Neurendern", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    const pdfRow = (await rows(id)).find((r) => r.kind === "PDF");
+    if (!pdfRow) throw new Error("PDF-Zeile fehlt");
+    const abs = path.join(tmpDir, ...pdfRow.path.split("/"));
+    await fs.writeFile(abs, Buffer.from("manipuliert"));
+    await expect(getArchivedInvoiceFile(orgId, id, "PDF")).rejects.toBeInstanceOf(ArchiveTamperedError);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    expect((await readArchiveFile(pdfRow.path))?.toString("latin1")).toBe("manipuliert");
+    expect(await rows(id)).toHaveLength(3);
+  });
+
+  it("geloeschte Datei: ArchiveTamperedError und Benachrichtigung ARCHIVE_TAMPERED", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "CII");
+    const ciiRow = (await rows(id)).find((r) => r.kind === "CII");
+    if (!ciiRow) throw new Error("CII-Zeile fehlt");
+    await fs.rm(path.join(tmpDir, ...ciiRow.path.split("/")));
+    const err = await getArchivedInvoiceFile(orgId, id, "CII").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveTamperedError);
+    expect((err as ArchiveTamperedError).status).toBe(500);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    expect(await readArchiveFile(ciiRow.path)).toBeNull();
+  });
+
+  it("Entwurf wird nie archiviert", async () => {
+    const id = await draft();
+    await expect(getArchivedInvoiceFile(orgId, id, "PDF")).rejects.toBeInstanceOf(InvalidOperationError);
+    await expect(ensureInvoiceArchive(orgId, id, "SCHEDULER")).rejects.toBeInstanceOf(InvalidOperationError);
+    expect(await rows(id)).toHaveLength(0);
+    expect(await archiveLogs(id)).toHaveLength(0);
+  });
+
+  it("Rechnung, die vor archive-epoch festgeschrieben wurde, wird als BACKFILL archiviert", async () => {
+    const id = await finalized();
+    const marker = await dbInternal.systemMarker.findUniqueOrThrow({ where: { key: "archive-epoch" }, select: { at: true } });
+    await dbInternal.systemMarker.update({ where: { key: "archive-epoch" }, data: { at: new Date("2100-01-01T00:00:00.000Z") } });
+    try {
+      const set = await ensureInvoiceArchive(orgId, id, "SCHEDULER");
+      expect(set.PDF.source).toBe("BACKFILL");
+      expect((await rows(id)).every((r) => r.source === "BACKFILL")).toBe(true);
+      const logs = await archiveLogs(id);
+      expect(JSON.parse(logs[0].diffJson ?? "{}").source).toBe("BACKFILL");
+    } finally {
+      await dbInternal.systemMarker.update({ where: { key: "archive-epoch" }, data: { at: marker.at } });
+    }
+  });
+
+  it("ensureInvoiceArchive mit Quelle SCHEDULER nach der Epoche", async () => {
+    const id = await finalized();
+    const set = await ensureInvoiceArchive(orgId, id, "SCHEDULER");
+    expect(set.CII.source).toBe("SCHEDULER");
+    const file = await readArchiveFile(set.CII.path);
+    expect(file).not.toBeNull();
+    expect(sha256Hex(file as Buffer)).toBe(set.CII.sha256);
+    const again = await ensureInvoiceArchive(orgId, id, "OUTPUT");
+    expect(again).toEqual(set);
+  });
+
+  it("fremde Organisation: NotFoundError, nichts archiviert", async () => {
+    const id = await finalized();
+    await expect(getArchivedInvoiceFile(otherOrgId, id, "PDF")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(ensureInvoiceArchive(otherOrgId, id, "SCHEDULER")).rejects.toBeInstanceOf(NotFoundError);
+    expect(await rows(id)).toHaveLength(0);
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    await expect(getArchivedInvoiceFile(otherOrgId, id, "PDF")).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("ArchivedDocument ist ueber den geschuetzten Client write-once", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    await expect(prisma.archivedDocument.updateMany({ where: { invoiceId: id }, data: { sha256: "x" } })).rejects.toThrow(/write-once/);
+    await expect(prisma.archivedDocument.deleteMany({ where: { invoiceId: id } })).rejects.toThrow(/write-once/);
+    const first = await dbInternal.archivedDocument.findFirstOrThrow({ where: { invoiceId: id }, select: { id: true } });
+    await expect(prisma.archivedDocument.update({ where: { id: first.id }, data: { sha256: "x" } })).rejects.toThrow(/write-once/);
+    await expect(prisma.archivedDocument.delete({ where: { id: first.id } })).rejects.toThrow(/write-once/);
+    expect(await rows(id)).toHaveLength(3);
+  });
+
+  it("Pflicht-Alarm ARCHIVE_TAMPERED auch bei vorbestehender Settings-Zeile ohne die neuen Typen", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    // Bestandszeile wie vor Phase 16a: nur die alten Typen gespeichert.
+    await dbInternal.notificationSettings.upsert({
+      where: { orgId },
+      create: { orgId, enabledTypesJson: JSON.stringify(["INVOICE_OVERDUE"]), emailDigest: false },
+      update: { enabledTypesJson: JSON.stringify(["INVOICE_OVERDUE"]) },
+    });
+    try {
+      const pdfRow = (await rows(id)).find((r) => r.kind === "PDF");
+      if (!pdfRow) throw new Error("PDF-Zeile fehlt");
+      await fs.rm(path.join(tmpDir, ...pdfRow.path.split("/")));
+      await expect(getArchivedInvoiceFile(orgId, id, "PDF")).rejects.toBeInstanceOf(ArchiveTamperedError);
+      expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    } finally {
+      await dbInternal.notificationSettings.delete({ where: { orgId } });
+    }
+  });
+
+  it("Fehler in der Transaktion: ARCHIVE_FAILED, keine Zeilen, Dateien bleiben liegen (kein Loeschen ohne Gewinner)", async () => {
+    const id = await finalized();
+    const spy = vi.spyOn(dbInternal, "$transaction").mockRejectedValueOnce(new Error("Transaktion kaputt"));
+    try {
+      await expect(ensureInvoiceArchive(orgId, id, "SCHEDULER")).rejects.toThrow("Transaktion kaputt");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await rows(id)).toHaveLength(0);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(1);
+    const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
+    const dir = path.join(tmpDir, orgId, "2099");
+    const leftovers = (await fs.readdir(dir)).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));
+    expect(leftovers.map((f) => f.slice(f.indexOf(".") + 1)).sort()).toEqual(["cii.xml", "pdf", "ubl.xml"]);
+    // Danach gelingt die Archivierung regulaer und nutzt die vorhandenen CII/UBL-Dateien.
+    const set = await ensureInvoiceArchive(orgId, id, "SCHEDULER");
+    expect(await readArchiveFile(set.CII.path)).not.toBeNull();
+  });
+});
+
+describe("Belegarchiv P2002-Pfad", () => {
+  it("Gewinner-Satz unvollstaendig: nichts geloescht, ARCHIVE_TAMPERED, ArchiveTamperedError", async () => {
+    const id = await finalized();
+    // Unvollstaendiger "Gewinner" (nur eine Zeile) erzwingt P2002 beim eigenen Insert und
+    // macht den Satz unlesbar.
+    await dbInternal.archivedDocument.create({ data: { invoiceId: id, kind: "CII", path: `${orgId}/2099/fremd.cii.xml`, sha256: "0".repeat(64), source: "OUTPUT" } });
+    const findMany = dbInternal.archivedDocument.findMany.bind(dbInternal.archivedDocument);
+    let calls = 0;
+    // Erster Lesezugriff (Vorpruefung) sieht keinen Satz, damit gerendert und geschrieben wird.
+    const spy = vi.spyOn(dbInternal.archivedDocument, "findMany").mockImplementation(((args: Parameters<typeof findMany>[0]) => {
+      calls += 1;
+      return calls === 1 ? Promise.resolve([]) : findMany(args);
+    }) as unknown as typeof findMany);
+    try {
+      const err = await ensureInvoiceArchive(orgId, id, "SCHEDULER").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ArchiveTamperedError);
+      expect((err as Error).message).toMatch(/unvollstaendig/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    const number = (await dbInternal.invoice.findUniqueOrThrow({ where: { id }, select: { number: true } })).number ?? "";
+    const files = (await fs.readdir(path.join(tmpDir, orgId, "2099"))).filter((f) => f.startsWith(`${number.replace(/[^A-Za-z0-9._-]/g, "_")}-`));
+    expect(files.map((f) => f.slice(f.indexOf(".") + 1)).sort()).toEqual(["cii.xml", "pdf", "ubl.xml"]);
+    expect(await dbInternal.archivedDocument.count({ where: { invoiceId: id } })).toBe(1);
+  });
+});
+
+describe("Belegarchiv: geloeschte Archivzeilen (Final-Fix)", () => {
+  it("Zeilen an der Anwendung vorbei geloescht, ChangeLog traegt ARCHIVE: kein Neurendern, ARCHIVE_TAMPERED", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    const saved = await dbInternal.archivedDocument.findMany({ where: { invoiceId: id }, select: { invoiceId: true, kind: true, path: true, sha256: true, source: true, createdAt: true } });
+    // Direkt in der DB geloescht (an Guard und Anwendung vorbei).
+    await dbInternal.$executeRaw`DELETE FROM "ArchivedDocument" WHERE "invoiceId" = ${id}`;
+    const err = await getArchivedInvoiceFile(orgId, id, "PDF").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveTamperedError);
+    expect((err as ArchiveTamperedError).status).toBe(500);
+    expect((err as Error).message).toMatch(/Aenderungsprotokoll/);
+    expect(await rows(id)).toHaveLength(0);
+    expect(await archiveLogs(id)).toHaveLength(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    // Wiederherstellen (wie aus der Sicherung), damit der globale Archiv-Nachlauf anderer Tests nicht darueber stolpert.
+    await dbInternal.archivedDocument.createMany({ data: saved });
+    expect((await getArchivedInvoiceFile(orgId, id, "PDF")).length).toBeGreaterThan(0);
+  });
+
+  it("unvollstaendiger Satz beim Abruf: ArchiveTamperedError statt generischem Fehler, ARCHIVE_TAMPERED", async () => {
+    const id = await finalized();
+    await getArchivedInvoiceFile(orgId, id, "PDF");
+    const ubl = await dbInternal.archivedDocument.findFirstOrThrow({ where: { invoiceId: id, kind: "UBL" }, select: { invoiceId: true, kind: true, path: true, sha256: true, source: true, createdAt: true } });
+    await dbInternal.$executeRaw`DELETE FROM "ArchivedDocument" WHERE "invoiceId" = ${id} AND "kind" = 'UBL'`;
+    const err = await getArchivedInvoiceFile(orgId, id, "PDF").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveTamperedError);
+    expect((err as ArchiveTamperedError).kind).toBe("UBL");
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: id } })).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_FAILED", entityId: id } })).toBe(0);
+    await dbInternal.archivedDocument.create({ data: ubl });
+  });
+});
+
+describe("Pflicht-Alarme in den Benachrichtigungs-Einstellungen", () => {
+  it("saveNotificationSettings kann die Pflicht-Alarme nicht abwaehlen", async () => {
+    const saved = await saveNotificationSettings(otherOrgId, { enabledTypes: ["INVOICE_OVERDUE"], emailDigest: false });
+    expect(saved.enabledTypes).toEqual(expect.arrayContaining(["INVOICE_OVERDUE", "ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN"]));
+    expect(saved.enabledTypes).not.toContain("INVOICE_DUE_TODAY");
+  });
+});

@@ -1027,3 +1027,6 @@ export * from "./api-log";
 
 // ── Phase 13d: Tags ──────────────────────────────────────────────────────────
 export * from "./tag";
+
+// ── Phase 16a: Zahlungskorrektur (Gegenbuchung) ──────────────────────────────
+export * from "./payment-correction";

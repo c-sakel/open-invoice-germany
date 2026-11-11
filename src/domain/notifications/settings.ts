@@ -15,11 +15,29 @@ export const NOTIFICATION_TYPES = {
   EMAIL_BOUNCED: "E-Mail unzustellbar",
   RECURRING_FAILED: "Wiederkehrende Rechnung fehlgeschlagen",
   EINVOICE_INVALID: "E-Rechnung ungueltig",
+  ARCHIVE_TAMPERED: "Archivierter Beleg fehlt oder wurde veraendert",
+  ARCHIVE_FAILED: "Archivierung fehlgeschlagen",
+  CHAIN_BROKEN: "Aenderungsprotokoll: Hash-Kette gebrochen",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
 
 export const ALL_NOTIFICATION_TYPES = Object.keys(NOTIFICATION_TYPES) as NotificationType[];
+
+/**
+ * Phase 16a (Koordinator-Ruling): GoBD-Pflicht-Alarme — werden immer zugestellt, unabhaengig
+ * von gespeicherten `enabledTypes` (auch fuer Bestandszeilen, die diese Typen nie kannten),
+ * und sind in der Einstellungs-UI nicht abwaehlbar.
+ */
+export const MANDATORY_NOTIFICATION_TYPES: readonly NotificationType[] = ["ARCHIVE_TAMPERED", "ARCHIVE_FAILED", "CHAIN_BROKEN"];
+
+export function isMandatoryNotificationType(type: NotificationType): boolean {
+  return MANDATORY_NOTIFICATION_TYPES.includes(type);
+}
+
+function withMandatory(types: NotificationType[]): NotificationType[] {
+  return ALL_NOTIFICATION_TYPES.filter((t) => types.includes(t) || isMandatoryNotificationType(t));
+}
 
 export interface NotificationSettingsValue {
   enabledTypes: NotificationType[];
@@ -31,7 +49,7 @@ function parseEnabledTypes(json: string): NotificationType[] {
   try {
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed)) return [...ALL_NOTIFICATION_TYPES];
-    return parsed.filter((t): t is NotificationType => ALL_NOTIFICATION_TYPES.includes(t));
+    return withMandatory(parsed.filter((t): t is NotificationType => ALL_NOTIFICATION_TYPES.includes(t)));
   } catch {
     return [...ALL_NOTIFICATION_TYPES];
   }
@@ -62,7 +80,7 @@ export interface SaveNotificationSettingsInput {
 
 /** Speichert die Benachrichtigungs-Einstellungen (Upsert, da anfangs keine Zeile existiert). */
 export async function saveNotificationSettings(orgId: string, input: SaveNotificationSettingsInput): Promise<NotificationSettingsValue> {
-  const enabledTypesJson = JSON.stringify(input.enabledTypes.filter((t) => ALL_NOTIFICATION_TYPES.includes(t)));
+  const enabledTypesJson = JSON.stringify(withMandatory(input.enabledTypes.filter((t) => ALL_NOTIFICATION_TYPES.includes(t))));
   const row = await dbInternal.notificationSettings.upsert({
     where: { orgId },
     create: { orgId, enabledTypesJson, emailDigest: input.emailDigest },

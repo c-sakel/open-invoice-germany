@@ -28,7 +28,7 @@ export const GET = withApi(async (req, ctx) => {
 
 export const POST = withApi(async (_req, ctx) => {
   const { invoiceId, ...rest } = createBodySchema.parse(ctx.body);
-  await recordPayment(invoiceId, rest, { actor: ctx.actor, orgId: ctx.orgId });
+  await recordPayment(invoiceId, rest, { actor: ctx.actor, orgId: ctx.orgId, createdBy: "api" });
   const created = await prisma.payment.findFirstOrThrow({ where: { invoiceId }, orderBy: { createdAt: "desc" } });
   return apiData(serializePayment(created), 201);
 }, { scope: "write" });

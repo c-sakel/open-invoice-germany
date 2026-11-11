@@ -50,5 +50,10 @@ COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY --from=build /app/prisma.postgres.config.ts ./prisma.postgres.config.ts
 COPY --from=build /app/scripts ./scripts
+# Datenverzeichnisse (Volumes oig-attachments / oig-archive, siehe docker-compose.yml). Der Prozess
+# laeuft als root; Rechte 750, damit die Belege nicht weltlesbar sind.
+RUN mkdir -p /app/data/attachments /app/data/archive && chmod 750 /app/data /app/data/attachments /app/data/archive
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["sh", "./scripts/docker-entrypoint.sh"]

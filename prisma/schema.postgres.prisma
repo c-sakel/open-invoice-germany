@@ -379,6 +379,7 @@ model Invoice {
 
   lines               InvoiceLine[]
   payments            Payment[]
+  archivedDocuments   ArchivedDocument[]
   dunnings            Dunning[]
   finalDeductions     FinalInvoiceDeduction[] @relation("FinalInvoiceDeductions")
   downpaymentOfFinals FinalInvoiceDeduction[] @relation("DownpaymentInvoiceDeductions")
@@ -457,8 +458,52 @@ model Payment {
   skontoForPaymentId String?
   note               String? // Phase 8b (§42): freie Notiz zur Zahlung
   createdAt          DateTime @default(now())
+  // Phase 16a (GoBD): Zahlungen sind append-only; Korrekturen laufen als Gegenbuchung.
+  kind               String   @default("PAYMENT") // PAYMENT | REVERSAL
+  reversesPaymentId  String? // bei kind=REVERSAL: die stornierte Zahlung
+  reason             String? // Begruendung der Gegenbuchung
+  provider           String? // Zahlungsanbieter bei automatisch gebuchten Zahlungen
+  providerPaymentId  String? // Anbieter-Referenz (Idempotenz je Anbieter)
+  createdBy          String   @default("user") // user | scheduler | mcp | api | webhook
 
+  @@unique([provider, providerPaymentId])
   @@index([invoiceId])
+  @@index([reversesPaymentId])
+}
+
+/// Phase 16a: Archivkopie eines festgeschriebenen Belegs (Datei + SHA-256), je Beleg und Art genau eine.
+model ArchivedDocument {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  kind      String // PDF | CII | UBL
+  path      String
+  sha256    String
+  source    String // OUTPUT | SCHEDULER | BACKFILL
+  createdAt DateTime @default(now())
+
+  @@unique([invoiceId, kind])
+}
+
+/// Phase 16a: Ergebnis einer Pruefung der ChangeLog-Hash-Chain.
+model ChainVerification {
+  id            String   @id @default(cuid())
+  orgId         String
+  checkedAt     DateTime @default(now())
+  valid         Boolean
+  entries       Int
+  brokenEntryId Int?
+  lastHash      String
+  durationMs    Int
+  trigger       String
+
+  @@index([orgId, checkedAt])
+}
+
+/// Phase 16a: Systemmarken (z. B. archive-epoch = Grenze fuer BACKFILL-Altbelege).
+model SystemMarker {
+  key String   @id
+  at  DateTime @default(now())
 }
 
 model Dunning {
@@ -480,6 +525,7 @@ model Dunning {
   lateFeeCents             Int       @default(0) // nur konkrete Kosten, KEINE Pauschale
   flatFee40Cents           Int       @default(0) // §288 Abs.5, nur B2B
   pdfPath                  String?
+  pdfSha256                String? // Phase 16a: SHA-256 des archivierten Mahn-PDFs
   createdAt                DateTime  @default(now())
   // Snapshots der Parteien zum Erstellungszeitpunkt (Phase 6, analog Invoice/Quote).
   // NULL bei Altmahnungen vor Phase 6 — Selbstheilung per ensureDunningSnapshots

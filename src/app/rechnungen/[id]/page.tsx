@@ -69,6 +69,10 @@ export default async function InvoiceDetail({
   if (!invoice) notFound();
 
   const vm = buildInvoiceViewModel(invoice);
+  const archive = await prisma.archivedDocument.findFirst({
+    where: { invoiceId: invoice.id, kind: "PDF", invoice: { orgId: org.id } },
+    select: { createdAt: true, sha256: true },
+  });
   // T7: nach einem Storno zurueckzuzahlender Betrag = echte Zahlungen (ohne Verrechnungen mit Teilgutschriften).
   const refundDueCents = vm.isCancelled
     ? refundablePaidCents(invoice.payments)
@@ -141,6 +145,8 @@ export default async function InvoiceDetail({
 
   const title = `${TYPE_TITLE[invoice.type] ?? "Beleg"} ${invoice.number ?? "(Entwurf)"}`;
   const showPaymentBlock = vm.isInvoiceType && !vm.isDraft && !vm.isCancelled;
+  // Zahlungsliste (inkl. Gegenbuchung) auch bei stornierten Rechnungen; PaymentDialog bleibt ueber canPay aus.
+  const showPaymentList = vm.isInvoiceType && !vm.isDraft;
 
   return (
     <DocumentDetailLayout
@@ -241,12 +247,14 @@ export default async function InvoiceDetail({
             paymentMethodName={vm.paymentMethodName}
             hasSkonto={vm.hasSkonto}
             showPaymentBlock={showPaymentBlock}
+            showPaymentList={showPaymentList}
             canPay={vm.canPay}
             paymentMethods={activePaymentMethods.map((m) => ({ code: m.code, name: m.name }))}
             defaultPaymentMethod={defaultPaymentMethodCode}
             lastSentAt={lastSentAt}
             tags={invoiceTags}
             tagOptions={allTags}
+            archive={archive}
           />
           <AttachmentPanel
             docType="INVOICE"

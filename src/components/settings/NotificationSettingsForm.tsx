@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 
 interface Props {
   allTypes: [string, string][]; // [key, label]
+  /** Pflicht-Alarme (Phase 16a): immer aktiv, nicht abwaehlbar. */
+  mandatoryTypes: string[];
   initial: { enabledTypes: string[]; emailDigest: boolean };
 }
 
 /** Task 4: Einstellungen -> Benachrichtigungen — welche Typen erzeugen In-App-
  *  Benachrichtigungen, optional taeglicher E-Mail-Digest. */
-export function NotificationSettingsForm({ allTypes, initial }: Props) {
+export function NotificationSettingsForm({ allTypes, mandatoryTypes, initial }: Props) {
   const router = useRouter();
   const [enabled, setEnabled] = useState<Set<string>>(new Set(initial.enabledTypes));
   const [emailDigest, setEmailDigest] = useState(initial.emailDigest);
@@ -54,18 +56,20 @@ export function NotificationSettingsForm({ allTypes, initial }: Props) {
           // (markEmailBounced wird von keiner Route/keinem MCP-Tool aufgerufen — kein
           // Bounce-Webhook angebunden) — die Checkbox waere ohne Hinweis irrefuehrend
           // ("aktiviert", aber es passiert nie etwas), deshalb deaktiviert + Hinweistext.
-          const disabled = key === "EMAIL_BOUNCED";
+          const mandatory = mandatoryTypes.includes(key);
+          const disabled = key === "EMAIL_BOUNCED" || mandatory;
           return (
-            <label key={key} className={`flex items-center gap-2 text-sm ${disabled ? "text-slate-400" : "text-slate-700"}`}>
+            <label key={key} className={`flex items-center gap-2 text-sm ${disabled && !mandatory ? "text-slate-400" : "text-slate-700"}`}>
               <input
                 type="checkbox"
-                checked={enabled.has(key)}
+                checked={mandatory || enabled.has(key)}
                 onChange={() => toggle(key)}
                 disabled={disabled}
                 className="h-4 w-4 rounded border-slate-300"
               />
               {label}
-              {disabled && <span className="text-xs italic">(noch nicht aktiv — kein Bounce-Empfang angebunden)</span>}
+              {mandatory && <span className="text-xs italic text-slate-500">(immer aktiv — GoBD-Pflicht-Alarm)</span>}
+              {key === "EMAIL_BOUNCED" && <span className="text-xs italic">(noch nicht aktiv — kein Bounce-Empfang angebunden)</span>}
             </label>
           );
         })}

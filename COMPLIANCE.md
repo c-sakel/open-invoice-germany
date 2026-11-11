@@ -1152,4 +1152,34 @@ mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
 
 ---
 
-*Ende COMPLIANCE.md — Stand 2026-09-08. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
+## 20. GoBD-Betrieb (Phase 16a): Gegenbuchung, Belegarchiv, Kettenprüfung, Prüfer-Export
+
+### Gegenbuchung statt Löschen (GoBD Rz. 58, 64, 107 ff.)
+- Zahlungen werden nie gelöscht oder überschrieben; der Datenbank-Guard (`src/lib/db.ts`) sperrt Ändern und Löschen von `Payment` technisch. Eine falsch erfasste Zahlung wird per **Gegenbuchung** korrigiert: eine neue, negative Zahlungszeile (`kind = REVERSAL`, `reversesPaymentId`) mit Pflichtbegründung (3–500 Zeichen). Die Originalzeile bleibt unverändert; in der Oberfläche erscheint sie durchgestrichen, die Gegenbuchung mit Grund und Zeitpunkt.
+- Teil-Gegenbuchungen sind möglich; ohne Betragsangabe wird der noch nicht gegengebuchte Rest zurückgebucht. Rechnungsstatus und `paidAmountCents` ziehen atomar nach (PAID → PARTIALLY_PAID bzw. FINALIZED oder SENT). Jede Gegenbuchung steht in der Hash-Kette des Änderungsprotokolls, löst den Webhook `payment.reversed` aus und läuft über den Domain-Service `reversePayment` (UI, REST, MCP identisch).
+
+### Belegarchiv, write-once (GoBD Rz. 58, 107 ff.; § 147 Abs. 2 AO)
+- Beim ersten Ausgang einer festgeschriebenen Rechnung (PDF-Abruf, E-Mail, API, Export) wird der **Stand der ersten Ausgabe** eingefroren: PDF, CII- und UBL-XML mit SHA-256, Quelle und Zeitpunkt (`ArchivedDocument`). Spätere Abrufe liefern immer diese archivierten Bytes (identische Bytes bei jedem Download). Layout-, Briefpapier- und Betreffänderungen wirken auf archivierte Belege nicht mehr.
+- Die Dateien liegen write-once (kein Überschreiben) unter `ARCHIVE_DIR`; der Hash steht zusätzlich in der Hash-Kette des Änderungsprotokolls. Vor jeder Auslieferung wird der Hash geprüft; ein fehlender oder veränderter Beleg bricht die Ausgabe ab (kein stilles Neu-Rendern). Das gilt auch, wenn die Archivzeilen an der Anwendung vorbei gelöscht wurden: trägt die Kette bereits ein `ARCHIVE` für den Beleg, wird nicht neu archiviert, sondern `ARCHIVE_TAMPERED` gemeldet; ein nur teilweise vorhandener Archivsatz ebenso.
+- Mahn-PDFs werden ebenso write-once archiviert; der Hash steht an der Mahnung und als ChangeLog-Eintrag `DUNNING/ARCHIVE` (mit Quelle `BACKFILL` für Mahnungen von vor der Archiv-Einführung).
+- Altbelege ohne Archiv werden vom Scheduler nachträglich archiviert (Quelle `BACKFILL`): sie zeigen den **Stand der Nacharchivierung**, nicht der ersten Ausgabe. Es wird keine EN-16931-Prüfung vor dem Einfrieren erzwungen: archiviert wird, was ausgegeben wurde (KoSIT in der CI sichert den Generator).
+- **Pflicht-Alarme:** `ARCHIVE_TAMPERED`, `ARCHIVE_FAILED` und `CHAIN_BROKEN` sind immer aktiv und lassen sich in den Benachrichtigungs-Einstellungen nicht abschalten.
+
+### Kettenprüfung mit Anker
+- Der Scheduler prüft wöchentlich je Organisation die Hash-Kette des Änderungsprotokolls lückenlos und legt das Ergebnis samt **Anker** (letzter geprüfter Hash und Anzahl) als `ChainVerification` ab. Beim nächsten Lauf muss der Anker unverändert in der Kette liegen; so fällt auch ein Abschneiden am Ende auf. Manuell: Einstellungen → Prüfung → „Jetzt prüfen“, `POST /api/v1/AuditChain/verify`, MCP `verify_audit_chain`. Bei Bruch: Alarm `CHAIN_BROKEN`.
+- Grenze: Der Anker liegt in derselben Datenbank; wer das Änderungsprotokoll löschen kann, kann auch den Anker löschen. Ein externer Anker (z. B. Abgleich auf dem Offsite-Ziel) ist möglich, aber nicht umgesetzt.
+
+### Prüfer-Export, Datenträgerüberlassung (§ 147 Abs. 6 Satz 2 AO, GoBD Rz. 165 ff.)
+- Einstellungen → Prüfung (und `GET /api/v1/AuditExport?from=&to=`, MCP `create_audit_export`) erzeugt ein ZIP: CSV-Tabellen, `index.xml` (maschinenlesbare Beschreibung nach GDPdU/Z3), DTD, `kettenpruefung.txt`, `liesmich.txt` und die archivierten Belege (PDF/XML). Zeitraum höchstens 3 Jahre, höchstens 20.000 Belege, kein ZIP64. Interne Notizen sind nie enthalten. Sind im Zeitraum mehr als 200 Belege noch nicht archiviert (etwa vor Abschluss des Backfills nach der Einführung), wird der Export mit 409 abgelehnt statt im Request nachzuarchivieren. `belege/<nr>.xml` ist immer die UBL-Fassung; bei ZUGFeRD steckt das CII im PDF.
+- Der Export läuft bei Kettenbruch weiter; `kettenpruefung.txt` weist dann UNTERBROCHEN aus (Prüfer erhält die Daten, der Bruch wird offengelegt).
+- **CSV unverändert:** Zellen werden nicht gegen Formel-Injektion präfixiert, damit die Daten unverändert bleiben (GoBD). Der Export darf deshalb nicht in einer Tabellenkalkulation mit Formelauswertung geöffnet werden; `liesmich.txt` weist darauf hin. Prüfsoftware (IDEA) wertet keine Formeln aus.
+- **Offen (vor Betriebsprüfung):** Die mitgelieferte GDPdU-DTD ist eine **Nachbildung**, keine amtliche Fassung. Vor einer Betriebsprüfung mit der amtlichen DTD abgleichen und die Abnahme von `index.xml` durch den Steuerberater einholen.
+
+### Betrieb (Sicherung, Health)
+- Sicherung per Vorlage `scripts/ops/backup.sh` (verschlüsselt): Datenbank-Dump, Beleganhänge, Belegarchiv **und** `.env`; Restore-Test `scripts/ops/restore-test.sh`. Siehe [docs/BETRIEB-VORLAGE.md](docs/BETRIEB-VORLAGE.md). **Offsite-Ziel und Verwahrung der Passphrase legt der Betreiber noch fest.** Ohne Ziel liegt die Sicherung nur lokal.
+- `GET /api/health` ist öffentlich, ohne Rate-Limit, und liefert nur `ok`/`error`; das Datenbank-Ergebnis wird serverseitig 5 s zwischengespeichert (Datenbank höchstens alle 5 s gefragt, der Docker-Healthcheck kann nicht ausgesperrt werden). Details nur über `GET /api/v1/System/health` (Scope `admin`).
+- Fälligkeit/„überfällig“ gilt nur für offene Belege, nie für Entwürfe.
+
+---
+
+*Ende COMPLIANCE.md — Stand 2026-11-11. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*

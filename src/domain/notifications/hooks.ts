@@ -12,12 +12,15 @@
  * wenn ihr Typ deaktiviert ist (Selbstheilung inklusive, wie beim Scheduler-Job).
  */
 import { createNotification } from "@/domain/notifications/create";
-import { loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
+import { isMandatoryNotificationType, loadNotificationSettings, type NotificationType } from "@/domain/notifications/settings";
 
 async function safeNotify(orgId: string, type: NotificationType, fn: () => Promise<unknown>): Promise<void> {
   try {
-    const settings = await loadNotificationSettings(orgId);
-    if (!settings.enabledTypes.includes(type)) return;
+    // Pflicht-Alarme (Phase 16a) umgehen den Einstellungsfilter.
+    if (!isMandatoryNotificationType(type)) {
+      const settings = await loadNotificationSettings(orgId);
+      if (!settings.enabledTypes.includes(type)) return;
+    }
     await fn();
   } catch (e) {
     console.error("notifications hook: Erzeugen fehlgeschlagen", e);
@@ -73,6 +76,59 @@ export async function onEInvoiceInvalid(orgId: string, input: { invoiceId: strin
       entityType: "INVOICE",
       entityId: input.invoiceId,
       dedupeKey: `EINVOICE_INVALID:${input.invoiceId}`,
+    }),
+  );
+}
+
+/**
+ * Phase 16a (Belegarchiv): eine archivierte Belegdatei fehlt oder ihr SHA-256 weicht ab.
+ * Dedupliziert je Rechnung, Dateiart und Tag — wiederholte Abrufe erzeugen keine Flut, ein
+ * erneuter Verlust nach einer Wiederherstellung meldet sich aber wieder.
+ */
+export async function onArchiveTampered(orgId: string, input: { invoiceId: string; kind: string; at?: Date }): Promise<void> {
+  const at = input.at ?? new Date();
+  await safeNotify(orgId, "ARCHIVE_TAMPERED", () =>
+    createNotification({
+      orgId,
+      type: "ARCHIVE_TAMPERED",
+      title: "Archivierter Beleg fehlt oder wurde veraendert",
+      body: `Die archivierte ${input.kind}-Datei der Rechnung ist nicht mehr unveraendert vorhanden. Der Beleg wird nicht neu erzeugt; bitte aus der Sicherung wiederherstellen.`,
+      entityType: "INVOICE",
+      entityId: input.invoiceId,
+      dedupeKey: `ARCHIVE_TAMPERED:${input.invoiceId}:${input.kind}:${at.toISOString().slice(0, 10)}`,
+      at,
+    }),
+  );
+}
+
+/** Phase 16a (Belegarchiv): Erzeugen oder Ablegen der Archivdateien ist fehlgeschlagen. */
+export async function onArchiveFailed(orgId: string, input: { invoiceId: string; message: string; at: Date }): Promise<void> {
+  await safeNotify(orgId, "ARCHIVE_FAILED", () =>
+    createNotification({
+      orgId,
+      type: "ARCHIVE_FAILED",
+      title: "Archivierung fehlgeschlagen",
+      body: input.message,
+      entityType: "INVOICE",
+      entityId: input.invoiceId,
+      dedupeKey: `ARCHIVE_FAILED:${input.invoiceId}:${input.at.toISOString().slice(0, 10)}`,
+      at: input.at,
+    }),
+  );
+}
+
+/** Phase 16a (Kettenpruefung): das Aenderungsprotokoll einer Organisation ist nicht mehr lueckenlos verkettet. */
+export async function onChainBroken(orgId: string, input: { brokenEntryId: number; at: Date }): Promise<void> {
+  await safeNotify(orgId, "CHAIN_BROKEN", () =>
+    createNotification({
+      orgId,
+      type: "CHAIN_BROKEN",
+      title: "Aenderungsprotokoll: Hash-Kette gebrochen",
+      body: `Eintrag ${input.brokenEntryId} passt nicht zur Hash-Kette.`,
+      entityType: "CHANGELOG",
+      entityId: String(input.brokenEntryId),
+      dedupeKey: `CHAIN_BROKEN:${input.brokenEntryId}`,
+      at: input.at,
     }),
   );
 }

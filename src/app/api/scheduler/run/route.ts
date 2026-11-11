@@ -1,7 +1,7 @@
 /**
  * Manueller Scheduler-Anstoss aus dem UI (Phase 6, Task 3, "Einstellungen -> Automatisierung").
  * Anders als die Cron-Routen (CRON_SECRET) session-geschuetzt: nur angemeldete Nutzer duerfen
- * einen Lauf manuell ausloesen. Optionaler Body `{ jobs?: ("dunning"|"recurring")[] }`
+ * einen Lauf manuell ausloesen. Optionaler Body `{ jobs?: ("dunning"|"recurring"|"archive"|"notifications")[] }`
  * schraenkt auf einzelne Jobs ein (Default: beide, feste Reihenfolge recurring -> dunning).
  */
 import { NextResponse } from "next/server";
@@ -11,7 +11,7 @@ import { runScheduledJobs, type SchedulerJob } from "@/domain/scheduler/runner";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const VALID_JOBS: SchedulerJob[] = ["dunning", "recurring", "notifications"];
+const VALID_JOBS: SchedulerJob[] = ["dunning", "recurring", "archive", "notifications"];
 
 function parseJobs(value: unknown): SchedulerJob[] | undefined {
   if (!Array.isArray(value)) return undefined;

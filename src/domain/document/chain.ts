@@ -224,7 +224,7 @@ async function buildNode(orgId: string, type: RefType, id: string, relation: str
       node.children.push({
         type: "PAYMENT",
         id: p.id,
-        label: `Zahlung ${formatCents(p.amountCents)}`,
+        label: `${p.kind === "REVERSAL" ? "Gegenbuchung" : "Zahlung"} ${formatCents(p.amountCents)}`,
         number: null,
         status: paymentMethodLabel(p.method),
         href: null,

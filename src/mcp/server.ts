@@ -39,6 +39,7 @@ import { registerApiKeyTools } from "./tools/api-keys";
 import { registerWebhookTools } from "./tools/webhooks";
 import { registerTemplateTools } from "./tools/templates";
 import { registerTagTools } from "./tools/tags";
+import { registerAuditTools } from "./tools/audit";
 
 // Exportiert fuer Integrationstests (test/integration/mcp-*.test.ts): erlaubt,
 // registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
@@ -69,6 +70,7 @@ registerApiKeyTools(server, mcpContext);
 registerWebhookTools(server, mcpContext);
 registerTemplateTools(server, mcpContext);
 registerTagTools(server, mcpContext);
+registerAuditTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function main() {

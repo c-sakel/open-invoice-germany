@@ -15,6 +15,10 @@ export function serializePayment(p: Payment) {
     isSkonto: p.isSkonto,
     skontoForPaymentId: p.skontoForPaymentId,
     note: p.note,
+    kind: p.kind as "PAYMENT" | "REVERSAL",
+    reversesPaymentId: p.reversesPaymentId,
+    reason: p.reason,
+    createdBy: p.createdBy,
     createdAt: iso(p.createdAt),
   };
 }
@@ -32,5 +36,9 @@ export const paymentSchema = z.object({
   isSkonto: z.boolean(),
   skontoForPaymentId: z.string().nullable(),
   note: z.string().nullable(),
+  kind: z.enum(["PAYMENT", "REVERSAL"]),
+  reversesPaymentId: z.string().nullable(),
+  reason: z.string().nullable(),
+  createdBy: z.string(),
   createdAt: z.string().nullable(),
 });

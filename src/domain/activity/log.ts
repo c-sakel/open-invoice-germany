@@ -42,6 +42,7 @@ export const ACTIVITY_TYPES = {
   DELIVERED: "Zugestellt",
   BOUNCED: "Unzustellbar",
   PAYMENT_RECORDED: "Zahlung erfasst",
+  PAYMENT_REVERSED: "Zahlung gegengebucht",
   CANCELLED: "Storniert",
   CREDIT_NOTE_CREATED: "Gutschrift erstellt",
   DUNNING_CREATED: "Mahnung erstellt",

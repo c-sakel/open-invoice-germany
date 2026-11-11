@@ -13,6 +13,7 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `invoice.cancelled` | Rechnung storniert (auf dem Original — die neu erzeugte Storno-Gutschrift löst zusätzlich ihr eigenes `invoice.finalized` aus) |
 | `invoice.paid` | Rechnung durch eine Zahlung (primär oder Skonto) vollständig bezahlt |
 | `payment.recorded` | Zahlung erfasst (immer, auch bei einer Teilzahlung oder der automatischen Skonto-Zahlung) |
+| `payment.reversed` | Zahlung per Gegenbuchung korrigiert (Phase 16a; auch bei Teil-Gegenbuchung, je Gegenbuchungszeile, Skonto-Gegenbuchung separat) |
 | `quote.sent` | Angebot versendet |
 | `quote.accepted` | Angebot vom Kunden angenommen |
 | `quote.rejected` | Angebot vom Kunden abgelehnt |

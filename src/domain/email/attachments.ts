@@ -1,13 +1,12 @@
 /** Standardanhaenge je Belegtyp (Lastenheft 19, Abschnitt 2). */
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
-import { renderInvoiceDocumentPdf, renderZugferdPdf } from "@/lib/einvoice/zugferd";
-import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
+import { renderInvoiceDocumentPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { onEInvoiceInvalid } from "@/domain/notifications/hooks";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
-import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
-import { buildDunningPdfData } from "@/lib/pdf/dunning-data";
+import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
+import { getArchivedDunningPdf } from "@/domain/dunning/archive";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { dbInternal } from "@/lib/db";
@@ -92,20 +91,20 @@ export async function buildStandardAttachments(
     const loaded = await loadEInvoiceData(docId);
     if (!loaded || loaded.invoice.orgId !== orgId || !okTypes.includes(loaded.invoice.type)) return [];
     const { invoice, data } = loaded;
-    const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
     const base = safe(invoice.number ?? "Entwurf");
     // Jeder Nicht-Entwurf (festgeschrieben, versendet, (teil)bezahlt, storniert) -> das
     // rechtsverbindliche ZUGFeRD-PDF; nur echte Entwuerfe bekommen den Entwurfs-Hinweis.
     const finalized = invoice.status !== "DRAFT";
     if (!finalized) {
+      const theme = await loadPdfTheme(orgId, invoice.printOptionsJson, invoiceTypeToLayoutDocType(invoice.type));
       return [{ filename: `${base}-ENTWURF.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoicePdf(data, theme)) }];
     }
-    const out: Attachment[] = [{ filename: `${base}.pdf`, contentType: "application/pdf", content: await lazy(() => renderZugferdPdf(data, theme)) }];
+    const out: Attachment[] = [{ filename: `${base}.pdf`, contentType: "application/pdf", content: await lazy(() => getArchivedInvoiceFile(orgId, invoice.id, "PDF")) }];
     // Leitweg-ID aus dem Kaeufer-Snapshot (nicht aus dem Stamm) — festgeschriebene Belege
     // duerfen durch spaetere Stammdatenaenderungen nicht rueckwirkend die Anhaenge aendern.
     const buyer = parseBuyerSnapshot(invoice.buyerSnapshotJson, buildBuyerSnapshot(invoice.customer), `email:${docType}:${docId}`);
     if (buyer.leitwegId) {
-      const xml = render ? buildXRechnungUBL(data) : "";
+      const xml = render ? (await getArchivedInvoiceFile(orgId, invoice.id, "UBL")).toString("utf8") : "";
       // onEInvoiceInvalid (Task-3-Brief): EN-16931-Kernvalidierung beim Versand, wie schon
       // im XRechnung-Export (GET .../xrechnung, ?validate=1). Blockt den Versand NICHT
       // (die verbindliche Validierung bleibt der KoSIT-Validator im CI) — nur die
@@ -122,17 +121,19 @@ export async function buildStandardAttachments(
   if (docType === "DUNNING") {
     const d = await dbInternal.dunning.findFirst({
       where: { id: docId, invoice: { orgId } },
-      include: { invoice: { include: { org: true, customer: true } }, stage: true },
+      select: { id: true, number: true, invoiceId: true },
     });
     if (!d) return [];
-    const dunningTheme = await loadPdfTheme(orgId, null, "DUNNING");
     const out: Attachment[] = [
-      { filename: `${safe(d.number ?? "Mahnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => renderDunningPdf(buildDunningPdfData(d, d.invoice), dunningTheme)) },
+      { filename: `${safe(d.number ?? "Mahnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => getArchivedDunningPdf(orgId, d.id)) },
     ];
     const inv = await loadEInvoiceData(d.invoiceId);
     if (inv) {
       const invoiceTheme = await loadPdfTheme(orgId, inv.invoice.printOptionsJson, invoiceTypeToLayoutDocType(inv.invoice.type));
-      out.push({ filename: `${safe(inv.invoice.number ?? "Rechnung")}.pdf`, contentType: "application/pdf", content: await lazy(() => renderInvoiceDocumentPdf(inv.data, invoiceTheme, inv.invoice.status)) });
+      // Nicht-Entwurf: archiviertes PDF (Phase 16a), nur ein Entwurf wird live gerendert.
+      const invoicePdf = () =>
+        inv.invoice.status === "DRAFT" ? renderInvoiceDocumentPdf(inv.data, invoiceTheme, inv.invoice.status) : getArchivedInvoiceFile(orgId, inv.invoice.id, "PDF");
+      out.push({ filename: `${safe(inv.invoice.number ?? "Rechnung")}.pdf`, contentType: "application/pdf", content: await lazy(invoicePdf) });
     }
     return out;
   }

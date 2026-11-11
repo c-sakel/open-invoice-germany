@@ -114,6 +114,8 @@ function statusToCode(status: number): ApiErrorCode | null {
       return "NOT_FOUND";
     case 409:
       return "CONFLICT";
+    case 413:
+      return "PAYLOAD_TOO_LARGE";
     case 429:
       return "RATE_LIMITED";
     default:

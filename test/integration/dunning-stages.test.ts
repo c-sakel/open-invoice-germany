@@ -297,12 +297,10 @@ describe("Phase 6 — GoBD-Guard fuer Dunning (src/lib/db.ts)", () => {
     dunningId = dunning.id;
   });
 
-  it("erlaubt update auf sentAt/pdfPath ueber den geschuetzten Client", async () => {
-    const updated = await prisma.dunning.update({
-      where: { id: dunningId },
-      data: { sentAt: new Date("2045-01-01"), pdfPath: "/tmp/mahnung.pdf" },
-    });
-    expect(updated.pdfPath).toBe("/tmp/mahnung.pdf");
+  it("erlaubt update auf sentAt, verweigert pdfPath ueber den geschuetzten Client", async () => {
+    const updated = await prisma.dunning.update({ where: { id: dunningId }, data: { sentAt: new Date("2045-01-01") } });
+    expect(updated.sentAt.getUTCFullYear()).toBe(2045);
+    await expect(prisma.dunning.update({ where: { id: dunningId }, data: { pdfPath: "/tmp/mahnung.pdf" } })).rejects.toThrow(/unveraenderlich/);
   });
 
   it("verweigert update auf jedes andere Feld", async () => {

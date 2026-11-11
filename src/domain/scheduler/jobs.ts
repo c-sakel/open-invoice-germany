@@ -8,7 +8,9 @@ import { runDueRecurring } from "@/domain/recurring/run";
 import { runDunningJob } from "@/domain/dunning/auto";
 import { runNotificationsJob } from "@/domain/notifications/job";
 import { runWebhookDeliveries } from "@/domain/webhook/deliver";
+import { runAuditJob } from "@/domain/audit/verify-chain";
 import { runCleanupJob } from "./cleanup";
+import { runArchiveJob } from "./archive-job";
 import type { SchedulerJob } from "./runner";
 
 export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, unknown>>> = {
@@ -21,12 +23,20 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
     const result = await runDunningJob(now);
     return { ...result };
   },
+  archive: async (now) => {
+    const result = await runArchiveJob(now);
+    return { ...result };
+  },
   notifications: async (now) => {
     const result = await runNotificationsJob(now);
     return { ...result };
   },
   webhooks: async (now) => {
     const result = await runWebhookDeliveries({ now });
+    return { ...result };
+  },
+  audit: async (now) => {
+    const result = await runAuditJob(now);
     return { ...result };
   },
   cleanup: async (now) => {

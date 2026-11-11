@@ -1,7 +1,7 @@
 import { getActiveOrg } from "@/lib/org";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { NotificationSettingsForm } from "@/components/settings/NotificationSettingsForm";
-import { loadNotificationSettings, NOTIFICATION_TYPES } from "@/domain/notifications/settings";
+import { loadNotificationSettings, MANDATORY_NOTIFICATION_TYPES, NOTIFICATION_TYPES } from "@/domain/notifications/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export default async function BenachrichtigungenEinstellungenPage() {
         Steuert, welche Ereignisse In-App-Benachrichtigungen erzeugen (Glocke oben rechts, „/benachrichtigungen“). Der Scheduler-Job „notifications“ prüft dies bei jedem Lauf (siehe Einstellungen →
         Automatisierung).
       </p>
-      <NotificationSettingsForm allTypes={Object.entries(NOTIFICATION_TYPES)} initial={{ enabledTypes: settings.enabledTypes, emailDigest: settings.emailDigest }} />
+      <NotificationSettingsForm allTypes={Object.entries(NOTIFICATION_TYPES)} mandatoryTypes={[...MANDATORY_NOTIFICATION_TYPES]} initial={{ enabledTypes: settings.enabledTypes, emailDigest: settings.emailDigest }} />
     </div>
   );
 }

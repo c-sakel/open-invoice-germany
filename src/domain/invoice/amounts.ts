@@ -44,3 +44,14 @@ export function refundablePaidCents(payments: ReadonlyArray<{ amountCents: numbe
     payments.filter((p) => p.method !== "CREDIT_NOTE" && p.method !== "SKONTO" && !p.isSkonto).reduce((sum, p) => sum + p.amountCents, 0),
   );
 }
+
+/** Summe der Gegenbuchungen je Zahlung (positiv), fuer Anzeige und Korrektur-Angebot in der Belegansicht. */
+export function reversedCentsByPayment(
+  payments: ReadonlyArray<{ kind: string; amountCents: number; reversesPaymentId: string | null }>,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const p of payments) {
+    if (p.kind === "REVERSAL" && p.reversesPaymentId) map.set(p.reversesPaymentId, (map.get(p.reversesPaymentId) ?? 0) - p.amountCents);
+  }
+  return map;
+}
