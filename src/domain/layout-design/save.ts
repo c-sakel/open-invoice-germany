@@ -132,3 +132,22 @@ export async function archiveLayoutDesign(orgId: string, id: string, archived: b
   });
   return getLayoutDesign(orgId, id);
 }
+
+/**
+ * Aendert ein Design (Name/Konfiguration/Archivstatus). Reihenfolge: Archivstatus ZUERST — scheitert das
+ * Archivieren (z. B. "noch zugeordnet"), wird nichts gespeichert; beim Reaktivieren ist das Design danach
+ * schon aktiv, wenn gespeichert wird.
+ */
+export async function updateLayoutDesign(
+  orgId: string,
+  id: string,
+  patch: { name?: string; config?: z.infer<typeof layoutDesignConfigSchema>; archived?: boolean },
+  actor: string,
+): Promise<LayoutDesignView> {
+  const current = await getLayoutDesign(orgId, id);
+  if (patch.archived !== undefined && patch.archived !== current.archived) await archiveLayoutDesign(orgId, id, patch.archived, actor);
+  if (patch.name !== undefined || patch.config !== undefined) {
+    return saveLayoutDesign(orgId, { id, name: patch.name ?? current.name, baseLayoutId: current.baseLayoutId, config: patch.config }, actor);
+  }
+  return getLayoutDesign(orgId, id);
+}

@@ -100,8 +100,10 @@ function aggregateDeductions(
   return [...byDownpayment.values()].sort((a, b) => a.issueDate.getTime() - b.issueDate.getTime() || a.number.localeCompare(b.number));
 }
 
-export async function loadEInvoiceData(invoiceId: string) {
-  const invoice = await dbInternal.invoice.findUnique({ where: { id: invoiceId }, include: INCLUDE });
+export async function loadEInvoiceData(invoiceId: string, orgId?: string) {
+  const invoice = orgId
+    ? await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, include: INCLUDE })
+    : await dbInternal.invoice.findUnique({ where: { id: invoiceId }, include: INCLUDE });
   if (!invoice) return null;
 
   const lang = resolveDocLanguage(invoice.language);

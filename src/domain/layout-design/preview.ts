@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { dbInternal } from "@/lib/db";
-import { NotFoundError } from "@/domain/errors";
+import { NotFoundError, ValidationError } from "@/domain/errors";
 import { layoutDesignConfigSchema, type LayoutDesignConfig } from "@/schemas/layout-design";
 import { PREVIEW_DOC_TYPES, PREVIEW_DOC_TYPE_TO_LAYOUT_DOC_TYPE, buildSampleInvoiceData, buildSampleDeliveryNoteData, buildSampleDunningData } from "@/domain/settings/preview";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
@@ -15,6 +15,7 @@ import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
 import { DEFAULT_LAYOUT_ID, isLayoutId, type LayoutId } from "@/lib/pdf/layouts/ids";
+import { checkRecipientWindow } from "@/lib/pdf/layouts/configurable";
 import { getLayoutDesign, listLayoutDesignVersions } from "@/domain/layout-design/list";
 
 export const layoutPreviewSchema = z
@@ -58,6 +59,10 @@ export async function renderLayoutPreview(orgId: string, designId: string | null
   if (!org) throw new NotFoundError("Organisation nicht gefunden.");
 
   let config: LayoutDesignConfig | undefined = input.config;
+  if (config) {
+    const problem = checkRecipientWindow(config);
+    if (problem) throw new ValidationError(problem);
+  }
   let baseLayoutId: LayoutId = DEFAULT_LAYOUT_ID;
   if (designId) {
     const design = await getLayoutDesign(orgId, designId);
@@ -78,7 +83,7 @@ export async function renderLayoutPreview(orgId: string, designId: string | null
 
   let draft: Awaited<ReturnType<typeof loadEInvoiceData>> = null;
   if (input.draftInvoiceId) {
-    draft = await loadEInvoiceData(input.draftInvoiceId);
+    draft = await loadEInvoiceData(input.draftInvoiceId, orgId);
     if (!draft || draft.invoice.orgId !== orgId || draft.invoice.status !== "DRAFT") throw new NotFoundError("Entwurfsrechnung nicht gefunden.");
   }
 

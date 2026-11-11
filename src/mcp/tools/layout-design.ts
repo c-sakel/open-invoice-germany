@@ -11,7 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PROJECT_ROOT } from "../bootstrap";
 import { InvalidOperationError, NotFoundError, ValidationError } from "@/domain/errors";
 import { listLayoutDesigns } from "@/domain/layout-design/list";
-import { saveLayoutDesign, archiveLayoutDesign, layoutDesignSaveSchema } from "@/domain/layout-design/save";
+import { saveLayoutDesign, updateLayoutDesign, layoutDesignSaveSchema } from "@/domain/layout-design/save";
 import { layoutPreviewSchema, renderLayoutPreview } from "@/domain/layout-design/preview";
 import { serializeLayoutDesign } from "@/api/serializers/layout";
 import { ToolError, type McpToolsContext, type Result } from "./context";
@@ -56,8 +56,10 @@ export function registerLayoutDesignTools(server: McpServer, ctx: McpToolsContex
         const org = await ctx.requireOrg();
         const { archived, ...rest } = args;
         const input = layoutDesignSaveSchema.parse(rest);
-        let saved = await saveLayoutDesign(org.id, input, "mcp");
-        if (archived !== undefined && archived !== saved.archived) saved = await archiveLayoutDesign(org.id, saved.id, archived, "mcp");
+        // Mit id: Archivstatus zuerst (scheitert er, wird nichts gespeichert) — wie PUT /api/v1/Layout/{id}.
+        const saved = input.id
+          ? await updateLayoutDesign(org.id, input.id, { name: input.name, config: input.config, archived }, "mcp")
+          : await saveLayoutDesign(org.id, input, "mcp");
         return ctx.ok(JSON.stringify(serializeLayoutDesign(saved, true), null, 2));
       } catch (e) {
         return failFrom(ctx, e);

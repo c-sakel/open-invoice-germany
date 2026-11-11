@@ -27,6 +27,10 @@ import { GET as LayoutList, POST as LayoutCreate } from "@/app/api/v1/Layout/rou
 import { GET as LayoutGet, PUT as LayoutPut } from "@/app/api/v1/Layout/[id]/route";
 import { GET as LayoutVersions } from "@/app/api/v1/Layout/[id]/versions/route";
 import { POST as LayoutPreview } from "@/app/api/v1/Layout/[id]/preview/route";
+import { saveBrandingSettings } from "@/domain/settings/branding";
+import { mapApiError } from "@/api/errors";
+import { ValidationError } from "@/domain/errors";
+import * as configurable from "@/lib/pdf/layouts/configurable";
 import type { CreateInvoiceInput } from "@/schemas";
 
 let orgId: string;
@@ -195,6 +199,63 @@ describe("REST /api/v1/Layout", () => {
     expect(plain.some((r) => r.id === designId)).toBe(false);
     const all = (await json(await LayoutList(req("http://x/api/v1/Layout?includeArchived=true", { token: readToken })))).data as { id: string }[];
     expect(all.some((r) => r.id === designId)).toBe(true);
+  });
+});
+
+describe("Fix 1: Konflikte, Reihenfolge, Vorschau-Grenzen", () => {
+  const postDesign = (body: unknown) => LayoutCreate(req("http://x/api/v1/Layout", { method: "POST", token: writeToken, body }));
+
+  it("Namenskollision -> 409", async () => {
+    expect((await postDesign({ name: "Doppelt" })).status).toBe(201);
+    expect((await postDesign({ name: "Doppelt" })).status).toBe(409);
+  });
+
+  it("PUT archived=true auf zugeordnetes Design: 409, keine neue Version zurueck (REST und MCP)", async () => {
+    const created = await json(await postDesign({ name: "Zugeordnet" }));
+    const id = created.data.id;
+    await saveBrandingSettings(orgId, { layoutId: `design:${id}` });
+    const next = { ...presetConfig("standard"), colors: { ...presetConfig("standard").colors, primary: "#654321" } };
+    const res = await LayoutPut(req(`http://x/api/v1/Layout/${id}`, { method: "PUT", token: writeToken, body: { config: next, archived: true } }), ctxFor(id));
+    expect(res.status).toBe(409);
+    let v = await json(await LayoutVersions(req(`http://x/api/v1/Layout/${id}/versions`, { token: readToken }), ctxFor(id)));
+    expect(v.data).toHaveLength(1);
+
+    const mcp = await callTool("save_layout_design", { id, name: "Zugeordnet", config: next, archived: true });
+    expect(mcp.isError).toBe(true);
+    v = await json(await LayoutVersions(req(`http://x/api/v1/Layout/${id}/versions`, { token: readToken }), ctxFor(id)));
+    expect(v.data).toHaveLength(1);
+    await saveBrandingSettings(orgId, { layoutId: "standard" });
+  });
+
+  it("Vorschau einer ungespeicherten config mit unzulaessigem Fenster -> 400 statt 500", async () => {
+    const created = await json(await postDesign({ name: "Fenster" }));
+    const id = created.data.id;
+    const spy = vi.spyOn(configurable, "checkRecipientWindow").mockReturnValue("Empfaengerfenster zu klein.");
+    try {
+      const res = await LayoutPreview(req(`http://x/api/v1/Layout/${id}/preview`, { method: "POST", token: readToken, body: { config: presetConfig("standard") } }), ctxFor(id));
+      expect(res.status).toBe(400);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("mapApiError: ValidationError -> 400 (z. B. letzter Basiszinssatz)", () => {
+    const m = mapApiError(new ValidationError("Der letzte Basiszinssatz kann nicht geloescht werden."));
+    expect(m.status).toBe(400);
+    expect(m.body.error.code).toBe("VALIDATION");
+  });
+
+  it("Vorschau: eigenes Kontingent 30/min je Schluessel -> 429", async () => {
+    const created = await json(await postDesign({ name: "Limit" }));
+    const id = created.data.id;
+    let last = 0;
+    for (let i = 0; i < 31; i++) {
+      const res = await LayoutPreview(req(`http://x/api/v1/Layout/${id}/preview`, { method: "POST", token: readToken, body: { docType: "DELIVERY_NOTE" } }), ctxFor(id));
+      last = res.status;
+      if (last === 429) break;
+      await res.arrayBuffer();
+    }
+    expect(last).toBe(429);
   });
 });
 

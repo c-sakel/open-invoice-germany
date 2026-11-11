@@ -7,7 +7,7 @@ import { listLayouts } from "@/lib/pdf/layouts/registry";
 import { isLayoutId } from "@/lib/pdf/layouts/ids";
 import { presetConfig } from "@/lib/pdf/layouts/presets";
 import { getLayoutDesign } from "@/domain/layout-design/list";
-import { saveLayoutDesign, archiveLayoutDesign } from "@/domain/layout-design/save";
+import { updateLayoutDesign } from "@/domain/layout-design/save";
 import { layoutDesignConfigSchema } from "@/schemas/layout-design";
 import { ValidationError } from "@/domain/errors";
 
@@ -37,14 +37,8 @@ export const PUT = withApi<{ id: string }>(async (_req, ctx) => {
   const id = ctx.params.id;
   if (isLayoutId(id)) throw new ValidationError(PRESET_READONLY);
   const body = updateBodySchema.parse(ctx.body);
-  const current = await getLayoutDesign(ctx.orgId, id);
-  if (body.name !== undefined || body.config !== undefined) {
-    await saveLayoutDesign(ctx.orgId, { id, name: body.name ?? current.name, baseLayoutId: current.baseLayoutId, config: body.config }, ctx.actor);
-  }
-  if (body.archived !== undefined && body.archived !== current.archived) {
-    await archiveLayoutDesign(ctx.orgId, id, body.archived, ctx.actor);
-  }
-  return apiData(serializeLayoutDesign(await getLayoutDesign(ctx.orgId, id), true));
+  const updated = await updateLayoutDesign(ctx.orgId, id, body, ctx.actor);
+  return apiData(serializeLayoutDesign(updated, true));
 }, { scope: "write" });
 
 export const spec = {

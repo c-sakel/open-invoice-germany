@@ -6,12 +6,18 @@ import { layoutPreviewCheckedSchema, renderLayoutPreview } from "@/domain/layout
 import { isLayoutId } from "@/lib/pdf/layouts/ids";
 import { ValidationError } from "@/domain/errors";
 
+import { rateLimit } from "@/lib/rate-limit";
+
+const PREVIEW_RATE_LIMIT = 30;
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** POST, weil die Vorschau eine ungespeicherte Konfiguration im Body annimmt; schreibt nichts (Scope read). */
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   if (isLayoutId(ctx.params.id)) throw new ValidationError("Vorlagen haben keine Design-Vorschau — Design aus Vorlage anlegen.");
+  // PDF-Rendern ist teuer: eigenes Kontingent je Schluessel zusaetzlich zum allgemeinen API-Limit (RateLimitError -> 429).
+  rateLimit(`layout-preview:${ctx.apiKey.id}`, { limit: PREVIEW_RATE_LIMIT, windowMs: 60_000 });
   const pdf = await renderLayoutPreview(ctx.orgId, ctx.params.id, ctx.body ?? {});
   return new NextResponse(new Uint8Array(pdf), {
     headers: { "content-type": "application/pdf", "content-disposition": 'inline; filename="layout-vorschau.pdf"', "cache-control": "no-store" },
