@@ -51,10 +51,10 @@ export function drawBackground(doc: PDFKit.PDFDocument, theme: PdfTheme): void {
 export const LOGO_MAX_HEIGHT_MM = 35;
 
 /** Zeichnet das Logo oben rechts (Breite `brand.logoWidthMm`); ohne Logo-Buffer no-op. */
-export function drawLogo(doc: PDFKit.PDFDocument, theme: PdfTheme, right: number, top: number): void {
+export function drawLogo(doc: PDFKit.PDFDocument, theme: PdfTheme, right: number, top: number, maxHeightMm = LOGO_MAX_HEIGHT_MM): void {
   if (!theme.logoBuffer) return;
   const width = mm(theme.brand.logoWidthMm);
-  doc.image(theme.logoBuffer, right - width, top, { fit: [width, mm(LOGO_MAX_HEIGHT_MM)], align: "right" });
+  doc.image(theme.logoBuffer, right - width, top, { fit: [width, mm(maxHeightMm)], align: "right" });
 }
 
 /**
@@ -68,4 +68,15 @@ export function senderLineFallback(
   const base = `${seller.name} · ${seller.addressLine1} · ${seller.postalCode} ${seller.city}`;
   const own = addressCountryLine(seller.countryCode ?? "DE", lang);
   return own ? `${base} · ${own}` : base;
+}
+
+/** Kopfgrafiken (Logo, Balken, Linien) der festen Layouts enden spaetestens bei 45 mm (Anschriftfeld). */
+export const HEADER_BOTTOM_MM = 45;
+
+/**
+ * Obere Kante des Kopfs: der Seitenrand, bei grossem Rand nach oben geschoben, damit ein Kopf der
+ * Hoehe `headHeightMm` noch oberhalb von 45 mm endet.
+ */
+export function headerTop(marginTopPt: number, headHeightMm: number): number {
+  return Math.min(marginTopPt, mm(HEADER_BOTTOM_MM - headHeightMm));
 }

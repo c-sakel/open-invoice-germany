@@ -1,6 +1,6 @@
 /**
  * Anschriftfeld nach DIN 5008 Form B (geteilt von festen Layouts und Layout-Designs):
- * Absenderzeile (Rueckseendeangabe) als unterste Zeile der Zusatz-/Vermerkzone direkt ueber der
+ * Absenderzeile (Ruecksendeangabe) als unterste Zeile der Zusatz-/Vermerkzone direkt ueber der
  * Anschriftzone, Empfaengeranschrift ab 62,7 mm. Eine Implementierung fuer beide Pfade.
  */
 import { DIN5008_FORM_B } from "../din5008";
@@ -29,24 +29,17 @@ function recipientLines(input: KopfInput): string[] {
   return [r.name, r.contactName, r.addressLine1, r.addressLine2, `${r.postalCode} ${r.city}`, r.countryLine].filter((l): l is string => Boolean(l));
 }
 
-/** Hoehe des Empfaengerblocks inkl. Zusatzblock, gemessen wie `drawRecipient` ihn zeichnet. */
+/** Hoehe der Postanschrift (ohne Zusatzblock), gemessen wie `drawRecipient` sie zeichnet. */
 function recipientHeight(doc: PDFKit.PDFDocument, input: KopfInput, size: number, width: number, lineGap: number | undefined): number {
   const opts = lineGap === undefined ? { width } : { width, lineGap };
   doc.font("Helvetica").fontSize(size);
-  let height = recipientLines(input).reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
-  const extra = input.extraRecipientBlock;
-  if (extra) {
-    doc.fontSize(size - 2);
-    height += 8 + doc.heightOfString(extra.heading, opts);
-    doc.fontSize(size);
-    height += extra.lines.reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
-  }
-  return height;
+  return recipientLines(input).reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
 }
 
 /**
- * Groesste Empfaengerschrift (`maxSize`, Standard 10 pt, abwaerts bis 8 pt, Schritte 0,5 pt), mit der Anschrift und
- * Zusatzblock ab `top` noch im Anschriftfeld (bis 90 mm) enden. Passt es bei 8 pt nicht, wird
+ * Groesste Empfaengerschrift (`maxSize`, Standard 10 pt, abwaerts bis 8 pt, Schritte 0,5 pt), mit der
+ * Postanschrift ab `top` noch im Anschriftfeld (bis 90 mm) endet. Ein Zusatzblock (Lieferanschrift,
+ * Ansprechpartner) steht darunter in Normalgroesse, darf unter 90 mm ragen und zaehlt nicht mit. Passt es bei 8 pt nicht, wird
  * der Zeilenabstand stufenweise verringert; ohne Erfolg Rueckfall auf 8 pt mit dem Mindestabstand.
  * Wirft nie. `fits` meldet, ob das Fenster tatsaechlich eingehalten wird.
  */
@@ -141,5 +134,10 @@ export function drawDinAddress(frame: LayoutFrame, input: KopfInput, options: Di
 
 /** Frueheste y-Position (pt) fuer Titel/Tabelle unterhalb des Anschriftfelds plus Abstand. */
 export function dinBodyTop(recipientBottom: number, metaBottom: number, gap: number): number {
-  return Math.max(Math.max(recipientBottom, metaBottom) + gap, mm(97));
+  return Math.max(Math.max(recipientBottom, metaBottom) + gap, mm(DIN5008_FORM_B.bodyTopMm));
+}
+
+/** Linke Kante des Informationsblocks (pt): nie links von 125 mm, unabhaengig von den Raendern. */
+export function infoBlockX(): number {
+  return mm(DIN5008_FORM_B.infoBlockLeftMm);
 }

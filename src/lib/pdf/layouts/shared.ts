@@ -5,7 +5,7 @@
  * Layout-spezifisches Wissen (das liefert `layout.table`/`layout.footerHeight`).
  */
 import type { LayoutFrame, KopfInput, FooterColumn, PdfLayout } from "./types";
-import { drawLogo } from "../layout";
+import { drawLogo, headerTop, HEADER_BOTTOM_MM, LOGO_MAX_HEIGHT_MM, MM_TO_PT } from "../layout";
 import { wrapPlain } from "../text-wrap";
 
 /**
@@ -15,15 +15,8 @@ import { wrapPlain } from "../text-wrap";
  * den rechten Infoblock (Meta-Zeilen/-Tabelle) hinein, weil pdfkit ohne `width` bis zum
  * Seitenrand umbricht. `maxWidth` begrenzt jede Zeile des Blocks auf die linke Spalte.
  *
- * Fix-Runde 1 (Task-5-Review): der urspruengliche Default `frame.width - 220` war
- * margin-abhaengig, obwohl `standard`/`klassik` (und via Delegation blau/schwarz/kompakt)
- * ihren Infoblock an einem FESTEN `left + 250` verankern — bei den Standard-18mm-Raendern
- * ergab das ~273pt (23pt zu weit, ueberlappt bereits leicht die Meta-Spalte), bei den
- * schema-erlaubten 5mm-Raendern sogar ~347pt. Der Default ist jetzt der feste Wert `240`
- * (= 250 − 10pt Abstand), unabhaengig von `frame.width`/den Raendern; `standard` und
- * `klassik` reichen ihn zusaetzlich explizit durch (statt sich auf den Default zu
- * verlassen), analog zu `schlicht`/`modern`, die ihre eigene (schmalere, weiter links
- * beginnende) Infoblock-Breite durchreichen (Infoblock-x minus 10pt Abstand minus `left`).
+ * Breite, Lage und Schrift der Anschrift bestimmt `din-address.ts#drawDinAddress` (DIN 5008 Form B:
+ * x ab 20 mm, hoechstens bis 105 mm); `maxWidth` ist dort die Feldbreite, der Infoblock steht rechts von 125 mm.
  */
 export function drawRecipient(frame: LayoutFrame, input: KopfInput, y: number, size = 11, maxWidth = 240, lineGap?: number): number {
   const { doc, left } = frame;
@@ -302,8 +295,9 @@ export function drawSubject(frame: LayoutFrame, subject: string, y: number): num
   return doc.y + 8;
 }
 
-/** Logo oben rechts. Die Absenderzeile steht nicht im Kopf, sondern im Anschriftfeld (`din-address.ts`). */
+/** Logo oben rechts, endet spaetestens bei 45 mm. Die Absenderzeile steht im Anschriftfeld (`din-address.ts`). */
 export function drawHeaderLogo(frame: LayoutFrame): void {
   const { doc, theme, right, margins } = frame;
-  drawLogo(doc, theme, right, margins.top);
+  const top = headerTop(margins.top, 15);
+  drawLogo(doc, theme, right, top, Math.min(LOGO_MAX_HEIGHT_MM, HEADER_BOTTOM_MM - top / MM_TO_PT));
 }

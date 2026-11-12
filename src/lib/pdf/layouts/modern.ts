@@ -1,7 +1,8 @@
 /** Layout "Modern" — Kopfbalken in Primaerfarbe ueber die volle Breite mit Logo/Firmenname in Weiss, Infoblock als Karte. */
 import type { PdfLayout } from "./types";
 import { drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
-import { drawDinAddress, dinBodyTop } from "./din-address";
+import { drawDinAddress, dinBodyTop, infoBlockX } from "./din-address";
+import { headerTop, MM_TO_PT } from "../layout";
 import { mm } from "../marks";
 
 /** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
@@ -20,24 +21,28 @@ export const modernLayout: PdfLayout = {
   drawKopf(frame, input) {
     const { doc, theme, left, right, margins, primary, base } = frame;
     const barH = HEADER_BAR_H;
-    doc.rect(0, 0, doc.page.width, margins.top + barH).fill(primary);
+    // Balken endet spaetestens bei 45 mm (Anschriftfeld), auch bei grossem Oberrand.
+    const top = headerTop(margins.top, barH / MM_TO_PT);
+    doc.rect(0, 0, doc.page.width, top + barH).fill(primary);
     if (theme.logoBuffer) {
       const logoW = mm(theme.brand.logoWidthMm);
       const logoH = barH - mm(4);
-      doc.image(theme.logoBuffer, left, (margins.top + barH - logoH) / 2, { fit: [logoW, logoH] });
+      doc.image(theme.logoBuffer, left, (top + barH - logoH) / 2, { fit: [logoW, logoH] });
     } else {
-      doc.font("Helvetica-Bold").fontSize(base + 6).fillColor("#fff").text(input.senderFallback.split(" · ")[0] ?? "", left, margins.top + 16);
+      doc.font("Helvetica-Bold").fontSize(base + 6).fillColor("#fff").text(input.senderFallback.split(" · ")[0] ?? "", left, top + 16);
     }
-    doc.font("Helvetica-Bold").fontSize(base + 8).fillColor("#fff").text(input.title, left, margins.top + 14, { width: right - left, align: "right" });
+    doc.font("Helvetica-Bold").fontSize(base + 8).fillColor("#fff").text(input.title, left, top + 14, { width: right - left, align: "right" });
     const buyerY = margins.top + barH + 36;
-    const cardX = right - 210;
+    // Karte nie links von 125 mm (DIN-Informationsblock), bis zum rechten Rand.
+    const cardX = Math.max(right - 210, infoBlockX());
+    const cardW = right - cardX;
     // DIN 5008 Form B: Absenderzeile in der Vermerkzone, Anschrift ab 62,7 mm bis hoechstens 105 mm
     // (die Karte beginnt rechts davon, din-address.ts).
     const recipientBottom = drawDinAddress(frame, input, { maxSize: base + 1 });
     const cardH = (input.meta.length + 1) * (base + 3) + 16;
-    doc.roundedRect(cardX, buyerY - 8, 210, cardH, 4).fill("#f3f4f6");
+    doc.roundedRect(cardX, buyerY - 8, cardW, cardH, 4).fill("#f3f4f6");
     doc.fillColor("#000");
-    const metaBottom = drawMetaTable(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], cardX + 8, buyerY, 194, base - 1);
+    const metaBottom = drawMetaTable(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], cardX + 8, buyerY, cardW - 16, base - 1);
     let y = dinBodyTop(recipientBottom, metaBottom + 8, 16);
     if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {

@@ -9,6 +9,8 @@ export const DIN5008_FORM_B = {
   fieldWidthMm: 85,
   fieldHeightMm: 45,
   addressZoneTopMm: 62.7,
+  /** Fruehester Beginn von Titel/Tabelle (Unterkante des Anschriftfelds 90 mm + Abstand, Bezugszeichenzeile). */
+  bodyTopMm: 97,
   infoBlockLeftMm: 125,
 } as const;
 

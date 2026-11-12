@@ -34,12 +34,11 @@ const WORST_CASE_INPUT: KopfInput = {
     city: "Musterstadt",
     countryLine: "ÖSTERREICH",
   },
-  extraRecipientBlock: { heading: "Lieferanschrift", lines: ["Lager Nord, Hafenstraße 1"] },
 };
 
 /**
  * Prueft zur Speicherzeit, ob die Anschrift im DIN-5008-Fenster bleibt: sechs Anschriftzeilen
- * plus Lieferanschrift-Zusatzblock mit der gewaehlten Schrift. `null` = passt, sonst Fehlertext.
+ * (ohne Zusatzblock) mit der gewaehlten Schrift. `null` = passt, sonst Fehlertext.
  */
 export function checkRecipientWindow(config: LayoutDesignConfig): string | null {
   const margins = marginsFromMm(config.marginsMm);
@@ -49,7 +48,7 @@ export function checkRecipientWindow(config: LayoutDesignConfig): string | null 
   const fit = fitRecipient(doc, WORST_CASE_INPUT, zoneTop, zoneWidth);
   doc.end();
   if (fit.fits) return null;
-  return `Mit der Schrift „${config.font}“ passt eine sechszeilige Anschrift mit Lieferanschrift nicht in das Anschriftfeld (bis 90 mm). Wählen Sie eine andere Schrift.`;
+  return `Mit der Schrift „${config.font}“ passt eine sechszeilige Anschrift nicht in das Anschriftfeld (bis 90 mm). Wählen Sie eine andere Schrift.`;
 }
 
 export function buildLayout(config: LayoutDesignConfig): PdfLayout {
@@ -85,7 +84,7 @@ export function buildLayout(config: LayoutDesignConfig): PdfLayout {
         right - mm(DIN5008_FORM_B.infoBlockLeftMm),
         base - 1,
       );
-      const titleY = Math.max(mm(97), recipientBottom + 12, metaBottom + 12);
+      const titleY = Math.max(mm(DIN5008_FORM_B.bodyTopMm), recipientBottom + 12, metaBottom + 12);
       doc.font("Helvetica-Bold").fontSize(base + 6).fillColor(colors.primary).text(input.title, left, titleY, { width: right - left });
       let y = doc.y + 10;
       // Betreff und Einleitung: vorhandener Inhalt wird immer gedruckt (PDF = XML-Inhalt);

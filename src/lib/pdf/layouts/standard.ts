@@ -1,7 +1,7 @@
 /** Layout "Standard" — exakt das Layout von Phase 7 (Kompatibilitaet fuer Bestandsbetreiber). */
 import type { PdfLayout } from "./types";
 import { drawHeaderLogo, drawMetaRows, drawFooterColumns, drawSubject } from "./shared";
-import { drawDinAddress, dinBodyTop } from "./din-address";
+import { drawDinAddress, dinBodyTop, infoBlockX } from "./din-address";
 
 /** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
 const FOOTER_FONT_SIZE = 8;
@@ -17,9 +17,10 @@ export const standardLayout: PdfLayout = {
     const buyerY = margins.top + 60;
     // DIN 5008 Form B: Absenderzeile in der Vermerkzone, Anschrift ab 62,7 mm (din-address.ts).
     const recipientBottom = drawDinAddress(frame, input, { maxSize: 11 });
-    doc.fontSize(18).fillColor(primary).font("Helvetica").text(input.title, left, buyerY, { align: "right", width: right - left });
-    const metaTop = margins.top + 90;
-    const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, metaTop);
+    const infoX = infoBlockX();
+    doc.fontSize(18).fillColor(primary).font("Helvetica").text(input.title, infoX, buyerY, { align: "right", width: right - infoX });
+    const metaTop = Math.max(margins.top + 90, doc.y + 6);
+    const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], infoX, metaTop);
     // Der Tabellenbeginn haengt vom gedruckten Anschrift-/Meta-Block ab, frueheste Lage 97 mm.
     let y = dinBodyTop(recipientBottom, metaBottom, 20);
     if (input.subject) y = drawSubject(frame, input.subject, y);
