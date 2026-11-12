@@ -91,7 +91,9 @@ describe("B1 — nichts in der Fusszeilen-Zone", () => {
   });
 
   it("die lange Beschreibung von Position 4 bricht zeilenweise auf Seite 2 um, der Tabellenkopf wiederholt sich", async () => {
-    const pdf = await renderInvoicePdf(invoice, theme);
+    // Layout "standard": nach dem DIN-5008-Kopf (Tabellenbeginn ab 97 mm) endet Seite 1 hier mitten in
+    // Position 4; bei "schlicht" rutscht Position 4 geschlossen auf Seite 2.
+    const pdf = await renderInvoicePdf(invoice, referenzTheme({ layoutId: "standard" }));
     const items = await extractItems(pdf);
     const page2 = items.filter((i) => i.page === 1);
     expect(page2.some((i) => i.str === "Pos.")).toBe(true);

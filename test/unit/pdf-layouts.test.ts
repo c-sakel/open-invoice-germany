@@ -286,6 +286,9 @@ describe("standard — Schlussblock (notes/paymentTermsHuman) paginiert statt au
   //   n - 30 > (612.7931 - 78.6929) / 16 = 33.38, also ab n >= 64 (n=64: E=622.6929 >
   //   612.7931 — bricht am `paymentTermsHuman`-Guard; n=63: E=606.6929 — bricht nicht,
   //   bleibt bei 2 Seiten).
+  //   Hotfix din5008-absender: Der Tabellenbeginn auf Seite 1 liegt jetzt bei mindestens 97 mm (statt
+  //   226,7 pt + Einleitung), Seite 1 fasst 27 statt 30 Zeilen; alle n-Schwellen oben sinken um 3
+  //   (paymentTermsHuman-Guard ab n >= 61, notes-Guard ab n >= 62; n=60 bleibt bei 2 Seiten).
   //   Ergebnis: n=65 UND n=66 (beide vom Koordinator vorgegeben, siehe Abschluss-Review
   //   Reproduktion) brechen am `notes`-Guard auf eine DRITTE Seite um — vor der Fix-Welle
   //   blieben beide bei 2 Seiten, und `notes`/`paymentTermsHuman` wurden irgendwo im
@@ -311,16 +314,16 @@ describe("standard — Schlussblock (notes/paymentTermsHuman) paginiert statt au
     expect(countOccurrences(stripped, STRIPPED_IBAN_FOOTER)).toBeGreaterThanOrEqual(numpages);
   });
 
-  it("n=64 Positionen: bricht am paymentTermsHuman-Guard (Grenzfall der Handrechnung oben)", async () => {
+  it("n=61 Positionen: bricht am paymentTermsHuman-Guard (Grenzfall der Handrechnung oben, nach DIN-5008-Kopf 3 Zeilen weniger Platz)", async () => {
     const theme = testPdfTheme({ layoutId: "standard" });
-    const { text, numpages } = await parsePdf(await renderInvoicePdf(invoiceWithLinesAndClosing(64), theme));
+    const { text, numpages } = await parsePdf(await renderInvoicePdf(invoiceWithLinesAndClosing(61), theme));
     expect(numpages).toBe(3);
     expect(text).toContain("Zahlbar bis 16.05.2073 ohne Abzug.");
   });
 
-  it("n=63 Positionen: bleibt bei 2 Seiten (Summen + Schlussblock passen ohne Guard-Umbruch)", async () => {
+  it("n=60 Positionen: bleibt bei 2 Seiten (Summen + Schlussblock passen ohne Guard-Umbruch)", async () => {
     const theme = testPdfTheme({ layoutId: "standard" });
-    const { numpages } = await parsePdf(await renderInvoicePdf(invoiceWithLinesAndClosing(63), theme));
+    const { numpages } = await parsePdf(await renderInvoicePdf(invoiceWithLinesAndClosing(60), theme));
     expect(numpages).toBe(2);
   });
 });

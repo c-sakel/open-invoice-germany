@@ -1,7 +1,7 @@
 /** Layout "Modern" — Kopfbalken in Primaerfarbe ueber die volle Breite mit Logo/Firmenname in Weiss, Infoblock als Karte. */
 import type { PdfLayout } from "./types";
-import { drawRecipient, drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
-import { drawSenderLine } from "../layout";
+import { drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
+import { drawDinAddress, dinBodyTop } from "./din-address";
 import { mm } from "../marks";
 
 /** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
@@ -29,18 +29,16 @@ export const modernLayout: PdfLayout = {
       doc.font("Helvetica-Bold").fontSize(base + 6).fillColor("#fff").text(input.senderFallback.split(" · ")[0] ?? "", left, margins.top + 16);
     }
     doc.font("Helvetica-Bold").fontSize(base + 8).fillColor("#fff").text(input.title, left, margins.top + 14, { width: right - left, align: "right" });
-    const top = margins.top + barH + 18;
-    drawSenderLine(doc, theme, left, top, input.senderFallback);
-    const buyerY = top + 18;
+    const buyerY = margins.top + barH + 36;
     const cardX = right - 210;
-    // Follow-up (Reviews, Task 5): Empfaengerblock nicht breiter als bis 10pt vor die
-    // Infoblock-Karte — sonst laeuft ein langer Empfaengername in die Karte hinein.
-    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1, cardX - left - 10);
+    // DIN 5008 Form B: Absenderzeile in der Vermerkzone, Anschrift ab 62,7 mm bis hoechstens 105 mm
+    // (die Karte beginnt rechts davon, din-address.ts).
+    const recipientBottom = drawDinAddress(frame, input, { maxSize: base + 1 });
     const cardH = (input.meta.length + 1) * (base + 3) + 16;
     doc.roundedRect(cardX, buyerY - 8, 210, cardH, 4).fill("#f3f4f6");
     doc.fillColor("#000");
     const metaBottom = drawMetaTable(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], cardX + 8, buyerY, 194, base - 1);
-    let y = Math.max(recipientBottom, metaBottom + 8, margins.top + 190) + 16;
+    let y = dinBodyTop(recipientBottom, metaBottom + 8, 16);
     if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {
       doc.font("Helvetica").fontSize(base).fillColor("#000").text(input.intro, left, y, { width: right - left });

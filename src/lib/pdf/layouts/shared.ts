@@ -1,11 +1,11 @@
 /**
  * Layout-Bausteine (Phase 11b), die mehrere PdfLayouts teilen: Empfaengerblock,
  * rechtsbuendige/-zweispaltige Meta-Zeilen, Tabellenkopfzeile, Fusszeilen-Spalten,
- * Logo+Absenderzeile. Reine Zeichenfunktionen auf einem `LayoutFrame` — kein
+ * Logo. Reine Zeichenfunktionen auf einem `LayoutFrame` — kein
  * Layout-spezifisches Wissen (das liefert `layout.table`/`layout.footerHeight`).
  */
 import type { LayoutFrame, KopfInput, FooterColumn, PdfLayout } from "./types";
-import { drawLogo, drawSenderLine } from "../layout";
+import { drawLogo } from "../layout";
 import { wrapPlain } from "../text-wrap";
 
 /**
@@ -302,8 +302,8 @@ export function drawSubject(frame: LayoutFrame, subject: string, y: number): num
   return doc.y + 8;
 }
 
-export function drawLogoAndSender(frame: LayoutFrame, input: KopfInput): void {
-  const { doc, theme, right, left, margins } = frame;
+/** Logo oben rechts. Die Absenderzeile steht nicht im Kopf, sondern im Anschriftfeld (`din-address.ts`). */
+export function drawHeaderLogo(frame: LayoutFrame): void {
+  const { doc, theme, right, margins } = frame;
   drawLogo(doc, theme, right, margins.top);
-  drawSenderLine(doc, theme, left, margins.top, input.senderFallback);
 }

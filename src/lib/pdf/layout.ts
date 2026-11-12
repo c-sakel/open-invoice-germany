@@ -1,6 +1,6 @@
 /**
  * Layout-Bausteine, die von allen drei PDF-Renderern (Rechnung/Angebot, Lieferschein,
- * Mahnung) geteilt werden: mm→pt, Ränder aus dem Theme, Absenderzeile, Logo oben rechts,
+ * Mahnung) geteilt werden: mm→pt, Ränder aus dem Theme, Absenderzeile-Fallback, Logo oben rechts,
  * Hintergrundbild vollflächig (Phase 7, Task 3, §35/§36). Die Fusszeile lebt seit Phase
  * 11b in `footer.ts` (Spalten-Fakten) + `layouts/shared.ts#drawFooterColumns` (Zeichnen).
  */
@@ -55,17 +55,6 @@ export function drawLogo(doc: PDFKit.PDFDocument, theme: PdfTheme, right: number
   if (!theme.logoBuffer) return;
   const width = mm(theme.brand.logoWidthMm);
   doc.image(theme.logoBuffer, right - width, top, { fit: [width, mm(LOGO_MAX_HEIGHT_MM)], align: "right" });
-}
-
-/**
- * Absenderzeile (kleine Zeile über der Empfängeradresse, DIN-5008-Sichtfenster) — nutzt
- * `brand.senderLine`, wenn gesetzt, sonst den übergebenen Fallback-Text (bisherige
- * hartcodierte Absenderzeile). Zeichnet nichts, wenn `options.showSenderLine` aus ist.
- */
-export function drawSenderLine(doc: PDFKit.PDFDocument, theme: PdfTheme, left: number, y: number, fallback: string): void {
-  if (!theme.options.showSenderLine) return;
-  const text = theme.brand.senderLine || fallback;
-  doc.fontSize(9).fillColor("#555555").text(text, left, y);
 }
 
 /**

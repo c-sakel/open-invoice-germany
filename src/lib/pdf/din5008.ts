@@ -1,7 +1,7 @@
 /**
  * DIN 5008 Form B (Falzmarke 105 mm, siehe marks.ts): Lage des Anschriftfelds. Gilt fuer
- * Layout-Designs; die sieben festen Layouts bleiben unveraendert. Auch fuer Fensterumschlag-
- * Versand nutzbar.
+ * Layout-Designs und alle sieben festen Layouts (Absenderzeile/Anschrift: layouts/din-address.ts).
+ * Auch fuer Fensterumschlag-Versand nutzbar.
  */
 export const DIN5008_FORM_B = {
   fieldLeftMm: 20,

@@ -13,12 +13,16 @@ export interface RecordedBox {
   yPt: number;
   widthPt: number;
   heightPt: number;
+  /** Nur Text: tatsaechliche Textbreite (einzeilig, aktuelle Schrift) und Ausrichtung. */
+  textWidthPt?: number;
+  align?: "left" | "right" | "center" | "justify";
 }
 
 interface TextOptions {
   width?: number;
   height?: number;
   lineGap?: number;
+  align?: "left" | "right" | "center" | "justify";
 }
 
 /** Spy auf `doc.text`/`doc.image`; `stop()` stellt die Originale wieder her und liefert die Boxen. */
@@ -37,7 +41,7 @@ export function recordTextBoxes(doc: PDFKit.PDFDocument): { stop(): RecordedBox[
     if (options.width !== undefined) measureOptions.width = options.width;
     if (options.lineGap !== undefined) measureOptions.lineGap = options.lineGap;
     const measured = doc.heightOfString(String(text), measureOptions);
-    boxes.push({ text: String(text), xPt: x, yPt: y, widthPt, heightPt: options.height ?? measured });
+    boxes.push({ text: String(text), xPt: x, yPt: y, widthPt, heightPt: options.height ?? measured, textWidthPt: Math.min(widthPt, doc.widthOfString(String(text))), ...(options.align ? { align: options.align } : {}) });
     return originalText(text, a as number, b as number, c);
   }) as typeof doc.text;
 

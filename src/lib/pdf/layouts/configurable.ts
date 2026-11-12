@@ -10,58 +10,14 @@ import { mm } from "../marks";
 import { createPdfDocument } from "../document";
 import { marginsFromMm } from "../layout";
 import type { KopfInput, PdfLayout } from "./types";
-import { drawFooterColumns, drawMetaTable, drawRecipient, drawSubject } from "./shared";
+import { drawFooterColumns, drawMetaTable, drawSubject } from "./shared";
+import { drawDinAddress, fitRecipient } from "./din-address";
+
+export { fitRecipient } from "./din-address";
+export type { RecipientFit } from "./din-address";
 
 const WHITE = "#ffffff";
 const ZEBRA = "#f5f5f5";
-
-const RECIPIENT_MAX_PT = 10;
-const RECIPIENT_MIN_PT = 8;
-/** Kleinster Zeilenabstand-Zuschlag (pt), wenn auch 8 pt nicht passen. */
-const RECIPIENT_MIN_LINE_GAP = -2;
-
-export interface RecipientFit {
-  size: number;
-  /** Nur gesetzt, wenn der Zeilenabstand verringert werden musste. */
-  lineGap?: number;
-}
-
-function recipientLines(input: KopfInput): string[] {
-  const r = input.recipient;
-  return [r.name, r.contactName, r.addressLine1, r.addressLine2, `${r.postalCode} ${r.city}`, r.countryLine].filter((l): l is string => Boolean(l));
-}
-
-/** Hoehe des Empfaengerblocks inkl. Zusatzblock, gemessen wie `drawRecipient` ihn zeichnet. */
-function recipientHeight(doc: PDFKit.PDFDocument, input: KopfInput, size: number, width: number, lineGap: number | undefined): number {
-  const opts = lineGap === undefined ? { width } : { width, lineGap };
-  doc.font("Helvetica").fontSize(size);
-  let height = recipientLines(input).reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
-  const extra = input.extraRecipientBlock;
-  if (extra) {
-    doc.fontSize(size - 2);
-    height += 8 + doc.heightOfString(extra.heading, opts);
-    doc.fontSize(size);
-    height += extra.lines.reduce((sum, line) => sum + doc.heightOfString(line, opts), 0);
-  }
-  return height;
-}
-
-/**
- * Groesste Empfaengerschrift (10 pt abwaerts bis 8 pt, Schritte 0,5 pt), mit der Anschrift und
- * Zusatzblock ab `top` noch im Anschriftfeld (bis 90 mm) enden. Passt es bei 8 pt nicht, wird
- * der Zeilenabstand stufenweise verringert; ohne Erfolg Rueckfall auf 8 pt mit dem Mindestabstand.
- * Wirft nie. `fits` meldet, ob das Fenster tatsaechlich eingehalten wird.
- */
-export function fitRecipient(doc: PDFKit.PDFDocument, input: KopfInput, top: number, width: number): RecipientFit & { fits: boolean } {
-  const maxHeight = mm(DIN5008_FORM_B.fieldTopMm + DIN5008_FORM_B.fieldHeightMm) - top;
-  for (let size = RECIPIENT_MAX_PT; size >= RECIPIENT_MIN_PT; size -= 0.5) {
-    if (recipientHeight(doc, input, size, width, undefined) <= maxHeight) return { size, fits: true };
-  }
-  for (let gap = -0.5; gap >= RECIPIENT_MIN_LINE_GAP; gap -= 0.5) {
-    if (recipientHeight(doc, input, RECIPIENT_MIN_PT, width, gap) <= maxHeight) return { size: RECIPIENT_MIN_PT, lineGap: gap, fits: true };
-  }
-  return { size: RECIPIENT_MIN_PT, lineGap: RECIPIENT_MIN_LINE_GAP, fits: false };
-}
 
 const WORST_CASE_INPUT: KopfInput = {
   title: "",
@@ -119,16 +75,8 @@ export function buildLayout(config: LayoutDesignConfig): PdfLayout {
         const x = config.logo.position === "left" ? left : config.logo.position === "center" ? left + (right - left - logoW) / 2 : right - logoW;
         doc.image(theme.logoBuffer, x, margins.top, { fit: [logoW, headerH], align: config.logo.position === "left" ? undefined : config.logo.position });
       }
-      const zoneTop = mm(DIN5008_FORM_B.addressZoneTopMm);
       const zoneWidth = mm(DIN5008_FORM_B.fieldLeftMm + DIN5008_FORM_B.fieldWidthMm) - left;
-      if (theme.options.showSenderLine) {
-        const text = theme.brand.senderLine || input.senderFallback;
-        doc.font("Helvetica").fontSize(7).fillColor(colors.muted);
-        const lineH = doc.currentLineHeight(true);
-        doc.text(text, left, zoneTop - lineH, { width: zoneWidth, height: lineH, ellipsis: true });
-      }
-      const fit = fitRecipient(doc, input, zoneTop, zoneWidth);
-      const recipientBottom = drawRecipient(frame, input, zoneTop, fit.size, zoneWidth, fit.lineGap);
+      const recipientBottom = drawDinAddress(frame, input, { x: left, width: zoneWidth, senderColor: colors.muted });
       const metaBottom = drawMetaTable(
         frame,
         [{ label: input.numberLabel, value: input.number }, ...input.meta],
