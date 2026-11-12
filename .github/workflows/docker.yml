@@ -1,25 +1,34 @@
 name: Docker
 
 # Container-Image ghcr.io/c-sakel/open-invoice-germany.
-#   Pull Request  -> Image bauen und gegen PostgreSQL testen (nichts wird veroeffentlicht)
-#   Tag v1.2.3    -> testen, dann amd64 + arm64 nativ bauen und als 1.2.3, 1.2, 1, latest veroeffentlichen
-#   manuell       -> wie ein Tag, aber mit dem Branch-Namen als Image-Tag (z. B. :main)
+#   Pull Request / main -> Image bauen und gegen PostgreSQL testen (nichts wird veroeffentlicht)
+#   Tag v1.2.3          -> erst wenn CI (ci.yml) fuer den Commit gruen ist und der Tag zur
+#                          package.json passt: testen, amd64 + arm64 nativ bauen und als
+#                          1.2.3, 1.2, 1, latest veroeffentlichen
+#   manuell             -> wie ein Tag, aber mit dem Branch-Namen als Image-Tag (z. B. :main)
 
 on:
   push:
+    branches: [main]
     tags: ["v*.*.*"]
   pull_request:
     paths:
       - Dockerfile
       - .dockerignore
+      - docker/**
       - package.json
       - package-lock.json
       - next.config.ts
+      - src/**
+      - public/**
+      - assets/fonts/**
+      - openapi/**
       - prisma/schema.postgres.prisma
       - prisma/migrations-postgres/**
       - prisma.postgres.config.ts
       - scripts/docker-entrypoint.sh
       - scripts/db-prepare.sh
+      - scripts/check-baseline.sql
       - .github/workflows/docker.yml
   workflow_dispatch:
 
@@ -37,9 +46,39 @@ jobs:
   test:
     name: Image testen (amd64, PostgreSQL)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag passt zu package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "Tag ${GITHUB_REF_NAME}, package.json ${version}"
+          test "${GITHUB_REF_NAME#v}" = "$version"
+      - name: Auf gruene CI fuer diesen Commit warten (Tests, KoSIT, veraPDF, Migrationen)
+        if: env.RELEASE == 'true'
+        timeout-minutes: 75
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          while :; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=1" \
+                  --jq '.workflow_runs[0] | "\(.status) \(.conclusion)"')
+            echo "ci.yml: ${run:-noch kein Lauf}"
+            case "$run" in
+              "completed success") break ;;
+              completed*) echo "CI fuer $GITHUB_SHA ist nicht gruen — kein Release."; exit 1 ;;
+            esac
+            sleep 60
+          done
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Bauen
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -48,11 +87,14 @@ jobs:
           load: true
           tags: oig:ci
           cache-from: type=gha,scope=linux-amd64
-          cache-to: type=gha,scope=linux-amd64,mode=max
+          # Nur main schreibt den Cache (Tags duerfen ihn lesen, PR-Caches nicht).
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=linux-amd64,mode=max' || '' }}
       - name: Inhalt pruefen (Nicht-root, keine Repo-Dateien)
         run: |
           set -eu
           test "$(docker run --rm --entrypoint id oig:ci -u)" = 1000
+          # Programmdateien gehoeren root und sind fuer den Laufzeitbenutzer nicht beschreibbar.
+          docker run --rm --entrypoint sh oig:ci -c 'test ! -w /app/server.js && test ! -w /app/node_modules && test -w /app/data/archive'
           # Nur Laufzeitdateien: keine Screenshots, Doku, Tests, Quelltexte oder Secrets.
           stray=$(docker run --rm --entrypoint sh oig:ci -c \
             'find /app -path /app/node_modules -prune -o -type f \( -name "*.md" -o -name "*.png" -o -name "*.test.*" -o -name "*.tsx" -o -name ".env*" -o -name "*.db" -o -path "/app/docs/*" -o -path "/app/test/*" -o -path "/app/src/*.ts" \) -print')
@@ -64,7 +106,7 @@ jobs:
           docker network create oig
           docker run -d --name db --network oig -e POSTGRES_USER=oig -e POSTGRES_DB=openinvoice \
             -e POSTGRES_PASSWORD=ci postgres:16-alpine
-          for i in $(seq 1 30); do docker exec db pg_isready -U oig -d openinvoice && break; sleep 2; done
+          for i in $(seq 1 30); do docker exec db pg_isready -h 127.0.0.1 -U oig -d openinvoice && break; sleep 2; done
           docker run -d --name app --network oig -p 3000:3000 \
             -e DATABASE_URL="postgresql://oig:ci@db:5432/openinvoice?schema=public" \
             -e AUTH_SECRET="ci-only-secret-0123456789abcdefghijklmnop" \
@@ -76,17 +118,46 @@ jobs:
           done
           docker logs app
           test "$(docker inspect -f '{{.State.Health.Status}}' app)" = healthy
-          for path in / /login /api/health /layouts/klassik.svg; do
+          # Frische Instanz ohne Konto: /setup antwortet 200 (/login leitet dorthin um).
+          for path in / /setup /api/health /layouts/klassik.svg; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000$path")
             echo "$path -> $code"; test "$code" = 200
           done
+          docker rm -f app
+      - name: Update von root-eigenen Volumes (Images vor 1.0.1)
+        run: |
+          set -eu
+          run_app() {
+            docker run -d --name app --network oig -v oig-archive:/app/data/archive "$@" \
+              -e DATABASE_URL="postgresql://oig:ci@db:5432/openinvoice?schema=public" \
+              -e AUTH_SECRET="ci-only-secret-0123456789abcdefghijklmnop" oig:ci
+          }
+          # Altbestand nachstellen: Archiv-Volume samt Datei gehoert root.
+          docker run --rm --user root -v oig-archive:/app/data/archive --entrypoint sh oig:ci \
+            -c 'mkdir -p /app/data/archive/org/2026 && touch /app/data/archive/org/2026/alt.pdf && chown -R root:root /app/data/archive'
+          run_app
+          docker wait app >/dev/null || true
+          test "$(docker inspect -f '{{.State.ExitCode}}' app)" != 0
+          docker logs app 2>&1 | grep -q "FEHLER: /app/data/archive"
+          docker rm -f app
+          # Der Befehl aus der Fehlermeldung (ohne compose) behebt es.
+          docker run --rm --user root --cap-drop ALL --cap-add CHOWN --cap-add DAC_READ_SEARCH \
+            -v oig-archive:/app/data/archive --entrypoint chown oig:ci -R node:node /app/data
+          run_app --cap-drop ALL --security-opt no-new-privileges:true
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' app)" = healthy ] && break
+            [ "$(docker inspect -f '{{.State.Running}}' app)" = true ] || break
+            sleep 3
+          done
+          docker logs app 2>&1 | tail -5
+          test "$(docker inspect -f '{{.State.Health.Status}}' app)" = healthy
       - name: Aufraeumen
         if: always()
         run: docker rm -f app db >/dev/null 2>&1 || true
 
   build:
     name: Bauen (${{ matrix.platform }})
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: test
     strategy:
       fail-fast: true
@@ -107,6 +178,8 @@ jobs:
         env:
           PLATFORM: ${{ matrix.platform }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Metadaten
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0

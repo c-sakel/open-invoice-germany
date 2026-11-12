@@ -140,7 +140,7 @@ Die SQLite-Datei liegt unter `prisma/dev.db` und gehört nur dir. Beim ersten St
 
 ## Mit Docker (PostgreSQL)
 
-Zu jedem Release erscheint ein fertiges Image für `linux/amd64` und `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (Tags `1.0.1`, `1.0`, `1`, `latest`).
+Ab Version 1.0.1 erscheint zu jedem Release ein fertiges Image für `linux/amd64` und `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (Tags `1.0.1`, `1.0`, `1`, `latest`).
 
 ```bash
 # .env neben docker-compose.yml anlegen (nie committen):
@@ -151,7 +151,7 @@ docker compose up -d            # lädt das Image; mit --build stattdessen aus d
 
 Danach `http://localhost:3000` öffnen und unter `/setup` das Konto anlegen. Die App lauscht nur auf `127.0.0.1` — für den Zugriff von außen einen TLS-Reverse-Proxy davorsetzen. `OIG_VERSION` in der `.env` legt eine Version fest (Standard `1`, also die neueste 1.x).
 
-Das Image entsteht aus dem Standalone-Output von Next.js und enthält nur, was der Server zur Laufzeit braucht — keine Screenshots, Doku, Tests oder Entwicklungsabhängigkeiten (der Build-Kontext ist eine Whitelist in `.dockerignore`). Es läuft als unprivilegierter Benutzer `node` (UID 1000) mit `tini` als Init-Prozess; die Compose-Datei entzieht zusätzlich alle Linux-Capabilities. Migrationen laufen bei jedem Start (`prisma migrate deploy`).
+Das Image entsteht aus dem Standalone-Output von Next.js und enthält nur, was der Server zur Laufzeit braucht — keine Screenshots, Doku, Tests oder Entwicklungsabhängigkeiten (der Build-Kontext ist eine Whitelist in `.dockerignore`). Es läuft als unprivilegierter Benutzer `node` (UID 1000) mit `tini` als Init-Prozess — die Programmdateien gehören root, beschreibbar sind nur die Datenverzeichnisse; die Compose-Datei entzieht zusätzlich alle Linux-Capabilities. Migrationen laufen bei jedem Start (`prisma migrate deploy`).
 
 Zwei benannte Volumes halten neben `oig-db` die Daten: `oig-attachments` (Beleganhänge, `ATTACHMENTS_DIR`) und `oig-archive` (write-once-Belegarchiv, `ARCHIVE_DIR`). Alle drei sichern.
 

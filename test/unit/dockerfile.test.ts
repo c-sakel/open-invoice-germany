@@ -26,6 +26,10 @@ describe("Dockerfile", () => {
   it.each([
     "openapi/openapi.json",
     "assets/fonts/LiberationSans-Regular.ttf",
+    "assets/fonts/IBMPlexSans-Regular.ttf",
+    "assets/fonts/IBMPlexSerif-Regular.ttf",
+    "assets/fonts/Inter-Regular.ttf",
+    "assets/fonts/SourceSerif4-Regular.ttf",
     "src/app/favicon.ico",
     "node_modules/swagger-ui-dist/swagger-ui-bundle.js",
     "node_modules/pdfkit/js/data/Helvetica.afm",
@@ -35,14 +39,31 @@ describe("Dockerfile", () => {
   });
 
   it("runner-Stage uebernimmt den Standalone-Output samt statischer Dateien", () => {
-    expect(runnerStage).toMatch(/COPY --from=build --chown=node:node \/app\/\.next\/standalone \.\//);
-    expect(runnerStage).toMatch(/COPY --from=build --chown=node:node \/app\/\.next\/static \.\/\.next\/static/);
-    expect(runnerStage).toMatch(/COPY --from=build --chown=node:node \/app\/public \.\/public/);
+    expect(runnerStage).toMatch(/COPY --from=build \/app\/\.next\/standalone \.\//);
+    expect(runnerStage).toMatch(/COPY --from=build \/app\/\.next\/static \.\/\.next\/static/);
+    expect(runnerStage).toMatch(/COPY --from=build \/app\/public \.\/public/);
   });
 
-  it("laeuft als unprivilegierter Benutzer mit tini als PID 1", () => {
+  it("laeuft als unprivilegierter Benutzer mit tini als PID 1, Programmdateien root-eigen", () => {
     expect(runnerStage).toMatch(/^USER node$/m);
     expect(runnerStage).toMatch(/^ENTRYPOINT \["\/usr\/bin\/tini", "--"\]$/m);
+    expect(runnerStage).not.toMatch(/^COPY .*--chown/m);
+    // Ohne explizites Mount sollen Belege nicht unbemerkt in anonymen Volumes landen.
+    expect(runnerStage).not.toMatch(/^VOLUME/m);
+  });
+
+  it("Basis-Image steht als literale FROM-Zeile mit Digest (Dependabot)", () => {
+    expect(dockerfile).toMatch(/^FROM node:\d+\.\d+\.\d+-[a-z]+-slim@sha256:[0-9a-f]{64} AS base$/m);
+  });
+
+  it("Prisma-CLI im Image hat dieselben Versionen wie package-lock.json", () => {
+    const lock = JSON.parse(read("package-lock.json")) as { packages: Record<string, { version: string }> };
+    const cli = JSON.parse(read("docker/prisma-cli/package.json")) as { dependencies: Record<string, string> };
+    const cliLock = JSON.parse(read("docker/prisma-cli/package-lock.json")) as { packages: Record<string, { version: string }> };
+    for (const name of ["prisma", "dotenv"]) {
+      expect(cli.dependencies[name]).toBe(lock.packages[`node_modules/${name}`].version);
+      expect(cliLock.packages[`node_modules/${name}`].version).toBe(lock.packages[`node_modules/${name}`].version);
+    }
   });
 });
 

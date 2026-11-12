@@ -25,6 +25,8 @@
 !scripts/docker-entrypoint.sh
 !scripts/db-prepare.sh
 !scripts/check-baseline.sql
+!docker/prisma-cli/package.json
+!docker/prisma-cli/package-lock.json
 
 !LICENSE
 

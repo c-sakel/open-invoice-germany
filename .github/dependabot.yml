@@ -10,6 +10,14 @@ updates:
       # Node-Major nur bewusst wechseln (engines in package.json, CI node-version).
       - dependency-name: node
         update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # PostgreSQL-Major nie automatisch: das Datenverzeichnis braucht ein Upgrade (pg_upgrade/Dump).
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Prueft den Datenbankzustand und wendet ausstehende Migrationen an.
 # In eine eigene Datei ausgelagert, damit dieser Teil ohne Anwendungsstart
-# testbar ist (docker-entrypoint.sh endet mit "exec npx next start").
+# testbar ist (docker-entrypoint.sh endet mit "exec node server.js").
 #
 # Frueher lief hier "prisma db push --accept-data-loss". Das durfte beim
 # Hochfahren stillschweigend Spalten und Tabellen entfernen — auf einer Instanz

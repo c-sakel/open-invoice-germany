@@ -141,7 +141,7 @@ The SQLite file lives at `prisma/dev.db` and belongs to you alone. On first star
 
 ## With Docker (PostgreSQL)
 
-A ready-made image for `linux/amd64` and `linux/arm64` is published with every release: **`ghcr.io/c-sakel/open-invoice-germany`** (tags `1.0.1`, `1.0`, `1`, `latest`).
+From version 1.0.1 on, every release publishes a ready-made image for `linux/amd64` and `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (tags `1.0.1`, `1.0`, `1`, `latest`).
 
 ```bash
 # .env next to docker-compose.yml (never commit it):
@@ -152,7 +152,7 @@ docker compose up -d            # pulls the image; add --build to build from thi
 
 Then open `http://localhost:3000` and create your account under `/setup`. The app only listens on `127.0.0.1` — put a TLS reverse proxy in front for outside access. `OIG_VERSION` in `.env` pins a version (default `1`, i.e. the latest 1.x).
 
-The image is built from the Next.js standalone output and contains only what the server needs at runtime — no screenshots, docs, tests or dev dependencies (the build context is an allowlist in `.dockerignore`). It runs as the unprivileged user `node` (UID 1000) with `tini` as init; the compose file additionally drops all Linux capabilities. Migrations run on every start (`prisma migrate deploy`).
+The image is built from the Next.js standalone output and contains only what the server needs at runtime — no screenshots, docs, tests or dev dependencies (the build context is an allowlist in `.dockerignore`). It runs as the unprivileged user `node` (UID 1000) with `tini` as init — program files belong to root, only the data directories are writable; the compose file additionally drops all Linux capabilities. Migrations run on every start (`prisma migrate deploy`).
 
 Two named volumes hold the data next to `oig-db`: `oig-attachments` (document attachments, `ATTACHMENTS_DIR`) and `oig-archive` (write-once document archive, `ARCHIVE_DIR`). Back up all three.
 
