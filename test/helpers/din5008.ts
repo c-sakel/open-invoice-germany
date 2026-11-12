@@ -13,12 +13,18 @@ export interface RecordedBox {
   yPt: number;
   widthPt: number;
   heightPt: number;
+  /** Nur Text: tatsaechliche Textbreite (einzeilig, aktuelle Schrift) und Ausrichtung. */
+  textWidthPt?: number;
+  /** Nur Text: Schriftgroesse beim Zeichnen. */
+  fontSizePt?: number;
+  align?: "left" | "right" | "center" | "justify";
 }
 
 interface TextOptions {
   width?: number;
   height?: number;
   lineGap?: number;
+  align?: "left" | "right" | "center" | "justify";
 }
 
 /** Spy auf `doc.text`/`doc.image`; `stop()` stellt die Originale wieder her und liefert die Boxen. */
@@ -37,7 +43,7 @@ export function recordTextBoxes(doc: PDFKit.PDFDocument): { stop(): RecordedBox[
     if (options.width !== undefined) measureOptions.width = options.width;
     if (options.lineGap !== undefined) measureOptions.lineGap = options.lineGap;
     const measured = doc.heightOfString(String(text), measureOptions);
-    boxes.push({ text: String(text), xPt: x, yPt: y, widthPt, heightPt: options.height ?? measured });
+    boxes.push({ text: String(text), xPt: x, yPt: y, widthPt, heightPt: options.height ?? measured, fontSizePt: (doc as unknown as { _fontSize: number })._fontSize, textWidthPt: Math.min(widthPt, doc.widthOfString(String(text))), ...(options.align ? { align: options.align } : {}) });
     return originalText(text, a as number, b as number, c);
   }) as typeof doc.text;
 
@@ -57,10 +63,49 @@ export function recordTextBoxes(doc: PDFKit.PDFDocument): { stop(): RecordedBox[
     return originalImage(src as string, a as number, b as number, c);
   }) as typeof doc.image;
 
+  // Flaechen und Linien (Kopfbalken, Karten, Trennlinien) als "[rect]" bzw. "[line]".
+  const originalRect = doc.rect.bind(doc);
+  const originalRounded = doc.roundedRect.bind(doc);
+  const originalMoveTo = doc.moveTo.bind(doc);
+  const originalLineTo = doc.lineTo.bind(doc);
+  let pen = { x: 0, y: 0 };
+  let inShape = false; // rect/roundedRect rufen intern moveTo/lineTo auf
+  doc.rect = ((x: number, y: number, w: number, h: number) => {
+    boxes.push({ text: "[rect]", xPt: x, yPt: y, widthPt: w, heightPt: h });
+    inShape = true;
+    try {
+      return originalRect(x, y, w, h);
+    } finally {
+      inShape = false;
+    }
+  }) as typeof doc.rect;
+  doc.roundedRect = ((x: number, y: number, w: number, h: number, r?: number) => {
+    boxes.push({ text: "[rect]", xPt: x, yPt: y, widthPt: w, heightPt: h });
+    inShape = true;
+    try {
+      return originalRounded(x, y, w, h, r);
+    } finally {
+      inShape = false;
+    }
+  }) as typeof doc.roundedRect;
+  doc.moveTo = ((x: number, y: number) => {
+    pen = { x, y };
+    return originalMoveTo(x, y);
+  }) as typeof doc.moveTo;
+  doc.lineTo = ((x: number, y: number) => {
+    if (!inShape) boxes.push({ text: "[line]", xPt: Math.min(pen.x, x), yPt: Math.min(pen.y, y), widthPt: Math.abs(x - pen.x), heightPt: Math.abs(y - pen.y) });
+    pen = { x, y };
+    return originalLineTo(x, y);
+  }) as typeof doc.lineTo;
+
   return {
     stop() {
       doc.text = originalText as typeof doc.text;
       doc.image = originalImage as typeof doc.image;
+      doc.rect = originalRect as typeof doc.rect;
+      doc.roundedRect = originalRounded as typeof doc.roundedRect;
+      doc.moveTo = originalMoveTo as typeof doc.moveTo;
+      doc.lineTo = originalLineTo as typeof doc.lineTo;
       return boxes;
     },
   };

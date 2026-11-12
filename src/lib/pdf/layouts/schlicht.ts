@@ -5,7 +5,8 @@
  * Fusszeile in Primaerfarbe.
  */
 import type { PdfLayout } from "./types";
-import { drawLogoAndSender, drawRecipient, drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
+import { drawHeaderLogo, drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
+import { drawDinAddress, dinBodyTop, infoBlockX } from "./din-address";
 
 /** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
 const FOOTER_FONT_SIZE = 7.5;
@@ -17,27 +18,27 @@ export const schlichtLayout: PdfLayout = {
   fontDelta: 0,
   drawKopf(frame, input) {
     const { doc, left, right, margins, base } = frame;
-    drawLogoAndSender(frame, input);
+    drawHeaderLogo(frame);
     const buyerY = margins.top + 62;
 
-    // Infoblock rechts (Breite 200): kleine Beschriftung, darunter die Nummer gross
+    // Infoblock rechts (Breite 200, nie links von 125 mm): kleine Beschriftung, darunter die Nummer gross
     // kursiv, darunter Label/Wert-Zeilen. Beide oberen Zeilen bekommen die VOLLE
     // Blockbreite statt einer festen Haelfte — pdfkit (dieses Bundle) ignoriert
     // `lineBreak: false`, sobald `width` gesetzt ist (der Zeilenumbruch laeuft in
     // dem Fall unabhaengig davon), ein enges Halbfeld fuer lange Labels wie
     // "Lieferscheinnummer" wuerde also trotzdem zweizeilig umbrechen und mit der
     // Meta-Tabelle darunter kollidieren.
-    const infoX = right - 200;
-    // Follow-up (Reviews, Task 5): Empfaengerblock nicht breiter als bis 10pt vor den
-    // Infoblock — sonst laeuft ein langer Empfaengername in die Meta-Tabelle hinein.
-    const recipientBottom = drawRecipient(frame, input, buyerY, base + 1, infoX - left - 10);
+    const infoX = Math.max(right - 200, infoBlockX());
+    const infoW = right - infoX;
+    // DIN 5008 Form B: Absenderzeile in der Vermerkzone, Anschrift ab 62,7 mm (din-address.ts).
+    const recipientBottom = drawDinAddress(frame, input, { maxSize: base + 1 });
     doc.font("Helvetica").fontSize(base - 1).fillColor("#555");
-    doc.text(input.numberLabel, infoX, buyerY - 14, { width: 200, align: "right" });
+    doc.text(input.numberLabel, infoX, buyerY - 14, { width: infoW, align: "right" });
     doc.font("Helvetica-Oblique").fontSize(base + 3).fillColor("#000");
-    doc.text(input.number, infoX, buyerY - 3, { width: 200, align: "right" });
-    const metaBottom = drawMetaTable(frame, input.meta, infoX, buyerY + base + 8, 200, base - 1);
+    doc.text(input.number, infoX, buyerY - 3, { width: infoW, align: "right" });
+    const metaBottom = drawMetaTable(frame, input.meta, infoX, buyerY + base + 8, infoW, base - 1);
 
-    let y = Math.max(recipientBottom, metaBottom, margins.top + 150) + 26;
+    let y = dinBodyTop(recipientBottom, metaBottom, 26);
     doc.font("Helvetica-BoldOblique").fontSize(base + 4).fillColor("#000").text(`${input.title} ${input.number}`, left, y, { width: right - left });
     y = doc.y + 12;
     if (input.subject) y = drawSubject(frame, input.subject, y);

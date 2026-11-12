@@ -1,6 +1,7 @@
 /** Layout "Standard" — exakt das Layout von Phase 7 (Kompatibilitaet fuer Bestandsbetreiber). */
 import type { PdfLayout } from "./types";
-import { drawLogoAndSender, drawRecipient, drawMetaRows, drawFooterColumns, drawSubject } from "./shared";
+import { drawHeaderLogo, drawMetaRows, drawFooterColumns, drawSubject } from "./shared";
+import { drawDinAddress, dinBodyTop, infoBlockX } from "./din-address";
 
 /** Einzige Quelle fuer die Fusszeilen-Schrift: Messung (footerZoneHeight) und Zeichnung muessen identisch sein. */
 const FOOTER_FONT_SIZE = 8;
@@ -12,21 +13,16 @@ export const standardLayout: PdfLayout = {
   fontDelta: 0,
   drawKopf(frame, input) {
     const { doc, left, right, margins, primary } = frame;
-    drawLogoAndSender(frame, input);
+    drawHeaderLogo(frame);
     const buyerY = margins.top + 60;
-    // Fix-Runde 1 (Task-5-Review): Empfaengerbreite explizit auf den festen 240pt-Default
-    // gepinnt (Infoblock steht bei `left + 250`) — nicht auf `drawRecipient`s Default
-    // verlassen, siehe shared.ts#drawRecipient.
-    const recipientBottom = drawRecipient(frame, input, buyerY, 11, 240);
-    doc.fontSize(18).fillColor(primary).font("Helvetica").text(input.title, left, buyerY, { align: "right", width: right - left });
-    const metaTop = margins.top + 90;
-    const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], left + 250, metaTop);
-    // Phase 11b, Task 3 — mit einem zusaetzlichen Empfaengerblock (Lieferschein-
-    // Lieferadresse, S7 Fix-Welle) haengt der Tabellenbeginn vom tatsaechlich gedruckten
-    // Empfaenger-/Meta-Block ab (der Lieferadress-Block braucht je nach Inhalt mehr oder
-    // weniger Platz als die feste Rechnungs-Kopfhoehe); ohne ihn bleibt die feste Hoehe aus
-    // Task 2 (byte-kompatibel zu Phase 7).
-    let y = input.extraRecipientBlock ? Math.max(recipientBottom, metaBottom, margins.top + 150) + 20 : margins.top + 170;
+    // DIN 5008 Form B: Absenderzeile in der Vermerkzone, Anschrift ab 62,7 mm (din-address.ts).
+    const recipientBottom = drawDinAddress(frame, input, { maxSize: 11 });
+    const infoX = infoBlockX();
+    doc.fontSize(18).fillColor(primary).font("Helvetica").text(input.title, infoX, buyerY, { align: "right", width: right - infoX });
+    const metaTop = Math.max(margins.top + 90, doc.y + 6);
+    const metaBottom = drawMetaRows(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], infoX, metaTop);
+    // Der Tabellenbeginn haengt vom gedruckten Anschrift-/Meta-Block ab, frueheste Lage 97 mm.
+    let y = dinBodyTop(recipientBottom, metaBottom, 20);
     if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {
       doc.fontSize(9).fillColor("#333").text(input.intro, left, y, { width: right - left });

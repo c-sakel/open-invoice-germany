@@ -21,15 +21,15 @@ import { sampleDeliveryNote, sampleDunning } from "../helpers/pdf-fixtures";
 import { testPdfTheme } from "../helpers/pdf-theme";
 
 const LAYOUTS = ["standard", "schlicht", "klassik", "modern", "blau", "schwarz", "kompakt"] as const;
-const HOLDERS = ["Max Mustermann", "Einzelunternehmen Max Mustermann Musterhost"];
+const HOLDERS = ["Jan Fischer", "Einzelunternehmen Jan Fischer Beispiel-Hosting-Service"];
 
 const facts = {
-  seller: { name: "Einzelunternehmen Max Mustermann", addressLine1: "Musterweg 10", postalCode: "12345", city: "Musterstadt", vatId: "DE123456789", taxNumber: "12/345/67890", email: "kontakt@example.org", phone: "01234 567890" },
+  seller: { name: "Einzelunternehmen Jan Fischer", addressLine1: "Am Beispielgrund 10", postalCode: "12345", city: "Musterstadt", vatId: "DE123456789", taxNumber: "12/345/67890", email: "info@muster-host.de", phone: "01234 567890" },
   iban: "DE02120300000000202051",
-  bic: "COBADEFFXXX",
-  bankName: "Musterbank Musterstadt",
-  website: "Example.org",
-  ownerName: "Max Mustermann",
+  bic: "BYLADEM1001",
+  bankName: "Musterbank Musterort",
+  website: "Muster-Host.de",
+  ownerName: "Jan Fischer",
 };
 
 function frameFor(doc: PDFKit.PDFDocument, theme: ReturnType<typeof testPdfTheme>): LayoutFrame {
@@ -51,7 +51,7 @@ describe("layoutFooterColumns — Kontoinhaber", () => {
     expect(laid.size).toBe(without.size);
     for (let i = 0; i < 3; i++) expect(laid.columns[i]!.lines, `${id} Spalte ${i}`).toEqual(without.columns[i]!.lines);
     const bank = laid.columns[3]!.lines;
-    expect(bank).toEqual(["Bank Musterbank Musterstadt", "Kontoinhaber Max Mustermann", without.columns[3]!.lines[1], "BIC COBADEFFXXX"]);
+    expect(bank).toEqual(["Bank Musterbank Musterort", "Kontoinhaber Jan Fischer", without.columns[3]!.lines[1], "BIC BYLADEM1001"]);
     expect(bank[2]).toMatch(/^IBAN DE02 1203 /); // IBAN bleibt gruppiert
   });
 
@@ -81,7 +81,7 @@ describe("layoutFooterColumns — Kontoinhaber", () => {
     expect(row.lines.length).toBeGreaterThan(1);
     doc.font("Helvetica").fontSize(laid.size);
     for (const l of row.lines) expect(doc.widthOfString(l)).toBeLessThanOrEqual(row.width + 0.5);
-    expect(laid.columns.slice(0, 4).flatMap((c) => c.lines)).toContain("Einzelunternehmen Max Mustermann");
+    expect(laid.columns.slice(0, 4).flatMap((c) => c.lines)).toContain("Einzelunternehmen Jan Fischer");
   });
 });
 
@@ -163,7 +163,7 @@ describe("Kontoinhaber in der Fusszeile — PDF, alle Layouts", () => {
 
 describe("Mahnung und Lieferschein: Fusszeile hat dieselben Spalten wie die Rechnung", () => {
   it("Tel./E-Mail/Web aus dem Verkaeuferdatensatz, vier Spalten wie bei der Rechnung", async () => {
-    const t = testPdfTheme({ layoutId: "standard", footerFacts: { website: "Example.org", ownerName: "Max Mustermann" } });
+    const t = testPdfTheme({ layoutId: "standard", footerFacts: { website: "Muster-Host.de", ownerName: "Jan Fischer" } });
     const seller = { ...facts.seller, countryCode: "DE", iban: facts.iban, bic: facts.bic, bankName: facts.bankName };
     const d = sampleDunning();
     d.seller = { ...d.seller, ...seller };

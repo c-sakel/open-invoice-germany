@@ -230,7 +230,7 @@ describe("renderDeliveryNotePdf", () => {
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 
-  it("Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock bricht bei 70 Positionen auf eine eigene Seite um, OHNE den Tabellenkopf zu wiederholen", async () => {
+  it("Fix-Runde 1 (Koordinator, Punkt 2): der Summenblock bricht bei 65 Positionen auf eine eigene Seite um, OHNE den Tabellenkopf zu wiederholen", async () => {
     // Empirisch ermittelt (Testkommentar statt Magiezahl-Erklaerung): bei den Default-
     // Raendern fuellen 70 Zeilen (16pt/Zeile) die ersten beiden Seiten bis knapp vor den
     // unteren Rand, sodass der Summenblock (Linie + bis zu drei Summenzeilen) auf eine
@@ -247,7 +247,9 @@ describe("renderDeliveryNotePdf", () => {
     // bereits beide Positionsseiten VOLL, sodass "nur" numpages=3 UND beschCount=numpages-1
     // erst wieder bei sehr viel groesseren n gilt — 70 bleibt der naechste stabile Wert
     // mit derselben "zwei Positionsseiten + eine reine Summenseite"-Form).
-    const lineCount = 70;
+    // DIN 5008 Form B (Hotfix din5008-absender): die Anschrift beginnt bei 62,7 mm, der Tabellenbeginn
+    // liegt fruehestens bei 97 mm — Seite 1 fasst ca. 3 Zeilen weniger, der stabile Wert sank von 70 auf 65.
+    const lineCount = 65;
     const lines: DeliveryNotePdfData["lines"] = Array.from({ length: lineCount }, (_, i) => ({
       pos: i + 1,
       description: `Testartikel ${i + 1}`,

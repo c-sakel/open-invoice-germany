@@ -190,10 +190,10 @@ Unter **„Einstellungen"** findest du seit Phase 7 zusätzliche Seiten für das
 
 ### Briefpapier einrichten (Reiter „Briefpapier")
 - **Logo hochladen**: PNG oder JPEG, max. **2 MB**. Wird je nach Layout oben rechts oder oben links auf jedem Beleg-PDF angezeigt.
-- **Logogröße**: Schieberegler + Zahlenfeld „Breite im PDF (mm)", 10–140 mm. Die Höhe wird automatisch auf 35 mm begrenzt — ein breites/flaches Logo wird bis zu dieser Breite groß, ein hohes/schmales Logo wird schon vorher durch die Höhengrenze gebremst, damit es nicht in den Adressblock hineinläuft. **Ausnahme Layout „modern"**: dort ist das Logo zusätzlich auf die Höhe des Kopfbalkens begrenzt (≈ 15 mm) — ein breites Logo wirkt dort kleiner als in den übrigen Layouts, auch bei hoher eingestellter Breite.
+- **Logogröße**: Schieberegler + Zahlenfeld „Breite im PDF (mm)", 10–140 mm. Die Höhe wird automatisch auf 35 mm begrenzt (und so, dass das Logo bei 45 mm von oben endet; bei großem oberen Rand wird es entsprechend kleiner) — ein breites/flaches Logo wird bis zu dieser Breite groß, ein hohes/schmales Logo wird schon vorher durch die Höhengrenze gebremst, damit es nicht in den Adressblock hineinläuft. **Ausnahme Layout „modern"**: dort ist das Logo zusätzlich auf die Höhe des Kopfbalkens begrenzt (≈ 15 mm) — ein breites Logo wirkt dort kleiner als in den übrigen Layouts, auch bei hoher eingestellter Breite.
 - **Hintergrundbild** (optional): PNG oder JPEG, max. **5 MB**, ganzseitig hinter dem Beleginhalt — nur sichtbar, wenn „Hintergrund anzeigen" aktiv ist.
 - **Primärfarbe**, **Ränder** (oben/rechts/unten/links, mm) und **Schriftgröße** (pt) bestimmen Optik.
-- **Absenderzeile** und Fußzeile (automatisch aus den Stammdaten in vier Spalten, oder drei freie Textfelder links/mittig/rechts).
+- **Absenderzeile** (Rücksendeangabe, steht in allen Layouts als unterste Zeile über der Anschrift im Fensterfeld nach DIN 5008 Form B) und Fußzeile (automatisch aus den Stammdaten in vier Spalten, oder drei freie Textfelder links/mittig/rechts).
 - **Vorschau**: Link auf der Seite öffnet eine Musterrechnung/-lieferschein mit dem aktuell gespeicherten Layout.
 - Änderungen wirken sofort auf **alle** künftigen PDF-Abrufe, auch bei bereits festgeschriebenen Belegen (Nachdruck) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Nummer) bleibt davon unberührt (siehe [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 6).
 

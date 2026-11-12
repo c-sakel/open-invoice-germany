@@ -1,6 +1,6 @@
 /** Phase 16g, Task 4 — Empfaenger, Absenderzeile und Logo bleiben im DIN-5008-Fenster. */
 import { describe, it, expect } from "vitest";
-import { buildLayout, checkRecipientWindow } from "@/lib/pdf/layouts/configurable";
+import { buildLayout, checkRecipientWindow, fitRecipient } from "@/lib/pdf/layouts/configurable";
 import { presetConfig } from "@/lib/pdf/layouts/presets";
 import { PDF_FONT_FAMILIES } from "@/lib/pdf/font-families";
 import { createPdfDocument } from "@/lib/pdf/document";
@@ -59,11 +59,27 @@ describe("DIN-5008-Fenster", () => {
             header: { heightMm: 45 - m.top },
           };
           const boxes = render(config, false, EXTRA);
-          expectInDinWindow(boxes, [SENDER, RECIPIENT.name, RECIPIENT.contactName, RECIPIENT.addressLine1, RECIPIENT.addressLine2, "12345 Musterstadt", "ÖSTERREICH", EXTRA.heading, ...EXTRA.lines]);
+          expectInDinWindow(boxes, [SENDER, RECIPIENT.name, RECIPIENT.contactName, RECIPIENT.addressLine1, RECIPIENT.addressLine2, "12345 Musterstadt", "ÖSTERREICH"]);
+          // Zusatzblock steht unterhalb der Postanschrift in Normalgroesse und zaehlt nicht fuer das Fenster
+          const country = boxes.find((b) => b.text === "ÖSTERREICH")!;
+          const extra = boxes.find((b) => b.text === EXTRA.heading)!;
+          expect(extra.yPt).toBeGreaterThanOrEqual(country.yPt + country.heightPt - 0.01);
         });
       }
     }
   }
+
+  it("fitRecipient: ein Zusatzblock (Lieferanschrift) aendert die Einpassung der Postanschrift nicht", () => {
+    const doc = createPdfDocument({ size: "A4", margins: { top: 57, right: 57, bottom: 57, left: 57 }, compress: false, pdfa: true });
+    const input = { title: "", numberLabel: "", number: "", meta: [], senderFallback: "", recipient: RECIPIENT };
+    const zoneTop = mm(62.7);
+    const without = fitRecipient(doc, input, zoneTop, mm(85));
+    const withExtra = fitRecipient(doc, { ...input, extraRecipientBlock: { heading: "Lieferanschrift", lines: ["a", "b", "c", "d"] } }, zoneTop, mm(85));
+    doc.end();
+    expect(withExtra).toEqual(without);
+    expect(without.lineGap).toBeUndefined();
+    expect(without.size).toBeGreaterThanOrEqual(10);
+  });
 
   it("hohes Logo bleibt in der Kopfzone", () => {
     const base = presetConfig("standard");
@@ -80,7 +96,7 @@ describe("DIN-5008-Fenster", () => {
       marginsMm: { ...base.marginsMm, top: 5 }, header: { heightMm: 40 }, logo: { position: "left", widthMm: 80 },
     };
     const boxes = render(config, true, EXTRA);
-    expectInDinWindow(boxes, [SENDER, RECIPIENT.name, "ÖSTERREICH", ...EXTRA.lines]);
+    expectInDinWindow(boxes, [SENDER, RECIPIENT.name, "ÖSTERREICH"]);
     const image = boxes.find((b) => b.text === "[image]");
     expect(image!.yPt + image!.heightPt).toBeLessThanOrEqual(mm(45) + 0.01);
   });

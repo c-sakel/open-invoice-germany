@@ -109,7 +109,7 @@ describe("Lieferschein mit Design", () => {
 
 describe("Lieferschein: DIN-5008-Fenster", () => {
   for (const [font, size] of [["inter", 8], ["ibm-plex-serif", 12]] as const) {
-    it(`${font} ${size} pt mit Lieferanschrift-Zusatzblock: Kopf im Fenster`, async () => {
+    it(`${font} ${size} pt mit Lieferanschrift-Zusatzblock: Postanschrift im Fenster, Zusatzblock darunter`, async () => {
       const data: DeliveryNotePdfData = {
         ...NOTE(),
         showDeliveryAddress: true,
@@ -124,10 +124,11 @@ describe("Lieferschein: DIN-5008-Fenster", () => {
         b.contactName!,
         b.addressLine1,
         `${b.postalCode} ${b.city}`,
-        de.meta.deliveryNoteAddress,
-        "Lager Nord, Hafenstraße 1",
-        "20095 Hamburg",
       ]);
+      // Zusatzblock (Lieferanschrift) zaehlt nicht fuers Fenster, steht aber unter der Postanschrift
+      const postal = boxes.find((x) => x.text === `${b.postalCode} ${b.city}`)!;
+      const heading = boxes.find((x) => x.text === de.meta.deliveryNoteAddress)!;
+      expect(heading.yPt).toBeGreaterThanOrEqual(postal.yPt + postal.heightPt - 0.01);
     });
   }
 });
