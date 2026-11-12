@@ -1,4 +1,4 @@
-# Bekannte Einschränkungen (MVP)
+# Bekannte Einschränkungen
 
 Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-09-12.
 

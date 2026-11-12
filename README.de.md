@@ -65,20 +65,32 @@ Ereignisgetriebene **Webhooks** (`/api/v1/Webhook`, Scope `admin`) liefern Ereig
 - **GoBD-Kern**: Festschreibung (Entwurf → unveränderbar), lückenlose Nummernkreise, append-only Audit-**Hash-Chain**, Storno statt Löschung.
 - **§ 14 UStG**: Pflichtangaben-Prüfung blockt das Festschreiben bei fehlenden Angaben.
 - **Steuerschemata**: Regelbesteuerung (19/7/0), Kleinunternehmer (§ 19), Reverse Charge (§ 13b), ig. Lieferung, Differenzbesteuerung (§ 25a), Kleinbetrag (§ 33).
-- **E-Rechnung**: **XRechnung** (UBL, EN 16931) — Export inkl. EN-16931-Kernregel-Validierung. ZUGFeRD/Factur-X über Mustang-Sidecar (Docker).
-- **PDF-Export** ("sonstige Rechnung") mit allen Pflichtangaben.
-- **Positions-Editor**: Drag-and-Drop zum Umordnen, Positionen duplizieren, Überschriften/Textblöcke/berechnete Zwischensummen neben regulären Positionen (nur reguläre Positionen landen im E-Rechnung-XML), Rich-Text (eingeschränktes Markdown — fett/kursiv/unterstrichen, eine Listenebene, Links) in Positionsbeschreibungen, Artikelnummern sowie Kopffelder (Betreff, Bestellnummer, interne Referenz, Ansprechpartner, Liefer-/Rechnungsadresse).
-- **Beleganhänge**: Dateien an jeden Beleg (Rechnung, Angebot, Lieferschein, Mahnung, Abo) anhängen — 10 MB je Datei, 50 MB je Beleg, MIME-Whitelist + Magic-Bytes-Prüfung, hash-adressierte Ablage mit Dedup, auswählbar als Zusatzanhang beim Mailversand.
+- **E-Rechnung**: **XRechnung** (UBL, EN 16931) **und ZUGFeRD/Factur-X-Hybrid-PDF** (eingebettetes EN-16931-CII in einem **PDF/A-3b**-Container), beide direkt in der App erzeugt und gegen die **offiziellen Schematron-Regeln** geprüft (SaxonJS, ohne Java) — in der CI zusätzlich mit KoSIT-Validator und veraPDF gegengeprüft. B2G: Die Leitweg-ID des Kunden geht als Käuferreferenz (BT-10) hinaus; eine abweichende Lieferanschrift landet in BG-13/BG-15.
+- **GoBD-Betrieb**: write-once-Belegarchiv (PDF, CII und UBL im Stand der ersten Ausgabe), regelmäßige Prüfung der Hash-Kette mit Statusseite, Prüfer-Export für die Betriebsprüfung (GDPdU/Z3-Datenzugriff inkl. amtlicher DTD), Gegenbuchung statt Löschen von Zahlungen, Vorlagen für Sicherungsskripte.
+- **Auslandskunden**: Rechnungen in Fremdwährung mit Umrechnungskurs nach § 16 Abs. 6 UStG (USt in EUR ausgewiesen), Belegsprache Deutsch oder Englisch und OSS-Schwellenwächter (§ 3c Abs. 4 UStG) mit Dashboard-Karte und Benachrichtigung.
+- **Belegarten**: Angebote, Auftragsbestätigungen, Proforma — in eine Rechnung umwandelbar.
+- **Rabatte, Aufschläge & Skonto**: Positionsrabatt (Prozent + Festbetrag) und Belegrabatt/-aufschlag (anteilig je Steuersatz verteilt), korrekt als `AllowanceCharge` in XRechnung/ZUGFeRD (BG-20/21/27/28); Skonto (bis zu zwei Stufen) als BT-20-Text inkl. der Konvention `#SKONTO#TAGE=n#PROZENT=x.xx#`, mit Vorschlag beim Zahlungseingang.
+- **Zahlungsmethoden**: Katalog je Organisation (Systemcodes + eigene), optionaler Kunden-Standard, beim Festschreiben eingefroren, als UNTDID-4461-`PaymentMeansCode` ausgegeben.
 - **Teil-, Abschlags- und Schlussrechnungen** (§ 14 Abs. 5 UStG): Teilrechnung über Prozent/Betrag/einzelne Positionen aus Angebot oder Lieferschein, Abschlagsrechnung vor Leistungserbringung (E-Rechnung-Typcode 386), abschließende Schlussrechnung, die die Abschläge samt Steuer automatisch absetzt (unveränderlicher Abzugs-Snapshot, BT-113/BT-115/BG-3 in der E-Rechnung, passender PDF-Abzugsblock).
+- **Ein Editor für alle Belege mit Live-Vorschau**: Rechnungen, Angebote/AB/Proforma und Lieferscheine im selben Editor, Kunden und Produkte direkt anlegen, PDF-Vorschau des ungespeicherten Entwurfs per Klick (mit Wasserzeichen, nichts wird gespeichert), Positionen per Drag-and-Drop oder Tastatur (`Alt+↑`/`Alt+↓`, `Enter` für neue Zeile) umordnen, Überschriften/Textblöcke/berechnete Zwischensummen neben regulären Positionen (nur reguläre Positionen landen im E-Rechnung-XML), Rich-Text (eingeschränktes Markdown — fett/kursiv/unterstrichen, eine Listenebene, Links) in Positionsbeschreibungen, Artikelnummern sowie Kopffelder (Betreff, Bestellnummer, interne Referenz, Ansprechpartner, Liefer-/Rechnungsadresse).
+- **Beleganhänge**: Dateien an jeden Beleg (Rechnung, Angebot, Lieferschein, Mahnung, Abo) anhängen — 10 MB je Datei, 50 MB je Beleg, MIME-Whitelist + Magic-Bytes-Prüfung, hash-adressierte Ablage mit Dedup, auswählbar als Zusatzanhang beim Mailversand.
+- **Zahlungen & Mahnwesen**: (Teil-)Zahlungen erfassen; gestufte Erinnerungen (Zahlungserinnerung → 1./2. Mahnung) mit **Verzugszinsen** (§ 288 BGB, taggenau auch über Basiszinswechsel; Basiszins-Halbjahrestabelle pflegbar in UI/REST/MCP) + 40-€-Pauschale (B2B), jeweils als PDF.
+- **Abo-Rechnungen**: wöchentliche bis jährliche Vorlagen mit Abrechnungszeitraum, optional automatisch festschreiben, Lauf über UI/MCP oder Cron (`npm run recurring:run`).
+- **Gutschriften**: Vollstorno **oder** Teilgutschrift, das Original bleibt festgeschrieben.
 - **Briefpapier, Druckoptionen & Nummernkreise**: Briefpapier je Organisation (Logo, Farbe, Ränder, Absender-/Fußzeile) mit Live-Vorschau; zehn globale Druckschalter (Fußzeile, Seitenzahlen, Falz-/Lochmarken, welche Spalten erscheinen) mit Beleg-Override im Entwurf; neun konfigurierbare Nummernkreise (Angebote, Auftragsbestätigungen, Proforma, Lieferscheine, Rechnungen, Gutschriften, Mahnungen sowie Kunden-/Artikelnummern) mit Muster/Präfix/Reset und Rückdreh-Sperre.
+- **PDF-Layouts & Layout-Designer**: sieben feste Layouts (Standard, Schlicht, Klassik, Modern, Blau, Schwarz, Kompakt) nach DIN 5008 Form B, dazu ein **Layout-Designer** für eigene, versionierte Designs (Blockreihenfolge, Spalten, Schriften IBM Plex / Source Serif 4 / Inter) mit Live-Vorschau. Wählbar je Belegart, im Entwurf je Beleg überschreibbar; beim Festschreiben wird das Layout eingefroren. Die Fußzeile entsteht aus den Firmendaten (vier Spalten) oder aus drei eigenen Textfeldern.
 - **EPC-QR-Code („GiroCode")** auf Rechnungen — Scannen & Bezahlen in jeder Banking-App, aus denselben IBAN-/Betragsdaten der Rechnung erzeugt; entfällt ohne Fehler, wenn eine Voraussetzung fehlt (Fremdwährung, keine IBAN, kein offener Betrag).
 - **Kundenkomfort**: mehrere Adressen (Rechnung/Lieferung/Sonstige) und Ansprechpartner je Kunde mit Standard-Kennzeichen und Beleg-Snapshot, zehn kundenspezifische Vorgaben (Standardwährung/-Rabatt, E-Mail/CC, Bestellreferenz, Liefer-/Zahlungsbedingungstext), organisationsweite benutzerdefinierte Kundenfelder (Text/Zahl/Datum/Ja-Nein/Auswahl) als `{{customField.<Schlüssel>}}`, „Letztes Dokument übernehmen" (Positionen/Texte/Bedingungen/Preise) beim Anlegen neuer Angebote/AB/Rechnungen.
+- **Vorlagen & Tags**: wiederverwendbare Belegvorlagen, Textbausteine und Tags zum Filtern von Belegen.
+- **Arbeitsablauf**: abgeleiteter Rechnungsstatus (fällig/überfällig, nie gespeichert) für alle Listen, Filter und das Dashboard; Schnellaktionen je Zeile (senden, Zahlung erfassen, nächste Mahnstufe, umwandeln, stornieren …) nur dort, wo sie zum Status passen; filter- und durchsuchbare Listen mit Status-Tabs; Zeitleiste je Beleg (Erstellung, Versand, Zahlungen, Mahnungen, Statuswechsel); Dashboard mit offenen/fälligen/überfälligen Posten, Altersstruktur und Umsatz; Kunden-Detailseite mit Kennzahlen; Benachrichtigungen in der App mit optionalem täglichem Mail-Digest; Befehlspalette (⌘K/Ctrl+K).
+- **Auswertungen**: Diagramme zu Umsatz, Zahlungseingang, Zahlungsverhalten, Top-Produkten, Angebotsquote und wiederkehrendem Umsatz.
+- **Belegansicht mit PDF im Mittelpunkt**: eingebettetes PDF, Statuskarte rechts (Kunde, Daten, Beträge, Zahlungen/Mahnungen), Aktionen oben, Belegkette, Blättern durch die zuletzt gefilterte Liste mit `‹`/`›` bzw. `Alt+←`/`Alt+→`.
 - **Self-hosted**: SQLite-Solo ohne Server **oder** PostgreSQL via Docker.
-- **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie) — App und API geschützt.
+- **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie, gehärtete Anmeldung, Passwort ändern) — App und API geschützt. API-Anfragen werden protokolliert (geschwärzt) unter Einstellungen → API.
 
 ### Status
 
-MVP. Was funktioniert: Stammdaten/Kunden/Produkte, Angebots-/Rechnungsmodell, Entwurf→Festschreiben→Storno, Teilgutschriften, **stufen-getriebenes Mahnwesen mit eingebautem Scheduler (§ 288 BGB)**, **wiederkehrende Rechnungen/Abos**, PDF- + **XRechnung- + ZUGFeRD**-Export, GoBD-Nummernkreis + Audit. Auf der Roadmap: DATEV-Export, B2G/Leitweg-ID, OSS/ZM, Multi-User. Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / Stufe 2 / Stufe 3) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
+Seit September 2026 im produktiven Einsatz für echte Rechnungen. Alles oben Genannte funktioniert und ist durch Tests abgedeckt; die E-Rechnungen bestehen bei jedem CI-Lauf die offiziellen Validatoren. Auf der Roadmap: DATEV-/CSV-Export, ZM-/OSS-Meldungen, VIES-Prüfung, Peppol-EAS-Schemata. Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
 
 ## Dokumentworkflow
 
@@ -96,6 +108,12 @@ Dieselben Aktionen auch per MCP: `convert_document`, `create_delivery_note`, `se
 ### Angebot online annehmen lassen
 
 Auf der Angebots-Detailseite (`Dokumente → Angebot`) unter „Annahme-Link" einen Link erzeugen — die URL wird **einmalig** angezeigt (Kopieren-Button), danach nicht mehr abrufbar. Der Kunde öffnet den Link ohne Login, sieht Angebot + PDF-Download und kann annehmen oder ablehnen (Name Pflicht, E-Mail/Kommentar optional). Nach der Entscheidung: Status `ACCEPTED`/`REJECTED`, eine interne Benachrichtigungsmail, und je nach Einstellung (**Einstellungen → Dokumente**) automatisch eine Auftragsbestätigung oder ein Rechnungsentwurf. Der Link kann jederzeit widerrufen werden. Für den Platzhalter `{{offer.link}}` in der Angebots-Mailvorlage `APP_BASE_URL` setzen (`.env`) — sonst bleibt er leer.
+
+### Navigation und Suche
+Die Seitenleiste links gliedert die App in Übersicht, Verkauf (Angebote, Auftragsbestätigungen, Proforma-Rechnungen, Lieferscheine, Rechnungen, Gutschriften, Abo-Rechnungen, Mahnwesen) und Verwaltung (Kunden, Produkte, Benachrichtigungen, Einstellungen). Sie lässt sich auf Symbole einklappen. Das Suchfeld oben (auch ⌘K / Ctrl+K) findet Belege nach Nummer oder Kunde sowie Kunden und Produkte und bietet Schnellaktionen.
+
+### Oberfläche
+Alle Farben, Radien, Schatten und Schriften sind Design-Tokens im `@theme`-Block von `src/app/globals.css` (`paper`, `sheet`, `ink`, `pen`, `stamp`, `seal`, `ledger` …); Komponenten nutzen die Token-Klassen (`bg-sheet`, `text-ink-soft` …) statt fester Farben. Der Dunkelmodus folgt der Systemeinstellung (`prefers-color-scheme`), einen manuellen Schalter gibt es nicht. Die Schriften (IBM Plex Sans und Mono) liegen lokal über `@fontsource` (SIL OFL) bei — es geht keine Anfrage an einen externen Schriftdienst. Listen werden auf schmalen Bildschirmen als Karten dargestellt, Diagramme passen sich ihrem Container an, und der Tastaturfokus ist als 2-px-Rahmen sichtbar.
 
 ## Tech-Stack
 
@@ -120,7 +138,7 @@ Die SQLite-Datei liegt unter `prisma/dev.db` und gehört nur dir. Beim ersten St
 
 **In der App:** `Einstellungen` (Unternehmen anlegen) → `Kunden` → `Neue Rechnung` → Position erfassen → **Festschreiben** (vergibt die Nummer, macht GoBD-konform unveränderbar) → **PDF**- und **XRechnung**-Export. Komplette Schritt-für-Schritt-Anleitung: **[docs/ANLEITUNG.md](docs/ANLEITUNG.md)**.
 
-## Mit Docker (PostgreSQL + ZUGFeRD-Sidecar)
+## Mit Docker (PostgreSQL)
 
 ```bash
 cp .env.example .env            # DATABASE_URL auf die postgresql://-Zeile umstellen
@@ -188,7 +206,17 @@ ist gewollt (fail-closed) statt bei unsicherem Schemazustand einfach
 weiterzulaufen. Prüfen, was die Migration teilweise angerichtet hat, dann mit
 `prisma migrate resolve --rolled-back <name>` auflösen.
 
-`docker-compose.yml` startet App + PostgreSQL. Der **Mustang**-Sidecar (XRechnung-/ZUGFeRD-Erzeugung & -Validierung) ist ein optionaler, auskommentierter Block (`einvoice-service/` wird nicht mitgeliefert) — siehe Abschnitt oben. Das Postgres-Schema liegt in `prisma/schema.postgres.prisma` (modellidentisch, nur andere Datasource).
+`docker-compose.yml` startet App + PostgreSQL. XRechnung und ZUGFeRD erzeugt die App selbst; der auskommentierte **Mustang**-Sidecar-Block ist ein optionales Extra und nicht nötig (`einvoice-service/` wird nicht mitgeliefert). Das Postgres-Schema liegt in `prisma/schema.postgres.prisma` (modellidentisch, nur andere Datasource).
+
+## E-Mail-Versand einrichten
+
+Nur SMTP — keine eingebaute Anbindung an Versanddienste per API (siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md)). Schritte:
+
+1. Unter **Einstellungen → E-Mail-Versand** SMTP-Host, Port, Verschlüsselung, Zugangsdaten und Absenderadresse eintragen.
+2. `AUTH_SECRET` (siehe `.env.example`) dient auch als Schlüssel für das gespeicherte SMTP-Passwort — vor der Mail-Einrichtung setzen und das Passwort nach einem Wechsel von `AUTH_SECRET` neu eintragen.
+3. Mit **Testmail senden** die Einstellungen prüfen, bevor echte Belege verschickt werden.
+4. Unter **Einstellungen → Vorlagen** die mitgelieferten Mailvorlagen (Betreff/Text/Signatur) je Belegart anpassen oder eigene anlegen; Platzhalter wie `{{document.number}}` listet der Editor auf.
+5. Versendet wird derzeit nur als Text, ohne Zustell-/Bounce-Tracking (Status bleibt `SENT`) — alle Einschränkungen in [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md).
 
 ## Tests
 

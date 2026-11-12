@@ -65,29 +65,33 @@ Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like
 - **GoBD core**: finalisation (draft → immutable), gapless number ranges, append-only audit **hash-chain**, cancellation instead of deletion.
 - **§ 14 UStG**: mandatory-field check blocks finalisation when data is missing.
 - **Tax schemes**: standard rating (19/7/0), small business (§ 19), reverse charge (§ 13b), intra-EU supply, margin scheme (§ 25a), small amount (§ 33).
-- **E-invoice**: **XRechnung** (UBL, EN 16931) **and ZUGFeRD/Factur-X hybrid PDF** (embedded EN-16931 CII), both validated against the **official Schematron** rules (SaxonJS, no Java) — cross-checked by the KoSIT validator in CI.
+- **E-invoice**: **XRechnung** (UBL, EN 16931) **and ZUGFeRD/Factur-X hybrid PDF** (embedded EN-16931 CII in a **PDF/A-3b** container), both generated natively and validated against the **official Schematron** rules (SaxonJS, no Java) — cross-checked by the KoSIT validator and veraPDF in CI. B2G: the customer's Leitweg-ID goes out as buyer reference (BT-10); a separate delivery address maps to BG-13/BG-15.
+- **GoBD operations**: write-once document archive (PDF, CII and UBL exactly as first issued), scheduled hash-chain verification with a status page, auditor export for tax audits (GDPdU/"Z3" data access incl. the official DTD), reversing entries instead of deleting payments, backup script templates.
+- **Foreign customers**: invoices in foreign currency with the exchange rate per § 16 Abs. 6 UStG (VAT shown in EUR), document language German or English, and an OSS threshold monitor (§ 3c Abs. 4 UStG) with dashboard card and notification.
 - **Documents**: quotes, order confirmations, pro-forma — convertible into an invoice.
 - **Discounts, surcharges & Skonto**: per-line discount (percent + fixed amount) and document-level discount/surcharge (allocated proportionally per tax rate), correctly mapped to `AllowanceCharge` in XRechnung/ZUGFeRD (BG-20/21/27/28); early-payment discount (Skonto, up to two terms) as BT-20 text incl. the `#SKONTO#TAGE=n#PROZENT=x.xx#` convention, with a payment-recording suggestion.
 - **Payment methods**: per-organisation catalogue (system codes + custom), optional customer default, snapshotted on finalisation, mapped to UNTDID 4461 `PaymentMeansCode`.
 - **Partial, down-payment & final invoices** (§ 14 Abs. 5 UStG): bill a percentage/amount/selected lines of a quote or delivery note (**partial invoice**), invoice a deposit before delivery (**down-payment invoice**, e-invoice type code 386), then close out with a **final invoice** that automatically deducts the down payments and their tax (immutable deduction snapshot, BT-113/BT-115/BG-3 in the e-invoice, matching PDF breakdown).
 - **Unified document editor with live preview**: one editor for invoices, quotes/order confirmations/pro-formas and delivery notes, with inline customer/product creation, a one-click PDF preview of the unsaved draft (watermarked, nothing written to the database), drag-and-drop or keyboard (`Alt+↑`/`Alt+↓`, `Enter`-to-add-row) line reordering, headings/text blocks/computed subtotals alongside regular item lines (only item lines go into the e-invoice XML), rich text (restricted markdown — bold/italic/underline, one list level, links) in line descriptions, article numbers, and header fields (subject, order number, internal reference, contact, delivery/billing address).
 - **Attachments**: upload files to any document (invoice, quote, delivery note, dunning, subscription) — 10 MB per file, 50 MB per document, MIME whitelist + magic-byte check, content-addressed storage with dedup, selectable as extra attachments when sending email.
-- **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate) + €40 flat fee (B2B), each as a PDF.
+- **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate across base-rate changes; half-yearly base-rate table maintained in UI/REST/MCP) + €40 flat fee (B2B), each as a PDF.
 - **Recurring invoices / subscriptions**: weekly–yearly templates, optional auto-finalisation, run via UI/MCP or cron (`npm run recurring:run`).
 - **Credit notes**: full cancellation **or** partial credit, original stays finalised.
 - **Letterhead, print options & number ranges**: per-organisation branding (logo, colour, margins, sender line, footer) with a live preview; ten global print switches (footer, page numbers, fold/punch marks, which columns show) with per-document overrides while still a draft; nine configurable number ranges (quotes, order confirmations, pro-forma, delivery notes, invoices, credit notes, dunnings, plus customer and article numbers) with pattern/prefix/reset and a rewind guard.
-- **PDF layouts** — seven built-in layouts (Standard, Schlicht, Klassik, Modern, Blau, Schwarz, Kompakt), selectable per document type under Settings → Letterhead → Layouts with live preview, overridable per draft document. The layout is frozen when an invoice is finalized. Footer is generated from company master data (four columns) or from three custom text fields.
+- **PDF layouts & layout designer** — seven built-in layouts (Standard, Schlicht, Klassik, Modern, Blau, Schwarz, Kompakt) following DIN 5008 Form B, plus a **layout designer** for your own versioned designs (block order, columns, fonts IBM Plex / Source Serif 4 / Inter) with live preview. Selectable per document type, overridable per draft document; the layout is frozen when an invoice is finalized. Footer is generated from company master data (four columns) or from three custom text fields.
+- **Templates & tags**: reusable document templates, text snippets and tags to filter documents.
+- **Reports**: charts for revenue, cash-in, payment behaviour, top products, quote outcome and recurring revenue.
 - **EPC QR code ("GiroCode")** on invoices — scan-to-pay in any German banking app, built from the same IBAN/amount already on the invoice; fails soft (no code, no error) if a prerequisite is missing (foreign currency, no IBAN, nothing outstanding).
 - **Customer comfort**: multiple addresses (billing/shipping/other) and contact persons per customer with a default flag and document snapshot, ten customer-level defaults (default currency/discount, invoice/quote email + CC, order reference, delivery/payment terms text), organisation-wide custom customer fields (text/number/date/boolean/select) available as `{{customField.<key>}}`, and "take over last document" (lines/texts/terms/prices) when creating a new quote/order confirmation/invoice.
 - **Workflow & UX**: a derived invoice status (due/overdue, never stored) drives every list/filter/dashboard; per-row quick actions (send, record payment, next dunning stage, convert, cancel, …) show only what's actually available for that document's status; filterable/searchable list pages for invoices, quotes, delivery notes and subscriptions; a per-document timeline (creation, sends, payments, dunnings, status changes) backed by a lightweight `ActivityLog` (UX history, **not** a GoBD audit substitute — the hash-chained `ChangeLog` is unchanged); a dashboard (open/due/overdue, aging, this month's revenue, recent documents) on the signed-in home page; a customer detail page with KPIs and per-customer document tabs; in-app notifications (invoice due/overdue, dunning stage reached, quote expiring, email bounced, recurring-invoice failure, invalid e-invoice) with per-type toggles and an optional daily email digest; an editable subscription (recurring invoice) with a run cap, per-subscription email template and period-text override; a collapsible, grouped navigation sidebar with a command palette (⌘K/Ctrl+K) search.
 - **PDF-centered document view**: invoice/document/delivery-note detail pages share one layout — the PDF embedded centre-stage (browser viewer, A4 aspect ratio, download fallback), a status card on the right (customer, dates, totals, payment/dunning), actions up top and a no-JS "more" menu for less-used ones (export, duplicate, cancel, convert), collapsible line items, and `‹`/`›`/`Alt+←`/`Alt+→` to step through the previously opened, filtered list.
 - **PDF export** ("other invoice") with all mandatory fields.
 - **Self-hosted**: SQLite solo without a server **or** PostgreSQL via Docker.
-- **Sign-in**: built-in admin account (scrypt hash + signed session cookie) — app and API protected.
+- **Sign-in**: built-in admin account (scrypt hash + signed session cookie, hardened sign-in, password change) — app and API protected. API requests are logged (redacted) under Settings → API.
 
 ### Status
 
-MVP. What works: master data/customers/products, quotes & invoices, draft → finalise → cancel, partial credit notes, **stage-based dunning with a built-in scheduler (§ 288 BGB)**, **recurring invoices/subscriptions**, PDF + **XRechnung + ZUGFeRD** export, GoBD number range + audit. On the roadmap: DATEV/CSV export, B2G/Leitweg-ID EAS codes, OSS/ZM, multi-user. See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) (MVP / stage 2 / stage 3) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
+In productive use since September 2026 for issuing real invoices. Everything listed above works and is covered by tests; e-invoices pass the official validators in every CI run. On the roadmap: DATEV/CSV export, ZM/OSS reports, VIES check, Peppol EAS schemes. See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
 
 ## Documents workflow
 
@@ -135,7 +139,7 @@ The SQLite file lives at `prisma/dev.db` and belongs to you alone. On first star
 
 **In the app:** `Settings` (create company) → `Customers` → `New invoice` → add line items → **Finalise** (assigns the number, makes it GoBD-immutable) → **PDF** and **XRechnung** export. Full step-by-step guide: **[docs/ANLEITUNG.md](docs/ANLEITUNG.md)** (German).
 
-## With Docker (PostgreSQL + ZUGFeRD sidecar)
+## With Docker (PostgreSQL)
 
 ```bash
 cp .env.example .env            # switch DATABASE_URL to the postgresql:// line
@@ -199,7 +203,7 @@ deploy` refuses to proceed and the container will not start. This is intentional
 the migration partially applied, then resolve it with `prisma migrate resolve
 --rolled-back <name>`.
 
-`docker-compose.yml` starts the app + PostgreSQL. The **Mustang** sidecar (XRechnung/ZUGFeRD generation & validation) is an optional, commented-out block (`einvoice-service/` is not shipped) — see the section above. The Postgres schema lives in `prisma/schema.postgres.prisma` (model-identical, only a different datasource).
+`docker-compose.yml` starts the app + PostgreSQL. XRechnung and ZUGFeRD are generated inside the app; the commented-out **Mustang** sidecar block is an optional extra and not needed (`einvoice-service/` is not shipped). The Postgres schema lives in `prisma/schema.postgres.prisma` (model-identical, only a different datasource).
 
 ## Sending emails (E-Mail-Versand einrichten)
 
