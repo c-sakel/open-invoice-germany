@@ -10,7 +10,9 @@ import { testPdfTheme, testPngBuffer } from "../helpers/pdf-theme";
 import { recordTextBoxes, type RecordedBox } from "../helpers/din5008";
 
 const PT_TO_MM = 25.4 / 72;
-const SENDER = "Einzelunternehmen Max Mustermann · Musterweg 10 · 12345 Musterstadt · DEUTSCHLAND";
+const SENDER = "Beispiel Hosting · Musterweg 10 · 12345 Musterstadt · DEUTSCHLAND";
+/** Laenge der Produktions-Absenderzeile: bei 6 pt noch 243,8 pt > 85 mm, also zwei Zeilen. */
+const PRODUCTION_SENDER = "Einzelunternehmen Max Mustermann · Musterweg 10 · 12345 Musterstadt · DEUTSCHLAND";
 const RECIPIENT = {
   name: "Beispiel Automotive GmbH",
   contactName: "Frau Erika Musterfrau",
@@ -75,7 +77,7 @@ describe("feste Layouts: DIN 5008 Form B", () => {
         expect(sender, "Absenderzeile nicht gezeichnet").toBeDefined();
         const s = mmBox(sender!);
         expect(dinWindowViolations(s)).toEqual([]);
-        // einzeilig (Produktionslaenge passt in 85 mm) und unterhalb der Feldoberkante
+        // einzeilig und unterhalb der Feldoberkante
         expect(s.heightMm).toBeLessThan(4);
         expect(s.yMm).toBeGreaterThanOrEqual(DIN5008_FORM_B.fieldTopMm - 0.01);
         expect(s.xMm).toBeGreaterThanOrEqual(DIN5008_FORM_B.fieldLeftMm - 0.01);
@@ -115,16 +117,33 @@ describe("feste Layouts: DIN 5008 Form B", () => {
     }
 
     it(`${id}: Worst Case (6 Anschriftzeilen + Lieferanschrift, überlange Absenderzeile) bleibt im Feld`, () => {
-      const long = `${SENDER} · Geschäftsführung: Beispiel Verwaltungs-GmbH, Zweigniederlassung Nord`;
+      const long = `${PRODUCTION_SENDER} · Geschäftsführung: Beispiel Verwaltungs-GmbH, Zweigniederlassung Nord`;
       const { boxes } = render(id, KINDS.find((x) => x.extra)!, long);
-      const sender = boxes.find((b) => b.text === long);
-      expect(sender).toBeDefined();
-      expect(dinWindowViolations(mmBox(sender!))).toEqual([]);
+      const senderLines = boxes.filter((b) => b.yPt * PT_TO_MM < DIN5008_FORM_B.addressZoneTopMm - 0.01 && b.yPt * PT_TO_MM >= DIN5008_FORM_B.fieldTopMm - 0.01 && b.text.includes("·") || b.text.startsWith("Geschäftsführung"));
+      expect(senderLines.length).toBeGreaterThanOrEqual(2);
+      for (const b of senderLines) expect(dinWindowViolations(mmBox(b)), b.text).toEqual([]);
       for (const text of [...ADDRESS_TEXTS, EXTRA.heading, ...EXTRA.lines]) {
         const box = boxes.find((b) => b.text === text);
         expect(box, text).toBeDefined();
         expect(dinWindowViolations(mmBox(box!)), text).toEqual([]);
       }
+    });
+
+    it(`${id}: Produktions-Absenderzeile bricht bei 6 pt an " · " in zwei Zeilen um, beide im Fenster über der Anschrift`, () => {
+      const { boxes } = render(id, KINDS[0]!, PRODUCTION_SENDER);
+      const lines = boxes.filter((b) => PRODUCTION_SENDER.startsWith(b.text.split(" ")[0]!) || PRODUCTION_SENDER.endsWith(b.text) || PRODUCTION_SENDER.includes(b.text)).filter((b) => b.yPt * PT_TO_MM < DIN5008_FORM_B.addressZoneTopMm);
+      expect(lines.length, "zwei Zeilen").toBe(2);
+      // Umbruch an einem Trenner: die Zeilen ergeben zusammen die Originalzeile
+      expect(lines.map((l) => l.text).join(" ")).toBe(PRODUCTION_SENDER);
+      const f = mmBox(lines[0]!);
+      const s = mmBox(lines[1]!);
+      expect(dinWindowViolations(f)).toEqual([]);
+      expect(dinWindowViolations(s)).toEqual([]);
+      expect(f.yMm).toBeLessThan(s.yMm);
+      // 6-pt-Zeilenhoehe (< 3 mm), zweite Zeile endet an der Anschriftzone
+      expect(s.heightMm).toBeLessThan(3);
+      expect(s.yMm + s.heightMm).toBeLessThanOrEqual(DIN5008_FORM_B.addressZoneTopMm + 0.01);
+      expect(s.yMm + s.heightMm).toBeGreaterThan(DIN5008_FORM_B.addressZoneTopMm - 0.5);
     });
   }
 

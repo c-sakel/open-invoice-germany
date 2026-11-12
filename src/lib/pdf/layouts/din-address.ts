@@ -7,14 +7,11 @@ import { DIN5008_FORM_B } from "../din5008";
 import { mm } from "../marks";
 import type { KopfInput, LayoutFrame } from "./types";
 import { drawRecipient } from "./shared";
+import { wrapPlain } from "../text-wrap";
 
-/**
- * Hoechste/kleinste Schrift der Absenderzeile (pt); dazwischen in 0,25-pt-Schritten. Die letzte Stufe
- * unter 6 pt (5,75) haelt die Rueckseendeangabe einer Einzelunternehmer-Firma mit Auslandszusatz
- * ("... · 12345 Musterstadt · DEUTSCHLAND", 243,8 pt bei 6 pt) einzeilig in 85 mm (240,9 pt).
- */
+/** Hoechste/kleinste Schrift der Absenderzeile (pt); dazwischen in 0,5-pt-Schritten. Nie unter 6 pt. */
 const SENDER_MAX_PT = 7;
-const SENDER_MIN_PT = 5.75;
+const SENDER_MIN_PT = 6;
 
 const RECIPIENT_MAX_PT = 10;
 const RECIPIENT_MIN_PT = 8;
@@ -76,9 +73,37 @@ export interface DinAddressOptions {
 }
 
 /**
+ * Umbruch der Absenderzeile bevorzugt an " · " (das Trennzeichen bleibt am Zeilenende); einzelne
+ * Teile, die allein nicht passen, werden an Woertern umbrochen.
+ */
+function wrapSenderLine(doc: PDFKit.PDFDocument, text: string, width: number, size: number): string[] {
+  const parts = text.split(" · ").map((p, i, all) => (i < all.length - 1 ? `${p} ·` : p));
+  const lines: string[] = [];
+  let current = "";
+  for (const part of parts) {
+    const candidate = current ? `${current} ${part}` : part;
+    if (doc.widthOfString(candidate) <= width) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    if (doc.widthOfString(part) <= width) {
+      current = part;
+    } else {
+      const pieces = wrapPlain(doc, part, width, "Helvetica", size);
+      current = pieces.pop() ?? "";
+      lines.push(...pieces);
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+/**
  * Absenderzeile in der Vermerkzone: Unterkante = Anschriftzone (62,7 mm). 7 pt, bei Ueberlaenge
- * stufenweise bis 5,75 pt; passt sie dann nicht in eine Zeile, wird sie umgebrochen (hoechstens die
- * Zonenhoehe von 45 bis 62,7 mm). Zeichnet nichts bei ausgeschaltetem `showSenderLine`.
+ * stufenweise bis 6 pt; passt sie dann nicht in 85 mm, Umbruch (bevorzugt an " · ") innerhalb der
+ * Zone von 45 bis 62,7 mm, unterste Zeile direkt ueber der Anschrift. Zeichnet nichts bei
+ * ausgeschaltetem `showSenderLine`.
  */
 export function drawDinSenderLine(frame: LayoutFrame, input: KopfInput, x: number, width: number, color: string): void {
   const { doc, theme } = frame;
@@ -90,16 +115,15 @@ export function drawDinSenderLine(frame: LayoutFrame, input: KopfInput, x: numbe
   let size = SENDER_MAX_PT;
   doc.fontSize(size);
   while (size > SENDER_MIN_PT && doc.widthOfString(text) > width) {
-    size -= 0.25;
+    size -= 0.5;
     doc.fontSize(size);
   }
   const lineH = doc.currentLineHeight(true);
-  let lines = 1;
-  if (doc.widthOfString(text) > width) {
-    const maxLines = Math.max(1, Math.floor((zoneBottom - zoneTop) / lineH));
-    lines = Math.min(maxLines, Math.max(1, Math.ceil(doc.heightOfString(text, { width }) / lineH - 0.01)));
-  }
-  doc.text(text, x, zoneBottom - lines * lineH, { width, height: lines * lineH, ellipsis: true });
+  const lines = doc.widthOfString(text) > width ? wrapSenderLine(doc, text, width, size) : [text];
+  const maxLines = Math.max(1, Math.floor((zoneBottom - zoneTop) / lineH));
+  if (lines.length > maxLines) lines.splice(maxLines - 1, lines.length - maxLines + 1, lines.slice(maxLines - 1).join(" "));
+  const top = zoneBottom - lines.length * lineH;
+  lines.forEach((line, i) => doc.text(line, x, top + i * lineH, { width, height: lineH, ellipsis: true }));
 }
 
 /**
