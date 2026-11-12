@@ -92,11 +92,20 @@ export function mandatoryTaxMetaRows(
   showFooter: boolean,
   lang: DocLanguage = "de",
 ): { label: string; value: string }[] {
-  const customText = brand.footerMode === "CUSTOM" && compact([brand.footerLeft, brand.footerCenter, brand.footerRight]).length > 0;
+  const customParts = brand.footerMode === "CUSTOM" ? compact([brand.footerLeft, brand.footerCenter, brand.footerRight]) : [];
+  const customText = customParts.length > 0;
   if (showFooter && !customText) return [];
+  // Sichtbarer eigener Fusstext, der die Nummer schon enthaelt: nicht doppelt drucken
+  // (Vergleich ohne Leerzeichen, ohne Gross-/Kleinschreibung).
+  const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+  const visibleCustom = showFooter ? norm(customParts.join(" ")) : "";
+  const needed = (value: string | null | undefined): string | null => {
+    const v = value?.trim();
+    if (!v) return null;
+    return visibleCustom && visibleCustom.includes(norm(v)) ? null : v;
+  };
   const f = docStrings(lang).footer;
-  return [
-    ...(seller.vatId?.trim() ? [{ label: f.vatId, value: seller.vatId.trim() }] : []),
-    ...(seller.taxNumber?.trim() ? [{ label: f.taxNumber, value: seller.taxNumber.trim() }] : []),
-  ];
+  const vatId = needed(seller.vatId);
+  const taxNumber = needed(seller.taxNumber);
+  return [...(vatId ? [{ label: f.vatId, value: vatId }] : []), ...(taxNumber ? [{ label: f.taxNumber, value: taxNumber }] : [])];
 }

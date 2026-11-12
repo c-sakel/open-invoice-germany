@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFooterColumns } from "@/lib/pdf/footer";
+import { buildFooterColumns, mandatoryTaxMetaRows } from "@/lib/pdf/footer";
 import { brandingSettingsInputSchema } from "@/schemas/settings";
 import { createPdfDocument } from "@/lib/pdf/document";
 import { pdfMargins } from "@/lib/pdf/layout";
@@ -151,5 +151,26 @@ describe("layoutFooterColumns", () => {
     const laid = layoutFooterColumns(frame, [{ lines: [token] }, { lines: ["Zweite Spalte"] }], 8);
     expect(laid.columns.length).toBe(2);
     expect(laid.height).toBeGreaterThan(0);
+  });
+});
+
+describe("mandatoryTaxMetaRows (Phase 16g, § 14 Abs. 4 Nr. 2 UStG)", () => {
+  const seller = { vatId: "DE123456789", taxNumber: "12/345/67890" };
+  const custom = (left: string) => ({ footerMode: "CUSTOM" as const, footerLeft: left, footerCenter: "", footerRight: "" });
+
+  it("Standard-Fusszeile sichtbar: keine Meta-Zeilen", () => {
+    expect(mandatoryTaxMetaRows(seller, { footerMode: "AUTO", footerLeft: "", footerCenter: "", footerRight: "" }, true)).toEqual([]);
+  });
+  it("Fusszeile ausgeblendet: beide Nummern in den Meta-Angaben", () => {
+    expect(mandatoryTaxMetaRows(seller, custom("USt-IdNr. DE123456789"), false).map((r) => r.value)).toEqual(["DE123456789", "12/345/67890"]);
+  });
+  it("eigener Fusstext ohne Nummern: beide in den Meta-Angaben", () => {
+    expect(mandatoryTaxMetaRows(seller, custom("Bankverbindung ..."), true).map((r) => r.value)).toEqual(["DE123456789", "12/345/67890"]);
+  });
+  it("eigener Fusstext enthaelt eine Nummer: nur die fehlende (Leerzeichen/Gross-Klein egal)", () => {
+    expect(mandatoryTaxMetaRows(seller, custom("USt-IdNr.: de 123 456 789"), true).map((r) => r.value)).toEqual(["12/345/67890"]);
+  });
+  it("eigener Fusstext enthaelt beide: nichts doppelt", () => {
+    expect(mandatoryTaxMetaRows(seller, custom("DE123456789 · St.-Nr. 12/345/67890"), true)).toEqual([]);
   });
 });
