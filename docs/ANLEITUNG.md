@@ -135,7 +135,7 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 - Seit **2025** musst du im B2B E-Rechnungen **empfangen** können; **versenden** wird ab 2027/2028 Pflicht (Details + Quellen: [COMPLIANCE.md](../COMPLIANCE.md)).
 - Der **XRechnung-XML-Teil ist führend** — das PDF ist nur die menschenlesbare Beilage.
 - Die App validiert jede XRechnung gegen die EN-16931-Kernregeln, bevor sie ausgeliefert wird. Die vollständige amtliche Prüfung (KoSIT-Validator) läuft im CI.
-- **ZUGFeRD/Factur-X** (PDF mit eingebettetem XML) ist über den optionalen Mustang-Sidecar geplant (siehe [ARCHITEKTUR.md](ARCHITEKTUR.md)).
+- **ZUGFeRD/Factur-X** (PDF/A-3b mit eingebettetem XML) erzeugt die App selbst; jedes Rechnungs-PDF außer Entwürfen enthält die XML.
 
 ### Steuerschemata und Pflichthinweise (Phase 12b)
 
@@ -173,8 +173,8 @@ Im Beleg-Editor wählst du unter „Steuerschema" eine von **acht** Optionen —
 
 - **Backup**: Die SQLite-Datei `prisma/dev.db` (bzw. die PostgreSQL-Datenbank) regelmäßig sichern. Aufbewahrungsfrist beachten (siehe COMPLIANCE.md).
 - **Mehrbenutzer/Internet**: Die App hat eine eingebaute Anmeldung (ein Admin-Konto, siehe „Anmeldung & Konto" oben) — aber **keine Mehrbenutzer-/Rollentrennung**. Betreibe sie in Produktion **immer** hinter HTTPS mit gesetztem `AUTH_SECRET`. Siehe [SECURITY.md](../SECURITY.md).
-- **PostgreSQL/Docker**: `docker compose up --build` (siehe README).
-- **API-Dokumentation im Container**: `/api/docs` (Swagger UI) und `GET /api/v1/openapi.json` lesen die committete Datei `openapi/openapi.json` zur Laufzeit relativ zu `process.cwd()` — das Docker-Image kopiert dieses Verzeichnis in die runner-Stage (`Dockerfile`, Fix-Welle Phase 10). Bei einem selbst angepassten Dockerfile darauf achten, `openapi/` mit auszuliefern, sonst liefert `/api/docs` einen 500er.
+- **PostgreSQL/Docker**: `docker compose up -d` mit dem fertigen Image `ghcr.io/c-sakel/open-invoice-germany` (siehe README, Abschnitt „Mit Docker“).
+- **API-Dokumentation im Container**: `/api/docs` (Swagger UI) und `GET /api/v1/openapi.json` lesen die committete Datei `openapi/openapi.json` zur Laufzeit relativ zu `process.cwd()`. Im Docker-Image legt das Next.js-Tracing sie im Standalone-Output ab; der Build bricht ab, wenn sie (oder eine andere zur Laufzeit gelesene Datei) dort fehlt.
 
 ### Prüfung & Export (`Einstellungen → Prüfung`, Phase 16a)
 - **Kettenprüfung:** Das Änderungsprotokoll ist hash-verkettet. Der Scheduler prüft wöchentlich; „Jetzt prüfen“ startet sofort und zeigt „gültig“ oder die Bruchstelle. Bei einem Bruch erscheint ein Alarm, der sich nicht abschalten lässt.

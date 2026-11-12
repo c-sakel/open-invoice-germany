@@ -790,9 +790,8 @@ scripts/                  # db-prepare.sh, migrate-postgres.sh, test-postgres-mi
 test/
   unit/
   integration/
-docker-compose.yml       # db + app für Docker-Betrieb; enthält einen auskommentierten,
-                          # optionalen Mustang-Sidecar-Block (Profil "einvoice", Build-Pfad
-                          # einvoice-service/ existiert nicht) — nicht aktiv genutzt
+docker-compose.yml       # db + app für Docker-Betrieb (Image ghcr.io/c-sakel/open-invoice-germany)
+Dockerfile               # Next.js-standalone-Image, Nicht-root, Whitelist in .dockerignore
 ```
 
 ---

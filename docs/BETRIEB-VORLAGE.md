@@ -44,6 +44,11 @@ Serverkonfiguration (Volume, Cron, Offsite-Ziel, Passphrase) liegt nicht im Repo
    per Restore-Test eingespielten Produktionskopie machen (Laufzeit je Beleg, Fehler). Der erste Prueferexport ist
    erst nach Abschluss des Backfills sinnvoll: solange im Zeitraum mehr als 200 Belege ausstehen, lehnt der Export
    mit 409 ab (Einstellungen → Pruefung zeigt den Stand „ausstehend“).
+8. **Container-Benutzer (ab 1.0.1)**: Die App laeuft als `node` (UID 1000). Beim ersten Deploy von 1.0.1 die
+   App stoppen, die Volumes `oig-attachments` und `oig-archive` einmalig auf `1000:1000` umstellen, dann
+   starten (laeuft der alte root-Container weiter, legt er neue root-eigene Dateien an). Nach einem Restore
+   gilt dasselbe: zurueckgespielte Archiv- und Anhangdateien muessen UID 1000 gehoeren, sonst startet der
+   Container nicht. Eine eingebundene `BACKUP_STATUS_FILE` muss fuer UID 1000 lesbar sein.
 
 ## Sicherung (`scripts/ops/backup.sh`)
 

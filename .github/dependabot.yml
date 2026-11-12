@@ -1,0 +1,27 @@
+# Haelt das gepinnte Basis-Image (Tag + Digest im Dockerfile) und die per SHA gepinnten
+# GitHub Actions aktuell. npm-Abhaengigkeiten bewusst nicht — die werden je Phase gepflegt.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Node-Major nur bewusst wechseln (engines in package.json, CI node-version).
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # PostgreSQL-Major nie automatisch: das Datenverzeichnis braucht ein Upgrade (pg_upgrade/Dump).
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
