@@ -18,6 +18,21 @@ E-invoice (XRechnung / ZUGFeRD) · GoBD · § 14 UStG · small business § 19 ·
 
 ---
 
+## 📸 Screenshots
+
+| | |
+|---|---|
+| <img src="docs/screenshots/startseite.png" alt="Dashboard with receivables, cash flow by due date and monthly revenue" width="420"> | <img src="docs/screenshots/rechnungen.png" alt="Invoice list with status tabs, cash-flow band and quick actions" width="420"> |
+| **Dashboard** — receivables, due dates, revenue | **Invoices** — status tabs, filters, record payments |
+| <img src="docs/screenshots/editor.png" alt="Invoice editor with line items, tax rates and totals" width="420"> | <img src="docs/screenshots/beleg.png" alt="Detail view of a partly paid invoice with PDF preview, payments and document chain" width="420"> |
+| **Editor** — line items, discounts, live totals | **Document view** — PDF, payments, archive, document chain |
+| <img src="docs/screenshots/layout-designer.png" alt="Layout designer with block order, columns and live preview" width="420"> | <img src="docs/screenshots/pdf-rechnung.png" alt="Invoice PDF following DIN 5008 with GiroCode and embedded e-invoice" width="300"> |
+| **Layout designer** — blocks, columns, live preview | **PDF** — DIN 5008, GiroCode, ZUGFeRD/PDF/A-3 |
+| <img src="docs/screenshots/mahnwesen.png" alt="Dunning overview with overdue invoices, ageing and dunning levels" width="420"> | <img src="docs/screenshots/kunden.png" alt="Customer list with number, city, type and VAT ID" width="420"> |
+| **Dunning** — ageing, dunning levels | **Customers** — master data, B2B/B2C |
+
+All data shown is fictitious. The UI is in German.
+
 ## 🗣️ Talk to it with an AI assistant (MCP)
 
 Connect your local instance to any **MCP-capable AI assistant** and create legally sound invoices just by describing them:

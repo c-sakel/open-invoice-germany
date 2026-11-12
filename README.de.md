@@ -18,6 +18,21 @@ E-Rechnung (XRechnung / ZUGFeRD) · GoBD · § 14 UStG · Kleinunternehmer § 19
 
 ---
 
+## 📸 Einblicke
+
+| | |
+|---|---|
+| <img src="docs/screenshots/startseite.png" alt="Dashboard mit offenen Forderungen, Geldfluss nach Fälligkeit und Umsatz je Monat" width="420"> | <img src="docs/screenshots/rechnungen.png" alt="Rechnungsliste mit Status-Tabs, Geldfluss-Band und Schnellaktionen" width="420"> |
+| **Übersicht** — offene Forderungen, Fälligkeiten, Umsatz | **Rechnungen** — Status-Tabs, Filter, Zahlung erfassen |
+| <img src="docs/screenshots/editor.png" alt="Rechnungseditor mit Positionen, Steuersätzen und Summen" width="420"> | <img src="docs/screenshots/beleg.png" alt="Belegansicht einer teilbezahlten Rechnung mit PDF-Vorschau, Zahlungen und Dokumentenkette" width="420"> |
+| **Editor** — Positionen, Rabatte, Live-Summen | **Belegansicht** — PDF, Zahlungen, Archiv, Dokumentenkette |
+| <img src="docs/screenshots/layout-designer.png" alt="Layout-Designer mit Blockreihenfolge, Spalten und Live-Vorschau" width="420"> | <img src="docs/screenshots/pdf-rechnung.png" alt="Rechnungs-PDF nach DIN 5008 mit GiroCode und eingebetteter E-Rechnung" width="300"> |
+| **Layout-Designer** — Blöcke, Spalten, Live-Vorschau | **PDF** — DIN 5008, GiroCode, ZUGFeRD/PDF/A-3 |
+| <img src="docs/screenshots/mahnwesen.png" alt="Mahnwesen mit überfälligen Rechnungen, Altersstruktur und Mahnstufen" width="420"> | <img src="docs/screenshots/kunden.png" alt="Kundenliste mit Kundennummer, Ort, Typ und USt-IdNr." width="420"> |
+| **Mahnwesen** — Altersstruktur, Mahnstufen | **Kunden** — Stammdaten, B2B/B2C |
+
+Alle Daten in den Bildern sind fiktiv.
+
 ## 🗣️ Per Sprache mit einem KI-Assistenten (MCP)
 
 Verbinde deine lokale Instanz mit einem **MCP-fähigen KI-Assistenten** und erstelle rechtssichere Rechnungen, indem du sie einfach beschreibst:
