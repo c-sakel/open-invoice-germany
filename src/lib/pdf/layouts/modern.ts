@@ -1,6 +1,6 @@
 /** Layout "Modern" — Kopfbalken in Primaerfarbe ueber die volle Breite mit Logo/Firmenname in Weiss, Infoblock als Karte. */
 import type { PdfLayout } from "./types";
-import { drawMetaTable, drawFooterColumns, drawSubject } from "./shared";
+import { drawMetaTable, measureMetaTable, drawFooterColumns, drawSubject } from "./shared";
 import { drawDinAddress, dinBodyTop, infoBlockX } from "./din-address";
 import { headerTop, MM_TO_PT } from "../layout";
 import { mm } from "../marks";
@@ -39,10 +39,11 @@ export const modernLayout: PdfLayout = {
     // DIN 5008 Form B: Absenderzeile in der Vermerkzone, Anschrift ab 62,7 mm bis hoechstens 105 mm
     // (die Karte beginnt rechts davon, din-address.ts).
     const recipientBottom = drawDinAddress(frame, input, { maxSize: base + 1 });
-    const cardH = (input.meta.length + 1) * (base + 3) + 16;
+    const metaRows = [{ label: input.numberLabel, value: input.number }, ...input.meta];
+    const cardH = measureMetaTable(doc, metaRows, cardW - 16, base - 1) + 16;
     doc.roundedRect(cardX, buyerY - 8, cardW, cardH, 4).fill("#f3f4f6");
     doc.fillColor("#000");
-    const metaBottom = drawMetaTable(frame, [{ label: input.numberLabel, value: input.number }, ...input.meta], cardX + 8, buyerY, cardW - 16, base - 1);
+    const metaBottom = drawMetaTable(frame, metaRows, cardX + 8, buyerY, cardW - 16, base - 1);
     let y = dinBodyTop(recipientBottom, metaBottom + 8, 16);
     if (input.subject) y = drawSubject(frame, input.subject, y);
     if (input.intro) {

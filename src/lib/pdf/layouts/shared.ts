@@ -68,13 +68,34 @@ export function drawMetaRows(frame: LayoutFrame, rows: { label: string; value: s
 export function drawMetaTable(frame: LayoutFrame, rows: { label: string; value: string }[], x: number, y: number, width: number, size = 9): number {
   const { doc } = frame;
   let cy = y;
-  const lineHeight = size + 3;
   for (const row of rows) {
-    doc.font("Helvetica").fontSize(size).fillColor("#555").text(row.label, x, cy, { width: width / 2, height: lineHeight, ellipsis: true });
-    doc.fillColor("#000").text(row.value, x + width / 2, cy, { width: width / 2, align: "right", height: lineHeight, ellipsis: true });
-    cy += size + 4;
+    doc.font("Helvetica").fontSize(size);
+    if (metaRowFits(doc, row, width)) {
+      doc.fillColor("#555").text(row.label, x, cy, { width: width / 2, lineBreak: false });
+      doc.fillColor("#000").text(row.value, x + width / 2, cy, { width: width / 2, align: "right", lineBreak: false });
+      cy += size + 4;
+    } else {
+      // Bei Platzmangel: Bezeichnung ueber dem Wert, beides umbrochen — Pflichtangaben werden nie gekuerzt.
+      doc.fillColor("#555").text(row.label, x, cy, { width });
+      doc.fillColor("#000").text(row.value, x, doc.y, { width, align: "right" });
+      cy = doc.y + 3;
+    }
   }
   return cy;
+}
+
+function metaRowFits(doc: PDFKit.PDFDocument, row: { label: string; value: string }, width: number): boolean {
+  return doc.widthOfString(row.label) <= width / 2 - 2 && doc.widthOfString(row.value) <= width / 2 - 2;
+}
+
+/** Hoehe der Meta-Tabelle, gemessen wie `drawMetaTable` sie zeichnet (fuer Hintergrundkarten). */
+export function measureMetaTable(doc: PDFKit.PDFDocument, rows: { label: string; value: string }[], width: number, size = 9): number {
+  let h = 0;
+  for (const row of rows) {
+    doc.font("Helvetica").fontSize(size);
+    h += metaRowFits(doc, row, width) ? size + 4 : doc.heightOfString(row.label, { width }) + doc.heightOfString(row.value, { width }) + 3;
+  }
+  return h;
 }
 
 export interface TableHeaderColumn {
