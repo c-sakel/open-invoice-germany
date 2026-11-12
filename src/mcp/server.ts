@@ -2,12 +2,12 @@
 /**
  * OpenInvoice Germany — MCP-Server.
  *
- * Macht die Rechnungssoftware per natürlicher Sprache steuerbar (Claude Code /
- * Claude Desktop). Die Tools setzen auf den GoBD-/EN-16931-gehärteten Domain-Kern
+ * Macht die Rechnungssoftware per natürlicher Sprache steuerbar (jeder MCP-fähige
+ * KI-Assistent). Die Tools setzen auf den GoBD-/EN-16931-gehärteten Domain-Kern
  * auf — das Festschreiben erzwingt die § 14-Pflichtangaben, festgeschriebene
  * Rechnungen sind unveränderbar. Keine Cloud, alles lokal.
  *
- * Start: npm run mcp   (oder via Claude-Code-MCP-Konfiguration, siehe README)
+ * Start: npm run mcp   (oder ueber die MCP-Konfiguration des Clients, siehe docs/MCP.md)
  *
  * Phase 9, Task 1: Aufteilung der frueher ~2700 Zeilen langen Tool-Registrierung in
  * Bereichs-Module unter src/mcp/tools/*.ts (register<Bereich>Tools(server, ctx)) —

@@ -73,7 +73,7 @@ interface AutoStage extends StageLike {
  * Auswahl — `dunningCandidates` (volle Zeilen inkl. `dunnings`-Relation, fuer den
  * tatsaechlichen Mahnlauf) UND `dashboardSummary.dunningRequired` (nur die Anzahl,
  * `dbInternal.invoice.count`, KEINE `dunnings`-Relation) nutzen dasselbe `where` statt
- * zweier Parallel-Definitionen, die auseinanderlaufen koennten (CLAUDE.md "Nichts
+ * zweier Parallel-Definitionen, die auseinanderlaufen koennten (Projektregeln "Nichts
  * doppelt bauen"). `dueDate <= now` bzw. (bei fehlendem Zahlungsziel) `issueDate <= now`
  * ist sicher: jede Mahnstufe traegt `daysAfterDue >= 0` (Schema), die naechste faellige
  * Mahnung liegt also NIE vor dem Zahlungsziel — Rechnungen, die noch nicht faellig sind,

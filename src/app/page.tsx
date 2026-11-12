@@ -9,6 +9,7 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { ossThreshold } from "@/domain/reporting/oss";
 import { topCustomers } from "@/domain/reporting/customers";
 import { DashboardWidgets } from "@/components/dashboard/DashboardWidgets";
+import { SOURCE_URL } from "@/domain/settings/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ function MarketingPage() {
             Anmelden
           </Link>
           <a
-            href="https://github.com/automationsmanufaktur-labs/open-invoice-germany"
+            href={SOURCE_URL}
             className="rounded-md border border-rule-strong bg-sheet px-5 py-2.5 font-medium text-ink-soft hover:bg-paper"
           >
             Quellcode auf GitHub

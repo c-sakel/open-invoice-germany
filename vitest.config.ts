@@ -21,7 +21,7 @@ export default defineConfig({
     },
     // SQLite verträgt keine parallelen Writer -> Test-Files seriell
     fileParallelism: false,
-    // Agent-Worktrees unter .claude/ sind vollstaendige Repo-Kopien — nie mitlaufen lassen.
+    // Agent-Worktrees im lokalen Werkzeugordner sind vollstaendige Repo-Kopien — nie mitlaufen lassen.
     exclude: [...configDefaults.exclude, ".claude/**"],
   },
   resolve: {

@@ -1167,13 +1167,13 @@ mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
   die Software also **nicht** anonym — die Herkunft und der Lizenztext
   bleiben für jeden Nutzer sichtbar.
 - **Quelle konfigurierbar über `SOURCE_URL`**: Der Quellcode-Link zeigt per
-  Vorgabe auf das öffentliche Upstream-Repository
-  (`https://github.com/automationsmanufaktur-labs/open-invoice-germany`).
+  Vorgabe auf das öffentliche Projekt-Repository
+  (`https://github.com/c-sakel/open-invoice-germany`).
   Wer diese Software **modifiziert** und per Netzwerk betreibt, muss nach
   § 13 AGPL-3.0 den **eigenen, modifizierten** Quellcode anbieten — dafür ist
   die Umgebungsvariable `SOURCE_URL` (`.env`, siehe `.env.example`) gedacht:
   sie muss auf das öffentlich erreichbare Repository mit dem tatsächlich
-  laufenden (Fork-)Stand zeigen, nicht auf das unveränderte Upstream-Original,
+  laufenden Stand zeigen, nicht auf ein unverändertes Original,
   sobald eigene Änderungen live sind.
 
 ---

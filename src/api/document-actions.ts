@@ -3,7 +3,7 @@
  * (Phase 10, Task 3). Quote (kind=ANGEBOT) und OrderConfirmation (kind=AUFTRAGSBESTAETIGUNG)
  * teilen sich dieselbe Prisma-Tabelle (Quote-Modell) und dieselben Domain-Funktionen — wie
  * bereits bei den Basis-Ressourcen (Task 2, src/api/serializers/document.ts: `objectName`
- * als Parameter). Ein Factory-Muster haelt die Geschaeftslogik EINMAL vor (CLAUDE.md 1.4/
+ * als Parameter). Ein Factory-Muster haelt die Geschaeftslogik EINMAL vor (Projektregeln 1.4/
  * 61.5 "nichts doppelt bauen"); jede Routendatei ruft nur `make*Action("Quote"|
  * "OrderConfirmation")` auf und exportiert `POST`/`spec` daraus.
  *

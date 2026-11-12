@@ -247,7 +247,7 @@ describe("Fix I3 — Nettoumsatz-Kacheln nutzen dieselbe Definition wie die Umsa
   // die Kachel zeigte faelschlich einen NEGATIVEN Betrag statt 0.
   it("dashboardSummary.revenueThisMonthCents und customerOverview.totalRevenueCents zaehlen ein storniertes Original + seine Storno-Gutschrift zu 0 zusammen", async () => {
     // Eigenes Jahr 2092 (Testjahr-Konvention): Belegnummern sind instanzweit @unique, nicht
-    // je Org (CLAUDE.md) — ein mit 2066 (Hauptszenario oben) geteiltes Jahr wuerde bei der
+    // je Org (Projektregeln) — ein mit 2066 (Hauptszenario oben) geteiltes Jahr wuerde bei der
     // ersten Rechnung dieser neuen Org kollidieren (Nummernkreis startet je Org bei 1).
     const NOW92 = new Date(2092, 4, 15, 10, 0, 0);
     const org = await dbInternal.organization.create({

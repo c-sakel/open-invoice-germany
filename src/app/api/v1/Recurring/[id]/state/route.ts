@@ -2,7 +2,7 @@
  * POST /api/v1/Recurring/{id}/state — Abo-Status setzen (ACTIVE/PAUSED/ENDED). Task 3,
  * task-3-facts.md: duenner Wrapper um `updateRecurringInvoice` (dieselbe Domain-Funktion
  * wie die Feld-Aenderung; `status` ist bereits Teil von `updateRecurringSchema`) — analog
- * dem MCP-Tool `set_recurring_state`, KEINE zweite Statuslogik (CLAUDE.md "nichts doppelt
+ * dem MCP-Tool `set_recurring_state`, KEINE zweite Statuslogik (Projektregeln "nichts doppelt
  * bauen"). `updateRecurringInvoice` ist bereits org-gescoped (wirft `NotFoundError`).
  *
  * Fix-Runde 1 (Koordinator-Befund 2): liefert das vollstaendige, aktualisierte Abo

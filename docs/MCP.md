@@ -1,6 +1,6 @@
-# Rechnungen per Sprache erstellen — mit Claude Code
+# Rechnungen per Sprache erstellen — mit einem KI-Assistenten (MCP)
 
-OpenInvoice Germany bringt einen **MCP-Server** mit. Damit verbindest du deine lokale Instanz mit **Claude Code** (oder Claude Desktop) und erstellst rechtssichere Rechnungen, indem du einfach **sagst, was du willst**.
+OpenInvoice Germany bringt einen **MCP-Server** mit. Damit verbindest du deine lokale Instanz mit einem **MCP-fähigen KI-Assistenten** und erstellst rechtssichere Rechnungen, indem du einfach **sagst, was du willst**.
 
 > Die Tools setzen auf den GoBD-/EN-16931-gehärteten Kern auf: Das Festschreiben **erzwingt** die § 14-Pflichtangaben, festgeschriebene Rechnungen sind unveränderbar. Die KI kann also keine *nicht*-konforme Rechnung erzeugen.
 
@@ -8,23 +8,23 @@ OpenInvoice Germany bringt einen **MCP-Server** mit. Damit verbindest du deine l
 
 Der **Rechnungs-Kern von OpenInvoice läuft zu 100 % lokal** (deine Datenbank, dein Rechner). Das MCP-Feature ist **optional**.
 
-Sobald du eine Rechnung von einem **Cloud-LLM** (z. B. Claude) erstellen lässt, werden die Inhalte, die du beschreibst — Kundenname, Adresse, Leistungen, Beträge = **personenbezogene Daten** — an den LLM-Anbieter **übermittelt** und dort in deinem Auftrag verarbeitet (**Auftragsverarbeitung, Art. 28 DSGVO**). Der „lokal"-Charakter gilt also für die App, **nicht** automatisch für den KI-Pfad.
+Sobald du eine Rechnung von einem **Cloud-LLM** erstellen lässt, werden die Inhalte, die du beschreibst — Kundenname, Adresse, Leistungen, Beträge = **personenbezogene Daten** — an den LLM-Anbieter **übermittelt** und dort in deinem Auftrag verarbeitet (**Auftragsverarbeitung, Art. 28 DSGVO**). Der „lokal"-Charakter gilt also für die App, **nicht** automatisch für den KI-Pfad.
 
 Für den geschäftlichen Einsatz mit echten Personendaten gibt es zwei saubere Wege:
 
 | Weg | Datenfluss | DSGVO-Status |
 |-----|-----------|--------------|
 | **Lokales Modell** — den MCP-Server von einem MCP-Client betreiben lassen, der ein **lokales Modell** nutzt (z. B. via Ollama/LM Studio); MCP ist anbieterneutral | bleibt auf deinem Rechner | kein Drittanbieter, kein AVV nötig |
-| **Cloud-LLM mit AVV** — z. B. die **Claude API** (Anthropic Commercial Terms: DPA inklusive, kein Training, SCCs für den US-Transfer) | geht an den Anbieter | AVV vorhanden; Anbieter als Sub-Auftragsverarbeiter dokumentieren |
+| **Cloud-LLM mit AVV** — z. B. ein **kommerzieller API-Zugang** mit DPA/AVV (kein Training auf deinen Daten, SCCs bei US-Transfer) | geht an den Anbieter | AVV vorhanden; Anbieter als Sub-Auftragsverarbeiter dokumentieren |
 
-> ⚠️ **Claude Code / Claude Desktop** routen immer an die Anthropic-Cloud. Das **Consumer-Abo (Claude Pro/Max) hat keinen AVV** und ist für fremde Personendaten nicht geeignet — wer Claude nutzen will, sollte den **API-Zugang** (Commercial Terms) verwenden. Für einen rein lokalen Datenfluss einen MCP-Client mit lokalem Modell wählen.
+> ⚠️ Desktop- und Coding-Assistenten mit Cloud-Modell senden die Inhalte immer an den Anbieter. **Consumer-Abos haben in der Regel keinen AVV** und sind für fremde Personendaten nicht geeignet — nutze dann den **kommerziellen API-Zugang** des Anbieters. Für einen rein lokalen Datenfluss einen MCP-Client mit lokalem Modell wählen.
 
 Nimm den genutzten LLM-Anbieter in dein **Verzeichnis von Verarbeitungstätigkeiten** und deine **Datenschutzerklärung** auf. Dies ist **keine Rechtsberatung**; rechtliche Grundlagen in [COMPLIANCE.md](../COMPLIANCE.md).
 
 ## 1. Einrichten
 
 ```bash
-git clone https://github.com/automationsmanufaktur-labs/open-invoice-germany.git
+git clone https://github.com/c-sakel/open-invoice-germany.git
 cd open-invoice-germany
 npm install
 cp .env.example .env
@@ -33,9 +33,9 @@ npm run db:migrate
 
 Teste den Server kurz: `npm run mcp` (er meldet „MCP-Server bereit" auf stderr; mit Strg+C beenden).
 
-### In Claude Code registrieren
+### Im MCP-Client registrieren
 
-Lege im Projekt (oder global) eine `.mcp.json` an — **absoluten Pfad** einsetzen:
+Die meisten MCP-Clients lesen eine `.mcp.json` im Projekt (oder eine globale Konfiguration) — **absoluten Pfad** einsetzen:
 
 ```json
 {
@@ -49,7 +49,7 @@ Lege im Projekt (oder global) eine `.mcp.json` an — **absoluten Pfad** einsetz
 }
 ```
 
-In Claude Code mit `/mcp` prüfen, dass `open-invoice-germany` verbunden ist. (Claude Desktop: denselben Block in die `claude_desktop_config.json` eintragen.)
+Im Client prüfen, dass `open-invoice-germany` verbunden ist. Desktop-Clients: denselben Block in deren MCP-Konfigurationsdatei eintragen.
 
 ## 2. So redest du mit ihm
 
@@ -67,7 +67,7 @@ In Claude Code mit `/mcp` prüfen, dass `open-invoice-germany` verbunden ist. (C
 
 > **„Welche Abos sind fällig? Erzeuge die fälligen Rechnungen."**
 
-Claude ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_customer` → `upsert_product` → `create_invoice` → `finalize_invoice` → `export_invoice`) und legt die Dateien unter `exports/` ab — inkl. EN-16931-Validierung. Weitere Beispiele wie im Lastenheft (§55) gefordert: siehe [ANLEITUNG.md](ANLEITUNG.md#7-per-sprache-mit-claude-code-mcp).
+Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_customer` → `upsert_product` → `create_invoice` → `finalize_invoice` → `export_invoice`) und legt die Dateien unter `exports/` ab — inkl. EN-16931-Validierung. Weitere Beispiele wie im Lastenheft (§55) gefordert: siehe [ANLEITUNG.md](ANLEITUNG.md#7-per-sprache-mit-einem-ki-assistenten-mcp).
 
 ## 3. Verfügbare Tools
 
@@ -296,7 +296,7 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 
 ## 4. Was die KI **nicht** kaputt machen kann
 
-- **Festschreiben blockt** bei fehlenden Pflichtangaben (z. B. Leistungsdatum, Steuernummer) und liefert die genaue Liste zurück — Claude ergänzt und versucht es erneut.
+- **Festschreiben blockt** bei fehlenden Pflichtangaben (z. B. Leistungsdatum, Steuernummer) und liefert die genaue Liste zurück — der Assistent ergänzt und versucht es erneut.
 - **Festgeschriebene Rechnungen sind unveränderbar** (GoBD) — Korrektur nur per Storno/Gutschrift/Korrekturrechnung.
 - **Steuerschema** (Kleinunternehmer, Reverse Charge …) ergänzt automatisch den Pflichthinweis und weist keine USt aus.
   Für Dienstleistungen an Drittland-Kunden: `taxScheme` `NICHT_STEUERBAR` (Positionen mit `taxCategory` `O`, 0 %); `AUSFUHR`/`G` nur für Warenlieferungen.

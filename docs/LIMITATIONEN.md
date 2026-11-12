@@ -301,4 +301,4 @@ DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, VIES-Prüfung, Mehrbenu
 
 ---
 
-Etwas davon blockiert dich? → [Issue eröffnen](https://github.com/automationsmanufaktur-labs/open-invoice-germany/issues). Rechtliche Grundlagen: [COMPLIANCE.md](../COMPLIANCE.md).
+Etwas davon blockiert dich? → [Rückmeldung über das GitHub-Repository](https://github.com/c-sakel/open-invoice-germany). Rechtliche Grundlagen: [COMPLIANCE.md](../COMPLIANCE.md).

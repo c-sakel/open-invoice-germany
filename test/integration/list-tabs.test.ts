@@ -175,7 +175,7 @@ beforeAll(async () => {
   await setArchived(orgId, "QUOTE", archivedQuote.id, true, "tester", NOW);
 
   // Lieferscheine: createDeliveryNote vergibt direkt Status CREATED (kein DRAFT-Pfad —
-  // offener Backlog-Punkt, siehe CLAUDE.md). Fixtures daher CREATED, SENT, DELIVERED.
+  // offener Backlog-Punkt, siehe Projektregeln). Fixtures daher CREATED, SENT, DELIVERED.
   await createDeliveryNote(
     orgId,
     { customerId, deliveryDate: NOW, lines: [line("Zaehlertest Lieferschein erstellt")] } as unknown as CreateDeliveryNoteInput,

@@ -44,7 +44,7 @@ jobs:
   # (dieselbe Liste, 21 Beispiele/41 XML-Dateien) statt nur „base" — vorher sah dieser
   # Job z. B. die Betreff-Fixture (Task 5) nie.
   # continue-on-error ENTFERNT (S4): der Validator (1.6.3 + Konfiguration 2026-08-31,
-  # dieselben Pins wie unten) ist laut Ledger (.claude/verlauf.md, Stand 2026-09-07:
+  # dieselben Pins wie unten) ist laut Ledger (Stand 2026-09-07:
   # „in eclipse-temurin:17 auf dem Server verifiziert: ACCEPTABLE") und Phase 12b
   # (progress.md: „39/39 KoSIT") mehrfach erfolgreich gelaufen — die urspruengliche
   # Bedingung „solange nicht lokal verifiziert" (siehe git log -S auf diesen Job) ist

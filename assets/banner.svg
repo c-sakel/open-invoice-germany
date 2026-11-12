@@ -62,7 +62,7 @@
     </g>
   </g>
 
-  <text x="72" y="360" class="sans" font-size="15" fill="#6E7681">Voice-controlled via Claude Code (MCP) · your data stays local · not tax advice</text>
+  <text x="72" y="360" class="sans" font-size="15" fill="#6E7681">Voice-controlled via AI assistant (MCP) · your data stays local · not tax advice</text>
 
   <!-- right: invoice doc -> XML doc with green check -->
   <g transform="translate(842,112)">

@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/automationsmanufaktur-labs/open-invoice-germany/main/assets/banner.svg" alt="OpenInvoice Germany — free self-hostable invoicing with XRechnung / EN 16931, GoBD and § 14 UStG" width="100%" />
+<img src="assets/banner.svg" alt="OpenInvoice Germany — free self-hostable invoicing with XRechnung / EN 16931, GoBD and § 14 UStG" width="100%" />
 
 # OpenInvoice Germany
 
 **Free, self-hostable open-source invoicing software for Germany.**
 E-invoice (XRechnung / ZUGFeRD) · GoBD · § 14 UStG · small business § 19 · GDPR
 
-[![CI](https://github.com/automationsmanufaktur-labs/open-invoice-germany/actions/workflows/ci.yml/badge.svg)](https://github.com/automationsmanufaktur-labs/open-invoice-germany/actions/workflows/ci.yml)
+[![CI](https://github.com/c-sakel/open-invoice-germany/actions/workflows/ci.yml/badge.svg)](https://github.com/c-sakel/open-invoice-germany/actions/workflows/ci.yml)
 &nbsp;·&nbsp; Licence: **AGPL-3.0** &nbsp;·&nbsp; **English** · [Deutsch](README.de.md)
 
 </div>
@@ -18,19 +18,19 @@ E-invoice (XRechnung / ZUGFeRD) · GoBD · § 14 UStG · small business § 19 ·
 
 ---
 
-## 🗣️ Talk to it with Claude Code (MCP)
+## 🗣️ Talk to it with an AI assistant (MCP)
 
-Connect your local instance to **Claude Code** or Claude Desktop and create legally sound invoices just by describing them:
+Connect your local instance to any **MCP-capable AI assistant** and create legally sound invoices just by describing them:
 
 > "Create an invoice to Müller GmbH for 3 hours of consulting at €95, delivered today, finalise it and export the XRechnung."
 
-Claude calls the right tools in order (create customer/service → invoice → finalise → PDF + XRechnung). Finalising **enforces** the § 14 UStG mandatory fields — non-compliant invoices are rejected. The invoice is created and stored locally. Setup + examples: **[docs/MCP.md](docs/MCP.md)**.
+The assistant calls the right tools in order (create customer/service → invoice → finalise → PDF + XRechnung). Finalising **enforces** the § 14 UStG mandatory fields — non-compliant invoices are rejected. The invoice is created and stored locally. Setup + examples: **[docs/MCP.md](docs/MCP.md)**.
 
 ```bash
-npm run mcp   # start the MCP server (stdio) / wire it into Claude Code via .mcp.json
+npm run mcp   # start the MCP server (stdio) / register it in your MCP client
 ```
 
-> 🔒 **Data protection (GDPR).** The app core runs **100% locally**, but the MCP feature is optional and **not automatically GDPR-compliant**: when you let a **cloud LLM** (e.g. Claude) create the invoice, the data you describe (customer name, items, amounts = personal data) is sent to that provider and processed on your behalf (Art. 28 GDPR). For business use with real personal data, either use a **local model** (the MCP server is model-agnostic) or a **commercial API with a DPA** — note that Claude **Code/Desktop** always use Anthropic's cloud and the consumer **Pro/Max subscription has no DPA**. List the provider as a sub-processor in your records and privacy policy. Details: **[docs/MCP.md](docs/MCP.md)**. Not legal advice.
+> 🔒 **Data protection (GDPR).** The app core runs **100% locally**, but the MCP feature is optional and **not automatically GDPR-compliant**: when you let a **cloud LLM** create the invoice, the data you describe (customer name, items, amounts = personal data) is sent to that provider and processed on your behalf (Art. 28 GDPR). For business use with real personal data, either use a **local model** (the MCP server is model-agnostic) or a **commercial API with a DPA** — consumer chat subscriptions usually come without a DPA. List the provider as a sub-processor in your records and privacy policy. Details: **[docs/MCP.md](docs/MCP.md)**. Not legal advice.
 
 ## REST API (`/api/v1`)
 
@@ -46,7 +46,7 @@ Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like
 
 ## Features
 
-- **Voice control via MCP** (Claude Code/Desktop) — see above.
+- **Voice control via MCP** (any MCP-capable AI assistant) — see above.
 - **GoBD core**: finalisation (draft → immutable), gapless number ranges, append-only audit **hash-chain**, cancellation instead of deletion.
 - **§ 14 UStG**: mandatory-field check blocks finalisation when data is missing.
 - **Tax schemes**: standard rating (19/7/0), small business (§ 19), reverse charge (§ 13b), intra-EU supply, margin scheme (§ 25a), small amount (§ 33).
@@ -105,7 +105,7 @@ Money as integer cents, quantities as integer milli-units, tax per EN-16931 grou
 ## Quick start (solo / SQLite — no server needed)
 
 ```bash
-git clone https://github.com/automationsmanufaktur-labs/open-invoice-germany.git
+git clone https://github.com/c-sakel/open-invoice-germany.git
 cd open-invoice-germany
 npm install
 cp .env.example .env            # DATABASE_URL="file:./dev.db" is the default
@@ -222,8 +222,8 @@ Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please file le
 
 ## Maintainer
 
-Built and maintained by [AutomationsManufaktur](https://automationsmanufaktur.de), Bardowick (Germany).
-Questions on German e-invoicing compliance: info@automationsmanufaktur.de
+Developed and maintained by [sakel-it.de](https://sakel-it.de).
+Originally based on OpenInvoice Germany by [AutomationsManufaktur](https://automationsmanufaktur.de) ([original repository](https://github.com/automationsmanufaktur-labs/open-invoice-germany)); licence and copyright notices remain in effect.
 
 ## License
 

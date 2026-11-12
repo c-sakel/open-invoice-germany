@@ -16,7 +16,7 @@ export { DEFAULT_APP_NAME, DEFAULT_APP_SHORT_NAME };
 
 /** Quellcode-Link der AGPL-Zeile. Ein Fork darf hier seine eigene Quelle eintragen — die
  *  Herkunftsangabe selbst bleibt (AGPL §13: Zugang zum Quellcode, nicht Namensverzicht). */
-export const SOURCE_URL = process.env.SOURCE_URL ?? "https://github.com/automationsmanufaktur-labs/open-invoice-germany";
+export const SOURCE_URL = process.env.SOURCE_URL ?? "https://github.com/c-sakel/open-invoice-germany";
 
 export interface Brand {
   appName: string;

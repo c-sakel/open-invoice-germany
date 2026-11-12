@@ -83,7 +83,7 @@ Am besten vorher kurz ein Issue aufmachen und den geplanten Schnitt beschreiben 
 
 Bei rechtsnahen Änderungen (Pflichtangaben, Steuerlogik, Nummernkreis, Festschreibung, Hash-Chain) rechne mit einer gründlicheren Runde. Das ist die Stelle, an der ein Fehler beim Nutzer teuer wird.
 
-Reviews können ein paar Tage dauern. Wenn du nach einer Woche nichts gehört hast, ping im PR oder schreib an info@automationsmanufaktur.de.
+Reviews können ein paar Tage dauern. Wenn du nach einer Woche nichts gehört hast, ping einfach im PR.
 
 ## Tests
 

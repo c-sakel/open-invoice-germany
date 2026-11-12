@@ -5,7 +5,7 @@
 // also NICHT dupliziert, sondern set_recurring_state ist nur ein duenner Wrapper
 // (dieselbe Domain-Funktion updateRecurringInvoice) fuer eine bequemere, dedizierte
 // Pause/Fortsetzen/Beenden-Aktion (analog set_dunning_state). Kein zweites "update_recurring"
-// Tool — waere reine Dopplung von update_recurring_invoice (CLAUDE.md "Nichts doppelt bauen").
+// Tool — waere reine Dopplung von update_recurring_invoice (Projektregeln "Nichts doppelt bauen").
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 

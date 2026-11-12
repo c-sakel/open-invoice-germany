@@ -19,7 +19,7 @@
  * (Erfolg/Fehlschlag des Festschreibens) ohne Bedeutung.
  *
  * Eigenes Testjahr (2047): bislang von keiner anderen Testdatei verwendet — Invoice.number
- * ist global @unique (nicht je Org, siehe CLAUDE.md).
+ * ist global @unique (nicht je Org, siehe Projektregeln).
  */
 import { beforeAll, describe, it, expect } from "vitest";
 import { dbInternal } from "@/lib/db";
@@ -32,7 +32,7 @@ import { createInvoiceSchema } from "@/schemas";
 
 const NOW = new Date("2047-05-01T10:00:00.000Z");
 // Eigenes Jahr fuer orgNoVat: assignDocumentNumber() vergibt Nummern "RE-<Jahr>-000N" je Org
-// NEU beginnend bei 1 — ein zweiter Jahrgang vermeidet die (bekannte, CLAUDE.md dokumentierte)
+// NEU beginnend bei 1 — ein zweiter Jahrgang vermeidet die (bekannte, in den Projektregeln dokumentierte)
 // globale @unique-Kollision zwischen den Nummernkreisen zweier verschiedener Test-Orgs im
 // selben Jahr.
 const NOW2 = new Date("2048-05-01T10:00:00.000Z");

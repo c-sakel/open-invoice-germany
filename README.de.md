@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/automationsmanufaktur-labs/open-invoice-germany/main/assets/banner.svg" alt="OpenInvoice Germany — kostenlose self-hostbare Rechnungssoftware mit XRechnung / EN 16931, GoBD und § 14 UStG" width="100%" />
+<img src="assets/banner.svg" alt="OpenInvoice Germany — kostenlose self-hostbare Rechnungssoftware mit XRechnung / EN 16931, GoBD und § 14 UStG" width="100%" />
 
 # OpenInvoice Germany
 
 **Kostenlose, self-hostbare Open-Source-Rechnungssoftware für Deutschland.**
 E-Rechnung (XRechnung / ZUGFeRD) · GoBD · § 14 UStG · Kleinunternehmer § 19 · DSGVO
 
-[![CI](https://github.com/automationsmanufaktur-labs/open-invoice-germany/actions/workflows/ci.yml/badge.svg)](https://github.com/automationsmanufaktur-labs/open-invoice-germany/actions/workflows/ci.yml)
+[![CI](https://github.com/c-sakel/open-invoice-germany/actions/workflows/ci.yml/badge.svg)](https://github.com/c-sakel/open-invoice-germany/actions/workflows/ci.yml)
 &nbsp;·&nbsp; Lizenz: **AGPL-3.0** &nbsp;·&nbsp; [English](README.md) · **Deutsch**
 
 </div>
@@ -18,19 +18,19 @@ E-Rechnung (XRechnung / ZUGFeRD) · GoBD · § 14 UStG · Kleinunternehmer § 19
 
 ---
 
-## 🗣️ Mit Claude Code per Sprache (MCP)
+## 🗣️ Per Sprache mit einem KI-Assistenten (MCP)
 
-Verbinde deine lokale Instanz mit **Claude Code** oder Claude Desktop und erstelle rechtssichere Rechnungen, indem du sie einfach beschreibst:
+Verbinde deine lokale Instanz mit einem **MCP-fähigen KI-Assistenten** und erstelle rechtssichere Rechnungen, indem du sie einfach beschreibst:
 
 > „Erstelle eine Rechnung an Müller GmbH über 3 Stunden Beratung à 95 €, Leistung heute, schreib sie fest und exportier die XRechnung."
 
-Claude ruft die passenden Tools auf (Kunde/Leistung anlegen → Rechnung → festschreiben → PDF + XRechnung). Das Festschreiben **erzwingt** die § 14-Pflichtangaben — nicht-konforme Rechnungen sind ausgeschlossen. Die Rechnung wird lokal erstellt und gespeichert. Setup + Beispiele: **[docs/MCP.md](docs/MCP.md)**.
+Der Assistent ruft die passenden Tools auf (Kunde/Leistung anlegen → Rechnung → festschreiben → PDF + XRechnung). Das Festschreiben **erzwingt** die § 14-Pflichtangaben — nicht-konforme Rechnungen sind ausgeschlossen. Die Rechnung wird lokal erstellt und gespeichert. Setup + Beispiele: **[docs/MCP.md](docs/MCP.md)**.
 
 ```bash
-npm run mcp   # MCP-Server (stdio) starten / in Claude Code via .mcp.json einbinden
+npm run mcp   # MCP-Server (stdio) starten / im MCP-Client registrieren
 ```
 
-> 🔒 **Datenschutz (DSGVO).** Der App-Kern läuft **zu 100 % lokal**, das MCP-Feature ist aber optional und **nicht automatisch DSGVO-konform**: Sobald ein **Cloud-LLM** (z. B. Claude) die Rechnung erstellt, werden die beschriebenen Inhalte (Kundenname, Leistungen, Beträge = personenbezogene Daten) an den Anbieter übermittelt und in deinem Auftrag verarbeitet (Auftragsverarbeitung, Art. 28 DSGVO). Für den geschäftlichen Einsatz mit echten Personendaten entweder ein **lokales Modell** nutzen (der MCP-Server ist anbieterneutral) oder einen **API-Zugang mit AVV** — beachte: Claude **Code/Desktop** nutzen immer die Anthropic-Cloud, und das Consumer-**Abo (Pro/Max) hat keinen AVV**. Den Anbieter als Sub-Auftragsverarbeiter im Verarbeitungsverzeichnis und in der Datenschutzerklärung führen. Details: **[docs/MCP.md](docs/MCP.md)**. Keine Rechtsberatung.
+> 🔒 **Datenschutz (DSGVO).** Der App-Kern läuft **zu 100 % lokal**, das MCP-Feature ist aber optional und **nicht automatisch DSGVO-konform**: Sobald ein **Cloud-LLM** die Rechnung erstellt, werden die beschriebenen Inhalte (Kundenname, Leistungen, Beträge = personenbezogene Daten) an den Anbieter übermittelt und in deinem Auftrag verarbeitet (Auftragsverarbeitung, Art. 28 DSGVO). Für den geschäftlichen Einsatz mit echten Personendaten entweder ein **lokales Modell** nutzen (der MCP-Server ist anbieterneutral) oder einen **API-Zugang mit AVV** — Consumer-Chat-Abos haben in der Regel **keinen AVV**. Den Anbieter als Sub-Auftragsverarbeiter im Verarbeitungsverzeichnis und in der Datenschutzerklärung führen. Details: **[docs/MCP.md](docs/MCP.md)**. Keine Rechtsberatung.
 
 ## REST-API (`/api/v1`)
 
@@ -46,7 +46,7 @@ Ereignisgetriebene **Webhooks** (`/api/v1/Webhook`, Scope `admin`) liefern Ereig
 
 ## Funktionen
 
-- **Sprachsteuerung via MCP** (Claude Code/Desktop) — siehe oben.
+- **Sprachsteuerung via MCP** (jeder MCP-fähige KI-Assistent) — siehe oben.
 - **GoBD-Kern**: Festschreibung (Entwurf → unveränderbar), lückenlose Nummernkreise, append-only Audit-**Hash-Chain**, Storno statt Löschung.
 - **§ 14 UStG**: Pflichtangaben-Prüfung blockt das Festschreiben bei fehlenden Angaben.
 - **Steuerschemata**: Regelbesteuerung (19/7/0), Kleinunternehmer (§ 19), Reverse Charge (§ 13b), ig. Lieferung, Differenzbesteuerung (§ 25a), Kleinbetrag (§ 33).
@@ -90,7 +90,7 @@ Geldbeträge als Integer-Cent, Mengen als Integer-Milliunits, Steuer pro EN-1693
 ## Schnellstart (Solo / SQLite — kein Server nötig)
 
 ```bash
-git clone https://github.com/automationsmanufaktur-labs/open-invoice-germany.git
+git clone https://github.com/c-sakel/open-invoice-germany.git
 cd open-invoice-germany
 npm install
 cp .env.example .env            # DATABASE_URL="file:./dev.db" ist Default
@@ -200,8 +200,8 @@ Beiträge willkommen — siehe [CONTRIBUTING.md](CONTRIBUTING.md). Rechtliche Ko
 
 ## Wartung
 
-Gebaut und gepflegt von [AutomationsManufaktur](https://automationsmanufaktur.de), Bardowick.
-Fragen zur E-Rechnungspflicht: info@automationsmanufaktur.de
+Weiterentwickelt und gepflegt von [sakel-it.de](https://sakel-it.de).
+Entstanden aus dem Projekt OpenInvoice Germany der [AutomationsManufaktur](https://automationsmanufaktur.de) ([Original-Repository](https://github.com/automationsmanufaktur-labs/open-invoice-germany)); Lizenz und Urheberhinweise gelten unverändert weiter.
 
 ## Lizenz
 

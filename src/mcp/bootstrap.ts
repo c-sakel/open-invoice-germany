@@ -1,7 +1,7 @@
 /**
  * Wird als ERSTES (vor dem Prisma-Import) geladen. Lädt .env und verankert einen
  * relativen SQLite-Pfad absolut am Projektverzeichnis — so läuft der MCP-Server
- * unabhängig vom Arbeitsverzeichnis, mit dem Claude Code ihn startet.
+ * unabhängig vom Arbeitsverzeichnis, mit dem der MCP-Client ihn startet.
  * PostgreSQL-/absolute URLs bleiben unverändert.
  */
 import "dotenv/config";

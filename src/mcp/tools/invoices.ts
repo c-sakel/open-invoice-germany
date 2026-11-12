@@ -306,7 +306,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
 
   // ── list_invoices ────────────────────────────────────────────────────────────
   // Task 4 (Facts): ersetzt die bisherige, einfache Version (Status als Rohstring, kein
-  // Org-Scoping-via-requireOrg — CLAUDE.md "Nichts doppelt bauen") durch listInvoices
+  // Org-Scoping-via-requireOrg — Projektregeln "Nichts doppelt bauen") durch listInvoices
   // (Task 1) mit vollem Filterschema.
   server.registerTool(
     "list_invoices",

@@ -76,7 +76,7 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
   // S6 (Fix-Welle): explizites `select` statt `include` ohne Einschraenkung — vorher kam
   // jede passende Rechnung MIT `taxBreakdownJson`/`sellerSnapshotJson`/`buyerSnapshotJson`/
   // `notes`/`internalNotes` usw. in den Speicher, obwohl nur ein Bruchteil der Felder
-  // tatsaechlich benutzt wird (CLAUDE.md: "Prisma immer mit select/include"). Faelligkeit
+  // tatsaechlich benutzt wird (Projektregeln: "Prisma immer mit select/include"). Faelligkeit
   // (dueDate bzw. Fallback issueDate) zusaetzlich in die where-Klausel gezogen statt erst
   // in JS zu filtern, damit nicht-faellige Rechnungen gar nicht erst geladen werden.
   const invoices = await dbInternal.invoice.findMany({

@@ -11,7 +11,7 @@ Diese Anleitung führt dich von der Installation bis zur ersten fertigen, rechts
 Voraussetzung: [Node.js](https://nodejs.org) ≥ 22.22 (Node 20 ist am Ende der Laufzeit; die Testsuite benötigt jsdom 31).
 
 ```bash
-git clone https://github.com/automationsmanufaktur-labs/open-invoice-germany.git
+git clone https://github.com/c-sakel/open-invoice-germany.git
 cd open-invoice-germany
 npm install
 cp .env.example .env        # Default: SQLite-Datei prisma/dev.db
@@ -368,11 +368,11 @@ Tags sind ein freies Ordnungsmerkmal über Rechnungen, Angeboten/AB/Proforma und
 
 ---
 
-## 7. Per Sprache mit Claude Code (MCP)
+## 7. Per Sprache mit einem KI-Assistenten (MCP)
 
-Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — z. B. mit Claude Code oder Claude Desktop. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.
+Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — mit jedem MCP-fähigen KI-Assistenten. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.
 
-Alle wichtigen Funktionen aus dieser Anleitung sind auch als MCP-Tool erreichbar — Claude ruft dieselben, gleich validierten Funktionen auf wie UI und API (§55 des Lastenhefts, keine Bypass-Pfade). Beispielsätze:
+Alle wichtigen Funktionen aus dieser Anleitung sind auch als MCP-Tool erreichbar — der Assistent ruft dieselben, gleich validierten Funktionen auf wie UI und API (§55 des Lastenhefts, keine Bypass-Pfade). Beispielsätze:
 
 > **„Erstelle für Müller GmbH ein Angebot über 10 Stunden Beratung zu 95 Euro."** → `create_document`
 
@@ -405,4 +405,4 @@ Vollständige Tool-Referenz (alle 98 Tools, nach Bereichen gruppiert, je ein Bei
 
 ---
 
-Fragen oder Fehler? → [Issues auf GitHub](https://github.com/automationsmanufaktur-labs/open-invoice-germany/issues) · Beitragen: [CONTRIBUTING.md](../CONTRIBUTING.md)
+Fragen oder Fehler? → [GitHub-Repository](https://github.com/c-sakel/open-invoice-germany) · Beitragen: [CONTRIBUTING.md](../CONTRIBUTING.md)

@@ -248,7 +248,7 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
   // "active.length > 0"-Zweig in deriveBillingState greift nur mit mindestens einer
   // Relation), braucht also weder seine Bruttosumme noch einen eigenen Map-Eintrag — bei
   // vielen Angeboten und wenigen abgerechneten waere die vorherige Fassung eine unbegrenzte
-  // Abfrage ueber die gesamte Angebotstabelle der Organisation gewesen (vgl. CLAUDE.md-
+  // Abfrage ueber die gesamte Angebotstabelle der Organisation gewesen (vgl. Projektregeln-
   // Backlog "statusCounts unbounded query").
   const linkedQuoteIds = [...new Set([...convertedByQuote.keys(), ...partialsByQuote.keys(), ...downpaymentsByQuote.keys(), ...finalsByQuote.keys()])];
 

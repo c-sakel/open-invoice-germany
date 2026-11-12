@@ -384,7 +384,7 @@ export interface DeliveryNoteListHeadline {
  * (`DeliveryNoteLine.unitNetPriceCents`/`.taxRate`, beide nullable) und sind bei den
  * meisten Lieferscheinen gar nicht gesetzt (`showPrices` ist per Default aus) — eine
  * daraus hochgerechnete Summe waere in der Praxis meist 0 und suggerierte eine
- * Genauigkeit, die die Daten nicht hergeben (CLAUDE.md „keine Attrappen, keine
+ * Genauigkeit, die die Daten nicht hergeben (Projektregeln „keine Attrappen, keine
  * Mock-Daten"). Ein echtes „Brutto" fuer Lieferscheine braucht eine Schemaaenderung
  * (neue Spalte(n) auf `DeliveryNote`, SQLite UND Postgres, Bestandsdaten) — ausserhalb
  * des Umfangs dieser Fix-Welle (Phase 13a aendert kein Schema); siehe Fix-Wave-1-Bericht

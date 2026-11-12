@@ -151,7 +151,7 @@ describe("topCustomers", () => {
 
 describe("Fix I2 — Vorzeichen-Normalisierung bei manuell angelegten Gutschriften", () => {
   // Eigenes Jahr 2091 (Testjahr-Konvention): Belegnummern sind instanzweit @unique, nicht je
-  // Org (siehe CLAUDE.md) — der Nummernkreis jeder neuen Org startet wieder bei 1, ein
+  // Org (siehe Projektregeln) — der Nummernkreis jeder neuen Org startet wieder bei 1, ein
   // geteiltes Jahr mit dem Hauptszenario (2085, oben) wuerde bei der ersten Rechnung
   // kollidieren.
   const NOW91 = new Date(Date.UTC(2091, 5, 15, 10, 0, 0));

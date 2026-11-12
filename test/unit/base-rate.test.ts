@@ -144,7 +144,7 @@ describe("Phase 14a — Basiszinssatz-Historie (base-rate.ts)", () => {
   });
 
   // Review-Befund (Fix-Welle 2 zu Task 2): CI laeuft mit TZ=UTC, lokale Entwicklung mit
-  // Europe/Berlin (CLAUDE.md-Gate) — dieser Test stellt sicher, dass ein per Datums-String
+  // Europe/Berlin (Projektregel) — dieser Test stellt sicher, dass ein per Datums-String
   // ("YYYY-MM-DD", z.iso.date()) gespeicherter Basiszinssatz an der Halbjahresgrenze
   // (1. Juli, CEST) unter BEIDEN Systemzeitzonen denselben Satz liefert: `validFrom` wird
   // als UTC-Mitternacht interpretiert (ECMA-262, date-only ISO-Strings sind immer UTC), der

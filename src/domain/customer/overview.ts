@@ -1,7 +1,7 @@
 /**
  * Kunden-Detailseite (Phase 8b, Task 4, `/kunden/[id]`) — KPIs + Belegtabs. Nutzt
  * bewusst die bestehenden Listen-Domainfunktionen (Task 1) mit `customerId`-Filter statt
- * eigener Parallel-Queries (CLAUDE.md "Nichts doppelt bauen").
+ * eigener Parallel-Queries (Projektregeln "Nichts doppelt bauen").
  */
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
