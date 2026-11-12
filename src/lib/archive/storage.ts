@@ -15,7 +15,8 @@ import path from "node:path";
 
 export function archiveRoot(): string {
   const dir = process.env.ARCHIVE_DIR || "./data/archive";
-  return path.isAbsolute(dir) ? dir : path.resolve(process.cwd(), dir);
+  // Laufzeit-Datenverzeichnis: nicht ins Build-Tracing ziehen (sonst landet das ganze Projekt im Standalone-Output).
+  return path.isAbsolute(dir) ? dir : path.resolve(/*turbopackIgnore: true*/ process.cwd(), dir);
 }
 
 /** Loest einen relativen Archivpfad auf; wirft, wenn er ausserhalb von `archiveRoot()` landet. */

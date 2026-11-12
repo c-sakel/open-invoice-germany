@@ -140,12 +140,27 @@ Die SQLite-Datei liegt unter `prisma/dev.db` und gehört nur dir. Beim ersten St
 
 ## Mit Docker (PostgreSQL)
 
+Zu jedem Release erscheint ein fertiges Image für `linux/amd64` und `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (Tags `1.0.1`, `1.0`, `1`, `latest`).
+
 ```bash
-cp .env.example .env            # DATABASE_URL auf die postgresql://-Zeile umstellen
-docker compose up --build
+# .env neben docker-compose.yml anlegen (nie committen):
+#   POSTGRES_PASSWORD=<openssl rand -hex 24>
+#   AUTH_SECRET=<openssl rand -hex 32>
+docker compose up -d            # lädt das Image; mit --build stattdessen aus diesem Checkout bauen
 ```
 
-`docker-compose.yml` mountet ein benanntes Volume (`oig-attachments`) unter `/app/data/attachments` für Beleganhänge (`ATTACHMENTS_DIR`); beim Sichern zusammen mit `oig-db` mitnehmen.
+Danach `http://localhost:3000` öffnen und unter `/setup` das Konto anlegen. Die App lauscht nur auf `127.0.0.1` — für den Zugriff von außen einen TLS-Reverse-Proxy davorsetzen. `OIG_VERSION` in der `.env` legt eine Version fest (Standard `1`, also die neueste 1.x).
+
+Das Image entsteht aus dem Standalone-Output von Next.js und enthält nur, was der Server zur Laufzeit braucht — keine Screenshots, Doku, Tests oder Entwicklungsabhängigkeiten (der Build-Kontext ist eine Whitelist in `.dockerignore`). Es läuft als unprivilegierter Benutzer `node` (UID 1000) mit `tini` als Init-Prozess; die Compose-Datei entzieht zusätzlich alle Linux-Capabilities. Migrationen laufen bei jedem Start (`prisma migrate deploy`).
+
+Zwei benannte Volumes halten neben `oig-db` die Daten: `oig-attachments` (Beleganhänge, `ATTACHMENTS_DIR`) und `oig-archive` (write-once-Belegarchiv, `ARCHIVE_DIR`). Alle drei sichern.
+
+**Update von einem Image vor 1.0.1** (lief als root): Die Volumes gehören noch root, der Container startet dann nicht und nennt den Befehl. Einmalig den Eigentümer umstellen:
+
+```bash
+docker compose run --rm --user root --cap-add CHOWN --cap-add DAC_READ_SEARCH \
+  --entrypoint chown app -R node:node /app/data
+```
 
 **Bestehende Instanz aktualisieren.** Wurde die Datenbank mit einer älteren Version
 per `prisma db push` angelegt, fehlt ihr die Migrationshistorie. Der Container
@@ -206,7 +221,7 @@ ist gewollt (fail-closed) statt bei unsicherem Schemazustand einfach
 weiterzulaufen. Prüfen, was die Migration teilweise angerichtet hat, dann mit
 `prisma migrate resolve --rolled-back <name>` auflösen.
 
-`docker-compose.yml` startet App + PostgreSQL. XRechnung und ZUGFeRD erzeugt die App selbst; der auskommentierte **Mustang**-Sidecar-Block ist ein optionales Extra und nicht nötig (`einvoice-service/` wird nicht mitgeliefert). Das Postgres-Schema liegt in `prisma/schema.postgres.prisma` (modellidentisch, nur andere Datasource).
+`docker-compose.yml` startet App + PostgreSQL. XRechnung und ZUGFeRD erzeugt die App selbst, ein Zusatzdienst ist nicht nötig. Das Postgres-Schema liegt in `prisma/schema.postgres.prisma` (modellidentisch, nur andere Datasource).
 
 ## E-Mail-Versand einrichten
 

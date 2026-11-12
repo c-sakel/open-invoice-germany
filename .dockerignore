@@ -1,11 +1,35 @@
-node_modules
-.next
-.git
-coverage
-tmp
-*.db
-*.db-journal
-.env
-.env.*
-!.env.example
-npm-debug.log*
+# Whitelist: Der Build-Kontext enthaelt nur, was der Build braucht. Alles andere
+# (Screenshots, Social-Grafiken, Doku, Tests, lokale Datenbanken, .env, node_modules,
+# Arbeitsordner) erreicht den Docker-Daemon gar nicht erst.
+*
+
+# Abhaengigkeiten und Build-Konfiguration
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!postcss.config.mjs
+!prisma.postgres.config.ts
+
+# Quellcode, statische Dateien, PDF-Schriften, OpenAPI-Dokument
+!src/
+!public/
+!assets/fonts/
+!openapi/openapi.json
+
+# PostgreSQL-Schema und -Migrationen (der SQLite-Pfad ist im Container nicht im Einsatz)
+!prisma/schema.postgres.prisma
+!prisma/migrations-postgres/
+
+# Start und Migrationen
+!scripts/docker-entrypoint.sh
+!scripts/db-prepare.sh
+!scripts/check-baseline.sql
+
+!LICENSE
+
+# Innerhalb der freigegebenen Ordner wieder ausschliessen
+src/generated/
+**/*.test.ts
+**/*.test.tsx
+**/.DS_Store

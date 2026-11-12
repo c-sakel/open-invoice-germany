@@ -23,7 +23,8 @@ export const ASSET_CACHE_HEADERS = {
 
 function attachmentsRoot(): string {
   const dir = process.env.ATTACHMENTS_DIR || "./data/attachments";
-  return path.isAbsolute(dir) ? path.resolve(dir) : path.resolve(process.cwd(), dir);
+  // Laufzeit-Datenverzeichnis: nicht ins Build-Tracing ziehen (sonst landet das ganze Projekt im Standalone-Output).
+  return path.isAbsolute(dir) ? path.resolve(/*turbopackIgnore: true*/ dir) : path.resolve(/*turbopackIgnore: true*/ process.cwd(), dir);
 }
 
 /** true, wenn `storagePath` (ein relativer Pfad aus BrandingSettings) nach der
