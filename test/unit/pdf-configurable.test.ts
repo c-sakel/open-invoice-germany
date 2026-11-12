@@ -15,7 +15,6 @@ import { parsePdf } from "../helpers/pdf-theme";
 import { referenzInvoice, referenzTheme } from "../helpers/pdf-referenz-fixture";
 
 const de = docStrings("de");
-const BLOCKS_BASE: LayoutBlockKey[] = ["sender", "recipient", "meta", "subject", "intro", "lines", "totals", "outro", "payment"];
 
 function withBlocks(blocks: LayoutBlockKey[]): LayoutDesignConfig {
   return { ...presetConfig("standard"), blocks };
