@@ -140,8 +140,10 @@ export function buildLayout(config: LayoutDesignConfig): PdfLayout {
       const titleY = Math.max(mm(97), recipientBottom + 12, metaBottom + 12);
       doc.font("Helvetica-Bold").fontSize(base + 6).fillColor(colors.primary).text(input.title, left, titleY, { width: right - left });
       let y = doc.y + 10;
-      if (config.blocks.includes("subject") && input.subject) y = drawSubject(frame, input.subject, y);
-      if (config.blocks.includes("intro") && input.intro) {
+      // Betreff und Einleitung: vorhandener Inhalt wird immer gedruckt (PDF = XML-Inhalt);
+      // `blocks` bestimmt nur die Reihenfolge der Rumpfbloecke, nicht ob Text entfaellt.
+      if (input.subject) y = drawSubject(frame, input.subject, y);
+      if (input.intro) {
         doc.font("Helvetica").fontSize(base - 1).fillColor(colors.text).text(input.intro, left, y, { width: right - left });
         y = doc.y + 10;
       }

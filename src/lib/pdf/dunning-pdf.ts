@@ -20,7 +20,7 @@ import { footerZoneHeight } from "./layouts/shared";
 import { renderPlainTextPdf } from "@/lib/richtext";
 import { drawWrappedLine, wrapRuns } from "./text-wrap";
 import type { LayoutFrame } from "./layouts/types";
-import { buildFooterColumns } from "./footer";
+import { buildFooterColumns, mandatoryTaxMetaRows } from "./footer";
 import { createPdfDocument } from "./document";
 
 export interface DunningPdfData {
@@ -147,7 +147,11 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       title,
       numberLabel: t.numberLabels.DUNNING,
       number: data.number,
-      meta: [{ label: t.meta.date, value: deDate(data.sentDate) }],
+      meta: [
+        { label: t.meta.date, value: deDate(data.sentDate) },
+        // § 14 Abs. 4 Nr. 2 UStG: ohne AUTO-Fusszeile stehen Steuernummer/USt-IdNr des Leistenden im Kopf.
+        ...mandatoryTaxMetaRows(data.seller, layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand, theme.options.showFooter, lang),
+      ],
       recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode, lang) },
       senderFallback: senderLineFallback(data.seller, lang),
     });

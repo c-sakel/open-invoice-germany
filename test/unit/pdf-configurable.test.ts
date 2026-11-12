@@ -71,14 +71,47 @@ describe("Bloecke", () => {
     expect(caption).toBeLessThan(text.indexOf("Vielen Dank für Ihren Auftrag."));
   });
 
-  it("ohne subject: Betreff fehlt, Rechnungsnummer und Pflichthinweise bleiben", async () => {
+  it("Block subject/intro/outro nicht konfiguriert: Betreff, Einleitung und Fusstext stehen trotzdem im PDF", async () => {
     const data: EInvoiceData = { ...referenzInvoice(), subject: "Betreff Sonderprojekt", consumerRetentionHint: true };
-    const without = await parsePdf(await render(withBlocks(["sender", "recipient", "meta", "intro", "lines", "totals", "outro", "payment"]), data));
-    expect(without.text).not.toContain("Betreff Sonderprojekt");
-    expect(without.text).toContain("RE-2073-00042");
-    expect(without.text.replace(/\s+/g, " ")).toContain("zwei Jahre aufzubewahren");
-    const withSubject = await parsePdf(await render(withBlocks(BLOCKS_BASE), data));
-    expect(withSubject.text).toContain("Betreff Sonderprojekt");
+    const bare = await parsePdf(await render(withBlocks(["sender", "recipient", "meta", "lines", "totals", "payment"]), data));
+    expect(bare.text).toContain("Betreff Sonderprojekt");
+    expect(bare.text).toContain("Wir erlauben uns, folgende Leistungen");
+    expect(bare.text).toContain("Vielen Dank für Ihren Auftrag.");
+    expect(bare.text).toContain("RE-2073-00042");
+    expect(bare.text.replace(/\s+/g, " ")).toContain("zwei Jahre aufzubewahren");
+  });
+});
+
+describe("Pflichtangaben Leistender (§ 14 Abs. 4 Nr. 2 UStG)", () => {
+  const SELLER = "DE123456789";
+  const TAX = "12/345/67890";
+  const head = (text: string) => text.slice(0, text.indexOf(de.columns.description));
+
+  it("Standard-Fusszeile sichtbar: unveraendert, keine Meta-Zeile mit USt-IdNr im Kopf", async () => {
+    const { text } = await parsePdf(await render(presetConfig("standard")));
+    expect(head(text)).not.toContain(SELLER);
+  });
+
+  it("Fusszeile ausgeblendet: USt-IdNr und Steuernummer stehen in den Meta-Angaben", async () => {
+    const { text } = await parsePdf(
+      await render(presetConfig("standard"), referenzInvoice(), (t) => {
+        t.options = { ...t.options, showFooter: false };
+      }),
+    );
+    expect(text).toContain(SELLER);
+    expect(text).toContain(TAX);
+  });
+
+  it("footerMode CUSTOM mit Eigentext: beide erscheinen automatisch in den Meta-Angaben", async () => {
+    const config = { ...presetConfig("standard"), footer: { ...presetConfig("standard").footer, mode: "CUSTOM" as const } };
+    const { text } = await parsePdf(
+      await render(config, referenzInvoice(), (t) => {
+        t.brand = { ...t.brand, footerLeft: "Eigener Fusstext", footerCenter: "", footerRight: "" };
+      }),
+    );
+    expect(text).toContain("Eigener Fusstext");
+    expect(head(text)).toContain(SELLER);
+    expect(head(text)).toContain(TAX);
   });
 });
 

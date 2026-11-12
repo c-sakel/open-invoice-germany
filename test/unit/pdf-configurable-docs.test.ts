@@ -167,3 +167,23 @@ describe("Mahnung mit Design", () => {
     expect(Math.min(...boxes.map((x) => x.xPt))).toBeGreaterThanOrEqual(85.0);
   });
 });
+
+describe("Pflichtangaben Leistender ohne Fusszeile (§ 14 Abs. 4 Nr. 2 UStG)", () => {
+  const noFooter = () => {
+    const theme = testPdfTheme({ layoutConfig: presetConfig("standard") });
+    theme.options = { ...theme.options, showFooter: false };
+    return theme;
+  };
+
+  it("Lieferschein: USt-IdNr in den Meta-Angaben", async () => {
+    const { text } = await parsePdf(await renderDeliveryNotePdf(NOTE(), noFooter()));
+    expect(text).toContain("USt-IdNr.");
+    expect(text).toContain("DE123456789");
+  });
+
+  it("Mahnung: USt-IdNr in den Meta-Angaben", async () => {
+    const { text } = await parsePdf(await renderDunningPdf(buildSampleDunningData(ORG), noFooter()));
+    expect(text).toContain("USt-IdNr.");
+    expect(text).toContain("DE123456789");
+  });
+});

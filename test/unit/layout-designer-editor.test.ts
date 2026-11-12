@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BLOCKS, DEFAULT_COLUMNS, layoutDesignConfigSchema } from "@/schemas/layout-design";
 import { presetConfig } from "@/lib/pdf/layouts/presets";
-import { collectFieldErrors, columnSum, moveBlock, moveColumn, toggleBlock, toggleColumn } from "@/lib/layout-design/editor";
+import { collectFieldErrors, columnSum, moveBlock, moveColumn, OPTIONAL_BLOCKS, toggleBlock, toggleColumn } from "@/lib/layout-design/editor";
 
 describe("moveBlock", () => {
   it("setzt den Fusstext vor die Summen, Ergebnis ist gueltig", () => {
@@ -33,12 +33,12 @@ describe("toggleBlock", () => {
     expect(toggleBlock(withGiro, "giro")).toEqual([...DEFAULT_BLOCKS]);
   });
 
-  it("fuegt Betreff und Einleitung direkt nach den Belegdaten ein, gueltig", () => {
-    const bare = DEFAULT_BLOCKS.filter((b) => b !== "subject" && b !== "intro");
-    const withIntro = toggleBlock(bare, "intro");
-    const both = toggleBlock(withIntro, "subject");
-    expect(both.slice(3, 5)).toEqual(["subject", "intro"]);
-    expect(layoutDesignConfigSchema.safeParse({ ...presetConfig("standard"), blocks: both }).success).toBe(true);
+  it("Betreff, Einleitung und Fusstext lassen sich nicht ausblenden (nur Reihenfolge)", () => {
+    for (const key of ["subject", "intro", "outro"] as const) {
+      expect(toggleBlock(DEFAULT_BLOCKS, key)).toEqual([...DEFAULT_BLOCKS]);
+    }
+    expect(OPTIONAL_BLOCKS).toEqual(["giro"]);
+    expect(layoutDesignConfigSchema.safeParse({ ...presetConfig("standard"), blocks: [...DEFAULT_BLOCKS] }).success).toBe(true);
   });
 });
 

@@ -163,6 +163,11 @@ export function StyleFields({
           ]}
           onChange={(mode) => onChange((c) => ({ ...c, footer: { ...c.footer, mode } }))}
         />
+        {config.footer.mode === "CUSTOM" && (
+          <p role="note" className="text-xs text-ink-muted">
+            Bei eigenem Fußtext stehen Steuernummer und USt-IdNr automatisch in den Belegdaten (§ 14 Abs. 4 Nr. 2 UStG).
+          </p>
+        )}
         <NumberField label="Fußzeilen-Spalten" value={config.footer.columns} error={err("footer.columns")} onChange={(n) => onChange((c) => ({ ...c, footer: { ...c.footer, columns: n } }))} />
         <NumberField label="Fußzeile Mindesthöhe (mm)" value={config.footer.minHeightMm} error={err("footer.minHeightMm")} onChange={(n) => onChange((c) => ({ ...c, footer: { ...c.footer, minHeightMm: n } }))} />
       </Group>

@@ -33,7 +33,7 @@ import { resolveConfiguredColumns, mergeFooterColumns } from "./layouts/columns"
 import { DEFAULT_BLOCKS, type LayoutBlockKey, type LayoutColumnKey } from "@/schemas/layout-design";
 import { drawTableHeaderRow, footerZoneHeight } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
-import { buildFooterColumns } from "./footer";
+import { buildFooterColumns, mandatoryTaxMetaRows } from "./footer";
 import { createPdfDocument } from "./document";
 import { buildFacturXXmp } from "./pdfa-xmp";
 
@@ -270,6 +270,8 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   if (data.buyer.customerNumber) meta.push({ label: t.meta.customerNumber, value: data.buyer.customerNumber });
   if (data.seller.contactName) meta.push({ label: t.meta.contactPerson, value: data.seller.contactName });
   if (data.buyer.vatId) meta.push({ label: t.meta.buyerVatId, value: data.buyer.vatId });
+  // § 14 Abs. 4 Nr. 2 UStG: ohne AUTO-Fusszeile stehen Steuernummer/USt-IdNr des Leistenden im Kopf.
+  meta.push(...mandatoryTaxMetaRows(data.seller, layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand, theme.options.showFooter, lang));
   // Phase 5 — Bezug zur Quelle (Angebot/Auftrag/Lieferschein) bei Teil-/Abschlags-/
   // Schlussrechnung, NUR fürs PDF-Layout (kein XML-Feld).
   if (data.sourceNumber) meta.push({ label: t.meta.reference, value: t.meta.referenceValue(data.sourceLabel ?? t.meta.genericDocument, data.sourceNumber) });
@@ -723,6 +725,11 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
   // (sender/recipient/meta/subject/intro) zeichnet `drawKopf`. GiroCode: `giro` im Layout ->
   // an dieser Stelle; sonst `below-totals` direkt nach den Summen; sonst unten rechts (s. u.).
   const bodyBlocks = (layout.blocks ?? DEFAULT_BLOCKS).filter((k: LayoutBlockKey) => ["lines", "totals", "giro", "outro", "payment"].includes(k));
+  // Fusstext: vorhandener Inhalt wird immer gedruckt; fehlt der Block im Design, steht er vor den Zahlungshinweisen.
+  if (!bodyBlocks.includes("outro")) {
+    const at = bodyBlocks.indexOf("payment");
+    bodyBlocks.splice(at >= 0 ? at : bodyBlocks.length, 0, "outro");
+  }
   const giroBlock = bodyBlocks.includes("giro");
   const giroInline = giroBlock || layout.giroPlacement === "below-totals";
   for (const key of bodyBlocks) {

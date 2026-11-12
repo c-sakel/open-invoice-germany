@@ -21,7 +21,7 @@ import type { LayoutColumnKey } from "@/schemas/layout-design";
 import { drawTableHeaderRow, footerZoneHeight, type TableHeaderColumn } from "./layouts/shared";
 import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
 import { createPdfDocument } from "./document";
-import { buildFooterColumns } from "./footer";
+import { buildFooterColumns, mandatoryTaxMetaRows } from "./footer";
 import { renderPlainTextPdf } from "@/lib/richtext";
 import { drawWrappedLine, wrapRuns } from "./text-wrap";
 import { docStrings, docLocale, formatDocDate, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
@@ -268,6 +268,8 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     if (data.deliveryDate) meta.push({ label: t.meta.deliveryNoteDate, value: docDate(data.deliveryDate, lang) });
     if (data.shippingDate) meta.push({ label: t.meta.shippingDate, value: docDate(data.shippingDate, lang) });
     if (data.sourceNumber) meta.push({ label: t.meta.referenceDocument, value: data.sourceNumber });
+    // § 14 Abs. 4 Nr. 2 UStG: ohne AUTO-Fusszeile stehen Steuernummer/USt-IdNr des Leistenden im Kopf.
+    meta.push(...mandatoryTaxMetaRows(data.seller, layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand, theme.options.showFooter, lang));
 
     // Lieferadresse — S7 (Fix-Welle, §36): zusaetzlicher Block aus der Standard-SHIPPING-
     // Adresse des Kunden, NUR wenn showDeliveryAddress an ist UND eine solche Adresse

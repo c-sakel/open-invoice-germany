@@ -136,6 +136,11 @@ describe("LayoutDesigner", () => {
     expect(screen.getByRole("link", { name: "Verlassen", hidden: true }).getAttribute("href")).toBe("/einstellungen/briefpapier/designer?id=d2");
   });
 
+  it("zeigt bei Fusszeile „Eigener Text“ den Hinweis auf Steuernummer und USt-IdNr", () => {
+    mount({ ...presetConfig("standard"), footer: { ...presetConfig("standard").footer, mode: "CUSTOM" } });
+    expect(screen.getByText(/Steuernummer und USt-IdNr automatisch/)).toBeTruthy();
+  });
+
   it("entprellt die Vorschau: drei Aenderungen innerhalb 300 ms ergeben genau einen fetch 500 ms nach der letzten", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     mount();

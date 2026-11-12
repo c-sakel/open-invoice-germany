@@ -44,6 +44,9 @@
     "xmlbuilder2": "^4.0.3",
     "zod": "^4.4.3"
   },
+  "engines": {
+    "node": ">=22.22.2"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.2",

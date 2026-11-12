@@ -8,7 +8,7 @@
 import { useMemo } from "react";
 import type { LayoutBlockKey } from "@/schemas/layout-design";
 import { slotToMoveTarget } from "@/lib/editor/reorder";
-import { FIXED_HEAD_COUNT, OPTIONAL_BLOCKS, moveBlock, toggleBlock } from "@/lib/layout-design/editor";
+import { ALWAYS_PRINTED_BLOCKS, FIXED_HEAD_COUNT, OPTIONAL_BLOCKS, moveBlock, toggleBlock } from "@/lib/layout-design/editor";
 import { useReorder, type ReorderItem } from "@/components/editor/blocks/use-pointer-reorder";
 
 export const BLOCK_LABELS: Record<LayoutBlockKey, string> = {
@@ -78,7 +78,9 @@ export function BlockOrderList({
               )}
               <span className="flex-1 text-ink">{label}</span>
               {fixed && <span className="text-xs text-ink-muted">fest (DIN 5008)</span>}
-              {!fixed && !optional && <span className="text-xs text-ink-muted">Pflicht</span>}
+              {!fixed && !optional && (
+                <span className="text-xs text-ink-muted">{ALWAYS_PRINTED_BLOCKS.includes(key) ? "nur Position, Inhalt wird immer gedruckt" : "Pflicht"}</span>
+              )}
               {optional && (
                 <button
                   type="button"

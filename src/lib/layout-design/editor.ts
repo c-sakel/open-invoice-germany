@@ -10,8 +10,14 @@ export type LayoutColumn = { key: LayoutColumnKey; widthPct: number };
 /** Die ersten drei Bloecke (Absender, Empfaenger, Belegdaten) stehen nach DIN 5008 fest oben. */
 export const FIXED_HEAD_COUNT = 3;
 
-/** Bloecke, die abgeschaltet werden duerfen; alle anderen sind Pflichtangaben oder Kopf. */
-export const OPTIONAL_BLOCKS: readonly LayoutBlockKey[] = ["subject", "intro", "giro", "outro"];
+/**
+ * Bloecke, die abgeschaltet werden duerfen. Betreff, Einleitung und Fusstext steuern nur die
+ * Reihenfolge: vorhandener Inhalt wird immer gedruckt (PDF = XML-Inhalt, z. B. IncludedNote).
+ */
+export const OPTIONAL_BLOCKS: readonly LayoutBlockKey[] = ["giro"];
+
+/** Textbloecke, deren Inhalt immer gedruckt wird; der Block bestimmt nur die Stelle. */
+export const ALWAYS_PRINTED_BLOCKS: readonly LayoutBlockKey[] = ["subject", "intro", "outro"];
 
 /** Spalten, die nicht abgeschaltet werden duerfen. */
 export const REQUIRED_COLUMNS: readonly LayoutColumnKey[] = ["description", "qty", "total"];
