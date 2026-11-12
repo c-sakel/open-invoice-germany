@@ -73,15 +73,15 @@ export interface DinAddressOptions {
 }
 
 /**
- * Umbruch der Absenderzeile bevorzugt an " · " (das Trennzeichen bleibt am Zeilenende); einzelne
+ * Umbruch der Absenderzeile bevorzugt an " · " (an der Umbruchstelle entfaellt das Trennzeichen); einzelne
  * Teile, die allein nicht passen, werden an Woertern umbrochen.
  */
 function wrapSenderLine(doc: PDFKit.PDFDocument, text: string, width: number, size: number): string[] {
-  const parts = text.split(" · ").map((p, i, all) => (i < all.length - 1 ? `${p} ·` : p));
+  const parts = text.split(" · ");
   const lines: string[] = [];
   let current = "";
   for (const part of parts) {
-    const candidate = current ? `${current} ${part}` : part;
+    const candidate = current ? `${current} · ${part}` : part;
     if (doc.widthOfString(candidate) <= width) {
       current = candidate;
       continue;

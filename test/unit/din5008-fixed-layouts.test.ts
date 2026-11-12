@@ -133,8 +133,9 @@ describe("feste Layouts: DIN 5008 Form B", () => {
       const { boxes } = render(id, KINDS[0]!, PRODUCTION_SENDER);
       const lines = boxes.filter((b) => PRODUCTION_SENDER.startsWith(b.text.split(" ")[0]!) || PRODUCTION_SENDER.endsWith(b.text) || PRODUCTION_SENDER.includes(b.text)).filter((b) => b.yPt * PT_TO_MM < DIN5008_FORM_B.addressZoneTopMm);
       expect(lines.length, "zwei Zeilen").toBe(2);
-      // Umbruch an einem Trenner: die Zeilen ergeben zusammen die Originalzeile
-      expect(lines.map((l) => l.text).join(" ")).toBe(PRODUCTION_SENDER);
+      // Umbruch an einem Trenner, der Trenner entfaellt: weder Zeilenende noch -anfang mit "·"
+      expect(lines.map((l) => l.text).join(" · ")).toBe(PRODUCTION_SENDER);
+      for (const l of lines) expect(l.text).not.toMatch(/^·|·$/);
       const f = mmBox(lines[0]!);
       const s = mmBox(lines[1]!);
       expect(dinWindowViolations(f)).toEqual([]);
