@@ -497,6 +497,13 @@ Damit entfällt der JVM-Sidecar vollständig.
 - **Typ-Lücken in `@types/pdfkit`:** `PDFDocumentOptions.font` kennt nur `string | undefined` (kein `null`), `PDFKit.Mixins.PDFAttachmentOptions` kennt kein `relationship` — beide Male zur Laufzeit aber ausdrücklich unterstützt (siehe `node_modules/pdfkit/js/pdfkit.js`, `FontsMixin.initFonts`/`AttachmentsMixin.file`). Statt `any` je ein gezielter, kommentierter Interop-Fix: `document.ts` castet über `as unknown as PDFKit.PDFDocumentOptions`, `invoice-pdf.ts` erweitert `PDFAttachmentOptions` strukturell um `relationship` (Intersection-Typ, kein Cast nötig).
 - **Nachweis:** `test/unit/pdfa-structure.test.ts` (Java-frei, reine Bytesuche — pdfkit schreibt Objekt-Dictionaries und die XMP-Metadatenstream immer unkomprimiert, `metadataRef.compress = false`) plus veraPDF in CI (Task 7).
 
+### Layout-Designs und Schriften (Phase 16g)
+
+- **Modell:** `LayoutDesign` + unveränderliche `LayoutDesignVersion` (JSON-Konfiguration `version: 1`, Zod-Schema `src/schemas/layout-design.ts`). `buildLayout(config)` (`src/lib/pdf/layouts/configurable.ts`) erzeugt ein `PdfLayout` mit optionalen Feldern (`blocks`, `columns`, `font`); die Renderer lesen sie mit Rückfall auf das bisherige Verhalten, die sieben festen Layouts bleiben bytegleich (`test/unit/pdf-regression.test.ts`).
+- **Auflösung und Einfrieren:** `src/domain/layout-design/resolve.ts` löst `design:<id>` (Branding, Beleg-Override) auf; `layoutVersionId` steht im `printOptionsJson` bzw. in `Dunning.layoutVersionId`. `loadPdfTheme` leitet aus Status und eingefrorener Version zentral ab, ob ein Design rendern darf.
+- **Schriften** (`src/lib/pdf/font-families.ts`, `fonts.ts`): Liberation Sans (Standard), IBM Plex Sans, IBM Plex Serif, Source Serif 4, Inter; je Familie Regular/Bold/Italic/BoldItalic als statische TTF unter OFL 1.1, Herkunft mit Version, URL und SHA-256 in `assets/fonts/README.md`. Kein Upload, keine Systemschriften.
+- **Designer-UI:** `src/components/settings/layout-designer/`, Vorschau über `POST /api/settings/layout-design/preview`; REST `/api/v1/Layout`, MCP `list_layout_designs`/`save_layout_design`/`preview_layout_design`.
+
 ### PDF/A-Nachweis in CI und Bildabsicherung (Phase 14a, Task 7)
 
 - **Muster-Generator** `scripts/render-pdfa-samples.ts` rendert drei Belege (ZUGFeRD-Rechnung mit Logo + GiroCode, Lieferschein, Mahnung) nach `tmp/pdfa-samples/` — reine Musterdaten (`src/domain/settings/preview.ts#buildSample*`), **kein DB-Zugriff**, ein selbst erzeugtes RGB-PNG als Logo (kein Fixture-Binary). `npx tsx scripts/render-pdfa-samples.ts` funktioniert auch lokal.

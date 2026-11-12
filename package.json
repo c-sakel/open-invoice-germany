@@ -44,8 +44,13 @@
     "xmlbuilder2": "^4.0.3",
     "zod": "^4.4.3"
   },
+  "engines": {
+    "node": ">=22.22.2"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
     "@types/pdfkit": "^0.17.6",
@@ -56,6 +61,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "^16.4.4",
+    "jsdom": "^31.0.0",
     "node-schematron": "^2.1.0",
     "pdf-parse": "^1.1.1",
     "prisma": "^6.19.3",

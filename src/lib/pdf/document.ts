@@ -14,6 +14,7 @@
 import PDFDocument from "pdfkit";
 import type { PdfMargins } from "./layout";
 import { registerPdfFonts } from "./fonts";
+import { DEFAULT_PDF_FONT_FAMILY, type PdfFontFamily } from "./font-families";
 
 export interface CreatePdfDocumentOptions {
   size: string | number[];
@@ -23,6 +24,8 @@ export interface CreatePdfDocumentOptions {
   info?: PDFKit.DocumentInfo;
   /** Muss `true` sein — PDF/A-3b ist ab Task 6 fuer alle Belegtypen verbindlich. */
   pdfa: true;
+  /** Schriftfamilie (Default `liberation-sans`); alle Familien werden eingebettet. */
+  fontFamily?: PdfFontFamily;
 }
 
 /**
@@ -45,7 +48,7 @@ export function createPdfDocument(options: CreatePdfDocumentOptions): PDFKit.PDF
   } as unknown as PDFKit.PDFDocumentOptions;
 
   const doc = new PDFDocument(pdfDocumentOptions);
-  registerPdfFonts(doc);
+  registerPdfFonts(doc, options.fontFamily ?? DEFAULT_PDF_FONT_FAMILY);
   // Ohne `font: null` wuerde der Konstruktor selbst `doc.font("Helvetica")` aufrufen —
   // hier holen wir das explizit nach, jetzt aber NACH `registerPdfFonts`, sodass
   // "Helvetica" bereits auf den eingebetteten Liberation-Sans-Regular-Buffer zeigt statt

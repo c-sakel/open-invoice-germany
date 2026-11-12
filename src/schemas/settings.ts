@@ -4,14 +4,16 @@
  * — kein Bypass ueber Route, UI oder MCP.
  */
 import { z } from "zod";
-import { LAYOUT_IDS, LAYOUT_DOC_TYPES, type LayoutDocType } from "@/lib/pdf/layouts/ids";
+import { LAYOUT_IDS, LAYOUT_DOC_TYPES, isDesignRef, type LayoutDocType } from "@/lib/pdf/layouts/ids";
 
 // ── Layouts (Phase 11b) ──────────────────────────────────────────────────────
 
 export const layoutIdSchema = z.enum(LAYOUT_IDS);
 export type LayoutIdInput = z.infer<typeof layoutIdSchema>;
+/** Festes Layout oder Layout-Design (Phase 16g: `design:<cuid>`). */
+export const layoutRefSchema = z.union([layoutIdSchema, z.string().regex(/^design:c[a-z0-9]{20,30}$/, "Ungültige Design-Kennung.").refine(isDesignRef)]);
 export const layoutByTypeSchema = z
-  .object(Object.fromEntries(LAYOUT_DOC_TYPES.map((t) => [t, layoutIdSchema.optional()])) as Record<LayoutDocType, z.ZodOptional<typeof layoutIdSchema>>)
+  .object(Object.fromEntries(LAYOUT_DOC_TYPES.map((t) => [t, layoutRefSchema.optional()])) as Record<LayoutDocType, z.ZodOptional<typeof layoutRefSchema>>)
   .strict();
 export type LayoutByType = z.infer<typeof layoutByTypeSchema>;
 export const footerModeSchema = z.enum(["AUTO", "CUSTOM"]);
@@ -78,6 +80,9 @@ export type PrintBooleanKey = Exclude<keyof PrintSettingsInput, "giroSizeMm">;
  */
 export const printOptionsOverrideSchema = z.object({ ...printOptionFields, layoutId: layoutIdSchema.optional() }).partial();
 export type PrintOptionsOverride = z.infer<typeof printOptionsOverrideSchema>;
+/** Eingefrorener Satz (Beleg-JSON nach dem Festschreiben): zusaetzlich die Design-Version (Phase 16g). */
+export const frozenPrintOptionsSchema = printOptionsOverrideSchema.extend({ layoutVersionId: z.string().min(1).max(64).optional() });
+export type FrozenPrintOptions = z.infer<typeof frozenPrintOptionsSchema>;
 
 // ── Briefpapier / Branding (§35) ─────────────────────────────────────────────
 
@@ -102,7 +107,7 @@ export const brandingSettingsInputSchema = z.object({
   fontSizePt: z.coerce.number().int().min(8).max(14).default(10),
   backgroundPath: z.string().nullable().default(null),
   showBackground: z.boolean().default(false),
-  layoutId: layoutIdSchema.default("standard"),
+  layoutId: layoutRefSchema.default("standard"),
   layoutByType: layoutByTypeSchema.default({}),
   footerMode: footerModeSchema.default("AUTO"),
   // Phase 12c — White-Label; null = Produktvorgabe.

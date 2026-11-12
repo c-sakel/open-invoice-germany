@@ -76,6 +76,8 @@ export const de: DocStrings = {
     unitPrice: "Einzel",
     vat: "USt",
     net: "Netto",
+    unit: "Einheit",
+    discount: "Rabatt",
   },
   totals: {
     subtotalNet: "Zwischensumme netto",

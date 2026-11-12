@@ -80,3 +80,32 @@ export function buildFooterColumns(facts: FooterFacts, brand: BrandingSettingsIn
   if (showAccountHolder) columns.push({ lines: [`${f.accountHolder} ${accountHolder}`], fullWidth: true, preferBankColumn: true });
   return columns.filter((c) => c.lines.length > 0);
 }
+
+/**
+ * Steuernummer und USt-IdNr des Leistenden (§ 14 Abs. 4 Nr. 2 UStG) stehen in der AUTO-Fusszeile.
+ * Ist die Fusszeile ausgeblendet oder zeigt sie nur eigenen Text (CUSTOM), kommen beide
+ * automatisch in die Meta-Angaben des Belegkopfs — gilt fuer alle Belegarten.
+ */
+export function mandatoryTaxMetaRows(
+  seller: { vatId?: string | null; taxNumber?: string | null },
+  brand: Pick<BrandingSettingsInput, "footerMode" | "footerLeft" | "footerCenter" | "footerRight">,
+  showFooter: boolean,
+  lang: DocLanguage = "de",
+): { label: string; value: string }[] {
+  const customParts = brand.footerMode === "CUSTOM" ? compact([brand.footerLeft, brand.footerCenter, brand.footerRight]) : [];
+  const customText = customParts.length > 0;
+  if (showFooter && !customText) return [];
+  // Sichtbarer eigener Fusstext, der die Nummer schon enthaelt: nicht doppelt drucken
+  // (Vergleich ohne Leerzeichen, ohne Gross-/Kleinschreibung).
+  const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+  const visibleCustom = showFooter ? norm(customParts.join(" ")) : "";
+  const needed = (value: string | null | undefined): string | null => {
+    const v = value?.trim();
+    if (!v) return null;
+    return visibleCustom && visibleCustom.includes(norm(v)) ? null : v;
+  };
+  const f = docStrings(lang).footer;
+  const vatId = needed(seller.vatId);
+  const taxNumber = needed(seller.taxNumber);
+  return [...(vatId ? [{ label: f.vatId, value: vatId }] : []), ...(taxNumber ? [{ label: f.taxNumber, value: taxNumber }] : [])];
+}

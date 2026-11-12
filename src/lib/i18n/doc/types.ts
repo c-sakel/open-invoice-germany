@@ -110,6 +110,8 @@ export interface DocStrings {
     unitPrice: string;
     vat: string;
     net: string;
+    unit: string;
+    discount: string;
   };
   totals: {
     subtotalNet: string;

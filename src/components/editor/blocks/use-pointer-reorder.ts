@@ -68,12 +68,22 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-export function useReorder(lines: DraftLine[], dispatch: (action: DraftAction) => void) {
+/** Minimale Zeilenform fuer das Sortieren (Positionen im Editor, Bloecke im Layout-Designer). */
+export type ReorderItem = Pick<DraftLine, "key" | "lineType">;
+export type ReorderDispatch = (action: Extract<DraftAction, { type: "moveBlock" }>) => void;
+
+/**
+ * `firstMovable`: kleinster Slot, an dem abgelegt werden darf (Layout-Designer: die festen
+ * Kopfbloecke davor bleiben unbeweglich). Standard 0 = Positionssortierung des Editors.
+ */
+export function useReorder(lines: ReorderItem[], dispatch: ReorderDispatch, firstMovable = 0) {
   const linesRef = useRef(lines);
   const dispatchRef = useRef(dispatch);
+  const firstMovableRef = useRef(firstMovable);
   useLayoutEffect(() => {
     linesRef.current = lines;
     dispatchRef.current = dispatch;
+    firstMovableRef.current = firstMovable;
   });
 
   const rowEls = useRef(new Map<string, HTMLElement>());
@@ -123,7 +133,7 @@ export function useReorder(lines: DraftLine[], dispatch: (action: DraftAction) =
     if (from === -1) return;
     const [start, end] = blockRange(ls, from);
     const len = end - start;
-    const clamped = Math.max(0, Math.min(ls.length, slot));
+    const clamped = Math.max(firstMovableRef.current, Math.min(ls.length, slot));
     if (isNoopMove(start, clamped, len)) return;
     const tops = new Map<string, number>();
     for (const l of ls) {
@@ -215,9 +225,12 @@ export function useReorder(lines: DraftLine[], dispatch: (action: DraftAction) =
       }
       const rects = measure();
       if (rects) {
-        const slot = dropSlot(
-          rects.map((r) => r.top + r.height / 2),
-          y,
+        const slot = Math.max(
+          firstMovableRef.current,
+          dropSlot(
+            rects.map((r) => r.top + r.height / 2),
+            y,
+          ),
         );
         const next = slot === a.slot ? a : { ...a, slot };
         if (next !== a) setActive(next);
@@ -318,7 +331,7 @@ export function useReorder(lines: DraftLine[], dispatch: (action: DraftAction) =
       const n = linesRef.current.length;
       const len = a.end - a.start;
       const target = a.slot <= a.start ? a.slot : a.slot - len;
-      const nextTarget = Math.max(0, Math.min(n - len, target + (e.key === "ArrowUp" ? -1 : 1)));
+      const nextTarget = Math.max(firstMovableRef.current, Math.min(n - len, target + (e.key === "ArrowUp" ? -1 : 1)));
       const slot = nextTarget <= a.start ? nextTarget : nextTarget + len;
       setActive({ ...a, slot });
       setAnnouncement(`An Stelle ${nextTarget + 1} von ${n - len + 1}`);

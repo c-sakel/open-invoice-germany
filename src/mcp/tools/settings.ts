@@ -114,7 +114,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Briefpapier-Einstellungen aktualisieren",
       description:
-        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35) sowie das PDF-Layout: `layoutId` (Organisationsstandard), `layoutByType` (je Belegtyp INVOICE/CREDIT_NOTE/QUOTE/ORDER_CONFIRMATION/PROFORMA/DELIVERY_NOTE/DUNNING), `footerMode` (AUTO = Stammdaten-Fusszeile, CUSTOM = footerLeft/-Center/-Right). Waehlbare Layout-Ids ueber list_pdf_layouts. OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert — Ausnahme: wird `layoutByType` mitgeschickt, ersetzt es die gesamte bisherige Zuordnung (nicht nur die genannten Belegtypen); um einen einzelnen Belegtyp zu aendern, vorher den aktuellen Stand per get_settings lesen und zusammenfuehren.",
+        "Aktualisiert Farbe/Raender/Schriftgroesse/Fusszeilen/Absenderzeile des Briefpapiers (§35) sowie das PDF-Layout: `layoutId` (Organisationsstandard), `layoutByType` (je Belegtyp INVOICE/CREDIT_NOTE/QUOTE/ORDER_CONFIRMATION/PROFORMA/DELIVERY_NOTE/DUNNING), `footerMode` (AUTO = Stammdaten-Fusszeile, CUSTOM = footerLeft/-Center/-Right). Waehlbare Layout-Ids ueber list_pdf_layouts; `layoutId`/`layoutByType`-Werte duerfen auch ein eigenes Design referenzieren (`design:<id>`, siehe list_layout_designs). OHNE Dateien — Logo-/Hintergrund-Upload nur ueber die UI-Route (Magic-Byte-Pruefung). Nicht angegebene Felder bleiben unveraendert — Ausnahme: wird `layoutByType` mitgeschickt, ersetzt es die gesamte bisherige Zuordnung (nicht nur die genannten Belegtypen); um einen einzelnen Belegtyp zu aendern, vorher den aktuellen Stand per get_settings lesen und zusammenfuehren.",
       inputSchema: partialInputShape(
         brandingSettingsInputSchema.omit({ logoPath: true, backgroundPath: true, faviconPath: true, appLogoPath: true }),
       ),
@@ -152,6 +152,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Briefpapier-Einstellungen gespeichert: ${JSON.stringify(saved)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof ValidationError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
@@ -238,7 +239,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "PDF-Layouts auflisten",
       description:
-        "Liste der waehlbaren PDF-Layouts (id, name, description). Auswahl je Belegtyp ueber update_branding_settings {layoutId, layoutByType}, je Beleg ueber set_print_options {options: {layoutId}}.",
+        "Liste der sieben festen PDF-Layouts (id, name, description); eigene Designs ueber list_layout_designs/save_layout_design (Referenz `design:<id>`). Auswahl je Belegtyp ueber update_branding_settings {layoutId, layoutByType}, je Beleg ueber set_print_options {options: {layoutId}}.",
       inputSchema: {},
     },
     async (): Promise<Result> => ctx.ok(JSON.stringify(listLayouts(), null, 2)),

@@ -9,6 +9,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { renderDunningPdf } from "@/lib/pdf/dunning-pdf";
+import { presetConfig } from "@/lib/pdf/layouts/presets";
+import { PDF_FONT_FAMILIES } from "@/lib/pdf/font-families";
 import { testPdfTheme } from "../helpers/pdf-theme";
 import type { EInvoiceData } from "@/lib/einvoice/types";
 import type { DeliveryNotePdfData } from "@/lib/pdf/delivery-note-pdf";
@@ -205,4 +207,22 @@ describe("PDF/A-3b-Struktur (Mahnung)", () => {
     expect(pdfText).not.toMatch(/\/BaseFont \/Helvetica-Bold\b/);
     expect(pdfText).toMatch(/\/BaseFont \/[A-Z]{6}\+LiberationSans/);
   });
+});
+
+// Phase 16g, Task 5: jede waehlbare Schrift wird vollstaendig eingebettet (kein Standard-14-Font).
+describe("PDF/A-3b-Struktur (Designs mit allen Schriften)", () => {
+  for (const font of PDF_FONT_FAMILIES) {
+    it(`${font}: jede Schrift hat /FontFile2, keine unbettete Standardschrift`, async () => {
+      const pdf = await renderZugferdPdf(data, testPdfTheme({ layoutConfig: { ...presetConfig("standard"), font } }));
+      const text = pdf.toString("latin1");
+      const baseFonts = [...text.matchAll(/\/BaseFont \/(\S+)/g)].map((m) => m[1]!);
+      expect(baseFonts.length).toBeGreaterThan(0);
+      for (const name of baseFonts) expect(name, `${font}: ${name} ohne Subset-Praefix`).toMatch(/^[A-Z]{6}\+/);
+      const descriptors = text.match(/\/Type \/FontDescriptor/g) ?? [];
+      const fontFiles = text.match(/\/FontFile2 \d+ 0 R/g) ?? [];
+      expect(descriptors.length).toBeGreaterThan(0);
+      expect(fontFiles.length).toBe(descriptors.length);
+      expect(text).not.toMatch(/\/BaseFont \/(Helvetica|Times|Courier)/);
+    });
+  }
 });

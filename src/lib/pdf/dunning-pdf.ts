@@ -12,14 +12,15 @@ import { docStrings, docLocale, formatDocDate, resolveDocLanguage, type DocLangu
 import type { InterestSegment } from "@/schemas";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
+import { pdfMargins, marginsFromMm, drawBackground, senderLineFallback } from "./layout";
 import { addressCountryLine } from "../countries";
-import { getLayout } from "./layouts/registry";
+import { layoutForTheme } from "./layouts/registry";
+import { mergeFooterColumns } from "./layouts/columns";
 import { footerZoneHeight } from "./layouts/shared";
 import { renderPlainTextPdf } from "@/lib/richtext";
 import { drawWrappedLine, wrapRuns } from "./text-wrap";
 import type { LayoutFrame } from "./layouts/types";
-import { buildFooterColumns } from "./footer";
+import { buildFooterColumns, mandatoryTaxMetaRows } from "./footer";
 import { createPdfDocument } from "./document";
 
 export interface DunningPdfData {
@@ -78,12 +79,16 @@ export interface DunningPdfData {
 
 export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const margins = pdfMargins(theme);
+    // Phase 16g: Design-Konfiguration (Schrift, Raender, Farben, Grundgroesse) nur, wenn gesetzt;
+    // Spalten und Rumpfbloecke gelten nicht (die Forderungsaufstellung ist fest).
+    const layout = layoutForTheme(theme);
+    const margins = layout.marginsMm ? marginsFromMm(layout.marginsMm) : pdfMargins(theme);
     const doc = createPdfDocument({
       size: "A4",
       margins,
       compress: theme.compress ?? true,
       pdfa: true,
+      fontFamily: layout.font,
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -105,9 +110,15 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
         : data.stageName || DUNNING_LEVEL_TITLE[data.level] || `${data.level}. Mahnung`;
 
     // Phase 11b — Layout-Hooks statt eigener Kopie der Zeichenlogik.
-    const layout = getLayout(theme.layoutId);
-    const base = theme.brand.fontSizePt + layout.fontDelta;
-    const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
+    const base = (layout.fontSizePt ?? theme.brand.fontSizePt) + layout.fontDelta;
+    const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: layout.colors?.primary ?? theme.brand.primaryColor, base };
+    // Bestandslayouts: feste 11/10 pt und Schwarz/#333; Designs skalieren mit der Grundgroesse.
+    const isDesign = layout.fontSizePt !== undefined;
+    const salutationSize = isDesign ? base + 1 : 11;
+    const bodySize = isDesign ? base : 10;
+    const ink = layout.colors?.text ?? "#000";
+    const introInk = layout.colors?.text ?? "#333";
+    const labelWidth = isDesign ? Math.min(360, right - left - 100) : 360;
     // Fix-Runde 1 (Task-5-Review, Minor): dieselbe `rowH`-Formel wie invoice-pdf.ts —
     // die Zeilen der Gebuehrenaufstellung (`row()`) hatten weiterhin fest 16pt. Bei
     // `base = 10` (Default) unveraendert 16.
@@ -136,14 +147,18 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       title,
       numberLabel: t.numberLabels.DUNNING,
       number: data.number,
-      meta: [{ label: t.meta.date, value: deDate(data.sentDate) }],
+      meta: [
+        { label: t.meta.date, value: deDate(data.sentDate) },
+        // § 14 Abs. 4 Nr. 2 UStG: ohne AUTO-Fusszeile stehen Steuernummer/USt-IdNr des Leistenden im Kopf.
+        ...mandatoryTaxMetaRows(data.seller, layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand, theme.options.showFooter, lang),
+      ],
       recipient: { ...data.buyer, countryLine: addressCountryLine(data.buyer.countryCode, lang) },
       senderFallback: senderLineFallback(data.seller, lang),
     });
 
-    doc.fontSize(11).fillColor("#000").text(t.dunning.salutation, left, y);
+    doc.fontSize(salutationSize).fillColor(ink).text(t.dunning.salutation, left, y);
     doc.moveDown(0.5);
-    doc.fontSize(10).fillColor("#333").text(t.dunning.intro[(data.level in t.dunning.intro ? data.level : 2) as 0 | 1 | 2](data.invoiceNumber), { width: right - left });
+    doc.fontSize(bodySize).fillColor(introInk).text(t.dunning.intro[(data.level in t.dunning.intro ? data.level : 2) as 0 | 1 | 2](data.invoiceNumber), { width: right - left });
 
     // Fix-Runde 2 (Koordinator, Guard b): die Mahnung ueberlaesst Seitenumbrueche sonst
     // vollstaendig pdfkits eigener Logik (siehe Kommentar zu `pageAdded` oben) — bei vielen
@@ -155,7 +170,7 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     // bereits automatisch fuer JEDEN `doc.addPage()` (auch diesen) — ein zusaetzlicher
     // expliziter `drawPageChrome`-Aufruf hier wuerde ihn doppelt zeichnen.
     // fix/pdf-umbrueche (B1/B2): Fusszone aus der tatsaechlichen Fusszeile messen.
-    const footerColumns = buildFooterColumns(
+    const builtFooterColumns = buildFooterColumns(
       {
         seller: data.seller,
         iban: data.seller.iban,
@@ -164,9 +179,10 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
         accountHolder: data.seller.accountHolder,
         ...theme.footerFacts,
       },
-      theme.brand,
+      layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand,
       lang,
     );
+    const footerColumns = layout.footerColumnCount ? mergeFooterColumns(builtFooterColumns, layout.footerColumnCount) : builtFooterColumns;
     const footerZone = footerZoneHeight(frame, layout, footerColumns);
     const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
     const ensurePlainSpace = (atY: number, needed: number): number => {
@@ -182,14 +198,14 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
       // fix/pdf-umbrueche: lange Zeilenbeschriftungen (Zins-Abschnitte) selbst umbrechen und
       // die Zeilenhoehe danach bemessen — sonst ueberdruckt der Umbruch die Folgezeile.
       const font = bold ? "Helvetica-Bold" : "Helvetica";
-      doc.font(font).fontSize(10);
-      const labelLines = wrapRuns(doc, [{ text: label, font }], 360, 10);
+      doc.font(font).fontSize(bodySize);
+      const labelLines = wrapRuns(doc, [{ text: label, font }], labelWidth, bodySize);
       const lineHeight = doc.currentLineHeight(true);
       const h = rowH + (labelLines.length - 1) * lineHeight;
       y = ensurePlainSpace(y, h);
-      doc.fillColor("#000");
-      labelLines.forEach((ll, li) => drawWrappedLine(doc, ll, left, y + li * lineHeight, 10));
-      doc.font(font).fontSize(10).text(value, left + 360, y, { width: right - left - 360, align: "right", lineBreak: false });
+      doc.fillColor(ink);
+      labelLines.forEach((ll, li) => drawWrappedLine(doc, ll, left, y + li * lineHeight, bodySize));
+      doc.font(font).fontSize(bodySize).text(value, left + labelWidth, y, { width: right - left - labelWidth, align: "right", lineBreak: false });
       y += h;
     };
     row(t.dunning.invoiceRow(data.invoiceNumber, deDate(data.invoiceDate)), money(data.openAmountCents));
@@ -229,9 +245,9 @@ export function renderDunningPdf(data: DunningPdfData, theme: PdfTheme): Promise
     renderPlainTextPdf(doc, t.dunning.payBy(deDate(data.newDueDate)), y, {
       x: left,
       width: right - left,
-      fontSize: 10,
+      fontSize: bodySize,
       ensureSpace: ensurePlainSpace,
-      color: "#000",
+      color: ink,
     });
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`

@@ -19,7 +19,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     loaded.invoice.status === "DRAFT"
       ? await renderInvoiceDocumentPdf(
           loaded.data,
-          await loadPdfTheme(loaded.invoice.orgId, loaded.invoice.printOptionsJson, invoiceTypeToLayoutDocType(loaded.invoice.type)),
+          await loadPdfTheme(loaded.invoice.orgId, loaded.invoice.printOptionsJson, invoiceTypeToLayoutDocType(loaded.invoice.type), { issued: loaded.invoice.status !== "DRAFT" }),
           loaded.invoice.status,
         )
       : await getArchivedInvoiceFile(loaded.invoice.orgId, loaded.invoice.id, "PDF");

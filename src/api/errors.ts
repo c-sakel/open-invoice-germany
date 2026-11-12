@@ -11,7 +11,7 @@
  */
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
+import { NotFoundError, InvalidOperationError, EInvoiceInvalidError, ValidationError } from "@/domain/errors";
 import { ApiAuthError, ApiScopeError } from "@/domain/api-key/verify";
 import { RateLimitError } from "@/lib/rate-limit";
 import { IdempotencyConflictError, IdempotencyInProgressError } from "./idempotency";
@@ -163,6 +163,9 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   // uebrigen spezifischen Vorab-Pruefungen in dieser Funktion).
   if (e instanceof EInvoiceInvalidError) {
     return { status: 409, body: { error: { code: "EINVOICE_INVALID", message: e.message, details: { issues: e.issues } } } };
+  }
+  if (e instanceof ValidationError) {
+    return { status: 400, body: { error: { code: "VALIDATION", message: e.message } } };
   }
   if (e instanceof NotFoundError) {
     return { status: 404, body: { error: { code: "NOT_FOUND", message: e.message } } };

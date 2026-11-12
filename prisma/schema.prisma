@@ -43,13 +43,14 @@ model Organization {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  customers    Customer[]
-  products     Product[]
-  quotes       Quote[]
-  invoices     Invoice[]
-  recurring    RecurringInvoice[]
-  numberRanges NumberRange[]
-  changeLogs   ChangeLog[]
+  customers     Customer[]
+  layoutDesigns LayoutDesign[]
+  products      Product[]
+  quotes        Quote[]
+  invoices      Invoice[]
+  recurring     RecurringInvoice[]
+  numberRanges  NumberRange[]
+  changeLogs    ChangeLog[]
 
   documentRelations      DocumentRelation[]
   deliveryNotes          DeliveryNote[]
@@ -542,6 +543,7 @@ model Dunning {
   flatFee40Cents           Int       @default(0) // §288 Abs.5, nur B2B
   pdfPath                  String?
   pdfSha256                String? // Phase 16a: SHA-256 des archivierten Mahn-PDFs
+  layoutVersionId          String? // Phase 16g: eingefrorene Design-Version; NULL = festes Layout bzw. Bestand
   createdAt                DateTime  @default(now())
   // Snapshots der Parteien zum Erstellungszeitpunkt (Phase 6, analog Invoice/Quote).
   // NULL bei Altmahnungen vor Phase 6 — Selbstheilung per ensureDunningSnapshots
@@ -1427,4 +1429,33 @@ model ExchangeRate {
 
   @@unique([source, currency, rateDate])
   @@index([currency, rateDate])
+}
+
+/// Phase 16g: Layout-Design einer Organisation (Stammdaten). Nie loeschen (eingefrorene Belege verweisen auf Versionen), nur archivieren.
+model LayoutDesign {
+  id             String                @id @default(cuid())
+  orgId          String
+  org            Organization          @relation(fields: [orgId], references: [id])
+  name           String
+  baseLayoutId   String                @default("standard") // einer der sieben LAYOUT_IDS
+  currentVersion Int                   @default(1)
+  archived       Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  versions       LayoutDesignVersion[]
+
+  @@unique([orgId, name])
+}
+
+/// Phase 16g — unveraenderlich (Guard src/lib/db.ts); jede Speicherung mit geaenderter Konfiguration = neue Zeile.
+model LayoutDesignVersion {
+  id         String       @id @default(cuid())
+  designId   String
+  design     LayoutDesign @relation(fields: [designId], references: [id])
+  version    Int
+  configJson String // layoutDesignConfigSchema, version 1
+  configHash String // sha256 der kanonischen JSON-Form
+  createdAt  DateTime     @default(now())
+
+  @@unique([designId, version])
 }

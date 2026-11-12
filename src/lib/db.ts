@@ -107,7 +107,7 @@ async function guardLineWhere(where: unknown): Promise<void> {
  */
 const DUNNING_MUTABLE_KEYS = new Set(["sentAt"]);
 
-class DunningImmutabilityError extends Error {
+export class DunningImmutabilityError extends Error {
   constructor(badKeys: string[]) {
     super(
       `GoBD: Mahnung ist nach Erstellung unveraenderlich (Geschaeftsbrief). Nur sentAt ` +
@@ -121,6 +121,54 @@ function assertDunningUpdateAllowed(data: unknown): void {
   const keys = Object.keys((data ?? {}) as Record<string, unknown>);
   const badKeys = keys.filter((k) => !DUNNING_MUTABLE_KEYS.has(k));
   if (badKeys.length > 0) throw new DunningImmutabilityError(badKeys);
+}
+
+/**
+ * Phase 16g: `LayoutDesignVersion` ist unveraenderlich (eingefrorene Belege verweisen darauf);
+ * jede Aenderung der Konfiguration ist eine neue Zeile. `LayoutDesign` wird nie geloescht,
+ * nur archiviert (`update` bleibt erlaubt: Name, archived, currentVersion).
+ */
+export class LayoutDesignVersionImmutabilityError extends Error {
+  constructor() {
+    super("GoBD: Layout-Design-Versionen sind unveraenderlich; Aenderungen erzeugen eine neue Version.");
+    this.name = "LayoutDesignVersionImmutabilityError";
+  }
+}
+
+/**
+ * Phase 16g (R7): `printOptionsJson` von Angebot/AB/Proforma (`quote`) und Lieferschein ist ab
+ * dem Verlassen des Entwurfs eingefroren (Druckoptionen + Layout-Version). Der Guard prueft nur
+ * den Schluessel `printOptionsJson`; alle anderen Felder (z. B. archivedAt) bleiben unberuehrt.
+ * Die Statuspruefung ist ein separates findFirst (nicht atomar); die Domain-Pfade (setPrintOptions)
+ * schreiben deshalb per bedingtem updateMany (status DRAFT) und sind selbst atomar.
+ * Das Einfrieren selbst laeuft ueber den Transaktions-Client von `dbInternal` (freeze-layout.ts).
+ */
+export class FrozenPrintOptionsError extends Error {
+  constructor(ref: string) {
+    super(`GoBD: Die Druckoptionen von "${ref}" sind nach dem Verlassen des Entwurfs eingefroren.`);
+    this.name = "FrozenPrintOptionsError";
+  }
+}
+
+function touchesPrintOptions(data: unknown): boolean {
+  return typeof data === "object" && data !== null && "printOptionsJson" in data;
+}
+
+async function guardPrintOptions(model: "quote" | "deliveryNote", where: unknown, data: unknown): Promise<void> {
+  if (!touchesPrintOptions(data)) return;
+  const filter = { AND: [(where ?? {}) as never, { status: { not: "DRAFT" } }] } as never;
+  const row =
+    model === "quote"
+      ? await base.quote.findFirst({ where: filter, select: { id: true, number: true } })
+      : await base.deliveryNote.findFirst({ where: filter, select: { id: true, number: true } });
+  if (row) throw new FrozenPrintOptionsError(row.number ?? row.id);
+}
+
+export class LayoutDesignDeleteError extends Error {
+  constructor() {
+    super("Layout-Designs werden nie geloescht (eingefrorene Belege verweisen auf Versionen), nur archiviert.");
+    this.name = "LayoutDesignDeleteError";
+  }
 }
 
 /**
@@ -218,6 +266,70 @@ export const prisma = base.$extends({
         throw new ArchivedDocumentImmutabilityError();
       },
     },
+    layoutDesignVersion: {
+      async update() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async updateMany() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async upsert() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async delete() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+      async deleteMany() {
+        throw new LayoutDesignVersionImmutabilityError();
+      },
+    },
+    quote: {
+      async update({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardPrintOptions("quote", args.where, args.update);
+        return query(args);
+      },
+    },
+    deliveryNote: {
+      async update({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.data);
+        return query(args);
+      },
+      async upsert({ args, query }) {
+        await guardPrintOptions("deliveryNote", args.where, args.update);
+        return query(args);
+      },
+    },
+    layoutDesign: {
+      async delete() {
+        throw new LayoutDesignDeleteError();
+      },
+      async deleteMany() {
+        throw new LayoutDesignDeleteError();
+      },
+    },
     payment: {
       async update() {
         throw new PaymentImmutabilityError();
@@ -245,6 +357,15 @@ export const prisma = base.$extends({
       },
       async updateMany({ args, query }) {
         assertDunningUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertDunningUpdateAllowed(args.data);
+        return query(args);
+      },
+      // upsert: Anlage frei, der Update-Zweig unterliegt denselben Regeln wie update.
+      async upsert({ args, query }) {
+        assertDunningUpdateAllowed(args.update);
         return query(args);
       },
       async delete() {

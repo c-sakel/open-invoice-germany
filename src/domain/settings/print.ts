@@ -6,7 +6,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { InvalidOperationError, NotFoundError } from "@/domain/errors";
-import { printSettingsInputSchema, printOptionsOverrideSchema, type PrintSettingsInput, type PrintOptionsOverride } from "@/schemas/settings";
+import { printSettingsInputSchema, printOptionsOverrideSchema, frozenPrintOptionsSchema, type PrintSettingsInput, type PrintOptionsOverride, type FrozenPrintOptions } from "@/schemas/settings";
 import type { EffectivePrintOptions } from "@/lib/pdf/theme";
 import type { LayoutId } from "@/lib/pdf/layouts/ids";
 
@@ -62,7 +62,7 @@ export function effectivePrintOptions(global: PrintSettingsInput, overrideJson: 
   } catch {
     return global;
   }
-  const parsed = printOptionsOverrideSchema.safeParse(raw);
+  const parsed = frozenPrintOptionsSchema.safeParse(raw);
   if (!parsed.success) return global;
   return { ...global, ...parsed.data };
 }
@@ -84,19 +84,25 @@ const PRINT_OPTION_KEYS = Object.keys(DEFAULT_PRINT_SETTINGS) as (keyof PrintSet
  * layoutId-loser Override beim Festschreiben nie ein Layout einfrieren und weiterhin die
  * organisationsweite Aufloesung durchreichen).
  */
-export function freezePrintOptionsJson(global: PrintSettingsInput, existingOverrideJson: string | null | undefined, layoutId: LayoutId): string {
-  let override: PrintOptionsOverride = {};
+export function freezePrintOptionsJson(
+  global: PrintSettingsInput,
+  existingOverrideJson: string | null | undefined,
+  layoutId: LayoutId,
+  layoutVersionId: string | null = null,
+): string {
+  let override: FrozenPrintOptions = {};
   if (existingOverrideJson) {
     try {
-      const parsed = printOptionsOverrideSchema.safeParse(JSON.parse(existingOverrideJson));
+      const parsed = frozenPrintOptionsSchema.safeParse(JSON.parse(existingOverrideJson));
       if (parsed.success) override = parsed.data;
     } catch {
       override = {};
     }
   }
   const isComplete = PRINT_OPTION_KEYS.every((key) => key in override);
-  if (isComplete && override.layoutId) return existingOverrideJson as string;
-  const merged = { ...global, ...override, layoutId: override.layoutId ?? layoutId };
+  const versionId = override.layoutVersionId ?? layoutVersionId;
+  if (isComplete && override.layoutId && (override.layoutVersionId || !layoutVersionId)) return existingOverrideJson as string;
+  const merged = { ...global, ...override, layoutId: override.layoutId ?? layoutId, ...(versionId ? { layoutVersionId: versionId } : {}) };
   return JSON.stringify(merged);
 }
 
@@ -132,14 +138,17 @@ export async function setPrintOptions(orgId: string, target: SetPrintOptionsTarg
     if (quote.status !== "DRAFT") {
       throw new InvalidOperationError("Druckoptionen koennen nur bei einem Angebot im Entwurf (DRAFT) geaendert werden.");
     }
-    await dbInternal.quote.update({ where: { id: target.id }, data: { printOptionsJson } });
+    // Atomar: nur solange der Beleg noch Entwurf ist (Race mit gleichzeitigem Statuswechsel/Einfrieren).
+    const res = await dbInternal.quote.updateMany({ where: { id: target.id, orgId, status: "DRAFT" }, data: { printOptionsJson } });
+    if (res.count === 0) throw new InvalidOperationError("Druckoptionen koennen nur bei einem Angebot im Entwurf (DRAFT) geaendert werden.");
   } else {
     const deliveryNote = await dbInternal.deliveryNote.findFirst({ where: { id: target.id, orgId }, select: { id: true, status: true } });
     if (!deliveryNote) throw new NotFoundError(`Lieferschein "${target.id}" nicht gefunden.`);
     if (deliveryNote.status !== "DRAFT") {
       throw new InvalidOperationError("Druckoptionen koennen nur bei einem Lieferschein im Entwurf (DRAFT) geaendert werden.");
     }
-    await dbInternal.deliveryNote.update({ where: { id: target.id }, data: { printOptionsJson } });
+    const res = await dbInternal.deliveryNote.updateMany({ where: { id: target.id, orgId, status: "DRAFT" }, data: { printOptionsJson } });
+    if (res.count === 0) throw new InvalidOperationError("Druckoptionen koennen nur bei einem Lieferschein im Entwurf (DRAFT) geaendert werden.");
   }
 
   return override;

@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { BrandingSettingsInput } from "@/schemas";
-import { LAYOUT_DOC_TYPES, LAYOUT_DOC_TYPE_LABEL, type LayoutDocType, type LayoutId } from "@/lib/pdf/layouts/ids";
+import { LAYOUT_DOC_TYPES, LAYOUT_DOC_TYPE_LABEL, designIdOf, type LayoutDocType, type LayoutRef } from "@/lib/pdf/layouts/ids";
+import { useLayoutPreview } from "./layout-designer/use-layout-preview";
 
 interface LayoutInfo {
-  id: LayoutId;
+  id: LayoutRef;
   name: string;
   description: string;
+  /** `design` = eigenes Design (Phase 16g), sonst eine der sieben festen Vorlagen. */
+  kind: "preset" | "design";
 }
 
 /** Belegtyp der Galerie -> Belegtyp der Vorschau-Route (`/api/settings/branding/preview`),
@@ -44,7 +48,7 @@ const PREVIEW_DOC_TYPE_MAP: Record<LayoutDocType, PreviewDocType> = {
  * keinen Weg — `applyForType()` war ein reiner No-op, weil der Kachel-Klick den Wert schon
  * geschrieben hatte).
  */
-export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsInput; layouts: LayoutInfo[] }) {
+export function LayoutGallery({ initial, layouts, designs = [] }: { initial: BrandingSettingsInput; layouts: LayoutInfo[]; designs?: LayoutInfo[] }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   // Referenz fuer "ungespeichert": nach dem Speichern auf den Server-Stand gesetzt.
@@ -53,14 +57,14 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   // `selection` ist der lokale Entwurf (welche Kachel gerade als Vorschau angezeigt wird) —
   // getrennt vom tatsaechlich WIRKSAMEN Layout (`effective` unten), das erst durch „Für
   // <Typ> übernehmen“/„Als Standard für alle“ + „Speichern“ uebernommen wird.
-  const [selection, setSelection] = useState<LayoutId>(initial.layoutByType[docType] ?? initial.layoutId);
+  const [selection, setSelection] = useState<LayoutRef>(initial.layoutByType[docType] ?? initial.layoutId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const docLabel = LAYOUT_DOC_TYPE_LABEL[docType];
   const typeOverride = values.layoutByType[docType];
-  const effective: LayoutId = typeOverride ?? values.layoutId;
+  const effective: LayoutRef = typeOverride ?? values.layoutId;
 
   function changeDocType(next: LayoutDocType) {
     setDocType(next);
@@ -73,7 +77,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   // Belegtyp direkt (wie bei gaengigen Rechnungsdiensten) — die Zwischenstufe "Fuer <Typ> uebernehmen" wurde als
   // reine Auswahl missverstanden, der Speicher-Aufruf blieb aus. Persistiert wird weiterhin
   // erst mit "Einstellungen speichern" (Hinweis auf ungespeicherte Aenderungen unten).
-  function selectTile(layoutId: LayoutId) {
+  function selectTile(layoutId: LayoutRef) {
     setSelection(layoutId);
     setError(null);
     setSaved(false);
@@ -129,6 +133,14 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
   }
 
   const previewDocType = PREVIEW_DOC_TYPE_MAP[docType];
+  const all = [...layouts, ...designs];
+  const selectedDesignId = designIdOf(selection);
+  // Eigene Designs werden ueber die Designer-Vorschau (POST, Blob) angezeigt, feste Vorlagen
+  // ueber die bestehende GET-Route.
+  const designPreview = useLayoutPreview(selectedDesignId ? { designId: selectedDesignId, docType: previewDocType } : null, 0);
+  const designerHref = selectedDesignId
+    ? `/einstellungen/briefpapier/designer?id=${selectedDesignId}`
+    : `/einstellungen/briefpapier/designer?from=${selection}`;
   const dirty = JSON.stringify({ l: values.layoutId, t: values.layoutByType }) !== JSON.stringify({ l: baseline.layoutId, t: baseline.layoutByType });
 
   return (
@@ -157,7 +169,7 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {layouts.map((l) => {
+          {all.map((l) => {
             // Ring/Rahmen: welche Kachel gerade als Vorschau ausgewaehlt ist (`selection`).
             const isSelected = l.id === selection;
             // Badge: welche Kachel TATSAECHLICH wirksam ist (`effective`) — kann von
@@ -178,7 +190,13 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
                     {typeOverride ? `Für ${docLabel}` : "Standard"}
                   </span>
                 )}
-                <img src={`/layouts/${l.id}.svg`} alt="" className="w-full rounded border border-rule" />
+                {l.kind === "design" ? (
+                  <div className="flex aspect-[1/1.414] w-full items-center justify-center rounded border border-dashed border-rule-strong bg-well text-xs text-ink-muted">
+                    Eigenes Design
+                  </div>
+                ) : (
+                  <img src={`/layouts/${l.id}.svg`} alt="" className="w-full rounded border border-rule" />
+                )}
                 <div>
                   <div className="text-sm font-bold text-ink">{l.name}</div>
                   <p className="text-xs text-ink-muted">{l.description}</p>
@@ -189,13 +207,19 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
         </div>
 
         <div className="flex flex-col gap-3">
-          <iframe
-            key={`${docType}-${selection}`}
-            src={`/api/settings/branding/preview?docType=${previewDocType}&layoutId=${selection}`}
-            title="Layout-Vorschau"
-            className="aspect-[1/1.414] w-full rounded border border-rule bg-white"
-          style={{ colorScheme: "light" }}
-          />
+          {selectedDesignId && !designPreview.url ? (
+            <div className="flex aspect-[1/1.414] w-full items-center justify-center rounded border border-rule bg-well text-xs text-ink-muted">
+              {designPreview.error ?? "Vorschau wird erzeugt…"}
+            </div>
+          ) : (
+            <iframe
+              key={`${docType}-${selection}`}
+              src={selectedDesignId ? (designPreview.url ?? undefined) : `/api/settings/branding/preview?docType=${previewDocType}&layoutId=${selection}`}
+              title="Layout-Vorschau"
+              className="aspect-[1/1.414] w-full rounded border border-rule bg-white"
+              style={{ colorScheme: "light" }}
+            />
+          )}
           <div className="flex flex-col gap-2">
             <p className="text-xs text-ink-soft">
               Kachel anklicken = Layout für <span className="font-medium">{docLabel}</span> übernehmen.
@@ -209,6 +233,9 @@ export function LayoutGallery({ initial, layouts }: { initial: BrandingSettingsI
                 Organisationsstandard verwenden
               </button>
             )}
+            <Link href={designerHref} className="rounded-md border border-rule px-3 py-2 text-center text-xs font-medium text-ink-muted hover:bg-paper">
+              Designer öffnen
+            </Link>
             <button
               type="button"
               onClick={applyAsDefault}

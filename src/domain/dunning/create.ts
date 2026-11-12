@@ -19,6 +19,9 @@ import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amou
 import { buildSellerSnapshot, buildBuyerSnapshot } from "@/domain/snapshot";
 import { formatDateDe } from "@/lib/template/format";
 import { NotFoundError } from "@/domain/errors";
+import { loadBrandingSettings } from "@/domain/settings/branding";
+import { resolveLayoutId } from "@/domain/settings/layout";
+import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 
 // B7 (Fix-Welle, Ruling Koordinator): Teil-/Abschlags-/Schlussrechnungen sind reguläre,
 // enforceable Forderungen und muessen mahnbar sein wie eine normale Rechnung.
@@ -72,6 +75,9 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
   // bei Bedarf an) — AUSSERHALB der Transaktion, da hier nur gelesen wird und der Upsert
   // (Anlegen der Default-Zeile) keine GoBD-relevante Schreibaktion ist.
   const settings = await loadDunningSettings(inv0.orgId);
+  // Phase 16g: Design der Mahnung (Typ-Map DUNNING > Organisationsstandard); die Version wird in der Tx eingefroren.
+  const brand = await loadBrandingSettings(inv0.orgId);
+  const layoutRef = resolveLayoutId({ overrideLayoutId: null, layoutByType: brand.layoutByType, orgDefault: brand.layoutId, docType: "DUNNING" });
 
   return dbInternal.$transaction(async (tx) => {
     const inv = await tx.invoice.findUnique({
@@ -186,9 +192,12 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
     const sellerSnapshotJson = JSON.stringify(buildSellerSnapshot(inv.org));
     const buyerSnapshotJson = JSON.stringify(buildBuyerSnapshot(inv.customer));
 
+    const layoutSelection = await resolveLayoutSelection(tx, inv.orgId, { ref: layoutRef });
+
     const dunning = await tx.dunning.create({
       data: {
         invoiceId,
+        layoutVersionId: layoutSelection.layoutVersionId,
         language: inv.language,
         number,
         level: stage.order,

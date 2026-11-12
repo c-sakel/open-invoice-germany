@@ -240,6 +240,8 @@ export function sampleValue(schema: z.ZodTypeAny, hint?: string): unknown {
     case "optional":
     case "default":
       return sampleValue(def.innerType as z.ZodTypeAny, hint);
+    case "union":
+      return sampleValue((def.options as z.ZodTypeAny[])[0]!, hint);
     default:
       return null;
   }
@@ -456,7 +458,7 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
     registry.registerPath({
       // Phase 13d, Task 5: "delete" ergaenzt (RouteSpec.method kennt jetzt "DELETE",
       // src/api/spec.ts) fuer das bodylose Loeschen von Tag/{id}.
-      method: spec.method.toLowerCase() as "get" | "post" | "patch" | "delete",
+      method: spec.method.toLowerCase() as "get" | "post" | "put" | "patch" | "delete",
       path: spec.path,
       tags: [tagForPath(spec.path)],
       summary: spec.summary,

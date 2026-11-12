@@ -13,13 +13,15 @@ import { computeTaxBreakdown } from "@/lib/tax";
 import { unitLabel } from "@/lib/units";
 import type { PdfTheme } from "./theme";
 import { drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
-import { pdfMargins, drawBackground, senderLineFallback } from "./layout";
+import { pdfMargins, marginsFromMm, drawBackground, senderLineFallback } from "./layout";
 import { addressCountryLine } from "../countries";
-import { getLayout } from "./layouts/registry";
+import { layoutForTheme } from "./layouts/registry";
+import { resolveConfiguredColumns, mergeFooterColumns } from "./layouts/columns";
+import type { LayoutColumnKey } from "@/schemas/layout-design";
 import { drawTableHeaderRow, footerZoneHeight, type TableHeaderColumn } from "./layouts/shared";
-import type { LayoutFrame, KopfMetaRow } from "./layouts/types";
+import type { LayoutFrame, KopfMetaRow, PdfLayout } from "./layouts/types";
 import { createPdfDocument } from "./document";
-import { buildFooterColumns } from "./footer";
+import { buildFooterColumns, mandatoryTaxMetaRows } from "./footer";
 import { renderPlainTextPdf } from "@/lib/richtext";
 import { drawWrappedLine, wrapRuns } from "./text-wrap";
 import { docStrings, docLocale, formatDocDate, resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
@@ -137,11 +139,13 @@ const COLUMN_GAP = 8;
  * Exportiert (wie `buildDeliveryNotePdfData`), damit die Spaltenbreiten-Rechnung direkt
  * unit-testbar ist, ohne ein vollstaendiges PDF zu rendern und zu parsen.
  */
-export function buildColumns(data: DeliveryNotePdfData, contentWidth: number): Column[] {
+export function buildColumns(data: DeliveryNotePdfData, contentWidth: number, configured?: PdfLayout["columns"]): Column[] {
   const cur = data.currency;
   const lang = resolveDocLanguage(data.language);
   const t = docStrings(lang).columns;
   const locale = docLocale(lang);
+  // Phase 16g: konfigurierte Spalten (Design) — sonst der bisherige Code unveraendert.
+  if (configured) return buildConfiguredColumns(data, contentWidth, configured);
   const columns: Column[] = [{ header: t.pos, width: 28, render: (l) => String(l.pos) }];
   if (data.showArticleNumber) {
     columns.push({ header: t.articleNumber, width: 70, render: (l) => l.articleNumber ?? "" });
@@ -169,14 +173,49 @@ export function buildColumns(data: DeliveryNotePdfData, contentWidth: number): C
   return columns;
 }
 
+/** Lieferschein-Spalten eines Designs: Reihenfolge und Breiten aus der Konfiguration. */
+function buildConfiguredColumns(data: DeliveryNotePdfData, contentWidth: number, configured: NonNullable<PdfLayout["columns"]>): Column[] {
+  const cur = data.currency;
+  const lang = resolveDocLanguage(data.language);
+  const t = docStrings(lang).columns;
+  const locale = docLocale(lang);
+  const hasUnitColumn = configured.some((c) => c.key === "unit");
+  const visible: Record<LayoutColumnKey, boolean> = {
+    pos: true,
+    article: data.showArticleNumber,
+    description: data.showDescription,
+    qty: true,
+    unit: true,
+    unitPrice: data.showPrices,
+    taxRate: data.showPrices && data.showTax,
+    discount: false,
+    total: data.showPrices,
+  };
+  const spec: Record<LayoutColumnKey, Omit<Column, "width">> = {
+    pos: { header: t.pos, render: (l) => String(l.pos) },
+    article: { header: t.articleNumber, render: (l) => l.articleNumber ?? "" },
+    description: { header: t.description, isDescription: true, render: (l) => l.description },
+    qty: { header: t.quantity, align: "right", render: (l) => `${formatQuantity(l.quantityMilli, locale)}${hasUnitColumn ? "" : ` ${unitLabel(l.unit, lang)}`}` },
+    unit: { header: t.unit, render: (l) => unitLabel(l.unit, lang) },
+    unitPrice: { header: t.unitPrice, align: "right", render: (l) => (l.unitNetPriceCents != null ? formatCents(l.unitNetPriceCents, cur, locale) : "") },
+    taxRate: { header: t.vat, align: "right", render: (l) => (l.taxRate != null ? `${l.taxRate}%` : "") },
+    discount: { header: t.discount, align: "right", render: () => "" },
+    total: { header: t.net, align: "right", render: (l) => (l.unitNetPriceCents != null ? formatCents(lineNetCents(l), cur, locale) : "") },
+  };
+  return resolveConfiguredColumns(configured, visible, contentWidth, COLUMN_GAP).map((c) => ({ ...spec[c.key], width: c.width }));
+}
+
 export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const margins = pdfMargins(theme);
+    // Phase 16g: Design-Konfiguration (Schrift, Raender, Farben) nur, wenn gesetzt.
+    const layout = layoutForTheme(theme);
+    const margins = layout.marginsMm ? marginsFromMm(layout.marginsMm) : pdfMargins(theme);
     const doc = createPdfDocument({
       size: "A4",
       margins,
       compress: theme.compress ?? true,
       pdfa: true,
+      fontFamily: layout.font,
     });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
@@ -205,9 +244,10 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
 
     // Phase 11b — Layout-Hooks (Kopf/Tabellenstil/Summenlinie/Fusszeile) statt eigener
     // Kopie der Zeichenlogik; `standard` reproduziert das bisherige Layout.
-    const layout = getLayout(theme.layoutId);
-    const base = theme.brand.fontSizePt + layout.fontDelta;
-    const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: theme.brand.primaryColor, base };
+    const base = (layout.fontSizePt ?? theme.brand.fontSizePt) + layout.fontDelta;
+    const frame: LayoutFrame = { doc, theme, margins, left, right, width: right - left, primary: layout.colors?.primary ?? theme.brand.primaryColor, base };
+    const cellInk = layout.colors?.text ?? "#000"; // Bestandslayouts: schwarz
+    const noteInk = layout.colors?.text ?? "#333";
     // Fix-Runde 1 (Task-5-Review, Minor): dieselbe `rowH`-Formel wie invoice-pdf.ts —
     // die Positionszeilen hatten weiterhin fest 16pt, unabhaengig von `layout.fontDelta`
     // (z. B. `kompakt`). Bei `base = 10` (Default) unveraendert 16.
@@ -228,6 +268,8 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     if (data.deliveryDate) meta.push({ label: t.meta.deliveryNoteDate, value: docDate(data.deliveryDate, lang) });
     if (data.shippingDate) meta.push({ label: t.meta.shippingDate, value: docDate(data.shippingDate, lang) });
     if (data.sourceNumber) meta.push({ label: t.meta.referenceDocument, value: data.sourceNumber });
+    // § 14 Abs. 4 Nr. 2 UStG: ohne AUTO-Fusszeile stehen Steuernummer/USt-IdNr des Leistenden im Kopf.
+    meta.push(...mandatoryTaxMetaRows(data.seller, layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand, theme.options.showFooter, lang));
 
     // Lieferadresse — S7 (Fix-Welle, §36): zusaetzlicher Block aus der Standard-SHIPPING-
     // Adresse des Kunden, NUR wenn showDeliveryAddress an ist UND eine solche Adresse
@@ -248,7 +290,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
 
     // Positions-Tabelle — Hotfix (A2): Spaltenbreiten wie invoice-pdf.ts aus dem tatsaechlich
     // verfuegbaren Inhaltsbereich ableiten (`tableX` unten ist `left + 4`, siehe dort).
-    const columns = buildColumns(data, right - left - 4);
+    const columns = buildColumns(data, right - left - 4, layout.columns);
     const tableX = left + 4;
     // Fix-Runde 2 (Koordinator, Critical): seit Fix-Runde 1 (Punkt 6) zeichnet
     // `layout.drawFooter` die Fusszeile auf JEDER Seite — `pageBottom` reservierte diesen
@@ -257,7 +299,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     // aktiver Fusszeile reserviert `pageBottom` jetzt zusaetzlich `layout.footerHeight`
     // plus 6pt Sicherheitsabstand; `footY` selbst bleibt unveraendert.
     // fix/pdf-umbrueche (B1/B2): Fusszone aus der tatsaechlichen Fusszeile messen.
-    const footerColumns = buildFooterColumns(
+    const builtFooterColumns = buildFooterColumns(
       {
         seller: data.seller,
         iban: data.seller.iban,
@@ -266,9 +308,10 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
         accountHolder: data.seller.accountHolder,
         ...theme.footerFacts,
       },
-      theme.brand,
-    lang,
+      layout.footerMode ? { ...theme.brand, footerMode: layout.footerMode } : theme.brand,
+      lang,
     );
+    const footerColumns = layout.footerColumnCount ? mergeFooterColumns(builtFooterColumns, layout.footerColumnCount) : builtFooterColumns;
     const footerZone = footerZoneHeight(frame, layout, footerColumns);
     const pageBottom = theme.options.showFooter ? doc.page.height - margins.bottom - footerZone - 6 : doc.page.height - margins.bottom;
 
@@ -305,7 +348,7 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
 
     y = drawTableHeader(y);
 
-    doc.fillColor("#000").fontSize(base - 1);
+    doc.fillColor(cellInk).fontSize(base - 1);
     // Hotfix (A1, Tiefenanalyse UI/Ausgabe/Bedienung): dasselbe Muster wie invoice-pdf.ts —
     // die Zeilenhoehe war fest `rowH` (eine Zeile); bricht die Beschreibung um, ueberdruckte
     // die naechste Position den Text. Ueber die Zeilenanzahl (gemessene Hoehe / Zeilenhoehe,
@@ -372,8 +415,8 @@ export function renderDeliveryNotePdf(data: DeliveryNotePdfData, theme: PdfTheme
     if (data.footerText) {
       y = ensurePlainSpace(y, 30);
       y += 10;
-      doc.fontSize(base - 1).fillColor("#333");
-      renderPlainTextPdf(doc, data.footerText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: "#333" });
+      doc.fontSize(base - 1).fillColor(noteInk);
+      renderPlainTextPdf(doc, data.footerText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: noteInk });
     }
 
     // Fix-Runde 1 (Koordinator, Punkt 6): Fusszeile auf JEDER Seite — `layout.drawFooter`

@@ -15,7 +15,16 @@ import { renderZugferdPdf } from "@/lib/einvoice/zugferd";
 import { buildSampleInvoiceData, buildSampleDeliveryNoteData, buildSampleDunningData } from "@/domain/settings/preview";
 import { DEFAULT_BRANDING_SETTINGS } from "@/domain/settings/branding";
 import { DEFAULT_PRINT_SETTINGS } from "@/domain/settings/print";
+import { presetConfig } from "@/lib/pdf/layouts/presets";
+import type { PdfFontFamily } from "@/lib/pdf/font-families";
 import type { PdfTheme } from "@/lib/pdf/theme";
+
+/** Schriften mit eigenem Design-Muster (Liberation Sans deckt der Bestand ab). */
+const DESIGN_FONTS: PdfFontFamily[] = ["ibm-plex-sans", "ibm-plex-serif", "source-serif-4", "inter"];
+
+function designTheme(font: PdfFontFamily): PdfTheme {
+  return { ...baseTheme(), layoutConfig: { ...presetConfig("standard"), font } };
+}
 
 const OUT_DIR = path.join(process.cwd(), "tmp/pdfa-samples");
 
@@ -115,6 +124,14 @@ async function main(): Promise<void> {
   // veraPDF geprueft.
   const schlichtTheme: PdfTheme = { ...baseTheme(), layoutId: "schlicht" };
   writeFileSync(path.join(OUT_DIR, "rechnung-schlicht.pdf"), await renderZugferdPdf(invoiceData, schlichtTheme));
+
+  // Phase 16g: Designs mit allen Schriften — je Familie eine ZUGFeRD-Rechnung, dazu Lieferschein
+  // und Mahnung, damit jede Schrift (alle vier Schnitte) durch veraPDF geprueft wird.
+  for (const font of DESIGN_FONTS) {
+    writeFileSync(path.join(OUT_DIR, `design-${font}.pdf`), await renderZugferdPdf(invoiceData, designTheme(font)));
+  }
+  writeFileSync(path.join(OUT_DIR, "design-lieferschein-inter.pdf"), await renderDeliveryNotePdf(buildSampleDeliveryNoteData(SAMPLE_ORG), designTheme("inter")));
+  writeFileSync(path.join(OUT_DIR, "design-mahnung-ibm-plex-serif.pdf"), await renderDunningPdf(buildSampleDunningData(SAMPLE_ORG), designTheme("ibm-plex-serif")));
 
   console.log(`PDF/A-3b-Muster erzeugt: ${OUT_DIR}`);
 }

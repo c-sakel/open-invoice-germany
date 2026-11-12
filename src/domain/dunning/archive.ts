@@ -46,7 +46,7 @@ export async function ensureDunningArchive(orgId: string, dunningId: string): Pr
   }
 
   try {
-    const theme = await loadPdfTheme(orgId, null, "DUNNING");
+    const theme = await loadPdfTheme(orgId, null, "DUNNING", { layoutVersionId: d.layoutVersionId, fixedLayoutOnly: !d.layoutVersionId });
     const bytes = await renderDunningPdf(buildDunningPdfData(d, d.invoice), theme);
     const sha256 = sha256Hex(bytes);
     const stem = (d.number ?? d.id).replace(/[^A-Za-z0-9._-]/g, "_");

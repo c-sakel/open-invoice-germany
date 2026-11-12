@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { ValidationError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { loadBrandingSettings, saveBrandingSettings } from "@/domain/settings/branding";
 
@@ -42,6 +43,7 @@ export async function PUT(req: Request) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }
+    if (e instanceof ValidationError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error("PUT /api/settings/branding:", e);
     return NextResponse.json({ error: "Interner Fehler" }, { status: 500 });
   }

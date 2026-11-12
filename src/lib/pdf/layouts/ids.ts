@@ -16,3 +16,12 @@ export const LAYOUT_DOC_TYPE_LABEL: Record<LayoutDocType, string> = {
 export function isLayoutId(value: unknown): value is LayoutId {
   return typeof value === "string" && (LAYOUT_IDS as readonly string[]).includes(value);
 }
+
+/** Phase 16g — Zuordnung eines Layout-Designs: `design:<LayoutDesign.id>`. */
+export type LayoutRef = LayoutId | `design:${string}`;
+export function isDesignRef(value: string): value is `design:${string}` {
+  return value.startsWith("design:") && value.length > "design:".length;
+}
+export function designIdOf(ref: string): string | null {
+  return isDesignRef(ref) ? ref.slice("design:".length) : null;
+}

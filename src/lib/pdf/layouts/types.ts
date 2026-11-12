@@ -7,6 +7,8 @@
 import type { PdfTheme } from "../theme";
 import type { PdfMargins } from "../layout";
 import type { LayoutId } from "./ids";
+import type { LayoutBlockKey, LayoutColumnKey, LayoutDesignConfig } from "@/schemas/layout-design";
+import type { PdfFontFamily } from "../font-families";
 
 export interface LayoutFrame {
   doc: PDFKit.PDFDocument;
@@ -70,7 +72,7 @@ export interface FooterColumn {
 }
 
 export interface PdfLayout {
-  id: LayoutId;
+  id: LayoutId | "design";
   name: string;
   description: string;
   fontDelta: number;
@@ -105,6 +107,16 @@ export interface PdfLayout {
    * Wortlaut ("Gesamtleistung netto/brutto") bleibt unveraendert, wird NICHT durch `labels`
    * ueberschrieben.
    */
+  /** Nur Designs (Phase 16g): Rumpfbloecke in Reihenfolge; ohne Feld gilt `DEFAULT_BLOCKS`. */
+  blocks?: readonly LayoutBlockKey[];
+  /** Nur Designs: konfigurierte Positionsspalten (Breite in Prozent). */
+  columns?: readonly { key: LayoutColumnKey; widthPct: number }[];
+  font?: PdfFontFamily;
+  fontSizePt?: number;
+  marginsMm?: LayoutDesignConfig["marginsMm"];
+  colors?: { primary: string; text: string; muted: string };
+  footerMode?: "AUTO" | "CUSTOM";
+  footerColumnCount?: number;
   labels?: Partial<{
     colEinzel: string;
     colNetto: string;

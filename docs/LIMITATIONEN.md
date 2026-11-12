@@ -103,7 +103,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 
 ## Briefpapier, Druckoptionen, Nummernkreise & GiroCode (Phase 7)
 - **Belegsprache nur Deutsch und Englisch.** PDF, E-Rechnungs-Hinweise und Mail-Vorlagen gibt es in `de` und `en` (Snapshot am Beleg). Freitexte (Positionen, Notizen, Zahlungsbedingungen) und eigene Vorlagen übersetzt der Nutzer selbst; englische Pflichthinweise tragen den deutschen Rechtswortlaut. Briefpapier, Nummernkreise (§ 33–37) und die öffentliche Angebotsseite bleiben deutsch.
-- **Ein Briefpapier je Organisation.** `BrandingSettings` ist 1:1 an `orgId` gebunden (kein zweites Layout, keine Vorlagen je Belegtyp/Kunde/Sprache) — Logo, Farbe, Ränder, Absender-/Fußzeile gelten für alle Belegarten gleichermaßen.
+- **Ein Briefpapier je Organisation.** `BrandingSettings` ist 1:1 an `orgId` gebunden (kein zweites Layout, keine Vorlagen je Belegtyp/Kunde/Sprache) — Logo, Farbe, Ränder, Absender-/Fußzeile gelten für alle Belegarten gleichermaßen. Seit Phase 16g lassen sich je Organisation mehrere **Layout-Designs** (Blockreihenfolge, Spalten, Schrift, Farben, Kopf-/Fußzone) anlegen und je Belegtyp zuordnen; Logo und Bilder stammen weiterhin aus dem einen Briefpapier.
 - **GiroCode nur in EUR und nur mit hinterlegter IBAN.** Der EPC-QR-Code (EPC069-12, COMPLIANCE.md Abschnitt 6) wird ausschließlich für Rechnungen in Euro mit einer gültigen IBAN gerendert; Fremdwährungsrechnungen und Rechnungen ohne IBAN erscheinen ohne GiroCode — ohne Fehler, der Beleg bleibt vollständig.
 - **Nummer erst beim Versand ist nicht umgesetzt.** Angebots-/AB-/Lieferschein-Nummern werden weiterhin **bei Erstellung** vergeben (Betreiber-Ruling, COMPLIANCE.md Abschnitt 6), nicht erst beim Versand — eine Option dafür existiert (noch) nicht.
 - **Layoutänderungen wirken auf Nachdrucke festgeschriebener, noch nicht archivierter Belege (seit Phase 16a nicht mehr auf archivierte).** Eine spätere Änderung an Briefpapier oder globalen Druckoptionen ändert das Aussehen jedes künftigen PDF-Abrufs eines bereits festgeschriebenen Belegs (das PDF wird bei jedem Abruf aus dem aktuellen Theme neu gerendert) — der rechtlich maßgebliche Beleginhalt (Zahlen, Positionen, Steuern, Nummer) bleibt davon unberührt, siehe COMPLIANCE.md Abschnitt 6 „Layoutänderungen vs. Beleginhalt". Je-Beleg-Druckoptionen lassen sich dagegen nach Festschreibung nicht mehr ändern.
@@ -114,14 +114,21 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
   **Mahnungen (`DUNNING`) haben keinen Beleg-Override** — anders als Rechnung/
   Gutschrift, Angebot/Auftragsbestätigung und Lieferschein greift bei Mahnungen
   ausschließlich die Typ-Zuordnung (`layoutByType.DUNNING`) bzw. der
-  Organisationsstandard, kein `printOptionsJson.layoutId` je Mahnung. **Schriften
-  ausschließlich die pdfkit-Standardfonts** (Helvetica-Familie) — kein Custom-Font-
-  Upload, keine Web-/Systemfont-Einbettung; die Referenzbelege des Betreibers (externe Referenzbelege, Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
+  Organisationsstandard, kein `printOptionsJson.layoutId` je Mahnung. **Schriften:
+  fünf fest eingebettete Familien** (Liberation Sans, IBM Plex Sans, IBM Plex Serif, Source Serif 4, Inter; Phase 16g) — kein Custom-Font-
+  Upload, keine Systemfonts; die Referenzbelege des Betreibers (externe Referenzbelege, Layout `schlicht`) nutzen einen humanistischen Sans-Serif-Font (Lato-artig) — eine
   eigene Font-Einbettung bliebe ein späterer Schritt. Beim Layout `modern` **überdeckt der
   farbige Kopfbalken ein evtl. hinterlegtes Hintergrundbild** im oberen Bereich der
   Seite (bewusster Trade-off der Balken-Optik, kein Bug). **Beträge zeigen das
   Währungssymbol** (`formatCents`, z. B. „5,88 €"), **nicht den ISO-Code** („EUR") —
   organisationsweit, nicht je Layout konfigurierbar.
+- **Layout-Designer (Phase 16g):**
+  - **Mahnungen:** Mit einem Design wird die Version bei der Erstellung eingefroren; mit festem Layout bleibt es beim Verhalten ohne Einfrieren. Eine Mahnung ohne eingefrorene Version rendert nie mit einem später zugeordneten Design. Verweist `Dunning.layoutVersionId` auf eine nicht mehr vorhandene Version (kein Fremdschlüssel), rendert die Mahnung mit dem festen Basislayout des zugeordneten Designs, nie mit dem Design.
+  - **Textbausteine und Pflichtangaben:** Betreff, Einleitungstext und Fußtext steuern nur die Reihenfolge; vorhandener Text wird immer gedruckt. Bei ausgeblendeter oder eigener Fußzeile stehen Steuernummer und USt-IdNr des Leistenden automatisch in den Belegdaten. Bei Angebot, Auftragsbestätigung, Proforma und Lieferschein werden Logo, Absenderzeile und Fußzeile beim Nachdruck live gelesen, nicht eingefroren.
+  - **Bestandsbelege:** Angebote und Lieferscheine, die vor 16g ausgegeben wurden, haben keine eingefrorene Version und rendern nur mit dem festen Layout.
+  - **Umfang je Belegart:** Der Lieferschein unterstützt nur Kopf-, Spalten- und Stilanpassung, die Mahnung nur Stil. Der Block `paylink` folgt mit der Zahlungsanbindung (16c).
+  - **DIN 5008 Form B:** Die sieben festen Layouts setzen den Empfänger bei Rand + 60 pt und liegen damit nicht im Anschriftfenster (45–90 mm von oben). Für Fensterumschläge und den Postversand ein Design verwenden. Die Empfängerschrift im Fenster beträgt mindestens 8 pt; passt eine Anschrift nicht, verringert sich der Zeilenabstand. Designs, bei denen eine sechszeilige Anschrift nicht ins Fenster passt, werden beim Speichern abgelehnt. Eine mehrzeilige Lieferanschrift (Zusatzblock) kann unter das Fenster ragen; im Umschlag ist sie verdeckt, die Postanschrift bleibt im Fenster.
+  - **Guards und verschachtelte Schreibzugriffe:** Die Guards in `src/lib/db.ts` (Prisma-Query-Extensions) greifen nur bei Top-Level-Aufrufen; verschachtelte Schreibzugriffe (z. B. `layoutDesign.update({ data: { versions: { update } } })`) werden nicht abgefangen. Die Domain-Services nutzen keine verschachtelten Schreibzugriffe auf geschützte Modelle; das gilt projektweit wie bei den bestehenden GoBD-Guards.
 - **CUSTOM-Fußzeile: gleich breite, linksbündige Spalten statt links/mittig/rechts.**
   `footerLeft`/`footerCenter`/`footerRight` (Phase 7) wurden vor Phase 11b über die volle
   Breite links/mittig/rechts ausgerichtet gezeichnet; seit der gemeinsamen
