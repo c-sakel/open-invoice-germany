@@ -15,6 +15,11 @@
  * - Codevergleiche zeitkonstant (`totp.ts`: `timingSafeEqual`; Wiederherstellungscodes:
  *   Vergleich ueber den HMAC in der DB).
  * - Datenbankzugriffe innerhalb von `$transaction` ausschliesslich ueber `tx`.
+ * - Einschalten, Abschalten und Erneuern der Wiederherstellungscodes beenden alle ANDEREN
+ *   Sitzungen: sie setzen `User.passwordChangedAt` (derselbe Mechanismus wie die Passwortaenderung,
+ *   `userIdFromToken` vergleicht `pwc`); die aufrufende Route stellt danach das Cookie des eigenen
+ *   Browsers per `setSession` neu aus. Bewusst KEIN eigenes Feld: dadurch entfaellt eine Migration
+ *   (SQLite + Postgres), und auch ein laufender Zwischenschritt `oig_mfa` (gleiches `pwc`) verfaellt.
  */
 import QRCode from "qrcode";
 import { dbInternal } from "@/lib/db";
@@ -122,7 +127,7 @@ export async function enableTotp(
     // Bedingt gegen Doppel-Aktivierung und gegen ein zwischenzeitlich ersetztes Geheimnis.
     const res = await tx.user.updateMany({
       where: { id: userId, totpEnabledAt: null, totpSecretEnc: user.totpSecretEnc },
-      data: { totpEnabledAt: now, totpLastStep: step },
+      data: { totpEnabledAt: now, totpLastStep: step, passwordChangedAt: now },
     });
     if (res.count !== 1) return false;
     await tx.recoveryCode.deleteMany({ where: { userId } });
@@ -264,7 +269,7 @@ export async function disableTotp(userId: string, raw: unknown, ctx: Ctx = {}): 
   const res = await confirmPasswordAndCode(userId, raw, ctx, now);
   if (res.status !== "ok") return res;
   await dbInternal.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: userId }, data: { totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null }, select: { id: true } });
+    await tx.user.update({ where: { id: userId }, data: { totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null, passwordChangedAt: now }, select: { id: true } });
     await tx.recoveryCode.deleteMany({ where: { userId } });
   });
   await logAccountEvent(userId, "TOTP_DISABLED", ctx.ip, "Zwei-Faktor-Anmeldung abgeschaltet", now);
@@ -281,6 +286,7 @@ export async function renewRecoveryCodes(
   if (res.status !== "ok") return res;
   const recoveryCodes = generateRecoveryCodes();
   await dbInternal.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { passwordChangedAt: now }, select: { id: true } });
     await tx.recoveryCode.deleteMany({ where: { userId } });
     await tx.recoveryCode.createMany({ data: recoveryCodes.map((c) => ({ userId, codeHash: hashRecoveryCode(normalizeRecoveryCode(c)!) })) });
   });

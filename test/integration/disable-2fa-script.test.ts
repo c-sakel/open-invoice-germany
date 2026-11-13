@@ -6,6 +6,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { dbInternal } from "@/lib/db";
+import { createSessionToken } from "@/lib/auth/session";
+import { userIdFromToken } from "@/lib/auth/server";
 import { hashPassword } from "@/lib/auth/password";
 
 const DB_URL = "file:" + path.resolve("prisma/test.db");
@@ -40,9 +42,9 @@ async function makeUser(withTotp = true) {
 async function state(id: string) {
   const u = await dbInternal.user.findUniqueOrThrow({
     where: { id },
-    select: { totpSecretEnc: true, totpEnabledAt: true, totpLastStep: true, failedLoginCount: true, lockedUntil: true },
+    select: { totpSecretEnc: true, totpEnabledAt: true, totpLastStep: true, failedLoginCount: true, lockedUntil: true, passwordChangedAt: true },
   });
-  return { ...u, codes: await dbInternal.recoveryCode.count({ where: { userId: id } }) };
+  return { ...u, passwordChangedAt: u.passwordChangedAt === null ? null : "gesetzt", codes: await dbInternal.recoveryCode.count({ where: { userId: id } }) };
 }
 
 
@@ -53,11 +55,22 @@ describe("scripts/disable-2fa.sh", () => {
     const r = run(["--bestaetigen", "--email", a.email]);
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("abgeschaltet");
-    expect(await state(a.id)).toEqual({ totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null, failedLoginCount: 0, lockedUntil: null, codes: 0 });
+    expect(await state(a.id)).toEqual({ totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null, failedLoginCount: 0, lockedUntil: null, passwordChangedAt: "gesetzt", codes: 0 });
     const sb = await state(b.id);
     expect(sb.totpSecretEnc).toBe("v1:geheim");
     expect(sb.failedLoginCount).toBe(5);
     expect(sb.codes).toBe(2);
+  });
+
+  it("beendet bestehende Sitzungen (passwordChangedAt wird neu gesetzt, Token mit altem pwc ungueltig)", async () => {
+    const a = await makeUser();
+    const old = await createSessionToken(a.id, null);
+    expect(await userIdFromToken(old)).toBe(a.id);
+    expect(run(["--bestaetigen", "--email", a.email]).status).toBe(0);
+    expect(await userIdFromToken(old)).toBeNull();
+    const row = await dbInternal.user.findUniqueOrThrow({ where: { id: a.id }, select: { passwordChangedAt: true } });
+    expect(Math.abs(row.passwordChangedAt!.getTime() - Date.now())).toBeLessThan(5 * 60_000);
+    expect(await userIdFromToken(await createSessionToken(a.id, row.passwordChangedAt!.getTime()))).toBe(a.id);
   });
 
   it("ohne --email: alle Konten", async () => {
@@ -66,7 +79,7 @@ describe("scripts/disable-2fa.sh", () => {
     const r = run(["--bestaetigen"]);
     expect(r.status).toBe(0);
     for (const u of [a, b]) {
-      expect(await state(u.id)).toEqual({ totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null, failedLoginCount: 0, lockedUntil: null, codes: 0 });
+      expect(await state(u.id)).toEqual({ totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null, failedLoginCount: 0, lockedUntil: null, passwordChangedAt: "gesetzt", codes: 0 });
     }
   });
 

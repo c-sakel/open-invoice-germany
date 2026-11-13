@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { setSession } from "@/lib/auth/server";
 import { disableTotp } from "@/domain/auth/two-factor";
 import { errorResponse, guardAccountRoute, jsonNoStore, lockedResponse } from "@/lib/http/account-route";
 
@@ -11,7 +12,10 @@ export async function POST(req: Request) {
   try {
     const body: unknown = await req.json();
     const result = await disableTotp(guard.userId, body, { ip: guard.ip });
-    if (result.status === "ok") return jsonNoStore({ ok: true });
+    if (result.status === "ok") {
+      await setSession(guard.userId);
+      return jsonNoStore({ ok: true });
+    }
     if (result.status === "locked") return lockedResponse(result.retryAfterMs);
     return jsonNoStore({ error: "Passwort oder Code ist falsch." }, { status: 401 });
   } catch (e) {

@@ -9,7 +9,7 @@
 #   docker compose exec app sh ./scripts/disable-2fa.sh --bestaetigen
 # Ohne --email werden ALLE Konten zurueckgesetzt (Single-User-Betrieb).
 #
-# Folgen: kein Passwort wird geaendert; die Anmeldung geht danach wieder allein mit dem Passwort.
+# Folgen: kein Passwort wird geaendert, aber alle bestehenden Sitzungen enden (passwordChangedAt); die Anmeldung geht danach wieder allein mit dem Passwort.
 # Es entsteht bewusst KEIN Eintrag im Aktivitaetsprotokoll: wer Server-Zugang hat, hat
 # Vollzugriff auf die Datenbank (siehe BETRIEB-VORLAGE.md). Das SQL ist fuer SQLite und
 # Postgres identisch.
@@ -59,9 +59,16 @@ if [ "$EMAIL_GIVEN" = 1 ]; then
   TARGET="$EMAIL"
 fi
 
+# passwordChangedAt = jetzt: beendet alle bestehenden Sitzungen (Token-pwc passt nicht mehr).
+# Zeitstempel je Datenbank: SQLite speichert DateTime als Unix-Millisekunden, Postgres als UTC-Zeit.
+case "$DATABASE_URL" in
+  file:*) NOW_SQL="CAST(strftime('%s','now') AS INTEGER) * 1000" ;;
+  *) NOW_SQL="(NOW() AT TIME ZONE 'UTC')" ;;
+esac
+
 if ! out=$(npx prisma db execute --url "$DATABASE_URL" --stdin 2>&1 <<SQL
 DELETE FROM "RecoveryCode" WHERE "userId" IN (SELECT "id" FROM "User" $WHERE);
-UPDATE "User" SET "totpSecretEnc" = NULL, "totpEnabledAt" = NULL, "totpLastStep" = NULL, "failedLoginCount" = 0, "lockedUntil" = NULL $WHERE;
+UPDATE "User" SET "totpSecretEnc" = NULL, "totpEnabledAt" = NULL, "totpLastStep" = NULL, "failedLoginCount" = 0, "lockedUntil" = NULL, "passwordChangedAt" = $NOW_SQL $WHERE;
 SQL
 ); then
   printf '%s\n' "$out" >&2

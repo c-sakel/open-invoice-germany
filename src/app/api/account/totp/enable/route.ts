@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { setSession } from "@/lib/auth/server";
 import { enableTotp, TotpAlreadyEnabledError } from "@/domain/auth/two-factor";
 import { errorResponse, guardAccountRoute, jsonNoStore, lockedResponse } from "@/lib/http/account-route";
 
@@ -11,7 +12,11 @@ export async function POST(req: Request) {
   try {
     const body: unknown = await req.json();
     const result = await enableTotp(guard.userId, body, { ip: guard.ip });
-    if (result.status === "ok") return jsonNoStore({ recoveryCodes: result.recoveryCodes });
+    if (result.status === "ok") {
+      // Andere Sitzungen sind entwertet (passwordChangedAt); nur dieser Browser bekommt ein neues Cookie.
+      await setSession(guard.userId);
+      return jsonNoStore({ recoveryCodes: result.recoveryCodes });
+    }
     if (result.status === "locked") return lockedResponse(result.retryAfterMs);
     if (result.status === "invalid_password") return jsonNoStore({ error: "Passwort ist falsch." }, { status: 401 });
     if (result.status === "no_pending_setup") return jsonNoStore({ error: "Die Einrichtung wurde nicht gestartet oder ist abgelaufen. Bitte neu beginnen." }, { status: 400 });

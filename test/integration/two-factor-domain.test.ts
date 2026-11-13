@@ -7,6 +7,8 @@ import { dbInternal } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { resetRateLimits, RateLimitError } from "@/lib/rate-limit";
 import { base32Decode, hotp, totpStep } from "@/lib/auth/totp";
+import { createSessionToken } from "@/lib/auth/session";
+import { userIdFromToken } from "@/lib/auth/server";
 import { decryptSecret } from "@/lib/crypto/secrets";
 import { createApiKey } from "@/domain/api-key/create";
 import { attemptLogin } from "@/domain/auth/login";
@@ -379,5 +381,45 @@ describe("Zwei-Faktor-Verwaltung: IP-Bremse", () => {
     for (let i = 0; i < 5; i++) await renewRecoveryCodes(u.id, { password: PASSWORD, code: "000000" }, { ip, now });
     await expect(disableTotp(u.id, { password: PASSWORD, code: "000000" }, { ip, now })).rejects.toBeInstanceOf(RateLimitError);
     await expect(renewRecoveryCodes(u.id, { password: PASSWORD, code: "000000" }, { ip, now })).rejects.toBeInstanceOf(RateLimitError);
+  });
+});
+
+describe("Sitzungen beim 2FA-Wechsel", () => {
+  async function sessionOf(id: string): Promise<string> {
+    const u = await dbInternal.user.findUniqueOrThrow({ where: { id }, select: { passwordChangedAt: true } });
+    return createSessionToken(id, u.passwordChangedAt?.getTime() ?? null);
+  }
+
+  it("Einschalten, Erneuern und Abschalten entwerten bestehende Sitzungen; neu ausgestellte gelten", async () => {
+    const u = await makeUser();
+    const s0 = await sessionOf(u.id);
+    expect(await userIdFromToken(s0)).toBe(u.id);
+
+    const setup = await beginTotpSetup(u.id, { issuer: "Test" });
+    const secret = base32Decode(setup.secret);
+    const en = await enableTotp(u.id, { password: PASSWORD, code: code(secret, T0) }, { now: T0 });
+    if (en.status !== "ok") throw new Error("Einrichtung fehlgeschlagen");
+    expect(await userIdFromToken(s0)).toBeNull();
+    const s1 = await sessionOf(u.id);
+    expect(await userIdFromToken(s1)).toBe(u.id);
+
+    const t1 = at(10);
+    const renewed = await renewRecoveryCodes(u.id, { password: PASSWORD, code: en.recoveryCodes[0] }, { now: t1 });
+    expect(renewed.status).toBe("ok");
+    expect(await userIdFromToken(s1)).toBeNull();
+    const s2 = await sessionOf(u.id);
+    expect(await userIdFromToken(s2)).toBe(u.id);
+
+    const t2 = at(20);
+    if (renewed.status !== "ok") throw new Error("unerwartet");
+    expect((await disableTotp(u.id, { password: PASSWORD, code: renewed.recoveryCodes[0] }, { now: t2 })).status).toBe("ok");
+    expect(await userIdFromToken(s2)).toBeNull();
+  });
+
+  it("fehlgeschlagene Verwaltung entwertet nichts", async () => {
+    const a = await makeActive();
+    const s = await sessionOf(a.id);
+    expect((await disableTotp(a.id, { password: "falsch", code: a.recoveryCodes[0] }, { now: at(30) })).status).toBe("invalid");
+    expect(await userIdFromToken(s)).toBe(a.id);
   });
 });

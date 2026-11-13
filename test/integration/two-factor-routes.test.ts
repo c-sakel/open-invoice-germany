@@ -58,6 +58,12 @@ async function makeUser() {
   return { id: u.id, email };
 }
 
+/** Zwischen-Cookie wie nach /api/auth/login: pwc = aktuelles passwordChangedAt (die 2FA-Aktivierung setzt es). */
+async function pending(id: string) {
+  const u = await dbInternal.user.findUniqueOrThrow({ where: { id }, select: { passwordChangedAt: true } });
+  return { uid: id, pwc: u.passwordChangedAt?.getTime() ?? null };
+}
+
 /** Aktive 2FA ueber die Routen (Konto-Sitzung); liefert Geheimnis und Wiederherstellungscodes. */
 async function activate() {
   const u = await makeUser();
@@ -68,6 +74,7 @@ async function activate() {
   const res = await enable(req("/api/account/totp/enable", { password: PASSWORD, code: totp(secret) }, ip));
   const j = (await res.json()) as { recoveryCodes: string[] };
   auth.currentUser = null;
+  auth.setSession.mockClear();
   return { ...u, secret, recoveryCodes: j.recoveryCodes };
 }
 
@@ -114,7 +121,7 @@ describe("POST /api/auth/second-factor", () => {
 
   it("richtiger Code: 200, Sitzung, Zwischen-Cookie geloescht", async () => {
     const a = await activate();
-    auth.pending = { uid: a.id, pwc: null };
+    auth.pending = await pending(a.id);
     const res = await secondFactor(req("/api/auth/second-factor", { code: totp(a.secret, 1) }, ipFor()));
     expect(res.status).toBe(200);
     expect(auth.setSession).toHaveBeenCalledWith(a.id);
@@ -123,14 +130,14 @@ describe("POST /api/auth/second-factor", () => {
 
   it("Wiederherstellungscode wird akzeptiert", async () => {
     const a = await activate();
-    auth.pending = { uid: a.id, pwc: null };
+    auth.pending = await pending(a.id);
     const res = await secondFactor(req("/api/auth/second-factor", { code: a.recoveryCodes[0] }, ipFor()));
     expect(res.status).toBe(200);
   });
 
   it("falscher Code: 401 'Code ist falsch.'; fuenf falsche: danach gesperrt mit Retry-After", async () => {
     const a = await activate();
-    auth.pending = { uid: a.id, pwc: null };
+    auth.pending = await pending(a.id);
     const ip = ipFor();
     const first = await secondFactor(req("/api/auth/second-factor", { code: "000000" }, ip));
     expect(first.status).toBe(401);
@@ -155,7 +162,7 @@ describe("POST /api/auth/second-factor", () => {
 
   it("ungueltiger Body: 400", async () => {
     const a = await activate();
-    auth.pending = { uid: a.id, pwc: null };
+    auth.pending = await pending(a.id);
     const res = await secondFactor(req("/api/auth/second-factor", { code: "1" }, ipFor()));
     expect(res.status).toBe(400);
   });
@@ -191,6 +198,7 @@ describe("Konto-Routen /api/account/totp/*", () => {
     const ok = await enable(req("/api/account/totp/enable", { password: PASSWORD, code: totp(base32Decode(j.secret)) }, ip));
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { recoveryCodes: string[] }).recoveryCodes).toHaveLength(10);
+    expect(auth.setSession).toHaveBeenCalledWith(u.id);
 
     expect((await setup(req("/api/account/totp/setup", {}, ip))).status).toBe(409);
   });
@@ -205,6 +213,7 @@ describe("Konto-Routen /api/account/totp/*", () => {
     expect(ok.status).toBe(200);
     const row = await dbInternal.user.findUniqueOrThrow({ where: { id: a.id }, select: { totpEnabledAt: true } });
     expect(row.totpEnabledAt).toBeNull();
+    expect(auth.setSession).toHaveBeenCalledWith(a.id);
   });
 
   it("recovery-codes: erneuert, 10 neue Codes", async () => {
@@ -213,6 +222,7 @@ describe("Konto-Routen /api/account/totp/*", () => {
     const res = await renew(req("/api/account/totp/recovery-codes", { password: PASSWORD, code: a.recoveryCodes[0] }, ipFor()));
     expect(res.status).toBe(200);
     expect(((await res.json()) as { recoveryCodes: string[] }).recoveryCodes).toHaveLength(10);
+    expect(auth.setSession).toHaveBeenCalledWith(a.id);
   });
 
   it("ohne AUTH_SECRET: setup 409 mit Hinweis", async () => {
