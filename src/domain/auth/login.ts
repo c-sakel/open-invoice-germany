@@ -5,8 +5,8 @@
  * Datenbank (`User.failedLoginCount`/`lockedUntil`, ueberlebt einen Neustart). Das
  * Passwort wird IMMER geprueft — bei unbekannter E-Mail gegen einen einmalig berechneten
  * Dummy-Hash — damit die Antwortzeit nichts ueber die Kontoexistenz verraet; die
- * Fehlermeldung ist in beiden Faellen identisch generisch (Route). Nur wer das RICHTIGE
- * Passwort liefert, erfaehrt ueberhaupt von einer Sperre.
+ * Fehlermeldung ist in beiden Faellen identisch generisch (Route). Waehrend einer
+ * Sperre antwortet jede Anfrage gleich (`locked`), das Passwort wird nicht ausgewertet.
  *
  * Ruling (Betreiber-Vorgabe, Dispatch Task 8): der Betreiber darf sich nicht dauerhaft
  * selbst aussperren koennen. Deshalb bleiben Zaehler UND Sperre eingefroren, solange eine
@@ -93,15 +93,14 @@ export async function attemptLogin(rawInput: unknown, ctx: { ip?: string; now?: 
 
   const { isLocked, retryAfterMs } = lockState(user, now);
 
+  // Waehrend einer aktiven Sperre gibt es nur EINE Antwort, unabhaengig vom Passwort —
+  // sonst waere die Sperre ein Passwort-Orakel (richtig -> "locked", falsch -> "invalid").
+  // Der scrypt-Vergleich oben lief trotzdem (gleiche Laufzeit), das Ergebnis wird nicht benutzt.
+  if (isLocked) return { status: "locked", retryAfterMs };
+
   if (!passwordOk) {
-    // `registerFailedAttempt` ist waehrend einer aktiven Sperre ein No-op (Ruling siehe attempts.ts).
     await registerFailedAttempt(user, { ip: ctx.ip, now }, "falsches Passwort");
     return { status: "invalid" };
-  }
-
-  // Passwort korrekt.
-  if (isLocked) {
-    return { status: "locked", retryAfterMs };
   }
 
   if (user.totpEnabledAt !== null) {
@@ -151,15 +150,12 @@ export async function changePassword(userId: string, rawInput: unknown, ctx: { i
   const { isLocked, retryAfterMs } = lockState(user, now);
   const currentOk = verifyPassword(input.currentPassword, user.passwordHash);
 
+  // Wie attemptLogin: waehrend der Sperre antwortet nur "locked", das Passwort bleibt ungeprueft.
+  if (isLocked) return { status: "locked", retryAfterMs };
+
   if (!currentOk) {
-    // Wie attemptLogin: waehrend einer aktiven Sperre No-op (siehe attempts.ts).
     await registerFailedAttempt(user, { ip: ctx.ip, now }, "falsches aktuelles Passwort (Passwortwechsel)");
     return { status: "invalid_current_password" };
-  }
-
-  // Aktuelles Passwort korrekt.
-  if (isLocked) {
-    return { status: "locked", retryAfterMs };
   }
 
   const passwordHash = hashPassword(input.newPassword);

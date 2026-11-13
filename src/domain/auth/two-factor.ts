@@ -112,11 +112,12 @@ export async function enableTotp(
   if (!parsed.success) return { status: "invalid_code" };
 
   const lock = lockState({ id: userId, ...user }, now);
+  // Waehrend der Sperre antwortet nur "locked" — das Passwort wird nicht ausgewertet (kein Orakel).
+  if (lock.isLocked) return { status: "locked", retryAfterMs: lock.retryAfterMs };
   if (!verifyPassword(parsed.data.password, user.passwordHash)) {
     await registerFailedAttempt({ id: userId, ...user }, { ip: ctx.ip, now }, "falsches Passwort (2FA einrichten)");
     return { status: "invalid_password" };
   }
-  if (lock.isLocked) return { status: "locked", retryAfterMs: lock.retryAfterMs };
 
   const secret = readSecret(user.totpSecretEnc);
   if (!secret) return { status: "invalid_code" };
@@ -303,12 +304,13 @@ async function confirmPasswordAndCode(userId: string, raw: unknown, ctx: Ctx, no
   if (!user || user.totpEnabledAt === null) return { status: "invalid" };
 
   const lock = lockState(user, now);
+  // Waehrend der Sperre antwortet nur "locked" — das Passwort wird nicht ausgewertet (kein Orakel).
+  if (lock.isLocked) return { status: "locked", retryAfterMs: lock.retryAfterMs };
   const passwordOk = verifyPassword(input.password, user.passwordHash);
   if (!passwordOk) {
     await registerFailedAttempt(user, { ip: ctx.ip, now }, "falsches Passwort (Zwei-Faktor-Verwaltung)");
     return { status: "invalid" };
   }
-  if (lock.isLocked) return { status: "locked", retryAfterMs: lock.retryAfterMs };
 
   const code = await evaluateCode(user, input.code, now, true, ctx.ip);
   if (code === "invalid") {

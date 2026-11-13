@@ -141,6 +141,17 @@ describe("enableTotp Re-Auth", () => {
     expect((await enableTotp(u.id, { code: good }, { now: at(100) })).status).toBe("invalid_code");
   });
 
+  it("Passwort-Orakel: waehrend der Sperre antworten richtiges und falsches Passwort identisch", async () => {
+    const u = await makeUser();
+    const setup = await beginTotpSetup(u.id, { issuer: "T" });
+    const good = code(base32Decode(setup.secret), T0);
+    for (let i = 0; i < 5; i++) await enableTotp(u.id, { password: "falsch", code: good }, { now: T0 });
+    const right = await enableTotp(u.id, { password: PASSWORD, code: good }, { now: T0 });
+    const wrong = await enableTotp(u.id, { password: "noch-falscher", code: good }, { now: T0 });
+    expect(right).toEqual(wrong);
+    expect(right.status).toBe("locked");
+  });
+
   it("IP-Bremse password-change: der 11. Aufruf wirft RateLimitError", async () => {
     const u = await makeUser();
     await beginTotpSetup(u.id, { issuer: "T" });
@@ -276,6 +287,16 @@ describe("verifySecondFactor", () => {
 });
 
 describe("disableTotp und renewRecoveryCodes", () => {
+  it("Passwort-Orakel: waehrend der Sperre antworten richtiges und falsches Passwort identisch", async () => {
+    const u = await makeActive();
+    const now = at(10);
+    for (let i = 0; i < 5; i++) await disableTotp(u.id, { password: "falsch", code: "000000" }, { now });
+    const right = await disableTotp(u.id, { password: PASSWORD, code: code(u.secret, now) }, { now });
+    const wrong = await disableTotp(u.id, { password: "noch-falscher", code: code(u.secret, now) }, { now });
+    expect(right).toEqual(wrong);
+    expect(right.status).toBe("locked");
+  });
+
   it("falsches Passwort / falscher Code -> invalid + Fehlversuch; richtig -> abgeschaltet", async () => {
     const u = await makeActive();
     const other = await makeActive();
