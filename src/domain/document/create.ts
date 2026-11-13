@@ -135,7 +135,7 @@ export async function createBusinessDocumentWithinTx(
     }
   }
 
-  const settings = await loadDocumentSettings(orgId);
+  const settings = await loadDocumentSettings(orgId, tx);
 
   // Rabatt (§28): Eingabe > Customer.defaultDiscountPermille, nur wenn BEIDE
   // Rabattfelder fehlen (Task-2-Facts, wie createDraftInvoiceWithinTx).

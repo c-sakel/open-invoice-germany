@@ -95,7 +95,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
     const footerText = q.footerText ?? (await pickTextTemplate(tx, orgId, "INVOICE", "FOOT", language));
     const paymentTerms = q.paymentTerms ?? (await pickTextTemplate(tx, orgId, "INVOICE", "TERMS_PAYMENT", language));
 
-    const settings = await loadDocumentSettings(orgId);
+    const settings = await loadDocumentSettings(orgId, tx);
 
     // Fehlt eine Zahlungsmethode am Dokument (Quote kennt keine eigene), greift zuerst die
     // Standard-Zahlungsmethode des Kunden (gleiches Muster wie createDraftInvoiceWithinTx),

@@ -28,19 +28,18 @@ export function ratesOfLines(lines: readonly { taxRate?: number | null }[]): num
   return [...out];
 }
 
-// `_tx` bleibt in der Signatur (Spec), wird aber bewusst nicht benutzt: `loadDocumentSettings`
-// liest eine org-weite Einstellungszeile, die nicht Teil der Beleg-Transaktion ist. Der
-// Parameter haelt die Aufrufstellen einheitlich und laesst eine spaetere Umstellung auf den
-// Transaktionsclient zu, ohne jede Aufrufstelle anzufassen.
+// Die Einstellungszeile wird ueber den uebergebenen Client gelesen: innerhalb einer Transaktion
+// ist das tx. Ein Zugriff ueber den globalen Client braucht eine zweite Pool-Verbindung und
+// blockiert bei kleinem Pool (Deadlock bis zum Transaktions-Timeout).
 export async function assertAllowedTaxRates(
-  _tx: Prisma.TransactionClient | typeof dbInternal,
+  tx: Prisma.TransactionClient | typeof dbInternal,
   orgId: string,
   rates: readonly number[],
   opts: { existing?: readonly number[] } = {},
 ): Promise<void> {
   const candidates = [...new Set(rates)].filter((r) => r !== 0);
   if (candidates.length === 0) return;
-  const allowed = new Set((await loadDocumentSettings(orgId)).taxRates);
+  const allowed = new Set((await loadDocumentSettings(orgId, tx)).taxRates);
   for (const r of opts.existing ?? []) allowed.add(r);
   for (const rate of candidates) {
     if (!allowed.has(rate)) {

@@ -6,6 +6,7 @@
  * bevor eine Organisation die Einstellungen zum ersten Mal oeffnet.
  */
 import { z } from "zod";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { documentSettingsInputSchema, taxRatesSchema, normalizeTaxRates, type DocumentSettingsInput } from "@/schemas/quote-share";
 
@@ -24,8 +25,13 @@ function parseTaxRates(json: string | null | undefined): number[] {
 }
 
 /** Laedt die Dokument-Einstellungen einer Organisation; Defaults, wenn noch keine Zeile existiert. */
-export async function loadDocumentSettings(orgId: string): Promise<DocumentSettingsInput> {
-  const row = await dbInternal.documentSettings.findUnique({ where: { orgId } });
+export async function loadDocumentSettings(
+  orgId: string,
+  db: PrismaClient | Prisma.TransactionClient = dbInternal,
+): Promise<DocumentSettingsInput> {
+  // Innerhalb einer Transaktion MUSS tx uebergeben werden: eine Abfrage ueber den globalen Client
+  // belegt eine zweite Pool-Verbindung und blockiert bei kleinem Pool (Deadlock bis Timeout).
+  const row = await db.documentSettings.findUnique({ where: { orgId } });
   if (!row) return DEFAULT_DOCUMENT_SETTINGS;
   return documentSettingsInputSchema.parse({
     onQuoteAccept: row.onQuoteAccept,

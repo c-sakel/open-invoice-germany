@@ -7,7 +7,10 @@ cd "$(dirname "$0")/.."
 
 CONTAINER=oig-racetest
 PORT=55434
-export DATABASE_URL="postgresql://oig:test@localhost:${PORT}/openinvoice?schema=public"
+# Kleiner Pool wie auf einem 2-Kern-Runner (Prisma: Kerne*2+1 = 5): bildet das Risiko ab,
+# dass Abfragen in einer Transaktion ausserhalb von tx eine Verbindung brauchen (Pool-Deadlock).
+POOL_LIMIT="${RACE_CONNECTION_LIMIT:-5}"
+export DATABASE_URL="postgresql://oig:test@localhost:${PORT}/openinvoice?schema=public&connection_limit=${POOL_LIMIT}"
 
 cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
 cleanup_all() { cleanup; rm -rf tmp/pg-race; }

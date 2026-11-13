@@ -16,8 +16,8 @@ export async function freezeDocumentLayout(
   orgId: string,
   doc: { docType: LayoutDocType; printOptionsJson: string | null },
 ): Promise<string> {
-  const globalPrintSettings = await loadPrintSettings(orgId);
-  const brand = await loadBrandingSettings(orgId);
+  const globalPrintSettings = await loadPrintSettings(orgId, tx);
+  const brand = await loadBrandingSettings(orgId, tx);
   const effective = effectivePrintOptions(globalPrintSettings, doc.printOptionsJson);
   const layoutRef = resolveLayoutId({
     overrideLayoutId: effective.layoutId ?? null,

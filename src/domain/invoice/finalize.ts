@@ -100,7 +100,7 @@ export async function finalizeWithinTx(
   let issueDate = opts.issueDate ?? invoice.issueDate ?? now;
   let dueDate = invoice.dueDate;
   if (!opts.issueDate) {
-    const settings = await loadDocumentSettings(invoice.orgId);
+    const settings = await loadDocumentSettings(invoice.orgId, tx);
     if (settings.refreshIssueDateOnFinalize && invoice.issueDate && utcDateOnly(invoice.issueDate) < utcDateOnly(today)) {
       issueDateBefore = invoice.issueDate;
       const diffDays = Math.round((utcDateOnly(now) - utcDateOnly(invoice.issueDate)) / DAY_MS);
@@ -241,8 +241,8 @@ export async function finalizeWithinTx(
   // "standard") und dann in `frozenPrintOptionsJson` eingefroren — eine spaetere Aenderung
   // des Organisations-/Typ-Layouts darf das Layout eines bereits festgeschriebenen Belegs
   // nicht mehr veraendern (analog den zehn Druckoptions-Schaltern oben).
-  const globalPrintSettings = await loadPrintSettings(invoice.orgId);
-  const brand = await loadBrandingSettings(invoice.orgId);
+  const globalPrintSettings = await loadPrintSettings(invoice.orgId, tx);
+  const brand = await loadBrandingSettings(invoice.orgId, tx);
   const effectiveOptions = effectivePrintOptions(globalPrintSettings, invoice.printOptionsJson);
   const layoutRef = resolveLayoutId({
     overrideLayoutId: effectiveOptions.layoutId ?? null,
