@@ -1022,6 +1022,38 @@ model User {
   lastLoginAt       DateTime?
   passwordChangedAt DateTime?
   createdAt         DateTime  @default(now())
+
+  // Phase 17d: Zwei-Faktor-Anmeldung (TOTP) und Passwort-Reset
+  totpSecretEnc       String? // encryptSecret(base32, "oig-totp-v1")
+  totpEnabledAt       DateTime? // null = 2FA aus (Geheimnis ohne Datum = Einrichtung laeuft)
+  totpLastStep        Int? // zuletzt akzeptierter TOTP-Schritt (Replay-Schutz)
+  recoveryCodes       RecoveryCode[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+/// Einmalige Wiederherstellungscodes fuer den zweiten Faktor (nur HMAC gespeichert).
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, codeHash])
+}
+
+/// Passwort-Reset-Token (nur SHA-256 gespeichert, einmalig, befristet).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
 
 /// Append-only Änderungsprotokoll (GoBD-Kern). Hash-Chain macht Manipulation erkennbar.
