@@ -35,6 +35,7 @@ export async function POST(req: Request) {
     const note = await createDeliveryNote(org.id, input, { actor });
     return NextResponse.json({ id: note.id, number: note.number, status: note.status }, { status: 201 });
   } catch (e) {
+    if (e instanceof SyntaxError) return NextResponse.json({ error: "Ungültiges JSON im Request-Body." }, { status: 400 });
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "Validierung fehlgeschlagen", issues: e.issues }, { status: 400 });
     }

@@ -63,7 +63,7 @@ export function RowActionsMenu({
   actions: ActionKey[];
   openHref: string;
   /** Nur gesetzt, wenn fuer diesen Beleg tatsaechlich eine Bearbeiten-Seite existiert
-   *  (Lieferscheine haben aktuell keine — EDIT wird dann trotz ActionKey nicht gerendert). */
+   *  (Entwuerfe; EDIT wird ohne `editHref` trotz ActionKey nicht gerendert). */
   editHref?: string;
   pdfHref?: string;
   xrechnungHref?: string;

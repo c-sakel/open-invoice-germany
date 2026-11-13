@@ -82,9 +82,9 @@ interface DocumentEditorProps {
 const PRIMARY_LABEL: Record<EditorMode, { create: string; edit: string }> = {
   INVOICE: { create: "Als Entwurf speichern", edit: "Änderungen speichern" },
   DOCUMENT: { create: "Dokument anlegen", edit: "Änderungen speichern" },
-  // Lieferscheine kennen im Editor keinen Bearbeiten-Fall (reine Anlage ohne
-  // Quelldokument) — dieselbe Beschriftung fuer beide Faelle.
-  DELIVERY_NOTE: { create: "Lieferschein anlegen", edit: "Lieferschein anlegen" },
+  // Phase 17b: Lieferscheine werden als Entwurf gespeichert; "Lieferschein erstellen"
+  // (Statuswechsel MARK_CREATED, Nummernvergabe) ist die Zweitaktion in der Kopfleiste.
+  DELIVERY_NOTE: { create: "Als Entwurf speichern", edit: "Änderungen speichern" },
 };
 
 const DETAIL_BASE_PATH: Record<EditorMode, string> = {
@@ -286,8 +286,10 @@ export function DocumentEditor({
           ? await fetch(`/api/documents/${draft.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) })
           : await fetch("/api/documents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       } else {
-        const payload = toDeliveryNotePayload(draft);
-        res = await fetch("/api/delivery-notes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+        const payload = toDeliveryNotePayload(draft, isEdit);
+        res = isEdit
+          ? await fetch(`/api/delivery-notes/${draft.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) })
+          : await fetch("/api/delivery-notes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       }
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string; issues?: SaveErrorIssue[] };
@@ -317,6 +319,34 @@ export function DocumentEditor({
     }
   }
 
+  // Phase 17b: Zweitaktion "Lieferschein erstellen" — Entwurf speichern (ohne Navigation),
+  // dann Statuswechsel MARK_CREATED. Bei 409 (z. B. Restmenge unterschritten) bleibt der
+  // Editor offen, der Entwurf ist gespeichert.
+  async function createDeliveryNote(): Promise<void> {
+    const id = await save({ navigate: false });
+    if (!id) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/delivery-notes/${id}/status`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "MARK_CREATED" }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(j.error ?? "Lieferschein konnte nicht erstellt werden. Der Entwurf ist gespeichert.");
+        setSaving(false);
+        return;
+      }
+      router.push(`${DETAIL_BASE_PATH[mode]}/${id}`);
+      router.refresh();
+    } catch {
+      setError("Lieferschein konnte nicht erstellt werden (Netzwerkfehler). Der Entwurf ist gespeichert.");
+      setSaving(false);
+    }
+  }
+
   return (
     <EditorCurrencyContext.Provider value={displayCurrency}>
       <div className="space-y-6 pb-10">
@@ -327,6 +357,8 @@ export function DocumentEditor({
           saving={saving}
           primaryLabel={isEdit ? PRIMARY_LABEL[mode].edit : PRIMARY_LABEL[mode].create}
           onSave={() => void save()}
+          secondaryLabel={mode === "DELIVERY_NOTE" ? "Lieferschein erstellen" : undefined}
+          onSecondary={mode === "DELIVERY_NOTE" ? () => void createDeliveryNote() : undefined}
           onPreview={() => setPreviewOpen(true)}
         />
 

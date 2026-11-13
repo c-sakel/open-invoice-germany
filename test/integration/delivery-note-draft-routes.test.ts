@@ -34,6 +34,7 @@ import { POST as v1Post } from "@/app/api/v1/DeliveryNote/route";
 import { PATCH as v1Patch } from "@/app/api/v1/DeliveryNote/[id]/route";
 import { POST as v1Status } from "@/app/api/v1/DeliveryNote/[id]/status/route";
 import { PATCH as internalPatch } from "@/app/api/delivery-notes/[id]/route";
+import { POST as internalPost } from "@/app/api/delivery-notes/route";
 import { POST as internalStatus } from "@/app/api/delivery-notes/[id]/status/route";
 import { GET as internalPdf } from "@/app/api/delivery-notes/[id]/pdf/route";
 
@@ -129,6 +130,10 @@ describe("interne Routen", () => {
     const dn = await draft();
     expect((await internalPatch(plain("PATCH", { notes: "intern" }), ctx1(dn.id))).status).toBe(200);
     expect((await internalPatch(plain("PATCH", { lines: [] }), ctx1(dn.id))).status).toBe(400);
+    const broken = (url: string) => new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{nicht json" });
+    expect((await internalPatch(broken("http://x"), ctx1(dn.id))).status).toBe(400);
+    expect((await internalStatus(broken("http://x"), ctx1(dn.id))).status).toBe(400);
+    expect((await internalPost(broken("http://x"))).status).toBe(400);
     expect((await internalPatch(plain("PATCH", { notes: "x" }), ctx1("gibtsnicht"))).status).toBe(404);
     await setDeliveryNoteStatus(orgId, dn.id, "CREATED", { actor: "t", now: NOW });
     expect((await internalPatch(plain("PATCH", { notes: "x" }), ctx1(dn.id))).status).toBe(409);
@@ -226,6 +231,28 @@ describe("MCP", () => {
     const res = await callTool("set_document_status", { type: "DELIVERY_NOTE", document: dn.id, action: "MARK_CREATED" });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).not.toContain("Unerwarteter Fehler");
+  });
+
+  it("update_delivery_note erhaelt den Quellbezug; MARK_CREATED mit Uebermenge -> OverDeliveryError", async () => {
+    const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [{ lineType: "ITEM", description: "Kabel", quantityMilli: 5000, unit: "C62", unitNetPriceCents: 1000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }] }, { now: NOW });
+    const ql = await dbInternal.quoteLine.findFirstOrThrow({ where: { quoteId: q.id } });
+    const src = { sourceType: "QUOTE" as const, sourceId: q.id, sourceLineId: ql.id };
+    const dn = await createDeliveryNote(orgId, { customerId, draft: true, sourceType: "QUOTE", sourceId: q.id, lines: [line(1000, src)] }, { now: NOW });
+    const upd = await callTool("update_delivery_note", { id: dn.id, lines: [{ description: "Kabel", quantity: 9, unitPriceEuro: 10, taxRatePercent: 19 }] });
+    expect(upd.isError).toBeFalsy();
+    const kept = await dbInternal.deliveryNoteLine.findFirstOrThrow({ where: { deliveryNoteId: dn.id } });
+    expect(kept.sourceLineId).toBe(ql.id);
+    await expect(setDeliveryNoteStatus(orgId, dn.id, "CREATED", { actor: "t", now: NOW })).rejects.toBeInstanceOf(OverDeliveryError);
+  });
+
+  it("create/update_delivery_note: Zod-Fehler als Validierungsfehler statt Unerwarteter Fehler", async () => {
+    const bad = await callTool("create_delivery_note", { customer: "Routen Kunde AG", lines: [{ description: "x", quantity: 0, unitPriceEuro: 5 }] });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0].text).not.toContain("Unerwarteter Fehler");
+    const d = await draft();
+    const badUpd = await callTool("update_delivery_note", { id: d.id, lines: [{ description: "x", quantity: 0, unitPriceEuro: 5 }] });
+    expect(badUpd.isError).toBe(true);
+    expect(badUpd.content[0].text).not.toContain("Unerwarteter Fehler");
   });
 
   it("Positionen mit productName tragen die Artikelnummer", async () => {

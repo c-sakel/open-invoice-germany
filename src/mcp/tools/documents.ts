@@ -348,6 +348,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         if (note.status === "DRAFT") return ctx.ok(`Lieferschein-Entwurf angelegt (ID ${note.id}) für ${customer.name}.`);
         return ctx.ok(`Lieferschein angelegt: ${note.number} für ${customer.name}.`);
       } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
@@ -365,7 +366,10 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       inputSchema: {
         id: z.string().describe("Lieferschein-ID oder -Nummer"),
         customer: z.string().optional().describe("Kundenname oder -ID (Kundenwechsel)"),
-        lines: z.array(docLineSchema).min(1).optional(),
+        lines: z
+          .array(docLineSchema.extend({ sourceLineId: z.string().optional().describe("Quellposition (Angebot/Rechnung) der Zeile; ohne Angabe bleibt der Bezug einer unveraenderten Zeile an gleicher Stelle erhalten") }))
+          .min(1)
+          .optional(),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
         notes: z.string().optional(),
         language: DocLanguageSchema.optional(),
@@ -377,23 +381,41 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const ref = await ctx.resolveDeliveryNote(org.id, args.id);
         const customer = args.customer ? await ctx.resolveCustomer(org.id, args.customer) : null;
         const lines = args.lines ? await ctx.buildSimpleLines(org.id, args.lines) : undefined;
+        // Quellbezug: explizites sourceLineId, sonst die bisherige Zeile gleicher Position mit gleicher Beschreibung.
+        // Der Kopf behaelt seine Quelle; ohne Bezug greift die Restmengenpruefung bei MARK_CREATED nicht.
+        const head = args.lines
+          ? await dbInternal.deliveryNote.findFirst({
+              where: { id: ref.id, orgId: org.id },
+              select: { sourceType: true, sourceId: true, lines: { orderBy: { position: "asc" }, select: { description: true, sourceLineId: true } } },
+            })
+          : null;
+        const sourceFor = (idx: number, description: string): { sourceType?: "QUOTE" | "INVOICE"; sourceId?: string; sourceLineId?: string } => {
+          if (!head?.sourceType || !head.sourceId) return {};
+          const explicit = args.lines?.[idx]?.sourceLineId;
+          const prev = head.lines[idx];
+          const sourceLineId = explicit ?? (prev && prev.description === description ? prev.sourceLineId ?? undefined : undefined);
+          if (!sourceLineId) return {};
+          return { sourceType: head.sourceType as "QUOTE" | "INVOICE", sourceId: head.sourceId, sourceLineId };
+        };
         const input = updateDeliveryNoteSchema.parse({
           customerId: customer?.id,
           deliveryDate: ctx.parseDateInput(args.deliveryDate),
           notes: args.notes,
           language: args.language,
-          lines: lines?.map((l) => ({
+          lines: lines?.map((l, idx) => ({
             description: l.description,
             articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
             unitNetPriceCents: l.unitNetPriceCents,
             taxRate: l.taxRate,
+            ...sourceFor(idx, l.description),
           })),
         });
         const note = await updateDraftDeliveryNote(org.id, ref.id, input, { actor: "mcp" });
         return ctx.ok(`Lieferschein-Entwurf aktualisiert (ID ${note.id}).`);
       } catch (e) {
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) return ctx.fail(e.message);
         if (e instanceof NotFoundError || e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
