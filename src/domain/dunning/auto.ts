@@ -14,7 +14,7 @@
 import { dbInternal } from "@/lib/db";
 import { createDunning, DunningError, DUNNABLE_TYPES } from "@/domain/dunning/create";
 import { sendDunning } from "@/domain/dunning/send";
-import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, reachedStageIds, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { openAmountCents } from "@/domain/invoice/amounts";
@@ -60,7 +60,7 @@ export interface DunningCandidate {
   paidAmountCents: number;
   payableCents: number | null;
   customer: { email: string | null };
-  dunnings: { createdAt: Date; dueDate: Date | null; sentAt: Date; level: number; stage: { order: number } | null }[];
+  dunnings: { createdAt: Date; dueDate: Date | null; sentAt: Date; level: number; stageId: string | null; stage: { order: number } | null }[];
 }
 
 interface AutoStage extends StageLike {
@@ -107,7 +107,7 @@ export async function dunningCandidates(orgId: string, now: Date = new Date()): 
       payableCents: true,
       customer: { select: { email: true } },
       dunnings: {
-        select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
+        select: { createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } },
       },
     },
   });
@@ -136,6 +136,7 @@ async function processCandidate(
     invoiceDueDate: dueDate,
     lastDunning: last ? { order: lastOrder!, dueDate: last.dueDate, sentAt: last.sentAt } : null,
     stages,
+    reachedStageIds: reachedStageIds(candidate.dunnings),
     gracePeriodDays,
     now,
   });

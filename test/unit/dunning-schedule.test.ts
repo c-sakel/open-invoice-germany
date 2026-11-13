@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dunningScheduleFor, latestDunning, type StageLike, type DunningLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, reachedStageIds, type StageLike, type DunningLike } from "@/domain/dunning/schedule";
 
 const STAGES: StageLike[] = [
   { order: 0, enabled: true, daysAfterDue: 3 },
@@ -136,5 +136,64 @@ describe("latestDunning (Nit, Fix-Welle)", () => {
     const low = d("2050-01-01T00:00:00.000Z", 0);
     const high = d("2050-01-01T00:00:00.000Z", 2);
     expect(latestDunning([low, high])).toBe(high);
+  });
+});
+
+// Task 5 (17b): Umsortieren ohne Rueckwirkung — bereits erreichte Stufen werden nie erneut gewaehlt.
+describe("dunningScheduleFor mit reachedStageIds (17b)", () => {
+  const due = new Date("2050-01-01T00:00:00.000Z");
+  const now = new Date("2050-06-01T00:00:00.000Z");
+  const sent = new Date("2050-03-01T00:00:00.000Z");
+  const stage = (id: string, order: number, enabled = true): StageLike => ({ id, order, enabled, daysAfterDue: 1 });
+
+  it("nach Tausch B=0, A=1 und letzter Mahnung B -> naechste Stufe C, nicht A", () => {
+    const s = dunningScheduleFor({
+      invoiceDueDate: due,
+      lastDunning: { order: 0, dueDate: null, sentAt: sent },
+      stages: [stage("B", 0), stage("A", 1), stage("C", 2)],
+      reachedStageIds: ["A", "B"],
+      gracePeriodDays: 0,
+      now,
+    });
+    expect(s.nextStage?.id).toBe("C");
+  });
+
+  it("A (erreicht) nach hinten verschoben: kein Rueckschritt, nextStage null", () => {
+    const s = dunningScheduleFor({
+      invoiceDueDate: due,
+      lastDunning: { order: 2, dueDate: null, sentAt: sent },
+      stages: [stage("B", 0), stage("C", 1), stage("A", 2)],
+      reachedStageIds: ["A"],
+      gracePeriodDays: 0,
+      now,
+    });
+    expect(s.nextStage).toBeNull();
+  });
+
+  it("ohne reachedStageIds -> bisheriges Verhalten (nur order)", () => {
+    const s = dunningScheduleFor({
+      invoiceDueDate: due,
+      lastDunning: { order: 0, dueDate: null, sentAt: sent },
+      stages: [stage("B", 0), stage("A", 1), stage("C", 2)],
+      gracePeriodDays: 0,
+      now,
+    });
+    expect(s.nextStage?.id).toBe("A");
+  });
+
+  it("deaktivierte Stufe wird weiter uebersprungen", () => {
+    const s = dunningScheduleFor({
+      invoiceDueDate: due,
+      lastDunning: { order: 0, dueDate: null, sentAt: sent },
+      stages: [stage("B", 0), stage("A", 1, false), stage("C", 2)],
+      reachedStageIds: ["B"],
+      gracePeriodDays: 0,
+      now,
+    });
+    expect(s.nextStage?.id).toBe("C");
+  });
+
+  it("reachedStageIds ignoriert Altmahnungen ohne stageId", () => {
+    expect(reachedStageIds([{ stageId: "A" }, { stageId: null }])).toEqual(["A"]);
   });
 });

@@ -11,7 +11,7 @@
 import { paymentMethodLabel } from "@/lib/payment-method-label";
 import { dbInternal } from "@/lib/db";
 import { ACTIVITY_TYPES, type ActivityEntityType, type ActivityType } from "@/domain/activity/log";
-import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, reachedStageIds } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { formatCents } from "@/lib/money";
@@ -103,7 +103,7 @@ async function invoiceMilestones(orgId: string, invoiceId: string, now: Date): P
       payableCents: true,
       dunningState: true,
       dunnings: {
-        select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
+        select: { createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } },
       },
     },
   });
@@ -132,6 +132,7 @@ async function invoiceMilestones(orgId: string, invoiceId: string, now: Date): P
         invoiceDueDate: inv.dueDate,
         lastDunning: last ? { order: lastOrder!, dueDate: last.dueDate, sentAt: last.sentAt } : null,
         stages,
+        reachedStageIds: reachedStageIds(inv.dunnings),
         gracePeriodDays: settings.gracePeriodDays,
         now,
       });

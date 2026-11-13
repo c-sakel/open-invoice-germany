@@ -16,7 +16,7 @@ import { createDunning, DunningError } from "@/domain/dunning/create";
 import { setDunningState } from "@/domain/dunning/state";
 import { sendDunning } from "@/domain/dunning/send";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
-import { createDunningStage, updateDunningStage } from "@/domain/dunning/stages";
+import { createDunningStage, updateDunningStage, reorderDunningStages } from "@/domain/dunning/stages";
 import { saveDunningSettings } from "@/domain/dunning/settings";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveMailSettings } from "@/domain/email/settings";
@@ -382,3 +382,69 @@ describe("Phase 6 — Mahn-Engine (create.ts, state.ts, send.ts, snapshot.ts)", 
     expect(pdfData.interestSegments?.[0]?.baseRateBp).toBe(127); // unveraendert trotz "999" danach
   });
 });
+
+// Task 5 (17b): Umsortieren der Mahnstufen nach bereits erstellten Mahnungen (Testjahr 2147).
+describe("Mahnstufen umsortieren ohne Rueckwirkung (17b)", () => {
+  const NOW = new Date("2147-06-09T10:00:00.000Z");
+  let reorderOrg = "";
+
+  async function freshOrg(): Promise<{ org: string; stageIds: string[] }> {
+    const o = await dbInternal.organization.create({
+      data: { legalName: "Mahn-Umsortieren Test GmbH", addressLine1: "Teststr. 1", postalCode: "12345", city: "Berlin", vatId: "DE999999999", taxNumber: "1" },
+    });
+    await ensureOrgMasterdata(dbInternal, o.id);
+    await dbInternal.dunningStage.deleteMany({ where: { orgId: o.id } });
+    const ids: string[] = [];
+    for (const [i, name] of ["A", "B", "C"].entries()) {
+      const st = await dbInternal.dunningStage.create({
+        data: { orgId: o.id, name, order: i, enabled: true, daysAfterDue: 1, newDueDays: 7, feeCents: 0, calculateInterest: false, includeB2BFlatFee: false },
+        select: { id: true },
+      });
+      ids.push(st.id);
+    }
+    return { org: o.id, stageIds: ids };
+  }
+
+  async function invoiceFor(org: string): Promise<string> {
+    const c = await dbInternal.customer.create({
+      data: { orgId: org, name: "Umsortier Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+      select: { id: true },
+    });
+    const draft = await createDraftInvoice(org, {
+      customerId: c.id,
+      type: "INVOICE",
+      taxScheme: "REGULAR",
+      currency: "EUR",
+      deliveryDate: new Date("2147-06-01"),
+      dueDate: new Date("2147-06-01"),
+      lines: [{ description: "Beratung", quantityMilli: 2000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput);
+    const fin = await finalizeInvoice(draft.id, { now: NOW });
+    return fin.id;
+  }
+
+  it("Mahnungen A und B, dann Tausch -> createDunning erzeugt C ohne Unique-Fehler", async () => {
+    const { org, stageIds } = await freshOrg();
+    reorderOrg = org;
+    const invId = await invoiceFor(org);
+    const r1 = await createDunning(invId, { now: NOW, force: true });
+    const r2 = await createDunning(invId, { now: new Date(NOW.getTime() + 1000), force: true });
+    expect([r1.stage.name, r2.stage.name]).toEqual(["A", "B"]);
+
+    await reorderDunningStages(org, { ids: [stageIds[1]!, stageIds[0]!, stageIds[2]!] });
+    const r3 = await createDunning(invId, { now: new Date(NOW.getTime() + 2000), force: true });
+    expect(r3.stage.name).toBe("C");
+  });
+
+  it("Altmahnung ohne stageId: naechste Stufe wie bisher nach level", async () => {
+    // gleiche Org wie oben (Belegnummern sind global eindeutig; Reihenfolge jetzt B, A, C)
+    const org = reorderOrg;
+    const invId = await invoiceFor(org);
+    const r1 = await createDunning(invId, { now: NOW, force: true });
+    expect(r1.stage.name).toBe("B");
+    await dbInternal.dunning.update({ where: { id: r1.dunning.id }, data: { stageId: null } });
+    const r2 = await createDunning(invId, { now: new Date(NOW.getTime() + 1000), force: true });
+    expect(r2.stage.name).toBe("A"); // level 0 -> naechste order > 0
+  });
+});
+

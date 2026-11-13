@@ -6,6 +6,7 @@
  */
 
 export interface StageLike {
+  id?: string;
   order: number;
   enabled: boolean;
   daysAfterDue: number;
@@ -20,6 +21,8 @@ export interface DunningScheduleInput<S extends StageLike = StageLike> {
   stages: S[];
   /** Karenztage, die nur auf die erste Stufe (order 0) zusaetzlich draufgerechnet werden. */
   gracePeriodDays: number;
+  /** IDs bereits erreichter Stufen; fehlt -> exakt bisheriges Verhalten (nur `order`). */
+  reachedStageIds?: readonly string[];
   now: Date;
 }
 
@@ -46,6 +49,13 @@ function utcDateOnly(d: Date): number {
 
 function daysBetweenDates(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/** `stageId`s aller bestehenden Mahnungen (Altmahnungen ohne `stageId` werden ignoriert). */
+export function reachedStageIds(dunnings: { stageId: string | null }[]): string[] {
+  const ids: string[] = [];
+  for (const d of dunnings) if (d.stageId) ids.push(d.stageId);
+  return ids;
 }
 
 export interface DunningLike {
@@ -86,16 +96,20 @@ export function latestDunning<T extends DunningLike>(dunnings: T[]): T | null {
 /**
  * Ermittelt die naechste faellige Mahnstufe. `nextStage` = erste aktivierte Stufe mit
  * `order` groesser als die Stufe der letzten Mahnung (bzw. die erste ueberhaupt, wenn noch
- * keine Mahnung existiert); deaktivierte Stufen werden uebersprungen. Basis fuer `dueAt`
+ * keine Mahnung existiert); deaktivierte Stufen und (17b) bereits erreichte Stufen
+ * (`reachedStageIds`, nach einem Umsortieren) werden uebersprungen. Basis fuer `dueAt`
  * ist die Faelligkeit/der Versand der letzten Mahnung (bzw. die Rechnungsfaelligkeit, wenn
  * es die erste Mahnung ist) plus `nextStage.daysAfterDue` — die Karenzfrist
  * (`gracePeriodDays`) zaehlt dabei NUR bei der allerersten Stufe (order 0) zusaetzlich.
  */
 export function dunningScheduleFor<S extends StageLike>(input: DunningScheduleInput<S>): DunningSchedule<S> {
   const afterOrder = input.lastDunning?.order ?? -1;
+  // Nach einem Umsortieren (S3) zaehlt neben `order` auch, welche Stufen schon erreicht
+  // wurden: eine erreichte Stufe wird nie erneut gewaehlt (Unique (invoiceId, stageId)).
+  const reached = new Set(input.reachedStageIds ?? []);
   const nextStage =
     input.stages
-      .filter((s) => s.enabled && s.order > afterOrder)
+      .filter((s) => s.enabled && s.order > afterOrder && !(s.id && reached.has(s.id)))
       .sort((a, b) => a.order - b.order)[0] ?? null;
 
   const daysOverdue = daysBetweenDates(input.invoiceDueDate, input.now);
