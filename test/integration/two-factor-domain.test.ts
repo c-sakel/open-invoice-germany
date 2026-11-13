@@ -189,9 +189,13 @@ describe("verifySecondFactor", () => {
 
     const good = code(u.secret, now);
     const locked = await verifySecondFactor(pending, { code: good }, { now, ip: "198.51.100.10" });
+    // Kein Orakel: richtiger, falscher und Wiederherstellungscode liefern in der Sperre dieselbe Antwort.
     expect(locked.status).toBe("locked");
-    // 6. falscher Code und der nicht verbrauchte richtige Code waehrend der Sperre aendern nichts.
-    await verifySecondFactor(pending, { code: wrongOk }, { now });
+    const lockedWrong = await verifySecondFactor(pending, { code: wrongOk }, { now });
+    const lockedRecovery = await verifySecondFactor(pending, { code: u.recoveryCodes[0]! }, { now });
+    expect(lockedWrong).toEqual(locked);
+    expect(lockedRecovery).toEqual(locked);
+    expect((await dbInternal.recoveryCode.count({ where: { userId: u.id, usedAt: null } }))).toBe(10);
     const r2 = await row(u.id);
     expect(r2.failedLoginCount).toBe(5);
     expect(r2.lockedUntil?.getTime()).toBe(r.lockedUntil?.getTime());

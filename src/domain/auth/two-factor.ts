@@ -11,7 +11,7 @@
  * - Falsche Codes zaehlen wie falsche Passwoerter auf IP-Bremse (`login:<ip>`) und
  *   Kontosperre (`attempts.ts`); ein richtiges Passwort allein setzt den Zaehler bei aktiver
  *   2FA nicht zurueck (siehe `login.ts`).
- * - Waehrend einer aktiven Sperre wird ein Code nur geprueft, NICHT verbraucht.
+ * - Waehrend einer aktiven Sperre wird ein Code weder geprueft noch verbraucht (einheitlich `locked`).
  * - Codevergleiche zeitkonstant (`totp.ts`: `timingSafeEqual`; Wiederherstellungscodes:
  *   Vergleich ueber den HMAC in der DB).
  * - Datenbankzugriffe innerhalb von `$transaction` ausschliesslich ueber `tx`.
@@ -193,9 +193,9 @@ export async function verifySecondFactor(
 
   const lock = lockState(user, now);
   if (lock.isLocked) {
-    // Waehrend der Sperre nichts verbrauchen, nichts zaehlen — nur ein richtiger Code erfaehrt von der Sperre.
-    const ok = await evaluateCode(user, input.code, now, false, ctx.ip);
-    return ok === "ok" ? { status: "locked", retryAfterMs: lock.retryAfterMs } : { status: "invalid" };
+    // Waehrend der Sperre wird der Code NICHT geprueft: richtig und falsch liefern dieselbe
+    // Antwort (kein Gueltigkeits-Orakel, auch nicht ueber Wiederherstellungscodes oder Antwortzeit).
+    return { status: "locked", retryAfterMs: lock.retryAfterMs };
   }
 
   const result = await evaluateCode(user, input.code, now, true, ctx.ip);
