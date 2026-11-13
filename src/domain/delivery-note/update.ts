@@ -15,7 +15,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { resolveDeliveryParties } from "@/domain/delivery-note/parties";
-import { DeliveryNoteError, DeliveryNoteNotDraftError } from "@/domain/delivery-note/errors";
+import { DeliveryNoteNotDraftError } from "@/domain/delivery-note/errors";
 import { updateDeliveryNoteSchema } from "@/schemas";
 
 export { DeliveryNoteNotDraftError };

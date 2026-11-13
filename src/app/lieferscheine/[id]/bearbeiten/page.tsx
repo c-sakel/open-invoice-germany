@@ -32,8 +32,16 @@ export default async function LieferscheinBearbeitenPage({ params }: { params: P
       select: { id: true, name: true, unit: true, netPriceCents: true, taxRate: true, articleNumber: true },
       orderBy: { name: "asc" },
     }),
-    dbInternal.contactPerson.findMany({ where: { orgId: org.id }, orderBy: { lastName: "asc" } }),
-    dbInternal.customerAddress.findMany({ where: { orgId: org.id }, orderBy: { label: "asc" } }),
+    dbInternal.contactPerson.findMany({
+      where: { orgId: org.id },
+      select: { id: true, customerId: true, firstName: true, lastName: true, role: true, isDefault: true },
+      orderBy: { lastName: "asc" },
+    }),
+    dbInternal.customerAddress.findMany({
+      where: { orgId: org.id },
+      select: { id: true, customerId: true, type: true, isDefault: true, label: true, addressLine1: true, postalCode: true, city: true },
+      orderBy: { label: "asc" },
+    }),
     listAttachments(org.id, "DELIVERY_NOTE", dn.id),
     loadDocumentSettings(org.id),
   ]);
