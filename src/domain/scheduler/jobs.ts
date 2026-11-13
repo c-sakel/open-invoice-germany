@@ -11,6 +11,7 @@ import { runWebhookDeliveries } from "@/domain/webhook/deliver";
 import { runAuditJob } from "@/domain/audit/verify-chain";
 import { runFxJob } from "@/domain/fx/job";
 import { runCleanupJob } from "./cleanup";
+import { pollPostalJobs } from "@/domain/postal/poll";
 import { runArchiveJob } from "./archive-job";
 import type { SchedulerJob } from "./runner";
 
@@ -23,6 +24,10 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
   },
   dunning: async (now) => {
     const result = await runDunningJob(now);
+    return { ...result };
+  },
+  postal: async (now) => {
+    const result = await pollPostalJobs(now);
     return { ...result };
   },
   archive: async (now) => {

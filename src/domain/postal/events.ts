@@ -32,7 +32,7 @@ export type PostalStatus = (typeof POSTAL_STATUSES)[number];
 /** Aktive Auftraege (sperren einen erneuten Versand desselben Belegs; DRY_RUN nie). */
 export const ACTIVE_POSTAL_STATUSES: readonly PostalStatus[] = ["PENDING", "SUBMITTING", "DRAFT", "QUEUED", "HOLD", "DONE", "UNKNOWN"];
 
-/** Ziel -> erlaubte Vorgaenger. DONE, CANCELLED, FAILED und DRY_RUN sind Endzustaende. */
+/** Ziel -> erlaubte Vorgaenger. CANCELLED, FAILED und DRY_RUN sind Endzustaende; DONE erlaubt nur die Selbst-Fortschreibung (Sendungsverfolgung bei Einschreiben). */
 export const POSTAL_TRANSITIONS: Record<PostalStatus, readonly PostalStatus[]> = {
   PENDING: [],
   SUBMITTING: ["PENDING"],
@@ -40,7 +40,7 @@ export const POSTAL_TRANSITIONS: Record<PostalStatus, readonly PostalStatus[]> =
   DRAFT: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
   QUEUED: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
   HOLD: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
-  DONE: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
+  DONE: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD", "DONE"],
   CANCELLED: ["UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
   FAILED: ["PENDING", "SUBMITTING", "UNKNOWN"],
   UNKNOWN: ["SUBMITTING"],
