@@ -1346,6 +1346,8 @@ INSERT INTO "Customer" ("id","orgId","name","addressLine1","postalCode","city","
   VALUES ('cust32','org32','Zweiunddreissig-Kunde GmbH','Kundenweg 32','99932','Bestadt','DE',NOW());
 INSERT INTO "DunningStage" ("id","orgId","order","name","daysAfterDue","calculateInterest","includeB2BFlatFee","updatedAt")
   VALUES ('ds32','org32',1,'Erinnerung',7,false,false,NOW());
+INSERT INTO "NotificationSettings" ("id","orgId","enabledTypesJson","updatedAt")
+  VALUES ('ns32','org32','["INVOICE_OVERDUE"]',NOW());
 SQL
 npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
   || fail "Phase-16d-Migration ist auf der Bestands-DB fehlgeschlagen"
@@ -1353,6 +1355,8 @@ CHVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"deliv
 [ "$CHVAL" = "EMAIL" ] || fail "Customer.deliveryChannel abweichend ('$CHVAL'), erwartet EMAIL"
 STVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"channel\"||'|'||\"postFallback\"::text from \"DunningStage\" where id='ds32'")
 [ "$STVAL" = "CUSTOMER|true" ] || fail "DunningStage-Bestand abweichend ('$STVAL'), erwartet CUSTOMER|true"
+NS32=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"enabledTypesJson\" from \"NotificationSettings\" where id='ns32'")
+[ "$NS32" = '["INVOICE_OVERDUE","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT"]' ] || fail "NotificationSettings.enabledTypesJson ohne Postversand-Typen ergaenzt ('$NS32')"
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "PostalSettings" ("id","orgId","updatedAt") VALUES ('ps32','org32',NOW());
 SQL

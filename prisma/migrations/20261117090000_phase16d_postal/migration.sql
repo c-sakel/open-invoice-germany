@@ -81,3 +81,24 @@ CREATE INDEX "PostalJob_invoiceId_status_idx" ON "PostalJob"("invoiceId", "statu
 CREATE INDEX "PostalJob_docType_docId_idx" ON "PostalJob"("docType", "docId");
 CREATE INDEX "PostalJob_orgId_createdAt_idx" ON "PostalJob"("orgId", "createdAt");
 CREATE INDEX "PostalJobEvent_jobId_at_idx" ON "PostalJobEvent"("jobId", "at");
+
+-- Bestands-Organisationen: neue Benachrichtigungstypen aktivieren (abwaehlbar, keine Pflicht-Alarme), sonst
+-- verwirft notifyPostal die Postversand-Meldungen still. enabledTypesJson ist ein kompaktes JSON-Array.
+UPDATE "NotificationSettings"
+SET "enabledTypesJson" = CASE
+  WHEN "enabledTypesJson" = '[]' THEN '["POSTAL_FAILED"]'
+  ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"POSTAL_FAILED"]'
+END
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"POSTAL_FAILED"%';
+UPDATE "NotificationSettings"
+SET "enabledTypesJson" = CASE
+  WHEN "enabledTypesJson" = '[]' THEN '["POSTAL_PENDING"]'
+  ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"POSTAL_PENDING"]'
+END
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"POSTAL_PENDING"%';
+UPDATE "NotificationSettings"
+SET "enabledTypesJson" = CASE
+  WHEN "enabledTypesJson" = '[]' THEN '["DUNNING_NOT_SENT"]'
+  ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"DUNNING_NOT_SENT"]'
+END
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"DUNNING_NOT_SENT"%';

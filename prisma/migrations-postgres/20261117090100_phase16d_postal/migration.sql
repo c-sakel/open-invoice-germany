@@ -114,3 +114,24 @@ ALTER TABLE "PostalJob" ADD CONSTRAINT "PostalJob_orgId_fkey" FOREIGN KEY ("orgI
 
 -- AddForeignKey
 ALTER TABLE "PostalJobEvent" ADD CONSTRAINT "PostalJobEvent_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "PostalJob"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Bestands-Organisationen: neue Benachrichtigungstypen aktivieren (abwaehlbar, keine Pflicht-Alarme), sonst
+-- verwirft notifyPostal die Postversand-Meldungen still. enabledTypesJson ist ein kompaktes JSON-Array.
+UPDATE "NotificationSettings"
+SET "enabledTypesJson" = CASE
+  WHEN "enabledTypesJson" = '[]' THEN '["POSTAL_FAILED"]'
+  ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"POSTAL_FAILED"]'
+END
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"POSTAL_FAILED"%';
+UPDATE "NotificationSettings"
+SET "enabledTypesJson" = CASE
+  WHEN "enabledTypesJson" = '[]' THEN '["POSTAL_PENDING"]'
+  ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"POSTAL_PENDING"]'
+END
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"POSTAL_PENDING"%';
+UPDATE "NotificationSettings"
+SET "enabledTypesJson" = CASE
+  WHEN "enabledTypesJson" = '[]' THEN '["DUNNING_NOT_SENT"]'
+  ELSE SUBSTR("enabledTypesJson", 1, LENGTH("enabledTypesJson") - 1) || ',"DUNNING_NOT_SENT"]'
+END
+WHERE "enabledTypesJson" LIKE '[%]' AND "enabledTypesJson" NOT LIKE '%"DUNNING_NOT_SENT"%';
