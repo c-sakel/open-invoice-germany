@@ -74,3 +74,17 @@ Monatlich ausfuehren; eine Sicherung gilt erst nach einem erfolgreichen Restore-
 Hinweis: `verify-chain.ts` nutzt den zur Laufzeit generierten Prisma-Client; der Test laeuft daher in einer
 Umgebung, in der der Postgres-Client generiert ist (z. B. im App-Container oder nach
 `npx prisma generate --schema=prisma/schema.postgres.prisma`).
+
+## Notfallzugang: Zwei-Faktor abschalten (`scripts/disable-2fa.sh`)
+
+Sind Authenticator-Gerät **und** Wiederherstellungscodes verloren, schaltet der Server-Zugang die Zwei-Faktor-Anmeldung ab:
+
+    docker compose exec app sh ./scripts/disable-2fa.sh --bestaetigen --email admin@example.com
+
+- `--bestaetigen` ist Pflicht, sonst Exit 2 und keine Änderung. Ohne `--email` werden **alle** Konten zurückgesetzt; ein leeres `--email ""` ist ein Fehler.
+- Eine gültige, aber unbekannte Adresse endet mit Exit 1 („Kein Konto gefunden“), es wird nichts geändert.
+- Das Skript löscht TOTP-Geheimnis und Wiederherstellungscodes, hebt eine Kontosperre auf, beendet alle bestehenden Sitzungen und entwertet offene Reset-Links. Das Passwort bleibt unverändert; danach unter „Einstellungen → Konto“ 2FA neu einrichten.
+- Es entsteht **kein** Eintrag im Aktivitätsprotokoll. Wer Server-Zugang hat, hat ohnehin Vollzugriff auf die Datenbank.
+- Die `DATABASE_URL` (mit Passwort) steht für die Laufzeit des Skripts in der Prozessliste des Containers.
+- Passwort-Reset per Mail setzt SMTP (Einstellungen → E-Mail) und `APP_BASE_URL` voraus.
+- **Client-IP für die Bremsen (`CLIENT_IP_SOURCE`):** Hinter Cloudflare `CLIENT_IP_SOURCE=cf` setzen und den Origin per nginx (oder Firewall) nur für Cloudflare-IP-Bereiche erreichbar machen, sonst lässt sich `cf-connecting-ip` fälschen. Hinter nginx allein `CLIENT_IP_SOURCE=x-real-ip` und im Server-Block `proxy_set_header X-Real-IP $remote_addr;` (überschreibt statt anzuhängen). Mehrere Proxys in Reihe: `xff` mit `TRUSTED_PROXY_COUNT`. Ohne Einstellung gilt `legacy` (fälschbar, siehe LIMITATIONEN); fehlt der Header ganz, teilen sich alle Clients einen IP-Zähler.

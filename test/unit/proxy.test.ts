@@ -143,4 +143,24 @@ describe("proxy", () => {
     const json = await res.json();
     expect(json.error).toBe("Nicht angemeldet");
   });
+
+  // Phase 17d: Zweitfaktor- und Reset-Seiten ohne Sitzung erreichbar, nie zwischengespeichert.
+  it("/login/zweiter-faktor -> next() ohne Cookie, cache-control private, no-store", async () => {
+    const res = await proxy(new NextRequest("http://localhost/login/zweiter-faktor"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("referrer-policy")).toBeNull();
+  });
+
+  it("/login/passwort-zuruecksetzen/abc -> next(), no-store und referrer-policy no-referrer", async () => {
+    const res = await proxy(new NextRequest("http://localhost/login/passwort-zuruecksetzen/abc"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("/api/account/totp/setup ohne Cookie -> 401", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/account/totp/setup"));
+    expect(res.status).toBe(401);
+  });
 });

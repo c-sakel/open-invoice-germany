@@ -73,6 +73,13 @@ export const ACTIVITY_TYPES = {
   LOGIN_FAILED: "Anmeldung fehlgeschlagen",
   LOGIN_LOCKED: "Konto gesperrt",
   PASSWORD_CHANGED: "Passwort geaendert",
+  // Phase 17d: Zwei-Faktor-Anmeldung und Passwort-Reset (entityType USER, src/domain/auth/*).
+  TOTP_ENABLED: "Zwei-Faktor-Anmeldung eingerichtet",
+  TOTP_DISABLED: "Zwei-Faktor-Anmeldung abgeschaltet",
+  RECOVERY_CODES_RENEWED: "Wiederherstellungscodes erneuert",
+  RECOVERY_CODE_USED: "Wiederherstellungscode verwendet",
+  PASSWORD_RESET_REQUESTED: "Passwort-Reset angefordert",
+  PASSWORD_RESET: "Passwort zurueckgesetzt",
   // Phase 16b: manuell gepflegter Wechselkurs (src/domain/fx/store.ts#upsertManualRate), entityId = ExchangeRate.id.
   FX_RATE_SET: "Wechselkurs gesetzt",
   // Phase 16g: Layout-Designs (src/domain/layout-design/save.ts), entityId = LayoutDesign.id.

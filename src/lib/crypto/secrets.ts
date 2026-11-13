@@ -17,7 +17,7 @@
  * endpoints.ts, deliver.ts) — kein Migrationsbedarf, da keine Bestandssecrets existieren
  * (Webhooks sind neu in Phase 10).
  */
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from "node:crypto";
 
 export class SecretsUnavailableError extends Error {
   constructor() {
@@ -51,4 +51,13 @@ export function decryptSecret(enc: string, purpose: string = DEFAULT_INFO): stri
   const decipher = createDecipheriv("aes-256-gcm", key(purpose), Buffer.from(ivB, "base64"));
   decipher.setAuthTag(Buffer.from(tagB, "base64"));
   return Buffer.concat([decipher.update(Buffer.from(ctB, "base64")), decipher.final()]).toString("utf8");
+}
+
+/**
+ * HMAC-SHA256 (hex) mit einem per HKDF aus AUTH_SECRET abgeleiteten Schluessel je `purpose`.
+ * Fuer Werte, die nur verglichen, nie zurueckgelesen werden (Wiederherstellungscodes, Phase 17d).
+ * Wirft `SecretsUnavailableError` ohne AUTH_SECRET.
+ */
+export function hmacWithDerivedKey(data: string, purpose: string): string {
+  return createHmac("sha256", key(purpose)).update(data, "utf8").digest("hex");
 }

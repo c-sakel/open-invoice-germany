@@ -52,6 +52,10 @@ describe("Dockerfile", () => {
     expect(runnerStage).not.toMatch(/^VOLUME/m);
   });
 
+  it("runner-Stage enthaelt das Notfallskript disable-2fa.sh", () => {
+    expect(runnerStage).toMatch(/\/app\/scripts\/disable-2fa\.sh/);
+  });
+
   it("Basis-Image steht als literale FROM-Zeile mit Digest (Dependabot)", () => {
     expect(dockerfile).toMatch(/^FROM node:\d+\.\d+\.\d+-[a-z]+-slim@sha256:[0-9a-f]{64} AS base$/m);
   });
@@ -72,7 +76,7 @@ describe(".dockerignore", () => {
     expect(ignoreLines[0]).toBe("*");
   });
 
-  it.each(["!openapi/openapi.json", "!assets/fonts/", "!src/", "!public/", "!prisma/migrations-postgres/"])(
+  it.each(["!openapi/openapi.json", "!assets/fonts/", "!src/", "!public/", "!prisma/migrations-postgres/", "!scripts/disable-2fa.sh"])(
     "gibt %s frei",
     (entry) => {
       expect(ignoreLines).toContain(entry);

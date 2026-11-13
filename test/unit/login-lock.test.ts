@@ -62,6 +62,17 @@ describe("attemptLogin — Kontosperre", () => {
     }
   });
 
+  it("Passwort-Orakel: waehrend der Sperre antworten richtiges und falsches Passwort identisch", async () => {
+    const { email } = await makeUser();
+    const now = new Date("2037-01-01T10:00:00.000Z");
+    for (let i = 0; i < 5; i++) await attemptLogin({ email, password: "falsch" }, { now });
+    const later = new Date(now.getTime() + 60_000);
+    const good = await attemptLogin({ email, password: PASSWORD }, { now: later });
+    const bad = await attemptLogin({ email, password: "falsch-egal" }, { now: later });
+    expect(good).toEqual(bad);
+    expect(good.status).toBe("locked");
+  });
+
   it("weitere Fehlversuche WAEHREND einer aktiven Sperre verlaengern sie nicht (keine dauerhafte Selbstaussperrung)", async () => {
     const { email } = await makeUser();
     const now = new Date("2037-01-01T10:00:00.000Z");
@@ -74,7 +85,7 @@ describe("attemptLogin — Kontosperre", () => {
     const fiveMinutesLater = new Date(now.getTime() + 5 * 60_000);
     for (let i = 0; i < 5; i++) {
       const res = await attemptLogin({ email, password: "immer-noch-falsch" }, { now: fiveMinutesLater });
-      expect(res.status).toBe("invalid");
+      expect(res.status).toBe("locked");
     }
 
     const rowAfterMoreAttempts = await dbInternal.user.findUniqueOrThrow({ where: { email }, select: { lockedUntil: true, failedLoginCount: true } });
