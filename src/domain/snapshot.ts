@@ -29,6 +29,8 @@ export function buildSellerSnapshot(org: SellerSnapshot): SellerSnapshot {
     email: org.email,
     phone: org.phone,
     electronicAddress: org.electronicAddress,
+    // Phase 17a: nur setzen, wenn der Aufrufer es mitgibt (Alt-Aufrufer/Fixtures unveraendert).
+    ...(org.electronicAddressScheme !== undefined ? { electronicAddressScheme: org.electronicAddressScheme } : {}),
     iban: org.iban,
     bic: org.bic,
     bankName: org.bankName,
@@ -61,6 +63,9 @@ export function buildBuyerSnapshot(customer: BuyerSnapshot): BuyerSnapshot {
     // Fix-Welle (Abschluss-Review Phase 11b, Block 3): gleiches Muster wie `address` oben —
     // nur setzen, wenn der Aufrufer es mitgibt (Object.keys-Kompatibilitaet).
     ...(customer.customerNumber !== undefined ? { customerNumber: customer.customerNumber } : {}),
+    // Phase 17a: aufgeloeste Adresse (BT-49) und BT-47 nur, wenn der Aufrufer sie mitgibt.
+    ...(customer.endpoint !== undefined ? { endpoint: customer.endpoint } : {}),
+    ...(customer.legalRegistrationId !== undefined ? { legalRegistrationId: customer.legalRegistrationId } : {}),
   };
 }
 

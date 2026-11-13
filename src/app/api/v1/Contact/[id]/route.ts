@@ -3,7 +3,7 @@ import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeContact } from "@/api/serializers/contact";
-import { customerSchema } from "@/schemas";
+import { customerFieldsSchema } from "@/schemas";
 import { dbInternal } from "@/lib/db";
 import { updateCustomer, CustomerValidationError } from "@/domain/customer/save";
 import { NotFoundError } from "@/domain/errors";
@@ -41,7 +41,7 @@ export const spec = {
     method: "PATCH",
     summary: "Kunden aktualisieren (Stammdaten)",
     scope: "write",
-    request: { body: customerSchema.partial() },
+    request: { body: customerFieldsSchema.partial() },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 404, 429],
   },

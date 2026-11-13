@@ -17,11 +17,11 @@ Stack (fix): Next.js 16 (App Router) · TS strict · Prisma · PostgreSQL (Docke
 ### Entitäten + Schlüsselfelder
 
 **Organization (Mandant/Unternehmen)** — der ausstellende Unternehmer
-`id` · `legalName` · `address` (struct) · `taxNumber?` · `vatId?` (USt-IdNr.) · `kuIdNr?` (§19a) · `smallBusiness` (bool, §19) · `defaultTaxScheme` (REGULAR | KLEINUNTERNEHMER | DIFFERENZ) · `iban` · `bic` · `bankName` · `accountHolder?` (Kontoinhaber/-in — GiroCode/Fusszeile/BT-85, leer = `legalName`) · `ownerName?` (Inhaber/-in, automatische Fusszeile) · `logoPath?` (Spalte vorhanden, aber von keinem Formular/API/MCP-Pfad gelesen oder geschrieben — das tatsächliche Beleg-Logo liegt in `BrandingSettings.logoPath`, das App-Chrome-Logo in `BrandingSettings.appLogoPath`) · `electronicAddress?` (Peppol) · `createdAt`
+`id` · `legalName` · `address` (struct) · `taxNumber?` · `vatId?` (USt-IdNr.) · `electronicAddress?` + `electronicAddressScheme?` (BT-34, EAS-Code; leer = Firmen-E-Mail als `EM`) · `kuIdNr?` (§19a) · `smallBusiness` (bool, §19) · `defaultTaxScheme` (REGULAR | KLEINUNTERNEHMER | DIFFERENZ) · `iban` · `bic` · `bankName` · `accountHolder?` (Kontoinhaber/-in — GiroCode/Fusszeile/BT-85, leer = `legalName`) · `ownerName?` (Inhaber/-in, automatische Fusszeile) · `logoPath?` (Spalte vorhanden, aber von keinem Formular/API/MCP-Pfad gelesen oder geschrieben — das tatsächliche Beleg-Logo liegt in `BrandingSettings.logoPath`, das App-Chrome-Logo in `BrandingSettings.appLogoPath`) · `electronicAddress?` (Peppol) · `createdAt`
 → Tenancy-Diskriminator auf **allen** belegführenden Tabellen (`orgId`), App-seitig erzwungen; bei Multi-Tenant zusätzlich Postgres RLS.
 
 **Customer (Kunde)**
-`id` · `orgId` · `type` (BUSINESS | CONSUMER) — steuert §286-Verzugslogik, 40-€-Pauschale, B2B-E-Rechnungspflicht · `name` · `address` · `vatId?` · `vatIdValidatedAt?` (VIES/§18e) · `countryCode` · `leitwegId?` (B2G, BT-10) · `peppolId?` · `defaultPaymentTermsDays` (Default 14) · `isArchived` (Soft-Delete, **kein** Hard-Delete bei Belegbezug)
+`id` · `orgId` · `type` (BUSINESS | CONSUMER) — steuert §286-Verzugslogik, 40-€-Pauschale, B2B-E-Rechnungspflicht · `name` · `address` · `vatId?` · `vatIdValidatedAt?` (VIES/§18e) · `countryCode` · `leitwegId?` (B2G, BT-10 und BT-49/`0204`, mit Prüfziffer) · `peppolId?` + `peppolScheme?` (EAS-Code, BT-49) · `legalRegistrationId?` (BT-47) · `defaultPaymentTermsDays` (Default 14) · `isArchived` (Soft-Delete, **kein** Hard-Delete bei Belegbezug)
 
 **Product (Produkt/Leistung)** — Katalog, frei editierbar (kein Beleg)
 `id` · `orgId` · `name` · `description` · `unit` (EN-16931 UN/ECE Rec 20, z.B. `C62`, `HUR`) · `netPriceCents` (Integer-Cent, kein Decimal) · `taxRate` (Integer-Prozent 0–100 — Phase 12c: keine feste `19|7|0`-Union mehr, sondern die org-eigene Steuersatz-Liste aus `Einstellungen → Belege`, siehe „Steuersätze" unten) · `taxCategory` (S | AE | K | G | E | Z — EN-16931 UNTDID 5305) · `differential` (bool, §25a)
@@ -335,6 +335,14 @@ individuelle Layout-Ueberschreibung ist zusaetzlich ueber `GET`/`PATCH
 /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` erreichbar (dieselbe
 Domain-Funktion `setPrintOptions`/`effectivePrintOptions`, `Quote` nur fuer
 `kind=ANGEBOT`) — siehe `docs/API.md`/`docs/LIMITATIONEN.md`.
+
+### Elektronische Adressen, VIES und Festschreibe-Hinweise (Phase 17a)
+
+- **`src/lib/einvoice/eas.ts`** (reine Funktionen): Codeliste BR-CL-25 (`EAS_CODES`), Leitweg-ID-Prüfziffer (`isValidLeitwegId`, Mod 97-10), `validateEndpoint(scheme, id)` je Schema, Auflösung `resolveBuyerEndpoint` (Peppol-ID+Schema > Leitweg-ID `0204` > E-Mail `EM`) und `resolveSellerEndpoint` (eigene Adresse+Schema > Firmen-E-Mail). `src/lib/vat-id.ts` prüft das USt-IdNr.-Format je Land.
+- **Snapshot-Schlüssel** (additiv, `src/domain/snapshot.ts`): Verkäufer `electronicAddressScheme`; Käufer `endpoint` (`{scheme, id}`, beim Festschreiben aus `resolveBuyerEndpoint` eingefroren) und `legalRegistrationId` (BT-47). Der Mapper (`src/lib/einvoice/mapper.ts`) liest bevorzugt den Snapshot; fehlt er (Altbeleg ohne Archiv), wird beim Neu-Export aus den Live-Stammdaten bzw. als `EM` aufgelöst. UBL (`EndpointID/@schemeID`) und CII (`URIUniversalCommunication/URIID/@schemeID`) nutzen denselben Endpoint.
+- **VIES** (`src/domain/customer/vat-check.ts`): `checkVatId` ruft die REST-Schnittstelle der EU-Kommission über `externalFetch` (`src/lib/http/external.ts`, POST, kein Redirect, 64 KB, 10 s), begrenzt auf 20 Abfragen/Minute und Organisation, und schreibt immer ein `VatIdCheck` (append-only, durch den Guard in `src/lib/db.ts` geschützt; Migrationen für SQLite und Postgres). Bei `VALID` setzt eine bedingte `updateMany` `Customer.vatIdValidatedAt`. Einstiegspunkte: Server-Action + `VatCheckPanel` am Kunden, REST `Contact/{id}/vat-check(s)`, MCP `check_vat_id`/`list_vat_id_checks`.
+- **Festschreibe-Hinweise** (`src/domain/invoice/finalize-warnings.ts`, `collectFinalizeWarnings`, wirft nie): liefert `{code, message}` (`adresse`, `vies-ungueltig`, `vies-fehler`, `vies-limit`). Die UI gibt nur die Codes in der URL weiter und baut den Text selbst; REST gibt `warnings` im Antwortkörper zurück, MCP im Text. Das Auto-Festschreiben (`send.ts`) sammelt bewusst keine Hinweise.
+- **Pflichtprüfung** (`src/domain/invoice/mandatory.ts`): AUSFUHR prüft das Bestimmungsland (Lieferanschrift > Rechnungsanschrift am Beleg > Kundenland); Reverse Charge akzeptiert BT-47 statt BT-48. Die Teilgutschrift (`credit.ts`) erbt den Pflichthinweis des Originals und die Kategorie-Hinweise der erstatteten Positionen.
 
 ### Kundendomain: Adressen, Ansprechpartner, Kundenfelder, Vorgaben, Letztes Dokument übernehmen (Phase 8a)
 

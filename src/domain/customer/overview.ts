@@ -24,6 +24,10 @@ export interface CustomerOverview {
     name: string;
     customerNumber: string | null;
     email: string | null;
+    vatId: string | null;
+    leitwegId: string | null;
+    peppolId: string | null;
+    peppolScheme: string | null;
     type: string;
     isArchived: boolean;
   };
@@ -37,7 +41,7 @@ export interface CustomerOverview {
 export async function customerOverview(orgId: string, customerId: string, now: Date = new Date()): Promise<CustomerOverview> {
   const customer = await dbInternal.customer.findFirst({
     where: { id: customerId, orgId },
-    select: { id: true, name: true, customerNumber: true, email: true, type: true, isArchived: true },
+    select: { id: true, name: true, customerNumber: true, email: true, vatId: true, leitwegId: true, peppolId: true, peppolScheme: true, type: true, isArchived: true },
   });
   if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
 

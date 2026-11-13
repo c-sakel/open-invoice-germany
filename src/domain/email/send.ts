@@ -62,6 +62,7 @@ export async function sendDocumentEmail(
     if (inv && inv.status === "DRAFT") {
       const docSettings = await loadDocumentSettings(orgId);
       if (docSettings.autoFinalizeOnSend) {
+        // Auto-Festschreiben bleibt ohne Festschreibe-Warnungen/VIES (kein Bediener, siehe finalize-warnings.ts).
         await finalizeInvoice(input.docId, { actor });
       }
     }

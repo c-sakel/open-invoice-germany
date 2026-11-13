@@ -36,6 +36,8 @@ describe("documentSettingsInputSchema (Phase 7, Task 1 — erweiterte Felder)", 
       fxRateSource: "BMF_MONTHLY",
       ossCountMode: "ALL_EU_B2C",
       ossWarnPercent: 80,
+      viesCheckEnabled: true,
+      viesCheckOnFinalize: false,
     });
   });
 

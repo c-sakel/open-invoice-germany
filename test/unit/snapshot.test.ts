@@ -39,6 +39,29 @@ describe("Snapshot-Builder und -Schemas", () => {
     expect(buyerSnapshotSchema.safeParse(withShipping).success).toBe(true);
   });
 
+  it("Alt-Snapshot-JSON ohne neue Schluessel (Phase 17a) parst und liefert den Snapshot, nicht den Fallback", () => {
+    const sellerJson = JSON.stringify(buildSellerSnapshot(org));
+    const buyerJson = JSON.stringify({ ...buildBuyerSnapshot(customer), name: "Alt AG" });
+    expect(sellerJson).not.toContain("electronicAddressScheme");
+    expect(buyerJson).not.toContain("endpoint");
+    expect(parseSellerSnapshot(sellerJson, { ...org, legalName: "Fallback" }, "inv-alt").legalName).toBe("Muster GmbH");
+    expect(parseBuyerSnapshot(buyerJson, customer, "inv-alt").name).toBe("Alt AG");
+  });
+
+  it("buildBuyerSnapshot/buildSellerSnapshot setzen endpoint, legalRegistrationId und electronicAddressScheme nur, wenn mitgegeben", () => {
+    expect(buildBuyerSnapshot(customer)).not.toHaveProperty("endpoint");
+    expect(buildBuyerSnapshot(customer)).not.toHaveProperty("legalRegistrationId");
+    expect(buildSellerSnapshot(org)).not.toHaveProperty("electronicAddressScheme");
+    const buyer = buildBuyerSnapshot({ ...customer, endpoint: { scheme: "0204", id: "991-33333TEST-33" }, legalRegistrationId: "HRB 1" });
+    expect(buyer.endpoint).toEqual({ scheme: "0204", id: "991-33333TEST-33" });
+    expect(buyer.legalRegistrationId).toBe("HRB 1");
+    expect(buyerSnapshotSchema.safeParse(buyer).success).toBe(true);
+    expect(buildBuyerSnapshot({ ...customer, endpoint: null }).endpoint).toBeNull();
+    const seller = buildSellerSnapshot({ ...org, electronicAddressScheme: "9930" });
+    expect(seller.electronicAddressScheme).toBe("9930");
+    expect(sellerSnapshotSchema.safeParse(seller).success).toBe(true);
+  });
+
   it("parse bevorzugt einen gueltigen Snapshot", () => {
     const json = JSON.stringify({ ...buildSellerSnapshot(org), legalName: "Alt GmbH" });
     expect(parseSellerSnapshot(json, org, "inv-1").legalName).toBe("Alt GmbH");

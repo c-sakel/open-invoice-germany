@@ -24,6 +24,8 @@ export interface MandatoryCustomer {
   postalCode: string;
   city: string;
   vatId?: string | null;
+  /** BT-47 (Handelsregisternummer/Kennung des Empfaengers). */
+  legalRegistrationId?: string | null;
   countryCode?: string | null;
 }
 
@@ -46,6 +48,8 @@ export interface MandatoryInvoice {
   deliveryEnd?: Date | string | null;
   notes?: string | null;
   isSmallAmount?: boolean; // Kleinbetragsrechnung § 33 UStDV (≤ 250 € brutto)
+  /** Land der Lieferanschrift am Beleg (Bestimmungsort); massgeblich fuer die Ausfuhrpruefung. */
+  deliveryCountryCode?: string | null;
   lines: readonly MandatoryLine[];
   org: MandatoryOrg;
   customer: MandatoryCustomer;
@@ -112,6 +116,13 @@ export const SCHEME_NOTICE_ACCEPTED: Record<string, RegExp[]> = {
     /sammlungsstuecke und antiquitaeten\s*\/\s*sonderregelung/,
   ],
 };
+
+/** Enthaelt der Text den Pflichthinweis des Schemas bereits (in zulaessiger Formulierung)? */
+export function noticeContained(scheme: string, text: string): boolean {
+  const accepted = SCHEME_NOTICE_ACCEPTED[scheme] ?? [];
+  const normalized = normalizeNotice(text);
+  return accepted.some((re) => re.test(normalized));
+}
 
 /**
  * Pflichthinweis je UNTDID-5305-Steuerkategorie (A2): auch bei Regelbesteuerung (taxScheme
@@ -289,14 +300,11 @@ export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMan
         problems.push("USt-IdNr. des Empfängers muss aus einem anderen EU-Mitgliedstaat stammen (§ 6a Abs. 1 Nr. 4 UStG).");
       }
     }
-    if (scheme === "REVERSE_CHARGE" && !customer.vatId?.trim()) {
-      // I1 (Fix-Welle): EN 16931 BR-AE-02 verlangt fuer die Rechnungszeile die
-      // Empfaenger-USt-IdNr. (BT-48) UND/ODER die Empfaenger-Handelsregisternummer
-      // (BT-47) — § 13b UStG selbst fordert KEINE Empfaenger-Kennung (nur den
-      // Pflichthinweis nach § 14a Abs. 5 S. 1, s. o.). BT-47 bildet das Datenmodell
-      // dieser Software nicht ab (kein eigenes Kundenfeld) — deshalb wird ausschliesslich
-      // die USt-IdNr. geprueft; siehe COMPLIANCE.md § 8 / docs/LIMITATIONEN.md.
-      problems.push("USt-IdNr. des Empfängers erforderlich, damit die E-Rechnung EN 16931 (BR-AE-02) erfüllt ist.");
+    if (scheme === "REVERSE_CHARGE" && !customer.vatId?.trim() && !customer.legalRegistrationId?.trim()) {
+      // I1: EN 16931 BR-AE-02 verlangt fuer die Rechnungszeile die Empfaenger-USt-IdNr. (BT-48)
+      // ODER die Empfaenger-Kennung (BT-47, Kundenfeld legalRegistrationId). § 13b UStG selbst
+      // fordert keine Empfaenger-Kennung (nur den Pflichthinweis nach § 14a Abs. 5 S. 1).
+      problems.push("USt-IdNr. (BT-48) oder Handelsregisternummer (BT-47) des Empfängers erforderlich, damit die E-Rechnung EN 16931 (BR-AE-02) erfüllt ist.");
     }
     if (scheme === "NICHT_STEUERBAR") {
       // Empfaengerland DE (Inland) oder EU-Mitglied: die Leistung ist dort (B2C) in DE steuerbar bzw.
@@ -307,9 +315,10 @@ export function validateMandatoryFields(inv: MandatoryInvoice, opts: ValidateMan
       }
     }
     if (scheme === "AUSFUHR") {
-      const country = (customer.countryCode ?? "").toUpperCase();
+      // Bestimmungsort: Land der Lieferanschrift am Beleg, sonst Kundenland.
+      const country = (inv.deliveryCountryCode ?? customer.countryCode ?? "").toUpperCase();
       if (!country || EU_COUNTRY_CODES.has(country)) {
-        problems.push("Ausfuhrlieferung setzt einen Empfänger außerhalb der EU voraus (§ 6 Abs. 1 UStG) — Länderkennzeichen des Kunden prüfen.");
+        problems.push("Ausfuhrlieferung setzt einen Bestimmungsort außerhalb der EU voraus (§ 6 Abs. 1 UStG) — Lieferanschrift am Beleg bzw. Länderkennzeichen prüfen.");
       }
       // I3/M8 (Fix-Welle): ohne Aussteller-USt-IdNr. verletzt Kategorie G BR-G-02/BR-G-03
       // (Seller VAT Identifier BT-31 oder Vertreter-USt-IdNr. BT-63) — der BT-29-Zusatz

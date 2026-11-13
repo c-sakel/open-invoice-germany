@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
+import { collectFinalizeWarnings, warningCodesParam, type FinalizeWarning } from "@/domain/invoice/finalize-warnings";
 import { ZodError } from "zod";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { NotFoundError } from "@/domain/errors";
@@ -12,7 +13,10 @@ import { parseCancelFormData } from "@/schemas";
 export async function finalizeAction(formData: FormData) {
   const id = String(formData.get("id"));
   let errorMessage = "";
+  let warnings: FinalizeWarning[] = [];
   try {
+    const org = await getActiveOrg();
+    warnings = await collectFinalizeWarnings(org.id, id);
     await finalizeInvoice(id);
   } catch (e) {
     errorMessage = e instanceof FinalizeError ? e.message : "Festschreiben fehlgeschlagen.";
@@ -22,7 +26,7 @@ export async function finalizeAction(formData: FormData) {
   }
   revalidatePath(`/rechnungen/${id}`);
   revalidatePath("/rechnungen");
-  redirect(`/rechnungen/${id}`);
+  redirect(warnings.length > 0 ? `/rechnungen/${id}?hinweis=${encodeURIComponent(warningCodesParam(warnings))}` : `/rechnungen/${id}`);
 }
 
 export async function cancelAction(formData: FormData) {

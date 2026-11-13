@@ -93,16 +93,32 @@ describe("Neue Blocker (Phase 12b)", () => {
   });
   it("REVERSE_CHARGE ohne Empfaenger-USt-IdNr. blockt (BR-AE-02)", () => {
     const p = validateMandatoryFields(inv({ taxScheme: "REVERSE_CHARGE", notes: "Steuerschuldnerschaft des Leistungsempfängers", lines: [{ ...zeroLine, taxCategory: "AE" }] }));
-    expect(p.join(" ")).toMatch(/USt-IdNr. des Empfängers erforderlich/);
+    expect(p.join(" ")).toMatch(/BT-48\) oder Handelsregisternummer \(BT-47\)/);
     // I1 (Fix-Welle): keine falsche § 13b-Rechtsgrundlage mehr behaupten — die Kennungspflicht
     // kommt ausschliesslich aus EN 16931 BR-AE-02, nicht aus § 13b UStG selbst.
     expect(p.join(" ")).not.toMatch(/§ 13b/);
     expect(p.join(" ")).toMatch(/BR-AE-02/);
   });
+  it("REVERSE_CHARGE mit Handelsregisternummer (BT-47) statt USt-IdNr. ist ok", () => {
+    const data = inv({
+      taxScheme: "REVERSE_CHARGE",
+      notes: "Steuerschuldnerschaft des Leistungsempfängers",
+      customer: { ...customer, legalRegistrationId: "HRB 12345" },
+      lines: [{ ...zeroLine, taxCategory: "AE" }],
+    });
+    expect(validateMandatoryFields(data)).toEqual([]);
+  });
+  it("AUSFUHR prueft den Bestimmungsort der Lieferanschrift", () => {
+    const notes = "Steuerfreie Ausfuhrlieferung";
+    const lines = [{ ...zeroLine, taxCategory: "G" }];
+    expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer, deliveryCountryCode: "CH", notes, lines }))).toEqual([]);
+    expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, deliveryCountryCode: "DE", notes, lines })).join(" ")).toMatch(/Bestimmungsort/);
+    expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, deliveryCountryCode: null, notes, lines }))).toEqual([]);
+  });
   it("AUSFUHR mit EU-Empfaenger blockt, mit Drittland ist ok, mit Satz > 0 blockt", () => {
     const notes = "Steuerfreie Ausfuhrlieferung";
     expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: euCustomer, notes, lines: [{ ...zeroLine, taxCategory: "G" }] })).join(" "))
-      .toMatch(/außerhalb der EU/);
+      .toMatch(/Bestimmungsort außerhalb der EU/);
     expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, notes, lines: [{ ...zeroLine, taxCategory: "G" }] }))).toEqual([]);
     expect(validateMandatoryFields(inv({ taxScheme: "AUSFUHR", customer: chCustomer, notes, lines: [{ description: "L", quantityMilli: 1000, taxRate: 19, taxCategory: "G" }] })).join(" "))
       .toMatch(/USt-Satz > 0/);

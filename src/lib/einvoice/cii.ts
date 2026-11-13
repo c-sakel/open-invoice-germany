@@ -84,6 +84,18 @@ function appendAllowanceCharge(
   ac.up();
 }
 
+/** BT-34/BT-49: ram:URIUniversalCommunication nach der Anschrift (TradePartyType-Reihenfolge). */
+function appendUri(parent: XmlNode, party: EInvoiceData["seller"]) {
+  const endpoint =
+    party.endpoint !== undefined
+      ? party.endpoint
+      : (party.electronicAddress ?? party.email)
+        ? { scheme: "EM", id: (party.electronicAddress ?? party.email) as string }
+        : null;
+  if (!endpoint) return;
+  parent.ele("ram:URIUniversalCommunication").ele("ram:URIID", { schemeID: endpoint.scheme }).txt(endpoint.id).up().up();
+}
+
 function appendAddress(parent: XmlNode, party: EInvoiceData["seller"]) {
   const addr = parent.ele("ram:PostalTradeAddress");
   addr.ele("ram:PostcodeCode").txt(party.postalCode).up();
@@ -213,6 +225,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
   }
   seller.ele("ram:Name").txt(data.seller.name).up();
   appendAddress(seller, data.seller);
+  appendUri(seller, data.seller);
   if (data.seller.vatId && !omitVatIds) {
     seller.ele("ram:SpecifiedTaxRegistration").ele("ram:ID", { schemeID: "VA" }).txt(data.seller.vatId).up().up();
   }
@@ -223,7 +236,12 @@ export function buildFacturXCII(data: EInvoiceData): string {
 
   const buyer = agr.ele("ram:BuyerTradeParty");
   buyer.ele("ram:Name").txt(data.buyer.name).up();
+  // BT-47: SpecifiedLegalOrganization steht nach Name und vor der Anschrift.
+  if (data.buyer.legalRegistrationId) {
+    buyer.ele("ram:SpecifiedLegalOrganization").ele("ram:ID").txt(data.buyer.legalRegistrationId).up().up();
+  }
   appendAddress(buyer, data.buyer);
+  appendUri(buyer, data.buyer);
   if (data.buyer.vatId && !omitVatIds) {
     buyer.ele("ram:SpecifiedTaxRegistration").ele("ram:ID", { schemeID: "VA" }).txt(data.buyer.vatId).up().up();
   }

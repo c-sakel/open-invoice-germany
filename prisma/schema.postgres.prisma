@@ -18,33 +18,35 @@ datasource db {
 
 /// Ausstellender Unternehmer (Mandant). Tenancy-Diskriminator orgId auf allen Belegtabellen.
 model Organization {
-  id                String   @id @default(cuid())
-  legalName         String
-  addressLine1      String
-  addressLine2      String?
-  postalCode        String
-  city              String
-  country           String   @default("DE")
-  email             String?
-  phone             String?
-  website           String?
-  taxNumber         String? // Steuernummer (§14 Abs.4 Nr.2)
-  vatId             String? // USt-IdNr. (§14 Abs.4 Nr.2)
-  kuIdNr            String? // §19a Kleinunternehmer-IdNr.
-  smallBusiness     Boolean  @default(false) // §19 UStG
-  defaultTaxScheme  String   @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
-  iban              String?
-  bic               String?
-  bankName          String?
-  accountHolder     String? // Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = legalName)
-  ownerName         String? // Phase 11b — Inhaber/-in fuer die automatische Fusszeile
-  logoPath          String?
-  electronicAddress String? // Peppol-Adresse des Ausstellers
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  legalName               String
+  addressLine1            String
+  addressLine2            String?
+  postalCode              String
+  city                    String
+  country                 String   @default("DE")
+  email                   String?
+  phone                   String?
+  website                 String?
+  taxNumber               String? // Steuernummer (§14 Abs.4 Nr.2)
+  vatId                   String? // USt-IdNr. (§14 Abs.4 Nr.2)
+  kuIdNr                  String? // §19a Kleinunternehmer-IdNr.
+  smallBusiness           Boolean  @default(false) // §19 UStG
+  defaultTaxScheme        String   @default("REGULAR") // REGULAR | KLEINUNTERNEHMER | DIFFERENZ | REVERSE_CHARGE | IG_LIEFERUNG | IG_LEISTUNG | AUSFUHR
+  iban                    String?
+  bic                     String?
+  bankName                String?
+  accountHolder           String? // Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = legalName)
+  ownerName               String? // Phase 11b — Inhaber/-in fuer die automatische Fusszeile
+  logoPath                String?
+  electronicAddress       String? // Peppol-Adresse des Ausstellers
+  electronicAddressScheme String? // EAS-Code zu electronicAddress (BT-34), NULL = EM
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   customers     Customer[]
   layoutDesigns LayoutDesign[]
+  vatIdChecks   VatIdCheck[]
   products      Product[]
   quotes        Quote[]
   invoices      Invoice[]
@@ -92,6 +94,8 @@ model Customer {
   vatIdValidatedAt        DateTime? // §18e / VIES qualifizierte Bestätigung
   leitwegId               String? // B2G, BT-10
   peppolId                String?
+  peppolScheme            String? // EAS-Code zu peppolId (BT-49)
+  legalRegistrationId     String? // BT-47
   // S1 (Fix-Welle Phase 7): NULL = kein Kunden-Override (kaskadiert auf Zahlungsmethode ->
   // DocumentSettings.invoiceDueDays -> 14 Tage, siehe invoice/create.ts). War vorher
   // `Int @default(14)` — dadurch hatte JEDER Kunde immer einen Wert und die Zahlungsmethode
@@ -500,6 +504,27 @@ model ArchivedDocument {
   createdAt DateTime @default(now())
 
   @@unique([invoiceId, kind])
+}
+
+/// Phase 17a: Pruefprotokoll der USt-IdNr.-Pruefung (VIES), append-only (Guard in src/lib/db.ts).
+model VatIdCheck {
+  id                String       @id @default(cuid())
+  orgId             String
+  org               Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  customerId        String
+  invoiceId         String?
+  vatId             String
+  requesterVatId    String?
+  status            String // VALID | INVALID | ERROR
+  errorCode         String?
+  requestIdentifier String?
+  requestDate       DateTime?
+  traderName        String?
+  traderAddress     String?
+  trigger           String // MANUAL | FINALIZE
+  checkedAt         DateTime     @default(now())
+
+  @@index([orgId, customerId, checkedAt])
 }
 
 /// Phase 16a: Ergebnis einer Pruefung der ChangeLog-Hash-Chain.
@@ -1081,6 +1106,9 @@ model DocumentSettings {
   ossCountMode                 String       @default("ALL_EU_B2C")
   // Phase 16e (§ 3c Abs. 4 UStG): Warnschwelle in Prozent der 10.000-EUR-Grenze (1..99).
   ossWarnPercent               Int          @default(80)
+  // Phase 17a: USt-IdNr.-Pruefung (VIES) freigeschaltet / beim Festschreiben automatisch.
+  viesCheckEnabled             Boolean      @default(true)
+  viesCheckOnFinalize          Boolean      @default(false)
   updatedAt                    DateTime     @updatedAt
 }
 

@@ -11,6 +11,7 @@ import { isValidIban, normalizeIban } from "@/lib/iban";
 import { parseRateMicros } from "@/domain/fx/decimal";
 import { DOC_LANGUAGES } from "@/lib/i18n/doc";
 import { OssCategorySchema } from "./oss";
+import { EAS_CODES, validateEndpoint } from "@/lib/einvoice/eas";
 
 /** Belegsprache (Phase 16b): de | en. */
 export const DocLanguageSchema = z.enum(DOC_LANGUAGES);
@@ -104,6 +105,9 @@ export const sellerSnapshotSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   electronicAddress: z.string().nullable(),
+  // Phase 17a (BT-34): EAS-Code zur elektronischen Adresse. Optional — Alt-Snapshots kennen den
+  // Schluessel nicht (dann EM, wie bisher); NULL = EM.
+  electronicAddressScheme: z.string().nullable().optional(),
   iban: z.string().nullable(),
   bic: z.string().nullable(),
   bankName: z.string().nullable(),
@@ -153,6 +157,10 @@ export const buyerSnapshotSchema = z.object({
   // Kompatibilitaet, siehe test/unit/snapshot.test.ts "Schluesselmengen": `buildBuyerSnapshot`
   // setzt das Feld nur, wenn der Aufrufer es mitgibt).
   customerNumber: z.string().nullable().optional(),
+  // Phase 17a: zum Festschreiben aufgeloeste elektronische Adresse des Kaeufers (BT-49) und
+  // Registrierungskennung (BT-47). Optional: Alt-Snapshots ohne Schluessel -> EM mit E-Mail.
+  endpoint: z.object({ scheme: z.string(), id: z.string() }).nullable().optional(),
+  legalRegistrationId: z.string().nullable().optional(),
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
 
@@ -197,7 +205,10 @@ export const taxBreakdownSchema = z.array(taxBreakdownEntrySchema);
 export type TaxBreakdownEntrySnapshot = z.infer<typeof taxBreakdownEntrySchema>;
 
 // ── Stammdaten ───────────────────────────────────────────────────────────
-export const organizationSchema = z.object({
+/** Phase 17a: EAS-Schemacode (BR-CL-25) — nur Codes der Liste. */
+const easCodeSchema = z.string().refine((c) => EAS_CODES.includes(c), { message: "Unbekannter EAS-Schemacode." });
+
+export const organizationFieldsSchema = z.object({
   legalName: z.string().min(1),
   ownerName: z.string().trim().max(120).optional(),
   addressLine1: z.string().min(1),
@@ -220,10 +231,20 @@ export const organizationSchema = z.object({
   // E-Rechnung (BT-85 PayeeFinancialAccount/Name), siehe mapper.ts/footer.ts.
   accountHolder: z.string().trim().max(120).nullable().optional(),
   electronicAddress: z.string().optional(),
+  // Phase 17a (BT-34): EAS-Code zur E-Rechnung-Adresse; leer = EM (E-Mail).
+  electronicAddressScheme: easCodeSchema.optional(),
+});
+export const organizationSchema = organizationFieldsSchema.superRefine((v, ctx) => {
+  if (v.electronicAddress) {
+    const problem = validateEndpoint(v.electronicAddressScheme ?? "EM", v.electronicAddress);
+    if (problem) ctx.addIssue({ code: "custom", path: ["electronicAddress"], message: problem });
+  } else if (v.electronicAddressScheme) {
+    ctx.addIssue({ code: "custom", path: ["electronicAddress"], message: "Schema ohne Adresse: bitte auch die E-Rechnung-Adresse angeben." });
+  }
 });
 export type OrganizationInput = z.infer<typeof organizationSchema>;
 
-export const customerSchema = z.object({
+export const customerFieldsSchema = z.object({
   type: CustomerType.default("BUSINESS"),
   name: z.string().min(1),
   contactName: z.string().optional(),
@@ -237,6 +258,10 @@ export const customerSchema = z.object({
   vatId: z.string().optional(),
   leitwegId: z.string().optional(),
   peppolId: z.string().optional(),
+  // Phase 17a (BT-49): EAS-Code zur Peppol-ID; Pflicht, sobald eine Peppol-ID gesetzt ist.
+  peppolScheme: easCodeSchema.optional(),
+  // Phase 17a (BT-47): Handelsregisternummer o. ae. — Ersatz fuer die USt-IdNr. bei Reverse Charge.
+  legalRegistrationId: z.string().trim().max(100).optional(),
   // S1 (Fix-Welle Phase 7): null/fehlend = kein Kunden-Override (kaskadiert auf
   // Zahlungsmethode -> DocumentSettings.invoiceDueDays -> 14, siehe invoice/create.ts).
   defaultPaymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
@@ -244,6 +269,17 @@ export const customerSchema = z.object({
   // Phase 7, §34 — frei editierbar; bleibt leer -> assignCustomerNumber bei der Anlage.
   customerNumber: z.string().max(30).optional(),
   notes: z.string().optional(),
+});
+/** Paarpruefung Peppol-ID/Schema (Phase 17a); fuer create und gemergten PATCH-Zustand. */
+export function customerEndpointProblems(v: { peppolId?: string | null; peppolScheme?: string | null }): { path: "peppolId" | "peppolScheme"; message: string }[] {
+  const id = v.peppolId?.trim();
+  if (!id) return [];
+  if (!v.peppolScheme) return [{ path: "peppolScheme", message: "Zur Peppol-ID gehoert ein Schemacode." }];
+  const problem = validateEndpoint(v.peppolScheme, id);
+  return problem ? [{ path: "peppolId", message: problem }] : [];
+}
+export const customerSchema = customerFieldsSchema.superRefine((v, ctx) => {
+  for (const p of customerEndpointProblems(v)) ctx.addIssue({ code: "custom", path: [p.path], message: p.message });
 });
 export type CustomerInput = z.infer<typeof customerSchema>;
 

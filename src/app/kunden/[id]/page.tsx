@@ -6,6 +6,10 @@ import { NotFoundError } from "@/domain/errors";
 import { monthlyRevenue } from "@/domain/reporting/revenue";
 import { paymentBehaviour } from "@/domain/reporting/payment-behaviour";
 import { CustomerTabs } from "@/components/customers/CustomerTabs";
+import { VatCheckPanel } from "@/components/customers/VatCheckPanel";
+import { listVatIdChecks } from "@/domain/customer/vat-check";
+import { loadDocumentSettings } from "@/domain/document/settings";
+import { resolveBuyerEndpoint } from "@/lib/einvoice/eas";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StackedBar, type StackedSegment } from "@/components/charts/StackedBar";
 import { CHART_COLORS } from "@/components/charts/types";
@@ -45,6 +49,10 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
   ]);
 
   const { customer, kpis } = overview;
+  const hasVatId = Boolean(customer.vatId?.trim());
+  const [vatChecks, docSettings] = hasVatId
+    ? await Promise.all([listVatIdChecks(org.id, id, 10), loadDocumentSettings(org.id)])
+    : [[], null];
   const { current, prior } = revenueWithPriorYear(revenue);
   // Puenktlich/verspaetet als Anzahl bezahlter Rechnungen (onTimeShare ist ein Anteil 0..1).
   const onTime = behaviour.onTimeShare === null ? 0 : Math.round(behaviour.onTimeShare * behaviour.paidCount);
@@ -83,6 +91,28 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
           <Kpi label="Nettoumsatz" value={formatCents(kpis.totalRevenueCents)} />
         </Card>
       </div>
+
+      {resolveBuyerEndpoint(customer) === null && (
+        <p className="text-sm text-ink-soft">Für XRechnung E-Mail, Leitweg-ID oder Peppol-ID hinterlegen.</p>
+      )}
+
+      {hasVatId && docSettings && (
+        <Card title="USt-IdNr. prüfen (VIES)">
+          <VatCheckPanel
+            customerId={id}
+            vatId={customer.vatId ?? ""}
+            enabled={docSettings.viesCheckEnabled}
+            checks={vatChecks.map((c) => ({
+              id: c.id,
+              status: c.status,
+              errorCode: c.errorCode,
+              requestIdentifier: c.requestIdentifier,
+              trigger: c.trigger,
+              checkedAtLabel: new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(c.checkedAt),
+            }))}
+          />
+        </Card>
+      )}
 
       <Card title="Zahlungsverhalten">
         <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-8">

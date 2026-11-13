@@ -107,9 +107,15 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
   const p = parent.ele("cac:Party");
 
   // BT-34 / BT-49 — elektronische Adresse (Endpoint)
-  const endpoint = party.electronicAddress ?? party.email ?? null;
+  // Phase 17a: aufgeloeste Adresse mit EAS-Schema; ohne Aufloesung (undefined) wie bisher EM.
+  const endpoint =
+    party.endpoint !== undefined
+      ? party.endpoint
+      : (party.electronicAddress ?? party.email)
+        ? { scheme: "EM", id: (party.electronicAddress ?? party.email) as string }
+        : null;
   if (endpoint) {
-    p.ele("cbc:EndpointID", { schemeID: "EM" }).txt(endpoint).up();
+    p.ele("cbc:EndpointID", { schemeID: endpoint.scheme }).txt(endpoint.id).up();
   }
 
   // BT-29 — Verkäuferkennung (PartyIdentification). Phase 12b: BR-CO-26 verlangt BT-29,
@@ -148,7 +154,11 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
   }
 
   // Registrierter Name (BT-27 / BT-44)
-  p.ele("cac:PartyLegalEntity").ele("cbc:RegistrationName").txt(party.name).up().up();
+  // BT-47 (nur Kaeufer): Registrierungskennung als CompanyID nach RegistrationName.
+  const legal = p.ele("cac:PartyLegalEntity");
+  legal.ele("cbc:RegistrationName").txt(party.name).up();
+  if (!isSeller && party.legalRegistrationId) legal.ele("cbc:CompanyID").txt(party.legalRegistrationId).up();
+  legal.up();
 
   // BG-6 — Kontakt (für Seller von XRechnung verlangt)
   if (isSeller) {

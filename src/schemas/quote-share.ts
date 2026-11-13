@@ -86,6 +86,10 @@ export const documentSettingsInputSchema = z.object({
    * (`saveDocumentSettings`, gilt fuer Oberflaeche, REST und MCP gleich).
    */
   fxEcbConfirmed: z.boolean().optional(),
+  /** Phase 17a: qualifizierte USt-IdNr.-Pruefung ueber VIES (EU-Kommission) freigeschaltet. */
+  viesCheckEnabled: z.boolean().default(true),
+  /** Phase 17a: USt-IdNr. beim Festschreiben einer innergemeinschaftlichen Rechnung automatisch pruefen. */
+  viesCheckOnFinalize: z.boolean().default(false),
 });
 export type DocumentSettingsInput = z.infer<typeof documentSettingsInputSchema>;
 

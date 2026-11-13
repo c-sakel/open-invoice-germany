@@ -16,7 +16,14 @@ export async function PUT(req: Request) {
   try {
     const org = await getActiveOrg();
     const body = await req.json();
-    const settings = await saveDocumentSettings(org.id, body);
+    // Fehlende VIES-Schalter duerfen nicht auf die Schema-Defaults zurueckfallen.
+    const current = await loadDocumentSettings(org.id);
+    const sent: Record<string, unknown> = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    const settings = await saveDocumentSettings(org.id, {
+      ...sent,
+      viesCheckEnabled: "viesCheckEnabled" in sent ? sent.viesCheckEnabled : current.viesCheckEnabled,
+      viesCheckOnFinalize: "viesCheckOnFinalize" in sent ? sent.viesCheckOnFinalize : current.viesCheckOnFinalize,
+    });
     return NextResponse.json({ settings });
   } catch (e) {
     if (e instanceof z.ZodError) {

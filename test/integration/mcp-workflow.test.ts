@@ -73,6 +73,8 @@ beforeAll(async () => {
   orgStore.id = orgId;
   await ensureOrgMasterdata(dbInternal, orgId);
   await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "MCPW-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", ISSUE);
+  // finalize_invoice nimmt die Systemuhr: eigener Kreis (eigenes Praefix) auch fuer das laufende Jahr, sonst Kollision mit Belegen anderer Testdateien.
+  await updateNumberRange(orgId, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "MCPW-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", new Date());
 
   const customer = await dbInternal.customer.create({
     data: { orgId, name: "MCP-Workflow-Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
@@ -100,6 +102,24 @@ beforeAll(async () => {
     lines: [line("MCP-Workflow-Abo-Position")],
   } as CreateRecurringInput);
   recurringId = recurring.id;
+});
+
+describe("finalize_invoice: Hinweise", () => {
+  it("liefert nicht blockierende Hinweise (Kunde ohne elektronische Adresse)", async () => {
+    const other = await dbInternal.customer.create({
+      data: { orgId, name: "Hinweis-Kunde AG", addressLine1: "Marktplatz 3", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const draft = await createDraftInvoice(
+      orgId,
+      { customerId: other.id, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: ISSUE, dueDate: ISSUE, lines: [line("Hinweis-Position")] } as CreateInvoiceInput,
+      { now: ISSUE },
+    );
+    const res = await callTool("finalize_invoice", { invoice: draft.id });
+    expect(res.isError).toBeFalsy();
+    expect(text(res)).toContain("Festgeschrieben:");
+    expect(text(res)).toContain("Hinweise (nicht blockierend)");
+    expect(text(res)).toContain("elektronische Adresse");
+  });
 });
 
 describe("list_invoices", () => {

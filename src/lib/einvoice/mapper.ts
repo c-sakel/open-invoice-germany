@@ -8,6 +8,7 @@ import { renderTemplate } from "@/lib/template/render";
 import { roundHalfUp } from "@/lib/money";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { resolvePayeeName } from "@/lib/payee-name";
+import { resolveBuyerEndpoint, resolveSellerEndpoint } from "./eas";
 import { taxBreakdownSchema, paymentMethodSnapshotSchema } from "@/schemas";
 import type { BuyerSnapshot } from "@/schemas";
 import type { EmailDocType } from "@/schemas/email";
@@ -110,6 +111,8 @@ export interface MapInput {
     email: string | null;
     phone: string | null;
     electronicAddress: string | null;
+    // Phase 17a (BT-34): fehlt bei Alt-Snapshots -> EM; Live-Relationen tragen den Schluessel immer.
+    electronicAddressScheme?: string | null;
     iban: string | null;
     bic: string | null;
     bankName: string | null;
@@ -129,6 +132,12 @@ export interface MapInput {
     // Fix-Welle (Abschluss-Review Phase 11b, Block 3): optional, damit bestehende Aufrufer
     // (Alt-Snapshots ohne dieses Feld) unveraendert bleiben — siehe BuyerSnapshot/EInvoiceParty.
     customerNumber?: string | null;
+    // Phase 17a: Snapshot traegt `endpoint` (BT-49, aufgeloest) und `legalRegistrationId` (BT-47);
+    // die Live-Relation (Entwurf/Vorschau) traegt stattdessen die Rohfelder peppolId/peppolScheme.
+    endpoint?: { scheme: string; id: string } | null;
+    legalRegistrationId?: string | null;
+    peppolId?: string | null;
+    peppolScheme?: string | null;
     // Phase 14a (Task 5, BG-13/BG-15): eigene Lieferanschrift aus buyerSnapshot.shippingAddress
     // (nur bei Rechnungen mit gewaehlter Invoice.shippingAddressId gesetzt). Optional aus
     // demselben Grund wie customerNumber — Aufrufer ohne Lieferanschrift bleiben unveraendert.
@@ -188,6 +197,12 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   const breakdown = breakdownParsed.success ? breakdownParsed.data : [];
   const org = parseSellerSnapshot(invoice.sellerSnapshotJson, invoice.org, ctx);
   const customer = parseBuyerSnapshot(invoice.buyerSnapshotJson, invoice.customer, ctx);
+  // parseBuyerSnapshot liefert bei fehlendem/ungueltigem Snapshot exakt das Fallback-Objekt (Live-Relation).
+  // Die Objektidentitaet (===) ist hier Absicht: ein geparster Snapshot ist IMMER ein neues Objekt
+  // (Zod-Parse), nur der Fallback ist dieselbe Referenz. Nur dann (Entwurf/Vorschau) duerfen die
+  // Rohfelder peppolId/peppolScheme der Live-Relation aufgeloest werden; ein festgeschriebener
+  // Beleg (auch Storno/Teilgutschrift mit uebernommenem Snapshot) bleibt bei seinem Snapshot.
+  const customerIsLive = customer === invoice.customer;
   const contact = parseContactSnapshot(invoice.contactSnapshotJson, null, ctx);
 
   // Phase 4a — Beleg-Rabatt/-Aufschlag je Steuersatz-Gruppe, aus der bereits
@@ -385,6 +400,14 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       phone: org.phone,
       contactName: null,
       electronicAddress: org.electronicAddress,
+      // BT-34: Snapshot/Relation mit Schluessel -> aufgeloest; Alt-Snapshot -> EM wie bisher.
+      endpoint:
+        "electronicAddressScheme" in org
+          ? resolveSellerEndpoint(org)
+          : (() => {
+              const legacy = org.electronicAddress ?? org.email;
+              return legacy ? { scheme: "EM", id: legacy } : null;
+            })(),
     },
     buyer: {
       name: customer.name,
@@ -398,6 +421,18 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       email: customer.email,
       // Fix-Welle (Abschluss-Review Phase 11b, Block 3): fuers PDF-Meta "Ihre Kundennummer".
       customerNumber: customer.customerNumber ?? null,
+      // BT-49: Snapshot mit `endpoint` -> uebernommen; Live-Relation (peppolId vorhanden) -> aufgeloest;
+      // Alt-Snapshot -> EM mit E-Mail wie bisher.
+      endpoint:
+        "endpoint" in customer
+          ? (customer.endpoint ?? null)
+          : customerIsLive && "peppolId" in invoice.customer
+            ? resolveBuyerEndpoint(invoice.customer)
+            : customer.email
+              ? { scheme: "EM", id: customer.email }
+              : null,
+      // BT-47: nur wenn vorhanden (Alt-Belege ohne Schluessel bleiben unveraendert).
+      ...(customer.legalRegistrationId ? { legalRegistrationId: customer.legalRegistrationId } : {}),
     },
     lines: invoice.lines.map((l) => {
       const grossLineCents = roundHalfUp((l.quantityMilli * l.unitNetPriceCents) / 1000);

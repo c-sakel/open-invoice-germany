@@ -68,7 +68,7 @@ export function registerSettingsTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Beleg-Einstellungen aktualisieren",
       description:
-        "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen), freigegebene Steuersaetze (taxRates, ganze Prozentwerte 0-100, 1-10 Eintraege) und Kursquelle fuer Fremdwaehrungsbelege (fxRateSource: BMF_MONTHLY = amtlicher Monatsdurchschnitt, Standard; ECB_DAILY = EZB-Tageskurs, NUR mit Gestattung des Finanzamts setzen, § 16 Abs. 6 UStG). OSS-Schwelle (§ 3c Abs. 4 UStG): ossCountMode (ALL_EU_B2C = alle EU-B2C-Umsaetze, Standard; BY_PRODUCT = nur Positionen mit OSS-Kategorie) und ossWarnPercent (1-99, Standard 80). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
+        "Aktualisiert die org-weiten Beleg-Einstellungen (§33: Angebote/Rechnungen/Lieferscheine/wiederkehrende Rechnungen), freigegebene Steuersaetze (taxRates, ganze Prozentwerte 0-100, 1-10 Eintraege) und Kursquelle fuer Fremdwaehrungsbelege (fxRateSource: BMF_MONTHLY = amtlicher Monatsdurchschnitt, Standard; ECB_DAILY = EZB-Tageskurs, NUR mit Gestattung des Finanzamts setzen, § 16 Abs. 6 UStG). OSS-Schwelle (§ 3c Abs. 4 UStG): ossCountMode (ALL_EU_B2C = alle EU-B2C-Umsaetze, Standard; BY_PRODUCT = nur Positionen mit OSS-Kategorie) und ossWarnPercent (1-99, Standard 80). USt-IdNr.-Pruefung ueber VIES: viesCheckEnabled (Standard an) und viesCheckOnFinalize (automatische Pruefung beim Festschreiben, Standard aus). Nicht angegebene Felder bleiben unveraendert (Merge mit dem aktuellen Stand).",
       inputSchema: partialInputShape(documentSettingsInputSchema),
     },
     async (args): Promise<Result> => {

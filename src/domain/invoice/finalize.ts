@@ -114,9 +114,18 @@ export async function finalizeWithinTx(
   // beim Anlegen des Korrekturbelegs (siehe dort), ein kuenftiger CORRECTION-Beleg ebenso.
   // Damit muessen die neuen Phase-12b-Blocker/die verschaerfte Hinweispruefung NICHT den
   // einzigen GoBD-konformen Korrekturweg fuer bereits festgeschriebene Rechnungen sperren.
+  const [billingAddr, shippingAddr] = await Promise.all([
+    invoice.billingAddressId
+      ? tx.customerAddress.findFirst({ where: { id: invoice.billingAddressId, orgId: invoice.orgId, customerId: invoice.customerId }, select: { countryCode: true } })
+      : null,
+    invoice.shippingAddressId
+      ? tx.customerAddress.findFirst({ where: { id: invoice.shippingAddressId, orgId: invoice.orgId, customerId: invoice.customerId }, select: { countryCode: true } })
+      : null,
+  ]);
   const problems = validateMandatoryFields(
     {
       taxScheme: invoice.taxScheme,
+      deliveryCountryCode: shippingAddr?.countryCode ?? billingAddr?.countryCode ?? null,
       issueDate,
       deliveryDate: invoice.deliveryDate,
       deliveryStart: invoice.deliveryStart,
@@ -131,7 +140,7 @@ export async function finalizeWithinTx(
         lineType: l.lineType,
       })),
       org: invoice.org,
-      customer: invoice.customer,
+      customer: { ...invoice.customer, countryCode: billingAddr?.countryCode ?? invoice.customer.countryCode },
     },
     { isCorrection: invoice.correctsInvoiceId != null },
   );

@@ -11,8 +11,10 @@
  * `spec.response` nutzt entsprechend `invoiceSchema` statt `z.unknown()`.
  */
 import { withApi } from "@/api/auth";
-import { apiData } from "@/api/response";
+import { apiDataWithWarnings } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
+import { z } from "zod";
+import { collectFinalizeWarnings } from "@/domain/invoice/finalize-warnings";
 import { serializeInvoice, invoiceSchema } from "@/api/serializers/invoice";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { prisma } from "@/lib/db";
@@ -24,8 +26,9 @@ export const dynamic = "force-dynamic";
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true } });
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
+  const warnings = (await collectFinalizeWarnings(ctx.orgId, ctx.params.id)).map((w) => w.message);
   const invoice = await finalizeInvoice(ctx.params.id, { actor: ctx.actor });
-  return apiData(serializeInvoice(invoice, new Set()));
+  return apiDataWithWarnings(serializeInvoice(invoice, new Set()), warnings);
 }, { scope: "write" });
 
 export const spec = {
@@ -34,7 +37,7 @@ export const spec = {
     method: "POST",
     summary: "Rechnung festschreiben (Rechnungsnummer, GoBD-unveraenderbar)",
     scope: "write",
-    response: apiDataResponseSchema(invoiceSchema),
+    response: apiDataResponseSchema(invoiceSchema).extend({ warnings: z.array(z.string()) }),
     errors: [401, 403, 404, 409, 422, 429],
   },
 } satisfies Record<string, RouteSpec>;

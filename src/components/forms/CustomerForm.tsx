@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { saveCustomer } from "@/app/actions/masterdata";
 import type { ActionResult } from "@/app/actions/result";
+import { EasSchemeField } from "./EasSchemeField";
 import { TextField, SelectField, TextAreaField, SubmitButton, ErrorBanner } from "./fields";
 
 export interface CustomerFormData {
@@ -19,6 +20,9 @@ export interface CustomerFormData {
   phone: string | null;
   vatId: string | null;
   leitwegId: string | null;
+  peppolId: string | null;
+  peppolScheme: string | null;
+  legalRegistrationId: string | null;
   customerNumber: string | null;
   defaultPaymentTermsDays: number | null;
   defaultPaymentMethodId: string | null;
@@ -65,6 +69,15 @@ export function CustomerForm({
         <TextField label="E-Mail" name="email" type="email" defaultValue={customer?.email} />
         <TextField label="Telefon" name="phone" defaultValue={customer?.phone} />
         <TextField label="Leitweg-ID (B2G)" name="leitwegId" defaultValue={customer?.leitwegId} hint="Nur für Rechnungen an öffentliche Auftraggeber." />
+        <TextField label="Peppol-ID / E-Rechnung-Adresse" name="peppolId" defaultValue={customer?.peppolId} hint="Optional — Empfängeradresse (BT-49); dazu das Schema wählen." />
+        <EasSchemeField label="Schema der Peppol-ID" name="peppolScheme" defaultValue={customer?.peppolScheme} allowEmpty />
+        <TextField
+          label="Handelsregisternummer (BT-47)"
+          name="legalRegistrationId"
+          defaultValue={customer?.legalRegistrationId}
+          placeholder="HRB 12345"
+          hint="für Reverse Charge ohne USt-IdNr."
+        />
         <TextField
           label="Kundennummer"
           name="customerNumber"

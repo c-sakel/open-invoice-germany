@@ -193,6 +193,8 @@ function buildSample(opts: {
   notes?: string;
   // Phase 13b (Task 5) — Betreff (BT-22 mit Subjektcode BT-21 "AAI").
   subject?: string;
+  // Phase 17a — abweichende Leitweg-ID/Buyer reference (BT-10); Default bleibt die Bestandsreferenz.
+  buyerReference?: string;
   // Storno-Belege tragen keine Zahlungsbedingungen des Originals (B8).
   noPaymentTerms?: boolean;
   // Phase 16b — Belegwaehrung/-sprache und eingefrorener Kurs (BT-6/BT-111): die EUR-Betraege
@@ -238,7 +240,7 @@ function buildSample(opts: {
     fxRateSource: opts.fx?.source ?? null,
     taxTotalEurCents: opts.fx ? totals.breakdown.reduce((sum, b) => sum + toEurCents(b.taxCents, opts.fx!.rateMicros), 0) : null,
     netTotalEurCents: opts.fx ? toEurCents(totals.netTotalCents, opts.fx.rateMicros) : null,
-    buyerReference: "04011000-12345-86",
+    buyerReference: opts.buyerReference ?? "04011000-12345-86",
     orderNumber: opts.orderNumber ?? null,
     paymentTerms: opts.skonto1 || opts.noPaymentTerms ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
     notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
@@ -651,6 +653,32 @@ const languageEnReverseCharge = () =>
     lines: [{ description: "Construction services", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 250000, taxRate: 0, taxCategory: "AE" }],
   });
 
+// 28) Phase 17a — elektronische Adressen: B2G-Kaeufer mit Leitweg-ID (BT-49, Schema 0204,
+// BT-10 = Leitweg-ID), Verkaeufer mit USt-IdNr. als Adresse (BT-34, Schema 9930).
+const ORG_9930: MapInput["org"] = { ...ORG, electronicAddress: "DE123456789", electronicAddressScheme: "9930" };
+const CUSTOMER_B2G: MapInput["customer"] = {
+  ...CUSTOMER,
+  leitwegId: "991-33333TEST-33",
+  endpoint: { scheme: "0204", id: "991-33333TEST-33" },
+};
+const endpointLeitweg0204 = () =>
+  buildSample({
+    number: "RE-2043-0001",
+    org: ORG_9930,
+    customer: CUSTOMER_B2G,
+    buyerReference: "991-33333TEST-33",
+    lines: [{ description: "Beratungsleistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 90000, taxRate: 19, taxCategory: "S" }],
+  });
+
+// 29) Phase 17a — BT-47: Kaeufer ohne USt-IdNr., aber mit Registrierungskennung (BR-AE-02), Kategorie AE.
+const reverseChargeBt47 = () =>
+  buildSample({
+    number: "RE-2043-0002",
+    customer: { ...CUSTOMER, vatId: null, legalRegistrationId: "HRB 12345" },
+    notes: "Steuerschuldnerschaft des Leistungsempfängers",
+    lines: [{ description: "Bauleistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 250000, taxRate: 0, taxCategory: "AE" }],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -680,6 +708,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "foreign-currency-usd": foreignCurrencyUsd,
   "foreign-currency-credit-note": foreignCurrencyCreditNote,
   "language-en-reverse-charge": languageEnReverseCharge,
+  "endpoint-leitweg-0204": endpointLeitweg0204,
+  "reverse-charge-bt47": reverseChargeBt47,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

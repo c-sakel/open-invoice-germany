@@ -308,3 +308,22 @@ describe("take_over_last_document", () => {
     expect(parsed.prefill.lines.length).toBe(1);
   });
 });
+
+describe("upsert_customer — Phase 17a (Peppol-ID, BT-47)", () => {
+  it("persistiert peppolId/peppolScheme/legalRegistrationId", async () => {
+    const res = await callTool("upsert_customer", {
+      name: "MCP-Peppol-Kunde", addressLine1: "Weg 1", postalCode: "12345", city: "Ort",
+      peppolId: "4012345000009", peppolScheme: "0088", legalRegistrationId: "HRB 4711",
+    });
+    expect(res.isError).toBeFalsy();
+    const row = await dbInternal.customer.findFirstOrThrow({ where: { orgId, name: "MCP-Peppol-Kunde" } });
+    expect(row).toMatchObject({ peppolId: "4012345000009", peppolScheme: "0088", legalRegistrationId: "HRB 4711" });
+  });
+
+  it("lehnt peppolId ohne Schema ab", async () => {
+    const res = await callTool("upsert_customer", {
+      name: "MCP-Peppol-Fehler", addressLine1: "Weg 1", postalCode: "12345", city: "Ort", peppolId: "4012345000009",
+    });
+    expect(res.isError).toBe(true);
+  });
+});

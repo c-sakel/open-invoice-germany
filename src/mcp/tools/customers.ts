@@ -17,11 +17,13 @@ import {
   setCustomerCustomFields,
   parseCustomerCustomFields,
 } from "@/domain/customer/custom-fields";
+import { checkVatId, listVatIdChecks, VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
+import { serializeVatIdCheck } from "@/api/serializers/vat-check";
 import { archiveCustomer } from "@/domain/customer/archive";
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
-  customerSchema,
+  customerFieldsSchema,
   customerAddressInputSchema,
   contactPersonInputSchema,
   customFieldDefinitionInputSchema,
@@ -73,11 +75,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       // Fix-Welle Punkt 8: Feldliste aus customerSchema komponiert statt handgepflegtem
       // inline-Zod (analog update_customer/Fix-Runde 1) — sonst driften upsert_customer und
       // customerSchema/saveCustomer auseinander (z. B. fehlten hier bisher addressLine2,
-      // phone, peppolId, customerNumber). Lookup-Feld "name" bleibt ueber customerSchema
+      // phone, peppolId, customerNumber). Lookup-Feld "name" bleibt ueber customerFieldsSchema
       // (min(1)) Pflicht. defaultPaymentMethodId entfaellt: der MCP-Aufrufer uebergibt einen
       // Namen/Code (defaultPaymentMethod), keine interne ID.
       inputSchema: {
-        ...customerSchema.omit({ defaultPaymentMethodId: true }).shape,
+        ...customerFieldsSchema.omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
       },
     },
@@ -124,7 +126,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         "Aktualisiert einen bestehenden Kunden gezielt per ID oder Name (anders als upsert_customer KEIN Anlegen). Nicht angegebene Felder bleiben unveraendert.",
       inputSchema: {
         customer: z.string().describe("Kunden-ID oder -Name"),
-        ...customerSchema.partial().omit({ defaultPaymentMethodId: true }).shape,
+        ...customerFieldsSchema.partial().omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
       },
     },
@@ -531,6 +533,51 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         return ctx.ok(`Kundenfelder gespeichert: ${JSON.stringify(view)}`);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── check_vat_id / list_vat_id_checks (Phase 17a) ──────────────────────────────
+  const vatCheckInput = { customerId: z.string().min(1).describe("Kunden-ID") };
+  server.registerTool(
+    "check_vat_id",
+    {
+      title: "USt-IdNr. pruefen (VIES)",
+      description:
+        "Prueft die USt-IdNr. eines Kunden qualifiziert ueber VIES (EU-Kommission) und protokolliert das Ergebnis samt Konsultationsnummer. Es werden die Kunden-USt-IdNr. und die eigene USt-IdNr. uebermittelt. Dienstfehler liefern Status ERROR statt eines Fehlers. In den Einstellungen abschaltbar (viesCheckEnabled).",
+      inputSchema: vatCheckInput,
+    },
+    async ({ customerId }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const row = await checkVatId(org.id, customerId, { trigger: "MANUAL" });
+        return ctx.ok(JSON.stringify(serializeVatIdCheck(row), null, 2));
+      } catch (e) {
+        if (e instanceof NotFoundError || e instanceof CustomerValidationError || e instanceof VatCheckDisabledError || e instanceof VatCheckRateLimitError) {
+          return ctx.fail(e.message);
+        }
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_vat_id_checks",
+    {
+      title: "USt-IdNr.-Pruefprotokoll",
+      description: "Listet das Pruefprotokoll der USt-IdNr. eines Kunden (neueste zuerst, maximal 50).",
+      inputSchema: vatCheckInput,
+    },
+    async ({ customerId }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const rows = await listVatIdChecks(org.id, customerId, 50);
+        return ctx.ok(JSON.stringify(rows.map(serializeVatIdCheck), null, 2));
+      } catch (e) {
         if (e instanceof NotFoundError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

@@ -232,6 +232,8 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | BT-2 | Ausstellungsdatum | § 14 Abs. 4 Nr. 3 |
 | BT-9 | Fälligkeitsdatum | (Mahnwesen) |
 | BT-10 | **Buyer reference** (= Leitweg-ID im B2G; im B2B i.d.R. leer) | § 5 ERechV (B2G) |
+| BT-34 / BT-49 | **Elektronische Adresse** Verkäufer / Erwerber (`EndpointID` in UBL, `URIUniversalCommunication` in CII) mit Schemacode (`schemeID`, EAS) — Phase 17a, s. u. | EN 16931; XRechnung 3.0.2 |
+| BT-47 | Handelsregister-/Unternehmensnummer des Erwerbers (`PartyLegalEntity/CompanyID` bzw. `SpecifiedLegalOrganization/ID`) — Alternative zu BT-48 bei Reverse Charge (BR-AE-02), Phase 17a | EN 16931 BR-AE-02 |
 | BT-13 | Referenz der Bestellung (Bestellnummer, Phase 4b) | § 14 Abs. 4 Nr. 5 (Leistungsbeschreibung/Bezug) |
 | BT-20 | Payment terms (Zahlungs-/Skontobedingungen, Freitext) | § 14 Abs. 4 Nr. 7 |
 | BT-154 | Freitext-Detailbeschreibung der Position (Rich-Text als Klartext, Phase 4b) | § 14 Abs. 4 Nr. 5 |
@@ -245,6 +247,13 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 | BG-20 / BT-92, BT-93, BT-96 | Rabatt auf Dokumentebene (`AllowanceCharge`, Belegrabatt) | § 14 Abs. 4 Nr. 7 |
 | BG-21 / BT-99, BT-100, BT-103 | Aufschlag auf Dokumentebene (`AllowanceCharge`, Belegaufschlag) | § 14 Abs. 4 Nr. 7 |
 | BT-107, BT-108 | Summe Zeilenrabatte / Summe Zeilenaufschläge (Netto-Summenfelder) | Rechenprobe EN 16931 |
+
+### Elektronische Adressen (BT-34/BT-49) und EAS-Codeliste (Phase 17a)
+
+- **Schemacode:** `schemeID` bzw. das Schema der Adresse folgt der Codeliste **BR-CL-25** (Electronic Address Scheme, z. B. `EM` E-Mail, `0204` Leitweg-ID, `9930` USt-IdNr. Deutschland, `0088` GLN, `0060` DUNS). Die Liste ist aus den offiziellen EN-16931-Schematron-Regeln (validation 1.3.13) übernommen (`src/lib/einvoice/eas.ts`); ein unbekannter Code wird abgelehnt.
+- **Pflicht in XRechnung 3.0.2:** `PEPPOL-EN16931-R010` (Erwerber-Adresse, BT-49) und `PEPPOL-EN16931-R020` (Verkäufer-Adresse, BT-34) verlangen je eine elektronische Adresse mit Schema. Fehlt dem Erwerber jede Adresse (weder Peppol-ID noch Leitweg-ID noch E-Mail), kann die XRechnung die Prüfung nicht bestehen — die Software weist darauf im Kundenblatt und beim Festschreiben hin (kein Blocker, ZUGFeRD/PDF sind davon nicht betroffen).
+- **Auflösung:** Erwerber: Peppol-ID mit Schema, sonst Leitweg-ID (`0204`), sonst E-Mail (`EM`). Verkäufer: eigene elektronische Adresse mit Schema, sonst Firmen-E-Mail (`EM`). Die Auswahl wird beim Festschreiben im Beleg-Snapshot eingefroren; spätere Stammdatenänderungen ändern alte Belege nicht.
+- **CII und Altbelege:** CII gibt BT-34/BT-49 jetzt ebenfalls aus. Bei **nicht archivierten Altbelegen** (vor Phase 17a festgeschrieben, ohne Snapshot-Endpunkt) gibt der Neu-Export BT-34/BT-49 als `EM` aus; bereits archivierte Ausgaben (Belegarchiv, § 20) bleiben unberührt.
 
 > **[ungesichert]** Das konkrete Mapping der Reverse-Charge-/§-25a-/Steuerbefreiungs-Hinweise auf EN-16931-VAT-Category-Codes und Begründungstexte (BT-120/BT-121) ist gegen die aktuelle KoSIT/XRechnung-Spezifikation zu prüfen — nicht primärquellen-verifiziert.
 
@@ -289,6 +298,7 @@ Kleinbeträge ≤ 250 € brutto (§ 33 UStDV) · Fahrausweise (§ 34) · Kleinu
 - **Prüfziffer:** nach **ISO/IEC 7064 Mod 97-10** (wie IBAN) — *primärquellen-bestätigt* in der KoSIT-Spezifikation.
 - **Beispiele:** mit Feinadressierung `04011000-12345ABCXYZ-86`; ohne `991-0123456789-01`.
 - **Erste zwei Stellen = Empfängerkreis:** 01 SH, 02 HH, 03 NI, 04 HB, 05 NW, 06 HE, 07 RP, 08 BW, 09 BY, 10 SL, 11 BE, 12 BB, 13 MV, 14 SN, 15 ST, 16 TH; **99 = Bund**.
+- **Umsetzung (Phase 17a):** Die Leitweg-ID wird als **BT-10** (Buyer reference) **und** als elektronische Adresse des Erwerbers **BT-49 mit Schema `0204`** ausgegeben (UBL und CII). Die Eingabe wird gegen das Format und die **Prüfziffer (Mod 97-10)** geprüft (`isValidLeitwegId`); Quelle: KoSIT-Formatspezifikation v2.0.2 (s. o.). Die ID bleibt vom Auftraggeber vorgegeben und wird nie generiert.
 - Die Leitweg-ID wird vom **öffentlichen Auftraggeber mitgeteilt** (Vertrag/Bestellung) — der Lieferant erfindet sie nicht selbst.
 
 ### ⚠️ KORRIGIERT — Bundes-Präfixe 991/992/993
@@ -537,8 +547,8 @@ Bis Phase 12b prüfte das Festschreiben (`finalize`) nur, ob der **Hinweistext**
 |--------|---------|------------------------|
 | `IG_LIEFERUNG` | Leistungsdatum **oder** -zeitraum (BT-72 bzw. BG-14/BT-73+BT-74) muss gesetzt sein — ein reiner Freitext-Hinweis genügt der EN-16931-Kernregel nicht | § 14 Abs. 4 Nr. 6 UStG; **BR-IC-11** |
 | `IG_LIEFERUNG` | Empfänger-USt-IdNr. muss aus einem **anderen** EU-Mitgliedstaat stammen (Präfix ≠ „DE" **und** Präfix in der EU-Präfixliste, s. § 4 unten) | § 6a Abs. 1 Nr. 4 UStG |
-| `REVERSE_CHARGE` | Empfänger-USt-IdNr. ist Pflicht — **keine** UStG-Rechtsgrundlage (§ 13b UStG selbst verlangt beim inländischen Reverse Charge keine Empfänger-Kennung), sondern eine reine E-Rechnungs-Anforderung. Die Kernregel lässt BT-48 (USt-IdNr.) **oder** BT-47 (Handelsregisternummer) genügen; BT-47 bildet das Datenmodell dieser Software nicht ab (kein eigenes Kundenfeld) — geprüft wird deshalb ausschließlich BT-48 | **EN 16931 BR-AE-02** |
-| `AUSFUHR` | Empfänger-Länderkennzeichen fehlt oder liegt innerhalb der EU (eine Ausfuhrlieferung setzt einen Bestimmungsort außerhalb der EU voraus) | § 6 Abs. 1 UStG |
+| `REVERSE_CHARGE` | Empfänger-USt-IdNr. ist Pflicht — **keine** UStG-Rechtsgrundlage (§ 13b UStG selbst verlangt beim inländischen Reverse Charge keine Empfänger-Kennung), sondern eine reine E-Rechnungs-Anforderung. Die Kernregel lässt BT-48 (USt-IdNr.) **oder** BT-47 (Handelsregisternummer) genügen; Seit Phase 17a trägt der Kunde ein Feld **Handelsregister-/Unternehmensnummer (BT-47)**; es genügt anstelle der USt-IdNr. und wird im XML ausgegeben (UBL `PartyLegalEntity/CompanyID`, CII `SpecifiedLegalOrganization/ID`) | **EN 16931 BR-AE-02** |
+| `AUSFUHR` | Das **Bestimmungsland der Lieferung** fehlt oder liegt innerhalb der EU (eine Ausfuhrlieferung setzt einen Bestimmungsort außerhalb der EU voraus). Maßgeblich ist seit Phase 17a die gewählte **Lieferanschrift** des Belegs, danach die Rechnungsanschrift am Beleg, zuletzt das Land des Kunden. **Nicht geprüft:** der Abholfall (§ 6 Abs. 1 Nr. 2 UStG, Abnehmer holt selbst ab) | § 6 Abs. 1 UStG |
 | `NICHT_STEUERBAR` | Alle Positionen müssen Kategorie `O` tragen; andere Kategorien im selben Beleg sind unzulässig (nicht für Korrekturbelege) | **EN 16931 BR-O-11 bis BR-O-14** |
 | `AUSFUHR` | Aussteller-USt-IdNr. ist Pflicht (Fix-Welle Final-Review, I3/M8) — ohne sie ist die Kategorie **G** (Ausfuhr) EN-16931-ungültig; der BT-29-Zusatz aus Task 6 (Steuernummer als generische Verkäuferkennung, s. § 3) genügt hier **nicht**, weil die Regel ausdrücklich eine USt-IdNr. verlangt | **EN 16931 BR-G-02 / BR-G-03** |
 
@@ -546,13 +556,20 @@ Und für alle sechs Schemata mit Pflichthinweis gilt weiterhin: `ZERO_TAX_SCHEME
 
 **Korrekturbelege sind ausgenommen (Fix-Welle Final-Review, C1).** Ein Storno (`cancel.ts`) oder eine Teilgutschrift (`credit.ts`) berichtigt ein bereits **festgeschriebenes** Original — die Tabelle oben sowie die exakte Hinweis-Regexprüfung (§ 1) gelten dafür **nicht** (`validateMandatoryFields(inv, { isCorrection: true })`, von `finalize.ts` aus `Invoice.correctsInvoiceId` abgeleitet). Sonst wäre für Bestandsbelege — mit Alt-Hinweistext, ohne Leistungsdatum/-zeitraum oder ohne Empfänger-/Aussteller-USt-IdNr. bereits vor dieser Prüfung wirksam festgeschrieben — der Storno/die Gutschrift nicht mehr möglich, obwohl das der nach Lastenheft § 51/GoBD **einzige** zulässige Korrekturweg für eine festgeschriebene Rechnung ist. Die übrigen § 14-Pflichtangaben (u. a. die § 14c-Nullsatz-Prüfung und die USt-IdNr.-Pflicht beider Parteien bei ig. Lieferung/Leistung, § 14a Abs. 1/3) bleiben auch für Korrekturbelege scharf.
 
+### VIES-Prüfung der USt-IdNr. (Phase 17a)
+
+- **Rechtsgrundlage:** § 18e UStG (Bestätigung einer USt-IdNr.), § 6a Abs. 1 S. 1 Nr. 4 UStG (Nachweis der Abnehmer-USt-IdNr. bei ig. Lieferung). Technisch wird die **qualifizierte Anfrage** an die REST-Schnittstelle der EU-Kommission gestellt (`POST https://ec.europa.eu/taxation_customs/vies/rest-api/check-vat-number`, Quelle: OpenAPI-Beschreibung des Dienstes).
+- **Übermittelte Daten:** Länderkennzeichen und Nummer der **Kunden-USt-IdNr.** sowie Länderkennzeichen und Nummer der **eigenen USt-IdNr.** (Anfragender, nur wenn hinterlegt und formal gültig). Keine Namen, Anschriften oder Belegdaten. Die Antwort enthält Gültigkeit, Abfragedatum, **Konsultationsnummer** (`requestIdentifier`), ggf. Name und Anschrift des Unternehmens.
+- **Prüfprotokoll:** Jede Abfrage wird append-only je Kunde gespeichert (`VatIdCheck`: geprüfte und eigene USt-IdNr., Status `VALID`/`INVALID`/`ERROR`, Konsultationsnummer, Abfragedatum, Name/Anschrift laut Dienst, Auslöser manuell oder Festschreiben, optional Rechnung). Bei `VALID` wird `Customer.vatIdValidatedAt` gesetzt. Dienstfehler und Timeouts erzeugen `ERROR`, nie einen Absturz. Beim lokalen Abfragelimit (20 je Minute und Organisation) wird nicht abgefragt und nichts protokolliert (REST 429, MCP-Fehler, beim Festschreiben der Hinweis `vies-limit`). Die Konsultationsnummer dient als Nachweis des guten Glaubens (§ 6a Abs. 4 UStG), ersetzt aber nicht die BZSt-Bestätigung.
+- **Festschreiben (nur wenn „Beim Festschreiben … automatisch prüfen" eingeschaltet ist, Standard aus):** Bei ig. Lieferung/Leistung an einen EU-Kunden ohne gültige Prüfung der letzten 24 Stunden wird einmalig abgefragt (Timeout 8 s); das Ergebnis erscheint nur als **Hinweis**, das Festschreiben wird nie blockiert. Das Auto-Festschreiben (Versand, Abos) fragt VIES nicht ab.
+- **Datenschutz und Abschalten:** s. § 13. Schalter unter „Einstellungen → Belege" („USt-IdNr.-Prüfung über VIES freischalten" und „Beim Festschreiben … automatisch prüfen").
+
 **Ausdrücklich NICHT umgesetzt (Lastenheft § 60, Abgrenzung):**
-- **Keine VIES-Online-Gültigkeitsprüfung.** Die Empfänger-USt-IdNr. wird nur auf das zweistellige Länder-Präfix geprüft (Format/Plausibilität), nicht gegen die tatsächlich beim BZSt/VIES hinterlegten Daten (siehe „USt-IdNr.-Prüfung" oben — dort bleibt es bei der manuellen Einzel-/Qualifizierten Abfrage).
+- **Keine BZSt-Bestätigung.** Die Software fragt nur den EU-Dienst VIES ab (s. u.); die qualifizierte Bestätigung des BZSt bleibt eine manuelle Aufgabe (offener Punkt, § 16).
 - **Keine automatische Zusammenfassende Meldung (ZM, § 18a UStG).** Die Software erzeugt keine ZM-Daten; das bleibt eine manuelle Aufgabe außerhalb dieser Software.
-- **Kein BT-47 (Buyer legal registration identifier).** Siehe REVERSE_CHARGE-Zeile oben — nur BT-48 (USt-IdNr.) wird geprüft/erzeugt.
 
 **Quellen:** [§ 13b UStG](https://www.gesetze-im-internet.de/ustg_1980/__13b.html) · [§ 14a UStG](https://www.gesetze-im-internet.de/ustg_1980/__14a.html) · [§ 4 UStG](https://www.gesetze-im-internet.de/ustg_1980/__4.html) · [§ 6 UStG](https://www.gesetze-im-internet.de/ustg_1980/__6.html) · [§ 6a UStG](https://www.gesetze-im-internet.de/ustg_1980/__6a.html) · [§ 18a UStG](https://www.gesetze-im-internet.de/ustg_1980/__18a.html) · [BZSt — Bestätigung ausländischer USt-IdNr.](https://www.bzst.de/DE/Unternehmen/Identifikationsnummern/Umsatzsteuer-Identifikationsnummer/AuslaendischeUSt-IdNr/auslaendische_ust_idnr_node.html)
-**Stand:** 2026-09-08 (Fix-Welle Final-Review: C1-Korrekturausnahme, I1 BR-AE-02-Korrektur, I3/M8 AUSFUHR-Aussteller-USt-IdNr.-Blocker ergänzt; materielle Zusatzprüfungen Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, primärquellen-verifiziert)
+**Stand:** 2026-11-13 (Phase 17a: VIES, BT-47, Ausfuhr nach Bestimmungsort); zuvor 2026-09-08 (Fix-Welle Final-Review: C1-Korrekturausnahme, I1 BR-AE-02-Korrektur, I3/M8 AUSFUHR-Aussteller-USt-IdNr.-Blocker ergänzt; materielle Zusatzprüfungen Phase 12b ergänzt; übriger Abschnitt Stand 2026-06-09, primärquellen-verifiziert)
 
 ---
 
@@ -696,6 +713,10 @@ Diese Software erzeugt bei Storno (`cancelInvoice`) und Teil-/Vollgutschrift (`c
 - **„Rechnungskorrektur"** — wenn das Dokument eine Korrektur (nicht volle Stornierung) einer bereits festgeschriebenen Rechnung darstellt.
 
 **Umsetzung dieser Software:** `documentTitle`/`documentNumberLabel` (`src/lib/pdf/invoice-pdf.ts`) leiten den Titel aus `creditNoteKind` ab, das **ausschließlich** aus `original.reversedByInvoiceId === invoice.id` bestimmt wird — dem einzigen zuverlässigen Unterschied zwischen `cancel.ts` (setzt `reversedByInvoiceId` auf dem Original) und `credit.ts` (setzt es **nicht**, nur `correctsInvoiceId`). Ohne auflösbares Original (z. B. Original gelöscht/nicht verknüpfbar) fällt der Titel auf „Stornorechnung" zurück, den weitaus häufigeren Fall. **`InvoiceTypeCode` bleibt 381** (Credit Note) in beiden Fällen — die UNTDID-1001-Codeliste kennt für „Rechnungskorrektur" keinen eigenen Code, 381 ist strukturell korrekt (negative/spiegelverkehrte Beträge). Der Nummernkreis `CREDIT_NOTE` und alle übrigen Datenfelder bleiben unverändert; nur der **gedruckte Titel** (PDF, nicht das XML) hat sich geändert. **Echte Selbstabrechnung (`InvoiceTypeCode` 389) ist NICHT umgesetzt** — dafür fehlt der komplette Empfänger-initiierte Workflow (Vereinbarung, Erstellung durch den Empfänger, Widerspruchsrecht); siehe `docs/LIMITATIONEN.md`.
+
+### Pflichthinweis in der Teilgutschrift (Phase 17a)
+
+Eine Teilgutschrift (`credit.ts`) übernimmt den **schemaspezifischen Pflichthinweis des Originals** (z. B. Reverse Charge, ig. Lieferung, Ausfuhr) sowie die **Kategorie-Hinweise der erstatteten Positionen** in ihrem Notiztext (Belegsprache, ohne Dopplung mit dem vom Nutzer eingegebenen Text). Damit trägt die Berichtigung dieselben Angaben wie die berichtigte Rechnung (§ 31 Abs. 5 UStDV). Korrekturbelege bleiben von der exakten Hinweisprüfung ausgenommen (§ 8, `isCorrection`).
 
 ### § 14c UStG (JStG 2024, ab 06.12.2024)
 
@@ -867,6 +888,10 @@ Organisation, in `Einstellungen → API` anpassbar), zusätzlich existiert im UI
 ein sofortiger Löschknopf („Protokoll leeren") für das gesamte Protokoll der
 eigenen Organisation.
 
+### VIES-Abfrage der USt-IdNr. (Phase 17a)
+
+Die USt-IdNr.-Prüfung (§ 8) ist **standardmäßig eingeschaltet** und übermittelt bei jeder Abfrage die USt-IdNr. des Kunden und die eigene USt-IdNr. an die **Europäische Kommission** (VIES-Dienst, ec.europa.eu). Betroffen sind Daten von Unternehmen (bei Einzelunternehmern ggf. personenbezogen). Rechtsgrundlage ist die Erfüllung der steuerlichen Nachweispflicht (Art. 6 Abs. 1 lit. c DSGVO i. V. m. § 6a UStG, § 18e UStG); der Verantwortliche sollte die Abfrage in seinem Verzeichnis der Verarbeitungstätigkeiten aufführen. Es werden keine Beleg-, Namens- oder Anschriftsdaten übermittelt. Das Prüfprotokoll (Antwort inkl. Name/Anschrift laut Dienst) bleibt lokal und unterliegt der Aufbewahrung nach § 147 AO. **Abschaltbar** unter „Einstellungen → Belege": Schalter „USt-IdNr.-Prüfung über VIES freischalten" (aus = keinerlei Verbindung zum Dienst, der Knopf am Kunden ist deaktiviert) und „Beim Festschreiben innergemeinschaftlicher Rechnungen automatisch prüfen". Es fließen keine Daten ohne Auslöser: Abfragen erfolgen nur per Knopf/REST/MCP oder, wenn eingeschaltet (Standard aus), beim Festschreiben einer ig. Lieferung/Leistung.
+
 ### OSS-/E-Rechnung-Tooling (Node/JS/JVM)
 
 | Tool | Sprache / Lizenz | Funktion | Reifegrad |
@@ -930,13 +955,13 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | Reverse Charge (§ 13b) | bei Markierung: USt-Ausweis **sperren**, Pflichthinweis „Steuerschuldnerschaft des Leistungsempfängers" + USt-IdNr. beider erzwingen | **MVP** |
 | Differenzbesteuerung (§ 25a) | **HARTE SPERRE** gegen USt-Ausweis; Pflichthinweis „Gebrauchtgegenstände/Sonderregelung"; Brutto-VK als Entgelt; getrennte Margen-Aufzeichnung | **MVP** (Refurb-Geschäftsmodell) |
 | § 14a-Hinweise (ig. Lieferung/Leistung) | fallabhängig USt-IdNr. beider + Befreiungs-/RC-Hinweis; **15-Tage-Ausstellfrist** anzeigen | **Später** |
-| USt-IdNr.-Prüfung (VIES/§ 18e) | **qualifizierte** Bestätigungsanfrage ans BZSt; Prüfprotokoll speichern; Re-Check-Intervall | **Später** |
+| USt-IdNr.-Prüfung (VIES/§ 18e) | **qualifizierte** Bestätigungsanfrage; Prüfprotokoll speichern; Re-Check-Intervall | **Umgesetzt (Phase 17a, VIES; BZSt-Bestätigung offen, § 16)** |
 | Zusammenfassende Meldung (§ 18a) | ZM-Datensatz erzeugen; Frist 25. d. Folgemonats; Quartals-/Monats-Logik (50.000-€-Schwelle); Berichtigung ≤ 1 Monat | **Später** |
 | E-Rechnung erzeugen (EN 16931) | XRechnung/ZUGFeRD ab Profil **BASIC**; **Profil-Sperre** gegen MINIMUM/BASIC-WL; Pflichtangaben **maschinenlesbar** im XML | **MVP** (B2B) / **Später** (Refurb-B2C) |
 | E-Rechnung validieren | **KoSIT-Validator** (HTTP-Daemon) + **veraPDF** (PDF/A-3) nachschalten; reine JS-Validierung **nicht** ausreichend | **MVP** (wenn B2B) |
 | E-Rechnung empfangen | Empfangskanal (E-Mail-Postfach + XML-Parser); Pflicht seit 1.1.2025 | **MVP** |
 | Hybrid-E-Rechnung | strukturierter XML-Teil **führend**; bei Abweichung XML maßgebend; Bildteil nur bei steuerlich relevanter Abweichung archivieren | **Später** |
-| Leitweg-ID (B2G) | BT-10-Feld; **Mod-97-10-Prüfziffer-Validierung**; vom Auftraggeber übernommen (nicht generiert); im B2B leer | **Später** (nur bei B2G) |
+| Leitweg-ID (B2G) | BT-10-Feld; **Mod-97-10-Prüfziffer-Validierung**; vom Auftraggeber übernommen (nicht generiert); im B2B leer | **Umgesetzt (Phase 17a)**: BT-10 und BT-49 mit Schema `0204`, Prüfziffer |
 | Skonto in E-Rechnung | Freitext BT-20 „X % Skonto bei Zahlung bis …" + strukturierte `#SKONTO#TAGE=n#PROZENT=x.xx#`-Zeile je Ziel (bis zu zwei Ziele); **kein** betragsmäßiger Ausweis nötig; spätere Skonto-Zahlung = § 17, **keine** Korrekturrechnung | **MVP** |
 | Rabatt/Aufschlag in E-Rechnung | `AllowanceCharge` je Position (BG-27/28) und je Steuersatz auf Dokumentebene (BG-20/21, Largest-Remainder-Aufteilung); vorzeichen-invariant für Storno/Gutschrift; BT-107/108-Summenfelder | **MVP** |
 | Storno/Korrektur | eindeutiger Bezug zur Ursprungsrechnung (Datum + Nr.); bei E-Rechnung **als E-Rechnung** im Storno-/Korrektur-Rechnungstyp (PDF/Papier **gesperrt**) | **MVP** |
@@ -964,6 +989,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 8. **OSS-Registrierungswirksamkeit** und Zusammenspiel mit EU-Kleinunternehmerregelung (§ 19a) — am BZSt/BMF-Primärtext verifizieren. **[ungesichert]**
 9. **Länder-B2G-Pflichten** (Stichtage/Schwellen/Leitweg-ID je Bundesland) — vor konkretem B2G-Mandat die Landes-VO prüfen. **[ungesichert]**
 10. **KoSIT-Leitweg-ID-Formatspezifikation:** Ist v2.0.2 (28.07.2021) noch geltend, oder gibt es eine 2025/2026-Fassung? Mod-97-10-Eingabestring für eigene Prüffunktion final verifizieren.
+10a. **BZSt-Bestätigung (Phase 17a):** Die Software nutzt nur VIES (EU-Kommission). Ob für den Nachweis des guten Glaubens (§ 6a Abs. 4 UStG) zusätzlich die qualifizierte Bestätigung des BZSt (Online-Dienst) erforderlich ist, mit dem Steuerberater klären; eine Anbindung ist nicht umgesetzt. **[ungesichert]**
 11. **Ablaufhemmung der 8-Jahres-Frist** im konkreten Fall (§ 147 Abs. 3 S. 5 AO) — pro Datensatz ggf. > 8 Jahre vorhalten.
 12. **AVV/Transfer** (Art. 28, Art. 44 ff. DSGVO) für konkrete Hosting-/Backup-/Monitoring-Dienstleister, inkl. Drittlandbezug.
 13. **Exakte Fundstellen** der maßgeblichen BMF-Schreiben (15.10.2025 E-Rechnung; 18.03.2025 Kleinunternehmer; 25.10.2013 Gutschrift/§ 14c; GoBD-2.-Änderung 14.07.2025) für rechtsverbindliche Mandanten-/Produkt-Aussagen direkt aus den BMF-PDFs zitieren.

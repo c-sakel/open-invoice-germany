@@ -20,6 +20,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { buildBuyerSnapshot } from "@/domain/snapshot";
 import { parseCustomerCustomFields } from "@/domain/customer/custom-fields";
+import { resolveBuyerEndpoint } from "@/lib/einvoice/eas";
 import type { BuyerSnapshot } from "@/schemas";
 
 interface CustomerLike {
@@ -39,6 +40,11 @@ interface CustomerLike {
   // (z. B. Alt-Fixtures) unveraendert bleiben; alle produktiven Aufrufer laden den
   // vollstaendigen Customer-Datensatz (kein `select`), das Feld ist dort immer vorhanden.
   customerNumber?: string | null;
+  // Phase 17a: Peppol-ID/-Schema und BT-47 (vollstaendiger Customer-Datensatz). Fehlen sie
+  // (Alt-Fixtures), bleibt der Snapshot ohne endpoint/legalRegistrationId.
+  peppolId?: string | null;
+  peppolScheme?: string | null;
+  legalRegistrationId?: string | null;
 }
 
 export async function resolveBuyerSnapshot(
@@ -119,5 +125,16 @@ export async function resolveBuyerSnapshot(
     ...(shippingAddress !== undefined ? { shippingAddress } : {}),
     ...(customFields !== undefined ? { customFields } : {}),
     ...(customer.customerNumber !== undefined ? { customerNumber: customer.customerNumber } : {}),
+    ...(customer.peppolId !== undefined
+      ? {
+          endpoint: resolveBuyerEndpoint({
+            peppolId: customer.peppolId,
+            peppolScheme: customer.peppolScheme,
+            leitwegId: customer.leitwegId,
+            email: customer.email,
+          }),
+        }
+      : {}),
+    ...(customer.legalRegistrationId !== undefined ? { legalRegistrationId: customer.legalRegistrationId } : {}),
   });
 }

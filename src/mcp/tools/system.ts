@@ -111,6 +111,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         accountHolder: z.string().optional().describe("Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = Firmenname)"),
         smallBusiness: z.boolean().default(false).describe("Kleinunternehmer nach § 19 UStG"),
         defaultTaxScheme: TaxScheme.default("REGULAR"),
+        electronicAddress: z.string().optional().describe("E-Rechnung-Adresse (BT-34); ohne Angabe bleibt der Bestand erhalten, bei Neuanlage gilt die E-Mail"),
+        electronicAddressScheme: z.string().optional().describe("EAS-Code zu electronicAddress, z. B. EM, 9930, 0204; nur zusammen mit electronicAddress"),
       },
     },
     async (args): Promise<Result> => {
@@ -129,6 +131,12 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         } catch {
           existing = null;
         }
+        // BT-34: ausdrueckliche Angabe setzt, sonst bleibt der Bestand; Neuanlage: E-Mail/EM.
+        const endpoint = v.electronicAddress
+          ? { electronicAddress: v.electronicAddress, electronicAddressScheme: v.electronicAddressScheme ?? "EM" }
+          : existing
+            ? {}
+            : { electronicAddress: v.email || null, electronicAddressScheme: v.email ? "EM" : null };
         const data = {
           legalName: v.legalName,
           addressLine1: v.addressLine1,
@@ -145,7 +153,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           bic: v.bic ?? null,
           bankName: v.bankName ?? null,
           accountHolder: v.accountHolder ?? null,
-          electronicAddress: v.email || null,
+          ...endpoint,
         };
         const org = existing
           ? await dbInternal.organization.update({ where: { id: existing.id }, data })
