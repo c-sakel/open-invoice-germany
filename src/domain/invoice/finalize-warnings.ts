@@ -10,18 +10,60 @@ import { EU_VAT_PREFIXES } from "@/lib/tax";
 import { normalizeVatId } from "@/lib/vat-id";
 import { resolveBuyerEndpoint } from "@/lib/einvoice/eas";
 import { loadDocumentSettings } from "@/domain/document/settings";
-import { checkVatId } from "@/domain/customer/vat-check";
+import { checkVatId, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 
 const VIES_SCHEMES = new Set(["IG_LIEFERUNG", "IG_LEISTUNG"]);
 const RECENT_VALID_MS = 24 * 60 * 60 * 1000;
 const VIES_TIMEOUT_MS = 8_000;
 
+/** Bekannte Hinweiscodes. Nur diese Codes duerfen in der URL der Rechnungsseite stehen (kein Klartext). */
+export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit"] as const;
+export type FinalizeWarningCode = (typeof FINALIZE_WARNING_CODES)[number];
+
+export interface FinalizeWarning {
+  code: FinalizeWarningCode;
+  message: string;
+}
+
+/** Fester Text je Code; `vatId` nur fuer die VIES-Codes, `detail` optionaler Fehlercode der Abfrage. */
+export function finalizeWarningMessage(code: FinalizeWarningCode, vatId = "", detail?: string): string {
+  switch (code) {
+    case "adresse":
+      return "Der Kunde hat keine elektronische Adresse (E-Mail, Leitweg-ID oder Peppol-ID) — die XRechnung wäre unvollständig (PEPPOL-EN16931-R010).";
+    case "vies-ungueltig":
+      return `VIES meldet die USt-IdNr. ${vatId} als ungültig — innergemeinschaftliche Steuerfreiheit prüfen (§ 6a UStG).`;
+    case "vies-fehler":
+      return detail
+        ? `VIES nicht erreichbar bzw. ohne Ergebnis (${detail}) — USt-IdNr. ${vatId} wurde nicht bestätigt.`
+        : `VIES nicht erreichbar — USt-IdNr. ${vatId} wurde nicht bestätigt.`;
+    case "vies-limit":
+      return `VIES-Abfragelimit erreicht — USt-IdNr. ${vatId} wurde nicht geprüft.`;
+  }
+}
+
+/** Codes fuer `?hinweis=` (kommagetrennt, Reihenfolge und Duplikate bereinigt). */
+export function warningCodesParam(warnings: FinalizeWarning[]): string {
+  return [...new Set(warnings.map((w) => w.code))].join(",");
+}
+
+/** Liest `?hinweis=`: nur bekannte Codes, alles andere wird verworfen. */
+export function parseWarningCodes(raw: string | undefined): FinalizeWarningCode[] {
+  if (!raw) return [];
+  const known = new Set<string>(FINALIZE_WARNING_CODES);
+  const out: FinalizeWarningCode[] = [];
+  for (const part of raw.split(",")) {
+    const c = part.trim();
+    if (known.has(c) && !out.includes(c as FinalizeWarningCode)) out.push(c as FinalizeWarningCode);
+  }
+  return out;
+}
+
 export async function collectFinalizeWarnings(
   orgId: string,
   invoiceId: string,
   opts: { fetchImpl?: typeof fetch; now?: Date } = {},
-): Promise<string[]> {
-  const warnings: string[] = [];
+): Promise<FinalizeWarning[]> {
+  const warnings: FinalizeWarning[] = [];
   try {
     const now = opts.now ?? new Date();
     const invoice = await dbInternal.invoice.findFirst({
@@ -37,7 +79,7 @@ export async function collectFinalizeWarnings(
     const customer = invoice.customer;
 
     if (resolveBuyerEndpoint(customer) === null) {
-      warnings.push("Der Kunde hat keine elektronische Adresse (E-Mail, Leitweg-ID oder Peppol-ID) — die XRechnung wäre unvollständig (PEPPOL-EN16931-R010).");
+      warnings.push({ code: "adresse", message: finalizeWarningMessage("adresse") });
     }
 
     if (VIES_SCHEMES.has(invoice.taxScheme) && customer.vatId?.trim()) {
@@ -52,10 +94,11 @@ export async function collectFinalizeWarnings(
         if (!recent) {
           try {
             const row = await checkVatId(orgId, customer.id, { trigger: "FINALIZE", invoiceId, fetchImpl: opts.fetchImpl, timeoutMs: VIES_TIMEOUT_MS, now: opts.now });
-            if (row.status === "INVALID") warnings.push(`VIES meldet die USt-IdNr. ${vatId} als ungültig — innergemeinschaftliche Steuerfreiheit prüfen (§ 6a UStG).`);
-            else if (row.status === "ERROR") warnings.push(`VIES nicht erreichbar bzw. ohne Ergebnis (${row.errorCode ?? "unbekannt"}) — USt-IdNr. ${vatId} wurde nicht bestätigt.`);
-          } catch {
-            warnings.push(`VIES nicht erreichbar — USt-IdNr. ${vatId} wurde nicht bestätigt.`);
+            if (row.status === "INVALID") warnings.push({ code: "vies-ungueltig", message: finalizeWarningMessage("vies-ungueltig", vatId) });
+            else if (row.status === "ERROR") warnings.push({ code: "vies-fehler", message: finalizeWarningMessage("vies-fehler", vatId, row.errorCode ?? "unbekannt") });
+          } catch (e) {
+            if (e instanceof VatCheckRateLimitError) warnings.push({ code: "vies-limit", message: finalizeWarningMessage("vies-limit", vatId) });
+            else warnings.push({ code: "vies-fehler", message: finalizeWarningMessage("vies-fehler", vatId) });
           }
         }
       }

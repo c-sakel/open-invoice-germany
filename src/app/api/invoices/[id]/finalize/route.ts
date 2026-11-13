@@ -9,7 +9,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   try {
     const org = await getActiveOrg();
-    const warnings = await collectFinalizeWarnings(org.id, id);
+    const warnings = (await collectFinalizeWarnings(org.id, id)).map((w) => w.message);
     const invoice = await finalizeInvoice(id);
     return NextResponse.json({ id: invoice.id, number: invoice.number, status: invoice.status, warnings });
   } catch (e) {

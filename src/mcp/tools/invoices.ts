@@ -203,7 +203,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
-        const warnings = await collectFinalizeWarnings(org.id, inv.id);
+        const warnings = (await collectFinalizeWarnings(org.id, inv.id)).map((w) => w.message);
         const finalized = await finalizeInvoice(inv.id);
         const hint = warnings.length > 0 ? `\n\nHinweise (nicht blockierend):\n${warnings.map((w) => `- ${w}`).join("\n")}` : "";
         return ctx.ok(`Festgeschrieben: ${finalized.number} · Brutto ${formatCents(finalized.grossTotalCents)}. Unveränderbar. Export mit export_invoice.${hint}`);

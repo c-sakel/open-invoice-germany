@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true } });
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
-  const warnings = await collectFinalizeWarnings(ctx.orgId, ctx.params.id);
+  const warnings = (await collectFinalizeWarnings(ctx.orgId, ctx.params.id)).map((w) => w.message);
   const invoice = await finalizeInvoice(ctx.params.id, { actor: ctx.actor });
   return apiDataWithWarnings(serializeInvoice(invoice, new Set()), warnings);
 }, { scope: "write" });

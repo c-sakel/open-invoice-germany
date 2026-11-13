@@ -5,9 +5,9 @@ import { beforeAll, beforeEach, describe, it, expect, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createApiKey } from "@/domain/api-key/create";
-import { resetRateLimits } from "@/lib/rate-limit";
+import { rateLimit, resetRateLimits } from "@/lib/rate-limit";
 import { saveDocumentSettings } from "@/domain/document/settings";
-import { collectFinalizeWarnings } from "@/domain/invoice/finalize-warnings";
+import { collectFinalizeWarnings, parseWarningCodes, warningCodesParam, finalizeWarningMessage } from "@/domain/invoice/finalize-warnings";
 import { POST as InvoiceFinalize } from "@/app/api/v1/Invoice/[id]/finalize/route";
 
 const NOW = new Date("2143-05-01T10:00:00.000Z");
@@ -59,7 +59,7 @@ describe("collectFinalizeWarnings", () => {
     await saveDocumentSettings(orgId, { viesCheckOnFinalize: true });
     const d = await draft({ scheme: "IG_LEISTUNG", vatId: "ATU12345678", email: "a@example.org" });
     const w = await collectFinalizeWarnings(orgId, d.invoiceId, { fetchImpl: viesReply(false), now: NOW });
-    expect(w.join(" ")).toContain("VIES meldet die USt-IdNr. ATU12345678 als ungültig");
+    expect(w.map((x) => x.message).join(" ")).toContain("VIES meldet die USt-IdNr. ATU12345678 als ungültig");
     const row = await dbInternal.vatIdCheck.findFirstOrThrow({ where: { orgId, customerId: d.customerId }, select: { trigger: true, invoiceId: true, status: true } });
     expect(row).toEqual({ trigger: "FINALIZE", invoiceId: d.invoiceId, status: "INVALID" });
   });
@@ -81,7 +81,8 @@ describe("collectFinalizeWarnings", () => {
     const d = await draft({ scheme: "IG_LEISTUNG", vatId: "ATU87654321", email: "a@example.org" });
     const f = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
     const w = await collectFinalizeWarnings(orgId, d.invoiceId, { fetchImpl: f, now: NOW });
-    expect(w.join(" ")).toContain("VIES nicht erreichbar");
+    expect(w.map((x) => x.code)).toEqual(["vies-fehler"]);
+    expect(w.map((x) => x.message).join(" ")).toContain("VIES nicht erreichbar");
   });
 
   it("viesCheckOnFinalize=false, REGULAR und DE-USt-IdNr.: kein fetch", async () => {
@@ -100,7 +101,30 @@ describe("collectFinalizeWarnings", () => {
   it("Kunde ohne elektronische Adresse: Warnung", async () => {
     const d = await draft({});
     const w = await collectFinalizeWarnings(orgId, d.invoiceId);
-    expect(w.join(" ")).toContain("keine elektronische Adresse");
+    expect(w.map((x) => x.code)).toEqual(["adresse"]);
+    expect(w[0].message).toContain("keine elektronische Adresse");
+  });
+});
+
+describe("Rate-Limit und Hinweiscodes", () => {
+  it("VIES-Abfragelimit: eigener Hinweis statt nicht erreichbar", async () => {
+    await saveDocumentSettings(orgId, { viesCheckOnFinalize: true });
+    const d = await draft({ scheme: "IG_LEISTUNG", vatId: "ATU55566677", email: "a@example.org" });
+    const f = viesReply(true);
+    // Limit (20/min je Org) ausschoepfen
+    for (let i = 0; i < 20; i++) rateLimit("vies:" + orgId, { limit: 20, windowMs: 60_000 });
+    const w = await collectFinalizeWarnings(orgId, d.invoiceId, { fetchImpl: f });
+    expect(f).not.toHaveBeenCalled();
+    expect(w.map((x) => x.code)).toEqual(["vies-limit"]);
+    expect(w[0].message).toBe("VIES-Abfragelimit erreicht — USt-IdNr. ATU55566677 wurde nicht geprüft.");
+  });
+
+  it("Codes: nur bekannte, dedupliziert; Klartext aus der URL wird verworfen", () => {
+    expect(warningCodesParam([{ code: "adresse", message: "x" }, { code: "adresse", message: "y" }, { code: "vies-limit", message: "z" }])).toBe("adresse,vies-limit");
+    expect(parseWarningCodes("adresse,vies-ungueltig, vies-fehler,adresse")).toEqual(["adresse", "vies-ungueltig", "vies-fehler"]);
+    expect(parseWarningCodes("Ihr Konto ist gesperrt, rufen Sie 0800 an")).toEqual([]);
+    expect(parseWarningCodes(undefined)).toEqual([]);
+    expect(finalizeWarningMessage("vies-ungueltig", "ATU1")).toContain("ATU1");
   });
 });
 

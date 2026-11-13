@@ -33,6 +33,8 @@ import { InvoiceMoreMenu } from "./_parts/InvoiceMoreMenu";
 import { InvoiceTotals } from "./_parts/InvoiceTotals";
 import { CorrectionSection } from "./_parts/CorrectionSection";
 import { PaymentSection } from "./_parts/PaymentSection";
+import { finalizeWarningMessage, parseWarningCodes } from "@/domain/invoice/finalize-warnings";
+import { normalizeVatId } from "@/lib/vat-id";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,7 @@ export default async function InvoiceDetail({
 }) {
   const { id } = await params;
   const { error, hinweis, send, liste: listeParam } = await searchParams;
+  const hinweisCodes = parseWarningCodes(hinweis);
   const liste = firstOf(listeParam);
 
   const org = await getActiveOrg();
@@ -243,9 +246,9 @@ export default async function InvoiceDetail({
             </div>
           )}
           {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-4 text-sm whitespace-pre-line text-stamp">{error}</div>}
-          {hinweis && (
+          {hinweisCodes.length > 0 && (
             <div role="status" className="rounded-md border border-rule bg-paper p-3 text-sm whitespace-pre-line text-ink-soft">
-              <strong className="font-medium">Hinweis zum Festschreiben:</strong>{"\n"}{hinweis}
+              <strong className="font-medium">Hinweis zum Festschreiben:</strong>{"\n"}{hinweisCodes.map((c) => finalizeWarningMessage(c, normalizeVatId(invoice.customer.vatId ?? ""))).join("\n")}
             </div>
           )}
           {vm.isCancelled && refundDueCents > 0 && (
