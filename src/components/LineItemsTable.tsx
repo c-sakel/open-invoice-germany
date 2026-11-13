@@ -134,7 +134,7 @@ export function LineItemsTable({
                 </td>
                 {showArticleNumber && <td className="px-4 py-2 text-ink-muted">{l.articleNumber}</td>}
                 <td className="tabular px-4 py-2 text-right">
-                  {qty(l.quantityMilli)} {unitLabel(l.unit)}
+                  {qty(l.quantityMilli)} {unitLabel(l.unit, lang ?? "de")}
                 </td>
                 <td className="tabular px-4 py-2 text-right">{money(l.unitNetPriceCents)}</td>
                 <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>

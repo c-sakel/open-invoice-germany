@@ -69,6 +69,8 @@ describe("Angebotsseite je Belegsprache", () => {
     expect(html).toContain("15/04/2154");
     expect(html).toContain("1,234.56");
     expect(html).not.toContain("PDF herunterladen");
+    expect(html).toMatch(/1(\.0+)? h</);
+    expect(html).not.toMatch(/ Std</);
   });
 
   it("deutsches Angebot bleibt unveraendert", async () => {
@@ -80,6 +82,7 @@ describe("Angebotsseite je Belegsprache", () => {
       expect(html).toContain("Angebot annehmen");
       expect(html).toContain("15.04.2154");
       expect(html).toContain("1.234,56");
+      expect(html).toMatch(/ Std</);
     }
   });
 
