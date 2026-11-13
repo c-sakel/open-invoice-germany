@@ -20,6 +20,10 @@ export interface ExternalFetchOptions {
   timeoutMs?: number;
   /** Obergrenze der Antwortgroesse in Bytes (Standard 2 MiB). */
   maxBytes?: number;
+  /** Standard GET. POST nur mit fester Ziel-URL aus dem Code (z. B. VIES); Weiterleitungen sind dann verboten. */
+  method?: "GET" | "POST";
+  body?: string;
+  headers?: Record<string, string>;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -52,6 +56,7 @@ export async function externalFetch(url: string, opts: ExternalFetchOptions = {}
   const fetchImpl = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+  const method = opts.method ?? "GET";
   const origin = new URL(url);
   if (origin.protocol !== "https:") throw new ExternalHttpError("Nur HTTPS erlaubt.");
 
@@ -59,7 +64,12 @@ export async function externalFetch(url: string, opts: ExternalFetchOptions = {}
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     let res: Response;
     try {
-      res = await fetchImpl(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+      res = await fetchImpl(current, {
+        method,
+        redirect: "manual",
+        signal: AbortSignal.timeout(timeoutMs),
+        ...(method === "POST" ? { body: opts.body, headers: opts.headers } : opts.headers ? { headers: opts.headers } : {}),
+      });
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       throw new ExternalHttpError(`Abruf fehlgeschlagen: ${reason}`);
@@ -67,6 +77,7 @@ export async function externalFetch(url: string, opts: ExternalFetchOptions = {}
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
       await res.body?.cancel();
+      if (method === "POST") throw new ExternalHttpError("Weiterleitung bei POST abgelehnt.", res.status);
       if (!location) throw new ExternalHttpError("Weiterleitung ohne Ziel.", res.status);
       const next = new URL(location, current);
       if (next.protocol !== "https:" || next.host !== origin.host) {

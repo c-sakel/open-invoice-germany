@@ -52,6 +52,8 @@ export async function loadDocumentSettings(orgId: string): Promise<DocumentSetti
     fxRateSource: row.fxRateSource === "ECB_DAILY" ? "ECB_DAILY" : "BMF_MONTHLY",
     ossCountMode: row.ossCountMode === "BY_PRODUCT" ? "BY_PRODUCT" : "ALL_EU_B2C",
     ossWarnPercent: row.ossWarnPercent,
+    viesCheckEnabled: row.viesCheckEnabled,
+    viesCheckOnFinalize: row.viesCheckOnFinalize,
   });
 }
 
