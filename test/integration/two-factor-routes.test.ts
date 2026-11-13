@@ -8,8 +8,8 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 const auth = vi.hoisted(() => ({
   pending: null as { uid: string; pwc: number | null } | null,
   currentUser: null as string | null,
-  setSession: vi.fn(async (_uid: string) => {}),
-  setPendingMfa: vi.fn(async (_uid: string) => {}),
+  setSession: vi.fn(async (uid: string) => { void uid; }),
+  setPendingMfa: vi.fn(async (uid: string) => { void uid; }),
   clearPendingMfa: vi.fn(async () => {}),
   clearSession: vi.fn(async () => {}),
 }));
@@ -186,6 +186,8 @@ describe("Konto-Routen /api/account/totp/*", () => {
 
     const bad = await enable(req("/api/account/totp/enable", { password: PASSWORD, code: "000000" }, ip));
     expect(bad.status).toBe(400);
+    const badPw = await enable(req("/api/account/totp/enable", { password: "falsch", code: totp(base32Decode(j.secret)) }, ip));
+    expect(badPw.status).toBe(401);
     const ok = await enable(req("/api/account/totp/enable", { password: PASSWORD, code: totp(base32Decode(j.secret)) }, ip));
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { recoveryCodes: string[] }).recoveryCodes).toHaveLength(10);
