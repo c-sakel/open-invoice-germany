@@ -501,14 +501,19 @@ async function transmit(t: TransmitInput): Promise<PostalSendResult> {
 
   if (mismatch) {
     const until = formatBerlinTime(new Date(submittedAt.getTime() + CANCEL_WINDOW_MS));
-    await notifyPostal(orgId, {
-      type: "POSTAL_FAILED",
-      title: "Postversand: Anschrift pruefen",
-      body: `Anschrift pruefen, Storno bis ${until} (${doc.docNumber}).`,
-      invoiceId: doc.invoiceId,
-      dedupeKey: `POSTAL_FAILED:${jobId}:address`,
-      at: submittedAt,
-    });
+    try {
+      await notifyPostal(orgId, {
+        type: "POSTAL_FAILED",
+        title: "Postversand: Anschrift pruefen",
+        body: `Anschrift pruefen, Storno bis ${until} (${doc.docNumber}).`,
+        invoiceId: doc.invoiceId,
+        dedupeKey: `POSTAL_FAILED:${jobId}:address`,
+        at: submittedAt,
+      });
+    } catch (e) {
+      // Der Brief ist uebertragen und gebucht: ein Meldungsfehler darf ihn nie als REJECTED erscheinen lassen.
+      console.error("postal: Anschrift-Meldung fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
+    }
   }
   return { ...base, status };
 }
@@ -576,6 +581,7 @@ async function recordSubmission(
           docNumber: doc.docNumber,
           at: submittedAt,
           actor: t.actor,
+          status,
         });
       }
       await logActivity(tx, {

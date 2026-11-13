@@ -15,6 +15,8 @@ import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { savePostalSettings } from "@/domain/postal/settings";
 import { quotePostal, sendByPost, type PostalSendResult } from "@/domain/postal/send";
 import { cancelPostalJob } from "@/domain/postal/cancel";
+import { pollPostalJobs } from "@/domain/postal/poll";
+import { resolveUnknownPostalJob } from "@/domain/postal/resolve";
 import { PostalConflictError } from "@/domain/postal/errors";
 import { transitionPostalJob } from "@/domain/postal/events";
 import { PostalTransportError, type LxpTransport, type LxpTransportRequest } from "@/lib/postal/transport";
@@ -672,5 +674,136 @@ describe("Geheimnisse", () => {
     expect(dumps).not.toContain(KEY);
     expect(dumps).not.toContain(USER);
     expect(dumps).not.toContain("base64_file");
+  });
+});
+
+describe("Fix-Welle 16d-4", () => {
+  beforeEach(async () => {
+    await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, monthlyBudgetCents: null, autoDunningPost: false });
+  });
+
+  const sentAtOf = async (id: string): Promise<Date> => (await dbInternal.dunning.findUniqueOrThrow({ where: { id }, select: { sentAt: true } })).sentAt;
+
+  it("Mahnung: Storno und erneuter Postversand setzt sentAt wieder (letztes Ereignis ist DUNNING_SEND_REVERTED)", async () => {
+    const f = lxp();
+    const d = await newDunning();
+    const before = await sentAtOf(d.id);
+    const r1 = await quoteSend("DUNNING", d.id, f);
+    const sub = (await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r1.jobId as string }, select: { submittedAt: true } })).submittedAt as Date;
+    await cancelPostalJob(orgId, r1.jobId as string, { actor: "tester", transport: f.transport, now: new Date(sub.getTime() + 60_000) });
+    expect((await sentAtOf(d.id)).getTime()).toBe(before.getTime());
+    const r2 = await quoteSend("DUNNING", d.id, f);
+    expect(r2.status).toBe("QUEUED");
+    expect((await sentAtOf(d.id)).getTime()).not.toBe(before.getTime());
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: r2.jobId as string, kind: "DUNNING_SENT" } })).toBe(1);
+  });
+
+  it("Mahnung: E-Mail-Versand nach Revert sperrt den Vermerk wieder (letztes Ereignis DUNNING_SEND)", async () => {
+    const f = lxp();
+    const d = await newDunning();
+    const r1 = await quoteSend("DUNNING", d.id, f);
+    const sub = (await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r1.jobId as string }, select: { submittedAt: true } })).submittedAt as Date;
+    await cancelPostalJob(orgId, r1.jobId as string, { actor: "tester", transport: f.transport, now: new Date(sub.getTime() + 60_000) });
+    await dbInternal.$transaction((tx) =>
+      audit.appendChangeLog(tx, { orgId, entity: "INVOICE", entityId: d.invoiceId, action: "DUNNING_SEND", actor: "tester", at: FIX, diff: { dunningId: d.id, number: "x", channel: "EMAIL" } }),
+    );
+    const before = await sentAtOf(d.id);
+    const r2 = await quoteSend("DUNNING", d.id, f);
+    expect((await sentAtOf(d.id)).getTime()).toBe(before.getTime());
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: r2.jobId as string, kind: "DUNNING_SENT" } })).toBe(0);
+  });
+
+  it("Poll-Pfad: externes Storno setzt sentAt zurueck, Ereignis DUNNING_SENT traegt den tatsaechlichen Status", async () => {
+    const f = lxp({ status: "draft" });
+    const d = await newDunning();
+    const before = await sentAtOf(d.id);
+    const r = await quoteSend("DUNNING", d.id, f);
+    const ev = await dbInternal.postalJobEvent.findFirstOrThrow({ where: { jobId: r.jobId as string, kind: "DUNNING_SENT" }, select: { status: true } });
+    expect(ev.status).toBe("DRAFT");
+    expect((await sentAtOf(d.id)).getTime()).not.toBe(before.getTime());
+    const job = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r.jobId as string }, select: { providerJobId: true } });
+    const transport: LxpTransport = async (req) => {
+      const m = /^\/printjobs\/(\d+)$/.exec(req.path);
+      if (req.method === "GET" && m) {
+        const id = Number(m[1]);
+        const status = id === job.providerJobId ? "canceled" : "queue";
+        return { status: 200, json: { status: 200, message: "OK", data: { id, status, filename_original: null, created_at: "2123-06-09 10:00:00", items: [] } } };
+      }
+      if (req.method === "GET" && req.path === "/printjobs") {
+        return { status: 200, json: { status: 200, message: "OK", data: { printjobs: [], pagination: { last_page: 1 } } } };
+      }
+      throw new Error(`unerwarteter Aufruf ${req.method} ${req.path}`);
+    };
+    const res = await pollPostalJobs(new Date(Date.now() + 3_600_000), { transport, sleep: async () => {}, orgId });
+    expect(res.changed).toBeGreaterThanOrEqual(1);
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r.jobId as string }, select: { status: true } })).status).toBe("CANCELLED");
+    expect((await sentAtOf(d.id)).getTime()).toBe(before.getTime());
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: r.jobId as string, kind: "DUNNING_REVERTED" } })).toBe(1);
+    expect(await dbInternal.changeLog.count({ where: { orgId, entity: "INVOICE", entityId: d.invoiceId, action: "DUNNING_SEND_REVERTED" } })).toBe(1);
+  });
+
+  it("Moduswechsel direkt vor der Uebertragung: kein Netzaufruf, Auftrag FAILED (abortPending), Ergebnis REJECTED", async () => {
+    const f = lxp();
+    const inv = await newInvoice();
+    const { quotes } = await quotePostal(orgId, [{ docType: "INVOICE", docId: inv.id }], { transport: f.transport });
+    const q = quotes[0]!;
+    const orig = dbInternal.postalSettings.findUnique.bind(dbInternal.postalSettings);
+    const spy = vi.spyOn(dbInternal.postalSettings, "findUnique").mockImplementation(((args: Parameters<typeof orig>[0]) => {
+      return dbInternal.postalJob.count({ where: { orgId, status: "PENDING" } }).then((n) => (n > 0 ? { enabled: false, mode: "LIVE" } : orig(args)));
+    }) as unknown as typeof dbInternal.postalSettings.findUnique);
+    let res: PostalSendResult[];
+    try {
+      res = await sendByPost(orgId, { items: [{ docType: "INVOICE", docId: inv.id, expectedPriceCents: q.priceCents, pdfSha256: q.pdfSha256 }], confirm: true }, { ...sctx, transport: f.transport });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res[0]!.status).toBe("REJECTED");
+    expect(f.calls.some((c) => c.method === "POST" && c.path === "/printjobs")).toBe(false);
+    const job = await dbInternal.postalJob.findFirstOrThrow({ where: { orgId, docId: inv.id }, select: { id: true, status: true } });
+    expect(job.status).toBe("FAILED");
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: job.id, kind: "FAILED" } })).toBe(1);
+  });
+
+  describe("resolveUnknownPostalJob", () => {
+    async function unknownJob(docType: "INVOICE" | "DUNNING"): Promise<{ jobId: string; docId: string; invoiceId: string }> {
+      const f = lxp({
+        submit: () => {
+          throw new PostalTransportError("Zeitueberschreitung", "timeout");
+        },
+      });
+      const d = docType === "DUNNING" ? await newDunning() : null;
+      const inv = d ? { id: d.invoiceId } : await newInvoice();
+      const docId = d ? d.id : inv.id;
+      const r = await quoteSend(docType, docId, f);
+      expect(r.status).toBe("UNKNOWN");
+      return { jobId: r.jobId as string, docId, invoiceId: inv.id };
+    }
+
+    it("SENT: DONE, Ereignis RESOLVED, ChangeLog, Mahnung sentAt gesetzt", async () => {
+      const u = await unknownJob("DUNNING");
+      const before = (await dbInternal.dunning.findUniqueOrThrow({ where: { id: u.docId }, select: { sentAt: true } })).sentAt;
+      const out = await resolveUnknownPostalJob(orgId, u.jobId, "SENT", "Brief laut Anbieter versendet", { actor: "tester" });
+      expect(out.status).toBe("DONE");
+      expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: u.jobId }, select: { status: true } })).status).toBe("DONE");
+      expect(await dbInternal.postalJobEvent.count({ where: { jobId: u.jobId, kind: "RESOLVED" } })).toBe(1);
+      expect(await dbInternal.changeLog.count({ where: { orgId, entity: "POSTAL", entityId: u.jobId, action: "RESOLVED_SENT" } })).toBe(1);
+      expect((await sentAtOf(u.docId)).getTime()).not.toBe(before.getTime());
+      await expect(resolveUnknownPostalJob(orgId, u.jobId, "SENT", "nochmal", { actor: "tester" })).rejects.toBeInstanceOf(PostalConflictError);
+    });
+
+    it("NOT_SENT: FAILED mit Begruendung, erneuter Versand wieder moeglich; Org-Scope, Pflicht-Begruendung", async () => {
+      const u = await unknownJob("INVOICE");
+      await expect(resolveUnknownPostalJob(orgId, u.jobId, "NOT_SENT", " ", { actor: "tester" })).rejects.toBeInstanceOf(ZodError);
+      const other = await dbInternal.organization.create({ data: { legalName: "Fremd2 GmbH", addressLine1: "Weg 1", postalCode: "12345", city: "Berlin" }, select: { id: true } });
+      await expect(resolveUnknownPostalJob(other.id, u.jobId, "NOT_SENT", "nichts gesendet", { actor: "t" })).rejects.toThrow(/nicht gefunden/);
+      const out = await resolveUnknownPostalJob(orgId, u.jobId, "NOT_SENT", "beim Anbieter nicht vorhanden", { actor: "tester" });
+      expect(out.status).toBe("FAILED");
+      const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: u.jobId }, select: { status: true, error: true } });
+      expect(row.status).toBe("FAILED");
+      expect(row.error).toContain("beim Anbieter nicht vorhanden");
+      expect(await dbInternal.changeLog.count({ where: { orgId, entity: "POSTAL", entityId: u.jobId, action: "RESOLVED_NOT_SENT" } })).toBe(1);
+      const again = await quoteSend("INVOICE", u.docId, lxp());
+      expect(again.status).toBe("QUEUED");
+    });
   });
 });

@@ -130,7 +130,8 @@ export type PostalEventKind =
   | "UNKNOWN"
   | "RECONCILED"
   | "DUNNING_SENT"
-  | "DUNNING_REVERTED";
+  | "DUNNING_REVERTED"
+  | "RESOLVED";
 
 export async function addPostalEvent(
   tx: Prisma.TransactionClient,

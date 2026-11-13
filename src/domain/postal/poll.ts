@@ -313,14 +313,19 @@ async function failStalePending(now: Date, orgId: string | undefined, result: Po
   });
   for (const job of stale) {
     const message = "Auftrag wurde nicht uebertragen (Vorgang abgebrochen)";
-    const moved = await dbInternal.$transaction(async (tx) => {
-      if (!(await transitionPostalJob(tx, job.id, "FAILED", { error: message, finishedAt: now }))) return false;
-      await addPostalEvent(tx, { jobId: job.id, orgId: job.orgId, kind: "FAILED", status: "FAILED", data: { error: message, notTransmitted: true, reason: "PENDING_STALE" }, at: now });
-      return true;
-    });
-    if (moved) {
-      result.failed += 1;
-      result.changed += 1;
+    try {
+      const moved = await dbInternal.$transaction(async (tx) => {
+        if (!(await transitionPostalJob(tx, job.id, "FAILED", { error: message, finishedAt: now }))) return false;
+        await addPostalEvent(tx, { jobId: job.id, orgId: job.orgId, kind: "FAILED", status: "FAILED", data: { error: message, notTransmitted: true, reason: "PENDING_STALE" }, at: now });
+        return true;
+      });
+      if (moved) {
+        result.failed += 1;
+        result.changed += 1;
+      }
+    } catch (e) {
+      console.error("postal: haengender Auftrag konnte nicht abgeschlossen werden", e instanceof Error ? e.name : "Fehler");
+      result.skipped.error = (result.skipped.error ?? 0) + 1;
     }
   }
 }
@@ -508,6 +513,7 @@ async function reconcileJob(
             docNumber: job.docNumber,
             at: now,
             actor: "system:postal-poll",
+            status,
           });
         }
         await logActivity(tx, {
