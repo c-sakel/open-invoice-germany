@@ -3,15 +3,15 @@
  * (XRechnung "Zahlungsbedingungen", z. B. genutzt von ZUGFeRD/E-Rechnungs-
  * Software wie ZUGFeRD-Community-Skripten oder "sepa-skonto-tags").
  *
- * Fristdatum: `dueDate = issueDate + days` (Kalendertage, aus dem UTC-Kalendertag des
- * Rechnungsdatums; das gedruckte Datum bleibt unveraendert). Fristende: Ablauf des
+ * Fristdatum: `dueDate = issueDate + days` (Kalendertage, aus dem Berliner Kalendertag des
+ * Rechnungsdatums, unabhaengig von `TZ`; Formular-Datum als UTC-Mitternacht bleibt derselbe Tag). Fristende: Ablauf des
  * Kalendertags `dueDate` nach Berliner Zeit (§ 188 Abs. 1 BGB) — ein Zahlungseingang zaehlt
  * noch, wenn `paidAt <= berlinDayEnd(dueDate)`. Das Fenster endet damit 1 h (MEZ) bzw. 2 h
  * (MESZ) frueher als beim fruheren UTC-Tagesende; Formular-Datum (UTC-Mitternacht) liegt
  * immer innerhalb.
  */
 import { formatCents, roundHalfUp } from "../money";
-import { berlinDayEnd } from "../berlin-time";
+import { berlinCalendarDay, berlinDayEnd } from "../berlin-time";
 import { docLocale, docStrings } from "../i18n/doc";
 import type { DocLanguage } from "../i18n/doc/types";
 
@@ -37,12 +37,8 @@ export interface SkontoTermsInput {
   skonto2Days: number | null;
 }
 
-function toUtcMidnight(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
 function addUtcDays(d: Date, days: number): Date {
-  const base = toUtcMidnight(d);
+  const base = berlinCalendarDay(d);
   base.setUTCDate(base.getUTCDate() + days);
   return base;
 }
@@ -128,7 +124,10 @@ export function detectSkonto(
  */
 export function paymentTermsText(terms: readonly SkontoTerm[], netDueDate: Date | null, lang: DocLanguage = "de", currency = "EUR"): string {
   const t = docStrings(lang).paymentTerms;
-  const fmtDate = (d: Date): string => (lang === "de" ? formatDateDE(d) : formatDateEn(d));
+  const fmtDate = (d: Date): string => {
+    const day = berlinCalendarDay(d);
+    return lang === "de" ? formatDateDE(day) : formatDateEn(day);
+  };
   const fmtPercent = (permille: number): string =>
     lang === "de" ? formatPercentDE(permille) : `${new Intl.NumberFormat(docLocale(lang), { maximumFractionDigits: 2 }).format(permille / 10)}%`;
   const parts = terms.map((term) =>

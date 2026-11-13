@@ -1,7 +1,8 @@
 /**
  * Berliner Kalendergrenzen (Europe/Berlin) ohne Zusatzabhaengigkeit, ueber Intl.
  * Einzige Quelle fuer Monats-, Jahres- und Tagesgrenzen der Auswertungen, des OSS-Jahres
- * und des Skonto-Fristendes.
+ * und des Skonto-Fristendes sowie Belegdatum -> Berliner Kalendertag (Skonto-Fristdatum,
+ * XML-Daten, Nachziehen beim Festschreiben).
  *
  * Abgrenzung zu src/lib/date-only.ts: reine Kalenderdaten (Faelligkeit, Gueltigkeit,
  * Mahnwesen) werden weiter als UTC-Mitternacht gespeichert und tagesgenau im UTC-Kalendertag
@@ -91,4 +92,10 @@ export function berlinDayEnd(calendarDate: Date): Date {
 export function berlinDateKey(d: Date): string {
   const { year, month, day } = berlinParts(d);
   return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+/** UTC-Mitternacht des Berliner Kalendertags von `d` (date-only-Konvention). Idempotent; UTC-Mitternachtswerte bleiben unveraendert. */
+export function berlinCalendarDay(d: Date): Date {
+  const { year, month, day } = berlinParts(d);
+  return new Date(Date.UTC(year, month - 1, day));
 }

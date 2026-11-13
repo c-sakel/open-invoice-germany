@@ -168,15 +168,45 @@ describe("Skonto-Fristende nach Berliner Tagesende", () => {
     expect(detectSkonto(t, new Date("2151-12-31T23:30:00.000Z"), 116620, 119000)).toBeNull();
   });
 
-  it("Druckbild unveraendert, auch fuer ein nachts festgeschriebenes Rechnungsdatum", () => {
-    // 2151-03-20T23:30Z = 21.03. 00:30 Berlin; das Fristdatum folgt weiter dem UTC-Kalendertag.
+  it("Fristdatum folgt dem Berliner Kalendertag des Rechnungsdatums", () => {
+    // 2151-03-20T23:30Z = 21.03. 00:30 Berlin -> wie das Formulardatum 21.03.
     const day = mk(new Date("2151-03-21T00:00:00.000Z"));
     const night = mk(new Date("2151-03-20T23:30:00.000Z"));
     expect(day[0].dueDate.toISOString()).toBe("2151-03-31T00:00:00.000Z");
-    expect(night[0].dueDate.toISOString()).toBe("2151-03-30T00:00:00.000Z");
+    expect(night[0].dueDate.toISOString()).toBe("2151-03-31T00:00:00.000Z");
     expect(paymentTermsText(day, null, "de")).toBe(`2 % Skonto bei Zahlung bis 31.03.2151 (Skontobetrag ${formatCents(2380)}).`);
-    expect(paymentTermsText(night, null, "de")).toBe(`2 % Skonto bei Zahlung bis 30.03.2151 (Skontobetrag ${formatCents(2380)}).`);
+    expect(paymentTermsText(night, null, "de")).toBe(`2 % Skonto bei Zahlung bis 31.03.2151 (Skontobetrag ${formatCents(2380)}).`);
     expect(xrechnungSkontoNote(day, "x")).toBe("#SKONTO#TAGE=10#PROZENT=2.00#\nx");
     expect(xrechnungSkontoNote(night, "x")).toBe("#SKONTO#TAGE=10#PROZENT=2.00#\nx");
+  });
+});
+
+describe("Skonto am Berliner Kalendertag (Nacht-Rechnungsdatum)", () => {
+  const mk = (issue: Date, days: number, permille = 20) =>
+    skontoTerms({ issueDate: issue, grossTotalCents: 119000, skonto1Permille: permille, skonto1Days: days, skonto2Permille: null, skonto2Days: null });
+
+  it("Winter: 14.01.2160 23:30Z (15.01. Berlin) + 14 Tage = 29.01.2160", () => {
+    const t = mk(new Date("2160-01-14T23:30:00.000Z"), 14);
+    expect(t[0].dueDate.toISOString()).toBe("2160-01-29T00:00:00.000Z");
+    expect(paymentTermsText(t, null, "de")).toContain("bis 29.01.2160");
+  });
+
+  it("Sommer: 14.07.2160 22:30Z (15.07. Berlin) + 10 Tage = 25.07.2160", () => {
+    expect(mk(new Date("2160-07-14T22:30:00.000Z"), 10)[0].dueDate.toISOString()).toBe("2160-07-25T00:00:00.000Z");
+  });
+
+  it("Formulardatum (UTC-Mitternacht) bleibt derselbe Tag", () => {
+    expect(mk(new Date("2160-01-15T00:00:00.000Z"), 14)[0].dueDate.toISOString()).toBe("2160-01-29T00:00:00.000Z");
+  });
+
+  it("Netto-Faelligkeit im Text folgt dem Berliner Tag", () => {
+    const t = mk(new Date("2160-01-15T00:00:00.000Z"), 14);
+    expect(paymentTermsText(t, new Date("2160-01-28T23:30:00.000Z"), "de").endsWith("zahlbar netto bis 29.01.2160.")).toBe(true);
+  });
+
+  it("detectSkonto: Fristende 29.01.2160 Berliner Zeit", () => {
+    const t = mk(new Date("2160-01-14T23:30:00.000Z"), 14);
+    expect(detectSkonto(t, new Date("2160-01-29T22:59:59.999Z"), 116620, 119000)).not.toBeNull();
+    expect(detectSkonto(t, new Date("2160-01-29T23:00:00.000Z"), 116620, 119000)).toBeNull();
   });
 });

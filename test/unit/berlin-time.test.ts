@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  berlinCalendarDay,
   berlinDateKey,
   berlinDayEnd,
   berlinMidnight,
@@ -73,5 +74,35 @@ describe("berlin-time", () => {
     // Monatsgrenze ueber die Fruehjahrsumstellung
     expect(berlinMonthStart(new Date("2151-04-15T12:00:00Z"), -1).toISOString()).toBe("2151-02-28T23:00:00.000Z");
     expect(berlinMonthStart(new Date("2151-03-15T12:00:00Z"), 1).toISOString()).toBe("2151-03-31T22:00:00.000Z");
+  });
+});
+
+describe("berlinCalendarDay", () => {
+  it("liefert UTC-Mitternacht des Berliner Kalendertags (Winter und Sommer)", () => {
+    expect(iso(berlinCalendarDay(new Date("2160-01-14T23:30:00Z")))).toBe("2160-01-15T00:00:00.000Z");
+    expect(iso(berlinCalendarDay(new Date("2160-07-14T22:30:00Z")))).toBe("2160-07-15T00:00:00.000Z");
+    expect(iso(berlinCalendarDay(new Date("2160-07-14T21:59:59.999Z")))).toBe("2160-07-14T00:00:00.000Z");
+  });
+
+  it("laesst UTC-Mitternachtswerte unveraendert und ist idempotent", () => {
+    const m = new Date("2160-01-15T00:00:00Z");
+    expect(iso(berlinCalendarDay(m))).toBe("2160-01-15T00:00:00.000Z");
+    const x = new Date("2160-03-10T23:30:00Z");
+    expect(iso(berlinCalendarDay(berlinCalendarDay(x)))).toBe(iso(berlinCalendarDay(x)));
+  });
+
+  it("Umstellungssonntage 2160: 00:30 und 23:30 Berliner Zeit liegen im selben Tag", () => {
+    for (const month of [3, 10]) {
+      let d = new Date(Date.UTC(2160, month, 0)); // letzter Tag des Monats
+      while (d.getUTCDay() !== 0) d = new Date(d.getTime() - 86_400_000);
+      const y = d.getUTCFullYear();
+      const m = d.getUTCMonth() + 1;
+      const day = d.getUTCDate();
+      const start = berlinMidnight(y, m, day).getTime() + 30 * 60_000;
+      const end = berlinMidnight(y, m, day + 1).getTime() - 30 * 60_000;
+      const expected = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00.000Z`;
+      expect(iso(berlinCalendarDay(new Date(start)))).toBe(expected);
+      expect(iso(berlinCalendarDay(new Date(end)))).toBe(expected);
+    }
   });
 });
