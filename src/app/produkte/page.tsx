@@ -50,6 +50,9 @@ export default async function ProduktePage() {
         actions={
           <>
             <CsvLink href="/api/exports/produkte.csv" what="Produkte" />
+            <Link href="/produkte/import" className="text-sm text-ink-soft underline-offset-2 hover:underline">
+              Importieren
+            </Link>
             <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
               Neues Produkt
             </Link>

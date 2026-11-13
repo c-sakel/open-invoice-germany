@@ -47,6 +47,9 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         actions={
           <>
             <CsvLink href={"/api/exports/kunden.csv" + (query ? "?q=" + encodeURIComponent(query) : "")} what="Kunden" />
+            <Link href="/kunden/import" className="text-sm text-ink-soft underline-offset-2 hover:underline">
+              Importieren
+            </Link>
             <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
               Neuer Kunde
             </Link>
