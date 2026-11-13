@@ -27,6 +27,14 @@ Deine Daten liegen in `prisma/dev.db` — eine einzige Datei, die nur dir gehör
 
 Beim allerersten Start führt dich `/setup` zur Einrichtung von E-Mail und Passwort für das (einzige) Admin-Konto — danach läuft jede weitere Anmeldung über `/login`. Nach **5 falschen Passworteingaben in Folge** wird das Konto **15 Minuten** gesperrt (die Meldung nennt die verbleibende Wartezeit); auch das richtige Passwort wird währenddessen abgelehnt. Unter **„Einstellungen → Konto"** änderst du dein Passwort (aktuelles Passwort + neues Passwort, mindestens 10 Zeichen) — das beendet **sofort alle anderen angemeldeten Sitzungen** (andere Browser/Geräte müssen sich neu anmelden), nur der Browser, in dem du gerade änderst, bleibt angemeldet. Es gibt (noch) **keinen Passwort-Reset per E-Mail** und **keine Zwei-Faktor-Authentifizierung** — bei einem verlorenen Passwort hilft nur ein direkter Zugriff auf die Datenbank (siehe [SECURITY.md](../SECURITY.md)).
 
+### Zwei-Faktor-Anmeldung (2FA) und Passwort vergessen (Phase 17d)
+
+- **Einrichten** unter „Einstellungen → Konto“: Passwort eingeben, den QR-Code mit der Authenticator-App scannen (oder das angezeigte Geheimnis eintippen) und den 6-stelligen Code eingeben. Danach werden **zehn Wiederherstellungscodes** genau einmal angezeigt — sicher aufbewahren (Passwortmanager oder Ausdruck); sie sind nicht erneut abrufbar.
+- **Anmeldung** mit 2FA: erst Passwort, dann auf der Folgeseite den Code aus der App **oder** einen Wiederherstellungscode (jeder gilt nur einmal). Die Folgeseite ist 5 Minuten gültig. Falsche Codes zählen wie falsche Passwörter zur Kontosperre (5 Fehlversuche, 15 Minuten).
+- **Neue Wiederherstellungscodes** und **Abschalten** verlangen Passwort und einen aktuellen Code; beim Einrichten, Abschalten und Erneuern enden alle anderen Sitzungen.
+- **Passwort vergessen?** Auf der Anmeldeseite „Passwort vergessen“ wählen. Die Anzeige ist immer dieselbe, ob die Adresse bekannt ist oder nicht. Bei bekannter Adresse kommt ein Link (30 Minuten gültig, einmal einlösbar); mit aktiver 2FA wird zusätzlich ein Code verlangt. Nach dem Zurücksetzen enden alle Sitzungen. Das setzt voraus, dass E-Mail-Versand (SMTP) eingerichtet und `APP_BASE_URL` gesetzt ist; sonst zeigt die Seite „nicht eingerichtet“.
+- **Gerät und Codes verloren?** Nur der Server-Betreiber kann helfen: `scripts/disable-2fa.sh` (siehe BETRIEB-VORLAGE.md, „Notfallzugang“).
+
 ---
 
 ## 2. Erste Schritte in der App

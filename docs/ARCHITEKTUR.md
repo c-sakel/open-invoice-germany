@@ -678,6 +678,17 @@ Zuordnungen, rührt aber keinen Beleg an).
 
 ---
 
+## 3d. Konto-Sicherheit: Zwei-Faktor und Passwort-Reset (Phase 17d)
+
+- **Domäne** `src/domain/auth/`: `attempts.ts` (gemeinsame IP-Bremse und Kontosperre für Passwort und Code), `two-factor.ts` (Einrichten, Aktivieren, Abschalten, Codes erneuern, zweiter Faktor beim Login), `password-reset.ts` (Anforderung, Prüfung, Einlösen), `login.ts` (Ergebnis `second_factor`). Primitive in `src/lib/auth/`: `totp.ts` (RFC 6238, HMAC-SHA1, 6 Ziffern, 30 s, ±1 Schritt, Wiederverwendung eines Schritts über `totpLastStep` abgelehnt), `recovery-codes.ts` (10 Codes, nur Hash gespeichert), `session.ts`.
+- **Zwei Schritte beim Login:** Nach richtigem Passwort setzt die Login-Route bei aktiver 2FA kein Sitzungscookie, sondern das Zwischen-Cookie `oig_mfa` (httpOnly, SameSite strict, 300 s, `src/lib/auth/server.ts`); erst `/api/auth/second-factor` stellt die Sitzung aus. Das Zwischen-Token verfällt bei einer Passwort- oder 2FA-Änderung (`passwordChangedAt`).
+- **Sitzungsende:** Sitzung und Zwischen-Token tragen `passwordChangedAt`; Passwortwechsel, Reset, 2FA-Einrichten/-Abschalten/-Erneuern und das Notfallskript setzen es, dadurch enden alle anderen Sitzungen. Kein neues Feld, keine Migration dafür.
+- **Atomarität:** Verbrauch eines Wiederherstellungscodes (bedingtes Update) und Einlösen eines Reset-Links (bedingtes `updateMany`) laufen in einer Transaktion; schlägt der zweite Faktor fehl, rollt auch das Einlösen zurück und der Fehlversuch zählt.
+- **Reset ohne Konto-Aufzählung:** Die Route beantwortet Anforderungen sofort und gleich; Konto-Lookup, Token und Mailversand laufen danach (`after()`). Der Link nutzt nur `APP_BASE_URL`, das Token liegt nur als SHA-256 in der Datenbank.
+- **Tabellen** (Migration `20261116090000_phase17d_auth`, SQLite + Postgres): `User` um `totpSecretEnc`, `totpEnabledAt`, `totpLastStep`; neu `RecoveryCode`, `PasswordResetToken` (beide ON DELETE CASCADE). Das TOTP-Geheimnis ist mit `src/lib/crypto/secrets.ts` (Zweck `oig-totp-v1`) verschlüsselt.
+- **Routen:** `/api/auth/second-factor`, `/api/auth/password-reset/{request,confirm}`, `/api/account/totp/*` (gemeinsamer Rahmen `src/lib/http/account-route.ts`: Sitzung, IP-Bremse, no-store); Seiten `/login/zweiter-faktor`, `/login/passwort-vergessen`, `/login/passwort-zuruecksetzen/[token]`.
+- **Notfall:** `scripts/disable-2fa.sh` (siehe BETRIEB-VORLAGE.md); Grenzen in LIMITATIONEN.md.
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.

@@ -1306,4 +1306,24 @@ NOTCODES=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coun
 [ "$NOTCODES" = "0" ] || fail "Notfallskript: Wiederherstellungscodes nicht geloescht ($NOTCODES)"
 echo "    ok — Notfallskript disable-2fa.sh schaltet 2FA ab und loescht Codes (Postgres)"
 
+# Erfolg: passwordChangedAt gesetzt (beendet Sitzungen), offene Reset-Tokens entwertet.
+PWC=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select (\"passwordChangedAt\" is not null) from \"User\" where id='user31'")
+[ "$PWC" = "t" ] || fail "Notfallskript: passwordChangedAt nicht gesetzt ('$PWC')"
+OPENTOK=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"PasswordResetToken\" where \"userId\"='user31' and \"usedAt\" is null")
+[ "$OPENTOK" = "0" ] || fail "Notfallskript: offene Reset-Tokens nicht entwertet ($OPENTOK)"
+
+# Gueltige, aber unbekannte Adresse: Exit 1 und keine Aenderung.
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+UPDATE "User" SET "totpSecretEnc"='v1:y', "totpEnabledAt"=NOW(), "totpLastStep"=2 WHERE id='user31b' OR id='user31';
+INSERT INTO "PasswordResetToken" ("id","userId","tokenHash","expiresAt")
+  VALUES ('prt31d','user31','tokenhash-d',NOW() + interval '30 minutes');
+SQL
+VORHER=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) || '|' || count(\"totpSecretEnc\") || '|' || (select count(*) from \"PasswordResetToken\" where \"usedAt\" is null) from \"User\"")
+if sh scripts/disable-2fa.sh --bestaetigen --email unbekannt31@example.com >/dev/null 2>&1; then
+  fail "Notfallskript: unbekannte Adresse muss mit Exit 1 enden"
+fi
+NACHHER=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) || '|' || count(\"totpSecretEnc\") || '|' || (select count(*) from \"PasswordResetToken\" where \"usedAt\" is null) from \"User\"")
+[ "$VORHER" = "$NACHHER" ] || fail "Notfallskript: unbekannte Adresse hat Daten veraendert ('$VORHER' -> '$NACHHER')"
+echo "    ok — Notfallskript: passwordChangedAt gesetzt, Reset-Tokens entwertet, unbekannte Adresse Exit 1 ohne Aenderung (Postgres)"
+
 echo "ALLE TESTS BESTANDEN"
