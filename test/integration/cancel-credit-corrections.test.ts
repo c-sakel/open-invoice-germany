@@ -30,6 +30,9 @@ import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { createInvoiceSchema } from "@/schemas";
 import { SCHEME_NOTICE_BY_LANG } from "@/domain/invoice/mandatory";
+import { docStrings } from "@/lib/i18n/doc";
+
+const CATEGORY_NOTICE_BY_LANG = { de: docStrings("de").categoryNotice, en: docStrings("en").categoryNotice };
 
 const NOW = new Date("2047-05-01T10:00:00.000Z");
 // Eigenes Jahr fuer orgNoVat: assignDocumentNumber() vergibt Nummern "RE-<Jahr>-000N" je Org
@@ -222,10 +225,10 @@ describe("Frische Belege bleiben blockiert (Gegenprobe zu C1)", () => {
 });
 
 describe("Teilgutschrift erbt den Pflichthinweis des Originals (17a)", () => {
-  async function partial(original: { id: string; orgId: string }, notes?: string) {
+  async function partial(original: { id: string; orgId: string }, notes?: string, taxCategory = "AE") {
     const res = await createPartialCreditNote(
       original.id,
-      { notes, lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 0, taxCategory: "AE" }] },
+      { notes, lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: taxCategory === "S" ? 19 : 0, taxCategory }] },
       { orgId: original.orgId, now: NOW },
     );
     return dbInternal.invoice.findUniqueOrThrow({ where: { id: res.creditNote.id }, select: { notes: true } });
@@ -248,8 +251,24 @@ describe("Teilgutschrift erbt den Pflichthinweis des Originals (17a)", () => {
     const c = await partial(await mk("en"));
     expect(c.notes).toContain(SCHEME_NOTICE_BY_LANG.en.REVERSE_CHARGE);
   });
+  it("REGULAR mit K-Position: Kategorie-Hinweis genau einmal (de und en)", async () => {
+    const kLine = [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 0, taxCategory: "K" }];
+    const run = async (language: string, notes?: string) => {
+      const o = await mk(language, "REGULAR", "K");
+      const res = await createPartialCreditNote(o.id, { notes, lines: kLine }, { orgId: o.orgId, now: NOW });
+      return (await dbInternal.invoice.findUniqueOrThrow({ where: { id: res.creditNote.id }, select: { notes: true } })).notes ?? "";
+    };
+    const count = (hay: string, needle: string) => hay.split(needle).length - 1;
+    const de = await run("de");
+    expect(count(de, CATEGORY_NOTICE_BY_LANG.de.K)).toBe(1);
+    const en = await run("en");
+    expect(count(en, CATEGORY_NOTICE_BY_LANG.en.K)).toBe(1);
+    // Nennt der Nutzertext den Grund schon, kommt er nicht doppelt.
+    const given = await run("de", "Steuerfreie innergemeinschaftliche Lieferung");
+    expect(count(given.toLowerCase(), "steuerfreie innergemeinschaftliche lieferung")).toBe(1);
+  });
   it("REGULAR: kein Zusatz", async () => {
-    const c = await partial(await mk("de", "REGULAR", "S"));
+    const c = await partial(await mk("de", "REGULAR", "S"), undefined, "S");
     expect(c.notes).toBe("Teilgutschrift zu Rechnung " + (await dbInternal.invoice.findFirstOrThrow({ where: { notes: "x", taxScheme: "REGULAR", orgId: orgWithVat }, select: { number: true }, orderBy: { createdAt: "desc" } })).number + ".");
   });
 });

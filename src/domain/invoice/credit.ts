@@ -15,7 +15,7 @@ import { creditCapCents, openAmountCents, payableBaseCents } from "@/domain/invo
 import { incrementPaidAmount } from "./paid-amount";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { finalizeWithinTx } from "./finalize";
-import { SCHEME_NOTICE_BY_LANG, noticeContained } from "./mandatory";
+import { SCHEME_NOTICE_BY_LANG, categoryNoticesToPrint, noticeContained } from "./mandatory";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { correctionFxOverride } from "@/domain/fx/correction";
 
@@ -119,7 +119,12 @@ export async function createPartialCreditNote(
     // Pflichthinweis des Originals (z. B. Steuerschuldnerschaft) erbt die Teilgutschrift.
     const schemeNotice = SCHEME_NOTICE_BY_LANG[resolveDocLanguage(original.language)][original.taxScheme];
     const extraNotes = schemeNotice && !noticeContained(original.taxScheme, input.notes ?? "") ? schemeNotice : null;
-    const notes = [`Teilgutschrift zu Rechnung ${original.number}.`, input.notes, extraNotes].filter(Boolean).join(" ");
+    // Kategorie-Hinweise (0-%-Positionen K/G/O/E/Z/AE) der erstatteten Positionen wie beim Original:
+    // dieselbe Quelle wie die PDF-Ausgabe (categoryNoticesToPrint), je Kategorie genau einmal, in
+    // Belegsprache, nicht doppelt wenn Nutzertext oder Schemahinweis den Grund schon nennen.
+    const noticesSoFar = [input.notes, extraNotes].filter(Boolean).join(" ");
+    const categoryNotes = categoryNoticesToPrint(input.lines.map((l) => l.taxCategory), noticesSoFar, resolveDocLanguage(original.language));
+    const notes = [`Teilgutschrift zu Rechnung ${original.number}.`, input.notes, extraNotes, ...categoryNotes].filter(Boolean).join(" ");
 
     const credit = await tx.invoice.create({
       data: {
