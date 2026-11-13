@@ -10,7 +10,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma, ciContains } from "@/lib/db";
 import { QuoteStatus, DeliveryNoteStatus } from "@/schemas";
 import { effectiveQuoteStatus } from "@/domain/document/status";
-import { billingStateIndex } from "@/domain/document/billing-state";
+import { billingFilterIds } from "@/domain/document/billing-state";
 import { docIdsForTag } from "@/domain/tag/list";
 import { collectByIdSet, compareBySort, countByIdSet, intersectIdSets, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
 
@@ -178,38 +178,26 @@ function quoteWith(base: Prisma.QuoteWhereInput[], c: IdCond, status?: Prisma.Qu
  * "partially-billed" (PARTIAL), jeweils ueber `id: { in: [...] }` auf denselben
  * Basisfilter angewandt wie die uebrigen Tabs. Bewusst NICHT in `quoteStatusWhere`: das
  * ist der gespeicherte Belegstatus, der Abrechnungsstand ist eine andere Achse (ein
- * Angebot kann z. B. SENT UND bereits voll abgerechnet sein). Ohne Index (Obergrenze
- * ueberschritten) liefern beide `null` — `StatusTabs` zeigt dann keine Zahl, die Seite
- * kann die Tabs ganz ausblenden, statt eine falsche Zahl zu zeigen.
+ * Angebot kann z. B. SENT UND bereits voll abgerechnet sein). Phase 17c: keine Obergrenze und
+ * kein `null` mehr — beide Zaehler sind immer Zahlen (Index und Zaehlung laufen in Bloecken).
  */
 export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<Record<string, number | null>> {
   const filter = quoteListFilterSchema.parse(rawFilter);
   const base = quoteFilterConditions(orgId, filter);
   const tagSet = await quoteIdSet(orgId, filter);
   const tabs = ["all", ...QuoteStatus.options] as const;
-  const [counts, index] = await Promise.all([
+  const [counts, fullIds, partialIds] = await Promise.all([
     Promise.all(
       tabs.map((tab) => {
         const cond = quoteStatusWhere(tab, now);
         return countByIdSet(tagSet, (c) => prisma.quote.count({ where: quoteWith(base, c, cond) }));
       }),
     ),
-    billingStateIndex(orgId),
+    billingFilterIds(orgId, "billed"),
+    billingFilterIds(orgId, "partially-billed"),
   ]);
   const result: Record<string, number | null> = Object.fromEntries(tabs.map((t, i) => [t, counts[i]]));
 
-  if (!index.available) {
-    result.billed = null;
-    result["partially-billed"] = null;
-    return result;
-  }
-
-  const fullIds: string[] = [];
-  const partialIds: string[] = [];
-  for (const [quoteId, state] of index.states) {
-    if (state === "FULL") fullIds.push(quoteId);
-    else if (state === "PARTIAL") partialIds.push(quoteId);
-  }
   const [billed, partiallyBilled] = await Promise.all([
     countByIdSet(intersectIdSets(tagSet, fullIds), (c) => prisma.quote.count({ where: quoteWith(base, c) })),
     countByIdSet(intersectIdSets(tagSet, partialIds), (c) => prisma.quote.count({ where: quoteWith(base, c) })),

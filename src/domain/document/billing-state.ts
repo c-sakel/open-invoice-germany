@@ -16,6 +16,7 @@ import { dbInternal } from "@/lib/db";
 import { listRelations } from "@/domain/relations";
 import { billedQuantities } from "@/domain/invoice/billed-quantities";
 import { BillingState, DocRefType } from "@/schemas";
+import { chunkIds, collectByIdSet } from "@/lib/id-filter";
 
 export interface BillingStateResult {
   state: BillingState;
@@ -170,27 +171,13 @@ export async function billingStateFor(orgId: string, type: "QUOTE", id: string):
 }
 
 export interface BillingStateIndex {
-  /** false ab `BILLING_INDEX_RELATION_LIMIT` Relationszeilen — dann bleibt `states` leer,
-   *  Aufrufer zeigen einen Hinweis/blenden abgeleitete Zaehler/Tabs aus statt zu raten. */
-  available: boolean;
-  /** Task 8 (Nachtrag): enthaelt NUR Angebote mit mindestens einer billingrelevanten
-   *  Relation (CONVERTED_TO/PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR) — ein Angebot ganz ohne
-   *  Rechnungsbezug hat KEINEN Eintrag mehr. Aufrufer lesen daher immer ueber
+  /** Enthaelt NUR Angebote mit mindestens einer billingrelevanten Relation
+   *  (CONVERTED_TO/PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR) — ein Angebot ganz ohne
+   *  Rechnungsbezug hat KEINEN Eintrag. Aufrufer lesen daher immer ueber
    *  `states.get(id) ?? "NONE"`, nie ein bares `.get(id)` (ein fehlender Eintrag bedeutet
-   *  "NONE", nicht "unbekannt" — `available` regelt getrennt davon, ob der Index ueberhaupt
-   *  gebaut werden konnte). */
+   *  "NONE", nicht "unbekannt"). */
   states: Map<string, BillingState>;
 }
-
-/** Ab dieser Zahl Relationszeilen je Organisation wird kein Index gebaut — die zwei
- *  abgeleiteten Tabs (billed/partially-billed) entfallen dann (Hinweis statt falscher
- *  Zahl, siehe docs/LIMITATIONEN.md). Fix-Welle S5: von 20 000 auf 5 000 gesenkt — die
- *  aus den Relationszeilen abgeleiteten Id-Listen (`fullIds`/`partialIds` in
- *  `quoteStatusTabCounts`, `billedIds`/`partiallyBilledIds` in `dokumente/page.tsx`)
- *  gehen ungeteilt als `id: { in: [...] }` in eine Abfrage; SQLite begrenzt Bind-
- *  Parameter (999 vor Version 3.32, danach 32 766) — bei nahe 20 000 Ids plus den
- *  uebrigen Filterparametern war der Abstand zur (aelteren) SQLite-Grenze zu klein. */
-export const BILLING_INDEX_RELATION_LIMIT = 5_000;
 
 /**
  * Abrechnungsstand ALLER Angebote/ABs einer Organisation in konstant vielen Abfragen
@@ -198,6 +185,9 @@ export const BILLING_INDEX_RELATION_LIMIT = 5_000;
  * Teilt sich mit dem Einzelpfad oben die Regel (`deriveBillingState`); je Anfrage ueber
  * React `cache()` memoisiert (Muster: src/domain/settings/brand.ts), damit Zaehler,
  * Filter und Zeilen denselben Index sehen.
+ *
+ * Phase 17c, Task 5: keine Obergrenze mehr — Relationen werden vollstaendig gelesen, alle
+ * Abfragen mit Id-Listen laufen in Bloecken (`src/lib/id-filter.ts`), jede org-gescoped.
  *
  * Fuenf Bulk-Abfragen statt zwei (Ruling, s. Task-5-Brief): Betrags- UND Mengendeckung
  * (`billedPermille`/`allQuantitiesBilled`) brauchen die Angebots-Bruttosumme, die
@@ -218,9 +208,7 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
       ],
     },
     select: { fromId: true, toId: true, fromType: true, relationType: true },
-    take: BILLING_INDEX_RELATION_LIMIT + 1,
   });
-  if (relations.length > BILLING_INDEX_RELATION_LIMIT) return { available: false, states: new Map() };
 
   const convertedByQuote = new Map<string, string[]>();
   const partialsByQuote = new Map<string, string[]>();
@@ -254,12 +242,10 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
 
   // Bulk-Abfrage 2 (Rechnungen) + Bulk-Abfrage 3 (Angebots-Brutto der verknuepften Angebote).
   const [invoices, quotes] = await Promise.all([
-    allInvoiceIds.size
-      ? dbInternal.invoice.findMany({ where: { id: { in: [...allInvoiceIds] }, orgId }, select: { id: true, status: true, grossTotalCents: true } })
-      : Promise.resolve([]),
-    linkedQuoteIds.length
-      ? dbInternal.quote.findMany({ where: { orgId, id: { in: linkedQuoteIds } }, select: { id: true, grossTotalCents: true } })
-      : Promise.resolve([]),
+    collectByIdSet([...allInvoiceIds], (c) =>
+      dbInternal.invoice.findMany({ where: { orgId, ...c }, select: { id: true, status: true, grossTotalCents: true } }),
+    ),
+    collectByIdSet(linkedQuoteIds, (c) => dbInternal.quote.findMany({ where: { orgId, ...c }, select: { id: true, grossTotalCents: true } })),
   ]);
   const invoiceById = new Map(invoices.map((i) => [i.id, i]));
 
@@ -270,18 +256,18 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
   // eindeutig (cuid) — eine flache Zuordnung ohne Gruppierung je Angebot reicht.
   const partialQuoteIds = [...partialsByQuote.keys()];
   const orderedLinesByQuote = new Map<string, { id: string; quantityMilli: number }[]>();
-  let billedByLine = new Map<string, number>();
-  if (partialQuoteIds.length > 0) {
+  const billedByLine = new Map<string, number>();
+  for (const chunk of chunkIds(partialQuoteIds)) {
     const [lines, billedRows] = await Promise.all([
       dbInternal.quoteLine.findMany({
-        where: { quoteId: { in: partialQuoteIds }, lineType: "ITEM" },
+        where: { quoteId: { in: chunk }, lineType: "ITEM", quote: { orgId } },
         select: { id: true, quoteId: true, quantityMilli: true },
       }),
       dbInternal.invoiceLine.groupBy({
         by: ["sourceLineId"],
         where: {
           sourceLineId: { not: null },
-          invoice: { orgId, sourceType: "QUOTE", sourceId: { in: partialQuoteIds }, type: "PARTIAL", status: { not: "CANCELLED" } },
+          invoice: { orgId, sourceType: "QUOTE", sourceId: { in: chunk }, type: "PARTIAL", status: { not: "CANCELLED" } },
         },
         _sum: { quantityMilli: true },
       }),
@@ -291,7 +277,9 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
       if (arr) arr.push({ id: l.id, quantityMilli: l.quantityMilli });
       else orderedLinesByQuote.set(l.quoteId, [{ id: l.id, quantityMilli: l.quantityMilli }]);
     }
-    billedByLine = new Map(billedRows.filter((r) => r.sourceLineId != null).map((r) => [r.sourceLineId as string, r._sum.quantityMilli ?? 0]));
+    for (const r of billedRows) {
+      if (r.sourceLineId != null) billedByLine.set(r.sourceLineId, (billedByLine.get(r.sourceLineId) ?? 0) + (r._sum.quantityMilli ?? 0));
+    }
   }
 
   function invoiceRows(ids: string[]): { id: string; status: string; grossTotalCents: number }[] {
@@ -322,5 +310,15 @@ export const billingStateIndex = cache(async (orgId: string): Promise<BillingSta
     states.set(quote.id, result.state);
   }
 
-  return { available: true, states };
+  return { states };
 });
+
+/** Angebots-Ids eines abgeleiteten Abrechnungsstand-Tabs der Liste (`status=billed` -> FULL,
+ *  `status=partially-billed` -> PARTIAL). Speist `listQuotes(..., { ids })` und die Tab-Zaehler. */
+export async function billingFilterIds(orgId: string, status: "billed" | "partially-billed"): Promise<string[]> {
+  const wanted: BillingState = status === "billed" ? "FULL" : "PARTIAL";
+  const index = await billingStateIndex(orgId);
+  const ids: string[] = [];
+  for (const [quoteId, state] of index.states) if (state === wanted) ids.push(quoteId);
+  return ids;
+}

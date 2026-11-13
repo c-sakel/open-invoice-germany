@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
  * Status-Tabs ueber einer Liste (Phase 13a, §40) — Links auf `?status=…`. `offset` faellt
  * beim Tabwechsel weg (neue Auswahl beginnt auf Seite 1), alle uebrigen Filter bleiben.
  * `count: null` zeigt keine Zahl — z. B. wenn der Zaehler mangels Daten nicht berechenbar
- * ist (billingStateIndex-Obergrenze, Task 5): lieber keine Zahl als eine falsche.
+ * ist: lieber keine Zahl als eine falsche (der Abrechnungsstand-Index hat seit Phase 17c keine Obergrenze mehr).
  */
 export interface StatusTab {
   value: string;
