@@ -247,6 +247,14 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 | `tag_document` | Tag (Name oder ID) einem Beleg (Belegnummer oder ID) zuordnen — idempotent | „Setze den Tag ‚Wartung' auf RE-2026-00342." |
 | `untag_document` | Tag-Zuordnung von einem Beleg entfernen — idempotent, kein Fehler ohne bestehende Zuordnung | „Entferne den Tag ‚Wartung' von RE-2026-00342." |
 
+### CSV-Export (Phase 18b)
+
+Dieselben Listenfilter und dieselbe Sortierung wie die `list_*`-Werkzeuge und `GET /api/v1/<Ressource>?format=csv`; interne Notizen sind nie enthalten.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `export_csv` | Rechnungen, Angebote, Auftragsbestätigungen, Lieferscheine, Kunden oder Produkte als CSV zurückgeben (`resource`: `invoices`, `quotes`, `order-confirmations`, `delivery-notes`, `contacts`, `products`; optional `filter` wie bei `list_*`). Semikolon, CRLF, deutsche Zahlen, ohne BOM; keine Paginierung, höchstens 20.000 Zeilen (sonst Fehler), 30 Exporte je Minute und Organisation | „Exportiere alle bezahlten Rechnungen als CSV." |
+
 ### Einstellungen
 
 | Tool | Zweck | Beispiel |

@@ -36,6 +36,11 @@ describe("proxy", () => {
     expect(json.error).toBe("Nicht angemeldet");
   });
 
+  it("/api/exports/rechnungen.csv ohne Cookie -> 401", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/exports/rechnungen.csv"));
+    expect(res.status).toBe(401);
+  });
+
   it("/angebot/abc -> next(), Request-Header x-oig-public wird auf 1 gesetzt", async () => {
     const req = new NextRequest("http://localhost/angebot/abc");
     const res = await proxy(req);

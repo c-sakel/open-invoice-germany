@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline, type InvoiceListRow } from "@/domain/invoice/list";
@@ -349,9 +350,12 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         title={values.type === "CREDIT_NOTE" ? "Gutschriften" : "Rechnungen"}
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
-            Neue Rechnung
-          </Link>
+          <>
+            <CsvLink href={"/api/exports/rechnungen.csv" + (liste ? "?" + liste : "")} what="Rechnungen" />
+            <Link href="/rechnungen/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
+              Neue Rechnung
+            </Link>
+          </>
         }
       />
 

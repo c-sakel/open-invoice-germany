@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
@@ -44,9 +45,12 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         title="Kunden"
         subtitle={`${customers.length} Kunden`}
         actions={
-          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
-            Neuer Kunde
-          </Link>
+          <>
+            <CsvLink href={"/api/exports/kunden.csv" + (query ? "?q=" + encodeURIComponent(query) : "")} what="Kunden" />
+            <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
+              Neuer Kunde
+            </Link>
+          </>
         }
       />
 
