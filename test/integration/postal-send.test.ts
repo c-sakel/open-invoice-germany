@@ -480,6 +480,20 @@ describe("Uebertragung", () => {
     expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: inv.id } })).toBe(1);
   });
 
+  it("TEST-Auftrag sperrt LIVE desselben Belegs mit klarer Meldung, nach Storno wieder frei", async () => {
+    await setPostal({ mode: "TEST" });
+    const inv = await newInvoice();
+    const f = lxp({ status: "draft" });
+    const t = await quoteSend("INVOICE", inv.id, f);
+    expect(t.status).toBe("DRAFT");
+    await setPostal({ mode: "LIVE", acknowledgeCosts: true });
+    const blocked = await quoteSend("INVOICE", inv.id, f);
+    expect(blocked).toMatchObject({ status: "REJECTED", code: "ALREADY_SENT" });
+    expect(blocked.error).toContain("Testauftrag zuerst stornieren");
+    await cancelPostalJob(orgId, t.jobId as string, { actor: "tester", transport: f.transport });
+    expect((await quoteSend("INVOICE", inv.id, lxp())).status).toBe("QUEUED");
+  });
+
   it("Doppelversand: ALREADY_SENT, repeat erlaubt, parallel genau ein Auftrag", async () => {
     const inv = await newInvoice();
     const f = lxp();

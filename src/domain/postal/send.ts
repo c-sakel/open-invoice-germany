@@ -342,9 +342,11 @@ async function sendOne(
     if (!item.repeat) {
       const active = await tx.postalJob.findFirst({
         where: { orgId, docType: doc.docType, docId: doc.docId, mode: { not: "DRY_RUN" }, status: { in: [...ACTIVE_POSTAL_STATUSES] } },
-        select: { id: true },
+        select: { id: true, mode: true },
       });
-      if (active) return "ACTIVE" as const;
+      // Ein TEST-Auftrag sperrt den LIVE-Versand desselben Belegs: der Briefdienst kann Testbriefe aus der Postbox
+      // manuell versenden (Doppelversand-Gefahr). Erst den Testauftrag stornieren.
+      if (active) return active.mode === "TEST" && mode === "LIVE" ? ("ACTIVE_TEST" as const) : ("ACTIVE" as const);
     }
     await tx.postalJob.create({
       data: {
@@ -376,6 +378,12 @@ async function sendOne(
   });
   if (created === "MODE_CHANGED") throw new PostalConflictError(MODE_CHANGED_MESSAGE, "NOT_ALLOWED");
   if (created === "BUDGET") throw new PostalConflictError("Das Monatsbudget fuer den Postversand waere ueberschritten.", "BUDGET");
+  if (created === "ACTIVE_TEST") {
+    throw new PostalConflictError(
+      "Fuer diesen Beleg besteht ein Testauftrag. Testauftrag zuerst stornieren, bevor er regulaer versendet wird (Testbriefe koennen aus der Postbox des Briefdienstes versendet werden).",
+      "ALREADY_SENT",
+    );
+  }
   if (created === "ACTIVE") throw new PostalConflictError("Dieser Beleg wurde bereits per Post versendet (oder der Versand laeuft).", "ALREADY_SENT");
 
   if (mode === "DRY_RUN" || !client || !creds) return finishDryRun(orgId, doc, jobId, summary, now, ctx.actor);
