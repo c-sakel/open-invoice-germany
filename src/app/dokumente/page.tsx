@@ -4,7 +4,7 @@ import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listQuotes, quoteStatusTabCounts, quoteListHeadline, type QuoteListResult, type QuoteListHeadline } from "@/domain/document/list";
 import { availableActions, convertTargets } from "@/domain/document/actions";
-import { billingStateIndex } from "@/domain/document/billing-state";
+import { billingStateIndex, billingFilterIds } from "@/domain/document/billing-state";
 import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { listTags } from "@/domain/tag/manage";
 import { tagsForDocuments } from "@/domain/tag/list";
@@ -86,10 +86,9 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // exakten Treffer aufloesen, sonst faellt der Rohtext auf `q` zurueck (Spec-Zusage).
   // Laeuft parallel zu `billingStateIndex`/`customerOptions` (unabhaengige Abfragen).
 
-  // billingStateIndex laeuft VOR der Liste, weil er fuer drei Dinge gebraucht wird: ob die
-  // zwei abgeleiteten Tabs ueberhaupt angeboten werden (Brief, Step 2), die `id`-Liste fuer
-  // "?status=billed"/"?status=partially-billed" (Task-5-Kommentar zu `quoteStatusWhere`) und
-  // den Zeilen-Chip — `cache()` memoisiert ihn je Request, ein zweiter Aufruf innerhalb von
+  // billingStateIndex laeuft VOR der Liste, weil er fuer zwei Dinge gebraucht wird: die
+  // `id`-Liste fuer "?status=billed"/"?status=partially-billed" (Task-5-Kommentar zu
+  // `quoteStatusWhere`) und den Zeilen-Chip (Phase 17c: ohne Obergrenze, beide Tabs immer) — `cache()` memoisiert ihn je Request, ein zweiter Aufruf innerhalb von
   // `quoteStatusTabCounts` unten kostet also keine zusaetzliche Abfrage.
   const [index, customerOptions, , tags] = await Promise.all([
     billingStateIndex(org.id),
@@ -100,13 +99,6 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
     // Phase 13d, Task 4: Tag-Filteroptionen (FilterBar-Feld "tag").
     listTags(org.id),
   ]);
-  const billedIds: string[] = [];
-  const partiallyBilledIds: string[] = [];
-  for (const [quoteId, state] of index.states) {
-    if (state === "FULL") billedIds.push(quoteId);
-    else if (state === "PARTIAL") partiallyBilledIds.push(quoteId);
-  }
-
   // Seiten-Wiring (Task 8, wie in Task 5 vorgesehen): "billed"/"partially-billed" sind kein
   // Beleg-Status — vor dem Aufruf von `listQuotes`/`quoteListHeadline` in `status: "all"` +
   // einen genuinen `ids`-Funktionsparameter (aus dem Index) uebersetzt, statt
@@ -114,8 +106,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // oeffentlich genutzten `quoteListFilterSchema` hinzuzufuegen (das waere ein neuer,
   // ungewollter Query-Parameter der `/api/v1/Quote`-/`/api/v1/OrderConfirmation`-Routen).
   const idsOpt: { ids?: string[] } = {};
-  if (values.status === "billed") idsOpt.ids = billedIds;
-  else if (values.status === "partially-billed") idsOpt.ids = partiallyBilledIds;
+  if (values.status === "billed" || values.status === "partially-billed") idsOpt.ids = await billingFilterIds(org.id, values.status);
 
   // Fix-Welle S6: `runListFilter` versucht `rawFilter` zuerst vollstaendig, entfernt bei
   // einem ZodError NUR die beanstandeten Schluessel (statt alle Filter zu verwerfen) und
@@ -134,7 +125,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
   // Phase 13d, Task 4: Tag-Chips der Zeilen — ein Bulk-Query fuer die ganze Seite (kein N+1).
   const tagsByDocId = await tagsForDocuments(org.id, "QUOTE", rows.map((r) => r.id));
 
-  const statusTabValues = index.available ? (["all", ...QuoteStatus.options, "billed", "partially-billed"] as const) : (["all", ...QuoteStatus.options] as const);
+  const statusTabValues = ["all", ...QuoteStatus.options, "billed", "partially-billed"] as const;
   const statusTabs: StatusTab[] = statusTabValues.map((value) => ({ value, label: STATUS_TAB_LABEL[value] ?? value, count: tabCounts[value] ?? null }));
 
   const headlineItems: HeadlineItem[] = [
@@ -201,11 +192,7 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         return (
           <span className="inline-flex flex-wrap items-center gap-1.5">
             <StatusBadge status={d.effectiveStatus} />
-            {/* Fix-Welle S1: ohne verfuegbaren Index (Obergrenze ueberschritten) liefert
-               `index.states.get(d.id) ?? "NONE"` fuer JEDES Angebot "NONE" — der Chip wuerde
-               fuer laengst voll abgerechnete Angebote faelschlich "Nicht berechnet" zeigen.
-               Ohne Index ganz ausblenden (die Tabs verschwinden bereits, siehe StatusTabValues). */}
-            {d.kind !== "PROFORMA" && index.available && <BillingStateBadge state={billingState} />}
+            {d.kind !== "PROFORMA" && <BillingStateBadge state={billingState} />}
             {d.archivedAt && <span className="text-xs text-ink-muted">archiviert</span>}
           </span>
         );

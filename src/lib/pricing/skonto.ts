@@ -3,11 +3,15 @@
  * (XRechnung "Zahlungsbedingungen", z. B. genutzt von ZUGFeRD/E-Rechnungs-
  * Software wie ZUGFeRD-Community-Skripten oder "sepa-skonto-tags").
  *
- * Alle Datumsvergleiche laufen in UTC auf Tagesende: `dueDate = issueDate +
- * days` (Kalendertage), ein Zahlungseingang zählt noch, wenn
- * `paidAt <= endOfDay(dueDate)`.
+ * Fristdatum: `dueDate = issueDate + days` (Kalendertage, aus dem UTC-Kalendertag des
+ * Rechnungsdatums; das gedruckte Datum bleibt unveraendert). Fristende: Ablauf des
+ * Kalendertags `dueDate` nach Berliner Zeit (§ 188 Abs. 1 BGB) — ein Zahlungseingang zaehlt
+ * noch, wenn `paidAt <= berlinDayEnd(dueDate)`. Das Fenster endet damit 1 h (MEZ) bzw. 2 h
+ * (MESZ) frueher als beim fruheren UTC-Tagesende; Formular-Datum (UTC-Mitternacht) liegt
+ * immer innerhalb.
  */
 import { formatCents, roundHalfUp } from "../money";
+import { berlinDayEnd } from "../berlin-time";
 import { docLocale, docStrings } from "../i18n/doc";
 import type { DocLanguage } from "../i18n/doc/types";
 
@@ -41,17 +45,6 @@ function addUtcDays(d: Date, days: number): Date {
   const base = toUtcMidnight(d);
   base.setUTCDate(base.getUTCDate() + days);
   return base;
-}
-
-// Fristende = UTC-Tagesende (bewusste Konvention, siehe Modulkommentar oben). In der
-// deutschen Zeitzone (Berlin, UTC+1/+2) bedeutet das: die Frist laeuft praktisch bis
-// 01:00 bzw. 02:00 Uhr NACHTS des Folgetags weiter, weil UTC-Mitternacht des Folgetags
-// erst dann erreicht ist. Ein Zahlungseingang in diesen fruehen Morgenstunden zaehlt
-// also noch fristgerecht — bewusst grosszuegig statt eine serverlokale Zeitzone
-// mitzufuehren (die bei DST-Umstellungen ohnehin uneindeutig waere).
-function endOfUtcDay(d: Date): Date {
-  const base = toUtcMidnight(d);
-  return new Date(base.getTime() + 24 * 60 * 60 * 1000 - 1);
 }
 
 function formatDateDE(d: Date): string {
@@ -118,7 +111,7 @@ export function detectSkonto(
   openBeforeCents: number,
 ): SkontoTerm | null {
   const matches = terms.filter(
-    (t) => paidAt.getTime() <= endOfUtcDay(t.dueDate).getTime() && Math.abs(amountCents - t.payableCents) <= 1,
+    (t) => paidAt.getTime() <= berlinDayEnd(t.dueDate).getTime() && Math.abs(amountCents - t.payableCents) <= 1,
   );
   if (matches.length === 0) return null;
   const best = matches.reduce((b, t) =>

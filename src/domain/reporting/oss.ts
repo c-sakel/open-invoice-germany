@@ -8,6 +8,7 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { buyerSnapshotSchema } from "@/schemas";
 import { OSS_NOTICE, type OssCountMode } from "@/schemas/oss";
 import { aggregateOssYear, ossLevel, OSS_THRESHOLD_CENTS, type OssDoc, type OssLevel, type OssYearSum } from "./oss-calc";
+import { berlinYearStart } from "@/lib/berlin-time";
 
 export type OssThreshold = {
   thresholdCents: number;
@@ -93,8 +94,8 @@ export async function ossThreshold(orgId: string, year: number): Promise<OssThre
   const settings = await loadDocumentSettings(orgId);
   const mode = settings.ossCountMode;
   const withLines = mode === "BY_PRODUCT";
-  const start = new Date(Date.UTC(year - 1, 0, 1));
-  const end = new Date(Date.UTC(year + 1, 0, 1));
+  const start = berlinYearStart(year - 1);
+  const end = berlinYearStart(year + 1);
   const range = { gte: start, lt: end };
 
   const mainRows = await loadRows(

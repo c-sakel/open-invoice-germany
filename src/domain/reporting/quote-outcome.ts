@@ -8,6 +8,7 @@
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
 import { effectiveQuoteStatus } from "@/domain/document/status";
+import { berlinMonthStart } from "@/lib/berlin-time";
 
 export interface QuoteBucket {
   count: number;
@@ -31,8 +32,8 @@ export interface QuoteOutcomeOptions {
 export async function quoteOutcome(orgId: string, opts: QuoteOutcomeOptions = {}): Promise<QuoteOutcomeRow[]> {
   const months = opts.months ?? 12;
   const now = opts.now ?? new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
   const quotes = await dbInternal.quote.findMany({

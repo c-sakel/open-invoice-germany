@@ -9,12 +9,6 @@ import { dbInternal } from "@/lib/db";
 import type { TagDocType } from "@/schemas/tag";
 import type { TagRow } from "@/domain/tag/manage";
 
-/** Deckelt docIdsForTag gegen unbegrenztes Laden bei sehr vielen Zuordnungen — dieselbe
- *  ungeteilte `id: { in: [...] }`-Konstruktion wie `BILLING_INDEX_RELATION_LIMIT`
- *  (src/domain/document/billing-state.ts), deshalb derselbe Deckel: 5.000 haelt sicheren
- *  Abstand zur SQLite-Bind-Parameter-Grenze (Fix-Welle 1, must 2 — vormals 10.000). */
-export const TAG_FILTER_LIMIT = 5_000;
-
 /** Dieselbe Projektion wie `listTags` (src/domain/tag/manage.ts) — dort UI-seitig ohne
  *  Paginierung, hier fuer `/api/v1/Tag` (Liste UND Einzelzugriff) wiederverwendet. */
 const TAG_ROW_SELECT = {
@@ -96,20 +90,16 @@ export async function tagsForDocuments(orgId: string, docType: TagDocType, docId
 }
 
 /**
- * Beleg-IDs, die einen bestimmten Tag tragen (FilterBar-Filter `tag`) — auf
- * TAG_FILTER_LIMIT gedeckelt, neueste Zuordnung zuerst (nit 8: `take` ohne `orderBy`
- * lieferte bei erreichtem Deckel eine nicht deterministische Teilmenge). Ueber React
- * `cache()` je Anfrage memoisiert (Muster `billingStateIndex`, Fix-Welle 1, must 1) —
- * `invoiceFilterConditions`/`quoteFilterConditions`/`deliveryNoteFilterConditions` UND die
- * jeweilige `list*`-Funktion rufen dieselbe (orgId, tagId, docType)-Kombination auf und
- * sehen dadurch garantiert dieselbe Id-Liste, ohne die Abfrage doppelt auszufuehren.
+ * Beleg-IDs, die einen bestimmten Tag tragen (FilterBar-Filter `tag`), ohne Obergrenze und
+ * ohne feste Reihenfolge (Phase 17c: grosse Mengen laufen ueber `src/lib/id-filter.ts` in
+ * Bloecken, nie als eine `id IN`-Abfrage). Eine Abfrage mit festen Parametern. Ueber React
+ * `cache()` je Anfrage memoisiert — Zeilen, Tabs und Kennzahlen einer Liste sehen dadurch
+ * dieselbe Id-Menge, ohne die Abfrage zu wiederholen.
  */
 export const docIdsForTag = cache(async (orgId: string, tagId: string, docType: TagDocType): Promise<string[]> => {
   const rows = await dbInternal.documentTag.findMany({
     where: { orgId, tagId, docType },
     select: { docId: true },
-    orderBy: { createdAt: "desc" },
-    take: TAG_FILTER_LIMIT,
   });
   return rows.map((r) => r.docId);
 });

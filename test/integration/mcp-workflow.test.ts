@@ -176,6 +176,14 @@ describe("get_report", () => {
     expect(j.rows).toHaveLength(12);
   });
 
+  it("Phase 17c T3: format=csv liefert reportToCsv ohne BOM", async () => {
+    const res = await callTool("get_report", { type: "revenue", months: 2, format: "csv" });
+    expect(res.isError).toBeFalsy();
+    const t = text(res);
+    expect(t.startsWith("Monat;Währung;Netto;Anzahl\r\n")).toBe(true);
+    expect(t.split("\r\n")).toHaveLength(4); // Kopf + 2 Monate + Abschluss
+  });
+
   it("liefert eine Fehlermeldung bei ungueltigem type", async () => {
     const res = await callTool("get_report", { type: "nichtvorhanden" });
     expect(res.isError).toBe(true);

@@ -9,6 +9,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
+import { berlinMonthStart } from "@/lib/berlin-time";
 
 export interface TopProduct {
   productId: string;
@@ -28,8 +29,8 @@ export async function topProducts(orgId: string, opts: TopProductsOptions = {}):
   const months = opts.months ?? 12;
   const limit = opts.limit ?? 10;
   const now = opts.now ?? new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
 
   const lines = await dbInternal.invoiceLine.findMany({
     where: {

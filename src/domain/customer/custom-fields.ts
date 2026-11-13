@@ -9,6 +9,7 @@
  * `customFieldValuesSchema` und lehnt unbekannte Keys/Tippfehler ab.
  */
 import { dbInternal } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
   customFieldDefinitionInputSchema,
@@ -44,8 +45,12 @@ function toLike(def: CustomFieldDefinitionRow): CustomFieldDefinitionLike {
 }
 
 /** Alle Kundenfeld-Definitionen einer Organisation, aufsteigend nach sortOrder. */
-export async function listCustomFieldDefinitions(orgId: string, opts: { activeOnly?: boolean } = {}) {
-  return dbInternal.customFieldDefinition.findMany({
+export async function listCustomFieldDefinitions(
+  orgId: string,
+  opts: { activeOnly?: boolean } = {},
+  db: Pick<Prisma.TransactionClient, "customFieldDefinition"> = dbInternal,
+) {
+  return db.customFieldDefinition.findMany({
     where: { orgId, ...(opts.activeOnly ? { isActive: true } : {}) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
@@ -114,7 +119,11 @@ export async function reorderCustomFields(orgId: string, rawInput: unknown): Pro
  * inzwischen geloeschten Definitionen (Key nicht mehr vorhanden) werden dabei still
  * uebergangen, ein defekter Einzelwert blockiert nicht die uebrigen Felder.
  */
-export async function parseCustomerCustomFields(orgId: string, json: string | null): Promise<Record<string, unknown>> {
+export async function parseCustomerCustomFields(
+  orgId: string,
+  json: string | null,
+  db: Pick<Prisma.TransactionClient, "customFieldDefinition"> = dbInternal,
+): Promise<Record<string, unknown>> {
   if (!json) return {};
   let raw: unknown;
   try {
@@ -124,7 +133,7 @@ export async function parseCustomerCustomFields(orgId: string, json: string | nu
   }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
 
-  const definitions = await listCustomFieldDefinitions(orgId);
+  const definitions = await listCustomFieldDefinitions(orgId, {}, db);
   const result: Record<string, unknown> = {};
   for (const def of definitions) {
     const value = (raw as Record<string, unknown>)[def.key];

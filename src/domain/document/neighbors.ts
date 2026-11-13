@@ -1,12 +1,13 @@
 /**
  * Vor/Zurueck innerhalb der aktuellen Liste (Phase 11d). Die Listen haengen ihre
  * Filter-Query als `?liste=<query>` an jeden Zeilen-Link; die Detailseite laedt mit
- * demselben Filter (ohne Paginierung, max. 200 Zeilen) die Id-Reihenfolge und sucht die
- * Nachbarn. `from` ist als Datumsfilter der Listen belegt, daher der Name `liste`.
+ * demselben Filter (ohne Paginierung, nur Ids, bis `NEIGHBOR_LIMIT` Treffer) die
+ * Id-Reihenfolge und sucht die Nachbarn (Phase 17c: schlanke Id-Abfrage statt voller Zeilen). `from` ist als Datumsfilter der Listen belegt, daher der Name `liste`.
  */
 import { z } from "zod";
-import { listInvoices } from "@/domain/invoice/list";
-import { listQuotes, listDeliveryNotes } from "@/domain/document/list";
+import { listInvoiceIds } from "@/domain/invoice/list";
+import { listQuoteIds, listDeliveryNoteIds } from "@/domain/document/list";
+import { billingFilterIds } from "@/domain/document/billing-state";
 import { applyCustomerComboFilter } from "@/domain/customer/list";
 import { parseListQuery } from "@/lib/list-query";
 
@@ -41,8 +42,10 @@ export const ALLOWED_KEYS = new Set([
   // Phase 13d (Task 4): Tag-Filter (src/domain/tag/list.ts#docIdsForTag).
   "tag",
 ]);
-/** Maximal 200 Zeilen je Listenabfrage (Schema-Maximum der Listenfilter). */
-const NEIGHBOR_LIMIT = 200;
+/** Hoechstens so viele Ids je Nachbarabfrage (Phase 17c: nur `select { id, <Sortfeld> }`, daher
+ *  deutlich mehr als die 200 Zeilen des Listenschemas). Liegt der aktuelle Beleg dahinter,
+ *  gibt es keine Vor/Zurueck-Links. */
+export const NEIGHBOR_LIMIT = 5_000;
 
 // Task-1-Review-Nachtrag (Task 4): `*` ergaenzt — URLSearchParams.toString() (buildListeParam)
 // und encodeURIComponent (Zeilen-Link) lassen `*` unescaped, es kommt also literal in der
@@ -87,11 +90,18 @@ async function orderedIds(kind: NeighborKind, orgId: string, params: URLSearchPa
   // liefern, statt denselben Kunden wie die Liste zu sehen.
   await applyCustomerComboFilter(orgId, raw);
   const includeArchived = params.get("archiviert") === "1";
-  const filter = { ...raw, limit: NEIGHBOR_LIMIT, offset: 0 };
   try {
-    if (kind === "INVOICE") return (await listInvoices(orgId, filter)).rows.map((r) => r.id);
-    if (kind === "QUOTE") return (await listQuotes(orgId, { ...filter, includeArchived })).rows.map((r) => r.id);
-    return (await listDeliveryNotes(orgId, { ...filter, includeArchived })).rows.map((r) => r.id);
+    if (kind === "INVOICE") return await listInvoiceIds(orgId, raw, { limit: NEIGHBOR_LIMIT });
+    if (kind === "QUOTE") {
+      // Abgeleitete Abrechnungsstand-Tabs sind kein Belegstatus: wie `/dokumente` in
+      // `status: "all"` + Id-Menge uebersetzen (kein zweiter Filterbau).
+      const status = raw.status;
+      if (status === "billed" || status === "partially-billed") {
+        return await listQuoteIds(orgId, { ...raw, status: "all", includeArchived }, { limit: NEIGHBOR_LIMIT, ids: await billingFilterIds(orgId, status) });
+      }
+      return await listQuoteIds(orgId, { ...raw, includeArchived }, { limit: NEIGHBOR_LIMIT });
+    }
+    return await listDeliveryNoteIds(orgId, { ...raw, includeArchived }, { limit: NEIGHBOR_LIMIT });
   } catch (e) {
     if (e instanceof z.ZodError) return [];
     throw e;

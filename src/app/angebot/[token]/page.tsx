@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { resolveShareToken } from "@/domain/quote-share/link";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
-import { formatCents } from "@/lib/money";
-import { formatDateDe } from "@/lib/template/format";
+import { docStrings, resolveDocLanguage, formatDocDate, formatDocMoney } from "@/lib/i18n/doc";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { DecisionForm } from "./DecisionForm";
@@ -13,12 +12,6 @@ export const dynamic = "force-dynamic";
 
 const PAGE_RATE_LIMIT = 60;
 const PAGE_RATE_WINDOW_MS = 60_000;
-
-const KIND_TITLE: Record<string, string> = {
-  ANGEBOT: "Angebot",
-  AUFTRAGSBESTAETIGUNG: "Auftragsbestätigung",
-  PROFORMA: "Proforma-Rechnung",
-};
 
 /**
  * Oeffentliche Angebotsseite (kein Login, Phase 3b). Zeigt AUSSCHLIESSLICH Daten aus
@@ -38,10 +31,17 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
       rateLimit(`public:ip:${ip}`, { limit: PAGE_RATE_LIMIT, windowMs: PAGE_RATE_WINDOW_MS });
     } catch (e) {
       if (e instanceof RateLimitError) {
+        // Sprache ist vor der Token-Aufloesung unbekannt -> zweisprachig.
+        const de = docStrings("de").publicOffer.rateLimit;
+        const en = docStrings("en").publicOffer.rateLimit;
         return (
           <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-center">
-            <p className="text-lg font-medium text-seal">Zu viele Anfragen</p>
-            <p className="mt-2 text-sm text-seal">Bitte versuchen Sie es in Kuerze erneut.</p>
+            <p className="text-lg font-medium text-seal">
+              {de.title} / {en.title}
+            </p>
+            <p className="mt-2 text-sm text-seal">
+              {de.hint} / {en.hint}
+            </p>
           </div>
         );
       }
@@ -54,41 +54,45 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
 
   const { link, quote } = resolved;
   const data = buildDocEInvoiceData(quote);
+  const lang = resolveDocLanguage(data.language);
+  const ds = docStrings(lang);
+  const t = ds.publicOffer;
+  const kindTitle = (ds.titles as unknown as Record<string, string>)[quote.kind] ?? ds.titles.DOCUMENT;
+  const money = (cents: number) => formatDocMoney(cents, data.currency, lang);
 
   if (link.decidedAt) {
-    const decisionLabel = link.decision === "ACCEPTED" ? "angenommen" : "abgelehnt";
     return (
-      <div className="space-y-4">
+      <div lang={lang} className="space-y-4">
         <h1 className="text-2xl font-bold tracking-tight">
-          {KIND_TITLE[quote.kind] ?? "Dokument"} {data.number}
+          {kindTitle} {data.number}
         </h1>
         <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-6 text-center">
           <p className="text-lg font-medium text-ink">
-            Vielen Dank, Ihr Angebot wurde am {formatDateDe(link.decidedAt)} {decisionLabel}.
+            {t.thanks(formatDocDate(link.decidedAt, lang), link.decision === "ACCEPTED")}
           </p>
-          <p className="mt-2 text-sm text-ink-muted">Eine weitere Entscheidung ueber diesen Link ist nicht mehr moeglich.</p>
+          <p className="mt-2 text-sm text-ink-muted">{t.noFurtherDecision}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div lang={lang} className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">
-          {KIND_TITLE[quote.kind] ?? "Dokument"} {data.number}
+          {kindTitle} {data.number}
         </h1>
         <a
           href={`/api/public/angebot/${token}/pdf`}
           className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper"
         >
-          PDF herunterladen
+          {t.downloadPdf}
         </a>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-ink">Absender</h2>
+          <h2 className="mb-2 font-semibold text-ink">{t.sender}</h2>
           <p className="text-ink-soft">{data.seller.name}</p>
           <p className="text-ink-soft">{data.seller.addressLine1}</p>
           <p className="text-ink-soft">
@@ -97,16 +101,16 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
           {data.seller.email && <p className="text-ink-soft">{data.seller.email}</p>}
         </div>
         <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
-          <h2 className="mb-2 font-semibold text-ink">Eckdaten</h2>
+          <h2 className="mb-2 font-semibold text-ink">{t.keyData}</h2>
           <dl className="grid grid-cols-2 gap-y-1 text-ink-soft">
-            <dt>Angebotsnummer</dt>
+            <dt>{t.quoteNumber}</dt>
             <dd className="text-right">{data.number}</dd>
-            <dt>Datum</dt>
-            <dd className="text-right">{formatDateDe(data.issueDate)}</dd>
+            <dt>{t.date}</dt>
+            <dd className="text-right">{formatDocDate(data.issueDate, lang)}</dd>
             {quote.validUntil && (
               <>
-                <dt>Gültig bis</dt>
-                <dd className="text-right">{formatDateDe(quote.validUntil)}</dd>
+                <dt>{t.validUntil}</dt>
+                <dd className="text-right">{formatDocDate(quote.validUntil, lang)}</dd>
               </>
             )}
           </dl>
@@ -115,26 +119,26 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
 
       {data.headerText && <p className="whitespace-pre-line text-sm text-ink-soft">{data.headerText}</p>}
 
-      <LineItemsTable lines={data.lines} currency={data.currency} />
+      <LineItemsTable lines={data.lines} currency={data.currency} labels={ds.columns} lang={lang} />
 
       <div className="ml-auto max-w-xs space-y-1 text-sm">
         <div className="flex justify-between">
-          <span className="text-ink-soft">Netto</span>
-          <span className="tabular font-medium">{formatCents(data.netTotalCents, data.currency)}</span>
+          <span className="text-ink-soft">{t.net}</span>
+          <span className="tabular font-medium">{money(data.netTotalCents)}</span>
         </div>
         <div className="flex justify-between text-ink-soft">
-          <span>zzgl. USt</span>
-          <span className="tabular">{formatCents(data.taxTotalCents, data.currency)}</span>
+          <span>{t.vat}</span>
+          <span className="tabular">{money(data.taxTotalCents)}</span>
         </div>
         <div className="flex justify-between border-t border-rule pt-1 text-base font-semibold">
-          <span>Gesamt</span>
-          <span className="tabular">{formatCents(data.grossTotalCents, data.currency)}</span>
+          <span>{t.gross}</span>
+          <span className="tabular">{money(data.grossTotalCents)}</span>
         </div>
       </div>
 
       {data.footerText && <p className="whitespace-pre-line text-sm text-ink-soft">{data.footerText}</p>}
 
-      <DecisionForm token={token} />
+      <DecisionForm token={token} lang={lang} strings={t.form} />
     </div>
   );
 }

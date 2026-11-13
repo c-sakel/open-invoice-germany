@@ -235,6 +235,7 @@ Parameter (Query):
 | `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue`, `top-customers`, `cash-in`, `quote-outcome` und `top-products` zulässig** (Fix 2, ehem. M8) |
 | `limit` | nein | Anzahl Zeilen (1–50, Default 5; bei `top-products` Default 10, je Währung) — **nur bei `top-customers` und `top-products` zulässig** |
 | `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
+| `currency` | nein | nur Belege dieser Währung (ISO-4217, Großbuchstaben, z. B. `EUR`) — **nur bei `revenue` zulässig**; ohne Angabe je Währung eigene Zeilen |
 
 Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
 gewählten `type` **nicht zulässiger** Parameter (z. B. `limit` bei
@@ -243,8 +244,8 @@ Meldung (`error.details.issues`) nennt den betroffenen Parameter. Vor Fix 2
 wurde ein nicht zutreffender Parameter still ignoriert; das ist seither ein
 Fehler, kein No-op mehr.
 
-- **`revenue`** — Netto-Umsatz je Kalendermonat, lückenlos (auch Monate ohne Beleg
-  als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
+- **`revenue`** — Netto-Umsatz je Kalendermonat und Währung (Feld `currency`, nie über
+  Währungen addiert), lückenlos je Währung (auch Monate ohne Beleg als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
   (negativen) Vorzeichen enthalten.
 - **`top-customers`** — die `limit` umsatzstärksten Kunden (netto) im Zeitraum,
   absteigend sortiert.
@@ -254,7 +255,7 @@ Fehler, kein No-op mehr.
   über als `PAID` abgeschlossene Rechnungen; beide Felder sind `null` ohne
   auswertbare Datengrundlage (keine bezahlte Rechnung bzw. keine mit
   Fälligkeitsdatum).
-- **`cash-in`** — Zahlungseingang je Kalendermonat (UTC) und Währung, lückenlos:
+- **`cash-in`** — Zahlungseingang je Kalendermonat (Europe/Berlin) und Währung, lückenlos:
   `paidCents` (Summe der Zahlungen nach `paidAt`; Gegenbuchungen negativ im Monat der
   Gegenbuchung; Skonto und Verrechnungen mit Gutschriften zählen nicht) und
   `invoicedGrossCents` (festgeschriebene Rechnungen nach Belegdatum, Brutto bzw.
@@ -273,10 +274,13 @@ Fehler, kein No-op mehr.
 
 Währungen werden bei allen vier neuen Typen nie gemischt: je Währung eigene Zeilen.
 
+**CSV (Phase 17c):** `GET /api/v1/Report?type=<typ>&format=csv` (für jeden `type`, Scope `read`) liefert statt JSON `text/csv; charset=utf-8` als Anhang `auswertung-<typ>-<Berliner Datum>.csv` (`src/domain/reporting/csv.ts`): UTF-8 mit BOM, Semikolon, `\r\n`, deutsche Spaltenköpfe je Typ, Geld als `1234,56`, Menge mit drei Nachkommastellen, Textzellen mit führendem `=`, `+`, `-`, `@` oder Tab werden mit `'` entschärft (Formelschutz). `format` ist bei jedem Typ zulässig (nicht in den typabhängigen Parametern), ungültige Werte liefern 400. Dieselbe Tabelle gibt die Oberfläche über die Session-Route `GET /api/reports/<typ>.csv` aus (kein Bearer-Zugriff).
+
 Beispiel:
 
 ```bash
 curl -s "$BASE/api/v1/Report?type=revenue&months=6" -H "$AUTH"
+curl -s "$BASE/api/v1/Report?type=revenue&months=6&format=csv" -H "$AUTH" -o umsatz.csv
 ```
 
 ```json
@@ -285,8 +289,8 @@ curl -s "$BASE/api/v1/Report?type=revenue&months=6" -H "$AUTH"
     "objectName": "Report",
     "type": "revenue",
     "rows": [
-      { "month": "2026-03", "netCents": 0, "count": 0 },
-      { "month": "2026-04", "netCents": 150000, "count": 2 }
+      { "month": "2026-03", "currency": "EUR", "netCents": 0, "count": 0 },
+      { "month": "2026-04", "currency": "EUR", "netCents": 150000, "count": 2 }
     ]
   }
 }
@@ -298,7 +302,7 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 
 ### OSS-Schwelle (`GET /api/v1/Report/oss`, Phase 16e)
 
-`GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles UTC-Jahr). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
+`GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles Jahr in Berliner Zeit). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
 
 Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`) an `Product` (Standard `NONE`) und an Positionen (Lese- und Schreibfeld; ohne Angabe übernimmt eine Position mit `productId` die Kategorie des Produkts als Snapshot, ohne Produkt bleibt sie leer). Die Belegeinstellungen (`/api/settings/documents`) tragen `ossCountMode` (Standard `ALL_EU_B2C`) und `ossWarnPercent` (ganze Zahl 1–99, Standard 80).
 

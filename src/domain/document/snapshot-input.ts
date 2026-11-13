@@ -108,7 +108,7 @@ export async function resolveBuyerSnapshot(
   }
 
   const customFields =
-    customer.customFieldsJson !== undefined ? await parseCustomerCustomFields(orgId, customer.customFieldsJson ?? null) : undefined;
+    customer.customFieldsJson !== undefined ? await parseCustomerCustomFields(orgId, customer.customFieldsJson ?? null, tx) : undefined;
 
   return buildBuyerSnapshot({
     name: customer.name,

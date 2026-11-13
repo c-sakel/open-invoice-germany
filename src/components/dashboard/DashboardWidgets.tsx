@@ -9,6 +9,7 @@ import { CHART_COLORS } from "@/components/charts/types";
 import { StackedBar } from "@/components/charts/StackedBar";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { Card } from "@/components/ui/Card";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { Kpi } from "@/components/ui/Kpi";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -167,7 +168,7 @@ export function DashboardWidgets({
         </Link>
       </div>
 
-      <Card title="Umsatz je Monat (netto) mit Vorjahr">
+      <Card title="Umsatz je Monat (netto) mit Vorjahr" action={<CsvLink href={`/api/reports/revenue.csv?months=24&currency=${encodeURIComponent(currency)}`} what="Umsatz je Monat" />}>
         <ResponsiveBarChart
           title="Umsatz je Monat (netto, 12 Monate)"
           data={current}
@@ -180,7 +181,7 @@ export function DashboardWidgets({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Zahlungseingang und Rechnungsausgang">
+        <Card title="Zahlungseingang und Rechnungsausgang" action={<CsvLink href="/api/reports/cash-in.csv?months=12" what="Zahlungseingang" />}>
           <ResponsiveBarChart
             title="Zahlungseingang je Monat"
             data={cash.paid}
@@ -192,7 +193,7 @@ export function DashboardWidgets({
             emptyMessage="Noch keine Zahlungen im Zeitraum."
           />
         </Card>
-        <Card title="Angebotsquote (12 Monate)">
+        <Card title="Angebotsquote (12 Monate)" action={<CsvLink href="/api/reports/quote-outcome.csv?months=12" what="Angebotsquote" />}>
           {quoteTotal > 0 ? (
             <StackedBar title="Angebote nach Ausgang" segments={quoteSegments} totalLabel={quoteLabel} />
           ) : (
@@ -202,7 +203,7 @@ export function DashboardWidgets({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Top 5 Kunden (netto, 12 Monate)">
+        <Card title="Top 5 Kunden (netto, 12 Monate)" action={<CsvLink href="/api/reports/top-customers.csv?months=12&limit=5" what="Top 5 Kunden" />}>
           <ResponsiveBarChart
             title="Top 5 Kunden (netto, 12 Monate)"
             data={topCustomerChartData(top)}

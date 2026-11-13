@@ -8,6 +8,7 @@ import { applyDocumentAdjustments } from "@/lib/pricing/allocate";
 import { PricingError } from "@/lib/pricing/errors";
 import { EU_COUNTRY_CODES } from "@/lib/tax";
 import { OSS_COUNTED_CATEGORIES, type OssCategory, type OssCountMode } from "@/schemas/oss";
+import { berlinYear } from "@/lib/berlin-time";
 
 export const OSS_THRESHOLD_CENTS = 1_000_000;
 
@@ -62,9 +63,9 @@ export function isOssBuyer(buyer: OssDoc["buyer"]): boolean {
   return buyer.vatId === null || buyer.vatId.trim() === "";
 }
 
-/** Jahr des Leistungszeitpunkts (R6): deliveryDate ?? deliveryEnd ?? issueDate, UTC. */
+/** Jahr des Leistungszeitpunkts (R6): deliveryDate ?? deliveryEnd ?? issueDate, Berliner Kalenderjahr. */
 export function ossYearOf(doc: OssDoc): number {
-  return fxStichtag(doc).getUTCFullYear();
+  return berlinYear(fxStichtag(doc));
 }
 
 function isCounted(category: string | null): boolean {

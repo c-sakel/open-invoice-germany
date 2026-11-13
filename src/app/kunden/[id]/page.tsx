@@ -17,6 +17,7 @@ import { ResponsiveBarChart } from "@/components/dashboard/ResponsiveBarChart";
 import { revenueWithPriorYear } from "@/components/dashboard/chart-data";
 import { DataTable } from "@/components/ui/DataTable";
 import { Card } from "@/components/ui/Card";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { Kpi } from "@/components/ui/Kpi";
 import { formatCents } from "@/lib/money";
 
@@ -43,16 +44,16 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
     throw e;
   }
 
+  const docSettings = await loadDocumentSettings(org.id);
+  const currency = docSettings.defaultCurrency;
   const [revenue, behaviour] = await Promise.all([
-    monthlyRevenue(org.id, { customerId: id, months: 24 }),
+    monthlyRevenue(org.id, { customerId: id, months: 24, currency }),
     paymentBehaviour(org.id, { customerId: id }),
   ]);
 
   const { customer, kpis } = overview;
   const hasVatId = Boolean(customer.vatId?.trim());
-  const [vatChecks, docSettings] = hasVatId
-    ? await Promise.all([listVatIdChecks(org.id, id, 10), loadDocumentSettings(org.id)])
-    : [[], null];
+  const vatChecks = hasVatId ? await listVatIdChecks(org.id, id, 10) : [];
   const { current, prior } = revenueWithPriorYear(revenue);
   // Puenktlich/verspaetet als Anzahl bezahlter Rechnungen (onTimeShare ist ein Anteil 0..1).
   const onTime = behaviour.onTimeShare === null ? 0 : Math.round(behaviour.onTimeShare * behaviour.paidCount);
@@ -129,7 +130,7 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
         </div>
       </Card>
 
-      <Card title="Umsatz je Monat (netto) mit Vorjahr">
+      <Card title="Umsatz je Monat (netto) mit Vorjahr" action={<CsvLink href={`/api/reports/revenue.csv?months=24&customerId=${encodeURIComponent(id)}&currency=${encodeURIComponent(currency)}`} what="Umsatz dieses Kunden" />}>
         <ResponsiveBarChart
           title="Umsatz je Monat (netto, 12 Monate)"
           data={current}

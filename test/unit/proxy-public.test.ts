@@ -54,3 +54,10 @@ describe("/api/health (Phase 16a, Task 8)", () => {
     }
   });
 });
+
+describe("/api/reports (Phase 17c, Task 3)", () => {
+  it("CSV-Export ist nicht oeffentlich (ohne Sitzung 401)", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/reports/revenue.csv"));
+    expect(res.status).toBe(401);
+  });
+});

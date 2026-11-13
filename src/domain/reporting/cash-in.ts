@@ -1,7 +1,7 @@
 /**
  * Zahlungseingang je Kalendermonat (Phase 16f, Task 5). Rein lesend, org-gescoped (ueber
  * `invoice.orgId`, Payment selbst traegt keine orgId), Aggregation in JS (DB-portabel,
- * Monatsgrenzen UTC wie `monthlyRevenue`).
+ * Monatsgrenzen Berlin wie `monthlyRevenue`).
  *
  * `paidCents` = Summe der `Payment.amountCents` nach `paidAt`: Zahlungen positiv,
  * Gegenbuchungen (`kind REVERSAL`) negativ im Monat der Gegenbuchung. Skonto-Zahlungen
@@ -12,9 +12,10 @@
  */
 import { dbInternal } from "@/lib/db";
 import { monthKey } from "./revenue";
+import { berlinMonthStart } from "@/lib/berlin-time";
 
 export interface CashInPoint {
-  month: string; // "YYYY-MM" (UTC)
+  month: string; // "YYYY-MM" (Berlin)
   currency: string;
   paidCents: number;
   invoicedGrossCents: number;
@@ -28,8 +29,8 @@ export interface CashInOptions {
 export async function monthlyCashIn(orgId: string, opts: CashInOptions = {}): Promise<CashInPoint[]> {
   const months = opts.months ?? 12;
   const now = opts.now ?? new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
 
   const [payments, invoices] = await Promise.all([
     dbInternal.payment.findMany({
@@ -48,7 +49,7 @@ export async function monthlyCashIn(orgId: string, opts: CashInOptions = {}): Pr
   ]);
 
   const monthKeys: string[] = [];
-  for (let i = 0; i < months; i++) monthKeys.push(monthKey(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1))));
+  for (let i = 0; i < months; i++) monthKeys.push(monthKey(berlinMonthStart(now, -(months - 1) + i)));
 
   const byCurrency = new Map<string, Map<string, CashInPoint>>();
   const bucket = (currency: string, month: string): CashInPoint | undefined => {

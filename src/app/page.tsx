@@ -10,6 +10,7 @@ import { ossThreshold } from "@/domain/reporting/oss";
 import { topCustomers } from "@/domain/reporting/customers";
 import { DashboardWidgets } from "@/components/dashboard/DashboardWidgets";
 import { SOURCE_URL } from "@/domain/settings/brand";
+import { berlinYear } from "@/lib/berlin-time";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +100,7 @@ export default async function Home() {
     monthlyCashIn(org.id),
     quoteOutcome(org.id),
     topCustomers(org.id, { currency }),
-    ossThreshold(org.id, new Date().getUTCFullYear()),
+    ossThreshold(org.id, berlinYear(new Date())),
   ]);
 
   return (

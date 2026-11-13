@@ -1,7 +1,7 @@
 /**
  * Phase 12e, Task 2 — monthlyRevenue und topCustomers. Eigenes Jahr 2085
  * (Testjahr-Konvention) und eigener Nummernkreis-Praefix (es wird festgeschrieben).
- * Alle Monatsgrenzen in UTC — der Testlauf muss auch mit `TZ=UTC npm test` gruen sein.
+ * Monatsgrenzen nach Berliner Kalendermonat; Testzeitpunkte meist 10:00 UTC, Lauf auch mit `TZ=UTC` gruen.
  *
  * Fix 1 (Review): Gutschriften werden ueber die echte Domain-Funktion
  * `createPartialCreditNote` erzeugt (nicht mehr per Hand mit `type: CREDIT_NOTE" und
@@ -113,7 +113,7 @@ describe("monthlyRevenue", () => {
   });
 
   it("monthKey und netShareCents sind reine Funktionen", () => {
-    expect(monthKey(new Date(Date.UTC(2085, 0, 31, 23, 59, 59)))).toBe("2085-01");
+    expect(monthKey(new Date(Date.UTC(2085, 0, 31, 23, 59, 59)))).toBe("2085-02"); // Berlin: 00:59 am 01.02.
     expect(netShareCents({ netTotalCents: 10000, grossTotalCents: 11900, payableCents: null })).toBe(10000);
     // Schlussrechnung: 11.900 brutto, davon 5.950 zahlbar -> halbes Netto.
     expect(netShareCents({ netTotalCents: 10000, grossTotalCents: 11900, payableCents: 5950 })).toBe(5000);

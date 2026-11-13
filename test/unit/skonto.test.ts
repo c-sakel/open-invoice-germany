@@ -59,7 +59,7 @@ describe("detectSkonto", () => {
   });
 
   it("Treffer innerhalb der Frist mit vollem Skonto-Betrag", () => {
-    const paidAt = new Date(Date.UTC(2034, 5, 10, 23, 59, 0));
+    const paidAt = new Date(Date.UTC(2034, 5, 10, 21, 59, 0));
     const hit = detectSkonto(terms, paidAt, 116620, 119000);
     expect(hit?.days).toBe(7);
   });
@@ -75,8 +75,13 @@ describe("detectSkonto", () => {
   });
 
   it("Zahlung am Fristende (Tagesende) zaehlt noch", () => {
-    const paidAt = new Date(Date.UTC(2034, 5, 10, 23, 59, 59, 999));
+    const paidAt = new Date(Date.UTC(2034, 5, 10, 21, 59, 59, 999));
     expect(detectSkonto(terms, paidAt, 116620, 119000)?.days).toBe(7);
+  });
+
+  it("23:59 UTC am Fristende liegt in Berlin schon am Folgetag und ist ausserhalb", () => {
+    const paidAt = new Date(Date.UTC(2034, 5, 10, 23, 59, 0));
+    expect(detectSkonto(terms, paidAt, 116620, 119000)).toBeNull();
   });
 
   it("kein Treffer, wenn der Zahlbetrag nicht mehr offen ist (bereits beglichen)", () => {
@@ -141,5 +146,37 @@ describe("xrechnungSkontoNote", () => {
     expect(xrechnungSkontoNote(terms, "Zahlbar netto bis 17.06.2034.")).toBe(
       "#SKONTO#TAGE=7#PROZENT=2.00#\n#SKONTO#TAGE=14#PROZENT=1.00#\nZahlbar netto bis 17.06.2034.",
     );
+  });
+});
+
+describe("Skonto-Fristende nach Berliner Tagesende", () => {
+  const mk = (issue: Date, days = 10) =>
+    skontoTerms({ issueDate: issue, grossTotalCents: 119000, skonto1Permille: 20, skonto1Days: days, skonto2Permille: null, skonto2Days: null });
+  const paid = (iso: string) => detectSkonto(mk(new Date(Date.UTC(2151, 2, 21))), new Date(iso), 116620, 119000);
+
+  it("Sommerzeit: Fristende 31.03.2151", () => {
+    expect(paid("2151-03-31T21:30:00.000Z")).not.toBeNull(); // 23:30 Berlin
+    expect(paid("2151-03-31T22:30:00.000Z")).toBeNull(); // 00:30 Berlin Folgetag
+    expect(paid("2151-03-31T21:59:59.999Z")).not.toBeNull();
+    expect(paid("2151-03-31T22:00:00.000Z")).toBeNull();
+    expect(paid("2151-03-31T00:00:00.000Z")).not.toBeNull(); // Formular-Datum
+  });
+
+  it("Winterzeit: Fristende 31.12.2151", () => {
+    const t = mk(new Date(Date.UTC(2151, 11, 21)));
+    expect(detectSkonto(t, new Date("2151-12-31T22:30:00.000Z"), 116620, 119000)).not.toBeNull();
+    expect(detectSkonto(t, new Date("2151-12-31T23:30:00.000Z"), 116620, 119000)).toBeNull();
+  });
+
+  it("Druckbild unveraendert, auch fuer ein nachts festgeschriebenes Rechnungsdatum", () => {
+    // 2151-03-20T23:30Z = 21.03. 00:30 Berlin; das Fristdatum folgt weiter dem UTC-Kalendertag.
+    const day = mk(new Date("2151-03-21T00:00:00.000Z"));
+    const night = mk(new Date("2151-03-20T23:30:00.000Z"));
+    expect(day[0].dueDate.toISOString()).toBe("2151-03-31T00:00:00.000Z");
+    expect(night[0].dueDate.toISOString()).toBe("2151-03-30T00:00:00.000Z");
+    expect(paymentTermsText(day, null, "de")).toBe(`2 % Skonto bei Zahlung bis 31.03.2151 (Skontobetrag ${formatCents(2380)}).`);
+    expect(paymentTermsText(night, null, "de")).toBe(`2 % Skonto bei Zahlung bis 30.03.2151 (Skontobetrag ${formatCents(2380)}).`);
+    expect(xrechnungSkontoNote(day, "x")).toBe("#SKONTO#TAGE=10#PROZENT=2.00#\nx");
+    expect(xrechnungSkontoNote(night, "x")).toBe("#SKONTO#TAGE=10#PROZENT=2.00#\nx");
   });
 });

@@ -2,8 +2,8 @@
  * Umsatzreihe je Kalendermonat (Phase 12e). Rein lesend, org-gescoped, DB-portabel:
  * `select`-reduzierte Zeilen + Aggregation in JS — dieselbe Begruendung wie in
  * src/domain/dashboard/summary.ts (SQLite/Postgres, keine DB-spezifischen Funktionen).
- * Monatsgrenzen in UTC (Date.UTC), damit die Reihe unabhaengig von der Container-Zeitzone
- * ist (Konvention aus src/lib/date-only.ts).
+ * Monatsgrenzen nach Berliner Kalendermonat (src/lib/berlin-time.ts), unabhaengig von der
+ * Container-Zeitzone. Date-only-Werte (UTC-Mitternacht) bleiben im selben Monat.
  *
  * Basis ist NETTO. Bei einer Abschlagskette (§14) traegt die Schlussrechnung in
  * `payableCents` den bereits um die Abschlaege reduzierten Betrag; ein rohes
@@ -33,9 +33,10 @@
  */
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
+import { berlinMonthKey, berlinMonthStart } from "@/lib/berlin-time";
 
 export interface MonthlyRevenuePoint {
-  month: string; // "YYYY-MM" (UTC)
+  month: string; // "YYYY-MM" (Berlin)
   netCents: number;
   count: number;
 }
@@ -48,9 +49,9 @@ export interface MonthlyRevenueOptions {
   now?: Date;
 }
 
-/** Kalendermonat (UTC) von `d` als "YYYY-MM". */
+/** Kalendermonat (Europe/Berlin) von `d` als "YYYY-MM". */
 export function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return berlinMonthKey(d);
 }
 
 /**
@@ -93,8 +94,8 @@ export function signedRevenueShareCents(inv: {
 export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions = {}): Promise<MonthlyRevenuePoint[]> {
   const months = opts.months ?? 12;
   const now = opts.now ?? new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
 
   const rows = await dbInternal.invoice.findMany({
     where: {
@@ -109,8 +110,8 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
 
   const buckets = new Map<string, MonthlyRevenuePoint>();
   for (let i = 0; i < months; i++) {
-    const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
-    buckets.set(monthKey(d), { month: monthKey(d), netCents: 0, count: 0 });
+    const key = berlinMonthKey(berlinMonthStart(now, -(months - 1) + i));
+    buckets.set(key, { month: key, netCents: 0, count: 0 });
   }
   for (const r of rows) {
     const bucket = buckets.get(monthKey(r.issueDate));
@@ -119,4 +120,48 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
     bucket.count += 1;
   }
   return [...buckets.values()];
+}
+
+export interface CurrencyRevenuePoint extends MonthlyRevenuePoint {
+  currency: string;
+}
+
+/**
+ * Umsatzreihe je Waehrung (Auswertung `revenue`, REST/MCP/CSV): fuer jede Waehrung mit
+ * mindestens einem Beleg im Fenster eine luecklose Monatsreihe, sortiert nach Monat, dann
+ * Waehrung — Betraege verschiedener Waehrungen werden nie addiert. Mit `currency` nur diese
+ * Waehrung (auch ohne Beleg: luecklose Nullreihe); ohne Beleg und ohne Filter eine
+ * Nullreihe in EUR, damit die Form stabil bleibt.
+ */
+export async function monthlyRevenueByCurrency(orgId: string, opts: MonthlyRevenueOptions = {}): Promise<CurrencyRevenuePoint[]> {
+  const months = opts.months ?? 12;
+  const now = opts.now ?? new Date();
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
+
+  const rows = await dbInternal.invoice.findMany({
+    where: {
+      orgId,
+      status: { not: "DRAFT" },
+      issueDate: { gte: start, lt: end },
+      ...(opts.customerId ? { customerId: opts.customerId } : {}),
+      ...(opts.currency ? { currency: opts.currency } : {}),
+    },
+    select: { issueDate: true, currency: true, netTotalCents: true, grossTotalCents: true, payableCents: true, type: true },
+  });
+
+  const currencies = new Set<string>(rows.map((r) => r.currency));
+  if (currencies.size === 0) currencies.add(opts.currency ?? "EUR");
+  const monthKeys = Array.from({ length: months }, (_, i) => berlinMonthKey(berlinMonthStart(now, -(months - 1) + i)));
+  const buckets = new Map<string, CurrencyRevenuePoint>();
+  for (const month of monthKeys) {
+    for (const currency of currencies) buckets.set(`${month}|${currency}`, { month, currency, netCents: 0, count: 0 });
+  }
+  for (const r of rows) {
+    const bucket = buckets.get(`${monthKey(r.issueDate)}|${r.currency}`);
+    if (!bucket) continue;
+    bucket.netCents += signedRevenueShareCents(r);
+    bucket.count += 1;
+  }
+  return [...buckets.values()].sort((a, b) => (a.month === b.month ? a.currency.localeCompare(b.currency) : a.month.localeCompare(b.month)));
 }

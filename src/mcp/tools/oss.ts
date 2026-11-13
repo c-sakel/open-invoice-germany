@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ossThreshold } from "@/domain/reporting/oss";
 import { ossQuerySchema } from "@/schemas/oss";
 import { ToolError, type McpToolsContext, type Result } from "./context";
+import { berlinYear } from "@/lib/berlin-time";
 
 export function registerOssTools(server: McpServer, ctx: McpToolsContext): void {
   server.registerTool(
@@ -20,7 +21,7 @@ export function registerOssTools(server: McpServer, ctx: McpToolsContext): void 
       try {
         const org = await ctx.requireOrg();
         const query: z.output<typeof ossQuerySchema> = args;
-        return ctx.ok(JSON.stringify(await ossThreshold(org.id, query.year ?? new Date().getUTCFullYear()), null, 2));
+        return ctx.ok(JSON.stringify(await ossThreshold(org.id, query.year ?? berlinYear(new Date())), null, 2));
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
