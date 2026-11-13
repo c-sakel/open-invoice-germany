@@ -27,6 +27,7 @@ export interface CustomerFormData {
   defaultPaymentTermsDays: number | null;
   defaultPaymentMethodId: string | null;
   notes: string | null;
+  deliveryChannel?: string;
 }
 
 export interface PaymentMethodOption {
@@ -99,6 +100,17 @@ export function CustomerForm({
           defaultValue={customer?.defaultPaymentMethodId ?? ""}
           options={[{ value: "", label: "— keine —" }, ...paymentMethods.map((m) => ({ value: m.id, label: m.name }))]}
           hint="Wird bei neuen Rechnungen für diesen Kunden vorbelegt."
+        />
+        <SelectField
+          label="Versandart für Mahnungen"
+          name="deliveryChannel"
+          defaultValue={customer?.deliveryChannel ?? "EMAIL"}
+          options={[
+            { value: "EMAIL", label: "E-Mail" },
+            { value: "POST", label: "Post" },
+            { value: "EMAIL_AND_POST", label: "E-Mail und Post" },
+          ]}
+          hint="Maßgeblich, wenn die Mahnstufe „Kundenvorgabe“ verwendet. Der Postversand muss unter Einstellungen eingeschaltet sein."
         />
         <TextAreaField label="Notiz" name="notes" defaultValue={customer?.notes} className="sm:col-span-2" />
       </div>

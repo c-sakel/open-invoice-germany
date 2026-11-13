@@ -4,7 +4,7 @@
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 import { postalJobListFilterSchema } from "@/schemas/postal";
-import { POSTAL_JOB_SELECT } from "./events";
+import { ACTIVE_POSTAL_STATUSES, POSTAL_JOB_SELECT } from "./events";
 
 export async function listPostalJobs(orgId: string, rawFilter: unknown) {
   const f = postalJobListFilterSchema.parse(rawFilter);
@@ -31,4 +31,13 @@ export async function getPostalJob(orgId: string, id: string) {
     select: { id: true, jobId: true, orgId: true, at: true, kind: true, status: true, dataJson: true },
   });
   return { job, events };
+}
+
+/** Aktiver (nicht abgeschlossener/stornierter) Auftrag eines Belegs ausser Trockenlaeufen; fuer Hinweise in der Oberflaeche. */
+export async function findActivePostalJob(orgId: string, docType: "INVOICE" | "DUNNING", docId: string) {
+  return dbInternal.postalJob.findFirst({
+    where: { orgId, docType, docId, mode: { not: "DRY_RUN" }, status: { in: [...ACTIVE_POSTAL_STATUSES] } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, mode: true, status: true, submittedAt: true },
+  });
 }

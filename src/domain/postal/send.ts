@@ -351,14 +351,21 @@ async function sendOne(
     }
     await lockRow(tx, "Invoice", doc.invoiceId, orgId);
     if (budgetRejected) return "BUDGET" as const;
+    // Ein TEST-Auftrag sperrt den LIVE-Versand desselben Belegs: der Briefdienst kann Testbriefe aus der Postbox
+    // manuell versenden (Doppelversand-Gefahr). Erst den Testauftrag stornieren — auch mit `repeat`.
+    if (mode === "LIVE") {
+      const activeTest = await tx.postalJob.findFirst({
+        where: { orgId, docType: doc.docType, docId: doc.docId, mode: "TEST", status: { in: [...ACTIVE_POSTAL_STATUSES] } },
+        select: { id: true },
+      });
+      if (activeTest) return "ACTIVE_TEST" as const;
+    }
     if (!item.repeat) {
       const active = await tx.postalJob.findFirst({
         where: { orgId, docType: doc.docType, docId: doc.docId, mode: { not: "DRY_RUN" }, status: { in: [...ACTIVE_POSTAL_STATUSES] } },
-        select: { id: true, mode: true },
+        select: { id: true },
       });
-      // Ein TEST-Auftrag sperrt den LIVE-Versand desselben Belegs: der Briefdienst kann Testbriefe aus der Postbox
-      // manuell versenden (Doppelversand-Gefahr). Erst den Testauftrag stornieren.
-      if (active) return active.mode === "TEST" && mode === "LIVE" ? ("ACTIVE_TEST" as const) : ("ACTIVE" as const);
+      if (active) return "ACTIVE" as const;
     }
     await tx.postalJob.create({
       data: {

@@ -118,6 +118,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     defaultPaymentMethodId: str(fd, "defaultPaymentMethodId"),
     customerNumber: str(fd, "customerNumber"),
     notes: str(fd, "notes"),
+    deliveryChannel: str(fd, "deliveryChannel"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
   const v = parsed.data;
