@@ -234,6 +234,8 @@ type ConfirmResult = { status: "ok" } | { status: "invalid" } | { status: "locke
 /** Passwort UND zweiter Faktor; falsche Eingaben zaehlen als Fehlversuch. */
 async function confirmPasswordAndCode(userId: string, raw: unknown, ctx: Ctx, now: Date): Promise<ConfirmResult> {
   const input = totpConfirmSchema.parse(raw);
+  // Gleiche IP-Bremse wie die Passwortaenderung (Namensraum geteilt).
+  rateLimit(`password-change:${ctx.ip ?? "unknown"}`, { limit: IP_RATE_LIMIT, windowMs: IP_RATE_WINDOW_MS, now: now.getTime() });
   const user = await dbInternal.user.findUnique({
     where: { id: userId },
     select: { ...codeUserSelect, passwordHash: true, failedLoginCount: true, lockedUntil: true },

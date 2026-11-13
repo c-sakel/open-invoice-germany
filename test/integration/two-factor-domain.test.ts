@@ -369,3 +369,15 @@ describe("registerFailedAttempt (atomar)", () => {
     expect(r.lockedUntil).toBeNull();
   });
 });
+
+describe("Zwei-Faktor-Verwaltung: IP-Bremse", () => {
+  it("disableTotp und renewRecoveryCodes teilen die Bremse password-change:<ip>; der 11. Aufruf wirft RateLimitError", async () => {
+    const u = await makeActive();
+    const ip = "198.51.100.50";
+    const now = at(10);
+    for (let i = 0; i < 5; i++) await disableTotp(u.id, { password: PASSWORD, code: "000000" }, { ip, now });
+    for (let i = 0; i < 5; i++) await renewRecoveryCodes(u.id, { password: PASSWORD, code: "000000" }, { ip, now });
+    await expect(disableTotp(u.id, { password: PASSWORD, code: "000000" }, { ip, now })).rejects.toBeInstanceOf(RateLimitError);
+    await expect(renewRecoveryCodes(u.id, { password: PASSWORD, code: "000000" }, { ip, now })).rejects.toBeInstanceOf(RateLimitError);
+  });
+});
