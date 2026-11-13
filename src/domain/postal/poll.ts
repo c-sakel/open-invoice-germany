@@ -323,6 +323,7 @@ async function failStalePending(now: Date, orgId: string | undefined, result: Po
       const moved = await dbInternal.$transaction(async (tx) => {
         if (!(await transitionPostalJob(tx, job.id, "FAILED", { error: message, finishedAt: now }))) return false;
         await addPostalEvent(tx, { jobId: job.id, orgId: job.orgId, kind: "FAILED", status: "FAILED", data: { error: message, notTransmitted: true, reason: "PENDING_STALE" }, at: now });
+        await appendChangeLog(tx, { orgId: job.orgId, entity: "POSTAL", entityId: job.id, action: "FAILED", actor: "system:postal-poll", at: now, diff: { error: message, notTransmitted: true, reason: "PENDING_STALE" } });
         return true;
       });
       if (moved) {

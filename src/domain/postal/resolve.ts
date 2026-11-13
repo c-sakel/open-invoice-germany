@@ -14,7 +14,7 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializePostalJob } from "@/api/serializers/postal";
 import { NotFoundError } from "@/domain/errors";
 import { PostalConflictError } from "./errors";
-import { addPostalEvent, CANCEL_WINDOW_MS, POSTAL_JOB_SELECT, transitionPostalJob } from "./events";
+import { addPostalEvent, CANCEL_WINDOW_MS, POSTAL_JOB_SELECT, transitionPostalJob, type PostalStatus } from "./events";
 import { markDunningSentByPost } from "./dunning-mark";
 
 export const resolveUnknownInputSchema = z.object({
@@ -58,6 +58,9 @@ export async function resolveUnknownPostalJob(
       job.id,
       target,
       sent ? { finishedAt: at, error: null } : { finishedAt: at, error: `Vom Betreiber als nicht versendet bestaetigt: ${input.note}` },
+      // exakt der gelesene Stand (Status + Modus): ein paralleler Abgleich (z. B. DONE) laesst den Abschluss scheitern;
+      // LIVE-Auftraege gehen so nie von QUEUED/HOLD/DRAFT nach FAILED (staleTest ist nur fuer TEST wahr).
+      { from: job.status as PostalStatus, mode: job.mode, orgId },
     );
     if (!moved) throw new PostalConflictError("Der Postauftrag wurde inzwischen veraendert.", "NOT_ALLOWED");
     await addPostalEvent(tx, {

@@ -874,5 +874,33 @@ describe("Fix-Welle 16d-7", () => {
     expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: t.jobId as string }, select: { status: true } })).status).toBe("FAILED");
     expect((await quoteSend("INVOICE", inv.id, lxp())).status).toBe("QUEUED");
   });
-});
 
+  it("LIVE-Auftrag QUEUED ist nicht abschliessbar; paralleler Statuswechsel (DONE) laesst den Abschluss scheitern", async () => {
+    const inv = await newInvoice();
+    const f = lxp();
+    const live = await quoteSend("INVOICE", inv.id, f);
+    expect(live.status).toBe("QUEUED");
+    const late = new Date(Date.now() + 3600_000);
+    await expect(resolveUnknownPostalJob(orgId, live.jobId as string, "NOT_SENT", "nie gesendet", { actor: "tester", now: late })).rejects.toBeInstanceOf(PostalConflictError);
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: live.jobId as string }, select: { status: true } })).status).toBe("QUEUED");
+
+    // UNKNOWN gelesen, dann setzt der Abgleich zwischen Lesen und Abschluss DONE
+    const inv2 = await newInvoice();
+    const g = lxp({ submit: () => { throw new PostalTransportError("Zeitueberschreitung", "timeout"); } });
+    const u = await quoteSend("INVOICE", inv2.id, g);
+    expect(u.status).toBe("UNKNOWN");
+    const orig = dbInternal.postalJob.findFirst.bind(dbInternal.postalJob);
+    const spy = vi.spyOn(dbInternal.postalJob, "findFirst").mockImplementation(((args: Parameters<typeof orig>[0]) => {
+      return orig(args).then(async (row) => {
+        await dbInternal.postalJob.updateMany({ where: { id: u.jobId as string }, data: { status: "DONE" } });
+        return row;
+      });
+    }) as unknown as typeof dbInternal.postalJob.findFirst);
+    try {
+      await expect(resolveUnknownPostalJob(orgId, u.jobId as string, "NOT_SENT", "nie gesendet", { actor: "tester" })).rejects.toBeInstanceOf(PostalConflictError);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: u.jobId as string }, select: { status: true } })).status).toBe("DONE");
+  });
+});

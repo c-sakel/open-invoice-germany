@@ -34,7 +34,7 @@ export const ACTIVE_POSTAL_STATUSES: readonly PostalStatus[] = ["PENDING", "SUBM
 /** Aufträge mit laufender oder unklarer Übertragung: sperren auch den Versand mit `repeat`. */
 export const UNSETTLED_POSTAL_STATUSES: readonly PostalStatus[] = ["PENDING", "SUBMITTING", "UNKNOWN"];
 
-/** Ziel -> erlaubte Vorgaenger. CANCELLED, FAILED und DRY_RUN sind Endzustaende; FAILED aus DRAFT/QUEUED/HOLD nur ueber den manuellen Abschluss eines Testauftrags; DONE erlaubt nur die Selbst-Fortschreibung (Sendungsverfolgung bei Einschreiben). */
+/** Ziel -> erlaubte Vorgaenger. CANCELLED, FAILED und DRY_RUN sind Endzustaende; DONE erlaubt nur die Selbst-Fortschreibung (Sendungsverfolgung bei Einschreiben). */
 export const POSTAL_TRANSITIONS: Record<PostalStatus, readonly PostalStatus[]> = {
   PENDING: [],
   SUBMITTING: ["PENDING"],
@@ -44,7 +44,7 @@ export const POSTAL_TRANSITIONS: Record<PostalStatus, readonly PostalStatus[]> =
   HOLD: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
   DONE: ["SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD", "DONE"],
   CANCELLED: ["UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
-  FAILED: ["PENDING", "SUBMITTING", "UNKNOWN", "DRAFT", "QUEUED", "HOLD"],
+  FAILED: ["PENDING", "SUBMITTING", "UNKNOWN"],
   UNKNOWN: ["SUBMITTING"],
 };
 
@@ -71,11 +71,13 @@ export async function transitionPostalJob(
   jobId: string,
   to: PostalStatus,
   data: PostalTransitionData = {},
+  /** Ausnahme von der Tabelle: nur der manuelle Abschluss (resolve) bedingt auf den exakt gelesenen Stand. */
+  only?: { from: PostalStatus; mode: string; orgId: string },
 ): Promise<boolean> {
   const res = await tx.postalJob.updateMany({
     where: {
       id: jobId,
-      status: { in: [...POSTAL_TRANSITIONS[to]] },
+      ...(only ? { orgId: only.orgId, mode: only.mode, status: only.from } : { status: { in: [...POSTAL_TRANSITIONS[to]] } }),
       ...(data.providerJobId !== undefined ? { providerJobId: null } : {}),
       ...(data.providerAddress !== undefined && data.providerAddress !== null ? { providerAddress: null } : {}),
     },

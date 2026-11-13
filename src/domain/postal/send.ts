@@ -425,6 +425,7 @@ async function abortPending(orgId: string, jobId: string, message: string, actor
   await dbInternal.$transaction(async (tx) => {
     if (!(await transitionPostalJob(tx, jobId, "FAILED", { error: message, finishedAt: at }))) return;
     await addPostalEvent(tx, { jobId, orgId, kind: "FAILED", status: "FAILED", data: { error: message, notTransmitted: true, by: actor }, at });
+    await appendChangeLog(tx, { orgId, entity: "POSTAL", entityId: jobId, action: "FAILED", actor, at, diff: { error: message, notTransmitted: true } });
   });
 }
 
@@ -686,6 +687,15 @@ async function recordFailure(t: TransmitInput, e: unknown, providerJobId?: numbe
   await dbInternal.$transaction(async (tx) => {
     if (!(await transitionPostalJob(tx, jobId, "UNKNOWN", { error: message }))) return;
     await addPostalEvent(tx, { jobId, orgId, kind: "UNKNOWN", status: "UNKNOWN", data: { error: message }, at });
+    await appendChangeLog(tx, {
+      orgId,
+      entity: "POSTAL",
+      entityId: jobId,
+      action: "UNKNOWN",
+      actor: t.actor,
+      at,
+      diff: { docType: doc.docType, docId: doc.docId, docNumber: doc.docNumber, mode: t.mode, error: message },
+    });
   });
   await notifyPostal(orgId, {
     type: "POSTAL_FAILED",
