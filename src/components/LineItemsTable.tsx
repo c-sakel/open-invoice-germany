@@ -14,6 +14,19 @@ import { parseRichText, renderRichTextHtml } from "@/lib/richtext";
 import { computeSubtotals, type LineForSubtotal } from "@/domain/document/lines";
 import { formatCents, formatQuantity } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
+import { docLocale, formatDocMoney, type DocLanguage, type DocStrings } from "@/lib/i18n/doc";
+
+/** Spaltenbeschriftung; Default ist die bisherige deutsche Beschriftung. */
+export type LineItemsTableLabels = Pick<DocStrings["columns"], "description" | "articleNumber" | "quantity" | "unitPrice" | "vat" | "net">;
+
+const DEFAULT_LABELS: LineItemsTableLabels = {
+  description: "Beschreibung",
+  articleNumber: "Art.-Nr.",
+  quantity: "Menge",
+  unitPrice: "Einzel",
+  vat: "USt",
+  net: "Netto",
+};
 
 const KNOWN_LINE_TYPES = new Set<LineForSubtotal["lineType"]>(["ITEM", "HEADING", "TEXT", "SUBTOTAL"]);
 
@@ -41,7 +54,20 @@ function richTextHtml(markdown: string): string {
   return renderRichTextHtml(parseRichText(markdown));
 }
 
-export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsTableLine[]; currency: string }) {
+export function LineItemsTable({
+  lines,
+  currency,
+  labels = DEFAULT_LABELS,
+  lang,
+}: {
+  lines: readonly LineItemsTableLine[];
+  currency: string;
+  labels?: LineItemsTableLabels;
+  /** Belegsprache fuer Betrags-/Mengenformat; ohne Angabe wie bisher deutsch. */
+  lang?: DocLanguage;
+}) {
+  const money = (cents: number) => (lang ? formatDocMoney(cents, currency, lang) : formatCents(cents, currency));
+  const qty = (milli: number) => (lang ? formatQuantity(milli, docLocale(lang)) : formatQuantity(milli));
   const normalized = lines.map((l) => ({ ...l, lineType: toLineType(l.lineType) }));
   const subtotals = computeSubtotals(normalized);
   const showArticleNumber = normalized.some((l) => l.lineType === "ITEM" && l.articleNumber);
@@ -53,12 +79,12 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
       <table className="w-full text-sm">
         <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
           <tr>
-            <th className="px-4 py-2">Beschreibung</th>
-            {showArticleNumber && <th className="px-4 py-2">Art.-Nr.</th>}
-            <th className="px-4 py-2 text-right">Menge</th>
-            <th className="px-4 py-2 text-right">Einzel</th>
-            <th className="px-4 py-2 text-right">USt</th>
-            <th className="px-4 py-2 text-right">Netto</th>
+            <th className="px-4 py-2">{labels.description}</th>
+            {showArticleNumber && <th className="px-4 py-2">{labels.articleNumber}</th>}
+            <th className="px-4 py-2 text-right">{labels.quantity}</th>
+            <th className="px-4 py-2 text-right">{labels.unitPrice}</th>
+            <th className="px-4 py-2 text-right">{labels.vat}</th>
+            <th className="px-4 py-2 text-right">{labels.net}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-rule">
@@ -90,7 +116,7 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
                   <td className="px-4 py-2" colSpan={totalColumns - 1}>
                     {l.description}
                   </td>
-                  <td className="tabular px-4 py-2 text-right">{formatCents(subtotals[i], currency)}</td>
+                  <td className="tabular px-4 py-2 text-right">{money(subtotals[i])}</td>
                 </tr>
               );
             }
@@ -108,11 +134,11 @@ export function LineItemsTable({ lines, currency }: { lines: readonly LineItemsT
                 </td>
                 {showArticleNumber && <td className="px-4 py-2 text-ink-muted">{l.articleNumber}</td>}
                 <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
+                  {qty(l.quantityMilli)} {unitLabel(l.unit)}
                 </td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, currency)}</td>
+                <td className="tabular px-4 py-2 text-right">{money(l.unitNetPriceCents)}</td>
                 <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.lineNetCents, currency)}</td>
+                <td className="tabular px-4 py-2 text-right">{money(l.lineNetCents)}</td>
               </tr>
             );
           })}

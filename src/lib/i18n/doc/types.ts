@@ -191,4 +191,40 @@ export interface DocStrings {
     total: string;
     payBy: (date: string) => string;
   };
+  /** Oeffentliche Angebotsseite (Freigabelink) und ihre Entscheidungsmeldungen. */
+  publicOffer: {
+    downloadPdf: string;
+    sender: string;
+    keyData: string;
+    quoteNumber: string;
+    date: string;
+    validUntil: string;
+    net: string;
+    vat: string;
+    gross: string;
+    /** Danke-Text nach der Entscheidung (Datum bereits formatiert). */
+    thanks: (date: string, accepted: boolean) => string;
+    noFurtherDecision: string;
+    rateLimit: { title: string; hint: string };
+    form: {
+      heading: string;
+      name: string;
+      email: string;
+      comment: string;
+      accept: string;
+      reject: string;
+      saving: string;
+    };
+    errors: {
+      name: string;
+      email: string;
+      comment: string;
+      decision: string;
+      generic: string;
+      invalidLink: string;
+      alreadyDecided: string;
+      tooMany: string;
+      saveFailed: string;
+    };
+  };
 }
