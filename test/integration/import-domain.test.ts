@@ -9,7 +9,7 @@ import { updateNumberRange } from "@/domain/numbering/ranges";
 import { resetRateLimits, RateLimitError } from "@/lib/rate-limit";
 import { upsertCustomFieldDefinition } from "@/domain/customer/custom-fields";
 import { contactsCsv, productsCsv } from "@/domain/export/masterdata-csv";
-import { runCsvImport, ImportRejectedError, ImportHashMismatchError, importRequestSchema } from "@/domain/import/run";
+import { runCsvImport, ImportRejectedError, ImportHashMismatchError, ImportAlreadyDoneError, importRequestSchema } from "@/domain/import/run";
 import { sha256Hex } from "@/domain/import/parse-csv";
 
 const CTX = { actor: "test", source: "API" as const, now: new Date("2167-03-01T10:00:00Z") };
@@ -161,8 +161,9 @@ describe("Kunden-Import — Commit alles oder nichts", () => {
 
   it("parallele Commits mit derselben Kundennummer: genau einer gelingt", async () => {
     const org = await makeOrg("Import Parallel GmbH");
-    const text = csv(KOPF + ";Kundennummer", "Par;Weg 1;10115;Berlin;;PAR-1");
-    const rs = await Promise.allSettled([1, 2].map(() => runCsvImport(org, "contacts", { text, dryRun: false }, CTX)));
+    const rs = await Promise.allSettled(
+      ["Par A", "Par B"].map((n) => runCsvImport(org, "contacts", { text: csv(KOPF + ";Kundennummer", `${n};Weg 1;10115;Berlin;;PAR-1`), dryRun: false }, CTX)),
+    );
     expect(rs.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     const rejected = rs.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     expect(rejected).toHaveLength(1);
@@ -184,6 +185,28 @@ describe("Kunden-Import — Commit alles oder nichts", () => {
     const src = await dbInternal.customer.findFirstOrThrow({ where: { orgId: a }, select: pick });
     const dst = await dbInternal.customer.findFirstOrThrow({ where: { orgId: b }, select: pick });
     expect(dst).toEqual(src);
+  });
+
+  it("Doppel-Import-Schutz: gleicher Hash derselben Org innerhalb 24 h -> ImportAlreadyDoneError, allowRepeat erlaubt, nach 24 h frei", async () => {
+    const org = await makeOrg("Import Doppel GmbH");
+    const other = await makeOrg("Import Doppel Andere GmbH");
+    const text = csv(KOPF, "Doppel AG;Weg 1;10115;Berlin;d@example.org");
+    const t0 = new Date("2169-05-01T10:00:00Z");
+    await runCsvImport(org, "contacts", { text, dryRun: false }, { ...CTX, now: t0 });
+    const log = await dbInternal.activityLog.findFirst({ where: { orgId: org, entityType: "IMPORT" }, select: { entityId: true } });
+    expect(log?.entityId).toBe(sha256Hex(text));
+    const soon = { ...CTX, now: new Date(t0.getTime() + 3600_000) };
+    await expect(runCsvImport(org, "contacts", { text, dryRun: false }, soon)).rejects.toBeInstanceOf(ImportAlreadyDoneError);
+    await expect(runCsvImport(org, "contacts", { text, dryRun: false }, soon)).rejects.toThrow("Datei wurde bereits importiert");
+    // andere Org: nicht betroffen
+    await expect(runCsvImport(other, "contacts", { text, dryRun: false }, soon)).resolves.toMatchObject({ status: "imported" });
+    // bewusst wiederholt: Schutz aufgehoben (der Kunde existiert, daher Validierungsfehler statt 409)
+    const repeat = await runCsvImport(org, "contacts", { text, dryRun: false, allowRepeat: true }, soon).catch((x: unknown) => x);
+    expect(repeat instanceof ImportAlreadyDoneError).toBe(false);
+    // nach 24 h greift der Schutz nicht mehr
+    const later = { ...CTX, now: new Date(t0.getTime() + 25 * 3600_000) };
+    const res = await runCsvImport(org, "contacts", { text, dryRun: false }, later).catch((x: unknown) => x);
+    expect(res instanceof ImportAlreadyDoneError).toBe(false);
   });
 
   it("protokolliert genau einen CSV_IMPORTED-Eintrag ohne Zellwerte; Dateiname bereinigt", async () => {

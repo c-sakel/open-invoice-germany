@@ -110,6 +110,64 @@ describe("Session-Route /api/imports/<resource>", () => {
     expect(await customerCount()).toBe(before);
   });
 
+  it("Origin/Sec-Fetch-Site: Fremdherkunft -> 403, same-origin und Nicht-Browser ok", async () => {
+    const before = await customerCount();
+    const withHeaders = async (extra: Record<string, string>) => {
+      const base = await multipart({ file: file(GOOD), mode: "preview" });
+      const h2 = new Headers(base.headers);
+      for (const [k, v] of Object.entries(extra)) h2.set(k, v);
+      return new Request("http://x/api/imports/contacts", { method: "POST", headers: h2, body: Buffer.from(await base.arrayBuffer()) });
+    };
+    expect((await sessionPost(await withHeaders({ "sec-fetch-site": "cross-site" }), params("contacts"))).status).toBe(403);
+    expect((await sessionPost(await withHeaders({ "sec-fetch-site": "same-site" }), params("contacts"))).status).toBe(403);
+    expect((await sessionPost(await withHeaders({ origin: "https://evil.example" }), params("contacts"))).status).toBe(403);
+    expect((await sessionPost(await withHeaders({ origin: "not a url" }), params("contacts"))).status).toBe(403);
+    expect((await sessionPost(await withHeaders({ "sec-fetch-site": "same-origin" }), params("contacts"))).status).toBe(200);
+    expect((await sessionPost(await withHeaders({ origin: "http://x" }), params("contacts"))).status).toBe(200);
+    expect((await sessionPost(await withHeaders({}), params("contacts"))).status).toBe(200);
+    expect(await customerCount()).toBe(before);
+  });
+
+  it("negative oder ungueltige Content-Length -> 400; Rate-Limit greift vor formData()", async () => {
+    for (const bad of ["-5", "abc"]) {
+      const r = new Request("http://x/api/imports/contacts", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=x", "content-length": bad }, body: "x" });
+      expect((await sessionPost(r, params("contacts"))).status).toBe(400);
+    }
+    resetRateLimits();
+    let last = 0;
+    const spy = vi.spyOn(Request.prototype, "formData");
+    for (let i = 0; i < 70; i++) {
+      const r = new Request("http://x/api/imports/contacts", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=x", "content-length": "10" }, body: "irrelevant" });
+      last = (await sessionPost(r, params("contacts"))).status;
+      if (last === 429) break;
+    }
+    expect(last).toBe(429);
+    expect(spy.mock.calls.length).toBeLessThan(70);
+    spy.mockRestore();
+    resetRateLimits();
+  });
+
+  it("Dateiname wird vor dem Protokoll bereinigt (Steuer-/Bidi-Zeichen)", async () => {
+    const text = csv(KOPF, "Dateiname AG;Weg 1;10115;Berlin;fn@example.org");
+    const res = await sessionPost(await multipart({ file: { name: "a\u202Eb\u0007.csv", bytes: Buffer.from(text) }, mode: "commit", expectedHash: h(text) }), params("contacts"));
+    expect(res.status).toBe(201);
+    const log = await dbInternal.activityLog.findFirst({ where: { orgId, entityType: "IMPORT", entityId: h(text) }, select: { dataJson: true } });
+    expect(JSON.parse(log?.dataJson ?? "{}").fileName).toBe("ab.csv");
+  });
+
+  it("Doppel-Import: zweiter Commit -> 409 ALREADY_IMPORTED, mit allowRepeat=true erlaubt (UI)", async () => {
+    const text = csv(KOPF, "Zweimal AG;Weg 1;10115;Berlin;z2@example.org");
+    const commit = (extra: Record<string, string> = {}) => multipart({ file: file(text), mode: "commit", expectedHash: h(text), ...extra });
+    expect((await sessionPost(await commit(), params("contacts"))).status).toBe(201);
+    const dup = await sessionPost(await commit(), params("contacts"));
+    expect(dup.status).toBe(409);
+    expect(await dup.json()).toMatchObject({ error: "Datei wurde bereits importiert", code: "ALREADY_IMPORTED" });
+    expect(await dbInternal.customer.count({ where: { orgId, name: "Zweimal AG" } })).toBe(1);
+    // allowRepeat: Schutz aufgehoben; der Kunde existiert, daher Duplikat-Fehler der Validierung statt 409
+    const rep = await sessionPost(await commit({ allowRepeat: "true" }), params("contacts"));
+    expect(rep.status).not.toBe(409);
+  });
+
   it("Commit ohne expectedHash -> 400, nichts angelegt", async () => {
     const before = await customerCount();
     expect((await sessionPost(await multipart({ file: file(GOOD), mode: "commit" }), params("contacts"))).status).toBe(400);
@@ -179,6 +237,17 @@ describe("REST /api/v1/<Contact|Product>/import", () => {
     expect(((await other.json()) as { error: { code: string } }).error.code).toBe("IDEMPOTENCY_MISMATCH");
   });
 
+  it("Doppel-Import REST: gleicher Hash -> 409 CONFLICT, allowRepeat im Schema", async () => {
+    const text = csv(KOPF, "Rest Doppel GmbH;Weg 1;10115;Berlin;rd@example.org");
+    expect((await rest(contactImport, "Contact", { csv: text, dryRun: false, expectedHash: h(text) }, { key: "dup-1" })).status).toBe(201);
+    const dup = await rest(contactImport, "Contact", { csv: text, dryRun: false, expectedHash: h(text) }, { key: "dup-2" });
+    expect(dup.status).toBe(409);
+    expect(((await dup.json()) as { error: { code: string; message: string } }).error).toEqual({ code: "CONFLICT", message: "Datei wurde bereits importiert" });
+    const rep = await rest(contactImport, "Contact", { csv: text, dryRun: false, expectedHash: h(text), allowRepeat: true }, { key: "dup-3" });
+    expect(rep.status).not.toBe(409);
+    expect((await rest(contactImport, "Contact", { csv: text, allowRepeat: "ja" })).status).toBe(400);
+  });
+
   it("Produkte: Vorschau und Commit", async () => {
     const text = csv("Bezeichnung;Nettopreis;Steuersatz", "Beratung REST;95,00;19");
     expect((await rest(productImport, "Product", { csv: text })).status).toBe(200);
@@ -239,6 +308,17 @@ describe("MCP import_contacts / import_products", () => {
     expect(await customerCount()).toBe(before + 1);
     const prod = await tools()["import_products"].handler({ csv: csv("Bezeichnung;Nettopreis", "Mcp Produkt;10,00"), dryRun: false, expectedHash: h(csv("Bezeichnung;Nettopreis", "Mcp Produkt;10,00")) });
     expect(prod.isError).toBeUndefined();
+  });
+
+  it("Doppel-Import MCP: zweiter Commit -> isError, allowRepeat=true hebt auf", async () => {
+    const text = csv(KOPF, "Mcp Doppel GmbH;Weg 1;10115;Berlin;md@example.org");
+    expect((await tools()["import_contacts"].handler({ csv: text, dryRun: false, expectedHash: h(text) })).isError).toBeUndefined();
+    const dup = await tools()["import_contacts"].handler({ csv: text, dryRun: false, expectedHash: h(text) });
+    expect(dup.isError).toBe(true);
+    expect(dup.content[0].text).toContain("Datei wurde bereits importiert");
+    expect(dup.content[0].text).toContain("allowRepeat");
+    const rep = await tools()["import_contacts"].handler({ csv: text, dryRun: false, expectedHash: h(text), allowRepeat: true });
+    expect(rep.content[0].text).not.toContain("Datei wurde bereits importiert");
   });
 
   it("fehlerhafte Datei -> isError mit Zeile/Spalte, gleiche Fehlerzahl wie REST", async () => {

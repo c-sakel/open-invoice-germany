@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { ApiContext } from "./auth";
 import { apiData } from "./response";
-import { importRequestSchema, runCsvImport, ImportRejectedError, type ImportResource } from "@/domain/import/run";
+import { importRequestSchema, runCsvImport, ImportRejectedError, ImportAlreadyDoneError, ImportHashMismatchError, type ImportResource } from "@/domain/import/run";
 
 export const IMPORT_MAX_BODY_BYTES = 3 * 1024 * 1024;
 
@@ -24,7 +24,7 @@ export async function handleRestImport(req: Request, ctx: ApiContext, resource: 
     const result = await runCsvImport(
       ctx.orgId,
       resource,
-      { text: input.csv, fileName: input.fileName, dryRun: input.dryRun, expectedHash: input.expectedHash },
+      { text: input.csv, fileName: input.fileName, dryRun: input.dryRun, expectedHash: input.expectedHash, allowRepeat: input.allowRepeat },
       { actor: ctx.actor, source: "API" },
     );
     if (result.status === "imported") return apiData({ created: result.created, preview: result.preview }, 201);
@@ -35,6 +35,9 @@ export async function handleRestImport(req: Request, ctx: ApiContext, resource: 
         { error: { code: "UNPROCESSABLE", message: e.message, details: { errorCount: e.preview.errorCount, errors: e.preview.errors } } },
         { status: 422 },
       );
+    }
+    if (e instanceof ImportAlreadyDoneError || e instanceof ImportHashMismatchError) {
+      return NextResponse.json({ error: { code: "CONFLICT", message: e.message } }, { status: 409 });
     }
     throw e;
   }

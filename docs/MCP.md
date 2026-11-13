@@ -261,7 +261,7 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `import_contacts` | Kunden aus CSV-Text (`csv`) anlegen; `dryRun` ist Standard `true` (nur Vorschau mit Fehlern je Zeile/Spalte, ohne Beispielzeilen), `dryRun: false` legt an und verlangt `expectedHash` (`fileHash` der Vorschau); optional `fileName` | „Prüfe diese Kundenliste als CSV und importiere sie, wenn sie fehlerfrei ist." |
+| `import_contacts` | Kunden aus CSV-Text (`csv`) anlegen; `dryRun` ist Standard `true` (nur Vorschau mit Fehlern je Zeile/Spalte, ohne Beispielzeilen), `dryRun: false` legt an und verlangt `expectedHash` (`fileHash` der Vorschau); optional `fileName`; dieselbe Datei (gleicher Inhalts-Hash) wird je Organisation innerhalb von 24 Stunden nur einmal importiert, `allowRepeat: true` hebt das bewusst auf | „Prüfe diese Kundenliste als CSV und importiere sie, wenn sie fehlerfrei ist." |
 | `import_products` | Produkte aus CSV-Text (`csv`) anlegen; sonst wie `import_contacts` | „Importiere diese Artikelliste als Produkte." |
 
 ### Einstellungen

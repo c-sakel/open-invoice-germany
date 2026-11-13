@@ -31,6 +31,8 @@ export const importRequestSchema = z.object({
   fileName: z.string().trim().max(200).optional(),
   dryRun: z.boolean().default(true),
   expectedHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  /** Gleiche Datei innerhalb von 24 h bewusst erneut importieren (Doppel-Import-Schutz aufheben). */
+  allowRepeat: z.boolean().default(false),
 });
 
 export interface ImportPreview {
@@ -62,6 +64,15 @@ export class ImportHashMismatchError extends Error {
   }
 }
 
+export const IMPORT_REPEAT_WINDOW_MS = 24 * 60 * 60 * 1000;
+export class ImportAlreadyDoneError extends Error {
+  readonly status = 409;
+  constructor() {
+    super("Datei wurde bereits importiert");
+    this.name = "ImportAlreadyDoneError";
+  }
+}
+
 export interface ImportContext {
   actor: string;
   source: "UI" | "API" | "MCP";
@@ -74,7 +85,7 @@ const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
 export async function runCsvImport(
   orgId: string,
   resource: ImportResource,
-  input: { text: string; encoding?: "utf-8" | "windows-1252"; fileName?: string; dryRun: boolean; expectedHash?: string },
+  input: { text: string; encoding?: "utf-8" | "windows-1252"; fileName?: string; dryRun: boolean; expectedHash?: string; allowRepeat?: boolean },
   ctx: ImportContext,
 ): Promise<ImportResult> {
   if (input.dryRun) rateLimit(`csv-import-preview:${orgId}`, { limit: 20, windowMs: 60_000 });
@@ -128,6 +139,16 @@ export async function runCsvImport(
 
   const created = await dbInternal.$transaction(async (tx) => {
     await lockOrganization(tx, orgId);
+    if (input.allowRepeat !== true) {
+      // Doppel-Import-Schutz: der Inhalts-Hash steht als ActivityLog (entityType IMPORT, entityId = Hash);
+      // Pruefung ueber tx nach der Org-Sperre, damit parallele Commits serialisiert sind.
+      const since = new Date((ctx.now ?? new Date()).getTime() - IMPORT_REPEAT_WINDOW_MS);
+      const prior = await tx.activityLog.findFirst({
+        where: { orgId, entityType: "IMPORT", entityId: fileHash, type: "CSV_IMPORTED", at: { gte: since } },
+        select: { id: true },
+      });
+      if (prior) throw new ImportAlreadyDoneError();
+    }
     const res = await validate(tx);
     if (res.errors.length > 0) throw new ImportRejectedError(preview(res.errors, res.valid.length));
     const taken = res.taken;

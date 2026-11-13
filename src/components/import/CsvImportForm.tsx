@@ -21,6 +21,7 @@ interface Preview {
 }
 interface Reply {
   error?: string;
+  code?: string;
   created?: number;
   preview?: Preview;
 }
@@ -33,7 +34,7 @@ export function CsvImportForm({ resource, noun, listHref }: { resource: "contact
   const [created, setCreated] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function send(mode: "preview" | "commit") {
+  async function send(mode: "preview" | "commit", allowRepeat = false) {
     if (!file) return;
     setBusy(true);
     setMessage(null);
@@ -42,12 +43,20 @@ export function CsvImportForm({ resource, noun, listHref }: { resource: "contact
       body.set("file", file);
       body.set("mode", mode);
       if (mode === "commit" && preview) body.set("expectedHash", preview.fileHash);
+      if (allowRepeat) body.set("allowRepeat", "true");
       const res = await fetch(`/api/imports/${resource}`, { method: "POST", body });
       const data = (await res.json().catch(() => ({}))) as Reply;
       if (data.preview) setPreview(data.preview);
       else if (mode === "preview") setPreview(null);
       if (res.status === 201 && typeof data.created === "number") {
         setCreated(data.created);
+      } else if (res.status === 409 && data.code === "ALREADY_IMPORTED") {
+        if (window.confirm(`${data.error ?? "Datei wurde bereits importiert"}. Trotzdem erneut importieren? Es werden neue Datensätze angelegt.`)) {
+          setBusy(false);
+          await send("commit", true);
+          return;
+        }
+        setMessage("Import abgebrochen: Die Datei wurde bereits importiert.");
       } else if (!res.ok) {
         setMessage(data.error ?? "Anfrage fehlgeschlagen.");
       }

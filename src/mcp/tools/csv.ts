@@ -10,7 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { exportFromApiFilter, ExportTooLargeError } from "@/domain/export";
 import { RateLimitError } from "@/lib/rate-limit";
-import { importRequestSchema, runCsvImport, ImportHashMismatchError, ImportRejectedError, type ImportResource } from "@/domain/import/run";
+import { importRequestSchema, runCsvImport, ImportHashMismatchError, ImportAlreadyDoneError, ImportRejectedError, type ImportResource } from "@/domain/import/run";
 import { CsvFormatError, CsvLimitError } from "@/domain/import/parse-csv";
 import type { McpToolsContext, Result } from "./context";
 
@@ -67,7 +67,7 @@ export function registerCsvTools(server: McpServer, ctx: McpToolsContext): void 
       const result = await runCsvImport(
         org.id,
         resource,
-        { text: input.csv, fileName: input.fileName, dryRun: input.dryRun, expectedHash: input.expectedHash },
+        { text: input.csv, fileName: input.fileName, dryRun: input.dryRun, expectedHash: input.expectedHash, allowRepeat: input.allowRepeat },
         { actor: "mcp", source: "MCP" },
       );
       return ctx.ok(JSON.stringify(result.status === "imported" ? { created: result.created, preview: result.preview } : { preview: result.preview }));
@@ -78,6 +78,7 @@ export function registerCsvTools(server: McpServer, ctx: McpToolsContext): void 
       }
       if (e instanceof z.ZodError) return ctx.fail(`Ungültige Eingabe: ${e.issues.map((i) => i.message).join("; ")}`);
       if (e instanceof CsvFormatError || e instanceof CsvLimitError || e instanceof ImportHashMismatchError) return ctx.fail(e.message);
+      if (e instanceof ImportAlreadyDoneError) return ctx.fail(`${e.message} (innerhalb von 24 Stunden). Mit allowRepeat=true bewusst wiederholen.`);
       if (e instanceof RateLimitError) return ctx.fail("Zu viele Importe — bitte kurz warten.");
       return ctx.failUnknown(e);
     }
