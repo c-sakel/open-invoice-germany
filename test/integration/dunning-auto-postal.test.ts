@@ -166,15 +166,32 @@ describe("Mahnautomatik mit Kanalwahl", () => {
     expect(await dbInternal.postalJob.count({ where: { orgId, docId: r.created[0]! } })).toBe(0);
   });
 
-  it("Fallback an, Post aus (enabled false) -> POSTAL_PENDING, kein Auftrag", async () => {
+  it("Fallback an, aber Postversand aus -> Bestandsverhalten (NO_RECIPIENT, DUNNING_NOT_SENT), kein Postweg", async () => {
+    await makeInvoice({});
+    const before = await notifications("DUNNING_NOT_SENT");
+    const pendingBefore = await notifications("POSTAL_PENDING");
+    const f = lxp();
+    const r = await runDunningJob(FIX, { orgId, provider: createMemoryProvider(), postalTransport: f.transport });
+    expect(r.skipped.noRecipient).toBe(1);
+    expect(r.postalPending).toHaveLength(0);
+    expect(r.postal).toHaveLength(0);
+    expect(await dbInternal.postalJob.count({ where: { orgId, docId: r.created[0]! } })).toBe(0);
+    expect(await notifications("DUNNING_NOT_SENT")).toBe(before + 1);
+    expect(await notifications("POSTAL_PENDING")).toBe(pendingBefore);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it("Fallback an, Postversand an, aber autoDunningPost aus -> POSTAL_PENDING statt DUNNING_NOT_SENT", async () => {
+    await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, autoDunningPost: false });
     await makeInvoice({});
     const before = await notifications("POSTAL_PENDING");
+    const notSent = await notifications("DUNNING_NOT_SENT");
     const f = lxp();
     const r = await runDunningJob(FIX, { orgId, provider: createMemoryProvider(), postalTransport: f.transport });
     expect(r.postalPending).toEqual(r.created);
-    expect(r.postal).toHaveLength(0);
-    expect(await dbInternal.postalJob.count({ where: { orgId, docId: r.created[0]! } })).toBe(0);
+    expect(r.skipped.noRecipient).toBeUndefined();
     expect(await notifications("POSTAL_PENDING")).toBe(before + 1);
+    expect(await notifications("DUNNING_NOT_SENT")).toBe(notSent);
     expect(f.calls).toHaveLength(0);
   });
 

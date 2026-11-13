@@ -191,7 +191,8 @@ async function processCandidate(
       stageChannel: stageRow.channel,
       customerChannel: asChannel(candidate.customer.deliveryChannel),
       hasEmail,
-      postFallback: stageRow.postFallback,
+      // Post statt "kein Empfaenger" nur bei eingeschaltetem Postversand; sonst Bestandsverhalten.
+      postFallback: stageRow.postFallback && postal.settings.enabled,
     });
 
     if (channels.reason === "NO_RECIPIENT") {

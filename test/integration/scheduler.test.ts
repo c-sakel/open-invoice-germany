@@ -176,9 +176,6 @@ describe("Phase 6 — runDunningJob (dunning/auto.ts)", () => {
   });
 
   it("fehlende Empfaenger-E-Mail -> skipped.noRecipient statt Fehler", async () => {
-    // Phase 16d: Ohne Post-Rueckfall (Stufenvorgabe) bleibt es beim Bestandsverhalten; mit Rueckfall siehe dunning-auto-postal.test.ts.
-    const stage0 = (await listDunningStages(orgId)).find((s) => s.order === 0)!;
-    await updateDunningStage(orgId, stage0.id, { ...stage0, autoSend: true, postFallback: false });
     const customerId = await makeCustomer(); // keine E-Mail
     await makeFinalizedInvoice(customerId, new Date("2051-06-01"));
 
