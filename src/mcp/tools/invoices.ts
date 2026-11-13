@@ -316,7 +316,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
     {
       title: "Rechnungen auflisten/filtern",
       description:
-        "Listet Rechnungen mit Filter/Suche/Paginierung (§40) — Status (effektiv: draft/open/due/overdue/partial/paid/cancelled/all), Typ, Zeitraum, Betragsspanne, Volltextsuche.",
+        "Listet Rechnungen mit Filter/Suche/Paginierung (§40) — Status (effektiv: draft/open/due/overdue/partial/paid/cancelled/credit/all), Typ, Zeitraum, Betragsspanne, Volltextsuche.",
       inputSchema: {
         ...invoiceListFilterSchema.shape,
         customer: z.string().optional().describe("Kundenname oder -ID (Alternative zu customerId)"),

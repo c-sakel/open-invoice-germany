@@ -100,7 +100,7 @@ export async function updateDraftDeliveryNote(
       });
       changed.push("lines");
     }
-    if (changed.length === 0) throw new DeliveryNoteError("Keine Aenderung angegeben.");
+    if (changed.length === 0) throw new DeliveryNoteValidationError("Keine Änderung angegeben.");
 
     const updated = await tx.deliveryNote.update({ where: { id }, data, include: { lines: { orderBy: { position: "asc" } } } });
 

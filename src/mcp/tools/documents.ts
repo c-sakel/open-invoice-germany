@@ -362,7 +362,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Lieferschein-Entwurf bearbeiten",
       description:
-        "Aendert einen Lieferschein im Status DRAFT (Kunde, Positionen, Lieferdatum, Notizen, Sprache). Positionen werden ersetzt. Erstellte Lieferscheine sind nicht bearbeitbar.",
+        "Aendert einen Lieferschein im Status DRAFT (Kunde, Positionen, Lieferdatum, Versanddatum, Notizen, Sprache). Positionen werden ersetzt. Erstellte Lieferscheine sind nicht bearbeitbar.",
       inputSchema: {
         id: z.string().describe("Lieferschein-ID oder -Nummer"),
         customer: z.string().optional().describe("Kundenname oder -ID (Kundenwechsel)"),
@@ -371,6 +371,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           .min(1)
           .optional(),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
+        shippingDate: z.string().optional().describe("YYYY-MM-DD; leerer String leert es"),
         notes: z.string().optional(),
         language: DocLanguageSchema.optional(),
       },
@@ -401,6 +402,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           customerId: customer?.id,
           // Leerer String leert das Lieferdatum.
           deliveryDate: args.deliveryDate === "" ? null : ctx.parseDateInput(args.deliveryDate),
+          // Leerer String leert das Versanddatum.
+          shippingDate: args.shippingDate === "" ? null : ctx.parseDateInput(args.shippingDate),
           notes: args.notes,
           language: args.language,
           lines: lines?.map((l, idx) => ({

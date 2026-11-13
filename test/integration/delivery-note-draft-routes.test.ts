@@ -114,6 +114,13 @@ describe("REST v1", () => {
     expect(conflict.status).toBe(409);
   });
 
+  it("leerer PATCH-Body auf einen Entwurf -> 400 mit Meldung", async () => {
+    const dn = await draft();
+    const res = await v1Patch(req("http://x", writeToken, "PATCH", {}), ctx1(dn.id));
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain("Keine Änderung angegeben.");
+  });
+
   it("Status MARK_CREATED bei Ueberlieferung -> 409, Entwurf bleibt", async () => {
     const q = await createBusinessDocument(orgId, { kind: "ANGEBOT", customerId, taxScheme: "REGULAR", currency: "EUR", lines: [{ lineType: "ITEM", description: "Kabel", quantityMilli: 2000, unit: "C62", unitNetPriceCents: 1000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }] }, { now: NOW });
     const ql = await dbInternal.quoteLine.findFirstOrThrow({ where: { quoteId: q.id } });
@@ -244,6 +251,20 @@ describe("MCP", () => {
     const again = await callTool("update_delivery_note", { id, notes: "nein" });
     expect(again.isError).toBe(true);
     expect(again.content[0].text).toContain("Entwurf");
+  });
+
+  it("update_delivery_note setzt und leert das Versanddatum; ungueltiges Datum -> Tool-Fehler", async () => {
+    const dn = await draft();
+    const set = await callTool("update_delivery_note", { id: dn.id, shippingDate: "2026-12-01" });
+    expect(set.isError).toBeFalsy();
+    const after = await dbInternal.deliveryNote.findFirst({ where: { id: dn.id }, select: { shippingDate: true } });
+    expect(after?.shippingDate?.toISOString().slice(0, 10)).toBe("2026-12-01");
+    const cleared = await callTool("update_delivery_note", { id: dn.id, shippingDate: "" });
+    expect(cleared.isError).toBeFalsy();
+    const gone = await dbInternal.deliveryNote.findFirst({ where: { id: dn.id }, select: { shippingDate: true } });
+    expect(gone?.shippingDate).toBeNull();
+    const bad = await callTool("update_delivery_note", { id: dn.id, shippingDate: "kein-datum" });
+    expect(bad.isError).toBe(true);
   });
 
   it("set_document_status MARK_CREATED bei Ueberlieferung -> ctx.fail mit Meldung", async () => {
