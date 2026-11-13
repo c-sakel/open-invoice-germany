@@ -136,6 +136,16 @@ export class LayoutDesignVersionImmutabilityError extends Error {
 }
 
 /**
+ * Phase 17a: Das VIES-Pruefprotokoll (`VatIdCheck`) ist append-only; nur `create` ist erlaubt.
+ */
+export class VatIdCheckImmutableError extends Error {
+  constructor() {
+    super("Pruefprotokoll ist unveraenderlich.");
+    this.name = "VatIdCheckImmutableError";
+  }
+}
+
+/**
  * Phase 16g (R7): `printOptionsJson` von Angebot/AB/Proforma (`quote`) und Lieferschein ist ab
  * dem Verlassen des Entwurfs eingefroren (Druckoptionen + Layout-Version). Der Guard prueft nur
  * den Schluessel `printOptionsJson`; alle anderen Felder (z. B. archivedAt) bleiben unberuehrt.
@@ -264,6 +274,26 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new ArchivedDocumentImmutabilityError();
+      },
+    },
+    vatIdCheck: {
+      async update() {
+        throw new VatIdCheckImmutableError();
+      },
+      async updateMany() {
+        throw new VatIdCheckImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new VatIdCheckImmutableError();
+      },
+      async upsert() {
+        throw new VatIdCheckImmutableError();
+      },
+      async delete() {
+        throw new VatIdCheckImmutableError();
+      },
+      async deleteMany() {
+        throw new VatIdCheckImmutableError();
       },
     },
     layoutDesignVersion: {
