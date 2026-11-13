@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureCustomerNumbers } from "@/domain/numbering/ranges";
@@ -8,9 +9,13 @@ import { DataTable } from "@/components/ui/DataTable";
 
 export const dynamic = "force-dynamic";
 
-export default async function KundenPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
+export default async function KundenPage({ searchParams }: { searchParams: Promise<{ q?: string; archiviert?: string }> }) {
+  const { q, archiviert } = await searchParams;
   const query = q?.trim() ?? "";
+  const exportParams = new URLSearchParams();
+  if (query) exportParams.set("q", query);
+  if (archiviert === "1") exportParams.set("archiviert", "1");
+  const exportQuery = exportParams.size > 0 ? `?${exportParams.toString()}` : "";
 
   try {
     const org = await getActiveOrg();
@@ -44,9 +49,15 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         title="Kunden"
         subtitle={`${customers.length} Kunden`}
         actions={
-          <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
-            Neuer Kunde
-          </Link>
+          <>
+            <CsvLink href={"/api/exports/kunden.csv" + exportQuery} what="Kunden" />
+            <Link href="/kunden/import" className="text-sm text-ink-soft underline-offset-2 hover:underline">
+              Importieren
+            </Link>
+            <Link href="/kunden/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
+              Neuer Kunde
+            </Link>
+          </>
         }
       />
 

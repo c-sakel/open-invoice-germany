@@ -29,3 +29,14 @@ export async function lockRows(tx: Prisma.TransactionClient, orgId: string, rows
   );
   for (const r of sorted) await lockRow(tx, r.table, r.id, orgId);
 }
+
+/**
+ * Sperrt die Organisationszeile (`FOR NO KEY UPDATE`) und serialisiert damit Schreibpfade, die ueber
+ * viele Zeilen hinweg auf Eindeutigkeit pruefen (CSV-Import). `NO KEY UPDATE` blockiert keine
+ * Fremdschluesselpruefungen anderer Schreibpfade. Unter SQLite No-op. Als ERSTE Anweisung der
+ * Transaktion aufrufen; `orgId` wird immer als Parameter gebunden.
+ */
+export async function lockOrganization(tx: Prisma.TransactionClient, orgId: string): Promise<void> {
+  if (!isPostgresUrl(process.env.DATABASE_URL)) return;
+  await tx.$queryRawUnsafe(`SELECT 1 FROM "Organization" WHERE "id" = $1 FOR NO KEY UPDATE`, orgId);
+}

@@ -247,6 +247,23 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 | `tag_document` | Tag (Name oder ID) einem Beleg (Belegnummer oder ID) zuordnen — idempotent | „Setze den Tag ‚Wartung' auf RE-2026-00342." |
 | `untag_document` | Tag-Zuordnung von einem Beleg entfernen — idempotent, kein Fehler ohne bestehende Zuordnung | „Entferne den Tag ‚Wartung' von RE-2026-00342." |
 
+### CSV-Export (Phase 18b)
+
+Dieselben Listenfilter und dieselbe Sortierung wie die `list_*`-Werkzeuge und `GET /api/v1/<Ressource>?format=csv`; interne Notizen sind nie enthalten.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `export_csv` | Rechnungen, Angebote, Auftragsbestätigungen, Lieferscheine, Kunden oder Produkte als CSV zurückgeben (`resource`: `invoices`, `quotes`, `order-confirmations`, `delivery-notes`, `contacts`, `products`; optional `filter` wie bei `list_*`). Semikolon, CRLF, deutsche Zahlen, ohne BOM; keine Paginierung, höchstens 500 Zeilen (sonst Fehler mit Hinweis auf REST `?format=csv` oder die Oberfläche für größere Mengen), 30 Exporte je Minute und Organisation | „Exportiere alle bezahlten Rechnungen als CSV." |
+
+### CSV-Import (Phase 18b)
+
+Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gleiche Prüfungen und Grenzen wie `POST /api/v1/Contact/import` und `/api/v1/Product/import` (höchstens 2 MB, 2.000 Zeilen; 20 Vorschauen und 5 Importe je Minute und Organisation).
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `import_contacts` | Kunden aus CSV-Text (`csv`) anlegen; `dryRun` ist Standard `true` (nur Vorschau mit Fehlern je Zeile/Spalte, ohne Beispielzeilen), `dryRun: false` legt an und verlangt `expectedHash` (`fileHash` der Vorschau); optional `fileName`; dieselbe Datei (gleicher Inhalts-Hash) wird je Organisation innerhalb von 24 Stunden nur einmal importiert, `allowRepeat: true` hebt das bewusst auf | „Prüfe diese Kundenliste als CSV und importiere sie, wenn sie fehlerfrei ist." |
+| `import_products` | Produkte aus CSV-Text (`csv`) anlegen; sonst wie `import_contacts` | „Importiere diese Artikelliste als Produkte." |
+
 ### Einstellungen
 
 | Tool | Zweck | Beispiel |

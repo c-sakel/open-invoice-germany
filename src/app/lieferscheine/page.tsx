@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import {
@@ -205,9 +206,12 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
         title="Lieferscheine"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/lieferscheine/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
-            Neuer Lieferschein
-          </Link>
+          <>
+            <CsvLink href={"/api/exports/lieferscheine.csv" + (liste ? "?" + liste : "")} what="Lieferscheine" />
+            <Link href="/lieferscheine/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
+              Neuer Lieferschein
+            </Link>
+          </>
         }
       />
       <div className="flex items-center justify-between">

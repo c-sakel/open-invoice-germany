@@ -729,6 +729,21 @@ Rechnungen und Mahnungen werden über einen Briefdienst gedruckt und zugestellt.
 
 Zusätzlich gilt „Code schlägt Doku“: Der Mailversand ändert den Rechnungsstatus nicht (nur bei Angebot/Lieferschein), der Postversand ebenso nicht; ein echter Live-Auftrag (`QUEUED`/`HOLD`/`DONE`) zählt aber in `payment-reversal.ts` als „ausgegeben“ (`hasOutput`).
 
+## 3f. CSV-Export und -Import (Phase 18b)
+
+Keine Migration, kein neues Env. Export und Import teilen sich Schreiber und Formelschutz; der Import hat genau einen Schreibpfad (`runCsvImport`).
+
+### Module
+- `src/domain/export/` — `csv-writer.ts` (Semikolon, CRLF, deutsche Zahlen, Formelschutz `csvTextCell`/`stripFormulaGuard`), `limits.ts` (`EXPORT_ROW_LIMIT` 20.000), `documents-csv.ts`/`masterdata-csv.ts` (Zeilen nur in Blöcken zu 500 Ids), `index.ts` (`exportFromApiFilter`, `exportFromPageQuery`, Rate-Limit 30/min und Organisation). Die Id-Menge der Belegexporte liefern bei REST/MCP direkt `listInvoiceIds`/`listQuoteIds`/`listDeliveryNoteIds` (Limit + 1); die Oberfläche geht über `listIdsFromPageQuery` (`src/domain/document/neighbors.ts`), dieselbe Abfrage wie Listenseiten und Blätterfunktion. Kunden und Produkte lesen mit einem `findMany` und `take: limit + 1`; MCP begrenzt auf 500 Zeilen (`MCP_EXPORT_ROW_LIMIT`), REST/Oberfläche auf 20.000.
+- `src/domain/import/` — `parse-csv.ts` (Dekodierung, Trennzeichen, Grenzen), `columns.ts` (Kopfnamen/Aliase), `contacts-import.ts`/`products-import.ts` (Zeile → bestehendes Zod-Schema, Dublettenprüfung), `run.ts` (Vorschau und Commit).
+- Einstiegspunkte: UI `/api/exports/[file]`, `/api/imports/[resource]`, Seiten `/kunden/import`, `/produkte/import`; REST `?format=csv` (`src/api/csv-list.ts`) und `src/api/import-route.ts`; MCP `src/mcp/tools/csv.ts` (`export_csv`, `import_contacts`, `import_products`).
+
+### Sicherheit und Nebenläufigkeit
+- Der Commit validiert **neu** innerhalb einer Transaktion, erste Anweisung `lockOrganization` (`src/lib/db-lock.ts`: `SELECT … FOR NO KEY UPDATE` auf die Organisationszeile; `NO KEY UPDATE`, damit die Fremdschlüsselprüfungen paralleler Schreibpfade nicht blockieren; unter SQLite No-op). Dadurch sind parallele Importe einer Organisation serialisiert.
+- `expectedHash` bindet den Commit an die gesehene Vorschau (`409`); derselbe Hash ist als `ActivityLog` (`IMPORT`, `CSV_IMPORTED`, entityId = Hash) in der Commit-Transaktion der Doppel-Import-Schutz (24 Stunden, `allowRepeat`). Das Protokoll enthält nie Zellwerte, der Dateiname wird bereinigt.
+- Rate-Limits je Organisation: Vorschau 20/min, Commit 5/min, Export 30/min; die Session-Route zusätzlich eine grobe Bremse vor dem Einlesen des Bodies. Die Session-Route akzeptiert nur Same-Origin-Anfragen (`Sec-Fetch-Site`/`Origin`) und prüft `Content-Length` vor `formData()`.
+- Das Anfrageprotokoll schwärzt den Schlüssel `csv` (`src/domain/api-log/redact.ts`).
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.

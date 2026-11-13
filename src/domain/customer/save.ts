@@ -22,7 +22,7 @@ import { isValidLeitwegId } from "@/lib/einvoice/eas";
 import { normalizeVatId } from "@/lib/vat-id";
 import { assignCustomerNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
-import type { Customer } from "@/generated/prisma/client";
+import type { Customer, Prisma } from "@/generated/prisma/client";
 
 /** defaultPaymentMethodId zeigt auf eine Zahlungsmethode einer ANDEREN Organisation
  *  oder gar nicht existent — Validierungsfehler (400 im API-Kontext), kein Serverfehler. */
@@ -73,17 +73,25 @@ function assertLeitwegId(next: string | null | undefined, current: string | null
   if (!isValidLeitwegId(value)) throw new CustomerValidationError("Ungültige Leitweg-ID (Format oder Prüfziffer).");
 }
 
+/** Vorpruefung einer Neuanlage ausserhalb der Datenbank (Leitweg-ID); wirft CustomerValidationError. */
+export function assertCustomerCreatable(v: CustomerInput): void {
+  assertLeitwegId(v.leitwegId, null);
+}
+
+/** Legt einen Kunden in einer bestehenden Transaktion an (Kundennummer per Nummernkreis, falls leer). */
+export async function createCustomerWithinTx(tx: Prisma.TransactionClient, orgId: string, v: CustomerInput): Promise<Customer> {
+  const data = toCreateData(v);
+  const customerNumber = v.customerNumber ?? (await assignCustomerNumber(tx, orgId));
+  return tx.customer.create({ data: { ...data, customerNumber, orgId } });
+}
+
 /** Legt einen neuen Kunden an. Kundennummer per Nummernkreis (CUSTOMER), sofern im
  *  Input nicht bereits gesetzt (§34). */
 export async function createCustomer(orgId: string, rawInput: unknown): Promise<Customer> {
   const v = customerSchema.parse(rawInput);
-  assertLeitwegId(v.leitwegId, null);
+  assertCustomerCreatable(v);
   await assertPaymentMethodBelongsToOrg(orgId, v.defaultPaymentMethodId);
-  const data = toCreateData(v);
-  return dbInternal.$transaction(async (tx) => {
-    const customerNumber = v.customerNumber ?? (await assignCustomerNumber(tx, orgId));
-    return tx.customer.create({ data: { ...data, customerNumber, orgId } });
-  });
+  return dbInternal.$transaction((tx) => createCustomerWithinTx(tx, orgId, v));
 }
 
 const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "peppolScheme", "legalRegistrationId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays"]);

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { ensureArticleNumbers } from "@/domain/numbering/ranges";
@@ -12,7 +13,8 @@ import { topProducts } from "@/domain/reporting/top-products";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProduktePage() {
+export default async function ProduktePage({ searchParams }: { searchParams: Promise<{ archiviert?: string }> }) {
+  const { archiviert } = await searchParams;
   try {
     const org = await getActiveOrg();
     // Selbstheilung (Nit, Final-Review, analog Kundenliste): Bestandsprodukte ohne
@@ -47,9 +49,15 @@ export default async function ProduktePage() {
         title="Produkte & Leistungen"
         subtitle={`${products.length} Produkte`}
         actions={
-          <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
-            Neues Produkt
-          </Link>
+          <>
+            <CsvLink href={"/api/exports/produkte.csv" + (archiviert === "1" ? "?archiviert=1" : "")} what="Produkte" />
+            <Link href="/produkte/import" className="text-sm text-ink-soft underline-offset-2 hover:underline">
+              Importieren
+            </Link>
+            <Link href="/produkte/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
+              Neues Produkt
+            </Link>
+          </>
         }
       />
 

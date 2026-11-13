@@ -73,7 +73,17 @@ export function buildListeParam(values: Record<string, string | undefined>): str
   return p.toString();
 }
 
-async function orderedIds(kind: NeighborKind, orgId: string, params: URLSearchParams): Promise<string[]> {
+/**
+ * Id-Reihenfolge einer Liste aus der Seiten-Query (Filter wie die Listenseiten). Gemeinsame Quelle
+ * fuer die Nachbarn (`invalid: "empty"`) und den CSV-Export (Phase 18b, `invalid: "throw"`:
+ * ein ungueltiger Filter ist dort ein Fehler, keine leere Liste). `opts.limit` begrenzt die Id-Menge.
+ */
+export async function listIdsFromPageQuery(
+  kind: NeighborKind,
+  orgId: string,
+  params: URLSearchParams,
+  opts: { limit: number; invalid: "empty" | "throw"; now?: Date },
+): Promise<string[]> {
   // Phase 13a (Task 6): `eInvoice` ist jetzt ALLOWED_KEYS-Mitglied — ohne booleanKeys
   // bliebe "true"/"false" eine Zeichenkette, invoiceListFilterSchema.eInvoice (z.boolean(),
   // bewusst ohne .coerce) wuerfe einen ZodError, orderedIds faellt dann still auf [] zurueck.
@@ -91,19 +101,19 @@ async function orderedIds(kind: NeighborKind, orgId: string, params: URLSearchPa
   await applyCustomerComboFilter(orgId, raw);
   const includeArchived = params.get("archiviert") === "1";
   try {
-    if (kind === "INVOICE") return await listInvoiceIds(orgId, raw, { limit: NEIGHBOR_LIMIT });
+    if (kind === "INVOICE") return await listInvoiceIds(orgId, raw, { limit: opts.limit, now: opts.now });
     if (kind === "QUOTE") {
       // Abgeleitete Abrechnungsstand-Tabs sind kein Belegstatus: wie `/dokumente` in
       // `status: "all"` + Id-Menge uebersetzen (kein zweiter Filterbau).
       const status = raw.status;
       if (status === "billed" || status === "partially-billed") {
-        return await listQuoteIds(orgId, { ...raw, status: "all", includeArchived }, { limit: NEIGHBOR_LIMIT, ids: await billingFilterIds(orgId, status) });
+        return await listQuoteIds(orgId, { ...raw, status: "all", includeArchived }, { limit: opts.limit, now: opts.now, ids: await billingFilterIds(orgId, status) });
       }
-      return await listQuoteIds(orgId, { ...raw, includeArchived }, { limit: NEIGHBOR_LIMIT });
+      return await listQuoteIds(orgId, { ...raw, includeArchived }, { limit: opts.limit, now: opts.now });
     }
-    return await listDeliveryNoteIds(orgId, { ...raw, includeArchived }, { limit: NEIGHBOR_LIMIT });
+    return await listDeliveryNoteIds(orgId, { ...raw, includeArchived }, { limit: opts.limit });
   } catch (e) {
-    if (e instanceof z.ZodError) return [];
+    if (e instanceof z.ZodError && opts.invalid === "empty") return [];
     throw e;
   }
 }
@@ -111,6 +121,6 @@ async function orderedIds(kind: NeighborKind, orgId: string, params: URLSearchPa
 export async function loadNeighbors(kind: NeighborKind, orgId: string, id: string, liste: string | undefined): Promise<Neighbors> {
   const params = parseListeQuery(liste);
   if (!params) return { prevId: null, nextId: null, backQuery: "" };
-  const ids = await orderedIds(kind, orgId, params);
+  const ids = await listIdsFromPageQuery(kind, orgId, params, { limit: NEIGHBOR_LIMIT, invalid: "empty" });
   return { ...neighborIds(ids, id), backQuery: params.toString() };
 }

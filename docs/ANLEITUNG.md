@@ -55,8 +55,10 @@ Name, Anschrift, Typ (B2B/B2C). Die USt-IdNr. ist nur bei innergemeinschaftliche
 
 **USt-IdNr. prüfen (VIES):** Auf der Kundenseite prüft der Knopf „USt-IdNr. prüfen (VIES)" die Nummer bei der EU-Kommission und speichert das Ergebnis samt Konsultationsnummer im Prüfprotokoll des Kunden (Nachweis für ig. Lieferungen). **Datenschutz:** Dabei werden die USt-IdNr. des Kunden und deine eigene USt-IdNr. an die EU-Kommission übermittelt, sonst nichts. Die Prüfung ist standardmäßig eingeschaltet; unter `Einstellungen → Belege` kannst du sie komplett abschalten („USt-IdNr.-Prüfung über VIES freischalten") oder die automatische Prüfung beim Festschreiben ein- und ausschalten. Wenn du es eingeschaltet hast (Standard: aus), fragt die App bei einer ig. Lieferung/Leistung beim Festschreiben einmal ab und zeigt dir das Ergebnis als Hinweis — das Festschreiben wird dadurch nie blockiert. Eine qualifizierte Bestätigung des BZSt ist nicht angebunden; daraus ergibt sich keine Pflicht zu einer zusätzlichen Bestätigung.
 
+Viele Kunden auf einmal: `Kunden → Importieren` (siehe „Export und Import (CSV)“ unten).
+
 ### Schritt 3 — (optional) Produkte anlegen (`Produkte`)
-Ein Katalog spart Tipparbeit — du kannst Positionen aber auch direkt in der Rechnung eintippen.
+Ein Katalog spart Tipparbeit — du kannst Positionen aber auch direkt in der Rechnung eintippen. Eine Produktliste lässt sich per `Produkte → Importieren` als CSV einlesen (siehe „Export und Import (CSV)“ unten).
 
 ### Schritt 4 — Rechnung erstellen (`Neue Rechnung`)
 Der Editor ist derselbe für Rechnung, Angebot/AB/Proforma und Lieferschein, läuft einspaltig (ein Block unter dem anderen) und deckt sich ab Phase 13b in folgenden Punkten: Kunde per Suche wählen (oder direkt im Editor über „+ Neuer Kunde" anlegen, ohne die Seite zu verlassen), Steuerschema, **Rechnungsdatum** (leer = Datum der Anlage) und **Leistungsdatum** — ein Haken „entspricht dem Rechnungsdatum" koppelt das Leistungsdatum ans Rechnungsdatum, bis du ihn entfernst, dann bleibt dein zuletzt eingetragenes Leistungsdatum stehen. **„Fällig am"** ist ein gekoppeltes Paar aus Datum **und** Tageszahl: gibst du ein Datum ein, springt die Tageszahl (Abstand zum Rechnungsdatum) automatisch mit, gibst du stattdessen eine Tageszahl ein (z. B. „14"), berechnet sich das Datum daraus. Ein Feld **„Betreff"** erscheint als eigene fette Zeile über dem Kopftext im PDF **und** — sofern gefüllt — als Notiz in der E-Rechnung (XRechnung/ZUGFeRD).
@@ -185,6 +187,49 @@ Das Versandprotokoll steht auf der Einstellungsseite (letzte 100 Aufträge) und 
 Beim Postversand werden Belegdaten (Anschrift, PDF) an den Briefdienst übertragen; dafür ist ein Auftragsverarbeitungsvertrag mit dem Anbieter nötig (COMPLIANCE.md § 21).
 
 ---
+
+## 2b. Export und Import (CSV)
+
+### Export
+Auf den Listen Rechnungen, Dokumente (Angebote/Auftragsbestätigungen), Lieferscheine, Kunden und Produkte lädt der Link **CSV** die Liste mit dem **aktiven Filter** als Datei (`<liste>-<Datum>.csv`: Semikolon, deutsche Zahlen, UTF-8 mit BOM, öffnet in Excel und LibreOffice direkt). Höchstens 20.000 Zeilen; bei mehr Treffern Filter einschränken. **Formelschutz:** Textzellen, die mit `=`, `+`, `-` oder `@` beginnen, erhalten ein vorangestelltes `'`, damit die Tabellenkalkulation sie nicht als Formel ausführt.
+
+### Import (`Kunden → Importieren`, `Produkte → Importieren`)
+Es werden nur **neue** Datensätze angelegt; bestehende bleiben unberührt. Ablauf:
+1. **Vorlage** herunterladen (Kopfzeile plus Beispielzeile) oder eine eigene Datei vorbereiten (UTF-8 oder Windows-1252, Trennzeichen `;` oder `,`, höchstens 2 MB und 2.000 Zeilen).
+2. Datei wählen und **Vorschau prüfen**: Die Vorschau zeigt Zeilenzahl, Fehler je Zeile und Spalte (höchstens 200 angezeigt), ignorierte Spalten und die ersten Beispielzeilen.
+3. Ist die Datei fehlerfrei, legt **Importieren** alle Zeilen an. Ein einziger Fehler verhindert den Import der ganzen Datei. Dieselbe Datei innerhalb von 24 Stunden erneut zu importieren fragt nach einer Bestätigung.
+
+Spalten Kunden (Kopf, Pflicht, Format; Aliase wie `Strasse`, `Email` werden erkannt):
+
+| Kopf | Pflicht | Format |
+|---|---|---|
+| Name | ja | Text |
+| Straße | ja | Text |
+| PLZ | ja | Text |
+| Ort | ja | Text |
+| Kundennummer | nein | leer = nächste Nummer aus dem Nummernkreis |
+| Typ | nein | `Firma` (Standard) oder `Privat` |
+| Ansprechpartner, Adresszusatz, Telefon, Registernummer | nein | Text |
+| Land | nein | Ländercode, z. B. `DE` |
+| E-Mail | nein | gültige Adresse |
+| USt-IdNr., Leitweg-ID, Peppol-ID, Peppol-Schema | nein | wie im Kundenformular geprüft |
+| Zahlungsziel (Tage) | nein | Ganzzahl 0–365 |
+
+Spalten Produkte:
+
+| Kopf | Pflicht | Format |
+|---|---|---|
+| Bezeichnung | ja | Text |
+| Nettopreis | ja | Betrag, z. B. `95,00` oder `1.234,56` |
+| Artikelnummer | nein | Text, je Organisation eindeutig |
+| Beschreibung | nein | Text |
+| Einheit | nein | Einheit wie in der App, z. B. `Std` |
+| Steuersatz (%) | nein | Ganzzahl 0–100, muss freigegeben sein |
+| Steuerkategorie | nein | `S` (Standard), bei den übrigen Kategorien 0 % |
+| Differenzbesteuerung | nein | `ja` / `nein` |
+| OSS-Kategorie | nein | wie im Produktformular |
+
+Eine Kundennummer, die schon vergeben ist, oder ein Kunde mit gleicher E-Mail und gleichem Namen wird als Fehler gemeldet. Mehr Grenzen: [LIMITATIONEN.md](LIMITATIONEN.md).
 
 ## 3. Wichtige Begriffe
 

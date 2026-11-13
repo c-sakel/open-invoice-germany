@@ -43,3 +43,29 @@ export function unitLabel(code: string, lang: DocLanguage = "de"): string {
   if (!code) return "";
   return (lang === "en" ? UNIT_LABELS_EN : UNIT_LABELS)[code] ?? code;
 }
+
+const UNIT_CODES: ReadonlySet<string> = new Set(["C62", "HUR", "DAY", "KGM", "MTR", "LTR", "MTK", "H87"]);
+
+const UNIT_INPUT_ALIASES: Readonly<Record<string, string>> = {
+  stk: "C62", "stk.": "C62", stueck: "C62", "stück": "C62", st: "C62", pcs: "C62",
+  std: "HUR", "std.": "HUR", stunde: "HUR", stunden: "HUR", h: "HUR",
+  tag: "DAY", tage: "DAY", d: "DAY",
+  kg: "KGM", m: "MTR", l: "LTR", liter: "LTR",
+  "m²": "MTK", m2: "MTK", qm: "MTK",
+  pauschale: "H87", psch: "H87", "psch.": "H87", "stück-pauschale": "H87",
+};
+
+/** Ist `code` ein bekannter UN/ECE-Einheitencode der Auswahlliste? */
+export function isKnownUnitCode(code: string): boolean {
+  return UNIT_CODES.has(code);
+}
+
+/** Import-Eingabe (Kürzel/Langform/Code) -> UN/ECE-Code. Unbekannter Freitext bleibt
+ *  unverändert (wie im Editor "andere…"), leer -> "C62". */
+export function unitCodeFromInput(input: string): string {
+  const t = input.trim();
+  if (!t) return "C62";
+  const upper = t.toUpperCase();
+  if (UNIT_CODES.has(upper) && t === upper) return upper;
+  return UNIT_INPUT_ALIASES[t.toLowerCase()] ?? t;
+}

@@ -472,6 +472,27 @@ Rechnungen (`docType` `INVOICE`, alle Rechnungstypen) und Mahnungen (`DUNNING`) 
 - Im Modus Testmodus landet der Auftrag in der Postbox des Briefdienstes und ist dort manuell versendbar (keine Sandbox); ein aktiver Testauftrag sperrt den Live-Versand desselben Belegs (`ALREADY_SENT`).
 - Webhook-Ereignisse: `postal.submitted`, `postal.done`, `postal.failed`, `postal.cancelled` (siehe [WEBHOOKS.md](WEBHOOKS.md)).
 
+## CSV-Export und -Import (Phase 18b)
+
+**Export:** Die Listen `Invoice`, `Quote`, `OrderConfirmation`, `DeliveryNote`, `Contact` und `Product` (`GET /api/v1/<Ressource>?format=csv`, Scope `read`) liefern dieselbe Auswahl wie die JSON-Liste mit denselben Filtern, aber ohne Paginierung (`limit`, `offset`, `embed` entfallen) als `text/csv` (Semikolon, UTF-8 mit BOM). Höchstens 20.000 Zeilen, darüber `413`; 30 Exporte je Minute und Organisation (`429`). `format` darf nur `json` oder `csv` sein (sonst `400`).
+
+**Import:** `POST /api/v1/Contact/import` und `POST /api/v1/Product/import` (Scope `write`), JSON-Body `{ "csv": "<Text>", "fileName"?, "dryRun"?, "expectedHash"?, "allowRepeat"? }`:
+- `dryRun` ist standardmäßig `true` und liefert nur die Vorschau (`preview` mit `fileHash`, `totalRows`, `validRows`, `errorCount`, `errors[]` je Zeile/Spalte, `ignoredColumns`; nie Beispielzeilen).
+- `dryRun: false` legt alle Zeilen an oder keine (nur Anlage, kein Update). Pflicht: Header `Idempotency-Key` und `expectedHash` (der `fileHash` der Vorschau), sonst `400`.
+- `csv` höchstens 2 MB, Body höchstens 3 MB, 2.000 Datenzeilen.
+- Antworten: `200` Vorschau, `201` angelegt (`created`), `400` ungültige Eingabe, `409` Datei geändert seit der Vorschau oder bereits importiert (`allowRepeat: true` erlaubt den Wiederholungsimport innerhalb von 24 Stunden bewusst), `413` zu groß, `422` Datei enthält Fehler (`details.errors`), `429` Rate-Limit (Vorschau 20, Import 5 je Minute und Organisation).
+- Das Anfrageprotokoll schwärzt das Feld `csv`.
+
+```bash
+CSV=$'Name;Straße;PLZ;Ort;E-Mail\r\nMuster GmbH;Beispielweg 1;12345;Musterstadt;info@example.org\r\n'
+curl -s -X POST https://rechnung.example.org/api/v1/Contact/import \
+  -H "Authorization: Bearer $OIG_KEY" -H "Content-Type: application/json" \
+  -d "$(jq -n --arg csv "$CSV" '{csv: $csv}')"      # Vorschau
+curl -s -X POST https://rechnung.example.org/api/v1/Contact/import \
+  -H "Authorization: Bearer $OIG_KEY" -H "Idempotency-Key: import-001" -H "Content-Type: application/json" \
+  -d "$(jq -n --arg csv "$CSV" --arg h "<fileHash der Vorschau>" '{csv: $csv, dryRun: false, expectedHash: $h}')"
+```
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,

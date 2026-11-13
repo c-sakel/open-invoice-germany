@@ -36,6 +36,18 @@ describe("proxy", () => {
     expect(json.error).toBe("Nicht angemeldet");
   });
 
+  it("/api/exports/rechnungen.csv ohne Cookie -> 401", async () => {
+    const res = await proxy(new NextRequest("http://localhost/api/exports/rechnungen.csv"));
+    expect(res.status).toBe(401);
+  });
+
+  it("/api/imports/contacts ohne Cookie -> 401, /kunden/import -> Redirect /login (Phase 18b)", async () => {
+    expect((await proxy(new NextRequest("http://localhost/api/imports/contacts"))).status).toBe(401);
+    const page = await proxy(new NextRequest("http://localhost/kunden/import"));
+    expect(page.status).toBe(307);
+    expect(page.headers.get("location")).toContain("/login");
+  });
+
   it("/angebot/abc -> next(), Request-Header x-oig-public wird auf 1 gesetzt", async () => {
     const req = new NextRequest("http://localhost/angebot/abc");
     const res = await proxy(req);

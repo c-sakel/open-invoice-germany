@@ -9,11 +9,11 @@
  */
 import { z } from "zod";
 import { withApi } from "@/api/auth";
-import { NextResponse } from "next/server";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { runReport, reportQuerySchema } from "@/domain/reporting/query";
-import { CSV_BOM, reportCsvFilename, reportToCsv } from "@/domain/reporting/csv";
+import { csvResponse } from "@/lib/http/csv-response";
+import { reportCsvFilename, reportToCsv } from "@/domain/reporting/csv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,15 +25,7 @@ export const GET = withApi(async (req, ctx) => {
   const result = await runReport(ctx.orgId, raw, now);
   // `runReport` hat `format` bereits validiert (nur json | csv, sonst ZodError -> 400).
   if (raw.format === "csv") {
-    return new NextResponse(CSV_BOM + reportToCsv(result), {
-      status: 200,
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "x-content-type-options": "nosniff",
-        "content-disposition": `attachment; filename="${reportCsvFilename(result.type, now)}"`,
-        "cache-control": "no-store",
-      },
-    });
+    return csvResponse(reportToCsv(result), reportCsvFilename(result.type, now));
   }
   return apiData(result);
 }, { scope: "read" });

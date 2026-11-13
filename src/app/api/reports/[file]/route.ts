@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { runReport } from "@/domain/reporting/query";
-import { CSV_BOM, reportCsvFilename, reportToCsv } from "@/domain/reporting/csv";
+import { csvResponse } from "@/lib/http/csv-response";
+import { reportCsvFilename, reportToCsv } from "@/domain/reporting/csv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,15 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ file: st
     delete query.format;
     const now = new Date();
     const result = await runReport(org.id, { ...query, type }, now);
-    return new NextResponse(CSV_BOM + reportToCsv(result), {
-      status: 200,
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "x-content-type-options": "nosniff",
-        "content-disposition": `attachment; filename="${reportCsvFilename(result.type, now)}"`,
-        "cache-control": "no-store",
-      },
-    });
+    return csvResponse(reportToCsv(result), reportCsvFilename(result.type, now));
   } catch (e) {
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: e.issues.map((i) => i.message).join("; ") }, { status: 400 });

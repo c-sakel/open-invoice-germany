@@ -15,6 +15,9 @@ describe("redactJson", () => {
       a: { b: { iban: REDACTED } }, list: [{ bic: REDACTED }, { ok: 1 }],
     });
   });
+  it("schwaerzt den Import-Body-Schluessel csv (Phase 18b)", () => {
+    expect(redactJson({ csv: "Name;Straße\r\nGeheim AG;Weg 1", dryRun: true })).toEqual({ csv: REDACTED, dryRun: true });
+  });
   it("laesst harmlose Felder und Nicht-Objekte unveraendert", () => {
     expect(redactJson({ name: "Kunde AG", netTotalCents: 11900 })).toEqual({ name: "Kunde AG", netTotalCents: 11900 });
     expect(redactJson("text")).toBe("text");

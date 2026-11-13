@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 import { listQuotes, quoteStatusTabCounts, quoteListHeadline, type QuoteListResult, type QuoteListHeadline } from "@/domain/document/list";
@@ -258,9 +259,12 @@ export default async function DokumentePage({ searchParams }: { searchParams: Pr
         title="Dokumente"
         subtitle={`${result.total} Belege`}
         actions={
-          <Link href="/dokumente/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
-            Neues Dokument
-          </Link>
+          <>
+            <CsvLink href={"/api/exports/dokumente.csv" + (liste ? "?" + liste : "")} what="Dokumente" />
+            <Link href="/dokumente/neu" className="rounded-md bg-pen px-4 py-2 text-sm font-medium text-on-accent hover:bg-pen-strong">
+              Neues Dokument
+            </Link>
+          </>
         }
       />
       <div className="flex items-center justify-between">

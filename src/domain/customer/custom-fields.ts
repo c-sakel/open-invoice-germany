@@ -31,7 +31,7 @@ type CustomFieldDefinitionRow = {
   isActive: boolean;
 };
 
-function toLike(def: CustomFieldDefinitionRow): CustomFieldDefinitionLike {
+export function toLike(def: CustomFieldDefinitionRow): CustomFieldDefinitionLike {
   let options: string[] | undefined;
   if (def.optionsJson) {
     try {
@@ -125,6 +125,18 @@ export async function parseCustomerCustomFields(
   db: Pick<Prisma.TransactionClient, "customFieldDefinition"> = dbInternal,
 ): Promise<Record<string, unknown>> {
   if (!json) return {};
+  const definitions = await listCustomFieldDefinitions(orgId, {}, db);
+  return customFieldValuesFromJson(json, definitions.map(toLike));
+}
+
+/**
+ * Reine Kernlogik von `parseCustomerCustomFields` (ohne Datenbankzugriff; Phase 18b: auch
+ * fuer den CSV-Export, der die Definitionen einmal laedt): rohes JSON gegen die uebergebenen
+ * Definitionen, je Feld einzeln validiert; defektes JSON, unbekannte Keys und ungueltige
+ * Einzelwerte werden still uebergangen.
+ */
+export function customFieldValuesFromJson(json: string | null, definitions: CustomFieldDefinitionLike[]): Record<string, unknown> {
+  if (!json) return {};
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -133,12 +145,11 @@ export async function parseCustomerCustomFields(
   }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
 
-  const definitions = await listCustomFieldDefinitions(orgId, {}, db);
   const result: Record<string, unknown> = {};
   for (const def of definitions) {
     const value = (raw as Record<string, unknown>)[def.key];
     if (value === undefined) continue;
-    const singleFieldSchema = customFieldValuesSchema([{ ...toLike(def), required: false }]);
+    const singleFieldSchema = customFieldValuesSchema([{ ...def, required: false }]);
     const parsed = singleFieldSchema.safeParse({ [def.key]: value });
     if (parsed.success && parsed.data[def.key] !== undefined) {
       result[def.key] = parsed.data[def.key];
