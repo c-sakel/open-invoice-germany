@@ -75,7 +75,9 @@ CREATE TABLE "PostalJobEvent" (
 
 CREATE UNIQUE INDEX "PostalSettings_orgId_key" ON "PostalSettings"("orgId");
 CREATE UNIQUE INDEX "PostalJob_provider_providerJobId_key" ON "PostalJob"("provider", "providerJobId");
+CREATE UNIQUE INDEX "PostalJob_orgId_filename_key" ON "PostalJob"("orgId", "filename");
 CREATE INDEX "PostalJob_orgId_status_idx" ON "PostalJob"("orgId", "status");
+CREATE INDEX "PostalJob_invoiceId_status_idx" ON "PostalJob"("invoiceId", "status");
 CREATE INDEX "PostalJob_docType_docId_idx" ON "PostalJob"("docType", "docId");
 CREATE INDEX "PostalJob_orgId_createdAt_idx" ON "PostalJob"("orgId", "createdAt");
 CREATE INDEX "PostalJobEvent_jobId_at_idx" ON "PostalJobEvent"("jobId", "at");

@@ -1378,6 +1378,11 @@ if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q 
   -c "DELETE FROM \"PostalJob\" WHERE id='pj32c'" >/dev/null 2>&1; then
   fail "PostalJob mit Ereignis haette sich nicht loeschen lassen duerfen (ON DELETE RESTRICT)"
 fi
+if docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q \
+  -c "INSERT INTO \"PostalJob\" (\"id\",\"orgId\",\"docType\",\"docId\",\"invoiceId\",\"docNumber\",\"mode\",\"trigger\",\"status\",\"filename\",\"pages\",\"color\",\"duplex\",\"shipping\",\"pdfSha256\",\"base64Md5\",\"createdBy\") VALUES ('pj32e','org32','INVOICE','doc32e','inv32e','RE-32-E','DRY_RUN','USER','DRY_RUN','RE-32-A-1.pdf',1,'1',false,'auto','sha-e','md5-e','user')" >/dev/null 2>&1; then
+  fail "doppelter filename je Organisation haette scheitern muessen"
+fi
+docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from pg_indexes where indexname in ('PostalJob_orgId_filename_key','PostalJob_invoiceId_status_idx')" | grep -qx 2 || fail "Index PostalJob_invoiceId_status_idx oder PostalJob_orgId_filename_key fehlt"
 COUNT32=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT32" = "61" ] || fail "erwartet 61 Tabellen nach Phase 16d, gefunden $COUNT32"
 echo "    ok — deliveryChannel EMAIL und Mahnstufe CUSTOMER|true auf Bestand, PostalSettings-Defaults false|DRY_RUN|false, zweite Zeile je Organisation scheitert, zwei Jobs ohne providerJobId ok, doppeltes (provider, providerJobId) scheitert, Job mit Ereignis nicht loeschbar (RESTRICT), 61 Tabellen"

@@ -1565,7 +1565,7 @@ model PostalJob {
   status           String // PENDING | SUBMITTING | DRY_RUN | DRAFT | QUEUED | HOLD | DONE | CANCELLED | FAILED | UNKNOWN
   provider         String           @default("LETTERXPRESS")
   providerJobId    Int?
-  filename         String // filename_original, eindeutig: <Belegnr>-<id>.pdf
+  filename         String // filename_original: <Belegnr>-<jobId>.pdf (je Org eindeutig)
   pages            Int
   color            String
   duplex           Boolean
@@ -1588,6 +1588,8 @@ model PostalJob {
   events           PostalJobEvent[]
 
   @@unique([provider, providerJobId])
+  @@unique([orgId, filename])
+  @@index([invoiceId, status])
   @@index([orgId, status])
   @@index([docType, docId])
   @@index([orgId, createdAt])

@@ -89,7 +89,13 @@ CREATE UNIQUE INDEX "PostalSettings_orgId_key" ON "PostalSettings"("orgId");
 CREATE UNIQUE INDEX "PostalJob_provider_providerJobId_key" ON "PostalJob"("provider", "providerJobId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "PostalJob_orgId_filename_key" ON "PostalJob"("orgId", "filename");
+
+-- CreateIndex
 CREATE INDEX "PostalJob_orgId_status_idx" ON "PostalJob"("orgId", "status");
+
+-- CreateIndex
+CREATE INDEX "PostalJob_invoiceId_status_idx" ON "PostalJob"("invoiceId", "status");
 
 -- CreateIndex
 CREATE INDEX "PostalJob_docType_docId_idx" ON "PostalJob"("docType", "docId");

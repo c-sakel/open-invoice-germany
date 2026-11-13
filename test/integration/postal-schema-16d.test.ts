@@ -66,6 +66,12 @@ describe("Schema Phase 16d", () => {
     await expect(dbInternal.postalJob.create({ data: jobData({ providerJobId: 4711 }) })).rejects.toThrow();
   });
 
+  it("PostalJob: filename je Organisation eindeutig", async () => {
+    const data = jobData();
+    await dbInternal.postalJob.create({ data });
+    await expect(dbInternal.postalJob.create({ data })).rejects.toThrow();
+  });
+
   it("PostalJob mit Ereignis ist nicht loeschbar (Restrict)", async () => {
     const job = await dbInternal.postalJob.create({ data: jobData(), select: { id: true } });
     await dbInternal.postalJobEvent.create({ data: { jobId: job.id, orgId, kind: "CREATED", status: "PENDING" } });
