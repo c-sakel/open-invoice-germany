@@ -6,6 +6,7 @@
  * ANLAGE: mindestens eine festgeschriebene, nicht stornierte Abschlagsrechnung UND keine
  * bereits bestehende, nicht stornierte Schlussrechnung auf derselben Quelle.
  */
+import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { linkDocuments, listRelations } from "@/domain/relations";
@@ -36,6 +37,8 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
+    await lockRow(tx, "Quote", input.sourceId);
     const quote = await tx.quote.findFirst({ where: { id: input.sourceId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!quote) throw new NotFoundError(`Angebot/Auftragsbestaetigung ${input.sourceId} nicht gefunden.`);
     if (!QUOTE_KINDS_ALLOWED.has(quote.kind)) {

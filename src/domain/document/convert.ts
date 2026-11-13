@@ -4,6 +4,7 @@
  * Konvertierung schreibt eine DocumentRelation (src/domain/relations.ts) und einen
  * ChangeLog-Eintrag in derselben Transaktion wie die jeweilige Schreiboperation.
  */
+import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown } from "@/lib/tax";
 import { appendChangeLog } from "@/domain/audit";
@@ -253,12 +254,11 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
 
 /**
  * Wandelt Angebot/AB/Rechnung in einen Lieferschein um — Mengen = Eingabe oder Restmengen.
- * W1 (Fix-Runde 2): Laden der Restmengen UND die Ueberlieferungspruefung laufen jetzt
- * INNERHALB derselben Transaktion wie das Anlegen des Lieferscheins (statt davor) — unter
- * SQLite serialisiert das ohnehin schon die Schreibtransaktion, unter Postgres (READ
- * COMMITTED) verkleinert es das Race-Fenster zwischen Lesen und Schreiben zweier
- * gleichzeitiger Anlagen auf dieselbe Restmenge (siehe LIMITATIONEN.md — vollstaendig
- * ausgeschlossen ist die Ueberlieferung unter Postgres damit weiterhin nicht). Erstellung,
+ * W1 (Fix-Runde 2, 17b): Laden der Restmengen UND die Ueberlieferungspruefung laufen
+ * INNERHALB derselben Transaktion wie das Anlegen des Lieferscheins. Unter Postgres
+ * (READ COMMITTED) serialisiert die Zeilensperre `lockRow` auf der Quelle (17b) parallele
+ * Anlagen auf dieselbe Restmenge; unter SQLite serialisiert die Schreibtransaktion ohnehin
+ * (siehe LIMITATIONEN.md). Erstellung,
  * Relation und ChangeLog laufen in EINER Transaktion (Lastenheft 50).
  */
 async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput, opts: ResolvedConvertOptions): Promise<DeliveryNote> {
@@ -266,6 +266,8 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
   const fromId = input.fromId;
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b, W1): serialisiert parallele Lieferscheine aus derselben Quelle unter Postgres (SQLite: No-op).
+    await lockRow(tx, fromType === "QUOTE" ? "Quote" : "Invoice", fromId);
     let sourceLanguage: string | undefined;
     if (fromType === "QUOTE") {
       const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, select: { status: true, validUntil: true, language: true } });

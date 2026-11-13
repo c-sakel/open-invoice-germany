@@ -14,6 +14,7 @@
  * `finalizeWithinTx` fuer FINAL-Rechnungen ohnehin die Summe der Abschlaege prueft —
  * fuer DOWNPAYMENT selbst gibt es keine analoge Nachpruefung, siehe Task-2-Report).
  */
+import { lockRow } from "@/lib/db-lock";
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
@@ -51,6 +52,8 @@ export async function createDownpaymentInvoice(orgId: string, rawInput: unknown,
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
+    await lockRow(tx, "Quote", input.sourceId);
     const quote = await tx.quote.findFirst({ where: { id: input.sourceId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!quote) throw new NotFoundError(`Angebot/Auftragsbestaetigung ${input.sourceId} nicht gefunden.`);
     if (!QUOTE_KINDS_ALLOWED.has(quote.kind)) {

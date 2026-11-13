@@ -10,6 +10,7 @@
  * selbst geaendert wird (GoBD). Ohne `applySkonto` bleibt der Rest offen; der
  * Aufrufer bekommt nur einen Vorschlag (`skontoSuggestion`) zurueck.
  */
+import { lockRow } from "@/lib/db-lock";
 import type { Prisma, Payment, Invoice } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
@@ -67,6 +68,8 @@ export async function recordPayment(
   const createdBy = opts.createdBy ?? "user";
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
+    await lockRow(tx, "Invoice", invoiceId);
     const inv = await tx.invoice.findUnique({
       where: { id: invoiceId },
       select: {
