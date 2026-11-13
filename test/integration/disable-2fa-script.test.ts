@@ -88,6 +88,18 @@ describe("scripts/disable-2fa.sh", () => {
     }
   });
 
+  it("gueltige, aber unbekannte E-Mail: Exit 1, klare Meldung, nichts geaendert", async () => {
+    const a = await makeUser();
+    const r = run(["--bestaetigen", "--email", "gibt-es-nicht@example.com"]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("Kein Konto gefunden");
+    expect(r.stdout).not.toContain("abgeschaltet");
+    const sa = await state(a.id);
+    expect(sa.totpSecretEnc).toBe("v1:geheim");
+    expect(sa.failedLoginCount).toBe(5);
+    expect(sa.codes).toBe(2);
+  });
+
   it("ohne --bestaetigen oder ohne DATABASE_URL: Exit 2, nichts geaendert", async () => {
     const a = await makeUser();
     expect(run([]).status).toBe(2);

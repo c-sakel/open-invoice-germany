@@ -9,6 +9,10 @@
 #   docker compose exec app sh ./scripts/disable-2fa.sh --bestaetigen
 # Ohne --email werden ALLE Konten zurueckgesetzt (Single-User-Betrieb).
 #
+# Sicherheitshinweis: DATABASE_URL (ggf. mit Passwort) steht waehrend des Laufs in der Prozessliste
+# (`ps`), wie bei db-prepare.sh; das Skript nur auf dem Server / im Container und nicht auf
+# Mehrbenutzer-Maschinen ausfuehren.
+#
 # Folgen: kein Passwort wird geaendert, aber alle bestehenden Sitzungen enden (passwordChangedAt); die Anmeldung geht danach wieder allein mit dem Passwort.
 # Es entsteht bewusst KEIN Eintrag im Aktivitaetsprotokoll: wer Server-Zugang hat, hat
 # Vollzugriff auf die Datenbank (siehe BETRIEB-VORLAGE.md). Das SQL ist fuer SQLite und
@@ -66,12 +70,23 @@ case "$DATABASE_URL" in
   *) NOW_SQL="(NOW() AT TIME ZONE 'UTC')" ;;
 esac
 
+# Trefferpruefung (identisch fuer SQLite und Postgres): `prisma db execute` liefert keine Zeilenzahl.
+# Das erste Statement legt eine Temp-Tabelle an und schreibt NULLIF(count, 0) in eine NOT-NULL-Spalte;
+# bei 0 Treffern bricht das Skript dort ab, BEVOR etwas geaendert wird.
 if ! out=$(npx prisma db execute --url "$DATABASE_URL" --stdin 2>&1 <<SQL
+CREATE TEMP TABLE "oig_treffer" ("kein_konto_gefunden" INTEGER NOT NULL);
+INSERT INTO "oig_treffer" ("kein_konto_gefunden") SELECT NULLIF(count(*), 0) FROM "User" $WHERE;
 UPDATE "PasswordResetToken" SET "usedAt" = $NOW_SQL WHERE "usedAt" IS NULL AND "userId" IN (SELECT "id" FROM "User" $WHERE);
 DELETE FROM "RecoveryCode" WHERE "userId" IN (SELECT "id" FROM "User" $WHERE);
 UPDATE "User" SET "totpSecretEnc" = NULL, "totpEnabledAt" = NULL, "totpLastStep" = NULL, "failedLoginCount" = 0, "lockedUntil" = NULL, "passwordChangedAt" = $NOW_SQL $WHERE;
 SQL
 ); then
+  case "$out" in
+    *kein_konto_gefunden*)
+      echo "FEHLER: Kein Konto gefunden fuer: $TARGET. Es wurde nichts geaendert (Adresse vertippt?)." >&2
+      exit 1
+      ;;
+  esac
   printf '%s\n' "$out" >&2
   echo "FEHLER: Die Datenbank konnte nicht aktualisiert werden." >&2
   exit 1
