@@ -19,7 +19,7 @@ export type VatCheckStatus = "VALID" | "INVALID" | "ERROR";
 /** Pruefung in den Einstellungen abgeschaltet (REST 409). */
 export class VatCheckDisabledError extends Error {
   constructor() {
-    super("Die USt-IdNr.-Pruefung ist in den Einstellungen abgeschaltet.");
+    super("Die USt-IdNr.-Prüfung ist in den Einstellungen abgeschaltet.");
     this.name = "VatCheckDisabledError";
   }
 }
@@ -28,7 +28,7 @@ export class VatCheckDisabledError extends Error {
 export class VatCheckRateLimitError extends Error {
   readonly retryAfterMs: number;
   constructor(retryAfterMs: number) {
-    super("Zu viele USt-IdNr.-Pruefungen — bitte in einer Minute erneut versuchen.");
+    super("Zu viele USt-IdNr.-Prüfungen — bitte in einer Minute erneut versuchen.");
     this.name = "VatCheckRateLimitError";
     this.retryAfterMs = retryAfterMs;
   }

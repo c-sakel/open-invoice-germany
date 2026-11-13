@@ -69,7 +69,7 @@ async function assertPaymentMethodBelongsToOrg(orgId: string, defaultPaymentMeth
 function assertLeitwegId(next: string | null | undefined, current: string | null): void {
   const value = next?.trim();
   if (!value || value === current) return;
-  if (!isValidLeitwegId(value)) throw new CustomerValidationError("Ungueltige Leitweg-ID (Format oder Pruefziffer).");
+  if (!isValidLeitwegId(value)) throw new CustomerValidationError("Ungültige Leitweg-ID (Format oder Prüfziffer).");
 }
 
 /** Legt einen neuen Kunden an. Kundennummer per Nummernkreis (CUSTOMER), sofern im

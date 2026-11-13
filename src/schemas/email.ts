@@ -6,7 +6,7 @@ export const EMAIL_DOC_TYPES = ["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA", "
 export const EmailDocType = z.enum(EMAIL_DOC_TYPES);
 export type EmailDocType = z.infer<typeof EmailDocType>;
 
-const email = z.string().trim().pipe(z.email("Ungueltige E-Mail-Adresse"));
+const email = z.string().trim().pipe(z.email("Ungültige E-Mail-Adresse"));
 
 /** Kommagetrennte Adressliste -> Array; leer erlaubt; max. 20. */
 export const addressListSchema = z
