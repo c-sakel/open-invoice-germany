@@ -192,7 +192,8 @@ export async function markEmailBounced(orgId: string, logId: string, actor = "sy
 
 /** Ab dieser Zeit seit Anlage gilt ein QUEUED-Protokoll als haengengeblieben (Prozessabbruch). */
 export const QUEUED_STALE_MS = 15 * 60 * 1000;
-export const QUEUED_RECONCILE_ERROR = "Versand abgebrochen (Abgleich)";
+/** Neutral formuliert: ob die SMTP-Zustellung vor dem Abbruch noch geklappt hat, ist unbekannt. */
+export const QUEUED_RECONCILE_ERROR = "Versand abgebrochen, Zustellung unbekannt (Abgleich) — vor erneutem Versand beim Empfänger nachfragen";
 
 function parseJson<T>(json: string, fallback: T): T {
   try {
@@ -222,6 +223,9 @@ export async function reconcileStaleQueuedEmails(now: Date, opts: { limit?: numb
 
   let reconciled = 0;
   for (const row of rows) {
+    // Je Zeile abgefangen: eine Kollision der ChangeLog-Kette mit einem parallelen Schreiber
+    // derselben Org darf den Cleanup-Job (und die nachfolgenden Loeschschritte) nicht abbrechen;
+    // die Zeile bleibt QUEUED und wird im naechsten Lauf erneut versucht.
     const done = await dbInternal.$transaction(async (tx) => {
       const res = await tx.emailLog.updateMany({
         where: { id: row.id, status: "QUEUED" },
@@ -257,6 +261,9 @@ export async function reconcileStaleQueuedEmails(now: Date, opts: { limit?: numb
         now,
       });
       return true;
+    }).catch((e: unknown) => {
+      console.warn("[email-reconcile] Zeile uebersprungen:", row.id, e instanceof Error ? e.message : e);
+      return false;
     });
     if (done) reconciled += 1;
   }
