@@ -21,7 +21,7 @@ import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { savePostalSettings } from "@/domain/postal/settings";
 import { quotePostal, sendByPost } from "@/domain/postal/send";
 import type { LxpTransport } from "@/lib/postal/transport";
-import { runCsvImport, ImportRejectedError } from "@/domain/import/run";
+import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
 
 const N = 5;
 // Belegnummern sind instanzweit eindeutig: je Szenario ein eigenes Jahr ab 2149.
@@ -203,12 +203,12 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     const jobs = await dbInternal.postalJob.findMany({ where: { orgId: s.orgId, mode: "LIVE", status: { notIn: ["FAILED", "CANCELLED"] } }, select: { priceCents: true, quotedPriceCents: true } });
     expect(jobs.reduce((sum, j) => sum + (j.priceCents ?? j.quotedPriceCents ?? 0), 0)).toBeLessThanOrEqual(150);
   });
-  it("CSV-Import 5x parallel mit derselben Kundennummer -> genau ein Kunde, Rest ImportRejectedError", async () => {
+  it("CSV-Import 5x parallel mit derselben Kundennummer -> genau ein Kunde, Rest ImportRejectedError oder ImportAlreadyDoneError", async () => {
     const s = await newScenario();
     const text = "Name;Straße;PLZ;Ort;Kundennummer\r\nRace Import AG;Weg 1;10115;Berlin;RACE-IMP-1\r\n";
     const rs = await parallel(() => runCsvImport(s.orgId, "contacts", { text, dryRun: false }, { actor: "race", source: "API" }));
     expect(fulfilled(rs).length, describeFailures(rs)).toBe(1);
-    expect(rejected(rs).every((r) => r.reason instanceof ImportRejectedError)).toBe(true);
+    expect(rejected(rs).every((r) => r.reason instanceof ImportRejectedError || r.reason instanceof ImportAlreadyDoneError)).toBe(true);
     expect(await dbInternal.customer.count({ where: { orgId: s.orgId, customerNumber: "RACE-IMP-1" } })).toBe(1);
   });
 });
