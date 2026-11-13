@@ -239,6 +239,25 @@ describe("Mahnautomatik mit Kanalwahl", () => {
     expect((await listPendingPostalDunnings(orgId)).map((p) => p.dunningId)).not.toContain(dunId);
   });
 
+  it("unvollstaendige Anschrift beim Auto-Post -> Fehlereintrag und Meldung, kein Auftrag", async () => {
+    await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, autoDunningPost: true, monthlyBudgetCents: null });
+    const invId = await makeInvoice({ deliveryChannel: "POST" });
+    const inv = await dbInternal.invoice.findFirstOrThrow({ where: { id: invId }, select: { customerId: true } });
+    await dbInternal.customer.update({ where: { id: inv.customerId }, data: { addressLine1: "", postalCode: "" } });
+    // Snapshot unlesbar machen, damit die Stammdaten (unvollstaendig) als Rueckfall gelten.
+    await dbInternal.invoice.update({ where: { id: invId }, data: { buyerSnapshotJson: "{}" } });
+    const before = await notifications("POSTAL_FAILED");
+    const f = lxp();
+    const r = await runDunningJob(FIX, { orgId, provider: createMemoryProvider(), postalTransport: f.transport });
+    expect(r.created).toHaveLength(1);
+    expect(r.postal).toHaveLength(0);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]!.invoiceId).toBe(invId);
+    expect(await notifications("POSTAL_FAILED")).toBe(before + 1);
+    expect(await dbInternal.postalJob.count({ where: { orgId, docId: r.created[0]! } })).toBe(0);
+    expect(f.calls.some((c) => c.path === "/printjobs")).toBe(false);
+  });
+
   it("Modus DRY_RUN mit beiden Schaltern -> Auftrag DRY_RUN, kein /printjobs", async () => {
     await setPostal({ enabled: true, mode: "DRY_RUN", autoDunningPost: true });
     await makeInvoice({ deliveryChannel: "POST" });

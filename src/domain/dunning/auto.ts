@@ -252,7 +252,22 @@ async function handlePost(
   const items = [{ docType: "DUNNING" as const, docId: dunningId }];
   const { quotes } = await quotePostal(orgId, items, { transport: postal.transport });
   const quote = quotes[0];
-  if (!quote) return;
+  // Fehlendes Angebot bzw. Belegproblem (z. B. unvollstaendige Anschrift) nie still verwerfen.
+  // Preis-Abfragefehler gehen weiter an sendByPost (-> ausstehend zur Bestaetigung).
+  const blocking = quote ? quote.problems.filter((p) => !p.startsWith("Preis nicht abfragbar")) : ["Kein Versandangebot fuer die Mahnung ermittelbar."];
+  if (!quote || blocking.length > 0) {
+    const message = `Postversand der Mahnung nicht moeglich: ${blocking.join("; ")}`;
+    result.errors.push({ invoiceId, message });
+    await notifyPostal(orgId, {
+      type: "POSTAL_FAILED",
+      title: "Post-Versand der Mahnung nicht moeglich",
+      body: `${message}. Bitte Beleg pruefen und manuell versenden.`,
+      invoiceId,
+      dedupeKey: `dunning-post-problem:${dunningId}`,
+      at: now,
+    });
+    return;
+  }
   const [res] = await sendByPost(
     orgId,
     { items: [{ ...items[0], expectedPriceCents: quote.priceCents, pdfSha256: quote.pdfSha256 }], confirm: true },
