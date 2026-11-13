@@ -187,9 +187,12 @@ async function processCandidate(
   try {
     // Empfaenger wie im manuellen Versand (Ansprechpartner > Rechnungs-E-Mail > E-Mail), nicht nur `customer.email`.
     const hasEmail = await dunningHasEmail(orgId, dunningId);
+    // Postversand aus: Post-Kanaele (Stufe/Kunde) fallen auf das Bestandsverhalten zurueck (E-Mail oder
+    // NO_RECIPIENT); sonst entstuende ein "wartet auf Bestaetigung" mit leerer Sammelliste.
+    const postOn = postal.settings.enabled;
     const channels = resolveChannels({
-      stageChannel: stageRow.channel,
-      customerChannel: asChannel(candidate.customer.deliveryChannel),
+      stageChannel: postOn || stageRow.channel === "CUSTOMER" ? stageRow.channel : "EMAIL",
+      customerChannel: postOn ? asChannel(candidate.customer.deliveryChannel) : "EMAIL",
       hasEmail,
       // Post statt "kein Empfaenger" nur bei eingeschaltetem Postversand; sonst Bestandsverhalten.
       postFallback: stageRow.postFallback && postal.settings.enabled,

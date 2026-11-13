@@ -181,6 +181,32 @@ describe("Mahnautomatik mit Kanalwahl", () => {
     expect(f.calls).toHaveLength(0);
   });
 
+  it("Postversand aus, Stufenkanal POST: Bestandsverhalten (E-Mail bei Empfaenger), kein POSTAL_PENDING", async () => {
+    await setStage({ channel: "POST" });
+    await makeInvoice({ invoiceEmail: "rechnung-kunde@example.org" });
+    const pendingBefore = await notifications("POSTAL_PENDING");
+    const provider = createMemoryProvider();
+    const f = lxp();
+    const r = await runDunningJob(FIX, { orgId, provider, postalTransport: f.transport });
+    expect(r.sent).toHaveLength(1);
+    expect(provider.sent[0]!.to).toEqual(["rechnung-kunde@example.org"]);
+    expect(r.postalPending).toHaveLength(0);
+    expect(r.postal).toHaveLength(0);
+    expect(await notifications("POSTAL_PENDING")).toBe(pendingBefore);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it("Postversand aus, Kundenkanal POST ohne Empfaenger: NO_RECIPIENT/DUNNING_NOT_SENT, kein POSTAL_PENDING", async () => {
+    await makeInvoice({ deliveryChannel: "EMAIL_AND_POST" });
+    const before = await notifications("DUNNING_NOT_SENT");
+    const pendingBefore = await notifications("POSTAL_PENDING");
+    const r = await runDunningJob(FIX, { orgId, provider: createMemoryProvider(), postalTransport: lxp().transport });
+    expect(r.skipped.noRecipient).toBe(1);
+    expect(r.postalPending).toHaveLength(0);
+    expect(await notifications("DUNNING_NOT_SENT")).toBe(before + 1);
+    expect(await notifications("POSTAL_PENDING")).toBe(pendingBefore);
+  });
+
   it("Fallback an, Postversand an, aber autoDunningPost aus -> POSTAL_PENDING statt DUNNING_NOT_SENT", async () => {
     await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, autoDunningPost: false });
     await makeInvoice({});
