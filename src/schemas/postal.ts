@@ -62,3 +62,40 @@ export const postalPriceQuerySchema = z
     message: "Einschreiben nur national.",
   });
 export type PostalPriceQuery = z.infer<typeof postalPriceQuerySchema>;
+
+export const POSTAL_DOC_TYPES = ["INVOICE", "DUNNING"] as const;
+export type PostalDocType = (typeof POSTAL_DOC_TYPES)[number];
+export const POSTAL_REGISTERED = ["r1", "r2"] as const;
+
+const postalItemBase = {
+  docType: z.enum(POSTAL_DOC_TYPES),
+  docId: z.string().trim().min(1).max(100),
+  /** undefined: Standard aus den Einstellungen, null: ausdruecklich ohne Einschreiben. */
+  registered: z.enum(POSTAL_REGISTERED).nullable().optional(),
+};
+
+export const postalQuoteInputSchema = z
+  .object({ items: z.array(z.object(postalItemBase).strict()).min(1).max(100) })
+  .strict();
+export type PostalItemInput = z.infer<typeof postalQuoteInputSchema>["items"][number];
+
+/** Versandauftrag: jeder Beleg nur mit Preis und Pruefsumme aus dem Angebot, ohne `confirm: true` kein Versand. */
+export const postalSendInputSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            ...postalItemBase,
+            expectedPriceCents: z.number().int().min(0).nullable(),
+            pdfSha256: z.string().regex(/^[0-9a-f]{64}$/, "Ungueltige Pruefsumme."),
+            repeat: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+    confirm: z.literal(true),
+  })
+  .strict();
+export type PostalSendInput = z.infer<typeof postalSendInputSchema>;

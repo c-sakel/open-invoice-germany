@@ -87,6 +87,11 @@ export const ACTIVITY_TYPES = {
   LAYOUT_DESIGN_ARCHIVED: "Layout-Design archiviert",
   // Phase 16d: Postversand-Einstellungen (src/domain/postal/settings.ts), entityType POSTAL, entityId = PostalSettings.id.
   POSTAL_SETTINGS_CHANGED: "Postversand-Einstellungen geaendert",
+  // Phase 16d: Versand per Post (src/domain/postal/send.ts, cancel.ts), entityType INVOICE, entityId = Rechnung.
+  POSTAL_SENT: "Per Post versendet",
+  POSTAL_DRY_RUN: "Postversand (Trockenlauf) protokolliert",
+  POSTAL_CANCELLED: "Postversand storniert",
+  POSTAL_FAILED: "Postversand fehlgeschlagen",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

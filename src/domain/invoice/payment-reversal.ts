@@ -141,7 +141,10 @@ export async function reversePayment(
     const newPaid = await decrementPaidAmount(tx, inv.id, totalDelta);
     if (newPaid === null) throw new PaymentError("Die Gegenbuchung uebersteigt den gebuchten Zahlbetrag der Rechnung.");
 
-    const hasOutput = (await tx.emailLog.count({ where: { docId: inv.id, status: "SENT" } })) > 0;
+    // Phase 16d: ein echter Postversand (TEST zaehlt nicht) gilt wie ein versendeter E-Mail-Beleg als ausgegeben.
+    const hasOutput =
+      (await tx.emailLog.count({ where: { docId: inv.id, status: "SENT" } })) > 0 ||
+      (await tx.postalJob.count({ where: { docType: "INVOICE", docId: inv.id, mode: "LIVE", status: { in: ["QUEUED", "HOLD", "DONE"] } } })) > 0;
     const status = deriveStatusAfterReversal({
       status: inv.status,
       paidCents: newPaid,

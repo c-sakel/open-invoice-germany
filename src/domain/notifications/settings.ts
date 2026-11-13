@@ -20,6 +20,9 @@ export const NOTIFICATION_TYPES = {
   CHAIN_BROKEN: "Aenderungsprotokoll: Hash-Kette gebrochen",
   FX_FETCH_FAILED: "Wechselkurs-Abruf fehlgeschlagen",
   OSS_THRESHOLD: "OSS-Schwelle (EU-Fernverkaeufe)",
+  POSTAL_FAILED: "Postversand fehlgeschlagen",
+  POSTAL_PENDING: "Post-Versand wartet auf Bestaetigung",
+  DUNNING_NOT_SENT: "Mahnung nicht versendet",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
