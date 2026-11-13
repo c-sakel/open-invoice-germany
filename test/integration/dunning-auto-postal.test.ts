@@ -207,6 +207,19 @@ describe("Mahnautomatik mit Kanalwahl", () => {
     expect(pending.map((p) => p.dunningId)).toContain(r.created[0]);
   });
 
+  it("Sammelliste: leer bei ausgeschaltetem Postversand, Empfaenger aus Rechnungs-E-Mail erkannt", async () => {
+    await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, autoDunningPost: false });
+    await makeInvoice({ deliveryChannel: "POST" });
+    const withMail = await makeInvoice({ invoiceEmail: "nur-rechnung@example.org", deliveryChannel: "EMAIL_AND_POST" });
+    const r = await runDunningJob(FIX, { orgId, provider: createMemoryProvider(), postalTransport: lxp().transport });
+    expect(r.created).toHaveLength(2);
+    const ids = (await listPendingPostalDunnings(orgId)).map((p) => p.dunningId);
+    for (const id of r.created) expect(ids).toContain(id);
+    expect(withMail).toBeTruthy();
+    await setPostal({ enabled: false });
+    expect(await listPendingPostalDunnings(orgId)).toEqual([]);
+  });
+
   it("beide Schalter + LIVE -> Auftrag QUEUED (AUTOMATION), sentAt gesetzt, kein zweiter Auftrag beim zweiten Lauf", async () => {
     await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, autoDunningPost: true, monthlyBudgetCents: null });
     await makeInvoice({ deliveryChannel: "POST" });
