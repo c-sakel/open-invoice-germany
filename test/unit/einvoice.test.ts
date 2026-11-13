@@ -344,3 +344,55 @@ describe("Betreff als BT-22-Note mit Subjektcode BT-21 AAI (Phase 13b, Task 5)",
     expect(cii).not.toContain("<Anlage>");
   });
 });
+
+describe("Endpoint (BT-34/BT-49) und BT-47 (Phase 17a, Task 4)", () => {
+  const withEndpoints: EInvoiceData = {
+    ...data,
+    seller: { ...data.seller, endpoint: { scheme: "9930", id: "DE123456789" } },
+    buyer: { ...data.buyer, endpoint: { scheme: "0204", id: "991-33333TEST-33" } },
+  };
+
+  it("UBL: Kaeufer mit Leitweg-ID -> EndpointID schemeID 0204", () => {
+    expect(buildXRechnungUBL(withEndpoints)).toContain('<cbc:EndpointID schemeID="0204">991-33333TEST-33</cbc:EndpointID>');
+  });
+
+  it("UBL: Verkaeufer 9930", () => {
+    expect(buildXRechnungUBL(withEndpoints)).toContain('<cbc:EndpointID schemeID="9930">DE123456789</cbc:EndpointID>');
+  });
+
+  it("UBL: Alt-Snapshot ohne endpoint -> EndpointID EM mit E-Mail, XML byte-gleich zur Referenz", () => {
+    const xml = buildXRechnungUBL(data);
+    expect(xml).toContain('<cbc:EndpointID schemeID="EM">einkauf@kunde.de</cbc:EndpointID>');
+    expect(xml).toMatchSnapshot();
+  });
+
+  it("UBL: BT-47 als PartyLegalEntity/CompanyID nach RegistrationName", () => {
+    const xml = buildXRechnungUBL({ ...data, buyer: { ...data.buyer, legalRegistrationId: "HRB 12345" } });
+    const reg = xml.indexOf("<cbc:RegistrationName>Kunde AG</cbc:RegistrationName>");
+    const company = xml.indexOf("<cbc:CompanyID>HRB 12345</cbc:CompanyID>");
+    expect(reg).toBeGreaterThan(-1);
+    expect(company).toBeGreaterThan(reg);
+  });
+
+  it("CII: URIUniversalCommunication/URIID@schemeID fuer Seller und Buyer, Reihenfolge Name < SpecifiedLegalOrganization < PostalTradeAddress < URIUniversalCommunication < SpecifiedTaxRegistration", () => {
+    const xml = buildFacturXCII({ ...withEndpoints, buyer: { ...withEndpoints.buyer, legalRegistrationId: "HRB 12345" } });
+    expect(xml).toContain('<ram:URIID schemeID="9930">DE123456789</ram:URIID>');
+    expect(xml).toContain('<ram:URIID schemeID="0204">991-33333TEST-33</ram:URIID>');
+    const buyer = xml.slice(xml.indexOf("<ram:BuyerTradeParty>"), xml.indexOf("</ram:BuyerTradeParty>"));
+    const order = ["<ram:Name>", "<ram:SpecifiedLegalOrganization>", "<ram:PostalTradeAddress>", "<ram:URIUniversalCommunication>", "<ram:SpecifiedTaxRegistration>"].map((t) => buyer.indexOf(t));
+    expect(order.every((n) => n >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const seller = xml.slice(xml.indexOf("<ram:SellerTradeParty>"), xml.indexOf("</ram:SellerTradeParty>"));
+    expect(seller.indexOf("<ram:PostalTradeAddress>")).toBeLessThan(seller.indexOf("<ram:URIUniversalCommunication>"));
+    expect(seller.indexOf("<ram:URIUniversalCommunication>")).toBeLessThan(seller.indexOf("<ram:SpecifiedTaxRegistration>"));
+  });
+
+  it("CII: ohne Adresse kein URIUniversalCommunication", () => {
+    const xml = buildFacturXCII({
+      ...data,
+      seller: { ...data.seller, endpoint: null },
+      buyer: { ...data.buyer, endpoint: null },
+    });
+    expect(xml).not.toContain("URIUniversalCommunication");
+  });
+});

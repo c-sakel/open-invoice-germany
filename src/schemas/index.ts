@@ -105,6 +105,9 @@ export const sellerSnapshotSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   electronicAddress: z.string().nullable(),
+  // Phase 17a (BT-34): EAS-Code zur elektronischen Adresse. Optional — Alt-Snapshots kennen den
+  // Schluessel nicht (dann EM, wie bisher); NULL = EM.
+  electronicAddressScheme: z.string().nullable().optional(),
   iban: z.string().nullable(),
   bic: z.string().nullable(),
   bankName: z.string().nullable(),
@@ -154,6 +157,10 @@ export const buyerSnapshotSchema = z.object({
   // Kompatibilitaet, siehe test/unit/snapshot.test.ts "Schluesselmengen": `buildBuyerSnapshot`
   // setzt das Feld nur, wenn der Aufrufer es mitgibt).
   customerNumber: z.string().nullable().optional(),
+  // Phase 17a: zum Festschreiben aufgeloeste elektronische Adresse des Kaeufers (BT-49) und
+  // Registrierungskennung (BT-47). Optional: Alt-Snapshots ohne Schluessel -> EM mit E-Mail.
+  endpoint: z.object({ scheme: z.string(), id: z.string() }).nullable().optional(),
+  legalRegistrationId: z.string().nullable().optional(),
 });
 export type BuyerSnapshot = z.infer<typeof buyerSnapshotSchema>;
 

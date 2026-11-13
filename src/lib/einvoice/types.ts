@@ -1,5 +1,6 @@
 /** Framework-/DB-freie Eingabe-Struktur für die E-Rechnungs-Erzeugung. */
 import type { DocLanguage } from "@/lib/i18n/doc/types";
+import type { Endpoint } from "./eas";
 
 export interface EInvoiceParty {
   name: string;
@@ -14,6 +15,14 @@ export interface EInvoiceParty {
   phone?: string | null;
   contactName?: string | null;
   electronicAddress?: string | null; // Peppol/Leitweg-Endpoint
+  /**
+   * Phase 17a (BT-34/BT-49): aufgeloeste elektronische Adresse mit EAS-Schema. `undefined` =
+   * Aufrufer ohne Aufloesung (Alt-Fixtures) -> Builder faellt auf EM mit `electronicAddress ?? email`
+   * zurueck; `null` = keine Adresse.
+   */
+  endpoint?: Endpoint | null;
+  /** BT-47 (Kaeufer): Registrierungskennung des Kaeufers, z. B. Handelsregisternummer. */
+  legalRegistrationId?: string | null;
   /**
    * Fix-Welle (Abschluss-Review Phase 11b, Block 3 — Referenzbeleg RE-2026-0001): Kundennummer
    * (BEIM KAEUFER; Customer.customerNumber, Phase 7 §34) fuers PDF-Meta ("Ihre

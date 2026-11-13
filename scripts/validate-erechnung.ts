@@ -6,7 +6,7 @@
  *   - CII: EN-16931-CII (KoSIT-Konfig)
  *
  * Aufruf:
- *   npm run validate:erechnung                # Sample (XRechnung-UBL) erzeugen + prüfen
+ *   npm run validate:erechnung                # alle 29 Fixtures (57 XML: base nur UBL) erzeugen + prüfen
  *   npm run validate:erechnung -- pfad/zur.xml
  *
  * Exit 0 = bestanden, 1 = Verletzung(en). Schematrons landen in validation/.cache
@@ -129,6 +129,8 @@ const SAMPLE_NAMES = [
   "foreign-currency-usd", // Phase 16b: USD-Rechnung, BT-6 TaxCurrencyCode EUR + BT-111 (zweites TaxTotal)
   "foreign-currency-credit-note", // Phase 16b: Storno der USD-Rechnung (CreditNote, positives BT-111)
   "language-en-reverse-charge", // Phase 16b: Belegsprache en, BT-120 "Reverse charge", BT-20 englisch
+  "endpoint-leitweg-0204", // Phase 17a: Kaeufer-Endpoint Leitweg-ID (0204), Verkaeufer 9930, BT-10 = Leitweg-ID
+  "reverse-charge-bt47", // Phase 17a: AE ohne Kaeufer-USt-IdNr., BT-47 (BR-AE-02)
 ];
 
 async function main(): Promise<void> {
