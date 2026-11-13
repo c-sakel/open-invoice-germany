@@ -67,6 +67,7 @@ case "$DATABASE_URL" in
 esac
 
 if ! out=$(npx prisma db execute --url "$DATABASE_URL" --stdin 2>&1 <<SQL
+UPDATE "PasswordResetToken" SET "usedAt" = $NOW_SQL WHERE "usedAt" IS NULL AND "userId" IN (SELECT "id" FROM "User" $WHERE);
 DELETE FROM "RecoveryCode" WHERE "userId" IN (SELECT "id" FROM "User" $WHERE);
 UPDATE "User" SET "totpSecretEnc" = NULL, "totpEnabledAt" = NULL, "totpLastStep" = NULL, "failedLoginCount" = 0, "lockedUntil" = NULL, "passwordChangedAt" = $NOW_SQL $WHERE;
 SQL

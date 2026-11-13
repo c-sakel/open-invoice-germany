@@ -12,7 +12,8 @@ import { createSessionToken } from "@/lib/auth/session";
 import { userIdFromToken } from "@/lib/auth/server";
 import { saveMailSettings } from "@/domain/email/settings";
 import { createApiKey } from "@/domain/api-key/create";
-import { beginTotpSetup, enableTotp } from "@/domain/auth/two-factor";
+import { beginTotpSetup, disableTotp, enableTotp, renewRecoveryCodes } from "@/domain/auth/two-factor";
+import { changePassword } from "@/domain/auth/login";
 import {
   confirmPasswordReset,
   deliverPasswordResetMail,
@@ -233,12 +234,61 @@ describe("confirmPasswordReset", () => {
   });
 });
 
+describe("Entwertung offener Token", () => {
+  it("Passwortaenderung entwertet offene Reset-Token", async () => {
+    const u = await makeUser();
+    const token = await requestToken(u.email);
+    expect((await changePassword(u.id, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD, newPasswordRepeat: NEW_PASSWORD }, { now: min(1), ip: "203.0.113.11" })).status).toBe("ok");
+    expect(await inspectResetToken(token, min(2))).toEqual({ valid: false });
+    expect((await confirm(token, {}, min(2))).status).toBe("invalid_token");
+  });
+
+  it("erfolgreicher Reset entwertet alle weiteren offenen Token (auch gegen Race: createdAt <= passwordChangedAt)", async () => {
+    const u = await makeUser();
+    const first = await requestToken(u.email);
+    // Zweites Token ohne die uebliche Entwertung der ersten Anforderung simulieren.
+    await dbInternal.passwordResetToken.updateMany({ where: { userId: u.id }, data: { usedAt: null } });
+    const second = await requestToken(u.email, min(1));
+    await dbInternal.passwordResetToken.updateMany({ where: { userId: u.id }, data: { usedAt: null } });
+    expect((await confirm(second, {}, min(2))).status).toBe("ok");
+    expect(await dbInternal.passwordResetToken.count({ where: { userId: u.id, usedAt: null } })).toBe(0);
+    // Selbst wieder geoeffnet, lehnt createdAt <= passwordChangedAt das alte Token ab.
+    await dbInternal.passwordResetToken.updateMany({ where: { userId: u.id }, data: { usedAt: null } });
+    expect((await confirm(first, {}, min(3))).status).toBe("invalid_token");
+    expect(await inspectResetToken(first, min(3))).toEqual({ valid: false });
+  });
+
+  it("2FA einschalten, erneuern und abschalten entwerten offene Token", async () => {
+    const u = await makeUser();
+    const setup = await beginTotpSetup(u.id, { issuer: "T" });
+    const secret = base32Decode(setup.secret);
+    const t1 = await requestToken(u.email);
+    const at1 = min(5);
+    const en = await enableTotp(u.id, { password: PASSWORD, code: hotp(secret, totpStep(at1)) }, { now: at1 });
+    if (en.status !== "ok") throw new Error("Einrichtung fehlgeschlagen");
+    expect(await dbInternal.passwordResetToken.findFirst({ where: { userId: u.id, usedAt: null } })).toBeNull();
+    expect((await confirm(t1, {}, min(6))).status).toBe("invalid_token");
+
+    const t2 = await requestToken(u.email, min(7));
+    const renewed = await renewRecoveryCodes(u.id, { password: PASSWORD, code: en.recoveryCodes[0] }, { now: min(8) });
+    expect(renewed.status).toBe("ok");
+    expect((await confirm(t2, {}, min(9))).status).toBe("invalid_token");
+
+    const t3 = await requestToken(u.email, min(10));
+    if (renewed.status !== "ok") throw new Error("unerwartet");
+    expect((await disableTotp(u.id, { password: PASSWORD, code: renewed.recoveryCodes[0] }, { now: min(11) })).status).toBe("ok");
+    expect((await confirm(t3, {}, min(12))).status).toBe("invalid_token");
+  });
+});
+
 describe("mit aktiver 2FA", () => {
   async function makeActive() {
     const u = await makeUser();
     const setup = await beginTotpSetup(u.id, { issuer: "T" });
     const secret = base32Decode(setup.secret);
-    const res = await enableTotp(u.id, { password: PASSWORD, code: hotp(secret, totpStep(T0)) }, { now: T0 });
+    // Einrichtung VOR T0: sie setzt passwordChangedAt, spaeter angeforderte Token muessen juenger sein.
+    const setupAt = min(-10);
+    const res = await enableTotp(u.id, { password: PASSWORD, code: hotp(secret, totpStep(setupAt)) }, { now: setupAt });
     if (res.status !== "ok") throw new Error("Einrichtung fehlgeschlagen");
     return { ...u, secret, recoveryCodes: res.recoveryCodes };
   }

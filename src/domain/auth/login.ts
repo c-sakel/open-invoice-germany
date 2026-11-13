@@ -49,6 +49,7 @@ import {
   lockState,
   logAccountEvent,
   registerFailedAttempt,
+  voidResetTokens,
 } from "@/domain/auth/attempts";
 
 // Einmal beim Laden des Moduls berechnet (scrypt ist bewusst langsam) — derselbe Hash
@@ -162,10 +163,14 @@ export async function changePassword(userId: string, rawInput: unknown, ctx: { i
   }
 
   const passwordHash = hashPassword(input.newPassword);
-  await dbInternal.user.update({
-    where: { id: user.id },
-    data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
-    select: { id: true },
+  await dbInternal.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: user.id },
+      data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
+      select: { id: true },
+    });
+    // Offene Reset-Links verfallen mit der Passwortaenderung.
+    await voidResetTokens(tx, user.id, now);
   });
   await logAccountEvent(user.id, "PASSWORD_CHANGED", ctx.ip, "Passwort erfolgreich geaendert", now);
   return { status: "ok", passwordChangedAt: now };

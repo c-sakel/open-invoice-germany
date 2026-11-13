@@ -25,7 +25,7 @@ import type { MailProvider } from "@/lib/mail/provider";
 import { loadMailSettings } from "@/domain/email/settings";
 import { DEFAULT_APP_NAME, loadBrand } from "@/domain/settings/brand";
 import { instanceOrgId } from "@/domain/auth/instance";
-import { lockState, logAccountEvent, registerFailedAttempt } from "@/domain/auth/attempts";
+import { lockState, logAccountEvent, registerFailedAttempt, voidResetTokens } from "@/domain/auth/attempts";
 import { checkSecondFactorCode } from "@/domain/auth/two-factor";
 import { passwordResetConfirmSchema, passwordResetRequestSchema } from "@/schemas/auth";
 
@@ -138,15 +138,20 @@ export async function deliverPasswordResetMail(mail: ResetMail, provider?: MailP
   }
 }
 
+/** Ein Token, das nicht NACH der letzten Passwort-/2FA-Aenderung ausgestellt wurde, ist wertlos (Defense in Depth zu `voidResetTokens`). */
+function issuedBeforePasswordChange(createdAt: Date, passwordChangedAt: Date | null): boolean {
+  return passwordChangedAt !== null && createdAt.getTime() <= passwordChangedAt.getTime();
+}
+
 const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 
 export async function inspectResetToken(token: string, now: Date = new Date()): Promise<{ valid: false } | { valid: true; requiresSecondFactor: boolean }> {
   if (!TOKEN_FORMAT.test(token)) return { valid: false };
   const row = await dbInternal.passwordResetToken.findFirst({
     where: { tokenHash: hashResetToken(token), usedAt: null, expiresAt: { gt: now } },
-    select: { user: { select: { totpEnabledAt: true } } },
+    select: { createdAt: true, user: { select: { totpEnabledAt: true, passwordChangedAt: true } } },
   });
-  if (!row) return { valid: false };
+  if (!row || issuedBeforePasswordChange(row.createdAt, row.user.passwordChangedAt)) return { valid: false };
   return { valid: true, requiresSecondFactor: row.user.totpEnabledAt !== null };
 }
 
@@ -168,10 +173,11 @@ export async function confirmPasswordReset(
     where: { tokenHash: hashResetToken(input.token), usedAt: null, expiresAt: { gt: now } },
     select: {
       id: true,
-      user: { select: { id: true, totpEnabledAt: true, failedLoginCount: true, lockedUntil: true } },
+      createdAt: true,
+      user: { select: { id: true, totpEnabledAt: true, failedLoginCount: true, lockedUntil: true, passwordChangedAt: true } },
     },
   });
-  if (!row) return { status: "invalid_token" };
+  if (!row || issuedBeforePasswordChange(row.createdAt, row.user.passwordChangedAt)) return { status: "invalid_token" };
   const user = row.user;
 
   if (user.totpEnabledAt !== null) {
@@ -197,7 +203,7 @@ export async function confirmPasswordReset(
       data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
       select: { id: true },
     });
-    await tx.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: now } });
+    await voidResetTokens(tx, user.id, now);
     return true;
   });
   if (!done) return { status: "invalid_token" };

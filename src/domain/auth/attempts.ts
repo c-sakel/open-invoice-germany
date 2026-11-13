@@ -12,6 +12,7 @@
  * dem Schwellenwert stehen: der naechste Fehlversuch zaehlt wie der ERSTE einer neuen
  * Serie (Fix-Welle 4), sonst sperrte ein einziger Fehlversuch je Sperrfenster erneut.
  */
+import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { logActivity, type ActivityType } from "@/domain/activity/log";
 import { instanceOrgId } from "@/domain/auth/instance";
@@ -111,4 +112,14 @@ export async function clearAttempts(userId: string, now: Date, opts: { lastLogin
     data: { failedLoginCount: 0, lockedUntil: null, ...(opts.lastLogin ? { lastLoginAt: now } : {}) },
     select: { id: true },
   });
+}
+
+/**
+ * Entwertet alle noch offenen Passwort-Reset-Token eines Kontos (als benutzt markiert). Wird
+ * in derselben Transaktion aufgerufen, die `passwordChangedAt` setzt (Passwortaenderung,
+ * Reset, 2FA-Wechsel): ein vorher angeforderter Link darf nach einer Sicherheitsaenderung
+ * nicht mehr funktionieren.
+ */
+export async function voidResetTokens(tx: Prisma.TransactionClient, userId: string, now: Date): Promise<void> {
+  await tx.passwordResetToken.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
 }

@@ -66,7 +66,12 @@ describe("scripts/disable-2fa.sh", () => {
     const a = await makeUser();
     const old = await createSessionToken(a.id, null);
     expect(await userIdFromToken(old)).toBe(a.id);
+    await dbInternal.passwordResetToken.create({
+      data: { userId: a.id, tokenHash: `skript-${a.id}`, expiresAt: new Date(Date.now() + 3_600_000) },
+      select: { id: true },
+    });
     expect(run(["--bestaetigen", "--email", a.email]).status).toBe(0);
+    expect(await dbInternal.passwordResetToken.count({ where: { userId: a.id, usedAt: null } })).toBe(0);
     expect(await userIdFromToken(old)).toBeNull();
     const row = await dbInternal.user.findUniqueOrThrow({ where: { id: a.id }, select: { passwordChangedAt: true } });
     expect(Math.abs(row.passwordChangedAt!.getTime() - Date.now())).toBeLessThan(5 * 60_000);

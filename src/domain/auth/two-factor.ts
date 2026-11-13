@@ -30,7 +30,7 @@ import { base32Decode, base32Encode, generateTotpSecret, matchTotp, otpauthUri }
 import { generateRecoveryCodes, hashRecoveryCode, normalizeRecoveryCode } from "@/lib/auth/recovery-codes";
 import { logActivity } from "@/domain/activity/log";
 import { DEFAULT_APP_NAME, loadBrand } from "@/domain/settings/brand";
-import { IP_RATE_LIMIT, IP_RATE_WINDOW_MS, clearAttempts, lockState, logAccountEvent, registerFailedAttempt } from "@/domain/auth/attempts";
+import { IP_RATE_LIMIT, IP_RATE_WINDOW_MS, clearAttempts, lockState, logAccountEvent, registerFailedAttempt, voidResetTokens } from "@/domain/auth/attempts";
 import { instanceOrgId } from "@/domain/auth/instance";
 import { secondFactorSchema, totpConfirmSchema, totpEnableSchema } from "@/schemas/auth";
 
@@ -130,6 +130,7 @@ export async function enableTotp(
       data: { totpEnabledAt: now, totpLastStep: step, passwordChangedAt: now },
     });
     if (res.count !== 1) return false;
+    await voidResetTokens(tx, userId, now);
     await tx.recoveryCode.deleteMany({ where: { userId } });
     await tx.recoveryCode.createMany({ data: recoveryCodes.map((c) => ({ userId, codeHash: hashRecoveryCode(normalizeRecoveryCode(c)!) })) });
     return true;
@@ -270,6 +271,7 @@ export async function disableTotp(userId: string, raw: unknown, ctx: Ctx = {}): 
   if (res.status !== "ok") return res;
   await dbInternal.$transaction(async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null, passwordChangedAt: now }, select: { id: true } });
+    await voidResetTokens(tx, userId, now);
     await tx.recoveryCode.deleteMany({ where: { userId } });
   });
   await logAccountEvent(userId, "TOTP_DISABLED", ctx.ip, "Zwei-Faktor-Anmeldung abgeschaltet", now);
@@ -287,6 +289,7 @@ export async function renewRecoveryCodes(
   const recoveryCodes = generateRecoveryCodes();
   await dbInternal.$transaction(async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { passwordChangedAt: now }, select: { id: true } });
+    await voidResetTokens(tx, userId, now);
     await tx.recoveryCode.deleteMany({ where: { userId } });
     await tx.recoveryCode.createMany({ data: recoveryCodes.map((c) => ({ userId, codeHash: hashRecoveryCode(normalizeRecoveryCode(c)!) })) });
   });
