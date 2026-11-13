@@ -23,6 +23,7 @@ import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { updateDraftDeliveryNote } from "@/domain/delivery-note/update";
 import { DeliveryNoteNotDraftError, DeliveryNoteValidationError, DeliveryNoteError } from "@/domain/delivery-note/errors";
+import { withDraftPreviewSnapshots } from "@/domain/delivery-note/parties";
 import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { setDeliveryNoteStatus } from "@/domain/document/status";
 import { mapApiError } from "@/api/errors";
@@ -155,6 +156,27 @@ describe("interne Routen", () => {
     expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(500);
     const file = await getDocumentFile(orgId, "DELIVERY_NOTE", dn.id, "pdf");
     expect(file.buffer.byteLength).toBeGreaterThan(500);
+  });
+});
+
+describe("PDF-Vorschau eines Entwurfs: gewaehlte Lieferanschrift", () => {
+  it("Snapshots live aus shippingAddressId/contactPersonId, nicht aus der Default-Adresse; nichts wird gespeichert", async () => {
+    await dbInternal.customerAddress.create({ data: { orgId, customerId, type: "SHIPPING", isDefault: true, addressLine1: "Standardweg 1", postalCode: "10115", city: "Berlin", countryCode: "DE" } });
+    const chosen = await dbInternal.customerAddress.create({ data: { orgId, customerId, type: "SHIPPING", isDefault: false, addressLine1: "Wunschrampe 7", postalCode: "20095", city: "Hamburg", countryCode: "DE" } });
+    const contact = await dbInternal.contactPerson.create({ data: { orgId, customerId, firstName: "Erika", lastName: "Vorschau" } });
+    const dn = await createDeliveryNote(orgId, { customerId, draft: true, shippingAddressId: chosen.id, contactPersonId: contact.id, lines: [line()] }, { now: NOW });
+    const row = await dbInternal.deliveryNote.findFirstOrThrow({ where: { id: dn.id }, include: { customer: true } });
+    expect(row.buyerSnapshotJson).toBeNull();
+    const preview = await withDraftPreviewSnapshots(row, row.customer);
+    const buyer = JSON.parse(preview.buyerSnapshotJson ?? "{}") as { shippingAddress?: { addressLine1?: string } };
+    expect(buyer.shippingAddress?.addressLine1).toBe("Wunschrampe 7");
+    expect(JSON.parse(preview.contactSnapshotJson ?? "{}")).toMatchObject({ lastName: "Vorschau" });
+    const pdf = await internalPdf(plain("GET"), ctx1(dn.id));
+    expect(pdf.status).toBe(200);
+    const after = await dbInternal.deliveryNote.findFirstOrThrow({ where: { id: dn.id }, select: { buyerSnapshotJson: true, contactSnapshotJson: true } });
+    expect(after).toEqual({ buyerSnapshotJson: null, contactSnapshotJson: null });
+    // CREATED-Beleg mit Snapshots bleibt unveraendert.
+    expect(await withDraftPreviewSnapshots({ ...row, status: "CREATED" }, row.customer)).toMatchObject({ buyerSnapshotJson: null });
   });
 });
 

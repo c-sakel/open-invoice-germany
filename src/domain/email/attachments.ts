@@ -8,6 +8,7 @@ import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { getArchivedInvoiceFile } from "@/domain/invoice/archive-read";
 import { getArchivedDunningPdf } from "@/domain/dunning/archive";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
+import { withDraftPreviewSnapshots } from "@/domain/delivery-note/parties";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { dbInternal } from "@/lib/db";
 import { loadDocumentSettings } from "@/domain/document/settings";
@@ -154,7 +155,7 @@ export async function buildStandardAttachments(
         })
       : null;
     const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE", { issued: dn.status !== "DRAFT" });
-    const pdf = await lazy(() => renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, null, shippingAddress), theme));
+    const pdf = await lazy(async () => renderDeliveryNotePdf(buildDeliveryNotePdfData(await withDraftPreviewSnapshots(dn, dn.customer), dn.org, dn.customer, null, shippingAddress), theme));
     return [{ filename: `${safe(dn.number ?? "Lieferschein")}.pdf`, contentType: "application/pdf", content: pdf }];
   }
 

@@ -4,6 +4,7 @@
  * Anlage (create.ts), Entwurf-Bearbeitung (update.ts) und DRAFT -> CREATED (status.ts).
  */
 import type { Customer, Prisma } from "@/generated/prisma/client";
+import { dbInternal } from "@/lib/db";
 import { buildSellerSnapshot, buildContactSnapshot } from "@/domain/snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { DeliveryNoteError, DeliveryNoteValidationError } from "@/domain/delivery-note/errors";
@@ -108,4 +109,29 @@ export async function assertCustomerMatchesSource(
   if (source.customerId !== customerId) {
     throw new DeliveryNoteValidationError("Der Kunde muss dem Kunden des Quelldokuments entsprechen.");
   }
+}
+
+/**
+ * PDF-Vorschau eines Entwurfs: Entwuerfe tragen noch keine Snapshots (Kunde, Lieferadresse,
+ * Ansprechpartner werden erst bei DRAFT -> CREATED eingefroren). Damit die Vorschau dieselbe
+ * Lieferanschrift und denselben Ansprechpartner zeigt wie der spaetere Beleg, werden die
+ * Snapshots aus `shippingAddressId`/`contactPersonId` live gebaut (nicht gespeichert).
+ * Andere Status und Belege mit Snapshots bleiben unveraendert.
+ */
+export async function withDraftPreviewSnapshots<
+  T extends {
+    status: string;
+    orgId: string;
+    shippingAddressId: string | null;
+    contactPersonId: string | null;
+    sellerSnapshotJson: string | null;
+    buyerSnapshotJson: string | null;
+    contactSnapshotJson: string | null;
+  },
+>(dn: T, customer: Customer): Promise<T> {
+  if (dn.status !== "DRAFT" || dn.buyerSnapshotJson) return dn;
+  const snap = await dbInternal.$transaction((tx) =>
+    buildDeliveryNoteSnapshots(tx, dn.orgId, customer, dn.contactPersonId, dn.shippingAddressId),
+  );
+  return { ...dn, ...snap };
 }
