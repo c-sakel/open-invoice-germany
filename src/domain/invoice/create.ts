@@ -106,7 +106,7 @@ export async function createDraftInvoiceWithinTx(
   // im Vorlagen-Payload/`customerId`-Override).
   if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
 
-  const settings = await loadDocumentSettings(orgId);
+  const settings = await loadDocumentSettings(orgId, tx);
   // Waehrung (§28): Eingabe > Customer.defaultCurrency > DocumentSettings.defaultCurrency
   // (selbstheilend geladen, Default darin bereits "EUR") > "EUR".
   const currency = input.currency ?? customer.defaultCurrency ?? settings.defaultCurrency ?? "EUR";

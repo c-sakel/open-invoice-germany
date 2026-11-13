@@ -74,7 +74,7 @@ export async function createDeliveryNoteWithinTx(
 
   // dnShow*-Defaults + showDeliveryAddress (Phase 7, §33): fehlt ein Anzeige-Flag am
   // Aufruf, greift die Org-Einstellung statt eines hart codierten Werts.
-  const docSettings = await loadDocumentSettings(orgId);
+  const docSettings = await loadDocumentSettings(orgId, tx);
   const showPrices = input.showPrices ?? docSettings.dnShowPrices;
   // showTax/showDescription kennen keine eigene Org-Einstellung (Brief nennt nur
   // dnShowPrices/dnShowArticleNumber/dnShowDeliveryAddress) — Defaults bleiben wie zuvor

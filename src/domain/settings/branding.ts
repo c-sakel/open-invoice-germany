@@ -6,6 +6,7 @@
  * Byte-Pruefung, Groessenlimit) leben in den PDF-/Upload-Aufgaben (Task 3), diese Datei
  * verwaltet nur die Pfade als Strings.
  */
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { brandingSettingsInputSchema, type BrandingSettingsInput } from "@/schemas/settings";
 import { parseLayoutByType } from "@/domain/settings/layout";
@@ -15,8 +16,11 @@ import { designIdOf } from "@/lib/pdf/layouts/ids";
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettingsInput = brandingSettingsInputSchema.parse({});
 
 /** Laedt die Briefpapier-Einstellungen einer Organisation; Defaults, wenn noch keine Zeile existiert. */
-export async function loadBrandingSettings(orgId: string): Promise<BrandingSettingsInput> {
-  const row = await dbInternal.brandingSettings.findUnique({ where: { orgId } });
+export async function loadBrandingSettings(
+  orgId: string,
+  db: PrismaClient | Prisma.TransactionClient = dbInternal, // in Transaktionen immer tx uebergeben (Pool-Deadlock)
+): Promise<BrandingSettingsInput> {
+  const row = await db.brandingSettings.findUnique({ where: { orgId } });
   if (!row) return DEFAULT_BRANDING_SETTINGS;
   return brandingSettingsInputSchema.parse({
     logoPath: row.logoPath,

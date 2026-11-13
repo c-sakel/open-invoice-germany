@@ -4,6 +4,7 @@
  * Selbstheilung analog src/domain/document/settings.ts: ohne gespeicherte Zeile
  * gelten die Defaults, keine Migration noetig vor dem ersten Speichern.
  */
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { InvalidOperationError, NotFoundError } from "@/domain/errors";
 import { printSettingsInputSchema, printOptionsOverrideSchema, frozenPrintOptionsSchema, type PrintSettingsInput, type PrintOptionsOverride, type FrozenPrintOptions } from "@/schemas/settings";
@@ -13,8 +14,11 @@ import type { LayoutId } from "@/lib/pdf/layouts/ids";
 export const DEFAULT_PRINT_SETTINGS: PrintSettingsInput = printSettingsInputSchema.parse({});
 
 /** Laedt die globalen Druckoptionen einer Organisation; Defaults, wenn noch keine Zeile existiert. */
-export async function loadPrintSettings(orgId: string): Promise<PrintSettingsInput> {
-  const row = await dbInternal.printSettings.findUnique({ where: { orgId } });
+export async function loadPrintSettings(
+  orgId: string,
+  db: PrismaClient | Prisma.TransactionClient = dbInternal, // in Transaktionen immer tx uebergeben (Pool-Deadlock)
+): Promise<PrintSettingsInput> {
+  const row = await db.printSettings.findUnique({ where: { orgId } });
   if (!row) return DEFAULT_PRINT_SETTINGS;
   return printSettingsInputSchema.parse({
     showFooter: row.showFooter,
