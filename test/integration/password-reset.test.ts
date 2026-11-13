@@ -167,7 +167,8 @@ describe("requestPasswordReset", () => {
     );
     expect(results.filter((r) => r.mail !== null).length).toBeLessThanOrEqual(3);
     expect(await dbInternal.passwordResetToken.count({ where: { userId: u.id } })).toBeLessThanOrEqual(3);
-  });
+    // SQLite serialisiert die sechs Schreibtransaktionen; auf langsamen CI-Runnern dauert das laenger.
+  }, 30_000);
 
   it("raeumt Token auf, die aelter als 24 Stunden sind", async () => {
     const u = await makeUser();

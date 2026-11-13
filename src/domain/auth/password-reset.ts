@@ -103,6 +103,12 @@ export async function requestPasswordReset(raw: unknown, ctx: RequestCtx = {}): 
       select: { id: true },
     });
     return true;
+  }).catch((e: unknown) => {
+    // Laeuft im Hintergrund (after()): ein Datenbankfehler (z. B. Sperr-/Zeitueberschreitung bei
+    // vielen parallelen Anforderungen) darf nicht durchschlagen — dann wird schlicht kein Token
+    // ausgestellt (sicherer Ausfall, die Antwort an den Client ist ohnehin schon gesendet).
+    console.warn("[password-reset] Anforderung nicht ausgestellt:", e instanceof Error ? e.message : e);
+    return false;
   });
   if (!created) return { mail: null };
   await logAccountEvent(user.id, "PASSWORD_RESET_REQUESTED", ctx.ip, "Passwort-Reset angefordert", now);
