@@ -20,6 +20,10 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `delivery_note.created` | Lieferschein erstellt (feuert bei der Nummernvergabe, also bei direkter Anlage oder beim Übergang Entwurf → Erstellt; ein Entwurf löst es nicht aus) |
 | `email.sent` / `email.failed` | Belegversand per E-Mail erfolgreich/fehlgeschlagen |
 | `dunning.created` | Mahnung erstellt |
+| `postal.submitted` | Postauftrag an den Briefdienst übertragen (Testmodus oder Live; Payload = `PostalJob`, ohne Zugangsdaten) |
+| `postal.done` | Postauftrag abgeschlossen (Brief fertig bzw. manuell als versendet abgeschlossen) |
+| `postal.failed` | Postauftrag fehlgeschlagen oder manuell als nicht versendet abgeschlossen |
+| `postal.cancelled` | Postauftrag storniert (auch: Testauftrag in der geleerten Postbox) |
 
 Ein Endpunkt abonniert eine oder mehrere dieser Ereignisse (`events`-Feld bei
 Anlage/Änderung). Eine **Test-Zustellung** (`webhook.test`, über „Testen"/

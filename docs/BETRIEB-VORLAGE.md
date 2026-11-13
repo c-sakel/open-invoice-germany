@@ -75,6 +75,17 @@ Hinweis: `verify-chain.ts` nutzt den zur Laufzeit generierten Prisma-Client; der
 Umgebung, in der der Postgres-Client generiert ist (z. B. im App-Container oder nach
 `npx prisma generate --schema=prisma/schema.postgres.prisma`).
 
+
+## Postversand (Phase 16d)
+
+1. **Notschalter `POSTAL_NETWORK=0`** (Umgebungsvariable, siehe `.env.example`): sperrt **jeden** Netzaufruf zum Briefdienst im Prozess, unabhängig von den Einstellungen. Trockenlauf, Protokoll und Oberfläche laufen weiter; Verbindungstest, Preisabfrage, Übertragung, Storno und Abgleich melden „Netzzugriff auf den Briefdienst ist gesperrt“. Leer oder jeder andere Wert = Netz erlaubt. In Tests und beim Smoke ist die Sperre immer aktiv.
+2. **Zugangsdaten** trägt der Betreiber unter „Einstellungen → Postversand“ ein; sie liegen verschlüsselt in der Datenbank (Schlüssel per HKDF aus `AUTH_SECRET`, Zweck `oig-postal-key-v1`). Sie gehören in keine `.env` und in keinen Beleg, kein Protokoll und keine Meldung.
+3. **Erste Inbetriebnahme:** Zugang eintragen (Schalter bleiben aus) und **einmal „Verbindung prüfen“** (nur `GET /v3/balance`, lesend). Der Verbindungstest wird erst **nach Freigabe durch den Betreiber** ausgeführt; solange er nicht gelaufen ist, ist unbestätigt, ob die Basis-URL `https://api.letterxpress.de/v3` per HTTPS erreichbar ist (die Dokumentation des Anbieters nennt nur `http`; das Programm nutzt nie HTTP).
+4. **Schlüsselrotation:** Neuen API-Schlüssel beim Briefdienst erzeugen, in „Einstellungen → Postversand“ eintragen (ersetzt den alten, „Entfernen“ löscht ihn), danach den alten beim Anbieter sperren. Empfohlen, wenn der Schlüssel außerhalb des Programms übermittelt wurde.
+5. **`AUTH_SECRET` wechseln** macht den gespeicherten Schlüssel unlesbar (Meldung „nicht lesbar“, kein Versand, Abgleich überspringt die Organisation). Danach den Schlüssel neu eintragen.
+6. **Scheduler:** Der Job `postal` läuft nach `dunning` in der bestehenden Job-Reihenfolge (je Auftrag frühestens alle 15 Minuten ein Abgleich; mit eingebautem Scheduler oder `npm run scheduler:run`). Er ruft den Briefdienst nur bei eingeschaltetem Postversand im Modus Testmodus/Live mit gültigem Zugang auf.
+7. **Sicherung:** Die Tabellen `PostalSettings`, `PostalJob`, `PostalJobEvent` sind im Datenbank-Dump enthalten. Das Versandprotokoll ist append-only und wird nicht gelöscht.
+
 ## Notfallzugang: Zwei-Faktor abschalten (`scripts/disable-2fa.sh`)
 
 Sind Authenticator-Gerät **und** Wiederherstellungscodes verloren, schaltet der Server-Zugang die Zwei-Faktor-Anmeldung ab:
