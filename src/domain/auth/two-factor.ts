@@ -22,6 +22,7 @@
  *   (SQLite + Postgres), und auch ein laufender Zwischenschritt `oig_mfa` (gleiches `pwc`) verfaellt.
  */
 import QRCode from "qrcode";
+import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { verifyPassword } from "@/lib/auth/password";
@@ -151,6 +152,38 @@ function classify(input: string): { kind: "totp"; code: string } | { kind: "reco
   return normalized ? { kind: "recovery", normalized } : { kind: "none" };
 }
 
+type Db = Prisma.TransactionClient | typeof dbInternal;
+
+/** TOTP-Schritt per CAS verbrauchen (nur ein groesserer Schritt als der letzte gilt). */
+async function claimTotpStep(db: Db, userId: string, step: number): Promise<boolean> {
+  const res = await db.user.updateMany({
+    where: { id: userId, totpEnabledAt: { not: null }, OR: [{ totpLastStep: null }, { totpLastStep: { lt: step } }] },
+    data: { totpLastStep: step },
+  });
+  return res.count === 1;
+}
+
+async function claimRecoveryCode(db: Db, userId: string, codeHash: string, now: Date): Promise<boolean> {
+  const res = await db.recoveryCode.updateMany({ where: { userId, codeHash, usedAt: null }, data: { usedAt: now } });
+  return res.count === 1;
+}
+
+export async function logRecoveryCodeUsed(userId: string, ip: string | undefined, now: Date): Promise<void> {
+  const remaining = await dbInternal.recoveryCode.count({ where: { userId, usedAt: null } });
+  const orgId = await instanceOrgId();
+  if (orgId) {
+    await logActivity(dbInternal, {
+      orgId,
+      entityType: "USER",
+      entityId: userId,
+      type: "RECOVERY_CODE_USED",
+      actor: userId,
+      at: now,
+      data: { ip: ip ?? null, remaining },
+    });
+  }
+}
+
 /** Prueft den Code; mit `consume` wird Schritt bzw. Wiederherstellungscode per CAS verbraucht. */
 async function evaluateCode(user: CodeUser, input: string, now: Date, consume: boolean, ip: string | undefined): Promise<"ok" | "invalid"> {
   if (user.totpEnabledAt === null) return "invalid";
@@ -162,11 +195,7 @@ async function evaluateCode(user: CodeUser, input: string, now: Date, consume: b
     const step = matchTotp(secret, c.code, now, { lastStep: user.totpLastStep });
     if (step === null) return "invalid";
     if (!consume) return "ok";
-    const res = await dbInternal.user.updateMany({
-      where: { id: user.id, totpEnabledAt: { not: null }, OR: [{ totpLastStep: null }, { totpLastStep: { lt: step } }] },
-      data: { totpLastStep: step },
-    });
-    return res.count === 1 ? "ok" : "invalid";
+    return (await claimTotpStep(dbInternal, user.id, step)) ? "ok" : "invalid";
   }
   if (c.kind === "recovery") {
     const codeHash = hashRecoveryCode(c.normalized);
@@ -174,27 +203,52 @@ async function evaluateCode(user: CodeUser, input: string, now: Date, consume: b
       const found = await dbInternal.recoveryCode.findFirst({ where: { userId: user.id, codeHash, usedAt: null }, select: { id: true } });
       return found ? "ok" : "invalid";
     }
-    const res = await dbInternal.recoveryCode.updateMany({ where: { userId: user.id, codeHash, usedAt: null }, data: { usedAt: now } });
-    if (res.count !== 1) return "invalid";
-    const remaining = await dbInternal.recoveryCode.count({ where: { userId: user.id, usedAt: null } });
-    const orgId = await instanceOrgId();
-    if (orgId) {
-      await logActivity(dbInternal, {
-        orgId,
-        entityType: "USER",
-        entityId: user.id,
-        type: "RECOVERY_CODE_USED",
-        actor: user.id,
-        at: now,
-        data: { ip: ip ?? null, remaining },
-      });
-    }
+    if (!(await claimRecoveryCode(dbInternal, user.id, codeHash, now))) return "invalid";
+    await logRecoveryCodeUsed(user.id, ip, now);
     return "ok";
   }
   return "invalid";
 }
 
-const codeUserSelect = { id: true, totpEnabledAt: true, totpSecretEnc: true, totpLastStep: true } as const;
+/**
+ * Verbraucht den Code INNERHALB einer laufenden Transaktion (Reset: Token-Claim und Code
+ * gehoeren zusammen; verliert der Aufrufer das Token-Rennen, bleibt der Code unberuehrt).
+ * Das Protokoll fuer einen Wiederherstellungscode schreibt der Aufrufer NACH dem Commit
+ * (`logRecoveryCodeUsed`).
+ */
+export async function consumeSecondFactorCodeInTx(
+  tx: Prisma.TransactionClient,
+  user: CodeUser,
+  input: string,
+  now: Date,
+): Promise<{ status: "ok"; usedRecovery: boolean } | { status: "invalid" }> {
+  if (user.totpEnabledAt === null) return { status: "invalid" };
+  const c = classify(input);
+  if (c.kind === "totp") {
+    if (!user.totpSecretEnc) return { status: "invalid" };
+    const secret = readSecret(user.totpSecretEnc);
+    if (!secret) return { status: "invalid" };
+    const step = matchTotp(secret, c.code, now, { lastStep: user.totpLastStep });
+    if (step === null || !(await claimTotpStep(tx, user.id, step))) return { status: "invalid" };
+    return { status: "ok", usedRecovery: false };
+  }
+  if (c.kind === "recovery") {
+    if (!(await claimRecoveryCode(tx, user.id, hashRecoveryCode(c.normalized), now))) return { status: "invalid" };
+    return { status: "ok", usedRecovery: true };
+  }
+  return { status: "invalid" };
+}
+
+/** Prueft den Code OHNE ihn zu verbrauchen (fuer den Reset, der ihn spaeter in der Transaktion verbraucht). */
+export async function peekSecondFactorCode(userId: string, code: string, now: Date): Promise<"ok" | "invalid"> {
+  const user = await dbInternal.user.findUnique({ where: { id: userId }, select: codeUserSelect });
+  if (!user) return "invalid";
+  return evaluateCode(user, code, now, false, undefined);
+}
+
+export type { CodeUser };
+
+export const codeUserSelect = { id: true, totpEnabledAt: true, totpSecretEnc: true, totpLastStep: true } as const;
 
 /** Verbraucht einen TOTP-Code oder Wiederherstellungscode (ohne Fehlversuchszaehlung; fuer Reset, T5). */
 export async function checkSecondFactorCode(userId: string, code: string, now: Date, ctx: { ip?: string } = {}): Promise<"ok" | "invalid"> {

@@ -26,7 +26,7 @@ import { loadMailSettings } from "@/domain/email/settings";
 import { DEFAULT_APP_NAME, loadBrand } from "@/domain/settings/brand";
 import { instanceOrgId } from "@/domain/auth/instance";
 import { lockState, logAccountEvent, registerFailedAttempt, voidResetTokens } from "@/domain/auth/attempts";
-import { checkSecondFactorCode } from "@/domain/auth/two-factor";
+import { codeUserSelect, consumeSecondFactorCodeInTx, logRecoveryCodeUsed, peekSecondFactorCode } from "@/domain/auth/two-factor";
 import { passwordResetConfirmSchema, passwordResetRequestSchema } from "@/schemas/auth";
 
 export const RESET_TOKEN_TTL_MS = 30 * 60_000;
@@ -143,6 +143,8 @@ function issuedBeforePasswordChange(createdAt: Date, passwordChangedAt: Date | n
   return passwordChangedAt !== null && createdAt.getTime() <= passwordChangedAt.getTime();
 }
 
+class CodeLostError extends Error {}
+
 const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 
 export async function inspectResetToken(token: string, now: Date = new Date()): Promise<{ valid: false } | { valid: true; requiresSecondFactor: boolean }> {
@@ -174,7 +176,7 @@ export async function confirmPasswordReset(
     select: {
       id: true,
       createdAt: true,
-      user: { select: { id: true, totpEnabledAt: true, failedLoginCount: true, lockedUntil: true, passwordChangedAt: true } },
+      user: { select: { ...codeUserSelect, failedLoginCount: true, lockedUntil: true, passwordChangedAt: true } },
     },
   });
   if (!row || issuedBeforePasswordChange(row.createdAt, row.user.passwordChangedAt)) return { status: "invalid_token" };
@@ -185,28 +187,47 @@ export async function confirmPasswordReset(
     const lock = lockState(user, now);
     // Waehrend der Sperre wird der Code nicht geprueft (kein Gueltigkeits-Orakel).
     if (lock.isLocked) return { status: "locked", retryAfterMs: lock.retryAfterMs };
-    if ((await checkSecondFactorCode(user.id, input.code, now, { ip: ctx.ip })) === "invalid") {
+    // Nur PRUEFEN; verbraucht wird der Code erst in der Transaktion, nachdem das Token
+    // erfolgreich beansprucht wurde (ein verlorenes Rennen verbrennt keinen Code).
+    if ((await peekSecondFactorCode(user.id, input.code, now)) === "invalid") {
       await registerFailedAttempt(user, { ip: ctx.ip, now }, "falscher Code (Passwort-Reset)");
       return { status: "invalid_code" };
     }
   }
 
   const passwordHash = hashPassword(input.newPassword);
-  const done = await dbInternal.$transaction(async (tx) => {
+  type Outcome = { status: "done"; usedRecovery: boolean } | { status: "token_lost" } | { status: "code_lost" };
+  const outcome = await dbInternal.$transaction(async (tx): Promise<Outcome> => {
+    // Zuerst das Token: wer das Rennen verliert, hat keinen Code verbraucht.
     const claimed = await tx.passwordResetToken.updateMany({
       where: { id: row.id, usedAt: null, expiresAt: { gt: now } },
       data: { usedAt: now },
     });
-    if (claimed.count !== 1) return false;
+    if (claimed.count !== 1) return { status: "token_lost" };
+    let usedRecovery = false;
+    if (user.totpEnabledAt !== null) {
+      const consumed = await consumeSecondFactorCodeInTx(tx, user, input.code ?? "", now);
+      // Code zwischenzeitlich anderweitig verbraucht: alles zurueck (auch der Token-Claim).
+      if (consumed.status !== "ok") throw new CodeLostError();
+      usedRecovery = consumed.usedRecovery;
+    }
     await tx.user.update({
       where: { id: user.id },
       data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
       select: { id: true },
     });
     await voidResetTokens(tx, user.id, now);
-    return true;
+    return { status: "done", usedRecovery };
+  }).catch((e: unknown): Outcome => {
+    if (e instanceof CodeLostError) return { status: "code_lost" };
+    throw e;
   });
-  if (!done) return { status: "invalid_token" };
+  if (outcome.status === "token_lost") return { status: "invalid_token" };
+  if (outcome.status === "code_lost") {
+    await registerFailedAttempt(user, { ip: ctx.ip, now }, "falscher Code (Passwort-Reset)");
+    return { status: "invalid_code" };
+  }
+  if (outcome.usedRecovery) await logRecoveryCodeUsed(user.id, ctx.ip, now);
 
   await logAccountEvent(user.id, "PASSWORD_RESET", ctx.ip, "Passwort zurueckgesetzt", now);
   return { status: "ok" };

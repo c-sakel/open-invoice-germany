@@ -317,6 +317,42 @@ describe("mit aktiver 2FA", () => {
     expect(used).toBe(1);
   });
 
+  it("verlorenes Token-Rennen verbrennt keinen Code: bei zwei parallelen Einloesungen wird genau EIN Code verbraucht", async () => {
+    const u = await makeActive();
+    const t = await requestToken(u.email, min(2));
+    const now = min(3);
+    const before = await dbInternal.user.findUniqueOrThrow({ where: { id: u.id }, select: { totpLastStep: true } });
+    const [a, b] = await Promise.all([
+      confirm(t, { code: hotp(u.secret, totpStep(now)) }, now),
+      confirm(t, { code: u.recoveryCodes[0] }, now),
+    ]);
+    expect([a.status, b.status].filter((x) => x === "ok")).toHaveLength(1);
+    const after = await dbInternal.user.findUniqueOrThrow({ where: { id: u.id }, select: { totpLastStep: true } });
+    const totpUsed = after.totpLastStep !== before.totpLastStep;
+    const recoveryUsed = (await dbInternal.recoveryCode.count({ where: { userId: u.id, usedAt: { not: null } } })) === 1;
+    expect(Number(totpUsed) + Number(recoveryUsed)).toBe(1);
+    // Der Verlierer hat Token UND Code unberuehrt gelassen: das Token gilt als verbraucht (vom Gewinner), nicht durch den Verlierer.
+    expect(await dbInternal.passwordResetToken.count({ where: { userId: u.id, usedAt: null } })).toBe(0);
+  });
+
+  it("Code zwischen Pruefung und Einloesung verbraucht: invalid_code, Token bleibt gueltig, Passwort unveraendert", async () => {
+    const u = await makeActive();
+    const t = await requestToken(u.email, min(2));
+    const now = min(3);
+    const code = hotp(u.secret, totpStep(now));
+    // Nach der Pruefung (peek) wird der Schritt durch eine andere Anmeldung verbraucht.
+    const spy = vi.spyOn(dbInternal, "$transaction").mockImplementationOnce(async (...args: unknown[]) => {
+      await dbInternal.user.update({ where: { id: u.id }, data: { totpLastStep: totpStep(now) }, select: { id: true } });
+      spy.mockRestore();
+      return (dbInternal.$transaction as unknown as (...a: unknown[]) => Promise<unknown>)(...args);
+    });
+    const res = await confirm(t, { code }, now);
+    expect(res.status).toBe("invalid_code");
+    expect(await inspectResetToken(t, now)).toMatchObject({ valid: true });
+    const row = await dbInternal.user.findUniqueOrThrow({ where: { id: u.id }, select: { passwordHash: true } });
+    expect(verifyPassword(PASSWORD, row.passwordHash)).toBe(true);
+  });
+
   it("waehrend der Sperre: locked, Passwort unveraendert, Code wird nicht verbraucht", async () => {
     const u = await makeActive();
     const t = await requestToken(u.email, min(2));
