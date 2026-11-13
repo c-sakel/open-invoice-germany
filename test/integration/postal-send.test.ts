@@ -6,6 +6,7 @@ import https from "node:https";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { dbInternal } from "@/lib/db";
+import * as audit from "@/domain/audit";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createDunning } from "@/domain/dunning/create";
@@ -414,6 +415,49 @@ describe("Uebertragung", () => {
     expect(f.calls.filter((x) => x.method === "POST" && x.path === "/printjobs")).toHaveLength(1);
     expect(await dbInternal.postalJob.count({ where: { docId: { in: [b.id, c.id] } } })).toBe(0);
     await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true });
+  });
+
+  it("Fehler der Buchung nach erfolgreichem Submit -> UNKNOWN je Beleg, Charge laeuft weiter, kein Neuversand", async () => {
+    const a = await newInvoice();
+    const b = await newInvoice();
+    const f = lxp();
+    const { quotes } = await quotePostal(orgId, [a, b].map((i) => ({ docType: "INVOICE" as const, docId: i.id })), { transport: f.transport });
+    const items = quotes.map((q) => ({ docType: "INVOICE" as const, docId: q.docId, expectedPriceCents: q.priceCents, pdfSha256: q.pdfSha256 }));
+    const real = audit.appendChangeLog;
+    let first = true;
+    const spy = vi.spyOn(audit, "appendChangeLog").mockImplementation(async (tx, input) => {
+      if (first && input.entity === "POSTAL" && input.action === "SUBMITTED") {
+        first = false;
+        throw new Error("Konflikt");
+      }
+      return real(tx, input);
+    });
+    const res = await sendByPost(orgId, { items, confirm: true }, { ...sctx, transport: f.transport });
+    spy.mockRestore();
+    expect(res[0]).toMatchObject({ status: "UNKNOWN" });
+    expect(res[0]!.error).toContain("abgeglichen");
+    expect(res[1]!.status).toBe("QUEUED");
+    const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: res[0]!.jobId as string }, select: { status: true } });
+    expect(row.status).toBe("UNKNOWN");
+    expect(f.calls.filter((x) => x.method === "POST" && x.path === "/printjobs")).toHaveLength(2);
+  });
+
+  it("sofort storniert gemeldet -> FAILED, providerJobId trotzdem gespeichert", async () => {
+    const inv = await newInvoice();
+    const f = lxp({
+      submit: (req) => ({
+        status: 200,
+        json: {
+          status: 200,
+          message: "OK",
+          data: { id: 7_999_123, status: "canceled", filename_original: (req.body as { letter: { filename_original: string } }).letter.filename_original, created_at: "2123-06-09 10:00:00", items: [] },
+        },
+      }),
+    });
+    const r = await quoteSend("INVOICE", inv.id, f);
+    expect(r.status).toBe("FAILED");
+    const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r.jobId as string }, select: { status: true, providerJobId: true } });
+    expect(row).toMatchObject({ status: "FAILED", providerJobId: 7_999_123 });
   });
 
   it("Doppelversand: ALREADY_SENT, repeat erlaubt, parallel genau ein Auftrag", async () => {

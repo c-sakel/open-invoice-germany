@@ -229,7 +229,9 @@ export async function sendByPost(orgId: string, raw: unknown, ctx: PostalSendCon
       } else if (e instanceof NotFoundError || e instanceof InvalidOperationError) {
         results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: e.message, code: "NOT_ALLOWED" });
       } else {
-        throw e;
+        // Nie die ganze Charge mit einem Fehler abbrechen: je Beleg melden, Schleife fortsetzen (die Meldung enthaelt keine Details).
+        console.error("postal: Beleg konnte nicht verarbeitet werden", e instanceof Error ? e.name : "Fehler");
+        results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: "Unerwarteter Fehler bei der Verarbeitung.", code: "NOT_ALLOWED" });
       }
     }
   }
@@ -459,7 +461,7 @@ async function transmit(t: TransmitInput): Promise<PostalSendResult> {
   }
 
   const status = mapRemoteStatus(remote.status);
-  if (!status) return recordFailure(t, new LxpRequestError("Vom Briefdienst als storniert gemeldet.", 400));
+  if (!status) return recordFailure(t, new LxpRequestError("Vom Briefdienst als storniert gemeldet.", 400), remote.id);
 
   const priceCents = remote.items.length > 0 ? remote.items.reduce((s, i) => s + i.amountCents, 0) : undefined;
   const vatCents = remote.items.length > 0 ? remote.items.reduce((s, i) => s + i.vatCents, 0) : undefined;
@@ -467,6 +469,49 @@ async function transmit(t: TransmitInput): Promise<PostalSendResult> {
   const submittedAt = new Date();
   const mismatch = !addressMatches(providerAddress, doc);
 
+  try {
+    await recordSubmission(t, remote, status, submittedAt, priceCents, vatCents, providerAddress, mismatch);
+  } catch (e) {
+    // Der Brief ist beim Anbieter angelegt, die Buchung hier schlug fehl (Transaktions-/ChangeLog-Konflikt, DB-Fehler):
+    // UNKNOWN (best effort), nie neu senden; der Abgleich findet den Auftrag ueber den Dateinamen.
+    console.error("postal: Buchung nach der Uebertragung fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
+    const message = "Uebertragung erfolgt, Buchung fehlgeschlagen — wird abgeglichen, nicht erneut senden.";
+    try {
+      await dbInternal.$transaction(async (tx) => {
+        if (!(await transitionPostalJob(tx, jobId, "UNKNOWN", { error: message }))) return;
+        await addPostalEvent(tx, { jobId, orgId, kind: "UNKNOWN", status: "UNKNOWN", data: { error: message, providerJobId: remote.id }, at: new Date() });
+      });
+    } catch {
+      // best effort: der Auftrag bleibt SUBMITTING und wird vom Abgleich aufgenommen
+    }
+    return { ...base, status: "UNKNOWN", error: message };
+  }
+
+  if (mismatch) {
+    const until = formatBerlinTime(new Date(submittedAt.getTime() + CANCEL_WINDOW_MS));
+    await notifyPostal(orgId, {
+      type: "POSTAL_FAILED",
+      title: "Postversand: Anschrift pruefen",
+      body: `Anschrift pruefen, Storno bis ${until} (${doc.docNumber}).`,
+      invoiceId: doc.invoiceId,
+      dedupeKey: `POSTAL_FAILED:${jobId}:address`,
+      at: submittedAt,
+    });
+  }
+  return { ...base, status };
+}
+
+async function recordSubmission(
+  t: TransmitInput,
+  remote: LxpPrintJob,
+  status: "QUEUED" | "DRAFT" | "HOLD" | "DONE",
+  submittedAt: Date,
+  priceCents: number | undefined,
+  vatCents: number | undefined,
+  providerAddress: string | null,
+  mismatch: boolean,
+): Promise<void> {
+  const { orgId, doc, jobId } = t;
   await dbInternal.$transaction(async (tx) => {
     const ok = await transitionPostalJob(tx, jobId, status, {
       providerJobId: remote.id,
@@ -541,19 +586,6 @@ async function transmit(t: TransmitInput): Promise<PostalSendResult> {
       now: submittedAt,
     });
   });
-
-  if (mismatch) {
-    const until = formatBerlinTime(new Date(submittedAt.getTime() + CANCEL_WINDOW_MS));
-    await notifyPostal(orgId, {
-      type: "POSTAL_FAILED",
-      title: "Postversand: Anschrift pruefen",
-      body: `Anschrift pruefen, Storno bis ${until} (${doc.docNumber}).`,
-      invoiceId: doc.invoiceId,
-      dedupeKey: `POSTAL_FAILED:${jobId}:address`,
-      at: submittedAt,
-    });
-  }
-  return { ...base, status };
 }
 
 function pageCountOf(t: TransmitInput): number {
@@ -566,7 +598,7 @@ function addressMatches(providerAddress: string | null, doc: PostalDocument): bo
   return hay.includes(doc.postalCode.toLowerCase()) && hay.includes(doc.city.toLowerCase());
 }
 
-async function recordFailure(t: TransmitInput, e: unknown): Promise<PostalSendResult> {
+async function recordFailure(t: TransmitInput, e: unknown, providerJobId?: number): Promise<PostalSendResult> {
   const { orgId, doc, jobId } = t;
   const base = { docType: doc.docType, docId: doc.docId, jobId };
   const at = new Date();
@@ -576,8 +608,8 @@ async function recordFailure(t: TransmitInput, e: unknown): Promise<PostalSendRe
 
   if (definitive) {
     await dbInternal.$transaction(async (tx) => {
-      if (!(await transitionPostalJob(tx, jobId, "FAILED", { error: message, finishedAt: at }))) return;
-      await addPostalEvent(tx, { jobId, orgId, kind: "FAILED", status: "FAILED", data: { error: message }, at });
+      if (!(await transitionPostalJob(tx, jobId, "FAILED", { error: message, finishedAt: at, ...(providerJobId !== undefined ? { providerJobId } : {}) }))) return;
+      await addPostalEvent(tx, { jobId, orgId, kind: "FAILED", status: "FAILED", data: { error: message, ...(providerJobId !== undefined ? { providerJobId } : {}) }, at });
       const job = await tx.postalJob.findUniqueOrThrow({ where: { id: jobId }, select: POSTAL_JOB_SELECT });
       await appendChangeLog(tx, {
         orgId,
