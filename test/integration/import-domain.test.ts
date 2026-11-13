@@ -113,6 +113,43 @@ describe("Kunden-Import — Commit alles oder nichts", () => {
     expect((e as ImportRejectedError).preview.errors[0]).toMatchObject({ line: 2, column: "Kundennummer" });
     expect(await dbInternal.customer.count({ where: { orgId: org } })).toBe(1);
     expect(await rangeValue(org, "CUSTOMER")).toBe(before);
+    expect((e as ImportRejectedError).preview.validRows).toBe(0);
+    // Abgelehnter Import: kein Audit-Eintrag (Protokoll liegt in der Commit-Transaktion)
+    expect(await dbInternal.activityLog.count({ where: { orgId: org, type: "CSV_IMPORTED" } })).toBe(0);
+  });
+
+  it("Kollision bei mehreren Zeilen: validRows zaehlt nur die kollisionsfreien", async () => {
+    const org = await makeOrg("Import Kollision2 GmbH");
+    await dbInternal.customer.create({ data: { orgId: org, name: "Belegt", addressLine1: "X 1", postalCode: "10115", city: "Berlin", customerNumber: "E18B5K-001" } });
+    await dbInternal.customer.create({ data: { orgId: org, name: "Belegt2", addressLine1: "X 1", postalCode: "10115", city: "Berlin", customerNumber: "E18B5K-003" } });
+    const text = csv(KOPF, "A;Weg 1;10115;Berlin;", "B;Weg 1;10115;Berlin;", "C;Weg 1;10115;Berlin;");
+    const e = await runCsvImport(org, "contacts", { text, dryRun: false }, CTX).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ImportRejectedError);
+    const prev = (e as ImportRejectedError).preview;
+    expect(prev.errorCount).toBe(2);
+    expect(prev.validRows).toBe(1);
+  });
+
+  it("Steuerzeichen (NUL) in einer Zelle ist ein Zeilenfehler, kein Abbruch", async () => {
+    const org = await makeOrg("Import Steuerzeichen GmbH");
+    const text = csv(KOPF, "Gut GmbH;Weg 1;10115;Berlin;", "Schlecht\u0000 GmbH;Weg 2;10115;Berlin;", "Bell\u0007;Weg 3;10115;Berlin;");
+    for (const dryRun of [true, false]) {
+      const r = await runCsvImport(org, "contacts", { text, dryRun }, CTX).catch((x: unknown) => x);
+      const prev = dryRun ? (r as { preview: { errors: unknown[] } }).preview : (r as ImportRejectedError).preview;
+      expect(prev.errors).toEqual([
+        { line: 3, column: "Name", message: "Enthält unzulässige Steuerzeichen" },
+        { line: 4, column: "Name", message: "Enthält unzulässige Steuerzeichen" },
+      ]);
+    }
+    expect(await dbInternal.customer.count({ where: { orgId: org } })).toBe(0);
+  });
+
+  it("ignorierte Spalten werden auf 80 Zeichen gekuerzt", async () => {
+    const org = await makeOrg("Import Kopfname GmbH");
+    const long = "X".repeat(300);
+    const r = await runCsvImport(org, "contacts", { text: csv(`${KOPF};${long}`, "A;Weg 1;10115;Berlin;;v"), dryRun: true }, CTX);
+    expect(r.preview.ignoredColumns).toHaveLength(1);
+    expect(r.preview.ignoredColumns[0]!.length).toBeLessThanOrEqual(81);
   });
 
   it("Formelschutz: fuehrendes Apostroph vor Formelzeichen wird entfernt, sonst bleibt es", async () => {
@@ -188,6 +225,21 @@ describe("Produkt-Import", () => {
       { netPriceCents: 123456, taxRate: 19, unit: "HUR", differential: true, articleNumber: "E18B5P-001" },
       { netPriceCents: 1250, taxRate: 7, unit: "C62", differential: false, articleNumber: "E18B5P-002" },
     ]);
+  });
+
+  it("Steuerkategorie ohne Steuersatz 0 % ist ein Zeilenfehler; Steuerzeichen ebenfalls", async () => {
+    const org = await makeOrg("Import Kategorie GmbH");
+    const r = await runCsvImport(org, "products", { text: csv("Bezeichnung;Nettopreis;Steuersatz (%);Steuerkategorie", "A;1,00;19;E", "B;1,00;0;E", "C\u0000;1,00;19;S"), dryRun: true }, CTX);
+    expect(r.preview.errors).toEqual([
+      { line: 2, column: "Steuerkategorie", message: "Steuerkategorie E erfordert 0 % Steuersatz" },
+      { line: 4, column: "Bezeichnung", message: "Enthält unzulässige Steuerzeichen" },
+    ]);
+  });
+
+  it("fehlender Preis: Pflichtfeld fehlt", async () => {
+    const org = await makeOrg("Import Preis GmbH");
+    const r = await runCsvImport(org, "products", { text: csv("Bezeichnung;Nettopreis;Steuersatz (%)", "A;;19"), dryRun: true }, CTX);
+    expect(r.preview.errors).toEqual([{ line: 2, column: "Nettopreis", message: "Pflichtfeld fehlt" }]);
   });
 
   it("doppelte Artikelnummer (Bestand archiviert und Datei) sind Zeilenfehler", async () => {

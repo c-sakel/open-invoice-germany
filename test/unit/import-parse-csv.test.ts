@@ -36,6 +36,16 @@ describe("parseCsv", () => {
     const r = parseCsv("a;b\n\n;\n1;2\n\n");
     expect(r.rows).toEqual([{ line: 4, cells: ["1", "2"] }]);
   });
+  it("Trennzeichen kommt aus der ersten nicht leeren Zeile", () => {
+    expect(parseCsv("\n\n a,b\n1,2").delimiter).toBe(",");
+    expect(parseCsv("  \n\t\na,b\n1,2").delimiter).toBe(",");
+    expect(parseCsv("\r\n\r\na;b\n1;2").delimiter).toBe(";");
+    expect(parseCsv("\n\na,b\n1,2").header).toEqual(["a", "b"]);
+  });
+  it("Zeilen nur aus Leerraum sind leer", () => {
+    const r = parseCsv("a;b\n   \n \t ;  \n1;2\n");
+    expect(r.rows).toEqual([{ line: 4, cells: ["1", "2"] }]);
+  });
   it("Formatfehler mit Zeile", () => {
     expect(() => parseCsv('a;b\n1;"x')).toThrow(CsvFormatError);
     try { parseCsv('a;b\n1;"x'); } catch (e) { expect((e as CsvFormatError).line).toBe(2); }
@@ -61,10 +71,11 @@ describe("parseCsv", () => {
     expect(parseCsv(`a\n${"x".repeat(5000)}`).rows).toHaveLength(1);
     expect(() => parseCsv("a\n" + "x".repeat(MAX_IMPORT_BYTES))).toThrow(CsvLimitError);
   });
-  it("Pathologische Eingabe laeuft linear", () => {
-    const t0 = Date.now();
+  it("Pathologische Eingabe bricht frueh ab (Zellgrenze statt Zeitmessung)", () => {
     expect(() => parseCsv('a\n"' + '""'.repeat(2500))).toThrow(CsvFormatError);
-    expect(Date.now() - t0).toBeLessThan(500);
+    // Ueber der Zellgrenze endet die Verarbeitung nach MAX_CELL_CHARS Zeichen mit CsvLimitError.
+    expect(() => parseCsv('a\n"' + '""'.repeat(5100))).toThrow(CsvLimitError);
+    expect(() => parseCsv('a\n"' + "x".repeat(1_500_000))).toThrow(CsvLimitError);
   });
 });
 
@@ -77,6 +88,13 @@ describe("decodeCsvBytes", () => {
   it("Windows-1252", () => {
     expect(decodeCsvBytes(new Uint8Array([0x4d, 0xfc, 0x6c, 0x6c, 0x65, 0x72]))).toEqual({ text: "Müller", encoding: "windows-1252" });
     expect(decodeCsvBytes(new Uint8Array([0x80, 0xfc])).text).toBe("€ü");
+  });
+  it("Windows-1252 an der Groessengrenze", () => {
+    const ok = new Uint8Array(MAX_IMPORT_BYTES).fill(0xe4); // ae, kein gueltiges UTF-8
+    expect(decodeCsvBytes(ok).encoding).toBe("windows-1252");
+    expect(() => decodeCsvBytes(new Uint8Array(MAX_IMPORT_BYTES + 1).fill(0xe4))).toThrow(CsvLimitError);
+    // Dekodiert doppelt so gross in UTF-8: der Parser lehnt das sauber ab.
+    expect(() => parseCsv("a\n" + decodeCsvBytes(ok).text)).toThrow(CsvLimitError);
   });
   it("UTF-16-BOM und Groesse", () => {
     expect(() => decodeCsvBytes(new Uint8Array([0xff, 0xfe, 0x61, 0]))).toThrow(CsvFormatError);

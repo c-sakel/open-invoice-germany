@@ -8,7 +8,7 @@ import { parseDecimalInput } from "@/lib/money";
 import { unitCodeFromInput } from "@/lib/units";
 import { assertAllowedTaxRates, TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { PRODUCT_IMPORT_COLUMNS, parseTaxRateCell, parseYesNoCell } from "./columns";
-import { cellValue, headerOf, zodProblems, type ColumnIndex, type ImportRowError, type ParsedRow, type RowProblem } from "./types";
+import { cellValue, controlCharProblems, headerOf, zodProblems, type ColumnIndex, type ImportRowError, type ParsedRow, type RowProblem } from "./types";
 import type { ImportDb, ValidatedRows } from "./contacts-import";
 
 const KEY_MAP: Record<string, string> = { netPriceCents: "netPrice", differential: "marginScheme" };
@@ -54,14 +54,15 @@ export async function validateProductRows(db: ImportDb, orgId: string, rows: rea
   const errors: ImportRowError[] = [];
 
   for (const row of rows) {
-    const mapped = productRowToInput(row.cells, index);
+    const control = controlCharProblems(row.cells, index, PRODUCT_IMPORT_COLUMNS);
+    const mapped = control.length > 0 ? { errors: control } : productRowToInput(row.cells, index);
     if ("errors" in mapped) {
       for (const p of mapped.errors) errors.push({ line: row.line, column: p.column, message: p.message });
       continue;
     }
     const parsed = productSchema.safeParse(mapped.input);
     if (!parsed.success) {
-      for (const p of zodProblems(parsed.error, PRODUCT_IMPORT_COLUMNS, KEY_MAP)) errors.push({ line: row.line, column: p.column, message: p.message });
+      for (const p of zodProblems(parsed.error, PRODUCT_IMPORT_COLUMNS, KEY_MAP, [], mapped.input)) errors.push({ line: row.line, column: p.column, message: p.message });
       continue;
     }
     const problems: RowProblem[] = [];
@@ -74,6 +75,11 @@ export async function validateProductRows(db: ImportDb, orgId: string, rows: rea
         seen.set(num, row.line);
         explicit.add(num);
       }
+    }
+    // Nur Kategorie S traegt einen Steuersatz > 0 (EN 16931: Z/E/AE/K/G/O sind 0 %); der Produktstamm
+    // selbst prueft die Kombination nicht, der Import legt keine widerspruechlichen Produkte an.
+    if (parsed.data.taxCategory !== "S" && parsed.data.taxRate > 0) {
+      problems.push({ column: h("taxCategory"), message: `Steuerkategorie ${parsed.data.taxCategory} erfordert 0 % Steuersatz` });
     }
     candidates.push({ line: row.line, value: parsed.data, problems });
   }

@@ -8,7 +8,7 @@ import type { dbInternal } from "@/lib/db";
 import { customerSchema, type CustomerInput } from "@/schemas";
 import { assertCustomerCreatable, CustomerValidationError } from "@/domain/customer/save";
 import { CONTACT_IMPORT_COLUMNS, parseCustomerTypeCell, parseIntCell } from "./columns";
-import { cellValue, headerOf, zodProblems, type ColumnIndex, type ImportRowError, type ParsedRow, type RowProblem } from "./types";
+import { cellValue, controlCharProblems, headerOf, zodProblems, type ColumnIndex, type ImportRowError, type ParsedRow, type RowProblem } from "./types";
 
 export type ImportDb = Prisma.TransactionClient | typeof dbInternal;
 
@@ -78,12 +78,13 @@ export async function validateContactRows(db: ImportDb, orgId: string, rows: rea
 
   for (const row of rows) {
     const problems: RowProblem[] = [];
-    const mapped = contactRowToInput(row.cells, index);
+    const control = controlCharProblems(row.cells, index, CONTACT_IMPORT_COLUMNS);
+    const mapped = control.length > 0 ? { errors: control } : contactRowToInput(row.cells, index);
     let value: CustomerInput | null = null;
     if ("errors" in mapped) problems.push(...mapped.errors);
     else {
       const parsed = customerSchema.safeParse(mapped.input);
-      if (!parsed.success) problems.push(...zodProblems(parsed.error, CONTACT_IMPORT_COLUMNS, KEY_MAP, ["countryCode"]));
+      if (!parsed.success) problems.push(...zodProblems(parsed.error, CONTACT_IMPORT_COLUMNS, KEY_MAP, ["countryCode"], mapped.input));
       else {
         try {
           assertCustomerCreatable(parsed.data);

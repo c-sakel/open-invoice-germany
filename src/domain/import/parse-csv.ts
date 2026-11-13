@@ -65,11 +65,29 @@ const QUOTE = 34;
 const LF = 10;
 const CR = 13;
 
+/** Zeile, die nur aus Leerraum und Trennzeichen besteht, zaehlt nicht als Kopf. */
+function isIgnorableChar(c: number): boolean {
+  return c === 32 || c === 9 || c === 0xa0 || c === 59 || c === 44;
+}
+
+/** Trennzeichen aus der ersten NICHT leeren Zeile (Leerraum-/Trennzeichen-Zeilen davor werden uebersprungen). */
 function detectDelimiter(text: string, start: number): ";" | "," {
+  let i = start;
+  for (;;) {
+    let j = i;
+    while (j < text.length && isIgnorableChar(text.charCodeAt(j))) j++;
+    if (j >= text.length) break;
+    const c = text.charCodeAt(j);
+    if (c === LF || c === CR) {
+      i = j + 1;
+      continue;
+    }
+    break;
+  }
   let semi = 0;
   let comma = 0;
   let inQuotes = false;
-  for (let i = start; i < text.length; i++) {
+  for (; i < text.length; i++) {
     const c = text.charCodeAt(i);
     if (c === QUOTE) inQuotes = !inQuotes;
     else if (!inQuotes) {
@@ -111,7 +129,7 @@ export function parseCsv(text: string): ParsedCsv {
     endField();
     const current = cells;
     cells = [];
-    const blank = current.every((c) => c === "");
+    const blank = current.every((c) => c.trim() === "");
     rowHasContent = false;
     if (blank) return;
     if (header === null) {

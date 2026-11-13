@@ -18,7 +18,7 @@ import { CONTACT_IMPORT_COLUMNS, PRODUCT_IMPORT_COLUMNS, mapHeader, type ImportC
 import { CsvFormatError, CsvLimitError, MAX_IMPORT_BYTES, parseCsv, sha256Hex } from "./parse-csv";
 import { validateContactRows, type ValidatedRows } from "./contacts-import";
 import { validateProductRows } from "./products-import";
-import { sanitizeFileName, type ColumnIndex, type ImportRowError, type ParsedRow } from "./types";
+import { clipHeaderName, sanitizeFileName, type ColumnIndex, type ImportRowError, type ParsedRow } from "./types";
 
 export type { ImportRowError } from "./types";
 export type ImportResource = "contacts" | "products";
@@ -106,7 +106,7 @@ export async function runCsvImport(
       validRows: validCount,
       errorCount: errors.length,
       errors: errors.slice(0, MAX_LISTED_ERRORS),
-      ignoredColumns: mapping.ignored,
+      ignoredColumns: mapping.ignored.map(clipHeaderName),
     };
     if (ctx.withSample) {
       out.sample = rows.slice(0, PREVIEW_SAMPLE_ROWS).map((r) => {
@@ -131,40 +131,42 @@ export async function runCsvImport(
     const res = await validate(tx);
     if (res.errors.length > 0) throw new ImportRejectedError(preview(res.errors, res.valid.length));
     const taken = res.taken;
-    const reject = (line: number, column: string): never => {
-      throw new ImportRejectedError(
-        preview([{ line, column, message: "Nummer aus dem Nummernkreis bereits vergeben — Nummernkreis anpassen" }], res.valid.length - 1),
-      );
+    // Kollisionen mit dem Nummernkreis sammeln (alle Zeilen laufen durch, der Rollback verwirft die Anlage).
+    const collisions: ImportRowError[] = [];
+    const collide = (line: number, column: string): void => {
+      collisions.push({ line, column, message: "Nummer aus dem Nummernkreis bereits vergeben — Nummernkreis anpassen" });
     };
     let count = 0;
     for (const row of res.valid) {
       if (resource === "contacts") {
         const c = await createCustomerWithinTx(tx, orgId, row.value as Parameters<typeof createCustomerWithinTx>[2]);
         if (!(row.value as { customerNumber?: string }).customerNumber) {
-          if (c.customerNumber && taken.has(c.customerNumber)) reject(row.line, "Kundennummer");
+          if (c.customerNumber && taken.has(c.customerNumber)) collide(row.line, "Kundennummer");
           if (c.customerNumber) taken.add(c.customerNumber);
         }
       } else {
         const p = await createProductWithinTx(tx, orgId, row.value as Parameters<typeof createProductWithinTx>[2]);
         if (!(row.value as { articleNumber?: string }).articleNumber) {
-          if (p.articleNumber && taken.has(p.articleNumber)) reject(row.line, "Artikelnummer");
+          if (p.articleNumber && taken.has(p.articleNumber)) collide(row.line, "Artikelnummer");
           if (p.articleNumber) taken.add(p.articleNumber);
         }
       }
       count += 1;
     }
-    return { count, valid: res.valid.length, errors: res.errors };
+    if (collisions.length > 0) throw new ImportRejectedError(preview(collisions, res.valid.length - collisions.length));
+    // Protokoll in derselben Transaktion: Daten existieren nie ohne Audit-Eintrag.
+    await logActivity(tx, {
+      orgId,
+      entityType: "IMPORT",
+      entityId: fileHash,
+      type: "CSV_IMPORTED",
+      actor: ctx.actor,
+      at: ctx.now,
+      data: { resource, created: count, fileName: sanitizeFileName(input.fileName), fileHash, source: ctx.source },
+    });
+    return { count, valid: res.valid.length };
   }, TX_OPTIONS);
 
   const result = preview([], created.valid);
-  await logActivity(dbInternal, {
-    orgId,
-    entityType: "IMPORT",
-    entityId: fileHash,
-    type: "CSV_IMPORTED",
-    actor: ctx.actor,
-    at: ctx.now,
-    data: { resource, created: created.count, fileName: sanitizeFileName(input.fileName), fileHash, source: ctx.source },
-  });
   return { status: "imported", created: created.count, preview: result };
 }
