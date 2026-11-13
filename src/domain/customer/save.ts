@@ -53,6 +53,7 @@ function toCreateData(v: CustomerInput) {
     defaultPaymentTermsDays: v.defaultPaymentTermsDays ?? null,
     defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
     notes: v.notes ?? null,
+    deliveryChannel: v.deliveryChannel ?? "EMAIL",
   };
 }
 

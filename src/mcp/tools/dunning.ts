@@ -190,6 +190,8 @@ export function registerDunningTools(server: McpServer, ctx: McpToolsContext): v
           emailTemplateId: args.emailTemplateId !== undefined ? args.emailTemplateId : existing.emailTemplateId,
           autoSend: args.autoSend ?? existing.autoSend,
           enabled: args.enabled ?? existing.enabled,
+          channel: args.channel ?? existing.channel,
+          postFallback: args.postFallback ?? existing.postFallback,
         };
         const saved = await updateDunningStage(org.id, id, merged);
         return ctx.ok(`Mahnstufe "${saved.name}" gespeichert: ${JSON.stringify(saved)}`);
