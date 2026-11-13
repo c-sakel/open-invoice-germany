@@ -100,6 +100,39 @@ describe("CollapsibleSection", () => {
     expect(document.activeElement).toBe(screen.getByText("Abschnitt").closest("summary"));
   });
 
+  it("Escape mit Fokus ausserhalb schliesst nicht", async () => {
+    render(
+      <>
+        <button type="button">Draussen</button>
+        <CollapsibleSection title="Abschnitt" defaultOpen>
+          <button type="button">Innen</button>
+        </CollapsibleSection>
+      </>,
+    );
+    screen.getByText("Draussen").focus();
+    fireEvent.keyDown(screen.getByText("Draussen"), { key: "Escape" });
+    expect(screen.getByText("Abschnitt").closest("details")!.open).toBe(true);
+    expect(document.activeElement).toBe(screen.getByText("Draussen"));
+  });
+
+  it("Escape mit defaultPrevented schliesst nicht", async () => {
+    render(
+      <CollapsibleSection title="Abschnitt" defaultOpen>
+        <button type="button">Innen</button>
+      </CollapsibleSection>,
+    );
+    const inner = screen.getByText("Innen");
+    inner.focus();
+    fireEvent(document, new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    expect(screen.getByText("Abschnitt").closest("details")!.open).toBe(false);
+    inner.focus();
+    screen.getByText("Abschnitt").closest("details")!.open = true;
+    const ev = new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true });
+    ev.preventDefault();
+    document.dispatchEvent(ev);
+    expect(screen.getByText("Abschnitt").closest("details")!.open).toBe(true);
+  });
+
   it("pointerdown ausserhalb schliesst nicht", async () => {
     render(
       <CollapsibleSection title="Abschnitt" defaultOpen>

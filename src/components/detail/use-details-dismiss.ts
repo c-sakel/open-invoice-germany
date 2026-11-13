@@ -15,7 +15,10 @@ export function useDetailsDismiss(ref: RefObject<HTMLDetailsElement | null>, opt
       if (target instanceof Node && !el.contains(target)) el.open = false;
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !el.open) return;
+      if (event.key !== "Escape" || !el.open || event.defaultPrevented) return;
+      // Ohne Klick-ausserhalb-Modus (Abschnitt) nur reagieren, wenn der Fokus im Element liegt;
+      // sonst gehoert Escape einem Dialog, Menue oder der Befehlspalette.
+      if (!outsideClick && !el.contains(document.activeElement)) return;
       el.open = false;
       el.querySelector("summary")?.focus();
     };
