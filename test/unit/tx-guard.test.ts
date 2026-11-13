@@ -5,7 +5,8 @@ function fakeClient() {
   const tx = { thing: { findMany: async () => ["tx"] } };
   const client = {
     thing: { findMany: async () => ["global"] },
-    $transaction: async <T>(cb: (t: typeof tx) => Promise<T>) => cb(tx),
+    $transaction: async <T>(arg: ((t: typeof tx) => Promise<T>) | Promise<unknown>[]) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(tx),
   };
   return client;
 }
@@ -26,5 +27,18 @@ describe("Transaktions-Guard", () => {
         return c.thing.findMany();
       }),
     ).rejects.toBeInstanceOf(GlobalClientInTransactionError);
+  });
+
+  it("erlaubt die Array-Form ausserhalb einer Transaktion", async () => {
+    const c = guardClient(fakeClient());
+    expect(await c.$transaction([Promise.resolve(1)])).toEqual([1]);
+  });
+
+  it("wirft bei Array-Form innerhalb eines interaktiven Callbacks", async () => {
+    const c = guardClient(fakeClient());
+    const p = Promise.resolve(1);
+    await expect(c.$transaction(async () => c.$transaction([p]))).rejects.toBeInstanceOf(
+      GlobalClientInTransactionError,
+    );
   });
 });

@@ -7,7 +7,8 @@
  * halten (Deadlock bis Timeout). Der Guard umhuellt beide Clients per Proxy, merkt sich
  * ueber AsyncLocalStorage, ob gerade ein Transaktions-Callback laeuft, und wirft bei jeder
  * Abfrage ueber den globalen Client in diesem Kontext. Der `tx`-Client selbst ist nicht
- * umhuellt und bleibt erlaubt.
+ * umhuellt und bleibt erlaubt. Die Array-Form `$transaction([...])` wird erfasst: Sie belegt
+ * eine eigene Verbindung und ist innerhalb eines interaktiven Callbacks ebenfalls verboten.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -46,7 +47,10 @@ export function guardClient<T extends object>(client: T): T {
       if (typeof prop !== "string") return value;
       if (prop === "$transaction") {
         return (arg: unknown, ...rest: unknown[]) => {
-          if (typeof arg !== "function") return (value as AnyFn).call(target, arg, ...rest);
+          if (typeof arg !== "function") {
+            assertOutsideTx("$transaction([...])");
+            return (value as AnyFn).call(target, arg, ...rest);
+          }
           const outer = txContext.getStore();
           return (value as AnyFn).call(
             target,
