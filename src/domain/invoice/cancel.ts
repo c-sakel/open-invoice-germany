@@ -195,6 +195,8 @@ export interface CancelOptions {
    * Traegt das Original einen Kurs, wird der Override nicht gespeichert (Originalkurs gilt).
    */
   fxOverrideRate?: number;
+  /** Phase 18c: Kennung eines Sammel-Stornos — landet in ChangeLog-Diff und ActivityLog-Daten (`batch`). */
+  batchId?: string;
 }
 
 export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
@@ -342,7 +344,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
       action: "CANCEL",
       actor,
       at: now,
-      diff: { status: "CANCELLED", reversedBy: finalizedCredit.number, ...(reason ? { reason } : {}) },
+      diff: { status: "CANCELLED", reversedBy: finalizedCredit.number, ...(reason ? { reason } : {}), ...(opts.batchId ? { batch: opts.batchId } : {}) },
     });
     await logActivity(tx, {
       orgId: original.orgId,
@@ -351,7 +353,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
       type: "CANCELLED",
       actor,
       at: now,
-      data: { reversedBy: finalizedCredit.number, ...(reason ? { reason } : {}) },
+      data: { reversedBy: finalizedCredit.number, ...(reason ? { reason } : {}), ...(opts.batchId ? { batch: opts.batchId } : {}) },
     });
 
     // Webhook-Outbox (Phase 10, Task 5): "invoice.cancelled" bezieht sich auf das

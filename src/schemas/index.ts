@@ -671,6 +671,12 @@ export const cancelInvoiceSchema = z.object({
 });
 export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
 
+// Phase 18c: Sammel-Storno (je Beleg ein eigener Storno, siehe src/domain/invoice/bulk-cancel.ts).
+export const BULK_CANCEL_MAX = 50;
+const bulkIds = z.array(z.string().trim().min(1).max(64)).min(1).max(BULK_CANCEL_MAX);
+export const bulkCancelSchema = z.object({ ids: bulkIds, reason: z.string().trim().min(1, "Bitte einen Grund angeben.").max(500) });
+export const bulkCancelPreviewSchema = z.object({ ids: bulkIds });
+
 /** Server-Action `cancelAction` (Storno-Dialog): Formularfelder -> validierte Eingabe. */
 export const cancelActionSchema = z.object({
   id: z.string().trim().min(1),
