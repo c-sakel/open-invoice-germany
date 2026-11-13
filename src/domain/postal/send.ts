@@ -36,6 +36,7 @@ import {
 } from "@/lib/postal/letterxpress";
 import { defaultTransport, PostalNetworkForbiddenError, type LxpTransport } from "@/lib/postal/transport";
 import { postalQuoteInputSchema, postalSendInputSchema, type PostalDocType, type PostalItemInput } from "@/schemas/postal";
+import { markDunningSentByPost } from "./dunning-mark";
 import { loadPostalDocument, type PostalDocument } from "./document";
 import { PostalConflictError, type PostalConflictCode } from "./errors";
 import {
@@ -567,15 +568,14 @@ async function recordSubmission(
     });
     if (t.mode === "LIVE") {
       if (doc.docType === "DUNNING") {
-        await tx.dunning.update({ where: { id: doc.docId }, data: { sentAt: submittedAt }, select: { id: true } });
-        await appendChangeLog(tx, {
+        await markDunningSentByPost(tx, {
           orgId,
-          entity: "INVOICE",
-          entityId: doc.invoiceId,
-          action: "DUNNING_SEND",
-          actor: t.actor,
+          jobId,
+          invoiceId: doc.invoiceId,
+          dunningId: doc.docId,
+          docNumber: doc.docNumber,
           at: submittedAt,
-          diff: { dunningId: doc.docId, number: doc.docNumber, channel: "POST" },
+          actor: t.actor,
         });
       }
       await logActivity(tx, {

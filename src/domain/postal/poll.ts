@@ -34,6 +34,7 @@ import {
   transitionPostalJob,
   type PostalStatus,
 } from "./events";
+import { markDunningSentByPost, revertDunningSentByPost } from "./dunning-mark";
 import { loadPostalCredentials, PostalKeyUnreadableError } from "./settings";
 
 const POLL_INTERVAL_MS = 15 * 60 * 1000;
@@ -368,6 +369,7 @@ async function finishEffects(
   target: "DONE" | "CANCELLED",
   now: Date,
 ): Promise<void> {
+  if (target === "CANCELLED") await revertDunningSentByPost(tx, job, now, "system:postal-poll");
   const row = await tx.postalJob.findUniqueOrThrow({ where: { id: job.id }, select: POSTAL_JOB_SELECT });
   await appendChangeLog(tx, {
     orgId: job.orgId,
@@ -498,15 +500,14 @@ async function reconcileJob(
       });
       if (mode === "LIVE") {
         if (job.docType === "DUNNING") {
-          await tx.dunning.update({ where: { id: job.docId }, data: { sentAt: now }, select: { id: true } });
-          await appendChangeLog(tx, {
+          await markDunningSentByPost(tx, {
             orgId: job.orgId,
-            entity: "INVOICE",
-            entityId: job.invoiceId,
-            action: "DUNNING_SEND",
-            actor: "system:postal-poll",
+            jobId: job.id,
+            invoiceId: job.invoiceId,
+            dunningId: job.docId,
+            docNumber: job.docNumber,
             at: now,
-            diff: { dunningId: job.docId, number: job.docNumber, channel: "POST" },
+            actor: "system:postal-poll",
           });
         }
         await logActivity(tx, {

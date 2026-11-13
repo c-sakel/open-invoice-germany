@@ -605,6 +605,43 @@ describe("Storno", () => {
     await expect(cancelPostalJob(orgId, r.jobId as string, { actor: "tester", transport: f.transport, now: new Date(sub.getTime() + 14 * 60_000) })).rejects.toBeInstanceOf(PostalConflictError);
   });
 
+  it("Mahnung: Storno setzt sentAt zurueck (Gegen-Ereignis), nicht wenn der Wert nicht vom Auftrag stammt", async () => {
+    const f = lxp();
+    const d = await newDunning();
+    const before = (await dbInternal.dunning.findUniqueOrThrow({ where: { id: d.id }, select: { sentAt: true } })).sentAt;
+    const r = await quoteSend("DUNNING", d.id, f);
+    const sub = (await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r.jobId as string }, select: { submittedAt: true } })).submittedAt as Date;
+    expect((await dbInternal.dunning.findUniqueOrThrow({ where: { id: d.id }, select: { sentAt: true } })).sentAt.getTime()).not.toBe(before.getTime());
+    await cancelPostalJob(orgId, r.jobId as string, { actor: "tester", transport: f.transport, now: new Date(sub.getTime() + 5 * 60_000) });
+    expect((await dbInternal.dunning.findUniqueOrThrow({ where: { id: d.id }, select: { sentAt: true } })).sentAt.getTime()).toBe(before.getTime());
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: r.jobId as string, kind: "DUNNING_REVERTED" } })).toBe(1);
+    const log = await dbInternal.changeLog.findFirstOrThrow({ where: { orgId, entity: "INVOICE", entityId: d.invoiceId, action: "DUNNING_SEND_REVERTED" } });
+    expect(JSON.parse(log.diffJson)).toMatchObject({ dunningId: d.id, channel: "POST" });
+
+    // sentAt wurde inzwischen anderweitig fortgeschrieben (z. B. E-Mail-Versand): kein Zuruecksetzen
+    const d2 = await newDunning();
+    const r2 = await quoteSend("DUNNING", d2.id, f);
+    const sub2 = (await dbInternal.postalJob.findUniqueOrThrow({ where: { id: r2.jobId as string }, select: { submittedAt: true } })).submittedAt as Date;
+    const other = new Date("2123-06-09T11:11:11.000Z");
+    await dbInternal.dunning.update({ where: { id: d2.id }, data: { sentAt: other }, select: { id: true } });
+    await cancelPostalJob(orgId, r2.jobId as string, { actor: "tester", transport: f.transport, now: new Date(sub2.getTime() + 5 * 60_000) });
+    expect((await dbInternal.dunning.findUniqueOrThrow({ where: { id: d2.id }, select: { sentAt: true } })).sentAt.getTime()).toBe(other.getTime());
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: r2.jobId as string, kind: "DUNNING_REVERTED" } })).toBe(0);
+  });
+
+  it("Mahnung bereits versendet (DUNNING_SEND vorhanden): Postversand laesst sentAt unveraendert", async () => {
+    const f = lxp();
+    const d = await newDunning();
+    await dbInternal.$transaction((tx) =>
+      audit.appendChangeLog(tx, { orgId, entity: "INVOICE", entityId: d.invoiceId, action: "DUNNING_SEND", actor: "tester", at: FIX, diff: { dunningId: d.id, number: "x", channel: "EMAIL" } }),
+    );
+    const before = (await dbInternal.dunning.findUniqueOrThrow({ where: { id: d.id }, select: { sentAt: true } })).sentAt;
+    const r = await quoteSend("DUNNING", d.id, f);
+    expect(r.status).toBe("QUEUED");
+    expect((await dbInternal.dunning.findUniqueOrThrow({ where: { id: d.id }, select: { sentAt: true } })).sentAt.getTime()).toBe(before.getTime());
+    expect(await dbInternal.postalJobEvent.count({ where: { jobId: r.jobId as string, kind: "DUNNING_SENT" } })).toBe(0);
+  });
+
   it("DONE und DRY_RUN nicht stornierbar, fremde Org nicht gefunden", async () => {
     const inv = await newInvoice();
     const f = lxp();

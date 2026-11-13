@@ -16,6 +16,7 @@ import { createLetterXpressClient, LxpRequestError, redact } from "@/lib/postal/
 import { defaultTransport, type LxpTransport } from "@/lib/postal/transport";
 import { PostalConflictError } from "./errors";
 import { addPostalEvent, CANCEL_WINDOW_MS, POSTAL_JOB_SELECT, transitionPostalJob } from "./events";
+import { revertDunningSentByPost } from "./dunning-mark";
 import { loadPostalCredentials, PostalKeyUnreadableError } from "./settings";
 
 const CANCELLABLE = ["QUEUED", "HOLD", "DRAFT"];
@@ -61,6 +62,7 @@ export async function cancelPostalJob(
       throw new PostalConflictError("Der Postauftrag wurde inzwischen veraendert.", "NOT_CANCELLABLE");
     }
     await addPostalEvent(tx, { jobId: job.id, orgId, kind: "CANCELLED", status: "CANCELLED", data: { by: ctx.actor }, at: now });
+    await revertDunningSentByPost(tx, { ...job, orgId }, now, ctx.actor);
     const row = await tx.postalJob.findUniqueOrThrow({ where: { id: job.id }, select: POSTAL_JOB_SELECT });
     await appendChangeLog(tx, {
       orgId,
