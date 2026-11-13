@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { encryptSecret, decryptSecret, SecretsUnavailableError, WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
+import { encryptSecret, decryptSecret, hmacWithDerivedKey, SecretsUnavailableError, WEBHOOK_SECRET_PURPOSE } from "@/lib/crypto/secrets";
 
 describe("secrets", () => {
   const prev = process.env.AUTH_SECRET;
@@ -43,5 +43,13 @@ describe("secrets", () => {
       const enc = encryptSecret("webhook-geheimnis", WEBHOOK_SECRET_PURPOSE);
       expect(() => decryptSecret(enc)).toThrow();
     });
+  });
+
+  it("hmacWithDerivedKey: deterministisch, je purpose verschieden", () => {
+    const a = hmacWithDerivedKey("daten", "zweck-a");
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(hmacWithDerivedKey("daten", "zweck-a")).toBe(a);
+    expect(hmacWithDerivedKey("daten", "zweck-b")).not.toBe(a);
+    expect(hmacWithDerivedKey("andere", "zweck-a")).not.toBe(a);
   });
 });

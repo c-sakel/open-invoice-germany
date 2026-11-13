@@ -4,6 +4,9 @@
  */
 export const SESSION_COOKIE = "oig_session";
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 Tage (Sekunden)
+/** Phase 17d: Zwischen-Cookie zwischen Passwort und zweitem Faktor (5 Minuten). */
+export const MFA_COOKIE = "oig_mfa";
+export const MFA_MAX_AGE = 300;
 
 function getSecret(): string {
   const s = process.env.AUTH_SECRET;
@@ -80,10 +83,50 @@ export async function verifySessionToken(token: string | undefined | null): Prom
   if (diff !== 0) return null;
 
   try {
-    const data = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as { uid?: string; exp?: number; pwc?: number | null };
+    const data = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as { uid?: string; exp?: number; pwc?: number | null; typ?: string };
+    // Phase 17d: Tokens mit `typ` (Zwischen-Token des zweiten Faktors) sind nie eine Sitzung.
+    if (data.typ !== undefined) return null;
     if (!data.uid || typeof data.exp !== "number" || data.exp < Date.now()) return null;
     // Alt-Token (vor Task 9 ausgestellt) tragen kein `pwc` — behandelt wie `null`
     // (Konto ohne Passwortwechsel), siehe SessionTokenPayload-Doc.
+    return { uid: data.uid, pwc: typeof data.pwc === "number" ? data.pwc : null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Phase 17d: Zwischen-Token nach korrektem Passwort, vor dem zweiten Faktor. Eigene
+ * HMAC-Domaene (Praefix `mfa.`) und Feld `typ: "mfa"` — Domaenentrennung verhindert, dass
+ * ein Zwischen-Token als Sitzung gilt (und umgekehrt). `pwc` bindet das Token an den
+ * Passwortstand: ein Passwortwechsel/-Reset entwertet laufende Zwischenschritte.
+ */
+export async function createPendingMfaToken(userId: string, pwc: number | null, nowMs: number = Date.now()): Promise<string> {
+  const payload = b64urlEncode(
+    new TextEncoder().encode(JSON.stringify({ uid: userId, exp: nowMs + MFA_MAX_AGE * 1000, pwc, typ: "mfa" })),
+  );
+  const sig = b64urlEncode(await hmac(`mfa.${payload}`));
+  return `${payload}.${sig}`;
+}
+
+export async function verifyPendingMfaToken(
+  token: string | undefined | null,
+  nowMs: number = Date.now(),
+): Promise<{ uid: string; pwc: number | null } | null> {
+  if (!token) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+
+  const expected = b64urlEncode(await hmac(`mfa.${payload}`));
+  if (sig.length !== expected.length) return null;
+  let diff = 0;
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
+  if (diff !== 0) return null;
+
+  try {
+    const data = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as { uid?: string; exp?: number; pwc?: number | null; typ?: string };
+    if (data.typ !== "mfa") return null;
+    if (!data.uid || typeof data.exp !== "number" || data.exp < nowMs) return null;
     return { uid: data.uid, pwc: typeof data.pwc === "number" ? data.pwc : null };
   } catch {
     return null;
