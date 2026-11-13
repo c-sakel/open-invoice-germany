@@ -28,6 +28,8 @@ export interface PostalDocument {
   pages: number | null;
   /** Fehlende Pflichtangaben der Anschrift. */
   addressProblems: string[];
+  /** Beleg-/Rechnungsstatus, der einen Versand ausschliesst (z. B. stornierte Rechnung, bezahlte Mahnung). */
+  statusProblems: string[];
 }
 
 interface AddressSource {
@@ -73,6 +75,7 @@ function finish(
   base: { docType: PostalDocType; docId: string; docNumber: string; invoiceId: string },
   a: AddressSource,
   pdf: Buffer,
+  statusProblems: string[] = [],
 ): PostalDocument {
   const { lines, problems } = addressLines(a);
   let pages: number | null = null;
@@ -91,6 +94,7 @@ function finish(
     pdfSha256: sha256Hex(pdf),
     pages,
     addressProblems: problems,
+    statusProblems,
   };
 }
 
@@ -107,6 +111,7 @@ export async function loadPostalDocument(orgId: string, docType: PostalDocType, 
       { docType, docId: inv.id, docNumber: inv.number, invoiceId: inv.id },
       pickAddress(inv.buyerSnapshotJson, inv.customer),
       pdf,
+      inv.status === "CANCELLED" ? ["Rechnung storniert - nicht per Post senden"] : [],
     );
   }
   const d = await dbInternal.dunning.findFirst({
@@ -116,7 +121,7 @@ export async function loadPostalDocument(orgId: string, docType: PostalDocType, 
       number: true,
       invoiceId: true,
       buyerSnapshotJson: true,
-      invoice: { select: { buyerSnapshotJson: true, customer: { select: CUSTOMER_SELECT } } },
+      invoice: { select: { status: true, buyerSnapshotJson: true, customer: { select: CUSTOMER_SELECT } } },
     },
   });
   if (!d) throw new NotFoundError("Mahnung nicht gefunden.");
@@ -126,5 +131,6 @@ export async function loadPostalDocument(orgId: string, docType: PostalDocType, 
     { docType, docId: d.id, docNumber: d.number ?? d.id, invoiceId: d.invoiceId },
     pickAddress(d.buyerSnapshotJson, fallback),
     pdf,
+    d.invoice.status === "PAID" || d.invoice.status === "CANCELLED" ? ["Rechnung bezahlt/storniert - Mahnung nicht senden"] : [],
   );
 }

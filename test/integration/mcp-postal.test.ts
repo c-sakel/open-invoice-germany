@@ -224,12 +224,15 @@ describe("Angebot, Versand, Protokoll", () => {
     const id = await newInvoice();
     const q = JSON.parse(text(await callTool("get_postal_quote", { items: [{ docType: "INVOICE", docId: id }] }))).quotes[0] as { pdfSha256: string };
     const sent = JSON.parse(text(await callTool("send_by_post", { items: [{ docType: "INVOICE", docId: id, expectedPriceCents: 68, pdfSha256: q.pdfSha256 }], confirm: true }))).results[0] as { jobId: string };
-    expect((await callTool("resolve_postal_job", { id: sent.jobId, outcome: "SENT", note: "ab" })).isError).toBe(true);
-    const early = await callTool("resolve_postal_job", { id: sent.jobId, outcome: "SENT", note: "Brief laut Anbieter zugestellt" });
+    expect((await callTool("resolve_postal_job", { id: sent.jobId, outcome: "SENT", note: "ab", confirm: true })).isError).toBe(true);
+    const early = await callTool("resolve_postal_job", { id: sent.jobId, outcome: "SENT", note: "Brief laut Anbieter zugestellt", confirm: true });
     expect(early.isError).toBe(true);
     expect(text(early)).toContain("NOT_ALLOWED");
     await dbInternal.postalJob.updateMany({ where: { id: sent.jobId }, data: { status: "UNKNOWN" } });
-    const done = await callTool("resolve_postal_job", { id: sent.jobId, outcome: "NOT_SENT", note: "laut Anbieter nicht versendet" });
+    const unconfirmed = await callTool("resolve_postal_job", { id: sent.jobId, outcome: "NOT_SENT", note: "laut Anbieter nicht versendet" });
+    expect(unconfirmed.isError).toBe(true);
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: sent.jobId }, select: { status: true } })).status).toBe("UNKNOWN");
+    const done = await callTool("resolve_postal_job", { id: sent.jobId, outcome: "NOT_SENT", note: "laut Anbieter nicht versendet", confirm: true });
     expect(JSON.parse(text(done))).toEqual({ status: "FAILED" });
   });
 

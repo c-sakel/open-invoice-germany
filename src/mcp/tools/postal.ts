@@ -36,6 +36,8 @@ function postalFail(ctx: McpToolsContext, e: unknown): Result {
   return ctx.failUnknown(e);
 }
 
+const resolveConfirmSchema = z.literal(true, { error: "Der manuelle Abschluss muss bestaetigt werden (confirm: true)." });
+
 export function registerPostalTools(server: McpServer, ctx: McpToolsContext): void {
   // ── get_postal_settings ──────────────────────────────────────────────────────
   server.registerTool(
@@ -140,7 +142,7 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Belege per Post senden",
       description:
-        "KOSTENPFLICHTIG im Modus LIVE (druckt und versendet echte Briefe; im Modus TEST landet der Brief in der Postbox des Briefdienstes). Erst get_postal_quote aufrufen und dem Nutzer Anschrift, Seitenzahl und Preis zeigen; dann nur nach seiner ausdruecklichen Zustimmung senden mit confirm: true, expectedPriceCents und pdfSha256 aus dem Angebot (je Beleg; weicht Preis oder Pruefsumme ab, wird abgelehnt). Ist der Postversand aus, entsteht nur ein Trockenlauf-Protokoll. Ergebnis je Beleg: status (z. B. QUEUED, DRY_RUN) oder REJECTED mit code (z. B. ALREADY_SENT, PRICE_CHANGED, BUDGET); repeat: true erlaubt bewusst einen erneuten Versand.",
+        "KOSTENPFLICHTIG im Modus LIVE (druckt und versendet echte Briefe; im Modus TEST landet der Brief in der Postbox des Briefdienstes). Erst get_postal_quote aufrufen und dem Nutzer Anschrift, Seitenzahl und Preis zeigen; dann nur nach seiner ausdruecklichen Zustimmung senden mit confirm: true, expectedPriceCents und pdfSha256 aus dem Angebot (je Beleg; weicht Preis oder Pruefsumme ab, wird abgelehnt). Ist der Postversand aus, entsteht nur ein Trockenlauf-Protokoll. Ergebnis je Beleg: status (z. B. QUEUED, DRY_RUN) oder REJECTED mit code (z. B. ALREADY_SENT, PRICE_CHANGED, BUDGET); repeat: true erlaubt bewusst einen erneuten Versand nach abgeschlossenem Brief; bei laufender oder unklarer Uebertragung (PENDING, SUBMITTING, UNKNOWN) wird auch mit repeat mit ALREADY_SENT abgelehnt.",
       inputSchema: postalSendInputSchema,
     },
     async (args): Promise<Result> => {
@@ -219,11 +221,12 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Postauftrag mit unklarem Ausgang abschliessen",
       description:
-        "Schliesst einen Auftrag im Status UNKNOWN manuell ab, nachdem beim Briefdienst geprueft wurde: outcome SENT (Brief wurde versendet -> DONE) oder NOT_SENT (nichts versendet -> FAILED, erneuter Versand moeglich); note = Begruendung (3-500 Zeichen). Wird protokolliert.",
-      inputSchema: { id: z.string().trim().min(1).max(100), ...postalResolveInputSchema.shape },
+        "Schliesst einen Auftrag im Status UNKNOWN manuell ab, nachdem beim Briefdienst geprueft wurde: outcome SENT (Brief wurde versendet -> DONE) oder NOT_SENT (nichts versendet -> FAILED, erneuter Versand moeglich); note = Begruendung (3-500 Zeichen). NOT_SENT gibt den Neuversand frei und kann zu einem Doppelbrief fuehren: nur nach Pruefung durch den Nutzer im Kundenbereich des Briefdienstes aufrufen; `confirm: true` ist Pflicht. Ein Testauftrag (TEST) mit abgelaufenem Stornofenster darf ebenfalls mit NOT_SENT abgeschlossen werden. Wird protokolliert.",
+      inputSchema: { id: z.string().trim().min(1).max(100), ...postalResolveInputSchema.shape, confirm: resolveConfirmSchema },
     },
     async (args): Promise<Result> => {
       try {
+        resolveConfirmSchema.parse(args.confirm);
         const org = await ctx.requireOrg();
         checkPostalRateLimit(org.id);
         return ctx.ok(JSON.stringify(await resolveUnknownPostalJob(org.id, args.id, args.outcome, args.note, { actor: "mcp" }), null, 2));

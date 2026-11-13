@@ -41,6 +41,7 @@ import { loadPostalDocument, type PostalDocument } from "./document";
 import { PostalConflictError, type PostalConflictCode } from "./errors";
 import {
   ACTIVE_POSTAL_STATUSES,
+  UNSETTLED_POSTAL_STATUSES,
   addPostalEvent,
   CANCEL_WINDOW_MS,
   formatBerlinTime,
@@ -85,7 +86,7 @@ function resolveRegistered(item: PostalItemInput, settings: PostalSettingsView):
 }
 
 function documentProblems(doc: PostalDocument, shipping: "national" | "international", registered: Registered): string[] {
-  const problems = [...doc.addressProblems];
+  const problems = [...doc.addressProblems, ...doc.statusProblems];
   if (doc.pages === null) problems.push("Seitenzahl des Belegs nicht lesbar");
   if (registered && (doc.countryCode !== "DE" || shipping !== "national")) problems.push("Einschreiben nur bei Anschrift in Deutschland (national)");
   if (Math.ceil((doc.pdf.length * 4) / 3) > MAX_REQUEST_BYTES - 64 * 1024) problems.push("Beleg zu gross (Anfrage ueber 50 MB)");
@@ -360,13 +361,14 @@ async function sendOne(
       });
       if (activeTest) return "ACTIVE_TEST" as const;
     }
-    if (!item.repeat) {
-      const active = await tx.postalJob.findFirst({
-        where: { orgId, docType: doc.docType, docId: doc.docId, mode: { not: "DRY_RUN" }, status: { in: [...ACTIVE_POSTAL_STATUSES] } },
-        select: { id: true },
-      });
-      if (active) return "ACTIVE" as const;
-    }
+    // `repeat` erlaubt nur den erneuten Versand nach abgeschlossenem Brief; bei laufender oder unklarer
+    // Uebertragung (PENDING/SUBMITTING/UNKNOWN) nie (Doppelversand-Schutz), unabhaengig von `repeat`.
+    const blockingStatuses = item.repeat ? UNSETTLED_POSTAL_STATUSES : ACTIVE_POSTAL_STATUSES;
+    const active = await tx.postalJob.findFirst({
+      where: { orgId, docType: doc.docType, docId: doc.docId, mode: { not: "DRY_RUN" }, status: { in: [...blockingStatuses] } },
+      select: { id: true, status: true },
+    });
+    if (active) return item.repeat ? ("UNSETTLED" as const) : ("ACTIVE" as const);
     await tx.postalJob.create({
       data: {
         id: jobId,
@@ -402,6 +404,9 @@ async function sendOne(
       "Fuer diesen Beleg besteht ein Testauftrag. Testauftrag zuerst stornieren, bevor er regulaer versendet wird (Testbriefe koennen aus der Postbox des Briefdienstes versendet werden).",
       "ALREADY_SENT",
     );
+  }
+  if (created === "UNSETTLED") {
+    throw new PostalConflictError("Ausgang unklar oder Uebertragung laeuft - erst manuell abschliessen, dann erneut senden.", "ALREADY_SENT");
   }
   if (created === "ACTIVE") throw new PostalConflictError("Dieser Beleg wurde bereits per Post versendet (oder der Versand laeuft).", "ALREADY_SENT");
 

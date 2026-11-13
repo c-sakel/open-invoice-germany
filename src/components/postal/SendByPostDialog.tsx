@@ -112,10 +112,12 @@ export function SendByPostDialog({
   const eff = quote?.effective ?? "OFF_DRY_RUN";
   const sending = eff === "TEST" || eff === "LIVE";
   const testBlocksLive = Boolean(quote?.activeJob && quote.activeJob.mode === "TEST" && eff === "LIVE");
-  const needsRepeat = Boolean(quote?.alreadySent) && !testBlocksLive;
+  // Laufende oder unklare Übertragung: kein erneuter Versand, erst "Manuell abschließen" (Doppelversand-Schutz).
+  const unsettled = Boolean(quote?.activeJob && ["UNKNOWN", "SUBMITTING", "PENDING"].includes(quote.activeJob.status));
+  const needsRepeat = Boolean(quote?.alreadySent) && !testBlocksLive && !unsettled;
   const problems = quote?.problems ?? [];
   const priceMissing = sending && quote !== null && quote.priceCents === null;
-  const blocked = !quote || problems.length > 0 || testBlocksLive || priceMissing || !confirmed || (needsRepeat && !repeat);
+  const blocked = !quote || problems.length > 0 || testBlocksLive || unsettled || priceMissing || !confirmed || (needsRepeat && !repeat);
   const priceText = quote?.priceCents != null ? formatCents(quote.priceCents) : null;
 
   let sendLabel = "Trockenlauf protokollieren";
@@ -244,6 +246,13 @@ export function SendByPostDialog({
                   ) : (
                     <p>Der Testauftrag ist nicht mehr stornierbar (Stornofenster von 15 Minuten abgelaufen oder bereits verarbeitet). Bitte in der Postbox des Briefdienstes prüfen.</p>
                   )}
+                </div>
+              )}
+
+              {unsettled && (
+                <div role="alert" className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-stamp">
+                  <p className="font-medium">Ausgang unklar oder Übertragung läuft.</p>
+                  <p>Ein erneuter Versand ist gesperrt. Bitte den Auftrag erst im Postversand-Protokoll prüfen und manuell abschließen (beim Briefdienst nachsehen, ob der Brief dort ist).</p>
                 </div>
               )}
 
