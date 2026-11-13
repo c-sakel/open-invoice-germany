@@ -118,6 +118,64 @@ describe("POST /api/pdf/preview", () => {
     expect(foreign.status).toBe(404);
   });
 
+  describe("Platzhalter in Kopf- und Fusstext (Phase 18a)", () => {
+    let contactId: string;
+    let otherContactId: string;
+    beforeAll(async () => {
+      contactId = (await dbInternal.contactPerson.create({ data: { orgId, customerId, firstName: "Erika", lastName: "Beispiel" } })).id;
+      const other = await dbInternal.customer.create({
+        data: { orgId, name: "Anderer Kunde GmbH", addressLine1: "X 1", postalCode: "3", city: "D", type: "BUSINESS" },
+      });
+      otherContactId = (await dbInternal.contactPerson.create({ data: { orgId, customerId: other.id, firstName: "Fremdname", lastName: "Fremd" } })).id;
+    });
+
+    it("Rechnung: Ansprechpartner, Nummer und Betrag werden aufgeloest, internalNotes nie", async () => {
+      const res = await previewPost(
+        req({
+          kind: "INVOICE",
+          payload: {
+            customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", contactPersonId: contactId,
+            headerText: "Hallo {{contact.firstName}}, {{document.number}} über {{document.total}}",
+            footerText: "{{gibt.esnicht}}Ende",
+            internalNotes: "GEHEIM-18A",
+            lines: [line],
+          },
+        }),
+      );
+      expect(res.status).toBe(200);
+      const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
+      expect(text).toContain("Hallo Erika, ENTWURF über");
+      expect(text).toMatch(/226,10/);
+      expect(text).toContain("Ende");
+      expect(text).not.toContain("{{");
+      expect(text).not.toContain("GEHEIM-18A");
+    });
+
+    it("fremder Ansprechpartner: Platzhalter leer, kein Fremdname", async () => {
+      const res = await previewPost(
+        req({ kind: "INVOICE", payload: { customerId, type: "INVOICE", currency: "EUR", contactPersonId: otherContactId, headerText: "Hallo [{{contact.firstName}}]", lines: [line] } }),
+      );
+      expect(res.status).toBe(200);
+      const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
+      expect(text).toContain("Hallo []");
+      expect(text).not.toContain("Fremdname");
+    });
+
+    it("Angebot (validUntil) und Lieferschein (customer.name)", async () => {
+      const doc = await previewPost(
+        req({ kind: "DOCUMENT", payload: { kind: "ANGEBOT", customerId, currency: "EUR", validUntil: "2031-03-15", headerText: "Gültig bis {{document.dueDate}}", lines: [line] } }),
+      );
+      const d = await parsePdf(Buffer.from(await doc.arrayBuffer()));
+      expect(d.text).toContain("Gültig bis 15.03.2031");
+      const dn = await previewPost(
+        req({ kind: "DELIVERY_NOTE", payload: { customerId, headerText: "Für {{customer.name}}", lines: [{ description: "Ware", quantityMilli: 1000, unit: "C62" }] } }),
+      );
+      const n = await parsePdf(Buffer.from(await dn.arrayBuffer()));
+      expect(n.text).toContain("Für Vorschau Kunde AG");
+      expect(n.text).not.toContain("{{");
+    });
+  });
+
   // Fix Round 1, Wichtig — die Lieferschein-Vorschau muss dieselben Anzeige-Defaults wie
   // die echte Anlage (`createDeliveryNoteWithinTx`) verwenden: ohne Payload-Flag greift
   // `DocumentSettings.dnShowPrices`, nicht ein hart codiertes `true`. Bewusst als LETZTER
