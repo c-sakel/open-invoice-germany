@@ -31,7 +31,7 @@ export const postalSettingsUiSchema = z
     shipping: z.enum(["auto", "national", "international"]),
     registeredDefault: z.enum(["r1", "r2"]).nullable(),
     username: z.string().trim().min(1).max(100),
-    apiKey: z.string().trim().min(8).max(200),
+    apiKey: z.string().trim().min(16).max(200),
     clearApiKey: z.boolean(),
     enabled: z.boolean(),
     mode: z.enum(POSTAL_MODES),
@@ -40,7 +40,11 @@ export const postalSettingsUiSchema = z
     acknowledgeCosts: z.boolean(),
   })
   .partial()
-  .strict();
+  .strict()
+  .refine((v) => !(v.apiKey !== undefined && v.clearApiKey === true), {
+    path: ["clearApiKey"],
+    message: "apiKey und clearApiKey nicht gleichzeitig.",
+  });
 export type PostalSettingsUiInput = z.infer<typeof postalSettingsUiSchema>;
 
 const boolish = z.union([
