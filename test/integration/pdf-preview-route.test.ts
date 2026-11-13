@@ -37,6 +37,7 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { POST as previewPost } from "@/app/api/pdf/preview/route";
+import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { parsePdf } from "../helpers/pdf-theme";
 
 let orgId: string;
@@ -153,12 +154,32 @@ describe("POST /api/pdf/preview", () => {
 
     it("fremder Ansprechpartner: Platzhalter leer, kein Fremdname", async () => {
       const res = await previewPost(
-        req({ kind: "INVOICE", payload: { customerId, type: "INVOICE", currency: "EUR", contactPersonId: otherContactId, headerText: "Hallo [{{contact.firstName}}]", lines: [line] } }),
+        req({ kind: "INVOICE", payload: { customerId, type: "INVOICE", currency: "EUR", contactPersonId: otherContactId, headerText: "Hallo [{{contact.firstName}}|{{contact.name}}|{{customer.firstName}}|{{customer.lastName}}]", lines: [line] } }),
       );
       expect(res.status).toBe(200);
       const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
-      expect(text).toContain("Hallo []");
-      expect(text).not.toContain("Fremdname");
+      expect(text).toContain("Hallo [|||]");
+      expect(text).not.toContain("Fremd");
+    });
+
+    it("ohne contactPersonId greift der Standard-Ansprechpartner des Kunden wie beim echten Beleg", async () => {
+      const c = await dbInternal.customer.create({
+        data: { orgId, name: "Standard Kunde AG", addressLine1: "S 1", postalCode: "4", city: "E", type: "BUSINESS" },
+      });
+      await dbInternal.contactPerson.create({ data: { orgId, customerId: c.id, firstName: "Standardina", lastName: "Muster", isDefault: true } });
+      const res = await previewPost(
+        req({ kind: "INVOICE", payload: { customerId: c.id, type: "INVOICE", currency: "EUR", headerText: "Hallo {{contact.firstName}}", lines: [line] } }),
+      );
+      expect(res.status).toBe(200);
+      const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
+      expect(text).toContain("Hallo Standardina");
+    });
+
+    it("resolveBuyerSnapshot: fremde contactPersonId setzt keinen Namen im Snapshot", async () => {
+      const customer = await dbInternal.customer.findFirstOrThrow({ where: { id: customerId, orgId } });
+      const buyer = await resolveBuyerSnapshot(dbInternal, orgId, customer, otherContactId, null);
+      expect(JSON.stringify(buyer)).not.toContain("Fremd");
+      expect(buyer.contactName ?? null).toBe(customer.contactName);
     });
 
     it("Angebot (validUntil) und Lieferschein (customer.name)", async () => {

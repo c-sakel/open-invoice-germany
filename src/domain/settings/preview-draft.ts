@@ -85,6 +85,7 @@ async function loadPreviewCustomer(orgId: string, customerId: string) {
   const customer = await dbInternal.customer.findFirst({
     where: { id: customerId, orgId },
     select: {
+      id: true,
       name: true,
       contactName: true,
       addressLine1: true,
@@ -128,13 +129,17 @@ async function previewTextContext(
   p: PreviewTextParams,
 ): Promise<TemplateContext> {
   const seller = buildSellerSnapshot(org);
-  const buyer = await resolveBuyerSnapshot(dbInternal, orgId, customer, p.contactPersonId, p.billingAddressId, p.shippingAddressId);
-  const contactRow = p.contactPersonId
-    ? await dbInternal.contactPerson.findFirst({
-        where: { id: p.contactPersonId, orgId, customerId: p.customerId },
-        select: { firstName: true, lastName: true, role: true, email: true, phone: true },
-      })
-    : null;
+  // Ansprechpartner wie bei der echten Anlage aufloesen (`createDraftInvoiceWithinTx`):
+  // gegeben -> nur wenn er zu Org UND Kunde gehoert (sonst wie keiner), `undefined` ->
+  // Standard-Ansprechpartner des Kunden, explizites `null` -> keiner.
+  const contactSelect = { id: true, firstName: true, lastName: true, role: true, email: true, phone: true } as const;
+  const contactRow =
+    p.contactPersonId === null
+      ? null
+      : p.contactPersonId
+        ? await dbInternal.contactPerson.findFirst({ where: { id: p.contactPersonId, orgId, customerId: p.customerId }, select: contactSelect })
+        : await dbInternal.contactPerson.findFirst({ where: { orgId, customerId: p.customerId, isDefault: true }, select: contactSelect });
+  const buyer = await resolveBuyerSnapshot(dbInternal, orgId, customer, contactRow?.id ?? null, p.billingAddressId, p.shippingAddressId);
   return buildDocumentTextContext({
     docType: p.docType,
     number: docStrings(p.lang).system.draftNumber,
