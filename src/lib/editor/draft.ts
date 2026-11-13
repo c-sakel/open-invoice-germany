@@ -594,20 +594,20 @@ export function toDeliveryNotePayload(d: DraftState, isEdit = false): Record<str
     // Fix 2 (Task-1-Review): shippingDate/internalNotes sind in createDeliveryNoteSchema
     // vorhanden, der Editor exponiert sie hier zusaetzlich.
     shippingDate: d.shippingDate || (isEdit ? null : undefined),
-    internalNotes: d.internalNotes || undefined,
+    internalNotes: isEdit ? d.internalNotes : d.internalNotes || undefined,
     // Fix-Welle I1/I2 (Abschluss-Review): headerText/footerText/showDeliveryAddress werden
     // im Editor angezeigt (HeadTextBlock/FootTextBlock/MoreOptions fuer ALLE drei Modi,
     // siehe dortige Kommentare) und von createDeliveryNoteSchema/createDeliveryNoteWithinTx
     // verarbeitet — vorher fielen sie hier still unter den Tisch, obwohl der Nutzer sie
     // sichtbar bedienen konnte (Lastenheft 59, "keine Buttons ohne Backend").
-    headerText: d.headerText || undefined,
-    footerText: d.footerText || undefined,
+    headerText: isEdit ? d.headerText : d.headerText || undefined,
+    footerText: isEdit ? d.footerText : d.footerText || undefined,
     showPrices: d.showPrices,
     showTax: d.showTax,
     showArticleNumber: d.showArticleNumber,
     showDescription: d.showDescription,
     showDeliveryAddress: d.showDeliveryAddress,
-    notes: d.notes || undefined,
+    notes: isEdit ? d.notes : d.notes || undefined,
     // Lieferscheine kennen keinen lineType — nur ITEM-Zeilen ergeben eine gueltige
     // Lieferschein-Position (deliveryNoteLineInputSchema verlangt quantityMilli > 0).
     lines: d.lines

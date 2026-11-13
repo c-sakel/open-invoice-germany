@@ -182,6 +182,9 @@ describe("editor/draft", () => {
     expect(p).toMatchObject({ deliveryDate: null, shippingDate: null });
     expect(updateDeliveryNoteSchema.safeParse(p).success).toBe(true);
     expect(toDeliveryNotePayload(d, false)).toMatchObject({ deliveryDate: undefined, shippingDate: undefined });
+    // Geleerte Texte werden beim Bearbeiten als "" gesendet (leeren), beim Anlegen weggelassen.
+    expect(p).toMatchObject({ notes: "", internalNotes: "", headerText: "", footerText: "" });
+    expect(toDeliveryNotePayload(d, false)).toMatchObject({ notes: undefined, internalNotes: undefined, headerText: undefined, footerText: undefined });
     const created = toDeliveryNotePayload(d, false) as { draft?: boolean; contactPersonId?: string | null };
     expect(created.draft).toBe(true);
     expect(created.contactPersonId).toBeUndefined();
