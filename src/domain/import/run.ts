@@ -1,0 +1,170 @@
+/**
+ * CSV-Import von Kunden und Produkten (Phase 18b). Vorschau (`dryRun`) validiert mit `dbInternal`;
+ * der Commit validiert vollstaendig NEU innerhalb einer Transaktion (nur `tx`, erste Anweisung
+ * `lockOrganization`) und legt seriell an. Jeder Fehler wirft `ImportRejectedError` (Rollback, kein
+ * Nummernkreis verbraucht): alles oder nichts. `expectedHash` bindet den Commit an die gesehene
+ * Vorschau (409). Kein Update bestehender Datensaetze, keine Datei auf der Platte; `orgId` stammt nur
+ * vom Aufrufer, nie aus der CSV (Spalten wie `id`/`orgId` werden ignoriert und gemeldet).
+ * Rate-Limits je Organisation (UI, REST und MCP gleich): Vorschau 20/min, Commit 5/min.
+ */
+import { z } from "zod";
+import { dbInternal } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
+import { lockOrganization } from "@/lib/db-lock";
+import { logActivity } from "@/domain/activity/log";
+import { createCustomerWithinTx } from "@/domain/customer/save";
+import { createProductWithinTx } from "@/domain/product/save";
+import { CONTACT_IMPORT_COLUMNS, PRODUCT_IMPORT_COLUMNS, mapHeader, type ImportColumn } from "./columns";
+import { CsvFormatError, CsvLimitError, MAX_IMPORT_BYTES, parseCsv, sha256Hex } from "./parse-csv";
+import { validateContactRows, type ValidatedRows } from "./contacts-import";
+import { validateProductRows } from "./products-import";
+import { sanitizeFileName, type ColumnIndex, type ImportRowError, type ParsedRow } from "./types";
+
+export type { ImportRowError } from "./types";
+export type ImportResource = "contacts" | "products";
+
+export const MAX_LISTED_ERRORS = 200;
+export const PREVIEW_SAMPLE_ROWS = 50;
+
+export const importRequestSchema = z.object({
+  csv: z.string().min(1).max(MAX_IMPORT_BYTES),
+  fileName: z.string().trim().max(200).optional(),
+  dryRun: z.boolean().default(true),
+  expectedHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+});
+
+export interface ImportPreview {
+  resource: ImportResource;
+  fileHash: string;
+  encoding: "utf-8" | "windows-1252";
+  delimiter: ";" | ",";
+  totalRows: number;
+  validRows: number;
+  errorCount: number;
+  errors: ImportRowError[];
+  ignoredColumns: string[];
+  sample?: { line: number; values: Record<string, string> }[];
+}
+export type ImportResult = { status: "preview"; preview: ImportPreview } | { status: "imported"; created: number; preview: ImportPreview };
+
+export class ImportRejectedError extends Error {
+  readonly status = 422;
+  constructor(readonly preview: ImportPreview) {
+    super("Import abgelehnt: Die Datei enthält Fehler.");
+    this.name = "ImportRejectedError";
+  }
+}
+export class ImportHashMismatchError extends Error {
+  readonly status = 409;
+  constructor() {
+    super("Die Datei hat sich seit der Vorschau geändert.");
+    this.name = "ImportHashMismatchError";
+  }
+}
+
+export interface ImportContext {
+  actor: string;
+  source: "UI" | "API" | "MCP";
+  withSample?: boolean;
+  now?: Date;
+}
+
+const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
+
+export async function runCsvImport(
+  orgId: string,
+  resource: ImportResource,
+  input: { text: string; encoding?: "utf-8" | "windows-1252"; fileName?: string; dryRun: boolean; expectedHash?: string },
+  ctx: ImportContext,
+): Promise<ImportResult> {
+  if (input.dryRun) rateLimit(`csv-import-preview:${orgId}`, { limit: 20, windowMs: 60_000 });
+  else rateLimit(`csv-import-commit:${orgId}`, { limit: 5, windowMs: 60_000 });
+
+  if (Buffer.byteLength(input.text, "utf8") > MAX_IMPORT_BYTES) {
+    throw new CsvLimitError("Datei zu groß (höchstens 2 MB).");
+  }
+  const parsed = parseCsv(input.text);
+  const columns: readonly ImportColumn[] = resource === "contacts" ? CONTACT_IMPORT_COLUMNS : PRODUCT_IMPORT_COLUMNS;
+  const mapping = mapHeader(parsed.header, columns);
+  if (mapping.duplicates.length > 0) throw new CsvFormatError(`Spalte mehrfach vorhanden: ${mapping.duplicates.join(", ")}`, 1);
+  if (mapping.missing.length > 0) throw new CsvFormatError(`Pflichtspalte fehlt: ${mapping.missing.join(", ")}`, 1);
+  const fileHash = sha256Hex(input.text);
+  if (input.expectedHash !== undefined && input.expectedHash !== fileHash) throw new ImportHashMismatchError();
+
+  const rows: ParsedRow[] = parsed.rows;
+  const index: ColumnIndex = mapping.index;
+  const validate = (db: Parameters<typeof validateContactRows>[0]): Promise<ValidatedRows<unknown>> =>
+    resource === "contacts" ? validateContactRows(db, orgId, rows, index) : validateProductRows(db, orgId, rows, index);
+
+  const preview = (errors: ImportRowError[], validCount: number): ImportPreview => {
+    const out: ImportPreview = {
+      resource,
+      fileHash,
+      encoding: input.encoding ?? "utf-8",
+      delimiter: parsed.delimiter,
+      totalRows: rows.length,
+      validRows: validCount,
+      errorCount: errors.length,
+      errors: errors.slice(0, MAX_LISTED_ERRORS),
+      ignoredColumns: mapping.ignored,
+    };
+    if (ctx.withSample) {
+      out.sample = rows.slice(0, PREVIEW_SAMPLE_ROWS).map((r) => {
+        const values: Record<string, string> = {};
+        for (const col of columns) {
+          const i = index.get(col.key);
+          if (i !== undefined) values[col.header] = r.cells[i] ?? "";
+        }
+        return { line: r.line, values };
+      });
+    }
+    return out;
+  };
+
+  if (input.dryRun) {
+    const res = await validate(dbInternal);
+    return { status: "preview", preview: preview(res.errors, res.valid.length) };
+  }
+
+  const created = await dbInternal.$transaction(async (tx) => {
+    await lockOrganization(tx, orgId);
+    const res = await validate(tx);
+    if (res.errors.length > 0) throw new ImportRejectedError(preview(res.errors, res.valid.length));
+    const taken = res.taken;
+    const reject = (line: number, column: string): never => {
+      throw new ImportRejectedError(
+        preview([{ line, column, message: "Nummer aus dem Nummernkreis bereits vergeben — Nummernkreis anpassen" }], res.valid.length - 1),
+      );
+    };
+    let count = 0;
+    for (const row of res.valid) {
+      if (resource === "contacts") {
+        const c = await createCustomerWithinTx(tx, orgId, row.value as Parameters<typeof createCustomerWithinTx>[2]);
+        if (!(row.value as { customerNumber?: string }).customerNumber) {
+          if (c.customerNumber && taken.has(c.customerNumber)) reject(row.line, "Kundennummer");
+          if (c.customerNumber) taken.add(c.customerNumber);
+        }
+      } else {
+        const p = await createProductWithinTx(tx, orgId, row.value as Parameters<typeof createProductWithinTx>[2]);
+        if (!(row.value as { articleNumber?: string }).articleNumber) {
+          if (p.articleNumber && taken.has(p.articleNumber)) reject(row.line, "Artikelnummer");
+          if (p.articleNumber) taken.add(p.articleNumber);
+        }
+      }
+      count += 1;
+    }
+    return { count, valid: res.valid.length, errors: res.errors };
+  }, TX_OPTIONS);
+
+  const result = preview([], created.valid);
+  await logActivity(dbInternal, {
+    orgId,
+    entityType: "IMPORT",
+    entityId: fileHash,
+    type: "CSV_IMPORTED",
+    actor: ctx.actor,
+    at: ctx.now,
+    data: { resource, created: created.count, fileName: sanitizeFileName(input.fileName), fileHash, source: ctx.source },
+  });
+  return { status: "imported", created: created.count, preview: result };
+}

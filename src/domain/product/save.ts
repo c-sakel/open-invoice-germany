@@ -13,7 +13,7 @@ import { productSchema, type ProductInput } from "@/schemas";
 import { assignArticleNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
 import { assertAllowedTaxRates } from "@/domain/settings/tax-rates";
-import type { Product } from "@/generated/prisma/client";
+import type { Prisma, Product } from "@/generated/prisma/client";
 
 function toCreateData(v: ProductInput) {
   return {
@@ -30,6 +30,14 @@ function toCreateData(v: ProductInput) {
   };
 }
 
+/** Legt ein Produkt in einer bestehenden Transaktion an (Artikelnummer per Nummernkreis, falls leer).
+ *  Die Steuersatz-Freigabe prueft der Aufrufer. */
+export async function createProductWithinTx(tx: Prisma.TransactionClient, orgId: string, v: ProductInput): Promise<Product> {
+  const data = toCreateData(v);
+  const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, orgId));
+  return tx.product.create({ data: { ...data, articleNumber, orgId } });
+}
+
 /** Legt ein neues Produkt an. Artikelnummer per Nummernkreis (PRODUCT), sofern im Input
  *  nicht bereits gesetzt (§34). */
 export async function createProduct(orgId: string, rawInput: unknown): Promise<Product> {
@@ -38,11 +46,7 @@ export async function createProduct(orgId: string, rawInput: unknown): Promise<P
   // Produktzeile), ein Produkt-Race gegen diese eine Zeile gibt es nicht — anders als bei
   // Beleg-Positionen entsteht hier keine TOCTOU-Luecke, die etwas Falsches persistiert.
   await assertAllowedTaxRates(dbInternal, orgId, [v.taxRate]);
-  const data = toCreateData(v);
-  return dbInternal.$transaction(async (tx) => {
-    const articleNumber = data.articleNumber ?? (await assignArticleNumber(tx, orgId));
-    return tx.product.create({ data: { ...data, articleNumber, orgId } });
-  });
+  return dbInternal.$transaction((tx) => createProductWithinTx(tx, orgId, v));
 }
 
 const NULLABLE_ON_EMPTY = new Set(["description", "articleNumber"]);
