@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { unitLabel } from "@/lib/units";
+import { unitLabel, unitCodeFromInput } from "@/lib/units";
 
 describe("unitLabel", () => {
   it("mappt alle bekannten UN/ECE-Codes auf ihren Klarnamen", () => {
@@ -30,5 +30,21 @@ describe("unitLabel (en)", () => {
     expect(unitLabel("H87", "en")).toBe("flat rate");
     expect(unitLabel("C62")).toBe("Stk");
     expect(unitLabel("Kiste", "en")).toBe("Kiste");
+  });
+});
+
+describe("unitCodeFromInput", () => {
+  it("Kürzel, Langform und Code", () => {
+    expect(unitCodeFromInput("Std")).toBe("HUR");
+    expect(unitCodeFromInput("stück")).toBe("C62");
+    expect(unitCodeFromInput("Stunde")).toBe("HUR");
+    expect(unitCodeFromInput("m²")).toBe("MTK");
+    expect(unitCodeFromInput("Pauschale")).toBe("H87");
+    expect(unitCodeFromInput("HUR")).toBe("HUR");
+  });
+  it("Freitext bleibt, leer wird C62", () => {
+    expect(unitCodeFromInput("Palette")).toBe("Palette");
+    expect(unitCodeFromInput("")).toBe("C62");
+    expect(unitCodeFromInput("  ")).toBe("C62");
   });
 });
