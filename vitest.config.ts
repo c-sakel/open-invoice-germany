@@ -11,6 +11,8 @@ export default defineConfig({
     hookTimeout: 30_000,
     environment: "node",
     globalSetup: ["./test/global-setup.ts"],
+    // Phase 17c: Transaktions-Guard (globaler Client in $transaction -> Fehler).
+    setupFiles: ["./test/helpers/tx-guard-setup.ts"],
     env: {
       // Separate Test-DB (löst relativ zum Schema-Verzeichnis auf -> prisma/test.db)
       DATABASE_URL: "file:./test.db",
