@@ -259,6 +259,12 @@ describe("Produkt-Import", () => {
     ]);
   });
 
+  it("unbekannte Einheit ist ein Zeilenfehler, bekannte Codes und Kuerzel nicht", async () => {
+    const org = await makeOrg("Import Einheit GmbH");
+    const r = await runCsvImport(org, "products", { text: csv(PK, "A;1,00;19;Karton", "B;1,00;19;HUR", "C;1,00;19;Std", "D;1,00;19;"), dryRun: true }, CTX);
+    expect(r.preview.errors).toEqual([{ line: 2, column: "Einheit", message: "Einheit unbekannt — bitte UN/ECE-Code, z. B. C62, HUR, DAY" }]);
+  });
+
   it("fehlender Preis: Pflichtfeld fehlt", async () => {
     const org = await makeOrg("Import Preis GmbH");
     const r = await runCsvImport(org, "products", { text: csv("Bezeichnung;Nettopreis;Steuersatz (%)", "A;;19"), dryRun: true }, CTX);

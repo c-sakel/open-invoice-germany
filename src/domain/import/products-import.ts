@@ -5,7 +5,7 @@
  */
 import { productSchema, type ProductInput } from "@/schemas";
 import { parseDecimalInput } from "@/lib/money";
-import { unitCodeFromInput } from "@/lib/units";
+import { isKnownUnitCode, unitCodeFromInput } from "@/lib/units";
 import { assertAllowedTaxRates, TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { PRODUCT_IMPORT_COLUMNS, parseTaxRateCell, parseYesNoCell } from "./columns";
 import { cellValue, controlCharProblems, headerOf, zodProblems, type ColumnIndex, type ImportRowError, type ParsedRow, type RowProblem } from "./types";
@@ -25,7 +25,11 @@ export function productRowToInput(cells: readonly string[], index: ColumnIndex):
     ossCategory: get("ossCategory")?.toUpperCase(),
   };
   const unit = get("unit");
-  if (unit !== undefined) input.unit = unitCodeFromInput(unit);
+  if (unit !== undefined) {
+    const code = unitCodeFromInput(unit);
+    if (isKnownUnitCode(code)) input.unit = code;
+    else errors.push({ column: h("unit"), message: "Einheit unbekannt — bitte UN/ECE-Code, z. B. C62, HUR, DAY" });
+  }
   const price = get("netPrice");
   if (price !== undefined) {
     const cents = parseDecimalInput(price, 2);

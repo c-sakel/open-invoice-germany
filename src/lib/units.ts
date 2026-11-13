@@ -55,6 +55,11 @@ const UNIT_INPUT_ALIASES: Readonly<Record<string, string>> = {
   pauschale: "H87", psch: "H87", "psch.": "H87", "stück-pauschale": "H87",
 };
 
+/** Ist `code` ein bekannter UN/ECE-Einheitencode der Auswahlliste? */
+export function isKnownUnitCode(code: string): boolean {
+  return UNIT_CODES.has(code);
+}
+
 /** Import-Eingabe (Kürzel/Langform/Code) -> UN/ECE-Code. Unbekannter Freitext bleibt
  *  unverändert (wie im Editor "andere…"), leer -> "C62". */
 export function unitCodeFromInput(input: string): string {
