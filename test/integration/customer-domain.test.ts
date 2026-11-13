@@ -31,6 +31,7 @@ import {
   parseCustomerCustomFields,
   setCustomerCustomFields,
 } from "@/domain/customer/custom-fields";
+import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
 import { saveCustomerDefaults, customerDefaultsFor } from "@/domain/customer/defaults";
 
 async function makeOrg() {
@@ -359,5 +360,44 @@ describe("Phase 8a — defaults.ts (§28)", () => {
   it("customerDefaultsFor auf unbekannten Kunden wirft NotFoundError", async () => {
     const org = await makeOrg();
     await expect(customerDefaultsFor(org.id, "does-not-exist")).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("Phase 17a — save.ts (Leitweg-ID, USt-IdNr.-Bestaetigung)", () => {
+  it("unveraenderte, formal ungueltige Bestands-leitwegId bleibt speicherbar; neue ungueltige wird abgelehnt", async () => {
+    const org = await makeOrg();
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "Altkunde", addressLine1: "Weg 1", postalCode: "54321", city: "Hamburg", leitwegId: "ALT-UNGUELTIG" },
+    });
+    const saved = await updateCustomer(org.id, customer.id, { leitwegId: "ALT-UNGUELTIG", city: "Kiel" });
+    expect(saved.city).toBe("Kiel");
+    await expect(updateCustomer(org.id, customer.id, { leitwegId: "991-33333TEST-00" })).rejects.toBeInstanceOf(CustomerValidationError);
+    const ok = await updateCustomer(org.id, customer.id, { leitwegId: "991-33333TEST-33" });
+    expect(ok.leitwegId).toBe("991-33333TEST-33");
+  });
+
+  it("Aenderung der vatId setzt vatIdValidatedAt auf null, unveraenderte (normalisiert) laesst es stehen", async () => {
+    const org = await makeOrg();
+    const customer = await dbInternal.customer.create({
+      data: { orgId: org.id, name: "VIES-Kunde", addressLine1: "Weg 1", postalCode: "54321", city: "Wien", vatId: "ATU12345678" },
+    });
+    await dbInternal.customer.update({ where: { id: customer.id }, data: { vatIdValidatedAt: new Date("2060-01-01T00:00:00Z") } });
+    const same = await updateCustomer(org.id, customer.id, { vatId: "atu 123 456 78" });
+    expect(same.vatIdValidatedAt).not.toBeNull();
+    const changed = await updateCustomer(org.id, customer.id, { vatId: "ATU87654321" });
+    expect(changed.vatIdValidatedAt).toBeNull();
+  });
+
+  it("createCustomer speichert Peppol-ID mit Schema und BT-47; PATCH nur mit gueltigem Paar", async () => {
+    const org = await makeOrg();
+    const c = await createCustomer(org.id, {
+      name: "Peppol-Kunde", addressLine1: "Weg 1", postalCode: "12345", city: "Ort",
+      peppolId: "4012345000009", peppolScheme: "0088", legalRegistrationId: "HRB 1",
+    });
+    expect(c).toMatchObject({ peppolId: "4012345000009", peppolScheme: "0088", legalRegistrationId: "HRB 1" });
+    await expect(updateCustomer(org.id, c.id, { peppolScheme: "0060" })).rejects.toBeInstanceOf(CustomerValidationError);
+    const cleared = await updateCustomer(org.id, c.id, { peppolId: "" });
+    expect(cleared.peppolId).toBeNull();
+    expect(cleared.peppolScheme).toBeNull();
   });
 });

@@ -146,6 +146,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           bankName: v.bankName ?? null,
           accountHolder: v.accountHolder ?? null,
           electronicAddress: v.email || null,
+          electronicAddressScheme: v.email ? "EM" : null,
         };
         const org = existing
           ? await dbInternal.organization.update({ where: { id: existing.id }, data })

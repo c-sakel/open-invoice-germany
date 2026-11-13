@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { saveOrganization } from "@/app/actions/masterdata";
 import type { ActionResult } from "@/app/actions/result";
+import { EasSchemeField } from "./EasSchemeField";
 import { TextField, SelectField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
 
 export interface OrgFormData {
@@ -26,6 +27,7 @@ export interface OrgFormData {
   bankName: string | null;
   accountHolder: string | null;
   electronicAddress: string | null;
+  electronicAddressScheme: string | null;
 }
 
 export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
@@ -79,6 +81,7 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
           <TextField label="BIC" name="bic" defaultValue={org?.bic} />
           <TextField label="Bankname" name="bankName" defaultValue={org?.bankName} />
           <TextField label="E-Rechnung-Adresse (Peppol)" name="electronicAddress" defaultValue={org?.electronicAddress} hint="Optional — Endpoint für E-Rechnung-Versand." />
+          <EasSchemeField label="Schema der E-Rechnung-Adresse" name="electronicAddressScheme" defaultValue={org?.electronicAddressScheme} />
         </div>
       </section>
 

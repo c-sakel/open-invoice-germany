@@ -21,7 +21,7 @@ import { archiveCustomer } from "@/domain/customer/archive";
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
-  customerSchema,
+  customerFieldsSchema,
   customerAddressInputSchema,
   contactPersonInputSchema,
   customFieldDefinitionInputSchema,
@@ -73,11 +73,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       // Fix-Welle Punkt 8: Feldliste aus customerSchema komponiert statt handgepflegtem
       // inline-Zod (analog update_customer/Fix-Runde 1) — sonst driften upsert_customer und
       // customerSchema/saveCustomer auseinander (z. B. fehlten hier bisher addressLine2,
-      // phone, peppolId, customerNumber). Lookup-Feld "name" bleibt ueber customerSchema
+      // phone, peppolId, customerNumber). Lookup-Feld "name" bleibt ueber customerFieldsSchema
       // (min(1)) Pflicht. defaultPaymentMethodId entfaellt: der MCP-Aufrufer uebergibt einen
       // Namen/Code (defaultPaymentMethod), keine interne ID.
       inputSchema: {
-        ...customerSchema.omit({ defaultPaymentMethodId: true }).shape,
+        ...customerFieldsSchema.omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
       },
     },
@@ -124,7 +124,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         "Aktualisiert einen bestehenden Kunden gezielt per ID oder Name (anders als upsert_customer KEIN Anlegen). Nicht angegebene Felder bleiben unveraendert.",
       inputSchema: {
         customer: z.string().describe("Kunden-ID oder -Name"),
-        ...customerSchema.partial().omit({ defaultPaymentMethodId: true }).shape,
+        ...customerFieldsSchema.partial().omit({ defaultPaymentMethodId: true }).shape,
         defaultPaymentMethod: z.string().optional().describe("Name oder Code der Standard-Zahlungsmethode"),
       },
     },

@@ -30,3 +30,18 @@ describe("organizationSchema — accountHolder", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("organizationSchema — Phase 17a (BT-34)", () => {
+  const base = { legalName: "Muster GmbH", addressLine1: "Weg 1", postalCode: "12345", city: "Ort" };
+
+  it("Adresse wird gegen das Schema geprueft", () => {
+    expect(organizationSchema.safeParse({ ...base, electronicAddress: "a@example.org", electronicAddressScheme: "EM" }).success).toBe(true);
+    expect(organizationSchema.safeParse({ ...base, electronicAddress: "kein-mail", electronicAddressScheme: "EM" }).success).toBe(false);
+    expect(organizationSchema.safeParse({ ...base, electronicAddress: "DE123456789", electronicAddressScheme: "9930" }).success).toBe(true);
+    expect(organizationSchema.safeParse({ ...base, electronicAddress: "x", electronicAddressScheme: "9999" }).success).toBe(false);
+  });
+
+  it("Schema ohne Adresse -> Fehler", () => {
+    expect(organizationSchema.safeParse({ ...base, electronicAddressScheme: "EM" }).success).toBe(false);
+  });
+});

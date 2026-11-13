@@ -9,6 +9,7 @@ import {
   customFieldDefinitionInputSchema,
   customFieldValuesSchema,
   customerDefaultsInputSchema,
+  customerSchema,
   type CustomFieldDefinitionLike,
 } from "@/schemas";
 
@@ -200,5 +201,32 @@ describe("customerDefaultsInputSchema (§28)", () => {
     expect(customerDefaultsInputSchema.safeParse({ language: "DE" }).success).toBe(false);
     expect(customerDefaultsInputSchema.safeParse({ language: "deu" }).success).toBe(false);
     expect(customerDefaultsInputSchema.safeParse({ language: "de" }).success).toBe(true);
+  });
+});
+
+describe("customerSchema — Phase 17a (BT-49, BT-47)", () => {
+  const base = { name: "Kunde", addressLine1: "Weg 1", postalCode: "12345", city: "Ort" };
+
+  it("peppolScheme nur aus der EAS-Codeliste", () => {
+    expect(customerSchema.safeParse({ ...base, peppolId: "x", peppolScheme: "9999" }).success).toBe(false);
+    expect(customerSchema.safeParse({ ...base, peppolId: "4012345000009", peppolScheme: "0088" }).success).toBe(true);
+  });
+
+  it("peppolId ohne peppolScheme -> Fehler am Pfad peppolScheme", () => {
+    const r = customerSchema.safeParse({ ...base, peppolId: "4012345000009" });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.some((i) => i.path.join(".") === "peppolScheme")).toBe(true);
+  });
+
+  it("Paar 0204 mit ungueltiger Leitweg-ID -> Fehler, mit gueltiger ok", () => {
+    expect(customerSchema.safeParse({ ...base, peppolId: "991-33333TEST-00", peppolScheme: "0204" }).success).toBe(false);
+    expect(customerSchema.safeParse({ ...base, peppolId: "991-33333TEST-33", peppolScheme: "0204" }).success).toBe(true);
+  });
+
+  it("legalRegistrationId: getrimmt, max. 100 Zeichen", () => {
+    const ok = customerSchema.parse({ ...base, legalRegistrationId: "  HRB 12345  " });
+    expect(ok.legalRegistrationId).toBe("HRB 12345");
+    expect(customerSchema.safeParse({ ...base, legalRegistrationId: "A".repeat(101) }).success).toBe(false);
+    expect(customerSchema.safeParse({ ...base, legalRegistrationId: "A".repeat(100) }).success).toBe(true);
   });
 });

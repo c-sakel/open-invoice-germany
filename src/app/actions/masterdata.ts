@@ -47,6 +47,8 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     bankName: str(fd, "bankName"),
     accountHolder: str(fd, "accountHolder"),
     electronicAddress: str(fd, "electronicAddress"),
+    // Schema ohne Adresse (Formular sendet immer einen Select-Wert) wird verworfen.
+    electronicAddressScheme: str(fd, "electronicAddress") ? str(fd, "electronicAddressScheme") : undefined,
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
   const v = parsed.data;
@@ -71,6 +73,7 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     bankName: v.bankName ?? null,
     accountHolder: v.accountHolder ?? null,
     electronicAddress: v.electronicAddress ?? null,
+    electronicAddressScheme: v.electronicAddress ? (v.electronicAddressScheme ?? "EM") : null,
   };
 
   try {
@@ -106,6 +109,8 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     vatId: str(fd, "vatId"),
     leitwegId: str(fd, "leitwegId"),
     peppolId: str(fd, "peppolId"),
+    peppolScheme: str(fd, "peppolScheme"),
+    legalRegistrationId: str(fd, "legalRegistrationId"),
     // S1 (Fix-Welle Phase 7): leeres Feld = kein Kunden-Override (null), NICHT der
     // bisherige Zwangs-Default 14 — sonst wuerde ein zufaellig auf 14 gesetzter Wert weiter
     // die Zahlungsmethode/DocumentSettings.invoiceDueDays-Kaskade unterbrechen.
@@ -125,14 +130,8 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     if (id) {
       const res = await dbInternal.customer.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
       if (!res) return { ok: false, error: "Kunde nicht gefunden." };
-      // peppolId wird (mangels Formularfeld) hier immer als Schluessel VORHANDEN (aber
-      // undefined) mitgefuehrt, da str(fd,"peppolId") ohne echtes Formularfeld immer
-      // undefined liefert. Beim Aufruf von updateCustomer MUSS der Schluessel deshalb
-      // explizit entfernt werden (nicht nur auf undefined gesetzt) -- eine PATCH-Semantik
-      // schreibt sonst ueber "Schluessel vorhanden" einen bestehenden Wert auf null.
-      const { peppolId: _peppolIdIgnored, ...updatePayload } = v;
-      void _peppolIdIgnored;
-      await updateCustomer(org.id, id, updatePayload);
+      // Alle Formularfelder sind Schluessel des Formulars; leere Felder loeschen den Wert (PATCH-Semantik der Domain).
+      await updateCustomer(org.id, id, v);
     } else {
       await createCustomer(org.id, v);
     }

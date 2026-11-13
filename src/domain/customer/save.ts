@@ -17,7 +17,9 @@
  * vergebene Nummer bleibt sonst beim Speichern anderer Felder erhalten).
  */
 import { dbInternal } from "@/lib/db";
-import { customerSchema, type CustomerInput } from "@/schemas";
+import { customerSchema, customerFieldsSchema, customerEndpointProblems, type CustomerInput } from "@/schemas";
+import { isValidLeitwegId } from "@/lib/einvoice/eas";
+import { normalizeVatId } from "@/lib/vat-id";
 import { assignCustomerNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
 import type { Customer } from "@/generated/prisma/client";
@@ -46,6 +48,8 @@ function toCreateData(v: CustomerInput) {
     vatId: v.vatId ?? null,
     leitwegId: v.leitwegId ?? null,
     peppolId: v.peppolId ?? null,
+    peppolScheme: v.peppolId ? (v.peppolScheme ?? null) : null,
+    legalRegistrationId: v.legalRegistrationId || null,
     defaultPaymentTermsDays: v.defaultPaymentTermsDays ?? null,
     defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
     notes: v.notes ?? null,
@@ -61,10 +65,18 @@ async function assertPaymentMethodBelongsToOrg(orgId: string, defaultPaymentMeth
   if (!method) throw new CustomerValidationError("Zahlungsmethode nicht gefunden.");
 }
 
+/** Leitweg-ID nur pruefen, wenn neu oder geaendert (Bestandswerte bleiben speicherbar). */
+function assertLeitwegId(next: string | null | undefined, current: string | null): void {
+  const value = next?.trim();
+  if (!value || value === current) return;
+  if (!isValidLeitwegId(value)) throw new CustomerValidationError("Ungueltige Leitweg-ID (Format oder Pruefziffer).");
+}
+
 /** Legt einen neuen Kunden an. Kundennummer per Nummernkreis (CUSTOMER), sofern im
  *  Input nicht bereits gesetzt (§34). */
 export async function createCustomer(orgId: string, rawInput: unknown): Promise<Customer> {
   const v = customerSchema.parse(rawInput);
+  assertLeitwegId(v.leitwegId, null);
   await assertPaymentMethodBelongsToOrg(orgId, v.defaultPaymentMethodId);
   const data = toCreateData(v);
   return dbInternal.$transaction(async (tx) => {
@@ -73,17 +85,25 @@ export async function createCustomer(orgId: string, rawInput: unknown): Promise<
   });
 }
 
-const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays"]);
+const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "peppolScheme", "legalRegistrationId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays"]);
 
 export async function updateCustomer(orgId: string, id: string, rawInput: unknown): Promise<Customer> {
   const raw = rawInput && typeof rawInput === "object" ? (rawInput as Record<string, unknown>) : {};
-  const v = customerSchema.partial().parse(raw);
+  const v = customerFieldsSchema.partial().parse(raw);
 
   const existing = await dbInternal.customer.findFirst({ where: { id, orgId } });
   if (!existing) throw new NotFoundError("Kunde nicht gefunden.");
 
   if ("defaultPaymentMethodId" in raw) {
     await assertPaymentMethodBelongsToOrg(orgId, v.defaultPaymentMethodId);
+  }
+
+  if ("leitwegId" in raw) assertLeitwegId(v.leitwegId, existing.leitwegId);
+  if ("peppolId" in raw || "peppolScheme" in raw) {
+    const peppolId = "peppolId" in raw ? v.peppolId : existing.peppolId;
+    const peppolScheme = "peppolScheme" in raw ? v.peppolScheme : existing.peppolScheme;
+    const problem = customerEndpointProblems({ peppolId, peppolScheme })[0];
+    if (problem) throw new CustomerValidationError(problem.message);
   }
 
   const patch: Record<string, unknown> = {};
@@ -95,9 +115,15 @@ export async function updateCustomer(orgId: string, id: string, rawInput: unknow
     } else if (key === "customerNumber") {
       if (!value) continue; // nur schreiben, wenn nicht-leer angegeben
     } else if (NULLABLE_ON_EMPTY.has(key)) {
-      value = value ?? null;
+      value = value === "" ? null : (value ?? null);
     }
     patch[key] = value;
+  }
+  // Ohne Peppol-ID kein Schema; geaenderte USt-IdNr. verliert die VIES-Bestaetigung.
+  if ("peppolId" in patch && !patch.peppolId) patch.peppolScheme = null;
+  if ("vatId" in patch) {
+    const norm = (x: string | null | undefined) => (x ? normalizeVatId(x) : null);
+    if (norm(patch.vatId as string | null) !== norm(existing.vatId)) patch.vatIdValidatedAt = null;
   }
   return dbInternal.customer.update({ where: { id: existing.id }, data: patch });
 }
