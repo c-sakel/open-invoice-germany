@@ -51,6 +51,8 @@ Die meisten MCP-Clients lesen eine `.mcp.json` im Projekt (oder eine globale Kon
 
 Im Client prüfen, dass `open-invoice-germany` verbunden ist. Desktop-Clients: denselben Block in deren MCP-Konfigurationsdatei eintragen.
 
+Konto-Sicherheit (Zwei-Faktor-Anmeldung, Passwort-Reset) gibt es nur über die Sitzung der Weboberfläche; der MCP-Zugang mit API-Schlüssel bleibt davon unberührt.
+
 ## 2. So redest du mit ihm
 
 > **„Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678, IBAN DE02 1203 0000 0000 2020 51."**

@@ -19,6 +19,8 @@ Jeder API-Aufruf braucht einen **API-Schlüssel** als Bearer-Token:
 `/api/v1/*` akzeptiert **ausschließlich** Bearer-Token, kein Session-Cookie. Ein
 Schlüssel ohne den passenden Scope liefert `403 FORBIDDEN`.
 
+Konto-Sicherheit (Passwort, Zwei-Faktor-Anmeldung, Passwort-Reset) läuft nur über die Sitzung der Weboberfläche; API-Schlüssel und Scopes bleiben davon unberührt.
+
 | Scope   | Bedeutung |
 |---------|-----------|
 | `read`  | Lesen (GET) |
