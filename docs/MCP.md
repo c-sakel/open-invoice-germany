@@ -141,6 +141,7 @@ Kursquelle ist standardmäßig der amtliche Monatsdurchschnitt (`fxRateSource = 
 | `convert_document_to_invoice` | Dokument → Rechnungs-Entwurf | „Erstelle aus Angebot ANG-2026-00123 eine Rechnung." |
 | `convert_document` | Generische Umwandlung: Angebot → AB, Angebot/AB/Proforma → Rechnung, Angebot/AB/Rechnung → Lieferschein (optional Teilmengen) | „Erzeuge aus Angebot ANG-2026-00123 eine Auftragsbestätigung." |
 | `create_delivery_note` | Lieferschein ohne Quelldokument anlegen (Direktlieferung) | „Erstelle aus dem Auftrag einen Lieferschein." |
+| `update_delivery_note` | Lieferschein-Entwurf (Status DRAFT) ändern: Kunde, Positionen, Lieferdatum (leerer String leert es), Notizen, Sprache; `create_delivery_note` legt mit `draft: true` einen Entwurf an | „Ändere im Lieferschein-Entwurf die Menge der ersten Position.“ |
 | `set_document_status` | Status eines Angebots/einer AB oder eines Lieferscheins setzen (MARK_SENT/MARK_ACCEPTED/MARK_REJECTED/MARK_CREATED/MARK_DELIVERED/CANCEL/ARCHIVE/UNARCHIVE) | „Markiere Angebot ANG-2026-00123 als angenommen." |
 | `duplicate_document` | Angebot/AB/Proforma, Lieferschein oder Rechnung als neuen Entwurf duplizieren | „Dupliziere Angebot ANG-2026-00123 als neuen Entwurf." |
 | `take_over_last_document` | Letzten passenden Vorgängerbeleg eines Kunden finden und daraus Positionen/Texte/Bedingungen/Preise als Vorschlag liefern (§32) | „Übernimm die Positionen aus dem letzten Angebot an Müller GmbH." |

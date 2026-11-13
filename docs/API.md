@@ -454,8 +454,7 @@ Das PDF/XML einer archivierten Rechnung (`GET /api/v1/Invoice/{id}/pdf`) liefert
   Rechnung, siehe `/api/docs`), `/dunning` (`{dunning}`), `/share-link`
   (`{url, token?, expiresAt}`). Datei-Endpunkte (`/pdf`, `/xrechnung`,
   `/zugferd`) bleiben binär.
-- `DeliveryNote` hat keinen `PATCH`-Endpunkt (keine `updateDraft`-Domainfunktion
-  vorhanden) — siehe [LIMITATIONEN.md](LIMITATIONEN.md).
+- `DeliveryNote`: `PATCH /api/v1/DeliveryNote/{id}` ändert nur Entwürfe (Status `DRAFT`, anzulegen mit `draft: true` beim `POST`); `deliveryDate`/`shippingDate` lassen sich mit `null` leeren, ein erstellter Lieferschein liefert 409. Statusänderungen laufen über `POST .../status`.
 - `Layout` (Phase 11b) selbst ist nur lesbar (`GET`, feste Liste, keine DB-Tabelle) —
   eine Beleg-individuelle Layout-Überschreibung setzt sich stattdessen über `PATCH
   /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
