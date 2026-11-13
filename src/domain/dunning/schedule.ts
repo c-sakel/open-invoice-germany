@@ -6,7 +6,7 @@
  */
 
 export interface StageLike {
-  id?: string;
+  id: string;
   order: number;
   enabled: boolean;
   daysAfterDue: number;
@@ -21,8 +21,8 @@ export interface DunningScheduleInput<S extends StageLike = StageLike> {
   stages: S[];
   /** Karenztage, die nur auf die erste Stufe (order 0) zusaetzlich draufgerechnet werden. */
   gracePeriodDays: number;
-  /** IDs bereits erreichter Stufen; fehlt -> exakt bisheriges Verhalten (nur `order`). */
-  reachedStageIds?: readonly string[];
+  /** IDs bereits erreichter Stufen (aus `reachedStageIds(dunnings)`); Pflicht, damit kein Aufrufer sie vergisst. */
+  reachedStageIds: readonly string[];
   now: Date;
 }
 
@@ -103,13 +103,20 @@ export function latestDunning<T extends DunningLike>(dunnings: T[]): T | null {
  * (`gracePeriodDays`) zaehlt dabei NUR bei der allerersten Stufe (order 0) zusaetzlich.
  */
 export function dunningScheduleFor<S extends StageLike>(input: DunningScheduleInput<S>): DunningSchedule<S> {
+  // Vertrag (17b): ohne Stufen-ID laesst sich eine erreichte Stufe nicht erkennen -> klarer Fehler statt stillem Fehlverhalten.
+  if (input.stages.some((s) => typeof s.id !== "string" || s.id === "")) {
+    throw new Error("dunningScheduleFor: alle Mahnstufen brauchen eine id (reachedStageIds-Vertrag).");
+  }
+  if (!Array.isArray(input.reachedStageIds)) {
+    throw new Error("dunningScheduleFor: reachedStageIds ist Pflicht (reachedStageIds(dunnings) uebergeben).");
+  }
   const afterOrder = input.lastDunning?.order ?? -1;
   // Nach einem Umsortieren (S3) zaehlt neben `order` auch, welche Stufen schon erreicht
   // wurden: eine erreichte Stufe wird nie erneut gewaehlt (Unique (invoiceId, stageId)).
-  const reached = new Set(input.reachedStageIds ?? []);
+  const reached = new Set(input.reachedStageIds);
   const nextStage =
     input.stages
-      .filter((s) => s.enabled && s.order > afterOrder && !(s.id && reached.has(s.id)))
+      .filter((s) => s.enabled && s.order > afterOrder && !reached.has(s.id))
       .sort((a, b) => a.order - b.order)[0] ?? null;
 
   const daysOverdue = daysBetweenDates(input.invoiceDueDate, input.now);

@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { dunningScheduleFor, latestDunning, reachedStageIds, type StageLike, type DunningLike } from "@/domain/dunning/schedule";
 
 const STAGES: StageLike[] = [
-  { order: 0, enabled: true, daysAfterDue: 3 },
-  { order: 1, enabled: true, daysAfterDue: 10 },
-  { order: 2, enabled: false, daysAfterDue: 10 },
-  { order: 3, enabled: true, daysAfterDue: 7 },
+  { id: "s0", order: 0, enabled: true, daysAfterDue: 3 },
+  { id: "s1", order: 1, enabled: true, daysAfterDue: 10 },
+  { id: "s2", order: 2, enabled: false, daysAfterDue: 10 },
+  { id: "s3", order: 3, enabled: true, daysAfterDue: 7 },
 ];
 
 describe("dunningScheduleFor (Phase 6, Task 2)", () => {
@@ -16,6 +16,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: null,
       stages: STAGES,
       gracePeriodDays: 2,
+      reachedStageIds: [],
       now: new Date("2050-01-06T00:00:00.000Z"), // Faellig +3+2=5 Tage -> 06.01.
     });
     expect(s.nextStage?.order).toBe(0);
@@ -29,6 +30,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: null,
       stages: STAGES,
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now: new Date("2050-01-02T00:00:00.000Z"),
     });
     expect(s.isDue).toBe(false);
@@ -40,6 +42,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: { order: 0, dueDate: new Date("2050-01-15T00:00:00.000Z"), sentAt: new Date("2050-01-04T00:00:00.000Z") },
       stages: STAGES,
       gracePeriodDays: 5,
+      reachedStageIds: [],
       now: new Date("2050-01-25T00:00:00.000Z"), // Basis (dueDate der Stufe 0) + 10 Tage = 25.01., ohne Karenz
     });
     expect(s.nextStage?.order).toBe(1);
@@ -53,6 +56,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: { order: 0, dueDate: null, sentAt: new Date("2050-01-10T00:00:00.000Z") },
       stages: STAGES,
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now: new Date("2050-01-20T00:00:00.000Z"),
     });
     expect(s.dueAt?.toISOString()).toBe("2050-01-20T00:00:00.000Z"); // 10.01 + 10 Tage
@@ -64,6 +68,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: { order: 1, dueDate: new Date("2050-02-01T00:00:00.000Z"), sentAt: new Date("2050-02-01T00:00:00.000Z") },
       stages: STAGES,
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now: new Date("2050-02-08T00:00:00.000Z"),
     });
     expect(s.nextStage?.order).toBe(3);
@@ -76,6 +81,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: { order: 3, dueDate: new Date("2050-03-01T00:00:00.000Z"), sentAt: new Date("2050-03-01T00:00:00.000Z") },
       stages: STAGES,
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now: new Date("2050-04-01T00:00:00.000Z"),
     });
     expect(s.nextStage).toBeNull();
@@ -89,6 +95,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: { order: 0, dueDate: new Date("2050-01-20T00:00:00.000Z"), sentAt: new Date("2050-01-04T00:00:00.000Z") },
       stages: STAGES,
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now: new Date("2050-02-01T00:00:00.000Z"),
     });
     expect(s.daysOverdue).toBe(31);
@@ -100,6 +107,7 @@ describe("dunningScheduleFor (Phase 6, Task 2)", () => {
       lastDunning: null,
       stages: STAGES,
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now: new Date("2050-01-04T23:59:00.000Z"), // faellig am 04.01. (01.01 + 3 Tage), spaet abends
     });
     expect(s.isDue).toBe(true);
@@ -176,6 +184,7 @@ describe("dunningScheduleFor mit reachedStageIds (17b)", () => {
       lastDunning: { order: 0, dueDate: null, sentAt: sent },
       stages: [stage("B", 0), stage("A", 1), stage("C", 2)],
       gracePeriodDays: 0,
+      reachedStageIds: [],
       now,
     });
     expect(s.nextStage?.id).toBe("A");
@@ -195,5 +204,19 @@ describe("dunningScheduleFor mit reachedStageIds (17b)", () => {
 
   it("reachedStageIds ignoriert Altmahnungen ohne stageId", () => {
     expect(reachedStageIds([{ stageId: "A" }, { stageId: null }])).toEqual(["A"]);
+  });
+});
+
+describe("dunningScheduleFor Vertrag (17b)", () => {
+  const base = { invoiceDueDate: new Date("2050-01-01T00:00:00.000Z"), lastDunning: null, gracePeriodDays: 0, now: new Date("2050-06-01T00:00:00.000Z") };
+
+  it("Stufen ohne id -> klarer Fehler statt stillem Fehlverhalten", () => {
+    const stages = [{ order: 0, enabled: true, daysAfterDue: 3 }] as unknown as StageLike[];
+    expect(() => dunningScheduleFor({ ...base, stages, reachedStageIds: [] })).toThrow(/id/);
+  });
+
+  it("fehlendes reachedStageIds -> klarer Fehler", () => {
+    const input = { ...base, stages: STAGES } as unknown as Parameters<typeof dunningScheduleFor>[0];
+    expect(() => dunningScheduleFor(input)).toThrow(/reachedStageIds/);
   });
 });
