@@ -235,20 +235,61 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
   const base = invoiceFilterConditions(orgId, filter);
   const idSet = await invoiceIdSet(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
-  const openishCond: Prisma.InvoiceWhereInput = { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"] } };
+  const grossRef = prisma.invoice.fields.grossTotalCents;
+  const payableRef = prisma.invoice.fields.payableCents;
+  // Geldfluss-Band je Block per aggregate (keine Zeilen im Speicher): Rechnungen mit
+  // Zahlungsstand 0 <= bezahlt <= Bemessungsgrundlage ("regulaer") summiert die Datenbank je
+  // Statusgruppe (bezahlt / offen nicht faellig / faellig / ueberfaellig) und Basis
+  // (payableCents null -> brutto, sonst payableCents). Die wenigen "unregulaeren" Zeilen
+  // (ueberzahlt oder negativ gebucht) brauchen die Klemmung je Zeile und kommen einzeln.
+  const openishRaw: Prisma.InvoiceWhereInput = { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"] } };
+  const groupConds = {
+    paid: { type: { not: "CREDIT_NOTE" }, status: "PAID" } satisfies Prisma.InvoiceWhereInput,
+    open: statusWhere("open", now) ?? {},
+    due: statusWhere("due", now) ?? {},
+    overdue: statusWhere("overdue", now) ?? {},
+  };
+  const bases = [
+    { kind: "gross", cond: { payableCents: null, paidAmountCents: { gte: 0, lte: grossRef } } },
+    { kind: "payable", cond: { payableCents: { not: null }, paidAmountCents: { gte: 0, lte: payableRef } } },
+  ] as const satisfies ReadonlyArray<{ kind: string; cond: Prisma.InvoiceWhereInput }>;
+  const irregular: Prisma.InvoiceWhereInput = {
+    OR: [
+      { paidAmountCents: { lt: 0 } },
+      { payableCents: null, paidAmountCents: { gt: grossRef } },
+      { payableCents: { not: null }, paidAmountCents: { gt: payableRef } },
+    ],
+  };
 
-  const [blockGroups, openish, draftCount] = await Promise.all([
-    collectByIdSet(idSet, (c) =>
-      prisma.invoice.groupBy({ by: ["currency"], where: withCond(base, c, statusCond), _count: { _all: true }, _sum: { grossTotalCents: true } }),
-    ),
-    collectByIdSet(idSet, (c) =>
-      prisma.invoice.findMany({
-        where: { AND: [withCond(base, c, statusCond), openishCond] },
-        select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
-      }),
-    ),
+  const blockBand = async (c: IdCond) => {
+    const where = (extra: Prisma.InvoiceWhereInput) => ({ AND: [withCond(base, c, statusCond), extra] });
+    const cells = await Promise.all(
+      (Object.keys(groupConds) as Array<keyof typeof groupConds>).flatMap((group) =>
+        bases.map(async (b) => {
+          const agg = await prisma.invoice.aggregate({
+            where: where({ AND: [groupConds[group], b.cond] }),
+            _count: { _all: true },
+            _sum: { grossTotalCents: true, payableCents: true, paidAmountCents: true },
+          });
+          const baseSum = b.kind === "gross" ? (agg._sum.grossTotalCents ?? 0) : (agg._sum.payableCents ?? 0);
+          return { group, count: agg._count._all, paid: agg._sum.paidAmountCents ?? 0, open: baseSum - (agg._sum.paidAmountCents ?? 0) };
+        }),
+      ),
+    );
+    const odd = await prisma.invoice.findMany({
+      where: where({ AND: [openishRaw, irregular] }),
+      select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+    });
+    return { cells, odd };
+  };
+
+  const [blocks, draftCount] = await Promise.all([
+    collectByIdSet(idSet, async (c) => [await blockBand(c)]),
     countByIdSet(idSet, (c) => prisma.invoice.count({ where: { AND: [withCond(base, c, statusCond), { status: "DRAFT" }] } })),
   ]);
+  const blockGroups = await collectByIdSet(idSet, (c) =>
+    prisma.invoice.groupBy({ by: ["currency"], where: withCond(base, c, statusCond), _count: { _all: true }, _sum: { grossTotalCents: true } }),
+  );
 
   // Block-Ergebnisse je Waehrung zusammenfuehren (ohne Id-Menge genau ein Block).
   const byCurrency = new Map<string, { count: number; gross: number }>();
@@ -265,20 +306,33 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
   let paidCents = 0;
   let notDueCents = 0;
   let dueCents = 0;
-  for (const inv of openish) {
-    const status = effectiveInvoiceStatus({ status: inv.status, type: inv.type, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
-    // Band: eingegangen = paidAmountCents (hoechstens der zahlbare Betrag), nie Entwuerfe.
-    paidCents += Math.max(0, Math.min(inv.paidAmountCents, payableBaseCents(inv)));
-    if (status === "OPEN") notDueCents += Math.max(0, openAmountCents(inv));
-    if (status === "DUE") dueCents += Math.max(0, openAmountCents(inv));
-    if (status !== "OPEN" && status !== "DUE" && status !== "OVERDUE") continue;
-    // openAmountCents rechnet vorzeichenbehaftet (payableBaseCents - paidAmountCents) — bei
-    // einer ueberzahlten Rechnung waere das Ergebnis negativ. Lokal geklemmt statt die
-    // geteilte Funktion zu aendern (sie hat weitere Aufrufer, z. B. dashboardSummary,
-    // dunning/auto.ts, deren Verhalten hier nicht mit angefasst werden soll).
-    const open = Math.max(0, openAmountCents(inv));
-    openCents += open;
-    if (status === "OVERDUE") overdueCents += open;
+  let bandCount = 0;
+  for (const block of blocks) {
+    for (const cell of block.cells) {
+      bandCount += cell.count;
+      paidCents += cell.paid; // regulaer: 0 <= bezahlt <= Basis, also keine Klemmung noetig
+      if (cell.group === "open") notDueCents += cell.open;
+      if (cell.group === "due") dueCents += cell.open;
+      if (cell.group === "open" || cell.group === "due") openCents += cell.open;
+      if (cell.group === "overdue") {
+        openCents += cell.open;
+        overdueCents += cell.open;
+      }
+    }
+    bandCount += block.odd.length;
+    for (const inv of block.odd) {
+      const status = effectiveInvoiceStatus({ status: inv.status, type: inv.type, dueDate: inv.dueDate, issueDate: inv.issueDate }, now);
+      // Band: eingegangen = paidAmountCents (hoechstens der zahlbare Betrag), nie Entwuerfe.
+      paidCents += Math.max(0, Math.min(inv.paidAmountCents, payableBaseCents(inv)));
+      if (status !== "OPEN" && status !== "DUE" && status !== "OVERDUE") continue;
+      // openAmountCents rechnet vorzeichenbehaftet; hier lokal geklemmt (die geteilte
+      // Funktion hat weitere Aufrufer, z. B. dashboardSummary, dunning/auto.ts).
+      const open = Math.max(0, openAmountCents(inv));
+      if (status === "OPEN") notDueCents += open;
+      if (status === "DUE") dueCents += open;
+      openCents += open;
+      if (status === "OVERDUE") overdueCents += open;
+    }
   }
 
   // Fuehrende Waehrung fuer die Anzeige: die mit den meisten Belegen (Tie-Break: erste
@@ -295,7 +349,7 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
     notDueCents,
     dueCents,
     draftCount,
-    bandCount: openish.length,
+    bandCount,
     currency: leading?.currency ?? "EUR",
     mixedCurrency: groups.length > 1,
   };
