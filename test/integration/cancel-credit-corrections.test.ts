@@ -29,6 +29,7 @@ import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { createInvoiceSchema } from "@/schemas";
+import { SCHEME_NOTICE_BY_LANG } from "@/domain/invoice/mandatory";
 
 const NOW = new Date("2047-05-01T10:00:00.000Z");
 // Eigenes Jahr fuer orgNoVat: assignDocumentNumber() vergibt Nummern "RE-<Jahr>-000N" je Org
@@ -217,5 +218,38 @@ describe("Frische Belege bleiben blockiert (Gegenprobe zu C1)", () => {
       { now: NOW },
     );
     await expect(finalizeInvoice(draft.id, { now: NOW })).rejects.toThrow(FinalizeError);
+  });
+});
+
+describe("Teilgutschrift erbt den Pflichthinweis des Originals (17a)", () => {
+  async function partial(original: { id: string; orgId: string }, notes?: string) {
+    const res = await createPartialCreditNote(
+      original.id,
+      { notes, lines: [{ description: "Teilrueckgabe", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 0, taxCategory: "AE" }] },
+      { orgId: original.orgId, now: NOW },
+    );
+    return dbInternal.invoice.findUniqueOrThrow({ where: { id: res.creditNote.id }, select: { notes: true } });
+  }
+  const mk = (language: string, taxScheme = "REVERSE_CHARGE", taxCategory = "AE") =>
+    createLegacyFinalizedInvoice({ orgId: orgWithVat, customerId: customerNoVat, taxScheme, notes: "x", deliveryDate: NOW, taxCategory }).then(async (o) => {
+      await dbInternal.invoice.update({ where: { id: o.id }, data: { language } });
+      return o;
+    });
+
+  it("de: Hinweis wird angehaengt", async () => {
+    const c = await partial(await mk("de"));
+    expect(c.notes).toContain(SCHEME_NOTICE_BY_LANG.de.REVERSE_CHARGE);
+  });
+  it("Hinweis in der Eingabe-Notiz: genau einmal", async () => {
+    const c = await partial(await mk("de"), SCHEME_NOTICE_BY_LANG.de.REVERSE_CHARGE);
+    expect(c.notes!.split(SCHEME_NOTICE_BY_LANG.de.REVERSE_CHARGE).length - 1).toBe(1);
+  });
+  it("en: englischer Hinweis", async () => {
+    const c = await partial(await mk("en"));
+    expect(c.notes).toContain(SCHEME_NOTICE_BY_LANG.en.REVERSE_CHARGE);
+  });
+  it("REGULAR: kein Zusatz", async () => {
+    const c = await partial(await mk("de", "REGULAR", "S"));
+    expect(c.notes).toBe("Teilgutschrift zu Rechnung " + (await dbInternal.invoice.findFirstOrThrow({ where: { notes: "x", taxScheme: "REGULAR", orgId: orgWithVat }, select: { number: true }, orderBy: { createdAt: "desc" } })).number + ".");
   });
 });
