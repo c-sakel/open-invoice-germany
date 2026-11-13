@@ -132,6 +132,30 @@ describe("REST /api/v1/Contact/{id}/vat-check(s)", () => {
     const foreign = await vatChecksGet(req("http://x", readToken), ctx1(otherCustomerId));
     expect(foreign.status).toBe(404);
   });
+
+  it("GET vat-checks: 51 Pruefzeilen -> 50 Eintraege, total 51", async () => {
+    const base = Date.UTC(2142, 0, 1);
+    const fresh = await dbInternal.customer.create({
+      data: { orgId, name: "VIES Protokoll Kunde", addressLine1: "Weg 2", postalCode: "54321", city: "Wien", vatId: "ATU12345678" },
+      select: { id: true },
+    });
+    await dbInternal.vatIdCheck.createMany({
+      data: Array.from({ length: 51 }, (_, i) => ({
+        orgId,
+        customerId: fresh.id,
+        vatId: "ATU12345678",
+        status: "VALID",
+        trigger: "MANUAL",
+        checkedAt: new Date(base + i * 60_000),
+      })),
+    });
+    const res = await vatChecksGet(req("http://x", readToken), ctx1(fresh.id));
+    const j = await res.json();
+    expect(res.status).toBe(200);
+    expect(j.data).toHaveLength(50);
+    expect(j.total).toBe(51);
+    expect(j.limit).toBe(50);
+  });
 });
 
 describe("MCP check_vat_id / list_vat_id_checks / update_document_settings", () => {

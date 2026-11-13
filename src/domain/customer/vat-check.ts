@@ -188,3 +188,8 @@ export async function listVatIdChecks(orgId: string, customerId: string, limit =
   });
   return rows as VatIdCheckRow[];
 }
+
+/** Gesamtzahl der Pruefprotokoll-Zeilen eines Kunden (listVatIdChecks liefert hoechstens 50). */
+export async function countVatIdChecks(orgId: string, customerId: string): Promise<number> {
+  return dbInternal.vatIdCheck.count({ where: { orgId, customerId } });
+}

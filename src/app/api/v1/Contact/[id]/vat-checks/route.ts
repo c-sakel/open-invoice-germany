@@ -5,14 +5,15 @@ import { withApi } from "@/api/auth";
 import { apiList } from "@/api/response";
 import { apiListResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeVatIdCheck, vatIdCheckSchema } from "@/api/serializers/vat-check";
-import { listVatIdChecks } from "@/domain/customer/vat-check";
+import { countVatIdChecks, listVatIdChecks } from "@/domain/customer/vat-check";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi<{ id: string }>(async (_req, ctx) => {
   const rows = await listVatIdChecks(ctx.orgId, ctx.params.id, 50);
-  return apiList(rows.map(serializeVatIdCheck), { total: rows.length, limit: 50, offset: 0 });
+  const total = await countVatIdChecks(ctx.orgId, ctx.params.id);
+  return apiList(rows.map(serializeVatIdCheck), { total, limit: 50, offset: 0 });
 }, { scope: "read" });
 
 export const spec = {
