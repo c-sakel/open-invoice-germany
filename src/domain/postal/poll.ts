@@ -7,7 +7,8 @@
  *   Netzaufrufe liegen nie in einer Transaktion.
  * - UNKNOWN/SUBMITTING (Ausgang unklar) werden ueber den eindeutigen Dateinamen (`filename_original`) in den
  *   Listen des Anbieters gesucht. Es gibt NIE einen automatischen Neuversand; ohne Treffer nach 60 min -> FAILED
- *   mit Hinweis zur manuellen Pruefung.
+ *   mit Hinweis zur manuellen Pruefung — aber nur, wenn die Listen vollstaendig geladen wurden (sonst UNKNOWN + Hinweis).
+ *   Ein Treffer mit Status `canceled` schliesst den Auftrag als CANCELLED ab.
  * - Unlesbare Antworten (auch unbekannte Statuswerte) und Ausfaelle werden nicht ausgewertet; der Auftrag
  *   bleibt unveraendert und wird im naechsten Lauf erneut abgefragt.
  */
@@ -124,6 +125,12 @@ function totals(remote: LxpPrintJob): {
   };
 }
 
+interface RemoteLists {
+  jobs: LxpPrintJob[];
+  /** Die Auftragsliste des Anbieters hat mehr Seiten, als geladen wurden: "kein Treffer" ist dann kein Beweis. */
+  truncated: boolean;
+}
+
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export async function pollPostalJobs(
@@ -156,7 +163,11 @@ export async function pollPostalJobs(
     try {
       creds = await loadPostalCredentials(org.orgId);
     } catch (e) {
-      if (!(e instanceof PostalKeyUnreadableError)) throw e;
+      if (!(e instanceof PostalKeyUnreadableError)) {
+        console.error("postal: Zugangsdaten nicht ladbar", e instanceof Error ? e.name : "Fehler");
+        skip("error");
+        continue;
+      }
       skip("keyUnreadable");
       continue;
     }
@@ -192,11 +203,13 @@ export async function pollPostalJobs(
     });
     remaining -= candidates.length;
 
-    let remoteLists: LxpPrintJob[] | null | undefined; // undefined: noch nicht geladen, null: nicht ladbar
-    const loadLists = async (): Promise<LxpPrintJob[] | null> => {
+    let remoteLists: RemoteLists | null | undefined; // undefined: noch nicht geladen, null: nicht ladbar
+    const loadLists = async (): Promise<RemoteLists | null> => {
       if (remoteLists !== undefined) return remoteLists;
       const found: LxpPrintJob[] = [];
-      const filters = mode === "TEST" ? (["queue", "hold", "done", "draft"] as const) : (["queue", "hold", "done"] as const);
+      let truncated = false;
+      const filters =
+        mode === "TEST" ? (["queue", "hold", "done", "draft", "canceled"] as const) : (["queue", "hold", "done", "canceled"] as const);
       try {
         for (const filter of filters) {
           for (let page = 1; page <= RECONCILE_PAGES; page++) {
@@ -204,9 +217,10 @@ export async function pollPostalJobs(
             const res = await client.list(filter, page);
             found.push(...res.jobs);
             if (page >= res.lastPage) break;
+            if (page === RECONCILE_PAGES) truncated = true; // weitere Seiten beim Anbieter, nicht geladen
           }
         }
-        remoteLists = found;
+        remoteLists = { jobs: found, truncated };
       } catch (e) {
         if (e instanceof LxpAuthError) throw e;
         if (!(e instanceof LxpUnavailableError || e instanceof LxpRequestError)) throw e;
@@ -262,7 +276,12 @@ export async function pollPostalJobs(
         skip("networkForbidden");
         continue;
       }
-      if (!(e instanceof LxpAuthError)) throw e;
+      if (!(e instanceof LxpAuthError)) {
+        // Fehler einer Organisation (z. B. Datenbank) stoppen nicht den Lauf der anderen.
+        console.error("postal: Abgleich einer Organisation fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
+        skip("error");
+        continue;
+      }
       skip("authRejected");
       const first = candidates[0];
       if (first) {
@@ -381,7 +400,11 @@ async function handleNotFound(job: Candidate, mode: "TEST" | "LIVE", now: Date):
     });
     return;
   }
-  if (!["QUEUED", "HOLD", "DRAFT"].includes(current) || job.error !== null) return;
+  if (!["QUEUED", "HOLD", "DRAFT"].includes(current) || job.error !== null) {
+    // Nur den Abfragezeitpunkt fortschreiben, damit der Auftrag nicht dauerhaft vorne in der Warteschlange steht.
+    await dbInternal.$transaction((tx) => transitionPostalJob(tx, job.id, current, { lastPolledAt: now }));
+    return;
+  }
   const message = "Beim Briefdienst nicht gefunden (Abruf 404)";
   const noted = await dbInternal.$transaction(async (tx) => {
     if (!(await transitionPostalJob(tx, job.id, current, { lastPolledAt: now, error: message }))) return false;
@@ -405,16 +428,42 @@ async function reconcileJob(
   job: Candidate,
   mode: "TEST" | "LIVE",
   creds: LxpCredentials,
-  loadLists: () => Promise<LxpPrintJob[] | null>,
+  loadLists: () => Promise<RemoteLists | null>,
   now: Date,
 ): Promise<"reconciled" | "failed" | "unavailable" | "pending"> {
   const lists = await loadLists();
   if (lists === null) return "unavailable";
-  const hit = lists.find((r) => r.filenameOriginal === job.filename);
+  const hit = lists.jobs.find((r) => r.filenameOriginal === job.filename);
+
+  if (hit && mapStatus(hit.status) === "CANCELLED") {
+    // Beim Anbieter bereits storniert: nach eigener Regel abschliessen (kein Brief, kein Neuversand, kein Mahnungsvermerk).
+    const t = totals(hit);
+    const ok = await dbInternal.$transaction(async (tx) => {
+      if (job.status === "SUBMITTING" && !(await transitionPostalJob(tx, job.id, "UNKNOWN", {}))) return false;
+      const moved = await transitionPostalJob(tx, job.id, "CANCELLED", {
+        providerJobId: hit.id,
+        ...(t.priceCents !== undefined ? { priceCents: t.priceCents, vatCents: t.vatCents } : {}),
+        lastPolledAt: now,
+        finishedAt: now,
+        error: null,
+      });
+      if (!moved) return false;
+      await addPostalEvent(tx, {
+        jobId: job.id,
+        orgId: job.orgId,
+        kind: "RECONCILED",
+        status: "CANCELLED",
+        data: { providerJobId: hit.id, from: job.status, to: "CANCELLED" },
+        at: now,
+      });
+      await finishEffects(tx, job, "CANCELLED", now);
+      return true;
+    });
+    return ok ? "reconciled" : "pending";
+  }
 
   if (hit) {
     const status = mapStatus(hit.status);
-    if (status === "CANCELLED") return "pending";
     const t = totals(hit);
     const ok = await dbInternal.$transaction(async (tx) => {
       const moved = await transitionPostalJob(tx, job.id, status, {
@@ -478,6 +527,19 @@ async function reconcileJob(
   }
 
   if (now.getTime() - job.createdAt.getTime() < GIVE_UP_AFTER_MS) return "pending";
+
+  if (lists.truncated) {
+    // Die Liste beim Anbieter ist laenger als geladen: kein Treffer beweist nichts. UNKNOWN lassen (Doppelversand ausschliessen).
+    await notifyPostal(job.orgId, {
+      type: "POSTAL_FAILED",
+      title: "Postversand unklar",
+      body: `${job.docNumber}: Uebertragung nicht abgleichbar (lange Auftragsliste) — im Kundenbereich des Briefdienstes pruefen, nicht erneut senden.`,
+      invoiceId: job.invoiceId,
+      dedupeKey: `POSTAL_FAILED:${job.id}:truncated`,
+      at: now,
+    });
+    return "pending";
+  }
 
   const message = redact("Uebertragung nicht nachweisbar — im Kundenbereich des Briefdienstes pruefen", creds);
   const failed = await dbInternal.$transaction(async (tx) => {

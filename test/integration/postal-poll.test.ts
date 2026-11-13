@@ -306,6 +306,55 @@ describe("Status-Abgleich", () => {
     expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: young.id }, select: { status: true } })).status).toBe("PENDING");
   });
 
+  it("UNKNOWN: Liste laenger als geladen -> nach 61 min nicht FAILED, Hinweis (einmal), Doppelversand ausgeschlossen", async () => {
+    const org = await newOrg();
+    const j = await newJob(org, { status: "UNKNOWN", providerJobId: null, createdAt: min(120), submittedAt: null });
+    const f = fake({ list: { queue: [[], [], []], hold: [[]], done: [[]], canceled: [[]] } });
+    const r = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
+    expect(r.failed).toBe(0);
+    await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: j.id }, select: { status: true } })).status).toBe("UNKNOWN");
+    expect(await dbInternal.notification.count({ where: { orgId: org, dedupeKey: `POSTAL_FAILED:${j.id}:truncated` } })).toBe(1);
+    expect(f.calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("UNKNOWN mit Treffer `canceled` -> CANCELLED (RECONCILED), nicht ewig UNKNOWN", async () => {
+    const org = await newOrg();
+    const j = await newJob(org, { status: "UNKNOWN", providerJobId: null, createdAt: min(30), submittedAt: null });
+    const f = fake({ list: { queue: [[]], hold: [[]], done: [[]], canceled: [[{ id: 7_888_001, status: "canceled", filename: j.filename }]] } });
+    const r = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
+    expect(r.reconciled).toBe(1);
+    const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: j.id }, select: { status: true, providerJobId: true, finishedAt: true } });
+    expect(row).toMatchObject({ status: "CANCELLED", providerJobId: 7_888_001 });
+    expect(row.finishedAt).not.toBeNull();
+    expect((await events(j.id)).map((e) => e.kind)).toContain("RECONCILED");
+    expect(await dbInternal.changeLog.count({ where: { orgId: org, entity: "POSTAL", entityId: j.id, action: "CANCELLED" } })).toBe(1);
+  });
+
+  it("404 in jedem Zweig setzt lastPolledAt (LIVE-DONE ohne Statusaenderung)", async () => {
+    const org = await newOrg();
+    const j = await newJob(org, { status: "DONE", registered: "r1", submittedAt: min(60) });
+    const f = fake({ get: () => ({ status: 404, json: { status: 404, message: "nicht gefunden" } }) });
+    await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
+    const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: j.id }, select: { status: true, lastPolledAt: true } });
+    expect(row.status).toBe("DONE");
+    expect(row.lastPolledAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  it("unerwarteter Fehler einer Organisation -> skipped.error, andere Organisationen laufen weiter", async () => {
+    const bad = await newOrg();
+    const good = await newOrg();
+    const jb = await newJob(bad);
+    const jg = await newJob(good);
+    const transport: LxpTransport = async (req) => {
+      if (req.path === `/printjobs/${jb.providerJobId}`) throw new TypeError("kaputt");
+      return fake().transport(req);
+    };
+    const r = await pollPostalJobs(NOW, { transport, sleep: noSleep });
+    expect(r.skipped.error).toBeGreaterThanOrEqual(1);
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: jg.id }, select: { lastPolledAt: true } })).lastPolledAt).not.toBeNull();
+  });
+
   it("Ausfall der Listen -> Auftrag bleibt UNKNOWN (kein FAILED auf Verdacht)", async () => {
     const org = await newOrg();
     const j = await newJob(org, { status: "UNKNOWN", providerJobId: null, createdAt: min(120), submittedAt: null });
