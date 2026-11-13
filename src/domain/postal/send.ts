@@ -48,7 +48,7 @@ import {
   transitionPostalJob,
   type PostalStatus,
 } from "./events";
-import { loadPostalCredentials, loadPostalSettings, PostalKeyUnreadableError, type PostalSettingsView } from "./settings";
+import { effectiveMode, loadPostalCredentials, loadPostalSettings, PostalKeyUnreadableError, type PostalSettingsView } from "./settings";
 
 export type { PostalDocType, PostalItemInput };
 
@@ -98,6 +98,18 @@ async function hasActiveJob(orgId: string, docType: PostalDocType, docId: string
   });
   return row !== null;
 }
+
+type SendMode = "DRY_RUN" | "TEST" | "LIVE";
+
+/** Aktueller Modus laut Einstellungen (aus = Trockenlauf). Liest frisch, nie aus dem Cache des Sammellaufs. */
+async function freshSendMode(db: Pick<Prisma.TransactionClient, "postalSettings">, orgId: string): Promise<SendMode> {
+  const row = await db.postalSettings.findUnique({ where: { orgId }, select: { enabled: true, mode: true } });
+  if (!row) return "DRY_RUN";
+  const eff = effectiveMode(row.enabled, row.mode === "TEST" || row.mode === "LIVE" ? row.mode : "DRY_RUN");
+  return eff === "TEST" || eff === "LIVE" ? eff : "DRY_RUN";
+}
+
+const MODE_CHANGED_MESSAGE = "Die Einstellungen des Postversands wurden waehrend des Laufs geaendert. Nichts uebertragen.";
 
 function pageCount(doc: PostalDocument): number {
   return doc.pages ?? 0;
@@ -250,7 +262,7 @@ async function sendOne(
     throw new PostalConflictError(problems.join("; "), problems.some((p) => p.startsWith("Anschrift")) ? "NO_ADDRESS" : "NOT_ALLOWED");
   }
 
-  const mode: "DRY_RUN" | "TEST" | "LIVE" = settings.effective === "TEST" || settings.effective === "LIVE" ? settings.effective : "DRY_RUN";
+  const mode: SendMode = settings.effective === "TEST" || settings.effective === "LIVE" ? settings.effective : "DRY_RUN";
 
   let creds: LxpCredentials | null = null;
   let client: ReturnType<typeof createLetterXpressClient> | null = null;
@@ -306,9 +318,14 @@ async function sendOne(
     // Monatsbudget atomar: erst die Einstellungszeile sperren (Reihenfolge Einstellungen vor Beleg, kein Deadlock),
     // dann die Ausgaben inkl. offener Auftraege neu berechnen. Die Vorpruefung oben ist nur eine Abkuerzung.
     let budgetRejected = false;
-    if (mode === "LIVE") {
+    if (mode !== "DRY_RUN") {
       const ensured = await tx.postalSettings.upsert({ where: { orgId }, create: { orgId }, update: {}, select: { id: true } });
       await lockRow(tx, "PostalSettings", ensured.id, orgId);
+      // Schalter und Modus je Beleg frisch (unter der Sperre): wurde der Postversand waehrend eines Sammellaufs
+      // ausgeschaltet oder der Modus gewechselt, wird nichts angelegt.
+      if ((await freshSendMode(tx, orgId)) !== mode) return "MODE_CHANGED" as const;
+    }
+    if (mode === "LIVE") {
       const fresh = await tx.postalSettings.findUniqueOrThrow({ where: { orgId }, select: { monthlyBudgetCents: true } });
       if (fresh.monthlyBudgetCents !== null) {
         const spent = await monthlySpendCents(tx, orgId, now);
@@ -352,11 +369,26 @@ async function sendOne(
     await addPostalEvent(tx, { jobId, orgId, kind: "CREATED", status: "PENDING", data: { mode, trigger: ctx.trigger }, at: now });
     return "CREATED" as const;
   });
+  if (created === "MODE_CHANGED") throw new PostalConflictError(MODE_CHANGED_MESSAGE, "NOT_ALLOWED");
   if (created === "BUDGET") throw new PostalConflictError("Das Monatsbudget fuer den Postversand waere ueberschritten.", "BUDGET");
   if (created === "ACTIVE") throw new PostalConflictError("Dieser Beleg wurde bereits per Post versendet (oder der Versand laeuft).", "ALREADY_SENT");
 
   if (mode === "DRY_RUN" || !client || !creds) return finishDryRun(orgId, doc, jobId, summary, now, ctx.actor);
+  // Unmittelbar vor der Uebertragung noch einmal (ohne Sperre): zwischen Anlage und Netzaufruf liegt nur ein kurzer Spalt.
+  if ((await freshSendMode(dbInternal, orgId)) !== mode) {
+    await abortPending(orgId, jobId, MODE_CHANGED_MESSAGE, ctx.actor);
+    throw new PostalConflictError(MODE_CHANGED_MESSAGE, "NOT_ALLOWED");
+  }
   return transmit({ orgId, doc, jobId, body, summary, client, creds, mode, actor: ctx.actor });
+}
+
+/** Angelegten, noch nicht uebertragenen Auftrag abbrechen (PENDING -> FAILED), damit er nicht haengen bleibt. */
+async function abortPending(orgId: string, jobId: string, message: string, actor: string): Promise<void> {
+  const at = new Date();
+  await dbInternal.$transaction(async (tx) => {
+    if (!(await transitionPostalJob(tx, jobId, "FAILED", { error: message, finishedAt: at }))) return;
+    await addPostalEvent(tx, { jobId, orgId, kind: "FAILED", status: "FAILED", data: { error: message, notTransmitted: true, by: actor }, at });
+  });
 }
 
 async function finishDryRun(

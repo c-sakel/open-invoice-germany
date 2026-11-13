@@ -385,6 +385,37 @@ describe("Uebertragung", () => {
     expect(after.sentAt.getTime()).toBe(before.sentAt.getTime());
   });
 
+  it.each([
+    ["aus", { enabled: false }],
+    ["Trockenlauf", { mode: "DRY_RUN" }],
+  ])("Einstellungen waehrend eines Sammellaufs auf %s -> restliche Belege werden nicht uebertragen", async (_label, patch) => {
+    const a = await newInvoice();
+    const b = await newInvoice();
+    const c = await newInvoice();
+    const f = lxp();
+    const { quotes } = await quotePostal(
+      orgId,
+      [a, b, c].map((i) => ({ docType: "INVOICE" as const, docId: i.id })),
+      { transport: f.transport },
+    );
+    const items = quotes.map((q) => ({ docType: "INVOICE" as const, docId: q.docId, expectedPriceCents: q.priceCents, pdfSha256: q.pdfSha256 }));
+    let pauses = 0;
+    const res = await sendByPost(orgId, { items, confirm: true }, {
+      ...sctx,
+      transport: f.transport,
+      sleep: async () => {
+        pauses += 1;
+        if (pauses === 1) await setPostal(patch); // nach dem ersten Beleg
+      },
+    });
+    expect(res[0]!.status).toBe("QUEUED");
+    expect(res[1]).toMatchObject({ status: "REJECTED", code: "NOT_ALLOWED", jobId: null });
+    expect(res[2]).toMatchObject({ status: "REJECTED", code: "NOT_ALLOWED", jobId: null });
+    expect(f.calls.filter((x) => x.method === "POST" && x.path === "/printjobs")).toHaveLength(1);
+    expect(await dbInternal.postalJob.count({ where: { docId: { in: [b.id, c.id] } } })).toBe(0);
+    await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true });
+  });
+
   it("Doppelversand: ALREADY_SENT, repeat erlaubt, parallel genau ein Auftrag", async () => {
     const inv = await newInvoice();
     const f = lxp();
