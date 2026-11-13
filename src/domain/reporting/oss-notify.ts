@@ -7,10 +7,11 @@ import { createNotification } from "@/domain/notifications/create";
 import { ossThreshold } from "@/domain/reporting/oss";
 import { OSS_NOTICE } from "@/schemas/oss";
 import { formatCents } from "@/lib/money";
+import { berlinYear } from "@/lib/berlin-time";
 
 /** Legt hoechstens eine neue OSS-Benachrichtigung fuer das Jahr von `now` an; liefert die Anzahl neu angelegter Eintraege. */
 export async function checkOssNotifications(orgId: string, now: Date): Promise<number> {
-  const year = now.getUTCFullYear();
+  const year = berlinYear(now);
   const oss = await ossThreshold(orgId, year);
   if (oss.level === "OK") return 0;
 

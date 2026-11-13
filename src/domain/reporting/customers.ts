@@ -14,6 +14,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { signedRevenueShareCents } from "./revenue";
+import { berlinMonthStart } from "@/lib/berlin-time";
 
 export interface TopCustomer {
   customerId: string;
@@ -41,8 +42,8 @@ export async function topCustomers(orgId: string, opts: TopCustomersOptions = {}
   const months = opts.months ?? 12;
   const limit = opts.limit ?? 5;
   const now = opts.now ?? new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
 
   const rows = await dbInternal.invoice.findMany({
     where: {

@@ -2,8 +2,8 @@
  * Umsatzreihe je Kalendermonat (Phase 12e). Rein lesend, org-gescoped, DB-portabel:
  * `select`-reduzierte Zeilen + Aggregation in JS — dieselbe Begruendung wie in
  * src/domain/dashboard/summary.ts (SQLite/Postgres, keine DB-spezifischen Funktionen).
- * Monatsgrenzen in UTC (Date.UTC), damit die Reihe unabhaengig von der Container-Zeitzone
- * ist (Konvention aus src/lib/date-only.ts).
+ * Monatsgrenzen nach Berliner Kalendermonat (src/lib/berlin-time.ts), unabhaengig von der
+ * Container-Zeitzone. Date-only-Werte (UTC-Mitternacht) bleiben im selben Monat.
  *
  * Basis ist NETTO. Bei einer Abschlagskette (§14) traegt die Schlussrechnung in
  * `payableCents` den bereits um die Abschlaege reduzierten Betrag; ein rohes
@@ -33,9 +33,10 @@
  */
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
+import { berlinMonthKey, berlinMonthStart } from "@/lib/berlin-time";
 
 export interface MonthlyRevenuePoint {
-  month: string; // "YYYY-MM" (UTC)
+  month: string; // "YYYY-MM" (Berlin)
   netCents: number;
   count: number;
 }
@@ -48,9 +49,9 @@ export interface MonthlyRevenueOptions {
   now?: Date;
 }
 
-/** Kalendermonat (UTC) von `d` als "YYYY-MM". */
+/** Kalendermonat (Europe/Berlin) von `d` als "YYYY-MM". */
 export function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return berlinMonthKey(d);
 }
 
 /**
@@ -93,8 +94,8 @@ export function signedRevenueShareCents(inv: {
 export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions = {}): Promise<MonthlyRevenuePoint[]> {
   const months = opts.months ?? 12;
   const now = opts.now ?? new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
 
   const rows = await dbInternal.invoice.findMany({
     where: {
@@ -109,8 +110,8 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
 
   const buckets = new Map<string, MonthlyRevenuePoint>();
   for (let i = 0; i < months; i++) {
-    const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
-    buckets.set(monthKey(d), { month: monthKey(d), netCents: 0, count: 0 });
+    const key = berlinMonthKey(berlinMonthStart(now, -(months - 1) + i));
+    buckets.set(key, { month: key, netCents: 0, count: 0 });
   }
   for (const r of rows) {
     const bucket = buckets.get(monthKey(r.issueDate));
