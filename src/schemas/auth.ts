@@ -28,3 +28,15 @@ export const changePasswordSchema = z
     path: ["newPasswordRepeat"],
   });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/** Zweiter Faktor bei der Anmeldung: TOTP (6 Ziffern) oder Wiederherstellungscode (Phase 17d). */
+export const secondFactorSchema = z.object({ code: z.string().trim().min(6).max(32) });
+export type SecondFactorInput = z.infer<typeof secondFactorSchema>;
+
+/** 2FA aktivieren: Bestaetigungscode aus der Authenticator-App. */
+export const totpEnableSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/) });
+export type TotpEnableInput = z.infer<typeof totpEnableSchema>;
+
+/** 2FA abschalten und Wiederherstellungscodes erneuern: Passwort UND zweiter Faktor. */
+export const totpConfirmSchema = z.object({ password: z.string().min(1), code: z.string().trim().min(6).max(32) });
+export type TotpConfirmInput = z.infer<typeof totpConfirmSchema>;

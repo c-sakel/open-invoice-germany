@@ -40,19 +40,16 @@
 import { dbInternal } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { rateLimit } from "@/lib/rate-limit";
-import { logActivity } from "@/domain/activity/log";
 import { loginSchema, changePasswordSchema } from "@/schemas/auth";
-
-const LOCK_THRESHOLD = 5;
-const LOCK_DURATION_MS = 15 * 60_000;
-const IP_RATE_LIMIT = 10;
-const IP_RATE_WINDOW_MS = 5 * 60_000;
-
-// Platzhalter-"Konto-ID" fuer ActivityLog-Eintraege zu Fehlversuchen gegen eine UNBEKANNTE
-// E-Mail-Adresse (Fix-Welle 3, must — Laufzeit-Leak) — buendelt alle diese Versuche in
-// einer Zeile statt je Adresse, ohne die Adresse selbst zu protokollieren (R12). Kein
-// echtes `User.id` (cuid-Format), kollidiert daher nie mit einer realen Konto-ID.
-const UNKNOWN_ACCOUNT_ID = "unknown";
+import {
+  IP_RATE_LIMIT,
+  IP_RATE_WINDOW_MS,
+  UNKNOWN_ACCOUNT_ID,
+  clearAttempts,
+  lockState,
+  logAccountEvent,
+  registerFailedAttempt,
+} from "@/domain/auth/attempts";
 
 // Einmal beim Laden des Moduls berechnet (scrypt ist bewusst langsam) — derselbe Hash
 // wird fuer JEDE unbekannte E-Mail-Adresse verglichen, damit `verifyPassword` fuer
@@ -61,24 +58,7 @@ const UNKNOWN_ACCOUNT_ID = "unknown";
 // echten Eingaben uebereinstimmen.
 const DUMMY_PASSWORD_HASH = hashPassword("dummy-passwort-nur-fuer-konstante-vergleichszeit");
 
-export type LoginResult = { status: "ok"; userId: string } | { status: "invalid" } | { status: "locked"; retryAfterMs: number };
-
-/** Liefert die ID der (einzigen) eingerichteten Organisation oder `null` — anders als
- *  `getActiveOrg()` (src/lib/org.ts) OHNE Exception, damit eine noch nicht eingerichtete
- *  Organisation (Erstinstallation: Konto existiert, Stammdaten noch nicht) den
- *  Anmeldeweg nicht blockiert. ActivityLog verlangt eine orgId — ohne Organisation
- *  entfaellt der Protokolleintrag ersatzlos. */
-async function findOrgIdForActivityLog(): Promise<string | null> {
-  const org = await dbInternal.organization.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
-  return org?.id ?? null;
-}
-
-/** Schreibt einen Anmelde-/Konto-Ereigniseintrag — NIE E-Mail oder Passwort in `data` (R12). */
-async function logLoginEvent(userId: string, type: "LOGIN_FAILED" | "LOGIN_LOCKED" | "PASSWORD_CHANGED", ip: string | undefined, reason: string, now: Date): Promise<void> {
-  const orgId = await findOrgIdForActivityLog();
-  if (!orgId) return; // Erstinstallation ohne Organisation — siehe Moduldoc.
-  await logActivity(dbInternal, { orgId, entityType: "USER", entityId: userId, type, actor: userId, at: now, data: { ip: ip ?? null, reason } });
-}
+export type LoginResult = { status: "ok"; userId: string } | { status: "second_factor"; userId: string } | { status: "invalid" } | { status: "locked"; retryAfterMs: number };
 
 /**
  * Prueft E-Mail/Passwort und wendet IP- sowie Konto-Bremse an. Wirft `RateLimitError`
@@ -96,7 +76,7 @@ export async function attemptLogin(rawInput: unknown, ctx: { ip?: string; now?: 
 
   const user = await dbInternal.user.findUnique({
     where: { email: input.email },
-    select: { id: true, passwordHash: true, failedLoginCount: true, lockedUntil: true },
+    select: { id: true, passwordHash: true, failedLoginCount: true, lockedUntil: true, totpEnabledAt: true },
   });
   const passwordOk = verifyPassword(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
 
@@ -106,56 +86,33 @@ export async function attemptLogin(rawInput: unknown, ctx: { ip?: string; now?: 
     // Eintrag), damit die Laufzeit nicht mehr verraet, ob die Adresse existiert. Kein
     // Konto-Update (es gibt kein Konto) und keine echte entityId — die E-Mail selbst
     // darf laut R12 nicht ins Protokoll, `UNKNOWN_ACCOUNT_ID` ist ein fester Platzhalter.
-    await logLoginEvent(UNKNOWN_ACCOUNT_ID, "LOGIN_FAILED", ctx.ip, "unbekannte E-Mail-Adresse", now);
+    await logAccountEvent(UNKNOWN_ACCOUNT_ID, "LOGIN_FAILED", ctx.ip, "unbekannte E-Mail-Adresse", now);
     return { status: "invalid" };
   }
 
-  const isLocked = user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
-  // Fix-Welle 4 (must 1): eine ABGELAUFENE Sperre (lockedUntil gesetzt, aber in der
-  // Vergangenheit) liess den Zaehler bisher unveraendert auf dem Sperr-Schwellenwert
-  // stehen — nur ein RICHTIGES Passwort setzt ihn zurueck (Erfolgsfall unten). Ein
-  // einzelner weiterer Fehlversuch NACH Ablauf ergab dadurch sofort wieder
-  // `failedLoginCount >= LOCK_THRESHOLD` und sperrte erneut fuer 15 Minuten — immer
-  // wieder, ohne dass je ein richtiges Passwort noetig gewesen waere. Fuer das EINZIGE
-  // Betreiberkonto der Produktivinstanz waere das eine dauerhafte Selbstaussperrung durch
-  // einen einzigen Fehlversuch je Sperrfenster — genau das, was laut Moduldoc/
-  // docs/LIMITATIONEN.md ausgeschlossen sein soll. Nach Ablauf zaehlt ein Fehlversuch
-  // deshalb wie der ERSTE einer neuen Serie.
-  const expiredLock = user.lockedUntil !== null && !isLocked;
+  const { isLocked, retryAfterMs } = lockState(user, now);
 
   if (!passwordOk) {
-    if (isLocked) {
-      // Waehrend einer aktiven Sperre: NICHTS an Zaehler/Sperre aendern (siehe Moduldoc,
-      // Ruling gegen dauerhafte Selbstaussperrung) UND (Fix-Welle 3, should) KEIN
-      // weiterer Log-Eintrag je Versuch mehr — die Sperre selbst wurde bereits beim
-      // Ausloesen protokolliert (LOGIN_LOCKED unten), sonst waechst das ActivityLog bei
-      // einem andauernden Angriff waehrend der Sperre unbegrenzt.
-      return { status: "invalid" };
-    }
-    const failedLoginCount = expiredLock ? 1 : user.failedLoginCount + 1;
-    const willLock = failedLoginCount >= LOCK_THRESHOLD;
-    await dbInternal.user.update({
-      where: { id: user.id },
-      data: { failedLoginCount, lockedUntil: willLock ? new Date(now.getTime() + LOCK_DURATION_MS) : null },
-      select: { id: true },
-    });
-    await logLoginEvent(user.id, "LOGIN_FAILED", ctx.ip, "falsches Passwort", now);
-    if (willLock) {
-      await logLoginEvent(user.id, "LOGIN_LOCKED", ctx.ip, `${failedLoginCount} Fehlversuche in Folge`, now);
-    }
+    // `registerFailedAttempt` ist waehrend einer aktiven Sperre ein No-op (Ruling siehe attempts.ts).
+    await registerFailedAttempt(user, { ip: ctx.ip, now }, "falsches Passwort");
     return { status: "invalid" };
   }
 
   // Passwort korrekt.
   if (isLocked) {
-    return { status: "locked", retryAfterMs: user.lockedUntil!.getTime() - now.getTime() };
+    return { status: "locked", retryAfterMs };
   }
 
-  await dbInternal.user.update({
-    where: { id: user.id },
-    data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: now },
-    select: { id: true },
-  });
+  if (user.totpEnabledAt !== null) {
+    // Zweiter Faktor aktiv: Zaehler und Sperre bleiben UNVERAENDERT und `lastLoginAt` wird
+    // nicht gesetzt — wer das Passwort kennt, soll den Fehlversuchszaehler nicht per
+    // richtigem Passwort zuruecksetzen koennen, sonst waeren Codeversuche unbegrenzt
+    // (Passwort, falscher Code, Passwort, ...). Zurueckgesetzt wird erst nach bestandenem
+    // zweiten Faktor (`verifySecondFactor`).
+    return { status: "second_factor", userId: user.id };
+  }
+
+  await clearAttempts(user.id, now, { lastLogin: true });
   return { status: "ok", userId: user.id };
 }
 
@@ -190,37 +147,18 @@ export async function changePassword(userId: string, rawInput: unknown, ctx: { i
   // behandelt (kein Absturz der Route).
   if (!user) return { status: "invalid_current_password" };
 
-  const isLocked = user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
-  // Fix-Welle 4 (must 1, Konsistenzfix analog attemptLogin): siehe dortiger Kommentar —
-  // eine abgelaufene Sperre zaehlt den naechsten Fehlversuch wie den ERSTEN einer neuen
-  // Serie, statt sofort wieder zu sperren.
-  const expiredLock = user.lockedUntil !== null && !isLocked;
+  const { isLocked, retryAfterMs } = lockState(user, now);
   const currentOk = verifyPassword(input.currentPassword, user.passwordHash);
 
   if (!currentOk) {
-    if (isLocked) {
-      // Wie attemptLogin: waehrend einer aktiven Sperre NICHTS an Zaehler/Sperre aendern
-      // UND (Fix-Welle 3, should, Konsistenzfix) KEIN weiterer Log-Eintrag je Versuch
-      // mehr — die Sperre wurde bereits beim Ausloesen protokolliert (LOGIN_LOCKED).
-      return { status: "invalid_current_password" };
-    }
-    const failedLoginCount = expiredLock ? 1 : user.failedLoginCount + 1;
-    const willLock = failedLoginCount >= LOCK_THRESHOLD;
-    await dbInternal.user.update({
-      where: { id: user.id },
-      data: { failedLoginCount, lockedUntil: willLock ? new Date(now.getTime() + LOCK_DURATION_MS) : null },
-      select: { id: true },
-    });
-    await logLoginEvent(user.id, "LOGIN_FAILED", ctx.ip, "falsches aktuelles Passwort (Passwortwechsel)", now);
-    if (willLock) {
-      await logLoginEvent(user.id, "LOGIN_LOCKED", ctx.ip, `${failedLoginCount} Fehlversuche in Folge`, now);
-    }
+    // Wie attemptLogin: waehrend einer aktiven Sperre No-op (siehe attempts.ts).
+    await registerFailedAttempt(user, { ip: ctx.ip, now }, "falsches aktuelles Passwort (Passwortwechsel)");
     return { status: "invalid_current_password" };
   }
 
   // Aktuelles Passwort korrekt.
   if (isLocked) {
-    return { status: "locked", retryAfterMs: user.lockedUntil!.getTime() - now.getTime() };
+    return { status: "locked", retryAfterMs };
   }
 
   const passwordHash = hashPassword(input.newPassword);
@@ -229,6 +167,6 @@ export async function changePassword(userId: string, rawInput: unknown, ctx: { i
     data: { passwordHash, passwordChangedAt: now, failedLoginCount: 0, lockedUntil: null },
     select: { id: true },
   });
-  await logLoginEvent(user.id, "PASSWORD_CHANGED", ctx.ip, "Passwort erfolgreich geaendert", now);
+  await logAccountEvent(user.id, "PASSWORD_CHANGED", ctx.ip, "Passwort erfolgreich geaendert", now);
   return { status: "ok", passwordChangedAt: now };
 }
