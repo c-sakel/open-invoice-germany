@@ -71,7 +71,11 @@ export async function requestPasswordReset(raw: unknown, ctx: RequestCtx = {}): 
   const now = ctx.now ?? new Date();
   if (!ctx.ipLimitChecked) enforceResetIpLimit(ctx.ip, now);
 
-  await dbInternal.passwordResetToken.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - CLEANUP_AGE_MS) } } });
+  // Aufraeumen ist nebensaechlich: ein Sperr-/Zeitfehler (viele parallele Anforderungen) darf die
+  // Anforderung nicht abbrechen.
+  await dbInternal.passwordResetToken
+    .deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - CLEANUP_AGE_MS) } } })
+    .catch((e: unknown) => console.warn("[password-reset] Aufraeumen uebersprungen:", e instanceof Error ? e.message : e));
 
   const orgId = ctx.orgId ?? (await instanceOrgId());
   const availability = await passwordResetAvailability(orgId ?? undefined);
