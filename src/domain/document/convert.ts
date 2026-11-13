@@ -62,7 +62,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) als erste Anweisung: serialisiert parallele Umwandlungen unter Postgres;
     // die convertedToInvoiceId-Pruefung unten liest erst nach der Sperre.
-    await lockRow(tx, "Quote", documentId);
+    await lockRow(tx, "Quote", documentId, orgId);
     const q = await tx.quote.findFirst({ where: { id: documentId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!q) throw new ConvertError("Dokument nicht gefunden.");
     if (q.convertedToInvoiceId) throw new ConvertError("Dokument wurde bereits in eine Rechnung umgewandelt.");
@@ -196,7 +196,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) als erste Anweisung (serialisiert parallele Umwandlungen und den Statuswechsel).
-    await lockRow(tx, "Quote", fromId);
+    await lockRow(tx, "Quote", fromId, orgId);
     const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!src) throw new ConvertError("Angebot nicht gefunden.");
     if (src.kind !== "ANGEBOT") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
@@ -272,7 +272,7 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b, W1): serialisiert parallele Lieferscheine aus derselben Quelle unter Postgres (SQLite: No-op).
-    await lockRow(tx, fromType === "QUOTE" ? "Quote" : "Invoice", fromId);
+    await lockRow(tx, fromType === "QUOTE" ? "Quote" : "Invoice", fromId, orgId);
     let sourceLanguage: string | undefined;
     if (fromType === "QUOTE") {
       const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, select: { status: true, validUntil: true, language: true } });

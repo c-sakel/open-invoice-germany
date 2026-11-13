@@ -79,7 +79,7 @@ export async function reversePayment(
     // Zeilensperre (17b): zuerst nur die Rechnung der Zahlung ermitteln, sperren, dann alles weitere lesen.
     const ref = await tx.payment.findUnique({ where: { id: paymentId }, select: { invoiceId: true, invoice: { select: { orgId: true } } } });
     if (!ref || ref.invoice.orgId !== opts.orgId) throw new NotFoundError("Zahlung nicht gefunden.");
-    await lockRow(tx, "Invoice", ref.invoiceId);
+    await lockRow(tx, "Invoice", ref.invoiceId, ref.invoice.orgId);
     const payment = await tx.payment.findUnique({
       where: { id: paymentId },
       select: {

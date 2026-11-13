@@ -38,7 +38,7 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
-    await lockRow(tx, "Quote", input.sourceId);
+    await lockRow(tx, "Quote", input.sourceId, orgId);
     const quote = await tx.quote.findFirst({ where: { id: input.sourceId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!quote) throw new NotFoundError(`Angebot/Auftragsbestaetigung ${input.sourceId} nicht gefunden.`);
     if (!QUOTE_KINDS_ALLOWED.has(quote.kind)) {

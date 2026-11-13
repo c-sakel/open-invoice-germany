@@ -33,7 +33,7 @@ export async function updateDraftDeliveryNote(
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) als erste Anweisung: Statuspruefung erst danach, sonst Race gegen DRAFT -> CREATED.
-    await lockRow(tx, "DeliveryNote", id);
+    await lockRow(tx, "DeliveryNote", id, orgId);
     const note = await tx.deliveryNote.findFirst({
       where: { id, orgId },
       select: { id: true, status: true, sourceType: true, sourceId: true, customerId: true, contactPersonId: true, shippingAddressId: true, _count: { select: { lines: true } } },

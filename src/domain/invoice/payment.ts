@@ -69,7 +69,10 @@ export async function recordPayment(
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
-    await lockRow(tx, "Invoice", invoiceId);
+    // Ohne opts.orgId (interne Aufrufer) wird die Org der Rechnung zuerst ungesperrt ermittelt.
+    const lockOrgId = opts.orgId ?? (await tx.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true } }))?.orgId;
+    if (!lockOrgId) throw new NotFoundError("Rechnung nicht gefunden.");
+    await lockRow(tx, "Invoice", invoiceId, lockOrgId);
     const inv = await tx.invoice.findUnique({
       where: { id: invoiceId },
       select: {

@@ -477,7 +477,7 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
-    await lockRow(tx, input.sourceType === "QUOTE" ? "Quote" : "DeliveryNote", input.sourceId);
+    await lockRow(tx, input.sourceType === "QUOTE" ? "Quote" : "DeliveryNote", input.sourceId, orgId);
     const source = await loadPartialSource(tx, orgId, input.sourceType, input.sourceId);
     const adjustedTotals = sourceAdjustedTotals(source);
 

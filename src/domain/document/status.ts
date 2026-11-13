@@ -204,7 +204,7 @@ export async function setDeliveryNoteStatus(
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b): serialisiert parallele Statuswechsel/Erstellungen desselben Lieferscheins
     // (Doppelnummer, doppeltes delivery_note.created); SQLite: No-op.
-    await lockRow(tx, "DeliveryNote", id);
+    await lockRow(tx, "DeliveryNote", id, orgId);
     const note = await tx.deliveryNote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!note) throw new NotFoundError(`Lieferschein ${id} nicht gefunden.`);
 

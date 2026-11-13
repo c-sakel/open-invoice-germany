@@ -157,6 +157,7 @@ export async function assertSourceQuantitiesWithinTx(
   if (bySource.size === 0) return;
   await lockRows(
     tx,
+    orgId,
     [...bySource.values()].map((s) => ({ table: s.sourceType === "QUOTE" ? ("Quote" as const) : ("Invoice" as const), id: s.sourceId })),
   );
   for (const s of bySource.values()) {

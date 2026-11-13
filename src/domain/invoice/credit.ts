@@ -68,7 +68,7 @@ export async function createPartialCreditNote(
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
-    await lockRow(tx, "Invoice", invoiceId);
+    await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
       select: {

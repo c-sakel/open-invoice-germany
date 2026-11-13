@@ -203,7 +203,7 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
 
   return dbInternal.$transaction(async (tx) => {
     // Zeilensperre (17b): Doppel-Storno unter Postgres ausgeschlossen (SQLite: No-op).
-    await lockRow(tx, "Invoice", invoiceId);
+    await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
       include: { lines: { orderBy: { position: "asc" } }, finalDeductions: true },
