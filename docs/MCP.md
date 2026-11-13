@@ -253,7 +253,7 @@ Dieselben Listenfilter und dieselbe Sortierung wie die `list_*`-Werkzeuge und `G
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `export_csv` | Rechnungen, Angebote, Auftragsbestätigungen, Lieferscheine, Kunden oder Produkte als CSV zurückgeben (`resource`: `invoices`, `quotes`, `order-confirmations`, `delivery-notes`, `contacts`, `products`; optional `filter` wie bei `list_*`). Semikolon, CRLF, deutsche Zahlen, ohne BOM; keine Paginierung, höchstens 20.000 Zeilen (sonst Fehler), 30 Exporte je Minute und Organisation | „Exportiere alle bezahlten Rechnungen als CSV." |
+| `export_csv` | Rechnungen, Angebote, Auftragsbestätigungen, Lieferscheine, Kunden oder Produkte als CSV zurückgeben (`resource`: `invoices`, `quotes`, `order-confirmations`, `delivery-notes`, `contacts`, `products`; optional `filter` wie bei `list_*`). Semikolon, CRLF, deutsche Zahlen, ohne BOM; keine Paginierung, höchstens 500 Zeilen (sonst Fehler mit Hinweis auf REST `?format=csv` oder die Oberfläche für größere Mengen), 30 Exporte je Minute und Organisation | „Exportiere alle bezahlten Rechnungen als CSV." |
 
 ### CSV-Import (Phase 18b)
 
