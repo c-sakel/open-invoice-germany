@@ -78,6 +78,9 @@ export async function saveDocumentSettingsAction(_prev: ActionResult, fd: FormDa
     taxRates,
     fxRateSource: fd.get("fxRateSource") ?? "BMF_MONTHLY",
     fxEcbConfirmed: fd.get("fxEcbConfirmed") === "on",
+    // Marker-Feld: fehlt der Abschnitt im Formular, bleiben die gespeicherten Werte erhalten.
+    viesCheckEnabled: fd.has("viesCheckSent") ? fd.get("viesCheckEnabled") === "on" : current.viesCheckEnabled,
+    viesCheckOnFinalize: fd.has("viesCheckSent") ? fd.get("viesCheckOnFinalize") === "on" : current.viesCheckOnFinalize,
     ossCountMode: fd.get("ossCountMode") ?? current.ossCountMode,
     ossWarnPercent: fd.has("ossWarnPercent") ? Number(fd.get("ossWarnPercent")) : current.ossWarnPercent,
   };

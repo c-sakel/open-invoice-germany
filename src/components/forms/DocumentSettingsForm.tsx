@@ -167,6 +167,21 @@ export function DocumentSettingsForm({ settings, paymentMethods = [] }: { settin
         <p className="text-xs text-ink-muted">{OSS_NOTICE}</p>
       </section>
 
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">USt-IdNr.-Prüfung (VIES)</h2>
+        <p className="text-sm text-ink-soft">
+          Bei einer Prüfung werden die USt-IdNr. des Kunden und Ihre eigene USt-IdNr. an das VIES-System der EU-Kommission übermittelt. Dort entsteht die Konsultationsnummer, die Sie als Nachweis für die Steuerfreiheit innergemeinschaftlicher Lieferungen aufbewahren. Weitere Daten werden nicht übermittelt.
+        </p>
+        <input type="hidden" name="viesCheckSent" value="1" />
+        <CheckboxField label="USt-IdNr.-Prüfung über VIES freischalten" name="viesCheckEnabled" defaultChecked={settings.viesCheckEnabled} />
+        <CheckboxField
+          label="Beim Festschreiben innergemeinschaftlicher Rechnungen automatisch prüfen"
+          name="viesCheckOnFinalize"
+          defaultChecked={settings.viesCheckOnFinalize}
+          hint="Das Ergebnis erscheint als Hinweis; das Festschreiben wird nie blockiert. Automatisch festgeschriebene Rechnungen (Versand, Abos) werden nicht geprüft."
+        />
+      </section>
+
       <SubmitButton>Einstellungen speichern</SubmitButton>
     </form>
   );

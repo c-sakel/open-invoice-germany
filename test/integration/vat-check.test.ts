@@ -136,4 +136,17 @@ describe("checkVatId", () => {
     const rows = await listVatIdChecks(org.id, c.id);
     expect(rows.map((r) => r.status)).toEqual(["VALID", "INVALID"]);
   });
+
+  it("USt-IdNr. waehrend der Pruefung geaendert -> vatIdValidatedAt bleibt null", async () => {
+    const org = await makeOrg();
+    const c = await makeCustomer(org.id, "ATU12345678");
+    const fetchImpl = vi.fn(async () => {
+      await dbInternal.customer.update({ where: { id: c.id }, data: { vatId: "ATU87654321" } });
+      return new Response(JSON.stringify({ valid: true, userError: "VALID" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const row = await checkVatId(org.id, c.id, { fetchImpl });
+    expect(row.status).toBe("VALID");
+    const after = await dbInternal.customer.findUnique({ where: { id: c.id }, select: { vatIdValidatedAt: true } });
+    expect(after?.vatIdValidatedAt).toBeNull();
+  });
 });

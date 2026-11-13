@@ -128,7 +128,11 @@ export async function checkVatId(
       select: rowSelect,
     });
     if (outcome.status === "VALID") {
-      await tx.customer.update({ where: { id: customerId }, data: { vatIdValidatedAt: outcome.requestDate ?? opts.now ?? new Date() } });
+      // Nur, wenn die geprueft USt-IdNr. noch unveraendert am Kunden steht (Race mit Stammdaten-Aenderung).
+      await tx.customer.updateMany({
+        where: { id: customerId, orgId, vatId: customer.vatId },
+        data: { vatIdValidatedAt: outcome.requestDate ?? opts.now ?? new Date() },
+      });
     }
     return row;
   });

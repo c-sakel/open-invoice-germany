@@ -33,6 +33,8 @@ import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { PricingError } from "@/lib/pricing/errors";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
+import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
+import { CustomerValidationError } from "@/domain/customer/save";
 
 /**
  * Domain-Fehlerklassen (task-2-facts.md), die OHNE eigene `status`-Eigenschaft daherkommen
@@ -58,6 +60,7 @@ const DOMAIN_CONFLICT_ERROR_CLASSES = [
   PricingError,
   MailNotConfiguredError,
   TaxRateNotAllowedError,
+  VatCheckDisabledError,
 ] as const;
 
 /**
@@ -173,8 +176,11 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   if (e instanceof InvalidOperationError) {
     return { status: 409, body: { error: { code: "CONFLICT", message: e.message } } };
   }
-  if (e instanceof RateLimitError) {
+  if (e instanceof RateLimitError || e instanceof VatCheckRateLimitError) {
     return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };
+  }
+  if (e instanceof CustomerValidationError) {
+    return { status: 400, body: { error: { code: "VALIDATION", message: e.message } } };
   }
   // Duck-Typing fuer bestehende Domain-Fehlerklassen mit `status` (z. B. DunningStageError/
   // DunningStageNotFoundError/DunningStageInUseError — 400/404/409 je nach Unterklasse).
@@ -204,7 +210,7 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
 export function apiError(e: unknown): NextResponse {
   const { status, body } = mapApiError(e);
   const res = NextResponse.json(body, { status });
-  if (e instanceof RateLimitError) {
+  if (e instanceof RateLimitError || e instanceof VatCheckRateLimitError) {
     res.headers.set("Retry-After", String(Math.ceil(e.retryAfterMs / 1000)));
   }
   return res;
