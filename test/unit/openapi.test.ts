@@ -56,6 +56,15 @@ describe("OpenAPI-Registry (Phase 10, Task 4)", () => {
     expect(current).toBe(generated);
   });
 
+  it("Report-GET nennt application/json und text/csv, andere Routen nur JSON", async () => {
+    const doc = buildOpenApiDocument(await discoverRouteSpecs());
+    const paths = doc.paths as Record<string, Record<string, { responses: Record<string, { content?: Record<string, unknown> }> }>>;
+    const report = paths["/api/v1/Report"]?.get?.responses["200"]?.content;
+    expect(Object.keys(report ?? {}).sort()).toEqual(["application/json", "text/csv"]);
+    const other = paths["/api/v1/ApiKey"]?.get?.responses["200"]?.content;
+    expect(Object.keys(other ?? {})).toEqual(["application/json"]);
+  });
+
   it("ist deterministisch (zwei Generierungslaeufe liefern byte-identisches JSON)", async () => {
     const routesA = await discoverRouteSpecs();
     const docA = serializeDocument(buildOpenApiDocument(routesA));

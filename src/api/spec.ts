@@ -48,4 +48,6 @@ export interface RouteSpec {
   request?: { query?: z.ZodTypeAny; body?: z.ZodTypeAny; params?: z.ZodTypeAny };
   response: z.ZodTypeAny;
   errors: number[];
+  /** Weitere Antwort-Medientypen der Erfolgsantwort neben application/json (z. B. text/csv). */
+  alternateContent?: Record<string, { description: string }>;
 }

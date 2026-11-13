@@ -47,5 +47,6 @@ export const spec = {
     request: { query: reportQuerySchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 429],
+    alternateContent: { "text/csv": { description: "Bei format=csv: CSV (UTF-8 mit BOM, Semikolon, CRLF)" } },
   },
 } satisfies Record<string, RouteSpec>;
