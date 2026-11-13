@@ -61,19 +61,47 @@ export async function logAccountEvent(
   await logActivity(dbInternal, { orgId, entityType: "USER", entityId: userId, type, actor: userId, at: now, data: { ip: ip ?? null, reason, ...extra } });
 }
 
-/** Zaehlt einen Fehlversuch (Passwort ODER zweiter Faktor); waehrend aktiver Sperre ein No-op. */
+/**
+ * Zaehlt einen Fehlversuch (Passwort ODER zweiter Faktor); waehrend aktiver Sperre ein No-op.
+ *
+ * Atomar (parallele Fehlversuche duerfen keine Zaehlung verlieren): der Zaehler wird in der DB
+ * bedingt hochgezaehlt (nie ueber den Schwellenwert, nie bei aktiver Sperre), die Sperre aus dem
+ * aktuellen DB-Wert gesetzt (bedingtes Update `failedLoginCount >= LOCK_THRESHOLD`). Eine
+ * abgelaufene Sperre wird per Compare-and-set genau einmal auf 1 zurueckgesetzt; wer den
+ * Wettlauf verliert, zaehlt normal weiter.
+ */
 export async function registerFailedAttempt(u: AttemptUser, ctx: { ip?: string; now: Date }, reason: string): Promise<void> {
-  const { isLocked, expiredLock } = lockState(u, ctx.now);
+  const { now } = ctx;
+  const { isLocked, expiredLock } = lockState(u, now);
   if (isLocked) return;
-  const failedLoginCount = expiredLock ? 1 : u.failedLoginCount + 1;
-  const willLock = failedLoginCount >= LOCK_THRESHOLD;
-  await dbInternal.user.update({
-    where: { id: u.id },
-    data: { failedLoginCount, lockedUntil: willLock ? new Date(ctx.now.getTime() + LOCK_DURATION_MS) : null },
-    select: { id: true },
+
+  if (expiredLock) {
+    const reset = await dbInternal.user.updateMany({
+      where: { id: u.id, lockedUntil: u.lockedUntil },
+      data: { failedLoginCount: 1, lockedUntil: null },
+    });
+    if (reset.count === 1) {
+      await logAccountEvent(u.id, "LOGIN_FAILED", ctx.ip, reason, now);
+      return;
+    }
+  }
+
+  const notLocked = [{ lockedUntil: null }, { lockedUntil: { lte: now } }];
+  const inc = await dbInternal.user.updateMany({
+    where: { id: u.id, failedLoginCount: { lt: LOCK_THRESHOLD }, OR: notLocked },
+    data: { failedLoginCount: { increment: 1 } },
   });
-  await logAccountEvent(u.id, "LOGIN_FAILED", ctx.ip, reason, ctx.now);
-  if (willLock) await logAccountEvent(u.id, "LOGIN_LOCKED", ctx.ip, `${failedLoginCount} Fehlversuche in Folge`, ctx.now);
+  const fresh = await dbInternal.user.findUnique({ where: { id: u.id }, select: { failedLoginCount: true, lockedUntil: true } });
+  if (!fresh) return;
+  if (inc.count === 1) await logAccountEvent(u.id, "LOGIN_FAILED", ctx.ip, reason, now);
+
+  if (fresh.failedLoginCount >= LOCK_THRESHOLD) {
+    const lock = await dbInternal.user.updateMany({
+      where: { id: u.id, failedLoginCount: { gte: LOCK_THRESHOLD }, OR: notLocked },
+      data: { lockedUntil: new Date(now.getTime() + LOCK_DURATION_MS) },
+    });
+    if (lock.count === 1) await logAccountEvent(u.id, "LOGIN_LOCKED", ctx.ip, `${fresh.failedLoginCount} Fehlversuche in Folge`, now);
+  }
 }
 
 /** Setzt Zaehler und Sperre zurueck; mit `lastLogin` zusaetzlich `lastLoginAt`. */

@@ -10,6 +10,7 @@ import { base32Decode, hotp, totpStep } from "@/lib/auth/totp";
 import { decryptSecret } from "@/lib/crypto/secrets";
 import { createApiKey } from "@/domain/api-key/create";
 import { attemptLogin } from "@/domain/auth/login";
+import { registerFailedAttempt } from "@/domain/auth/attempts";
 import {
   TOTP_SECRET_PURPOSE,
   TotpAlreadyEnabledError,
@@ -311,5 +312,32 @@ describe("Protokoll und API-Schluessel", () => {
     const after = await dbInternal.apiKey.findUniqueOrThrow({ where: { id: key.id }, select: { revokedAt: true, keyHash: true } });
     expect(after).toEqual(before);
     expect(after.revokedAt).toBeNull();
+  });
+});
+
+describe("registerFailedAttempt (atomar)", () => {
+  const snapshot = (id: string) => ({ id, failedLoginCount: 0, lockedUntil: null });
+
+  it("8 parallele Fehlversuche: Konto gesperrt, Zaehler genau am Schwellenwert, je eine Sperre protokolliert", async () => {
+    const u = await makeUser();
+    const now = at(10);
+    await Promise.all(Array.from({ length: 8 }, () => registerFailedAttempt(snapshot(u.id), { ip: "198.51.100.30", now }, "parallel")));
+    const r = await row(u.id);
+    expect(r.failedLoginCount).toBe(5);
+    expect(r.lockedUntil?.getTime()).toBe(now.getTime() + 15 * 60_000);
+    expect(await dbInternal.activityLog.count({ where: { entityId: u.id, type: "LOGIN_LOCKED" } })).toBe(1);
+    expect(await dbInternal.activityLog.count({ where: { entityId: u.id, type: "LOGIN_FAILED" } })).toBe(5);
+  });
+
+  it("abgelaufene Sperre, parallele Fehlversuche: Zaehlung geht nicht verloren", async () => {
+    const u = await makeUser();
+    const now = at(10);
+    const expired = new Date(now.getTime() - 60_000);
+    await dbInternal.user.update({ where: { id: u.id }, data: { failedLoginCount: 5, lockedUntil: expired } });
+    const stale = { id: u.id, failedLoginCount: 5, lockedUntil: expired };
+    await Promise.all(Array.from({ length: 3 }, () => registerFailedAttempt(stale, { now }, "parallel")));
+    const r = await row(u.id);
+    expect(r.failedLoginCount).toBe(3);
+    expect(r.lockedUntil).toBeNull();
   });
 });
