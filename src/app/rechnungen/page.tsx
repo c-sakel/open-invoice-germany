@@ -53,6 +53,7 @@ const STATUS_TAB_LABEL: Record<InvoiceListStatusFilter, string> = {
   partial: "Teilbezahlt",
   paid: "Bezahlt",
   cancelled: "Storniert",
+  credit: "Gutschriften",
 };
 
 function deDate(d: Date | null) {

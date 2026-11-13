@@ -714,7 +714,7 @@ export const skontoCheckQuerySchema = z.object({
 export type SkontoCheckQuery = z.infer<typeof skontoCheckQuerySchema>;
 
 // ── Rechnungsliste: Filter/Suche (Phase 8b, §40) ─────────────────────────────
-export const InvoiceListStatusFilter = z.enum(["all", "draft", "open", "due", "overdue", "partial", "paid", "cancelled"]);
+export const InvoiceListStatusFilter = z.enum(["all", "draft", "open", "due", "overdue", "partial", "paid", "cancelled", "credit"]);
 export type InvoiceListStatusFilter = z.infer<typeof InvoiceListStatusFilter>;
 
 export const invoiceListFilterSchema = z.object({

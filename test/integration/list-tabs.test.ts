@@ -27,6 +27,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { recordPayment } from "@/domain/invoice/payment";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { createPartialCreditNote } from "@/domain/invoice/credit";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { listInvoices, invoiceStatusTabCounts } from "@/domain/invoice/list";
 import { createBusinessDocument } from "@/domain/document/create";
@@ -258,10 +259,25 @@ describe("invoiceStatusTabCounts", () => {
     }
   });
 
-  it("die sechs disjunkten Tabs ergeben zusammen 'Alle' (Gutschriften/Stornobelege sind keine Forderung und nur unter 'Alle' sichtbar, R2)", async () => {
+  it("die sieben disjunkten Tabs (inkl. Gutschriften) ergeben zusammen 'Alle' (Gutschriften/Stornobelege sind keine Forderung, R2, und haben ihren eigenen Tab)", async () => {
     const c = await invoiceStatusTabCounts(orgId, {}, NOW);
-    const creditNotes = await dbInternal.invoice.count({ where: { orgId, type: "CREDIT_NOTE", status: { in: ["FINALIZED", "SENT"] } } });
-    expect(c.draft + c.open + c.due + c.overdue + c.paid + c.cancelled + creditNotes).toBe(c.all);
+    expect(c.credit).toBeGreaterThanOrEqual(1);
+    expect(c.draft + c.open + c.due + c.overdue + c.paid + c.cancelled + c.credit).toBe(c.all);
+  });
+
+  it("Tab 'Gutschriften': Storno- und Teilgutschrift, keine Rechnungen, keine Entwuerfe (Jahr 2148)", async () => {
+    const CREDIT_NOW = new Date(Date.UTC(2148, 5, 15, 10, 0, 0));
+    const input: CreateInvoiceInput = { customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: CREDIT_NOW, lines: [line("Gutschriftentest")] } as CreateInvoiceInput;
+    const draft = await createDraftInvoice(orgId, input, { now: CREDIT_NOW });
+    await dbInternal.invoice.update({ where: { id: draft.id }, data: { dueDate: new Date(Date.UTC(2148, 6, 15)) } });
+    const fin = await finalizeInvoice(draft.id, { now: CREDIT_NOW });
+    const before = await listInvoices(orgId, { status: "credit", limit: 200 }, CREDIT_NOW);
+    await createPartialCreditNote(fin.id, { lines: [{ description: "Teilgutschrift", quantityMilli: 500, unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }] }, { orgId, now: CREDIT_NOW });
+    const after = await listInvoices(orgId, { status: "credit", limit: 200 }, CREDIT_NOW);
+    expect(after.total).toBe(before.total + 1);
+    expect(after.rows.every((r) => r.type === "CREDIT_NOTE" && r.status !== "DRAFT")).toBe(true);
+    expect(after.rows.some((r) => r.id === fin.id)).toBe(false);
+    expect((await invoiceStatusTabCounts(orgId, {}, CREDIT_NOW)).credit).toBe(after.total);
   });
 
   it("ein Textfilter wirkt auf ALLE Zaehler, eine fremde Organisation zaehlt nicht mit", async () => {
