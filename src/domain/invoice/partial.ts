@@ -74,7 +74,8 @@ interface PartialSource {
   number: string;
   status: string;
   taxScheme: string;
-  currency: string;
+  /** null: keine Quelle mit Waehrung (manueller Lieferschein) -> Kette Kunde > Einstellung > EUR. */
+  currency: string | null;
   headerText: string | null;
   footerText: string | null;
   paymentTerms: string | null;
@@ -96,6 +97,67 @@ interface PartialSource {
   documentChargePermille: number;
   documentChargeCents: number;
   lines: PartialSourceLine[];
+}
+
+interface OriginLine {
+  quantityMilli: number;
+  unitNetPriceCents: number;
+  taxRate: number;
+  taxCategory: string;
+  ossCategory: string | null;
+  discountPermille: number;
+  discountCents: number;
+}
+
+interface DeliveryNoteOrigin {
+  taxScheme: string;
+  currency: string;
+  paymentTerms: string | null;
+  billingAddressId: string | null;
+  lines: Map<string, OriginLine>;
+}
+
+/**
+ * Quelle (Angebot/Rechnung) eines Lieferscheins fuer die Vererbung (18a). `null`, wenn es
+ * keine Quelle gibt, sie in dieser Org fehlt oder einem anderen Kunden gehoert (Altdaten).
+ */
+async function loadDeliveryNoteOrigin(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  n: { customerId: string; sourceType: string | null; sourceId: string | null; lines: { sourceLineId: string | null; sourceType: string | null; sourceId: string | null }[] },
+): Promise<DeliveryNoteOrigin | null> {
+  if (!n.sourceId || (n.sourceType !== "QUOTE" && n.sourceType !== "INVOICE")) return null;
+  const sourceId = n.sourceId;
+  const head =
+    n.sourceType === "QUOTE"
+      ? await tx.quote.findFirst({
+          where: { id: sourceId, orgId },
+          select: { customerId: true, taxScheme: true, currency: true, paymentTerms: true, billingAddressId: true },
+        })
+      : await tx.invoice.findFirst({
+          where: { id: sourceId, orgId },
+          select: { customerId: true, taxScheme: true, currency: true, paymentTerms: true, billingAddressId: true },
+        });
+  if (!head || head.customerId !== n.customerId) return null;
+
+  const ids = n.lines
+    .filter((l) => l.sourceLineId && (l.sourceId == null || l.sourceId === sourceId))
+    .map((l) => l.sourceLineId as string);
+  const lineSelect = { id: true, quantityMilli: true, unitNetPriceCents: true, taxRate: true, taxCategory: true, ossCategory: true, discountPermille: true, discountCents: true } as const;
+  const srcLines =
+    ids.length === 0
+      ? []
+      : n.sourceType === "QUOTE"
+        ? await tx.quoteLine.findMany({ where: { id: { in: ids }, quote: { id: sourceId, orgId } }, select: lineSelect })
+        : await tx.invoiceLine.findMany({ where: { id: { in: ids }, invoice: { id: sourceId, orgId } }, select: lineSelect });
+
+  return {
+    taxScheme: head.taxScheme,
+    currency: head.currency,
+    paymentTerms: head.paymentTerms,
+    billingAddressId: head.billingAddressId,
+    lines: new Map(srcLines.map((l) => [l.id, l])),
+  };
 }
 
 /** Laedt und validiert die Quelle (mandantengeprueft) — Quote oder DeliveryNote. */
@@ -168,33 +230,49 @@ async function loadPartialSource(
   // Preise (`showPrices: false`, der Normalfall) darf weiterhin per POSITIONS/QUANTITIES
   // abgerechnet werden, solange die tatsaechlich ausgewaehlten Zeilen einen Preis tragen
   // (Pruefung in `positionLinesForMode`/`assertAllLinesPriced`, nicht hier).
-  const lines = n.lines.map((l) => ({
-    id: l.id,
-    description: l.description,
-    unit: l.unit,
-    quantityMilli: l.quantityMilli,
-    unitNetPriceCents: l.unitNetPriceCents,
-    taxRate: l.taxRate,
-    // DeliveryNoteLine kennt keine taxCategory (Abgrenzung Task 1-Schema) — Standard "S".
-    taxCategory: "S",
-    lineNetCents: l.unitNetPriceCents != null ? Math.round((l.quantityMilli * l.unitNetPriceCents) / 1000) : 0,
-    // DeliveryNoteLine kennt keinen Positionsrabatt (Abgrenzung Task 1-Schema).
-    discountPermille: 0,
-    discountCents: 0,
-  }));
+  //
+  // Phase 18a: stammt der Lieferschein aus einem Angebot/einer Rechnung desselben Kunden,
+  // erbt die Teilrechnung Steuerschema, Waehrung, Zahlungsbedingungen, Rechnungsanschrift,
+  // Zeilenkategorie, OSS-Kategorie und Positionsrabatt dieser Quelle (alles ueber `tx`,
+  // org-gescoped). Ohne passende Quelle bleiben die Standardwerte.
+  const origin = await loadDeliveryNoteOrigin(tx, orgId, n);
+  const lines = n.lines.map((l) => {
+    const src = l.sourceLineId ? origin?.lines.get(l.sourceLineId) : undefined;
+    const sameRate = src != null && l.taxRate != null && l.taxRate === src.taxRate;
+    const samePrice = sameRate && l.unitNetPriceCents != null && l.unitNetPriceCents === src.unitNetPriceCents;
+    const inheritDiscount = samePrice && src.quantityMilli > 0;
+    const discountPermille = inheritDiscount ? src.discountPermille : 0;
+    const discountCents = inheritDiscount ? roundHalfUp((src.discountCents * l.quantityMilli) / src.quantityMilli) : 0;
+    return {
+      id: l.id,
+      description: l.description,
+      unit: l.unit,
+      quantityMilli: l.quantityMilli,
+      unitNetPriceCents: l.unitNetPriceCents,
+      taxRate: l.taxRate,
+      taxCategory: sameRate ? src.taxCategory : "S",
+      ossCategory: sameRate ? src.ossCategory : null,
+      lineNetCents:
+        l.unitNetPriceCents != null
+          ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, discountPermille, discountCents }).lineNetCents
+          : 0,
+      discountPermille,
+      discountCents,
+    };
+  });
   return {
     customerId: n.customerId,
     number: n.number ?? "",
     status: n.status,
-    // DeliveryNote kennt weder taxScheme noch currency (Abgrenzung Task 1-Schema) —
-    // Standardwerte wie bei sonstigen Selbstheilungspfaden (createDraftInvoiceWithinTx).
-    taxScheme: "REGULAR",
-    currency: "EUR",
+    // Quelle (Angebot/Rechnung) vorhanden: deren Werte; sonst REGULAR und keine Waehrung
+    // (createDraftInvoiceWithinTx: Kunde > Einstellung > EUR).
+    taxScheme: origin?.taxScheme ?? "REGULAR",
+    currency: origin?.currency ?? null,
     headerText: n.headerText,
     footerText: n.footerText,
-    paymentTerms: null,
+    paymentTerms: origin?.paymentTerms ?? null,
     contactPersonId: n.contactPersonId,
-    billingAddressId: null, // DeliveryNote kennt keine eigene Rechnungsadresse
+    billingAddressId: origin?.billingAddressId ?? null, // der Lieferschein selbst fuehrt keine Rechnungsanschrift
     shippingAddressId: n.shippingAddressId,
     sellerSnapshotJson: n.sellerSnapshotJson,
     buyerSnapshotJson: n.buyerSnapshotJson,
@@ -490,7 +568,7 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
       customerId: source.customerId,
       type: "PARTIAL",
       taxScheme: source.taxScheme as CreateInvoiceInput["taxScheme"],
-      currency: source.currency,
+      currency: source.currency ?? undefined,
       // Leistungszeitpunkt (§14 Abs.4 Nr.6): Quote/DeliveryNote fuehren kein eigenes
       // Lieferdatum-Feld je Teilrechnungs-Anteil — Ersatzweise das Anlagedatum, analog
       // convertDocumentToInvoice (issueDate: now ohne eigenes deliveryDate).
