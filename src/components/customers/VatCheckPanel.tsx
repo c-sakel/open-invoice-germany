@@ -8,7 +8,6 @@ export interface VatCheckPanelRow {
   status: "VALID" | "INVALID" | "ERROR";
   errorCode: string | null;
   requestIdentifier: string | null;
-  traderName: string | null;
   trigger: "MANUAL" | "FINALIZE";
   /** Vorformatiertes Datum (Server), vermeidet Zeitzonen-Abweichungen bei der Hydration. */
   checkedAtLabel: string;
@@ -30,13 +29,11 @@ export function VatCheckPanel({
   customerId,
   vatId,
   enabled,
-  hasElectronicAddress,
   checks,
 }: {
   customerId: string;
   vatId: string;
   enabled: boolean;
-  hasElectronicAddress: boolean;
   checks: VatCheckPanelRow[];
 }) {
   const [pending, startTransition] = useTransition();
@@ -85,10 +82,6 @@ export function VatCheckPanel({
         <p role="alert" className="text-sm text-stamp">
           {error}
         </p>
-      )}
-
-      {!hasElectronicAddress && (
-        <p className="text-sm text-ink-soft">Für XRechnung E-Mail, Leitweg-ID oder Peppol-ID hinterlegen.</p>
       )}
 
       {checks.length > 0 && (

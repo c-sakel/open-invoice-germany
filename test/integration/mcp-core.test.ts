@@ -325,6 +325,26 @@ describe("setup_company", () => {
     expect(touched.taxNumber).toBe("99/999/99999");
   });
 
+  it("BT-34: Update ohne Adressfelder laesst Bestand stehen, mit Feldern setzt, ungueltiges Paar -> Fehler", async () => {
+    const base = { legalName: "MCP-Core-BT34 GmbH", addressLine1: "Setupweg 9", postalCode: "10999", city: "Berlin", taxNumber: "99/999/99999" };
+    const first = await callTool("setup_company", { ...base, electronicAddress: "DE123456789", electronicAddressScheme: "9930" });
+    expect(first.isError).toBeFalsy();
+    const id = text(first).match(/\(([^)]+)\)\.\s*$/)![1];
+    const again = await callTool("setup_company", { ...base, phone: "030 1234567" });
+    expect(again.isError).toBeFalsy();
+    expect(text(again)).toContain(id);
+    const kept = await dbInternal.organization.findUniqueOrThrow({ where: { id }, select: { electronicAddress: true, electronicAddressScheme: true } });
+    expect(kept).toEqual({ electronicAddress: "DE123456789", electronicAddressScheme: "9930" });
+    const changed = await callTool("setup_company", { ...base, electronicAddress: "rechnung@example.com", electronicAddressScheme: "EM" });
+    expect(changed.isError).toBeFalsy();
+    const set = await dbInternal.organization.findUniqueOrThrow({ where: { id }, select: { electronicAddress: true, electronicAddressScheme: true } });
+    expect(set).toEqual({ electronicAddress: "rechnung@example.com", electronicAddressScheme: "EM" });
+    const bad = await callTool("setup_company", { ...base, electronicAddress: "kein-gueltiger-wert", electronicAddressScheme: "9930" });
+    expect(bad.isError).toBe(true);
+    const badScheme = await callTool("setup_company", { ...base, electronicAddress: "x", electronicAddressScheme: "ZZZZ" });
+    expect(badScheme.isError).toBe(true);
+  });
+
   it("Fehlerpfad: Validierung schlaegt bei fehlender Postleitzahl fehl (organizationSchema)", async () => {
     const res = await callTool("setup_company", { legalName: "X-GmbH", addressLine1: "Y-Weg 1", city: "Z-Stadt" });
     expect(res.isError).toBe(true);

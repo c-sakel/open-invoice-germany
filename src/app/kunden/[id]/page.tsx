@@ -92,19 +92,21 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
         </Card>
       </div>
 
+      {resolveBuyerEndpoint(customer) === null && (
+        <p className="text-sm text-ink-soft">Für XRechnung E-Mail, Leitweg-ID oder Peppol-ID hinterlegen.</p>
+      )}
+
       {hasVatId && docSettings && (
         <Card title="USt-IdNr. prüfen (VIES)">
           <VatCheckPanel
             customerId={id}
             vatId={customer.vatId ?? ""}
             enabled={docSettings.viesCheckEnabled}
-            hasElectronicAddress={resolveBuyerEndpoint(customer) !== null}
             checks={vatChecks.map((c) => ({
               id: c.id,
               status: c.status,
               errorCode: c.errorCode,
               requestIdentifier: c.requestIdentifier,
-              traderName: c.traderName,
               trigger: c.trigger,
               checkedAtLabel: new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(c.checkedAt),
             }))}
