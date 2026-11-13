@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createBusinessDocument } from "@/domain/document/create";
-import { convertDocument } from "@/domain/document/convert";
+import { convertDocument, convertDocumentToInvoice, ConvertError } from "@/domain/document/convert";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { setDeliveryNoteStatus } from "@/domain/document/status";
@@ -65,6 +65,11 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     const s = await newScenario();
     const rs = await parallel(() => convertDocument(s.orgId, { fromType: "QUOTE", fromId: s.quote.id, toKind: "DELIVERY_NOTE" }, { now: s.now }));
     expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    // Die uebrigen vier scheitern fachlich an der Restmenge (ConvertError), nicht an einem Sperr-/DB-Fehler.
+    for (const f of rejected(rs)) {
+      expect(f.reason).toBeInstanceOf(ConvertError);
+      expect(String(f.reason)).toContain("Keine Restmenge");
+    }
     const lines = await dbInternal.deliveryNoteLine.findMany({ where: { sourceLineId: s.line.id }, select: { quantityMilli: true } });
     expect(lines.reduce((sum, l) => sum + l.quantityMilli, 0)).toBe(10000);
   });
@@ -118,6 +123,16 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     });
     const active = await dbInternal.invoice.count({ where: { id: { in: rel.map((r) => r.fromId) }, status: { not: "CANCELLED" } } });
     expect(active).toBe(1);
+  });
+
+  it("Angebot 5x parallel in Rechnung umwandeln -> genau eine Rechnung, Quelle verweist darauf", async () => {
+    const s = await newScenario();
+    const rs = await parallel(() => convertDocumentToInvoice(s.orgId, s.quote.id, { now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    for (const f of rejected(rs)) expect(String(f.reason)).toContain("bereits in eine Rechnung umgewandelt");
+    const quote = await dbInternal.quote.findFirstOrThrow({ where: { id: s.quote.id }, select: { convertedToInvoiceId: true } });
+    expect(quote.convertedToInvoiceId).toBe(fulfilled(rs)[0].value.id);
+    expect(await dbInternal.invoice.count({ where: { orgId: s.orgId } })).toBe(1);
   });
 
   it("Teilrechnung 5x 60 % parallel -> genau eine (Summe <= 100 %)", async () => {

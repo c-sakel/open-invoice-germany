@@ -10,7 +10,8 @@ PORT=55434
 export DATABASE_URL="postgresql://oig:test@localhost:${PORT}/openinvoice?schema=public"
 
 cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+cleanup_all() { cleanup; rm -rf tmp/pg-race; }
+trap cleanup_all EXIT
 cleanup
 
 fail() { echo "FEHLGESCHLAGEN: $1" >&2; exit 1; }
@@ -29,7 +30,7 @@ done
 sleep 2
 
 echo "==> Migrationen anwenden"
-npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null
+npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null  # nur stdout verwerfen, stderr bleibt fuer die Diagnose
 
 echo "==> Postgres-Client getrennt erzeugen (src/generated/prisma bleibt unveraendert)"
 rm -rf tmp/pg-race
@@ -44,7 +45,7 @@ export default defineConfig({
   datasource: { url: process.env.DATABASE_URL ?? "" },
 });
 CFG
-npx prisma generate --config tmp/pg-race/prisma.config.ts >/dev/null
+npx prisma generate --config tmp/pg-race/prisma.config.ts >/dev/null  # nur stdout verwerfen
 [ -f tmp/pg-race/client/client.ts ] || fail "Postgres-Client wurde nicht erzeugt (tmp/pg-race/client/client.ts)"
 
 echo "==> Parallel-Tests"
