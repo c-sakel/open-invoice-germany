@@ -16,6 +16,10 @@ import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { NotFoundError } from "@/domain/errors";
 import { freezeDocumentLayout } from "@/domain/document/freeze-layout";
 import { invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
+import { lockRow } from "@/lib/db-lock";
+import { assertSourceQuantitiesWithinTx } from "@/domain/delivery-note/quantities";
+import { buildDeliveryNoteSnapshots } from "@/domain/delivery-note/parties";
+import { serializeDeliveryNote } from "@/api/serializers/delivery-note";
 import { QuoteStatus, DeliveryNoteStatus, type SnapshotSource } from "@/schemas";
 import type { Quote, DeliveryNote, Prisma } from "@/generated/prisma/client";
 
@@ -198,7 +202,10 @@ export async function setDeliveryNoteStatus(
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
-    const note = await tx.deliveryNote.findFirst({ where: { id, orgId } });
+    // Zeilensperre (17b): serialisiert parallele Statuswechsel/Erstellungen desselben Lieferscheins
+    // (Doppelnummer, doppeltes delivery_note.created); SQLite: No-op.
+    await lockRow(tx, "DeliveryNote", id);
+    const note = await tx.deliveryNote.findFirst({ where: { id, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!note) throw new NotFoundError(`Lieferschein ${id} nicht gefunden.`);
 
     const from = DeliveryNoteStatus.parse(note.status);
@@ -207,6 +214,22 @@ export async function setDeliveryNoteStatus(
     const data: Prisma.DeliveryNoteUpdateInput = { status: target };
     if (target === "SENT") data.sentAt = now;
     if (target === "DELIVERED") data.deliveredAt = now;
+
+    const becomesCreated = from === "DRAFT" && target === "CREATED";
+    if (becomesCreated) {
+      // Entwurf wird wirksam (17b): Restmengen hart pruefen (Entwuerfe zaehlten bisher nie mit),
+      // Wirksamkeitsdatum setzen und Parteien-Snapshots einfrieren.
+      await assertSourceQuantitiesWithinTx(tx, orgId, note.lines);
+      const customer = await tx.customer.findFirst({ where: { id: note.customerId, orgId } });
+      if (!customer) throw new NotFoundError(`Kunde ${note.customerId} nicht gefunden.`);
+      const snapshots = await buildDeliveryNoteSnapshots(tx, orgId, customer, note.contactPersonId, note.shippingAddressId);
+      data.issueDate = now;
+      data.sellerSnapshotJson = snapshots.sellerSnapshotJson;
+      data.buyerSnapshotJson = snapshots.buyerSnapshotJson;
+      data.contactSnapshotJson = snapshots.contactSnapshotJson;
+      data.snapshotSource = "CREATE" satisfies SnapshotSource;
+      data.snapshotAt = now;
+    }
 
     if (target === "CREATED" && !note.number) {
       // B3 (Final-Review): ueber assignDocumentNumber() — siehe invoice/finalize.ts.
@@ -218,7 +241,7 @@ export async function setDeliveryNoteStatus(
       data.printOptionsJson = await freezeDocumentLayout(tx, orgId, { docType: "DELIVERY_NOTE", printOptionsJson: note.printOptionsJson });
     }
 
-    const updated = await tx.deliveryNote.update({ where: { id }, data });
+    const updated = await tx.deliveryNote.update({ where: { id }, data, include: { lines: { orderBy: { position: "asc" } } } });
 
     await appendChangeLog(tx, {
       orgId,
@@ -231,6 +254,18 @@ export async function setDeliveryNoteStatus(
     });
     const dnActivityType: ActivityType = target === "SENT" ? "SENT" : target === "DELIVERED" ? "DELIVERED" : target === "CANCELLED" ? "CANCELLED" : "STATUS_CHANGED";
     await logActivity(tx, { orgId, entityType: "DELIVERY_NOTE", entityId: id, type: dnActivityType, actor, at: now, data: { from, to: target } });
+
+    // Webhook-Outbox: "delivery_note.created" genau einmal, wenn der Entwurf wirksam wird (gleiche Tx).
+    if (becomesCreated) {
+      await emitEvent(tx, {
+        orgId,
+        type: "delivery_note.created",
+        objectName: "DeliveryNote",
+        objectId: id,
+        data: serializeDeliveryNote(updated, new Set()),
+        now,
+      });
+    }
 
     return updated;
   });

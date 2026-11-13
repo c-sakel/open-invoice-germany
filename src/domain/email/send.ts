@@ -15,6 +15,7 @@ import { buildTemplateContext, DocumentNotFoundError } from "@/domain/email/cont
 import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/settings";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { DeliveryNoteValidationError } from "@/domain/delivery-note/errors";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
@@ -66,6 +67,12 @@ export async function sendDocumentEmail(
         await finalizeInvoice(input.docId, { actor });
       }
     }
+  }
+
+  // Lieferschein-Entwurf (17b): ohne Nummer nicht versendbar — VOR jeder Log-Anlage ablehnen.
+  if (input.docType === "DELIVERY_NOTE") {
+    const dn = await dbInternal.deliveryNote.findFirst({ where: { id: input.docId, orgId }, select: { status: true } });
+    if (dn && dn.status === "DRAFT") throw new DeliveryNoteValidationError("Lieferschein-Entwurf zuerst erstellen (Nummer vergeben).");
   }
 
   // shareLinkDefaultOn (Phase 7, §33): Linkerzeugung fuer Angebote wurde nach

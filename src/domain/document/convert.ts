@@ -299,6 +299,7 @@ async function convertToDeliveryNote(orgId: string, input: ConvertDocumentInput,
         if (!src) throw new ConvertError(`Quellposition ${r.sourceLineId} unbekannt.`);
         return {
           description: src.description,
+          articleNumber: src.articleNumber ?? undefined,
           quantityMilli: r.quantityMilli,
           unit: src.unit,
           sourceType: fromType,

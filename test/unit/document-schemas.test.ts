@@ -191,3 +191,20 @@ describe("Backfill-Migration phase3a_documents (SQLite + Postgres)", () => {
     expect(sql).toContain(backfillSql);
   });
 });
+
+describe("Lieferschein-Entwurf (Phase 17b)", () => {
+  const line = { description: "Position", quantityMilli: 1000, unit: "C62" };
+  it("createDeliveryNoteSchema: draft optional boolean", () => {
+    expect(createDeliveryNoteSchema.safeParse({ customerId: "c1", lines: [line] }).success).toBe(true);
+    expect(createDeliveryNoteSchema.safeParse({ customerId: "c1", draft: true, lines: [line] }).success).toBe(true);
+    expect(createDeliveryNoteSchema.safeParse({ customerId: "c1", draft: "ja", lines: [line] }).success).toBe(false);
+  });
+  it("updateDeliveryNoteSchema: alles optional, lehnt sourceType/draft und leere lines ab", async () => {
+    const { updateDeliveryNoteSchema } = await import("@/schemas");
+    expect(updateDeliveryNoteSchema.safeParse({}).success).toBe(true);
+    expect(updateDeliveryNoteSchema.safeParse({ notes: "x", lines: [line] }).success).toBe(true);
+    expect(updateDeliveryNoteSchema.safeParse({ sourceType: "QUOTE" }).success).toBe(false);
+    expect(updateDeliveryNoteSchema.safeParse({ draft: true }).success).toBe(false);
+    expect(updateDeliveryNoteSchema.safeParse({ lines: [] }).success).toBe(false);
+  });
+});

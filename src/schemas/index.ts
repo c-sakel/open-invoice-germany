@@ -869,7 +869,15 @@ export const createDeliveryNoteSchema = z.object({
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
   lines: z.array(deliveryNoteLineInputSchema).min(1),
+  // Phase 17b: true -> Entwurf (DRAFT ohne Nummer/Snapshot, reserviert keine Menge).
+  draft: z.boolean().optional(),
 });
+export const updateDeliveryNoteSchema = createDeliveryNoteSchema
+  .omit({ sourceType: true, sourceId: true, draft: true, lines: true })
+  .partial()
+  .extend({ lines: z.array(deliveryNoteLineInputSchema).min(1).optional() })
+  .strict();
+export type UpdateDeliveryNoteInput = z.infer<typeof updateDeliveryNoteSchema>;
 export type CreateDeliveryNoteInput = z.infer<typeof createDeliveryNoteSchema>;
 
 // customerAddressInputSchema/contactPersonInputSchema (Phase 8a, §29/§30) leben in

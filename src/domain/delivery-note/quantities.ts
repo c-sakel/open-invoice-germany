@@ -6,6 +6,7 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
+import { lockRows } from "@/lib/db-lock";
 
 export class OverDeliveryError extends Error {
   constructor(message: string) {
@@ -26,6 +27,7 @@ export interface SourceLine {
   id: string;
   description: string;
   unit: string;
+  articleNumber: string | null;
   quantityMilli: number;
   unitNetPriceCents: number;
   taxRate: number;
@@ -59,7 +61,7 @@ export async function loadSourceLines(
       // SUBTOTAL tragen keine Menge und duerfen keine Lieferschein-Restmenge erzeugen (§8).
       lines: q.lines
         .filter((l) => l.lineType === "ITEM")
-        .map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+        .map((l) => ({ id: l.id, description: l.description, unit: l.unit, articleNumber: l.articleNumber, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
     };
   }
   const inv = await db.invoice.findFirst({
@@ -72,7 +74,7 @@ export async function loadSourceLines(
     // W3: siehe oben.
     lines: inv.lines
       .filter((l) => l.lineType === "ITEM")
-      .map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
+      .map((l) => ({ id: l.id, description: l.description, unit: l.unit, articleNumber: l.articleNumber, quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, taxRate: l.taxRate })),
   };
 }
 
@@ -128,5 +130,40 @@ export function assertNoOverDelivery(
         `Menge ${req.quantityMilli} ueberschreitet die Restmenge ${r.remainingMilli} fuer Position "${r.description}".`,
       );
     }
+  }
+}
+
+/**
+ * Harte Restmengenpruefung fuer Lieferscheine, die wirksam werden (Anlage ohne Entwurf,
+ * DRAFT -> CREATED): sperrt alle beteiligten Quellen (Zeilensperre, 17b) und prueft je
+ * Quelle die Restmenge. Lieferschein-Entwuerfe zaehlen nie als geliefert; ein bereits
+ * wirksamer Lieferschein, der selbst geprueft wird, darf hier noch nicht mitgezaehlt sein
+ * (Aufrufer: vor dem Statuswechsel bzw. vor dem Anlegen).
+ */
+export async function assertSourceQuantitiesWithinTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  lines: { sourceType?: string | null; sourceId?: string | null; sourceLineId?: string | null; quantityMilli: number }[],
+): Promise<void> {
+  const bySource = new Map<string, { sourceType: DeliverySourceType; sourceId: string; requested: { sourceLineId: string; quantityMilli: number }[] }>();
+  for (const l of lines) {
+    if (!l.sourceLineId || !l.sourceId) continue;
+    if (l.sourceType !== "QUOTE" && l.sourceType !== "INVOICE") continue;
+    const key = `${l.sourceType}\u0000${l.sourceId}`;
+    const entry = bySource.get(key) ?? { sourceType: l.sourceType, sourceId: l.sourceId, requested: [] };
+    entry.requested.push({ sourceLineId: l.sourceLineId, quantityMilli: l.quantityMilli });
+    bySource.set(key, entry);
+  }
+  if (bySource.size === 0) return;
+  await lockRows(
+    tx,
+    [...bySource.values()].map((s) => ({ table: s.sourceType === "QUOTE" ? ("Quote" as const) : ("Invoice" as const), id: s.sourceId })),
+  );
+  for (const s of bySource.values()) {
+    const remaining = await remainingQuantities(orgId, s.sourceType, s.sourceId, tx);
+    // Mehrere Zeilen derselben Quellposition addieren sich.
+    const sums = new Map<string, number>();
+    for (const r of s.requested) sums.set(r.sourceLineId, (sums.get(r.sourceLineId) ?? 0) + r.quantityMilli);
+    assertNoOverDelivery(remaining, [...sums].map(([sourceLineId, quantityMilli]) => ({ sourceLineId, quantityMilli })));
   }
 }
