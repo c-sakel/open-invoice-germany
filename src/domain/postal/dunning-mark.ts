@@ -8,7 +8,7 @@
  * und schreibt ein Gegen-Ereignis (ChangeLog `DUNNING_SEND_REVERTED`).
  */
 import type { Prisma } from "@/generated/prisma/client";
-import { appendChangeLog } from "@/domain/audit";
+import { appendPostalChangeLog as appendChangeLog } from "@/domain/postal/chain-lock";
 import { addPostalEvent, type PostalStatus } from "./events";
 
 interface MarkInput {
