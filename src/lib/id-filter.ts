@@ -119,3 +119,30 @@ export async function pageByIdSet<Full extends { id: string }, Key extends { id:
     return r ? [r] : [];
   });
 }
+
+export interface OrderedIdsParams<Key extends { id: string }> {
+  limit: number;
+  compare: (a: Key, b: Key) => number;
+  /** Je Block: nur `id` + Sortfeld, `orderBy` wie die Liste, `take`. */
+  keys: (c: IdCond, take: number) => Promise<Key[]>;
+}
+
+/**
+ * Die ersten `limit` Ids in Listenreihenfolge (Vor/Zurueck-Navigation, Phase 17c, Task 6):
+ * ohne Id-Menge bzw. bei einem Block eine Abfrage, sonst je Block `limit` Schluessel, Merge
+ * mit der totalen Ordnung `compare`, Abschnitt `0..limit`.
+ */
+export async function orderedIdsByIdSet<Key extends { id: string }>(
+  ids: IdSet,
+  p: OrderedIdsParams<Key>,
+  size: number = ID_CHUNK_SIZE,
+): Promise<string[]> {
+  if (ids === null) return (await p.keys(null, p.limit)).map((k) => k.id);
+  const chunks = chunkIds(ids, size);
+  if (chunks.length === 0) return [];
+  if (chunks.length === 1) return (await p.keys({ id: { in: chunks[0] } }, p.limit)).map((k) => k.id);
+  const all: Key[] = [];
+  for (const chunk of chunks) all.push(...(await p.keys({ id: { in: chunk } }, p.limit)));
+  all.sort(p.compare);
+  return all.slice(0, p.limit).map((k) => k.id);
+}

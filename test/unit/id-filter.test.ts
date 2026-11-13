@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { chunkIds, intersectIdSets, countByIdSet, collectByIdSet, compareBySort, pageByIdSet, type IdCond, type SortSpec } from "@/lib/id-filter";
+import { chunkIds, intersectIdSets, countByIdSet, collectByIdSet, compareBySort, orderedIdsByIdSet, pageByIdSet, type IdCond, type SortSpec } from "@/lib/id-filter";
 
 interface Row {
   id: string;
@@ -99,6 +99,27 @@ describe("pageByIdSet", () => {
     expect(await pageByIdSet([], base)).toEqual([]);
     expect(single).not.toHaveBeenCalled();
     expect(await pageByIdSet(null, base)).toEqual([{ id: "x" }]);
+    expect(keys).not.toHaveBeenCalled();
+  });
+});
+
+describe("orderedIdsByIdSet", () => {
+  const all = dataset(7);
+  const compare = compareBySort<Row>({ key: "v", dir: "asc", nulls: "last" }, (r) => r.v);
+  it("entspricht dem Referenzergebnis fuer jedes limit", async () => {
+    const reference = [...all].sort(compare).map((r) => r.id);
+    const ids = all.map((r) => r.id);
+    for (let limit = 1; limit <= 9; limit++) {
+      const out = await orderedIdsByIdSet<Row>(ids, { limit, compare, keys: async (c, take) => all.filter((r) => c?.id.in.includes(r.id)).sort(compare).slice(0, take) }, 3);
+      expect(out).toEqual(reference.slice(0, limit));
+    }
+  });
+  it("null: eine Abfrage; leer: keine", async () => {
+    const keys = vi.fn(async () => [{ id: "a", v: 1 }]);
+    expect(await orderedIdsByIdSet(null, { limit: 5, compare, keys })).toEqual(["a"]);
+    expect(keys).toHaveBeenCalledTimes(1);
+    keys.mockClear();
+    expect(await orderedIdsByIdSet([], { limit: 5, compare, keys })).toEqual([]);
     expect(keys).not.toHaveBeenCalled();
   });
 });

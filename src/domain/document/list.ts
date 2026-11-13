@@ -12,7 +12,7 @@ import { QuoteStatus, DeliveryNoteStatus } from "@/schemas";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingFilterIds } from "@/domain/document/billing-state";
 import { docIdsForTag } from "@/domain/tag/list";
-import { collectByIdSet, compareBySort, countByIdSet, intersectIdSets, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
+import { collectByIdSet, compareBySort, countByIdSet, intersectIdSets, orderedIdsByIdSet, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
 
 /** Feste Ordnung der Angebots-/Lieferscheinlisten: `issueDate` absteigend, `id` aufsteigend als Tiebreak. */
 const ISSUE_DATE_DESC: SortSpec = { key: "issueDate", dir: "desc", nulls: "last" };
@@ -316,6 +316,24 @@ export async function listQuotes(
   };
 }
 
+/**
+ * Nur die Ids einer gefilterten Angebotsliste in Listenreihenfolge, hoechstens `opts.limit`
+ * (Phase 17c, Task 6) — siehe `listInvoiceIds`. `opts.ids` wie bei `listQuotes`.
+ */
+export async function listQuoteIds(orgId: string, rawFilter: unknown, opts: { limit: number; now?: Date; ids?: string[] }): Promise<string[]> {
+  const now = opts.now ?? new Date();
+  const filter = quoteListFilterSchema.parse({ ...(typeof rawFilter === "object" && rawFilter !== null ? rawFilter : {}), limit: 1, offset: 0 });
+  const base = quoteFilterConditions(orgId, filter);
+  const idSet = await quoteIdSet(orgId, filter, { ids: opts.ids });
+  const statusCond = quoteStatusWhere(filter.status, now);
+  const orderBy: Prisma.QuoteOrderByWithRelationInput[] = [{ issueDate: "desc" }, { id: "asc" }];
+  return orderedIdsByIdSet(idSet, {
+    limit: opts.limit,
+    compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
+    keys: (c, take) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), orderBy, take, select: { id: true, issueDate: true } }),
+  });
+}
+
 // ── Lieferscheine ────────────────────────────────────────────────────────────
 export const deliveryNoteListFilterSchema = z.object({
   ...baseFilterShape,
@@ -464,6 +482,20 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
     limit: filter.limit,
     offset: filter.offset,
   };
+}
+
+/** Nur die Ids einer gefilterten Lieferscheinliste in Listenreihenfolge (Phase 17c, Task 6). */
+export async function listDeliveryNoteIds(orgId: string, rawFilter: unknown, opts: { limit: number }): Promise<string[]> {
+  const filter = deliveryNoteListFilterSchema.parse({ ...(typeof rawFilter === "object" && rawFilter !== null ? rawFilter : {}), limit: 1, offset: 0 });
+  const base = deliveryNoteFilterConditions(orgId, filter);
+  const idSet = await deliveryNoteIdSet(orgId, filter);
+  const statusCond: Prisma.DeliveryNoteWhereInput | undefined = filter.status !== "all" ? { status: filter.status } : undefined;
+  const orderBy: Prisma.DeliveryNoteOrderByWithRelationInput[] = [{ issueDate: "desc" }, { id: "asc" }];
+  return orderedIdsByIdSet(idSet, {
+    limit: opts.limit,
+    compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
+    keys: (c, take) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), orderBy, take, select: { id: true, issueDate: true } }),
+  });
 }
 
 // ── Abos / wiederkehrende Rechnungen ─────────────────────────────────────────

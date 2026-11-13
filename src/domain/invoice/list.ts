@@ -12,7 +12,7 @@ import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } 
 import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
 import { docIdsForTag } from "@/domain/tag/list";
-import { collectByIdSet, compareBySort, countByIdSet, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
+import { collectByIdSet, compareBySort, countByIdSet, orderedIdsByIdSet, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
 
 export interface InvoiceListRow {
   id: string;
@@ -89,6 +89,8 @@ interface InvoiceSortPlan {
   spec: SortSpec;
   field: "issueDate" | "dueDate" | "grossTotalCents" | "number";
 }
+
+type InvoiceSortKey = { id: string; issueDate: Date; dueDate: Date | null; grossTotalCents: number; number: string | null };
 
 function sortPlan(sort: InvoiceListFilter["sort"]): InvoiceSortPlan {
   switch (sort) {
@@ -328,13 +330,12 @@ export async function listInvoices(
     _count: { select: { dunnings: true } },
   } as const;
 
-  type SortKey = { id: string; issueDate: Date; dueDate: Date | null; grossTotalCents: number; number: string | null };
   const [total, rows] = await Promise.all([
     countByIdSet(idSet, (c) => prisma.invoice.count({ where: withCond(base, c, statusCond) })),
     pageByIdSet(idSet, {
       offset: filter.offset,
       limit: filter.limit,
-      compare: compareBySort<SortKey>(plan.spec, (r) => r[plan.field]),
+      compare: compareBySort<InvoiceSortKey>(plan.spec, (r) => r[plan.field]),
       single: (c) => prisma.invoice.findMany({ where: withCond(base, c, statusCond), orderBy: plan.orderBy, skip: filter.offset, take: filter.limit, select }),
       keys: (c, take) =>
         prisma.invoice.findMany({
@@ -388,3 +389,30 @@ export async function listInvoices(
   };
 }
 
+
+/**
+ * Nur die Ids einer gefilterten Liste in Listenreihenfolge, hoechstens `opts.limit`
+ * (Phase 17c, Task 6 — Vor/Zurueck der Detailseite). Dieselben Where-Bausteine, dieselbe
+ * Sortierung und dieselbe Id-Menge wie `listInvoices`, aber nur `select { id, <Sortfeld> }`:
+ * keine Zeilen, keine `count`-, keine `emailLog`-Abfrage. `limit`/`offset` im Rohfilter werden
+ * ignoriert.
+ */
+export async function listInvoiceIds(orgId: string, rawFilter: unknown, opts: { limit: number; now?: Date }): Promise<string[]> {
+  const now = opts.now ?? new Date();
+  const filter = invoiceListFilterSchema.parse({ ...(typeof rawFilter === "object" && rawFilter !== null ? rawFilter : {}), limit: 1, offset: 0 });
+  const base = invoiceFilterConditions(orgId, filter);
+  const idSet = await invoiceIdSet(orgId, filter);
+  const statusCond = statusWhere(filter.status, now);
+  const plan = sortPlan(filter.sort);
+  return orderedIdsByIdSet(idSet, {
+    limit: opts.limit,
+    compare: compareBySort<InvoiceSortKey>(plan.spec, (r) => r[plan.field]),
+    keys: (c, take) =>
+      prisma.invoice.findMany({
+        where: withCond(base, c, statusCond),
+        orderBy: plan.orderBy,
+        take,
+        select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true },
+      }),
+  });
+}
