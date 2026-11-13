@@ -140,3 +140,13 @@ describe("defaultTransport (Notschalter)", () => {
     );
   });
 });
+
+describe("Notbremse im Request-Pfad", () => {
+  it("createHttpsTransport ohne requestImpl sendet unter Vitest nie", async () => {
+    const spy = vi.spyOn(https, "request");
+    const t = createHttpsTransport();
+    await expect(t({ method: "GET", path: "/balance", body: {}, timeoutMs: 1000 })).rejects.toBeInstanceOf(PostalNetworkForbiddenError);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});

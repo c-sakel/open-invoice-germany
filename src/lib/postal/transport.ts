@@ -47,6 +47,10 @@ export class PostalTransportError extends Error {
   }
 }
 
+function networkForbidden(): boolean {
+  return Boolean(process.env.VITEST) || process.env.POSTAL_NETWORK === "0";
+}
+
 const DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export function createHttpsTransport(opts: {
@@ -64,6 +68,11 @@ export function createHttpsTransport(opts: {
 
   return (req) =>
     new Promise<LxpTransportResponse>((resolve, reject) => {
+      // Notbremse im Request-Pfad: echtes Netz (keine injizierte Implementierung) nie unter Vitest/POSTAL_NETWORK=0.
+      if (!requestImpl && networkForbidden()) {
+        reject(new PostalNetworkForbiddenError());
+        return;
+      }
       const url = new URL(base.toString().replace(/\/+$/, "") + req.path);
       for (const [k, v] of Object.entries(req.query ?? {})) url.searchParams.set(k, v);
       const payload = Buffer.from(JSON.stringify(req.body), "utf8");
@@ -155,7 +164,7 @@ export function createHttpsTransport(opts: {
 /** Produktiver Transport; prueft den Notschalter bei jedem Aufruf (nicht beim Erzeugen). */
 export function defaultTransport(): LxpTransport {
   return (req) => {
-    if (process.env.VITEST || process.env.POSTAL_NETWORK === "0") {
+    if (networkForbidden()) {
       return Promise.reject(new PostalNetworkForbiddenError());
     }
     return createHttpsTransport()(req);
