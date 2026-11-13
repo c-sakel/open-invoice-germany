@@ -7,7 +7,7 @@
 import type { Block, Run } from "./types";
 
 /** Escaped die für HTML-Text und -Attribute kritischen Zeichen. */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

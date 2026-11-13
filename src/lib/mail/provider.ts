@@ -9,6 +9,8 @@ export interface OutgoingMail {
   replyTo?: string;
   subject: string;
   text: string;
+  /** Optionaler HTML-Teil (multipart/alternative, Text bleibt unveraendert). */
+  html?: string;
   attachments: Attachment[];
 }
 
