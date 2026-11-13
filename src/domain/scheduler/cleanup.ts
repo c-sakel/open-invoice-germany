@@ -12,22 +12,28 @@
  * - `ApiRequestLog`, je Organisation nach `ApiSettings.retentionDays` (Default 7) **und**
  *   `maxRows` (Default 2000, die neuesten bleiben) — Phase 12d.
  *
+ * - 17b: haengengebliebene QUEUED-EmailLogs (> 15 min) werden vorab auf FAILED abgeglichen.
+ *
  * Laeuft als LETZTER Job (JOB_ORDER, src/domain/scheduler/runner.ts, nach "webhooks") —
  * raeumt damit nie eine Zeile weg, die derselbe Lauf gerade erst als faellig behandelt hat.
  */
 import { dbInternal } from "@/lib/db";
 import { purgeApiRequestLogs } from "@/domain/api-log/purge";
+import { reconcileStaleQueuedEmails } from "@/domain/email/email-log";
 
 export const WEBHOOK_DELIVERY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const API_IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export interface CleanupResult {
+  emailsReconciled: number;
   webhookDeliveriesDeleted: number;
   apiIdempotencyDeleted: number;
   apiRequestLogsDeleted: number;
 }
 
 export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResult> {
+  // Zuerst: haengengebliebene QUEUED-Mails auf FAILED (17b), vor dem Loeschen alter Zeilen.
+  const emailsReconciled = await reconcileStaleQueuedEmails(now);
   const webhookThreshold = new Date(now.getTime() - WEBHOOK_DELIVERY_RETENTION_MS);
   const idempotencyThreshold = new Date(now.getTime() - API_IDEMPOTENCY_RETENTION_MS);
 
@@ -39,5 +45,5 @@ export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResu
   });
   const apiRequestLogsDeleted = await purgeApiRequestLogs(now);
 
-  return { webhookDeliveriesDeleted: webhookDeliveries.count, apiIdempotencyDeleted: apiIdempotency.count, apiRequestLogsDeleted };
+  return { emailsReconciled, webhookDeliveriesDeleted: webhookDeliveries.count, apiIdempotencyDeleted: apiIdempotency.count, apiRequestLogsDeleted };
 }
