@@ -1,6 +1,6 @@
 # Bekannte Einschränkungen
 
-Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-11-13 (Phase 18a, Phase 16d).
+Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Status: 2026-11-14 (Phase 18b, Phase 18a, Phase 16d).
 
 ## Betrieb & Sicherheit
 - **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Seit Phase 14a (Task 8) gehärtet: eine IP-Bremse (max. 10 Versuche/5 Minuten, nur im Speicher) und eine Kontosperre nach 5 Fehlversuchen in Folge (15 Minuten, übersteht einen Neustart) verlangsamen das Erraten des Passworts; jeder Fehlversuch und jede Sperre werden protokolliert (nie E-Mail/Passwort im Protokoll). Die Sperre hat eine feste Obergrenze — weitere Fehlversuche während einer laufenden Sperre verlängern sie nicht, ein Selbst-Aussperren auf Dauer ist damit ausgeschlossen. Seit Phase 14a (Task 9) kann das Passwort selbst unter „Einstellungen → Konto" geändert werden (aktuelles Passwort Pflicht, dieselbe IP-/Kontosperre wie beim Login) — das beendet **sofort alle anderen Sitzungen** (Session-Token trägt den Zeitpunkt der letzten Passwortänderung, `src/lib/auth/server.ts#userIdFromToken` verwirft ältere Token), nur der Browser der Änderung selbst bleibt angemeldet. Seit Phase 17d gibt es Zwei-Faktor-Anmeldung (TOTP) und Passwort-Reset per Mail (Abschnitt „Konto-Sicherheit (Phase 17d)“). Weiterhin **nicht** vorhanden: Mehrbenutzer und Rollen. In Produktion `AUTH_SECRET` setzen + hinter HTTPS betreiben.
@@ -313,8 +313,19 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Das Protokoll auf der Einstellungsseite zeigt die letzten 100 Aufträge**; der Beleg selbst zeigt alle seine Aufträge.
 - **Lieferschein-PDF:** Preise im Lieferschein-PDF stehen immer in EUR (siehe „Teilrechnung aus einem Lieferschein“ oben); relevant, falls ein Lieferschein später per Post gehen soll.
 
+## CSV-Export und -Import (Phase 18b)
+- **Export:** höchstens 20.000 Zeilen je Datei, darüber `413` (Filter einschränken); der MCP-Export `export_csv` liefert höchstens 500 Zeilen (und ohne BOM, Hinweis auf REST/Oberfläche). Bei `format=csv` entfällt die Paginierung. Kunden und Produkte sind nach Name sortiert. „Kundennummer“ ist der aktuelle Stand des Kunden, der Kundenname in Belegen der Snapshot. Es gibt **kein Export-Protokoll** (Export ist nicht im Aktivitätsprotokoll); 30 Exporte je Minute und Organisation.
+- **Archivierte Kunden und Produkte** gibt es nur im Export (mit dem Filter „archiviert“); der Import legt keine archivierten Datensätze an, der Import gleicht Nummern und E-Mail/Name aber auch gegen archivierte Datensätze ab.
+- **Import nur Kunden und Produkte, nur Anlage** (kein Update bestehender Datensätze, keine Belege, keine Adressen/Ansprechpartner/Kundenfelder/Zahlungsmethode/Kunden-Vorgaben). Höchstens 2 MB, 2.000 Datenzeilen und 60 Spalten; alles oder nichts (ein Fehler verwirft die ganze Datei, die Nummernkreise bleiben unverbraucht).
+- **Windows-1252-Datei und Größe:** Die 2-MB-Grenze gilt für die Datei und nochmals für den dekodierten Text in UTF-8. Eine Windows-1252-Datei knapp unter 2 MB mit vielen Umlauten kann als UTF-8 größer als 2 MB werden und wird dann mit „Datei zu groß“ abgelehnt. Die Erkennung Windows-1252 gibt es nur beim Datei-Upload der Oberfläche; REST und MCP erwarten UTF-8-Text.
+- **Kein Datenbank-Unique je Organisation für Kundennummer und Artikelnummer.** Die Eindeutigkeit sichern nur die Import-Sperre (Organisationssperre in der Transaktion) und die Vorabprüfung; die manuelle Anlage in der Oberfläche oder per REST, parallel zu einem Import oder zu einer zweiten Anlage, ist nicht abgesichert. Ein Nachtrag wäre eine Migration mit Bereinigung von Bestandsdubletten.
+- **Steuersatz- und Kategorieprüfung nur im Import:** Der Import verlangt Steuerkategorie ≠ S nur mit 0 % und prüft den Steuersatz gegen die freigegebenen Sätze. Das Produktformular und `POST /api/v1/Product` prüfen diese Kombination nicht.
+- **Doppel-Import-Schutz:** dieselbe Datei (gleicher Inhalts-Hash) wird je Organisation innerhalb von 24 Stunden nur einmal importiert (`409`, `allowRepeat` hebt es auf); die Frist ist fest, der Schutz verhindert keine inhaltlich gleichen Dateien mit anderem Hash. Bereits angelegte Kunden/Produkte werden unabhängig davon von den Dublettenprüfungen erkannt.
+- **Formelschutz:** Der Export stellt Textzellen mit Formelzeichen (`=`, `+`, `-`, `@`, auch nach unsichtbaren Zeichen) ein `'` voran; der Import entfernt dieses `'` wieder. Ein Wert, der selbst mit `'` vor einem Formelzeichen beginnt, verliert dadurch beim Import das `'`.
+- **Suche:** Die Kundensuche der Liste (Name, Nummer) unterscheidet sich vom Export-Filter `search`, der zusätzlich die E-Mail durchsucht.
+
 ## Funktionsumfang (geplant)
-DATEV-/CSV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.
+DATEV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.
 
 ---
 
