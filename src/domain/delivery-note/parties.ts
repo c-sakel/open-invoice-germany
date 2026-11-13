@@ -135,3 +135,24 @@ export async function withDraftPreviewSnapshots<
   );
   return { ...dn, ...snap };
 }
+
+/**
+ * Quellbezuege eines Lieferscheins: Der Kopf traegt sourceType und sourceId nur gemeinsam, und jede
+ * Zeile mit Quellbezug muss exakt auf die Quelle des Kopfes zeigen. Sonst liesse sich die
+ * Kundenpruefung (assertCustomerMatchesSource) umgehen, indem Zeilen auf die Quelle eines anderen
+ * Kunden zeigen. Gemeinsam fuer Anlage und Entwurf-Bearbeitung.
+ */
+export function assertLineSourcesMatchHead(
+  head: { sourceType?: string | null; sourceId?: string | null },
+  lines: { sourceType?: string | null; sourceId?: string | null; sourceLineId?: string | null }[],
+): void {
+  if (Boolean(head.sourceType) !== Boolean(head.sourceId)) {
+    throw new DeliveryNoteValidationError("sourceType und sourceId muessen gemeinsam angegeben werden.");
+  }
+  for (const [i, l] of lines.entries()) {
+    if (!l.sourceType && !l.sourceId && !l.sourceLineId) continue;
+    if ((l.sourceType ?? null) !== (head.sourceType ?? null) || (l.sourceId ?? null) !== (head.sourceId ?? null)) {
+      throw new DeliveryNoteValidationError(`Position ${i + 1}: Quellbezug passt nicht zur Quelle des Lieferscheins.`);
+    }
+  }
+}

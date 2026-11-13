@@ -183,6 +183,20 @@ describe("direkte Anlage mit Quellbezug", () => {
     }
   });
 
+  it("Zeilen-Quellbezug ohne/abweichend vom Kopf und halbe Kopf-Quelle -> DeliveryNoteValidationError", async () => {
+    const { quote, line } = await newQuote();
+    const l = dnLine(quote, line.id, 1000);
+    const bad = [
+      { customerId, draft: true, lines: [l] }, // Zeile mit Quelle, Kopf ohne
+      { customerId: otherCustomerId, draft: true, lines: [l] }, // Umgehung der Kundenpruefung
+      { customerId, draft: true, sourceId: quote.id, lines: [l] }, // sourceId ohne sourceType
+      { customerId, draft: true, sourceType: "QUOTE" as const, lines: [l] }, // sourceType ohne sourceId
+    ];
+    for (const input of bad) {
+      await expect(createDeliveryNote(orgId, input, { now: FIX })).rejects.toBeInstanceOf(DeliveryNoteValidationError);
+    }
+  });
+
   it("sourceLineId einer fremden Quelle -> OverDeliveryError 'unbekannt'", async () => {
     const a = await newQuote(5000);
     const b = await newQuote(5000);

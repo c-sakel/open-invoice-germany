@@ -8,6 +8,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
+import { assertLineSourcesMatchHead } from "@/domain/delivery-note/parties";
 import { DeliveryNoteValidationError } from "@/domain/delivery-note/errors";
 import { NotFoundError } from "@/domain/errors";
 import { appendChangeLog } from "@/domain/audit";
@@ -75,12 +76,7 @@ export async function updateDraftDeliveryNote(
 
     if (input.lines) {
       // Die Quelle des Kopfes bleibt unveraendert: Zeilenbezuege muessen auf genau diese Quelle zeigen.
-      for (const [i, l] of input.lines.entries()) {
-        if (!l.sourceType && !l.sourceId && !l.sourceLineId) continue;
-        if (l.sourceType !== note.sourceType || l.sourceId !== note.sourceId) {
-          throw new DeliveryNoteValidationError(`Position ${i + 1}: Quellbezug passt nicht zur Quelle des Lieferscheins.`);
-        }
-      }
+      assertLineSourcesMatchHead(note, input.lines);
       // Bereits im Entwurf enthaltene Saetze (z. B. von der Quelle geerbt) bleiben erlaubt.
       const current = await tx.deliveryNoteLine.findMany({ where: { deliveryNoteId: id }, select: { taxRate: true } });
       await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), {
