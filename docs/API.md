@@ -254,7 +254,7 @@ Fehler, kein No-op mehr.
   über als `PAID` abgeschlossene Rechnungen; beide Felder sind `null` ohne
   auswertbare Datengrundlage (keine bezahlte Rechnung bzw. keine mit
   Fälligkeitsdatum).
-- **`cash-in`** — Zahlungseingang je Kalendermonat (UTC) und Währung, lückenlos:
+- **`cash-in`** — Zahlungseingang je Kalendermonat (Europe/Berlin) und Währung, lückenlos:
   `paidCents` (Summe der Zahlungen nach `paidAt`; Gegenbuchungen negativ im Monat der
   Gegenbuchung; Skonto und Verrechnungen mit Gutschriften zählen nicht) und
   `invoicedGrossCents` (festgeschriebene Rechnungen nach Belegdatum, Brutto bzw.
@@ -273,10 +273,13 @@ Fehler, kein No-op mehr.
 
 Währungen werden bei allen vier neuen Typen nie gemischt: je Währung eigene Zeilen.
 
+**CSV (Phase 17c):** `GET /api/v1/Report?type=<typ>&format=csv` (für jeden `type`, Scope `read`) liefert statt JSON `text/csv; charset=utf-8` als Anhang `auswertung-<typ>-<Berliner Datum>.csv` (`src/domain/reporting/csv.ts`): UTF-8 mit BOM, Semikolon, `\r\n`, deutsche Spaltenköpfe je Typ, Geld als `1234,56`, Menge mit drei Nachkommastellen, Textzellen mit führendem `=`, `+`, `-`, `@` oder Tab werden mit `'` entschärft (Formelschutz). `format` ist bei jedem Typ zulässig (nicht in den typabhängigen Parametern), ungültige Werte liefern 400. Dieselbe Tabelle gibt die Oberfläche über die Session-Route `GET /api/reports/<typ>.csv` aus (kein Bearer-Zugriff).
+
 Beispiel:
 
 ```bash
 curl -s "$BASE/api/v1/Report?type=revenue&months=6" -H "$AUTH"
+curl -s "$BASE/api/v1/Report?type=revenue&months=6&format=csv" -H "$AUTH" -o umsatz.csv
 ```
 
 ```json
@@ -298,7 +301,7 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 
 ### OSS-Schwelle (`GET /api/v1/Report/oss`, Phase 16e)
 
-`GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles UTC-Jahr). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
+`GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles Jahr in Berliner Zeit). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
 
 Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`) an `Product` (Standard `NONE`) und an Positionen (Lese- und Schreibfeld; ohne Angabe übernimmt eine Position mit `productId` die Kategorie des Produkts als Snapshot, ohne Produkt bleibt sie leer). Die Belegeinstellungen (`/api/settings/documents`) tragen `ossCountMode` (Standard `ALL_EU_B2C`) und `ossWarnPercent` (ganze Zahl 1–99, Standard 80).
 

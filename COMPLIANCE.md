@@ -679,7 +679,7 @@ Die Software wertet die Bagatellgrenze des § 3c Abs. 4 UStG selbst aus (Dashboa
 |--------|-----------|
 | Schwelle | 10.000,00 € netto; „überschritten“ ist strikt `> 10.000,00 €` (genau 10.000,00 € ist nicht überschritten, 10.000,01 € schon). Geprüft **getrennt für Vorjahr und laufendes Jahr** (§ 3c Abs. 4 UStG), jedes Jahr für sich gegen 10.000,00 € — keine Summe beider Jahre; überschritten, wenn eines der beiden Jahre > 10.000,00 € ist. Warnstufe ab einstellbarem Prozentsatz (Standard 80 %). |
 | Erwerber | Käufer laut **Beleg-Snapshot**: Land in der EU, nicht DE, **ohne USt-IdNr.** Ohne Snapshot zählt der Beleg nicht; spätere Stammdatenänderungen ändern die Zählung nicht. |
-| Jahreszuordnung | Leistungszeitpunkt (`deliveryDate`, sonst `deliveryEnd`, sonst Rechnungsdatum), Jahr in UTC. Leistung im Dezember, Rechnung im Januar zählt im Vorjahr. |
+| Jahreszuordnung | Leistungszeitpunkt (`deliveryDate`, sonst `deliveryEnd`, sonst Rechnungsdatum), Jahr in Berliner Zeit (`berlinYear`, `src/lib/berlin-time.ts`; bis Phase 17b UTC). Leistung im Dezember, Rechnung im Januar zählt im Vorjahr. |
 | Beträge | Eingefrorene EUR-Werte (`netTotalEurCents`, § 16 Abs. 6 UStG, Phase 16b); Fremdwährungs-Altbelege ohne EUR-Betrag werden nicht gezählt, die Karte nennt deren Anzahl. |
 | Belegarten | Alle festgeschriebenen Rechnungsarten außer Entwurf. Schlussrechnungen zählen ohne bereits abgerechnete Abschläge, Gutschriften, Korrekturen und Stornos mindern (Teilgutschriften im Modus „Nach Produkt“ anteilig nach dem OSS-Anteil des Originals). |
 | Zählmodus | Standard `ALL_EU_B2C`: alle EU-B2C-Umsätze. Das ist **vorsichtiger als das Gesetz**, das nur Fernverkäufe (§ 3c) und Leistungen nach § 3a Abs. 5 Satz 2 (v. a. Telekommunikations-, Rundfunk-, Fernseh- und elektronische Dienstleistungen) zählt. `BY_PRODUCT`: nur Positionen mit Produktkategorie `GOODS_DISTANCE` oder `ELECTRONIC_SERVICE`. **Offen für den Steuerberater**, welcher Modus zum Geschäftsmodell passt. |
@@ -729,6 +729,8 @@ Eine Teilgutschrift (`credit.ts`) übernimmt den **schemaspezifischen Pflichthin
 - Hybrid-E-Rechnung: **strukturierter Teil führend**. **[ungesichert]** Höherer Ausweis nur im Bildteil/Abweichung kann §-14c-Risiko begründen (Auslegung, nicht im BMF-Schreiben ausdrücklich als § 14c benannt).
 
 ### Skonto in E-Rechnung (Kernfrage)
+
+- **Fristende (Phase 17c):** Eine nach Tagen bemessene Frist endet mit Ablauf ihres letzten Tages (§ 187 Abs. 1, § 188 Abs. 1 BGB; [§ 187](https://www.gesetze-im-internet.de/bgb/__187.html), [§ 188](https://www.gesetze-im-internet.de/bgb/__188.html)). Die Software erkennt einen Skontoabzug bei Zahlungseingang daher bis 24:00 Uhr Berliner Zeit des Fristtags (`berlinDayEnd`, `src/lib/berlin-time.ts`, genutzt in `detectSkonto`, `src/lib/pricing/skonto.ts`); bis Phase 17b galt das UTC-Tagesende. **Geldwirkung:** Das Skonto-Fenster endet damit 1 Stunde (Winterzeit) bzw. 2 Stunden (Sommerzeit) früher; nur künftige Zahlungen sind betroffen — in diesem Nachtfenster gibt es keinen Skonto-Vorschlag und keine automatische Skontobuchung. Bestehende Buchungen, PDF, XML und Archive bleiben unverändert. **Fristdatum und Druckbild (BT-20) sind unverändert**; offener Punkt siehe § 16 Nr. 14.
 
 - § 14 Abs. 4 S. 1 Nr. 7 verlangt **jede im Voraus vereinbarte Entgeltminderung**. Bei Skonto genügt eine **Freitext-Angabe** wie „2 % Skonto bei Zahlung bis …". Das Skonto muss **NICHT betragsmäßig** ausgewiesen werden (BMF 15.10.2025, Abschn. 14.5 Abs. 19 S. 11–12).
 - **Spätere Zahlung unter Skontoausnutzung** = Änderung der Bemessungsgrundlage nach § 17 UStG → **keine** Rechnungsberichtigung (§ 31 Abs. 5) nötig; Belegaustausch nur in § 17 Abs. 4-Fällen, Beleg muss keine USt-Rechnung sein.
@@ -994,6 +996,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 11. **Ablaufhemmung der 8-Jahres-Frist** im konkreten Fall (§ 147 Abs. 3 S. 5 AO) — pro Datensatz ggf. > 8 Jahre vorhalten.
 12. **AVV/Transfer** (Art. 28, Art. 44 ff. DSGVO) für konkrete Hosting-/Backup-/Monitoring-Dienstleister, inkl. Drittlandbezug.
 13. **Exakte Fundstellen** der maßgeblichen BMF-Schreiben (15.10.2025 E-Rechnung; 18.03.2025 Kleinunternehmer; 25.10.2013 Gutschrift/§ 14c; GoBD-2.-Änderung 14.07.2025) für rechtsverbindliche Mandanten-/Produkt-Aussagen direkt aus den BMF-PDFs zitieren.
+14. **Skonto-Fristdatum im Nachtfall (Phase 17c, offen):** Wird eine Rechnung zwischen 00:00 und 01:00 (Winterzeit) bzw. 02:00 Uhr (Sommerzeit) Berliner Zeit festgeschrieben, rechnet die Frist vom UTC-Kalendertag des Rechnungsdatums, das gedruckte Skonto-Datum liegt dann einen Tag vor „Rechnungsdatum + n Tage“ (Bestandsverhalten, Backlog). Eine Korrektur würde das Druckbild nicht archivierter Altbelege beim Nachdruck ändern; GoBD-sauber wäre ein Snapshot des Fristdatums beim Festschreiben — Entscheidung beim Betreiber/Steuerberater. Zusätzlich offen: Bestätigung der kürzeren Skonto-Frist (§ 11 „Fristende“, Geldwirkung auf künftige Zahlungen, auch per API/Webshop mit Uhrzeit).
 
 ---
 
