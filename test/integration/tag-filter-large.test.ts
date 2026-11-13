@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import { dbInternal, prisma } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { listInvoices, invoiceStatusTabCounts, invoiceListHeadline } from "@/domain/invoice/list";
+import { loadNeighbors } from "@/domain/document/neighbors";
 import { listQuotes, listDeliveryNotes, quoteStatusTabCounts, quoteListHeadline, deliveryNoteStatusTabCounts, deliveryNoteListHeadline } from "@/domain/document/list";
 
 const N_INV = 5_100;
@@ -126,6 +127,30 @@ describe("Angebote und Lieferscheine mit Tag (1.200 Treffer)", () => {
     expect(d.rows).toHaveLength(50);
     expect((await deliveryNoteStatusTabCounts(orgId, { tag: tagId })).all).toBe(N_DOC);
     expect((await deliveryNoteListHeadline(orgId, { tag: tagId })).count).toBe(N_DOC);
+  }, 60_000);
+});
+
+describe("Vor/Zurueck mit Tag-Menge ueber die Blockgrenze (> 900)", () => {
+  async function expectNeighbors(kind: "INVOICE" | "QUOTE" | "DELIVERY_NOTE", ref: string[], positions: number[]) {
+    for (const pos of positions) {
+      const n = await loadNeighbors(kind, orgId, ref[pos], `tag=${tagId}`);
+      expect(n.prevId, `${kind} prev @${pos}`).toBe(pos > 0 ? ref[pos - 1] : null);
+      expect(n.nextId, `${kind} next @${pos}`).toBe(pos < ref.length - 1 ? ref[pos + 1] : null);
+    }
+  }
+
+  it("Rechnungen (5.100 Ids, Grenze 5.000 = NEIGHBOR_LIMIT): Blockgrenzen 900/1.800", async () => {
+    const ref = byIssueDesc(invoiceRows).map((r) => r.id);
+    await expectNeighbors("INVOICE", ref, [0, 1, 898, 899, 900, 901, 1_799, 1_800, 4_998]);
+    // Hinter der Obergrenze gibt es keine Nachbarn.
+    expect(await loadNeighbors("INVOICE", orgId, ref[5_050], `tag=${tagId}`)).toMatchObject({ prevId: null, nextId: null });
+  }, 60_000);
+
+  it("Angebote und Lieferscheine (1.200 Ids): Blockgrenze 900", async () => {
+    const docs = Array.from({ length: N_DOC }, (_, i) => ({ id: `c17t4-doc-${String(i).padStart(5, "0")}`, issueDate: new Date(START + (i % 300) * DAY) }));
+    const ref = byIssueDesc(docs).map((r) => r.id);
+    await expectNeighbors("QUOTE", ref, [0, 898, 899, 900, 901, 1_199]);
+    await expectNeighbors("DELIVERY_NOTE", ref.map((id) => `${id}-dn`), [0, 898, 899, 900, 901, 1_199]);
   }, 60_000);
 });
 

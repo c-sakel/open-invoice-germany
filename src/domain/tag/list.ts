@@ -90,8 +90,8 @@ export async function tagsForDocuments(orgId: string, docType: TagDocType, docId
 }
 
 /**
- * Beleg-IDs, die einen bestimmten Tag tragen (FilterBar-Filter `tag`), neueste Zuordnung
- * zuerst, ohne Obergrenze (Phase 17c: grosse Mengen laufen ueber `src/lib/id-filter.ts` in
+ * Beleg-IDs, die einen bestimmten Tag tragen (FilterBar-Filter `tag`), ohne Obergrenze und
+ * ohne feste Reihenfolge (Phase 17c: grosse Mengen laufen ueber `src/lib/id-filter.ts` in
  * Bloecken, nie als eine `id IN`-Abfrage). Eine Abfrage mit festen Parametern. Ueber React
  * `cache()` je Anfrage memoisiert — Zeilen, Tabs und Kennzahlen einer Liste sehen dadurch
  * dieselbe Id-Menge, ohne die Abfrage zu wiederholen.
@@ -100,7 +100,6 @@ export const docIdsForTag = cache(async (orgId: string, tagId: string, docType: 
   const rows = await dbInternal.documentTag.findMany({
     where: { orgId, tagId, docType },
     select: { docId: true },
-    orderBy: { createdAt: "desc" },
   });
   return rows.map((r) => r.docId);
 });
