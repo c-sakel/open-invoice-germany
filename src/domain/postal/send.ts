@@ -14,6 +14,7 @@
  * laufen nie innerhalb einer Transaktion; Statusuebergaenge nur ueber transitionPostalJob.
  */
 import { randomBytes } from "node:crypto";
+import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
 import { appendChangeLog } from "@/domain/audit";
@@ -191,8 +192,9 @@ function safeStem(n: string): string {
   return n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60);
 }
 
-async function monthlySpendCents(orgId: string, now: Date): Promise<number> {
-  const rows = await dbInternal.postalJob.findMany({
+/** Ausgaben des Monats inkl. noch offener Auftraege (PENDING/SUBMITTING/UNKNOWN zaehlen mit erwartetem Preis). */
+async function monthlySpendCents(db: Pick<Prisma.TransactionClient, "postalJob">, orgId: string, now: Date): Promise<number> {
+  const rows = await db.postalJob.findMany({
     where: { orgId, mode: "LIVE", status: { notIn: ["FAILED", "CANCELLED"] }, createdAt: { gte: berlinMonthStart(now) } },
     select: { priceCents: true, quotedPriceCents: true },
   });
@@ -281,7 +283,7 @@ async function sendOne(
       throw new PostalConflictError("Der Preis hat sich geaendert. Angebot neu anfordern.", "PRICE_CHANGED");
     }
     if (mode === "LIVE" && settings.monthlyBudgetCents !== null) {
-      const spent = await monthlySpendCents(orgId, now);
+      const spent = await monthlySpendCents(dbInternal, orgId, now);
       if (spent + priceCents > settings.monthlyBudgetCents) {
         throw new PostalConflictError("Das Monatsbudget fuer den Postversand waere ueberschritten.", "BUDGET");
       }
@@ -301,13 +303,26 @@ async function sendOne(
 
   // Auftrag anlegen: Sperre je Rechnung + Pruefung "kein aktiver Auftrag" in einer Transaktion.
   const created = await dbInternal.$transaction(async (tx) => {
+    // Monatsbudget atomar: erst die Einstellungszeile sperren (Reihenfolge Einstellungen vor Beleg, kein Deadlock),
+    // dann die Ausgaben inkl. offener Auftraege neu berechnen. Die Vorpruefung oben ist nur eine Abkuerzung.
+    let budgetRejected = false;
+    if (mode === "LIVE") {
+      const ensured = await tx.postalSettings.upsert({ where: { orgId }, create: { orgId }, update: {}, select: { id: true } });
+      await lockRow(tx, "PostalSettings", ensured.id, orgId);
+      const fresh = await tx.postalSettings.findUniqueOrThrow({ where: { orgId }, select: { monthlyBudgetCents: true } });
+      if (fresh.monthlyBudgetCents !== null) {
+        const spent = await monthlySpendCents(tx, orgId, now);
+        if (spent + (item.expectedPriceCents ?? 0) > fresh.monthlyBudgetCents) budgetRejected = true;
+      }
+    }
     await lockRow(tx, "Invoice", doc.invoiceId, orgId);
+    if (budgetRejected) return "BUDGET" as const;
     if (!item.repeat) {
       const active = await tx.postalJob.findFirst({
         where: { orgId, docType: doc.docType, docId: doc.docId, mode: { not: "DRY_RUN" }, status: { in: [...ACTIVE_POSTAL_STATUSES] } },
         select: { id: true },
       });
-      if (active) return false;
+      if (active) return "ACTIVE" as const;
     }
     await tx.postalJob.create({
       data: {
@@ -335,9 +350,10 @@ async function sendOne(
       select: { id: true },
     });
     await addPostalEvent(tx, { jobId, orgId, kind: "CREATED", status: "PENDING", data: { mode, trigger: ctx.trigger }, at: now });
-    return true;
+    return "CREATED" as const;
   });
-  if (!created) throw new PostalConflictError("Dieser Beleg wurde bereits per Post versendet (oder der Versand laeuft).", "ALREADY_SENT");
+  if (created === "BUDGET") throw new PostalConflictError("Das Monatsbudget fuer den Postversand waere ueberschritten.", "BUDGET");
+  if (created === "ACTIVE") throw new PostalConflictError("Dieser Beleg wurde bereits per Post versendet (oder der Versand laeuft).", "ALREADY_SENT");
 
   if (mode === "DRY_RUN" || !client || !creds) return finishDryRun(orgId, doc, jobId, summary, now, ctx.actor);
   return transmit({ orgId, doc, jobId, body, summary, client, creds, mode, actor: ctx.actor });
