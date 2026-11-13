@@ -11,6 +11,8 @@ import { formatCents } from "@/lib/money";
 import { createBusinessDocument } from "@/domain/document/create";
 import { convertDocument, ConvertError } from "@/domain/document/convert";
 import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/create";
+import { updateDraftDeliveryNote } from "@/domain/delivery-note/update";
+import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { setQuoteStatus, setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/domain/document/status";
 import { createShareLink, revokeShareLink, listShareLinks, ShareLinkError } from "@/domain/quote-share/link";
 import { SecretsUnavailableError } from "@/lib/crypto/secrets";
@@ -19,7 +21,7 @@ import { duplicateDocument, type DuplicatableType } from "@/domain/document/dupl
 import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumentKind } from "@/domain/document/take-over";
 import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import { getDocumentFile } from "@/api/files";
-import { currencyCodeSchema, DocLanguageSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, convertDocumentBodySchema } from "@/schemas";
+import { currencyCodeSchema, DocLanguageSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, updateDeliveryNoteSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
@@ -65,7 +67,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           documentChargePermille: args.documentChargePercent ? Math.round(args.documentChargePercent * 10) : undefined,
           documentChargeCents: args.documentChargeEuro ? ctx.euroToCents(args.documentChargeEuro) : undefined,
           documentChargeReason: args.documentChargeReason,
-          lines,
+          // Verhalten unveraendert: Artikelnummer nur fuer Lieferschein-Tools (Phase 17b).
+          lines: lines.map((l) => ({ ...l, articleNumber: undefined })),
         });
         const doc = await createBusinessDocument(org.id, input);
         return ctx.ok(`${args.kind} angelegt: ${doc.number} für ${customer.name} · Brutto ${formatCents(doc.grossTotalCents)}.`);
@@ -310,13 +313,15 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
     "create_delivery_note",
     {
       title: "Lieferschein anlegen (manuell)",
-      description: "Legt einen Lieferschein ohne Quelldokument an, z. B. fuer eine Direktlieferung ohne vorheriges Angebot.",
+      description:
+        "Legt einen Lieferschein ohne Quelldokument an, z. B. fuer eine Direktlieferung ohne vorheriges Angebot. Mit draft=true entsteht ein Entwurf ohne Nummer, den update_delivery_note bearbeitet und set_document_status (MARK_CREATED) erstellt.",
       inputSchema: {
         customer: z.string().describe("Kundenname oder -ID"),
         lines: z.array(docLineSchema).min(1),
         deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
         notes: z.string().optional(),
         language: DocLanguageSchema.optional().describe("Belegsprache de|en (Snapshot am Beleg); ohne Angabe die Sprache des Kunden, sonst de."),
+        draft: z.boolean().optional().describe("true = als Entwurf anlegen (ohne Nummer); Standard: direkt erstellen."),
       },
     },
     async (args): Promise<Result> => {
@@ -329,8 +334,10 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           deliveryDate: ctx.parseDateInput(args.deliveryDate),
           notes: args.notes,
           language: args.language,
+          draft: args.draft,
           lines: lines.map((l) => ({
             description: l.description,
+            articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
             unitNetPriceCents: l.unitNetPriceCents,
@@ -338,10 +345,57 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           })),
         });
         const note = await createDeliveryNote(org.id, input);
+        if (note.status === "DRAFT") return ctx.ok(`Lieferschein-Entwurf angelegt (ID ${note.id}) für ${customer.name}.`);
         return ctx.ok(`Lieferschein angelegt: ${note.number} für ${customer.name}.`);
       } catch (e) {
-        if (e instanceof DeliveryNoteError) return ctx.fail(e.message);
+        if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── update_delivery_note (Entwurf bearbeiten) ─────────────────────────────────
+  server.registerTool(
+    "update_delivery_note",
+    {
+      title: "Lieferschein-Entwurf bearbeiten",
+      description:
+        "Aendert einen Lieferschein im Status DRAFT (Kunde, Positionen, Lieferdatum, Notizen, Sprache). Positionen werden ersetzt. Erstellte Lieferscheine sind nicht bearbeitbar.",
+      inputSchema: {
+        id: z.string().describe("Lieferschein-ID oder -Nummer"),
+        customer: z.string().optional().describe("Kundenname oder -ID (Kundenwechsel)"),
+        lines: z.array(docLineSchema).min(1).optional(),
+        deliveryDate: z.string().optional().describe("YYYY-MM-DD"),
+        notes: z.string().optional(),
+        language: DocLanguageSchema.optional(),
+      },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const ref = await ctx.resolveDeliveryNote(org.id, args.id);
+        const customer = args.customer ? await ctx.resolveCustomer(org.id, args.customer) : null;
+        const lines = args.lines ? await ctx.buildSimpleLines(org.id, args.lines) : undefined;
+        const input = updateDeliveryNoteSchema.parse({
+          customerId: customer?.id,
+          deliveryDate: ctx.parseDateInput(args.deliveryDate),
+          notes: args.notes,
+          language: args.language,
+          lines: lines?.map((l) => ({
+            description: l.description,
+            articleNumber: l.articleNumber,
+            quantityMilli: l.quantityMilli,
+            unit: l.unit,
+            unitNetPriceCents: l.unitNetPriceCents,
+            taxRate: l.taxRate,
+          })),
+        });
+        const note = await updateDraftDeliveryNote(org.id, ref.id, input, { actor: "mcp" });
+        return ctx.ok(`Lieferschein-Entwurf aktualisiert (ID ${note.id}).`);
+      } catch (e) {
+        if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) return ctx.fail(e.message);
+        if (e instanceof NotFoundError || e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
     },
@@ -387,7 +441,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const updated = await setDeliveryNoteStatus(org.id, doc.id, target[action], { actor: "mcp", note });
         return ctx.ok(`Status gesetzt: ${updated.status}${updated.number ? ` (Nummer ${updated.number})` : ""}.`);
       } catch (e) {
-        if (e instanceof StatusTransitionError) return ctx.fail(e.message);
+        if (e instanceof StatusTransitionError || e instanceof OverDeliveryError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

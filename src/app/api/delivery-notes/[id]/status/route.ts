@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { documentStatusActionSchema } from "@/schemas";
 import { setDeliveryNoteStatus, setArchived, StatusTransitionError } from "@/domain/document/status";
+import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { NotFoundError } from "@/domain/errors";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
@@ -41,7 +42,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (e instanceof NotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
     }
-    if (e instanceof StatusTransitionError) {
+    if (e instanceof StatusTransitionError || e instanceof OverDeliveryError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
     console.error("POST /api/delivery-notes/[id]/status:", e);

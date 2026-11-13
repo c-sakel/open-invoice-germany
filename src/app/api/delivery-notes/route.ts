@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createDeliveryNoteSchema } from "@/schemas";
 import { createDeliveryNote, DeliveryNoteError, DeliveryNoteValidationError } from "@/domain/delivery-note/create";
+import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { listDeliveryNotes } from "@/domain/document/list";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
     if (e instanceof DeliveryNoteValidationError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
-    if (e instanceof DeliveryNoteError) {
+    if (e instanceof DeliveryNoteError || e instanceof OverDeliveryError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
     console.error("POST /api/delivery-notes:", e);
