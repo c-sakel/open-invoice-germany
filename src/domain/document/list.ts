@@ -287,7 +287,7 @@ export async function listQuotes(
       limit: filter.limit,
       compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
       single: (c) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), orderBy, skip: filter.offset, take: filter.limit, select }),
-      keys: (c, take) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), orderBy, take, select: { id: true, issueDate: true } }),
+      keys: (c) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), select: { id: true, issueDate: true } }),
       byIds: (pageIds) => prisma.quote.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
@@ -460,7 +460,7 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
       limit: filter.limit,
       compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
       single: (c) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), orderBy, skip: filter.offset, take: filter.limit, select }),
-      keys: (c, take) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), orderBy, take, select: { id: true, issueDate: true } }),
+      keys: (c) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), select: { id: true, issueDate: true } }),
       byIds: (pageIds) => prisma.deliveryNote.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
@@ -598,3 +598,6 @@ export async function listRecurring(orgId: string, rawFilter: unknown): Promise<
     offset: filter.offset,
   };
 }
+
+/** Nur fuer Tests (Bind-Parameter-Budget je Blockabfrage). */
+export { quoteWith as quoteBlockWhere, quoteStatusWhere, deliveryNoteWith as deliveryNoteBlockWhere };

@@ -66,7 +66,7 @@ describe("pageByIdSet", () => {
               limit,
               compare,
               single: async (c) => [...all].filter((r) => !c || c.id.in.includes(r.id)).sort(compare).slice(offset, offset + limit),
-              keys: async (c, take) => all.filter((r) => c?.id.in.includes(r.id)).sort(compare).slice(0, take),
+              keys: async (c) => all.filter((r) => c?.id.in.includes(r.id)),
               byIds,
             },
             3,
@@ -101,6 +101,37 @@ describe("pageByIdSet", () => {
     expect(await pageByIdSet(null, base)).toEqual([{ id: "x" }]);
     expect(keys).not.toHaveBeenCalled();
   });
+});
+
+describe("Textsortierung ueber mehrere Bloecke (Collation != Code-Units)", () => {
+  interface NumRow {
+    id: string;
+    number: string;
+  }
+  // Locale-Reihenfolge (Gross-/Kleinschreibung, Bindestrich) weicht von Code-Units ab.
+  const dbCollate = (a: NumRow, b: NumRow) => a.number.localeCompare(b.number, "en", { sensitivity: "base" }) || (a.id < b.id ? -1 : 1);
+  const rows: NumRow[] = Array.from({ length: 1850 }, (_, i) => {
+    const k = String(i).padStart(4, "0");
+    return { id: `d${k}`, number: i % 3 === 0 ? `re-${k}` : i % 3 === 1 ? `RE-${k}` : `Re${k}` };
+  });
+  for (const dir of ["asc", "desc"] as const) {
+    it(`> 900 Ids, number ${dir}: Treffer an Blockgrenzen stimmen mit der JS-Ordnung ueberein`, async () => {
+      const compare = compareBySort<NumRow>({ key: "number", dir, nulls: "last" }, (r) => r.number);
+      const reference = [...rows].sort(compare);
+      const ids = rows.map((r) => r.id);
+      // Die DB-Stufe liefert (wie Postgres) nach Collation sortiert; ein top-N waere hier falsch.
+      const keys = vi.fn(async (c: IdCond) => rows.filter((r) => c?.id.in.includes(r.id)).sort(dbCollate));
+      const byIds = async (pageIds: string[]) => rows.filter((r) => pageIds.includes(r.id));
+      for (const [offset, limit] of [[0, 25], [880, 50], [895, 20], [1790, 60]] as const) {
+        const page = await pageByIdSet<NumRow, NumRow>(ids, { offset, limit, compare, single: async () => [], keys, byIds });
+        expect(page.map((r) => r.id)).toEqual(reference.slice(offset, offset + limit).map((r) => r.id));
+      }
+      const first = await orderedIdsByIdSet<NumRow>(ids, { limit: 1000, compare, keys });
+      expect(first).toEqual(reference.slice(0, 1000).map((r) => r.id));
+      // Jeder Block-Aufruf bekommt kein take: alle Schluessel je Block.
+      expect(keys.mock.calls.every((call) => call.length === 1)).toBe(true);
+    });
+  }
 });
 
 describe("orderedIdsByIdSet", () => {

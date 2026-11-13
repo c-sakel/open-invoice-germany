@@ -337,11 +337,9 @@ export async function listInvoices(
       limit: filter.limit,
       compare: compareBySort<InvoiceSortKey>(plan.spec, (r) => r[plan.field]),
       single: (c) => prisma.invoice.findMany({ where: withCond(base, c, statusCond), orderBy: plan.orderBy, skip: filter.offset, take: filter.limit, select }),
-      keys: (c, take) =>
+      keys: (c) =>
         prisma.invoice.findMany({
           where: withCond(base, c, statusCond),
-          orderBy: plan.orderBy,
-          take,
           select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true },
         }),
       byIds: (pageIds) => prisma.invoice.findMany({ where: { orgId, id: { in: pageIds } }, select }),
@@ -416,3 +414,6 @@ export async function listInvoiceIds(orgId: string, rawFilter: unknown, opts: { 
       }),
   });
 }
+
+/** Nur fuer Tests (Bind-Parameter-Budget je Blockabfrage). */
+export { withCond as invoiceBlockWhere, statusWhere as invoiceStatusWhere };
