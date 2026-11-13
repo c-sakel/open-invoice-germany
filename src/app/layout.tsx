@@ -82,10 +82,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // "/login" und "/setup" rendern bewusst AUCH ohne gueltige Sitzung (siehe deren
     // jeweilige page.tsx) und werden vom Proxy deshalb nie umgeleitet — nur hier
     // entscheidet `authed`, ob z. B. "/" das Dashboard oder die Marketing-Seite zeigt.
-    // Umgeleitet wird trotzdem NICHT auf "/", "/login" oder "/setup" selbst — sonst
+    // Phase 17d: auch die Unterseiten von "/login" (zweiter Faktor, Passwort-Reset) sind
+    // ohne Sitzung erreichbar. Umgeleitet wird trotzdem NICHT auf "/", "/login" oder "/setup" selbst — sonst
     // Redirect-Schleife bzw. kaputte Marketing-/Setup-Seite.
     const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
-    if (pathname && pathname !== "/" && pathname !== "/login" && pathname !== "/setup") {
+    if (pathname && pathname !== "/" && pathname !== "/setup" && pathname !== "/login" && !pathname.startsWith("/login/")) {
       redirect(`/login?from=${encodeURIComponent(pathname)}`);
     }
 

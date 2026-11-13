@@ -12,6 +12,8 @@ const authServerMock = vi.hoisted(() => ({
   setSession: vi.fn(async () => {}),
   getCurrentUserId: vi.fn(async () => null as string | null),
   clearSession: vi.fn(async () => {}),
+  setPendingMfa: vi.fn(async () => {}),
+  clearPendingMfa: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/auth/server", () => authServerMock);
 

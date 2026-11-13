@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { setSession } from "@/lib/auth/server";
+import { setPendingMfa, setSession } from "@/lib/auth/server";
 import { attemptLogin } from "@/domain/auth/login";
 import { RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
@@ -22,6 +22,12 @@ export async function POST(req: Request) {
     if (result.status === "ok") {
       await setSession(result.userId);
       return NextResponse.json({ ok: true });
+    }
+
+    if (result.status === "second_factor") {
+      // Passwort stimmt, zweiter Faktor steht aus: nur Zwischen-Cookie, keine Sitzung.
+      await setPendingMfa(result.userId);
+      return NextResponse.json({ twoFactor: true });
     }
 
     if (result.status === "locked") {

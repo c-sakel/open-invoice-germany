@@ -1,5 +1,8 @@
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { PasswordChangeForm } from "@/components/settings/PasswordChangeForm";
+import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
+import { accountSecurityStatus } from "@/domain/auth/two-factor";
+import { getCurrentUserId } from "@/lib/auth/server";
 
 /**
  * Konto (Phase 14a, Task 9, R12) — im Unterschied zu den anderen Einstellungsseiten KEINE
@@ -8,7 +11,9 @@ import { PasswordChangeForm } from "@/components/settings/PasswordChangeForm";
  */
 export const dynamic = "force-dynamic";
 
-export default function AccountSettingsPage() {
+export default async function AccountSettingsPage() {
+  const userId = await getCurrentUserId();
+  const security = userId ? await accountSecurityStatus(userId) : { totpEnabledAt: null, recoveryCodesRemaining: 0 };
   return (
     <div className="space-y-6">
       <SettingsTabs active="konto" />
@@ -17,6 +22,11 @@ export default function AccountSettingsPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-ink">Passwort ändern</h2>
         <PasswordChangeForm />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-ink">Zwei-Faktor-Anmeldung</h2>
+        <TwoFactorSettings enabledAt={security.totpEnabledAt?.toISOString() ?? null} recoveryCodesRemaining={security.recoveryCodesRemaining} />
       </section>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 // "@/lib/brand-defaults" hat keine Imports (siehe dort) und ist deshalb im Gegensatz zu
 // "@/domain/settings/brand" (zieht ueber branding.ts -> lib/db.ts den Prisma-Client nach
@@ -43,6 +44,11 @@ export function AuthForm({
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       setError(j.error ?? "Fehler");
       setBusy(false);
+      return;
+    }
+    const j = (await res.json().catch(() => ({}))) as { twoFactor?: boolean };
+    if (!isSetup && j.twoFactor) {
+      router.push(`/login/zweiter-faktor?from=${encodeURIComponent(redirectTo)}`);
       return;
     }
     router.push(redirectTo);
@@ -97,6 +103,11 @@ export function AuthForm({
         >
           {busy ? "…" : isSetup ? "Konto erstellen" : "Anmelden"}
         </button>
+        {!isSetup && (
+          <p className="text-center text-sm">
+            <Link href="/login/passwort-vergessen" className="text-pen hover:underline">Passwort vergessen?</Link>
+          </p>
+        )}
       </form>
     </div>
   );

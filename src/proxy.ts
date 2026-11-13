@@ -84,6 +84,12 @@ export async function proxy(req: NextRequest) {
     if (pathname === "/" || pathname === "/api/health" || matchesPublicPrefix(pathname, "/api/v1/") || matchesPublicPrefix(pathname, "/api/docs")) {
       res.headers.set("cache-control", "private, no-store");
     }
+    // Phase 17d: Anmelde-, Zweitfaktor- und Reset-Seiten nie zwischenspeichern; die Seite mit dem
+    // Reset-Token in der URL sendet zusaetzlich keinen Referer an Dritte.
+    if (matchesPublicPrefix(pathname, "/login")) {
+      res.headers.set("cache-control", "private, no-store");
+      if (pathname.startsWith("/login/passwort-zuruecksetzen/")) res.headers.set("referrer-policy", "no-referrer");
+    }
     return res;
   }
 
