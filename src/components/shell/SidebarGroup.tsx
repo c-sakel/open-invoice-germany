@@ -8,6 +8,8 @@ import { activeGroupKey, itemMatches, SETTINGS_GROUPS, SETTINGS_ITEMS } from "@/
 import { NavIcon } from "./NavIcons";
 import { UnreadBadge } from "./UnreadBadge";
 
+export const NAV_TOGGLE_EVENT = "oig:nav-toggle";
+
 interface Props {
   group: NavGroup;
   pathname: string;
@@ -55,15 +57,33 @@ export function SidebarGroup({ group, pathname, search, collapsed, unreadCount, 
     return () => clearTimeout(t);
   }, [storageKey]);
 
+  // Abgleich mehrerer Instanzen derselben Gruppe (Desktop-Sidebar und Drawer) sowie anderer
+  // Tabs: Event im selben Dokument, `storage` aus anderen Tabs.
+  useEffect(() => {
+    const onToggleEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ key: string; open: boolean }>).detail;
+      if (detail?.key === group.key) setOpen(detail.open);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === storageKey) setOpen(event.newValue !== "0");
+    };
+    window.addEventListener(NAV_TOGGLE_EVENT, onToggleEvent);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(NAV_TOGGLE_EVENT, onToggleEvent);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [group.key, storageKey]);
+
   function toggleOpen() {
-    setOpen((v) => {
-      try {
-        localStorage.setItem(storageKey, v ? "0" : "1");
-      } catch {
-        // ignorieren
-      }
-      return !v;
-    });
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(storageKey, next ? "1" : "0");
+    } catch {
+      // ignorieren
+    }
+    window.dispatchEvent(new CustomEvent(NAV_TOGGLE_EVENT, { detail: { key: group.key, open: next } }));
   }
 
   // Fix 1 (Task 5, kritisch): die aktive Gruppe oeffnet sich nur EINMALIG beim UEBERGANG in

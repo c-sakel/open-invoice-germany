@@ -1,11 +1,17 @@
 // src/components/detail/ActionMenu.tsx
-import type { ReactNode } from "react";
+"use client";
 
-/** "Mehr"-Menue ohne Client-JS: <details> mit absolut positionierter Liste. Kinder sind
+import { useRef, type ReactNode } from "react";
+import { useDetailsDismiss } from "./use-details-dismiss";
+
+/** "Mehr"-Menue: <details> mit absolut positionierter Liste. Ohne JS bleibt es voll bedienbar
+ *  (natives Auf-/Zuklappen); mit JS schliesst es bei Klick ausserhalb und Escape. Kinder sind
  *  <ActionMenuItem> mit Link, Button oder <form action=...> (Server Actions bleiben nutzbar). */
 export function ActionMenu({ label = "Mehr", children }: { label?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useDetailsDismiss(ref, { outsideClick: true });
   return (
-    <details className="relative">
+    <details ref={ref} className="relative">
       <summary className="cursor-pointer list-none rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper [&::-webkit-details-marker]:hidden">
         {label} ▾
       </summary>
