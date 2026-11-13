@@ -31,7 +31,7 @@ beforeAll(async () => {
 });
 beforeEach(() => resetRateLimits());
 
-async function draft(opts: { scheme?: string; vatId?: string | null; email?: string | null }) {
+async function draft(opts: { scheme?: string; vatId?: string | null; email?: string | null; finalizable?: boolean }) {
   const customer = await dbInternal.customer.create({
     data: { orgId, name: "Warn Kunde", addressLine1: "Weg 1", postalCode: "1010", city: "Wien", type: "BUSINESS", countryCode: "AT", vatId: opts.vatId ?? null, email: opts.email ?? null },
   });
@@ -44,7 +44,8 @@ async function draft(opts: { scheme?: string; vatId?: string | null; email?: str
       taxScheme: opts.scheme ?? "REGULAR",
       issueDate: NOW,
       deliveryDate: NOW,
-      lines: { create: [{ position: 1, description: "Leistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S", lineNetCents: 10000 }] },
+      notes: opts.finalizable ? "Steuerschuldnerschaft des Leistungsempfängers" : null,
+      lines: { create: [{ position: 1, description: "Leistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 10000, taxRate: opts.finalizable ? 0 : 19, taxCategory: opts.finalizable ? "K" : "S", lineNetCents: 10000 }] },
     },
   });
   return { invoiceId: inv.id, customerId: customer.id };
@@ -83,6 +84,11 @@ describe("collectFinalizeWarnings", () => {
     const w = await collectFinalizeWarnings(orgId, d.invoiceId, { fetchImpl: f, now: NOW });
     expect(w.map((x) => x.code)).toEqual(["vies-fehler"]);
     expect(w.map((x) => x.message).join(" ")).toContain("VIES nicht erreichbar");
+    const rows = await dbInternal.vatIdCheck.findMany({
+      where: { orgId, invoiceId: d.invoiceId },
+      select: { status: true, errorCode: true, trigger: true, invoiceId: true },
+    });
+    expect(rows).toEqual([{ status: "ERROR", errorCode: "NETWORK", trigger: "FINALIZE", invoiceId: d.invoiceId }]);
   });
 
   it("viesCheckOnFinalize=false, REGULAR und DE-USt-IdNr.: kein fetch", async () => {
@@ -139,5 +145,24 @@ describe("POST /api/v1/Invoice/{id}/finalize", () => {
     const json = (await res.json()) as { data: { status: string }; warnings: string[] };
     expect(json.data.status).toBe("FINALIZED");
     expect(json.warnings.join(" ")).toContain("elektronische Adresse");
+  });
+
+  it("VIES-Ausfall (fetch wirft): Rechnung FINALIZED, warnings enthaelt 'VIES nicht erreichbar'", async () => {
+    await saveDocumentSettings(orgId, { viesCheckOnFinalize: true });
+    const d = await draft({ scheme: "IG_LEISTUNG", vatId: "ATU87654321", email: "a@example.org", finalizable: true });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+    try {
+      const res = await InvoiceFinalize(
+        new Request(`http://x/api/v1/Invoice/${d.invoiceId}/finalize`, { method: "POST", headers: { authorization: `Bearer ${token}` } }),
+        { params: Promise.resolve({ id: d.invoiceId }) },
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { data: { status: string }; warnings: string[] };
+      expect(json.data.status).toBe("FINALIZED");
+      expect(json.warnings.join(" ")).toContain("VIES nicht erreichbar");
+    } finally {
+      vi.unstubAllGlobals();
+      await saveDocumentSettings(orgId, { viesCheckOnFinalize: false });
+    }
   });
 });
