@@ -17,6 +17,7 @@
  * und payment-reversal.ts): `xmlHash` per `updateMany({ where: { id, xmlHash: null } })` —
  * ein bereits gesetzter Hash bleibt.
  */
+import { isChangeLogChainConflict } from "@/lib/chain-retry";
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
@@ -227,8 +228,9 @@ export async function ensureInvoiceArchive(orgId: string, invoiceId: string, sou
         await removeUnreferenced(files, winner);
         return winner;
       }
-      // Kettenkonflikt mit einem anderen ChangeLog-Schreiber, noch kein Satz: einmal wiederholen.
-      if (attempt >= 1) return failArchive(orgId, invoiceId, e, now);
+      // Kettenkonflikt mit einem anderen ChangeLog-Schreiber, noch kein Satz: begrenzt mit Wartezeit wiederholen (Satz wird je Runde neu geprueft).
+      if (attempt >= 5 || !isChangeLogChainConflict(e)) return failArchive(orgId, invoiceId, e, now);
+      await new Promise((r) => setTimeout(r, 5 + Math.random() * 35 * (attempt + 1)));
     }
   }
 }
