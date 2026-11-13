@@ -12,6 +12,10 @@ import { QuoteStatus, DeliveryNoteStatus } from "@/schemas";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingStateIndex } from "@/domain/document/billing-state";
 import { docIdsForTag } from "@/domain/tag/list";
+import { collectByIdSet, compareBySort, countByIdSet, intersectIdSets, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
+
+/** Feste Ordnung der Angebots-/Lieferscheinlisten: `issueDate` absteigend, `id` aufsteigend als Tiebreak. */
+const ISSUE_DATE_DESC: SortSpec = { key: "issueDate", dir: "desc", nulls: "last" };
 
 // Phase 13d, Task 4: dieselbe Tag-Id fuer beide Listen (quoteListFilterSchema/
 // deliveryNoteListFilterSchema). Fix-Welle 1 (must 1): die Aufloesung sitzt in
@@ -112,6 +116,9 @@ function quoteStatusWhere(status: QuoteListFilter["status"], now: Date): Prisma.
  * Alle Filterbedingungen einer Angebots-/AB-Liste AUSSER dem Status (Phase 13a, Task 3 —
  * siehe invoiceFilterConditions fuer das Muster).
  *
+ * Phase 17c: Id-Mengen (Tag-Filter, `opts.ids`) sind KEINE Bedingungen mehr hier, sondern
+ * `quoteIdSet` (`id-filter`, Block-Abfragen statt einer grossen `id IN`-Abfrage).
+ *
  * `opts.ids` (Task 8): GENUINER Funktionsparameter, bewusst NICHT Teil von
  * `quoteListFilterSchema` — dieses Schema ist die Query-Validierung der oeffentlichen API
  * (`/api/v1/Quote`, `/api/v1/OrderConfirmation`, `request.query`), ein Zusatzfeld dort waere
@@ -123,16 +130,10 @@ function quoteStatusWhere(status: QuoteListFilter["status"], now: Date): Prisma.
  * `invoiceFilterConditions` fuer die Begruendung (Tabs/Kennzahlen teilen sich damit
  * dasselbe `where` wie die Zeilenliste, `docIdsForTag` ist je Anfrage `cache()`-memoisiert).
  */
-export async function quoteFilterConditions(
-  orgId: string,
-  filter: QuoteListFilter,
-  opts: { ids?: string[] } = {},
-): Promise<Prisma.QuoteWhereInput[]> {
+export function quoteFilterConditions(orgId: string, filter: QuoteListFilter): Prisma.QuoteWhereInput[] {
   const and: Prisma.QuoteWhereInput[] = [{ orgId }];
-  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "QUOTE") } });
   if (filter.kind) and.push({ kind: filter.kind });
   if (filter.customerId) and.push({ customerId: filter.customerId });
-  if (opts.ids) and.push({ id: { in: opts.ids } });
   if (!filter.includeArchived) and.push({ archivedAt: null });
 
   const dateRange = dateRangeAnd(filter.from, filter.to);
@@ -154,6 +155,16 @@ export async function quoteFilterConditions(
   return and;
 }
 
+/** Id-Menge eines Angebots-Listenaufrufs: Tag-Zuordnung geschnitten mit `opts.ids` (z. B. Abrechnungsstand). */
+export async function quoteIdSet(orgId: string, filter: QuoteListFilter, opts: { ids?: string[] } = {}): Promise<IdSet> {
+  const tagSet: IdSet = filter.tag ? await docIdsForTag(orgId, filter.tag, "QUOTE") : null;
+  return intersectIdSets(tagSet, opts.ids ?? null);
+}
+
+function quoteWith(base: Prisma.QuoteWhereInput[], c: IdCond, status?: Prisma.QuoteWhereInput): Prisma.QuoteWhereInput {
+  return { AND: [...base, ...(c ? [c] : []), ...(status ? [status] : [])] };
+}
+
 /**
  * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3) — analog
  * `invoiceStatusTabCounts`: je Tab ein `count()` mit demselben `where`, nur mit
@@ -173,13 +184,14 @@ export async function quoteFilterConditions(
  */
 export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<Record<string, number | null>> {
   const filter = quoteListFilterSchema.parse(rawFilter);
-  const base = await quoteFilterConditions(orgId, filter);
+  const base = quoteFilterConditions(orgId, filter);
+  const tagSet = await quoteIdSet(orgId, filter);
   const tabs = ["all", ...QuoteStatus.options] as const;
   const [counts, index] = await Promise.all([
     Promise.all(
       tabs.map((tab) => {
         const cond = quoteStatusWhere(tab, now);
-        return prisma.quote.count({ where: { AND: cond ? [...base, cond] : base } });
+        return countByIdSet(tagSet, (c) => prisma.quote.count({ where: quoteWith(base, c, cond) }));
       }),
     ),
     billingStateIndex(orgId),
@@ -199,8 +211,8 @@ export async function quoteStatusTabCounts(orgId: string, rawFilter: unknown, no
     else if (state === "PARTIAL") partialIds.push(quoteId);
   }
   const [billed, partiallyBilled] = await Promise.all([
-    prisma.quote.count({ where: { AND: [...base, { id: { in: fullIds } }] } }),
-    prisma.quote.count({ where: { AND: [...base, { id: { in: partialIds } }] } }),
+    countByIdSet(intersectIdSets(tagSet, fullIds), (c) => prisma.quote.count({ where: quoteWith(base, c) })),
+    countByIdSet(intersectIdSets(tagSet, partialIds), (c) => prisma.quote.count({ where: quoteWith(base, c) })),
   ]);
   result.billed = billed;
   result["partially-billed"] = partiallyBilled;
@@ -228,16 +240,26 @@ export async function quoteListHeadline(
   opts: { ids?: string[] } = {},
 ): Promise<QuoteListHeadline> {
   const filter = quoteListFilterSchema.parse(rawFilter);
-  const base = await quoteFilterConditions(orgId, filter, opts);
+  const base = quoteFilterConditions(orgId, filter);
+  const idSet = await quoteIdSet(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
-  const and = statusCond ? [...base, statusCond] : base;
 
-  const groups = await prisma.quote.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } });
-  const leading = [...groups].sort((a, b) => b._count._all - a._count._all)[0];
+  const blockGroups = await collectByIdSet(idSet, (c) =>
+    prisma.quote.groupBy({ by: ["currency"], where: quoteWith(base, c, statusCond), _count: { _all: true }, _sum: { grossTotalCents: true } }),
+  );
+  const byCurrency = new Map<string, { count: number; gross: number }>();
+  for (const g of blockGroups) {
+    const cur = byCurrency.get(g.currency) ?? { count: 0, gross: 0 };
+    cur.count += g._count._all;
+    cur.gross += g._sum.grossTotalCents ?? 0;
+    byCurrency.set(g.currency, cur);
+  }
+  const groups = [...byCurrency.entries()].map(([currency, v]) => ({ currency, count: v.count, gross: v.gross }));
+  const leading = [...groups].sort((a, b) => b.count - a.count)[0];
 
   return {
-    count: groups.reduce((sum, g) => sum + g._count._all, 0),
-    grossCents: groups.reduce((sum, g) => sum + (g._sum.grossTotalCents ?? 0), 0),
+    count: groups.reduce((sum, g) => sum + g.count, 0),
+    grossCents: groups.reduce((sum, g) => sum + g.gross, 0),
     currency: leading?.currency ?? "EUR",
     mixedCurrency: groups.length > 1,
   };
@@ -251,33 +273,34 @@ export async function listQuotes(
 ): Promise<QuoteListResult> {
   const filter = quoteListFilterSchema.parse(rawFilter);
 
-  const and = await quoteFilterConditions(orgId, filter, opts);
+  const base = quoteFilterConditions(orgId, filter);
+  const idSet = await quoteIdSet(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
-  if (statusCond) and.push(statusCond);
-
-  const where: Prisma.QuoteWhereInput = { AND: and };
+  const orderBy: Prisma.QuoteOrderByWithRelationInput[] = [{ issueDate: "desc" }, { id: "asc" }];
+  const select = {
+    id: true,
+    number: true,
+    kind: true,
+    status: true,
+    customerId: true,
+    customer: { select: { name: true } },
+    issueDate: true,
+    validUntil: true,
+    grossTotalCents: true,
+    currency: true,
+    archivedAt: true,
+    convertedToInvoiceId: true,
+  } as const;
 
   const [total, rows] = await Promise.all([
-    prisma.quote.count({ where }),
-    prisma.quote.findMany({
-      where,
-      orderBy: { issueDate: "desc" },
-      skip: filter.offset,
-      take: filter.limit,
-      select: {
-        id: true,
-        number: true,
-        kind: true,
-        status: true,
-        customerId: true,
-        customer: { select: { name: true } },
-        issueDate: true,
-        validUntil: true,
-        grossTotalCents: true,
-        currency: true,
-        archivedAt: true,
-        convertedToInvoiceId: true,
-      },
+    countByIdSet(idSet, (c) => prisma.quote.count({ where: quoteWith(base, c, statusCond) })),
+    pageByIdSet(idSet, {
+      offset: filter.offset,
+      limit: filter.limit,
+      compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
+      single: (c) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), orderBy, skip: filter.offset, take: filter.limit, select }),
+      keys: (c, take) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), orderBy, take, select: { id: true, issueDate: true } }),
+      byIds: (pageIds) => prisma.quote.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
 
@@ -336,13 +359,11 @@ export interface DeliveryNoteListResult {
 
 /**
  * Alle Filterbedingungen einer Lieferschein-Liste AUSSER dem Status (Phase 13a, Task 3 —
- * siehe invoiceFilterConditions fuer das Muster). Fix-Welle 1 (must 1): der Tag-Filter
- * (`filter.tag`) ist HIER aufgeloest — siehe `invoiceFilterConditions` fuer die
- * Begruendung.
+ * siehe invoiceFilterConditions fuer das Muster). Phase 17c: der Tag-Filter ist eine
+ * Id-Menge (`deliveryNoteIdSet`), keine Bedingung hier.
  */
-export async function deliveryNoteFilterConditions(orgId: string, filter: DeliveryNoteListFilter): Promise<Prisma.DeliveryNoteWhereInput[]> {
+export function deliveryNoteFilterConditions(orgId: string, filter: DeliveryNoteListFilter): Prisma.DeliveryNoteWhereInput[] {
   const and: Prisma.DeliveryNoteWhereInput[] = [{ orgId }];
-  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "DELIVERY_NOTE") } });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (!filter.includeArchived) and.push({ archivedAt: null });
   const dateRange = dateRangeAnd(filter.from, filter.to);
@@ -353,6 +374,15 @@ export async function deliveryNoteFilterConditions(orgId: string, filter: Delive
   return and;
 }
 
+/** Id-Menge des Tag-Filters einer Lieferscheinliste (`null` = kein Tag gesetzt). */
+export async function deliveryNoteIdSet(orgId: string, filter: DeliveryNoteListFilter): Promise<IdSet> {
+  return filter.tag ? docIdsForTag(orgId, filter.tag, "DELIVERY_NOTE") : null;
+}
+
+function deliveryNoteWith(base: Prisma.DeliveryNoteWhereInput[], c: IdCond, status?: Prisma.DeliveryNoteWhereInput): Prisma.DeliveryNoteWhereInput {
+  return { AND: [...base, ...(c ? [c] : []), ...(status ? [status] : [])] };
+}
+
 /**
  * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3) — analog
  * `invoiceStatusTabCounts`, ohne Zeitbezug (der Lieferschein-Status ist rein gespeichert,
@@ -360,12 +390,13 @@ export async function deliveryNoteFilterConditions(orgId: string, filter: Delive
  */
 export async function deliveryNoteStatusTabCounts(orgId: string, rawFilter: unknown): Promise<Record<"all" | DeliveryNoteStatus, number>> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
-  const base = await deliveryNoteFilterConditions(orgId, filter);
+  const base = deliveryNoteFilterConditions(orgId, filter);
+  const idSet = await deliveryNoteIdSet(orgId, filter);
   const tabs = ["all", ...DeliveryNoteStatus.options] as const;
   const counts = await Promise.all(
     tabs.map((tab) => {
       const cond: Prisma.DeliveryNoteWhereInput | undefined = tab === "all" ? undefined : { status: tab };
-      return prisma.deliveryNote.count({ where: { AND: cond ? [...base, cond] : base } });
+      return countByIdSet(idSet, (c) => prisma.deliveryNote.count({ where: deliveryNoteWith(base, c, cond) }));
     }),
   );
   return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<"all" | DeliveryNoteStatus, number>;
@@ -392,36 +423,39 @@ export interface DeliveryNoteListHeadline {
  */
 export async function deliveryNoteListHeadline(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListHeadline> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
-  const and = await deliveryNoteFilterConditions(orgId, filter);
-  if (filter.status !== "all") and.push({ status: filter.status });
-  const count = await prisma.deliveryNote.count({ where: { AND: and } });
+  const base = deliveryNoteFilterConditions(orgId, filter);
+  const idSet = await deliveryNoteIdSet(orgId, filter);
+  const statusCond: Prisma.DeliveryNoteWhereInput | undefined = filter.status !== "all" ? { status: filter.status } : undefined;
+  const count = await countByIdSet(idSet, (c) => prisma.deliveryNote.count({ where: deliveryNoteWith(base, c, statusCond) }));
   return { count };
 }
 
 export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListResult> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
 
-  const and = await deliveryNoteFilterConditions(orgId, filter);
-  if (filter.status !== "all") and.push({ status: filter.status });
-
-  const where: Prisma.DeliveryNoteWhereInput = { AND: and };
+  const base = deliveryNoteFilterConditions(orgId, filter);
+  const idSet = await deliveryNoteIdSet(orgId, filter);
+  const statusCond: Prisma.DeliveryNoteWhereInput | undefined = filter.status !== "all" ? { status: filter.status } : undefined;
+  const orderBy: Prisma.DeliveryNoteOrderByWithRelationInput[] = [{ issueDate: "desc" }, { id: "asc" }];
+  const select = {
+    id: true,
+    number: true,
+    status: true,
+    customerId: true,
+    customer: { select: { name: true } },
+    issueDate: true,
+    archivedAt: true,
+  } as const;
 
   const [total, rows] = await Promise.all([
-    prisma.deliveryNote.count({ where }),
-    prisma.deliveryNote.findMany({
-      where,
-      orderBy: { issueDate: "desc" },
-      skip: filter.offset,
-      take: filter.limit,
-      select: {
-        id: true,
-        number: true,
-        status: true,
-        customerId: true,
-        customer: { select: { name: true } },
-        issueDate: true,
-        archivedAt: true,
-      },
+    countByIdSet(idSet, (c) => prisma.deliveryNote.count({ where: deliveryNoteWith(base, c, statusCond) })),
+    pageByIdSet(idSet, {
+      offset: filter.offset,
+      limit: filter.limit,
+      compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
+      single: (c) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), orderBy, skip: filter.offset, take: filter.limit, select }),
+      keys: (c, take) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), orderBy, take, select: { id: true, issueDate: true } }),
+      byIds: (pageIds) => prisma.deliveryNote.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
 

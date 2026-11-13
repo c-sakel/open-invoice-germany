@@ -12,6 +12,7 @@ import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } 
 import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
 import { docIdsForTag } from "@/domain/tag/list";
+import { collectByIdSet, compareBySort, countByIdSet, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
 
 export interface InvoiceListRow {
   id: string;
@@ -81,19 +82,27 @@ function statusWhere(status: InvoiceListFilter["status"], now: Date): Prisma.Inv
   return { ...openOrDue, OR: [{ dueDate: null }, { dueDate: { gte: tomorrow } }] };
 }
 
-function sortOrder(sort: InvoiceListFilter["sort"]): Prisma.InvoiceOrderByWithRelationInput {
+/** Sortierung einer Liste: DB-`orderBy` und dazu passende JS-Ordnung (Id-Mengen-Merge, `id-filter`)
+ *  — beide mit `id` aufsteigend als Tiebreak, Nullwerte (optionale Felder) zuletzt. */
+interface InvoiceSortPlan {
+  orderBy: Prisma.InvoiceOrderByWithRelationInput[];
+  spec: SortSpec;
+  field: "issueDate" | "dueDate" | "grossTotalCents" | "number";
+}
+
+function sortPlan(sort: InvoiceListFilter["sort"]): InvoiceSortPlan {
   switch (sort) {
     case "issueDate_asc":
-      return { issueDate: "asc" };
+      return { orderBy: [{ issueDate: "asc" }, { id: "asc" }], spec: { key: "issueDate", dir: "asc", nulls: "last" }, field: "issueDate" };
     case "dueDate_asc":
-      return { dueDate: "asc" };
+      return { orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { id: "asc" }], spec: { key: "dueDate", dir: "asc", nulls: "last" }, field: "dueDate" };
     case "gross_desc":
-      return { grossTotalCents: "desc" };
+      return { orderBy: [{ grossTotalCents: "desc" }, { id: "asc" }], spec: { key: "grossTotalCents", dir: "desc", nulls: "last" }, field: "grossTotalCents" };
     case "number_desc":
-      return { number: "desc" };
+      return { orderBy: [{ number: { sort: "desc", nulls: "last" } }, { id: "asc" }], spec: { key: "number", dir: "desc", nulls: "last" }, field: "number" };
     case "issueDate_desc":
     default:
-      return { issueDate: "desc" };
+      return { orderBy: [{ issueDate: "desc" }, { id: "asc" }], spec: { key: "issueDate", dir: "desc", nulls: "last" }, field: "issueDate" };
   }
 }
 
@@ -105,19 +114,15 @@ function sortOrder(sort: InvoiceListFilter["sort"]): Prisma.InvoiceOrderByWithRe
  * (dueDate null ODER ab morgen) — ein zweites `OR` fuer `q` wuerde das erste sonst
  * ueberschreiben statt beide zu kombinieren (Prisma erlaubt nur ein `OR` je Objektebene).
  *
- * Fix-Welle 1 (must 1): der Tag-Filter (`filter.tag`) ist HIER aufgeloest, nicht mehr nur
- * in `listInvoices` — `invoiceStatusTabCounts` und `invoiceListHeadline` teilen sich damit
- * dasselbe `where` wie die Zeilenliste, statt den aktiven Tag-Filter zu ignorieren (Review-
- * Fund: Tabs/Kopfkennzahlen zeigten die ungefilterte Gesamtzahl). `docIdsForTag` ist ueber
- * React `cache()` je Anfrage memoisiert (Muster `billingStateIndex`) — alle drei Aufrufer
- * (Zeilen, Tabs, Kennzahlen) loesen denselben Tag deshalb nur EINMAL auf, feste
- * Abfragezahl. Eine leere Zuordnungsmenge ergibt bewusst `id: { in: [] }`, niemals einen
- * stillschweigend ignorierten Filter.
+ * Phase 17c: der Tag-Filter (`filter.tag`) ist KEINE Bedingung mehr hier, sondern eine Id-Menge
+ * (`invoiceIdSet`, `id-filter`): grosse Mengen laufen in Bloecken statt in einer `id IN`-Abfrage.
+ * Zeilen, Tabs und Kennzahlen teilen sich dieselbe Menge (`docIdsForTag` ist je Anfrage
+ * `cache()`-memoisiert). Eine leere Zuordnungsmenge ergibt bewusst eine leere Ergebnismenge,
+ * niemals einen stillschweigend ignorierten Filter.
  */
-export async function invoiceFilterConditions(orgId: string, filter: InvoiceListFilter): Promise<Prisma.InvoiceWhereInput[]> {
+export function invoiceFilterConditions(orgId: string, filter: InvoiceListFilter): Prisma.InvoiceWhereInput[] {
   const and: Prisma.InvoiceWhereInput[] = [{ orgId }];
 
-  if (filter.tag) and.push({ id: { in: await docIdsForTag(orgId, filter.tag, "INVOICE") } });
   if (filter.type) and.push({ type: filter.type });
   if (filter.customerId) and.push({ customerId: filter.customerId });
   if (filter.paymentMethodId) and.push({ paymentMethodId: filter.paymentMethodId });
@@ -159,6 +164,16 @@ export async function invoiceFilterConditions(orgId: string, filter: InvoiceList
   return and;
 }
 
+/** Id-Menge des Tag-Filters (`null` = kein Tag gesetzt). Phase 17c, Task 4. */
+export async function invoiceIdSet(orgId: string, filter: InvoiceListFilter): Promise<IdSet> {
+  return filter.tag ? docIdsForTag(orgId, filter.tag, "INVOICE") : null;
+}
+
+/** Basis-`where` plus optionale Id-Bedingung eines Blocks plus Statusbedingung. */
+function withCond(base: Prisma.InvoiceWhereInput[], c: IdCond, status?: Prisma.InvoiceWhereInput): Prisma.InvoiceWhereInput {
+  return { AND: [...base, ...(c ? [c] : []), ...(status ? [status] : [])] };
+}
+
 /**
  * Zeilenzahl je Status-Tab fuer dieselbe Filtermenge (Phase 13a, Task 3): je Tab ein
  * `count()` mit demselben `where` wie die Liste, nur mit ausgetauschter Statusbedingung —
@@ -173,12 +188,13 @@ export async function invoiceStatusTabCounts(
   now: Date = new Date(),
 ): Promise<Record<InvoiceListStatusFilter, number>> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
-  const base = await invoiceFilterConditions(orgId, filter);
+  const base = invoiceFilterConditions(orgId, filter);
+  const idSet = await invoiceIdSet(orgId, filter);
   const tabs = InvoiceListStatusFilter.options;
   const counts = await Promise.all(
     tabs.map((tab) => {
       const cond = statusWhere(tab, now);
-      return prisma.invoice.count({ where: { AND: cond ? [...base, cond] : base } });
+      return countByIdSet(idSet, (c) => prisma.invoice.count({ where: withCond(base, c, cond) }));
     }),
   );
   return Object.fromEntries(tabs.map((t, i) => [t, counts[i]])) as Record<InvoiceListStatusFilter, number>;
@@ -214,18 +230,33 @@ export interface InvoiceListHeadline {
  */
 export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now: Date = new Date()): Promise<InvoiceListHeadline> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
-  const base = await invoiceFilterConditions(orgId, filter);
+  const base = invoiceFilterConditions(orgId, filter);
+  const idSet = await invoiceIdSet(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
-  const and = statusCond ? [...base, statusCond] : base;
+  const openishCond: Prisma.InvoiceWhereInput = { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"] } };
 
-  const [groups, openish, draftCount] = await Promise.all([
-    prisma.invoice.groupBy({ by: ["currency"], where: { AND: and }, _count: { _all: true }, _sum: { grossTotalCents: true } }),
-    prisma.invoice.findMany({
-      where: { AND: [...and, { type: { not: "CREDIT_NOTE" }, status: { in: ["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"] } }] },
-      select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
-    }),
-    prisma.invoice.count({ where: { AND: [...and, { status: "DRAFT" }] } }),
+  const [blockGroups, openish, draftCount] = await Promise.all([
+    collectByIdSet(idSet, (c) =>
+      prisma.invoice.groupBy({ by: ["currency"], where: withCond(base, c, statusCond), _count: { _all: true }, _sum: { grossTotalCents: true } }),
+    ),
+    collectByIdSet(idSet, (c) =>
+      prisma.invoice.findMany({
+        where: { AND: [withCond(base, c, statusCond), openishCond] },
+        select: { status: true, type: true, dueDate: true, issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true },
+      }),
+    ),
+    countByIdSet(idSet, (c) => prisma.invoice.count({ where: { AND: [withCond(base, c, statusCond), { status: "DRAFT" }] } })),
   ]);
+
+  // Block-Ergebnisse je Waehrung zusammenfuehren (ohne Id-Menge genau ein Block).
+  const byCurrency = new Map<string, { count: number; gross: number }>();
+  for (const g of blockGroups) {
+    const cur = byCurrency.get(g.currency) ?? { count: 0, gross: 0 };
+    cur.count += g._count._all;
+    cur.gross += g._sum.grossTotalCents ?? 0;
+    byCurrency.set(g.currency, cur);
+  }
+  const groups = [...byCurrency.entries()].map(([currency, v]) => ({ currency, count: v.count, gross: v.gross }));
 
   let openCents = 0;
   let overdueCents = 0;
@@ -251,11 +282,11 @@ export async function invoiceListHeadline(orgId: string, rawFilter: unknown, now
   // Fuehrende Waehrung fuer die Anzeige: die mit den meisten Belegen (Tie-Break: erste
   // Gruppe in Prisma-Ergebnisreihenfolge) — irrelevant, sobald `mixedCurrency` true ist
   // und die UI den Hinweis anhaengt.
-  const leading = [...groups].sort((a, b) => b._count._all - a._count._all)[0];
+  const leading = [...groups].sort((a, b) => b.count - a.count)[0];
 
   return {
-    count: groups.reduce((sum, g) => sum + g._count._all, 0),
-    grossCents: groups.reduce((sum, g) => sum + (g._sum.grossTotalCents ?? 0), 0),
+    count: groups.reduce((sum, g) => sum + g.count, 0),
+    grossCents: groups.reduce((sum, g) => sum + g.gross, 0),
     openCents,
     overdueCents,
     paidCents,
@@ -275,35 +306,44 @@ export async function listInvoices(
 ): Promise<InvoiceListResult> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
 
-  const and = await invoiceFilterConditions(orgId, filter);
+  const base = invoiceFilterConditions(orgId, filter);
+  const idSet = await invoiceIdSet(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
-  if (statusCond) and.push(statusCond);
+  const plan = sortPlan(filter.sort);
 
-  const where: Prisma.InvoiceWhereInput = { AND: and };
+  const select = {
+    id: true,
+    number: true,
+    type: true,
+    status: true,
+    customerId: true,
+    customer: { select: { name: true } },
+    issueDate: true,
+    dueDate: true,
+    grossTotalCents: true,
+    paidAmountCents: true,
+    payableCents: true,
+    currency: true,
+    dunningState: true,
+    _count: { select: { dunnings: true } },
+  } as const;
 
+  type SortKey = { id: string; issueDate: Date; dueDate: Date | null; grossTotalCents: number; number: string | null };
   const [total, rows] = await Promise.all([
-    prisma.invoice.count({ where }),
-    prisma.invoice.findMany({
-      where,
-      orderBy: sortOrder(filter.sort),
-      skip: filter.offset,
-      take: filter.limit,
-      select: {
-        id: true,
-        number: true,
-        type: true,
-        status: true,
-        customerId: true,
-        customer: { select: { name: true } },
-        issueDate: true,
-        dueDate: true,
-        grossTotalCents: true,
-        paidAmountCents: true,
-        payableCents: true,
-        currency: true,
-        dunningState: true,
-        _count: { select: { dunnings: true } },
-      },
+    countByIdSet(idSet, (c) => prisma.invoice.count({ where: withCond(base, c, statusCond) })),
+    pageByIdSet(idSet, {
+      offset: filter.offset,
+      limit: filter.limit,
+      compare: compareBySort<SortKey>(plan.spec, (r) => r[plan.field]),
+      single: (c) => prisma.invoice.findMany({ where: withCond(base, c, statusCond), orderBy: plan.orderBy, skip: filter.offset, take: filter.limit, select }),
+      keys: (c, take) =>
+        prisma.invoice.findMany({
+          where: withCond(base, c, statusCond),
+          orderBy: plan.orderBy,
+          take,
+          select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true },
+        }),
+      byIds: (pageIds) => prisma.invoice.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
 
