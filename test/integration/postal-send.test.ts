@@ -377,7 +377,7 @@ describe("Uebertragung", () => {
   });
 
   it("TEST: auth.mode test, Antwort draft -> DRAFT, sentAt unveraendert", async () => {
-    await setPostal({ mode: "TEST" });
+    await setPostal({ mode: "TEST", acknowledgeCosts: true });
     const d = await newDunning();
     const f = lxp({ status: "draft" });
     const before = await dbInternal.dunning.findUniqueOrThrow({ where: { id: d.id }, select: { sentAt: true } });
@@ -483,7 +483,7 @@ describe("Uebertragung", () => {
   });
 
   it("TEST-Auftrag sperrt LIVE desselben Belegs mit klarer Meldung, nach Storno wieder frei", async () => {
-    await setPostal({ mode: "TEST" });
+    await setPostal({ mode: "TEST", acknowledgeCosts: true });
     const inv = await newInvoice();
     const f = lxp({ status: "draft" });
     const t = await quoteSend("INVOICE", inv.id, f);

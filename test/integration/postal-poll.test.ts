@@ -161,9 +161,11 @@ describe("Status-Abgleich", () => {
     await newJob(off);
     await newJob(dry);
     const f = fake();
-    const r = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep });
+    // Je Organisation abfragen: andere Testdateien legen parallel Organisationen mit aktivem Postversand an.
+    const r1 = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: off });
+    const r2 = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: dry });
     expect(f.calls).toHaveLength(0);
-    expect(r.polled).toBe(0);
+    expect(r1.polled + r2.polled).toBe(0);
   });
 
   it("Auftraege eines anderen Modus werden nicht abgefragt", async () => {
