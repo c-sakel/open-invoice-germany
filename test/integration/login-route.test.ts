@@ -66,6 +66,21 @@ describe("POST /api/auth/login", () => {
     expect(authServerMock.setSession).not.toHaveBeenCalled();
   });
 
+  it("unbekannte E-Mail, falsches Passwort und gesperrtes Konto liefern byte-gleiche Antworten ohne Retry-After", async () => {
+    const { email } = await makeUser();
+    const unknown = await POST(loginReq({ email: "gibt-es-nicht@example.com", password: "falsch" }, "198.51.100.7"));
+    const wrong = await POST(loginReq({ email, password: "falsch" }, "198.51.100.8"));
+    for (let i = 0; i < 4; i++) await POST(loginReq({ email, password: "falsch" }, "198.51.100.8"));
+    const lockedRight = await POST(loginReq({ email, password: PASSWORD }, "198.51.100.9"));
+    const lockedWrong = await POST(loginReq({ email, password: "wieder-falsch" }, "198.51.100.9"));
+    const bodies = await Promise.all([unknown, wrong, lockedRight, lockedWrong].map((r) => r.text()));
+    for (const r of [unknown, wrong, lockedRight, lockedWrong]) {
+      expect(r.status).toBe(401);
+      expect(r.headers.get("Retry-After")).toBeNull();
+    }
+    expect(new Set(bodies).size).toBe(1);
+  });
+
   it("nach Ablauf der Sperre ist die Anmeldung wieder erfolgreich (setzt ein Cookie)", async () => {
     const { email, id } = await makeUser();
     for (let i = 0; i < 5; i++) {

@@ -7,11 +7,9 @@ import { clientIpFromHeaders } from "@/lib/http/client-ip";
 
 export const runtime = "nodejs";
 
-/** Minuten, aufgerundet — fuer die Sperrmeldung an den Nutzer (Retry-After-Header traegt
- *  die exakten Sekunden fuer programmatische Aufrufer). */
-function minutesCeil(ms: number): number {
-  return Math.max(1, Math.ceil(ms / 60_000));
-}
+/** Einheitliche Antwort fuer "invalid" UND "locked": kein Existenz-/Sperr-Leak, kein Retry-After. */
+const LOGIN_FAILED_MESSAGE =
+  "Anmeldung fehlgeschlagen. Nach mehreren Fehlversuchen ist die Anmeldung vorübergehend gesperrt — bitte später erneut versuchen.";
 
 export async function POST(req: Request) {
   const ip = clientIpFromHeaders(req.headers) ?? undefined;
@@ -30,17 +28,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ twoFactor: true });
     }
 
-    if (result.status === "locked") {
-      const retryAfterSeconds = Math.ceil(result.retryAfterMs / 1000);
-      return NextResponse.json(
-        { error: `Konto vorübergehend gesperrt. Bitte in etwa ${minutesCeil(result.retryAfterMs)} Minute(n) erneut versuchen.` },
-        { status: 401, headers: { "Retry-After": String(retryAfterSeconds) } },
-      );
-    }
-
-    // status === "invalid" — bewusst dieselbe Meldung fuer unbekannte E-Mail UND falsches
-    // Passwort (R12: kein Existenz-Leak).
-    return NextResponse.json({ error: "E-Mail oder Passwort ist falsch." }, { status: 401 });
+    // "invalid" (unbekannte E-Mail, falsches Passwort) und "locked" (Konto gesperrt) sind fuer
+    // nicht angemeldete Clients nicht unterscheidbar: gleicher Status, gleicher Text, keine Restzeit.
+    return NextResponse.json({ error: LOGIN_FAILED_MESSAGE }, { status: 401 });
   } catch (e) {
     if (e instanceof RateLimitError) {
       return NextResponse.json(
