@@ -160,6 +160,15 @@ describe("requestPasswordReset", () => {
     expect(later.mail).not.toBeNull();
   });
 
+  it("parallele Anforderungen: hoechstens 3 Token je Stunde und Konto", async () => {
+    const u = await makeUser();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => requestPasswordReset({ email: u.email }, { now: min(5), orgId, ip: `203.0.113.${100 + i}` })),
+    );
+    expect(results.filter((r) => r.mail !== null).length).toBeLessThanOrEqual(3);
+    expect(await dbInternal.passwordResetToken.count({ where: { userId: u.id } })).toBeLessThanOrEqual(3);
+  });
+
   it("raeumt Token auf, die aelter als 24 Stunden sind", async () => {
     const u = await makeUser();
     await dbInternal.passwordResetToken.create({

@@ -86,19 +86,25 @@ export async function requestPasswordReset(raw: unknown, ctx: RequestCtx = {}): 
   const user = await dbInternal.user.findUnique({ where: { email: input.email }, select: { id: true, email: true } });
   if (!user) return { mail: null };
 
-  const recent = await dbInternal.passwordResetToken.count({
-    where: { userId: user.id, createdAt: { gte: new Date(now.getTime() - HOUR_MS) } },
-  });
-  if (recent >= RESET_PER_ACCOUNT_PER_HOUR) return { mail: null };
-
   const token = randomBytes(32).toString("base64url");
-  await dbInternal.$transaction(async (tx) => {
+  // Zaehlen und Anlegen atomar: die erste Anweisung ist ein Schreibzugriff auf die User-Zeile.
+  // Unter Postgres haelt sie die Zeilensperre bis zum Ende der Transaktion (parallele
+  // Anforderungen desselben Kontos warten und zaehlen danach neu), unter SQLite
+  // serialisiert sie die Schreibtransaktion.
+  const created = await dbInternal.$transaction(async (tx) => {
+    await tx.user.updateMany({ where: { id: user.id }, data: { email: user.email } });
+    const recent = await tx.passwordResetToken.count({
+      where: { userId: user.id, createdAt: { gte: new Date(now.getTime() - HOUR_MS) } },
+    });
+    if (recent >= RESET_PER_ACCOUNT_PER_HOUR) return false;
     await tx.passwordResetToken.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: now } });
     await tx.passwordResetToken.create({
       data: { userId: user.id, tokenHash: hashResetToken(token), createdAt: now, expiresAt: new Date(now.getTime() + RESET_TOKEN_TTL_MS) },
       select: { id: true },
     });
+    return true;
   });
+  if (!created) return { mail: null };
   await logAccountEvent(user.id, "PASSWORD_RESET_REQUESTED", ctx.ip, "Passwort-Reset angefordert", now);
 
   const brand = await loadBrand(orgId);
