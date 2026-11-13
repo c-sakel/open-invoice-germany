@@ -198,6 +198,10 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   const org = parseSellerSnapshot(invoice.sellerSnapshotJson, invoice.org, ctx);
   const customer = parseBuyerSnapshot(invoice.buyerSnapshotJson, invoice.customer, ctx);
   // parseBuyerSnapshot liefert bei fehlendem/ungueltigem Snapshot exakt das Fallback-Objekt (Live-Relation).
+  // Die Objektidentitaet (===) ist hier Absicht: ein geparster Snapshot ist IMMER ein neues Objekt
+  // (Zod-Parse), nur der Fallback ist dieselbe Referenz. Nur dann (Entwurf/Vorschau) duerfen die
+  // Rohfelder peppolId/peppolScheme der Live-Relation aufgeloest werden; ein festgeschriebener
+  // Beleg (auch Storno/Teilgutschrift mit uebernommenem Snapshot) bleibt bei seinem Snapshot.
   const customerIsLive = customer === invoice.customer;
   const contact = parseContactSnapshot(invoice.contactSnapshotJson, null, ctx);
 
