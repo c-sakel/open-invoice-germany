@@ -140,6 +140,8 @@ export async function pollPostalJobs(
   };
   let remaining = deps.limit ?? DEFAULT_LIMIT;
 
+  await failStalePending(now, deps.orgId, result);
+
   const orgs = await dbInternal.postalSettings.findMany({
     where: { enabled: true, mode: { in: ["TEST", "LIVE"] }, ...(deps.orgId ? { orgId: deps.orgId } : {}) },
     select: { orgId: true, mode: true },
@@ -274,6 +276,31 @@ export async function pollPostalJobs(
     }
   }
   return result;
+}
+
+/**
+ * Haengende PENDING-Auftraege (Prozess nach dem Anlegen abgebrochen, vor dem Netzaufruf): nach 10 min -> FAILED.
+ * Es wurde nichts uebertragen (SUBMITTING setzt der Versand erst unmittelbar vor dem Netzaufruf); kein Netz noetig.
+ */
+async function failStalePending(now: Date, orgId: string | undefined, result: PostalPollResult): Promise<void> {
+  const stale = await dbInternal.postalJob.findMany({
+    where: { status: "PENDING", mode: { not: "DRY_RUN" }, createdAt: { lt: new Date(now.getTime() - UNCLEAR_AFTER_MS) }, ...(orgId ? { orgId } : {}) },
+    select: { id: true, orgId: true },
+    orderBy: { createdAt: "asc" },
+    take: DEFAULT_LIMIT,
+  });
+  for (const job of stale) {
+    const message = "Auftrag wurde nicht uebertragen (Vorgang abgebrochen)";
+    const moved = await dbInternal.$transaction(async (tx) => {
+      if (!(await transitionPostalJob(tx, job.id, "FAILED", { error: message, finishedAt: now }))) return false;
+      await addPostalEvent(tx, { jobId: job.id, orgId: job.orgId, kind: "FAILED", status: "FAILED", data: { error: message, notTransmitted: true, reason: "PENDING_STALE" }, at: now });
+      return true;
+    });
+    if (moved) {
+      result.failed += 1;
+      result.changed += 1;
+    }
+  }
 }
 
 /** Bekannter Auftrag: Antwort des Anbieters uebernehmen. Rueckgabe: veraendert / unveraendert / conflict. */

@@ -290,6 +290,22 @@ describe("Status-Abgleich", () => {
     expect(f.calls.every((c) => c.method === "GET")).toBe(true);
   });
 
+  it("PENDING aelter als 10 min -> FAILED mit Ereignis, ohne Netz; juengere und Trockenlauf bleiben", async () => {
+    const org = await newOrg({ enabled: false });
+    const stale = await newJob(org, { status: "PENDING", providerJobId: null, createdAt: min(11), submittedAt: null });
+    const young = await newJob(org, { status: "PENDING", providerJobId: null, createdAt: min(5), submittedAt: null });
+    const f = fake();
+    const r = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
+    expect(f.calls).toHaveLength(0);
+    expect(r.failed).toBe(1);
+    const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: stale.id }, select: { status: true, error: true, finishedAt: true } });
+    expect(row.status).toBe("FAILED");
+    expect(row.error).toContain("nicht uebertragen");
+    expect(row.finishedAt).not.toBeNull();
+    expect((await events(stale.id)).map((e) => e.kind)).toContain("FAILED");
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: young.id }, select: { status: true } })).status).toBe("PENDING");
+  });
+
   it("Ausfall der Listen -> Auftrag bleibt UNKNOWN (kein FAILED auf Verdacht)", async () => {
     const org = await newOrg();
     const j = await newJob(org, { status: "UNKNOWN", providerJobId: null, createdAt: min(120), submittedAt: null });
