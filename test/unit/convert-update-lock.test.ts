@@ -36,19 +36,19 @@ describe("Sperre als erste Anweisung", () => {
   it("convertDocumentToInvoice sperrt das Angebot vor dem Lesen", async () => {
     process.env.DATABASE_URL = "postgresql://u:p@localhost:5432/db";
     await expect(convertDocumentToInvoice("o1", "q1")).rejects.toThrow();
-    expect(hoisted.order).toEqual(['lock:SELECT 1 FROM "Quote" WHERE "id" = $1 FOR UPDATE:q1', "read:quote"]);
+    expect(hoisted.order).toEqual(['lock:SELECT 1 FROM "Quote" WHERE "id" = $1 AND "orgId" = $2 FOR UPDATE:q1', "read:quote"]);
   });
 
   it("Angebot -> AB sperrt das Angebot vor dem Lesen", async () => {
     process.env.DATABASE_URL = "postgresql://u:p@localhost:5432/db";
     await expect(convertDocument("o1", { fromType: "QUOTE", fromId: "q1", toKind: "AUFTRAGSBESTAETIGUNG" } as never)).rejects.toThrow();
-    expect(hoisted.order[0]).toBe('lock:SELECT 1 FROM "Quote" WHERE "id" = $1 FOR UPDATE:q1');
+    expect(hoisted.order[0]).toBe('lock:SELECT 1 FROM "Quote" WHERE "id" = $1 AND "orgId" = $2 FOR UPDATE:q1');
     expect(hoisted.order[1]).toBe("read:quote");
   });
 
   it("updateDraftDeliveryNote sperrt den Lieferschein vor der Statuspruefung", async () => {
     process.env.DATABASE_URL = "postgresql://u:p@localhost:5432/db";
     await expect(updateDraftDeliveryNote("o1", "d1", { notes: "x" })).rejects.toThrow();
-    expect(hoisted.order).toEqual(['lock:SELECT 1 FROM "DeliveryNote" WHERE "id" = $1 FOR UPDATE:d1', "read:deliveryNote"]);
+    expect(hoisted.order).toEqual(['lock:SELECT 1 FROM "DeliveryNote" WHERE "id" = $1 AND "orgId" = $2 FOR UPDATE:d1', "read:deliveryNote"]);
   });
 });
