@@ -4,6 +4,7 @@
  * Zugangsdaten, Schalter (enabled, mode, autoDunningPost) und Budget sind nur in der Oberflaeche aenderbar
  * (das strikte Schema lehnt jedes weitere Feld mit 400 ab).
  */
+import { ZodError } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
@@ -18,6 +19,9 @@ export const GET = withApi(async (_req, ctx) => apiData(serializePostalSettings(
 
 export const PUT = withApi(async (_req, ctx) => {
   const input = postalPrintOptionsSchema.parse(ctx.body ?? {});
+  if (Object.keys(input).length === 0) {
+    throw new ZodError([{ code: "custom", path: [], message: "Mindestens eine Druckoption angeben." }]);
+  }
   return apiData(serializePostalSettings(await savePostalSettings(ctx.orgId, input, { actor: ctx.actor, source: "API" })));
 }, { scope: "admin" });
 

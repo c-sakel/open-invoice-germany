@@ -210,9 +210,11 @@ describe("Angebot, Versand, Protokoll", () => {
     expect(text(await callTool("get_postal_job", { id: sent.jobId }))).not.toContain(KEY);
     expect((await callTool("get_postal_job", { id: "gibt-es-nicht" })).isError).toBe(true);
 
-    const cancel = await callTool("cancel_postal_job", { id: sent.jobId });
+    expect((await callTool("cancel_postal_job", { id: sent.jobId })).isError).toBe(true);
+    expect((await callTool("cancel_postal_job", { id: sent.jobId, confirm: false })).isError).toBe(true);
+    const cancel = await callTool("cancel_postal_job", { id: sent.jobId, confirm: true });
     expect(JSON.parse(text(cancel))).toEqual({ status: "CANCELLED" });
-    const second = await callTool("cancel_postal_job", { id: sent.jobId });
+    const second = await callTool("cancel_postal_job", { id: sent.jobId, confirm: true });
     expect(second.isError).toBe(true);
     expect(text(second)).toContain("NOT_CANCELLABLE");
   });

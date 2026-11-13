@@ -77,6 +77,16 @@ describe("Einstellungen", () => {
     expect(v.apiKeyLast4).toBe("0000");
   });
 
+  it("Benutzername ist loeschbar (null), undefined laesst ihn unveraendert", async () => {
+    const o = (await dbInternal.organization.create({ data: { legalName: "Name-Post GmbH", addressLine1: "Weg 3", postalCode: "21339", city: "Lüneburg" } })).id;
+    await savePostalSettings(o, { username: USER, apiKey: KEY }, ctx);
+    expect((await savePostalSettings(o, { duplex: true }, ctx)).username).toBe(USER);
+    expect((await savePostalSettings(o, { username: null }, ctx)).username).toBeNull();
+    expect(await loadPostalCredentials(o)).toBeNull();
+    // API/MCP duerfen den Benutzernamen weiterhin nicht setzen
+    await expect(savePostalSettings(o, { username: null }, { actor: "x", source: "API" })).rejects.toBeInstanceOf(ZodError);
+  });
+
   it("LIVE nur mit Kostenbestaetigung", async () => {
     await expect(savePostalSettings(orgId, { enabled: true, mode: "LIVE" }, ctx)).rejects.toBeInstanceOf(ZodError);
     expect(await loadPostalSettings(orgId)).toMatchObject({ enabled: false, mode: "DRY_RUN" });
@@ -94,8 +104,12 @@ describe("Einstellungen", () => {
     expect(await loadPostalSettings(o)).toMatchObject({ enabled: false, mode: "DRY_RUN" });
     const ok = await savePostalSettings(o, { enabled: true, mode: "TEST", acknowledgeCosts: true }, ctx);
     expect(ok.effective).toBe("TEST");
-    // TEST -> LIVE ist weiterhin ein Versandzustand: keine erneute Bestaetigung noetig
-    expect((await savePostalSettings(o, { mode: "LIVE" }, ctx)).effective).toBe("LIVE");
+    // TEST -> LIVE ist ein Wechsel des wirksamen Modus: erneute Bestaetigung noetig (auch in der Domain)
+    await expect(savePostalSettings(o, { mode: "LIVE" }, ctx)).rejects.toBeInstanceOf(ZodError);
+    expect((await loadPostalSettings(o)).effective).toBe("TEST");
+    expect((await savePostalSettings(o, { mode: "LIVE", acknowledgeCosts: true }, ctx)).effective).toBe("LIVE");
+    // gleicher Modus erneut gespeichert: keine Bestaetigung
+    expect((await savePostalSettings(o, { mode: "LIVE", duplex: true }, ctx)).effective).toBe("LIVE");
   });
 
   it("parallele Speicherungen verlieren keinen Schalter und umgehen die Bestaetigung nicht", async () => {

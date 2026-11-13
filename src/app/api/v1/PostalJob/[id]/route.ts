@@ -9,6 +9,7 @@ import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { postalJobSchema, serializePostalJob } from "@/api/serializers/postal";
 import { cancelPostalJob } from "@/domain/postal/cancel";
 import { getPostalJob } from "@/domain/postal/list";
+import { postalCancelQuerySchema } from "@/schemas/postal";
 import { checkPostalRateLimit } from "@/domain/postal/rate-limit";
 
 export const runtime = "nodejs";
@@ -19,7 +20,8 @@ export const GET = withApi<{ id: string }>(async (_req, ctx) => {
   return apiData(serializePostalJob(job, events));
 }, { scope: "read" });
 
-export const DELETE = withApi<{ id: string }>(async (_req, ctx) => {
+export const DELETE = withApi<{ id: string }>(async (req, ctx) => {
+  postalCancelQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams));
   checkPostalRateLimit(ctx.orgId);
   return apiData(await cancelPostalJob(ctx.orgId, ctx.params.id, { actor: ctx.actor }));
 }, { scope: "write" });
@@ -36,9 +38,10 @@ export const spec = {
   cancel: {
     path: "/api/v1/PostalJob/{id}",
     method: "DELETE",
-    summary: "Postauftrag stornieren (binnen 15 Minuten nach der Uebertragung)",
+    summary: "Postauftrag stornieren (binnen 15 Minuten nach der Uebertragung; Query confirm=true Pflicht)",
     scope: "write",
+    request: { query: postalCancelQuerySchema },
     response: apiDataResponseSchema(z.object({ status: z.literal("CANCELLED") })),
-    errors: [401, 403, 404, 409, 429, 502],
+    errors: [400, 401, 403, 404, 409, 429, 502],
   },
 } satisfies Record<string, RouteSpec>;

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { quotePendingBatchAction, sendPendingBatchAction, type PendingBatchItemDto, type PendingBatchResultDto } from "@/app/actions/postal";
+import { quotePendingBatchAction, sendPendingBatchAction, type PendingBatchItemDto, type PendingBatchResultDto, type PendingBatchSummary } from "@/app/actions/postal";
 import { formatCents } from "@/lib/money";
 import { STATUS_LABEL } from "./format";
 
@@ -23,7 +23,7 @@ export function PendingPostalBatch() {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [results, setResults] = useState<{ rows: PendingBatchResultDto[]; sentTotalCents: number } | null>(null);
+  const [results, setResults] = useState<{ rows: PendingBatchResultDto[]; summary: PendingBatchSummary } | null>(null);
 
   function loadPreview() {
     setError(null);
@@ -57,7 +57,7 @@ export function PendingPostalBatch() {
         setError(res.error);
         return;
       }
-      setResults({ rows: res.results, sentTotalCents: res.sentTotalCents });
+      setResults({ rows: res.results, summary: res.summary });
       setPreview(null);
       router.refresh();
     });
@@ -145,7 +145,19 @@ export function PendingPostalBatch() {
               </li>
             ))}
           </ul>
-          <p className="font-medium">Übertragene Kosten: {formatCents(results.sentTotalCents)}</p>
+          {results.summary.liveCount > 0 && (
+            <p className="font-medium">
+              Übertragene Kosten (Live): {results.summary.liveEstimated ? "ca. " : ""}
+              {formatCents(results.summary.liveTotalCents)}
+              {results.summary.liveEstimated ? " (geschätzt, Preis noch nicht vom Briefdienst bestätigt)" : ""}
+            </p>
+          )}
+          {results.summary.testCount > 0 && (
+            <p className="text-ink-soft">
+              Testaufträge: {results.summary.testCount} (Postbox des Briefdienstes, nicht in den Live-Kosten enthalten)
+            </p>
+          )}
+          {results.summary.liveCount === 0 && results.summary.testCount === 0 && <p className="text-ink-soft">Es wurden keine Aufträge übertragen.</p>}
           <button type="button" onClick={() => setResults(null)} className="text-sm text-pen hover:underline">
             Schließen
           </button>

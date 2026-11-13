@@ -27,6 +27,7 @@ vi.mock("@/lib/postal/transport", async (orig) => {
   };
 });
 
+import { resetRateLimits } from "@/lib/rate-limit";
 import { dbInternal } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
@@ -132,6 +133,7 @@ afterAll(async () => {
   await dbInternal.$disconnect();
 });
 beforeEach(async () => {
+  resetRateLimits();
   process.env.AUTH_SECRET = "test-secret-16d-0123456789abcdef";
   calls = [];
   holder.transport = fakeTransport();
@@ -249,7 +251,11 @@ describe("Versand", () => {
       expect(blocked.ok && blocked.results[0]).toMatchObject({ status: "REJECTED", code: "ALREADY_SENT" });
       expect(blocked.ok && blocked.results[0]?.error).toMatch(/Testauftrag zuerst stornieren/);
     }
-    const cancel = await cancelPostalJobAction(ql.activeJob!.id);
+    const noConfirm = await cancelPostalJobAction(ql.activeJob!.id);
+    expect(noConfirm.ok).toBe(false);
+    expect((await cancelPostalJobAction(ql.activeJob!.id, false)).ok).toBe(false);
+    expect(await dbInternal.postalJob.count({ where: { id: ql.activeJob!.id, status: "CANCELLED" } })).toBe(0);
+    const cancel = await cancelPostalJobAction(ql.activeJob!.id, true);
     expect(cancel).toEqual({ ok: true });
     const live = await sendByPostAction({ items: [{ docType: "INVOICE", docId: id, expectedPriceCents: 68, pdfSha256: ql.pdfSha256 }], confirm: true });
     expect(live.ok && live.results[0]).toMatchObject({ status: "QUEUED" });
@@ -257,7 +263,7 @@ describe("Versand", () => {
   });
 
   it("Storno fremder/unbekannter Auftrag -> Fehlertext", async () => {
-    const res = await cancelPostalJobAction("gibt-es-nicht");
+    const res = await cancelPostalJobAction("gibt-es-nicht", true);
     expect(res.ok).toBe(false);
   });
 });
@@ -317,12 +323,22 @@ describe("Post ausstehend (Sammelversand)", () => {
     if (!sent.ok) return;
     expect(sent.results).toHaveLength(3);
     expect(sent.results.every((r) => r.status === "QUEUED")).toBe(true);
-    expect(sent.sentTotalCents).toBe(preview.totalCents);
+    expect(sent.summary).toMatchObject({ liveCount: 3, testCount: 0, testTotalCents: 0, liveTotalCents: preview.totalCents });
+    const stored = await dbInternal.postalJob.findMany({ where: { orgId, id: { in: sent.results.map((r) => r.jobId as string) } }, select: { priceCents: true } });
+    expect(sent.summary.liveEstimated).toBe(stored.some((j) => j.priceCents === null));
     expect(calls.filter((c) => c.path === "/printjobs")).toHaveLength(3);
     // Liste leert sich.
     const after = await quotePendingBatchAction();
     expect(after.ok && after.items.filter((i) => created.includes(i.docId))).toHaveLength(0);
   }, 30_000);
+
+  it("UI-Actions nutzen das Postversand-Kontingent (31. Aufruf -> Fehler, kein Netz)", async () => {
+    let last: Awaited<ReturnType<typeof quotePendingBatchAction>> | null = null;
+    for (let i = 0; i < 31; i++) last = await quotePendingBatchAction();
+    expect(last?.ok).toBe(false);
+    expect(last && !last.ok && last.error).toMatch(/Zu viele/);
+    expect((await quotePostalAction({ items: [{ docType: "INVOICE", docId: "x" }] })).ok).toBe(false);
+  });
 
   it("Postversand ausgeschaltet -> Sammelliste leer", async () => {
     await setPostal({ enabled: false });

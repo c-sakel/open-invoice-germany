@@ -63,7 +63,7 @@ export function PostalSettingsForm({ initial }: { initial: PostalSettingsDto }) 
       monthlyBudgetCents = c;
     }
     const payload: Record<string, unknown> = {
-      username: username.trim() || undefined,
+      username: username.trim() || null,
       enabled,
       mode,
       autoDunningPost,

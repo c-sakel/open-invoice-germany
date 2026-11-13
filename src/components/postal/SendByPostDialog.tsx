@@ -37,6 +37,7 @@ export function SendByPostDialog({
   const [quote, setQuote] = useState<PostalQuoteDto | null>(null);
   const [reg, setReg] = useState<Reg>("default");
   const [confirmed, setConfirmed] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [result, setResult] = useState<PostalSendResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -58,6 +59,7 @@ export function SendByPostDialog({
     setResult(null);
     setNotice(null);
     setConfirmed(false);
+    setConfirmCancel(false);
     setRepeat(false);
     setReg("default");
     setQuote(null);
@@ -74,8 +76,9 @@ export function SendByPostDialog({
     if (!quote?.activeJob) return;
     setBusy(true);
     setNotice(null);
-    const res = await cancelPostalJobAction(quote.activeJob.id);
+    const res = await cancelPostalJobAction(quote.activeJob.id, true);
     setBusy(false);
+    setConfirmCancel(false);
     if (!res.ok) setNotice(res.error);
     else setNotice("Der Testauftrag wurde storniert.");
     await load(reg);
@@ -211,14 +214,33 @@ export function SendByPostDialog({
                   <p className="font-medium">Testauftrag zuerst stornieren.</p>
                   <p>Für diesen Beleg besteht ein Testauftrag in der Postbox des Briefdienstes. Er kann dort manuell versendet werden; ein Live-Versand würde den Brief doppelt auslösen.</p>
                   {quote.activeJob.cancellable ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void cancelActive()}
-                      className="rounded-md border border-stamp/40 bg-sheet px-3 py-1.5 font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60"
-                    >
-                      Testauftrag stornieren{quote.activeJob.remainingMs !== null ? ` (noch ${remainingLabel(quote.activeJob.remainingMs)})` : ""}
-                    </button>
+                    confirmCancel ? (
+                      <div role="alertdialog" aria-label="Storno bestätigen" className="space-y-2 rounded-md border border-stamp/40 bg-sheet p-3">
+                        <p className="font-medium">Testauftrag beim Briefdienst wirklich stornieren?</p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void cancelActive()}
+                            className="rounded-md border border-stamp/40 bg-stamp px-3 py-1.5 font-medium text-on-accent disabled:opacity-60"
+                          >
+                            Ja, stornieren
+                          </button>
+                          <button type="button" disabled={busy} onClick={() => setConfirmCancel(false)} className="rounded-md px-3 py-1.5 text-ink-muted hover:text-ink">
+                            Abbrechen
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setConfirmCancel(true)}
+                        className="rounded-md border border-stamp/40 bg-sheet px-3 py-1.5 font-medium text-stamp hover:bg-stamp/10 disabled:opacity-60"
+                      >
+                        Testauftrag stornieren{quote.activeJob.remainingMs !== null ? ` (noch ${remainingLabel(quote.activeJob.remainingMs)})` : ""}
+                      </button>
+                    )
                   ) : (
                     <p>Der Testauftrag ist nicht mehr stornierbar (Stornofenster von 15 Minuten abgelaufen oder bereits verarbeitet). Bitte in der Postbox des Briefdienstes prüfen.</p>
                   )}

@@ -30,7 +30,8 @@ export const postalSettingsUiSchema = z
     duplex: z.boolean(),
     shipping: z.enum(["auto", "national", "international"]),
     registeredDefault: z.enum(["r1", "r2"]).nullable(),
-    username: z.string().trim().min(1).max(100),
+    /** null = Benutzername loeschen (leeres Feld in der UI). */
+    username: z.string().trim().min(1).max(100).nullable(),
     apiKey: z.string().trim().min(16).max(200),
     clearApiKey: z.boolean(),
     enabled: z.boolean(),
@@ -116,6 +117,11 @@ export const postalJobListFilterSchema = z
   })
   .strict();
 export type PostalJobListFilter = z.infer<typeof postalJobListFilterSchema>;
+
+/** Storno eines Postauftrags: ohne ausdrueckliche Bestaetigung (`confirm: true`) kein Storno. */
+export const postalCancelConfirmSchema = z.object({ confirm: z.literal(true, { error: "Das Storno muss bestaetigt werden." }) }).strict();
+/** REST: DELETE hat keinen Body, die Bestaetigung kommt als Query `?confirm=true`. */
+export const postalCancelQuerySchema = z.object({ confirm: z.enum(["true", "1"], { error: "Das Storno muss bestaetigt werden (?confirm=true)." }) });
 
 /** Manueller Abschluss eines Auftrags mit unklarem Ausgang. */
 export const postalResolveInputSchema = z

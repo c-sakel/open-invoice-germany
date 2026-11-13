@@ -35,7 +35,7 @@ export function PostalJobActions({
   function cancel() {
     setCancelError(null);
     start(async () => {
-      const res = await cancelPostalJobAction(jobId);
+      const res = await cancelPostalJobAction(jobId, true);
       if (!res.ok) {
         setCancelError(res.error);
         cancelRef.current?.close();

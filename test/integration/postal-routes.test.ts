@@ -198,6 +198,8 @@ describe("Einstellungen", () => {
       const res = await SettingsPut(req("http://x/api/v1/Settings/postal", { method: "PUT", token: adminToken, body }));
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
+    expect((await SettingsPut(req("http://x/api/v1/Settings/postal", { method: "PUT", token: adminToken, body: {} }))).status).toBe(400);
+    expect((await SettingsPut(req("http://x/api/v1/Settings/postal", { method: "PUT", token: adminToken }))).status).toBe(400);
     const ok = await SettingsPut(req("http://x/api/v1/Settings/postal", { method: "PUT", token: adminToken, body: { duplex: true, color: "4" } }));
     expect(ok.status).toBe(200);
     expect((await ok.json()).data).toMatchObject({ duplex: true, color: "4", enabled: false });
@@ -330,16 +332,19 @@ describe("PostalJob", () => {
     // Fremde Organisation: 404 (kein Existenz-Orakel), auch fuer Storno/Abschluss
     const f1 = await JobGet(req(`http://x/api/v1/PostalJob/${jobId}`, { token: otherToken }), idCtx(jobId));
     expect(f1.status).toBe(404);
-    expect((await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}`, { method: "DELETE", token: otherToken }), idCtx(jobId))).status).toBe(404);
+    expect((await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}?confirm=true`, { method: "DELETE", token: otherToken }), idCtx(jobId))).status).toBe(404);
     expect(
       (await JobResolve(req(`http://x/api/v1/PostalJob/${jobId}/resolve`, { method: "POST", token: otherToken, body: { outcome: "SENT", note: "geprueft" } }), idCtx(jobId))).status,
     ).toBe(404);
     expect((await JobGet(req("http://x/api/v1/PostalJob/gibt-es-nicht", { token: readToken }), idCtx("gibt-es-nicht"))).status).toBe(404);
 
-    const del = await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}`, { method: "DELETE", token: writeToken }), idCtx(jobId));
+    expect((await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}`, { method: "DELETE", token: writeToken }), idCtx(jobId))).status).toBe(400);
+    expect((await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}?confirm=false`, { method: "DELETE", token: writeToken }), idCtx(jobId))).status).toBe(400);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+    const del = await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}?confirm=true`, { method: "DELETE", token: writeToken }), idCtx(jobId));
     expect(del.status).toBe(200);
     expect((await del.json()).data).toEqual({ status: "CANCELLED" });
-    const again = await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}`, { method: "DELETE", token: writeToken }), idCtx(jobId));
+    const again = await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}?confirm=true`, { method: "DELETE", token: writeToken }), idCtx(jobId));
     expect(again.status).toBe(409);
     expect((await again.json()).error.reason).toBe("NOT_CANCELLABLE");
   });
@@ -351,7 +356,7 @@ describe("PostalJob", () => {
     const sent = await send(inv.id, 68, q.pdfSha256, "old-1");
     const jobId = sent.body.data.results[0].jobId as string;
     await dbInternal.postalJob.updateMany({ where: { id: jobId }, data: { submittedAt: new Date(Date.now() - 16 * 60_000) } });
-    const del = await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}`, { method: "DELETE", token: writeToken }), idCtx(jobId));
+    const del = await JobDelete(req(`http://x/api/v1/PostalJob/${jobId}?confirm=true`, { method: "DELETE", token: writeToken }), idCtx(jobId));
     expect(del.status).toBe(409);
     expect((await del.json()).error.reason).toBe("NOT_CANCELLABLE");
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
@@ -364,10 +369,11 @@ describe("PostalJob", () => {
     const sent = await send(inv.id, 68, q.pdfSha256, "res-1");
     const jobId = sent.body.data.results[0].jobId as string;
     const url = `http://x/api/v1/PostalJob/${jobId}/resolve`;
-    expect((await JobResolve(req(url, { method: "POST", token: writeToken, body: { outcome: "SENT", note: "ab" } }), idCtx(jobId))).status).toBe(400);
-    expect((await JobResolve(req(url, { method: "POST", token: writeToken, body: { outcome: "SENT", note: "Brief laut Anbieter zugestellt" } }), idCtx(jobId))).status).toBe(409);
+    expect((await JobResolve(req(url, { method: "POST", token: writeToken, body: { outcome: "SENT", note: "Brief laut Anbieter zugestellt" } }), idCtx(jobId))).status).toBe(403);
+    expect((await JobResolve(req(url, { method: "POST", token: adminToken, body: { outcome: "SENT", note: "ab" } }), idCtx(jobId))).status).toBe(400);
+    expect((await JobResolve(req(url, { method: "POST", token: adminToken, body: { outcome: "SENT", note: "Brief laut Anbieter zugestellt" } }), idCtx(jobId))).status).toBe(409);
     await dbInternal.postalJob.updateMany({ where: { id: jobId }, data: { status: "UNKNOWN" } });
-    const done = await JobResolve(req(url, { method: "POST", token: writeToken, body: { outcome: "SENT", note: "Brief laut Anbieter zugestellt" } }), idCtx(jobId));
+    const done = await JobResolve(req(url, { method: "POST", token: adminToken, body: { outcome: "SENT", note: "Brief laut Anbieter zugestellt" } }), idCtx(jobId));
     expect(done.status).toBe(200);
     expect((await done.json()).data).toEqual({ status: "DONE" });
     const ev = await dbInternal.postalJobEvent.count({ where: { jobId, kind: "RESOLVED" } });

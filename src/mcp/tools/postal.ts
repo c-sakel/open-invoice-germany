@@ -18,7 +18,7 @@ import { loadPostalSettings, PostalDisabledError, PostalKeyUnreadableError, Post
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
 import { RateLimitError } from "@/lib/rate-limit";
-import { postalJobListFilterSchema, postalPriceQuerySchema, postalPrintOptionsSchema, postalQuoteInputSchema, postalResolveInputSchema, postalSendInputSchema } from "@/schemas/postal";
+import { postalCancelConfirmSchema, postalJobListFilterSchema, postalPriceQuerySchema, postalPrintOptionsSchema, postalQuoteInputSchema, postalResolveInputSchema, postalSendInputSchema } from "@/schemas/postal";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
 /** Feste, zugangsdatenfreie Texte (nie die Roh-Meldung des Anbieters). */
@@ -198,11 +198,12 @@ export function registerPostalTools(server: McpServer, ctx: McpToolsContext): vo
     "cancel_postal_job",
     {
       title: "Postauftrag stornieren",
-      description: "Storniert einen Postauftrag beim Briefdienst. Nur binnen 15 Minuten nach der Uebertragung und nur in QUEUED, HOLD oder DRAFT; sonst Fehler NOT_CANCELLABLE.",
-      inputSchema: { id: z.string().trim().min(1).max(100) },
+      description: "Storniert einen Postauftrag beim Briefdienst. Nur binnen 15 Minuten nach der Uebertragung und nur in QUEUED, HOLD oder DRAFT; sonst Fehler NOT_CANCELLABLE. `confirm: true` ist Pflicht.",
+      inputSchema: { id: z.string().trim().min(1).max(100), ...postalCancelConfirmSchema.shape },
     },
     async (args): Promise<Result> => {
       try {
+        postalCancelConfirmSchema.parse({ confirm: args.confirm });
         const org = await ctx.requireOrg();
         checkPostalRateLimit(org.id);
         return ctx.ok(JSON.stringify(await cancelPostalJob(org.id, args.id, { actor: "mcp" }), null, 2));

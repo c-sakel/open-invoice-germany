@@ -211,7 +211,7 @@ export async function savePostalSettings(
     const base: Row = await tx.postalSettings.findUniqueOrThrow({ where: { orgId }, select: SELECT });
 
     const next = {
-      username: input.username ?? base.username,
+      username: input.username !== undefined ? input.username : base.username,
       apiKeyEnc: base.apiKeyEnc,
       enabled: input.enabled ?? base.enabled,
       mode: input.mode ?? asMode(base.mode),
@@ -223,13 +223,12 @@ export async function savePostalSettings(
       monthlyBudgetCents: input.monthlyBudgetCents !== undefined ? input.monthlyBudgetCents : base.monthlyBudgetCents,
     };
 
-    // Bestaetigung (Datenuebertragung an Dritte, ggf. Kosten) bei jedem Wechsel von
-    // {aus, Probelauf} nach {TEST, LIVE}.
+    // Bestaetigung (Datenuebertragung an Dritte, ggf. Kosten) bei JEDEM Wechsel des wirksamen
+    // Modus nach TEST oder LIVE (auch TEST -> LIVE).
     const was = effectiveMode(base.enabled, asMode(base.mode));
     const will = effectiveMode(next.enabled, next.mode);
-    const wasSending = was === "TEST" || was === "LIVE";
     const willSend = will === "TEST" || will === "LIVE";
-    if (willSend && !wasSending && input.acknowledgeCosts !== true) throw costsError();
+    if (willSend && will !== was && input.acknowledgeCosts !== true) throw costsError();
 
     if (input.clearApiKey) next.apiKeyEnc = null;
     if (newKeyEnc !== undefined) next.apiKeyEnc = newKeyEnc;

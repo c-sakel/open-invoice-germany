@@ -17,7 +17,7 @@ import { SecretsUnavailableError } from "@/lib/crypto/secrets";
 import { InvalidOperationError, NotFoundError } from "@/domain/errors";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
-import { postalSettingsUiSchema, POSTAL_DOC_TYPES, POSTAL_REGISTERED } from "@/schemas/postal";
+import { postalCancelConfirmSchema, postalSettingsUiSchema, POSTAL_DOC_TYPES, POSTAL_REGISTERED } from "@/schemas/postal";
 import { loadPostalSettings, PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError, savePostalSettings, effectiveMode } from "@/domain/postal/settings";
 import { testPostalConnection } from "@/domain/postal/connection";
 import { quotePostal, sendByPost, type PostalSendResult } from "@/domain/postal/send";
@@ -26,6 +26,9 @@ import { resolveUnknownPostalJob } from "@/domain/postal/resolve";
 import { findActivePostalJob } from "@/domain/postal/list";
 import { listPendingPostalDunnings } from "@/domain/postal/pending";
 import { PostalConflictError } from "@/domain/postal/errors";
+import { checkPostalRateLimit } from "@/domain/postal/rate-limit";
+import { RateLimitError } from "@/lib/rate-limit";
+import { dbInternal } from "@/lib/db";
 import { toActiveJobDto, toSettingsDto, type PostalQuoteDto, type PostalSettingsDto } from "@/domain/postal/ui";
 
 type Fail = { ok: false; error: string };
@@ -35,6 +38,7 @@ function errorText(e: unknown): string {
     const i = e.issues[0];
     return i ? i.message : "Ungültige Eingabe.";
   }
+  if (e instanceof RateLimitError) return "Zu viele Postversand-Anfragen. Bitte kurz warten und erneut versuchen.";
   if (e instanceof PostalNetworkForbiddenError) return "Netzzugriff auf den Briefdienst ist abgeschaltet.";
   if (e instanceof LxpAuthError) return "Der Briefdienst hat die Zugangsdaten abgelehnt.";
   if (e instanceof LxpUnavailableError) return "Der Briefdienst ist nicht erreichbar.";
@@ -114,6 +118,7 @@ export async function quotePostalAction(input: unknown): Promise<{ ok: true; quo
   try {
     const { items } = quoteInputSchema.parse(input);
     const org = await getActiveOrg();
+    checkPostalRateLimit(org.id);
     const { quotes, totalCents } = await quotePostal(org.id, items);
     const now = new Date();
     const withJob: PostalQuoteDto[] = [];
@@ -150,9 +155,10 @@ export async function sendByPostAction(input: unknown): Promise<{ ok: true; resu
 
 const idSchema = z.string().trim().min(1).max(100);
 
-export async function cancelPostalJobAction(jobId: unknown): Promise<{ ok: true } | Fail> {
+export async function cancelPostalJobAction(jobId: unknown, confirm?: unknown): Promise<{ ok: true } | Fail> {
   try {
     const id = idSchema.parse(jobId);
+    postalCancelConfirmSchema.parse({ confirm });
     const org = await getActiveOrg();
     await cancelPostalJob(org.id, id, { actor: await actor() });
     revalidateAll();
@@ -194,6 +200,7 @@ export async function quotePendingBatchAction(): Promise<
 > {
   try {
     const org = await getActiveOrg();
+    checkPostalRateLimit(org.id);
     const pending = await listPendingPostalDunnings(org.id);
     if (pending.length === 0) return { ok: true, items: [], totalCents: 0, blocked: 0, effective: (await loadPostalSettings(org.id)).effective };
     const { quotes } = await quotePostal(
@@ -234,11 +241,45 @@ export interface PendingBatchResultDto extends PostalSendResult {
   expectedPriceCents: number | null;
 }
 
+export interface PendingBatchSummary {
+  /** Kosten der tatsaechlich uebertragenen LIVE-Auftraege in Cent. */
+  liveTotalCents: number;
+  /** true: mindestens ein LIVE-Auftrag hat noch keinen gespeicherten Preis, der Betrag enthaelt dort den erwarteten Preis. */
+  liveEstimated: boolean;
+  liveCount: number;
+  /** TEST-Auftraege (Postbox des Briefdienstes) werden getrennt ausgewiesen und nicht eingerechnet. */
+  testCount: number;
+  testTotalCents: number;
+}
+
+/** Kosten nur aus Auftraegen, die wirklich uebertragen wurden: LIVE mit gespeichertem Preis (Fallback erwarteter Preis, gekennzeichnet), TEST getrennt. */
+async function summarizeTransferred(orgId: string, rows: PendingBatchResultDto[]): Promise<PendingBatchSummary> {
+  const ids = rows.filter((r) => r.jobId && r.status !== "REJECTED" && r.status !== "DRY_RUN").map((r) => r.jobId as string);
+  const s: PendingBatchSummary = { liveTotalCents: 0, liveEstimated: false, liveCount: 0, testCount: 0, testTotalCents: 0 };
+  if (ids.length === 0) return s;
+  const jobs = await dbInternal.postalJob.findMany({ where: { orgId, id: { in: ids } }, select: { id: true, mode: true, priceCents: true } });
+  const expected = new Map(rows.map((r) => [r.jobId, r.expectedPriceCents]));
+  for (const j of jobs) {
+    const stored = j.priceCents;
+    const cents = stored ?? expected.get(j.id) ?? 0;
+    if (j.mode === "LIVE") {
+      s.liveCount += 1;
+      s.liveTotalCents += cents;
+      if (stored === null) s.liveEstimated = true;
+    } else if (j.mode === "TEST") {
+      s.testCount += 1;
+      s.testTotalCents += cents;
+    }
+  }
+  return s;
+}
+
 /** Serieller Versand der ausstehenden Mahnungen; nur Belege, die tatsaechlich in der Liste stehen. Eine Bestaetigung je Lauf. */
-export async function sendPendingBatchAction(input: unknown): Promise<{ ok: true; results: PendingBatchResultDto[]; sentTotalCents: number } | Fail> {
+export async function sendPendingBatchAction(input: unknown): Promise<{ ok: true; results: PendingBatchResultDto[]; summary: PendingBatchSummary } | Fail> {
   try {
     const parsed = batchInputSchema.parse(input);
     const org = await getActiveOrg();
+    checkPostalRateLimit(org.id);
     const pending = await listPendingPostalDunnings(org.id);
     const info = new Map(pending.map((p) => [p.dunningId, p]));
     const unknown = parsed.items.find((i) => !info.has(i.docId));
@@ -255,9 +296,9 @@ export async function sendPendingBatchAction(input: unknown): Promise<{ ok: true
       customerName: info.get(r.docId)?.customerName ?? "",
       expectedPriceCents: price.get(r.docId) ?? null,
     }));
-    const sentTotalCents = out.filter((r) => r.status !== "REJECTED" && r.status !== "DRY_RUN").reduce((s, r) => s + (r.expectedPriceCents ?? 0), 0);
+    const summary = await summarizeTransferred(org.id, out);
     revalidateAll();
-    return { ok: true, results: out, sentTotalCents };
+    return { ok: true, results: out, summary };
   } catch (e) {
     return { ok: false, error: errorText(e) };
   }
