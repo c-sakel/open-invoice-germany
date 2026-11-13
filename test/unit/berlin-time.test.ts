@@ -56,4 +56,22 @@ describe("berlin-time", () => {
       expect([p.year, p.month, p.day]).toEqual([d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()]);
     }
   });
+
+  it("Umstellungssonntage 2151: 23-h-Tag im Maerz, 25-h-Tag im Oktober", () => {
+    // Letzter Sonntag im Maerz 2151 = 28.03. (02:00 MEZ -> 03:00 MESZ)
+    expect(berlinMidnight(2151, 3, 28).toISOString()).toBe("2151-03-27T23:00:00.000Z");
+    expect(berlinMidnight(2151, 3, 29).toISOString()).toBe("2151-03-28T22:00:00.000Z");
+    const springEnd = berlinDayEnd(new Date("2151-03-28T00:00:00Z"));
+    expect(springEnd.toISOString()).toBe("2151-03-28T21:59:59.999Z");
+    expect(springEnd.getTime() + 1 - berlinMidnight(2151, 3, 28).getTime()).toBe(23 * 3_600_000);
+    // Letzter Sonntag im Oktober 2151 = 31.10. (03:00 MESZ -> 02:00 MEZ)
+    expect(berlinMidnight(2151, 10, 31).toISOString()).toBe("2151-10-30T22:00:00.000Z");
+    expect(berlinMidnight(2151, 11, 1).toISOString()).toBe("2151-10-31T23:00:00.000Z");
+    const autumnEnd = berlinDayEnd(new Date("2151-10-31T00:00:00Z"));
+    expect(autumnEnd.toISOString()).toBe("2151-10-31T22:59:59.999Z");
+    expect(autumnEnd.getTime() + 1 - berlinMidnight(2151, 10, 31).getTime()).toBe(25 * 3_600_000);
+    // Monatsgrenze ueber die Fruehjahrsumstellung
+    expect(berlinMonthStart(new Date("2151-04-15T12:00:00Z"), -1).toISOString()).toBe("2151-02-28T23:00:00.000Z");
+    expect(berlinMonthStart(new Date("2151-03-15T12:00:00Z"), 1).toISOString()).toBe("2151-03-31T22:00:00.000Z");
+  });
 });
