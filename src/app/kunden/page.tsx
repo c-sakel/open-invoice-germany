@@ -9,9 +9,13 @@ import { DataTable } from "@/components/ui/DataTable";
 
 export const dynamic = "force-dynamic";
 
-export default async function KundenPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
+export default async function KundenPage({ searchParams }: { searchParams: Promise<{ q?: string; archiviert?: string }> }) {
+  const { q, archiviert } = await searchParams;
   const query = q?.trim() ?? "";
+  const exportParams = new URLSearchParams();
+  if (query) exportParams.set("q", query);
+  if (archiviert === "1") exportParams.set("archiviert", "1");
+  const exportQuery = exportParams.size > 0 ? `?${exportParams.toString()}` : "";
 
   try {
     const org = await getActiveOrg();
@@ -46,7 +50,7 @@ export default async function KundenPage({ searchParams }: { searchParams: Promi
         subtitle={`${customers.length} Kunden`}
         actions={
           <>
-            <CsvLink href={"/api/exports/kunden.csv" + (query ? "?q=" + encodeURIComponent(query) : "")} what="Kunden" />
+            <CsvLink href={"/api/exports/kunden.csv" + exportQuery} what="Kunden" />
             <Link href="/kunden/import" className="text-sm text-ink-soft underline-offset-2 hover:underline">
               Importieren
             </Link>

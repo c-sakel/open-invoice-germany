@@ -14,6 +14,10 @@ import { importRequestSchema, runCsvImport, ImportHashMismatchError, ImportRejec
 import { CsvFormatError, CsvLimitError } from "@/domain/import/parse-csv";
 import type { McpToolsContext, Result } from "./context";
 
+/** Eigene MCP-Grenze: Antworten gehen in den Modellkontext. */
+export const MCP_EXPORT_ROW_LIMIT = 500;
+const MCP_EXPORT_HINT = "Für größere Mengen REST (`?format=csv`) oder die Oberfläche nutzen.";
+
 const EXPORT_RESOURCES = ["invoices", "quotes", "order-confirmations", "delivery-notes", "contacts", "products"] as const;
 
 function importDescription(label: string): string {
@@ -32,7 +36,7 @@ export function registerCsvTools(server: McpServer, ctx: McpToolsContext): void 
       title: "CSV exportieren",
       description:
         "Exportiert Rechnungen (invoices), Angebote (quotes), Auftragsbestätigungen (order-confirmations), Lieferscheine (delivery-notes), Kunden (contacts) oder Produkte (products) als CSV " +
-        "(Semikolon, CRLF, deutsche Zahlen, ohne BOM). `filter` wie bei den list_*-Werkzeugen (z. B. status, from, to, customerId, search); keine Paginierung, höchstens 20.000 Zeilen. " +
+        "(Semikolon, CRLF, deutsche Zahlen, ohne BOM). `filter` wie bei den list_*-Werkzeugen (z. B. status, from, to, customerId, search); keine Paginierung, höchstens 500 Zeilen (darüber Fehler; größere Mengen per REST `?format=csv` oder Oberfläche). " +
         "Interne Notizen sind nie enthalten.",
       inputSchema: {
         resource: z.enum(EXPORT_RESOURCES).describe("Welche Liste exportiert wird"),
@@ -44,7 +48,7 @@ export function registerCsvTools(server: McpServer, ctx: McpToolsContext): void 
         const org = await ctx.requireOrg();
         const raw: Record<string, unknown> = { ...(filter ?? {}) };
         for (const k of ["format", "embed", "limit", "offset"]) delete raw[k];
-        const result = await exportFromApiFilter(org.id, resource, raw);
+        const result = await exportFromApiFilter(org.id, resource, raw, { limit: MCP_EXPORT_ROW_LIMIT, hint: MCP_EXPORT_HINT });
         return ctx.ok(result.csv);
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Ungültiger Filter: ${e.issues.map((i) => i.message).join("; ")}`);

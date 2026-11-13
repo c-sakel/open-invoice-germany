@@ -12,7 +12,8 @@ import { berlinParts } from "@/lib/berlin-time";
 
 export const CSV_BOM = "﻿";
 
-const FORMULA_START = /^[\s　]*[=+\-@\t\r＝＋－＠]/;
+/** Fuehrende Leerraeume und unsichtbare Zeichen (Zero-Width, BOM, NBSP, NUL), die Tabellenkalkulationen ueberspringen. */
+const FORMULA_START = /^[\s\u0000\u00a0\u200b\u200c\u200d\u2060\ufeff　]*[=+\-@\t\r＝＋－＠]/;
 
 /** Textzelle: Formelzeichen am Anfang mit `'` entschaerfen, bei Trennzeichen/Anfuehrung/Umbruch quoten. */
 export function csvTextCell(v: string | null): string {

@@ -45,12 +45,12 @@ function asRecord(raw: unknown): Record<string, unknown> {
   return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
 }
 
-function assertWithinLimit(ids: readonly string[]): void {
-  if (ids.length > EXPORT_ROW_LIMIT) throw new ExportTooLargeError();
+function assertWithinLimit(ids: readonly string[], limit: number, hint?: string): void {
+  if (ids.length > limit) throw new ExportTooLargeError(limit, hint);
 }
 
-async function documentCsv(orgId: string, resource: "invoices" | "quotes" | "order-confirmations" | "documents" | "delivery-notes", ids: string[], now: Date): Promise<string> {
-  assertWithinLimit(ids);
+async function documentCsv(orgId: string, resource: "invoices" | "quotes" | "order-confirmations" | "documents" | "delivery-notes", ids: string[], now: Date, limit: number, hint?: string): Promise<string> {
+  assertWithinLimit(ids, limit, hint);
   if (resource === "invoices") return invoicesCsv(orgId, ids, now);
   if (resource === "delivery-notes") return deliveryNotesCsv(orgId, ids);
   return quotesCsv(orgId, ids, now);
@@ -61,16 +61,17 @@ export async function exportFromApiFilter(
   orgId: string,
   resource: ExportResource,
   rawFilter: unknown,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; limit?: number; hint?: string } = {},
 ): Promise<{ csv: string; filename: string; rows: number }> {
   rateLimitExport(orgId);
   const now = opts.now ?? new Date();
   const filename = exportFilename(resource, now);
   const raw = asRecord(rawFilter);
-  const take = EXPORT_ROW_LIMIT + 1;
+  const limit = opts.limit ?? EXPORT_ROW_LIMIT;
+  const take = limit + 1;
 
-  if (resource === "contacts") return { ...(await contactsCsv(orgId, raw)), filename };
-  if (resource === "products") return { ...(await productsCsv(orgId, raw)), filename };
+  if (resource === "contacts") return { ...(await contactsCsv(orgId, raw, { limit, hint: opts.hint })), filename };
+  if (resource === "products") return { ...(await productsCsv(orgId, raw, { limit, hint: opts.hint })), filename };
 
   let ids: string[];
   if (resource === "invoices") ids = await listInvoiceIds(orgId, raw, { limit: take, now });
@@ -79,7 +80,7 @@ export async function exportFromApiFilter(
     const kind = resource === "quotes" ? "ANGEBOT" : resource === "order-confirmations" ? "AUFTRAGSBESTAETIGUNG" : undefined;
     ids = await listQuoteIds(orgId, kind ? { ...raw, kind } : raw, { limit: take, now });
   }
-  return { csv: await documentCsv(orgId, resource, ids, now), filename, rows: ids.length };
+  return { csv: await documentCsv(orgId, resource, ids, now, limit, opts.hint), filename, rows: ids.length };
 }
 
 /** Oberflaeche: Seiten-Query wie die Listenseiten (Kundenname-Combo, archiviert=1, billed/partially-billed). */
@@ -96,14 +97,12 @@ export async function exportFromPageQuery(
   if (resource === "contacts" || resource === "products") {
     const q = params.get("q");
     const filter: Record<string, unknown> = q ? { search: q } : {};
-    if (resource === "contacts") {
-      if (params.get("archiviert") === "1") filter.includeArchived = true;
-      return { ...(await contactsCsv(orgId, filter)), filename };
-    }
+    if (params.get("archiviert") === "1") filter.includeArchived = true;
+    if (resource === "contacts") return { ...(await contactsCsv(orgId, filter)), filename };
     return { ...(await productsCsv(orgId, filter)), filename };
   }
 
   const kind: NeighborKind = resource === "invoices" ? "INVOICE" : resource === "documents" ? "QUOTE" : "DELIVERY_NOTE";
   const ids = await listIdsFromPageQuery(kind, orgId, params, { limit: EXPORT_ROW_LIMIT + 1, invalid: "throw", now });
-  return { csv: await documentCsv(orgId, resource, ids, now), filename, rows: ids.length };
+  return { csv: await documentCsv(orgId, resource, ids, now, EXPORT_ROW_LIMIT), filename, rows: ids.length };
 }

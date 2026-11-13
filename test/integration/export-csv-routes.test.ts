@@ -134,6 +134,16 @@ describe("GET /api/exports/<liste>.csv", () => {
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
+  it("kunden.csv/produkte.csv ignorieren offset, reichen archiviert durch", async () => {
+    await dbInternal.customer.create({ data: { orgId, name: "Archiv Kunde E18B3", addressLine1: "A 1", postalCode: "10115", city: "Berlin", type: "BUSINESS", isArchived: true } });
+    await dbInternal.product.create({ data: { orgId, name: "Archiv Produkt E18B3", unit: "C62", netPriceCents: 1, taxRate: 19, taxCategory: "S", isArchived: true } });
+    const count = async (file: string, qs: string) => (await (await session(file, qs)).text()).split("\r\n").filter((l) => l !== "").length - 1;
+    expect(await count("kunden.csv", "?offset=5")).toBe(await count("kunden.csv", ""));
+    expect(await count("produkte.csv", "?offset=5")).toBe(await count("produkte.csv", ""));
+    expect(await count("kunden.csv", "?archiviert=1")).toBe((await count("kunden.csv", "")) + 1);
+    expect(await count("produkte.csv", "?archiviert=1")).toBe((await count("produkte.csv", "")) + 1);
+  });
+
   it("Grenze ueberschritten -> 413 JSON", async () => {
     vi.resetModules();
     vi.doMock("@/domain/export/limits", () => ({ EXPORT_ROW_LIMIT: 1 }));
@@ -196,6 +206,27 @@ describe("REST ?format=csv", () => {
   });
 });
 
+describe("REST ?format=csv Grenzen", () => {
+  it("zu viele Zeilen -> 413", async () => {
+    vi.resetModules();
+    vi.doMock("@/domain/export/limits", () => ({ EXPORT_ROW_LIMIT: 1 }));
+    try {
+      const route = await import("@/app/api/v1/Invoice/route");
+      const res = await route.GET(new Request("http://x/api/v1/Invoice?format=csv", { headers: { authorization: `Bearer ${token}` } }));
+      expect(res.status).toBe(413);
+    } finally {
+      vi.doUnmock("@/domain/export/limits");
+      vi.resetModules();
+    }
+  });
+
+  it("31. Aufruf -> 429", async () => {
+    for (let i = 0; i < 30; i++) expect((await rest(productGet, "Product", "?format=csv")).status).toBe(200);
+    const res = await rest(productGet, "Product", "?format=csv");
+    expect(res.status).toBe(429);
+  });
+});
+
 describe("MCP export_csv", () => {
   it("entspricht der REST-Datei ohne BOM", async () => {
     const res = await tools()["export_csv"].handler({ resource: "invoices", filter: { status: "paid" } });
@@ -208,5 +239,29 @@ describe("MCP export_csv", () => {
   it("ungueltiger Filter -> isError", async () => {
     const res = await tools()["export_csv"].handler({ resource: "invoices", filter: { from: "abc" } });
     expect(res.isError).toBe(true);
+  });
+
+  it("ueber 500 Zeilen -> isError mit Hinweis auf REST", async () => {
+    const bigOrg = await makeOrg("Export Gross GmbH", "E18B3G-", "DE216600004");
+    await dbInternal.product.createMany({
+      data: Array.from({ length: 501 }, (_, i) => ({ orgId: bigOrg, name: `Massenprodukt ${i}`, unit: "C62", netPriceCents: 100, taxRate: 19, taxCategory: "S" })),
+    });
+    const prev = orgStore.id;
+    orgStore.id = bigOrg;
+    try {
+      const res = await tools()["export_csv"].handler({ resource: "products" });
+      expect(res.isError).toBe(true);
+      expect(res.content[0].text).toContain("500");
+      expect(res.content[0].text).toContain("REST");
+    } finally {
+      orgStore.id = prev;
+    }
+  });
+
+  it("31. Aufruf -> isError (Rate-Limit)", async () => {
+    for (let i = 0; i < 30; i++) expect((await tools()["export_csv"].handler({ resource: "products" })).isError).toBeUndefined();
+    const res = await tools()["export_csv"].handler({ resource: "products" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Zu viele Exporte");
   });
 });

@@ -14,13 +14,15 @@ import { CUSTOMER_TYPE_LABEL, labelOf } from "./labels";
 import { ExportTooLargeError } from "./errors";
 import { EXPORT_ROW_LIMIT } from "./limits";
 
+const tooLarge = (limit: number, hint?: string) => new ExportTooLargeError(limit, hint);
+
 function fieldCell(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value === "boolean") return value ? "ja" : "nein";
   return String(value);
 }
 
-export async function contactsCsv(orgId: string, rawFilter: unknown, opts: { limit?: number } = {}): Promise<{ csv: string; rows: number }> {
+export async function contactsCsv(orgId: string, rawFilter: unknown, opts: { limit?: number; hint?: string } = {}): Promise<{ csv: string; rows: number }> {
   const limit = opts.limit ?? EXPORT_ROW_LIMIT;
   const filter = contactListFilterSchema.parse(rawFilter);
   const where = {
@@ -30,11 +32,11 @@ export async function contactsCsv(orgId: string, rawFilter: unknown, opts: { lim
       ? { OR: [{ name: ciContains(filter.search) }, { customerNumber: ciContains(filter.search) }, { email: ciContains(filter.search) }] }
       : {}),
   };
-  if ((await prisma.customer.count({ where })) > limit) throw new ExportTooLargeError();
   const [rows, definitions] = await Promise.all([
     prisma.customer.findMany({
       where,
       orderBy: [{ name: "asc" }, { id: "asc" }],
+      take: limit + 1,
       select: {
         customerNumber: true,
         type: true,
@@ -63,6 +65,7 @@ export async function contactsCsv(orgId: string, rawFilter: unknown, opts: { lim
     }),
     listCustomFieldDefinitions(orgId, { activeOnly: true }),
   ]);
+  if (rows.length > limit) throw tooLarge(limit, opts.hint);
   const likes = definitions.map(toLike);
   type R = (typeof rows)[number];
   const fieldValues = new WeakMap<R, Record<string, unknown>>();
@@ -102,7 +105,7 @@ export async function contactsCsv(orgId: string, rawFilter: unknown, opts: { lim
   return { csv: csvTable(columns, rows), rows: rows.length };
 }
 
-export async function productsCsv(orgId: string, rawFilter: unknown, opts: { limit?: number } = {}): Promise<{ csv: string; rows: number }> {
+export async function productsCsv(orgId: string, rawFilter: unknown, opts: { limit?: number; hint?: string } = {}): Promise<{ csv: string; rows: number }> {
   const limit = opts.limit ?? EXPORT_ROW_LIMIT;
   const filter = productListFilterSchema.parse(rawFilter);
   const where = {
@@ -110,10 +113,10 @@ export async function productsCsv(orgId: string, rawFilter: unknown, opts: { lim
     ...(filter.includeArchived ? {} : { isArchived: false }),
     ...(filter.search ? { OR: [{ name: ciContains(filter.search) }, { articleNumber: ciContains(filter.search) }] } : {}),
   };
-  if ((await prisma.product.count({ where })) > limit) throw new ExportTooLargeError();
   const rows = await prisma.product.findMany({
     where,
     orderBy: [{ name: "asc" }, { id: "asc" }],
+    take: limit + 1,
     select: {
       articleNumber: true,
       name: true,
@@ -128,6 +131,7 @@ export async function productsCsv(orgId: string, rawFilter: unknown, opts: { lim
       createdAt: true,
     },
   });
+  if (rows.length > limit) throw tooLarge(limit, opts.hint);
   type R = (typeof rows)[number];
   const columns: CsvColumn<R>[] = [
     col("Artikelnummer", "text", (r) => r.articleNumber),

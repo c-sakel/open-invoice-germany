@@ -13,7 +13,8 @@ import { topProducts } from "@/domain/reporting/top-products";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProduktePage() {
+export default async function ProduktePage({ searchParams }: { searchParams: Promise<{ archiviert?: string }> }) {
+  const { archiviert } = await searchParams;
   try {
     const org = await getActiveOrg();
     // Selbstheilung (Nit, Final-Review, analog Kundenliste): Bestandsprodukte ohne
@@ -49,7 +50,7 @@ export default async function ProduktePage() {
         subtitle={`${products.length} Produkte`}
         actions={
           <>
-            <CsvLink href="/api/exports/produkte.csv" what="Produkte" />
+            <CsvLink href={"/api/exports/produkte.csv" + (archiviert === "1" ? "?archiviert=1" : "")} what="Produkte" />
             <Link href="/produkte/import" className="text-sm text-ink-soft underline-offset-2 hover:underline">
               Importieren
             </Link>
