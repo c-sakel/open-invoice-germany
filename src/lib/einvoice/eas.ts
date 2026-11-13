@@ -104,7 +104,7 @@ function nonEmpty(v: string | null | undefined): string | null {
   return t ? t : null;
 }
 
-/** BT-49: Peppol-ID (mit Schema) vor Leitweg-ID (0204) vor E-Mail (EM). */
+/** BT-49: Peppol-ID (mit Schema) vor gueltiger Leitweg-ID (0204) vor E-Mail (EM). */
 export function resolveBuyerEndpoint(c: {
   peppolId?: string | null;
   peppolScheme?: string | null;
@@ -115,7 +115,9 @@ export function resolveBuyerEndpoint(c: {
   const scheme = nonEmpty(c.peppolScheme);
   if (peppol && scheme) return { scheme, id: peppol };
   const leitweg = nonEmpty(c.leitwegId);
-  if (leitweg) return { scheme: "0204", id: leitweg };
+  // Bestandswerte werden beim Speichern nur bei Aenderung geprueft (save.ts): formal ungueltige
+  // Leitweg-IDs fallen daher auf die E-Mail zurueck, statt als ungueltiges BT-49 auszugehen.
+  if (leitweg && isValidLeitwegId(leitweg)) return { scheme: "0204", id: leitweg };
   const email = nonEmpty(c.email);
   if (email) return { scheme: "EM", id: email };
   return null;

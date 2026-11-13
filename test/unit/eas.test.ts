@@ -47,6 +47,11 @@ describe("resolveBuyerEndpoint", () => {
     expect(resolveBuyerEndpoint({ email: "a@b.de" })).toEqual({ scheme: "EM", id: "a@b.de" });
     expect(resolveBuyerEndpoint({})).toBeNull();
   });
+  it("formal ungueltige Leitweg-ID faellt auf die E-Mail zurueck, ohne E-Mail null", () => {
+    expect(resolveBuyerEndpoint({ leitwegId: "991-33333TEST-34", email: "a@b.de" })).toEqual({ scheme: "EM", id: "a@b.de" });
+    expect(resolveBuyerEndpoint({ leitwegId: "991-33333TEST-34" })).toBeNull();
+    expect(resolveBuyerEndpoint({ leitwegId: "991-33333TEST-33", email: "a@b.de" })).toEqual({ scheme: "0204", id: "991-33333TEST-33" });
+  });
   it("peppolId ohne Schema wird ignoriert", () => {
     expect(resolveBuyerEndpoint({ peppolId: "4000001000005", email: "a@b.de" })).toEqual({ scheme: "EM", id: "a@b.de" });
   });
