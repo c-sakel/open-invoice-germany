@@ -264,10 +264,11 @@ async function loadPartialSource(
     customerId: n.customerId,
     number: n.number ?? "",
     status: n.status,
-    // Quelle (Angebot/Rechnung) vorhanden: deren Werte; sonst REGULAR und keine Waehrung
-    // (createDraftInvoiceWithinTx: Kunde > Einstellung > EUR).
+    // Quelle (Angebot/Rechnung) vorhanden: deren Werte; sonst REGULAR und EUR. Das
+    // Lieferschein-PDF druckt Preise fest in EUR; ein manueller Lieferschein ergibt daher
+    // keine Kundenwaehrung (Ruling Fix-Welle 2, 18a).
     taxScheme: origin?.taxScheme ?? "REGULAR",
-    currency: origin?.currency ?? null,
+    currency: origin?.currency ?? "EUR",
     headerText: n.headerText,
     footerText: n.footerText,
     paymentTerms: origin?.paymentTerms ?? null,

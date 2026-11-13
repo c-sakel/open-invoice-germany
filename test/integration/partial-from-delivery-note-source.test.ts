@@ -189,7 +189,7 @@ describe("Teilrechnung aus Lieferschein erbt die Quelle", () => {
     expect(l.taxCategory).toBe("AE");
   });
 
-  it("manueller Lieferschein: Kundenwaehrung, REGULAR, Kategorie S", async () => {
+  it("manueller Lieferschein: EUR (auch bei Kundenwaehrung CHF), REGULAR, Kategorie S", async () => {
     const dn = await createDeliveryNote(
       orgId,
       { customerId: chfCustomerId, lines: [{ description: "B18A2-Manuell", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 5_000, taxRate: 19 }] },
@@ -197,7 +197,8 @@ describe("Teilrechnung aus Lieferschein erbt die Quelle", () => {
     );
     const dnLine = await dbInternal.deliveryNoteLine.findFirstOrThrow({ where: { deliveryNoteId: dn.id }, select: { id: true } });
     const inv = await createPartialInvoice(orgId, { sourceType: "DELIVERY_NOTE", sourceId: dn.id, mode: "POSITIONS", lineIds: [dnLine.id] }, { now: FIX });
-    expect(inv.currency).toBe("CHF");
+    // Lieferschein-PDF druckt fest EUR: keine Kundenwaehrung ohne Quelle.
+    expect(inv.currency).toBe("EUR");
     expect(inv.taxScheme).toBe("REGULAR");
     expect((await invoiceLines(inv.id))[0].taxCategory).toBe("S");
 
