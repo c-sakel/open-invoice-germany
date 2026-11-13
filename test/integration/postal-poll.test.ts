@@ -159,7 +159,7 @@ describe("Status-Abgleich", () => {
     const off = await newOrg({ enabled: false });
     const dry = await newOrg({ enabled: true, mode: "DRY_RUN" });
     await newJob(off);
-    await newJob(dry);
+    await newJob(dry, { mode: "DRY_RUN", status: "DRY_RUN" });
     const f = fake();
     // Je Organisation abfragen: andere Testdateien legen parallel Organisationen mit aktivem Postversand an.
     const r1 = await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: off });
@@ -168,12 +168,13 @@ describe("Status-Abgleich", () => {
     expect(r1.polled + r2.polled).toBe(0);
   });
 
-  it("Auftraege eines anderen Modus werden nicht abgefragt", async () => {
+  it("Auftraege eines anderen Modus werden mit dem Zugang ihres eigenen Modus abgefragt (nur lesend)", async () => {
     const org = await newOrg({ enabled: true, mode: "LIVE", acknowledgeCosts: true });
     await newJob(org, { mode: "TEST" });
     const f = fake();
     await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
-    expect(f.calls).toHaveLength(0);
+    expect(f.calls.every((c) => c.method === "GET")).toBe(true);
+    expect(f.calls.map((c) => (c.body as { auth: { mode: string } }).auth.mode)).toEqual(["test"]);
   });
 
   it("QUEUED -> done mit Tracking: DONE, finishedAt, Events, ChangeLog, Webhook", async () => {
@@ -243,6 +244,18 @@ describe("Status-Abgleich", () => {
     expect(r.polled).toBe(1);
     const row = await dbInternal.postalJob.findUniqueOrThrow({ where: { id: open.id }, select: { status: true, trackingStatus: true } });
     expect(row).toMatchObject({ status: "DONE", trackingStatus: "Zugestellt" });
+  });
+
+  it("nach Moduswechsel TEST -> LIVE: aktiver TEST-Auftrag wird weiter abgeglichen (404 -> CANCELLED), LIVE-Auftrag mit LIVE-Zugang", async () => {
+    const org = await newOrg({ enabled: true, mode: "LIVE", acknowledgeCosts: true });
+    const tj = await newJob(org, { mode: "TEST" });
+    const lj = await newJob(org, { mode: "LIVE" });
+    const f = fake({ get: (id) => (id === tj.providerJobId ? { status: 404, json: { status: 404, message: "Nicht gefunden" } } : { id, status: "queue" }) });
+    await pollPostalJobs(NOW, { transport: f.transport, sleep: noSleep, orgId: org });
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: tj.id }, select: { status: true } })).status).toBe("CANCELLED");
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: lj.id }, select: { status: true } })).status).toBe("QUEUED");
+    const sentModes = f.calls.filter((c) => c.path.startsWith("/printjobs/")).map((c) => (c.body as { auth: { mode: string } }).auth.mode);
+    expect(sentModes.sort()).toEqual(["live", "test"]);
   });
 
   it("TEST: 404 -> CANCELLED (Postbox geleert); LIVE: 404 -> nur Hinweis, einmal Meldung", async () => {

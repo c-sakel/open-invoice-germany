@@ -74,7 +74,7 @@ export function PostalJobTable({ rows }: { rows: PostalProtocolRow[] }) {
                   {r.pdfSha256.slice(0, 10)}…
                 </td>
                 <td className="px-3 py-2">
-                  <PostalJobActions jobId={r.id} docNumber={r.docNumber} status={r.status} cancellable={w.cancellable} remainingMs={w.remainingMs} />
+                  <PostalJobActions jobId={r.id} docNumber={r.docNumber} status={r.status} mode={r.mode} cancellable={w.cancellable} remainingMs={w.remainingMs} />
                 </td>
               </tr>
             );

@@ -42,7 +42,7 @@ export async function PostalHistory({ invoiceId }: { invoiceId: string }) {
                   </p>
                   {r.error && <p className="text-xs text-stamp">{r.error}</p>}
                 </div>
-                <PostalJobActions jobId={r.id} docNumber={r.docNumber} status={r.status} cancellable={w.cancellable} remainingMs={w.remainingMs} />
+                <PostalJobActions jobId={r.id} docNumber={r.docNumber} status={r.status} mode={r.mode} cancellable={w.cancellable} remainingMs={w.remainingMs} />
               </div>
             );
           })}

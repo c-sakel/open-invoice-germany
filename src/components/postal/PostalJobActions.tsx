@@ -14,12 +14,14 @@ export function PostalJobActions({
   jobId,
   docNumber,
   status,
+  mode,
   cancellable,
   remainingMs,
 }: {
   jobId: string;
   docNumber: string;
   status: string;
+  mode: string;
   cancellable: boolean;
   remainingMs: number | null;
 }) {
@@ -50,7 +52,7 @@ export function PostalJobActions({
     e.preventDefault();
     setResolveError(null);
     start(async () => {
-      const res = await resolveUnknownPostalJobAction({ jobId, outcome, note });
+      const res = await resolveUnknownPostalJobAction({ jobId, outcome: staleTest ? "NOT_SENT" : outcome, note });
       if (!res.ok) {
         setResolveError(res.error);
         return;
@@ -61,7 +63,9 @@ export function PostalJobActions({
     });
   }
 
-  if (!cancellable && status !== "UNKNOWN") return null;
+  // Aktiver Testauftrag nach Ablauf des Stornofensters: nur "nicht versendet" abschließbar.
+  const staleTest = mode === "TEST" && !cancellable && ["QUEUED", "HOLD", "DRAFT"].includes(status);
+  if (!cancellable && status !== "UNKNOWN" && !staleTest) return null;
 
   return (
     <div className="flex flex-col items-start gap-1">
@@ -81,27 +85,31 @@ export function PostalJobActions({
           />
         </>
       )}
-      {status === "UNKNOWN" && (
+      {(status === "UNKNOWN" || staleTest) && (
         <>
           <button
             type="button"
             onClick={() => resolveRef.current?.showModal()}
             className="rounded-md border border-rule-strong bg-sheet px-2 py-1 text-xs font-medium text-ink-soft hover:bg-paper"
           >
-            Manuell abschließen
+            {staleTest ? "Als nicht versendet abschließen" : "Manuell abschließen"}
           </button>
           <dialog ref={resolveRef} className="w-full max-w-md rounded-lg border border-rule p-0 backdrop:bg-ink/40">
             <form onSubmit={resolve} className="space-y-3 p-5 text-sm">
               <h2 className="text-sm font-semibold text-ink">Postauftrag {docNumber} manuell abschließen</h2>
               <p className="text-ink-soft">
-                Der Ausgang dieser Übertragung ist unklar. Bitte beim Briefdienst prüfen, ob der Brief dort angekommen ist, und das Ergebnis eintragen. Es wird nie automatisch erneut versendet.
+                {staleTest
+                  ? "Dieser Testauftrag liegt noch in der Postbox des Briefdienstes und ist nicht mehr stornierbar. Bitte dort prüfen. Mit dem Abschluss wird er als nicht versendet markiert, der Beleg ist danach wieder versendbar. Ein Brief in der Postbox wird dadurch nicht gelöscht."
+                  : "Der Ausgang dieser Übertragung ist unklar. Bitte beim Briefdienst prüfen, ob der Brief dort angekommen ist, und das Ergebnis eintragen. Es wird nie automatisch erneut versendet."}
               </p>
+              {!staleTest && (
+                <label className="flex items-start gap-2">
+                  <input type="radio" name="outcome" checked={outcome === "SENT"} onChange={() => setOutcome("SENT")} className="mt-1 h-4 w-4" />
+                  <span>Der Brief wurde versendet.</span>
+                </label>
+              )}
               <label className="flex items-start gap-2">
-                <input type="radio" name="outcome" checked={outcome === "SENT"} onChange={() => setOutcome("SENT")} className="mt-1 h-4 w-4" />
-                <span>Der Brief wurde versendet.</span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input type="radio" name="outcome" checked={outcome === "NOT_SENT"} onChange={() => setOutcome("NOT_SENT")} className="mt-1 h-4 w-4" />
+                <input type="radio" name="outcome" checked={staleTest || outcome === "NOT_SENT"} onChange={() => setOutcome("NOT_SENT")} className="mt-1 h-4 w-4" />
                 <span>Der Brief wurde nicht versendet (ein neuer Versand ist danach möglich).</span>
               </label>
               <label className="block space-y-1">

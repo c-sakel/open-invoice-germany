@@ -14,7 +14,7 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializePostalJob } from "@/api/serializers/postal";
 import { NotFoundError } from "@/domain/errors";
 import { PostalConflictError } from "./errors";
-import { addPostalEvent, POSTAL_JOB_SELECT, transitionPostalJob } from "./events";
+import { addPostalEvent, CANCEL_WINDOW_MS, POSTAL_JOB_SELECT, transitionPostalJob } from "./events";
 import { markDunningSentByPost } from "./dunning-mark";
 
 export const resolveUnknownInputSchema = z.object({
@@ -33,10 +33,22 @@ export async function resolveUnknownPostalJob(
   const at = ctx.now ?? new Date();
   const job = await dbInternal.postalJob.findFirst({
     where: { id: jobId, orgId },
-    select: { id: true, docType: true, docId: true, invoiceId: true, docNumber: true, mode: true, status: true },
+    select: { id: true, docType: true, docId: true, invoiceId: true, docNumber: true, mode: true, status: true, submittedAt: true },
   });
   if (!job) throw new NotFoundError("Postauftrag nicht gefunden.");
-  if (job.status !== "UNKNOWN") throw new PostalConflictError("Nur Auftraege mit unklarem Ausgang koennen manuell abgeschlossen werden.", "NOT_ALLOWED");
+  // Ausnahme: aktiver TEST-Auftrag (QUEUED/HOLD/DRAFT) mit abgelaufenem Stornofenster darf als "nicht versendet"
+  // abgeschlossen werden (sonst sperrt er den Versand des Belegs dauerhaft).
+  const staleTest =
+    job.mode === "TEST" &&
+    ["QUEUED", "HOLD", "DRAFT"].includes(job.status) &&
+    job.submittedAt !== null &&
+    at.getTime() - job.submittedAt.getTime() > CANCEL_WINDOW_MS;
+  if (job.status !== "UNKNOWN" && !staleTest) {
+    throw new PostalConflictError("Nur Auftraege mit unklarem Ausgang (oder Testauftraege nach Ablauf der Stornofrist) koennen manuell abgeschlossen werden.", "NOT_ALLOWED");
+  }
+  if (staleTest && input.outcome !== "NOT_SENT") {
+    throw new PostalConflictError("Ein Testauftrag kann nur als nicht versendet abgeschlossen werden.", "NOT_ALLOWED");
+  }
 
   const sent = input.outcome === "SENT";
   const target = sent ? "DONE" : "FAILED";
@@ -53,7 +65,7 @@ export async function resolveUnknownPostalJob(
       orgId,
       kind: "RESOLVED",
       status: target,
-      data: { outcome: input.outcome, note: input.note, by: ctx.actor, from: "UNKNOWN" },
+      data: { outcome: input.outcome, note: input.note, by: ctx.actor, from: job.status },
       at,
     });
     if (sent && job.mode === "LIVE" && job.docType === "DUNNING") {

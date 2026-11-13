@@ -807,3 +807,72 @@ describe("Fix-Welle 16d-4", () => {
     });
   });
 });
+
+describe("Fix-Welle 16d-7", () => {
+  beforeEach(async () => {
+    await setPostal({ enabled: true, mode: "LIVE", acknowledgeCosts: true, monthlyBudgetCents: null, autoDunningPost: false });
+  });
+
+  it("repeat erlaubt keinen Versand bei UNKNOWN: REJECTED/ALREADY_SENT, genau ein Submit; nach NOT_SENT-Abschluss wieder moeglich", async () => {
+    const f = lxp({
+      submit: () => {
+        throw new PostalTransportError("Zeitueberschreitung", "timeout");
+      },
+    });
+    const inv = await newInvoice();
+    const first = await quoteSend("INVOICE", inv.id, f);
+    expect(first.status).toBe("UNKNOWN");
+    const rep = await quoteSend("INVOICE", inv.id, f, { repeat: true });
+    expect(rep).toMatchObject({ status: "REJECTED", code: "ALREADY_SENT" });
+    expect(rep.error).toContain("manuell abschliessen");
+    expect(f.calls.filter((c) => c.path === "/printjobs")).toHaveLength(1);
+    expect(await dbInternal.postalJob.count({ where: { docId: inv.id, mode: "LIVE" } })).toBe(1);
+    await resolveUnknownPostalJob(orgId, first.jobId as string, "NOT_SENT", "beim Anbieter nicht vorhanden", { actor: "tester" });
+    expect((await quoteSend("INVOICE", inv.id, lxp(), { repeat: true })).status).toBe("QUEUED");
+  });
+
+  it("repeat sperrt auch einen laufenden Auftrag (SUBMITTING)", async () => {
+    const inv = await newInvoice();
+    const f = lxp();
+    const first = await quoteSend("INVOICE", inv.id, f);
+    await dbInternal.postalJob.update({ where: { id: first.jobId as string }, data: { status: "SUBMITTING" } });
+    const rep = await quoteSend("INVOICE", inv.id, f, { repeat: true });
+    expect(rep).toMatchObject({ status: "REJECTED", code: "ALREADY_SENT" });
+  });
+
+  it("stornierte Rechnung und Mahnung zu bezahlter/stornierter Rechnung: Problem im Angebot, Versand abgelehnt", async () => {
+    const f = lxp();
+    const cancelled = await newInvoice();
+    await dbInternal.invoice.update({ where: { id: cancelled.id }, data: { status: "CANCELLED" } });
+    const q1 = (await quotePostal(orgId, [{ docType: "INVOICE", docId: cancelled.id }], { transport: f.transport })).quotes[0]!;
+    expect(q1.problems.join(" ")).toContain("storniert");
+    expect((await quoteSend("INVOICE", cancelled.id, f)).status).toBe("REJECTED");
+
+    for (const status of ["PAID", "CANCELLED"] as const) {
+      const d = await newDunning();
+      await dbInternal.invoice.update({ where: { id: d.invoiceId }, data: { status } });
+      const q = (await quotePostal(orgId, [{ docType: "DUNNING", docId: d.id }], { transport: f.transport })).quotes[0]!;
+      expect(q.problems.join(" ")).toContain("Mahnung nicht senden");
+      expect((await quoteSend("DUNNING", d.id, f)).status).toBe("REJECTED");
+    }
+    expect(f.calls.filter((c) => c.path === "/printjobs")).toHaveLength(0);
+  });
+
+  it("aktiver TEST-Auftrag nach Stornofrist: als nicht versendet abschliessbar (nur NOT_SENT), danach LIVE-Versand frei; vor Ablauf abgelehnt", async () => {
+    await setPostal({ mode: "TEST", acknowledgeCosts: true });
+    const inv = await newInvoice();
+    const f = lxp({ status: "draft" });
+    const t = await quoteSend("INVOICE", inv.id, f);
+    expect(t.status).toBe("DRAFT");
+    const submittedAt = (await dbInternal.postalJob.findUniqueOrThrow({ where: { id: t.jobId as string }, select: { submittedAt: true } })).submittedAt as Date;
+    await setPostal({ mode: "LIVE", acknowledgeCosts: true });
+    await expect(resolveUnknownPostalJob(orgId, t.jobId as string, "NOT_SENT", "Testbrief nie gesendet", { actor: "tester", now: new Date(submittedAt.getTime() + 60_000) })).rejects.toBeInstanceOf(PostalConflictError);
+    const late = new Date(submittedAt.getTime() + 20 * 60_000);
+    await expect(resolveUnknownPostalJob(orgId, t.jobId as string, "SENT", "Testbrief gesendet", { actor: "tester", now: late })).rejects.toBeInstanceOf(PostalConflictError);
+    const out = await resolveUnknownPostalJob(orgId, t.jobId as string, "NOT_SENT", "Testbrief nie gesendet", { actor: "tester", now: late });
+    expect(out.status).toBe("FAILED");
+    expect((await dbInternal.postalJob.findUniqueOrThrow({ where: { id: t.jobId as string }, select: { status: true } })).status).toBe("FAILED");
+    expect((await quoteSend("INVOICE", inv.id, lxp())).status).toBe("QUEUED");
+  });
+});
+

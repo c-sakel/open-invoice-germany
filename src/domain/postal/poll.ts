@@ -152,11 +152,17 @@ export async function pollPostalJobs(
 
   await failStalePending(now, deps.orgId, result);
 
-  const orgs = await dbInternal.postalSettings.findMany({
-    where: { enabled: true, mode: { in: ["TEST", "LIVE"] }, ...(deps.orgId ? { orgId: deps.orgId } : {}) },
-    select: { orgId: true, mode: true },
+  // Aktive Auftraege ALLER Modi abgleichen (nur lesend): nach einem Moduswechsel (TEST -> LIVE) werden
+  // verbliebene Auftraege des frueheren Modus weiter abgefragt, statt dauerhaft zu haengen.
+  const orgRows = await dbInternal.postalSettings.findMany({
+    where: { enabled: true, ...(deps.orgId ? { orgId: deps.orgId } : {}) },
+    select: { orgId: true },
     orderBy: { orgId: "asc" },
   });
+  const orgs = orgRows.flatMap((o) => [
+    { orgId: o.orgId, mode: "TEST" as const },
+    { orgId: o.orgId, mode: "LIVE" as const },
+  ]);
 
   for (const org of orgs) {
     if (remaining <= 0) break;
@@ -176,7 +182,7 @@ export async function pollPostalJobs(
       skip("unconfigured");
       continue;
     }
-    const mode: "TEST" | "LIVE" = org.mode === "LIVE" ? "LIVE" : "TEST";
+    const mode: "TEST" | "LIVE" = org.mode;
     creds = { ...creds, mode: mode === "LIVE" ? "live" : "test" };
     const client = createLetterXpressClient(creds, deps.transport ?? defaultTransport());
 
