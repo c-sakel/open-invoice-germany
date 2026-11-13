@@ -33,8 +33,8 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export const secondFactorSchema = z.object({ code: z.string().trim().min(6).max(32) });
 export type SecondFactorInput = z.infer<typeof secondFactorSchema>;
 
-/** 2FA aktivieren: Bestaetigungscode aus der Authenticator-App. */
-export const totpEnableSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/) });
+/** 2FA aktivieren: aktuelles Passwort (Re-Auth) UND Bestaetigungscode aus der Authenticator-App. */
+export const totpEnableSchema = z.object({ password: z.string().min(1), code: z.string().trim().regex(/^\d{6}$/) });
 export type TotpEnableInput = z.infer<typeof totpEnableSchema>;
 
 /** 2FA abschalten und Wiederherstellungscodes erneuern: Passwort UND zweiter Faktor. */

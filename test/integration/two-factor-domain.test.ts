@@ -47,7 +47,7 @@ async function makeActive() {
   const u = await makeUser();
   const setup = await beginTotpSetup(u.id, { issuer: "Test" });
   const secret = base32Decode(setup.secret);
-  const res = await enableTotp(u.id, { code: code(secret, T0) }, { now: T0 });
+  const res = await enableTotp(u.id, { password: PASSWORD, code: code(secret, T0) }, { now: T0 });
   if (res.status !== "ok") throw new Error("Einrichtung fehlgeschlagen");
   return { ...u, secret, recoveryCodes: res.recoveryCodes };
 }
@@ -92,20 +92,20 @@ describe("Einrichten", () => {
     expect(b.secret).not.toBe(a.secret);
     expect(decryptSecret((await row(u.id)).totpSecretEnc!, TOTP_SECRET_PURPOSE)).toBe(b.secret);
 
-    await enableTotp(u.id, { code: hotp(base32Decode(b.secret), totpStep(T0)) }, { now: T0 });
+    await enableTotp(u.id, { password: PASSWORD, code: hotp(base32Decode(b.secret), totpStep(T0)) }, { now: T0 });
     await expect(beginTotpSetup(u.id)).rejects.toBeInstanceOf(TotpAlreadyEnabledError);
   });
 
   it("enableTotp: falscher Code, ohne Einrichtung, richtiger Code, Replay", async () => {
     const u = await makeUser();
-    expect((await enableTotp(u.id, { code: "123456" }, { now: T0 })).status).toBe("no_pending_setup");
+    expect((await enableTotp(u.id, { password: PASSWORD, code: "123456" }, { now: T0 })).status).toBe("no_pending_setup");
     const setup = await beginTotpSetup(u.id, { issuer: "T" });
     const secret = base32Decode(setup.secret);
     const wrong = code(secret, T0) === "000000" ? "000001" : "000000";
-    expect((await enableTotp(u.id, { code: wrong }, { now: T0 })).status).toBe("invalid_code");
+    expect((await enableTotp(u.id, { password: PASSWORD, code: wrong }, { now: T0 })).status).toBe("invalid_code");
     expect((await row(u.id)).totpEnabledAt).toBeNull();
 
-    const res = await enableTotp(u.id, { code: code(secret, T0) }, { now: T0 });
+    const res = await enableTotp(u.id, { password: PASSWORD, code: code(secret, T0) }, { now: T0 });
     if (res.status !== "ok") throw new Error("erwartet ok");
     expect(res.recoveryCodes).toHaveLength(10);
     const r = await row(u.id);
@@ -117,6 +117,34 @@ describe("Einrichten", () => {
 
     const pending = await pendingFor(u.id);
     expect((await verifySecondFactor(pending, { code: code(secret, T0) }, { now: T0 })).status).toBe("invalid");
+  });
+});
+
+describe("enableTotp Re-Auth", () => {
+  it("falsches Passwort: invalid_password, Fehlversuch, nicht aktiviert; fuenfmal -> Sperre, danach locked", async () => {
+    const u = await makeUser();
+    const setup = await beginTotpSetup(u.id, { issuer: "T" });
+    const good = code(base32Decode(setup.secret), T0);
+    expect((await enableTotp(u.id, { password: "falsch", code: good }, { now: T0 })).status).toBe("invalid_password");
+    let r = await row(u.id);
+    expect(r.failedLoginCount).toBe(1);
+    expect(r.totpEnabledAt).toBeNull();
+    for (let i = 0; i < 4; i++) await enableTotp(u.id, { password: "falsch", code: good }, { now: T0 });
+    r = await row(u.id);
+    expect(r.lockedUntil).not.toBeNull();
+    const locked = await enableTotp(u.id, { password: PASSWORD, code: good }, { now: T0 });
+    expect(locked.status).toBe("locked");
+    expect((await row(u.id)).totpEnabledAt).toBeNull();
+    // Ohne Passwort im Body: kein Aktivieren.
+    expect((await enableTotp(u.id, { code: good }, { now: at(100) })).status).toBe("invalid_code");
+  });
+
+  it("IP-Bremse password-change: der 11. Aufruf wirft RateLimitError", async () => {
+    const u = await makeUser();
+    await beginTotpSetup(u.id, { issuer: "T" });
+    const ip = "198.51.100.40";
+    for (let i = 0; i < 10; i++) await enableTotp(u.id, { password: "falsch", code: "000000" }, { ip, now: T0 }).catch(() => undefined);
+    await expect(enableTotp(u.id, { password: PASSWORD, code: "000000" }, { ip, now: T0 })).rejects.toBeInstanceOf(RateLimitError);
   });
 });
 
@@ -308,7 +336,7 @@ describe("Protokoll und API-Schluessel", () => {
     const key = await createApiKey(orgId, { name: "2fa-test", scopes: ["read"] });
     const before = await dbInternal.apiKey.findUniqueOrThrow({ where: { id: key.id }, select: { revokedAt: true, keyHash: true } });
     const setup = await beginTotpSetup(u.id, { issuer: "T" });
-    await enableTotp(u.id, { code: code(base32Decode(setup.secret), T0) }, { now: T0 });
+    await enableTotp(u.id, { password: PASSWORD, code: code(base32Decode(setup.secret), T0) }, { now: T0 });
     const after = await dbInternal.apiKey.findUniqueOrThrow({ where: { id: key.id }, select: { revokedAt: true, keyHash: true } });
     expect(after).toEqual(before);
     expect(after.revokedAt).toBeNull();

@@ -77,18 +77,40 @@ export async function beginTotpSetup(userId: string, ctx: { issuer?: string } = 
   return { secret, otpauthUri: uri, qrDataUrl };
 }
 
+/**
+ * Aktiviert die 2FA. Re-Auth: neben dem Code aus der App ist das AKTUELLE Passwort Pflicht
+ * (eine entfuehrte Sitzung darf den Inhaber nicht aussperren). Falsches Passwort zaehlt wie bei
+ * der Passwortaenderung als Fehlversuch (Kontosperre) und auf die IP-Bremse `password-change:<ip>`.
+ */
 export async function enableTotp(
   userId: string,
   raw: unknown,
-  ctx: { now?: Date } = {},
-): Promise<{ status: "ok"; recoveryCodes: string[] } | { status: "invalid_code" } | { status: "no_pending_setup" }> {
+  ctx: { ip?: string; now?: Date } = {},
+): Promise<
+  | { status: "ok"; recoveryCodes: string[] }
+  | { status: "invalid_code" }
+  | { status: "invalid_password" }
+  | { status: "locked"; retryAfterMs: number }
+  | { status: "no_pending_setup" }
+> {
   const now = ctx.now ?? new Date();
+  rateLimit(`password-change:${ctx.ip ?? "unknown"}`, { limit: IP_RATE_LIMIT, windowMs: IP_RATE_WINDOW_MS, now: now.getTime() });
   const parsed = totpEnableSchema.safeParse(raw);
-  const user = await dbInternal.user.findUnique({ where: { id: userId }, select: { totpSecretEnc: true, totpEnabledAt: true } });
+  const user = await dbInternal.user.findUnique({
+    where: { id: userId },
+    select: { totpSecretEnc: true, totpEnabledAt: true, passwordHash: true, failedLoginCount: true, lockedUntil: true },
+  });
   if (!user) return { status: "no_pending_setup" };
   if (user.totpEnabledAt !== null) throw new TotpAlreadyEnabledError();
   if (!user.totpSecretEnc) return { status: "no_pending_setup" };
   if (!parsed.success) return { status: "invalid_code" };
+
+  const lock = lockState({ id: userId, ...user }, now);
+  if (!verifyPassword(parsed.data.password, user.passwordHash)) {
+    await registerFailedAttempt({ id: userId, ...user }, { ip: ctx.ip, now }, "falsches Passwort (2FA einrichten)");
+    return { status: "invalid_password" };
+  }
+  if (lock.isLocked) return { status: "locked", retryAfterMs: lock.retryAfterMs };
 
   const secret = readSecret(user.totpSecretEnc);
   if (!secret) return { status: "invalid_code" };
