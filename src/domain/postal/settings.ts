@@ -11,6 +11,7 @@
 import { ZodError } from "zod";
 import { dbInternal } from "@/lib/db";
 import { decryptSecret, encryptSecret, POSTAL_KEY_PURPOSE } from "@/lib/crypto/secrets";
+import { lockRow } from "@/lib/db-lock";
 import { logActivity } from "@/domain/activity/log";
 import {
   postalPrintOptionsSchema,
@@ -125,7 +126,8 @@ export function effectiveMode(enabled: boolean, mode: PostalMode): PostalSetting
 
 function last4(enc: string): string | null {
   try {
-    return decryptSecret(enc, POSTAL_KEY_PURPOSE).slice(-4);
+    const key = decryptSecret(enc, POSTAL_KEY_PURPOSE);
+    return key.length >= 12 ? key.slice(-4) : null;
   } catch {
     return null;
   }
@@ -180,7 +182,7 @@ function costsError(): ZodError {
     {
       code: "custom",
       path: ["acknowledgeCosts"],
-      message: "Der Live-Versand verursacht Kosten und muss bestaetigt werden.",
+      message: "Der Versand uebertraegt Daten an einen Dritten und kann Kosten verursachen; er muss bestaetigt werden.",
     },
   ]);
 }
@@ -193,63 +195,73 @@ export async function savePostalSettings(
   const input: PostalSettingsUiInput =
     ctx.source === "UI" ? postalSettingsUiSchema.parse(raw) : postalPrintOptionsSchema.parse(raw);
 
-  const current = await dbInternal.postalSettings.findUnique({ where: { orgId }, select: SELECT });
-  const base: Row = current ?? DEFAULT_ROW;
+  // Verschluesseln VOR der Transaktion: ohne AUTH_SECRET wird nichts gespeichert.
+  const newKeyEnc = input.apiKey !== undefined ? encryptSecret(input.apiKey, POSTAL_KEY_PURPOSE) : undefined;
 
-  const next = {
-    username: input.username ?? base.username,
-    apiKeyEnc: base.apiKeyEnc,
-    enabled: input.enabled ?? base.enabled,
-    mode: input.mode ?? asMode(base.mode),
-    autoDunningPost: input.autoDunningPost ?? base.autoDunningPost,
-    color: input.color ?? base.color,
-    duplex: input.duplex ?? base.duplex,
-    shipping: input.shipping ?? base.shipping,
-    registeredDefault: input.registeredDefault !== undefined ? input.registeredDefault : base.registeredDefault,
-    monthlyBudgetCents: input.monthlyBudgetCents !== undefined ? input.monthlyBudgetCents : base.monthlyBudgetCents,
-  };
-
-  // Live-Versand nur mit ausdruecklicher Kostenbestaetigung beim Wechsel in den Live-Zustand.
-  const wasLive = effectiveMode(base.enabled, asMode(base.mode)) === "LIVE";
-  const willBeLive = effectiveMode(next.enabled, next.mode) === "LIVE";
-  if (willBeLive && !wasLive && input.acknowledgeCosts !== true) throw costsError();
-
-  // Verschluesseln VOR dem Schreiben: ohne AUTH_SECRET wird nichts gespeichert.
-  if (input.clearApiKey) next.apiKeyEnc = null;
-  if (input.apiKey !== undefined) next.apiKeyEnc = encryptSecret(input.apiKey, POSTAL_KEY_PURPOSE);
-
-  const changed: string[] = [];
-  const cmp: [string, unknown, unknown][] = [
-    ["username", base.username, next.username],
-    ["apiKey", base.apiKeyEnc !== null, next.apiKeyEnc !== null],
-    ["enabled", base.enabled, next.enabled],
-    ["mode", asMode(base.mode), next.mode],
-    ["autoDunningPost", base.autoDunningPost, next.autoDunningPost],
-    ["color", base.color, next.color],
-    ["duplex", base.duplex, next.duplex],
-    ["shipping", base.shipping, next.shipping],
-    ["registeredDefault", base.registeredDefault, next.registeredDefault],
-    ["monthlyBudgetCents", base.monthlyBudgetCents, next.monthlyBudgetCents],
-  ];
-  for (const [name, a, b] of cmp) if (a !== b) changed.push(name);
-  if (input.apiKey !== undefined && !changed.includes("apiKey")) changed.push("apiKey"); // Schluessel ersetzt
-
-  const saved = await dbInternal.postalSettings.upsert({
-    where: { orgId },
-    create: { orgId, ...next },
-    update: next,
-    select: SELECT,
-  });
-
-  if (changed.length > 0) {
-    await logActivity(dbInternal, {
-      orgId,
-      entityType: "POSTAL",
-      entityId: saved.id,
-      type: "POSTAL_SETTINGS_CHANGED",
-      actor: ctx.actor,
-      data: { changed, enabled: next.enabled, mode: next.mode, autoDunningPost: next.autoDunningPost },
+  const saved = await dbInternal.$transaction(async (tx) => {
+    // Zeile sicherstellen und sperren (Postgres: FOR UPDATE; SQLite serialisiert Schreibtransaktionen),
+    // dann erst lesen: parallele Speicherungen sehen den Stand der jeweils vorherigen.
+    const ensured = await tx.postalSettings.upsert({
+      where: { orgId },
+      create: { orgId },
+      update: {},
+      select: { id: true },
     });
-  }
+    await lockRow(tx, "PostalSettings", ensured.id, orgId);
+    const base: Row = await tx.postalSettings.findUniqueOrThrow({ where: { orgId }, select: SELECT });
+
+    const next = {
+      username: input.username ?? base.username,
+      apiKeyEnc: base.apiKeyEnc,
+      enabled: input.enabled ?? base.enabled,
+      mode: input.mode ?? asMode(base.mode),
+      autoDunningPost: input.autoDunningPost ?? base.autoDunningPost,
+      color: input.color ?? base.color,
+      duplex: input.duplex ?? base.duplex,
+      shipping: input.shipping ?? base.shipping,
+      registeredDefault: input.registeredDefault !== undefined ? input.registeredDefault : base.registeredDefault,
+      monthlyBudgetCents: input.monthlyBudgetCents !== undefined ? input.monthlyBudgetCents : base.monthlyBudgetCents,
+    };
+
+    // Bestaetigung (Datenuebertragung an Dritte, ggf. Kosten) bei jedem Wechsel von
+    // {aus, Probelauf} nach {TEST, LIVE}.
+    const was = effectiveMode(base.enabled, asMode(base.mode));
+    const will = effectiveMode(next.enabled, next.mode);
+    const wasSending = was === "TEST" || was === "LIVE";
+    const willSend = will === "TEST" || will === "LIVE";
+    if (willSend && !wasSending && input.acknowledgeCosts !== true) throw costsError();
+
+    if (input.clearApiKey) next.apiKeyEnc = null;
+    if (newKeyEnc !== undefined) next.apiKeyEnc = newKeyEnc;
+
+    const changed: string[] = [];
+    const cmp: [string, unknown, unknown][] = [
+      ["username", base.username, next.username],
+      ["apiKey", base.apiKeyEnc !== null, next.apiKeyEnc !== null],
+      ["enabled", base.enabled, next.enabled],
+      ["mode", asMode(base.mode), next.mode],
+      ["autoDunningPost", base.autoDunningPost, next.autoDunningPost],
+      ["color", base.color, next.color],
+      ["duplex", base.duplex, next.duplex],
+      ["shipping", base.shipping, next.shipping],
+      ["registeredDefault", base.registeredDefault, next.registeredDefault],
+      ["monthlyBudgetCents", base.monthlyBudgetCents, next.monthlyBudgetCents],
+    ];
+    for (const [name, a, b] of cmp) if (a !== b) changed.push(name);
+    if (newKeyEnc !== undefined && !changed.includes("apiKey")) changed.push("apiKey"); // Schluessel ersetzt
+
+    const row = await tx.postalSettings.update({ where: { orgId }, data: next, select: SELECT });
+    if (changed.length > 0) {
+      await logActivity(tx, {
+        orgId,
+        entityType: "POSTAL",
+        entityId: row.id,
+        type: "POSTAL_SETTINGS_CHANGED",
+        actor: ctx.actor,
+        data: { changed, enabled: next.enabled, mode: next.mode, autoDunningPost: next.autoDunningPost },
+      });
+    }
+    return row;
+  });
   return toView(saved);
 }

@@ -88,6 +88,33 @@ describe("Einstellungen", () => {
     expect((await savePostalSettings(orgId, { enabled: true }, ctx)).effective).toBe("DRY_RUN");
   });
 
+  it("TEST braucht ebenfalls Bestaetigung; Modus bleibt unveraendert", async () => {
+    const o = (await dbInternal.organization.create({ data: { legalName: "Test-Post GmbH", addressLine1: "Weg 2", postalCode: "21339", city: "Lüneburg" } })).id;
+    await expect(savePostalSettings(o, { enabled: true, mode: "TEST" }, ctx)).rejects.toBeInstanceOf(ZodError);
+    expect(await loadPostalSettings(o)).toMatchObject({ enabled: false, mode: "DRY_RUN" });
+    const ok = await savePostalSettings(o, { enabled: true, mode: "TEST", acknowledgeCosts: true }, ctx);
+    expect(ok.effective).toBe("TEST");
+    // TEST -> LIVE ist weiterhin ein Versandzustand: keine erneute Bestaetigung noetig
+    expect((await savePostalSettings(o, { mode: "LIVE" }, ctx)).effective).toBe("LIVE");
+  });
+
+  it("parallele Speicherungen verlieren keinen Schalter und umgehen die Bestaetigung nicht", async () => {
+    const o = (await dbInternal.organization.create({ data: { legalName: "Parallel GmbH", addressLine1: "Weg 3", postalCode: "21339", city: "Lüneburg" } })).id;
+    const res = await Promise.allSettled([
+      savePostalSettings(o, { duplex: true }, ctx),
+      savePostalSettings(o, { autoDunningPost: true }, ctx),
+      savePostalSettings(o, { enabled: true, mode: "TEST" }, ctx),
+      savePostalSettings(o, { color: "4" }, ctx),
+    ]);
+    expect(res.map((r) => r.status)).toEqual(["fulfilled", "fulfilled", "rejected", "fulfilled"]);
+    expect(await loadPostalSettings(o)).toMatchObject({ duplex: true, autoDunningPost: true, color: "4", enabled: false, mode: "DRY_RUN" });
+  });
+
+  it("apiKey zusammen mit clearApiKey wird abgelehnt; kurzer Schluessel ebenso", async () => {
+    await expect(savePostalSettings(orgId, { apiKey: KEY, clearApiKey: true }, ctx)).rejects.toBeInstanceOf(ZodError);
+    await expect(savePostalSettings(orgId, { apiKey: "kurz-12345" }, ctx)).rejects.toBeInstanceOf(ZodError);
+  });
+
   it("API/MCP: nur Druckoptionen", async () => {
     for (const src of ["API", "MCP"] as const) {
       expect((await savePostalSettings(orgId, { color: "4" }, { actor: "k", source: src })).color).toBe("4");
@@ -107,7 +134,7 @@ describe("Einstellungen", () => {
 
   it("ActivityLog ohne Schluessel und Benutzername", async () => {
     const org3 = (await dbInternal.organization.create({ data: { legalName: "Post3 GmbH", addressLine1: "Weg 3", postalCode: "21339", city: "Lüneburg" } })).id;
-    await savePostalSettings(org3, { enabled: true, mode: "TEST", username: USER, apiKey: KEY }, ctx);
+    await savePostalSettings(org3, { enabled: true, mode: "TEST", acknowledgeCosts: true, username: USER, apiKey: KEY }, ctx);
     const logs = await dbInternal.activityLog.findMany({ where: { orgId: org3, type: "POSTAL_SETTINGS_CHANGED" }, select: { entityType: true, dataJson: true } });
     expect(logs).toHaveLength(1);
     expect(logs[0]?.entityType).toBe("POSTAL");
