@@ -112,6 +112,28 @@ describe("POST /api/auth/login mit zweitem Faktor", () => {
 });
 
 describe("POST /api/auth/second-factor", () => {
+  it("abgelaufener Zwischenschritt (Passwort inzwischen geaendert): 401, Zwischen-Cookie geloescht, keine Sitzung", async () => {
+    const a = await activate();
+    auth.pending = await pending(a.id);
+    await dbInternal.user.update({ where: { id: a.id }, data: { passwordChangedAt: new Date(Date.now() + 1000) }, select: { id: true } });
+    const res = await secondFactor(req("/api/auth/second-factor", { code: totp(a.secret) }, ipFor()));
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toMatch(/abgelaufen/);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(auth.clearPendingMfa).toHaveBeenCalledTimes(1);
+    expect(auth.setSession).not.toHaveBeenCalled();
+  });
+
+  it("abgeschaltete 2FA seit dem ersten Schritt: expired wie oben", async () => {
+    const a = await activate();
+    auth.pending = await pending(a.id);
+    await dbInternal.user.update({ where: { id: a.id }, data: { totpEnabledAt: null }, select: { id: true } });
+    const res = await secondFactor(req("/api/auth/second-factor", { code: totp(a.secret) }, ipFor()));
+    expect(res.status).toBe(401);
+    expect(auth.clearPendingMfa).toHaveBeenCalledTimes(1);
+    expect(auth.setSession).not.toHaveBeenCalled();
+  });
+
   it("ohne Zwischen-Cookie: 401, keine Sitzung", async () => {
     const res = await secondFactor(req("/api/auth/second-factor", { code: "123456" }));
     expect(res.status).toBe(401);

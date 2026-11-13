@@ -73,8 +73,8 @@ export async function clearSession(): Promise<void> {
 
 /**
  * Zwischen-Cookie fuer den zweiten Faktor (Phase 17d): nach richtigem Passwort, vor dem
- * Code. Kein Sitzungscookie. SameSite=Lax (der Redirect nach der Anmeldung ist eine
- * Same-Site-Navigation), Pfad "/" — es wird von der Seite /login/zweiter-faktor UND der
+ * Code. Kein Sitzungscookie. SameSite=Strict: der zweite Schritt ist eine Same-Site-Navigation
+ * bzw. ein Same-Origin-Fetch von /login aus; ein fremder Kontext braucht das Cookie nie. Pfad "/" — es wird von der Seite /login/zweiter-faktor UND der
  * Route /api/auth/second-factor gelesen, beide haben nur "/" als gemeinsames Praefix.
  */
 export async function setPendingMfa(userId: string): Promise<void> {
@@ -84,7 +84,7 @@ export async function setPendingMfa(userId: string): Promise<void> {
   const store = await cookies();
   store.set(MFA_COOKIE, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
     secure: isSecureRequest(await headers()),
     path: "/",
     maxAge: MFA_MAX_AGE,
@@ -98,5 +98,5 @@ export async function readPendingMfa(): Promise<{ uid: string; pwc: number | nul
 
 export async function clearPendingMfa(): Promise<void> {
   const store = await cookies();
-  store.set(MFA_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: isSecureRequest(await headers()), path: "/", maxAge: 0 });
+  store.set(MFA_COOKIE, "", { httpOnly: true, sameSite: "strict", secure: isSecureRequest(await headers()), path: "/", maxAge: 0 });
 }
