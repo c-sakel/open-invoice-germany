@@ -43,6 +43,7 @@ import { registerLayoutDesignTools } from "./tools/layout-design";
 import { registerAuditTools } from "./tools/audit";
 import { registerFxTools } from "./tools/fx";
 import { registerOssTools } from "./tools/oss";
+import { registerPostalTools } from "./tools/postal";
 
 // Exportiert fuer Integrationstests (test/integration/mcp-*.test.ts): erlaubt,
 // registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
@@ -77,6 +78,7 @@ registerLayoutDesignTools(server, mcpContext);
 registerAuditTools(server, mcpContext);
 registerFxTools(server, mcpContext);
 registerOssTools(server, mcpContext);
+registerPostalTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function main() {

@@ -39,6 +39,7 @@ export const SETTINGS_KEYS = [
   "briefpapier",
   "marke",
   "email",
+  "post",
   "vorlagen",
   "textvorlagen",
   "zahlungsmethoden",
@@ -110,6 +111,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
   { href: "/einstellungen/briefpapier", label: "Briefpapier", key: "briefpapier" },
   { href: "/einstellungen/marke", label: "Marke", key: "marke" },
   { href: "/einstellungen/email", label: "E-Mail-Versand", key: "email" },
+  { href: "/einstellungen/post", label: "Postversand", key: "post" },
   { href: "/einstellungen/vorlagen", label: "Textvorlagen", key: "vorlagen" },
   { href: "/einstellungen/textvorlagen", label: "Dokumenttexte", key: "textvorlagen" },
   { href: "/einstellungen/zahlungsmethoden", label: "Zahlungsmethoden", key: "zahlungsmethoden" },
@@ -134,7 +136,7 @@ export const SETTINGS_ITEMS: readonly SettingsNavItem[] = [
 export const SETTINGS_GROUPS: readonly { label: string; keys: readonly SettingsKey[] }[] = [
   { label: "Firma", keys: ["stammdaten", "marke", "briefpapier", "zahlungsmethoden"] },
   { label: "Belege", keys: ["belege", "nummernkreise", "kurse", "vorlagen", "textvorlagen", "mahnwesen", "kundenfelder", "tags"] },
-  { label: "Kommunikation", keys: ["email", "benachrichtigungen"] },
+  { label: "Kommunikation", keys: ["email", "post", "benachrichtigungen"] },
   { label: "System", keys: ["automatisierung", "api", "webhooks", "pruefung", "konto"] },
 ];
 

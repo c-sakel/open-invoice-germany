@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -85,6 +85,13 @@ export const ACTIVITY_TYPES = {
   // Phase 16g: Layout-Designs (src/domain/layout-design/save.ts), entityId = LayoutDesign.id.
   LAYOUT_DESIGN_SAVED: "Layout-Design gespeichert",
   LAYOUT_DESIGN_ARCHIVED: "Layout-Design archiviert",
+  // Phase 16d: Postversand-Einstellungen (src/domain/postal/settings.ts), entityType POSTAL, entityId = PostalSettings.id.
+  POSTAL_SETTINGS_CHANGED: "Postversand-Einstellungen geaendert",
+  // Phase 16d: Versand per Post (src/domain/postal/send.ts, cancel.ts), entityType INVOICE, entityId = Rechnung.
+  POSTAL_SENT: "Per Post versendet",
+  POSTAL_DRY_RUN: "Postversand (Trockenlauf) protokolliert",
+  POSTAL_CANCELLED: "Postversand storniert",
+  POSTAL_FAILED: "Postversand fehlgeschlagen",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

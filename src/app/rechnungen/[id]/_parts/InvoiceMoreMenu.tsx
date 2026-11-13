@@ -5,6 +5,7 @@ import { ConvertMenu } from "@/components/ConvertMenu";
 import { DuplicateInvoiceButton } from "@/components/DuplicateInvoiceButton";
 import { SaveTemplateDialog } from "@/components/templates/SaveTemplateDialog";
 import { CancelInvoiceDialog } from "@/components/invoices/CancelInvoiceDialog";
+import { SendByPostDialog } from "@/components/postal/SendByPostDialog";
 
 /**
  * "Mehr"-Menue der Rechnungsdetailseite (Phase 11d, Task 3) — buendelt XRechnung/ZUGFeRD,
@@ -62,6 +63,12 @@ export function InvoiceMoreMenu({
             </a>
           </ActionMenuItem>
         </>
+      )}
+
+      {!isDraft && (
+        <ActionMenuItem>
+          <SendByPostDialog docType="INVOICE" docId={invoiceId} className="" />
+        </ActionMenuItem>
       )}
 
       {showDuplicate && (

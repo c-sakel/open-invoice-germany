@@ -2,6 +2,7 @@
 import { formatCents } from "@/lib/money";
 import { DunningActions } from "@/components/dunning/DunningActions";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
+import { SendByPostDialog } from "@/components/postal/SendByPostDialog";
 import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 import { deDate, type InvoiceDetail } from "./invoice-view-model";
 
@@ -83,6 +84,7 @@ export function PaymentSection({
                   PDF
                 </a>
                 <SendEmailDialog docType="DUNNING" docId={d.id} label="Mahnung senden" />
+                <SendByPostDialog docType="DUNNING" docId={d.id} label="Per Post senden" />
               </div>
             </div>
           ))}

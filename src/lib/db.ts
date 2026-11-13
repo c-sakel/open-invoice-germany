@@ -139,6 +139,46 @@ export class LayoutDesignVersionImmutabilityError extends Error {
 }
 
 /**
+ * Phase 16d: Das Postversand-Protokoll ist ein Nachweis (GoBD). `PostalJobEvent` ist append-only
+ * (nur `create`). `PostalJob` wird nie geloescht; nach dem Anlegen sind nur Status-, Preis-,
+ * Verfolgungs- und Zeitfelder fortschreibbar — Belegbezug, Pruefsummen, Modus und Versandart
+ * bleiben unveraenderlich, damit der Nachweis, was wann versandt wurde, nicht verfaelscht wird.
+ */
+export class PostalJobEventImmutableError extends Error {
+  constructor() {
+    super("Versandereignisse sind unveraenderlich (append-only).");
+    this.name = "PostalJobEventImmutableError";
+  }
+}
+
+export class PostalJobImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Versandauftrag ist ein Nachweis und nicht aenderbar: ${detail}`);
+    this.name = "PostalJobImmutableError";
+  }
+}
+
+const POSTAL_JOB_MUTABLE_KEYS = new Set([
+  "status",
+  "providerJobId",
+  "priceCents",
+  "vatCents",
+  "providerAddress",
+  "trackingCode",
+  "trackingStatus",
+  "error",
+  "submittedAt",
+  "lastPolledAt",
+  "finishedAt",
+]);
+
+function assertPostalJobUpdateAllowed(data: unknown): void {
+  const keys = Object.keys((data ?? {}) as Record<string, unknown>);
+  const badKeys = keys.filter((k) => !POSTAL_JOB_MUTABLE_KEYS.has(k));
+  if (badKeys.length > 0) throw new PostalJobImmutableError(badKeys.join(", "));
+}
+
+/**
  * Phase 17a: Das VIES-Pruefprotokoll (`VatIdCheck`) ist append-only; nur `create` ist erlaubt.
  */
 export class VatIdCheckImmutableError extends Error {
@@ -297,6 +337,49 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new VatIdCheckImmutableError();
+      },
+    },
+    postalJobEvent: {
+      async update() {
+        throw new PostalJobEventImmutableError();
+      },
+      async updateMany() {
+        throw new PostalJobEventImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new PostalJobEventImmutableError();
+      },
+      async upsert() {
+        throw new PostalJobEventImmutableError();
+      },
+      async delete() {
+        throw new PostalJobEventImmutableError();
+      },
+      async deleteMany() {
+        throw new PostalJobEventImmutableError();
+      },
+    },
+    postalJob: {
+      async update({ args, query }) {
+        assertPostalJobUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertPostalJobUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertPostalJobUpdateAllowed(args.data);
+        return query(args);
+      },
+      async upsert() {
+        throw new PostalJobImmutableError("upsert");
+      },
+      async delete() {
+        throw new PostalJobImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new PostalJobImmutableError("deleteMany");
       },
     },
     layoutDesignVersion: {

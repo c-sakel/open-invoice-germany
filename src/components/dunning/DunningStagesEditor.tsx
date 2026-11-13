@@ -16,14 +16,16 @@ interface Stage {
   emailTemplateId: string | null;
   autoSend: boolean;
   enabled: boolean;
+  channel: string;
+  postFallback: boolean;
 }
 
-type StageFields = Pick<Stage, "name" | "daysAfterDue" | "newDueDays" | "feeCents" | "calculateInterest" | "includeB2BFlatFee" | "autoSend" | "enabled">;
+type StageFields = Pick<Stage, "name" | "daysAfterDue" | "newDueDays" | "feeCents" | "calculateInterest" | "includeB2BFlatFee" | "autoSend" | "enabled" | "channel" | "postFallback">;
 
-const EMPTY_NEW: StageFields = { name: "", daysAfterDue: 14, newDueDays: 14, feeCents: 0, calculateInterest: true, includeB2BFlatFee: false, autoSend: false, enabled: true };
+const EMPTY_NEW: StageFields = { name: "", daysAfterDue: 14, newDueDays: 14, feeCents: 0, calculateInterest: true, includeB2BFlatFee: false, autoSend: false, enabled: true, channel: "CUSTOMER", postFallback: true };
 
 function fieldsOf(s: Stage): StageFields {
-  return { name: s.name, daysAfterDue: s.daysAfterDue, newDueDays: s.newDueDays, feeCents: s.feeCents, calculateInterest: s.calculateInterest, includeB2BFlatFee: s.includeB2BFlatFee, autoSend: s.autoSend, enabled: s.enabled };
+  return { name: s.name, daysAfterDue: s.daysAfterDue, newDueDays: s.newDueDays, feeCents: s.feeCents, calculateInterest: s.calculateInterest, includeB2BFlatFee: s.includeB2BFlatFee, autoSend: s.autoSend, enabled: s.enabled, channel: s.channel, postFallback: s.postFallback };
 }
 
 /**
@@ -137,6 +139,8 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
               <th className="px-3 py-2">Zinsen</th>
               <th className="px-3 py-2">40-€-Pauschale</th>
               <th className="px-3 py-2">Auto-Versand</th>
+              <th className="px-3 py-2">Kanal</th>
+              <th className="px-3 py-2">Ohne E-Mail-Adresse per Post</th>
               <th className="px-3 py-2">Aktiv</th>
               <th className="px-3 py-2 text-right">Aktionen</th>
             </tr>
@@ -211,6 +215,28 @@ export function DunningStagesEditor({ initialStages }: { initialStages: Stage[] 
                       onChange={(e) => setDraft(s.id, { autoSend: e.target.checked })}
                       className="h-4 w-4 rounded border-rule-strong"
                       aria-label={`Automatischer Versand — Mahnstufe ${s.order}`}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={d.channel}
+                      onChange={(e) => setDraft(s.id, { channel: e.target.value })}
+                      className="rounded border border-rule-strong px-2 py-1"
+                      aria-label={`Versandkanal — Mahnstufe ${s.order}`}
+                    >
+                      <option value="CUSTOMER">Kundenvorgabe</option>
+                      <option value="EMAIL">E-Mail</option>
+                      <option value="POST">Post</option>
+                      <option value="EMAIL_AND_POST">E-Mail und Post</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={d.postFallback}
+                      onChange={(e) => setDraft(s.id, { postFallback: e.target.checked })}
+                      className="h-4 w-4 rounded border-rule-strong"
+                      aria-label={`Ohne E-Mail-Adresse per Post senden — Mahnstufe ${s.order}`}
                     />
                   </td>
                   <td className="px-3 py-2">

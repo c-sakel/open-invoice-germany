@@ -18,6 +18,9 @@ import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { recordPayment } from "@/domain/invoice/payment";
 import { cancelInvoice } from "@/domain/invoice/cancel";
 import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
+import { savePostalSettings } from "@/domain/postal/settings";
+import { quotePostal, sendByPost } from "@/domain/postal/send";
+import type { LxpTransport } from "@/lib/postal/transport";
 
 const N = 5;
 // Belegnummern sind instanzweit eindeutig: je Szenario ein eigenes Jahr ab 2149.
@@ -163,5 +166,40 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(original.status).toBe("CANCELLED");
     const rel = await dbInternal.documentRelation.count({ where: { orgId: s.orgId, toType: "INVOICE", toId: inv.id, relationType: "REVERSES" } });
     expect(rel).toBe(1);
+  });
+  it("Postversand LIVE: 4 parallele Auftraege knapp unter dem Monatsbudget -> hoechstens zwei (Fake-Transport, kein Netz)", async () => {
+    const s = await newScenario();
+    let providerId = 9_000_000;
+    const transport: LxpTransport = async (req) => {
+      if (req.path === "/price") return { status: 200, json: { status: 200, message: "OK", data: { price: 0.68, letter: {} } } };
+      if (req.method === "POST" && req.path === "/printjobs") {
+        const letter = (req.body as { letter: { filename_original: string } }).letter;
+        return {
+          status: 200,
+          json: { status: 200, message: "OK", data: { id: ++providerId, status: "queue", filename_original: letter.filename_original, created_at: "2150-01-01 10:00:00", items: [{ address: "Kunde AG, Marktplatz 2, 20095 Hamburg", pages: 1, amount: 0.68, vat: 0.13, status: "queue" }] } },
+        };
+      }
+      throw new Error(`unerwarteter Aufruf ${req.method} ${req.path}`);
+    };
+    await savePostalSettings(s.orgId, { username: "race-user", apiKey: "race-test-key-0000000000", enabled: true, mode: "LIVE", acknowledgeCosts: true, monthlyBudgetCents: 150 }, { actor: "race", source: "UI" });
+    const invoices = [];
+    for (let i = 0; i < 4; i++) {
+      const q = await createBusinessDocument(s.orgId, { kind: "ANGEBOT", customerId: s.customerId, taxScheme: "REGULAR", currency: "EUR", lines: [item(1000)] }, { now: s.now });
+      invoices.push(await invoiceFromQuote(s.orgId, q.id, s.now));
+    }
+    const items = await Promise.all(
+      invoices.map(async (inv) => {
+        const { quotes } = await quotePostal(s.orgId, [{ docType: "INVOICE", docId: inv.id }], { transport });
+        return { docType: "INVOICE" as const, docId: inv.id, expectedPriceCents: quotes[0]!.priceCents, pdfSha256: quotes[0]!.pdfSha256 };
+      }),
+    );
+    const rs = await Promise.all(
+      items.map((it) => sendByPost(s.orgId, { items: [it], confirm: true }, { actor: "race", trigger: "USER", transport, now: s.now, sleep: async () => {} })),
+    );
+    const ok = rs.filter((r) => r[0]!.status !== "REJECTED");
+    expect(ok.length).toBeLessThanOrEqual(2);
+    expect(rs.filter((r) => r[0]!.status === "REJECTED").every((r) => r[0]!.code === "BUDGET")).toBe(true);
+    const jobs = await dbInternal.postalJob.findMany({ where: { orgId: s.orgId, mode: "LIVE", status: { notIn: ["FAILED", "CANCELLED"] } }, select: { priceCents: true, quotedPriceCents: true } });
+    expect(jobs.reduce((sum, j) => sum + (j.priceCents ?? j.quotedPriceCents ?? 0), 0)).toBeLessThanOrEqual(150);
   });
 });

@@ -6,6 +6,9 @@ import { loadDunningSettings } from "@/domain/dunning/settings";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { OverviewWidgets } from "@/components/dunning/OverviewWidgets";
 import { OverdueTable } from "@/components/dunning/OverdueTable";
+import { loadPostalSettings } from "@/domain/postal/settings";
+import { listPendingPostalDunnings } from "@/domain/postal/pending";
+import { PendingPostalBatch } from "@/components/postal/PendingPostalBatch";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +22,14 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
   if (state === "ACTIVE" || state === "PAUSED" || state === "STOPPED") filter.state = state;
   if (customerId) filter.customerId = customerId;
 
-  const [overview, settings, paymentMethodsRaw] = await Promise.all([
+  const [overview, settings, paymentMethodsRaw, postalSettings] = await Promise.all([
     loadDunningOverview(org.id, new Date(), filter),
     loadDunningSettings(org.id),
     listPaymentMethods(org.id),
+    loadPostalSettings(org.id),
   ]);
+  // "Post ausstehend" gibt es nur bei eingeschaltetem Postversand (sonst ist der Abschnitt gar nicht sichtbar).
+  const pendingPost = postalSettings.enabled ? await listPendingPostalDunnings(org.id) : [];
   const paymentMethods = paymentMethodsRaw.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ code: m.code, name: m.name }));
 
   const rows = overview.rows.map((r) => ({
@@ -68,6 +74,35 @@ export default async function MahnwesenPage({ searchParams }: { searchParams: Pr
       </nav>
 
       <OverdueTable rows={rows} paymentMethods={paymentMethods} />
+
+      {postalSettings.enabled && (
+        <section id="post" className="scroll-mt-16 space-y-3">
+          <h2 className="text-sm font-semibold text-ink">Post ausstehend ({pendingPost.length})</h2>
+          {pendingPost.length === 0 ? (
+            <p className="text-sm text-ink-muted">Keine Mahnungen warten auf den Postversand.</p>
+          ) : (
+            <>
+              <p className="text-sm text-ink-soft">
+                Diese Mahnungen sollen per Post versendet werden und warten auf Ihre Bestätigung. Die Vorschau zeigt Probleme und Gesamtkosten; erst danach wird versendet.
+              </p>
+              <ul className="space-y-1 rounded-[var(--radius-card)] border border-rule bg-sheet p-3 text-sm">
+                {pendingPost.map((p) => (
+                  <li key={p.dunningId} className="flex flex-wrap justify-between gap-2 border-t border-rule pt-1 first:border-t-0 first:pt-0">
+                    <span>
+                      <span className="font-medium">{p.number ?? "Mahnung"}</span> · {p.customerName}
+                      {p.invoiceNumber ? ` · Rechnung ${p.invoiceNumber}` : ""}
+                    </span>
+                    <a href={`/api/dunnings/${p.dunningId}/pdf`} target="_blank" rel="noreferrer" className="text-pen hover:underline">
+                      PDF
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <PendingPostalBatch />
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

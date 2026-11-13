@@ -1236,6 +1236,19 @@ mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
 - `GET /api/health` ist öffentlich, ohne Rate-Limit, und liefert nur `ok`/`error`; das Datenbank-Ergebnis wird serverseitig 5 s zwischengespeichert (Datenbank höchstens alle 5 s gefragt, der Docker-Healthcheck kann nicht ausgesperrt werden). Details nur über `GET /api/v1/System/health` (Scope `admin`).
 - Fälligkeit/„überfällig“ gilt nur für offene Belege, nie für Entwürfe.
 
+## 21. Postversand (Phase 16d): Versandprotokoll, Datenweitergabe an Dienstleister
+
+**Umsetzung dieser Software:**
+
+- **Kein Belegeingriff.** Gesendet wird ausschließlich das Archiv-PDF des Belegs (Phase 16a, § 20); Die Archivdatei wird beim Lesen gegen den gespeicherten Hash geprüft (Abweichung: nichts wird übertragen, Alarm `ARCHIVE_TAMPERED`); `PostalJob.pdfSha256` ist der SHA-256 der gesendeten Bytes. Rechnungsstatus, Beträge und Archiv bleiben unverändert; der Versand ändert die Rechnung nicht. Ein echter Live-Postauftrag zählt bei der Zahlungsgegenbuchung als „ausgegeben“ (wie ein versendeter E-Mail-Beleg).
+- **Versandprotokoll als Nachweis (GoBD).** `PostalJob` wird nie gelöscht; nach dem Anlegen sind nur Status-, Preis-, Tracking- und Zeitfelder änderbar. `PostalJobEvent` ist append-only (Guard in `src/lib/db.ts`). Zusätzlich schreibt jede Übertragung (auch im Testmodus), jeder Storno, jeder Fehlschlag (auch ein nie übertragener Abbruch), jeder unklare Ausgang und jeder manuelle Abschluss einen ChangeLog-Eintrag der Hash-Kette (`entity` `POSTAL`). Einen ActivityLog-Eintrag am Beleg (Komfort-Verlauf, kein Nachweis; die Zeitleiste zeigt „Per Post versendet“) gibt es nur bei einer Live-Übertragung sowie bei endgültigem Fehlschlag, Storno und manuellem Abschluss, nicht bei Testmodus-Übertragungen und nicht bei unklarem Ausgang oder nie übertragenen Abbrüchen; dort bleibt das Ereignis im Versandprotokoll (`PostalJobEvent`). Der protokollierte Request enthält weder die Zugangsdaten noch die Datei (nur Länge, MD5 und SHA-256).
+- **Trockenlauf** protokolliert den Auftrag mit Archiv-Hash, ohne etwas zu übertragen (Modus `DRY_RUN`).
+- **Zugangsdaten** liegen nur verschlüsselt in der Datenbank; sie erscheinen in keinem Protokoll, keiner Meldung, keinem Webhook und keiner Fehlermeldung (Anbietertexte werden geschwärzt und gekürzt).
+- **Einschreiben-Arten** („Einschreiben Einwurf“ `r1`, „Einschreiben“ `r2`) stammen aus der API-Dokumentation des Briefdienstes (Stand Juli 2026, S. 7/8) und sind nur bei Anschrift in Deutschland zulässig. Ob ein Einschreiben die Zustellung im Streitfall nachweist, ist eine Frage des Einzelfalls und nicht Gegenstand der Software.
+- **Datenweitergabe an einen Dienstleister (DSGVO).** Bei Testmodus und Live werden Anschrift und Inhalt des Belegs (Rechnungs- oder Mahnungs-PDF) an den Briefdienst übertragen, der sie als **Auftragsverarbeiter** druckt und zustellt. Dafür ist ein **Auftragsverarbeitungsvertrag nach Art. 28 DSGVO** mit dem Anbieter nötig; er ist nicht Teil der Software und vom Betreiber vor Aktivierung abzuschließen. Die Aktivierung verlangt eine ausdrückliche Bestätigung in den Einstellungen, jeder Versand zusätzlich eine Bestätigung je Beleg bzw. je Sammelversand (Ausnahme: Mahnautomatik mit zweitem Schalter). Ab Werk ist der Postversand aus und überträgt nichts. Ob der Anbieter in einem Drittland verarbeitet, ist vom Betreiber zu prüfen (Art. 44 ff. DSGVO).
+- **Interne Notizen** gelangen nicht in das gesendete PDF (das Archiv-PDF enthält sie nie).
+- **Offen:** Rechtliche Bewertung des Postwegs als Zustellnachweis (z. B. für Mahnungen mit Fristwirkung) gehört mit dem Steuerberater/Anwalt geklärt.
+
 ---
 
 *Ende COMPLIANCE.md — Stand 2026-11-11. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*

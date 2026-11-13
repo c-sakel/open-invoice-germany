@@ -269,6 +269,8 @@ export const customerFieldsSchema = z.object({
   // Phase 7, §34 — frei editierbar; bleibt leer -> assignCustomerNumber bei der Anlage.
   customerNumber: z.string().max(30).optional(),
   notes: z.string().optional(),
+  // Phase 16d: bevorzugter Versandkanal fuer Mahnungen (Stufe "CUSTOMER" folgt diesem Wert); ohne Angabe unveraendert.
+  deliveryChannel: z.enum(["EMAIL", "POST", "EMAIL_AND_POST"]).optional(),
 });
 /** Paarpruefung Peppol-ID/Schema (Phase 17a); fuer create und gemergten PATCH-Zustand. */
 export function customerEndpointProblems(v: { peppolId?: string | null; peppolScheme?: string | null }): { path: "peppolId" | "peppolScheme"; message: string }[] {
@@ -925,6 +927,9 @@ export const dunningStageFieldsSchema = z.object({
   emailTemplateId: z.string().nullable().optional(),
   autoSend: z.boolean().default(false),
   enabled: z.boolean().default(true),
+  // Phase 16d: Versandkanal der Stufe; ohne Angabe bleibt der Bestand unveraendert (Anlage: DB-Default CUSTOMER/true).
+  channel: z.enum(["CUSTOMER", "EMAIL", "POST", "EMAIL_AND_POST"]).optional(),
+  postFallback: z.boolean().optional(),
 });
 export type DunningStageFieldsInput = z.infer<typeof dunningStageFieldsSchema>;
 

@@ -132,6 +132,25 @@ Kursquelle ist standardmäßig der amtliche Monatsdurchschnitt (`fxRateSource = 
 | `set_exchange_rate` | Kurs pflegen (`source` `MONTHLY` mit Monatserstem oder `ECB`), überschreibt Importe | „Setze den Monatskurs USD für November 2026 auf 1,0850." |
 | `refresh_exchange_rates` | EZB-Kurse sofort abrufen und Monatsmittel des Vormonats berechnen (bei `FX_AUTO_FETCH=0` abgeschaltet) | „Hol die aktuellen Wechselkurse." |
 
+### Postversand (Phase 16d)
+
+Rechnungen und Mahnungen lassen sich über einen Briefdienst drucken und versenden. Zugangsdaten und die Schalter (`enabled`, `mode`, `autoDunningPost`, Monatsbudget) sind **nur in der Oberfläche** änderbar; über MCP/REST ist der Schlüssel nie lesbar (nur `hasApiKey`/`apiKeyLast4`), der wirksame Modus dagegen schon. Ablauf: erst `get_postal_quote`, dem Nutzer Anschrift, Seiten und Preis zeigen, dann nur nach ausdrücklicher Zustimmung `send_by_post` mit `confirm: true`, `expectedPriceCents` und `pdfSha256` aus dem Angebot. Bei ausgeschaltetem Postversand entsteht nur ein Trockenlauf-Protokoll; im Modus `LIVE` ist der Versand kostenpflichtig. Die Tools nutzen dieselben Zod-Schemas wie REST (`/api/v1/PostalQuote`, `/api/v1/PostalJob`, `/api/v1/Settings/postal`); Auslöser `MCP`.
+
+Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis, Versand, Storno) und `admin` (Einstellungen, Verbindungstest, manueller Abschluss); die **MCP-Tools laufen ohne Scope-Modell** (lokaler Admin-Zugang), daher kann `resolve_postal_job` per MCP ohne `admin`-Scope aufgerufen werden — der Zugang selbst ist die Berechtigung. `send_by_post`, `cancel_postal_job` und `resolve_postal_job` verlangen `confirm: true` (REST: `send_by_post` und Storno ebenso; der manuelle Abschluss ist dort ein `admin`-Aufruf). `resolve_postal_job` mit `NOT_SENT` gibt den Neuversand frei und darf nur nach Prüfung durch den Nutzer im Kundenbereich des Briefdienstes aufgerufen werden; der Versand zählt auf dasselbe Kontingent (30 Aktionen/Minute und Organisation). Wiederholung desselben Versands ist über die Doppelversand-Sperre geschützt (`ALREADY_SENT`); `repeat: true` erlaubt einen weiteren Versand nur nach abgeschlossenem Brief, nie solange ein Auftrag des Belegs `PENDING`, `SUBMITTING` oder `UNKNOWN` ist (dann `ALREADY_SENT`, erst manuell abschließen); der `Idempotency-Key` gilt nur für REST.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `get_postal_settings` | Einstellungen und wirksamen Modus lesen (ohne Zugangsdaten) | „Ist der Postversand aktiv?" |
+| `update_postal_print_options` | Nur Druckoptionen setzen (Farbe, Duplex, Versandart, Einschreiben-Vorgabe); Schalter/Zugangsdaten werden abgelehnt | „Drucke Briefe künftig doppelseitig." |
+| `test_postal_connection` | Verbindung prüfen (nur Guthabenabfrage, kein Versand) | „Prüf die Verbindung zum Briefdienst." |
+| `get_postal_price` | Preis eines Briefs abfragen (nur bei aktiviertem Postversand) | „Was kostet ein 2-seitiger Brief?" |
+| `get_postal_quote` | Angebot je Beleg (Anschrift, Seiten, Preis, Prüfsumme, Probleme); versendet nichts | „Was würde der Versand von RE-50001 per Post kosten?" |
+| `send_by_post` | Belege per Post senden bzw. Trockenlauf protokollieren (`confirm: true`, Preis und Prüfsumme aus dem Angebot; kostenpflichtig bei `LIVE`) | „Schick RE-50001 per Post." |
+| `list_postal_jobs` | Postaufträge auflisten (Filter Status, Belegart, Beleg, Modus) | „Welche Briefe sind noch unterwegs?" |
+| `get_postal_job` | Auftrag mit Ereignissen lesen | „Wo ist der Brief zu RE-50001?" |
+| `cancel_postal_job` | Auftrag stornieren (nur binnen 15 Minuten, nur QUEUED/HOLD/DRAFT) | „Storniere den Brief." |
+| `resolve_postal_job` | Auftrag mit unklarem Ausgang (UNKNOWN) nach Prüfung beim Briefdienst manuell abschließen (`SENT`/`NOT_SENT`, mit Begründung, `confirm: true`); auch ein Testauftrag nach Ablauf der Stornofrist (nur `NOT_SENT`) | „Der Brief wurde laut Briefdienst nicht versendet — schließ den Auftrag ab." |
+
 ### Angebote / Auftragsbestätigungen / Lieferscheine
 
 | Tool | Zweck | Beispiel |

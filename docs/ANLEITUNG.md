@@ -134,6 +134,58 @@ Alternativ per HTTP (mit Header `Authorization: Bearer $CRON_SECRET`, sofern `CR
 
 ---
 
+## 2a. Postversand (Phase 16d)
+
+Rechnungen (auch Gutschriften und Stornorechnungen) und Mahnungen lassen sich über einen Briefdienst drucken und per Post zustellen lassen. Gesendet wird immer das **archivierte PDF** des Belegs (Phase 16a), nie ein neu gerendertes. Der Beleg selbst ändert sich dabei nicht: Der Rechnungsstatus wechselt nicht auf „versendet“; im Verlauf erscheint nach einer Live-Übertragung der Eintrag „Per Post versendet“, das vollständige Ergebnis steht im **Versandprotokoll**. Eine stornierte Rechnung und eine Mahnung zu einer bezahlten oder stornierten Rechnung lassen sich nicht per Post senden. Angebote und Lieferscheine lassen sich (noch) nicht per Post senden.
+
+### Einrichten (`Einstellungen → Postversand`)
+1. Benutzername und API-Schlüssel des Briefdienstes eintragen und speichern. Der Schlüssel (mindestens 16 Zeichen) wird verschlüsselt abgelegt; danach zeigt die Seite nur „hinterlegt ••••xxxx“ (die letzten vier Zeichen, und nur bei Schlüsseln ab 12 Zeichen), nie den Klartext. „Entfernen“ löscht ihn. Das Feld bleibt beim Öffnen leer.
+2. Druckoptionen wählen: schwarz/weiß oder Farbe, einseitig oder doppelseitig, Versandart (automatisch nach Land der Anschrift, national, international) und optional ein Standard-Einschreiben („Einschreiben Einwurf“ oder „Einschreiben“, nur bei Anschrift in Deutschland).
+3. Optional ein **Monatsbudget** (Euro, nur Modus Live) setzen; leer = kein Limit.
+4. „**Verbindung prüfen**“ fragt ausschließlich das Guthaben ab und versendet nichts. Der Knopf macht nur auf Klick einen Netzaufruf, nie der Scheduler.
+
+### Schalter und Modi
+Der Postversand ist **ab Werk ausgeschaltet**. Es gibt zwei getrennte Schalter und drei Modi:
+
+| Postversand | Modus | Was passiert beim Senden |
+|---|---|---|
+| aus | egal | **Trockenlauf**: Das Protokoll entsteht, es wird nichts übertragen, auch kein Preis abgefragt („Preis wird erst bei eingeschalteter Verbindung abgefragt“). |
+| an | Trockenlauf | Der Preis wird abgefragt (lesend), übertragen wird nichts. |
+| an | Testmodus des Briefdienstes | Der Auftrag wird in die **Postbox** des Briefdienstes gelegt. Der Testmodus ist **keine Sandbox**: Dort lässt sich der Brief **manuell versenden**, dann wird er gedruckt, zugestellt und berechnet. Ist ein Testauftrag beim Briefdienst nicht mehr auffindbar (Postbox nach 7 Tagen geleert), setzt das Programm ihn auf „storniert“. |
+| an | Live | Der Brief wird kostenpflichtig gedruckt und versendet. |
+
+- **Bestätigungen:** Jeder Wechsel auf Testmodus oder Live verlangt in den Einstellungen eine ausdrückliche Bestätigung (Warnbox, Pflicht-Checkbox); die Domain lehnt den Wechsel ohne Bestätigung ab, auch über die Oberfläche hinaus. Ohne Bestätigung bleibt der bisherige Modus.
+- **Zweiter Schalter „Mahnautomatik darf ohne Rückfrage per Post versenden“:** Nur wenn er an ist (zusätzlich zum Postversand), überträgt der Scheduler automatisch erzeugte Mahnungen selbst. Sonst erscheinen sie unter **Mahnwesen → „Post ausstehend“** und gehen erst nach deiner Bestätigung hinaus.
+- Die Schalter, Zugangsdaten und das Budget lassen sich nur in der Oberfläche ändern, nicht per REST oder MCP.
+
+### Einzelversand
+Im Menü „Mehr“ der Rechnung bzw. bei einer Mahnung im Abschnitt Zahlung/Mahnwesen („Per Post senden“): Der Dialog zeigt Anschrift, Seitenzahl, Versandart, Modus und die **Kosten laut Preisabfrage** (sobald der Postversand eingeschaltet ist; der Briefdienst nennt nicht, ob der Preis netto oder brutto ist). Erst „Bestätigen“ löst den Versand aus. Zwischen Anzeige und Versand wird der Preis erneut geprüft; weicht er ab (oder hat sich das PDF geändert), wird nichts gesendet und der Dialog lädt das Angebot neu. Unvollständige Anschriften (Name, Straße, PLZ, Ort fehlen) und Belege über 50 MB werden vorab abgelehnt. Ein Beleg lässt sich nur einmal senden; ein erneuter Versand braucht eine ausdrückliche Wiederholung mit Kostenhinweis und ist nur nach abgeschlossenem Brief möglich, **nie** solange ein Auftrag des Belegs läuft oder unklar ist (dann erst „Manuell abschließen“).
+
+### Testaufträge sperren den Echtversand
+Weil ein Testauftrag in der Postbox manuell versendet werden kann, **sperrt ein aktiver Testauftrag den Live-Versand desselben Belegs** (auch bei „Wiederholen“). Erst den Testauftrag **stornieren**. Ist er nicht mehr stornierbar (siehe unten), bleibt die Sperre bestehen: Beim Wechsel von Test auf Live gleicht der Scheduler Testaufträge weiter ab (die Postbox wird nach 7 Tagen geleert, dann gilt der Auftrag als storniert); alternativ schließt du einen aktiven Testauftrag nach Ablauf der Stornofrist im Protokoll über „Als nicht versendet abschließen“ ab (mit Begründung). Ein **abgeschlossener** Testauftrag (Status „versendet“) sperrt den Live-Versand dauerhaft, weil der Brief tatsächlich gedruckt wurde.
+
+### Storno, Abgleich, unklare Aufträge
+- **Storno** ist nur binnen **15 Minuten** nach der Übertragung möglich und nur für Aufträge in der Warteschlange (Entwurf/wartet/angehalten), nicht für Trockenläufe und nicht, wenn der Brief schon fertig ist. Die Oberfläche fragt vor dem Storno nach.
+- Der Scheduler-Job **postal** gleicht den Status jedes aktiven Auftrags (aller Modi, auch Testaufträge nach einem Moduswechsel) frühestens alle 15 Minuten mit dem Briefdienst ab (es gibt keinen Rückruf), verfolgt bei Einschreiben die Sendung bis zu 14 Tage und meldet Fehlschläge als Benachrichtigung „Postversand fehlgeschlagen“.
+- **Unklarer Ausgang (UNKNOWN)** entsteht, wenn die Antwort des Briefdienstes ausblieb. Das Programm sendet dann **nie automatisch neu** (es gäbe sonst Doppelbriefe), sondern sucht den Auftrag über den eindeutigen Dateinamen in den Listen des Briefdienstes. Findet es ihn nach 60 Minuten nicht und konnte die Listen vollständig lesen, endet der Auftrag als „fehlgeschlagen“. Bleibt er unklar, schließt du ihn nach Prüfung im Konto des Briefdienstes **manuell ab**: „Manuell abschließen“ im Protokoll oder im Rechnungsverlauf, „versendet“ oder „nicht versendet“ mit Pflichtbegründung (mindestens 3 Zeichen). Bei „nicht versendet“ ist ein erneuter Versand wieder möglich.
+- Hängende Aufträge, die nie übertragen wurden (Abbruch während der Vorbereitung), setzt der Scheduler nach 10 Minuten auf „fehlgeschlagen“.
+
+### Protokoll, Kosten, Monatssummen
+Das Versandprotokoll steht auf der Einstellungsseite (letzte 100 Aufträge) und je Beleg unter dem E-Mail-Verlauf. Es zeigt Datum, Beleg, Modus, Status, Seitenzahl, Preis (der berechnete, sonst der aus dem Angebot), Einschreiben bzw. Sendungsverfolgung, die Prüfsumme und die Ereignisse; der Auslöser (Nutzer, Automatik, API, MCP) steht im Auftrag. Der Trockenlauf-Eintrag trägt dieselbe SHA-256-Prüfsumme wie das Archiv-PDF. Die **Monatssummen** der letzten 12 Monate zeigen je Monat die Anzahl und Kosten der Live-Aufträge sowie die Anzahl der Test- und Trockenlauf-Aufträge getrennt.
+
+### Versandart je Kunde und Kanal je Mahnstufe
+- **Kunde → „Versandart für Mahnungen“:** E-Mail (Standard), Post oder E-Mail und Post.
+- **Einstellungen → Mahnwesen → Mahnstufen → „Kanal“:** „Kundenvorgabe“ (Standard), E-Mail, Post oder E-Mail und Post. „**Ohne E-Mail-Adresse per Post**“ (Standard an) schickt Mahnungen für Kunden ohne E-Mail-Adresse per Post, **aber nur bei eingeschaltetem Postversand**; sonst bleibt das bisherige Verhalten (keine Mail, Meldung „Mahnung nicht versendet“).
+- Die Mahnautomatik sendet zuerst die E-Mail, danach die Post. Fehlt jeder Weg (keine Adresse, kein Postfallback), meldet sie „Mahnung nicht versendet“, statt die Mahnung still zu überspringen. Probleme beim Postversand (z. B. unvollständige Anschrift) erscheinen als Fehler mit Meldung.
+
+### „Post ausstehend“ und Sammelversand
+`/mahnwesen#post` (nur bei eingeschaltetem Postversand sichtbar) listet automatisch erzeugte Mahnungen mit Postkanal, die auf Bestätigung warten (letzte 90 Tage, nur offene Rechnungen). „Vorschau“ zeigt je Mahnung Anschrift und Preis sowie die **Gesamtkosten**; erst die Bestätigung sendet, nacheinander mit Pause zwischen den Anfragen des Briefdienstes. Ein Sammelversand in der Rechnungsliste existiert nicht.
+
+### Datenschutz
+Beim Postversand werden Belegdaten (Anschrift, PDF) an den Briefdienst übertragen; dafür ist ein Auftragsverarbeitungsvertrag mit dem Anbieter nötig (COMPLIANCE.md § 21).
+
+---
+
 ## 3. Wichtige Begriffe
 
 | Begriff | Bedeutung |

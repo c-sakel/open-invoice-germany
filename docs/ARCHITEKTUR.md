@@ -689,6 +689,46 @@ Zuordnungen, rührt aber keinen Beleg an).
 - **Routen:** `/api/auth/second-factor`, `/api/auth/password-reset/{request,confirm}`, `/api/account/totp/*` (gemeinsamer Rahmen `src/lib/http/account-route.ts`: Sitzung, IP-Bremse, no-store); Seiten `/login/zweiter-faktor`, `/login/passwort-vergessen`, `/login/passwort-zuruecksetzen/[token]`.
 - **Notfall:** `scripts/disable-2fa.sh` (siehe BETRIEB-VORLAGE.md); Grenzen in LIMITATIONEN.md.
 
+## 3e. Postversand (Phase 16d)
+
+Rechnungen und Mahnungen werden über einen Briefdienst gedruckt und zugestellt. Standardmäßig **aus**, mit Trockenlauf; die Domain erzwingt die Schalter, nicht nur die Oberfläche.
+
+### Module
+- `src/lib/postal/transport.ts` — eigener `node:https`-Transport (Basis fest `https://api.letterxpress.de/v3`, nie HTTP, kein Redirect, Antwort ≤ 2 MB, Gesamt-Timer). Der Anbieter verlangt das `auth`-Objekt als JSON-Body **auch bei GET/DELETE**; WHATWG-`fetch` verbietet das, daher kein `src/lib/http/external.ts`. Notbremse: `defaultTransport()` und der Request-Pfad lehnen unter Vitest oder mit `POSTAL_NETWORK=0` jeden echten Aufruf mit `PostalNetworkForbiddenError` ab.
+- `src/lib/postal/letterxpress.ts` — Request-Bauer, Zod-Antwortschemas, Euro → Cent über die Dezimalstring-Darstellung (nie `* 100`), MD5 über den Base64-String, Fehlerabbildung, Schwärzung (`redact`) von Benutzername/Schlüssel in Anbietertexten.
+- `src/domain/postal/` — `settings.ts` (Einstellungen, Zugang `encryptSecret(…, "oig-postal-key-v1")`, Bestätigung bei Wechsel nach TEST/LIVE), `connection.ts` (Verbindungstest, nur `GET /balance`), `document.ts` (archiviertes PDF, Anschrift aus dem Beleg-Snapshot, Seitenzahl), `send.ts` (Angebot, Trockenlauf, Übertragung, Zustandsautomat), `events.ts` (Statusübergänge, `PostalJobEvent`, Meldungen), `cancel.ts`, `poll.ts` (Scheduler-Job `postal`), `resolve.ts` (manueller Abschluss), `channel.ts`/`pending.ts`/`dunning-mark.ts` (Kanalwahl, „Post ausstehend“, Mahnvermerk), `list.ts`/`report.ts`/`ui.ts`, `rate-limit.ts`.
+- Einstiegspunkte: Server-Actions `src/app/actions/postal.ts`, REST `src/app/api/v1/{PostalJob,PostalQuote,PostalPrice,Settings/postal}`, MCP `src/mcp/tools/postal.ts`, Mahnautomatik `src/domain/dunning/auto.ts` (ruft dieselbe Domainfunktion `sendByPost` mit Auslöser `AUTOMATION`).
+
+### Datenmodell (Migrationen `phase16d_postal`, SQLite + Postgres; Tabellen 58 → 61)
+`PostalSettings` (je Organisation: Zugang verschlüsselt, `enabled`, `mode`, `autoDunningPost`, Druckoptionen, Budget, Ergebnis des letzten Verbindungstests), `PostalJob` (je Auftrag; Kernfelder wie Beleg, Modus, Auslöser, `pdfSha256`, `filename` eindeutig je Organisation, Preise in Cent), `PostalJobEvent` (append-only). Neue Felder `Customer.deliveryChannel`, `DunningStage.channel` und `DunningStage.postFallback`. Der Guard in `src/lib/db.ts` erlaubt an `PostalJobEvent` nur `create`, an `PostalJob` nur Status-, Preis-, Tracking- und Zeitfelder (kein Löschen, kein Upsert); `PostalSettings` wird unter `lockRow` gespeichert.
+
+### Schaltermatrix
+| `enabled` | `mode` | Preisabfrage | Übertragung |
+|---|---|---|---|
+| aus (Standard) | egal | nein | nein → Trockenlauf |
+| an | `DRY_RUN` (Standard) | ja (lesend) | nein → Trockenlauf |
+| an | `TEST` | ja | ja, Postbox (`auth.mode="test"`) |
+| an | `LIVE` | ja | ja, kostenpflichtig |
+
+Übertragung zusätzlich nur mit Bestätigung je Beleg (`confirm`, `expectedPriceCents`, `pdfSha256` aus dem Angebot) oder — nur Mahnautomatik — mit `autoDunningPost`. Schalter und Modus werden je Beleg unter der Einstellungssperre frisch gelesen und unmittelbar vor dem Netzaufruf erneut geprüft; das Monatsbudget (Berliner Kalendermonat, nur Live, ohne fehlgeschlagene/stornierte Aufträge) wird in derselben Transaktion unter der Einstellungssperre geprüft.
+
+### Zustandsautomat
+`PENDING → SUBMITTING → QUEUED | DRAFT | HOLD | DONE | FAILED | UNKNOWN`, `PENDING → DRY_RUN`; Statuswechsel nur über `transitionPostalJob` (bedingter `updateMany`). Doppelversand: `lockRow` auf die Rechnung und Prüfung „kein aktiver Auftrag“ in einer Transaktion. Netzaufrufe liegen nie in einer Transaktion. `UNKNOWN` wird nie automatisch neu gesendet.
+
+### Abweichungen von der Spezifikation (bindend ist die Anbieterdokumentation)
+1. Basis-URL nur `https`; die Doku nennt `http` (HTTPS-Erreichbarkeit erst nach dem Verbindungstest bestätigt).
+2. `auth` im Body jedes Requests → eigener Transport.
+3. Der Testmodus ist **keine Sandbox** (Postbox, manuell versendbar) → eigener Modus `DRY_RUN` als Standard.
+4. Zusätzlicher Auftragsstatus `draft` (Postbox), Positionsstatus `queue`/`sent`.
+5. Preisabfrage ohne Angabe netto/brutto; Auftragspositionen liefern Betrag und Umsatzsteuer getrennt.
+6. Storno nur binnen 15 Minuten und nicht bei `done`.
+7. Nicht genutzt: `c4`, `bank_form`, Hintergründe, AGB, Serienbrief, E-Mail-Brief, Journal, Transaktionen, Rechnungen des Anbieters; `GET /printjobs` nur zum Abgleich unklarer Übertragungen.
+8. Fehlerantworten nur für 401 dokumentiert → defensives Parsen, Timeout/5xx gelten als „unklar“.
+9. Kein Idempotenzschlüssel, kein Rückruf → Polling; nach Timeout nie Neuversand, Abgleich über den eindeutigen Dateinamen.
+10. Antwortformat `{status, message, data}`; die Anschrift ist ein kommagetrennter String.
+
+Zusätzlich gilt „Code schlägt Doku“: Der Mailversand ändert den Rechnungsstatus nicht (nur bei Angebot/Lieferschein), der Postversand ebenso nicht; ein echter Live-Auftrag (`QUEUED`/`HOLD`/`DONE`) zählt aber in `payment-reversal.ts` als „ausgegeben“ (`hasOutput`).
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.

@@ -254,7 +254,7 @@ describe("Phase 6 — runScheduledJobs (scheduler/runner.ts)", () => {
     // laeuft als LETZTER Job. Phase 16b: "fx" (Wechselkurse) laeuft als ERSTER Job.
     const now = new Date("2051-06-11T10:00:00.000Z");
     const results = await runScheduledJobs({ trigger: "MANUAL", now });
-    expect(results.map((r) => r.job)).toEqual(["fx", "recurring", "dunning", "archive", "notifications", "webhooks", "audit", "cleanup"]);
+    expect(results.map((r) => r.job)).toEqual(["fx", "recurring", "dunning", "postal", "archive", "notifications", "webhooks", "audit", "cleanup"]);
     expect(results.every((r) => r.ok)).toBe(true);
   });
 });

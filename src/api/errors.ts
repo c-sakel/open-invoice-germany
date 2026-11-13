@@ -36,6 +36,10 @@ import { MailNotConfiguredError } from "@/domain/email/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 import { CustomerValidationError } from "@/domain/customer/save";
+import { PostalConflictError } from "@/domain/postal/errors";
+import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
+import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
+import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
 
 /**
  * Domain-Fehlerklassen (task-2-facts.md), die OHNE eigene `status`-Eigenschaft daherkommen
@@ -178,6 +182,26 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof InvalidOperationError) {
     return { status: 409, body: { error: { code: "CONFLICT", message: e.message } } };
+  }
+  // Phase 16d: Postversand. Feste Texte, nie die Meldung des Anbieters (kein Schluessel in Antworten).
+  if (e instanceof PostalConflictError) {
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: e.code } } };
+  }
+  if (e instanceof PostalNotConfiguredError || e instanceof PostalDisabledError || e instanceof PostalKeyUnreadableError) {
+    const reason = e instanceof PostalDisabledError ? "disabled" : e instanceof PostalNotConfiguredError ? "not_configured" : "key_unreadable";
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason } } };
+  }
+  if (e instanceof PostalNetworkForbiddenError) {
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: "network_disabled" } } };
+  }
+  if (e instanceof LxpAuthError) {
+    return { status: 502, body: { error: { code: "INTERNAL", message: "Der Briefdienst hat die Zugangsdaten abgelehnt.", reason: "provider_auth" } } };
+  }
+  if (e instanceof LxpRequestError) {
+    return { status: 502, body: { error: { code: "INTERNAL", message: "Der Briefdienst hat die Anfrage abgelehnt.", reason: "provider_rejected" } } };
+  }
+  if (e instanceof LxpUnavailableError) {
+    return { status: 502, body: { error: { code: "INTERNAL", message: "Der Briefdienst ist nicht erreichbar.", reason: "provider_unavailable" } } };
   }
   if (e instanceof RateLimitError || e instanceof VatCheckRateLimitError) {
     return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };

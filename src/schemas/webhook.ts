@@ -18,6 +18,10 @@ export const WEBHOOK_EVENTS = [
   "email.sent",
   "email.failed",
   "dunning.created",
+  "postal.submitted",
+  "postal.done",
+  "postal.failed",
+  "postal.cancelled",
 ] as const;
 
 export const webhookEventSchema = z.enum(WEBHOOK_EVENTS);

@@ -10,6 +10,7 @@ import { loadDunningSettings } from "@/domain/dunning/settings";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
 import { EmailHistory } from "@/components/EmailHistory";
+import { PostalHistory } from "@/components/postal/PostalHistory";
 import { DocumentChain } from "@/components/DocumentChain";
 import { AttachmentPanel } from "@/components/AttachmentPanel";
 import { listAttachments } from "@/domain/attachment/manage";
@@ -346,6 +347,7 @@ export default async function InvoiceDetail({
 
       <DetailSection id="verlauf" title="Verlauf">
         <EmailHistory docType={vm.emailDocType} docId={invoice.id} />
+        <PostalHistory invoiceId={invoice.id} />
         <DocumentTimeline kind="INVOICE" docId={invoice.id} />
       </DetailSection>
     </DocumentDetailLayout>

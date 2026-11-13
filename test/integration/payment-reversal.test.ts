@@ -86,6 +86,22 @@ describe("reversePayment", () => {
     expect((await reversePayment(p.id, { reason: "Fehlbuchung" }, { actor: "t", orgId, now: LATER })).invoiceStatus).toBe("SENT");
   });
 
+  it("Phase 16d: LIVE-Postauftrag zaehlt als ausgegeben (-> SENT), Trockenlauf nicht (-> FINALIZED)", async () => {
+    const job = (id: string, mode: string, status: string) => ({
+      orgId, docType: "INVOICE", docId: id, invoiceId: id, docNumber: `RE-${id}`, mode, trigger: "USER", status,
+      filename: `${id}-${mode}-${status}.pdf`, pages: 1, color: "1", duplex: false, shipping: "national", pdfSha256: "a".repeat(64), base64Md5: "b".repeat(32), createdBy: "t",
+    });
+    const live = await invoice();
+    await dbInternal.postalJob.create({ data: job(live, "LIVE", "QUEUED"), select: { id: true } });
+    const p1 = await pay(live, 11900);
+    expect((await reversePayment(p1.id, { reason: "Fehlbuchung" }, { actor: "t", orgId, now: LATER })).invoiceStatus).toBe("SENT");
+
+    const dry = await invoice();
+    await dbInternal.postalJob.create({ data: job(dry, "DRY_RUN", "DRY_RUN"), select: { id: true } });
+    const p2 = await pay(dry, 11900);
+    expect((await reversePayment(p2.id, { reason: "Fehlbuchung" }, { actor: "t", orgId, now: LATER })).invoiceStatus).toBe("FINALIZED");
+  });
+
   it("Teil-Gegenbuchung: PARTIALLY_PAID, Rest-Default danach 6900, weitere Ueberschreitung 409", async () => {
     const id = await invoice();
     const p = await pay(id, 11900);

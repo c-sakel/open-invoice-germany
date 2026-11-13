@@ -73,6 +73,8 @@ model Organization {
   customFieldDefinitions CustomFieldDefinition[]
   documentTemplates      DocumentTemplate[]
   tags                   Tag[]
+  postalSettings         PostalSettings?
+  postalJobs             PostalJob[]
 }
 
 /// Kunde / Leistungsempfänger.
@@ -88,6 +90,7 @@ model Customer {
   postalCode              String
   city                    String
   countryCode             String       @default("DE")
+  deliveryChannel         String       @default("EMAIL") // EMAIL | POST | EMAIL_AND_POST (Phase 16d)
   email                   String?
   phone                   String?
   vatId                   String?
@@ -930,6 +933,8 @@ model DunningStage {
   emailTemplate      EmailTemplate? @relation(fields: [emailTemplateId], references: [id])
   documentTemplateId String?
   autoSend           Boolean        @default(false) // Versand nur, wenn zusaetzlich global aktiv (DunningSettings.autoSend)
+  channel            String         @default("CUSTOMER") // CUSTOMER | EMAIL | POST | EMAIL_AND_POST (Phase 16d)
+  postFallback       Boolean        @default(true) // ohne E-Mail-Adresse per Post
   enabled            Boolean        @default(true)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
@@ -1518,4 +1523,88 @@ model LayoutDesignVersion {
   createdAt  DateTime     @default(now())
 
   @@unique([designId, version])
+}
+
+/// Phase 16d: Postversand-Einstellungen je Organisation (ein Datensatz). Der Zugangsschluessel liegt
+/// nur verschluesselt (apiKeyEnc, Zweck "oig-postal-key-v1"). Schalter 1 = enabled, Schalter 2 = autoDunningPost.
+model PostalSettings {
+  id                 String       @id @default(cuid())
+  orgId              String       @unique
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  provider           String       @default("LETTERXPRESS")
+  username           String?
+  apiKeyEnc          String?
+  enabled            Boolean      @default(false)
+  mode               String       @default("DRY_RUN") // DRY_RUN | TEST | LIVE
+  autoDunningPost    Boolean      @default(false)
+  color              String       @default("1") // "1" s/w | "4" farbig
+  duplex             Boolean      @default(false)
+  shipping           String       @default("auto") // auto | national | international
+  registeredDefault  String? // null | r1 | r2
+  monthlyBudgetCents Int?
+  lastBalanceCents   Int?
+  lastTestAt         DateTime?
+  lastTestOk         Boolean?
+  lastTestError      String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+/// Phase 16d: Versandprotokoll Postversand. Kerndaten write-once, nur Status-/Preis-/Verfolgungsfelder
+/// fortschreibbar, nie loeschbar (GoBD, Guard in src/lib/db.ts).
+model PostalJob {
+  id               String           @id @default(cuid())
+  orgId            String
+  org              Organization     @relation(fields: [orgId], references: [id])
+  docType          String // INVOICE | DUNNING
+  docId            String
+  invoiceId        String // Rechnung (bei Mahnung die gemahnte)
+  docNumber        String
+  mode             String // DRY_RUN | TEST | LIVE
+  trigger          String // USER | AUTOMATION | API | MCP
+  status           String // PENDING | SUBMITTING | DRY_RUN | DRAFT | QUEUED | HOLD | DONE | CANCELLED | FAILED | UNKNOWN
+  provider         String           @default("LETTERXPRESS")
+  providerJobId    Int?
+  filename         String // filename_original: <Belegnr>-<jobId>.pdf (je Org eindeutig)
+  pages            Int
+  color            String
+  duplex           Boolean
+  shipping         String
+  registered       String?
+  quotedPriceCents Int?
+  priceCents       Int?
+  vatCents         Int?
+  pdfSha256        String
+  base64Md5        String
+  providerAddress  String?
+  trackingCode     String?
+  trackingStatus   String?
+  error            String?
+  createdBy        String
+  createdAt        DateTime         @default(now())
+  submittedAt      DateTime?
+  lastPolledAt     DateTime?
+  finishedAt       DateTime?
+  events           PostalJobEvent[]
+
+  @@unique([provider, providerJobId])
+  @@unique([orgId, filename])
+  @@index([invoiceId, status])
+  @@index([orgId, status])
+  @@index([docType, docId])
+  @@index([orgId, createdAt])
+}
+
+/// Phase 16d: Ereignisse zu einem Postversand — append-only (Guard in src/lib/db.ts).
+model PostalJobEvent {
+  id       String    @id @default(cuid())
+  jobId    String
+  job      PostalJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  orgId    String
+  at       DateTime  @default(now())
+  kind     String // CREATED | DRY_RUN | SUBMITTED | STATUS | PRICE | TRACKING | ADDRESS_MISMATCH | CANCELLED | FAILED | UNKNOWN | RECONCILED
+  status   String
+  dataJson String    @default("{}")
+
+  @@index([jobId, at])
 }

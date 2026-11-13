@@ -450,6 +450,28 @@ Zahlungsbedingungen des Originals.
 
 Das PDF/XML einer archivierten Rechnung (`GET /api/v1/Invoice/{id}/pdf`) liefert bei jedem Abruf dieselben Bytes (Stand der ersten Ausgabe).
 
+## Postversand (Phase 16d)
+
+Rechnungen (`docType` `INVOICE`, alle Rechnungstypen) und Mahnungen (`DUNNING`) lassen sich über den Briefdienst versenden. Zugangsdaten, Schalter (`enabled`, `mode`, `autoDunningPost`) und Budget gibt es **nur in der Oberfläche**; die API liest sie und setzt nur Druckoptionen.
+
+| Route | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/Settings/postal` | `admin` | Einstellungen lesen (`hasApiKey`, `apiKeyLast4`, wirksamer Modus; nie der Schlüssel) |
+| `PUT /api/v1/Settings/postal` | `admin` | nur Druckoptionen (`color`, `duplex`, `shipping`, `registeredDefault`); andere Felder → 400 |
+| `POST /api/v1/Settings/postal/test` | `admin` | Verbindung prüfen (nur Guthabenabfrage) |
+| `GET /api/v1/PostalPrice` | `write` | Preis eines Briefs (`pages`, `color`, `duplex`, `shipping`, `registered`); nur bei eingeschaltetem Postversand |
+| `POST /api/v1/PostalQuote` | `write` | Angebot je Beleg (`items[]`): Anschrift, Seiten, Preis, `pdfSha256`, Probleme; versendet nichts |
+| `POST /api/v1/PostalJob` | `write` | Versand bzw. Trockenlauf (`items[]` mit `expectedPriceCents`, `pdfSha256` aus dem Angebot, `confirm: true`) |
+| `GET /api/v1/PostalJob`, `GET /api/v1/PostalJob/{id}` | `read` | Aufträge (Filter `status`, `docType`, `docId`, `mode`) bzw. Auftrag mit Ereignissen |
+| `DELETE /api/v1/PostalJob/{id}?confirm=true` | `write` | Storno (nur binnen 15 Minuten, nur Warteschlange) |
+| `POST /api/v1/PostalJob/{id}/resolve` | `admin` | unklaren Auftrag (`UNKNOWN`) manuell abschließen: `{ "outcome": "SENT" \| "NOT_SENT", "note": "…" }` (Begründung 3–500 Zeichen) |
+
+- **`POST /api/v1/PostalJob` verlangt den Header `Idempotency-Key`** (sonst 400) und `confirm: true`. Preis und Prüfsumme stammen aus dem Angebot; weichen sie ab (`PRICE_CHANGED`, `PDF_CHANGED`, `PRICE_UNAVAILABLE`) und sind **alle** Positionen davon betroffen, antwortet die API `409` mit `reason` und `details.results`. Sonst `200` mit einem Ergebnis je Position (`status` ein Auftragsstatus oder `REJECTED` mit `code` wie `ALREADY_SENT`, `BUDGET`, `NO_ADDRESS`, `NOT_ALLOWED`); ein abgelehnter Beleg bricht die übrigen nicht ab.
+- **Fehler:** `409` mit `reason` `disabled`, `not_configured`, `key_unreadable`, `network_disabled` (Notschalter `POSTAL_NETWORK=0`) bzw. dem Konfliktcode; `502` mit `reason` `provider_auth`, `provider_rejected`, `provider_unavailable` (feste Texte, nie Anbietertext).
+- **Kontingent:** zusätzlich zum allgemeinen Limit höchstens 30 Postaktionen (Angebot, Preis, Versand, Storno) je Minute und Organisation, gemeinsam für REST und MCP (`429`).
+- Im Modus Testmodus landet der Auftrag in der Postbox des Briefdienstes und ist dort manuell versendbar (keine Sandbox); ein aktiver Testauftrag sperrt den Live-Versand desselben Belegs (`ALREADY_SENT`).
+- Webhook-Ereignisse: `postal.submitted`, `postal.done`, `postal.failed`, `postal.cancelled` (siehe [WEBHOOKS.md](WEBHOOKS.md)).
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,

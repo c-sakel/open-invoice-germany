@@ -19,6 +19,12 @@ import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import type { MailProvider } from "@/lib/mail/provider";
+import { asChannel, asStageChannel, resolveChannels, type StageChannel } from "@/domain/postal/channel";
+import { dunningHasEmail } from "@/domain/postal/pending";
+import { notifyPostal } from "@/domain/postal/events";
+import { loadPostalSettings, type PostalSettingsView } from "@/domain/postal/settings";
+import { quotePostal, sendByPost } from "@/domain/postal/send";
+import type { LxpTransport } from "@/lib/postal/transport";
 import type { Prisma } from "@/generated/prisma/client";
 
 const DUNNABLE_STATUSES = ["FINALIZED", "SENT", "PARTIALLY_PAID"] as const;
@@ -27,6 +33,8 @@ export interface RunDunningJobOptions {
   provider?: MailProvider;
   /** Nur diese Organisation verarbeiten (Tests/manuelle Einzellaeufe). */
   orgId?: string;
+  /** Nur Tests: Transport fuer den Postversand (nie die echte API). */
+  postalTransport?: LxpTransport;
 }
 
 export interface RunDunningJobResult {
@@ -34,6 +42,10 @@ export interface RunDunningJobResult {
   checked: number;
   created: string[];
   sent: string[];
+  /** Phase 16d: Mahnungen, fuer die ein Postauftrag angelegt wurde (auch Trockenlauf). */
+  postal: string[];
+  /** Phase 16d: Mahnungen, die per Post auf die gesammelte Bestaetigung warten. */
+  postalPending: string[];
   skipped: Record<string, number>;
   errors: { invoiceId: string; message: string }[];
 }
@@ -59,13 +71,15 @@ export interface DunningCandidate {
   grossTotalCents: number;
   paidAmountCents: number;
   payableCents: number | null;
-  customer: { email: string | null };
+  customer: { email: string | null; deliveryChannel?: string };
   dunnings: { createdAt: Date; dueDate: Date | null; sentAt: Date; level: number; stageId: string | null; stage: { order: number } | null }[];
 }
 
 interface AutoStage extends StageLike {
   id: string;
   autoSend: boolean;
+  channel: StageChannel;
+  postFallback: boolean;
 }
 
 /**
@@ -105,7 +119,7 @@ export async function dunningCandidates(orgId: string, now: Date = new Date()): 
       grossTotalCents: true,
       paidAmountCents: true,
       payableCents: true,
-      customer: { select: { email: true } },
+      customer: { select: { email: true, deliveryChannel: true } },
       dunnings: {
         select: { createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } },
       },
@@ -122,6 +136,7 @@ async function processCandidate(
   autoSendGlobal: boolean,
   provider: MailProvider | undefined,
   result: RunDunningJobResult,
+  postal: { settings: PostalSettingsView; transport?: LxpTransport },
 ): Promise<void> {
   const openAmount = openAmountCents(candidate);
   if (openAmount <= 0) {
@@ -169,25 +184,114 @@ async function processCandidate(
   const stageRow = stages.find((s) => s.id === stageId);
   if (!stageRow?.autoSend) return;
 
-  if (!candidate.customer.email) {
-    bump(result.skipped, "noRecipient");
-    return;
-  }
-
   try {
-    const sendResult = await sendDunning(orgId, dunningId, { actor: "scheduler", provider });
-    if (sendResult.status === "SENT") {
-      result.sent.push(dunningId);
-    } else {
-      result.errors.push({ invoiceId: candidate.id, message: sendResult.error ?? "Versand fehlgeschlagen." });
+    // Empfaenger wie im manuellen Versand (Ansprechpartner > Rechnungs-E-Mail > E-Mail), nicht nur `customer.email`.
+    const hasEmail = await dunningHasEmail(orgId, dunningId);
+    // Postversand aus: Post-Kanaele (Stufe/Kunde) fallen auf das Bestandsverhalten zurueck (E-Mail oder
+    // NO_RECIPIENT); sonst entstuende ein "wartet auf Bestaetigung" mit leerer Sammelliste.
+    const postOn = postal.settings.enabled;
+    const channels = resolveChannels({
+      stageChannel: postOn || stageRow.channel === "CUSTOMER" ? stageRow.channel : "EMAIL",
+      customerChannel: postOn ? asChannel(candidate.customer.deliveryChannel) : "EMAIL",
+      hasEmail,
+      // Post statt "kein Empfaenger" nur bei eingeschaltetem Postversand; sonst Bestandsverhalten.
+      postFallback: stageRow.postFallback && postal.settings.enabled,
+    });
+
+    if (channels.reason === "NO_RECIPIENT") {
+      bump(result.skipped, "noRecipient");
+      await notifyPostal(orgId, {
+        type: "DUNNING_NOT_SENT",
+        title: "Mahnung nicht versendet",
+        body: "Fuer die Mahnung ist weder eine E-Mail-Adresse noch der Postversand vorgesehen. Bitte manuell versenden.",
+        invoiceId: candidate.id,
+        dedupeKey: `dunning-not-sent:${dunningId}`,
+        at: now,
+      });
+      return;
     }
+
+    if (channels.email) {
+      const sendResult = await sendDunning(orgId, dunningId, { actor: "scheduler", provider });
+      if (sendResult.status === "SENT") {
+        result.sent.push(dunningId);
+      } else {
+        result.errors.push({ invoiceId: candidate.id, message: sendResult.error ?? "Versand fehlgeschlagen." });
+      }
+    }
+
+    if (channels.post) await handlePost(orgId, candidate.id, dunningId, now, result, postal);
   } catch (e) {
     result.errors.push({ invoiceId: candidate.id, message: e instanceof Error ? e.message : String(e) });
   }
 }
 
+/** Postkanal: mit beiden Schaltern Auftrag (Trockenlauf/TEST/LIVE je Modus), sonst "Post ausstehend". */
+async function handlePost(
+  orgId: string,
+  invoiceId: string,
+  dunningId: string,
+  now: Date,
+  result: RunDunningJobResult,
+  postal: { settings: PostalSettingsView; transport?: LxpTransport },
+): Promise<void> {
+  const pending = async (reason: string): Promise<void> => {
+    result.postalPending.push(dunningId);
+    await notifyPostal(orgId, {
+      type: "POSTAL_PENDING",
+      title: "Post-Versand wartet auf Bestaetigung",
+      body: `${reason} Bestaetigung unter /mahnwesen#post.`,
+      invoiceId,
+      dedupeKey: `postal-pending:${dunningId}`,
+      at: now,
+    });
+  };
+
+  if (!(postal.settings.enabled && postal.settings.autoDunningPost)) {
+    await pending("Die Mahnung soll per Post versendet werden, der automatische Postversand ist nicht freigegeben.");
+    return;
+  }
+
+  const items = [{ docType: "DUNNING" as const, docId: dunningId }];
+  const { quotes } = await quotePostal(orgId, items, { transport: postal.transport });
+  const quote = quotes[0];
+  // Fehlendes Angebot bzw. Belegproblem (z. B. unvollstaendige Anschrift) nie still verwerfen.
+  // Preis-Abfragefehler gehen weiter an sendByPost (-> ausstehend zur Bestaetigung).
+  const blocking = quote ? quote.problems.filter((p) => !p.startsWith("Preis nicht abfragbar")) : ["Kein Versandangebot fuer die Mahnung ermittelbar."];
+  if (!quote || blocking.length > 0) {
+    const message = `Postversand der Mahnung nicht moeglich: ${blocking.join("; ")}`;
+    result.errors.push({ invoiceId, message });
+    await notifyPostal(orgId, {
+      type: "POSTAL_FAILED",
+      title: "Post-Versand der Mahnung nicht moeglich",
+      body: `${message}. Bitte Beleg pruefen und manuell versenden.`,
+      invoiceId,
+      dedupeKey: `dunning-post-problem:${dunningId}`,
+      at: now,
+    });
+    return;
+  }
+  const [res] = await sendByPost(
+    orgId,
+    { items: [{ ...items[0], expectedPriceCents: quote.priceCents, pdfSha256: quote.pdfSha256 }], confirm: true },
+    { actor: "scheduler", trigger: "AUTOMATION", transport: postal.transport, now },
+  );
+  if (!res) return;
+  if (res.status !== "REJECTED") {
+    result.postal.push(dunningId);
+    return;
+  }
+  // Preis/Budget: nicht still verwerfen, sondern zur Bestaetigung vorlegen. Alles andere ist ein Fehler.
+  if (res.code === "BUDGET" || res.code === "PRICE_CHANGED" || res.code === "PRICE_UNAVAILABLE") {
+    await pending(`${res.error ?? "Automatischer Versand nicht moeglich."}`);
+    return;
+  }
+  if (res.code === "ALREADY_SENT") return;
+  result.errors.push({ invoiceId, message: res.error ?? "Postversand abgelehnt." });
+}
+
 export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobOptions = {}): Promise<RunDunningJobResult> {
-  const result: RunDunningJobResult = { orgs: 0, checked: 0, created: [], sent: [], skipped: {}, errors: [] };
+  const result: RunDunningJobResult = { orgs: 0, checked: 0, created: [], sent: [], postal: [], postalPending: [], skipped: {}, errors: [] };
 
   const orgs = opts.orgId
     ? [{ id: opts.orgId }]
@@ -204,10 +308,13 @@ export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobO
     if (!settings.autoCreate) continue;
     result.orgs += 1;
 
-    const stages: AutoStage[] = await dbInternal.dunningStage.findMany({
+    const stageRows = await dbInternal.dunningStage.findMany({
       where: { orgId: org.id },
-      select: { id: true, order: true, enabled: true, daysAfterDue: true, autoSend: true },
+      select: { id: true, order: true, enabled: true, daysAfterDue: true, autoSend: true, channel: true, postFallback: true },
     });
+    const stages: AutoStage[] = stageRows.map((r) => ({ ...r, channel: asStageChannel(r.channel) }));
+    // Einmal je Organisation laden; der Postversand prueft Schalter und Modus je Beleg erneut frisch.
+    const postalSettings = await loadPostalSettings(org.id);
 
     const candidates = await dunningCandidates(org.id, now);
 
@@ -215,7 +322,10 @@ export async function runDunningJob(now: Date = new Date(), opts: RunDunningJobO
       result.checked += 1;
       // Seriell (for-await, kein Promise.all): ChangeLog-Hashkette
       // (@@unique([orgId, prevHash])) verbietet gleichzeitige Schreibvorgaenge derselben Org.
-      await processCandidate(org.id, candidate, stages, settings.gracePeriodDays, now, settings.autoSend, opts.provider, result);
+      await processCandidate(org.id, candidate, stages, settings.gracePeriodDays, now, settings.autoSend, opts.provider, result, {
+        settings: postalSettings,
+        transport: opts.postalTransport,
+      });
     }
   }
 
