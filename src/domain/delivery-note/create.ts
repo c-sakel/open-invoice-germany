@@ -25,7 +25,7 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { freezeDocumentLayout } from "@/domain/document/freeze-layout";
 import { DeliveryNoteError, DeliveryNoteValidationError, DeliveryNoteNotDraftError } from "@/domain/delivery-note/errors";
-import { resolveDeliveryParties, buildDeliveryNoteSnapshots } from "@/domain/delivery-note/parties";
+import { resolveDeliveryParties, buildDeliveryNoteSnapshots, assertCustomerMatchesSource } from "@/domain/delivery-note/parties";
 import { assertSourceQuantitiesWithinTx } from "@/domain/delivery-note/quantities";
 import { createDeliveryNoteSchema, type SnapshotSource } from "@/schemas";
 
@@ -52,6 +52,7 @@ export async function createDeliveryNoteWithinTx(
     } catch {
       throw new DeliveryNoteError(`Quelldokument ${input.sourceId} nicht gefunden.`);
     }
+    await assertCustomerMatchesSource(tx, orgId, input.sourceType, input.sourceId, input.customerId);
   }
 
   const docType = "DELIVERY_NOTE";

@@ -85,3 +85,27 @@ export async function buildDeliveryNoteSnapshots(
   }
   return { sellerSnapshotJson: JSON.stringify(buildSellerSnapshot(org)), buyerSnapshotJson: JSON.stringify(buyerSnapshot), contactSnapshotJson };
 }
+
+/**
+ * Ein Lieferschein mit Quelle (Angebot/Rechnung) gehoert zum Kunden der Quelle: sonst wuerde er
+ * die Restmenge des Quellbelegs eines anderen Kunden verbrauchen. Die Quelle muss zur Organisation
+ * gehoeren (sonst "nicht gefunden").
+ */
+export async function assertCustomerMatchesSource(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  sourceType: string,
+  sourceId: string,
+  customerId: string,
+): Promise<void> {
+  const source =
+    sourceType === "INVOICE"
+      ? await tx.invoice.findFirst({ where: { id: sourceId, orgId }, select: { customerId: true } })
+      : sourceType === "QUOTE"
+        ? await tx.quote.findFirst({ where: { id: sourceId, orgId }, select: { customerId: true } })
+        : null;
+  if (!source) throw new DeliveryNoteError(`Quelldokument ${sourceId} nicht gefunden.`);
+  if (source.customerId !== customerId) {
+    throw new DeliveryNoteValidationError("Der Kunde muss dem Kunden des Quelldokuments entsprechen.");
+  }
+}

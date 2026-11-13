@@ -48,6 +48,10 @@ export async function updateDraftDeliveryNote(
     // bisherige Auswahl, solange nichts Neues angegeben wird.
     const customerId = input.customerId ?? note.customerId;
     const customerChanged = customerId !== note.customerId;
+    // Mit Quelle bleibt der Kunde der Quelle: sonst verbraucht der Lieferschein die Restmenge eines fremden Kunden.
+    if (customerChanged && note.sourceId) {
+      throw new DeliveryNoteValidationError("Der Kunde eines Lieferscheins mit Quelldokument kann nicht geaendert werden.");
+    }
     const touchesParties = customerChanged || input.contactPersonId !== undefined || input.shippingAddressId !== undefined;
     if (touchesParties) {
       const parties = await resolveDeliveryParties(tx, orgId, customerId, {

@@ -115,6 +115,12 @@ describe("updateDraftDeliveryNote", () => {
     expect(upd.contactPersonId).toBeNull();
   });
 
+  it("Kundenwechsel bei Entwurf mit Quelle -> DeliveryNoteValidationError, Kunde unveraendert", async () => {
+    const { quote, line } = await newQuote();
+    const dn = await createDeliveryNote(orgId, { customerId, draft: true, sourceType: "QUOTE", sourceId: quote.id, lines: [dnLine(quote, line.id, 1000)] }, { now: FIX });
+    await expect(updateDraftDeliveryNote(orgId, dn.id, { customerId: otherCustomerId }, { now: FIX })).rejects.toBeInstanceOf(DeliveryNoteValidationError);
+    expect((await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: dn.id }, select: { customerId: true } })).customerId).toBe(customerId);
+  });
   it("auf CREATED -> DeliveryNoteNotDraftError", async () => {
     const dn = await createDeliveryNote(orgId, { customerId, lines: [{ description: "X", quantityMilli: 1000, unit: "C62" }] }, { now: FIX });
     expect(dn.status).toBe("CREATED");
@@ -166,6 +172,15 @@ describe("direkte Anlage mit Quellbezug", () => {
   it("sourceLineId ueber Restmenge -> OverDeliveryError", async () => {
     const { quote, line } = await newQuote(5000);
     await expect(createDeliveryNote(orgId, { customerId, sourceType: "QUOTE", sourceId: quote.id, lines: [dnLine(quote, line.id, 6000)] }, { now: FIX })).rejects.toBeInstanceOf(OverDeliveryError);
+  });
+
+  it("Kunde passt nicht zur Quelle -> DeliveryNoteValidationError (Entwurf und direkte Anlage)", async () => {
+    const { quote, line } = await newQuote();
+    for (const draft of [true, false]) {
+      await expect(
+        createDeliveryNote(orgId, { customerId: otherCustomerId, draft, sourceType: "QUOTE", sourceId: quote.id, lines: [dnLine(quote, line.id, 1000)] }, { now: FIX }),
+      ).rejects.toBeInstanceOf(DeliveryNoteValidationError);
+    }
   });
 
   it("sourceLineId einer fremden Quelle -> OverDeliveryError 'unbekannt'", async () => {
