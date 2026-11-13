@@ -92,8 +92,8 @@ describe("GET /api/reports/<typ>.csv", () => {
     const hadBom = await hasBom(res);
     const body = await res.text();
     expect(hadBom).toBe(true);
-    expect(body.startsWith("Monat;Netto;Anzahl\r\n")).toBe(true);
-    expect(body.split("\r\n")).toContain("2152-04;123,45;1");
+    expect(body.startsWith("Monat;Währung;Netto;Anzahl\r\n")).toBe(true);
+    expect(body.split("\r\n")).toContain("2152-04;EUR;123,45;1");
   });
 
   it("Kunde mit Formelanfang wird entschaerft; fremde Org bleibt unsichtbar", async () => {
@@ -112,6 +112,8 @@ describe("GET /api/reports/<typ>.csv", () => {
   it("ungueltige Parameter -> 400", async () => {
     expect((await call("revenue.csv", "?months=99")).status).toBe(400);
     expect((await call("revenue.csv", "?limit=3")).status).toBe(400);
+    expect((await call("revenue.csv", "?currency=eur")).status).toBe(400);
+    expect((await call("top-customers.csv", "?currency=EUR")).status).toBe(400);
   });
 });
 
