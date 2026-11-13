@@ -50,9 +50,10 @@ const rowSelect = {
   checkedAt: true,
 } as const;
 
-function clean(v: string | null | undefined): string | null {
+/** Fremdtext der EU-Antwort: getrimmt, "---" = leer, auf `max` Zeichen begrenzt. */
+function clean(v: string | null | undefined, max = 500): string | null {
   const t = v?.trim();
-  return t && t !== "---" ? t : null;
+  return t && t !== "---" ? t.slice(0, max) : null;
 }
 
 interface Outcome {
@@ -164,12 +165,13 @@ async function callVies(body: string, opts: { fetchImpl?: typeof fetch; timeoutM
   const r = parsed.data;
   const requestDate = r.requestDate && !Number.isNaN(new Date(r.requestDate).getTime()) ? new Date(r.requestDate) : null;
   const common = {
-    requestIdentifier: clean(r.requestIdentifier),
+    requestIdentifier: clean(r.requestIdentifier, 100),
     requestDate,
     traderName: clean(r.name),
     traderAddress: clean(r.address),
   };
-  const userError = r.userError?.trim() || null;
+  // Fehlercode der Fremd-API nur als kurzer Bezeichner speichern.
+  const userError = r.userError?.trim().slice(0, 64).replace(/[^A-Za-z0-9_]/g, "_") || null;
   if (r.valid && (!userError || userError === "VALID")) return { status: "VALID", errorCode: null, ...common };
   if (!r.valid && (!userError || userError === "INVALID")) return { status: "INVALID", errorCode: null, ...common };
   return { status: "ERROR", errorCode: userError ?? "UNKNOWN", ...common };
