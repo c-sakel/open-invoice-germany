@@ -245,6 +245,32 @@ describe("MCP", () => {
     await expect(setDeliveryNoteStatus(orgId, dn.id, "CREATED", { actor: "t", now: NOW })).rejects.toBeInstanceOf(OverDeliveryError);
   });
 
+  it("Lieferdatum/Versanddatum leeren: REST (null), intern (null) und MCP (leerer String)", async () => {
+    const dn = await createDeliveryNote(orgId, { customerId, draft: true, deliveryDate: new Date("2146-03-10"), shippingDate: new Date("2146-03-11"), lines: [line()] }, { now: NOW });
+    expect((await v1Patch(req("http://x", writeToken, "PATCH", { deliveryDate: null, shippingDate: null }), ctx1(dn.id))).status).toBe(200);
+    const cleared = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: dn.id }, select: { deliveryDate: true, shippingDate: true } });
+    expect(cleared).toEqual({ deliveryDate: null, shippingDate: null });
+    const set = await updateDraftDeliveryNote(orgId, dn.id, { deliveryDate: "2146-04-01" }, { now: NOW });
+    expect(set.deliveryDate).not.toBeNull();
+    expect((await internalPatch(plain("PATCH", { deliveryDate: null }), ctx1(dn.id))).status).toBe(200);
+    expect((await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: dn.id }, select: { deliveryDate: true } })).deliveryDate).toBeNull();
+    await updateDraftDeliveryNote(orgId, dn.id, { deliveryDate: "2146-04-02" }, { now: NOW });
+    const mcp = await callTool("update_delivery_note", { id: dn.id, deliveryDate: "" });
+    expect(mcp.isError).toBeFalsy();
+    expect((await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: dn.id }, select: { deliveryDate: true } })).deliveryDate).toBeNull();
+  });
+
+  it("MCP: ungueltiges Lieferdatum -> Validierungsfehler statt stillem Verwerfen", async () => {
+    const d = await draft();
+    const upd = await callTool("update_delivery_note", { id: d.id, deliveryDate: "kein-datum" });
+    expect(upd.isError).toBe(true);
+    expect(upd.content[0].text).toContain("kein-datum");
+    expect(upd.content[0].text).not.toContain("Unerwarteter Fehler");
+    const created = await callTool("create_delivery_note", { customer: "Routen Kunde AG", draft: true, deliveryDate: "31.31.2146", lines: [{ description: "x", quantity: 1, unitPriceEuro: 5 }] });
+    expect(created.isError).toBe(true);
+    expect(created.content[0].text).toContain("31.31.2146");
+  });
+
   it("create/update_delivery_note: Zod-Fehler als Validierungsfehler statt Unerwarteter Fehler", async () => {
     const bad = await callTool("create_delivery_note", { customer: "Routen Kunde AG", lines: [{ description: "x", quantity: 0, unitPriceEuro: 5 }] });
     expect(bad.isError).toBe(true);

@@ -399,7 +399,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         };
         const input = updateDeliveryNoteSchema.parse({
           customerId: customer?.id,
-          deliveryDate: ctx.parseDateInput(args.deliveryDate),
+          // Leerer String leert das Lieferdatum.
+          deliveryDate: args.deliveryDate === "" ? null : ctx.parseDateInput(args.deliveryDate),
           notes: args.notes,
           language: args.language,
           lines: lines?.map((l, idx) => ({

@@ -589,10 +589,11 @@ export function toDeliveryNotePayload(d: DraftState, isEdit = false): Record<str
     language: d.language || undefined,
     contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
     shippingAddressId: optionalSelectValue(d.shippingAddressId, isEdit),
-    deliveryDate: d.deliveryDate || undefined,
+    // Beim Bearbeiten sendet ein geleertes Datum `null` (PATCH leert das Feld).
+    deliveryDate: d.deliveryDate || (isEdit ? null : undefined),
     // Fix 2 (Task-1-Review): shippingDate/internalNotes sind in createDeliveryNoteSchema
     // vorhanden, der Editor exponiert sie hier zusaetzlich.
-    shippingDate: d.shippingDate || undefined,
+    shippingDate: d.shippingDate || (isEdit ? null : undefined),
     internalNotes: d.internalNotes || undefined,
     // Fix-Welle I1/I2 (Abschluss-Review): headerText/footerText/showDeliveryAddress werden
     // im Editor angezeigt (HeadTextBlock/FootTextBlock/MoreOptions fuer ALLE drei Modi,

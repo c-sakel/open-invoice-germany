@@ -875,7 +875,12 @@ export const createDeliveryNoteSchema = z.object({
 export const updateDeliveryNoteSchema = createDeliveryNoteSchema
   .omit({ sourceType: true, sourceId: true, draft: true, lines: true })
   .partial()
-  .extend({ lines: z.array(deliveryNoteLineInputSchema).min(1).optional() })
+  // `null` leert das Datum (Entwurf bearbeiten); beim Anlegen bleibt es optional.
+  .extend({
+    deliveryDate: z.coerce.date().nullable().optional(),
+    shippingDate: z.coerce.date().nullable().optional(),
+    lines: z.array(deliveryNoteLineInputSchema).min(1).optional(),
+  })
   .strict();
 export type UpdateDeliveryNoteInput = z.infer<typeof updateDeliveryNoteSchema>;
 export type CreateDeliveryNoteInput = z.infer<typeof createDeliveryNoteSchema>;

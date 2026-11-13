@@ -16,7 +16,7 @@ import {
   resolveDueDays,
   localDateOnly,
 } from "@/lib/editor/draft";
-import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema } from "@/schemas";
+import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema, updateDeliveryNoteSchema } from "@/schemas";
 
 function invoiceDraft() {
   let s = emptyDraft("INVOICE");
@@ -178,6 +178,10 @@ describe("editor/draft", () => {
     expect(p.draft).toBeUndefined();
     expect(p.contactPersonId).toBeNull();
     expect(p.shippingAddressId).toBeNull();
+    // Geleerte Datumsfelder werden beim Bearbeiten als null gesendet (leeren), beim Anlegen weggelassen.
+    expect(p).toMatchObject({ deliveryDate: null, shippingDate: null });
+    expect(updateDeliveryNoteSchema.safeParse(p).success).toBe(true);
+    expect(toDeliveryNotePayload(d, false)).toMatchObject({ deliveryDate: undefined, shippingDate: undefined });
     const created = toDeliveryNotePayload(d, false) as { draft?: boolean; contactPersonId?: string | null };
     expect(created.draft).toBe(true);
     expect(created.contactPersonId).toBeUndefined();

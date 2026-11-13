@@ -42,7 +42,9 @@ export function parseDateInput(s?: string): Date | undefined {
   const t = s.trim().toLowerCase();
   if (t === "heute" || t === "today") return new Date();
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? undefined : d;
+  // Ungueltige Eingaben nicht still verwerfen (sonst wuerde z. B. ein Lieferdatum ungesetzt bleiben).
+  if (Number.isNaN(d.getTime())) throw new ToolError(`Datum "${s}" konnte nicht gelesen werden (YYYY-MM-DD oder 'heute').`);
+  return d;
 }
 
 export async function requireOrg() {
