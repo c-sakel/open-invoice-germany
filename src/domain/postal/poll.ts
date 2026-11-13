@@ -103,6 +103,8 @@ function mapStatus(s: LxpPrintJob["status"]): PostalStatus {
       return "DRAFT";
     case "canceled":
       return "CANCELLED";
+    default:
+      throw new Error("Unbekannter Status des Briefdienstes.");
   }
 }
 

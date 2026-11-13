@@ -21,7 +21,7 @@ import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializePostalJob } from "@/api/serializers/postal";
-import { InvalidOperationError, NotFoundError } from "@/domain/errors";
+import { ArchiveTamperedError, InvalidOperationError, NotFoundError } from "@/domain/errors";
 import { berlinMonthStart } from "@/lib/berlin-time";
 import {
   buildPrintJobBody,
@@ -226,6 +226,9 @@ export async function sendByPost(orgId: string, raw: unknown, ctx: PostalSendCon
     } catch (e) {
       if (e instanceof PostalConflictError) {
         results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: e.message, code: e.code });
+      } else if (e instanceof ArchiveTamperedError) {
+        // Archivdatei weicht vom gespeicherten Hash ab: nie uebertragen (Meldung ARCHIVE_TAMPERED erzeugt der Lesepfad).
+        results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: e.message, code: "NOT_ALLOWED" });
       } else if (e instanceof NotFoundError || e instanceof InvalidOperationError) {
         results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: e.message, code: "NOT_ALLOWED" });
       } else {

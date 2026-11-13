@@ -460,6 +460,26 @@ describe("Uebertragung", () => {
     expect(row).toMatchObject({ status: "FAILED", providerJobId: 7_999_123 });
   });
 
+  it("Archivdatei veraendert (Hash weicht ab) -> ARCHIVE_TAMPERED-Pfad, nichts angelegt, nichts uebertragen", async () => {
+    const inv = await newInvoice();
+    const f = lxp();
+    const item = (await quotePostal(orgId, [{ docType: "INVOICE", docId: inv.id }], { transport: f.transport })).quotes[0]!;
+    const arch = await dbInternal.archivedDocument.findFirstOrThrow({ where: { invoiceId: inv.id, kind: "PDF" }, select: { path: true } });
+    const { archiveRoot } = await import("@/lib/archive/storage");
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    await fs.writeFile(path.join(archiveRoot(), ...arch.path.split("/")), Buffer.from("manipuliert"));
+    const res = await sendByPost(
+      orgId,
+      { items: [{ docType: "INVOICE", docId: inv.id, expectedPriceCents: item.priceCents, pdfSha256: item.pdfSha256 }], confirm: true },
+      { ...sctx, transport: f.transport },
+    );
+    expect(res[0]).toMatchObject({ status: "REJECTED", code: "NOT_ALLOWED", jobId: null });
+    expect(f.calls.some((c) => c.method === "POST" && c.path === "/printjobs")).toBe(false);
+    expect(await dbInternal.postalJob.count({ where: { docId: inv.id } })).toBe(0);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "ARCHIVE_TAMPERED", entityId: inv.id } })).toBe(1);
+  });
+
   it("Doppelversand: ALREADY_SENT, repeat erlaubt, parallel genau ein Auftrag", async () => {
     const inv = await newInvoice();
     const f = lxp();
