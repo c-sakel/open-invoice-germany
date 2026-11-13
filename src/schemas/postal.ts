@@ -103,3 +103,24 @@ export const postalSendInputSchema = z
   })
   .strict();
 export type PostalSendInput = z.infer<typeof postalSendInputSchema>;
+
+/** Filter der Auftragsliste (REST und MCP gemeinsam). */
+export const postalJobListFilterSchema = z
+  .object({
+    status: z.enum(["PENDING", "SUBMITTING", "DRY_RUN", "DRAFT", "QUEUED", "HOLD", "DONE", "CANCELLED", "FAILED", "UNKNOWN"]).optional(),
+    docType: z.enum(POSTAL_DOC_TYPES).optional(),
+    docId: z.string().trim().min(1).max(100).optional(),
+    mode: z.enum(POSTAL_MODES).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+  .strict();
+export type PostalJobListFilter = z.infer<typeof postalJobListFilterSchema>;
+
+/** Manueller Abschluss eines Auftrags mit unklarem Ausgang. */
+export const postalResolveInputSchema = z
+  .object({
+    outcome: z.enum(["SENT", "NOT_SENT"]),
+    note: z.string().trim().min(3, "Bitte eine Begruendung angeben.").max(500),
+  })
+  .strict();

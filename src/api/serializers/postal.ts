@@ -2,6 +2,7 @@ import "../openapi-zod-init"; // MUSS vor jedem z.object()-Aufruf hier stehen
 import { iso } from "./common";
 import type { PostalJob, PostalJobEvent } from "@/generated/prisma/client";
 import { z } from "zod";
+import type { PostalSettingsView } from "@/domain/postal/settings";
 
 /** Pruefsummen und Anbieter-Anschrift sind Teil der Auskunft; Zugangsdaten und Dateiinhalt nie. */
 export function serializePostalJob(j: PostalJob, events?: PostalJobEvent[]) {
@@ -85,4 +86,79 @@ export const postalJobSchema = z.object({
   events: z
     .array(z.object({ kind: z.string(), status: z.string(), at: z.string().nullable(), data: z.unknown() }))
     .optional(),
+});
+
+/** Einstellungen ohne Zugangsdaten: nur `hasApiKey`/`apiKeyLast4`, nie der (verschluesselte) Schluessel. */
+export function serializePostalSettings(v: PostalSettingsView) {
+  return {
+    objectName: "PostalSettings" as const,
+    provider: v.provider,
+    username: v.username,
+    hasApiKey: v.hasApiKey,
+    apiKeyLast4: v.apiKeyLast4,
+    enabled: v.enabled,
+    mode: v.mode,
+    effective: v.effective,
+    autoDunningPost: v.autoDunningPost,
+    color: v.color,
+    duplex: v.duplex,
+    shipping: v.shipping,
+    registeredDefault: v.registeredDefault,
+    monthlyBudgetCents: v.monthlyBudgetCents,
+    lastBalanceCents: v.lastBalanceCents,
+    lastTestAt: iso(v.lastTestAt),
+    lastTestOk: v.lastTestOk,
+    lastTestError: v.lastTestError,
+  };
+}
+
+export const postalSettingsSchema = z.object({
+  objectName: z.literal("PostalSettings"),
+  provider: z.literal("LETTERXPRESS"),
+  username: z.string().nullable(),
+  hasApiKey: z.boolean(),
+  apiKeyLast4: z.string().nullable(),
+  enabled: z.boolean(),
+  mode: z.enum(["DRY_RUN", "TEST", "LIVE"]),
+  effective: z.enum(["OFF_DRY_RUN", "DRY_RUN", "TEST", "LIVE"]),
+  autoDunningPost: z.boolean(),
+  color: z.enum(["1", "4"]),
+  duplex: z.boolean(),
+  shipping: z.enum(["auto", "national", "international"]),
+  registeredDefault: z.enum(["r1", "r2"]).nullable(),
+  monthlyBudgetCents: z.number().int().nullable(),
+  lastBalanceCents: z.number().int().nullable(),
+  lastTestAt: z.string().nullable(),
+  lastTestOk: z.boolean().nullable(),
+  lastTestError: z.string().nullable(),
+});
+
+export const postalQuoteSchema = z.object({
+  docType: z.enum(["INVOICE", "DUNNING"]),
+  docId: z.string(),
+  docNumber: z.string(),
+  invoiceId: z.string(),
+  address: z.array(z.string()),
+  countryCode: z.string(),
+  shipping: z.enum(["national", "international"]),
+  pages: z.number().int(),
+  registered: z.enum(["r1", "r2"]).nullable(),
+  pdfSha256: z.string(),
+  priceCents: z.number().int().nullable(),
+  effective: z.enum(["OFF_DRY_RUN", "DRY_RUN", "TEST", "LIVE"]),
+  alreadySent: z.boolean(),
+  problems: z.array(z.string()),
+});
+
+export const postalQuoteResponseSchema = z.object({
+  data: z.object({ quotes: z.array(postalQuoteSchema), totalCents: z.number().int().nullable() }),
+});
+
+export const postalSendResultSchema = z.object({
+  docType: z.enum(["INVOICE", "DUNNING"]),
+  docId: z.string(),
+  jobId: z.string().nullable(),
+  status: z.string().describe("Auftragsstatus oder REJECTED (nichts angelegt, nichts uebertragen)."),
+  error: z.string().optional(),
+  code: z.string().optional(),
 });

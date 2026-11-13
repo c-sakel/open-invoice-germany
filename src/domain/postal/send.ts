@@ -230,6 +230,17 @@ export async function sendByPost(orgId: string, raw: unknown, ctx: PostalSendCon
       } else if (e instanceof ArchiveTamperedError) {
         // Archivdatei weicht vom gespeicherten Hash ab: nie uebertragen (Meldung ARCHIVE_TAMPERED erzeugt der Lesepfad).
         results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: e.message, code: "NOT_ALLOWED" });
+      } else if (e instanceof PostalNetworkForbiddenError || e instanceof LxpAuthError || e instanceof LxpUnavailableError || e instanceof LxpRequestError) {
+        // Preis-/Netzfehler vor der Uebertragung (nichts angelegt): feste Meldung ohne Anbietertext.
+        const message =
+          e instanceof PostalNetworkForbiddenError
+            ? e.message
+            : e instanceof LxpAuthError
+              ? "Der Briefdienst hat die Zugangsdaten abgelehnt."
+              : e instanceof LxpUnavailableError
+                ? "Der Briefdienst ist nicht erreichbar."
+                : "Der Briefdienst hat die Anfrage abgelehnt.";
+        results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: message, code: "NOT_ALLOWED" });
       } else if (e instanceof NotFoundError || e instanceof InvalidOperationError) {
         results.push({ docType: item.docType, docId: item.docId, jobId: null, status: "REJECTED", error: e.message, code: "NOT_ALLOWED" });
       } else {
