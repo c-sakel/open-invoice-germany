@@ -10,6 +10,11 @@
  * `limit`/`months` werden HIER (Boundary) per Zod begrenzt — `topCustomers`/
  * `monthlyRevenue` selbst validieren ihre Optionen nicht (siehe deren Modulkommentare).
  *
+ * Phase 17c, Task 3: `format` ("json" | "csv") ist fuer jeden Typ zulaessig und steht bewusst
+ * NICHT in `APPLICABLE_PARAMS`; `runReport` liefert immer das typisierte `ReportResult`, die
+ * Aufrufer (REST, MCP, Session-Route `/api/reports/<typ>.csv`) entscheiden ueber die
+ * Darstellung (`reportToCsv` in csv.ts).
+ *
  * Rueckgabeform bleibt fuer alle vier Typen stabil: `{ objectName: "Report", type, rows }`.
  * `payment-behaviour` liefert genau EIN Ergebnisobjekt (keine Liste über die Zeit) —
  * verpackt trotzdem als `rows: [behaviour]`, damit Konsumenten nicht zwischen
@@ -50,7 +55,14 @@ import { paymentBehaviour } from "./payment-behaviour";
 import { monthlyCashIn } from "./cash-in";
 import { quoteOutcome } from "./quote-outcome";
 import { topProducts } from "./top-products";
-import { recurringRunRate } from "./recurring-run-rate";
+import { recurringRunRate, type RunRateRow } from "./recurring-run-rate";
+import type { MonthlyRevenuePoint } from "./revenue";
+import type { TopCustomer } from "./customers";
+import type { StatusCount } from "./status";
+import type { PaymentBehaviour } from "./payment-behaviour";
+import type { CashInPoint } from "./cash-in";
+import type { QuoteOutcomeRow } from "./quote-outcome";
+import type { TopProduct } from "./top-products";
 
 export const reportQueryFieldsSchema = z.object({
   type: z
@@ -60,6 +72,7 @@ export const reportQueryFieldsSchema = z.object({
     ),
   months: z.coerce.number().int().min(1).max(36).optional().describe("Anzahl Kalendermonate rückwirkend (1–36, Default 12) — nur bei revenue, top-customers, cash-in, quote-outcome und top-products zulässig."),
   limit: z.coerce.number().int().min(1).max(50).optional().describe("Maximale Anzahl Zeilen (1–50, Default 5; bei top-products Default 10, je Währung) — nur bei top-customers und top-products zulässig."),
+  format: z.enum(["json", "csv"]).optional().describe("Ausgabeformat: json (Default) oder csv (deutsches Format, Semikolon, Dezimalkomma) — bei jedem type zulässig; wird von den Aufrufern (REST/MCP) gelesen, nicht von runReport."),
   customerId: z.string().min(1).optional().describe("Auf einen Kunden einschränken — nur bei revenue und payment-behaviour zulässig."),
 });
 
@@ -99,7 +112,17 @@ export const reportQuerySchema = reportQueryFieldsSchema.superRefine((q, ctx) =>
  * ausschliesslich fuer Tests gedacht (dieselbe Konvention wie in den darunterliegenden
  * Reporting-Funktionen).
  */
-export async function runReport(orgId: string, raw: unknown, now?: Date): Promise<unknown> {
+export type ReportResult =
+  | { objectName: "Report"; type: "revenue"; rows: MonthlyRevenuePoint[] }
+  | { objectName: "Report"; type: "top-customers"; rows: TopCustomer[] }
+  | { objectName: "Report"; type: "status"; rows: StatusCount[] }
+  | { objectName: "Report"; type: "payment-behaviour"; rows: [PaymentBehaviour] }
+  | { objectName: "Report"; type: "cash-in"; rows: CashInPoint[] }
+  | { objectName: "Report"; type: "quote-outcome"; rows: QuoteOutcomeRow[] }
+  | { objectName: "Report"; type: "top-products"; rows: TopProduct[] }
+  | { objectName: "Report"; type: "recurring-run-rate"; rows: RunRateRow[] };
+
+export async function runReport(orgId: string, raw: unknown, now?: Date): Promise<ReportResult> {
   const q = reportQuerySchema.parse(raw);
   const months = q.months ?? 12;
   const limit = q.limit ?? 5;

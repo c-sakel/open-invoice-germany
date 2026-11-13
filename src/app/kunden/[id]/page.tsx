@@ -17,6 +17,7 @@ import { ResponsiveBarChart } from "@/components/dashboard/ResponsiveBarChart";
 import { revenueWithPriorYear } from "@/components/dashboard/chart-data";
 import { DataTable } from "@/components/ui/DataTable";
 import { Card } from "@/components/ui/Card";
+import { CsvLink } from "@/components/ui/CsvLink";
 import { Kpi } from "@/components/ui/Kpi";
 import { formatCents } from "@/lib/money";
 
@@ -129,7 +130,7 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
         </div>
       </Card>
 
-      <Card title="Umsatz je Monat (netto) mit Vorjahr">
+      <Card title="Umsatz je Monat (netto) mit Vorjahr" action={<CsvLink href={`/api/reports/revenue.csv?months=24&customerId=${encodeURIComponent(id)}`} what="Umsatz dieses Kunden" />}>
         <ResponsiveBarChart
           title="Umsatz je Monat (netto, 12 Monate)"
           data={current}

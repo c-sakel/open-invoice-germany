@@ -7,6 +7,7 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { dashboardSummary } from "@/domain/dashboard/summary";
 import { runReport, reportQueryFieldsSchema } from "@/domain/reporting/query";
+import { reportToCsv } from "@/domain/reporting/csv";
 import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
 import { listApiRequestLogs } from "@/domain/api-log/list";
@@ -196,7 +197,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
     {
       title: "Auswertung abrufen",
       description:
-        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status), payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil), cash-in (Zahlungseingang je Monat/Waehrung), quote-outcome (Angebotsquote), top-products (Nettoumsatz je Produkt) oder recurring-run-rate (monatlich wiederkehrender Netto-Umsatz aktiver Abos). Optional je Kunde (customer) und ueber n Monate (months, Default 12; nicht bei status/payment-behaviour/recurring-run-rate) und Zeilenzahl (limit, nur bei top-customers und top-products).",
+        "Liefert eine Auswertung (Phase 12e): revenue (Netto-Umsatz je Monat, Gutschriften abgezogen), top-customers (nach Netto), status (Rechnungen je effektivem Status), payment-behaviour (Ø Tage bis zur Zahlung, Puenktlichkeitsanteil), cash-in (Zahlungseingang je Monat/Waehrung), quote-outcome (Angebotsquote), top-products (Nettoumsatz je Produkt) oder recurring-run-rate (monatlich wiederkehrender Netto-Umsatz aktiver Abos). Optional je Kunde (customer) und ueber n Monate (months, Default 12; nicht bei status/payment-behaviour/recurring-run-rate) und Zeilenzahl (limit, nur bei top-customers und top-products). Mit format=csv kommt statt JSON eine CSV-Tabelle (Semikolon, Dezimalkomma).",
       // Fix M7 (Abschluss-Review): `reportQueryFieldsSchema.shape` als einzige Quelle fuer
       // type/months/limit (kein zweites, redundant getipptes Feld-Set mehr) — nur
       // `customerId` wird durch `customer` ersetzt: jedes andere Tool nimmt eine Kunden-ID
@@ -215,7 +216,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         const customerId = customer ? (await ctx.resolveCustomer(org.id, customer)).id : undefined;
-        return ctx.ok(JSON.stringify(await runReport(org.id, { ...rest, customerId }), null, 2));
+        const result = await runReport(org.id, { ...rest, customerId });
+        return ctx.ok(rest.format === "csv" ? reportToCsv(result) : JSON.stringify(result, null, 2));
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);
         // Fix M8 (Fix 2): reportQuerySchema.parse() in runReport wirft bei unbekanntem
