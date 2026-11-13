@@ -5,13 +5,24 @@
  * @unique und test.db wird ueber die gesamte Testlaufzeit geteilt (siehe
  * Kommentar in phase1.test.ts).
  */
-import { beforeAll, describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect, vi } from "vitest";
+
+const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
+vi.mock("@/lib/org", () => ({
+  getActiveOrg: async () => {
+    if (!orgStore.id) throw new Error("Test-Org noch nicht gesetzt.");
+    return { id: orgStore.id };
+  },
+}));
+
 import { dbInternal, prisma } from "@/lib/db";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { recordPayment, PaymentError } from "@/domain/invoice/payment";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { verifyChain, type ChainEntry } from "@/domain/changelog";
+import { updateNumberRange } from "@/domain/numbering/ranges";
+import { GET as skontoCheckGet } from "@/app/api/invoices/[id]/skonto-check/route";
 import { recordPaymentSchema, type CreateInvoiceInput } from "@/schemas";
 
 let orgId: string;
@@ -190,5 +201,57 @@ describe("Skonto: Erkennung und Buchung bei Zahlungseingang", () => {
 
     const payments = await prisma.payment.findMany({ where: { invoiceId: inv.id } });
     expect(payments).toHaveLength(0);
+  });
+});
+
+// Phase 17c, Task 2 — Fristende = Berliner Tagesende (Jahr 2151, Praefix C17T2-).
+describe("Skonto: Fristende nach Berliner Tagesende", () => {
+  const ISSUE = new Date("2151-03-21T10:00:00.000Z");
+  let org2: string;
+
+  beforeAll(async () => {
+    const org = await dbInternal.organization.create({
+      data: { legalName: "Skonto Berlin GmbH", addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE215100001", taxNumber: "21/151/00001" },
+    });
+    org2 = org.id;
+    orgStore.id = org2;
+    await ensureOrgMasterdata(dbInternal, org2);
+    await dbInternal.customer.create({ data: { orgId: org2, name: "Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS" } });
+    await updateNumberRange(org2, "INVOICE", { pattern: "{PREFIX}{YYYY}-{SEQ}", prefix: "C17T2-", seqPadding: 4, yearlyReset: true, nextValue: 1 }, "test", ISSUE);
+  });
+
+  async function invoice(): Promise<{ id: string; grossTotalCents: number }> {
+    const customer = await dbInternal.customer.findFirstOrThrow({ where: { orgId: org2 }, select: { id: true } });
+    const input = {
+      customerId: customer.id, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", skonto1Permille: 20, skonto1Days: 10, issueDate: ISSUE,
+      deliveryDate: new Date("2151-03-20"),
+      lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 100000, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as CreateInvoiceInput;
+    const draft = await createDraftInvoice(org2, input, { now: ISSUE });
+    const fin = await finalizeInvoice(draft.id, { now: ISSUE });
+    return { id: fin.id, grossTotalCents: fin.grossTotalCents };
+  }
+
+  it("00:30 Berlin am Folgetag: kein Vorschlag, keine Skontobuchung, Rest bleibt offen", async () => {
+    const inv = await invoice();
+    const payable = inv.grossTotalCents - 2380;
+    const paidAt = new Date("2151-03-31T22:30:00.000Z");
+    const r = await recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: payable, method: "TRANSFER", paidAt, applySkonto: true }));
+    expect(r.payment.status).toBe("PARTIALLY_PAID");
+    expect(r.skontoSuggestion).toBeUndefined();
+    expect(r.skontoPayment).toBeUndefined();
+    const check = await skontoCheckGet(new Request(`http://localhost/x?amountCents=${payable}&paidAt=${paidAt.toISOString()}`), { params: Promise.resolve({ id: inv.id }) });
+    expect((await check.json()).suggestion).toBeNull();
+  });
+
+  it("23:30 Berlin am Fristtag: Skontobuchung wie bisher, Vorschau stimmt", async () => {
+    const inv = await invoice();
+    const payable = inv.grossTotalCents - 2380;
+    const paidAt = new Date("2151-03-31T21:30:00.000Z");
+    const check = await skontoCheckGet(new Request(`http://localhost/x?amountCents=${payable}&paidAt=${paidAt.toISOString()}`), { params: Promise.resolve({ id: inv.id }) });
+    expect((await check.json()).suggestion).not.toBeNull();
+    const r = await recordPayment(inv.id, recordPaymentSchema.parse({ amountCents: payable, method: "TRANSFER", paidAt, applySkonto: true }));
+    expect(r.payment.status).toBe("PAID");
+    expect(r.skontoPayment?.amountCents).toBe(2380);
   });
 });
