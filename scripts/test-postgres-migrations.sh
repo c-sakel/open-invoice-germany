@@ -1161,7 +1161,8 @@ LINEVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coale
 SRCVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(q.\"ossCategory\",'<null>') || '|' || coalesce(r.\"ossCategory\",'<null>') from \"QuoteLine\" q, \"RecurringInvoiceLine\" r where q.id='qline28' and r.id='rline28'")
 [ "$SRCVAL" = "<null>|<null>" ] || fail "QuoteLine/RecurringInvoiceLine.ossCategory abweichend ('$SRCVAL'), erwartet <null>|<null>"
 NSVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select string_agg(\"enabledTypesJson\", ' ' order by id) from \"NotificationSettings\" where id in ('ns28','ns28b')")
-[ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD"] ["OSS_THRESHOLD"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD ergaenzt ('$NSVAL')"
+# Fall 28 laeuft am Ende mit ALLEN Migrationen: Phase 16d ergaenzt danach die drei Postversand-Typen.
+[ "$NSVAL" = '["INVOICE_OVERDUE","QUOTE_EXPIRING","OSS_THRESHOLD","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT"] ["OSS_THRESHOLD","POSTAL_FAILED","POSTAL_PENDING","DUNNING_NOT_SENT"]' ] || fail "NotificationSettings.enabledTypesJson ohne OSS_THRESHOLD/Postversand-Typen ergaenzt ('$NSVAL')"
 COUNT28=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT28" = "61" ] || fail "erwartet weiterhin 61 Tabellen nach Phase 16e (nur sechs Spalten), gefunden $COUNT28"
 echo "    ok — DocumentSettings ALL_EU_B2C/80, Product.ossCategory=NONE, InvoiceLine.ossCategory NULL auf Bestandszeilen, OSS_THRESHOLD in NotificationSettings ergaenzt, 61 Tabellen"
