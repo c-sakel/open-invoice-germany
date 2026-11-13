@@ -9,7 +9,7 @@ const lines = (s: string) => s.split("\r\n");
 describe("csvTextCell", () => {
   it("entschaerft Formelzeichen mit Apostroph", () => {
     expect(csvTextCell("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
-    for (const v of ["+1", "-Firma", "@x", "\tA", "\rA"]) {
+    for (const v of ["+1", "-Firma", "@x", "\tA", "\rA", "  =1+1", "\u3000=A1", "\uFF1DA1", "\uFF0B1", "\uFF20x"]) {
       expect(csvTextCell(v).replace(/^"/, "").startsWith("'"), JSON.stringify(v)).toBe(true);
     }
   });

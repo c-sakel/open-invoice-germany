@@ -29,6 +29,7 @@ export const GET = withApi(async (req, ctx) => {
       status: 200,
       headers: {
         "content-type": "text/csv; charset=utf-8",
+        "x-content-type-options": "nosniff",
         "content-disposition": `attachment; filename="${reportCsvFilename(result.type, now)}"`,
         "cache-control": "no-store",
       },

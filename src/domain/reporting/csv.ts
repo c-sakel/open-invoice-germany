@@ -18,7 +18,8 @@ export const CSV_BOM = "\uFEFF";
 export function csvTextCell(v: string | null): string {
   if (v === null) return "";
   let s = v;
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  // Formelschutz (OWASP CSV Injection): auch nach fuehrendem Leerraum und fuer Vollbreite-Varianten.
+  if (/^[\s\u3000]*[=+\-@\t\r\uFF1D\uFF0B\uFF0D\uFF20]/.test(s)) s = `'${s}`;
   if (/[;"\r\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
   return s;
 }
