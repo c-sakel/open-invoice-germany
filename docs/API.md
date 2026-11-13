@@ -137,6 +137,15 @@ curl -s -X POST "$BASE/api/v1/Invoice/<id>/finalize" -H "$AUTH"
 Vergibt die Rechnungsnummer aus dem Nummernkreis und schreibt die Rechnung fest.
 Erneutes Festschreiben derselben Rechnung liefert `409 CONFLICT`.
 
+Die Antwort kann ein Feld `warnings` (Liste von Texten) enthalten: `{ "data": { ... }, "warnings": ["..."] }`. Die Hinweise blockieren das Festschreiben nie, z. B. wenn dem Käufer jede elektronische Adresse fehlt (XRechnung-Regel `PEPPOL-EN16931-R010`) oder eine ig. Lieferung/Leistung ohne gültige VIES-Prüfung festgeschrieben wird (VIES-Fehler, ungültige USt-IdNr., Abfragelimit).
+
+### USt-IdNr.-Prüfung und neue Kontaktfelder (Phase 17a)
+
+- `Contact` und `PATCH /api/v1/Contact/{id}` kennen zusätzlich `peppolScheme` (EAS-Schemacode der `peppolId`, z. B. `0088`; eine leere `peppolId` setzt das Schema auf `null`) und `legalRegistrationId` (BT-47, Handelsregister-/Unternehmensnummer). `leitwegId` wird mit Prüfziffer geprüft (400 `VALIDATION` bei Fehler).
+- `POST /api/v1/Contact/{id}/vat-check` prüft die USt-IdNr. des Kontakts qualifiziert über VIES und liefert den Protokolleintrag (`status` `VALID`/`INVALID`/`ERROR`, `requestIdentifier`, `traderName`, `traderAddress`, `checkedAt`). Fehler: 409, wenn die Prüfung in den Einstellungen abgeschaltet ist; 429 mit `Retry-After` bei mehr als 20 Abfragen je Minute; 400 bei fehlender USt-IdNr.; 404 für fremde Organisation. Dienstausfälle ergeben `status: "ERROR"`, nie 5xx.
+- `GET /api/v1/Contact/{id}/vat-checks` listet das Prüfprotokoll (neueste zuerst, höchstens 50).
+- `Settings.documents` kennt `viesCheckEnabled` (Prüfung freischalten, Standard `true`) und `viesCheckOnFinalize` (Prüfung beim Festschreiben, Standard `true`); `PATCH` ändert nur gesendete Felder.
+
 ### 4. PDF und XRechnung abrufen
 
 ```bash

@@ -38,11 +38,14 @@ Beim ersten Start wirst du hierher geführt. Trage deine Firmendaten ein. Pflich
 - **Firmenname + vollständige Anschrift**
 - **Steuernummer ODER USt-IdNr.** (mindestens eines)
 - Bankverbindung (für den Zahlungshinweis)
+- optional: **E-Rechnung-Adresse** (BT-34) mit Schema, z. B. `9930` für deine USt-IdNr.; ohne Eintrag wird deine Firmen-E-Mail als `EM` verwendet
 
 Wähle dein **Standard-Steuerschema** (Regelbesteuerung oder Kleinunternehmer § 19). Speichern → fertig.
 
 ### Schritt 2 — Kunden anlegen (`Kunden → Neuer Kunde`)
-Name, Anschrift, Typ (B2B/B2C). Die USt-IdNr. ist nur bei innergemeinschaftlichen Lieferungen/Leistungen Pflicht. Für Behörden trägst du die **Leitweg-ID** ein.
+Name, Anschrift, Typ (B2B/B2C). Die USt-IdNr. ist nur bei innergemeinschaftlichen Lieferungen/Leistungen Pflicht. Für Behörden trägst du die **Leitweg-ID** ein (sie wird mit Prüfziffer kontrolliert und als BT-10 sowie als elektronische Adresse mit Schema `0204` in die XRechnung geschrieben). Für Empfänger im Peppol-Netz hinterlegst du die **Peppol-ID** samt **Schema** (z. B. `0088` für eine GLN); die **Handelsregisternummer** (BT-47) genügt bei Reverse Charge anstelle der USt-IdNr. Ohne Peppol-ID und Leitweg-ID wird die E-Mail-Adresse des Kunden als elektronische Adresse verwendet — fehlt auch sie, warnt dich die App beim Festschreiben, weil die XRechnung dann die Prüfung nicht besteht.
+
+**USt-IdNr. prüfen (VIES):** Auf der Kundenseite prüft der Knopf „USt-IdNr. prüfen (VIES)" die Nummer bei der EU-Kommission und speichert das Ergebnis samt Konsultationsnummer im Prüfprotokoll des Kunden (Nachweis für ig. Lieferungen). **Datenschutz:** Dabei werden die USt-IdNr. des Kunden und deine eigene USt-IdNr. an die EU-Kommission übermittelt, sonst nichts. Die Prüfung ist standardmäßig eingeschaltet; unter `Einstellungen → Belege` kannst du sie komplett abschalten („USt-IdNr.-Prüfung über VIES freischalten") oder nur die automatische Prüfung beim Festschreiben ausschalten. Bei einer ig. Lieferung/Leistung fragt die App beim Festschreiben einmal ab und zeigt dir das Ergebnis als Hinweis — das Festschreiben wird dadurch nie blockiert. Eine qualifizierte Bestätigung des BZSt ersetzt das nicht.
 
 ### Schritt 3 — (optional) Produkte anlegen (`Produkte`)
 Ein Katalog spart Tipparbeit — du kannst Positionen aber auch direkt in der Rechnung eintippen.
@@ -65,6 +68,7 @@ Das Anhänge-Panel steht bereits im Neuanlage-Editor bereit: lädst du dort — 
 ### Schritt 5 — Festschreiben
 Auf der Rechnungs-Detailseite: „**Festschreiben**". Dabei passiert (GoBD-konform):
 - Die Pflichtangaben werden geprüft (fehlt etwas, bekommst du eine klare Meldung).
+- Hinweise (z. B. fehlende elektronische Adresse des Kunden, VIES-Ergebnis) erscheinen als Banner auf der Rechnungsseite; sie blockieren nicht.
 - Eine **fortlaufende Rechnungsnummer** wird vergeben (z. B. `RE-2026-0001`).
 - Die Rechnung wird **unveränderbar**. Änderungen sind ab jetzt gesperrt.
 
