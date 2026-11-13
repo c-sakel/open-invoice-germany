@@ -98,6 +98,30 @@ describe("POST /api/auth/password-reset/request", () => {
     expect(responses[0].body).toContain("Der Link gilt 30 Minuten.");
   });
 
+  it("Antwort bekannt/unbekannt byte-gleich (inkl. Header) und vor der Antwort kein Datenbankzugriff", async () => {
+    const known = await makeUser();
+    const spies = [
+      vi.spyOn(dbInternal.user, "findUnique"),
+      vi.spyOn(dbInternal.passwordResetToken, "deleteMany"),
+      vi.spyOn(dbInternal.passwordResetToken, "count"),
+      vi.spyOn(dbInternal.passwordResetToken, "updateMany"),
+      vi.spyOn(dbInternal.passwordResetToken, "create"),
+      vi.spyOn(dbInternal, "$transaction"),
+      vi.spyOn(dbInternal.activityLog, "create"),
+    ];
+    const grab = async (email: string) => {
+      const r = await request(req("/api/auth/password-reset/request", { email }));
+      return { status: r.status, headers: [...r.headers.entries()].sort(), body: await r.text() };
+    };
+    const a = await grab(known.email);
+    const b = await grab("gibt-es-nicht@example.com");
+    expect(a).toEqual(b);
+    for (const s of spies) expect(s).not.toHaveBeenCalled();
+    await flush();
+    expect(spies[1]).toHaveBeenCalled(); // erst danach: Aufraeumen, Lookup, Token
+    expect(hoisted.memory!.sent).toHaveLength(1);
+  });
+
   it("Mail geht erst nach der Antwort raus; Host-Header aendert den Link nicht", async () => {
     const u = await makeUser();
     const r = await request(req("/api/auth/password-reset/request", { email: u.email }, { host: "evil.example" }));

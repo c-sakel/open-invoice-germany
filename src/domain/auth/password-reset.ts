@@ -58,12 +58,18 @@ export interface ResetMail {
   text: string;
 }
 
-type RequestCtx = { ip?: string; now?: Date; orgId?: string };
+/** `ipLimitChecked`: die Route hat die IP-Bremse bereits VOR der Antwort angewandt (nicht doppelt zaehlen). */
+type RequestCtx = { ip?: string; now?: Date; orgId?: string; ipLimitChecked?: boolean };
+
+/** IP-Bremse der Reset-Anforderung; wirft `RateLimitError`. Beruehrt keine Datenbank. */
+export function enforceResetIpLimit(ip: string | undefined, now: Date = new Date()): void {
+  rateLimit(`pw-reset:${ip ?? "unknown"}`, { limit: RESET_IP_LIMIT, windowMs: RESET_IP_WINDOW_MS, now: now.getTime() });
+}
 
 export async function requestPasswordReset(raw: unknown, ctx: RequestCtx = {}): Promise<{ mail: ResetMail | null }> {
   const input = passwordResetRequestSchema.parse(raw);
   const now = ctx.now ?? new Date();
-  rateLimit(`pw-reset:${ctx.ip ?? "unknown"}`, { limit: RESET_IP_LIMIT, windowMs: RESET_IP_WINDOW_MS, now: now.getTime() });
+  if (!ctx.ipLimitChecked) enforceResetIpLimit(ctx.ip, now);
 
   await dbInternal.passwordResetToken.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - CLEANUP_AGE_MS) } } });
 
