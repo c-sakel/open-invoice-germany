@@ -654,6 +654,11 @@ model RecurringInvoiceLine {
   taxCategory        String           @default("S")
   discountPermille   Int              @default(0)
   ossCategory        String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
+  lineType           String           @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (wie InvoiceLine, Phase 18c)
+  productId          String? // nur Snapshot-Referenz, kein Live-Lookup
+  descriptionLong    String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge)
+  articleNumber      String? // Artikelnummer-Snapshot
+  discountCents      Int              @default(0) // Festbetragsrabatt (Cent)
 
   @@index([recurringInvoiceId])
 }
@@ -832,6 +837,7 @@ model MailSettings {
   defaultCc   String       @default("")
   defaultBcc  String       @default("")
   copyToSelf  Boolean      @default(false)
+  htmlEnabled Boolean      @default(false) // Phase 18c: HTML-Teil zusaetzlich zum Text
   lastTestAt  DateTime?
   lastTestOk  Boolean?
   createdAt   DateTime     @default(now())
