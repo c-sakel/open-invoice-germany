@@ -168,7 +168,7 @@ export function DashboardWidgets({
         </Link>
       </div>
 
-      <Card title="Umsatz je Monat (netto) mit Vorjahr" action={<CsvLink href="/api/reports/revenue.csv?months=24" what="Umsatz je Monat" />}>
+      <Card title="Umsatz je Monat (netto) mit Vorjahr" action={<CsvLink href={`/api/reports/revenue.csv?months=24&currency=${encodeURIComponent(currency)}`} what="Umsatz je Monat" />}>
         <ResponsiveBarChart
           title="Umsatz je Monat (netto, 12 Monate)"
           data={current}

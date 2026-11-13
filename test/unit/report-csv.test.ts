@@ -25,8 +25,8 @@ describe("csvTextCell", () => {
 
 describe("reportToCsv", () => {
   it("Betragsspalten werden nicht entschaerft", () => {
-    const csv = reportToCsv({ objectName: R, type: "revenue", rows: [{ month: "2152-04", netCents: -123456, count: 2 }, { month: "2152-05", netCents: 5, count: 1 }] });
-    expect(lines(csv)).toEqual(["Monat;Netto;Anzahl", "2152-04;-1234,56;2", "2152-05;0,05;1", ""]);
+    const csv = reportToCsv({ objectName: R, type: "revenue", rows: [{ month: "2152-04", currency: "EUR", netCents: -123456, count: 2 }, { month: "2152-04", currency: "USD", netCents: 7, count: 1 }, { month: "2152-05", currency: "EUR", netCents: 5, count: 1 }] });
+    expect(lines(csv)).toEqual(["Monat;Währung;Netto;Anzahl", "2152-04;EUR;-1234,56;2", "2152-04;USD;0,07;1", "2152-05;EUR;0,05;1", ""]);
     expect(csv).not.toContain(CSV_BOM);
   });
 
@@ -76,7 +76,7 @@ describe("reportToCsv", () => {
 
   it("leere Zeilen -> nur Kopfzeile", () => {
     const r: ReportResult = { objectName: R, type: "revenue", rows: [] };
-    expect(reportToCsv(r)).toBe("Monat;Netto;Anzahl\r\n");
+    expect(reportToCsv(r)).toBe("Monat;Währung;Netto;Anzahl\r\n");
   });
 });
 

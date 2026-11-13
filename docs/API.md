@@ -235,6 +235,7 @@ Parameter (Query):
 | `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue`, `top-customers`, `cash-in`, `quote-outcome` und `top-products` zulässig** (Fix 2, ehem. M8) |
 | `limit` | nein | Anzahl Zeilen (1–50, Default 5; bei `top-products` Default 10, je Währung) — **nur bei `top-customers` und `top-products` zulässig** |
 | `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
+| `currency` | nein | nur Belege dieser Währung (ISO-4217, Großbuchstaben, z. B. `EUR`) — **nur bei `revenue` zulässig**; ohne Angabe je Währung eigene Zeilen |
 
 Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
 gewählten `type` **nicht zulässiger** Parameter (z. B. `limit` bei
@@ -243,8 +244,8 @@ Meldung (`error.details.issues`) nennt den betroffenen Parameter. Vor Fix 2
 wurde ein nicht zutreffender Parameter still ignoriert; das ist seither ein
 Fehler, kein No-op mehr.
 
-- **`revenue`** — Netto-Umsatz je Kalendermonat, lückenlos (auch Monate ohne Beleg
-  als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
+- **`revenue`** — Netto-Umsatz je Kalendermonat und Währung (Feld `currency`, nie über
+  Währungen addiert), lückenlos je Währung (auch Monate ohne Beleg als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
   (negativen) Vorzeichen enthalten.
 - **`top-customers`** — die `limit` umsatzstärksten Kunden (netto) im Zeitraum,
   absteigend sortiert.
@@ -288,8 +289,8 @@ curl -s "$BASE/api/v1/Report?type=revenue&months=6&format=csv" -H "$AUTH" -o ums
     "objectName": "Report",
     "type": "revenue",
     "rows": [
-      { "month": "2026-03", "netCents": 0, "count": 0 },
-      { "month": "2026-04", "netCents": 150000, "count": 2 }
+      { "month": "2026-03", "currency": "EUR", "netCents": 0, "count": 0 },
+      { "month": "2026-04", "currency": "EUR", "netCents": 150000, "count": 2 }
     ]
   }
 }

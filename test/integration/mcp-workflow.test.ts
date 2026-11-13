@@ -180,7 +180,7 @@ describe("get_report", () => {
     const res = await callTool("get_report", { type: "revenue", months: 2, format: "csv" });
     expect(res.isError).toBeFalsy();
     const t = text(res);
-    expect(t.startsWith("Monat;Netto;Anzahl\r\n")).toBe(true);
+    expect(t.startsWith("Monat;Währung;Netto;Anzahl\r\n")).toBe(true);
     expect(t.split("\r\n")).toHaveLength(4); // Kopf + 2 Monate + Abschluss
   });
 

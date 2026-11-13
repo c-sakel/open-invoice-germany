@@ -70,7 +70,7 @@ export function reportToCsv(result: ReportResult): string {
   switch (result.type) {
     case "revenue":
       return table<Rows<"revenue">>(
-        [col("Monat", "text", (r) => r.month), col("Netto", "cents", (r) => r.netCents), col("Anzahl", "int", (r) => r.count)],
+        [col("Monat", "text", (r) => r.month), col("Währung", "text", (r) => r.currency), col("Netto", "cents", (r) => r.netCents), col("Anzahl", "int", (r) => r.count)],
         result.rows,
       );
     case "top-customers":

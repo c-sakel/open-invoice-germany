@@ -270,7 +270,7 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 
 ## Grafiken & Auswertungen (Phase 12e)
 - **Die Diagramme sind statisch (SVG, serverseitig gerendert): kein Zoom, kein Filtern im Bild.**
-- **CSV-Export je Auswertung** (Oberfläche, REST `GET /api/v1/Report?format=csv`, MCP `get_report` mit `format=csv`); kein PDF-Export. Der Umsatz-CSV summiert wie die REST-Auswertung über alle Währungen (`revenue` kennt keinen Währungsfilter; das Dashboard zeigt nur die Standardwährung).
+- **CSV-Export je Auswertung** (Oberfläche, REST `GET /api/v1/Report?format=csv`, MCP `get_report` mit `format=csv`); kein PDF-Export. Die Auswertung `revenue` (JSON und CSV) liefert je Monat und Währung eine eigene Zeile mit Spalte „Währung“ und addiert nie über Währungen; der optionale Parameter `currency` (z. B. `EUR`) schränkt sie auf eine Währung ein. Die Links auf Dashboard und Kundenseite geben die Standardwährung mit.
 - **Der Umsatz ist eine Netto-Auswertung nach Rechnungsdatum, keine Einnahmen-Überschuss-Rechnung und keine Buchhaltung (Lastenheft §60).**
 - **Rechnungen ohne erfasste Zahlung, die manuell auf PAID gesetzt wurden, gehen nicht in die Ø Zahlungsdauer ein.**
 - **Tagesvergleiche bleiben UTC-Kalendertag.** Fälligkeit/Überfälligkeit, Mahnwesen, Dashboard-Fälligkeiten und die „heute“-Werte der Angebotsquote vergleichen Kalendertage in UTC (`utcDateOnly`); nur Monats- und Jahresgrenzen der Auswertungen, das OSS-Jahr und das Skonto-Fristende laufen in Berliner Zeit.

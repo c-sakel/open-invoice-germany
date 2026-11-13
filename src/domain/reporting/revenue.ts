@@ -121,3 +121,47 @@ export async function monthlyRevenue(orgId: string, opts: MonthlyRevenueOptions 
   }
   return [...buckets.values()];
 }
+
+export interface CurrencyRevenuePoint extends MonthlyRevenuePoint {
+  currency: string;
+}
+
+/**
+ * Umsatzreihe je Waehrung (Auswertung `revenue`, REST/MCP/CSV): fuer jede Waehrung mit
+ * mindestens einem Beleg im Fenster eine luecklose Monatsreihe, sortiert nach Monat, dann
+ * Waehrung — Betraege verschiedener Waehrungen werden nie addiert. Mit `currency` nur diese
+ * Waehrung (auch ohne Beleg: luecklose Nullreihe); ohne Beleg und ohne Filter eine
+ * Nullreihe in EUR, damit die Form stabil bleibt.
+ */
+export async function monthlyRevenueByCurrency(orgId: string, opts: MonthlyRevenueOptions = {}): Promise<CurrencyRevenuePoint[]> {
+  const months = opts.months ?? 12;
+  const now = opts.now ?? new Date();
+  const end = berlinMonthStart(now, 1);
+  const start = berlinMonthStart(now, -(months - 1));
+
+  const rows = await dbInternal.invoice.findMany({
+    where: {
+      orgId,
+      status: { not: "DRAFT" },
+      issueDate: { gte: start, lt: end },
+      ...(opts.customerId ? { customerId: opts.customerId } : {}),
+      ...(opts.currency ? { currency: opts.currency } : {}),
+    },
+    select: { issueDate: true, currency: true, netTotalCents: true, grossTotalCents: true, payableCents: true, type: true },
+  });
+
+  const currencies = new Set<string>(rows.map((r) => r.currency));
+  if (currencies.size === 0) currencies.add(opts.currency ?? "EUR");
+  const monthKeys = Array.from({ length: months }, (_, i) => berlinMonthKey(berlinMonthStart(now, -(months - 1) + i)));
+  const buckets = new Map<string, CurrencyRevenuePoint>();
+  for (const month of monthKeys) {
+    for (const currency of currencies) buckets.set(`${month}|${currency}`, { month, currency, netCents: 0, count: 0 });
+  }
+  for (const r of rows) {
+    const bucket = buckets.get(`${monthKey(r.issueDate)}|${r.currency}`);
+    if (!bucket) continue;
+    bucket.netCents += signedRevenueShareCents(r);
+    bucket.count += 1;
+  }
+  return [...buckets.values()].sort((a, b) => (a.month === b.month ? a.currency.localeCompare(b.currency) : a.month.localeCompare(b.month)));
+}
