@@ -1295,4 +1295,15 @@ COUNT31=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count
 [ "$COUNT31" = "58" ] || fail "erwartet 58 Tabellen nach Phase 17d, gefunden $COUNT31"
 echo "    ok — TOTP-Spalten NULL auf Bestand (failedLoginCount unveraendert), RecoveryCode/PasswordResetToken einfuegbar, doppelte (userId, codeHash) und tokenHash scheitern, ON DELETE CASCADE, 58 Tabellen"
 
+docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
+UPDATE "User" SET "totpSecretEnc"='v1:x', "totpEnabledAt"=NOW(), "totpLastStep"=1, "failedLoginCount"=5, "lockedUntil"=NOW() + interval '10 minutes' WHERE id='user31';
+SQL
+sh scripts/disable-2fa.sh --bestaetigen --email bestand31@example.com >/dev/null \
+  || fail "Notfallskript disable-2fa.sh ist auf Postgres fehlgeschlagen"
+NOTVAL=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select coalesce(\"totpSecretEnc\",'<null>') || '|' || coalesce(\"totpEnabledAt\"::text,'<null>') || '|' || coalesce(\"totpLastStep\"::text,'<null>') || '|' || \"failedLoginCount\" from \"User\" where id='user31'")
+[ "$NOTVAL" = "<null>|<null>|<null>|0" ] || fail "Notfallskript: User abweichend ('$NOTVAL'), erwartet <null>|<null>|<null>|0"
+NOTCODES=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"RecoveryCode\" where \"userId\"='user31'")
+[ "$NOTCODES" = "0" ] || fail "Notfallskript: Wiederherstellungscodes nicht geloescht ($NOTCODES)"
+echo "    ok — Notfallskript disable-2fa.sh schaltet 2FA ab und loescht Codes (Postgres)"
+
 echo "ALLE TESTS BESTANDEN"

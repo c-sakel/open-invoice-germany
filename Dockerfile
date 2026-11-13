@@ -121,6 +121,7 @@ COPY --from=build /app/prisma/migrations-postgres ./prisma/migrations-postgres
 COPY --from=build /app/prisma.postgres.config.ts ./prisma.postgres.config.ts
 COPY --from=build \
      /app/scripts/docker-entrypoint.sh /app/scripts/db-prepare.sh /app/scripts/check-baseline.sql \
+     /app/scripts/disable-2fa.sh \
      ./scripts/
 COPY --from=build /app/LICENSE ./LICENSE
 
