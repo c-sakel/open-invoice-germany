@@ -102,6 +102,24 @@ beforeAll(async () => {
   recurringId = recurring.id;
 });
 
+describe("finalize_invoice: Hinweise", () => {
+  it("liefert nicht blockierende Hinweise (Kunde ohne elektronische Adresse)", async () => {
+    const other = await dbInternal.customer.create({
+      data: { orgId, name: "Hinweis-Kunde AG", addressLine1: "Marktplatz 3", postalCode: "20095", city: "Hamburg", type: "BUSINESS" },
+    });
+    const draft = await createDraftInvoice(
+      orgId,
+      { customerId: other.id, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", issueDate: ISSUE, dueDate: ISSUE, lines: [line("Hinweis-Position")] } as CreateInvoiceInput,
+      { now: ISSUE },
+    );
+    const res = await callTool("finalize_invoice", { invoice: draft.id });
+    expect(res.isError).toBeFalsy();
+    expect(text(res)).toContain("Festgeschrieben:");
+    expect(text(res)).toContain("Hinweise (nicht blockierend)");
+    expect(text(res)).toContain("elektronische Adresse");
+  });
+});
+
 describe("list_invoices", () => {
   it("listet Rechnungen der Organisation, filterbar nach Kunde", async () => {
     const res = await callTool("list_invoices", { customer: customerName });

@@ -46,10 +46,10 @@ export default async function InvoiceDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; send?: string; liste?: string | string[] }>;
+  searchParams: Promise<{ error?: string; hinweis?: string; send?: string; liste?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { error, send, liste: listeParam } = await searchParams;
+  const { error, hinweis, send, liste: listeParam } = await searchParams;
   const liste = firstOf(listeParam);
 
   const org = await getActiveOrg();
@@ -243,6 +243,11 @@ export default async function InvoiceDetail({
             </div>
           )}
           {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-4 text-sm whitespace-pre-line text-stamp">{error}</div>}
+          {hinweis && (
+            <div role="status" className="rounded-md border border-rule bg-paper p-3 text-sm whitespace-pre-line text-ink-soft">
+              <strong className="font-medium">Hinweis zum Festschreiben:</strong>{"\n"}{hinweis}
+            </div>
+          )}
           {vm.isCancelled && refundDueCents > 0 && (
             <div className="rounded-md border border-rule bg-paper p-3 text-sm text-ink-soft">
               Erfasste Zahlungen: {formatCents(refundDueCents, invoice.currency)} — falls noch nicht geschehen, an den Kunden zurückzahlen (Skonto und Verrechnungen mit Gutschriften sind nicht enthalten).

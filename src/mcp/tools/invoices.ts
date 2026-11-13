@@ -14,6 +14,7 @@ import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSch
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
+import { collectFinalizeWarnings } from "@/domain/invoice/finalize-warnings";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
 import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
@@ -202,8 +203,10 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, invoice);
+        const warnings = await collectFinalizeWarnings(org.id, inv.id);
         const finalized = await finalizeInvoice(inv.id);
-        return ctx.ok(`Festgeschrieben: ${finalized.number} · Brutto ${formatCents(finalized.grossTotalCents)}. Unveränderbar. Export mit export_invoice.`);
+        const hint = warnings.length > 0 ? `\n\nHinweise (nicht blockierend):\n${warnings.map((w) => `- ${w}`).join("\n")}` : "";
+        return ctx.ok(`Festgeschrieben: ${finalized.number} · Brutto ${formatCents(finalized.grossTotalCents)}. Unveränderbar. Export mit export_invoice.${hint}`);
       } catch (e) {
         if (e instanceof FinalizeError) return ctx.fail(`Festschreiben nicht möglich:\n${e.message}`);
         if (e instanceof ToolError) return ctx.fail(e.message);

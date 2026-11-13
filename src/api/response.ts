@@ -9,6 +9,11 @@ export function apiData<T>(data: T, status = 200): NextResponse {
   return NextResponse.json({ data }, { status });
 }
 
+/** Einzelobjekt mit nicht blockierenden Hinweisen: `{ data, warnings }`. */
+export function apiDataWithWarnings<T>(data: T, warnings: string[], status = 200): NextResponse {
+  return NextResponse.json({ data, warnings }, { status });
+}
+
 export interface PaginationParams {
   limit: number;
   offset: number;
