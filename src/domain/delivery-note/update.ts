@@ -7,6 +7,8 @@
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { lockRow } from "@/lib/db-lock";
+import { DeliveryNoteValidationError } from "@/domain/delivery-note/errors";
 import { NotFoundError } from "@/domain/errors";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
@@ -30,9 +32,11 @@ export async function updateDraftDeliveryNote(
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) als erste Anweisung: Statuspruefung erst danach, sonst Race gegen DRAFT -> CREATED.
+    await lockRow(tx, "DeliveryNote", id);
     const note = await tx.deliveryNote.findFirst({
       where: { id, orgId },
-      select: { id: true, status: true, customerId: true, contactPersonId: true, shippingAddressId: true, _count: { select: { lines: true } } },
+      select: { id: true, status: true, sourceType: true, sourceId: true, customerId: true, contactPersonId: true, shippingAddressId: true, _count: { select: { lines: true } } },
     });
     if (!note) throw new NotFoundError(`Lieferschein ${id} nicht gefunden.`);
     if (note.status !== "DRAFT") throw new DeliveryNoteNotDraftError();
@@ -66,6 +70,13 @@ export async function updateDraftDeliveryNote(
     }
 
     if (input.lines) {
+      // Die Quelle des Kopfes bleibt unveraendert: Zeilenbezuege muessen auf genau diese Quelle zeigen.
+      for (const [i, l] of input.lines.entries()) {
+        if (!l.sourceType && !l.sourceId && !l.sourceLineId) continue;
+        if (l.sourceType !== note.sourceType || l.sourceId !== note.sourceId) {
+          throw new DeliveryNoteValidationError(`Position ${i + 1}: Quellbezug passt nicht zur Quelle des Lieferscheins.`);
+        }
+      }
       // Bereits im Entwurf enthaltene Saetze (z. B. von der Quelle geerbt) bleiben erlaubt.
       const current = await tx.deliveryNoteLine.findMany({ where: { deliveryNoteId: id }, select: { taxRate: true } });
       await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), {

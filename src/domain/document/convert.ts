@@ -60,6 +60,9 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) als erste Anweisung: serialisiert parallele Umwandlungen unter Postgres;
+    // die convertedToInvoiceId-Pruefung unten liest erst nach der Sperre.
+    await lockRow(tx, "Quote", documentId);
     const q = await tx.quote.findFirst({ where: { id: documentId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!q) throw new ConvertError("Dokument nicht gefunden.");
     if (q.convertedToInvoiceId) throw new ConvertError("Dokument wurde bereits in eine Rechnung umgewandelt.");
@@ -192,6 +195,8 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
   const { actor, now } = opts;
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) als erste Anweisung (serialisiert parallele Umwandlungen und den Statuswechsel).
+    await lockRow(tx, "Quote", fromId);
     const src = await tx.quote.findFirst({ where: { id: fromId, orgId }, include: { lines: { orderBy: { position: "asc" } } } });
     if (!src) throw new ConvertError("Angebot nicht gefunden.");
     if (src.kind !== "ANGEBOT") throw new ConvertError("Nur ein Angebot kann in eine Auftragsbestaetigung umgewandelt werden.");
