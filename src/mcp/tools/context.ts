@@ -42,7 +42,9 @@ export function parseDateInput(s?: string): Date | undefined {
   const t = s.trim().toLowerCase();
   if (t === "heute" || t === "today") return new Date();
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? undefined : d;
+  // Ungueltige Eingaben nicht still verwerfen (sonst wuerde z. B. ein Lieferdatum ungesetzt bleiben).
+  if (Number.isNaN(d.getTime())) throw new ToolError(`Datum "${s}" konnte nicht gelesen werden (YYYY-MM-DD oder 'heute').`);
+  return d;
 }
 
 export async function requireOrg() {
@@ -164,11 +166,13 @@ export async function buildSimpleLines(
     let taxRate = l.taxRatePercent;
     let description = l.description;
     let productId: string | undefined;
+    let articleNumber: string | undefined;
     if (l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
       // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie create_invoice).
       if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
       if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt
+      if (p?.articleNumber) articleNumber = p.articleNumber; // Phase 17b: Lieferschein-Tools reichen sie weiter
       if (p && unitPriceEuro == null) {
         unitPriceEuro = p.netPriceCents / 100;
         unit = unit ?? p.unit;
@@ -179,6 +183,7 @@ export async function buildSimpleLines(
     if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
     return {
       productId,
+      articleNumber,
       ossCategory: l.ossCategory,
       description,
       quantityMilli: qtyToMilli(l.quantity),

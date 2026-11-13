@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generierter Postgres-Client des Race-Skripts (scripts/test-postgres-race.sh).
+    "tmp/**",
   ]),
 ]);
 

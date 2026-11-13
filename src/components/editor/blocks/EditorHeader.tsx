@@ -52,6 +52,8 @@ export function EditorHeader({
   saving,
   primaryLabel,
   onSave,
+  secondaryLabel,
+  onSecondary,
   onPreview,
   previewDisabled,
 }: {
@@ -61,6 +63,9 @@ export function EditorHeader({
   saving: boolean;
   primaryLabel: string;
   onSave: () => void;
+  /** Phase 17b: optionale zweite Aktion (z. B. "Lieferschein erstellen"), teilt sich `saving`. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onPreview: () => void;
   previewDisabled?: boolean;
 }) {
@@ -133,6 +138,16 @@ export function EditorHeader({
           >
             Vorschau
           </button>
+          {secondaryLabel && onSecondary && (
+            <button
+              type="button"
+              onClick={onSecondary}
+              disabled={saving}
+              className="rounded-md border border-rule-strong px-3 py-2 text-sm font-medium text-ink-soft hover:bg-paper disabled:opacity-60"
+            >
+              {secondaryLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onSave}

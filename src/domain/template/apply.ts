@@ -10,6 +10,9 @@
  * geschrieben: die Erzeugung wickelt ihre eigene Transaktion — ein fehlgeschlagener
  * Zaehler darf den bereits erzeugten Beleg nicht zurueckrollen, ein fehlgeschlagener
  * Beleg zaehlt nie hoch.
+ *
+ * Lieferscheine entstehen als Entwurf (`draft: true`, ohne Nummer, Phase 17b) und werden im
+ * Lieferschein-Editor bearbeitet und erstellt.
  */
 import { dbInternal } from "@/lib/db";
 import { logActivity } from "@/domain/activity/log";
@@ -73,6 +76,7 @@ export async function applyTemplate(
         headerText: payload.headerText,
         footerText: payload.footerText,
         notes: payload.notes,
+        draft: true,
         lines: payload.lines.map(toDeliveryNoteLine),
       },
       { actor, now },

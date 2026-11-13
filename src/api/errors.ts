@@ -27,7 +27,8 @@ import { FinalInvoiceError } from "@/domain/invoice/final";
 import { StatusTransitionError } from "@/domain/document/status";
 import { ShareLinkError } from "@/domain/quote-share/link";
 import { InvoiceUpdateError } from "@/domain/invoice/update";
-import { DeliveryNoteError, DeliveryNoteValidationError } from "@/domain/delivery-note/create";
+import { DeliveryNoteError, DeliveryNoteValidationError, DeliveryNoteNotDraftError } from "@/domain/delivery-note/errors";
+import { OverDeliveryError } from "@/domain/delivery-note/quantities";
 import { RecurringError } from "@/domain/recurring/create";
 import { AttachmentValidationError } from "@/lib/attachments/storage";
 import { PricingError } from "@/lib/pricing/errors";
@@ -54,7 +55,9 @@ const DOMAIN_CONFLICT_ERROR_CLASSES = [
   StatusTransitionError,
   ShareLinkError,
   InvoiceUpdateError,
+  DeliveryNoteNotDraftError,
   DeliveryNoteError,
+  OverDeliveryError,
   RecurringError,
   AttachmentValidationError,
   PricingError,

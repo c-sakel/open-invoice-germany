@@ -6,6 +6,7 @@
  * Nummer aus dem Kreis angelegt und festgeschrieben; das Original erhält den
  * Status CANCELLED und einen Verweis auf die Gutschrift (§ 31 Abs. 5 UStDV).
  */
+import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
 import type { TaxBreakdownEntry } from "@/lib/tax";
@@ -201,6 +202,8 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b): Doppel-Storno unter Postgres ausgeschlossen (SQLite: No-op).
+    await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
       include: { lines: { orderBy: { position: "asc" } }, finalDeductions: true },

@@ -67,6 +67,8 @@ function statusWhere(status: InvoiceListFilter["status"], now: Date): Prisma.Inv
   if (status === "paid") return { status: "PAID" };
   if (status === "partial") return { status: "PARTIALLY_PAID" };
   if (status === "cancelled") return { status: "CANCELLED" };
+  // Gutschriften (Storno- und Teilgutschriften), ohne Entwuerfe — Tab "Gutschriften" (17b).
+  if (status === "credit") return { type: "CREDIT_NOTE", status: { not: "DRAFT" } };
 
   const today = new Date(utcDateOnlyPlusDays(now, 0));
   const tomorrow = new Date(utcDateOnlyPlusDays(now, 1));
@@ -162,7 +164,7 @@ export async function invoiceFilterConditions(orgId: string, filter: InvoiceList
  * `count()` mit demselben `where` wie die Liste, nur mit ausgetauschter Statusbedingung —
  * keine Zeilen im Speicher, kein zweiter Statusbegriff. Bewusst ueberlappend, wo
  * `statusWhere` es ist: `partial` (Rohstatus PARTIALLY_PAID) ist Teilmenge von
- * open/due/overdue. Feste Abfragezahl: ein `count()` je Tab (8 Tabs), kein N+1 auf
+ * open/due/overdue. Feste Abfragezahl: ein `count()` je Tab (9 Tabs), kein N+1 auf
  * Zeilenebene.
  */
 export async function invoiceStatusTabCounts(

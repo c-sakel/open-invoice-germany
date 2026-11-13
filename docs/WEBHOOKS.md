@@ -17,7 +17,7 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `quote.sent` | Angebot versendet |
 | `quote.accepted` | Angebot vom Kunden angenommen |
 | `quote.rejected` | Angebot vom Kunden abgelehnt |
-| `delivery_note.created` | Lieferschein angelegt |
+| `delivery_note.created` | Lieferschein erstellt (feuert bei der Nummernvergabe, also bei direkter Anlage oder beim Übergang Entwurf → Erstellt; ein Entwurf löst es nicht aus) |
 | `email.sent` / `email.failed` | Belegversand per E-Mail erfolgreich/fehlgeschlagen |
 | `dunning.created` | Mahnung erstellt |
 

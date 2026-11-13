@@ -97,7 +97,5 @@ export async function applyTemplateAction(input: { id: string }): Promise<ApplyT
 function editHrefFor(docType: TagDocType, id: string): string {
   if (docType === "INVOICE") return `/rechnungen/${id}/bearbeiten`;
   if (docType === "QUOTE") return `/dokumente/${id}/bearbeiten`;
-  // Lieferscheine kennen keinen eigenen Editor (RowActionsMenu-Kommentar) — die
-  // Detailseite selbst ist der Entwurfs-Zustand.
-  return `/lieferscheine/${id}`;
+  return `/lieferscheine/${id}/bearbeiten`;
 }

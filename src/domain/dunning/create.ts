@@ -9,7 +9,7 @@ import { dbInternal } from "@/lib/db";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { computeInterestSegments } from "@/lib/dunning";
 import { loadBaseRates } from "@/domain/dunning/base-rate";
-import { dunningScheduleFor, latestDunning, type StageLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, reachedStageIds, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { appendChangeLog } from "@/domain/audit";
 import { logActivity } from "@/domain/activity/log";
@@ -89,7 +89,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
         // die "letzte Mahnung" jetzt einheitlich ueber alle drei Aufrufer hinweg (siehe
         // dort), nicht mehr per DB-seitigem orderBy+take.
         dunnings: {
-          select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } },
+          select: { createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } },
         },
       },
     });
@@ -138,6 +138,7 @@ export async function createDunning(invoiceId: string, opts: DunningOptions = {}
       invoiceDueDate: dueDate,
       lastDunning: last ? { order: lastOrder!, dueDate: last.dueDate, sentAt: last.sentAt } : null,
       stages,
+      reachedStageIds: reachedStageIds(inv.dunnings),
       gracePeriodDays: settings.gracePeriodDays,
       now,
     });

@@ -37,6 +37,8 @@ export interface DraftLine {
   productId?: string | null;
   /** Phase 16e: OSS-Kategorie-Snapshot der Position (aus dem gespeicherten Beleg); `undefined` = aus Produkt ableiten. */
   ossCategory?: string;
+  /** Phase 17b: Quellbezug einer Lieferschein-Zeile (Teillieferung); bleibt beim Bearbeiten erhalten. */
+  source?: { type: "QUOTE" | "INVOICE"; id: string; lineId: string } | null;
 }
 
 export interface DraftState {
@@ -581,30 +583,31 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
   return isEdit ? shared : { kind: d.kind, ...shared };
 }
 
-export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
-  return {
+export function toDeliveryNotePayload(d: DraftState, isEdit = false): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
     customerId: d.customerId,
     language: d.language || undefined,
-    contactPersonId: optionalSelectValue(d.contactPersonId, false),
-    shippingAddressId: optionalSelectValue(d.shippingAddressId, false),
-    deliveryDate: d.deliveryDate || undefined,
+    contactPersonId: optionalSelectValue(d.contactPersonId, isEdit),
+    shippingAddressId: optionalSelectValue(d.shippingAddressId, isEdit),
+    // Beim Bearbeiten sendet ein geleertes Datum `null` (PATCH leert das Feld).
+    deliveryDate: d.deliveryDate || (isEdit ? null : undefined),
     // Fix 2 (Task-1-Review): shippingDate/internalNotes sind in createDeliveryNoteSchema
     // vorhanden, der Editor exponiert sie hier zusaetzlich.
-    shippingDate: d.shippingDate || undefined,
-    internalNotes: d.internalNotes || undefined,
+    shippingDate: d.shippingDate || (isEdit ? null : undefined),
+    internalNotes: isEdit ? d.internalNotes : d.internalNotes || undefined,
     // Fix-Welle I1/I2 (Abschluss-Review): headerText/footerText/showDeliveryAddress werden
     // im Editor angezeigt (HeadTextBlock/FootTextBlock/MoreOptions fuer ALLE drei Modi,
     // siehe dortige Kommentare) und von createDeliveryNoteSchema/createDeliveryNoteWithinTx
     // verarbeitet — vorher fielen sie hier still unter den Tisch, obwohl der Nutzer sie
     // sichtbar bedienen konnte (Lastenheft 59, "keine Buttons ohne Backend").
-    headerText: d.headerText || undefined,
-    footerText: d.footerText || undefined,
+    headerText: isEdit ? d.headerText : d.headerText || undefined,
+    footerText: isEdit ? d.footerText : d.footerText || undefined,
     showPrices: d.showPrices,
     showTax: d.showTax,
     showArticleNumber: d.showArticleNumber,
     showDescription: d.showDescription,
     showDeliveryAddress: d.showDeliveryAddress,
-    notes: d.notes || undefined,
+    notes: isEdit ? d.notes : d.notes || undefined,
     // Lieferscheine kennen keinen lineType — nur ITEM-Zeilen ergeben eine gueltige
     // Lieferschein-Position (deliveryNoteLineInputSchema verlangt quantityMilli > 0).
     lines: d.lines
@@ -616,8 +619,13 @@ export function toDeliveryNotePayload(d: DraftState): Record<string, unknown> {
         unit: l.unit,
         unitNetPriceCents: centsOrZero(l.price),
         taxRate: l.taxRate,
+        ...(l.source ? { sourceType: l.source.type, sourceId: l.source.id, sourceLineId: l.source.lineId } : {}),
       })),
   };
+  // Phase 17b: Erstellen laeuft ueber den Statuswechsel (MARK_CREATED), der Editor
+  // legt Lieferscheine immer als Entwurf an. PATCH kennt `draft` nicht (strict).
+  if (!isEdit) payload.draft = true;
+  return payload;
 }
 
 export function validateDraft(d: DraftState): string[] {
@@ -900,6 +908,83 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     documentChargeAmount: roundTrip(initial.documentChargeAmount, toCents, fromCents),
     documentChargeReason: initial.documentChargeReason ?? "",
     lines: initialLines(initial.lines, allowedTaxRates),
+    dirty: false,
+  };
+}
+
+/** Shape, das `src/app/lieferscheine/[id]/bearbeiten/page.tsx` aus dem geladenen Lieferschein-Entwurf baut. */
+export interface DeliveryNoteInitialLike {
+  id: string;
+  customerId: string;
+  language?: string;
+  contactPersonId: string;
+  shippingAddressId: string;
+  /** `yyyy-mm-dd` oder leer. */
+  deliveryDate: string;
+  shippingDate: string;
+  headerText: string;
+  footerText: string;
+  notes: string;
+  internalNotes: string;
+  showPrices: boolean;
+  showTax: boolean;
+  showArticleNumber: boolean;
+  showDescription: boolean;
+  showDeliveryAddress: boolean;
+  lines: {
+    description: string;
+    articleNumber: string;
+    /** Anzeige-/Rohform in Einheiten (z. B. "2.5"). */
+    quantity: string;
+    unit: string;
+    /** Anzeige-/Rohform in Euro (z. B. "9.90") oder leer. */
+    price: string;
+    taxRate: number | null;
+    source?: { type: "QUOTE" | "INVOICE"; id: string; lineId: string } | null;
+  }[];
+}
+
+export function draftFromDeliveryNote(initial: DeliveryNoteInitialLike, taxRates: readonly number[] = FALLBACK_TAX_RATES): DraftState {
+  const allowedTaxRates = [...taxRates];
+  const base = emptyDraft("DELIVERY_NOTE", { allowedTaxRates });
+  const fallbackRate = emptyLine("ITEM", allowedTaxRates).taxRate;
+  return {
+    ...base,
+    id: initial.id,
+    customerId: initial.customerId,
+    language: initial.language === "en" ? "en" : "de",
+    languageTouched: true,
+    contactPersonId: initial.contactPersonId,
+    shippingAddressId: initial.shippingAddressId,
+    deliveryDateFollowsIssue: false,
+    deliveryDate: initial.deliveryDate,
+    shippingDate: initial.shippingDate,
+    headerText: initial.headerText,
+    footerText: initial.footerText,
+    notes: initial.notes,
+    internalNotes: initial.internalNotes,
+    showPrices: initial.showPrices,
+    showTax: initial.showTax,
+    showArticleNumber: initial.showArticleNumber,
+    showDescription: initial.showDescription,
+    showDeliveryAddress: initial.showDeliveryAddress,
+    lines: initial.lines.length
+      ? initial.lines.map((l) => ({
+          ...initialLineToDraftLine({
+            lineType: "ITEM",
+            description: l.description,
+            descriptionLong: "",
+            articleNumber: l.articleNumber,
+            quantity: l.quantity,
+            unit: l.unit,
+            price: l.price,
+            taxRate: l.taxRate ?? fallbackRate,
+            discountPercent: "",
+            discountAmount: "",
+          }),
+          source: l.source ?? null,
+        }))
+      : [emptyLine("ITEM", allowedTaxRates)],
     dirty: false,
   };
 }

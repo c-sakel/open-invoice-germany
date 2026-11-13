@@ -113,7 +113,7 @@ export default async function LieferscheinDetail({
         <>
           {/* Fix-Welle I2: kompakte Kopfzeile — nur der erste verfuegbare Statusuebergang;
               der Rest wandert per DocumentActionsMenuItems ins "Mehr"-Menue. */}
-          <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} variant="compact" cancelInfo={{ noun: "Lieferschein", number: dn.number }} />
+          <DocumentActions type="DELIVERY_NOTE" id={dn.id} status={dn.status} archived={archived} editHref={`/lieferscheine/${dn.id}/bearbeiten`} variant="compact" cancelInfo={{ noun: "Lieferschein", number: dn.number }} />
           {dn.number && (
             <a
               href={`/api/delivery-notes/${dn.id}/pdf`}

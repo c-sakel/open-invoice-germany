@@ -7,7 +7,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { openAmountCents as computeOpenAmountCents } from "@/domain/invoice/amounts";
-import { dunningScheduleFor, type StageLike } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, reachedStageIds, type StageLike } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { ensureDunningSnapshots } from "@/domain/dunning/snapshot";
 import { DUNNABLE_TYPES } from "@/domain/dunning/create";
@@ -70,7 +70,7 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
 
   const stages: (StageLike & { name: string })[] = await dbInternal.dunningStage.findMany({
     where: { orgId },
-    select: { order: true, enabled: true, daysAfterDue: true, name: true },
+    select: { id: true, order: true, enabled: true, daysAfterDue: true, name: true },
   });
 
   // S6 (Fix-Welle): explizites `select` statt `include` ohne Einschraenkung — vorher kam
@@ -101,7 +101,7 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
       customer: { select: { name: true } },
       dunnings: {
         orderBy: { createdAt: "desc" },
-        select: { id: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true, name: true } } },
+        select: { id: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true, name: true } } },
       },
     },
   });
@@ -187,6 +187,7 @@ export async function loadDunningOverview(orgId: string, now: Date = new Date(),
       invoiceDueDate: dueDate,
       lastDunning: last ? { order: currentStage!.order, dueDate: last.dueDate, sentAt: last.sentAt } : null,
       stages,
+      reachedStageIds: reachedStageIds(inv.dunnings),
       gracePeriodDays: settings.gracePeriodDays,
       now,
     });

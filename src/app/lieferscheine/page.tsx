@@ -183,7 +183,7 @@ export default async function LieferscheinePage({ searchParams }: { searchParams
             id={n.id}
             actions={actions}
             openHref={`/lieferscheine/${n.id}`}
-            // Keine Bearbeiten-Seite fuer Lieferscheine (vorbestehende Luecke) — EDIT wird trotz ActionKey nicht gerendert.
+            editHref={n.status === "DRAFT" ? `/lieferscheine/${n.id}/bearbeiten` : undefined}
             pdfHref={`/api/delivery-notes/${n.id}/pdf`}
             emailDocType="DELIVERY_NOTE"
             hasEmailLog={n.hasEmailLog}

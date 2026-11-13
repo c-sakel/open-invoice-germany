@@ -34,9 +34,12 @@ function resolveDatasourceUrl(): string | undefined {
  * `mode` NUR gesetzt, wenn der Provider Postgres ist (erkannt am Praefix von
  * `DATABASE_URL`, analog `resolveDatasourceUrl` oben).
  */
+export function isPostgresUrl(url?: string): boolean {
+  return (url ?? "").startsWith("postgres");
+}
+
 export function ciContains(value: string): { contains: string; mode?: "insensitive" } {
-  const url = process.env.DATABASE_URL ?? "";
-  const isPostgres = url.startsWith("postgres");
+  const isPostgres = isPostgresUrl(process.env.DATABASE_URL);
   return isPostgres ? { contains: value, mode: "insensitive" } : { contains: value };
 }
 

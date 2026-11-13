@@ -714,7 +714,7 @@ export const skontoCheckQuerySchema = z.object({
 export type SkontoCheckQuery = z.infer<typeof skontoCheckQuerySchema>;
 
 // ── Rechnungsliste: Filter/Suche (Phase 8b, §40) ─────────────────────────────
-export const InvoiceListStatusFilter = z.enum(["all", "draft", "open", "due", "overdue", "partial", "paid", "cancelled"]);
+export const InvoiceListStatusFilter = z.enum(["all", "draft", "open", "due", "overdue", "partial", "paid", "cancelled", "credit"]);
 export type InvoiceListStatusFilter = z.infer<typeof InvoiceListStatusFilter>;
 
 export const invoiceListFilterSchema = z.object({
@@ -869,7 +869,20 @@ export const createDeliveryNoteSchema = z.object({
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
   lines: z.array(deliveryNoteLineInputSchema).min(1),
+  // Phase 17b: true -> Entwurf (DRAFT ohne Nummer/Snapshot, reserviert keine Menge).
+  draft: z.boolean().optional(),
 });
+export const updateDeliveryNoteSchema = createDeliveryNoteSchema
+  .omit({ sourceType: true, sourceId: true, draft: true, lines: true })
+  .partial()
+  // `null` leert das Datum (Entwurf bearbeiten); beim Anlegen bleibt es optional.
+  .extend({
+    deliveryDate: z.coerce.date().nullable().optional(),
+    shippingDate: z.coerce.date().nullable().optional(),
+    lines: z.array(deliveryNoteLineInputSchema).min(1).optional(),
+  })
+  .strict();
+export type UpdateDeliveryNoteInput = z.infer<typeof updateDeliveryNoteSchema>;
 export type CreateDeliveryNoteInput = z.infer<typeof createDeliveryNoteSchema>;
 
 // customerAddressInputSchema/contactPersonInputSchema (Phase 8a, §29/§30) leben in

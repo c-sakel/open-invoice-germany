@@ -13,7 +13,7 @@ import { dbInternal } from "@/lib/db";
 import { createNotification } from "@/domain/notifications/create";
 import { loadNotificationSettings, markDigestSent, type NotificationType } from "@/domain/notifications/settings";
 import { DUNNABLE_TYPES } from "@/domain/dunning/create";
-import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, reachedStageIds } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { loadMailSettings } from "@/domain/email/settings";
@@ -109,7 +109,7 @@ async function processDunningStages(orgId: string, now: Date, enabled: Set<Notif
       grossTotalCents: true,
       paidAmountCents: true,
       payableCents: true,
-      dunnings: { select: { createdAt: true, dueDate: true, sentAt: true, level: true, stage: { select: { order: true } } } },
+      dunnings: { select: { createdAt: true, dueDate: true, sentAt: true, level: true, stageId: true, stage: { select: { order: true } } } },
     },
   });
 
@@ -122,6 +122,7 @@ async function processDunningStages(orgId: string, now: Date, enabled: Set<Notif
       invoiceDueDate: dueDate,
       lastDunning: last ? { order: lastOrder!, dueDate: last.dueDate, sentAt: last.sentAt } : null,
       stages,
+      reachedStageIds: reachedStageIds(inv.dunnings),
       gracePeriodDays: settings.gracePeriodDays,
       now,
     });

@@ -188,3 +188,84 @@ export async function markEmailBounced(orgId: string, logId: string, actor = "sy
   const to = (JSON.parse(log.toJson) as string[])[0];
   await onEmailBounced(orgId, { logId, docType: log.docType, docId: log.docId, to });
 }
+
+
+/** Ab dieser Zeit seit Anlage gilt ein QUEUED-Protokoll als haengengeblieben (Prozessabbruch). */
+export const QUEUED_STALE_MS = 15 * 60 * 1000;
+/** Neutral formuliert: ob die SMTP-Zustellung vor dem Abbruch noch geklappt hat, ist unbekannt. */
+export const QUEUED_RECONCILE_ERROR = "Versand abgebrochen, Zustellung unbekannt (Abgleich) — vor erneutem Versand beim Empfänger nachfragen";
+
+function parseJson<T>(json: string, fallback: T): T {
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Setzt haengengebliebene QUEUED-EmailLogs (aelter als `QUEUED_STALE_MS`, z. B. nach einem
+ * Prozessabbruch zwischen Anlage und SMTP-Ergebnis) auf FAILED — je Zeile eine eigene
+ * Transaktion (ChangeLog-Kette je Org, seriell; kein `Promise.all`). Der bedingte
+ * `updateMany` (nur wenn noch QUEUED) schuetzt vor einem Wettlauf mit `finishEmailLog`:
+ * wurde die Zeile zwischenzeitlich SENT, passiert nichts. Wird ein Versand spaeter doch
+ * noch erfolgreich, ueberschreibt `finishEmailLog` mit SENT (zweiter ChangeLog-Satz, damit
+ * nachvollziehbar). Gibt die Anzahl abgeglichener Zeilen zurueck.
+ */
+export async function reconcileStaleQueuedEmails(now: Date, opts: { limit?: number } = {}): Promise<number> {
+  const threshold = new Date(now.getTime() - QUEUED_STALE_MS);
+  const rows = await dbInternal.emailLog.findMany({
+    where: { status: "QUEUED", createdAt: { lt: threshold } },
+    select: { id: true, orgId: true, docType: true, docId: true, toJson: true, ccJson: true, bccJson: true, subject: true, attachmentsJson: true },
+    orderBy: { createdAt: "asc" },
+    take: opts.limit ?? 500,
+  });
+
+  let reconciled = 0;
+  for (const row of rows) {
+    // Je Zeile abgefangen: eine Kollision der ChangeLog-Kette mit einem parallelen Schreiber
+    // derselben Org darf den Cleanup-Job (und die nachfolgenden Loeschschritte) nicht abbrechen;
+    // die Zeile bleibt QUEUED und wird im naechsten Lauf erneut versucht.
+    const done = await dbInternal.$transaction(async (tx) => {
+      const res = await tx.emailLog.updateMany({
+        where: { id: row.id, status: "QUEUED" },
+        data: { status: "FAILED", error: QUEUED_RECONCILE_ERROR, sentAt: null },
+      });
+      if (res.count !== 1) return false;
+      const updated = await tx.emailLog.findUniqueOrThrow({ where: { id: row.id } });
+      await appendChangeLog(tx, {
+        orgId: row.orgId,
+        entity: "EMAIL",
+        entityId: row.id,
+        action: "FAILED",
+        actor: "scheduler",
+        at: now,
+        diff: {
+          docType: row.docType,
+          docId: row.docId,
+          docNumber: null,
+          to: parseJson<unknown[]>(row.toJson, []),
+          cc: parseJson<unknown[]>(row.ccJson, []),
+          bcc: parseJson<unknown[]>(row.bccJson, []),
+          subject: row.subject,
+          attachments: parseJson<unknown[]>(row.attachmentsJson, []),
+          error: QUEUED_RECONCILE_ERROR,
+        },
+      });
+      await emitEvent(tx, {
+        orgId: row.orgId,
+        type: "email.failed",
+        objectName: "EmailLog",
+        objectId: row.id,
+        data: serializeEmailLog(updated),
+        now,
+      });
+      return true;
+    }).catch((e: unknown) => {
+      console.warn("[email-reconcile] Zeile uebersprungen:", row.id, e instanceof Error ? e.message : e);
+      return false;
+    });
+    if (done) reconciled += 1;
+  }
+  return reconciled;
+}

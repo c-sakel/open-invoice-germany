@@ -76,6 +76,12 @@ describe("runCleanupJob", () => {
     expect(await dbInternal.apiIdempotency.findUnique({ where: { id: recentRow.id } })).not.toBeNull();
   });
 
+  it("liefert emailsReconciled (haengengebliebene QUEUED-Mails, 17b)", async () => {
+    const result = await runCleanupJob(NOW);
+    expect(typeof result.emailsReconciled).toBe("number");
+    expect(result.emailsReconciled).toBeGreaterThanOrEqual(0);
+  });
+
   it("ist Teil der Scheduler-Jobreihenfolge als letzter Job (nach webhooks)", async () => {
     const results = await runScheduledJobs({ trigger: "MANUAL", now: NOW, jobs: ["cleanup"] });
     expect(results.map((r) => r.job)).toEqual(["cleanup"]);

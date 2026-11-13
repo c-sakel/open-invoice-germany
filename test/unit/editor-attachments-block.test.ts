@@ -1,7 +1,6 @@
 /**
- * Fix-Welle 1, M1 (Abschluss-Review Phase 13b): DELIVERY_NOTE kennt anders als INVOICE/
- * DOCUMENT keinen Entwurfspfad — ein Anhang-Upload VOR dem Speichern darf dort deshalb
- * keinen Lieferschein anlegen. Reine Funktionspruefung (kein RTL im Projekt, siehe
+ * Phase 17b (vorher Fix-Welle 1, M1): Lieferscheine haben einen Entwurfspfad, ein Upload VOR
+ * dem Erstellen legt nur einen Entwurf an. Reine Funktionspruefung (kein RTL im Projekt, siehe
  * test/unit/editor-discount-mode.test.ts fuer dasselbe Muster): `canOfferAttachmentUpload`
  * entscheidet, ob `AttachmentsBlock` den Upload-Weg (ggf. inkl. `ensureDocId`) ueberhaupt
  * anbietet. Liefert sie `false`, rendert `AttachmentsBlock` nur den Hinweistext — es gibt
@@ -12,15 +11,15 @@
 import { describe, it, expect } from "vitest";
 import { canOfferAttachmentUpload } from "@/components/editor/blocks/AttachmentsBlock";
 
-describe("AttachmentsBlock.canOfferAttachmentUpload (Fix-Welle 1, M1)", () => {
-  it("DELIVERY_NOTE ohne docId (Neuanlage, noch nicht gespeichert): kein Upload-Weg", () => {
-    expect(canOfferAttachmentUpload("DELIVERY_NOTE", undefined)).toBe(false);
-    expect(canOfferAttachmentUpload("DELIVERY_NOTE", "")).toBe(false);
+describe("AttachmentsBlock.canOfferAttachmentUpload (Phase 17b)", () => {
+  it("DELIVERY_NOTE ohne docId: Upload erlaubt (ensureDocId legt einen Entwurf an)", () => {
+    expect(canOfferAttachmentUpload("DELIVERY_NOTE", undefined)).toBe(true);
+    expect(canOfferAttachmentUpload("DELIVERY_NOTE", "")).toBe(true);
   });
-  it("DELIVERY_NOTE MIT docId (bereits gespeicherter Beleg): Upload erlaubt", () => {
+  it("DELIVERY_NOTE MIT docId: Upload erlaubt", () => {
     expect(canOfferAttachmentUpload("DELIVERY_NOTE", "dn1")).toBe(true);
   });
-  it("INVOICE/DOCUMENT bieten den Upload-Weg auch VOR dem Speichern an (Entwurfspfad, Task 6)", () => {
+  it("INVOICE/DOCUMENT bieten den Upload-Weg auch VOR dem Speichern an", () => {
     expect(canOfferAttachmentUpload("INVOICE", undefined)).toBe(true);
     expect(canOfferAttachmentUpload("DOCUMENT", undefined)).toBe(true);
     expect(canOfferAttachmentUpload("INVOICE", "inv1")).toBe(true);

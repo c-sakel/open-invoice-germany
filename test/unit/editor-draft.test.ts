@@ -9,13 +9,14 @@ import {
   toDeliveryNotePayload,
   draftFromInvoice,
   draftFromDocument,
+  draftFromDeliveryNote,
   validateDraft,
   dueDaysFrom,
   dueDateFromDays,
   resolveDueDays,
   localDateOnly,
 } from "@/lib/editor/draft";
-import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema } from "@/schemas";
+import { createInvoiceSchema, updateInvoiceSchema, createDocumentSchema, createDeliveryNoteSchema, updateDeliveryNoteSchema } from "@/schemas";
 
 function invoiceDraft() {
   let s = emptyDraft("INVOICE");
@@ -163,6 +164,30 @@ describe("editor/draft", () => {
     let n = emptyDraft("DELIVERY_NOTE"); n = draftReducer(n, { type: "set", field: "customerId", value: "c1" });
     n = draftReducer(n, { type: "setLine", key: n.lines[0]!.key, patch: { description: "Ware", quantity: "3" } });
     expect(createDeliveryNoteSchema.safeParse(toDeliveryNotePayload(n)).success).toBe(true);
+  });
+  it("draftFromDeliveryNote -> toDeliveryNotePayload(d, true): Quellbezug, Artikelnummer, Rundreise", () => {
+    const d = draftFromDeliveryNote({
+      id: "dn1", customerId: "c1", language: "de", contactPersonId: "", shippingAddressId: "",
+      deliveryDate: "", shippingDate: "", headerText: "", footerText: "", notes: "", internalNotes: "",
+      showPrices: true, showTax: false, showArticleNumber: true, showDescription: true, showDeliveryAddress: true,
+      lines: [{ description: "Ware", articleNumber: "A-1", quantity: "2.5", unit: "C62", price: "9.90", taxRate: 7,
+        source: { type: "QUOTE", id: "q1", lineId: "ql1" } }],
+    });
+    const p = toDeliveryNotePayload(d, true) as { lines: Record<string, unknown>[]; draft?: boolean; contactPersonId?: string | null; shippingAddressId?: string | null };
+    expect(p.lines[0]).toMatchObject({ articleNumber: "A-1", quantityMilli: 2500, unitNetPriceCents: 990, taxRate: 7, sourceType: "QUOTE", sourceId: "q1", sourceLineId: "ql1" });
+    expect(p.draft).toBeUndefined();
+    expect(p.contactPersonId).toBeNull();
+    expect(p.shippingAddressId).toBeNull();
+    // Geleerte Datumsfelder werden beim Bearbeiten als null gesendet (leeren), beim Anlegen weggelassen.
+    expect(p).toMatchObject({ deliveryDate: null, shippingDate: null });
+    expect(updateDeliveryNoteSchema.safeParse(p).success).toBe(true);
+    expect(toDeliveryNotePayload(d, false)).toMatchObject({ deliveryDate: undefined, shippingDate: undefined });
+    // Geleerte Texte werden beim Bearbeiten als "" gesendet (leeren), beim Anlegen weggelassen.
+    expect(p).toMatchObject({ notes: "", internalNotes: "", headerText: "", footerText: "" });
+    expect(toDeliveryNotePayload(d, false)).toMatchObject({ notes: undefined, internalNotes: undefined, headerText: undefined, footerText: undefined });
+    const created = toDeliveryNotePayload(d, false) as { draft?: boolean; contactPersonId?: string | null };
+    expect(created.draft).toBe(true);
+    expect(created.contactPersonId).toBeUndefined();
   });
   // Fix 2 (Task-1-Review, Ruling nach Task 4): shippingDate/internalNotes sind in
   // createDeliveryNoteSchema vorhanden — der Editor sendet sie mit.

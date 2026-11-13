@@ -5,7 +5,7 @@ import { getActiveOrg } from "@/lib/org";
 import { formatCents } from "@/lib/money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { finalizeAction } from "@/app/actions/invoices";
-import { dunningScheduleFor, latestDunning } from "@/domain/dunning/schedule";
+import { dunningScheduleFor, latestDunning, reachedStageIds } from "@/domain/dunning/schedule";
 import { loadDunningSettings } from "@/domain/dunning/settings";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
 import { SendEmailDialog } from "@/components/SendEmailDialog";
@@ -105,7 +105,7 @@ export default async function InvoiceDetail({
   // die naechste Erstellung tatsaechlich anwenden wuerde.
   let dunningSchedule: { nextStage: { name: string; order: number } | null; dueAt: Date | null; isDue: boolean } | null = null;
   if (vm.openCents > 0 && !vm.isDraft && !vm.isCancelled) {
-    const dunningStages = await prisma.dunningStage.findMany({ where: { orgId: org.id }, select: { order: true, enabled: true, daysAfterDue: true, name: true } });
+    const dunningStages = await prisma.dunningStage.findMany({ where: { orgId: org.id }, select: { id: true, order: true, enabled: true, daysAfterDue: true, name: true } });
     const dunningSettings = await loadDunningSettings(org.id);
     // Nit (Fix-Welle): `latestDunning` statt "letztes Element nach orderBy level asc" —
     // nach einem Umsortieren der Mahnstufen (S3) ist `level`/`stage.order` nicht mehr
@@ -115,6 +115,7 @@ export default async function InvoiceDetail({
       invoiceDueDate: vm.dueDate,
       lastDunning: lastDunning ? { order: lastDunning.stage?.order ?? lastDunning.level, dueDate: lastDunning.dueDate, sentAt: lastDunning.sentAt } : null,
       stages: dunningStages,
+      reachedStageIds: reachedStageIds(invoice.dunnings),
       gracePeriodDays: dunningSettings.gracePeriodDays,
       now: new Date(),
     });

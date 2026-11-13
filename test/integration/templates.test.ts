@@ -303,7 +303,8 @@ describe("DELIVERY_NOTE-Vorlagen", () => {
 
     const neu = await dbInternal.deliveryNote.findUniqueOrThrow({ where: { id: res.id }, include: { lines: true } });
     expect(neu.headerText).toBe("Kopf");
-    expect(neu.number).not.toBeNull();
+    expect(neu.number).toBeNull(); // 17b: Vorlage erzeugt Lieferschein-Entwurf
+    expect(neu.status).toBe("DRAFT");
     expect(neu.lines).toHaveLength(1);
     expect(neu.lines[0]).toMatchObject({ unit: "MTR", unitNetPriceCents: 250, taxRate: 19 });
   });

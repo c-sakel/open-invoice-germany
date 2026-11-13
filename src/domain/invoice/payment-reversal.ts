@@ -8,6 +8,7 @@
  * Die Methode der Gegenbuchung entspricht der der Zahlung, damit Erstattungssummen
  * (refundablePaidCents) die Zeilen automatisch neutralisieren.
  */
+import { lockRow } from "@/lib/db-lock";
 import type { Prisma, Payment } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
@@ -75,6 +76,10 @@ export async function reversePayment(
   const createdBy = opts.createdBy ?? "user";
 
   const result = await dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b): zuerst nur die Rechnung der Zahlung ermitteln, sperren, dann alles weitere lesen.
+    const ref = await tx.payment.findUnique({ where: { id: paymentId }, select: { invoiceId: true, invoice: { select: { orgId: true } } } });
+    if (!ref || ref.invoice.orgId !== opts.orgId) throw new NotFoundError("Zahlung nicht gefunden.");
+    await lockRow(tx, "Invoice", ref.invoiceId, ref.invoice.orgId);
     const payment = await tx.payment.findUnique({
       where: { id: paymentId },
       select: {

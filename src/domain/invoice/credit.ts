@@ -4,6 +4,7 @@
  * (Teil-)Positionen erzeugt. Das Original bleibt vollständig erhalten und
  * behält seinen Status (für Voll-Storno siehe cancelInvoice).
  */
+import { lockRow } from "@/lib/db-lock";
 import { dbInternal } from "@/lib/db";
 import { roundHalfUp } from "@/lib/money";
 import { computeLineNet } from "@/lib/pricing/line";
@@ -66,6 +67,8 @@ export async function createPartialCreditNote(
   if (input.lines.length === 0) throw new CreditError("Mindestens eine Position erforderlich.");
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
+    await lockRow(tx, "Invoice", invoiceId, opts.orgId);
     const original = await tx.invoice.findUnique({
       where: { id: invoiceId },
       select: {

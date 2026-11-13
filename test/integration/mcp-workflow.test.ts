@@ -132,6 +132,13 @@ describe("list_invoices", () => {
     expect(j.rows[0].customer).toBe(customerName);
   });
 
+  it("akzeptiert status=credit (Gutschriften-Tab, 17b) und liefert nur Gutschriften", async () => {
+    const res = await callTool("list_invoices", { status: "credit" });
+    expect(res.isError).toBeFalsy();
+    const j = JSON.parse(text(res)) as { rows: Array<{ type?: string }> };
+    for (const r of j.rows) if (r.type) expect(r.type).toBe("CREDIT_NOTE");
+  });
+
   it("liefert eine Fehlermeldung bei ungueltigem Statuswert", async () => {
     const res = await callTool("list_invoices", { status: "nichtvorhanden" });
     expect(res.isError).toBe(true);

@@ -502,6 +502,12 @@ describe("/api/v1/Invoice", () => {
     }
   });
 
+  it("17b: Liste mit status=credit liefert 200 und nur Gutschriften", async () => {
+    const res = await InvoiceList(req("http://x/api/v1/Invoice?limit=5&status=credit", { token }));
+    expect(res.status).toBe(200);
+    for (const entry of (await json(res)).data) expect(entry.type).toBe("CREDIT_NOTE");
+  });
+
   it("T2: Quote-/Lieferschein-Liste ohne embed bestehen das Schema", async () => {
     const q = await QuoteList(req("http://x/api/v1/Quote?limit=5", { token }));
     for (const entry of (await json(q)).data) expect(() => quoteSchema.strict().parse(entry)).not.toThrow();

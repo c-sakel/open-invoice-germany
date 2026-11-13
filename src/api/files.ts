@@ -21,6 +21,7 @@ import { renderInvoiceDocumentPdf } from "@/lib/einvoice/zugferd";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
+import { withDraftPreviewSnapshots } from "@/domain/delivery-note/parties";
 import { buildDeliveryNotePdfData } from "@/lib/pdf/delivery-note-data";
 import { renderDeliveryNotePdf } from "@/lib/pdf/delivery-note-pdf";
 import { loadPdfTheme } from "@/domain/settings/theme";
@@ -127,7 +128,7 @@ export async function getDocumentFile(orgId: string, kind: DocumentFileKind, doc
         })
       : null;
     const theme = await loadPdfTheme(orgId, dn.printOptionsJson, "DELIVERY_NOTE", { issued: dn.status !== "DRAFT" });
-    const buffer = await renderDeliveryNotePdf(buildDeliveryNotePdfData(dn, dn.org, dn.customer, sourceNumber, shippingAddress), theme);
+    const buffer = await renderDeliveryNotePdf(buildDeliveryNotePdfData(await withDraftPreviewSnapshots(dn, dn.customer), dn.org, dn.customer, sourceNumber, shippingAddress), theme);
     return { buffer, mimeType: "application/pdf", filenameBase: sanitizeFilename(dn.number ?? "lieferschein") };
   }
 

@@ -49,7 +49,7 @@ export const spec = {
   create: {
     path: "/api/v1/DeliveryNote",
     method: "POST",
-    summary: "Lieferschein anlegen (Entwurf)",
+    summary: "Lieferschein anlegen (mit draft: true als Entwurf ohne Nummer, sonst direkt erstellt)",
     scope: "write",
     request: { body: createDeliveryNoteSchema },
     response: apiDataResponseSchema(z.unknown()),

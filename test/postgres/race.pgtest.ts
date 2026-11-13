@@ -1,0 +1,167 @@
+/**
+ * Phase 17b, Task 8 — Parallel-Lasttest unter PostgreSQL (scripts/test-postgres-race.sh).
+ * Je Szenario eine frische Organisation und frische Quelle; N parallele Aufrufe ueber die
+ * Domainfunktionen. Ohne die Zeilensperre (lockRow) schlagen die Szenarien fehl.
+ */
+import { describe, it, expect, beforeAll } from "vitest";
+import { dbInternal } from "@/lib/db";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { createBusinessDocument } from "@/domain/document/create";
+import { convertDocument, convertDocumentToInvoice, ConvertError } from "@/domain/document/convert";
+import { createDeliveryNote } from "@/domain/delivery-note/create";
+import { OverDeliveryError } from "@/domain/delivery-note/quantities";
+import { setDeliveryNoteStatus } from "@/domain/document/status";
+import { createDownpaymentInvoice } from "@/domain/invoice/downpayment";
+import { createFinalInvoice } from "@/domain/invoice/final";
+import { createPartialInvoice } from "@/domain/invoice/partial";
+import { finalizeInvoice } from "@/domain/invoice/finalize";
+import { recordPayment } from "@/domain/invoice/payment";
+import { cancelInvoice } from "@/domain/invoice/cancel";
+import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
+
+const N = 5;
+// Belegnummern sind instanzweit eindeutig: je Szenario ein eigenes Jahr ab 2149.
+const nowFor = (n: number) => new Date(Date.UTC(2148 + n, 2, 2, 10, 0, 0));
+
+const item = (qty: number, netCents = 1000) => ({
+  lineType: "ITEM" as const, description: "Kabel", quantityMilli: qty, unit: "C62", unitNetPriceCents: netCents,
+  taxRate: 19 as const, taxCategory: "S" as const, discountPermille: 0, discountCents: 0,
+});
+
+let seq = 0;
+
+async function newScenario() {
+  seq += 1;
+  const now = nowFor(seq);
+  const org = await dbInternal.organization.create({
+    data: { legalName: `Race ${seq} GmbH`, addressLine1: "Hauptstr. 1", postalCode: "21339", city: "Lüneburg", vatId: "DE123456789", taxNumber: "33/123/45678" },
+  });
+  await ensureOrgMasterdata(dbInternal, org.id);
+  const customer = await dbInternal.customer.create({
+    data: { orgId: org.id, name: "Kunde AG", addressLine1: "Marktplatz 2", postalCode: "20095", city: "Hamburg", type: "BUSINESS", email: "kunde@example.org" },
+  });
+  const quote = await createBusinessDocument(org.id, { kind: "ANGEBOT", customerId: customer.id, taxScheme: "REGULAR", currency: "EUR", lines: [item(10000)] }, { now });
+  const line = await dbInternal.quoteLine.findFirstOrThrow({ where: { quoteId: quote.id } });
+  return { orgId: org.id, customerId: customer.id, quote, line, now };
+}
+
+const parallel = <T>(fn: (i: number) => Promise<T>) => Promise.allSettled(Array.from({ length: N }, (_, i) => fn(i)));
+const fulfilled = <T>(rs: PromiseSettledResult<T>[]) => rs.filter((r): r is PromiseFulfilledResult<T> => r.status === "fulfilled");
+const rejected = (rs: PromiseSettledResult<unknown>[]) => rs.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+const describeFailures = (rs: PromiseSettledResult<unknown>[]) => rejected(rs).map((r) => String(r.reason)).join(" | ");
+
+async function invoiceFromQuote(orgId: string, quoteId: string, now: Date) {
+  const conv = await convertDocument(orgId, { fromType: "QUOTE", fromId: quoteId, toKind: "INVOICE" }, { now });
+  return finalizeInvoice(conv.id, { now });
+}
+
+beforeAll(() => {
+  process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
+  expect((process.env.DATABASE_URL ?? "").startsWith("postgres")).toBe(true);
+});
+
+describe("Parallele Zugriffe unter PostgreSQL", () => {
+  it("Lieferschein aus Angebot (volle Restmenge) 5x parallel -> genau einer, Summe = bestellt", async () => {
+    const s = await newScenario();
+    const rs = await parallel(() => convertDocument(s.orgId, { fromType: "QUOTE", fromId: s.quote.id, toKind: "DELIVERY_NOTE" }, { now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    // Die uebrigen vier scheitern fachlich an der Restmenge (ConvertError), nicht an einem Sperr-/DB-Fehler.
+    for (const f of rejected(rs)) {
+      expect(f.reason).toBeInstanceOf(ConvertError);
+      expect(String(f.reason)).toContain("Keine Restmenge");
+    }
+    const lines = await dbInternal.deliveryNoteLine.findMany({ where: { sourceLineId: s.line.id }, select: { quantityMilli: true } });
+    expect(lines.reduce((sum, l) => sum + l.quantityMilli, 0)).toBe(10000);
+  });
+
+  it("5 Entwuerfe mit voller Menge parallel erstellen -> genau einer CREATED, 4x OverDeliveryError, 4 bleiben DRAFT ohne Nummer", async () => {
+    const s = await newScenario();
+    const drafts = [];
+    for (let i = 0; i < N; i++) {
+      drafts.push(await createDeliveryNote(s.orgId, {
+        customerId: s.customerId, draft: true, sourceType: "QUOTE", sourceId: s.quote.id,
+        lines: [{ description: "Kabel", quantityMilli: 10000, unit: "C62", sourceType: "QUOTE", sourceId: s.quote.id, sourceLineId: s.line.id, unitNetPriceCents: 1000, taxRate: 19 }],
+      }, { now: s.now }));
+    }
+    const rs = await Promise.allSettled(drafts.map((d) => setDeliveryNoteStatus(s.orgId, d.id, "CREATED", { now: s.now })));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    const failures = rejected(rs);
+    expect(failures).toHaveLength(N - 1);
+    for (const f of failures) expect(f.reason).toBeInstanceOf(OverDeliveryError);
+    const notes = await dbInternal.deliveryNote.findMany({ where: { orgId: s.orgId }, select: { status: true, number: true } });
+    expect(notes.filter((n) => n.status === "CREATED")).toHaveLength(1);
+    const stillDraft = notes.filter((n) => n.status === "DRAFT");
+    expect(stillDraft).toHaveLength(N - 1);
+    for (const n of stillDraft) expect(n.number).toBeNull();
+  });
+
+  it("derselbe Entwurf 5x parallel MARK_CREATED -> ein Erfolg, Nummer einmal, ein Webhook delivery_note.created", async () => {
+    const s = await newScenario();
+    const ep = await createWebhookEndpoint(s.orgId, { url: "https://93.184.216.34/hook", events: ["delivery_note.created"] }, { now: s.now });
+    const draft = await createDeliveryNote(s.orgId, {
+      customerId: s.customerId, draft: true, sourceType: "QUOTE", sourceId: s.quote.id,
+      lines: [{ description: "Kabel", quantityMilli: 4000, unit: "C62", sourceType: "QUOTE", sourceId: s.quote.id, sourceLineId: s.line.id, unitNetPriceCents: 1000, taxRate: 19 }],
+    }, { now: s.now });
+    const rs = await parallel(() => setDeliveryNoteStatus(s.orgId, draft.id, "CREATED", { now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    const after = await dbInternal.deliveryNote.findFirstOrThrow({ where: { id: draft.id }, select: { number: true, status: true } });
+    expect(after.status).toBe("CREATED");
+    expect(after.number).not.toBeNull();
+    expect(await dbInternal.deliveryNote.count({ where: { orgId: s.orgId, number: { not: null } } })).toBe(1);
+    expect(await dbInternal.webhookDelivery.count({ where: { endpointId: ep.id, objectId: draft.id } })).toBe(1);
+  });
+
+  it("Schlussrechnung 5x parallel auf dieselbe Quelle -> genau eine aktive", async () => {
+    const s = await newScenario();
+    const dp = await createDownpaymentInvoice(s.orgId, { sourceType: "QUOTE", sourceId: s.quote.id, mode: "PERCENT", permille: 300 }, { now: s.now });
+    await finalizeInvoice(dp.id, { now: s.now });
+    const rs = await parallel(() => createFinalInvoice(s.orgId, { sourceType: "QUOTE", sourceId: s.quote.id }, { now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    const rel = await dbInternal.documentRelation.findMany({
+      where: { orgId: s.orgId, toType: "QUOTE", toId: s.quote.id, relationType: "FINAL_FOR" },
+      select: { fromId: true },
+    });
+    const active = await dbInternal.invoice.count({ where: { id: { in: rel.map((r) => r.fromId) }, status: { not: "CANCELLED" } } });
+    expect(active).toBe(1);
+  });
+
+  it("Angebot 5x parallel in Rechnung umwandeln -> genau eine Rechnung, Quelle verweist darauf", async () => {
+    const s = await newScenario();
+    const rs = await parallel(() => convertDocumentToInvoice(s.orgId, s.quote.id, { now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    for (const f of rejected(rs)) expect(String(f.reason)).toContain("bereits in eine Rechnung umgewandelt");
+    const quote = await dbInternal.quote.findFirstOrThrow({ where: { id: s.quote.id }, select: { convertedToInvoiceId: true } });
+    expect(quote.convertedToInvoiceId).toBe(fulfilled(rs)[0].value.id);
+    expect(await dbInternal.invoice.count({ where: { orgId: s.orgId } })).toBe(1);
+  });
+
+  it("Teilrechnung 5x 60 % parallel -> genau eine (Summe <= 100 %)", async () => {
+    const s = await newScenario();
+    const rs = await parallel(() => createPartialInvoice(s.orgId, { sourceType: "QUOTE", sourceId: s.quote.id, mode: "PERCENT", permille: 600 }, { now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+  });
+
+  it("Zahlung 5x voller Betrag parallel -> genau ein Payment, paidAmountCents = Brutto, PAID", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const rs = await parallel(() =>
+      recordPayment(inv.id, { method: "TRANSFER", amountCents: inv.grossTotalCents, isSkonto: false, applySkonto: false }, { orgId: s.orgId, now: s.now }),
+    );
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id } })).toBe(1);
+    const after = await dbInternal.invoice.findFirstOrThrow({ where: { id: inv.id }, select: { paidAmountCents: true, grossTotalCents: true, status: true } });
+    expect(after.paidAmountCents).toBe(after.grossTotalCents);
+    expect(after.status).toBe("PAID");
+  });
+
+  it("Storno 5x parallel -> genau ein Stornobeleg, Original CANCELLED", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const rs = await parallel(() => cancelInvoice(inv.id, { orgId: s.orgId, now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    const original = await dbInternal.invoice.findFirstOrThrow({ where: { id: inv.id }, select: { status: true } });
+    expect(original.status).toBe("CANCELLED");
+    const rel = await dbInternal.documentRelation.count({ where: { orgId: s.orgId, toType: "INVOICE", toId: inv.id, relationType: "REVERSES" } });
+    expect(rel).toBe(1);
+  });
+});

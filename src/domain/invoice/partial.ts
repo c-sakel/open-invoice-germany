@@ -15,6 +15,7 @@
  * uebernimmt), Kopf-Felder (sourceType/sourceId/partialPermille/sourceLineId je Zeile)
  * nachtragen, Relation PARTIAL_OF setzen, Quelle ggf. auf ACCEPTED heben.
  */
+import { lockRow } from "@/lib/db-lock";
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { formatCents, roundHalfUp } from "@/lib/money";
@@ -475,6 +476,8 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
   const actor = opts.actor ?? "system";
 
   return dbInternal.$transaction(async (tx) => {
+    // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
+    await lockRow(tx, input.sourceType === "QUOTE" ? "Quote" : "DeliveryNote", input.sourceId, orgId);
     const source = await loadPartialSource(tx, orgId, input.sourceType, input.sourceId);
     const adjustedTotals = sourceAdjustedTotals(source);
 
