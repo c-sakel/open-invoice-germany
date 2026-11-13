@@ -8,7 +8,7 @@
  * (sha256, source); Mahnungen von vor der Archiv-Epoche tragen `source = BACKFILL`
  * (nachgerendert mit dem Stand zum Zeitpunkt der Nacharchivierung, siehe LIMITATIONEN).
  */
-import { Prisma } from "@/generated/prisma/client";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { dbInternal } from "@/lib/db";
 import { appendChangeLog } from "@/domain/audit";
 import { ArchiveTamperedError, NotFoundError } from "@/domain/errors";
@@ -55,8 +55,12 @@ export async function ensureDunningArchive(orgId: string, dunningId: string): Pr
     const marker = await dbInternal.systemMarker.findUnique({ where: { key: ARCHIVE_EPOCH_KEY }, select: { at: true } });
     const source = marker && d.createdAt.getTime() < marker.at.getTime() ? "BACKFILL" : "OUTPUT";
     const now = new Date();
-    for (let attempt = 0; ; attempt++) {
-      try {
+    const readWinner = async () => {
+      const w = await dbInternal.dunning.findUnique({ where: { id: dunningId }, select: { pdfPath: true, pdfSha256: true } });
+      return w?.pdfPath && w.pdfSha256 ? { path: w.pdfPath, sha256: w.pdfSha256 } : undefined;
+    };
+    const result = await withChangeLogRetry(
+      async () => {
         const won = await dbInternal.$transaction(async (tx) => {
           const res = await tx.dunning.updateMany({ where: { id: dunningId, pdfPath: null }, data: { pdfPath: relPath, pdfSha256: sha256 } });
           if (res.count !== 1) return false;
@@ -71,13 +75,11 @@ export async function ensureDunningArchive(orgId: string, dunningId: string): Pr
           });
           return true;
         });
-        if (won) return { path: relPath, sha256 };
-        break;
-      } catch (e) {
-        // Kettenkonflikt mit einem anderen ChangeLog-Schreiber: genau einmal wiederholen.
-        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") || attempt >= 1) throw e;
-      }
-    }
+        return won ? { path: relPath, sha256 } : null;
+      },
+      { alreadyDone: readWinner },
+    );
+    if (result) return result;
     // Paralleler Aufruf war schneller: dessen Eintrag gilt.
     const winner = await dbInternal.dunning.findUnique({ where: { id: dunningId }, select: { pdfPath: true, pdfSha256: true } });
     if (winner?.pdfPath && winner.pdfSha256) return { path: winner.pdfPath, sha256: winner.pdfSha256 };

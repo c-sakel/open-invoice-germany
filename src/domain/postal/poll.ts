@@ -13,7 +13,7 @@
  *   bleibt unveraendert und wird im naechsten Lauf erneut abgefragt.
  */
 import { dbInternal } from "@/lib/db";
-import { appendChangeLog } from "@/domain/audit";
+import { appendPostalChangeLog as appendChangeLog } from "@/domain/postal/chain-lock";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializePostalJob } from "@/api/serializers/postal";

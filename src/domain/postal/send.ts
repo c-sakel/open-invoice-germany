@@ -17,7 +17,7 @@ import { randomBytes } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
-import { appendChangeLog } from "@/domain/audit";
+import { appendPostalChangeLog as appendChangeLog } from "@/domain/postal/chain-lock";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializePostalJob } from "@/api/serializers/postal";
