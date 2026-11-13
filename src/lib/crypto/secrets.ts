@@ -30,6 +30,9 @@ const DEFAULT_INFO = "oig-mail-settings-v1";
 /** Eigener HKDF-Info-String fuer Webhook-Secrets (Fix-Welle, Should-fix 10). */
 export const WEBHOOK_SECRET_PURPOSE = "oig-webhook-secret-v1";
 
+/** Eigener HKDF-Info-String fuer den Zugangsschluessel des Briefdienstes (Phase 16d). */
+export const POSTAL_KEY_PURPOSE = "oig-postal-key-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();
