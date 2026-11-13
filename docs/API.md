@@ -145,7 +145,7 @@ Die Antwort kann ein Feld `warnings` (Liste von Texten) enthalten: `{ "data": { 
 
 - `Contact` und `PATCH /api/v1/Contact/{id}` kennen zusätzlich `peppolScheme` (EAS-Schemacode der `peppolId`, z. B. `0088`; eine leere `peppolId` setzt das Schema auf `null`) und `legalRegistrationId` (BT-47, Handelsregister-/Unternehmensnummer). `leitwegId` wird mit Prüfziffer geprüft (400 `VALIDATION` bei Fehler).
 - `POST /api/v1/Contact/{id}/vat-check` prüft die USt-IdNr. des Kontakts qualifiziert über VIES und liefert den Protokolleintrag (`status` `VALID`/`INVALID`/`ERROR`, `requestIdentifier`, `traderName`, `traderAddress`, `checkedAt`). Fehler: 409, wenn die Prüfung in den Einstellungen abgeschaltet ist; 429 mit `Retry-After` bei mehr als 20 Abfragen je Minute; 400 bei fehlender USt-IdNr.; 404 für fremde Organisation. Dienstausfälle ergeben `status: "ERROR"`, nie 5xx.
-- `GET /api/v1/Contact/{id}/vat-checks` listet das Prüfprotokoll (neueste zuerst, höchstens 50).
+- `GET /api/v1/Contact/{id}/vat-checks` listet das Prüfprotokoll (neueste zuerst, höchstens 50 Einträge; `total` ist die Gesamtzahl der Einträge des Kontakts).
 - `Settings.documents` kennt `viesCheckEnabled` (Prüfung freischalten, Standard `true`) und `viesCheckOnFinalize` (Prüfung beim Festschreiben, Standard `false`); `PATCH` ändert nur gesendete Felder.
 
 ### 4. PDF und XRechnung abrufen
@@ -276,7 +276,7 @@ Fehler, kein No-op mehr.
 
 Währungen werden bei allen vier neuen Typen nie gemischt: je Währung eigene Zeilen.
 
-**CSV (Phase 17c):** `GET /api/v1/Report?type=<typ>&format=csv` (für jeden `type`, Scope `read`) liefert statt JSON `text/csv; charset=utf-8` als Anhang `auswertung-<typ>-<Berliner Datum>.csv` (`src/domain/reporting/csv.ts`): UTF-8 mit BOM, Semikolon, `\r\n`, deutsche Spaltenköpfe je Typ, Geld als `1234,56`, Menge mit drei Nachkommastellen, Textzellen mit führendem `=`, `+`, `-`, `@` oder Tab werden mit `'` entschärft (Formelschutz). `format` ist bei jedem Typ zulässig (nicht in den typabhängigen Parametern), ungültige Werte liefern 400. Dieselbe Tabelle gibt die Oberfläche über die Session-Route `GET /api/reports/<typ>.csv` aus (kein Bearer-Zugriff).
+**CSV (Phase 17c):** `GET /api/v1/Report?type=<typ>&format=csv` (für jeden `type`, Scope `read`) liefert statt JSON `text/csv; charset=utf-8` als Anhang `auswertung-<typ>-<Berliner Datum>.csv` (`src/domain/reporting/csv.ts`): UTF-8 mit BOM, Semikolon, `\r\n`, deutsche Spaltenköpfe je Typ, Geld als `1234,56`, Menge mit drei Nachkommastellen, Textzellen mit führendem `=`, `+`, `-`, `@` oder Tab werden mit `'` entschärft (Formelschutz). `format` ist bei jedem Typ zulässig (nicht in den typabhängigen Parametern), ungültige Werte liefern 400. Die OpenAPI-Spezifikation führt dafür neben `application/json` auch `text/csv`. Dieselbe Tabelle gibt die Oberfläche über die Session-Route `GET /api/reports/<typ>.csv` aus (kein Bearer-Zugriff).
 
 Beispiel:
 
@@ -460,7 +460,7 @@ Das PDF/XML einer archivierten Rechnung (`GET /api/v1/Invoice/{id}/pdf`) liefert
   Rechnung, siehe `/api/docs`), `/dunning` (`{dunning}`), `/share-link`
   (`{url, token?, expiresAt}`). Datei-Endpunkte (`/pdf`, `/xrechnung`,
   `/zugferd`) bleiben binär.
-- `DeliveryNote`: `PATCH /api/v1/DeliveryNote/{id}` ändert nur Entwürfe (Status `DRAFT`, anzulegen mit `draft: true` beim `POST`); `deliveryDate`/`shippingDate` lassen sich mit `null` leeren, ein erstellter Lieferschein liefert 409. Statusänderungen laufen über `POST .../status`.
+- `DeliveryNote`: `PATCH /api/v1/DeliveryNote/{id}` ändert nur Entwürfe (Status `DRAFT`, anzulegen mit `draft: true` beim `POST`); `deliveryDate`/`shippingDate` lassen sich mit `null` leeren, ein erstellter Lieferschein liefert 409, ein Body ohne Änderung (z. B. `{}`) 400. Statusänderungen laufen über `POST .../status`.
 - `Layout` (Phase 11b) selbst ist nur lesbar (`GET`, feste Liste, keine DB-Tabelle) —
   eine Beleg-individuelle Layout-Überschreibung setzt sich stattdessen über `PATCH
   /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).

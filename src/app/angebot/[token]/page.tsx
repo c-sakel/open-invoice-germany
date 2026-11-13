@@ -3,12 +3,19 @@ import { headers } from "next/headers";
 import { resolveShareToken } from "@/domain/quote-share/link";
 import { buildDocEInvoiceData } from "@/domain/document/pdf-data";
 import { docStrings, resolveDocLanguage, formatDocDate, formatDocMoney } from "@/lib/i18n/doc";
+import type { DocStrings } from "@/lib/i18n/doc/types";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { DecisionForm } from "./DecisionForm";
 import { LineItemsTable } from "@/components/LineItemsTable";
 
 export const dynamic = "force-dynamic";
+
+const KIND_TITLE = {
+  ANGEBOT: "ANGEBOT",
+  AUFTRAGSBESTAETIGUNG: "AUFTRAGSBESTAETIGUNG",
+  PROFORMA: "PROFORMA",
+} as const satisfies Record<string, keyof DocStrings["titles"]>;
 
 const PAGE_RATE_LIMIT = 60;
 const PAGE_RATE_WINDOW_MS = 60_000;
@@ -57,7 +64,7 @@ export default async function AngebotPage({ params }: { params: Promise<{ token:
   const lang = resolveDocLanguage(data.language);
   const ds = docStrings(lang);
   const t = ds.publicOffer;
-  const kindTitle = (ds.titles as unknown as Record<string, string>)[quote.kind] ?? ds.titles.DOCUMENT;
+  const kindTitle = quote.kind in KIND_TITLE ? ds.titles[KIND_TITLE[quote.kind as keyof typeof KIND_TITLE]] : ds.titles.DOCUMENT;
   const money = (cents: number) => formatDocMoney(cents, data.currency, lang);
 
   if (link.decidedAt) {

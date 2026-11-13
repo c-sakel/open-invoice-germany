@@ -430,6 +430,12 @@ export function buildOpenApiDocument(routes: DiscoveredRoute[]): Record<string, 
             schema: responseSchema,
             ...(exampleRef ? { examples: { default: { $ref: exampleRef } } } : { example }),
           },
+          ...Object.fromEntries(
+            Object.entries(spec.alternateContent ?? {}).map(([type, info]) => [
+              type,
+              { schema: { type: "string" as const, description: info.description } },
+            ]),
+          ),
         },
       };
     }

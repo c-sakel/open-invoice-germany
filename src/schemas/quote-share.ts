@@ -105,7 +105,7 @@ export type CreateShareLinkInput = z.infer<typeof createShareLinkInputSchema>;
 // weiterhin eine gueltige Adresse sein.
 const deciderEmail = z.preprocess(
   (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-  z.string().trim().pipe(z.email("Ungueltige E-Mail-Adresse")).optional(),
+  z.string().trim().pipe(z.email("Ungültige E-Mail-Adresse")).optional(),
 );
 
 export const decideOfferInputSchema = z.object({

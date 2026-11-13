@@ -37,6 +37,7 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { POST as previewPost } from "@/app/api/pdf/preview/route";
+import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { parsePdf } from "../helpers/pdf-theme";
 
 let orgId: string;
@@ -116,6 +117,84 @@ describe("POST /api/pdf/preview", () => {
     expect(bad.status).toBe(400);
     const foreign = await previewPost(req({ kind: "INVOICE", payload: { customerId: "gibtsnicht", type: "INVOICE", currency: "EUR", lines: [line] } }));
     expect(foreign.status).toBe(404);
+  });
+
+  describe("Platzhalter in Kopf- und Fusstext (Phase 18a)", () => {
+    let contactId: string;
+    let otherContactId: string;
+    beforeAll(async () => {
+      contactId = (await dbInternal.contactPerson.create({ data: { orgId, customerId, firstName: "Erika", lastName: "Beispiel" } })).id;
+      const other = await dbInternal.customer.create({
+        data: { orgId, name: "Anderer Kunde GmbH", addressLine1: "X 1", postalCode: "3", city: "D", type: "BUSINESS" },
+      });
+      otherContactId = (await dbInternal.contactPerson.create({ data: { orgId, customerId: other.id, firstName: "Fremdname", lastName: "Fremd" } })).id;
+    });
+
+    it("Rechnung: Ansprechpartner, Nummer und Betrag werden aufgeloest, internalNotes nie", async () => {
+      const res = await previewPost(
+        req({
+          kind: "INVOICE",
+          payload: {
+            customerId, type: "INVOICE", taxScheme: "REGULAR", currency: "EUR", contactPersonId: contactId,
+            headerText: "Hallo {{contact.firstName}}, {{document.number}} über {{document.total}}",
+            footerText: "{{gibt.esnicht}}Ende",
+            internalNotes: "GEHEIM-18A",
+            lines: [line],
+          },
+        }),
+      );
+      expect(res.status).toBe(200);
+      const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
+      expect(text).toContain("Hallo Erika, ENTWURF über");
+      expect(text).toMatch(/226,10/);
+      expect(text).toContain("Ende");
+      expect(text).not.toContain("{{");
+      expect(text).not.toContain("GEHEIM-18A");
+    });
+
+    it("fremder Ansprechpartner: Platzhalter leer, kein Fremdname", async () => {
+      const res = await previewPost(
+        req({ kind: "INVOICE", payload: { customerId, type: "INVOICE", currency: "EUR", contactPersonId: otherContactId, headerText: "Hallo [{{contact.firstName}}|{{contact.name}}|{{customer.firstName}}|{{customer.lastName}}]", lines: [line] } }),
+      );
+      expect(res.status).toBe(200);
+      const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
+      expect(text).toContain("Hallo [|||]");
+      expect(text).not.toContain("Fremd");
+    });
+
+    it("ohne contactPersonId greift der Standard-Ansprechpartner des Kunden wie beim echten Beleg", async () => {
+      const c = await dbInternal.customer.create({
+        data: { orgId, name: "Standard Kunde AG", addressLine1: "S 1", postalCode: "4", city: "E", type: "BUSINESS" },
+      });
+      await dbInternal.contactPerson.create({ data: { orgId, customerId: c.id, firstName: "Standardina", lastName: "Muster", isDefault: true } });
+      const res = await previewPost(
+        req({ kind: "INVOICE", payload: { customerId: c.id, type: "INVOICE", currency: "EUR", headerText: "Hallo {{contact.firstName}}", lines: [line] } }),
+      );
+      expect(res.status).toBe(200);
+      const { text } = await parsePdf(Buffer.from(await res.arrayBuffer()));
+      expect(text).toContain("Hallo Standardina");
+    });
+
+    it("resolveBuyerSnapshot: fremde contactPersonId setzt keinen Namen im Snapshot", async () => {
+      const customer = await dbInternal.customer.findFirstOrThrow({ where: { id: customerId, orgId } });
+      const buyer = await resolveBuyerSnapshot(dbInternal, orgId, customer, otherContactId, null);
+      expect(JSON.stringify(buyer)).not.toContain("Fremd");
+      expect(buyer.contactName ?? null).toBe(customer.contactName);
+    });
+
+    it("Angebot (validUntil) und Lieferschein (customer.name)", async () => {
+      const doc = await previewPost(
+        req({ kind: "DOCUMENT", payload: { kind: "ANGEBOT", customerId, currency: "EUR", validUntil: "2031-03-15", headerText: "Gültig bis {{document.dueDate}}", lines: [line] } }),
+      );
+      const d = await parsePdf(Buffer.from(await doc.arrayBuffer()));
+      expect(d.text).toContain("Gültig bis 15.03.2031");
+      const dn = await previewPost(
+        req({ kind: "DELIVERY_NOTE", payload: { customerId, headerText: "Für {{customer.name}}", lines: [{ description: "Ware", quantityMilli: 1000, unit: "C62" }] } }),
+      );
+      const n = await parsePdf(Buffer.from(await dn.arrayBuffer()));
+      expect(n.text).toContain("Für Vorschau Kunde AG");
+      expect(n.text).not.toContain("{{");
+    });
   });
 
   // Fix Round 1, Wichtig — die Lieferschein-Vorschau muss dieselben Anzeige-Defaults wie

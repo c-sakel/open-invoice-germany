@@ -28,14 +28,6 @@ const DOC_TYPE: Record<EditorMode, "QUOTE" | "INVOICE" | "DELIVERY_NOTE"> = {
   DELIVERY_NOTE: "DELIVERY_NOTE",
 };
 
-/** Ob der Block den Upload-Weg (ggf. ueber `ensureDocId`) anbietet. Seit Phase 17b in allen
- *  Modi immer: ohne `docId` legt `ensureDocId` zuerst einen Entwurf an. Eigene, ungerenderte
- *  Funktion, damit sie ohne Rendering testbar ist (kein RTL im Projekt). */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- Signatur bleibt fuer Aufrufer/Tests stabil
-export function canOfferAttachmentUpload(_mode: EditorMode, _docId?: string): boolean {
-  return true;
-}
-
 export function AttachmentsBlock({
   mode,
   docId,
@@ -49,8 +41,5 @@ export function AttachmentsBlock({
    *  Id (oder `null` bei fehlgeschlagener Validierung) — siehe `DocumentEditor.save`. */
   onEnsureDocId?: () => Promise<string | null>;
 }) {
-  if (!canOfferAttachmentUpload(mode, docId)) {
-    return <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-4 text-sm text-ink-muted">Anhänge lassen sich nach dem Speichern hinzufügen.</div>;
-  }
   return <AttachmentPanel docType={DOC_TYPE[mode]} docId={docId ?? ""} initial={attachments} ensureDocId={onEnsureDocId} />;
 }

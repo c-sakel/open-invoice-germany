@@ -5,6 +5,7 @@
  * ein bereits vorhandener Freitext-Hinweis (z. B. Kleinunternehmer) bleibt unangetastet.
  * Wortlaut je Belegsprache aus docStrings(lang).notes.
  */
+import { berlinParts } from "@/lib/berlin-time";
 import { docLocale, docStrings } from "@/lib/i18n/doc";
 import type { DocLanguage } from "@/lib/i18n/doc/types";
 import type { EInvoiceDeduction } from "./types";
@@ -14,9 +15,10 @@ function money(cents: number, lang: DocLanguage): string {
 }
 
 function date(d: Date, lang: DocLanguage): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  // Berliner Kalendertag, unabhaengig von der Prozess-TZ.
+  const { year: y, month, day: dd } = berlinParts(d);
+  const m = String(month).padStart(2, "0");
+  const day = String(dd).padStart(2, "0");
   return lang === "en" ? `${day}/${m}/${y}` : `${day}.${m}.${y}`;
 }
 

@@ -19,8 +19,6 @@ export const viesResponseSchema = z.object({
 });
 export type ViesResponse = z.infer<typeof viesResponseSchema>;
 
-export const vatCheckParamsSchema = z.object({ customerId: z.string().min(1) });
-
 export interface VatIdCheckRow {
   id: string;
   customerId: string;

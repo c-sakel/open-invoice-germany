@@ -24,6 +24,7 @@ import { resolveBuyerEndpoint } from "@/lib/einvoice/eas";
 import type { BuyerSnapshot } from "@/schemas";
 
 interface CustomerLike {
+  id: string;
   name: string;
   contactName: string | null;
   addressLine1: string;
@@ -65,11 +66,15 @@ export async function resolveBuyerSnapshot(
   let shippingAddress: BuyerSnapshot["shippingAddress"] | undefined;
 
   if (contactPersonId) {
-    const contact = await tx.contactPerson.findFirst({ where: { id: contactPersonId, orgId } });
+    // Nur Ansprechpartner des Belegkunden (orgId UND customerId); fremde gelten als keiner.
+    const contact = await tx.contactPerson.findFirst({
+      where: { id: contactPersonId, orgId, customerId: customer.id },
+      select: { firstName: true, lastName: true },
+    });
     if (contact) contactName = `${contact.firstName} ${contact.lastName}`.trim();
   }
   if (billingAddressId) {
-    const found = await tx.customerAddress.findFirst({ where: { id: billingAddressId, orgId } });
+    const found = await tx.customerAddress.findFirst({ where: { id: billingAddressId, orgId, customerId: customer.id } });
     if (found) {
       addressLine1 = found.addressLine1;
       addressLine2 = found.addressLine2;
@@ -91,7 +96,7 @@ export async function resolveBuyerSnapshot(
   // `shippingAddress`, die flachen `addressLine1`-Felder oben (BG-8) bleiben unberuehrt.
   if (shippingAddressId) {
     const found = await tx.customerAddress.findFirst({
-      where: { id: shippingAddressId, orgId },
+      where: { id: shippingAddressId, orgId, customerId: customer.id },
       select: { type: true, label: true, addressLine1: true, addressLine2: true, postalCode: true, city: true, countryCode: true },
     });
     if (found) {

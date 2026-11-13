@@ -274,7 +274,7 @@ export const customerFieldsSchema = z.object({
 export function customerEndpointProblems(v: { peppolId?: string | null; peppolScheme?: string | null }): { path: "peppolId" | "peppolScheme"; message: string }[] {
   const id = v.peppolId?.trim();
   if (!id) return [];
-  if (!v.peppolScheme) return [{ path: "peppolScheme", message: "Zur Peppol-ID gehoert ein Schemacode." }];
+  if (!v.peppolScheme) return [{ path: "peppolScheme", message: "Zur Peppol-ID gehört ein Schemacode." }];
   const problem = validateEndpoint(v.peppolScheme, id);
   return problem ? [{ path: "peppolId", message: problem }] : [];
 }

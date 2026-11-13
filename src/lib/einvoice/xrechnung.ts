@@ -8,6 +8,7 @@
  */
 import { create } from "xmlbuilder2";
 import { roundHalfUp } from "@/lib/money";
+import { berlinDateKey } from "@/lib/berlin-time";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
@@ -33,12 +34,8 @@ function quantity(milli: number): string {
 }
 
 function isoDate(date: Date): string {
-  // Lokale Y/M/D-Komponenten — NICHT toISOString() (würde bei lokaler Mitternacht
-  // in UTC um einen Tag zurückspringen und ein falsches Ausstellungs-/Leistungsdatum erzeugen).
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  // Berliner Kalendertag, unabhaengig von der Prozess-TZ (UTC-Mitternacht aus Formularen = derselbe Tag).
+  return berlinDateKey(date);
 }
 
 function invoiceTypeCode(type: string): string {

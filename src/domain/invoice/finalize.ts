@@ -31,16 +31,15 @@ import { loadBrandingSettings } from "@/domain/settings/branding";
 import { resolveLayoutId, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 import { validateMandatoryFields } from "./mandatory";
+import { berlinCalendarDay } from "@/lib/berlin-time";
 import { FinalizeError } from "./finalize-error";
 import { resolveFxSnapshot, deductedTaxEurCents, type DeductionFxEntry } from "@/domain/fx/snapshot";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Nur das UTC-Kalenderdatum (ohne Uhrzeit) als Millisekunden-Zeitstempel — fuer den
+/** Berliner Kalendertag (ohne Uhrzeit) als Millisekunden-Zeitstempel — fuer den
  *  tagesgenauen Vergleich "Entwurf-issueDate liegt in der Vergangenheit" (refreshIssueDateOnFinalize). */
-function utcDateOnly(d: Date): number {
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
+const berlinDay = (d: Date): number => berlinCalendarDay(d).getTime();
 
 const FINALIZED_DOWNPAYMENT_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID", "PAID"]);
 
@@ -84,7 +83,7 @@ export async function finalizeWithinTx(
     throw new FinalizeError(`Nur Entwürfe können festgeschrieben werden (Status: ${invoice.status}).`);
 
   // 1b) refreshIssueDateOnFinalize (Phase 7, §33): ein Entwurf-Rechnungsdatum, das
-  // gegenueber dem TATSAECHLICHEN Kalendertag ("heute", Systemuhr — bewusst NICHT
+  // gegenueber dem TATSAECHLICHEN Berliner Kalendertag ("heute", Systemuhr — bewusst NICHT
   // `opts.now`, siehe unten) in der Vergangenheit liegt, wird beim Festschreiben auf
   // `now` nachgezogen — Faelligkeit um dieselbe Tagesdifferenz verschoben. Greift NICHT
   // bei explizit uebergebenem `opts.issueDate` (Ruling) und NICHT auf das Leistungsdatum.
@@ -101,9 +100,9 @@ export async function finalizeWithinTx(
   let dueDate = invoice.dueDate;
   if (!opts.issueDate) {
     const settings = await loadDocumentSettings(invoice.orgId, tx);
-    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && utcDateOnly(invoice.issueDate) < utcDateOnly(today)) {
+    if (settings.refreshIssueDateOnFinalize && invoice.issueDate && berlinDay(invoice.issueDate) < berlinDay(today)) {
       issueDateBefore = invoice.issueDate;
-      const diffDays = Math.round((utcDateOnly(now) - utcDateOnly(invoice.issueDate)) / DAY_MS);
+      const diffDays = Math.round((berlinDay(now) - berlinDay(invoice.issueDate)) / DAY_MS);
       issueDate = now;
       if (invoice.dueDate) dueDate = new Date(invoice.dueDate.getTime() + diffDays * DAY_MS);
     }
