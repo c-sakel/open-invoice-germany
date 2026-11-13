@@ -464,6 +464,17 @@ function assertLinePriced(src: PartialSourceLine): asserts src is PartialSourceL
   }
 }
 
+/**
+ * Festbetragsrabatt einer Teilmenge, kumulativ gerundet: die Summe aller Teilrechnungen
+ * einer Quellzeile ergibt exakt den Quellrabatt (kein Cent-Drift bei 3 x 1/3).
+ */
+export function cumulativeDiscountShare(totalCents: number, sourceQtyMilli: number, billedBeforeMilli: number, partMilli: number): number {
+  if (totalCents === 0 || sourceQtyMilli <= 0) return 0;
+  const after = roundHalfUp((totalCents * (billedBeforeMilli + partMilli)) / sourceQtyMilli);
+  const before = roundHalfUp((totalCents * billedBeforeMilli) / sourceQtyMilli);
+  return after - before;
+}
+
 function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialSource, billed: Map<string, number>): BuiltResult {
   const byId = new Map(source.lines.map((l) => [l.id, l]));
   const lines: BuiltLine[] = [];
@@ -516,7 +527,9 @@ function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialS
         // Menge ueber computeLineNet), Festbetragsrabatt proportional zur abgerechneten
         // Menge (discountCents gilt fuer die GESAMTE Quellzeile, nicht je Einheit).
         discountPermille: src.discountPermille,
-        discountCents: roundHalfUp((src.discountCents * q.quantityMilli) / src.quantityMilli),
+        // Kumulativ gerundet (Cent-Drift): Anteil = round(gesamt * nachher / Quelle) -
+        // round(gesamt * vorher / Quelle); `billed` kommt aus derselben Transaktion.
+        discountCents: cumulativeDiscountShare(src.discountCents, src.quantityMilli, billedMilli, q.quantityMilli),
       });
     }
   }
