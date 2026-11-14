@@ -39,16 +39,10 @@ jobs:
 
   # Zusätzliche XRechnung-CIUS-/XSD-Prüfung mit dem offiziellen KoSIT-Validator (Java) —
   # der EINZIGE Lauf mit echter XSD-Prüfung (SaxonJS im build-test-Job prüft nur
-  # Schematron, siehe docs/LIMITATIONEN.md „E-Rechnung"). Prüft seit Fix-Welle 1
-  # (S4, Abschluss-Review Phase 13b) ALLE Fixtures aus scripts/validate-erechnung.ts
-  # (dieselbe Liste, 21 Beispiele/41 XML-Dateien) statt nur „base" — vorher sah dieser
-  # Job z. B. die Betreff-Fixture (Task 5) nie.
-  # continue-on-error ENTFERNT (S4): der Validator (1.6.3 + Konfiguration 2026-08-31,
-  # dieselben Pins wie unten) ist laut Ledger (Stand 2026-09-07:
-  # „in eclipse-temurin:17 auf dem Server verifiziert: ACCEPTABLE") und Phase 12b
-  # (progress.md: „39/39 KoSIT") mehrfach erfolgreich gelaufen — die urspruengliche
-  # Bedingung „solange nicht lokal verifiziert" (siehe git log -S auf diesen Job) ist
-  # erfuellt, das Gate blockt PRs jetzt scharf.
+  # Schematron, siehe docs/LIMITATIONEN.md „E-Rechnung"). Prüft ALLE Fixtures aus
+  # scripts/validate-erechnung.ts (dieselbe Liste wie npm run validate:erechnung), nicht nur „base".
+  # Harte Sperre (kein continue-on-error): Validator 1.6.3 + Konfiguration 2026-08-31
+  # (dieselben Pins wie unten) läuft stabil unter Java 17.
   xrechnung-kosit:
     runs-on: ubuntu-latest
     env:
@@ -104,13 +98,13 @@ jobs:
           done
           exit $fail
 
-      # Task 6/7 (Phase 14a): PDF/A-3b-Nachweis fuer den ZUGFeRD-Hybrid-Container (und,
-      # da dieselbe Fabrik src/lib/pdf/document.ts nutzt, auch Lieferschein/Mahnung).
+      # PDF/A-3b-Nachweis für den ZUGFeRD-Hybrid-Container (und, da dieselbe Fabrik
+      # src/lib/pdf/document.ts genutzt wird, auch Lieferschein/Mahnung).
       # Java 17 liegt in diesem Job bereits vor (siehe setup-java oben) — kein eigener
-      # Job noetig, solange veraPDF darunter laeuft (Ruling, siehe COMPLIANCE.md/Ledger:
-      # laut offizieller veraPDF-Doku wird die Installation unter Java 8/11/17/21
-      # unterstuetzt; bricht der Schritt hier dennoch ab, ist die Ausweiche ein eigener
-      # Job mit `actions/setup-java` auf Java 11 statt eines stillschweigenden Wegfalls).
+      # Job nötig, solange veraPDF darunter läuft (laut offizieller veraPDF-Doku wird die
+      # Installation unter Java 8/11/17/21 unterstützt; bricht der Schritt hier dennoch ab,
+      # ist die Ausweiche ein eigener Job mit `actions/setup-java` auf Java 11 statt eines
+      # stillschweigenden Wegfalls).
       - name: PDF/A-3b-Muster erzeugen (ZUGFeRD-Rechnung mit Logo/GiroCode, Lieferschein, Mahnung)
         run: npx tsx scripts/render-pdfa-samples.ts
       - name: veraPDF installieren (IzPack, headless — nur das CLI-Paket)

@@ -69,7 +69,7 @@ Konto-Sicherheit (Zwei-Faktor-Anmeldung, Passwort-Reset) gibt es nur über die S
 
 > **„Welche Abos sind fällig? Erzeuge die fälligen Rechnungen."**
 
-Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_customer` → `upsert_product` → `create_invoice` → `finalize_invoice` → `export_invoice`) und legt die Dateien unter `exports/` ab — inkl. EN-16931-Validierung. Weitere Beispiele wie im Lastenheft (§55) gefordert: siehe [ANLEITUNG.md](ANLEITUNG.md#7-per-sprache-mit-einem-ki-assistenten-mcp).
+Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `upsert_customer` → `upsert_product` → `create_invoice` → `finalize_invoice` → `export_invoice`) und legt die Dateien unter `exports/` ab — inkl. EN-16931-Validierung. Weitere Beispiele: siehe [ANLEITUNG.md](ANLEITUNG.md#7-per-sprache-mit-einem-ki-assistenten-mcp).
 
 ## 3. Verfügbare Tools
 
@@ -80,9 +80,9 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `get_status` | Zustand der aktiven Organisation (Unternehmen eingerichtet? Kunden-/Produkt-/Rechnungszähler) | „Wie ist der Status meiner Instanz?" |
-| `list_api_requests` | Protokollierte REST-API-Anfragen auflisten (Phase 12d) — Zeit, Methode, Pfad, Status, Dauer, Schlüssel; standardmäßig leer, bis „Einstellungen → API → Anfrageprotokoll" eingeschaltet ist | „Zeig mir die letzten fehlgeschlagenen API-Aufrufe." |
+| `list_api_requests` | Protokollierte REST-API-Anfragen auflisten — Zeit, Methode, Pfad, Status, Dauer, Schlüssel; standardmäßig leer, bis „Einstellungen → API → Anfrageprotokoll" eingeschaltet ist | „Zeig mir die letzten fehlgeschlagenen API-Aufrufe." |
 | `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN; optional `sepaCreditorId`, die SEPA-Gläubiger-ID für Lastschriften (BT-90) — wird geprüft und normalisiert; ohne Angabe bleibt der Bestand, das **Leeren geht nur in der Oberfläche**) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
-| `verify_audit_chain` | Hash-Kette des Änderungsprotokolls lückenlos prüfen, Prüfung protokollieren, bei Bruch alarmieren (Phase 16a) | „Prüfe die Hash-Kette des Änderungsprotokolls." |
+| `verify_audit_chain` | Hash-Kette des Änderungsprotokolls lückenlos prüfen, Prüfung protokollieren, bei Bruch alarmieren | „Prüfe die Hash-Kette des Änderungsprotokolls." |
 | `create_audit_export` | Prüfer-Export nach § 147 Abs. 6 AO (ZIP: CSV-Tabellen, `index.xml`, DTD, Kettenprüfung, archivierte Belege PDF/XML) für einen Zeitraum von höchstens drei Jahren in `exports/` schreiben | „Erzeuge den Prüfer-Export für 2025." |
 | `get_invoice_archive` | Archivstand einer Rechnung (PDF/CII/UBL mit SHA-256, Quelle, Zeitpunkt); archiviert nicht selbst | „Ist die Rechnung RE-50001 archiviert?" |
 | `reverse_payment` | Zahlung per Gegenbuchung korrigieren (negative Zahlungszeile mit Begründung; Zahlungen werden nie gelöscht) | „Storniere die Zahlung vom 03.03. bei RE-50001, falsch gebucht." |
@@ -122,7 +122,7 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 | `update_product` | Produkt gezielt per ID/Name patchen (anders als `upsert_product` **kein** Anlegen) | „Ändere den Preis von ‚Beratung' auf 105 € pro Stunde." |
 | `archive_product` | Produkt archivieren (verschwindet aus `list_products`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere die Leistung ‚Altprodukt'." |
 
-### Wechselkurse (Phase 16b)
+### Wechselkurse
 
 Kursquelle ist standardmäßig der amtliche Monatsdurchschnitt (`fxRateSource = BMF_MONTHLY`, § 16 Abs. 6 Satz 1 UStG); der EZB-Tageskurs (`ECB_DAILY`) nur mit Gestattung des Finanzamts (`update_document_settings`). Fehlt der Monatskurs, gilt der Vormonat (der Monat wird genannt). Das Monatsmittel entsteht nur bei mindestens 15 Tageskursen; Kurse über 2000 je EUR werden abgelehnt. `create_invoice` und `create_document` nehmen zusätzlich `language` (`de`/`en`, sonst Kundensprache) an; `create_invoice` auch `fxOverrideRate`; `create_delivery_note`, `create_recurring` und `update_recurring_invoice` nehmen `language` an, `update_invoice_draft` zusätzlich `fxOverrideRate`, `cancel_invoice` und `credit_invoice` `fxOverrideRate` (nur für Altbelege ohne Kurs). Die MCP-Tools laufen wie alle anderen ohne Scope-Modell (lokaler Admin-Zugang).
 
@@ -132,7 +132,7 @@ Kursquelle ist standardmäßig der amtliche Monatsdurchschnitt (`fxRateSource = 
 | `set_exchange_rate` | Kurs pflegen (`source` `MONTHLY` mit Monatserstem oder `ECB`), überschreibt Importe | „Setze den Monatskurs USD für November 2026 auf 1,0850." |
 | `refresh_exchange_rates` | EZB-Kurse sofort abrufen und Monatsmittel des Vormonats berechnen (bei `FX_AUTO_FETCH=0` abgeschaltet) | „Hol die aktuellen Wechselkurse." |
 
-### Postversand (Phase 16d)
+### Postversand
 
 Rechnungen und Mahnungen lassen sich über einen Briefdienst drucken und versenden. Zugangsdaten und die Schalter (`enabled`, `mode`, `autoDunningPost`, Monatsbudget) sind **nur in der Oberfläche** änderbar; über MCP/REST ist der Schlüssel nie lesbar (nur `hasApiKey`/`apiKeyLast4`), der wirksame Modus dagegen schon. Ablauf: erst `get_postal_quote`, dem Nutzer Anschrift, Seiten und Preis zeigen, dann nur nach ausdrücklicher Zustimmung `send_by_post` mit `confirm: true`, `expectedPriceCents` und `pdfSha256` aus dem Angebot. Bei ausgeschaltetem Postversand entsteht nur ein Trockenlauf-Protokoll; im Modus `LIVE` ist der Versand kostenpflichtig. Die Tools nutzen dieselben Zod-Schemas wie REST (`/api/v1/PostalQuote`, `/api/v1/PostalJob`, `/api/v1/Settings/postal`); Auslöser `MCP`.
 
@@ -172,7 +172,7 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `create_invoice` | Rechnung als Entwurf; mit `finalize: true` atomar angelegt und festgeschrieben (unveränderbar, Korrektur nur per Storno), optional mit `payment` (`amountEuro`, `paidAt`, `method`, `reference`; ohne Betrag der volle offene Betrag) — dann ist `idempotencyKey` Pflicht (gleicher Schlüssel + gleiche Argumente liefern dieselbe Antwort, nie zwei Rechnungen; anderer Inhalt = Konflikt), es wird nichts versendet (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung; bei einer Kartenmethode (UNTDID `48`/`54`/`55`) optional `cardPanTruncated` — nur die letzten 4 Ziffern, mehr als 10 Ziffern werden abgelehnt —, `cardNetwork` und `cardHolderName`, bei anderen Methoden werden sie verworfen) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
-| `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar; nicht blockierende Hinweise (fehlende elektronische Adresse, VIES-Ergebnis bei ig. Lieferung) stehen im Antworttext (Phase 17a) | „Schreib die Rechnung fest." |
+| `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar; nicht blockierende Hinweise (fehlende elektronische Adresse, VIES-Ergebnis bei ig. Lieferung) stehen im Antworttext | „Schreib die Rechnung fest." |
 | `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType`; die Kartenfelder `cardPanTruncated`, `cardNetwork`, `cardHolderName` wie bei `create_invoice` (ein Methodenwechsel auf Nicht-Karte leert sie); Rechnungstyp bleibt unveränderbar | „Setze bei der Entwurfsrechnung die Bestellnummer auf PO-4711." |
 | `get_invoice` | Rechnung anzeigen, inkl. Zahlungen mit ID (für `reverse_payment`) | „Zeig mir Rechnung RE-2026-00342." |
 | `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig und `credit` (Gutschriften), Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung); Abgleich mit `updatedSince`/`cursor` (Antwort mit `nextCursor`, ohne `sort`/`offset`) | „Welche Rechnungen sind überfällig?" |
@@ -181,7 +181,7 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten); optional `reason` (Stornogrund, steht in den Belegnotizen), nach Teilgutschriften nur der Rest, Hinweis auf fällige Erstattung | „Storniere RE-2026-00342." |
 | `cancel_invoices` | 1 bis 50 festgeschriebene Rechnungen (`invoices`: IDs oder Nummern, `reason` Pflicht) nacheinander stornieren; je Beleg eigene Storno-Gutschrift, Ergebnis je Beleg (`ok`/`failed`, Codes z. B. `NOT_CANCELLABLE`, `NOT_FOUND`), ein Fehler stoppt die übrigen nicht; kein Versand; höchstens 10 Aufrufe pro Minute | „Storniere RE-1001 und RE-1002 wegen Doppelerfassung." |
 
-**Preise (Phase 18f):** `unitPriceEuro` nimmt bis zu 5 Nachkommastellen an (`0.002`); mehr Stellen, negative Sub-Cent-Preise und Sub-Cent-Preise über 21.474,83 EUR sind ein Fehler und werden nie still gerundet (`src/mcp/tools/context.ts:46`). Alternativ `unitGrossPriceEuro` (Brutto je Einheit, höchstens 2 Nachkommastellen; schließt `unitPriceEuro` aus, nicht mit Rabatten, Umrechnung je Steuersatz, Abweichung bis 1 Cent je Satz wird in der Antwort ausgewiesen, größere Abweichungen wie 1.500 × 0,01 EUR werden abgelehnt; Belegrabatt im Brutto-Modus fest 0, ein Standardrabatt des Kunden greift nicht). `unitGrossPriceEuro` gilt in `create_invoice`, `update_invoice_draft` und `create_document`; in Tools ohne Bruttoumrechnung (z. B. Lieferschein, Abo) wird es mit klarer Fehlermeldung abgelehnt. `credit_invoice` (Teilgutschrift mit Positionen) und Lieferscheine rechnen in ganzen Cent und lehnen einen Sub-Cent-Preis ab. Bei `create_invoice` mit `finalize` und `payment` wird eine Zahlung, die nach einer Brutto-Abweichung nicht dem tatsächlichen Rechnungsbrutto entspricht, mit Fehlermeldung abgelehnt (`src/mcp/tools/invoices.ts:276`, gleiche Regel wie bei REST `GROSS_DEVIATION`).
+**Preise:** `unitPriceEuro` nimmt bis zu 5 Nachkommastellen an (`0.002`); mehr Stellen, negative Sub-Cent-Preise und Sub-Cent-Preise über 21.474,83 EUR sind ein Fehler und werden nie still gerundet (`src/mcp/tools/context.ts:46`). Alternativ `unitGrossPriceEuro` (Brutto je Einheit, höchstens 2 Nachkommastellen; schließt `unitPriceEuro` aus, nicht mit Rabatten, Umrechnung je Steuersatz, Abweichung bis 1 Cent je Satz wird in der Antwort ausgewiesen, größere Abweichungen wie 1.500 × 0,01 EUR werden abgelehnt; Belegrabatt im Brutto-Modus fest 0, ein Standardrabatt des Kunden greift nicht). `unitGrossPriceEuro` gilt in `create_invoice`, `update_invoice_draft` und `create_document`; in Tools ohne Bruttoumrechnung (z. B. Lieferschein, Abo) wird es mit klarer Fehlermeldung abgelehnt. `credit_invoice` (Teilgutschrift mit Positionen) und Lieferscheine rechnen in ganzen Cent und lehnen einen Sub-Cent-Preis ab. Bei `create_invoice` mit `finalize` und `payment` wird eine Zahlung, die nach einer Brutto-Abweichung nicht dem tatsächlichen Rechnungsbrutto entspricht, mit Fehlermeldung abgelehnt (`src/mcp/tools/invoices.ts:276`, gleiche Regel wie bei REST `GROSS_DEVIATION`).
 
 ### Teil-/Abschlags-/Schlussrechnungen
 
@@ -230,7 +230,7 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | `list_attachments` | Anhänge eines Belegs auflisten | „Welche Anhänge hat RE-2026-00342?" |
 | `remove_attachment` | Anhang von einem Beleg entfernen | „Entferne den zweiten Anhang von RE-2026-00342." |
 
-### Belegvorlagen (Phase 13d)
+### Belegvorlagen
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
@@ -238,7 +238,7 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | `create_template_from_document` | Den aktuellen Stand eines gespeicherten Belegs (Belegnummer oder ID) als wiederverwendbare Vorlage speichern — Positionen + Kopf-Metadaten, ohne Belegnummer/Datum/Snapshots/interne Notizen (§48); eine Vorlage ist ein Schnappschuss und ändert sich nicht mit dem Ursprungsbeleg | „Speichere RE-2026-00342 als Vorlage ‚Wartung monatlich'." |
 | `apply_template` | Aus einer Vorlage (Name oder ID) einen neuen Belegentwurf erzeugen — dieselbe Domain-Funktion wie /vorlagen (gleiche Steuersatz-/Kundenprüfung, kein Bypass); optional ein Kunde (Name oder ID), falls die Vorlage noch keinen festlegt | „Erzeuge aus der Vorlage ‚Wartung monatlich' eine Rechnung an Müller GmbH." |
 
-### Tags (Phase 13d)
+### Tags
 
 Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfernbar auch an festgeschriebenen Rechnungen, erscheinen nie in PDF/XRechnung/ZUGFeRD/Kunden-Mail/öffentlichem Angebotslink.
 
@@ -250,7 +250,7 @@ Tags sind reine interne Metadaten (kein GoBD-Belegbestandteil) — setz-/entfern
 | `tag_document` | Tag (Name oder ID) einem Beleg (Belegnummer oder ID) zuordnen — idempotent | „Setze den Tag ‚Wartung' auf RE-2026-00342." |
 | `untag_document` | Tag-Zuordnung von einem Beleg entfernen — idempotent, kein Fehler ohne bestehende Zuordnung | „Entferne den Tag ‚Wartung' von RE-2026-00342." |
 
-### CSV-Export (Phase 18b)
+### CSV-Export
 
 Dieselben Listenfilter und dieselbe Sortierung wie die `list_*`-Werkzeuge und `GET /api/v1/<Ressource>?format=csv`; interne Notizen sind nie enthalten.
 
@@ -258,7 +258,7 @@ Dieselben Listenfilter und dieselbe Sortierung wie die `list_*`-Werkzeuge und `G
 |---|---|---|
 | `export_csv` | Rechnungen, Angebote, Auftragsbestätigungen, Lieferscheine, Kunden oder Produkte als CSV zurückgeben (`resource`: `invoices`, `quotes`, `order-confirmations`, `delivery-notes`, `contacts`, `products`; optional `filter` wie bei `list_*`). Semikolon, CRLF, deutsche Zahlen, ohne BOM; keine Paginierung, höchstens 500 Zeilen (sonst Fehler mit Hinweis auf REST `?format=csv` oder die Oberfläche für größere Mengen), 30 Exporte je Minute und Organisation | „Exportiere alle bezahlten Rechnungen als CSV." |
 
-### CSV-Import (Phase 18b)
+### CSV-Import
 
 Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gleiche Prüfungen und Grenzen wie `POST /api/v1/Contact/import` und `/api/v1/Product/import` (höchstens 2 MB, 2.000 Zeilen; 20 Vorschauen und 5 Importe je Minute und Organisation).
 
@@ -272,37 +272,37 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) — `documents` enthält `taxRates`, `branding` die vier Marke-Felder `appName`/`appShortName`/`faviconPath`/`appLogoPath` (Phase 12c) | „Zeig mir meine Beleg-Einstellungen." |
-| `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand, `viesCheckEnabled`/`viesCheckOnFinalize` (USt-IdNr.-Prüfung über VIES, Phase 17a), `taxRates` — freigegebene Steuersätze der Organisation, 1–10 ganze Prozentwerte 0–100, Phase 12c) — Merge; ein nicht freigegebener Satz auf einem bestehenden Beleg/Produkt wird abgelehnt, nicht die Einstellung selbst | „Setze die Fälligkeitstage für Rechnungen auf 14." |
+| `get_settings` | Einstellungen lesen (`area`: `documents`/`print`/`branding`/`numberRanges`/`dunning`; bei `numberRanges` optional `year`) — `documents` enthält `taxRates`, `branding` die vier Marke-Felder `appName`/`appShortName`/`faviconPath`/`appLogoPath` | „Zeig mir meine Beleg-Einstellungen." |
+| `update_document_settings` | Belegeinstellungen teilweise aktualisieren (u. a. Fälligkeitstage, Standardwährung, Angebotsgültigkeit, Automatik-Festschreiben/-Versand, `viesCheckEnabled`/`viesCheckOnFinalize` (USt-IdNr.-Prüfung über VIES), `taxRates` — freigegebene Steuersätze der Organisation, 1–10 ganze Prozentwerte 0–100) — Merge; ein nicht freigegebener Satz auf einem bestehenden Beleg/Produkt wird abgelehnt, nicht die Einstellung selbst | „Setze die Fälligkeitstage für Rechnungen auf 14." |
 | `update_print_settings` | Globale Druckoptionen teilweise aktualisieren (Fußzeile, Seitenzahlen, Falz-/Lochmarken, Spalten, GiroCode, GiroCode-Größe 15–40 mm) — Merge | „Aktiviere den GiroCode auf Rechnungen." |
-| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) sowie das PDF-Layout (`layoutId`, `layoutByType` je Belegtyp, `footerMode` AUTO/CUSTOM, Phase 11b) **und** die Marke (`appName` max. 40 Zeichen, `appShortName` max. 12 Zeichen, Phase 12c) — Merge; Favicon-/Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
+| `update_branding_settings` | Briefpapier teilweise aktualisieren (Farbe, Ränder, Schriftgröße, Absender-/Fußzeile) sowie das PDF-Layout (`layoutId`, `layoutByType` je Belegtyp, `footerMode` AUTO/CUSTOM) **und** die Marke (`appName` max. 40 Zeichen, `appShortName` max. 12 Zeichen) — Merge; Favicon-/Logo-Upload nur über die HTTP-Route | „Setze die Akzentfarbe im Briefpapier auf #1A237E." |
 | `list_pdf_layouts` | Die sieben wählbaren PDF-Layouts auflisten (id, name, description) — ohne Eingabe | „Welche PDF-Layouts gibt es?" |
 | `list_layout_designs` | Layout-Designs der Organisation auflisten (id, ref `design:<id>`, name, baseLayoutId, currentVersion, archived; `includeArchived`) | „Welche Layout-Designs gibt es?" |
 | `save_layout_design` | Layout-Design anlegen oder (mit `id`) als neue Version speichern, optional `archived`; dieselbe Validierung wie REST und UI (Pflichtblöcke, Anschriftfenster) | „Lege ein Design ‚Post‘ auf Basis von klassik an." |
 | `preview_layout_design` | PDF-Vorschau eines Designs oder einer Version (Datei `exports/layout-vorschau-<id>.pdf`) | „Zeig mir die Vorschau von Design X." |
 | `update_number_range` | Einen Nummernkreis aktualisieren (`docType`, Muster/Präfix/Padding/`yearlyReset`/nächste Nummer) — Merge mit dem laufenden Jahr; lehnt ein Zurückdrehen unterhalb bereits vergebener Nummern ab | „Setze das Rechnungspräfix auf RE-2026-." |
 | `update_dunning_settings` | Org-weite Mahnwesen-Einstellungen teilweise aktualisieren (Auto-Erstellung/-Versand, Karenztage) — Merge. **Altschreibweg:** ein mitgeschicktes `baseInterestRateBp`/`baseRateValidFrom` legt zusätzlich einen Eintrag in der Basiszinssatz-Historie an (siehe `set_base_interest_rate`) — neu: `list_base_interest_rates`/`set_base_interest_rate`/`delete_base_interest_rate` verwenden | „Aktiviere automatischen Mahnungsversand." |
-| `list_base_interest_rates` | Basiszinssatz-Historie auflisten (§ 288 Abs. 1 Satz 2 BGB, Phase 14a) — aufsteigend nach „gültig ab"; seit Phase 14a die alleinige Quelle der Verzugszinsberechnung | „Welche Basiszinssätze sind hinterlegt?" |
+| `list_base_interest_rates` | Basiszinssatz-Historie auflisten (§ 288 Abs. 1 Satz 2 BGB) — aufsteigend nach „gültig ab"; sie ist die alleinige Quelle der Verzugszinsberechnung | „Welche Basiszinssätze sind hinterlegt?" |
 | `set_base_interest_rate` | Basiszinssatz zu einem Stichtag anlegen oder überschreiben (Upsert auf „gültig ab", `rateBp` in Basispunkten, 127 = 1,27 %) — wirkt erst auf danach erstellte Mahnungen | „Trage zum 01.07.2026 einen Basiszins von 3,42 % ein." |
 | `delete_base_interest_rate` | Basiszinssatz-Eintrag löschen — der letzte verbleibende Eintrag ist geschützt | „Lösche den Basiszins-Eintrag zum 01.01.2024." |
-| `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) sowie optional des PDF-Layouts (`layoutId`, Phase 11b) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
+| `set_print_options` | Beleg-individuelle Überschreibung der globalen Druckoptionen (§36) sowie optional des PDF-Layouts (`layoutId`) setzen — nur solange der Beleg noch `DRAFT` ist; ersetzt die bisherige Überschreibung (kein Merge) | „Schalte für diese eine Rechnung die Seitenzahlen aus." |
 
-### API-Schluessel
+### API-Schlüssel
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_api_key` | Neuen API-Schluessel fuer `/api/v1` erzeugen (Name, Scopes read/write/send/admin, optional Ablauf) — das Klartext-Token wird NUR in dieser Antwort angezeigt | „Erzeuge einen API-Schluessel ‚Buchhaltung' mit Lese- und Schreibrechten." |
-| `revoke_api_key` | API-Schluessel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schluessel ‚Buchhaltung'." |
-| `list_api_keys` | API-Schluessel auflisten (Name, Praefix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schluessel gibt es?" |
+| `create_api_key` | Neuen API-Schlüssel für `/api/v1` erzeugen (Name, Scopes read/write/send/admin, optional Ablauf) — das Klartext-Token wird NUR in dieser Antwort angezeigt | „Erzeuge einen API-Schlüssel ‚Buchhaltung' mit Lese- und Schreibrechten." |
+| `revoke_api_key` | API-Schlüssel unwiderruflich widerrufen (idempotent) | „Widerrufe den API-Schlüssel ‚Buchhaltung'." |
+| `list_api_keys` | API-Schlüssel auflisten (Name, Präfix, Scopes, zuletzt genutzt, Ablauf, Widerruf) — nie das Klartext-Token | „Welche API-Schlüssel gibt es?" |
 
 ### Webhooks
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `list_webhooks` | Webhook-Endpunkte auflisten (URL, abonnierte Ereignisse, aktiv) — nie das Secret | „Welche Webhooks sind eingerichtet?" |
-| `upsert_webhook` | Webhook-Endpunkt anlegen oder aendern (URL, Events, aktiv) — Klartext-Secret nur bei Neuanlage/Rotation sichtbar | „Lege einen Webhook auf https://example.com/hook fuer invoice.finalized und payment.recorded an." |
+| `upsert_webhook` | Webhook-Endpunkt anlegen oder ändern (URL, Events, aktiv) — Klartext-Secret nur bei Neuanlage/Rotation sichtbar | „Lege einen Webhook auf https://example.com/hook für invoice.finalized und payment.recorded an." |
 | `test_webhook` | Synthetische Test-Zustellung an einen Endpunkt senden und Ergebnis melden | „Teste den Webhook ‚https://example.com/hook'." |
-| `replay_webhook_delivery` | Eine bestehende Zustellung als NEUE Zustellung erneut versuchen (Original bleibt unveraendert) | „Wiederhole die fehlgeschlagene Zustellung xyz." |
+| `replay_webhook_delivery` | Eine bestehende Zustellung als NEUE Zustellung erneut versuchen (Original bleibt unverändert) | „Wiederhole die fehlgeschlagene Zustellung xyz." |
 
 ### Abos (wiederkehrende Rechnungen)
 
@@ -328,9 +328,9 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `get_dashboard` | Dashboard-Kennzahlen: offen/fällig/überfällig, „fällig diese Woche", teilbezahlt, Anzahl mahnwürdiger Rechnungen, Aging-Buckets, Nettoumsatz laufender Monat, letzte Belege, offene Angebote | „Wie ist die Lage — was ist offen und überfällig?" |
-| `get_report` | Auswertung (Phase 12e): `revenue` (Netto-Umsatz je Monat und Währung), `top-customers` (nach Netto), `status` (Rechnungen je effektivem Status) oder `payment-behaviour` (Ø Zahlungsdauer, Pünktlichkeitsanteil), `cash-in` (Zahlungseingang je Monat/Währung), `quote-outcome` (Angebotsquote), `top-products` (Nettoumsatz je Produkt) oder `recurring-run-rate` (monatlich wiederkehrender Netto-Umsatz aktiver Abos) — `customer` (ID oder Name) nur bei `revenue`/`payment-behaviour`, `months` nur bei `revenue`/`top-customers`/`cash-in`/`quote-outcome`/`top-products`, `limit` nur bei `top-customers`/`top-products`; `currency` (ISO-Code, z. B. `EUR`) nur bei `revenue`; `format` (`json` Standard oder `csv`, bei jedem `type`; CSV = Semikolon, Dezimalkomma, BOM-frei als Text, Formelschutz, gleiche Tabelle wie REST `format=csv`); ein beim gewählten `type` nicht zulässiger Parameter wird mit einer Fehlermeldung abgelehnt (Fix 2, ehem. M8) | „Wie war der Umsatz der letzten sechs Monate, und wer sind meine Top-5-Kunden?" |
+| `get_report` | Auswertung: `revenue` (Netto-Umsatz je Monat und Währung), `top-customers` (nach Netto), `status` (Rechnungen je effektivem Status) oder `payment-behaviour` (Ø Zahlungsdauer, Pünktlichkeitsanteil), `cash-in` (Zahlungseingang je Monat/Währung), `quote-outcome` (Angebotsquote), `top-products` (Nettoumsatz je Produkt) oder `recurring-run-rate` (monatlich wiederkehrender Netto-Umsatz aktiver Abos) — `customer` (ID oder Name) nur bei `revenue`/`payment-behaviour`, `months` nur bei `revenue`/`top-customers`/`cash-in`/`quote-outcome`/`top-products`, `limit` nur bei `top-customers`/`top-products`; `currency` (ISO-Code, z. B. `EUR`) nur bei `revenue`; `format` (`json` Standard oder `csv`, bei jedem `type`; CSV = Semikolon, Dezimalkomma, BOM-frei als Text, Formelschutz, gleiche Tabelle wie REST `format=csv`); ein beim gewählten `type` nicht zulässiger Parameter wird mit einer Fehlermeldung abgelehnt | „Wie war der Umsatz der letzten sechs Monate, und wer sind meine Top-5-Kunden?" |
 | `get_timeline` | Chronologische Historie eines Belegs (`kind`: Rechnung/Angebot/Lieferschein + `doc`-ID) — Anlage, Änderungen, Festschreibung, Versand, Zahlungen, Mahnungen, Statuswechsel | „Zeig mir die Historie von RE-2026-00342." |
-| `get_oss_threshold` | OSS-Schwelle (§ 3c Abs. 4 UStG, Phase 16e): EU-B2C-Netto-Umsatz des Jahres und des Vorjahres gegen 10.000 €, `level` OK/WARN/EXCEEDED, Summen je Land, Zählmodus, `skippedWithoutEur`; `year` optional. Produkte, Positionen und `get_settings` (`documents`) tragen `ossCategory`, `ossCountMode`, `ossWarnPercent`; `create_invoice`, `create_document`, `create_recurring` und `update_invoice_draft` nehmen je Position `ossCategory` an (sonst Snapshot aus dem Produkt) | „Wie nah bin ich an der OSS-Schwelle?" |
+| `get_oss_threshold` | OSS-Schwelle (§ 3c Abs. 4 UStG): EU-B2C-Netto-Umsatz des Jahres und des Vorjahres gegen 10.000 €, `level` OK/WARN/EXCEEDED, Summen je Land, Zählmodus, `skippedWithoutEur`; `year` optional. Produkte, Positionen und `get_settings` (`documents`) tragen `ossCategory`, `ossCountMode`, `ossWarnPercent`; `create_invoice`, `create_document`, `create_recurring` und `update_invoice_draft` nehmen je Position `ossCategory` an (sonst Snapshot aus dem Produkt) | „Wie nah bin ich an der OSS-Schwelle?" |
 | `list_notifications` | Benachrichtigungen auflisten (optional nur ungelesen, `limit`) | „Welche ungelesenen Benachrichtigungen habe ich?" |
 | `mark_notifications_read` | Benachrichtigungen als gelesen markieren (einzelne IDs oder alle) | „Markiere alle Benachrichtigungen als gelesen." |
 

@@ -75,7 +75,7 @@ Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like
 - **Unified document editor with live preview**: one editor for invoices, quotes/order confirmations/pro-formas and delivery notes, with inline customer/product creation, a one-click PDF preview of the unsaved draft (watermarked, nothing written to the database), drag-and-drop or keyboard (`Alt+↑`/`Alt+↓`, `Enter`-to-add-row) line reordering, headings/text blocks/computed subtotals alongside regular item lines (only item lines go into the e-invoice XML), rich text (restricted markdown — bold/italic/underline, one list level, links) in line descriptions, article numbers, and header fields (subject, order number, internal reference, contact, delivery/billing address).
 - **Attachments**: upload files to any document (invoice, quote, delivery note, dunning, subscription) — 10 MB per file, 50 MB per document, MIME whitelist + magic-byte check, content-addressed storage with dedup, selectable as extra attachments when sending email.
 - **Payments & dunning**: record (partial) payments; staged reminders (payment reminder → 1st/2nd dunning) with **default interest** (§ 288 BGB, day-accurate across base-rate changes; half-yearly base-rate table maintained in UI/REST/MCP) + €40 flat fee (B2B), each as a PDF.
-- **Recurring invoices / subscriptions**: weekly–yearly templates, optional auto-finalisation, run via UI/MCP or cron (`npm run recurring:run`).
+- **Recurring invoices / subscriptions**: weekly–yearly templates, optional auto-finalisation, run via UI/MCP or cron (`npm run recurring:run`). Subscription lines can use heading/text/subtotal blocks, and usage-based lines are billed from recorded consumption (UI/REST/MCP, with `externalId`); a usage run only happens after the billing period has ended.
 - **Credit notes**: full cancellation **or** partial credit, original stays finalised.
 - **Letterhead, print options & number ranges**: per-organisation branding (logo, colour, margins, sender line, footer) with a live preview; ten global print switches (footer, page numbers, fold/punch marks, which columns show) with per-document overrides while still a draft; nine configurable number ranges (quotes, order confirmations, pro-forma, delivery notes, invoices, credit notes, dunnings, plus customer and article numbers) with pattern/prefix/reset and a rewind guard.
 - **PDF layouts & layout designer** — seven built-in layouts (Standard, Schlicht, Klassik, Modern, Blau, Schwarz, Kompakt) following DIN 5008 Form B, plus a **layout designer** for your own versioned designs (block order, columns, fonts IBM Plex / Source Serif 4 / Inter) with live preview. Selectable per document type, overridable per draft document; the layout is frozen when an invoice is finalized. Footer is generated from company master data (four columns) or from three custom text fields.
@@ -87,11 +87,20 @@ Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like
 - **PDF-centered document view**: invoice/document/delivery-note detail pages share one layout — the PDF embedded centre-stage (browser viewer, A4 aspect ratio, download fallback), a status card on the right (customer, dates, totals, payment/dunning), actions up top and a no-JS "more" menu for less-used ones (export, duplicate, cancel, convert), collapsible line items, and `‹`/`›`/`Alt+←`/`Alt+→` to step through the previously opened, filtered list.
 - **PDF export** ("other invoice") with all mandatory fields.
 - **Self-hosted**: SQLite solo without a server **or** PostgreSQL via Docker.
-- **Sign-in**: built-in admin account (scrypt hash + signed session cookie, hardened sign-in, password change) — app and API protected. API requests are logged (redacted) under Settings → API.
+- **Sign-in**: built-in admin account (scrypt hash + signed session cookie, hardened sign-in, password change) — app and API protected. Optional two-factor authentication (TOTP with recovery codes) and password reset by email (needs SMTP and `APP_BASE_URL`). API requests are logged (redacted) under Settings → API.
+- **E-invoice identifiers & VAT ID check**: Peppol endpoint IDs with EAS scheme (BT-34/BT-49) in UBL and CII, Leitweg-ID check-digit validation, and an optional VIES check of customer VAT IDs (on by default, skipped on finalisation; each check is stored append-only).
+- **Card and SEPA direct debit in the e-invoice** (BG-18/BG-19): card payments with only the last four digits, direct debit with creditor ID (company), mandate (customer) and pre-notification on the PDF; incomplete data gives payment means code 1 (not defined) in the e-invoice, with a notice on finalisation.
+- **Unit prices to 0.00001 EUR** (invoices, quotes/order confirmations, subscriptions): line totals are rounded half-up; BT-146 carries five decimals. Gross-price input is available via REST/MCP.
+- **CSV export & import**: export documents and contacts as CSV; import contacts and products with a preview, formula-injection protection and a 24 h double-import lock.
+- **Bulk cancellation**: cancel several invoices from the list at once (max. 50, each with its own cancellation document, result report); also via REST/MCP.
+- **Optional HTML email**: sent alongside the plain-text part, off by default.
+- **Postal dispatch via LetterXpress** (off by default, dry-run mode, confirmation per mode change and per document; dunning automation only with an explicit setting).
+- **API extras**: `updatedSince` and cursor pagination on lists, create + finalise + record payment in one call with a mandatory `Idempotency-Key` (24 h replay), bulk contacts (max. 100), bulk cancellation, gross-price input.
+- **Berlin time**: invoice, due and delivery dates in the e-invoice (BT-2/BT-9/BT-72), the Skonto deadline date and end, the month and year boundaries of reports and the OSS year follow the Berlin calendar day; overdue status and dunning still count UTC days.
 
 ### Status
 
-In productive use since September 2026 for issuing real invoices. Everything listed above works and is covered by tests; e-invoices pass the official validators in every CI run. On the roadmap: DATEV/CSV export, ZM/OSS reports, VIES check, Peppol EAS schemes. See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
+In productive use since September 2026 for issuing real invoices. Everything listed above works and is covered by tests; e-invoices pass the official validators in every CI run. Not part of the project by design: DATEV export, financial accounting and multi-user/roles. The software does not produce ZM (§ 18a UStG) or OSS returns (§ 18j UStG). See [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) and the honest list of **[known limitations](docs/LIMITATIONEN.md)**.
 
 ## Documents workflow
 
@@ -183,7 +192,7 @@ docker compose run --rm app \
 (head), not against the `0_init` baseline. The baseline reference is
 `prisma/migrations-postgres/0_init/migration.sql` only. The diff can therefore
 also show tables or columns that were only introduced by a **later** migration
-under `prisma/migrations-postgres/` (e.g. the phase-0 snapshot columns) — those
+under `prisma/migrations-postgres/` (e.g. the snapshot columns) — those
 must **not** be applied by hand; `migrate deploy` applies them automatically
 after the `resolve` step. To tell which migration introduces a given column,
 run `grep -l "<column name>" prisma/migrations-postgres/*/migration.sql`: if it
@@ -261,4 +270,4 @@ Originally based on OpenInvoice Germany by [AutomationsManufaktur](https://autom
 
 ## License
 
-**[AGPL-3.0](LICENSE).** You may use, modify and self-host the software. Anyone who runs it as a network service must make the (modified) source available to its users — keeping the project free for everyone. Rationale for the licence choice: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md#3-lizenz-empfehlung).
+**[AGPL-3.0](LICENSE).** You may use, modify and self-host the software. Anyone who runs it as a network service must make the (modified) source available to its users — keeping the project free for everyone. Rationale for the licence choice: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md#4-lizenz-empfehlung).

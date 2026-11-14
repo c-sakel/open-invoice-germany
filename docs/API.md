@@ -145,14 +145,14 @@ Erneutes Festschreiben derselben Rechnung liefert `409 CONFLICT`.
 
 Die Antwort kann ein Feld `warnings` (Liste von Texten) enthalten: `{ "data": { ... }, "warnings": ["..."] }`. Die Hinweise blockieren das Festschreiben nie, z. B. wenn dem Käufer jede elektronische Adresse fehlt (XRechnung-Regel `PEPPOL-EN16931-R010`) oder eine ig. Lieferung/Leistung ohne gültige VIES-Prüfung festgeschrieben wird (VIES-Fehler, ungültige USt-IdNr., Abfragelimit).
 
-### USt-IdNr.-Prüfung und neue Kontaktfelder (Phase 17a)
+### USt-IdNr.-Prüfung und neue Kontaktfelder
 
 - `Contact` und `PATCH /api/v1/Contact/{id}` kennen zusätzlich `peppolScheme` (EAS-Schemacode der `peppolId`, z. B. `0088`; eine leere `peppolId` setzt das Schema auf `null`) und `legalRegistrationId` (BT-47, Handelsregister-/Unternehmensnummer). `leitwegId` wird mit Prüfziffer geprüft (400 `VALIDATION` bei Fehler).
 - `POST /api/v1/Contact/{id}/vat-check` prüft die USt-IdNr. des Kontakts qualifiziert über VIES und liefert den Protokolleintrag (`status` `VALID`/`INVALID`/`ERROR`, `requestIdentifier`, `traderName`, `traderAddress`, `checkedAt`). Fehler: 409, wenn die Prüfung in den Einstellungen abgeschaltet ist; 429 mit `Retry-After` bei mehr als 20 Abfragen je Minute; 400 bei fehlender USt-IdNr.; 404 für fremde Organisation. Dienstausfälle ergeben `status: "ERROR"`, nie 5xx.
 - `GET /api/v1/Contact/{id}/vat-checks` listet das Prüfprotokoll (neueste zuerst, höchstens 50 Einträge; `total` ist die Gesamtzahl der Einträge des Kontakts).
 - `Settings.documents` kennt `viesCheckEnabled` (Prüfung freischalten, Standard `true`) und `viesCheckOnFinalize` (Prüfung beim Festschreiben, Standard `false`); `PATCH` ändert nur gesendete Felder.
 
-### Lastschriftmandat und Kartenangaben (Phase 18e)
+### Lastschriftmandat und Kartenangaben
 
 - **`Contact`** (`POST /api/v1/Contact`, `PATCH /api/v1/Contact/{id}`) kennt die Mandatsfelder `sepaMandateReference` (Mandatsreferenz, höchstens 35 Zeichen aus `A-Z a-z 0-9 + ? / - : ( ) . , '`), `sepaMandateSignedAt` (Datum der Unterschrift), `sepaDebitIban` (**nur Eingabe**) und `sepaDebitAccountName`. Referenz und IBAN gehören zusammen: ist eines der Mandatsfelder gesetzt, muss auch das andere vorhanden sein (sonst 400 `VALIDATION` mit Feldpfad). Referenz **und** IBAN beide leer entfernt das Mandat (Datum und Kontoinhaber werden mitgeleert; wer sie dabei mitsendet, erhält 400). Die Ausgabe enthält `sepaMandateReference`, `sepaMandateSignedAt` (`YYYY-MM-DD`), `sepaDebitAccountName` und `sepaDebitIbanMasked` (z. B. `DE02 **** 2051`) — **die volle IBAN wird nie ausgegeben**.
 - **`Invoice`** (`POST`, `PATCH` am Entwurf) nimmt `cardPanTruncated`, `cardNetwork` und `cardHolderName` an. Nur bei einer Zahlungsmethode mit UNTDID-Code `48`, `54` oder `55` wirksam, sonst werden sie auf `null` gesetzt; nach dem Festschreiben nicht mehr änderbar. **PAN-Regel:** `cardPanTruncated` akzeptiert 4 bis 10 Ziffern (Leerzeichen, `*`, `x`, `X`, `-`, `.` erlaubt) und speichert **nur die letzten 4**; mehr als 10 Ziffern ergibt 400, die Fehlermeldung wiederholt die Eingabe nie. Die Ausgabe enthält `cardPanTruncated`, `cardNetwork`, `cardHolderName` und `directDebit` (`{ mandateReference, creditorId, debtorIbanMasked }`, ab Festschreibung bei Lastschrift mit vollständigen Angaben, sonst `null`).
@@ -213,7 +213,7 @@ curl -s -X POST "$BASE/api/v1/Invoice" \
       }'
 ```
 
-## Atomar anlegen: `POST /api/v1/Invoice` mit `finalize` und `payment` (Phase 18d)
+## Atomar anlegen: `POST /api/v1/Invoice` mit `finalize` und `payment`
 
 Zusätzliche Body-Felder zum bekannten Rechnungsbody:
 
@@ -239,7 +239,7 @@ Zusätzliche Body-Felder zum bekannten Rechnungsbody:
 - Steuerfragen (z. B. Drittland-Schema `NICHT_STEUERBAR` oder `AUSFUHR`, siehe Schritt 2) bleiben Sache der
   anbindenden Integration; der atomare Aufruf prüft sie nicht anders als das Festschreiben.
 
-## Abgleich: `updatedSince` und `cursor` (Phase 18d)
+## Abgleich: `updatedSince` und `cursor`
 
 Die Listen `GET /api/v1/{Invoice,Quote,OrderConfirmation,DeliveryNote,Contact,Product}` unterstützen einen
 Abgleich geänderter Datensätze:
@@ -267,17 +267,17 @@ curl -s "$BASE/api/v1/Invoice?updatedSince=2076-09-01T00:00:00Z&limit=100" -H "$
   mit `includeArchived=true` kommen sie im Abgleich mit (Rechnungen kennen keine Archivierung).
 - `eInvoice` akzeptiert `true`/`false` und `1`/`0`.
 
-**Verhaltensänderung 18d (Kompatibilität):**
+**Änderung vom 14.11.2026 (Kompatibilität):**
 
-- `eInvoice=1` wurde bisher wie `false` behandelt und gilt jetzt als `true`. Abfragen, die `eInvoice=1`
+- `eInvoice=1` wurde zuvor wie `false` behandelt und gilt jetzt als `true`. Abfragen, die `eInvoice=1`
   gesendet haben, liefern künftig die E-Rechnungen statt der übrigen Rechnungen.
-- Andere Werte (`TRUE`, `yes`, leer) wurden bisher wie `false` behandelt und liefern jetzt `400`.
-- `POST /api/v1/Invoice`: die Felder `finalize` und `payment` wurden bisher verworfen. Sie lösen jetzt
+- Andere Werte (`TRUE`, `yes`, leer) wurden zuvor wie `false` behandelt und liefern jetzt `400`.
+- `POST /api/v1/Invoice`: die Felder `finalize` und `payment` wurden zuvor verworfen. Sie lösen jetzt
   das Festschreiben (`finalize: true`, mit Pflicht-`Idempotency-Key`) bzw. bei `payment` ohne `finalize`
-  einen `400` aus. Integrationen (z. B. Webshop-Anbindungen) vor dem Deploy auf diese Felder prüfen.
+  einen `400` aus. Integrationen (z. B. Webshop-Anbindungen) vor dem Update auf diese Felder prüfen.
 - `includeArchived=true` wird nicht mehr mit `400` abgelehnt, sondern wirkt im Abgleich.
 
-## Sammelanlage Kontakte: `POST /api/v1/Contact/bulk` (Phase 18d)
+## Sammelanlage Kontakte: `POST /api/v1/Contact/bulk`
 
 Body `{ "contacts": [ { ... }, ... ] }` mit 1 bis 100 Einträgen (Felder wie `POST /api/v1/Contact`).
 
@@ -290,7 +290,7 @@ Body `{ "contacts": [ { ... }, ... ] }` mit 1 bis 100 Einträgen (Felder wie `PO
 - Rate-Limit: höchstens 10 Aufrufe pro Minute und Organisation (`429`).
 - Protokoll: ein ActivityLog-Eintrag (`CONTACTS_BULK_CREATED`) in derselben Transaktion.
 
-## Sammel-Storno: `POST /api/v1/Invoice/bulk-cancel` (Phase 18d)
+## Sammel-Storno: `POST /api/v1/Invoice/bulk-cancel`
 
 ```bash
 curl -s -X POST "$BASE/api/v1/Invoice/bulk-cancel" \
@@ -308,13 +308,13 @@ curl -s -X POST "$BASE/api/v1/Invoice/bulk-cancel" \
 - Kein Versand der Stornorechnungen. Höchstens 10 Aufrufe pro Minute und Organisation (`429`).
 - Kein `Idempotency-Key` nötig: eine bereits stornierte Rechnung meldet beim Wiederholen `NOT_CANCELLABLE`.
 
-## Preise: Sub-Cent und Brutto (Phase 18f)
+## Preise: Sub-Cent und Brutto
 
 Jede Rechnungs-, Angebots- und AB-Zeile (`POST`/`PATCH` auf `Invoice`, `Quote`, `OrderConfirmation`) nimmt **genau eine** Preisform an (`src/domain/document/price-input.ts:25`, `:105`):
 
 | Feld | Bedeutung |
 |---|---|
-| `unitNetPriceCents` | Netto je Einheit in ganzen Cent (wie bisher) |
+| `unitNetPriceCents` | Netto je Einheit in ganzen Cent |
 | `unitNetPriceMilliCents` | Netto je Einheit in tausendstel Cent, führend (0,002 EUR = `200`); `unitNetPriceCents` ist dann dessen Rundung und darf weggelassen werden, ein abweichender Wert wird abgelehnt. Bereich 0 bis 2.147.483.647 (= 21.474,83 EUR) |
 | `unitGrossPriceCents` | Brutto je Einheit in Cent, wird je Steuersatz in Netto umgerechnet |
 | `lineGrossCents` | Brutto der Zeile in Cent; hat Vorrang vor Menge × Bruttoeinzelpreis |
@@ -341,7 +341,7 @@ Bei Bruttoeingabe enthält die Antwort zusätzlich `grossTargetCents` (Summe der
 
 In den Antworten tragen Rechnungs- und Angebotszeilen `unitNetPriceMilliCents` (`null` bei ganzem Cent), Rechnungszeilen zusätzlich `servicePeriodStart`/`-End`. Abo-Zeilen tragen `id`, `billing` (`FIXED` | `USAGE`), `usageUnitLabel` und `unitNetPriceMilliCents`; im Request nehmen sie dieselben Felder an (`USAGE` nur für `ITEM`, Menge `0`; bleibt die `id` einer Zeile im `PUT` erhalten, bleibt ihr Verbrauch zugeordnet). Teilgutschrift und Lieferschein rechnen in ganzen Cent.
 
-## Verbrauch (`Recurring/{id}/usage`, Phase 18f)
+## Verbrauch (`Recurring/{id}/usage`)
 
 Verbrauch wird je Abo-Position mit `billing: USAGE` erfasst; der nächste Lauf rechnet die offene Menge ab (siehe [ANLEITUNG.md](ANLEITUNG.md), „Abrechnung nach Verbrauch“).
 
@@ -396,7 +396,7 @@ Request-/Response-Bodies hängen zusätzlich am separaten Schalter `logBodies`.
   `/api/v1/ApiRequestLog` selbst (Rekursionsschutz) — diese Pfade tragen nichts
   zur Fehlersuche bei.
 
-## Auswertungen (Phase 12e)
+## Auswertungen
 
 `GET /api/v1/Report` (Scope `read`) liefert dieselben Auswertungen wie die Diagramme
 auf Dashboard und Kundenseite — **keine eigene Aggregation** für die API, sondern
@@ -410,7 +410,7 @@ Parameter (Query):
 | Parameter | Pflicht | Bedeutung |
 |---|---|---|
 | `type` | ja | `revenue` \| `top-customers` \| `status` \| `payment-behaviour` \| `cash-in` \| `quote-outcome` \| `top-products` \| `recurring-run-rate` |
-| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue`, `top-customers`, `cash-in`, `quote-outcome` und `top-products` zulässig** (Fix 2, ehem. M8) |
+| `months` | nein | Anzahl Kalendermonate rückwirkend (1–36, Default 12) — **nur bei `revenue`, `top-customers`, `cash-in`, `quote-outcome` und `top-products` zulässig** |
 | `limit` | nein | Anzahl Zeilen (1–50, Default 5; bei `top-products` Default 10, je Währung) — **nur bei `top-customers` und `top-products` zulässig** |
 | `customerId` | nein | auf einen Kunden einschränken — **nur bei `revenue` und `payment-behaviour` zulässig** |
 | `currency` | nein | nur Belege dieser Währung (ISO-4217, Großbuchstaben, z. B. `EUR`) — **nur bei `revenue` zulässig**; ohne Angabe je Währung eigene Zeilen |
@@ -418,9 +418,8 @@ Parameter (Query):
 Ein unbekannter `type`, `months`/`limit` außerhalb ihrer Grenzen ODER ein beim
 gewählten `type` **nicht zulässiger** Parameter (z. B. `limit` bei
 `type=revenue`, `months` bei `type=status`) liefert `400 VALIDATION` — die
-Meldung (`error.details.issues`) nennt den betroffenen Parameter. Vor Fix 2
-wurde ein nicht zutreffender Parameter still ignoriert; das ist seither ein
-Fehler, kein No-op mehr.
+Meldung (`error.details.issues`) nennt den betroffenen Parameter. Ein nicht
+zutreffender Parameter wird nie still ignoriert.
 
 - **`revenue`** — Netto-Umsatz je Kalendermonat und Währung (Feld `currency`, nie über
   Währungen addiert), lückenlos je Währung (auch Monate ohne Beleg als 0), Entwürfe ausgeschlossen, Gutschriften/Stornos bereits mit ihrem
@@ -452,7 +451,7 @@ Fehler, kein No-op mehr.
 
 Währungen werden bei allen vier neuen Typen nie gemischt: je Währung eigene Zeilen.
 
-**CSV (Phase 17c):** `GET /api/v1/Report?type=<typ>&format=csv` (für jeden `type`, Scope `read`) liefert statt JSON `text/csv; charset=utf-8` als Anhang `auswertung-<typ>-<Berliner Datum>.csv` (`src/domain/reporting/csv.ts`): UTF-8 mit BOM, Semikolon, `\r\n`, deutsche Spaltenköpfe je Typ, Geld als `1234,56`, Menge mit drei Nachkommastellen, Textzellen mit führendem `=`, `+`, `-`, `@` oder Tab werden mit `'` entschärft (Formelschutz). `format` ist bei jedem Typ zulässig (nicht in den typabhängigen Parametern), ungültige Werte liefern 400. Die OpenAPI-Spezifikation führt dafür neben `application/json` auch `text/csv`. Dieselbe Tabelle gibt die Oberfläche über die Session-Route `GET /api/reports/<typ>.csv` aus (kein Bearer-Zugriff).
+**CSV:** `GET /api/v1/Report?type=<typ>&format=csv` (für jeden `type`, Scope `read`) liefert statt JSON `text/csv; charset=utf-8` als Anhang `auswertung-<typ>-<Berliner Datum>.csv` (`src/domain/reporting/csv.ts`): UTF-8 mit BOM, Semikolon, `\r\n`, deutsche Spaltenköpfe je Typ, Geld als `1234,56`, Menge mit drei Nachkommastellen, Textzellen mit führendem `=`, `+`, `-`, `@` oder Tab werden mit `'` entschärft (Formelschutz). `format` ist bei jedem Typ zulässig (nicht in den typabhängigen Parametern), ungültige Werte liefern 400. Die OpenAPI-Spezifikation führt dafür neben `application/json` auch `text/csv`. Dieselbe Tabelle gibt die Oberfläche über die Session-Route `GET /api/reports/<typ>.csv` aus (kein Bearer-Zugriff).
 
 Beispiel:
 
@@ -478,13 +477,13 @@ curl -s "$BASE/api/v1/Report?type=revenue&months=6&format=csv" -H "$AUTH" -o ums
 (`[{ avgDaysToPay, onTimeShare, paidCount }]`) — dieselbe Form wie die anderen drei
 Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden müssen.
 
-### OSS-Schwelle (`GET /api/v1/Report/oss`, Phase 16e)
+### OSS-Schwelle (`GET /api/v1/Report/oss`)
 
 `GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles Jahr in Berliner Zeit). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
 
 Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`) an `Product` (Standard `NONE`) und an Positionen (Lese- und Schreibfeld; ohne Angabe übernimmt eine Position mit `productId` die Kategorie des Produkts als Snapshot, ohne Produkt bleibt sie leer). Die Belegeinstellungen (`/api/settings/documents`) tragen `ossCountMode` (Standard `ALL_EU_B2C`) und `ossWarnPercent` (ganze Zahl 1–99, Standard 80).
 
-### Abo-Positionen (`Recurring`, Phase 18c)
+### Abo-Positionen (`Recurring`)
 
 `GET /api/v1/Recurring/{id}` sowie `POST` und `PATCH` liefern zusätzlich `lines` (nach `position` sortiert; die Liste `GET /api/v1/Recurring` enthält sie nicht). Jede Zeile trägt `position`, `lineType` (`ITEM` | `HEADING` | `TEXT` | `SUBTOTAL`), `productId` (nur Snapshot), `description`, `descriptionLong`, `articleNumber`, `quantityMilli`, `unit`, `unitNetPriceCents`, `taxRate`, `taxCategory`, `discountPermille`, `discountCents` und `ossCategory`. Im Request (`POST`, `PATCH`) gelten für `lines` dieselben Zeilenfelder und Regeln wie bei Rechnungen: Überschrift, Textblock und Zwischensumme tragen keine Menge, keinen Preis und keinen Rabatt. Jeder Lauf übernimmt die Zeilen in den Rechnungsentwurf.
 
@@ -497,8 +496,8 @@ Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`)
 `DocumentTemplate` — vollständige Liste mit Feldern, Filtern (`embed=`,
 Statusfilter, Datumsbereiche) und Beispielen: `GET /api/docs`.
 
-`BaseInterestRate` (Phase 14a) — Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB,
-Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), seit Phase 14a die
+`BaseInterestRate` — Basiszinssatz-Historie (§ 288 Abs. 1 Satz 2 BGB,
+Bekanntgabe der Deutschen Bundesbank zum 01.01./01.07.), die
 alleinige Quelle der Verzugszinsberechnung (ersetzt das einzelne Feld
 `DunningSettings.baseInterestRateBp`). `GET /api/v1/BaseInterestRate` (Scope
 `admin`, keine Paginierung — die Historie wächst höchstens zweimal jährlich)
@@ -511,7 +510,7 @@ einen Eintrag an oder überschreibt den bestehenden Eintrag zu genau diesem
 letzte verbleibende Eintrag einer Organisation ist geschützt (`400
 VALIDATION`, die Verzugszinsberechnung braucht mindestens einen Satz).
 
-`Tag` (Phase 13d) — Ordnungsmerkmal über Belegen (`INVOICE`/`QUOTE`/
+`Tag` — Ordnungsmerkmal über Belegen (`INVOICE`/`QUOTE`/
 `DELIVERY_NOTE`), reine Metadaten ohne GoBD-Bezug: setz-/entfernbar auch an
 festgeschriebenen Rechnungen. `GET /api/v1/Tag` (Scope `read`) und `POST
 /api/v1/Tag` (Scope `write`, Body `{"name":"Wartung","color":"slate"}` →
@@ -526,7 +525,7 @@ API akzeptiert bei `DELETE` grundsätzlich keinen Request-Body): `POST
 — **beide `assign` und `unassign` sind `POST`**, kein `DELETE`; ein erneuter
 Aufruf mit derselben Zuordnung ist kein Fehler.
 
-`DocumentTemplate` (Phase 13d) — wiederverwendbare Belegvorlage (Positionen +
+`DocumentTemplate` — wiederverwendbare Belegvorlage (Positionen +
 Kopf-Metadaten, ohne Belegnummer/Datum/Snapshots/interne Notizen, §48).
 `GET /api/v1/DocumentTemplate` (Scope `read`, Filter `docType`) und `POST
 /api/v1/DocumentTemplate` (Scope `write`, Body
@@ -547,7 +546,7 @@ docType,id}`) — die neue Ressource selbst danach über `GET
 `name`, `description`, `thumbnailUrl`) — keine Paginierung, kein POST/PATCH (feste
 Liste, keine DB-Tabelle). Auswahl je Organisation/Belegtyp über `PATCH
 /api/v1/Settings` (`branding.layoutId`/`branding.layoutByType`). Eine Beleg-
-individuelle Layout-Überschreibung ist seit der Fix-Welle (Phase 11b) auch über
+individuelle Layout-Überschreibung ist auch über
 `/api/v1` erreichbar: `GET`/`PATCH /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-
 options` (Scope `read`/`write`) liefert die effektiven Druckoptionen (globale
 Einstellungen verschmolzen mit einer etwaigen Beleg-Überschreibung) bzw. setzt die
@@ -557,13 +556,13 @@ Einstellungen verschmolzen mit einer etwaigen Beleg-Überschreibung) bzw. setzt 
 sonst). `Quote/{id}/print-options` gilt nur für `kind=ANGEBOT` — Auftragsbestätigung/
 Proforma haben keinen eigenen `print-options`-Endpunkt.
 
-**Layout-Designs (Phase 16g).** `GET /api/v1/Layout` liefert zusätzlich zu den festen Layouts die Designs der Organisation (`id`, `ref` = `design:<id>`, `name`, `baseLayoutId`, `currentVersion`, `archived`; `?includeArchived=true`). `POST /api/v1/Layout` legt ein Design an (`name`, optional `baseLayoutId` oder `config`), `GET`/`PUT /api/v1/Layout/{id}` liest bzw. speichert (eine Speicherung mit geänderter Konfiguration erzeugt eine neue unveränderliche Version, `archived` archiviert/reaktiviert), `GET /api/v1/Layout/{id}/versions` listet die Versionen, `POST /api/v1/Layout/{id}/preview` rendert ein PDF-Vorschaubild mit Wasserzeichen (`config` oder `version`, optional Entwurf; 30 Aufrufe/min je Schlüssel). Scope `read` für alle Lesezugriffe und die Vorschau. Fehler: 400 `VALIDATION` (Konfiguration oder Anschriftfenster), 404 für fremde Organisation, 409 bei Namenskollision oder wenn ein zugeordnetes Design archiviert werden soll. Die Zuordnung läuft über `PATCH /api/v1/Settings` mit `branding.layoutId`/`branding.layoutByType` und dem Wert `design:<id>` (fremdes, archiviertes oder unbekanntes Design: 400); die eingefrorene Version eines Belegs steht nicht in der API.
+**Layout-Designs.** `GET /api/v1/Layout` liefert zusätzlich zu den festen Layouts die Designs der Organisation (`id`, `ref` = `design:<id>`, `name`, `baseLayoutId`, `currentVersion`, `archived`; `?includeArchived=true`). `POST /api/v1/Layout` legt ein Design an (`name`, optional `baseLayoutId` oder `config`), `GET`/`PUT /api/v1/Layout/{id}` liest bzw. speichert (eine Speicherung mit geänderter Konfiguration erzeugt eine neue unveränderliche Version, `archived` archiviert/reaktiviert), `GET /api/v1/Layout/{id}/versions` listet die Versionen, `POST /api/v1/Layout/{id}/preview` rendert ein PDF-Vorschaubild mit Wasserzeichen (`config` oder `version`, optional Entwurf; 30 Aufrufe/min je Schlüssel). Scope `read` für alle Lesezugriffe und die Vorschau. Fehler: 400 `VALIDATION` (Konfiguration oder Anschriftfenster), 404 für fremde Organisation, 409 bei Namenskollision oder wenn ein zugeordnetes Design archiviert werden soll. Die Zuordnung läuft über `PATCH /api/v1/Settings` mit `branding.layoutId`/`branding.layoutByType` und dem Wert `design:<id>` (fremdes, archiviertes oder unbekanntes Design: 400); die eingefrorene Version eines Belegs steht nicht in der API.
 
 `GET`/`PATCH /api/v1/Settings` (Scope `admin`) bündelt vier Fragmente unter je
 einem Schlüssel: `documents` (u. a. `taxRates` — die org-eigene Liste
-freigegebener Steuersätze, 1–10 ganze Prozentwerte 0–100, Default `[19, 7, 0]`,
-Phase 12c), `branding` (u. a. `appName`/`appShortName`/`faviconPath`/
-`appLogoPath` — Marke/White-Label, Phase 12c; `appName`/`appShortName` sind per
+freigegebener Steuersätze, 1–10 ganze Prozentwerte 0–100, Default `[19, 7, 0]`),
+`branding` (u. a. `appName`/`appShortName`/`faviconPath`/
+`appLogoPath` — Marke/White-Label; `appName`/`appShortName` sind per
 `PATCH` schreibbar, `faviconPath`/`appLogoPath` nur lesbar — Datei-Upload läuft
 ausschließlich über die Session-Route `/api/settings/branding/upload`, nicht
 über `/api/v1`), `print` und `dunning` (Auto-Erstellung/-Versand, Karenztage).
@@ -573,8 +572,8 @@ nicht bereits auf dem betroffenen Beleg gespeichert war), liefert `409
 CONFLICT` — dieselbe Regel wie in UI und MCP, durchgesetzt in den
 Domain-Kernen, kein API-eigener Bypass.
 
-**Altschreibweg `dunning.baseInterestRateBp`/`dunning.baseRateValidFrom`**
-(Phase 14a, R6): seit Phase 14a liest die Verzugszinsberechnung ausschließlich
+**Altschreibweg `dunning.baseInterestRateBp`/`dunning.baseRateValidFrom`**:
+Die Verzugszinsberechnung liest ausschließlich
 die Basiszinssatz-Historie (`BaseInterestRate`, siehe oben) — die beiden
 gleichnamigen `DunningSettings`-Felder bleiben aus Kompatibilitätsgründen
 bestehen und lesbar, werden aber von keiner Berechnung mehr verwendet. Ein
@@ -616,7 +615,7 @@ die API mit 409. Eine Abschlagsrechnung, die in einer nicht stornierten Schlussr
 verrechnet ist, lässt sich nicht stornieren (409). Die Storno-Gutschrift trägt keine
 Zahlungsbedingungen des Originals.
 
-## Gegenbuchung, Archiv, Prüfung, Health (Phase 16a)
+## Gegenbuchung, Archiv, Prüfung, Health
 
 | Route | Scope | Zweck |
 |---|---|---|
@@ -630,7 +629,7 @@ Zahlungsbedingungen des Originals.
 
 Das PDF/XML einer archivierten Rechnung (`GET /api/v1/Invoice/{id}/pdf`) liefert bei jedem Abruf dieselben Bytes (Stand der ersten Ausgabe).
 
-## Postversand (Phase 16d)
+## Postversand
 
 Rechnungen (`docType` `INVOICE`, alle Rechnungstypen) und Mahnungen (`DUNNING`) lassen sich über den Briefdienst versenden. Zugangsdaten, Schalter (`enabled`, `mode`, `autoDunningPost`) und Budget gibt es **nur in der Oberfläche**; die API liest sie und setzt nur Druckoptionen.
 
@@ -652,7 +651,7 @@ Rechnungen (`docType` `INVOICE`, alle Rechnungstypen) und Mahnungen (`DUNNING`) 
 - Im Modus Testmodus landet der Auftrag in der Postbox des Briefdienstes und ist dort manuell versendbar (keine Sandbox); ein aktiver Testauftrag sperrt den Live-Versand desselben Belegs (`ALREADY_SENT`).
 - Webhook-Ereignisse: `postal.submitted`, `postal.done`, `postal.failed`, `postal.cancelled` (siehe [WEBHOOKS.md](WEBHOOKS.md)).
 
-## CSV-Export und -Import (Phase 18b)
+## CSV-Export und -Import
 
 **Export:** Die Listen `Invoice`, `Quote`, `OrderConfirmation`, `DeliveryNote`, `Contact` und `Product` (`GET /api/v1/<Ressource>?format=csv`, Scope `read`) liefern dieselbe Auswahl wie die JSON-Liste mit denselben Filtern, aber ohne Paginierung (`limit`, `offset`, `embed` entfallen) als `text/csv` (Semikolon, UTF-8 mit BOM). Höchstens 20.000 Zeilen, darüber `413`; 30 Exporte je Minute und Organisation (`429`). `format` darf nur `json` oder `csv` sein (sonst `400`).
 
@@ -684,12 +683,12 @@ curl -s -X POST https://rechnung.example.org/api/v1/Contact/import \
   (`{url, token?, expiresAt}`). Datei-Endpunkte (`/pdf`, `/xrechnung`,
   `/zugferd`) bleiben binär.
 - `DeliveryNote`: `PATCH /api/v1/DeliveryNote/{id}` ändert nur Entwürfe (Status `DRAFT`, anzulegen mit `draft: true` beim `POST`); `deliveryDate`/`shippingDate` lassen sich mit `null` leeren, ein erstellter Lieferschein liefert 409, ein Body ohne Änderung (z. B. `{}`) 400. Statusänderungen laufen über `POST .../status`.
-- `Layout` (Phase 11b) selbst ist nur lesbar (`GET`, feste Liste, keine DB-Tabelle) —
+- `Layout` selbst ist nur lesbar (`GET`, feste Liste, keine DB-Tabelle) —
   eine Beleg-individuelle Layout-Überschreibung setzt sich stattdessen über `PATCH
   /api/v1/{Invoice,Quote,DeliveryNote}/{id}/print-options` (siehe oben).
 - Multi-Tenant-Rollen gibt es nicht — ein API-Schlüssel gehört zu genau einer
   Organisation, „Berechtigungen" bedeuten hier ausschließlich Scopes.
-- `POST /api/pdf/preview` (Beleg-Editor, Phase 11c) ist **keine** `/api/v1`-Ressource:
+- `POST /api/pdf/preview` (Beleg-Editor) ist **keine** `/api/v1`-Ressource:
   eine Session-Route (Browser-Login, kein Bearer-Token) zum Rendern eines
   ungespeicherten Editor-Entwurfs (`{kind, payload, layoutId?}`) — ohne
   Nummernkreis/`ChangeLog`/DB-Schreibzugriff, Belegnummer „ENTWURF", Wasserzeichen
