@@ -75,7 +75,7 @@ Ereignisgetriebene **Webhooks** (`/api/v1/Webhook`, Scope `admin`) liefern Ereig
 - **Ein Editor für alle Belege mit Live-Vorschau**: Rechnungen, Angebote/AB/Proforma und Lieferscheine im selben Editor, Kunden und Produkte direkt anlegen, PDF-Vorschau des ungespeicherten Entwurfs per Klick (mit Wasserzeichen, nichts wird gespeichert), Positionen per Drag-and-Drop oder Tastatur (`Alt+↑`/`Alt+↓`, `Enter` für neue Zeile) umordnen, Überschriften/Textblöcke/berechnete Zwischensummen neben regulären Positionen (nur reguläre Positionen landen im E-Rechnung-XML), Rich-Text (eingeschränktes Markdown — fett/kursiv/unterstrichen, eine Listenebene, Links) in Positionsbeschreibungen, Artikelnummern sowie Kopffelder (Betreff, Bestellnummer, interne Referenz, Ansprechpartner, Liefer-/Rechnungsadresse).
 - **Beleganhänge**: Dateien an jeden Beleg (Rechnung, Angebot, Lieferschein, Mahnung, Abo) anhängen — 10 MB je Datei, 50 MB je Beleg, MIME-Whitelist + Magic-Bytes-Prüfung, hash-adressierte Ablage mit Dedup, auswählbar als Zusatzanhang beim Mailversand.
 - **Zahlungen & Mahnwesen**: (Teil-)Zahlungen erfassen; gestufte Erinnerungen (Zahlungserinnerung → 1./2. Mahnung) mit **Verzugszinsen** (§ 288 BGB, taggenau auch über Basiszinswechsel; Basiszins-Halbjahrestabelle pflegbar in UI/REST/MCP) + 40-€-Pauschale (B2B), jeweils als PDF.
-- **Abo-Rechnungen**: wöchentliche bis jährliche Vorlagen mit Abrechnungszeitraum, optional automatisch festschreiben, Lauf über UI/MCP oder Cron (`npm run recurring:run`).
+- **Abo-Rechnungen**: wöchentliche bis jährliche Vorlagen mit Abrechnungszeitraum, optional automatisch festschreiben, Lauf über UI/MCP oder Cron (`npm run recurring:run`). Abo-Positionen können Überschrift-/Text-/Zwischensummen-Blöcke enthalten; Positionen nach Verbrauch werden aus erfassten Verbrauchsmengen abgerechnet (UI/REST/MCP, mit `externalId`), der Lauf erfolgt erst nach Ende des Abrechnungszeitraums.
 - **Gutschriften**: Vollstorno **oder** Teilgutschrift, das Original bleibt festgeschrieben.
 - **Briefpapier, Druckoptionen & Nummernkreise**: Briefpapier je Organisation (Logo, Farbe, Ränder, Absender-/Fußzeile) mit Live-Vorschau; zehn globale Druckschalter (Fußzeile, Seitenzahlen, Falz-/Lochmarken, welche Spalten erscheinen) mit Beleg-Override im Entwurf; neun konfigurierbare Nummernkreise (Angebote, Auftragsbestätigungen, Proforma, Lieferscheine, Rechnungen, Gutschriften, Mahnungen sowie Kunden-/Artikelnummern) mit Muster/Präfix/Reset und Rückdreh-Sperre.
 - **PDF-Layouts & Layout-Designer**: sieben feste Layouts (Standard, Schlicht, Klassik, Modern, Blau, Schwarz, Kompakt) nach DIN 5008 Form B, dazu ein **Layout-Designer** für eigene, versionierte Designs (Blockreihenfolge, Spalten, Schriften IBM Plex / Source Serif 4 / Inter) mit Live-Vorschau. Wählbar je Belegart, im Entwurf je Beleg überschreibbar; beim Festschreiben wird das Layout eingefroren. Die Fußzeile entsteht aus den Firmendaten (vier Spalten) oder aus drei eigenen Textfeldern.
@@ -86,11 +86,20 @@ Ereignisgetriebene **Webhooks** (`/api/v1/Webhook`, Scope `admin`) liefern Ereig
 - **Auswertungen**: Diagramme zu Umsatz, Zahlungseingang, Zahlungsverhalten, Top-Produkten, Angebotsquote und wiederkehrendem Umsatz.
 - **Belegansicht mit PDF im Mittelpunkt**: eingebettetes PDF, Statuskarte rechts (Kunde, Daten, Beträge, Zahlungen/Mahnungen), Aktionen oben, Belegkette, Blättern durch die zuletzt gefilterte Liste mit `‹`/`›` bzw. `Alt+←`/`Alt+→`.
 - **Self-hosted**: SQLite-Solo ohne Server **oder** PostgreSQL via Docker.
-- **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie, gehärtete Anmeldung, Passwort ändern) — App und API geschützt. API-Anfragen werden protokolliert (geschwärzt) unter Einstellungen → API.
+- **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie, gehärtete Anmeldung, Passwort ändern) — App und API geschützt. Optional Zwei-Faktor-Authentifizierung (TOTP mit Wiederherstellungscodes) und Passwort-Reset per Mail (benötigt SMTP und `APP_BASE_URL`). API-Anfragen werden protokolliert (geschwärzt) unter Einstellungen → API.
+- **E-Rechnungs-Kennungen & USt-IdNr.-Prüfung**: Peppol-Endpunkt-IDs mit EAS-Schema (BT-34/BT-49) in UBL und CII, Prüfziffernprüfung der Leitweg-ID und optionale VIES-Prüfung der Kunden-USt-IdNr. (standardmäßig an, beim Festschreiben aus; jede Prüfung wird append-only gespeichert).
+- **Karte und SEPA-Lastschrift in der E-Rechnung** (BG-18/BG-19): Karte nur mit den letzten vier Ziffern, Lastschrift mit Gläubiger-ID (Firma), Mandat (Kunde) und Vorabankündigung im PDF; bei unvollständigen Angaben fällt die Zahlungsart auf Überweisung mit Hinweis zurück.
+- **Einzelpreise bis 0,00001 €**: Zeilennetto wird kaufmännisch gerundet, BT-146 trägt fünf Nachkommastellen. Brutto-Eingabe per REST/MCP.
+- **CSV-Export & -Import**: Belege und Kontakte als CSV exportieren; Kontakte und Produkte mit Vorschau importieren, mit Formelschutz und 24-h-Sperre gegen Doppel-Import.
+- **Sammel-Storno**: mehrere Rechnungen aus der Liste auf einmal stornieren (max. 50, je Beleg ein eigener Storno, Ergebnisbericht); auch per REST/MCP.
+- **Optionale HTML-Mail**: wird zusätzlich zum Textteil gesendet, standardmäßig aus.
+- **Postversand über LetterXpress** (standardmäßig aus, Trockenlauf, Bestätigung je Moduswechsel und je Beleg; Mahnautomatik nur mit ausdrücklicher Einstellung).
+- **API-Erweiterungen**: `updatedSince` und Cursor-Paginierung in Listen, Anlegen + Festschreiben + Zahlung in einem Aufruf mit Pflicht-`Idempotency-Key` (24 h Wiedergabe), Sammel-Kontakte (max. 100), Sammel-Storno, Brutto-Eingabe.
+- **Berliner Zeit**: Fälligkeiten, Skonto-Fristen, E-Rechnungs-Daten und Auswertungen nutzen den Berliner Kalendertag.
 
 ### Status
 
-Seit September 2026 im produktiven Einsatz für echte Rechnungen. Alles oben Genannte funktioniert und ist durch Tests abgedeckt; die E-Rechnungen bestehen bei jedem CI-Lauf die offiziellen Validatoren. Auf der Roadmap: DATEV-/CSV-Export, ZM-/OSS-Meldungen, VIES-Prüfung, Peppol-EAS-Schemata. Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
+Seit September 2026 im produktiven Einsatz für echte Rechnungen. Alles oben Genannte funktioniert und ist durch Tests abgedeckt; die E-Rechnungen bestehen bei jedem CI-Lauf die offiziellen Validatoren. Bewusst nicht Teil des Projekts: DATEV-Export, Finanzbuchhaltung und Mehrbenutzer/Rollen. Die Software erzeugt keine ZM (§ 18a UStG) und keine OSS-Meldungen (§ 18j UStG). Siehe [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) und die ehrliche Liste der **[bekannten Einschränkungen](docs/LIMITATIONEN.md)**.
 
 ## Dokumentworkflow
 
@@ -185,7 +194,7 @@ docker compose run --rm app \
 ausschließlich `prisma/migrations-postgres/0_init/migration.sql`. Der Diff kann
 daher auch Tabellen oder Spalten zeigen, die erst in einer **späteren**
 Migration unter `prisma/migrations-postgres/` eingeführt wurden (z. B. die
-Phase-0-Snapshot-Spalten) — diese gehören **nicht** von Hand eingespielt,
+Snapshot-Spalten) — diese gehören **nicht** von Hand eingespielt,
 sondern werden nach dem `resolve` automatisch von `migrate deploy` nachgezogen.
 Ob eine Spalte/Tabelle zur Baseline gehört, zeigt
 `grep -l "<spaltenname>" prisma/migrations-postgres/*/migration.sql`: taucht sie
@@ -263,4 +272,4 @@ Entstanden aus dem Projekt OpenInvoice Germany der [AutomationsManufaktur](https
 
 ## Lizenz
 
-**[AGPL-3.0](LICENSE).** Du darfst die Software nutzen, ändern und selbst hosten. Wer sie als Netzwerk-Dienst betreibt, muss den (modifizierten) Quellcode den Nutzern verfügbar machen — so bleibt das Projekt für alle frei. Begründung der Lizenzwahl: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md#3-lizenz-empfehlung).
+**[AGPL-3.0](LICENSE).** Du darfst die Software nutzen, ändern und selbst hosten. Wer sie als Netzwerk-Dienst betreibt, muss den (modifizierten) Quellcode den Nutzern verfügbar machen — so bleibt das Projekt für alle frei. Begründung der Lizenzwahl: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md#4-lizenz-empfehlung).
