@@ -1,7 +1,7 @@
 /**
  * Phase 18c, Task 3: Routen des Sammel-Stornos (Session-Auth/Org gemockt). Eigenes Testjahr 2172.
  */
-import { beforeAll, beforeEach, describe, it, expect, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from "vitest";
 
 const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
 vi.mock("@/lib/org", () => ({
@@ -23,7 +23,7 @@ import { POST as previewPost } from "@/app/api/invoices/bulk-cancel/preview/rout
 
 const NOW = new Date("2172-05-01T10:00:00.000Z");
 // Belegnummern sind instanzweit eindeutig: die Fremd-Org nutzt ein eigenes Jahr.
-const NOW_OTHER = new Date("2173-05-01T10:00:00.000Z");
+const NOW_OTHER = new Date("2176-05-01T10:00:00.000Z");
 let orgId: string;
 let otherOrgId: string;
 let customerId: string;
@@ -64,6 +64,13 @@ beforeAll(async () => {
   ({ orgId, customerId } = await mkOrg("Sammelroute GmbH", "DE555666779"));
   ({ orgId: otherOrgId, customerId: otherCustomerId } = await mkOrg("Fremde Route GmbH", "DE888999002"));
   orgStore.id = orgId;
+  // Die Route storniert mit der Systemzeit; ohne festes Datum landeten die Stornobelege im laufenden
+  // Jahr und kollidierten mit Belegnummern anderer Testdateien (global eindeutig).
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+afterAll(() => {
+  vi.useRealTimers();
 });
 beforeEach(() => resetRateLimits());
 

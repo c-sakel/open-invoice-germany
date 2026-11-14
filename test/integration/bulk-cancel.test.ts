@@ -19,7 +19,7 @@ import { createInvoiceSchema, recordPaymentSchema } from "@/schemas";
 
 const NOW = new Date("2170-05-01T10:00:00.000Z");
 // Belegnummern sind instanzweit eindeutig: die Fremd-Org nutzt ein eigenes Jahr.
-const NOW_OTHER = new Date("2171-05-01T10:00:00.000Z");
+const NOW_OTHER = new Date("2175-05-01T10:00:00.000Z");
 const now = () => NOW;
 
 let orgId: string;

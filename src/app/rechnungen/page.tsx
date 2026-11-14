@@ -20,8 +20,7 @@ import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs } from "@/components/list/StatusTabs";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
 import { ListSelectionProvider, SelectionCheckbox } from "@/components/list/ListSelection";
-import { SelectionBar } from "@/components/list/SelectionBar";
-import { BulkCancelDialog } from "@/components/invoices/BulkCancelDialog";
+import { InvoiceSelectionBar } from "@/components/invoices/InvoiceSelectionBar";
 import { DataTable, type DataColumn } from "@/components/ui/DataTable";
 import { Card } from "@/components/ui/Card";
 import { StackedBar } from "@/components/charts/StackedBar";
@@ -394,7 +393,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
 
       <ListSelectionProvider selectableIds={selectableIds}>
       <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
-        <SelectionBar noun={["Rechnung", "Rechnungen"]}>{(sel, clear) => <BulkCancelDialog ids={sel} onDone={clear} />}</SelectionBar>
+        <InvoiceSelectionBar />
         <DataTable
           caption="Rechnungen"
           rows={result.rows}
