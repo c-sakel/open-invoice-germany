@@ -2,18 +2,18 @@ import { z } from "zod";
 import { resolvePortalToken } from "@/domain/portal/link";
 import { getPortalFile } from "@/domain/portal/files";
 import { recordPortalEvent } from "@/domain/portal/events";
-import { hashToken, isWellFormedPortalToken } from "@/domain/portal/token";
+import { isWellFormedPortalToken } from "@/domain/portal/token";
 import { portalSecurityHeaders } from "@/domain/portal/http";
 import { ArchiveTamperedError } from "@/domain/errors";
-import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { RateLimitError } from "@/lib/rate-limit";
+import { enforcePortalRateLimit } from "@/domain/portal/rate-limit";
+import { describeError } from "@/lib/safe-error";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const IP_RATE_LIMIT = 60;
 const TOKEN_RATE_LIMIT = 30;
-const RATE_WINDOW_MS = 60_000;
 
 const pathSchema = z.object({
   docType: z.enum(["INVOICE", "DUNNING"]),
@@ -33,10 +33,8 @@ function notFound(): Response {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string; docType: string; docId: string; fileKind: string }> }) {
   const raw = await ctx.params;
 
-  const ip = clientIpFromHeaders(req.headers) ?? undefined;
   try {
-    if (ip) rateLimit(`public:ip:${ip}`, { limit: IP_RATE_LIMIT, windowMs: RATE_WINDOW_MS });
-    if (isWellFormedPortalToken(raw.token)) rateLimit(`portal:${hashToken(raw.token)}`, { limit: TOKEN_RATE_LIMIT, windowMs: RATE_WINDOW_MS });
+    enforcePortalRateLimit({ ip: clientIpFromHeaders(req.headers), token: raw.token, scope: "download", tokenLimit: TOKEN_RATE_LIMIT });
   } catch (e) {
     if (e instanceof RateLimitError) {
       return new Response("Zu viele Anfragen / Too many requests", {
@@ -68,7 +66,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string; 
   }
   if (!file) return notFound();
 
-  await recordPortalEvent(link, { kind: "DOWNLOAD", docType: parsed.data.docType, docId: parsed.data.docId, fileKind: parsed.data.fileKind });
+  // Ein Fehler beim Protokollieren darf die Auslieferung nicht verhindern; intern loggen (ohne Token).
+  try {
+    await recordPortalEvent(link, { kind: "DOWNLOAD", docType: parsed.data.docType, docId: parsed.data.docId, fileKind: parsed.data.fileKind });
+  } catch (e) {
+    console.error("portal download event:", describeError(e));
+  }
   return new Response(new Uint8Array(file.bytes), {
     headers: {
       ...portalSecurityHeaders(),

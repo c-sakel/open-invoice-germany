@@ -4,14 +4,14 @@ import { resolvePortalToken } from "@/domain/portal/link";
 import { loadPortalView } from "@/domain/portal/view";
 import { recordPortalEvent } from "@/domain/portal/events";
 import { docStrings, formatDocDate, formatDocMoney } from "@/lib/i18n/doc";
-import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { RateLimitError } from "@/lib/rate-limit";
+import { enforcePortalRateLimit } from "@/domain/portal/rate-limit";
 import { clientIpFromHeaders } from "@/lib/http/client-ip";
 import { PortalDocumentTable } from "@/components/portal/PortalDocumentTable";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_RATE_LIMIT = 60;
-const PAGE_RATE_WINDOW_MS = 60_000;
 
 /**
  * Oeffentliches Kundenportal (kein Login). Zeigt ausschliesslich die Whitelist-Projektion aus
@@ -21,28 +21,25 @@ export default async function PortalPage({ params }: { params: Promise<{ token: 
   const { token } = await params;
 
   const h = await headers();
-  const ip = clientIpFromHeaders(h) ?? undefined;
-  if (ip) {
-    try {
-      rateLimit(`public:ip:${ip}`, { limit: PAGE_RATE_LIMIT, windowMs: PAGE_RATE_WINDOW_MS });
-    } catch (e) {
-      if (e instanceof RateLimitError) {
-        // Die Sprache ist vor der Token-Aufloesung unbekannt -> zweisprachig.
-        const de = docStrings("de").publicPortal.rateLimit;
-        const en = docStrings("en").publicPortal.rateLimit;
-        return (
-          <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-center">
-            <p className="text-lg font-medium text-seal">
-              {de.title} / {en.title}
-            </p>
-            <p className="mt-2 text-sm text-seal">
-              {de.hint} / {en.hint}
-            </p>
-          </div>
-        );
-      }
-      throw e;
+  try {
+    enforcePortalRateLimit({ ip: clientIpFromHeaders(h), token, scope: "page", tokenLimit: PAGE_RATE_LIMIT });
+  } catch (e) {
+    if (e instanceof RateLimitError) {
+      // Die Sprache ist vor der Token-Aufloesung unbekannt -> zweisprachig.
+      const de = docStrings("de").publicPortal.rateLimit;
+      const en = docStrings("en").publicPortal.rateLimit;
+      return (
+        <div className="rounded-lg border border-seal/30 bg-seal/10 p-6 text-center">
+          <p className="text-lg font-medium text-seal">
+            {de.title} / {en.title}
+          </p>
+          <p className="mt-2 text-sm text-seal">
+            {de.hint} / {en.hint}
+          </p>
+        </div>
+      );
     }
+    throw e;
   }
 
   const link = await resolvePortalToken(token);

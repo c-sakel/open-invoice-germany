@@ -183,6 +183,7 @@ describe("proxy", () => {
       expect(res.headers.get("x-middleware-request-" + PUBLIC_NO_NAV_HEADER)).toBe("1");
       expect(res.headers.get("referrer-policy")).toBe("no-referrer");
       expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
       expect(res.headers.get("cache-control")).toBe("private, no-store");
     }
   });
