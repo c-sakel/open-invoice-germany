@@ -174,7 +174,9 @@ export function withApi<TParams = Record<string, string>>(
         // (409), bevor der Handler ueberhaupt startet. Siehe src/api/idempotency.ts.
         const replay = await beginIdempotency(ctx.orgId, idemKey!, method, url.pathname, rawBody);
         if (replay) {
-          return attachKeyExpiry(attachRateLimitHeader(NextResponse.json(replay.body, { status: replay.status }), remaining), apiKey);
+          const replayRes = NextResponse.json(replay.body, { status: replay.status });
+          replayRes.headers.set("Idempotent-Replayed", "true");
+          return attachKeyExpiry(attachRateLimitHeader(replayRes, remaining), apiKey);
         }
       }
 

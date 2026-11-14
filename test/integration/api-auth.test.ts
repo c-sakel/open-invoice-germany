@@ -227,6 +227,9 @@ describe("withApi — Idempotenz (POST)", () => {
 
     // Identische Antwort (inkl. createdAt aus dem GESPEICHERTEN ersten Aufruf, nicht neu berechnet).
     expect(j2).toEqual(j1);
+    // Replay ist als solcher erkennbar; die Erstantwort traegt den Header nicht.
+    expect(res2.headers.get("Idempotent-Replayed")).toBe("true");
+    expect(res1.headers.get("Idempotent-Replayed")).toBeNull();
   });
 
   it("gleicher Idempotency-Key + abweichender Body -> 409 IDEMPOTENCY_MISMATCH", async () => {
