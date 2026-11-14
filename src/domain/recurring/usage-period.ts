@@ -52,11 +52,11 @@ export function resolveUsagePeriod(rec: UsagePeriodRecurring, usageDay: Date): {
     throw new UsageError("AFTER_END", "Der Verbrauchstag liegt nach dem Ende des Abos.");
   }
   if (rec.maxRuns != null) {
-    // Verbleibende Laeufe ab nextRunDate: der letzte Stichtag ist S_0 + (remaining - 1) Intervalle.
+    // Verbleibende Laeufe ab nextRunDate: der letzte Stichtag ist S_0 + (remaining - 1) Intervalle. periodEnd ist
+    // S_0 + steps Intervalle (dieselbe Schrittfolge oben), also genuegt der Vergleich der Schrittzahl — ohne Schleife
+    // ueber maxRuns (sonst Rechenaufwand proportional zu einem frei waehlbaren maxRuns).
     const remaining = Math.max(1, rec.maxRuns - (rec.issuedCount ?? 0));
-    let lastEnd = rec.nextRunDate;
-    for (let i = 1; i < remaining; i++) lastEnd = advanceDate(lastEnd, interval, rec.intervalCount, rec.anchorDay);
-    if (periodEnd.getTime() > lastEnd.getTime()) {
+    if (steps + 1 > remaining) {
       throw new UsageError("AFTER_END", "Der Verbrauchstag liegt nach dem Ende der letzten Abrechnungsperiode des Abos (maxRuns).");
     }
   }
