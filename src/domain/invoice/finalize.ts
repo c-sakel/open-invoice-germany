@@ -33,6 +33,8 @@ import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 import { validateMandatoryFields } from "./mandatory";
 import { berlinCalendarDay } from "@/lib/berlin-time";
 import { FinalizeError } from "./finalize-error";
+import { buildDirectDebitSnapshot } from "./direct-debit";
+import { DIRECT_DEBIT_CODE } from "@/lib/einvoice/payment-means";
 import { resolveFxSnapshot, deductedTaxEurCents, type DeductionFxEntry } from "@/domain/fx/snapshot";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -176,6 +178,15 @@ export async function finalizeWithinTx(
         bankName: invoice.paymentMethod.bankName,
       })
     : null;
+
+  // Lastschrift-Snapshot (Phase 18e, BG-19): Glaeubiger-ID/Mandat/Kunden-IBAN werden einmalig
+  // eingefroren, damit spaetere Stammdatenaenderungen XML/PDF nicht veraendern. Nur fuer
+  // Lastschrift-Methode (Code 59), nie fuer Gutschriften/Storno; unvollstaendig -> NULL.
+  const directDebit =
+    invoice.paymentMethod?.untdidCode === DIRECT_DEBIT_CODE && invoice.type !== "CREDIT_NOTE"
+      ? buildDirectDebitSnapshot(invoice.org, invoice.customer)
+      : null;
+  const directDebitSnapshotJson = directDebit ? JSON.stringify(directDebit) : null;
 
   // Parteien-Snapshot (Phase 0): ab jetzt rendern PDF/XML aus diesem Stand.
   // Storno/Teilgutschrift erben den Snapshot des Originals (siehe FinalizeOptions.inheritSnapshotFrom),
@@ -375,6 +386,7 @@ export async function finalizeWithinTx(
       snapshotSource,
       snapshotAt: now,
       paymentMethodSnapshotJson,
+      directDebitSnapshotJson,
       printOptionsJson: frozenPrintOptionsJson,
       fxRateMicros: fx.fxRateMicros,
       fxRateDate: fx.fxRateDate,

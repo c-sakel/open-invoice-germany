@@ -69,13 +69,13 @@ jobs:
           java-version: "17"
       - run: npm install --no-audit --no-fund # nicht npm ci: saxon-js zieht plattformspezifische optionale Deps
       - run: npx prisma generate
-      - name: Alle Beispiel-XRechnungen erzeugen (27 Fixtures, UBL + CII)
+      - name: Alle Beispiel-XRechnungen erzeugen (Liste aus dem Generator, UBL + CII)
         run: |
           mkdir -p tmp/xrechnung-samples
-          # Dieselbe Fixture-Liste wie SAMPLE_NAMES in scripts/validate-erechnung.ts
-          # (dort der SaxonJS-Lauf im build-test-Job) — "base" nur als UBL (Bestands-
-          # regression), alle anderen als UBL UND CII.
-          SAMPLES="base line-discount doc-discount-two-rates charge skonto-two-terms cash credit-note-doc-discount no-iban card-48 sepa-59 sections credit-note-sections downpayment-386 partial-percent final-two-downpayments reverse-charge-ae ig-lieferung-k ausfuhr-g nicht-steuerbar-o kleinunternehmer-e differenz-e betreff-note lieferanschrift-bg15 credit-note-rest-storno foreign-currency-usd foreign-currency-credit-note language-en-reverse-charge"
+          # Liste kommt aus dem Generator (eine Quelle, SAMPLE_NAMES in scripts/validate-erechnung.ts
+          # muss gleich sein, geprueft in test/unit/erechnung-fixture-list.test.ts). Zuvor war sie hier
+          # von Hand gepflegt und hinkte hinter dem Generator her. "base" nur als UBL (Bestandsregression).
+          SAMPLES=$(npx tsx scripts/generate-sample-xrechnung.ts --list)
           for sample in $SAMPLES; do
             npx tsx scripts/generate-sample-xrechnung.ts "tmp/xrechnung-samples/${sample}-ubl.xml" "$sample" ubl
             if [ "$sample" != "base" ]; then

@@ -17,7 +17,7 @@
  * vergebene Nummer bleibt sonst beim Speichern anderer Felder erhalten).
  */
 import { dbInternal } from "@/lib/db";
-import { customerSchema, customerFieldsSchema, customerEndpointProblems, type CustomerInput } from "@/schemas";
+import { customerSchema, customerFieldsSchema, customerEndpointProblems, customerDirectDebitProblems, type CustomerInput } from "@/schemas";
 import { isValidLeitwegId } from "@/lib/einvoice/eas";
 import { normalizeVatId } from "@/lib/vat-id";
 import { assignCustomerNumber } from "@/domain/numbering/ranges";
@@ -27,9 +27,12 @@ import type { Customer, Prisma } from "@/generated/prisma/client";
 /** defaultPaymentMethodId zeigt auf eine Zahlungsmethode einer ANDEREN Organisation
  *  oder gar nicht existent — Validierungsfehler (400 im API-Kontext), kein Serverfehler. */
 export class CustomerValidationError extends Error {
-  constructor(message: string) {
+  /** Feld, an dem die Meldung haengt (REST: Pfad der Validierungsfrage); ohne Angabe: defaultPaymentMethodId. */
+  readonly path: string | undefined;
+  constructor(message: string, path?: string) {
     super(message);
     this.name = "CustomerValidationError";
+    this.path = path;
   }
 }
 
@@ -54,6 +57,10 @@ function toCreateData(v: CustomerInput) {
     defaultPaymentMethodId: v.defaultPaymentMethodId ?? null,
     notes: v.notes ?? null,
     deliveryChannel: v.deliveryChannel ?? "EMAIL",
+    sepaMandateReference: v.sepaMandateReference || null,
+    sepaMandateSignedAt: v.sepaMandateSignedAt ?? null,
+    sepaDebitIban: v.sepaDebitIban || null,
+    sepaDebitAccountName: v.sepaDebitAccountName || null,
   };
 }
 
@@ -94,7 +101,9 @@ export async function createCustomer(orgId: string, rawInput: unknown): Promise<
   return dbInternal.$transaction((tx) => createCustomerWithinTx(tx, orgId, v));
 }
 
-const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "peppolScheme", "legalRegistrationId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays"]);
+const NULLABLE_ON_EMPTY = new Set(["contactName", "addressLine2", "phone", "vatId", "leitwegId", "peppolId", "peppolScheme", "legalRegistrationId", "notes", "defaultPaymentMethodId", "defaultPaymentTermsDays", "sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName"]);
+
+const DIRECT_DEBIT_KEYS = ["sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName"] as const;
 
 export async function updateCustomer(orgId: string, id: string, rawInput: unknown): Promise<Customer> {
   const raw = rawInput && typeof rawInput === "object" ? (rawInput as Record<string, unknown>) : {};
@@ -115,6 +124,29 @@ export async function updateCustomer(orgId: string, id: string, rawInput: unknow
     if (problem) throw new CustomerValidationError(problem.message);
   }
 
+  let clearMandate = false;
+  if (DIRECT_DEBIT_KEYS.some((k) => k in raw)) {
+    // Mandat als Paar auf dem gemergten Zustand pruefen (Bestand + Aenderung); Meldungen ohne Werte.
+    const pick = <T>(key: (typeof DIRECT_DEBIT_KEYS)[number], current: T): T | null | undefined =>
+      key in raw ? ((v as Record<string, unknown>)[key] as T | null | undefined) : current;
+    const merged = {
+      sepaMandateReference: pick("sepaMandateReference", existing.sepaMandateReference),
+      sepaMandateSignedAt: pick("sepaMandateSignedAt", existing.sepaMandateSignedAt),
+      sepaDebitIban: pick("sepaDebitIban", existing.sepaDebitIban),
+      sepaDebitAccountName: pick("sepaDebitAccountName", existing.sepaDebitAccountName),
+    };
+    // Referenz UND IBAN ausdruecklich geleert = Mandat entfernt: Datum und Kontoinhaber gehen mit.
+    clearMandate = "sepaMandateReference" in raw && "sepaDebitIban" in raw && !merged.sepaMandateReference?.trim() && !merged.sepaDebitIban?.trim();
+    if (clearMandate) {
+      // Mandat entfernen und zugleich Datum/Kontoinhaber mitschicken: widerspruechlich, nicht still verwerfen.
+      if (v.sepaMandateSignedAt) throw new CustomerValidationError("Zum Entfernen des Mandats darf kein Unterschriftsdatum angegeben werden.", "sepaMandateSignedAt");
+      if (v.sepaDebitAccountName?.trim()) throw new CustomerValidationError("Zum Entfernen des Mandats darf kein Kontoinhaber angegeben werden.", "sepaDebitAccountName");
+    } else {
+      const problem = customerDirectDebitProblems(merged)[0];
+      if (problem) throw new CustomerValidationError(problem.message, problem.path);
+    }
+  }
+
   const patch: Record<string, unknown> = {};
   for (const key of Object.keys(raw)) {
     if (!(key in v)) continue;
@@ -127,6 +159,10 @@ export async function updateCustomer(orgId: string, id: string, rawInput: unknow
       value = value === "" ? null : (value ?? null);
     }
     patch[key] = value;
+  }
+  if (clearMandate) {
+    patch.sepaMandateSignedAt = null;
+    patch.sepaDebitAccountName = null;
   }
   // Ohne Peppol-ID kein Schema; geaenderte USt-IdNr. verliert die VIES-Bestaetigung.
   if ("peppolId" in patch && !patch.peppolId) patch.peppolScheme = null;

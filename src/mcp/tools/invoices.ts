@@ -9,6 +9,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PROJECT_ROOT } from "../bootstrap";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
+import { serializeDirectDebit } from "@/api/serializers/invoice";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
@@ -45,9 +46,17 @@ import {
   cancelInvoiceSchema,
   partialCreditSchema,
   DocLanguageSchema,
+  invoiceCardFields,
 } from "@/schemas";
 import { OssCategorySchema } from "@/schemas/oss";
 import { docLineSchema, editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
+
+/** Kartenfelder (BG-18) — dieselben Zod-Objekte wie REST/Editor; nie mehr als die letzten 4 Ziffern. */
+const cardFieldShape = {
+  cardPanTruncated: invoiceCardFields.cardPanTruncated.describe("Kartenzahlung: nur letzte 4 Ziffern, nie die volle Kartennummer"),
+  cardNetwork: invoiceCardFields.cardNetwork.describe("Kartenzahlung: Kartennetz, z. B. VISA oder MASTERCARD"),
+  cardHolderName: invoiceCardFields.cardHolderName.describe("Kartenzahlung: Karteninhaber (BT-88)"),
+};
 
 export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_invoice ───────────────────────────────────────────────────────────
@@ -96,6 +105,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           .string()
           .optional()
           .describe("Kurs manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. \"1,25\"), nur bei Fremdwaehrung; ersetzt die Kurstabelle, Quelle wird MANUAL (§ 16 Abs. 6 UStG)."),
+        ...cardFieldShape,
       },
     },
     async (args): Promise<Result> => {
@@ -173,6 +183,9 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           consumerRetentionHint: args.consumerRetentionHint,
           language,
           fxOverrideRate: args.fxOverrideRate,
+          cardPanTruncated: args.cardPanTruncated,
+          cardNetwork: args.cardNetwork,
+          cardHolderName: args.cardHolderName,
           lines,
         });
         const invoice = await createDraftInvoice(org.id, input);
@@ -285,6 +298,10 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               net: formatCents(inv.netTotalCents),
               tax: formatCents(inv.taxTotalCents),
               gross: formatCents(inv.grossTotalCents),
+              cardPanTruncated: inv.cardPanTruncated ?? null,
+              cardNetwork: inv.cardNetwork ?? null,
+              cardHolderName: inv.cardHolderName ?? null,
+              directDebit: serializeDirectDebit(inv.directDebitSnapshotJson ?? null),
               lines: inv.lines.map((l) => ({ description: l.description, qty: l.quantityMilli / 1000, unit: l.unit, net: formatCents(l.lineNetCents) })),
               payments: inv.payments.map((p) => ({
                 id: p.id,
@@ -663,6 +680,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         language: DocLanguageSchema.optional().describe("Belegsprache de|en des Entwurfs"),
         fxOverrideRate: z.string().nullable().optional().describe("Kurs manuell (z. B. \"1,25\"); null entfernt den manuellen Kurs. Nur bei Fremdwaehrung."),
         lines: z.array(editorLineSchema).optional(),
+        ...cardFieldShape,
       },
     },
     async (args): Promise<Result> => {
@@ -693,6 +711,9 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           if (notes !== (inv.notes ?? "") || args.notes !== undefined) patch.notes = notes;
         }
         if (args.fxOverrideRate !== undefined) patch.fxOverrideRate = args.fxOverrideRate;
+        if (args.cardPanTruncated !== undefined) patch.cardPanTruncated = args.cardPanTruncated;
+        if (args.cardNetwork !== undefined) patch.cardNetwork = args.cardNetwork;
+        if (args.cardHolderName !== undefined) patch.cardHolderName = args.cardHolderName;
         if (args.lines) patch.lines = await ctx.buildEditorLines(org.id, args.lines);
 
         const updated = await updateDraftInvoice(org.id, inv.id, patch, "mcp");

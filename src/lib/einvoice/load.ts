@@ -14,6 +14,8 @@ import { fxStichtag } from "@/domain/fx/pick-rate";
 import { rateFor } from "@/domain/fx/rate-for";
 import { loadDeductedTaxEurCents } from "@/domain/fx/snapshot";
 import { taxBreakdownSchema } from "@/schemas";
+import { buildDirectDebitSnapshot } from "@/domain/invoice/direct-debit";
+import { DIRECT_DEBIT_CODE } from "./payment-means";
 import { buildEInvoiceData, type MapInput } from "./mapper";
 
 const INCLUDE = {
@@ -100,6 +102,28 @@ function aggregateDeductions(
   return [...byDownpayment.values()].sort((a, b) => a.issueDate.getTime() - b.issueDate.getTime() || a.number.localeCompare(b.number));
 }
 
+/**
+ * Entwurfsvorschau bei Lastschrift (Methode 59, keine Gutschrift): Zahlungsmethoden- und
+ * Lastschrift-Snapshot live bauen (rein, nichts speichern), damit die Vorschau dem spaeteren
+ * Beleg entspricht. Andere Methoden bleiben unveraendert.
+ */
+async function previewDirectDebit(invoice: {
+  orgId: string;
+  type: string;
+  paymentMethodId: string | null;
+  org: { sepaCreditorId: string | null };
+  customer: Parameters<typeof buildDirectDebitSnapshot>[1];
+}): Promise<{ paymentMethodSnapshotJson: string; directDebitSnapshotJson: string | null } | null> {
+  if (invoice.type === "CREDIT_NOTE" || !invoice.paymentMethodId) return null;
+  const pm = await dbInternal.paymentMethod.findFirst({
+    where: { id: invoice.paymentMethodId, orgId: invoice.orgId },
+    select: { code: true, name: true, invoiceText: true, untdidCode: true, bankIban: true, bankBic: true, bankName: true },
+  });
+  if (!pm || pm.untdidCode !== DIRECT_DEBIT_CODE) return null;
+  const snap = buildDirectDebitSnapshot(invoice.org, invoice.customer);
+  return { paymentMethodSnapshotJson: JSON.stringify(pm), directDebitSnapshotJson: snap ? JSON.stringify(snap) : null };
+}
+
 export async function loadEInvoiceData(invoiceId: string, orgId?: string) {
   const invoice = orgId
     ? await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, include: INCLUDE })
@@ -132,9 +156,14 @@ export async function loadEInvoiceData(invoiceId: string, orgId?: string) {
   });
   // Nur Entwuerfe rechnen live; festgeschriebene Belege tragen den eingefrorenen Snapshot.
   const draftFx = invoice.status === "DRAFT" && invoice.fxRateMicros == null ? await previewFx(invoice) : null;
+  // Lastschrift-Entwurf: Snapshot live bauen (rein, nichts speichern), damit die Vorschau dem
+  // spaeteren Beleg entspricht. Festgeschriebene Belege lesen unveraendert nur ihren Snapshot.
+  const liveDirectDebit =
+    invoice.status === "DRAFT" && invoice.paymentMethodSnapshotJson == null ? await previewDirectDebit(invoice) : null;
   const data = buildEInvoiceData({
     ...invoice,
     ...draftFx,
+    ...(liveDirectDebit ?? {}),
     paidAmountCents: invoice.paidAmountCents - (offsets._sum.amountCents ?? 0),
     deductions: invoice.type === "FINAL" ? aggregateDeductions(invoice.finalDeductions) : undefined,
     sourceNumber,

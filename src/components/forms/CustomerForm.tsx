@@ -6,6 +6,8 @@ import type { ActionResult } from "@/app/actions/result";
 import { EasSchemeField } from "./EasSchemeField";
 import { TextField, SelectField, TextAreaField, SubmitButton, ErrorBanner } from "./fields";
 
+const SEPA_MANDATE_FIELDS = ["sepaMandateReference", "sepaMandateSignedAt", "sepaDebitIban", "sepaDebitAccountName"] as const;
+
 export interface CustomerFormData {
   id: string;
   type: string;
@@ -28,6 +30,11 @@ export interface CustomerFormData {
   defaultPaymentMethodId: string | null;
   notes: string | null;
   deliveryChannel?: string;
+  sepaMandateReference?: string | null;
+  /** YYYY-MM-DD */
+  sepaMandateSignedAt?: string | null;
+  sepaDebitIban?: string | null;
+  sepaDebitAccountName?: string | null;
 }
 
 export interface PaymentMethodOption {
@@ -114,6 +121,31 @@ export function CustomerForm({
         />
         <TextAreaField label="Notiz" name="notes" defaultValue={customer?.notes} className="sm:col-span-2" />
       </div>
+
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">SEPA-Lastschriftmandat</h2>
+        <p className="text-xs text-ink-muted">Nur für Kunden, die per Lastschrift zahlen. Mandatsreferenz und IBAN gehören zusammen. Zum Entfernen „Mandat entfernen“ wählen und speichern.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField label="Mandatsreferenz" name="sepaMandateReference" defaultValue={customer?.sepaMandateReference} autoComplete="off" />
+          <TextField label="Datum der Unterschrift" name="sepaMandateSignedAt" type="date" defaultValue={customer?.sepaMandateSignedAt} />
+          <TextField label="IBAN des belasteten Kontos" name="sepaDebitIban" defaultValue={customer?.sepaDebitIban} autoComplete="off" />
+          <TextField label="Kontoinhaber/-in" name="sepaDebitAccountName" defaultValue={customer?.sepaDebitAccountName} autoComplete="off" />
+        </div>
+        <button
+          type="button"
+          className="text-sm text-ink-muted underline hover:text-ink"
+          onClick={(e) => {
+            const form = e.currentTarget.form;
+            if (!form) return;
+            for (const name of SEPA_MANDATE_FIELDS) {
+              const el = form.elements.namedItem(name);
+              if (el instanceof HTMLInputElement) el.value = "";
+            }
+          }}
+        >
+          Mandat entfernen
+        </button>
+      </section>
 
       <SubmitButton>Kunde speichern</SubmitButton>
     </form>

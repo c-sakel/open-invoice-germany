@@ -257,6 +257,15 @@ Für EU-weite Inanspruchnahme der Befreiung in anderen Mitgliedstaaten (besonder
 
 > **[ungesichert]** Das konkrete Mapping der Reverse-Charge-/§-25a-/Steuerbefreiungs-Hinweise auf EN-16931-VAT-Category-Codes und Begründungstexte (BT-120/BT-121) ist gegen die aktuelle KoSIT/XRechnung-Spezifikation zu prüfen — nicht primärquellen-verifiziert.
 
+### Zahlungsmittel BG-16 bis BG-19 (Phase 18e)
+
+- **Zuordnung (XRechnung 3.0.2):** UNTDID-4461-Code `48`, `54`, `55` (Karte) verlangt die Gruppe BG-18 (BR-DE-24-a), Code `59` (SEPA-Lastschrift) die Gruppe BG-19 (BR-DE-25-a). Bei diesen Codes ist BG-17 (Zahlungsempfänger-Konto) verboten (BR-DE-24-b, BR-DE-25-b); die Software gibt es dort nicht aus. Die Gläubiger-ID (BT-90) steht nur bei BG-19 (BR-DE-30), die belastete IBAN (BT-91) ist dort Pflicht und muss gültig sein (BR-DE-20, BR-DE-31).
+- **Karte (BG-18):** BT-87 ist die **gekürzte** Kartennummer. EN 16931 BR-51 begrenzt sie auf 10 Zeichen inklusive Maskierung; die Software speichert nur die **letzten 4 Ziffern** (BR-51 verweist sinngemäß auf die Maskierung nach PCI DSS, bei der höchstens die ersten 6 und die letzten 4 Ziffern lesbar bleiben; die volle Nummer wird nie erfasst, gespeichert oder protokolliert). BT-88 Karteninhaber optional. Das Kartennetz (UBL `NetworkID`) ist Pflichtangabe der Software, CII kennt es nicht.
+- **Lastschrift (BG-19):** Mandatsreferenz (BT-89), Gläubiger-ID (BT-90) und belastetes Konto (BT-91). Die Gläubiger-ID wird nach dem EPC-Rulebook (SEPA Core Direct Debit) geprüft: Format, für Deutschland 18 Zeichen, Prüfziffer MOD 97-10 über die Id ohne Geschäftsbereichskennung. Die Mandatsreferenz hat höchstens 35 Zeichen aus dem Rulebook-Zeichensatz (die Software verlangt zusätzlich: ohne Leerzeichen).
+- **Rückfall, nie Blocker:** Fehlen Angaben (Karte: letzte 4 Ziffern oder Netz; Lastschrift: Gläubiger-ID, Mandat, IBAN oder Fälligkeitsdatum), gibt die E-Rechnung Code `1` (nicht festgelegt) aus, und das Festschreiben zeigt einen Hinweis. **Gutschriften** tragen nie BG-18/BG-19. Der Gläubiger-ID-Schemacode `SEPA` bei BT-90 ist die Ausnahme in BR-CL-10 (EN-16931-Schematron 1.3.13).
+- **Vorabankündigung:** Das PDF einer Lastschriftrechnung nennt Betrag, Fälligkeitsdatum, die maskierte IBAN, Mandatsreferenz und Gläubiger-ID (Pre-Notification nach Rulebook). Die **Frist** (laut EPC-Rulebook für SEPA Core Direct Debit in der aktuellen Fassung regulär 14 Kalendertage, per Vereinbarung kürzer) prüft die Software nicht; sie ist Sache der Mandatsvereinbarung (Betreiber/Steuerberater).
+- **Quellen:** EN 16931-1:2017 (BG-16 bis BG-19, BT-81, BT-87 bis BT-91, BR-49 bis BR-51, BR-61, BR-CO-27); EN-16931-Schematron 1.3.13 (BR-CL-10); XRechnung 3.0.2 (BR-DE-20, BR-DE-23 bis BR-DE-25, BR-DE-30, BR-DE-31); UNTDID 4461; EPC SEPA Core Direct Debit Rulebook (Gläubiger-ID, Mandat, Vorabankündigung); PCI DSS v4.0 (Maskierung der Kartennummer, Req. 3.4.1; [ungesichert]: Nummerierung vor Nutzung prüfen). Umsetzung `src/lib/einvoice/payment-means.ts`, `xrechnung.ts`, `cii.ts`; Aufbau siehe `docs/ARCHITEKTUR.md`.
+
 ### Ausnahmen von der E-Rechnungspflicht
 
 Kleinbeträge ≤ 250 € brutto (§ 33 UStDV) · Fahrausweise (§ 34) · Kleinunternehmer-Ausstellung (§ 34a/§ 19) · B2C · bestimmte steuerfreie Umsätze (§ 4 Nr. 8–29). Pflichtangaben müssen im strukturierten XML **maschinenlesbar** enthalten sein.
@@ -393,6 +402,10 @@ Cloud-Nutzung ist der On-Premise-Speicherung gleichgestellt (GoBD Abschn. 1.11).
 - Der GiroCode folgt dem **EPC069-12** „Quick Response Code Guidelines to Enable the Data Capture for the Initiation of a SEPA Credit Transfer", Version **002** (European Payments Council) — dem Industriestandard für QR-gestützte SEPA-Überweisungen, den u.a. die deutsche Kreditwirtschaft als „GiroCode" vermarktet.
 - Kein eigenständiges Gesetz/keine UStG-Pflichtangabe — der GiroCode ist eine **freiwillige Zahlungserleichterung**, keine Rechnungsangabe. Software-seitig deshalb bewusst **fail-soft**: fehlt eine Voraussetzung (keine IBAN, kein SEPA-tauglicher Betrag, Name > 70 Zeichen, Zahlungsart ohne offenen Betrag), entfällt der Code **ersatzlos** — er darf den restlichen Beleg (insb. die Pflichtangaben) nie blockieren.
 - Nur **EUR** wird unterstützt (EPC069-12 beschränkt den Standard-QR-Code faktisch auf SEPA/EUR-Überweisungen); Fremdwährungsrechnungen bleiben ohne GiroCode (siehe `docs/LIMITATIONEN.md`).
+
+### Lastschrift-Snapshot beim Festschreiben (Phase 18e)
+
+Beim Festschreiben einer Rechnung mit Zahlungsmethode `59` friert die Software Gläubiger-ID, Mandatsreferenz, Unterschriftsdatum, Kunden-IBAN und Kontoinhaber in `Invoice.directDebitSnapshotJson` ein (im selben Schreibvorgang wie die übrigen Snapshots, `finalizeWithinTx`). Spätere Änderungen an Firmen- oder Kundenstamm ändern XML und PDF des festgeschriebenen Belegs nicht. Die Kartenfelder liegen am Beleg und sind nach dem Festschreiben durch den GoBD-Guard gesperrt. Belege vor Phase 18e haben keinen Snapshot und bleiben bei Code `1`.
 
 ### Beleg-Snapshots — Kundenkomfort-Erweiterung (Phase 8a)
 
@@ -895,6 +908,12 @@ eigenen Organisation.
 ### VIES-Abfrage der USt-IdNr. (Phase 17a)
 
 Die USt-IdNr.-Prüfung (§ 8) ist **standardmäßig eingeschaltet** und übermittelt bei jeder Abfrage die USt-IdNr. des Kunden und die eigene USt-IdNr. an die **Europäische Kommission** (VIES-Dienst, ec.europa.eu). Betroffen sind Daten von Unternehmen (bei Einzelunternehmern ggf. personenbezogen). Rechtsgrundlage ist die Erfüllung der steuerlichen Nachweispflicht (Art. 6 Abs. 1 lit. c DSGVO i. V. m. § 6a UStG, § 18e UStG); der Verantwortliche sollte die Abfrage in seinem Verzeichnis der Verarbeitungstätigkeiten aufführen. Es werden keine Beleg-, Namens- oder Anschriftsdaten übermittelt. Das Prüfprotokoll (Antwort inkl. Name/Anschrift laut Dienst) bleibt lokal und unterliegt der Aufbewahrung nach § 147 AO. **Abschaltbar** unter „Einstellungen → Belege": Schalter „USt-IdNr.-Prüfung über VIES freischalten" (aus = keinerlei Verbindung zum Dienst, der Knopf am Kunden ist deaktiviert) und „Beim Festschreiben innergemeinschaftlicher Rechnungen automatisch prüfen". Es fließen keine Daten ohne Auslöser: Abfragen erfolgen nur per Knopf/REST/MCP oder, wenn eingeschaltet (Standard aus), beim Festschreiben einer ig. Lieferung/Leistung.
+
+### Kunden-IBAN, Lastschriftmandat und Kartenendziffern (Phase 18e)
+
+- **Rechtsgrundlage und Datensparsamkeit:** Die IBAN des belasteten Kontos, Mandatsreferenz, Unterschriftsdatum und Kontoinhaber werden zur Durchführung des Vertrags verarbeitet (Art. 6 Abs. 1 lit. b DSGVO) und nur für Lastschriftbelege verwendet. Auf Rechnungen mit anderer Zahlungsmethode steht die IBAN weder im Beleg noch im Snapshot. Der Kunde kann das Mandat jederzeit entfernen (Button „Mandat entfernen“ im Kundenformular leert alle vier Mandatsfelder; API: alle Mandatsfelder leeren); bereits festgeschriebene Belege behalten ihren Snapshot (Aufbewahrung nach § 147 AO).
+- **Maskierung:** Kunden-IBAN erscheint in PDF, REST, MCP und Kundendetailseite nur maskiert (`DE02 **** 2051`); voll nur im Bearbeitungsformular und im XML (BT-91, Pflicht). Das Anfrageprotokoll redigiert IBAN-, Karten-, Kontoinhaber- und Mandatsfelder; Fehlerprotokolle (`describeError`) enthalten keine Ziffernfolgen oder IBAN-Muster.
+- **Kartenendziffern:** Nur die letzten 4 Ziffern werden gespeichert, nie die volle Kartennummer (Begründung: BR-51, BT-87 höchstens 10 Zeichen, sowie die PCI-DSS-Maskierung); Fehlermeldungen geben die Eingabe nicht wieder.
 
 ### OSS-/E-Rechnung-Tooling (Node/JS/JVM)
 

@@ -24,7 +24,7 @@ export const REDACTED = "[redaktiert]";
 // Fix-Welle (m7): nicht mehr `export` — wird ausserhalb dieses Moduls nirgends importiert
 // (weder von redactJson noch von der neuen redactQuery, beide bleiben innerhalb der Datei).
 // `csv` (Phase 18b): Import-Bodies (`{ csv }`) enthalten ganze Kunden-/Produktlisten und sind personenbezogen.
-const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|^csv$)/i;
+const SECRET_KEY_PATTERN = /(secret|token|password|passwort|api[_-]?key|authorization|iban|bic|cardpan|cardholdername|sepadebitaccountname|mandate|^csv$)/i;
 /** Zusaetzlich zu SECRET_KEY_PATTERN nur fuer Query-Parameter (I1): E-Mail-Adressen sind
  *  keine Geheimnisse, aber personenbezogene Daten (z. B. `/api/v1/Contact?email=...`). */
 const QUERY_ONLY_PATTERN = /email/i;

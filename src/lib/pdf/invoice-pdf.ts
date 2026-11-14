@@ -23,6 +23,7 @@ import type { PdfTheme } from "./theme";
 import { mm, drawFoldMarks, drawPunchMark, drawPageNumbers, drawWatermark, concatPdfChunks } from "./marks";
 import { pdfMargins, marginsFromMm, drawBackground, senderLineFallback } from "./layout";
 import { addressCountryLine } from "../countries";
+import { paymentMeansPdfText } from "./payment-means-text";
 import { buildEpcPayload, EpcError } from "./epc";
 import { renderGiroCode } from "./giro";
 import { categoryNoticesToPrint } from "@/domain/invoice/mandatory";
@@ -608,7 +609,10 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       // ohne diese Pruefung wuerde eine Fremdwaehrungsrechnung einen GiroCode mit falscher
       // Waehrungsangabe drucken (Kunde zahlt EUR-Betrag statt z. B. USD-Betrag).
       GIRO_ELIGIBLE_TYPES.has(data.type) &&
-      (data.giroAmountCents ?? 0) > 0,
+      (data.giroAmountCents ?? 0) > 0 &&
+      // Phase 18e: bei Karte/Lastschrift kein Ueberweisungs-QR (Bestand mit Code 1/58 unveraendert).
+      !data.paymentMeans?.card &&
+      !data.paymentMeans?.directDebit,
   );
   // Fix (Kontoinhaber): Zahlungsempfaenger-Name im GiroCode — Kontoinhaber, wenn gesetzt,
   // sonst der Firmenname (dieselbe Fallback-Regel wie mapper.ts#payeeAccountName fuer
@@ -717,6 +721,12 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       y = ensurePlainSpace(y, 30);
       y += 5;
       y = renderPlainTextPdf(doc, data.paymentMethodText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
+    }
+    const paymentMeansText = paymentMeansPdfText(data, lang);
+    if (paymentMeansText) {
+      y = ensurePlainSpace(y, 30);
+      y += 5;
+      y = renderPlainTextPdf(doc, paymentMeansText, y, { x: left, width: right - left, fontSize: base - 1, ensureSpace: ensurePlainSpace, color: ink });
     }
   };
 

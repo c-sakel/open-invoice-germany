@@ -75,6 +75,7 @@ model Organization {
   tags                   Tag[]
   postalSettings         PostalSettings?
   postalJobs             PostalJob[]
+  sepaCreditorId String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
 
 /// Kunde / Leistungsempfänger.
@@ -138,6 +139,10 @@ model Customer {
 
   @@index([orgId])
   @@index([orgId, customerNumber])
+  sepaMandateReference String?   // Phase 18e: Mandatsreferenz (BT-89)
+  sepaMandateSignedAt  DateTime? // Datum der Unterschrift (nur PDF-Vorabankuendigung)
+  sepaDebitIban        String?   // belastetes Konto (BT-91), personenbezogen
+  sepaDebitAccountName String?   // Kontoinhaber, nur PDF
 }
 
 /// Frei definierbare Kundenzusatzfelder je Organisation (§31). Werte liegen in
@@ -412,6 +417,10 @@ model Invoice {
   @@index([contactPersonId])
   @@index([billingAddressId])
   @@index([shippingAddressId])
+  cardPanTruncated        String? // Phase 18e: letzte 4 Ziffern (BT-87), nie die volle Nummer
+  cardHolderName          String? // BT-88
+  cardNetwork             String? // UBL NetworkID (Pflicht in CardAccount), CII ohne Entsprechung
+  directDebitSnapshotJson String? // BG-19-Snapshot beim Festschreiben (directDebitSnapshotSchema), sonst NULL
 }
 
 // Phase 5 (§14 Abs. 5 Satz 2 UStG): Snapshot einer auf einer Schlussrechnung

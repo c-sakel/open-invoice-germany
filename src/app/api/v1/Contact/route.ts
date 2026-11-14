@@ -35,7 +35,7 @@ export const POST = withApi(async (_req, ctx) => {
     // CustomerValidationError (defaultPaymentMethodId gehoert nicht zur Organisation) ist
     // NICHT in der globalen Registry (src/api/errors.ts) — sie ist domain-spezifisch fuer
     // Contact/Product und semantisch eine 400-Validierung, kein 409-Konflikt.
-    if (e instanceof CustomerValidationError) throw new z.ZodError([{ code: "custom", path: ["defaultPaymentMethodId"], message: e.message }]);
+    if (e instanceof CustomerValidationError) throw new z.ZodError([{ code: "custom", path: [e.path ?? "defaultPaymentMethodId"], message: e.message }]);
     throw e;
   }
 }, { scope: "write" });

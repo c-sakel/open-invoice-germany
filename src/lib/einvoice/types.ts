@@ -1,6 +1,7 @@
 /** Framework-/DB-freie Eingabe-Struktur für die E-Rechnungs-Erzeugung. */
 import type { DocLanguage } from "@/lib/i18n/doc/types";
 import type { Endpoint } from "./eas";
+import type { DirectDebitSnapshot } from "@/schemas";
 
 export interface EInvoiceParty {
   name: string;
@@ -94,6 +95,10 @@ export interface EInvoicePaymentMeans {
   iban?: string | null;
   bic?: string | null;
   accountName?: string | null;
+  /** BG-18 (Code 48/54/55): nur letzte Ziffern (BT-87), Kartennetz, Inhaber (BT-88). */
+  card?: { panTruncated: string; network: string; holderName: string | null };
+  /** BG-19 (Code 59) + BT-90: eingefrorener Lastschrift-Snapshot. */
+  directDebit?: DirectDebitSnapshot;
 }
 
 export interface EInvoiceData {

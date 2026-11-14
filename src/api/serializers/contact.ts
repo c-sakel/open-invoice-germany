@@ -4,6 +4,8 @@
  */
 import "../openapi-zod-init"; // Fix-Runde 1: MUSS vor jedem z.object()-Aufruf hier stehen
 import { iso } from "./common";
+import { maskIban } from "@/lib/iban";
+import { berlinDateKey } from "@/lib/berlin-time";
 import type { Customer, CustomerAddress, ContactPerson as ContactPersonRow } from "@/generated/prisma/client";
 import { z } from "zod";
 
@@ -32,6 +34,11 @@ export function serializeContact(c: Customer) {
     customerNumber: c.customerNumber,
     notes: c.notes,
     deliveryChannel: c.deliveryChannel,
+    sepaMandateReference: c.sepaMandateReference,
+    sepaMandateSignedAt: c.sepaMandateSignedAt ? berlinDateKey(c.sepaMandateSignedAt) : null,
+    // Nie die volle IBAN ausgeben (Eingabe: sepaDebitIban, Ausgabe nur maskiert).
+    sepaDebitIbanMasked: c.sepaDebitIban ? maskIban(c.sepaDebitIban) : null,
+    sepaDebitAccountName: c.sepaDebitAccountName,
     isArchived: c.isArchived,
     createdAt: iso(c.createdAt),
     updatedAt: iso(c.updatedAt),
@@ -104,6 +111,10 @@ export const contactSchema = z.object({
   customerNumber: z.string().nullable(),
   notes: z.string().nullable(),
   deliveryChannel: z.string(),
+  sepaMandateReference: z.string().nullable().describe("SEPA-Mandatsreferenz (BT-89); nur zusammen mit sepaDebitIban."),
+  sepaMandateSignedAt: z.string().nullable().describe("Datum der Mandatsunterschrift (YYYY-MM-DD)."),
+  sepaDebitIbanMasked: z.string().nullable().describe("Belastetes Konto maskiert (z. B. DE02 **** 2051); die volle IBAN wird nie ausgegeben."),
+  sepaDebitAccountName: z.string().nullable().describe("Kontoinhaber des belasteten Kontos."),
   isArchived: z.boolean(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),

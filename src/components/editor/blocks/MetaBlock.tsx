@@ -25,13 +25,18 @@ import { inputCls } from "@/components/forms/fields";
 import type { RecipientCustomerOption } from "./RecipientBlock";
 import { currencyOptions } from "@/lib/currencies";
 import { useEditorCurrency } from "../currency-context";
+import { CARD_NETWORK_SUGGESTIONS } from "@/lib/payment-card";
 import { FxPreview } from "@/components/fx/FxPreview";
 
 export interface PaymentMethodOption {
   id: string;
   name: string;
   paymentTermsDays?: number | null;
+  /** UNTDID 4461 (BT-81) der Methode; steuert Karten-/Lastschrift-Felder (Phase 18e). */
+  untdidCode?: string | null;
 }
+
+const CARD_CODES: ReadonlySet<string> = new Set(["48", "54", "55"]);
 
 export function MetaBlock({
   mode,
@@ -252,6 +257,60 @@ export function MetaBlock({
               </select>
             )}
           </EditorField>
+        )}
+
+        {mode === "INVOICE" && selectedMethod?.untdidCode && CARD_CODES.has(selectedMethod.untdidCode) && (
+          <>
+            <EditorField label="Kartennetz">
+              {(id) => (
+                <>
+                  <input
+                    id={id}
+                    className={inputCls}
+                    list="card-network-suggestions"
+                    maxLength={35}
+                    autoComplete="off"
+                    value={draft.cardNetwork}
+                    onChange={(e) => dispatch({ type: "set", field: "cardNetwork", value: e.target.value })}
+                  />
+                  <datalist id="card-network-suggestions">
+                    {CARD_NETWORK_SUGGESTIONS.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                </>
+              )}
+            </EditorField>
+            <EditorField label="Letzte 4 Ziffern">
+              {(id) => (
+                <input
+                  id={id}
+                  className={inputCls}
+                  inputMode="numeric"
+                  maxLength={19}
+                  autoComplete="off"
+                  value={draft.cardPanTruncated}
+                  onChange={(e) => dispatch({ type: "set", field: "cardPanTruncated", value: e.target.value })}
+                />
+              )}
+            </EditorField>
+            <EditorField label="Karteninhaber">
+              {(id) => (
+                <input
+                  id={id}
+                  className={inputCls}
+                  maxLength={70}
+                  autoComplete="off"
+                  value={draft.cardHolderName}
+                  onChange={(e) => dispatch({ type: "set", field: "cardHolderName", value: e.target.value })}
+                />
+              )}
+            </EditorField>
+          </>
+        )}
+
+        {mode === "INVOICE" && selectedMethod?.untdidCode === "59" && (
+          <p className="text-xs text-ink-muted">Mandat und Gläubiger-ID werden beim Festschreiben übernommen.</p>
         )}
 
         {mode === "DOCUMENT" && !isEdit && (

@@ -10,6 +10,7 @@ import { ContactsPanel } from "@/components/customers/ContactsPanel";
 import { CustomerDefaultsForm } from "@/components/customers/CustomerDefaultsForm";
 import { CustomFieldsForm } from "@/components/customers/CustomFieldsForm";
 import { listPaymentMethods } from "@/domain/payment-method/manage";
+import { berlinDateKey } from "@/lib/berlin-time";
 import { listAddresses } from "@/domain/customer/addresses";
 import { listContacts } from "@/domain/customer/contacts";
 import { customerDefaultsFor } from "@/domain/customer/defaults";
@@ -45,7 +46,7 @@ export default async function KundeBearbeitenPage({ params }: { params: Promise<
 
         <CustomerTabs
           tabs={[
-            { key: "stammdaten", label: "Stammdaten", content: <CustomerForm customer={customer} paymentMethods={paymentMethods} /> },
+            { key: "stammdaten", label: "Stammdaten", content: <CustomerForm customer={{ ...customer, sepaMandateSignedAt: customer.sepaMandateSignedAt ? berlinDateKey(customer.sepaMandateSignedAt) : null }} paymentMethods={paymentMethods} /> },
             {
               key: "adressen",
               label: "Adressen",

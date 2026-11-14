@@ -21,6 +21,7 @@ import { pickTextTemplate } from "@/domain/text-template/pick";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { NotFoundError } from "@/domain/errors";
+import { normalizeCardFields } from "./direct-debit";
 import type { CreateInvoiceInput } from "@/schemas";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -116,10 +117,10 @@ export async function createDraftInvoiceWithinTx(
   // (Selbstheilung), danach die Org-weite Standard-Zahlungsmethode aus den Einstellungen
   // (Phase 7, `defaultPaymentMethodId`).
   const paymentMethodId = input.paymentMethodId ?? customer.defaultPaymentMethodId ?? settings.defaultPaymentMethodId ?? undefined;
-  let method: { id: string; paymentTermsDays: number | null } | null = null;
+  let method: { id: string; paymentTermsDays: number | null; untdidCode: string } | null = null;
   if (paymentMethodId) {
-    method = await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { id: true, paymentTermsDays: true } });
-    if (!method) throw new Error("Zahlungsmethode nicht gefunden.");
+    method = await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { id: true, paymentTermsDays: true, untdidCode: true } });
+    if (!method) throw new NotFoundError("Zahlungsmethode nicht gefunden.");
   }
 
   const issueDate = input.issueDate ?? now;
@@ -202,6 +203,9 @@ export async function createDraftInvoiceWithinTx(
     },
   );
 
+  // Phase 18e: Kartenfelder nur bei Kartenmethode (48/54/55), sonst null (REST/MCP/UI gleich).
+  const card = normalizeCardFields(method?.untdidCode, input);
+
   const invoice = await tx.invoice.create({
     data: {
       orgId,
@@ -241,6 +245,7 @@ export async function createDraftInvoiceWithinTx(
       skonto2Permille: input.skonto2Permille,
       skonto2Days: input.skonto2Days,
       paymentMethodId,
+      ...card,
       recurringInvoiceId: opts.recurringInvoiceId,
       netTotalCents: totals.netTotalCents,
       taxTotalCents: totals.taxTotalCents,

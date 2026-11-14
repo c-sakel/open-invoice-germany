@@ -26,6 +26,7 @@ export interface OrgFormData {
   bic: string | null;
   bankName: string | null;
   accountHolder: string | null;
+  sepaCreditorId?: string | null;
   electronicAddress: string | null;
   electronicAddressScheme: string | null;
 }
@@ -80,6 +81,7 @@ export function OrganizationForm({ org }: { org?: OrgFormData | null }) {
           <TextField label="IBAN" name="iban" defaultValue={org?.iban} />
           <TextField label="BIC" name="bic" defaultValue={org?.bic} />
           <TextField label="Bankname" name="bankName" defaultValue={org?.bankName} />
+          <TextField label="Gläubiger-ID (SEPA)" name="sepaCreditorId" defaultValue={org?.sepaCreditorId} placeholder="DE98ZZZ09999999999" hint="Nur für Lastschriften nötig." />
           <TextField label="E-Rechnung-Adresse (Peppol)" name="electronicAddress" defaultValue={org?.electronicAddress} hint="Optional — Endpoint für E-Rechnung-Versand." />
           <EasSchemeField label="Schema der E-Rechnung-Adresse" name="electronicAddressScheme" defaultValue={org?.electronicAddressScheme} />
         </div>

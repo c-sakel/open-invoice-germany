@@ -178,6 +178,11 @@ export interface DocStrings {
     accountHolder: string;
   };
   giro: { caption: string; captionShort: string };
+  /** Phase 18e: Zahlungsweg-Hinweise (Lastschrift-Vorabankuendigung, Kartenzahlung). */
+  paymentMeans: {
+    directDebit: (amount: string, date: string | null, ibanMasked: string, mandateReference: string, creditorId: string) => string;
+    card: (network: string, last4: string) => string;
+  };
   page: (n: number, total: number) => string;
   dunning: {
     salutation: string;

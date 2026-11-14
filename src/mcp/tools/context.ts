@@ -15,6 +15,7 @@ import { LineType, TaxRate } from "@/schemas";
 import { OssCategorySchema, type OssCategory } from "@/schemas/oss";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
 import type { MailProvider } from "@/lib/mail/provider";
+import { describeError } from "@/lib/safe-error";
 
 export type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -30,7 +31,7 @@ export class ToolError extends Error {}
  *  Rohtext an den MCP-Client durchreichen (koennten Prisma-/Interna enthalten) — nur
  *  geloggt, generische Antwort. */
 export function failUnknown(e: unknown): Result {
-  console.error("[mcp] Unerwarteter Fehler:", e instanceof Error ? (e.stack ?? e.message) : e);
+  console.error("[mcp] Unerwarteter Fehler:", describeError(e));
   return fail("Unerwarteter Fehler — Details im Serverlog.");
 }
 

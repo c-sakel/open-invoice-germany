@@ -3,7 +3,8 @@
  * Warnung bzw. verschluckt, die Rechnung wird in jedem Fall festgeschrieben.
  * Laeuft bewusst ausserhalb der Festschreibe-Transaktion (Netzaufruf). Das Auto-Festschreiben
  * (Scheduler, src/domain/email/send.ts) ruft diese Funktion NICHT auf — dort gibt es keinen
- * Bediener, der eine Warnung sehen koennte.
+ * Bediener, der eine Warnung sehen koennte; das Ergebnis (Code 1 statt BG-18/BG-19) ist dort
+ * nur im XML sichtbar.
  */
 import { dbInternal } from "@/lib/db";
 import { EU_VAT_PREFIXES } from "@/lib/tax";
@@ -11,13 +12,15 @@ import { normalizeVatId } from "@/lib/vat-id";
 import { resolveBuyerEndpoint } from "@/lib/einvoice/eas";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { checkVatId, VatCheckRateLimitError } from "@/domain/customer/vat-check";
+import { resolveSpecialMeans, DIRECT_DEBIT_CODE } from "@/lib/einvoice/payment-means";
+import { buildDirectDebitSnapshot } from "./direct-debit";
 
 const VIES_SCHEMES = new Set(["IG_LIEFERUNG", "IG_LEISTUNG"]);
 const RECENT_VALID_MS = 24 * 60 * 60 * 1000;
 const VIES_TIMEOUT_MS = 8_000;
 
 /** Bekannte Hinweiscodes. Nur diese Codes duerfen in der URL der Rechnungsseite stehen (kein Klartext). */
-export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit"] as const;
+export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit", "karte-unvollstaendig", "lastschrift-unvollstaendig", "lastschrift-faelligkeit"] as const;
 export type FinalizeWarningCode = (typeof FINALIZE_WARNING_CODES)[number];
 
 export interface FinalizeWarning {
@@ -38,6 +41,12 @@ export function finalizeWarningMessage(code: FinalizeWarningCode, vatId = "", de
         : `VIES nicht erreichbar — USt-IdNr. ${vatId} wurde nicht bestätigt.`;
     case "vies-limit":
       return `VIES-Abfragelimit erreicht — USt-IdNr. ${vatId} wurde nicht geprüft.`;
+    case "karte-unvollstaendig":
+      return "Kartenzahlung: letzte vier Ziffern oder Kartennetz fehlen – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
+    case "lastschrift-faelligkeit":
+      return "SEPA-Lastschrift: Fälligkeitsdatum fehlt (Vorabankündigung) – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
+    case "lastschrift-unvollstaendig":
+      return "SEPA-Lastschrift: Gläubiger-ID der Firma oder Mandat (Referenz, IBAN) des Kunden fehlen – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
   }
 }
 
@@ -72,7 +81,19 @@ export async function collectFinalizeWarnings(
         id: true,
         status: true,
         taxScheme: true,
-        customer: { select: { id: true, vatId: true, email: true, leitwegId: true, peppolId: true, peppolScheme: true } },
+        type: true,
+        dueDate: true,
+        cardPanTruncated: true,
+        cardNetwork: true,
+        cardHolderName: true,
+        paymentMethod: { select: { untdidCode: true } },
+        org: { select: { sepaCreditorId: true } },
+        customer: {
+          select: {
+            id: true, vatId: true, email: true, leitwegId: true, peppolId: true, peppolScheme: true,
+            sepaMandateReference: true, sepaMandateSignedAt: true, sepaDebitIban: true, sepaDebitAccountName: true,
+          },
+        },
       },
     });
     if (!invoice || invoice.status !== "DRAFT") return warnings;
@@ -80,6 +101,22 @@ export async function collectFinalizeWarnings(
 
     if (resolveBuyerEndpoint(customer) === null) {
       warnings.push({ code: "adresse", message: finalizeWarningMessage("adresse") });
+    }
+
+    // Phase 18e: Karte/Lastschrift unvollstaendig -> gleiche Entscheidung wie der Mapper
+    // (resolveSpecialMeans); Festschreiben gelingt, die E-Rechnung faellt auf Code 1 zurueck.
+    const meansCode = invoice.paymentMethod?.untdidCode;
+    if (meansCode) {
+      const special = resolveSpecialMeans({
+        code: meansCode,
+        invoiceType: invoice.type,
+        card: { cardPanTruncated: invoice.cardPanTruncated, cardNetwork: invoice.cardNetwork, cardHolderName: invoice.cardHolderName },
+        directDebit: meansCode === DIRECT_DEBIT_CODE ? buildDirectDebitSnapshot(invoice.org, customer) : null,
+        dueDate: invoice.dueDate,
+      });
+      if (special.kind === "fallback" && special.gap) {
+        warnings.push({ code: special.gap, message: finalizeWarningMessage(special.gap) });
+      }
     }
 
     if (VIES_SCHEMES.has(invoice.taxScheme) && customer.vatId?.trim()) {

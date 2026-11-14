@@ -12,7 +12,7 @@ import { buildTimeline, type TimelineKind } from "@/domain/timeline/build";
 import { listNotifications, markRead } from "@/domain/notifications/create";
 import { listApiRequestLogs } from "@/domain/api-log/list";
 import { apiRequestLogFilterSchema } from "@/schemas/api-log";
-import { organizationSchema, TaxScheme } from "@/schemas";
+import { organizationSchema, organizationFieldsSchema, TaxScheme } from "@/schemas";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerSystemTools(server: McpServer, ctx: McpToolsContext): void {
@@ -110,6 +110,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         bic: z.string().optional(),
         bankName: z.string().optional(),
         accountHolder: z.string().optional().describe("Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = Firmenname)"),
+        sepaCreditorId: organizationFieldsSchema.shape.sepaCreditorId.describe("SEPA-Gläubiger-ID für Lastschriften (BT-90); ohne Angabe bleibt der Bestand, Leeren nur in der Oberfläche"),
         smallBusiness: z.boolean().default(false).describe("Kleinunternehmer nach § 19 UStG"),
         defaultTaxScheme: TaxScheme.default("REGULAR"),
         electronicAddress: z.string().optional().describe("E-Rechnung-Adresse (BT-34); ohne Angabe bleibt der Bestand erhalten, bei Neuanlage gilt die E-Mail"),
@@ -154,6 +155,8 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
           bic: v.bic ?? null,
           bankName: v.bankName ?? null,
           accountHolder: v.accountHolder ?? null,
+          // Gläubiger-ID: ausdrueckliche Angabe setzt, ohne Schluessel bleibt der Bestand (Neuanlage: leer).
+          ...(v.sepaCreditorId ? { sepaCreditorId: v.sepaCreditorId } : existing ? {} : { sepaCreditorId: null }),
           ...endpoint,
         };
         const org = existing
