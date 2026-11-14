@@ -88,14 +88,14 @@ Ereignisgetriebene **Webhooks** (`/api/v1/Webhook`, Scope `admin`) liefern Ereig
 - **Self-hosted**: SQLite-Solo ohne Server **oder** PostgreSQL via Docker.
 - **Anmeldung**: eingebautes Admin-Konto (scrypt-Hash + signiertes Session-Cookie, gehärtete Anmeldung, Passwort ändern) — App und API geschützt. Optional Zwei-Faktor-Authentifizierung (TOTP mit Wiederherstellungscodes) und Passwort-Reset per Mail (benötigt SMTP und `APP_BASE_URL`). API-Anfragen werden protokolliert (geschwärzt) unter Einstellungen → API.
 - **E-Rechnungs-Kennungen & USt-IdNr.-Prüfung**: Peppol-Endpunkt-IDs mit EAS-Schema (BT-34/BT-49) in UBL und CII, Prüfziffernprüfung der Leitweg-ID und optionale VIES-Prüfung der Kunden-USt-IdNr. (standardmäßig an, beim Festschreiben aus; jede Prüfung wird append-only gespeichert).
-- **Karte und SEPA-Lastschrift in der E-Rechnung** (BG-18/BG-19): Karte nur mit den letzten vier Ziffern, Lastschrift mit Gläubiger-ID (Firma), Mandat (Kunde) und Vorabankündigung im PDF; bei unvollständigen Angaben fällt die Zahlungsart auf Überweisung mit Hinweis zurück.
-- **Einzelpreise bis 0,00001 €**: Zeilennetto wird kaufmännisch gerundet, BT-146 trägt fünf Nachkommastellen. Brutto-Eingabe per REST/MCP.
+- **Karte und SEPA-Lastschrift in der E-Rechnung** (BG-18/BG-19): Karte nur mit den letzten vier Ziffern, Lastschrift mit Gläubiger-ID (Firma), Mandat (Kunde) und Vorabankündigung im PDF; bei unvollständigen Angaben gibt die E-Rechnung den Zahlungscode 1 (nicht festgelegt) aus, das Festschreiben zeigt einen Hinweis.
+- **Einzelpreise bis 0,00001 €** (Rechnung, Angebot/AB, Abo): Zeilennetto wird kaufmännisch gerundet, BT-146 trägt fünf Nachkommastellen. Brutto-Eingabe per REST/MCP.
 - **CSV-Export & -Import**: Belege und Kontakte als CSV exportieren; Kontakte und Produkte mit Vorschau importieren, mit Formelschutz und 24-h-Sperre gegen Doppel-Import.
 - **Sammel-Storno**: mehrere Rechnungen aus der Liste auf einmal stornieren (max. 50, je Beleg ein eigener Storno, Ergebnisbericht); auch per REST/MCP.
 - **Optionale HTML-Mail**: wird zusätzlich zum Textteil gesendet, standardmäßig aus.
 - **Postversand über LetterXpress** (standardmäßig aus, Trockenlauf, Bestätigung je Moduswechsel und je Beleg; Mahnautomatik nur mit ausdrücklicher Einstellung).
 - **API-Erweiterungen**: `updatedSince` und Cursor-Paginierung in Listen, Anlegen + Festschreiben + Zahlung in einem Aufruf mit Pflicht-`Idempotency-Key` (24 h Wiedergabe), Sammel-Kontakte (max. 100), Sammel-Storno, Brutto-Eingabe.
-- **Berliner Zeit**: Fälligkeiten, Skonto-Fristen, E-Rechnungs-Daten und Auswertungen nutzen den Berliner Kalendertag.
+- **Berliner Zeit**: Rechnungs-, Fälligkeits- und Lieferdatum in der E-Rechnung (BT-2/BT-9/BT-72), Skonto-Fristdatum und -Fristende, Monats-/Jahresgrenzen der Auswertungen und das OSS-Jahr folgen dem Berliner Kalendertag; Überfälligkeit und Mahnwesen rechnen noch mit UTC-Tagen.
 
 ### Status
 

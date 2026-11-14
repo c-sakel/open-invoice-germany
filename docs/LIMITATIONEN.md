@@ -4,6 +4,8 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 
 Die Liste ist nach Themen gegliedert: Betrieb und Sicherheit, E-Rechnung, Zahlung/Mahnwesen/Abos, E-Mail- und Postversand, Daten und Recht, Belege und Dokumentworkflow, Teil-/Abschlags-/Schlussrechnungen, Editor und PDF-Layout, Stammdaten und Oberfläche, REST-API/Webhooks, Auswertungen, GoBD-Betrieb, CSV-Import/-Export, Preise und Verbrauch sowie der bewusst nicht umgesetzte Funktionsumfang am Ende.
 
+Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist, wann die eigene Installation aktualisiert wurde.
+
 ## Betrieb & Sicherheit
 - **Anmeldung vorhanden, aber Single-User.** Ein Admin-Konto schützt App **und** API (signiertes Session-Cookie). Gehärtet: eine IP-Bremse (max. 10 Versuche/5 Minuten, nur im Speicher) und eine Kontosperre nach 5 Fehlversuchen in Folge (15 Minuten, übersteht einen Neustart) verlangsamen das Erraten des Passworts; jeder Fehlversuch und jede Sperre werden protokolliert (nie E-Mail/Passwort im Protokoll). Die Sperre hat eine feste Obergrenze — weitere Fehlversuche während einer laufenden Sperre verlängern sie nicht, ein Selbst-Aussperren auf Dauer ist damit ausgeschlossen. Das Passwort lässt sich unter „Einstellungen → Konto" selbst ändern (aktuelles Passwort Pflicht, dieselbe IP-/Kontosperre wie beim Login) — das beendet **sofort alle anderen Sitzungen** (Session-Token trägt den Zeitpunkt der letzten Passwortänderung, `src/lib/auth/server.ts#userIdFromToken` verwirft ältere Token), nur der Browser der Änderung selbst bleibt angemeldet. Zwei-Faktor-Anmeldung (TOTP) und Passwort-Reset per Mail gibt es ebenfalls (Abschnitt „Konto-Sicherheit"). **Nicht** vorhanden sind Mehrbenutzer und Rollen (bewusst nicht umgesetzt). In Produktion `AUTH_SECRET` setzen und hinter HTTPS betreiben.
 - **Single-Tenant.** Das Datenmodell trägt `orgId`, die App nutzt aber eine aktive Organisation. Schreibpfade (Stammdaten) sind org-gescoped; eine vollständige Mehrmandanten-Trennung (inkl. Lese-Pfade, Postgres-RLS) ist Roadmap.
@@ -276,6 +278,7 @@ Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenz
 - **Kleinbetragsrechnung (§ 33 UStDV):** Die Grenze von 250 € brutto wird nicht automatisch geprüft.
 - **15-Tage-Ausstellfrist (§ 14a Abs. 1 UStG)** bei innergemeinschaftlichen Lieferungen/Leistungen wird nicht angezeigt.
 - **Mahnwesen bei Verbrauchern:** Der Hinweis auf den Verzugseintritt 30 Tage nach Fälligkeit und Zugang (§ 286 Abs. 3 BGB) wird nicht automatisch gedruckt.
+- **Gutschrift im Selbstabrechnungsverfahren (§ 14 Abs. 2 S. 5 UStG):** keine Selbstabrechnung durch den Leistungsempfänger; Typcode 389 wird nicht erzeugt.
 
 Einzelheiten je Pflicht: Umsetzungsmatrix in [COMPLIANCE.md](../COMPLIANCE.md) Abschnitt 15.
 

@@ -478,7 +478,7 @@ Die eingeloggte Ansicht nutzt eine App-Shell mit einklappbarer Sidebar (`src/com
 
 ### Belegansicht
 
-Rechnungs-, Dokument- (Angebot/AB/Proforma) und Lieferschein-Detailseiten (`src/app/{rechnungen,dokumente,lieferscheine}/[id]/page.tsx`) teilen sich einen gemeinsamen Rahmen — PDF mittig, Statuskarte(n) rechts, Aktionen oben (dem Vorbild moderner Rechnungsdienste. Die PDF-Ansicht übernimmt `PdfStack` (siehe unten); die Statuskarte ist je Belegtyp in zwei getrennte Karten geteilt.
+Rechnungs-, Dokument- (Angebot/AB/Proforma) und Lieferschein-Detailseiten (`src/app/{rechnungen,dokumente,lieferscheine}/[id]/page.tsx`) teilen sich einen gemeinsamen Rahmen — PDF mittig, Statuskarte(n) rechts, Aktionen oben (nach dem Vorbild moderner Rechnungsdienste). Die PDF-Ansicht übernimmt `PdfStack` (siehe unten); die Statuskarte ist je Belegtyp in zwei getrennte Karten geteilt.
 
 **Rahmen** (`DocumentDetailLayout`, `src/components/detail/DocumentDetailLayout.tsx`): reine Layout-Komponente ohne eigene Logik, nimmt neun benannte Slots — `nav` (siehe `DetailNav`), `title`, `badges`, `actions`, `more` (siehe `ActionMenu`), `notice`, `pdf` (Seitenmitte), `aside` (rechte Spalte) und `children` (volle Breite darunter: Positionen, Mahnblock, Korrekturbereich, E-Mail-Verlauf, Zeitstrahl). Grid `xl:grid-cols-[minmax(0,1fr)_24rem]` (erst ab `xl` nebeneinander) — PDF und die rechte Spalte stehen darüber nebeneinander, darunter stapeln sie sich. `nav` sitzt nicht über dem Titel, sondern in einer `DetailCard title="Beleg"` als erstem Element der rechten Spalte (Vor/Zurück nahe an den übrigen Belegdaten); die Karte zeigt nur die Navigation, nicht zusätzlich den Belegtitel (der steht bereits als `<h1>` im Kopf direkt darüber).
 
@@ -937,26 +937,15 @@ Dockerfile               # Next.js-standalone-Image, Nicht-root, Whitelist in .d
 
 ---
 
-## 6. Roadmap (historisch)
+## 6. Nicht umgesetzt
 
-Ursprüngliche Stufenidee. Umgesetzt ist der in diesem Dokument beschriebene Stand; abweichend davon gibt es keinen JVM-Sidecar (eigener Generator, siehe Abschnitt 2), keinen DATEV-Export (bewusst nicht umgesetzt, siehe `docs/LIMITATIONEN.md`), keine Zusammenfassende Meldung (§18a), keinen Peppol-Versand und keine Multi-Tenant-RLS.
+Diese Punkte sind bewusst oder bisher nicht umgesetzt (Details: `docs/LIMITATIONEN.md`, Umsetzungsmatrix in `COMPLIANCE.md` § 15):
 
-### MVP (zuerst — deckt den B2C/Solo-/§19-Fall vollständig)
-- **Org-Setup**, Kunden, Produkte, Angebot → Rechnung.
-- **Festschreibung + Nummernkreise + ChangeLog (Hash-Chain) + Storno** — der nicht verhandelbare GoBD-Kern.
-- **Standard-Rechnung Regelbesteuerung 19/7/0** + **Kleinunternehmer §19** (Pflichthinweis §34a, kein USt-Ausweis) + **§33 Kleinbetrag**.
-- **PDF (PDF/A-3-fähig) + ZUGFeRD-Export** über den eigenen Generator (kein Sidecar); einfaches PDF („sonstige Rechnung") für B2C/§19.
-- Zahlungserfassung, Mahn-Basis (Erinnerung + Verzugszins B2C 5 Pp).
-- SQLite-Solo-Modus lauffähig ohne Docker.
-
-### Stufe 2 (E-Rechnung B2B scharf)
-- **XRechnung** (UBL+CII) + **ZUGFeRD EN16931/EXTENDED**, KoSIT/veraPDF-CI-Gate produktiv.
-- B2B-Verzugslogik: **9 Pp + 40-€-Pauschale (§288 Abs.5)**, halbjahresgenaue Basiszins-Tabelle.
-- **VIES/§18e**-Validierung, **Reverse Charge §13b** (Pflichthinweis, kein USt-Ausweis), ig. Lieferung §6a + Hinweise §14a.
-- Korrekturrechnung §31 Abs.5 als E-Rechnung (PDF-Korrektur einer E-Rechnung unzulässig).
-
-### Stufe 3 (Spezialfälle + Komfort)
-- **Differenzbesteuerung §25a** (Refurb/Gebrauchtwaren, Marker „Gebrauchtgegenstände/Sonderregelung", Margenlogik, Gesamtdifferenz ≤750 €).
-- **B2G**: Leitweg-ID (BT-10), Peppol-Versand, OZG-RE.
-- **ZM §18a**, **OSS §18j** (EU-B2C-Fernverkauf).
-- Mehrstufiges automatisiertes Mahnwesen, wiederkehrende Rechnungen/Abos, DATEV-Export, Multi-Tenant-RLS, revisionssichere Langzeit-Archivierung (8 J., §14b).
+- Keine OSS-Meldung nach § 18j UStG; der OSS-Schwellenrechner dient nur der Orientierung.
+- Keine Zusammenfassende Meldung (§ 18a UStG).
+- Kein ZUGFeRD-EXTENDED-Profil; ausgegeben werden XRechnung (UBL, CII) und ZUGFeRD EN 16931.
+- Keine OZG-RE-Anbindung und kein Peppol-Versand.
+- Keine Margenaufzeichnung nach § 25a UStG (Differenzbesteuerung).
+- § 33 UStDV (Kleinbetragsrechnung) nur als Validierungsoption.
+- Kein DATEV-Export (bewusst nicht umgesetzt).
+- Kein RLS (Postgres-Row-Level-Security); Single-Tenant je Instanz.

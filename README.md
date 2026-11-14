@@ -89,14 +89,14 @@ Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like
 - **Self-hosted**: SQLite solo without a server **or** PostgreSQL via Docker.
 - **Sign-in**: built-in admin account (scrypt hash + signed session cookie, hardened sign-in, password change) — app and API protected. Optional two-factor authentication (TOTP with recovery codes) and password reset by email (needs SMTP and `APP_BASE_URL`). API requests are logged (redacted) under Settings → API.
 - **E-invoice identifiers & VAT ID check**: Peppol endpoint IDs with EAS scheme (BT-34/BT-49) in UBL and CII, Leitweg-ID check-digit validation, and an optional VIES check of customer VAT IDs (on by default, skipped on finalisation; each check is stored append-only).
-- **Card and SEPA direct debit in the e-invoice** (BG-18/BG-19): card payments with only the last four digits, direct debit with creditor ID (company), mandate (customer) and pre-notification on the PDF; incomplete data falls back to a plain credit transfer with a notice.
-- **Unit prices to 0.00001 EUR**: line totals are rounded half-up; BT-146 carries five decimals. Gross-price input is available via REST/MCP.
+- **Card and SEPA direct debit in the e-invoice** (BG-18/BG-19): card payments with only the last four digits, direct debit with creditor ID (company), mandate (customer) and pre-notification on the PDF; incomplete data gives payment means code 1 (not defined) in the e-invoice, with a notice on finalisation.
+- **Unit prices to 0.00001 EUR** (invoices, quotes/order confirmations, subscriptions): line totals are rounded half-up; BT-146 carries five decimals. Gross-price input is available via REST/MCP.
 - **CSV export & import**: export documents and contacts as CSV; import contacts and products with a preview, formula-injection protection and a 24 h double-import lock.
 - **Bulk cancellation**: cancel several invoices from the list at once (max. 50, each with its own cancellation document, result report); also via REST/MCP.
 - **Optional HTML email**: sent alongside the plain-text part, off by default.
 - **Postal dispatch via LetterXpress** (off by default, dry-run mode, confirmation per mode change and per document; dunning automation only with an explicit setting).
 - **API extras**: `updatedSince` and cursor pagination on lists, create + finalise + record payment in one call with a mandatory `Idempotency-Key` (24 h replay), bulk contacts (max. 100), bulk cancellation, gross-price input.
-- **Berlin time**: due dates, Skonto deadlines, e-invoice dates and reports use the Berlin calendar day.
+- **Berlin time**: invoice, due and delivery dates in the e-invoice (BT-2/BT-9/BT-72), the Skonto deadline date and end, the month and year boundaries of reports and the OSS year follow the Berlin calendar day; overdue status and dunning still count UTC days.
 
 ### Status
 
