@@ -67,6 +67,8 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       emailTemplateId: input.emailTemplateId ?? null,
       showPeriodText,
       notes: input.notes ?? null,
+      collectiveBilling: input.collectiveBilling ?? false,
+      invoiceHeading: input.invoiceHeading ?? null,
       lines: { create: lines },
     },
     include: { lines: { orderBy: { position: "asc" } } },

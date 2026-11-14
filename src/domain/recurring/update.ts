@@ -37,10 +37,19 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         nextRunDate: true,
         maxRuns: true,
         taxScheme: true,
+        collectiveBilling: true,
+        invoiceHeading: true,
         lines: { select: { taxRate: true, lineType: true } },
       },
     });
     if (!existing) throw new NotFoundError("Abo nicht gefunden.");
+
+    // Sammelrechnung: der resultierende Zustand (gespeichert + Patch) braucht eine Blockueberschrift.
+    const effectiveCollective = input.collectiveBilling !== undefined ? input.collectiveBilling : existing.collectiveBilling;
+    const effectiveHeading = input.invoiceHeading !== undefined ? input.invoiceHeading : existing.invoiceHeading;
+    if (effectiveCollective && (effectiveHeading === null || effectiveHeading.trim() === "")) {
+      throw new RecurringError("Blockueberschrift ist fuer Sammelrechnungen Pflicht.");
+    }
 
     // Fix-Welle (Nit): ein aus ENDED reaktiviertes Abo (status -> ACTIVE) behaelt sein
     // bisheriges maxRuns unveraendert bei — war das Abo bereits ENDED, WEIL issuedCount
@@ -157,6 +166,8 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.showPeriodText !== undefined ? { showPeriodText: input.showPeriodText } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         ...(input.currency !== undefined ? { currency: input.currency } : {}),
+        ...(input.collectiveBilling !== undefined ? { collectiveBilling: input.collectiveBilling } : {}),
+        ...(input.invoiceHeading !== undefined ? { invoiceHeading: input.invoiceHeading } : {}),
         ...(input.language !== undefined ? { language: input.language } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(sync && sync.create.length > 0 ? { lines: { create: sync.create.flatMap((index) => (lineRows[index] ? [lineRows[index]] : [])) } } : {}),
