@@ -48,12 +48,13 @@ import {
 export { isRunDue, isSkipped };
 export type { EmitOutcome, EmittedInvoice, RecurringRunSummary, RunOptions, SkippedPeriod };
 
-/** Erzeugt genau EINE Rechnung für die aktuelle Periode und schiebt das Abo weiter. */
-async function emitOne(
+/** Erzeugt genau EINE Rechnung für die aktuelle Periode und schiebt das Abo weiter. Mit `requireDue` wird die Fälligkeit nach der Sperre erneut geprüft (Batch und Rückfall). */
+export async function emitOne(
   recurringId: string,
   now: Date,
   actor: string,
   provider?: MailProvider,
+  requireDue = false,
 ): Promise<{ result: EmitOutcome; ended: boolean; autoSend: boolean; orgId: string; emailTemplateId: string | null }> {
   // Parallele Laeufe derselben Org (Scheduler, "Jetzt erzeugen", REST/MCP): Org-Sperre serialisiert die ChangeLog-Kette
   // (Postgres, Reihenfolge Org vor Abo); ein dennoch auftretender Kettenkonflikt (P2002 orgId+prevHash) wiederholt die
@@ -74,6 +75,10 @@ async function emitOne(
 
     const periodDate = rec.nextRunDate;
     const hasUsageLines = rec.lines.some((l) => l.billing === "USAGE");
+    // Batch und Rueckfall: Faelligkeit nach der Sperre erneut pruefen, damit nichts vorgezogen wird.
+    if (requireDue && !isRunDue(periodDate, now, hasUsageLines)) {
+      throw new RecurringNotDueError("Abo ist (nicht mehr) faellig.");
+    }
     if (hasUsageLines && !isRunDue(periodDate, now, true)) {
       throw new RecurringNotDueError(
         "Verbrauchsabo: Die Periode endet erst am Stichtag; abgerechnet wird ab dem Folgetag, damit kein Verbrauch verloren geht.",
@@ -192,6 +197,7 @@ export async function runDueRecurring(
     let isolations = 0;
     try {
       for (let i = 0; i < max; i++) {
+        memberIds = [rec.id];
         const cur = await dbInternal.recurringInvoice.findUnique({
           where: { id: rec.id },
           select: { status: true, nextRunDate: true, collectiveBilling: true, lines: { where: { billing: "USAGE" }, select: { id: true }, take: 1 } },
@@ -233,7 +239,7 @@ export async function runDueRecurring(
               let ownEnded = false;
               for (const id of group) {
                 try {
-                  const one = await emitOne(id, now, actor, opts.provider);
+                  const one = await emitOne(id, now, actor, opts.provider, true);
                   const mine: EmittedInvoice[] = [];
                   const mineSkipped: Date[] = [];
                   if (isSkipped(one.result)) mineSkipped.push(one.result.periodDate);
@@ -247,6 +253,7 @@ export async function runDueRecurring(
                     summaries.push({ recurringId: id, title, emitted: mine, skipped: mineSkipped });
                   }
                 } catch (single) {
+                  if (single instanceof RecurringNotDueError) continue;
                   const message = single instanceof Error ? single.message : String(single);
                   failed.add(id);
                   const title = titles.get(id) ?? (await recurringTitle(id)) ?? id;
@@ -272,10 +279,19 @@ export async function runDueRecurring(
             i -= 1;
           }
         } else {
-          const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
-          if (isSkipped(result)) skipped.push(result.periodDate);
-          else emitted.push(result);
-          if (ended) break;
+          let one: Awaited<ReturnType<typeof emitOne>>;
+          try {
+            one = await emitOne(rec.id, now, actor, opts.provider, true);
+          } catch (e) {
+            if (e instanceof RecurringNotDueError) {
+              if (i === 0) alreadyDone = true;
+              break;
+            }
+            throw e;
+          }
+          if (isSkipped(one.result)) skipped.push(one.result.periodDate);
+          else emitted.push(one.result);
+          if (one.ended) break;
         }
       }
     } catch (e) {
