@@ -6,7 +6,7 @@
  * (CREATE, FINALIZE, PAYMENT), ActivityLog und Webhook-Outbox. Alles oder nichts: scheitert ein
  * Schritt (Festschreibe-Pflichtangabe, Ueberzahlung, fremder Kunde, `beforeCommit`), rollt die
  * ganze Transaktion zurueck — es bleiben weder Entwurf noch verbrauchte Belegnummer (keine
- * Nummernluecke). Die Hinweise (VIES/Adresse) laufen VOR der Transaktion, weil sie das Netz
+ * Nummernluecke). Bei Kettenkonflikt mit parallelen Schreibern wird die Transaktion wiederholt. Die Hinweise (VIES/Adresse) laufen VOR der Transaktion, weil sie das Netz
  * nutzen. Kein Versand: weder Mail noch Postversand.
  *
  * VatIdCheck (VIES-Pruefung der Hinweise) ist append-only und bleibt bei einem Rollback bestehen: die Pruefung
@@ -14,6 +14,8 @@
  */
 import type { Prisma, Invoice, InvoiceLine, Payment } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
+import { lockOrganization } from "@/lib/db-lock";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { recordPaymentWithinTx, PaymentError, type PaymentCreatedBy } from "@/domain/invoice/payment";
@@ -47,8 +49,12 @@ export async function createInvoiceComplete(
 
   const preWarnings = await collectFinalizeWarningsFor(orgId, { customerId: input.customerId, taxScheme: input.taxScheme }, { fetchImpl: opts.fetchImpl, now });
 
-  const result = await dbInternal.$transaction(
+  // Parallele Anlagen derselben Org: Org-Sperre serialisiert die ChangeLog-Kette (Postgres); ein dennoch
+  // auftretender Kettenkonflikt (P2002 orgId+prevHash) wiederholt die GANZE Transaktion (Rollback ist vollstaendig,
+  // beforeCommit laeuft je Versuch neu, Nach-Commit-Hooks nur einmal nach Erfolg).
+  const result = await withChangeLogRetry(() => dbInternal.$transaction(
     async (tx): Promise<InvoiceCompleteResult> => {
+      await lockOrganization(tx, orgId);
       const draft = await createDraftInvoiceWithinTx(tx, orgId, input, { actor, now });
       // Karte/Lastschrift-Hinweise (18e) aus dem gespeicherten Entwurf, ueber dieselbe Entscheidungsstelle
       // wie beim Festschreiben (paymentMeansWarnings).
@@ -78,7 +84,7 @@ export async function createInvoiceComplete(
       return out;
     },
     { timeout: 20_000, maxWait: 10_000 },
-  );
+  ));
 
   // Nach dem Commit (der Hook darf das Ergebnis nie kippen): OSS-Schwelle pruefen.
   try {

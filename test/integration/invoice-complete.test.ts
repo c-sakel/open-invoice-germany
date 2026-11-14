@@ -3,6 +3,7 @@
  * (Invoice.number ist global eindeutig), Praefix D18D4-. Der Transaktions-Guard (tx-guard-setup)
  * ist in allen Tests aktiv: ein Zugriff ueber den globalen Client in der Transaktion schlaegt fehl.
  */
+import { Prisma } from "@/generated/prisma/client";
 import { describe, it, expect, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
@@ -165,6 +166,24 @@ describe("createInvoiceComplete", () => {
       ).rejects.toThrow("boom");
       expect(await snapshot(orgId)).toEqual(before);
     });
+  });
+
+  it("Kettenkonflikt im ersten Versuch: Transaktion wird wiederholt, genau eine Rechnung, Kette gueltig", async () => {
+    const { orgId, customerId } = await makeOrg("Atomar Retry GmbH");
+    let attempts = 0;
+    const r = await createInvoiceComplete(orgId, invoiceInput(customerId), {
+      ...base,
+      beforeCommit: async () => {
+        attempts++;
+        if (attempts === 1) {
+          throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test", meta: { target: ["orgId", "prevHash"] } });
+        }
+      },
+    });
+    expect(attempts).toBe(2);
+    expect(r.invoice.status).toBe("FINALIZED");
+    expect(await dbInternal.invoice.count({ where: { orgId } })).toBe(1);
+    expect((await verifyOrgChain(orgId, "UI")).valid).toBe(true);
   });
 
   it("beforeCommit laeuft in der Transaktion: ApiIdempotency-Zeile nur nach Erfolg", async () => {

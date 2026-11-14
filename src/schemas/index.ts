@@ -804,10 +804,6 @@ function refinePaymentNeedsFinalize(v: { finalize: boolean; payment?: unknown },
   }
 }
 
-export const invoiceCompleteExtrasSchema = z
-  .object({ finalize: z.boolean().default(false), payment: atomicPaymentSchema.optional() })
-  .superRefine(refinePaymentNeedsFinalize);
-
 /** Body von POST /api/v1/Invoice (Route + OpenAPI); `createInvoiceSchema` bleibt unveraendert. */
 export const createInvoiceRequestSchema = z
   .object({
