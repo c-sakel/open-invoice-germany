@@ -8,6 +8,7 @@ import { confirmBankMatch, ignoreBankTransaction, reopenBankTransaction, undoBan
 import { confirmBankReturn, returnSuggestions } from "@/domain/bank/return";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { NotFoundError } from "@/domain/errors";
+import { monthlyCashIn } from "@/domain/reporting/cash-in";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { mkBankOrg, mkBankTx, mkInvoice, type BankTestOrg } from "../helpers/bank-fixtures";
 
@@ -208,5 +209,41 @@ describe("Bankabgleich: Rueckbuchung ohne Gegenbuchung erledigen", () => {
     const retTx = await mkBankTx(org, { amountCents: 3000, bookingDate: BOOK, direction: "DBIT", status: "RETURN" });
     const res = await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts);
     expect(res).toMatchObject({ feeCents: 0, partial: true });
+  });
+});
+
+describe("Bankabgleich: Buchungsdatum der Gegenbuchungen", () => {
+  const LATE = { actor: "tester", createdBy: "user" as const, now: new Date("2203-06-03T10:00:00.000Z") };
+
+  it("Ruecklastschrift: Gegenbuchung traegt den Buchungstag der Bank; Auswertung zaehlt Eingang und Gegenbuchung im Monat der Bank", async () => {
+    const o = await mkBankOrg("Bank Datum GmbH", ISSUE);
+    const inv = await mkInvoice(o, ISSUE);
+    const inTx = await mkBankTx(o, { amountCents: GROSS, bookingDate: BOOK, remittance: inv.number });
+    const r = await confirmBankMatch(o.orgId, inTx, { allocations: [{ invoiceId: inv.id, amountCents: GROSS }], expectedAllocatedCents: 0 }, opts);
+    const paymentId = r.payments[0]!.paymentId;
+    const returnDay = new Date("2203-04-02T00:00:00.000Z");
+    const retTx = await mkBankTx(o, { amountCents: GROSS, bookingDate: returnDay, direction: "DBIT", status: "RETURN", returnReason: "AC04" });
+    await confirmBankReturn(o.orgId, retTx, { paymentId }, LATE);
+    const rev = await dbInternal.payment.findFirstOrThrow({ where: { reversesPaymentId: paymentId }, select: { paidAt: true } });
+    expect(rev.paidAt.toISOString()).toBe(returnDay.toISOString());
+    const points = await monthlyCashIn(o.orgId, { now: LATE.now });
+    const byMonth = new Map(points.map((p) => [p.month, p.paidCents]));
+    expect(byMonth.get("2203-03")).toBe(GROSS);
+    expect(byMonth.get("2203-04")).toBe(-GROSS);
+    expect(byMonth.get("2203-06") ?? 0).toBe(0);
+    expect((await verifyOrgChain(o.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Zuordnung zuruecknehmen: Gegenbuchung traegt das Datum der urspruenglichen Zahlung (Fehlzuordnung neutralisiert im selben Monat)", async () => {
+    const o = await mkBankOrg("Bank Datum Undo GmbH", ISSUE);
+    const inv = await mkInvoice(o, ISSUE);
+    const txId = await mkBankTx(o, { amountCents: GROSS, bookingDate: BOOK, remittance: inv.number });
+    const r = await confirmBankMatch(o.orgId, txId, { allocations: [{ invoiceId: inv.id, amountCents: GROSS }], expectedAllocatedCents: 0 }, opts);
+    const match = await dbInternal.bankMatch.findFirstOrThrow({ where: { transactionId: txId, kind: "PAYMENT" }, select: { id: true } });
+    await undoBankMatch(o.orgId, txId, { matchId: match.id, reason: "Falsch" }, LATE);
+    const rev = await dbInternal.payment.findFirstOrThrow({ where: { reversesPaymentId: r.payments[0]!.paymentId }, select: { paidAt: true } });
+    expect(rev.paidAt.toISOString()).toBe(BOOK.toISOString());
+    const points = await monthlyCashIn(o.orgId, { now: LATE.now });
+    expect(points.find((p) => p.month === "2203-03")?.paidCents ?? 0).toBe(0);
   });
 });

@@ -55,7 +55,11 @@ export function toBankRowView(
   suggestions: Suggestion[],
   returnSuggestions: ReturnSuggestion[],
 ): BankRowView {
-  const undoneIds = new Set(matches.filter((m) => m.kind === "UNDO" && m.refMatchId).map((m) => m.refMatchId as string));
+  // Zurueckgenommen = Zahlung vollstaendig durch UNDO-/Rueckbuchungs-Eintraege neutralisiert (auch Teil-Stornierungen zaehlen anteilig).
+  const reversedBy = new Map<string, number>();
+  for (const m of matches) {
+    if ((m.kind === "UNDO" || m.kind === "REVERSAL") && m.refMatchId) reversedBy.set(m.refMatchId, (reversedBy.get(m.refMatchId) ?? 0) + m.amountCents);
+  }
   return {
     id: row.id,
     bookingDate: row.bookingDate.toISOString(),
@@ -79,7 +83,7 @@ export function toBankRowView(
       kind: m.kind,
       refMatchId: m.refMatchId,
       reason: m.reason,
-      undone: undoneIds.has(m.id),
+      undone: m.kind === "PAYMENT" && (reversedBy.get(m.id) ?? 0) >= m.amountCents,
     })),
     suggestions: suggestions.map((s) => ({ allocations: s.allocations, confidence: s.confidence, reasons: s.reasons, restCents: s.restCents })),
     returnSuggestions,

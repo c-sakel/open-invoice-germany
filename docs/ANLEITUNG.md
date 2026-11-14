@@ -559,17 +559,21 @@ Jeder offene Umsatz zeigt Vorschläge mit Begründung und Sicherheit. **Sicher**
 ### Rückbuchungen und Rücklastschriften
 
 - Ein **Zahlungseingang bleibt der Rechnung zugeordnet**, auch wenn die Bank später zurückbucht. Kommt eine **Rücklastschrift** (Rückgabe einer Lastschrift, Umsatz als Belastung), erscheint sie im Reiter „Rückgaben" als „Rückbuchung – prüfen". Du wählst die betroffene Zahlung; die App **bucht sie per Gegenbuchung gegen** und hebt damit den Zahlungseingang auf. Die Rechnung ist danach wieder offen bzw. teilweise offen.
+- Die Gegenbuchung trägt als Datum den **Buchungstag der Bank** der Rückbuchung, nicht den Tag der Bestätigung; Auswertungen zählen sie damit im Monat der Bankbuchung.
+- **Falsch bestätigt?** Eine bestätigte Rücklastschrift lässt sich nicht zurücknehmen: Die Gegenbuchung wird nicht erneut gegengebucht, der Rückbuchungs-Umsatz bleibt erledigt. Korrigiere, indem du die Zahlung an der Rechnung erneut erfasst (Zahlungsdialog). Eine bereits voll gegengebuchte Zahlung lässt sich in der Bankabgleich-Ansicht nicht mehr „zurücknehmen“; der Knopf wird dort nicht mehr angeboten.
 - **Rückgabegebühren** der Bank (Umsatz größer als die gegengebuchte Zahlung) werden **nicht gebucht**; die App meldet sie nur.
 - **Rückbuchungen zu eigenen Zahlungen** (Gutschrift mit Rückbuchungskennzeichen, also Rückgabe einer eigenen Überweisung) lassen sich **nur als erledigt markieren**, nicht gegen Kundenzahlungen buchen.
 
 ### Zurücknehmen und Stornieren
 
-- **Zuordnung zurücknehmen:** nimmt die Zuordnung per **Gegenbuchung** der Zahlung zurück (mit Grund). Nichts wird gelöscht; Zuordnung und Gegenbuchung bleiben nachvollziehbar.
+- **Zuordnung zurücknehmen:** nimmt die Zuordnung per **Gegenbuchung** der Zahlung zurück (mit Grund). Die Gegenbuchung trägt das Datum der ursprünglichen Zahlung, damit eine Fehlzuordnung im selben Zeitraum neutralisiert wird. Nichts wird gelöscht; Zuordnung und Gegenbuchung bleiben nachvollziehbar.
 - **Zahlung manuell stornieren:** Stornierst du eine aus dem Bankabgleich stammende Zahlung an der Rechnung, führt die App den **Zuordnungsbetrag des Bankumsatzes mit** (der Umsatz wird wieder teilweise bzw. ganz offen).
 
 ### Was gespeichert wird
 
 Je Umsatz speichert die App Buchungs- und Wertstellungsdatum, Betrag, Währung, **Name und IBAN des Gegenkontos**, den **Verwendungszweck** (bis 500 Zeichen), Referenzen der Bank und den Status. Die Zahlung an der Rechnung trägt den Verwendungszweck als Zahlungsreferenz. IBANs erscheinen in Oberfläche, REST und MCP nur maskiert. Die gelernte Zuordnung „Gegenkonto → Kunde" speichert nur einen Hash der IBAN und benötigt `AUTH_SECRET`. Die Datei selbst wird **nicht** aufbewahrt, auch keine Belastungen und kein Kontostand. Kontoauszüge bleiben Buchungsbelege deiner Buchhaltung; bewahre sie dort wie bisher auf (siehe [COMPLIANCE.md](../COMPLIANCE.md) § 22).
+
+**Ignorierte und erledigte Umsätze:** Auch Umsätze ohne Rechnungsbezug (ignoriert oder als erledigt markiert) behalten Name und IBAN des Gegenkontos sowie den Verwendungszweck. Sie gehören als Teil der Kontoauszugsdaten zu den aufbewahrungspflichtigen Buchungsunterlagen (§ 147 AO). Die App bietet für festgeschriebene Bankdaten vor Fristablauf bewusst keine Löschfunktion; nach Fristablauf entfernst du sie nur mit direktem Datenbankzugriff.
 
 Auch per REST (`/api/v1/BankStatement`, `/api/v1/BankTransaction`, siehe [API.md](API.md)) und MCP (siehe [MCP.md](MCP.md)) nutzbar.
 

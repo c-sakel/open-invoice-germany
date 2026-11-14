@@ -293,12 +293,13 @@ export async function undoBankMatch(orgId: string, txId: string, raw: unknown, o
         throw new BankAllocationError("Die Zuordnung dieses Umsatzes kann nicht zurueckgenommen werden.");
       }
       // Rest der Zahlung (nach manuellen Teil-Gegenbuchungen): ist er 0, wurde die Zuordnung schon zurueckgenommen.
-      const payment = await tx.payment.findUnique({ where: { id: match.paymentId }, select: { amountCents: true } });
+      const payment = await tx.payment.findUnique({ where: { id: match.paymentId }, select: { amountCents: true, paidAt: true } });
       const reversedAgg = await tx.payment.aggregate({ where: { reversesPaymentId: match.paymentId, kind: "REVERSAL" }, _sum: { amountCents: true } });
       if (!payment || payment.amountCents + (reversedAgg._sum.amountCents ?? 0) <= 0) throw new BankConflictError("Diese Zuordnung wurde bereits zurueckgenommen.");
 
-      // reversePaymentWithinTx schreibt Umsatz (allocatedCents/Status) und UNDO-Eintrag fort.
-      const reversed = await reversePaymentWithinTx(tx, match.paymentId, { reason: input.reason }, { actor: opts.actor, orgId, now, createdBy: opts.createdBy });
+      // reversePaymentWithinTx schreibt Umsatz (allocatedCents/Status) und UNDO-Eintrag fort. Eine Fehlzuordnung wird im
+      // Zeitraum der urspruenglichen Zahlung neutralisiert (Datum der Zahlung), nicht im Monat der Korrektur.
+      const reversed = await reversePaymentWithinTx(tx, match.paymentId, { reason: input.reason }, { actor: opts.actor, orgId, now, createdBy: opts.createdBy, reversedAt: payment.paidAt });
       await logActivity(tx, {
         orgId,
         entityType: "BANK_TRANSACTION",

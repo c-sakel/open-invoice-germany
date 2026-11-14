@@ -1332,6 +1332,8 @@ mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
 | Aufbewahrung | Die Zahlung gehört zu den Rechnungs- und Buchungsdaten und wird wie diese aufbewahrt (§ 147 AO). Die App löscht Bankumsätze weder automatisch noch per Funktion; es gibt keinen Aufräumjob | Art. 5 Abs. 1 lit. e, Art. 17 Abs. 3 lit. b |
 | Löschung | Während der Aufbewahrungsfrist verdrängt sie das Löschbegehren (siehe § 13). Nach Fristablauf kann nur der Betreiber Daten mit direktem Datenbankzugriff entfernen; der Guard der Anwendung verhindert das Löschen im laufenden Betrieb bewusst | Art. 17 Abs. 3 lit. b |
 
+Auch ignorierte und als erledigt markierte Umsätze (ohne Rechnungsbezug) behalten Gegenkonto-Name, IBAN und Verwendungszweck. Sie sind Teil der Kontoauszugsdaten und damit aufbewahrungspflichtige Buchungsunterlagen (§ 147 AO, siehe oben); vor Fristablauf gibt es für festgeschriebene Bankdaten keine Löschfunktion, nach Fristablauf nur direkten Datenbankzugriff des Betreibers (Speicherbegrenzung, Art. 5 Abs. 1 lit. e).
+
 Gegenkonto-Name und IBAN können Privatpersonen betreffen. Der Betreiber führt den Bankabgleich in seinem Verzeichnis der Verarbeitungstätigkeiten (Art. 30) und sichert die Datenbank wie die übrigen Belegdaten (siehe § 20, Betrieb).
 
 ---

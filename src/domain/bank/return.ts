@@ -87,7 +87,7 @@ export async function confirmBankReturn(orgId: string, txId: string, raw: unknow
       await lockRow(tx, "BankTransaction", txId, orgId);
       const bankTx = await tx.bankTransaction.findFirst({
         where: { id: txId, orgId },
-        select: { id: true, status: true, direction: true, amountCents: true, currency: true, returnReason: true },
+        select: { id: true, status: true, direction: true, amountCents: true, currency: true, returnReason: true, bookingDate: true },
       });
       if (!bankTx) throw new NotFoundError("Bankumsatz nicht gefunden.");
       if (bankTx.status !== "RETURN") throw new BankAllocationError("Nur Rueckbuchungen koennen als Ruecklastschrift gebucht werden.");
@@ -109,7 +109,7 @@ export async function confirmBankReturn(orgId: string, txId: string, raw: unknow
       const code = bankTx.returnReason ? ` ${bankTx.returnReason}` : "";
       const reason = `Ruecklastschrift${code}${input.reason ? `: ${input.reason}` : ""}`.slice(0, 500);
 
-      const reversed = await reversePaymentWithinTx(tx, payment.id, { amountCents, reason }, { actor: opts.actor, orgId, now, createdBy: opts.createdBy, syncBank: false });
+      const reversed = await reversePaymentWithinTx(tx, payment.id, { amountCents, reason }, { actor: opts.actor, orgId, now, createdBy: opts.createdBy, syncBank: false, reversedAt: bankTx.bookingDate });
       const origin = await tx.bankMatch.findFirst({ where: { orgId, paymentId: payment.id }, select: { id: true } });
       await tx.bankMatch.create({
         data: {

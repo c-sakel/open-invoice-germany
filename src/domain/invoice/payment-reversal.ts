@@ -48,14 +48,14 @@ async function createReversalRow(
   original: OriginalRow,
   amountCents: number,
   reason: string,
-  now: Date,
+  paidAt: Date,
   createdBy: PaymentCreatedBy,
 ): Promise<Payment> {
   return tx.payment.create({
     data: {
       invoiceId,
       amountCents: -amountCents,
-      paidAt: now,
+      paidAt,
       method: original.method,
       isSkonto: original.isSkonto,
       kind: "REVERSAL",
@@ -81,11 +81,13 @@ export async function reversePaymentWithinTx(
   tx: Prisma.TransactionClient,
   paymentId: string,
   input: ReversePaymentInput,
-  opts: { actor: string; orgId: string; now: Date; createdBy: PaymentCreatedBy; syncBank?: boolean },
+  opts: { actor: string; orgId: string; now: Date; createdBy: PaymentCreatedBy; syncBank?: boolean; reversedAt?: Date },
 ): Promise<ReversePaymentWithinTxResult> {
   const now = opts.now;
   const createdBy = opts.createdBy;
   const syncBank = opts.syncBank !== false;
+  // Buchungsdatum der Gegenbuchung (Zahlungsdatum der Zeile); Standard ist der Zeitpunkt der Erfassung.
+  const reversedAt = opts.reversedAt ?? now;
   // Stammt die Zahlung aus dem Bankabgleich, wird der Bankumsatz VOR der Rechnung gesperrt (gleiche
   // Reihenfolge wie im Bankpfad: Umsatz, dann Rechnung), damit keine Sperrkreuzung entsteht.
   const bankMatch = syncBank
@@ -130,7 +132,7 @@ export async function reversePaymentWithinTx(
     throw new PaymentError(`Gegenbuchung (${amountCents} Cent) uebersteigt den noch nicht gegengebuchten Betrag (${restCents} Cent).`);
   }
 
-  const reversal = await createReversalRow(tx, inv.id, payment, amountCents, input.reason, now, createdBy);
+  const reversal = await createReversalRow(tx, inv.id, payment, amountCents, input.reason, reversedAt, createdBy);
   if ((await alreadyReversedCents(tx, payment.id)) > payment.amountCents) {
     throw new PaymentError("Die Zahlung wurde parallel bereits gegengebucht.");
   }
@@ -148,7 +150,7 @@ export async function reversePaymentWithinTx(
     if (skonto) {
       const skontoRest = skonto.amountCents - (await alreadyReversedCents(tx, skonto.id));
       if (skontoRest > 0) {
-        skontoReversal = await createReversalRow(tx, inv.id, skonto, skontoRest, input.reason, now, createdBy);
+        skontoReversal = await createReversalRow(tx, inv.id, skonto, skontoRest, input.reason, reversedAt, createdBy);
         totalDelta += skontoRest;
       }
     }

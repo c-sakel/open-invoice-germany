@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { BankImportResult, type BankImportResultView } from "./BankImportResult";
 
 interface Reply {
@@ -17,6 +17,7 @@ export function BankUploadForm() {
   const [result, setResult] = useState<BankImportResultView | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   async function send(mode: "preview" | "commit") {
     if (!file) return;
@@ -54,19 +55,33 @@ export function BankUploadForm() {
   return (
     <div className="space-y-4">
       <form onSubmit={onPreview} className="flex flex-wrap items-end gap-3">
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-ink-soft">Kontoauszug (CAMT.053 oder CAMT.054, XML)</span>
+        <div className="text-sm">
+          <label htmlFor="bank-file" className="mb-1 block font-medium text-ink-soft">
+            Kontoauszug (CAMT.053 oder CAMT.054, XML)
+          </label>
           <input
+            id="bank-file"
+            ref={fileInput}
             type="file"
             accept=".xml,text/xml,application/xml"
+            className="sr-only"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setResult(null);
               setMessage(null);
             }}
-            className="block text-sm"
           />
-        </label>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              className="rounded-md border border-rule-strong px-4 py-2 text-sm font-medium text-ink-soft hover:bg-paper"
+            >
+              Datei auswählen
+            </button>
+            <span className="text-ink-muted">{file ? file.name : "Keine Datei ausgewählt"}</span>
+          </div>
+        </div>
         <button
           type="submit"
           disabled={!file || busy}

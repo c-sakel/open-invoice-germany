@@ -186,6 +186,10 @@ describe("Umsatzliste", () => {
     expect(active).toContain("Zurücknehmen RE-50001");
     const undone = table([view({ status: "OPEN" }, [], [m("ckm1", "PAYMENT", null), m("ckm2", "UNDO", "ckm1")])]);
     expect(undone).not.toContain("Zurücknehmen");
+    const reversedByReturn = table([view({ status: "MATCHED" }, [], [m("ckm1", "PAYMENT", null), m("ckm3", "REVERSAL", "ckm1")])]);
+    expect(reversedByReturn).not.toContain("Zurücknehmen");
+    const partial = table([view({ status: "PARTIAL" }, [], [m("ckm1", "PAYMENT", null), { ...m("ckm4", "UNDO", "ckm1"), amountCents: 2000 }])]);
+    expect(partial).toContain("Zurücknehmen RE-50001");
   });
 });
 
