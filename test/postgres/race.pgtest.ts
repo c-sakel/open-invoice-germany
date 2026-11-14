@@ -354,10 +354,12 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
   it("Verbrauch: 5x Lauf + 5x Erfassung parallel -> je Periode hoechstens eine Rechnung, kein Satz doppelt abgerechnet, Summen stimmen", async () => {
     const s = await usageScenario();
     const day = s.now.toISOString().slice(0, 10);
+    // Verbrauchsabos werden erst am Berliner Tag nach dem Stichtag abgerechnet.
+    const later = new Date(s.now.getTime() + 24 * 3_600_000);
     const tasks: Promise<unknown>[] = [];
     for (let i = 0; i < 5; i++) {
-      tasks.push(emitRecurringNow(s.rec.id, { now: s.now, actor: "race" }));
-      tasks.push(recordUsage(s.orgId, s.rec.id, { recurringLineId: s.usageLineId, quantityMilli: 1_000_000 * (i + 1), usageDate: day, externalId: `ev-${i}` }, { source: "API", actor: "race", now: s.now }));
+      tasks.push(emitRecurringNow(s.rec.id, { now: later, actor: "race" }));
+      tasks.push(recordUsage(s.orgId, s.rec.id, { recurringLineId: s.usageLineId, quantityMilli: 1_000_000 * (i + 1), usageDate: day, externalId: `ev-${i}` }, { source: "API", actor: "race", now: later }));
     }
     const rs = await Promise.allSettled(tasks);
     // Erfassung nach dem Lauf der Periode scheitert fachlich (PERIOD_BILLED); alles andere ist ein Fehler.
@@ -372,5 +374,23 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(lines.reduce((sum, l) => sum + l.quantityMilli, 0)).toBe(billed.reduce((sum, u) => sum + u.quantityMilli, 0));
     const lastEnd = Math.max(...invoices.map((i) => i.deliveryDate?.getTime() ?? 0));
     expect(usages.filter((u) => u.invoiceId === null && u.periodEnd.getTime() <= lastEnd)).toHaveLength(0);
+  });
+
+  it("Abo-Lauf: parallele Laeufe vier verschiedener Abos derselben Org (festgeschrieben) -> alle ok, Kette gueltig", async () => {
+    const s = await newScenario();
+    const abos = await Promise.all(
+      Array.from({ length: 4 }, (_, i) =>
+        createRecurring(
+          s.orgId,
+          createRecurringSchema.parse({ customerId: s.customerId, title: `V18F3-Lauf-${i}`, startDate: s.now, autoFinalize: true, lines: [{ ...item(1000, 2900), description: `V18F3-Fest-${i}` }] }),
+        ),
+      ),
+    );
+    const rs = await Promise.allSettled(abos.map((a) => emitRecurringNow(a.id, { now: s.now, actor: "race" })));
+    expect(rejected(rs).length, describeFailures(rs)).toBe(0);
+    const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: { in: abos.map((a) => a.id) }, status: { not: "DRAFT" } }, select: { number: true } });
+    expect(invoices).toHaveLength(4);
+    expect(new Set(invoices.map((i) => i.number)).size).toBe(4);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 });

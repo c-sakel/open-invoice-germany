@@ -33,7 +33,8 @@ import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
 import { RecurringError } from "./errors";
 import { collectBillableUsage, markUsageBilled } from "./usage";
-import { lockRow } from "@/lib/db-lock";
+import { lockOrganization, lockRow } from "@/lib/db-lock";
+import { withChangeLogRetry } from "@/lib/chain-retry";
 import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
 import { logActivity } from "@/domain/activity/log";
 import { MAX_USAGE_QUANTITY_MILLI } from "@/schemas/recurring-usage";
@@ -132,10 +133,14 @@ async function emitOne(
   actor: string,
   provider?: MailProvider,
 ): Promise<{ result: EmitOutcome; ended: boolean; autoSend: boolean; orgId: string; emailTemplateId: string | null }> {
-  const created = await dbInternal.$transaction(async (tx) => {
-    // Phase 18f: Abo sperren (vor jedem Lesen) — serialisiert Lauf, Verbrauchserfassung und Zeilenbearbeitung.
+  // Parallele Laeufe derselben Org (Scheduler, "Jetzt erzeugen", REST/MCP): Org-Sperre serialisiert die ChangeLog-Kette
+  // (Postgres, Reihenfolge Org vor Abo); ein dennoch auftretender Kettenkonflikt (P2002 orgId+prevHash) wiederholt die
+  // GANZE Transaktion (vollstaendiger Rollback, nextRunDate wird neu gelesen). Mailversand/Hooks laufen nur einmal danach.
+  const created = await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
     const head = await tx.recurringInvoice.findUnique({ where: { id: recurringId }, select: { orgId: true } });
     if (!head) throw new RecurringError("Abo nicht gefunden.");
+    await lockOrganization(tx, head.orgId);
+    // Phase 18f: Abo sperren (vor jedem Lesen) — serialisiert Lauf, Verbrauchserfassung und Zeilenbearbeitung.
     await lockRow(tx, "RecurringInvoice", recurringId, head.orgId);
     const rec = await tx.recurringInvoice.findUnique({
       where: { id: recurringId },
@@ -279,7 +284,7 @@ async function emitOne(
 
     const result: EmittedInvoice = { invoiceId: invoice.id, number, periodDate, finalized };
     return { result, ended, autoSend: rec.autoSend, orgId: rec.orgId, emailTemplateId: rec.emailTemplateId };
-  });
+  }));
 
   // autoSend (Phase 7, §33): erst NACH der Transaktion versenden (Modulkommentar: kein
   // SMTP-Aufruf innerhalb einer Prisma-Transaktion). Ein Fehler beim Versand darf die
