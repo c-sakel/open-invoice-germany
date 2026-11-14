@@ -18,6 +18,8 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createDraftInvoice } from "@/domain/invoice/create";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createProduct } from "@/domain/product/save";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "@/mcp/server";
 import type { CreateInvoiceInput, CreateDocumentInput } from "@/schemas";
 
@@ -25,14 +27,17 @@ interface ToolResult {
   content: { type: string; text: string }[];
   isError?: boolean;
 }
-interface RegisteredTool {
-  handler: (args: Record<string, unknown>) => Promise<ToolResult>;
-}
-function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
-  const tools = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools;
-  const tool = tools[name];
-  if (!tool) throw new Error(`MCP-Tool "${name}" ist nicht registriert.`);
-  return tool.handler(args);
+// Aufruf ueber Client + InMemoryTransport: die Argumente laufen durch das echte inputSchema-Parsing
+// des SDK (inkl. Schema-Defaults), nicht direkt in den Handler.
+const client = new Client({ name: "test", version: "1.0.0" });
+let connected = false;
+async function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+  if (!connected) {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverT), client.connect(clientT)]);
+    connected = true;
+  }
+  return (await client.callTool({ name, arguments: args })) as ToolResult;
 }
 const text = (r: ToolResult) => r.content.map((c) => c.text).join("\n");
 

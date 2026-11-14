@@ -335,6 +335,9 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         "Listet Rechnungen mit Filter/Suche/Paginierung (§40) — Status (effektiv: draft/open/due/overdue/partial/paid/cancelled/credit/all), Typ, Zeitraum, Betragsspanne, Volltextsuche.",
       inputSchema: {
         ...invoiceListFilterSchema.shape,
+        // Kein Schema-Default: ein vom SDK eingesetzter Default wuerde mit updatedSince kollidieren
+        // (dort ist `sort` verboten); listInvoices setzt den Default selbst (Legacy-Pfad).
+        sort: invoiceListFilterSchema.shape.sort.removeDefault().optional(),
         customer: z.string().optional().describe("Kundenname oder -ID (Alternative zu customerId)"),
       },
     },
