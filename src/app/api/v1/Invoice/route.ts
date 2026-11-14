@@ -2,7 +2,7 @@ import { z } from "zod";
 import { csvListResponse } from "@/api/csv-list";
 import { csvFormatQuery } from "@/domain/export";
 import { withApi } from "@/api/auth";
-import { queryObject } from "@/api/query";
+import { coerceBooleans, queryObject } from "@/api/query";
 import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeInvoice } from "@/api/serializers/invoice";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withApi(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
-  const csv = await csvListResponse(ctx.orgId, "invoices", searchParams, (raw) => ("eInvoice" in raw ? { ...raw, eInvoice: raw.eInvoice === "true" } : raw));
+  const csv = await csvListResponse(ctx.orgId, "invoices", searchParams, (raw) => coerceBooleans(raw, ["eInvoice"]));
   if (csv) return csv;
   const embed = parseEmbed(searchParams);
   const result = await listInvoices(ctx.orgId, queryObject(searchParams, ["eInvoice"]) as InvoiceListFilter);

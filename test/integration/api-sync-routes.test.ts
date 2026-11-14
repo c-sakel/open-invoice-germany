@@ -198,6 +198,14 @@ describe("Sonderfaelle", () => {
     expect((await get(InvoiceList, "eInvoice=vielleicht", token)).status).toBe(400);
   });
 
+  it("Invoice: eInvoice=1/0 wird wie true/false gelesen (JSON und CSV)", async () => {
+    expect((await get(InvoiceList, "eInvoice=1", token)).status).toBe(200);
+    expect((await get(InvoiceList, "eInvoice=0", token)).status).toBe(200);
+    expect((await get(InvoiceList, "eInvoice=1&format=csv", token)).status).toBe(200);
+    expect((await get(InvoiceList, "eInvoice=0&format=csv", token)).status).toBe(200);
+    expect((await get(InvoiceList, "eInvoice=2", token)).status).toBe(400);
+  });
+
   it("Contact/Product: includeArchived=true liefert archivierte Datensaetze", async () => {
     const [contactId] = ids.Contact;
     const [productId] = ids.Product;
