@@ -14,6 +14,7 @@ vi.mock("@/lib/org", () => ({
 vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "V18F8-user" }));
 
 import { dbInternal } from "@/lib/db";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createRecurring } from "@/domain/recurring/create";
 import { createRecurringSchema } from "@/schemas";
@@ -69,6 +70,38 @@ beforeAll(async () => {
 afterAll(() => {
   vi.useRealTimers();
   orgStore.id = null;
+});
+
+describe("Sitzungs-Routen: Origin, Groesse, Rate-Limit", () => {
+  const origin = (o: string, extra: Record<string, string> = {}) => ({ ...json, origin: o, host: "app.example.test", ...extra });
+  const body = { recurringLineId: "x", quantityMilli: 1000 };
+
+  it("fremder Origin und Sec-Fetch-Site cross-site -> 403 (POST und DELETE), nichts geschrieben", async () => {
+    const before = await dbInternal.recurringUsage.count({ where: { recurringInvoiceId: recurringId } });
+    expect((await post(recurringId, { ...body, recurringLineId: usageLineId }, origin("https://boese.example"))).status).toBe(403);
+    expect((await post(recurringId, { ...body, recurringLineId: usageLineId }, { ...json, "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await del(recurringId, "egal", { reason: "x" }, origin("https://boese.example"))).status).toBe(403);
+    expect(await dbInternal.recurringUsage.count({ where: { recurringInvoiceId: recurringId } })).toBe(before);
+  });
+
+  it("gleicher Origin und same-origin sowie ohne Origin/Sec-Fetch-Site (kein Browser) sind zulaessig", async () => {
+    const ok1 = await post(recurringId, { recurringLineId: usageLineId, quantityMilli: 1, usageDate: "2185-03-12", externalId: "V18F8-origin" }, origin("http://app.example.test"));
+    expect(ok1.status).toBe(201);
+    expect((await post(recurringId, { recurringLineId: usageLineId, quantityMilli: 1, usageDate: "2185-03-12", externalId: "V18F8-origin" }, { ...json, "sec-fetch-site": "same-origin" })).status).toBe(200);
+    expect((await post(recurringId, { recurringLineId: usageLineId, quantityMilli: 1, usageDate: "2185-03-12", externalId: "V18F8-origin" })).status).toBe(200);
+  });
+
+  it("zu grosser Body -> 413, Rate-Limit je Org -> 429 mit Retry-After", async () => {
+    expect((await post(recurringId, { ...body, note: "x".repeat(9000) })).status).toBe(413);
+    resetRateLimits();
+    let last = 0;
+    for (let i = 0; i < 125 && last !== 429; i++) last = (await post(recurringId, { recurringLineId: "gibt-es-nicht", quantityMilli: 1 })).status;
+    expect(last).toBe(429);
+    orgStore.id = otherOrgId; // andere Org hat eigenes Kontingent
+    expect((await post(recurringId, { recurringLineId: usageLineId, quantityMilli: 1000 })).status).toBe(404);
+    orgStore.id = orgId;
+    resetRateLimits();
+  });
 });
 
 describe("POST /api/recurring/[id]/usage", () => {
