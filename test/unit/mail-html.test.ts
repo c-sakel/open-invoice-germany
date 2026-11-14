@@ -21,6 +21,12 @@ describe("renderMailHtml", () => {
     expect(renderMailHtml("mailto:info@example.org")).toContain('href="mailto:info@example.org"');
     expect(renderMailHtml("https://example.org/a")).toContain('href="https://example.org/a"');
   });
+  it("mailto mit Query bleibt Text, reine Adresse wird verlinkt", () => {
+    const h = renderMailHtml("mailto:info@example.org?subject=Hi&body=x");
+    expect(h).not.toContain("<a ");
+    expect(h).toContain("mailto:info@example.org?subject=Hi&amp;body=x");
+    expect(renderMailHtml("mailto:info@example.org")).toContain('href="mailto:info@example.org"');
+  });
   it("kein Markdown", () => {
     const h = renderMailHtml("[Klick](https://evil.example) **fett**");
     expect(h).toContain("**fett**");

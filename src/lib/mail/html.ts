@@ -30,7 +30,8 @@ function stripUnsafe(value: string): string {
 }
 
 function isAllowedHref(href: string): boolean {
-  if (/^mailto:[^\s<>"'@]+@[^\s<>"'@]+$/i.test(href)) return true;
+  // Nur reine Adresse; ein ?-Anteil (subject=, body=, cc=) bleibt als Text stehen.
+  if (/^mailto:[^\s<>"'@?]+@[^\s<>"'@?]+$/i.test(href)) return true;
   if (!/^https:\/\//i.test(href)) return false;
   try {
     const u = new URL(href);
