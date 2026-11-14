@@ -26,6 +26,7 @@ import { serializeRecurring } from "@/api/serializers/recurring";
 import { computeLineNet } from "@/lib/pricing/line";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
+import { draftLinesFromInitial, draftLinesToPayload } from "@/lib/editor/draft";
 import { createRecurringSchema, type CreateRecurringInput } from "@/schemas";
 import { server } from "@/mcp/server";
 
@@ -153,6 +154,29 @@ describe("Abo mit Positionsbloecken", () => {
     expect(ok.lines).toHaveLength(2);
     // PUT/PATCH ohne lines bleibt gueltig.
     expect((await updateRecurringInvoice(orgId, rec.id, { title: "Ohne lines" })).lines).toHaveLength(2);
+  });
+
+  it("productId eines per API angelegten Abos bleibt im Editor-Payload erhalten", async () => {
+    const rec = await createRecurring(orgId, input({ autoFinalize: false, lines: [{ ...itemA, productId: "prod-snapshot-1" }] }));
+    expect(rec.lines[0]!.productId).toBe("prod-snapshot-1");
+    const initial = rec.lines.map((l) => ({
+      lineType: l.lineType as "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL",
+      description: l.description,
+      descriptionLong: l.descriptionLong ?? "",
+      articleNumber: l.articleNumber ?? "",
+      quantity: (l.quantityMilli / 1000).toString(),
+      unit: l.unit,
+      price: (l.unitNetPriceCents / 100).toFixed(2),
+      taxRate: l.taxRate,
+      discountPercent: (l.discountPermille / 10).toString(),
+      discountAmount: (l.discountCents / 100).toFixed(2),
+      ossCategory: l.ossCategory,
+      productId: l.productId,
+    }));
+    const payload = draftLinesToPayload(draftLinesFromInitial(initial, [19]), "REGULAR");
+    expect(payload[0]!.productId).toBe("prod-snapshot-1");
+    const updated = await updateRecurringInvoice(orgId, rec.id, { lines: payload });
+    expect(updated.lines[0]!.productId).toBe("prod-snapshot-1");
   });
 
   it("serializeRecurring: lines nur mit geladenen Zeilen", async () => {

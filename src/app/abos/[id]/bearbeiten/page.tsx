@@ -62,6 +62,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
       discountPercent: (l.discountPermille / 10).toString(),
       discountAmount: (l.discountCents / 100).toFixed(2),
       ossCategory: l.ossCategory,
+      productId: l.productId,
     })),
   };
 

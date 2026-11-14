@@ -20,6 +20,20 @@ describe("editor/draft Zeilenabbildung", () => {
     expect(draftLinesToPayload(d.lines, d.taxScheme)).toEqual(toInvoicePayload(d, false).lines);
   });
 
+  it("productId: Roundtrip initial -> Entwurf -> Payload, freie Beschreibungsaenderung loescht sie nicht", () => {
+    const initial = [{ lineType: "ITEM" as const, description: "Ware", descriptionLong: "", articleNumber: "", quantity: "1", unit: "C62", price: "10.00", taxRate: 19, discountPercent: "0", discountAmount: "0.00", productId: "prod-1" }];
+    let lines = draftLinesFromInitial(initial, [0, 7, 19]);
+    expect(lines[0]!.productId).toBe("prod-1");
+    expect(draftLinesToPayload(lines, "REGULAR")[0]!.productId).toBe("prod-1");
+    let s = emptyDraft("INVOICE", { lines });
+    s = draftReducer(s, { type: "setLine", key: s.lines[0]!.key, patch: { description: "Anders" } });
+    lines = s.lines;
+    expect(draftLinesToPayload(lines, "REGULAR")[0]!.productId).toBe("prod-1");
+    // Ohne Produktbezug kein Schluessel-Wert; Nicht-ITEM-Zeilen tragen keine productId.
+    expect(draftLinesToPayload(draftLinesFromInitial(undefined, [19]), "REGULAR")[0]!.productId).toBeUndefined();
+    expect(draftLinesToPayload([{ ...lines[0]!, lineType: "HEADING" }], "REGULAR")[0]!.productId).toBeUndefined();
+  });
+
   it("KLEINUNTERNEHMER: Steuersatz 0", () => {
     const d = build();
     const lines = draftLinesToPayload(d.lines, "KLEINUNTERNEHMER");

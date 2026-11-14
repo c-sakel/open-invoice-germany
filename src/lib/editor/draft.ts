@@ -475,6 +475,8 @@ function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
     discountCents: l.lineType === "ITEM" ? centsOrZero(l.discountAmount) : 0,
     ossCategory: l.lineType === "ITEM" ? l.ossCategory : undefined,
+    // Snapshot-Bezug zum Produkt (kein Live-Lookup); Server leitet daraus die OSS-Kategorie ab.
+    productId: l.lineType === "ITEM" ? (l.productId ?? undefined) : undefined,
   };
 }
 
@@ -713,6 +715,8 @@ export interface InitialLineLike {
   discountAmount: string;
   /** Phase 16e: gespeicherte OSS-Kategorie der Position (bleibt beim Bearbeiten erhalten). */
   ossCategory?: string | null;
+  /** Gespeicherte Produktreferenz (Snapshot); bleibt beim Bearbeiten erhalten. */
+  productId?: string | null;
 }
 
 /** Shape, das `src/app/rechnungen/[id]/bearbeiten/page.tsx` aus der geladenen Rechnung baut und an `draftFromInvoice` uebergibt. */
@@ -818,7 +822,7 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
     taxRate: l.taxRate,
     discountPercent: roundTrip(l.discountPercent, toPermille, fromPermille),
     discountAmount: roundTrip(l.discountAmount, toCents, fromCents),
-    productId: null,
+    productId: l.productId ?? null,
     ossCategory: l.ossCategory ?? undefined,
   };
 }
