@@ -73,6 +73,8 @@ export interface CollectiveRunOptions {
   excludeIds?: ReadonlySet<string>;
   /** Alles ausfuehren und am Ende zurueckrollen (Fehlerisolierung): kein Beleg, kein Fortschritt, keine Nachlaeufe. */
   dryRun?: boolean;
+  /** Nur Tests: wird im Gruppenpfad (mehrere Bloecke) aufgerufen und kann dort einen Fehler ausloesen. Von keiner Route/UI erreichbar. */
+  failGroupPathForTest?: () => void;
 }
 
 class DryRunRollback extends Error {
@@ -227,6 +229,7 @@ export async function emitCollective(
     }
 
     // Mehrere Bloecke: eine Rechnung mit Ueberschrift/Zwischensumme je Abo.
+    opts.failGroupPathForTest?.();
     const first = blocks[0].rec;
     const collectiveBlocks: CollectiveBlock[] = blocks.map((b) => ({
       recurringId: b.rec.id,

@@ -69,6 +69,22 @@ export async function onRecurringFailed(orgId: string, input: { recurringId: str
   );
 }
 
+/** Sammelrechnung nicht moeglich: die Abos der Gruppe wurden einzeln abgerechnet. */
+export async function onCollectiveFallback(orgId: string, input: { recurringId: string; memberCount: number; message: string; at: Date }): Promise<void> {
+  await safeNotify(orgId, "RECURRING_FAILED", () =>
+    createNotification({
+      orgId,
+      type: "RECURRING_FAILED",
+      title: "Sammelrechnung nicht moeglich – Abos einzeln abgerechnet",
+      body: `${input.memberCount} Abos wurden einzeln abgerechnet. Grund: ${input.message}`,
+      entityType: "RECURRING",
+      entityId: input.recurringId,
+      dedupeKey: `COLLECTIVE_FALLBACK:${input.recurringId}:${input.at.toISOString().slice(0, 10)}`,
+      at: input.at,
+    }),
+  );
+}
+
 /** Eine erzeugte XRechnung/ZUGFeRD-XML besteht die EN-16931-Kernvalidierung nicht. */
 export async function onEInvoiceInvalid(orgId: string, input: { invoiceId: string; errors: string[] }): Promise<void> {
   await safeNotify(orgId, "EINVOICE_INVALID", () =>

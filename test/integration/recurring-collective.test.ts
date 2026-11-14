@@ -320,4 +320,29 @@ describe("Sammelrechnung im Lauf", () => {
     const billed = await dbInternal.recurringInvoice.count({ where: { id: { in: ids }, issuedCount: 1 } });
     expect(billed).toBe(50);
   }, 240_000);
+  it("Fehler im Gruppenpfad: jedes Abo wird einzeln abgerechnet, eine Benachrichtigung, zweiter Lauf erzeugt nichts", async () => {
+    const c = await customer();
+    const a = await abo(c, "H1", 1000);
+    const b = await abo(c, "H2", 2000);
+    const d = await abo(c, "H3", 3000);
+    const ids = [a.id, b.id, d.id];
+    const failGroupPathForTest = () => { throw new Error("Zusammenfuehrung gescheitert"); };
+    const sums = (await runDueRecurring({ now: a.nextRunDate, orgId, failGroupPathForTest })).filter((s) => ids.includes(s.recurringId));
+    expect(sums.every((s) => !s.error)).toBe(true);
+    const emitted = sums.flatMap((s) => s.emitted);
+    expect(emitted).toHaveLength(3);
+    expect(emitted.every((e) => !e.collectiveRecurringIds)).toBe(true);
+    expect(new Set(emitted.map((e) => e.invoiceId)).size).toBe(3);
+    for (const r of [a, b, d]) {
+      const after = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: r.id }, select: { issuedCount: true, nextRunDate: true } });
+      expect(after.issuedCount).toBe(1);
+      expect(after.nextRunDate.getTime()).toBeGreaterThan(r.nextRunDate.getTime());
+      expect(await dbInternal.documentRelation.count({ where: { orgId, toId: r.id, relationType: "GENERATED_BY" } })).toBe(1);
+    }
+    const notes = await dbInternal.notification.findMany({ where: { orgId, type: "RECURRING_FAILED", entityId: { in: ids } }, select: { title: true } });
+    expect(notes).toHaveLength(1);
+    expect(notes[0].title).toContain("Sammelrechnung nicht moeglich");
+    const again = (await runDueRecurring({ now: a.nextRunDate, orgId, failGroupPathForTest })).filter((s) => ids.includes(s.recurringId));
+    expect(again.flatMap((s) => s.emitted)).toHaveLength(0);
+  });
 });

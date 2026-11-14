@@ -20,12 +20,13 @@
  * Kundenvorgaben statt leer zu bleiben.
  */
 import { dbInternal } from "@/lib/db";
-import { onInvoiceFinalizedOss, onRecurringFailed } from "@/domain/notifications/hooks";
+import { onCollectiveFallback, onInvoiceFinalizedOss, onRecurringFailed } from "@/domain/notifications/hooks";
 import type { MailProvider } from "@/lib/mail/provider";
 import { RecurringError, RecurringNotDueError } from "./errors";
 import { lockOrganization, lockRow } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
+import { describeError } from "@/lib/safe-error";
 import { berlinParts, berlinMidnight } from "@/lib/berlin-time";
 import {
   advanceEmptyPeriod,
@@ -152,7 +153,7 @@ export async function emitRecurringNow(recurringId: string, opts: RunOptions = {
  * diesem Lauf nicht erneut versucht (eine Benachrichtigung).
  */
 export async function runDueRecurring(
-  opts: RunOptions & { orgId?: string; maxPerAbo?: number } = {},
+  opts: RunOptions & { orgId?: string; maxPerAbo?: number; failGroupPathForTest?: () => void } = {},
 ): Promise<RecurringRunSummary[]> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "recurring-runner";
@@ -177,8 +178,11 @@ export async function runDueRecurring(
   const titles = new Map(due.map((d) => [d.id, d.title]));
   const summaries: RecurringRunSummary[] = [];
   const failed = new Set<string>();
+  // Mitglieder, die nach einem Fehler im Gruppenpfad einzeln abgerechnet wurden (in diesem Lauf nie wieder gruppiert).
+  const individual = new Set<string>();
   for (const rec of due) {
     if (failed.has(rec.id)) continue;
+    if (individual.has(rec.id) && summaries.some((s) => s.recurringId === rec.id)) continue;
     const emitted: EmittedInvoice[] = [];
     const skipped: Date[] = [];
     let deferred = false;
@@ -196,13 +200,14 @@ export async function runDueRecurring(
           if (i === 0) alreadyDone = true;
           break;
         }
-        if (cur.collectiveBilling) {
+        if (cur.collectiveBilling && !individual.has(rec.id)) {
           try {
             const res = await emitCollective(rec.id, now, actor, {
               mode: "batch",
               provider: opts.provider,
               onMembers: (ids) => { memberIds = ids; },
               excludeIds: failed,
+              failGroupPathForTest: opts.failGroupPathForTest,
             });
             if ("deferred" in res.outcome) {
               deferred = true;
@@ -217,7 +222,42 @@ export async function runDueRecurring(
             const group = memberIds;
             if (group.length < 2 || isolations >= MAX_ISOLATIONS) throw e;
             const faulty = await findFaultyMembers(group, now, actor, failed);
-            if (faulty.size === 0) throw e;
+            if (faulty.size === 0) {
+              // Ursache liegt im Gruppenpfad (Zusammenfuehrung, Kopftext, Steuersaetze o. ae.): jedes Mitglied
+              // wird einzeln abgerechnet, nie gar nicht. Ein Mitglied, das nur im Probelauf einmalig scheiterte,
+              // wird bei Bedarf im naechsten Lauf erneut versucht (nichts wird als fehlgeschlagen vermerkt).
+              const reason = describeError(e);
+              const detail = reason.message ? `${reason.name}: ${reason.message}` : reason.name;
+              await onCollectiveFallback(rec.orgId, { recurringId: rec.id, memberCount: group.length, message: detail, at: now });
+              for (const id of group) individual.add(id);
+              let ownEnded = false;
+              for (const id of group) {
+                try {
+                  const one = await emitOne(id, now, actor, opts.provider);
+                  const mine: EmittedInvoice[] = [];
+                  const mineSkipped: Date[] = [];
+                  if (isSkipped(one.result)) mineSkipped.push(one.result.periodDate);
+                  else mine.push(one.result);
+                  if (id === rec.id) {
+                    emitted.push(...mine);
+                    skipped.push(...mineSkipped);
+                    ownEnded = one.ended;
+                  } else {
+                    const title = titles.get(id) ?? (await recurringTitle(id)) ?? id;
+                    summaries.push({ recurringId: id, title, emitted: mine, skipped: mineSkipped });
+                  }
+                } catch (single) {
+                  const message = single instanceof Error ? single.message : String(single);
+                  failed.add(id);
+                  const title = titles.get(id) ?? (await recurringTitle(id)) ?? id;
+                  await onRecurringFailed(rec.orgId, { recurringId: id, title, message, at: now });
+                  if (id === rec.id) error = message;
+                  else summaries.push({ recurringId: id, title, emitted: [], skipped: [], error: message });
+                }
+              }
+              if (error || ownEnded) break;
+              continue;
+            }
             isolations += 1;
             for (const [id, message] of faulty) {
               failed.add(id);
