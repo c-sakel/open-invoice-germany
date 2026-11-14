@@ -51,3 +51,15 @@ describe("paymentMethodSchema bankIban", () => {
     expect(paymentMethodSchema.parse({ code: "UEB", name: "Überweisung" }).bankIban).toBeUndefined();
   });
 });
+
+describe("maskIban", () => {
+  it("maskiert DE-IBAN", async () => {
+    const { maskIban } = await import("@/lib/iban");
+    expect(maskIban("DE02120300000000202051")).toBe("DE02 **** 2051");
+    expect(maskIban("de02 1203 0000 0000 2020 51")).toBe("DE02 **** 2051");
+  });
+  it("maskiert kurze IBAN", async () => {
+    const { maskIban } = await import("@/lib/iban");
+    expect(maskIban("NO9386011117947")).toBe("NO93 **** 7947");
+  });
+});

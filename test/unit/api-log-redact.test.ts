@@ -15,6 +15,11 @@ describe("redactJson", () => {
       a: { b: { iban: REDACTED } }, list: [{ bic: REDACTED }, { ok: 1 }],
     });
   });
+  it("schwaerzt Karten- und Mandatsfelder (Phase 18e)", () => {
+    expect(redactJson({ cardPanTruncated: "1234", sepaMandateReference: "M1", sepaDebitIban: "DE02120300000000202051", name: "x" })).toEqual({
+      cardPanTruncated: REDACTED, sepaMandateReference: REDACTED, sepaDebitIban: REDACTED, name: "x",
+    });
+  });
   it("schwaerzt den Import-Body-Schluessel csv (Phase 18b)", () => {
     expect(redactJson({ csv: "Name;Straße\r\nGeheim AG;Weg 1", dryRun: true })).toEqual({ csv: REDACTED, dryRun: true });
   });

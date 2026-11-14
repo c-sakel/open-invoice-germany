@@ -8,6 +8,8 @@ import { z } from "zod";
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { isValidIban, normalizeIban } from "@/lib/iban";
+import { isValidCreditorId, isValidMandateReference, normalizeCreditorId } from "@/lib/sepa";
+import { CARD_NETWORK_PATTERN, truncatePanInput } from "@/lib/payment-card";
 import { parseRateMicros } from "@/domain/fx/decimal";
 import { DOC_LANGUAGES } from "@/lib/i18n/doc";
 import { OssCategorySchema } from "./oss";
@@ -44,6 +46,74 @@ const ibanInput = z
   .optional()
   .transform((s) => (s ? normalizeIban(s) : s))
   .refine((s) => !s || isValidIban(s), "Ungültige IBAN");
+
+/** Glaeubiger-ID (BT-90): normalisiert, Pruefziffer. Leer bleibt erlaubt. */
+export const creditorIdInput = z
+  .string()
+  .optional()
+  .transform((s) => (s ? normalizeCreditorId(s) : s))
+  .refine((s) => !s || isValidCreditorId(s), "Ungültige Gläubiger-ID (Format oder Prüfziffer).");
+
+/** Lastschriftmandat am Kunden (Phase 18e). */
+export const customerDirectDebitFields = {
+  sepaMandateReference: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || isValidMandateReference(v), "Ungültige Mandatsreferenz (max. 35 Zeichen, A–Z a–z 0–9 + ? / - : ( ) . , ').")
+    .nullable()
+    .optional(),
+  sepaMandateSignedAt: z.coerce.date().nullable().optional(),
+  sepaDebitIban: ibanInput.nullable().optional(),
+  sepaDebitAccountName: z.string().trim().max(70).nullable().optional(),
+};
+
+/** Paarpruefung Mandat: irgendein Feld gesetzt -> Mandatsreferenz UND IBAN Pflicht. */
+export function customerDirectDebitProblems(v: {
+  sepaMandateReference?: string | null;
+  sepaDebitIban?: string | null;
+  sepaMandateSignedAt?: Date | null;
+  sepaDebitAccountName?: string | null;
+}): { path: string; message: string }[] {
+  const ref = v.sepaMandateReference?.trim();
+  const iban = v.sepaDebitIban?.trim();
+  const any = Boolean(ref || iban || v.sepaMandateSignedAt || v.sepaDebitAccountName?.trim());
+  if (!any) return [];
+  const out: { path: string; message: string }[] = [];
+  if (!ref) out.push({ path: "sepaMandateReference", message: "Zum Lastschriftmandat gehört eine Mandatsreferenz." });
+  if (!iban) out.push({ path: "sepaDebitIban", message: "Zum Lastschriftmandat gehört die IBAN des belasteten Kontos." });
+  return out;
+}
+
+/** Kartennummer-Eingabe: leer -> null, sonst nur die letzten 4 Ziffern; Meldungen ohne Eingabewert. */
+export const cardPanInputSchema = z.string().transform((raw, ctx) => {
+  if (raw.trim() === "") return null;
+  const r = truncatePanInput(raw);
+  if (r.ok) return r.last4;
+  const message =
+    r.reason === "zu-lang"
+      ? "Bitte nie die vollständige Kartennummer erfassen – nur die letzten 4 Ziffern."
+      : r.reason === "zu-kurz"
+        ? "Bitte mindestens die letzten 4 Ziffern der Kartennummer angeben."
+        : "Die Kartennummer darf nur Ziffern (und Platzhalter wie *) enthalten.";
+  ctx.addIssue({ code: "custom", message });
+  return z.NEVER;
+});
+
+export const invoiceCardFields = {
+  cardPanTruncated: cardPanInputSchema.nullable().optional(),
+  cardNetwork: z.string().trim().regex(CARD_NETWORK_PATTERN, "Ungültiges Kartennetz.").nullable().optional(),
+  cardHolderName: z.string().trim().max(70).nullable().optional(),
+};
+
+/** Lastschrift-Snapshot am Beleg (BG-19/BT-89..91); mandateSignedAt als YYYY-MM-DD. */
+export const directDebitSnapshotSchema = z.object({
+  creditorId: z.string(),
+  mandateReference: z.string(),
+  mandateSignedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  debtorIban: z.string(),
+  debtorAccountName: z.string().nullable(),
+});
+export type DirectDebitSnapshot = z.infer<typeof directDebitSnapshotSchema>;
 
 // ── Enumerationen ────────────────────────────────────────────────────────
 export const TaxScheme = z.enum([
@@ -227,6 +297,8 @@ export const organizationFieldsSchema = z.object({
   iban: ibanInput,
   bic: z.string().optional(),
   bankName: z.string().optional(),
+  // Phase 18e (BT-90): SEPA-Glaeubiger-ID.
+  sepaCreditorId: creditorIdInput,
   // Fix (Kontoinhaber): leer = Firmenname (legalName) als Fallback in GiroCode/Fusszeile/
   // E-Rechnung (BT-85 PayeeFinancialAccount/Name), siehe mapper.ts/footer.ts.
   accountHolder: z.string().trim().max(120).nullable().optional(),
@@ -271,6 +343,7 @@ export const customerFieldsSchema = z.object({
   notes: z.string().optional(),
   // Phase 16d: bevorzugter Versandkanal fuer Mahnungen (Stufe "CUSTOMER" folgt diesem Wert); ohne Angabe unveraendert.
   deliveryChannel: z.enum(["EMAIL", "POST", "EMAIL_AND_POST"]).optional(),
+  ...customerDirectDebitFields,
 });
 /** Paarpruefung Peppol-ID/Schema (Phase 17a); fuer create und gemergten PATCH-Zustand. */
 export function customerEndpointProblems(v: { peppolId?: string | null; peppolScheme?: string | null }): { path: "peppolId" | "peppolScheme"; message: string }[] {
@@ -282,6 +355,7 @@ export function customerEndpointProblems(v: { peppolId?: string | null; peppolSc
 }
 export const customerSchema = customerFieldsSchema.superRefine((v, ctx) => {
   for (const p of customerEndpointProblems(v)) ctx.addIssue({ code: "custom", path: [p.path], message: p.message });
+  for (const p of customerDirectDebitProblems(v)) ctx.addIssue({ code: "custom", path: [p.path], message: p.message });
 });
 export type CustomerInput = z.infer<typeof customerSchema>;
 
@@ -476,6 +550,8 @@ const invoiceHeaderFields = {
   fxOverrideRate: rateDecimalSchema.nullable().optional(),
   ...documentAdjustmentFields,
   ...skontoFields,
+  // Phase 18e: Kartenzahlung (BG-18), nur gekuerzte Nummer.
+  ...invoiceCardFields,
 };
 
 export const createInvoiceSchema = z

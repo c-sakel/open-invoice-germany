@@ -26,3 +26,10 @@ export function isValidIban(iban: string): boolean {
   }
   return remainder === 1;
 }
+
+/** Maskierte Anzeige: Laenderkennung+Pruefziffern, Sternchen, letzte 4 ("DE02 **** 2051"). */
+export function maskIban(iban: string): string {
+  const n = normalizeIban(iban);
+  if (n.length < 8) return "****";
+  return `${n.slice(0, 4)} **** ${n.slice(-4)}`;
+}
