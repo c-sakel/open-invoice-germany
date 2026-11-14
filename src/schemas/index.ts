@@ -791,6 +791,36 @@ export const recordPaymentSchema = z.object({
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
+// Phase 18d: Zahlung beim atomaren Anlegen + Festschreiben. Ohne Betrag: offener Betrag nach dem
+// Festschreiben (volle Zahlung). Kein Skonto-Abzug (isSkonto/applySkonto werden in der Domain fest gesetzt).
+export const atomicPaymentSchema = recordPaymentSchema
+  .pick({ paidAt: true, method: true, reference: true, note: true })
+  .extend({ amountCents: z.number().int().positive().optional() });
+export type AtomicPaymentInput = z.infer<typeof atomicPaymentSchema>;
+
+function refinePaymentNeedsFinalize(v: { finalize: boolean; payment?: unknown }, ctx: z.RefinementCtx): void {
+  if (v.payment && !v.finalize) {
+    ctx.addIssue({ code: "custom", path: ["payment"], message: "payment nur zusammen mit finalize: true." });
+  }
+}
+
+export const invoiceCompleteExtrasSchema = z
+  .object({ finalize: z.boolean().default(false), payment: atomicPaymentSchema.optional() })
+  .superRefine(refinePaymentNeedsFinalize);
+
+/** Body von POST /api/v1/Invoice (Route + OpenAPI); `createInvoiceSchema` bleibt unveraendert. */
+export const createInvoiceRequestSchema = z
+  .object({
+    ...invoiceHeaderFields,
+    lines: z.array(invoiceLineDerivableSchema).min(1),
+    finalize: z.boolean().default(false),
+    payment: atomicPaymentSchema.optional(),
+  })
+  .superRefine(refineSkontoTargets)
+  .superRefine(refinePaymentNeedsFinalize)
+  .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
+export type CreateInvoiceRequestInput = z.infer<typeof createInvoiceRequestSchema>;
+
 // Query von GET /api/invoices/[id]/skonto-check (Phase 4a) — reine Vorschau ohne Schreiben.
 export const skontoCheckQuerySchema = z.object({
   amountCents: z.coerce.number().int().positive(),

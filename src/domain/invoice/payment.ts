@@ -58,206 +58,222 @@ async function resolvePaymentMethodId(tx: Prisma.TransactionClient, orgId: strin
   return method.id;
 }
 
+export interface RecordPaymentOptions {
+  actor?: string;
+  now?: Date;
+  orgId?: string;
+  createdBy?: PaymentCreatedBy;
+}
+
 export async function recordPayment(
   invoiceId: string,
   input: RecordPaymentInput,
-  opts: { actor?: string; now?: Date; orgId?: string; createdBy?: PaymentCreatedBy } = {},
+  opts: RecordPaymentOptions = {},
+): Promise<RecordPaymentResult> {
+  return dbInternal.$transaction((tx) => recordPaymentWithinTx(tx, invoiceId, input, opts));
+}
+
+/** Rumpf von `recordPayment` in einer vom Aufrufer gehaltenen Transaktion (Phase 18d:
+ *  atomares Anlegen + Festschreiben + Zahlung, src/domain/invoice/create-complete.ts). */
+export async function recordPaymentWithinTx(
+  tx: Prisma.TransactionClient,
+  invoiceId: string,
+  input: RecordPaymentInput,
+  opts: RecordPaymentOptions = {},
 ): Promise<RecordPaymentResult> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
   const createdBy = opts.createdBy ?? "user";
 
-  return dbInternal.$transaction(async (tx) => {
-    // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
-    // Ohne opts.orgId (interne Aufrufer) wird die Org der Rechnung zuerst ungesperrt ermittelt.
-    const lockOrgId = opts.orgId ?? (await tx.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true } }))?.orgId;
-    if (!lockOrgId) throw new NotFoundError("Rechnung nicht gefunden.");
-    await lockRow(tx, "Invoice", invoiceId, lockOrgId);
-    const inv = await tx.invoice.findUnique({
-      where: { id: invoiceId },
-      select: {
-        id: true, status: true, type: true, orgId: true, number: true,
-        issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true,
-        skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
-      },
-    });
-    // Fix-Runde (Koordinator-Ruling a, Task 3): eine voellig unbekannte invoiceId ist
-    // "nicht gefunden" (404), kein Zustandskonflikt (409) — vorher PaymentError.
-    if (!inv) throw new NotFoundError("Rechnung nicht gefunden.");
-    // Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): recordPayment pruefte bisher NICHT,
-    // dass invoiceId zur aufrufenden Organisation gehoert — nur wirksam, wenn der
-    // Aufrufer opts.orgId mitgibt (Session-Routen/MCP-Tools, die bereits per getActiveOrg()
-    // scopen, geben es ebenfalls mit; ein fehlendes opts.orgId aendert das bisherige
-    // Verhalten NICHT, um interne Aufrufer ohne Organisationskontext nicht zu brechen).
-    if (opts.orgId && inv.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
-    if (inv.status === "DRAFT") throw new PaymentError("Zahlung erst nach dem Festschreiben erfassbar.");
-    if (inv.status === "CANCELLED") throw new PaymentError("Die Rechnung ist storniert.");
-    if (inv.type === "CREDIT_NOTE") throw new PaymentError("Zahlungen werden nur auf Rechnungen erfasst, nicht auf Gutschriften.");
+  // Zeilensperre (17b) schliesst das Fenster unter Postgres (SQLite: No-op).
+  // Ohne opts.orgId (interne Aufrufer) wird die Org der Rechnung zuerst ungesperrt ermittelt.
+  const lockOrgId = opts.orgId ?? (await tx.invoice.findUnique({ where: { id: invoiceId }, select: { orgId: true } }))?.orgId;
+  if (!lockOrgId) throw new NotFoundError("Rechnung nicht gefunden.");
+  await lockRow(tx, "Invoice", invoiceId, lockOrgId);
+  const inv = await tx.invoice.findUnique({
+    where: { id: invoiceId },
+    select: {
+      id: true, status: true, type: true, orgId: true, number: true,
+      issueDate: true, grossTotalCents: true, paidAmountCents: true, payableCents: true,
+      skonto1Permille: true, skonto1Days: true, skonto2Permille: true, skonto2Days: true,
+    },
+  });
+  // Fix-Runde (Koordinator-Ruling a, Task 3): eine voellig unbekannte invoiceId ist
+  // "nicht gefunden" (404), kein Zustandskonflikt (409) — vorher PaymentError.
+  if (!inv) throw new NotFoundError("Rechnung nicht gefunden.");
+  // Fix-Runde 1 (Koordinator-Ruling b, 2026-09-04): recordPayment pruefte bisher NICHT,
+  // dass invoiceId zur aufrufenden Organisation gehoert — nur wirksam, wenn der
+  // Aufrufer opts.orgId mitgibt (Session-Routen/MCP-Tools, die bereits per getActiveOrg()
+  // scopen, geben es ebenfalls mit; ein fehlendes opts.orgId aendert das bisherige
+  // Verhalten NICHT, um interne Aufrufer ohne Organisationskontext nicht zu brechen).
+  if (opts.orgId && inv.orgId !== opts.orgId) throw new NotFoundError("Rechnung nicht gefunden.");
+  if (inv.status === "DRAFT") throw new PaymentError("Zahlung erst nach dem Festschreiben erfassbar.");
+  if (inv.status === "CANCELLED") throw new PaymentError("Die Rechnung ist storniert.");
+  if (inv.type === "CREDIT_NOTE") throw new PaymentError("Zahlungen werden nur auf Rechnungen erfasst, nicht auf Gutschriften.");
 
-    await resolvePaymentMethodId(tx, inv.orgId, input.method);
+  await resolvePaymentMethodId(tx, inv.orgId, input.method);
 
-    const paidAt = input.paidAt ?? now;
-    // Phase 5: bei einer Schlussrechnung (type FINAL) ist payableCents gesetzt
-    // (grossTotalCents - prepaidCents) und ist die Bemessungsgrundlage fuer Zahlung/
-    // PAID-Grenze/Skonto — sonst COALESCE auf grossTotalCents (src/domain/invoice/amounts.ts).
-    const baseCents = payableBaseCents(inv);
-    const openBeforeCents = baseCents - inv.paidAmountCents;
+  const paidAt = input.paidAt ?? now;
+  // Phase 5: bei einer Schlussrechnung (type FINAL) ist payableCents gesetzt
+  // (grossTotalCents - prepaidCents) und ist die Bemessungsgrundlage fuer Zahlung/
+  // PAID-Grenze/Skonto — sonst COALESCE auf grossTotalCents (src/domain/invoice/amounts.ts).
+  const baseCents = payableBaseCents(inv);
+  const openBeforeCents = baseCents - inv.paidAmountCents;
 
-    // Ueberzahlung verhindern (Fix-Runde 1, Low-Befund): eine bereits vollstaendig
-    // bezahlte Rechnung (offener Rest <= 0) nimmt keine weitere Zahlung mehr an, und eine
-    // einzelne Zahlung darf den noch offenen Rest nicht uebersteigen — es entsteht kein
-    // Ueberzahlungs-Datensatz.
-    if (openBeforeCents <= 0) {
-      throw new PaymentError("Rechnung ist bereits vollstaendig bezahlt");
-    }
-    if (input.amountCents > openBeforeCents) {
-      throw new PaymentError(
-        `Zahlung (${input.amountCents} Cent) uebersteigt den offenen Betrag (${openBeforeCents} Cent).`,
-      );
-    }
+  // Ueberzahlung verhindern (Fix-Runde 1, Low-Befund): eine bereits vollstaendig
+  // bezahlte Rechnung (offener Rest <= 0) nimmt keine weitere Zahlung mehr an, und eine
+  // einzelne Zahlung darf den noch offenen Rest nicht uebersteigen — es entsteht kein
+  // Ueberzahlungs-Datensatz.
+  if (openBeforeCents <= 0) {
+    throw new PaymentError("Rechnung ist bereits vollstaendig bezahlt");
+  }
+  if (input.amountCents > openBeforeCents) {
+    throw new PaymentError(
+      `Zahlung (${input.amountCents} Cent) uebersteigt den offenen Betrag (${openBeforeCents} Cent).`,
+    );
+  }
 
-    const payment = await tx.payment.create({
-      data: {
-        invoiceId,
-        amountCents: input.amountCents,
-        paidAt,
-        method: input.method,
-        reference: input.reference ?? null,
-        isSkonto: input.isSkonto,
-        // Phase 8b (§42): freie Notiz zur Zahlung.
-        note: input.note ?? null,
-        createdBy,
-      },
-    });
+  const payment = await tx.payment.create({
+    data: {
+      invoiceId,
+      amountCents: input.amountCents,
+      paidAt,
+      method: input.method,
+      reference: input.reference ?? null,
+      isSkonto: input.isSkonto,
+      // Phase 8b (§42): freie Notiz zur Zahlung.
+      note: input.note ?? null,
+      createdBy,
+    },
+  });
 
-    const newPaid = await incrementPaidAmount(tx, invoiceId, baseCents, input.amountCents);
-    if (newPaid === null) throw new PaymentError("Zahlung übersteigt den offenen Betrag (Rechnung wurde parallel geändert).");
-    const status = newPaid >= baseCents ? "PAID" : "PARTIALLY_PAID";
-    let updated = await tx.invoice.update({
-      where: { id: invoiceId },
-      data: { status },
-    });
+  const newPaid = await incrementPaidAmount(tx, invoiceId, baseCents, input.amountCents);
+  if (newPaid === null) throw new PaymentError("Zahlung übersteigt den offenen Betrag (Rechnung wurde parallel geändert).");
+  const status = newPaid >= baseCents ? "PAID" : "PARTIALLY_PAID";
+  let updated = await tx.invoice.update({
+    where: { id: invoiceId },
+    data: { status },
+  });
 
-    await appendChangeLog(tx, {
-      orgId: inv.orgId,
-      entity: "INVOICE",
-      entityId: invoiceId,
-      action: "PAYMENT",
-      actor,
-      at: now,
-      diff: { paymentCents: input.amountCents, paidAmountCents: newPaid, status },
-    });
-    await logActivity(tx, {
-      orgId: inv.orgId,
-      entityType: "INVOICE",
-      entityId: invoiceId,
-      type: "PAYMENT_RECORDED",
-      actor,
-      at: now,
-      data: { paymentCents: input.amountCents, status },
-    });
+  await appendChangeLog(tx, {
+    orgId: inv.orgId,
+    entity: "INVOICE",
+    entityId: invoiceId,
+    action: "PAYMENT",
+    actor,
+    at: now,
+    diff: { paymentCents: input.amountCents, paidAmountCents: newPaid, status },
+  });
+  await logActivity(tx, {
+    orgId: inv.orgId,
+    entityType: "INVOICE",
+    entityId: invoiceId,
+    type: "PAYMENT_RECORDED",
+    actor,
+    at: now,
+    data: { paymentCents: input.amountCents, status },
+  });
 
-    // Webhook-Outbox (Phase 10, Task 5, task-5-facts.md "payment.recorded, invoice.paid
-    // bei Vollzahlung"): payment.recorded IMMER; invoice.paid zusaetzlich, wenn diese
-    // Zahlung die Rechnung vollstaendig ausgleicht (kein Skontoabzug noetig).
+  // Webhook-Outbox (Phase 10, Task 5, task-5-facts.md "payment.recorded, invoice.paid
+  // bei Vollzahlung"): payment.recorded IMMER; invoice.paid zusaetzlich, wenn diese
+  // Zahlung die Rechnung vollstaendig ausgleicht (kein Skontoabzug noetig).
+  await emitEvent(tx, {
+    orgId: inv.orgId,
+    type: "payment.recorded",
+    objectName: "Payment",
+    objectId: payment.id,
+    data: serializePayment(payment),
+    now,
+  });
+  if (status === "PAID") {
     await emitEvent(tx, {
       orgId: inv.orgId,
-      type: "payment.recorded",
-      objectName: "Payment",
-      objectId: payment.id,
-      data: serializePayment(payment),
+      type: "invoice.paid",
+      objectName: "Invoice",
+      objectId: invoiceId,
+      data: serializeInvoice(updated, new Set()),
       now,
     });
-    if (status === "PAID") {
-      await emitEvent(tx, {
-        orgId: inv.orgId,
-        type: "invoice.paid",
-        objectName: "Invoice",
-        objectId: invoiceId,
-        data: serializeInvoice(updated, new Set()),
-        now,
-      });
-    }
+  }
 
-    // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —
-    // ein exakt/vollstaendig bezahlter Betrag hat keinen Skontoabzug mehr zu buchen.
-    const result: RecordPaymentResult = { payment: updated, recorded: payment };
-    const restCents = baseCents - newPaid;
+  // Skonto-Erkennung: greift nur, solange nach dieser Zahlung noch ein Rest offen ist —
+  // ein exakt/vollstaendig bezahlter Betrag hat keinen Skontoabzug mehr zu buchen.
+  const result: RecordPaymentResult = { payment: updated, recorded: payment };
+  const restCents = baseCents - newPaid;
 
-    if (restCents > 0) {
-      const terms = skontoTerms({
-        issueDate: inv.issueDate,
-        grossTotalCents: baseCents,
-        skonto1Permille: inv.skonto1Permille,
-        skonto1Days: inv.skonto1Days,
-        skonto2Permille: inv.skonto2Permille,
-        skonto2Days: inv.skonto2Days,
-      });
-      const match = detectSkonto(terms, paidAt, input.amountCents, openBeforeCents);
+  if (restCents > 0) {
+    const terms = skontoTerms({
+      issueDate: inv.issueDate,
+      grossTotalCents: baseCents,
+      skonto1Permille: inv.skonto1Permille,
+      skonto1Days: inv.skonto1Days,
+      skonto2Permille: inv.skonto2Permille,
+      skonto2Days: inv.skonto2Days,
+    });
+    const match = detectSkonto(terms, paidAt, input.amountCents, openBeforeCents);
 
-      if (match) {
-        result.skontoSuggestion = { ...match, restCents };
+    if (match) {
+      result.skontoSuggestion = { ...match, restCents };
 
-        if (input.applySkonto) {
-          // Existenzpruefung/Selbstheilung des Systemcodes SKONTO, bevor die Zahlung mit
-          // method="SKONTO" gebucht wird (gleiches Muster wie fuer die Primaerzahlung).
-          await resolvePaymentMethodId(tx, inv.orgId, "SKONTO");
+      if (input.applySkonto) {
+        // Existenzpruefung/Selbstheilung des Systemcodes SKONTO, bevor die Zahlung mit
+        // method="SKONTO" gebucht wird (gleiches Muster wie fuer die Primaerzahlung).
+        await resolvePaymentMethodId(tx, inv.orgId, "SKONTO");
 
-          const skontoPayment = await tx.payment.create({
-            data: {
-              invoiceId,
-              amountCents: restCents,
-              paidAt,
-              method: "SKONTO",
-              isSkonto: true,
-              skontoForPaymentId: payment.id,
-              createdBy,
-            },
-          });
+        const skontoPayment = await tx.payment.create({
+          data: {
+            invoiceId,
+            amountCents: restCents,
+            paidAt,
+            method: "SKONTO",
+            isSkonto: true,
+            skontoForPaymentId: payment.id,
+            createdBy,
+          },
+        });
 
-          const paidAfterSkonto = await incrementPaidAmount(tx, invoiceId, baseCents, restCents);
-          if (paidAfterSkonto === null) throw new PaymentError("Skontobuchung übersteigt den offenen Betrag (Rechnung wurde parallel geändert).");
-          updated = await tx.invoice.update({
-            where: { id: invoiceId },
-            data: { status: "PAID" },
-          });
+        const paidAfterSkonto = await incrementPaidAmount(tx, invoiceId, baseCents, restCents);
+        if (paidAfterSkonto === null) throw new PaymentError("Skontobuchung übersteigt den offenen Betrag (Rechnung wurde parallel geändert).");
+        updated = await tx.invoice.update({
+          where: { id: invoiceId },
+          data: { status: "PAID" },
+        });
 
-          await appendChangeLog(tx, {
-            orgId: inv.orgId,
-            entity: "INVOICE",
-            entityId: invoiceId,
-            action: "SKONTO",
-            actor,
-            at: now,
-            diff: { skontoCents: restCents, skontoForPaymentId: payment.id, paidAmountCents: baseCents, status: "PAID" },
-          });
+        await appendChangeLog(tx, {
+          orgId: inv.orgId,
+          entity: "INVOICE",
+          entityId: invoiceId,
+          action: "SKONTO",
+          actor,
+          at: now,
+          diff: { skontoCents: restCents, skontoForPaymentId: payment.id, paidAmountCents: baseCents, status: "PAID" },
+        });
 
-          // Webhook-Outbox: die Skonto-Buchung ist selbst eine Zahlung (payment.recorded)
-          // und schliesst die Rechnung ab (invoice.paid) — derselbe Vertrag wie beim
-          // primaeren Zweig oben, nur ueber die zweite Zahlung ausgeloest.
-          await emitEvent(tx, {
-            orgId: inv.orgId,
-            type: "payment.recorded",
-            objectName: "Payment",
-            objectId: skontoPayment.id,
-            data: serializePayment(skontoPayment),
-            now,
-          });
-          await emitEvent(tx, {
-            orgId: inv.orgId,
-            type: "invoice.paid",
-            objectName: "Invoice",
-            objectId: invoiceId,
-            data: serializeInvoice(updated, new Set()),
-            now,
-          });
+        // Webhook-Outbox: die Skonto-Buchung ist selbst eine Zahlung (payment.recorded)
+        // und schliesst die Rechnung ab (invoice.paid) — derselbe Vertrag wie beim
+        // primaeren Zweig oben, nur ueber die zweite Zahlung ausgeloest.
+        await emitEvent(tx, {
+          orgId: inv.orgId,
+          type: "payment.recorded",
+          objectName: "Payment",
+          objectId: skontoPayment.id,
+          data: serializePayment(skontoPayment),
+          now,
+        });
+        await emitEvent(tx, {
+          orgId: inv.orgId,
+          type: "invoice.paid",
+          objectName: "Invoice",
+          objectId: invoiceId,
+          data: serializeInvoice(updated, new Set()),
+          now,
+        });
 
-          result.payment = updated;
-          result.skontoPayment = skontoPayment;
-        }
+        result.payment = updated;
+        result.skontoPayment = skontoPayment;
       }
     }
+  }
 
-    return result;
-  });
+  return result;
 }
