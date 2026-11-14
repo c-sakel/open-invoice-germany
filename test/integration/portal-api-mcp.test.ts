@@ -50,6 +50,17 @@ function req(url: string, token: string, method = "GET", body?: unknown, rawBody
   if (body !== undefined || rawBody !== undefined) headers.set("content-type", "application/json");
   return new Request(url, { method, headers, body: rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined) });
 }
+/** Sammelt rekursiv alle Objekt-Schluessel (nicht die Werte, damit zufaellige Ids nie treffen). */
+function collectKeys(v: unknown, out: Set<string> = new Set()): Set<string> {
+  if (Array.isArray(v)) for (const e of v) collectKeys(e, out);
+  else if (v && typeof v === "object") {
+    for (const [k, val] of Object.entries(v)) {
+      out.add(k);
+      collectKeys(val, out);
+    }
+  }
+  return out;
+}
 const ctx1 = (id: string) => ({ params: Promise.resolve({ id }) });
 const LINK = (id: string) => `${BASE}/api/v1/Contact/${id}/portal-link`;
 
@@ -91,9 +102,10 @@ describe("REST portal-link", () => {
     expect(created.link.active).toBe(true);
 
     const st = await linkGet(req(LINK(customerId), readToken), ctx1(customerId));
-    const text = JSON.stringify(await st.json());
-    expect(text).not.toContain(created.url.split("/portal/")[1]);
-    expect(text).not.toMatch(/url|tokenHash|tokenEnc/);
+    const stBody: unknown = await st.json();
+    expect(JSON.stringify(stBody)).not.toContain(created.url.split("/portal/")[1]);
+    const stKeys = collectKeys(stBody);
+    for (const k of ["url", "tokenHash", "tokenEnc"]) expect(stKeys.has(k)).toBe(false);
 
     const rev = await revealPost(req(`${LINK(customerId)}/reveal`, writeToken, "POST"), ctx1(customerId));
     expect(rev.status).toBe(200);
@@ -135,6 +147,9 @@ describe("REST portal-link", () => {
     const mcp = await callTool("create_portal_link", { customer: customerId });
     expect(mcp.isError).toBe(true);
     expect(mcp.content[0]!.text).toContain("NO_BASE_URL");
+    const mrev = await callTool("reveal_portal_link", { customer: customerId });
+    expect(mrev.isError).toBe(true);
+    expect(mrev.content[0]!.text).toContain("NO_BASE_URL");
     // fremder Kunde bleibt 404 (kein Hinweis auf die Konfiguration)
     expect((await linkPost(req(LINK(otherCustomerId), writeToken, "POST", {}), ctx1(otherCustomerId))).status).toBe(404);
   });
@@ -181,7 +196,8 @@ describe("REST portal-events", () => {
     expect(p1.data).toHaveLength(2);
     expect(p1.total).toBe(3);
     expect(p1.nextCursor).toBeTruthy();
-    expect(JSON.stringify(p1)).not.toMatch(/ip|userAgent/i);
+    const evKeys = collectKeys(p1);
+    for (const k of ["ip", "ipAddress", "userAgent"]) expect(evKeys.has(k)).toBe(false);
     expect(p1.data[0].docId).toBe("d2");
     const p2 = await (await eventsGet(req(`${url}?limit=2&cursor=${p1.nextCursor}`, readToken), ctx1(customerId))).json();
     expect(p2.data).toHaveLength(1);
@@ -232,10 +248,18 @@ describe("MCP", () => {
     const st = await callTool("get_portal_link", { customer: customerId });
     expect(st.content[0]!.text).not.toContain(body.url.split("/portal/")[1]);
     expect(JSON.parse(st.content[0]!.text).active).toBe(true);
+    const mrev = await callTool("reveal_portal_link", { customer: customerId });
+    expect(mrev.isError).toBeUndefined();
+    expect(JSON.parse(mrev.content[0]!.text).url).toBe(body.url);
     const ev = await callTool("list_portal_events", { customer: customerId, limit: 1 });
     expect(JSON.parse(ev.content[0]!.text).data).toHaveLength(1);
     const rev = await callTool("revoke_portal_link", { customer: customerId });
     expect(JSON.parse(rev.content[0]!.text).active).toBe(false);
+    // ohne aktiven Link: Fehler wie REST 404; fremder Kunde ebenfalls
+    const none = await callTool("reveal_portal_link", { customer: customerId });
+    expect(none.isError).toBe(true);
+    expect(none.content[0]!.text).toContain("Kein aktiver Portal-Link");
+    expect((await callTool("reveal_portal_link", { customer: otherCustomerId })).isError).toBe(true);
   });
 
   it("Fehlertexte entsprechen REST: Portal aus, fremder Kunde", async () => {

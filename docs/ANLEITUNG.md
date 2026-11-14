@@ -518,7 +518,7 @@ Mit dem Kundenportal können Kunden ihre Belege selbst abrufen, ohne Konto und o
 
 ### Link erzeugen, senden, widerrufen (`Kunden → <Kunde>`, Karte „Kundenportal")
 
-- **Link erzeugen:** legt einen neuen Link an. Ein bereits aktiver Link wird dabei widerrufen (Rotation). Der Link wird nur auf Knopfdruck angezeigt und kopiert; er steht nie in Listen oder Protokollen.
+- **Link erzeugen:** legt einen neuen Link an. Ein bereits aktiver Link wird dabei widerrufen (Rotation). Der Link wird nur auf Knopfdruck angezeigt und kopiert; er steht nie in Listen oder Protokollen der Anwendung. Zugriffsprotokolle von Reverse-Proxy und CDN enthalten den Pfad samt Token; Hinweis in `docs/BETRIEB-VORLAGE.md`.
 - **Per Mail senden:** schickt den aktiven Link an die Rechnungs-E-Mail des Kunden oder an eine angegebene Adresse (höchstens 3 Mails je Kunde und Stunde). Im Versandprotokoll steht statt des Links nur „[Portal-Link]".
 - **Widerrufen:** der Link liefert sofort die Fehlerseite „nicht gefunden", ebenso nach Ablauf. Wird ein Kunde archiviert, wird sein Link automatisch widerrufen.
 - **Wer den Link kennt, sieht alle Belege dieses Kunden.** Gib ihn nur an den Kunden weiter; bei Verdacht auf Weitergabe neuen Link erzeugen.

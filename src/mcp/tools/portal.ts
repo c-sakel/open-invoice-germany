@@ -1,6 +1,6 @@
 // ── Kundenportal ─────────────────────────────────────────────────────────────────────────────
 // Dieselben Zod-Schemas und Domainfunktionen wie REST (/api/v1/Contact/{id}/portal-link, /portal-events,
-// /Settings/portal). Der Status enthaelt nie Token oder URL; die URL liefert nur `create_portal_link`.
+// /Settings/portal). Der Status enthaelt nie Token oder URL; die URL liefern `create_portal_link` und `reveal_portal_link`.
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -10,7 +10,7 @@ import { listPortalEvents } from "@/domain/portal/access";
 import { PortalError } from "@/domain/portal/errors";
 import { sendPortalLinkEmail } from "@/domain/portal/mail";
 import { MailNotConfiguredError } from "@/domain/email/settings";
-import { createPortalLink, getPortalLinkStatus, requirePortalBaseUrl, revokePortalLink } from "@/domain/portal/link";
+import { createPortalLink, getPortalLinkStatus, requirePortalBaseUrl, revealPortalUrl, revokePortalLink } from "@/domain/portal/link";
 import { loadPortalSettings, savePortalSettings } from "@/domain/portal/settings";
 import { RateLimitError } from "@/lib/rate-limit";
 import { createPortalLinkInputSchema, portalSettingsInputSchema } from "@/schemas/portal";
@@ -62,6 +62,27 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
         const c = await ctx.resolveCustomer(org.id, customer);
         const { link, url } = await createPortalLink(org.id, c.id, input, { actor: "mcp", baseUrl: requirePortalBaseUrl() });
         return ctx.ok(JSON.stringify({ link: serializePortalLink(link), url }, null, 2));
+      } catch (e) {
+        return portalFail(ctx, e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "reveal_portal_link",
+    {
+      title: "Kundenportal-Link-URL erneut abrufen",
+      description:
+        "Liefert die URL des aktiven, nicht abgelaufenen Portal-Links des Kunden, ohne ihn zu rotieren. Ohne aktiven Link Fehler (zuerst create_portal_link).",
+      inputSchema: { customer: customerRef },
+    },
+    async ({ customer }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const c = await ctx.resolveCustomer(org.id, customer);
+        const url = await revealPortalUrl(org.id, c.id, requirePortalBaseUrl());
+        if (!url) throw new NotFoundError("Kein aktiver Portal-Link vorhanden.");
+        return ctx.ok(JSON.stringify({ url }, null, 2));
       } catch (e) {
         return portalFail(ctx, e);
       }

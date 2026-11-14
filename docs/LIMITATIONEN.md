@@ -58,6 +58,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Zusatzanhänge werden nicht persistiert.** Im `EmailLog` werden nur Dateiname, Größe und SHA-256-Hash protokolliert, nicht der Dateiinhalt.
 
 ## Kundenportal
+- **Token in Zugriffsprotokollen außerhalb der Anwendung.** Reverse-Proxy und CDN sehen den Pfad `/portal/<token>` samt IP; die Anwendung selbst protokolliert ihn nie. Dort Protokollierung für die Portalpfade abschalten (siehe BETRIEB-VORLAGE).
 - **Nur Ansicht und Download.** Der Kunde kann im Portal nichts eingeben, keine Rechnung reklamieren und (noch) nicht online bezahlen; ein „Jetzt bezahlen" folgt erst mit einer Online-Zahlung.
 - **Sichtbar ist alles, was zum Kunden gehört.** Festgeschriebene Rechnungen, Gutschriften/Stornos und versendete Mahnungen erscheinen auch dann, wenn die Rechnung nie per Mail verschickt wurde. Der Link gilt als Zugangsschlüssel: wer ihn kennt, sieht alle Belege des Kunden (Rotation oder Widerruf in der Kundenkarte).
 - **Kein Versand an den Kunden ohne Mailkonfiguration.** Der Link lässt sich auch kopieren; die Mail braucht SMTP und `APP_BASE_URL`. Ohne `APP_BASE_URL` entstehen keine Links (kein Rückfall auf den Host-Header).
