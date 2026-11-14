@@ -15,7 +15,10 @@ export interface ParsedTransaction {
   amountCents: number;
   currency: string;
   direction: "CRDT" | "DBIT";
+  /** Rueckgabe/Rueckbuchung (Ruecklastschrift, RtrInf, Rueckbuchungskennzeichen): nie buchbar, nur zur Pruefung. */
   isReturn: boolean;
+  /** Eintrag mit Rueckbuchungskennzeichen (RvslInd) der Bank. */
+  isReversal: boolean;
   counterpartyName: string | null;
   counterpartyIban: string | null;
   remittance: string;
@@ -40,6 +43,8 @@ export interface ParsedCamt {
   statements: ParsedStatement[];
   entryCount: number;
   skippedCount: number;
+  /** Verworfene Umsaetze je Grund (NOT_BOOKED, OUTGOING, RETURN_OF_OUTGOING, ZERO_AMOUNT). */
+  skippedReasons: Record<string, number>;
 }
 
 const MAX_REMITTANCE = 500;
@@ -244,6 +249,16 @@ function txCode(c: z.infer<typeof bkTxCd> | undefined): string | null {
   return v ? clean(v).slice(0, 100) || null : null;
 }
 
+/** Familien-/Unterfamilien-Codes (ISO 20022) fuer Rueckgaben, Ruecklastschriften und Rueckueberweisungen. */
+const RETURN_SUBFAMILIES = new Set(["RDDT", "ARET", "RRTN", "UPDD"]);
+
+function bankCodeIsReturn(...codes: Array<z.infer<typeof bkTxCd> | undefined>): boolean {
+  return codes.some((c) => {
+    const sub = c?.Domn?.Fmly?.SubFmlyCd?.trim().toUpperCase();
+    return sub !== undefined && RETURN_SUBFAMILIES.has(sub);
+  });
+}
+
 type Stmt = z.infer<typeof stmtSchema>;
 type Entry = z.infer<typeof entrySchema>;
 type TxDtls = z.infer<typeof txDtlsSchema>;
@@ -277,32 +292,65 @@ function unitAmount(d: TxDtls | undefined, e: Entry, single: boolean): { cents: 
   return { cents: parseCamtAmount(a["#"]), currency };
 }
 
-function parseStatement(st: Stmt, counters: { entries: number; skipped: number }): ParsedStatement {
+type Counters = { entries: number; skipped: number; reasons: Record<string, number> };
+
+function skip(counters: Counters, reason: string): void {
+  counters.skipped++;
+  counters.reasons[reason] = (counters.reasons[reason] ?? 0) + 1;
+}
+
+/** Mehrere TxDtls ohne eigenen Betrag: ein Umsatz mit dem Betrag des Eintrags, Verwendungszwecke zusammengefuehrt. */
+function mergedDetails(details: TxDtls[]): TxDtls {
+  const first = details[0]!;
+  const ustrd = details.flatMap((d) => d.RmtInf?.Ustrd ?? []);
+  const strd = details.flatMap((d) => d.RmtInf?.Strd ?? []);
+  return {
+    ...first,
+    RmtInf: { ...(first.RmtInf ?? {}), Ustrd: ustrd, Strd: strd },
+    RtrInf: details.find((d) => d.RtrInf !== undefined)?.RtrInf,
+  };
+}
+
+function parseStatement(st: Stmt, counters: Counters): ParsedStatement {
   const accountIban = normIban(st.Acct?.Id?.IBAN);
   if (!accountIban) throw new CamtFormatError("Die Datei enthaelt keine gueltige Konto-IBAN.", "NO_IBAN");
   const transactions: ParsedTransaction[] = [];
   for (const e of st.Ntry ?? []) {
     counters.entries++;
     const dir = e.CdtDbtInd?.trim();
-    if (entryStatus(e) !== "BOOK" || (dir !== "CRDT" && dir !== "DBIT") || e.RvslInd?.trim().toLowerCase() === "true") {
-      counters.skipped++;
+    if (entryStatus(e) !== "BOOK" || (dir !== "CRDT" && dir !== "DBIT")) {
+      skip(counters, "NOT_BOOKED");
       continue;
     }
+    const isReversal = e.RvslInd?.trim().toLowerCase() === "true";
     const bookingDate = parseDay(e.BookgDt) ?? parseDay(e.ValDt);
     if (!bookingDate) return badDate();
     const valueDate = parseDay(e.ValDt);
-    const details = (e.NtryDtls ?? []).flatMap((n) => n.TxDtls ?? []);
+    let details = (e.NtryDtls ?? []).flatMap((n) => n.TxDtls ?? []);
+    if (details.length > 1) {
+      const withAmount = details.filter((d) => d.Amt ?? d.AmtDtls?.TxAmt?.Amt).length;
+      if (withAmount === 0) details = [mergedDetails(details)];
+      else if (withAmount < details.length) {
+        throw new CamtFormatError("Einzelbuchungen eines Eintrags sind nur teilweise mit Betrag angegeben.", "BAD_AMOUNT");
+      }
+    }
     const units: Array<TxDtls | undefined> = details.length > 0 ? details : [undefined];
     for (const d of units) {
-      const isReturn = d?.RtrInf !== undefined;
-      if ((dir === "CRDT" && isReturn) || (dir === "DBIT" && !isReturn)) {
-        counters.skipped++;
+      const hasReturnInfo = d?.RtrInf !== undefined;
+      const isReturn = isReversal || hasReturnInfo || bankCodeIsReturn(d?.BkTxCd, e.BkTxCd);
+      // Gutschrift mit Rueckgabeinfo: Rueckgabe einer eigenen Zahlung, kein Zahlungseingang.
+      if (dir === "CRDT" && isReturn && !isReversal) {
+        skip(counters, "RETURN_OF_OUTGOING");
+        continue;
+      }
+      if (dir === "DBIT" && !isReturn) {
+        skip(counters, "OUTGOING");
         continue;
       }
       const amt = unitAmount(d, e, units.length === 1);
       if (!amt) throw new CamtFormatError("Ungueltiger Betrag in der Datei.", "BAD_AMOUNT");
       if (amt.cents === 0) {
-        counters.skipped++;
+        skip(counters, "ZERO_AMOUNT");
         continue;
       }
       const cp = counterparty(d);
@@ -316,6 +364,7 @@ function parseStatement(st: Stmt, counters: { entries: number; skipped: number }
         currency: amt.currency,
         direction: dir,
         isReturn,
+        isReversal,
         counterpartyName: cp.name,
         counterpartyIban: cp.iban,
         remittance: remittanceOf(d),
@@ -369,7 +418,7 @@ export function parseCamt(xml: string): ParsedCamt {
   const stmts = container.data[childKey] ?? [];
   if (stmts.length === 0) throw new CamtFormatError("Die Datei enthaelt keinen Kontoauszug.", "MALFORMED");
 
-  const counters = { entries: 0, skipped: 0 };
+  const counters: Counters = { entries: 0, skipped: 0, reasons: {} };
   const statements = stmts.map((s) => parseStatement(s as Stmt, counters));
-  return { format, schemaVersion, statements, entryCount: counters.entries, skippedCount: counters.skipped };
+  return { format, schemaVersion, statements, entryCount: counters.entries, skippedCount: counters.skipped, skippedReasons: counters.reasons };
 }

@@ -7,10 +7,11 @@ import { normalizeIban } from "@/lib/iban";
 import { skontoTerms } from "@/lib/pricing/skonto";
 import { openAmountCents } from "@/domain/invoice/amounts";
 import { buyerSnapshotSchema } from "@/schemas";
-import { suggestMatches, type MatchContext, type MatchTransaction, type OpenInvoiceForMatch, type Suggestion } from "./match";
+import { returnHints, suggestMatches, type MatchContext, type MatchTransaction, type OpenInvoiceForMatch, type ReturnHint, type Suggestion } from "./match";
 
 export type { MatchContext, MatchTransaction, OpenInvoiceForMatch, Suggestion } from "./match";
-export { findInvoiceNumbers, normalizeRef, suggestMatches } from "./match";
+export type { ReturnHint } from "./match";
+export { findInvoiceNumbers, normalizeRef, returnHints, suggestMatches } from "./match";
 
 export const BANK_IBAN_PURPOSE = "oig-bank-iban-v1";
 const INVOICE_BLOCK = 500;
@@ -154,4 +155,32 @@ export async function suggestionsForPage(orgId: string, transactionIds: string[]
 
 export async function suggestionsFor(orgId: string, transactionId: string): Promise<Suggestion[]> {
   return (await suggestionsForPage(orgId, [transactionId])).get(transactionId) ?? [];
+}
+
+/** Hinweise fuer Rueckbuchungen (Status RETURN): betroffene bereits bezahlte Rechnung; nie ein Buchungsvorschlag. */
+export async function returnHintsForPage(orgId: string, transactionIds: string[]): Promise<Map<string, ReturnHint[]>> {
+  const out = new Map<string, ReturnHint[]>();
+  const ids = [...new Set(transactionIds)];
+  if (ids.length === 0) return out;
+  const rows = await dbInternal.bankTransaction.findMany({
+    where: { orgId, id: { in: ids.slice(0, INVOICE_BLOCK) }, status: "RETURN" },
+    select: { id: true, currency: true, remittance: true, endToEndId: true },
+  });
+  if (rows.length === 0) return out;
+  const paid: Array<{ id: string; number: string; currency: string }> = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const block = await dbInternal.invoice.findMany({
+      where: { orgId, status: { in: ["PAID", "PARTIALLY_PAID"] }, type: { not: "CREDIT_NOTE" }, number: { not: null } },
+      select: { id: true, number: true, currency: true },
+      orderBy: { id: "asc" },
+      take: INVOICE_BLOCK,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    for (const r of block) if (r.number) paid.push({ id: r.id, number: r.number, currency: r.currency });
+    if (block.length < INVOICE_BLOCK) break;
+    cursor = block[block.length - 1]!.id;
+  }
+  for (const r of rows) out.set(r.id, returnHints(r, paid));
+  return out;
 }

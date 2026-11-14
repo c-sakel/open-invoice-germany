@@ -13,14 +13,16 @@ function dayKey(d: Date): string {
 export function transactionFingerprints(accountIban: string, txs: readonly ParsedTransaction[]): string[] {
   const seen = new Map<string, number>();
   return txs.map((t) => {
-    const base = [
+    const parts = [
       accountIban,
       dayKey(t.bookingDate),
       String(t.amountCents),
       t.direction,
       t.endToEndId ?? "",
       t.remittance,
-    ].join("|");
+    ];
+    if (t.isReversal) parts.push("RVSL");
+    const base = parts.join("|");
     const k = (seen.get(base) ?? 0) + 1;
     seen.set(base, k);
     return createHash("sha256").update(`${base}|${k}`).digest("hex");

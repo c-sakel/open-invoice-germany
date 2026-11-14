@@ -30,6 +30,8 @@ export interface MatchTransaction {
   counterpartyIbanHash: string | null;
   remittance: string;
   endToEndId: string | null;
+  /** Rueckbuchung/Rueckgabe: nie ein Zahlungsvorschlag, nur Hinweis auf die betroffene Rechnung. */
+  isReturn?: boolean;
 }
 
 export interface MatchContext {
@@ -157,7 +159,7 @@ function rankKey(s: Suggestion): string {
  */
 export function suggestMatches(tx: MatchTransaction, ctx: MatchContext, max = 5): Suggestion[] {
   const txRest = tx.amountCents - tx.allocatedCents;
-  if (tx.direction !== "CRDT" || txRest <= 0 || max <= 0) return [];
+  if (tx.isReturn || tx.direction !== "CRDT" || txRest <= 0 || max <= 0) return [];
 
   const invoices = ctx.invoices
     .filter((i) => i.currency === tx.currency && i.openCents > 0)
@@ -269,4 +271,29 @@ function buildSplit(candidates: readonly Candidate[], txRest: number): Suggestio
     reasons: reasonsOf(reasons),
     restCents: 0,
   };
+}
+
+export interface PaidInvoiceForMatch {
+  id: string;
+  number: string;
+  currency: string;
+}
+
+export interface ReturnHint {
+  invoiceId: string;
+  number: string;
+}
+
+/**
+ * Hinweis fuer eine Rueckbuchung: bereits (teil-)bezahlte Rechnungen gleicher Waehrung, deren volle Nummer
+ * im Verwendungszweck steht. Es wird nie gebucht; ein Mensch entscheidet ueber die Rueckabwicklung.
+ */
+export function returnHints(tx: Pick<MatchTransaction, "remittance" | "endToEndId" | "currency">, paid: readonly PaidInvoiceForMatch[], max = 5): ReturnHint[] {
+  const sameCurrency = paid.filter((i) => i.currency === tx.currency);
+  const found = new Set(findInvoiceNumbers(`${tx.remittance} ${tx.endToEndId ?? ""}`, sameCurrency.map((i) => i.number)));
+  return sameCurrency
+    .filter((i) => found.has(i.number))
+    .sort((a, b) => (a.number < b.number ? -1 : a.number > b.number ? 1 : 0))
+    .slice(0, max)
+    .map((i) => ({ invoiceId: i.id, number: i.number }));
 }

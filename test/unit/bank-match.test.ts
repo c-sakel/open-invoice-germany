@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findInvoiceNumbers, normalizeRef, suggestMatches, type MatchContext, type MatchTransaction, type OpenInvoiceForMatch } from "@/domain/bank/match";
+import { findInvoiceNumbers, normalizeRef, returnHints, suggestMatches, type MatchContext, type MatchTransaction, type OpenInvoiceForMatch } from "@/domain/bank/match";
 import { skontoTerms } from "@/lib/pricing/skonto";
 
 const HASH = "hash-a";
@@ -154,5 +154,25 @@ describe("suggestMatches", () => {
     const invoices = ["RE-60001", "RE-60002", "RE-60003"].map((n, i) => inv(n, 11900, { dueDate: new Date(Date.UTC(2200, 5, 10 - i)) }));
     const list = suggestMatches(tx({ counterpartyName: "Muster Kundschaft" }), ctx(invoices), 2);
     expect(list.map((s) => s.allocations[0]!.number)).toEqual(["RE-60003", "RE-60002"]);
+  });
+});
+
+describe("Rueckbuchungen", () => {
+  it("liefern nie einen Zahlungsvorschlag", () => {
+    const c = ctx([inv("RE-50123", 11900)]);
+    expect(suggestMatches(tx({ isReturn: true, remittance: "RE-50123" }), c)).toEqual([]);
+    expect(suggestMatches(tx({ isReturn: true, direction: "DBIT", remittance: "RE-50123" }), c)).toEqual([]);
+  });
+
+  it("returnHints nennt nur bezahlte Rechnungen gleicher Waehrung mit voller Nummer im Text", () => {
+    const paid = [
+      { id: "a", number: "RE-50123", currency: "EUR" },
+      { id: "b", number: "RE-50124", currency: "EUR" },
+      { id: "c", number: "RE-50125", currency: "USD" },
+    ];
+    expect(returnHints({ remittance: "Ruecklastschrift RE-50123 RE-50125", endToEndId: null, currency: "EUR" }, paid)).toEqual([
+      { invoiceId: "a", number: "RE-50123" },
+    ]);
+    expect(returnHints({ remittance: "ohne Bezug", endToEndId: null, currency: "EUR" }, paid)).toEqual([]);
   });
 });

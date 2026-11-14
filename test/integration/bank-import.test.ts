@@ -177,6 +177,48 @@ describe("Kontoauszug-Import", () => {
     expect(n).toBe(1);
   });
 
+  it("Vorschau einer bereits importierten Datei nennt den Import statt zu scheitern", async () => {
+    const xml = enc(stmt053([{ date: "2200-03-22", cents: 4321, ref: "SCHON" }]));
+    const first = await importBankStatement(orgId, xml, opts);
+    const prev = await importBankStatement(orgId, xml, { ...opts, dryRun: true });
+    expect(prev.status).toBe("preview");
+    expect(prev.duplicateOf?.importId).toBe(first.importId);
+    expect(prev.importedCount).toBe(0);
+    expect(prev.warnings).toContain("NOTHING_NEW");
+  });
+
+  it("Rueckbuchung wird als RETURN gespeichert; Fremdwaehrung warnt mit NON_EUR", async () => {
+    const xml = buildCamt({
+      format: "053",
+      version: 8,
+      iban: IBAN,
+      entries: [
+        { date: "2200-03-23", direction: "DBIT", reversal: true, txs: [tx(5555, "RUECK-1", "E-RUECK")] },
+        { date: "2200-03-23", currency: "USD", txs: [tx(6666, "USD-1")] },
+      ],
+    });
+    const r = await importBankStatement(orgId, enc(xml), opts);
+    expect(r.returnCount).toBe(1);
+    expect(r.warnings).toEqual(expect.arrayContaining(["RETURNS", "NON_EUR"]));
+    const ret = await dbInternal.bankTransaction.findFirst({ where: { orgId, remittance: "RUECK-1" }, select: { status: true, amountCents: true, direction: true } });
+    expect(ret).toEqual({ status: "RETURN", amountCents: 5555, direction: "DBIT" });
+    const usd = await dbInternal.bankTransaction.findFirst({ where: { orgId, remittance: "USD-1" }, select: { status: true, currency: true } });
+    expect(usd).toEqual({ status: "OPEN", currency: "USD" });
+  });
+
+  it("parallele Importe ueberlappender Dateien -> kein Fehler ausser Duplikat, keine doppelten Umsaetze", async () => {
+    const shared = { date: "2200-03-24", cents: 3210, ref: "UEBERLAPP-X" };
+    const files = [
+      enc(stmt053([shared, { date: "2200-03-24", cents: 1, ref: "UEBERLAPP-A" }])),
+      enc(stmt053([shared, { date: "2200-03-24", cents: 2, ref: "UEBERLAPP-B" }])),
+      enc(stmt053([shared, { date: "2200-03-24", cents: 3, ref: "UEBERLAPP-C" }])),
+    ];
+    const res = await Promise.allSettled(files.map((f) => importBankStatement(orgId, f, opts)));
+    for (const r of res) expect(r.status, String((r as PromiseRejectedResult).reason)).toBe("fulfilled");
+    expect(await dbInternal.bankTransaction.count({ where: { orgId, remittance: "UEBERLAPP-X" } })).toBe(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId, remittance: { startsWith: "UEBERLAPP-" } } })).toBe(4);
+  });
+
   it("fremde Organisation darf dieselbe Datei importieren (eigene Zeilen)", async () => {
     const xml = enc(stmt053([{ date: "2200-03-20", cents: 1234, ref: "FREMD" }]));
     const mine = await importBankStatement(orgId, xml, opts);

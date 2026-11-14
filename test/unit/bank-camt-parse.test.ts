@@ -161,6 +161,69 @@ describe("CAMT-Leser", () => {
   });
 });
 
+describe("CAMT-Leser: Rueckbuchungen und Sonderfaelle", () => {
+  const one = (entry: Parameters<typeof buildCamt>[0]["entries"][number]) =>
+    parseCamt(buildCamt({ format: "053", version: 8, iban: IBAN, entries: [entry] }));
+
+  it("RvslInd=true (DBIT) wird als Rueckbuchung importiert, nicht verworfen", () => {
+    const r = one({ date: "2200-06-05", direction: "DBIT", reversal: true, txs: [{ amountCents: 11900, remittance: "RE-50001", endToEndId: "E1" }] });
+    expect(r.skippedCount).toBe(0);
+    expect(r.statements[0].transactions[0]).toMatchObject({ amountCents: 11900, direction: "DBIT", isReturn: true, isReversal: true });
+  });
+
+  it("DBIT mit RtrInf und RDDT ohne RvslInd werden als Rueckgabe erkannt", () => {
+    const a = one({ date: "2200-06-05", direction: "DBIT", txs: [{ amountCents: 500, returnReason: "AC04" }] });
+    expect(a.statements[0].transactions[0]).toMatchObject({ isReturn: true, isReversal: false, returnReason: "AC04" });
+    const b = one({ date: "2200-06-05", direction: "DBIT", bankTxCode: ["PMNT", "IDDT", "RDDT"], txs: [{ amountCents: 700, remittance: "x" }] });
+    expect(b.statements[0].transactions[0]).toMatchObject({ isReturn: true, isReversal: false, bankTxCode: "PMNT-IDDT-RDDT" });
+  });
+
+  it("zaehlt verworfene Umsaetze je Grund", () => {
+    const r = parseCamt(
+      buildCamt({
+        format: "053",
+        version: 8,
+        iban: IBAN,
+        entries: [
+          { date: "2200-06-05", direction: "DBIT", txs: [{ amountCents: 100 }] },
+          { date: "2200-06-05", status: "PDNG", txs: [{ amountCents: 100 }] },
+          { date: "2200-06-05", txs: [{ amountCents: 0 }] },
+          { date: "2200-06-05", txs: [{ amountCents: 100, returnReason: "AC04" }] },
+          { date: "2200-06-05", txs: [{ amountCents: 100 }] },
+        ],
+      }),
+    );
+    expect(r.skippedCount).toBe(4);
+    expect(r.skippedReasons).toEqual({ OUTGOING: 1, NOT_BOOKED: 1, ZERO_AMOUNT: 1, RETURN_OF_OUTGOING: 1 });
+    expect(r.statements[0].transactions).toHaveLength(1);
+  });
+
+  it("mehrere TxDtls ohne eigenen Betrag: ein Umsatz mit Eintragsbetrag und zusammengefuehrtem Verwendungszweck", () => {
+    const r = one({
+      date: "2200-06-05",
+      txs: [
+        { amountCents: 100, remittance: "RE-50001", noAmount: true },
+        { amountCents: 100, remittance: "RE-50002", noAmount: true },
+      ],
+    });
+    expect(r.statements[0].transactions).toHaveLength(1);
+    expect(r.statements[0].transactions[0]).toMatchObject({ amountCents: 200, remittance: "RE-50001 RE-50002" });
+  });
+
+  it("gemischt (nur ein Teil mit Betrag) ist ein klarer Fehler", () => {
+    expect(
+      codeOf(() => one({ date: "2200-06-05", txs: [{ amountCents: 100 }, { amountCents: 100, noAmount: true }] })),
+    ).toBe("BAD_AMOUNT");
+  });
+
+  it("RvslInd fliesst in den Fingerabdruck ein", () => {
+    const base = { date: "2200-06-05", direction: "DBIT" as const, txs: [{ amountCents: 100, remittance: "x" }] };
+    const a = one({ ...base, reversal: true }).statements[0].transactions;
+    const b = one({ ...base, reversal: false, bankTxCode: ["PMNT", "IDDT", "RDDT"] }).statements[0].transactions;
+    expect(transactionFingerprints(IBAN, a)[0]).not.toBe(transactionFingerprints(IBAN, b)[0]);
+  });
+});
+
 describe("parseCamtAmount", () => {
   it("rechnet in Cent", () => {
     expect(parseCamtAmount("0.01")).toBe(1);

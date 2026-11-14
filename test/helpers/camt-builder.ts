@@ -8,6 +8,8 @@ export interface CamtBuilderTx {
   remittance?: string;
   endToEndId?: string;
   returnReason?: string;
+  /** Einzelbuchung ohne eigenen Betrag (Betrag steht nur am Eintrag). */
+  noAmount?: boolean;
 }
 
 export interface CamtBuilderEntry {
@@ -15,6 +17,11 @@ export interface CamtBuilderEntry {
   date: string;
   direction?: "CRDT" | "DBIT";
   status?: "BOOK" | "PDNG";
+  /** Rueckbuchungskennzeichen RvslInd=true. */
+  reversal?: boolean;
+  /** Bankumsatzschluessel am Eintrag, z. B. ["PMNT", "IDDT", "RDDT"]. */
+  bankTxCode?: [string, string, string];
+  currency?: string;
   txs: CamtBuilderTx[];
 }
 
@@ -50,7 +57,7 @@ export function buildCamt(o: CamtBuilderOptions): string {
     const details = e.txs.map((x) => {
       let inner = "";
       if (x.endToEndId) inner += t("Refs", t("EndToEndId", esc(x.endToEndId)));
-      inner += t("Amt", eur(x.amountCents), ` Ccy="EUR"`);
+      if (!x.noAmount) inner += t("Amt", eur(x.amountCents), ` Ccy="${e.currency ?? "EUR"}"`);
       const party =
         (x.name ? t("Dbtr", t("Nm", esc(x.name))) : "") +
         (x.iban ? t("DbtrAcct", t("Id", t("IBAN", esc(x.iban)))) : "");
@@ -62,10 +69,14 @@ export function buildCamt(o: CamtBuilderOptions): string {
     const sts = o.version >= 8 ? t("Sts", t("Cd", status)) : t("Sts", status);
     return t(
       "Ntry",
-      t("Amt", eur(total), ` Ccy="EUR"`) +
+      t("Amt", eur(total), ` Ccy="${e.currency ?? "EUR"}"`) +
         t("CdtDbtInd", dir) +
+        (e.reversal ? t("RvslInd", "true") : "") +
         sts +
         t("BookgDt", t("Dt", e.date)) +
+        (e.bankTxCode
+          ? t("BkTxCd", t("Domn", t("Cd", e.bankTxCode[0]) + t("Fmly", t("Cd", e.bankTxCode[1]) + t("SubFmlyCd", e.bankTxCode[2]))))
+          : "") +
         t("NtryDtls", details.join("")),
     );
   });

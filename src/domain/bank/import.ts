@@ -27,7 +27,15 @@ export class BankImportDuplicateError extends Error {
   }
 }
 
-export type BankImportWarning = "UNKNOWN_ACCOUNT" | "MULTIPLE_ACCOUNTS" | "NOTHING_NEW";
+export class BankImportConflictError extends Error {
+  readonly status = 409;
+  constructor() {
+    super("Der Import kollidiert mit einem parallelen Import. Bitte erneut versuchen.");
+    this.name = "BankImportConflictError";
+  }
+}
+
+export type BankImportWarning = "UNKNOWN_ACCOUNT" | "MULTIPLE_ACCOUNTS" | "NOTHING_NEW" | "NON_EUR" | "RETURNS";
 
 export interface BankImportResult {
   status: "preview" | "imported";
@@ -40,7 +48,13 @@ export interface BankImportResult {
   importedCount: number;
   duplicateCount: number;
   skippedCount: number;
+  /** Verworfene Umsaetze je Grund. */
+  skippedReasons: Record<string, number>;
+  /** Rueckbuchungen/Rueckgaben in der Datei (nur zur Pruefung, nie buchbar). */
+  returnCount: number;
   warnings: BankImportWarning[];
+  /** Vorschau einer bereits importierten Datei. */
+  duplicateOf?: { importId: string; importedAt: Date };
 }
 
 export interface BankImportOptions {
@@ -131,6 +145,8 @@ export async function importBankStatement(
     if (accounts.length > 1) warnings.push("MULTIPLE_ACCOUNTS");
     if (accounts.some((a) => !known.has(normalizeIban(a)))) warnings.push("UNKNOWN_ACCOUNT");
     if (importedCount === 0) warnings.push("NOTHING_NEW");
+    if (planned.some((p) => p.tx.currency !== "EUR")) warnings.push("NON_EUR");
+    if (planned.some((p) => p.tx.isReturn)) warnings.push("RETURNS");
     return {
       status,
       importId,
@@ -141,6 +157,8 @@ export async function importBankStatement(
       importedCount,
       duplicateCount,
       skippedCount: parsed.skippedCount,
+      skippedReasons: parsed.skippedReasons,
+      returnCount: planned.filter((p) => p.tx.isReturn).length,
       warnings,
     };
   };
@@ -152,15 +170,21 @@ export async function importBankStatement(
     });
 
   if (opts.dryRun) {
+    const known = await knownIbans(dbInternal, orgId);
     const prior = await existingImport(dbInternal);
-    if (prior) throw new BankImportDuplicateError(prior.id, prior.createdAt);
+    if (prior) {
+      return { ...buildResult("preview", null, 0, planned.length, known), duplicateOf: { importId: prior.id, importedAt: prior.createdAt } };
+    }
     const existing = await loadExisting(dbInternal, orgId, planned.map((p) => p.fingerprint));
     const dup = planned.filter((p) => existing.has(p.fingerprint)).length;
-    return buildResult("preview", null, planned.length - dup, dup, await knownIbans(dbInternal, orgId));
+    if (planned.length - dup > MAX_STORED_TX) {
+      throw new CamtFormatError("Zu viele neue Umsaetze in einer Datei.", "TOO_MANY_ENTRIES");
+    }
+    return buildResult("preview", null, planned.length - dup, dup, known);
   }
 
-  try {
-    return await dbInternal.$transaction(async (tx) => {
+  const run = (): Promise<BankImportResult> =>
+    dbInternal.$transaction(async (tx) => {
       await lockOrganization(tx, orgId);
       const prior = await existingImport(tx);
       if (prior) throw new BankImportDuplicateError(prior.id, prior.createdAt);
@@ -241,12 +265,17 @@ export async function importBankStatement(
       });
       return { ...result, importId: created.id };
     }, TX_OPTIONS);
-  } catch (e) {
-    // Parallele Importe derselben Datei (ohne Zeilensperre, z. B. SQLite): Eindeutigkeit der Datei greift.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+
+  // Parallele Importe (ohne Zeilensperre, z. B. SQLite): Eindeutigkeit der Datei bzw. des Umsatzes greift.
+  // Dieselbe Datei -> Duplikat; ueberlappende Datei -> einmal neu, dann sind die Umsaetze Duplikate.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2002") throw e;
       const prior = await existingImport(dbInternal);
       if (prior) throw new BankImportDuplicateError(prior.id, prior.createdAt);
+      if (attempt >= 1) throw new BankImportConflictError();
     }
-    throw e;
   }
 }

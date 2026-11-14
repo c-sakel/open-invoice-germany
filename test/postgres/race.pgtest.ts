@@ -33,6 +33,8 @@ import { emitRecurringNow } from "@/domain/recurring/run";
 import { RecurringNotDueError } from "@/domain/recurring/errors";
 import { recordUsage, UsageError } from "@/domain/recurring/usage";
 import { createRecurringSchema } from "@/schemas";
+import { BankImportDuplicateError, importBankStatement } from "@/domain/bank/import";
+import { buildCamt } from "../helpers/camt-builder";
 import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
 
 const N = 5;
@@ -397,5 +399,31 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(invoices).toHaveLength(4);
     expect(new Set(invoices.map((i) => i.number)).size).toBe(4);
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Kontoauszug: parallele Importe derselben und ueberlappender Dateien -> keine doppelten Umsaetze, kein Serverfehler", async () => {
+    const s = await newScenario();
+    const iban = "DE89370400440532013000";
+    const file = (extra: string, cents: number) =>
+      new TextEncoder().encode(
+        buildCamt({
+          format: "053",
+          version: 8,
+          iban,
+          entries: [
+            { date: "2150-03-02", txs: [{ amountCents: 3210, remittance: "RACE-GEMEINSAM" }] },
+            { date: "2150-03-02", txs: [{ amountCents: cents, remittance: extra }] },
+          ],
+        }),
+      );
+    const a = file("RACE-A", 101);
+    const b = file("RACE-B", 102);
+    const opts = { actor: "race", source: "API" as const };
+    const rs = await Promise.allSettled([a, a, b, b, a].map((f) => importBankStatement(s.orgId, f, opts)));
+    for (const r of rejected(rs)) expect(r.reason, String(r.reason)).toBeInstanceOf(BankImportDuplicateError);
+    expect(fulfilled(rs).length).toBeGreaterThanOrEqual(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId: s.orgId, remittance: "RACE-GEMEINSAM" } })).toBe(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId: s.orgId, remittance: "RACE-A" } })).toBe(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId: s.orgId, remittance: "RACE-B" } })).toBe(1);
   });
 });
