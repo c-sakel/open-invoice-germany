@@ -120,7 +120,7 @@ export async function createDraftInvoiceWithinTx(
   let method: { id: string; paymentTermsDays: number | null; untdidCode: string } | null = null;
   if (paymentMethodId) {
     method = await tx.paymentMethod.findFirst({ where: { id: paymentMethodId, orgId }, select: { id: true, paymentTermsDays: true, untdidCode: true } });
-    if (!method) throw new Error("Zahlungsmethode nicht gefunden.");
+    if (!method) throw new NotFoundError("Zahlungsmethode nicht gefunden.");
   }
 
   const issueDate = input.issueDate ?? now;

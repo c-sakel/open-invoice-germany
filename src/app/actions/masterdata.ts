@@ -46,11 +46,17 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     bic: str(fd, "bic"),
     bankName: str(fd, "bankName"),
     accountHolder: str(fd, "accountHolder"),
+    sepaCreditorId: str(fd, "sepaCreditorId"),
     electronicAddress: str(fd, "electronicAddress"),
     // Schema ohne Adresse (Formular sendet immer einen Select-Wert) wird verworfen.
     electronicAddressScheme: str(fd, "electronicAddress") ? str(fd, "electronicAddressScheme") : undefined,
   });
-  if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
+  if (!parsed.success) {
+    // Gläubiger-ID: Meldung ohne Feldpraefix (Formularfeld traegt die Beschriftung selbst).
+    const first = parsed.error.issues[0];
+    if (first && first.path[0] === "sepaCreditorId") return { ok: false, error: first.message };
+    return { ok: false, error: firstError(parsed.error.issues) };
+  }
   const v = parsed.data;
   const data = {
     legalName: v.legalName,
@@ -72,6 +78,7 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     bic: v.bic ?? null,
     bankName: v.bankName ?? null,
     accountHolder: v.accountHolder ?? null,
+    sepaCreditorId: v.sepaCreditorId || null,
     electronicAddress: v.electronicAddress ?? null,
     electronicAddressScheme: v.electronicAddress ? (v.electronicAddressScheme ?? "EM") : null,
   };
@@ -119,6 +126,10 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     customerNumber: str(fd, "customerNumber"),
     notes: str(fd, "notes"),
     deliveryChannel: str(fd, "deliveryChannel"),
+    sepaMandateReference: str(fd, "sepaMandateReference"),
+    sepaMandateSignedAt: str(fd, "sepaMandateSignedAt"),
+    sepaDebitIban: str(fd, "sepaDebitIban"),
+    sepaDebitAccountName: str(fd, "sepaDebitAccountName"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
   const v = parsed.data;

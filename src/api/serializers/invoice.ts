@@ -6,6 +6,23 @@ import type { Invoice, InvoiceLine, Customer, Payment } from "@/generated/prisma
 import { payableBaseCents, openAmountCents } from "@/domain/invoice/amounts";
 import { serializePayment, paymentSchema } from "./payment";
 import { formatRate } from "@/domain/fx/decimal";
+import { maskIban } from "@/lib/iban";
+import { directDebitSnapshotSchema } from "@/schemas";
+
+/** Lastschrift-Snapshot (BG-19) fuer die Ausgabe: nur Referenz, Glaeubiger-ID und maskierte IBAN. */
+function serializeDirectDebit(json: string | null): { mandateReference: string; creditorId: string; debtorIbanMasked: string } | null {
+  if (!json) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const parsed = directDebitSnapshotSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const d = parsed.data;
+  return { mandateReference: d.mandateReference, creditorId: d.creditorId, debtorIbanMasked: maskIban(d.debtorIban) };
+}
 
 /** Kurs als Dezimalstring mit Punkt (z. B. "1.1214"), null ohne Kurs. */
 const rateString = (micros: number | null | undefined): string | null => (micros == null ? null : formatRate(micros, "en-GB"));
@@ -47,6 +64,10 @@ export function serializeInvoice(inv: InvoiceWithOptionalRelations, embed: Set<s
     skonto2Permille: inv.skonto2Permille,
     skonto2Days: inv.skonto2Days,
     paymentMethodId: inv.paymentMethodId,
+    cardPanTruncated: inv.cardPanTruncated ?? null,
+    cardNetwork: inv.cardNetwork ?? null,
+    cardHolderName: inv.cardHolderName ?? null,
+    directDebit: serializeDirectDebit(inv.directDebitSnapshotJson ?? null),
     netTotalCents: inv.netTotalCents,
     taxTotalCents: inv.taxTotalCents,
     grossTotalCents: inv.grossTotalCents,
@@ -120,6 +141,13 @@ export const invoiceSchema = z.object({
   skonto2Permille: z.number().int().nullable(),
   skonto2Days: z.number().int().nullable(),
   paymentMethodId: z.string().nullable(),
+  cardPanTruncated: z.string().nullable().describe("Nur die letzten 4 Ziffern der Karte (BT-87), nie die volle Nummer."),
+  cardNetwork: z.string().nullable().describe("Kartennetz, z. B. VISA (nur Kartenmethoden)."),
+  cardHolderName: z.string().nullable().describe("Karteninhaber (BT-88)."),
+  directDebit: z
+    .object({ mandateReference: z.string(), creditorId: z.string(), debtorIbanMasked: z.string() })
+    .nullable()
+    .describe("Lastschrift-Snapshot ab Festschreibung (BG-19); IBAN nur maskiert."),
   netTotalCents: z.number().int(),
   taxTotalCents: z.number().int(),
   grossTotalCents: z.number().int(),
