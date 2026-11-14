@@ -27,9 +27,12 @@ import type { Customer, Prisma } from "@/generated/prisma/client";
 /** defaultPaymentMethodId zeigt auf eine Zahlungsmethode einer ANDEREN Organisation
  *  oder gar nicht existent — Validierungsfehler (400 im API-Kontext), kein Serverfehler. */
 export class CustomerValidationError extends Error {
-  constructor(message: string) {
+  /** Feld, an dem die Meldung haengt (REST: Pfad der Validierungsfrage); ohne Angabe: defaultPaymentMethodId. */
+  readonly path: string | undefined;
+  constructor(message: string, path?: string) {
     super(message);
     this.name = "CustomerValidationError";
+    this.path = path;
   }
 }
 
@@ -134,9 +137,13 @@ export async function updateCustomer(orgId: string, id: string, rawInput: unknow
     };
     // Referenz UND IBAN ausdruecklich geleert = Mandat entfernt: Datum und Kontoinhaber gehen mit.
     clearMandate = "sepaMandateReference" in raw && "sepaDebitIban" in raw && !merged.sepaMandateReference?.trim() && !merged.sepaDebitIban?.trim();
-    if (!clearMandate) {
+    if (clearMandate) {
+      // Mandat entfernen und zugleich Datum/Kontoinhaber mitschicken: widerspruechlich, nicht still verwerfen.
+      if (v.sepaMandateSignedAt) throw new CustomerValidationError("Zum Entfernen des Mandats darf kein Unterschriftsdatum angegeben werden.", "sepaMandateSignedAt");
+      if (v.sepaDebitAccountName?.trim()) throw new CustomerValidationError("Zum Entfernen des Mandats darf kein Kontoinhaber angegeben werden.", "sepaDebitAccountName");
+    } else {
       const problem = customerDirectDebitProblems(merged)[0];
-      if (problem) throw new CustomerValidationError(problem.message);
+      if (problem) throw new CustomerValidationError(problem.message, problem.path);
     }
   }
 

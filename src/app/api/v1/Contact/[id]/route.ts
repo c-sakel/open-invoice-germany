@@ -22,7 +22,7 @@ export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
     const updated = await updateCustomer(ctx.orgId, ctx.params.id, ctx.body);
     return apiData(serializeContact(updated));
   } catch (e) {
-    if (e instanceof CustomerValidationError) throw new z.ZodError([{ code: "custom", path: ["defaultPaymentMethodId"], message: e.message }]);
+    if (e instanceof CustomerValidationError) throw new z.ZodError([{ code: "custom", path: [e.path ?? "defaultPaymentMethodId"], message: e.message }]);
     throw e;
   }
 }, { scope: "write" });

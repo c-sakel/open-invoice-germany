@@ -29,6 +29,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { createInvoiceSchema } from "@/schemas";
 import { saveOrganization } from "@/app/actions/masterdata";
+import { updateCustomer } from "@/domain/customer/save";
 import { server } from "@/mcp/server";
 
 import { POST as ContactCreate } from "@/app/api/v1/Contact/route";
@@ -136,6 +137,25 @@ describe("REST Contact: Lastschriftmandat", () => {
     expect(res.status).toBe(400);
     const body = await res.text();
     expect(body).not.toContain("DE89370400440532013000");
+    const stored = await dbInternal.customer.findUniqueOrThrow({ where: { id }, select: { sepaMandateReference: true } });
+    expect(stored.sepaMandateReference).toBe("MANDAT-2182-001");
+  });
+
+  it("PATCH Mandat entfernen mit Datum/Kontoinhaber -> 400 am Feld, nichts geaendert", async () => {
+    const res = await ContactUpdate(req(`http://x/api/v1/Contact/${id}`, { method: "PATCH", body: { sepaMandateReference: "", sepaDebitIban: "", sepaMandateSignedAt: "2182-02-01" } }), idCtx(id));
+    expect(res.status).toBe(400);
+    const j = await res.json();
+    expect(j.error.details.issues.some((i: { path: string[] }) => i.path.includes("sepaMandateSignedAt"))).toBe(true);
+    expect(JSON.stringify(j)).not.toContain("2182-02-01");
+    const stored = await dbInternal.customer.findUniqueOrThrow({ where: { id }, select: { sepaMandateReference: true } });
+    expect(stored.sepaMandateReference).toBe("MANDAT-2182-001");
+  });
+
+  it("Domain: Mandat entfernen mit Kontoinhaber -> CustomerValidationError mit Pfad", async () => {
+    await expect(updateCustomer(orgId, id, { sepaMandateReference: "", sepaDebitIban: "", sepaDebitAccountName: "Erika Beispiel" })).rejects.toMatchObject({
+      name: "CustomerValidationError",
+      path: "sepaDebitAccountName",
+    });
     const stored = await dbInternal.customer.findUniqueOrThrow({ where: { id }, select: { sepaMandateReference: true } });
     expect(stored.sepaMandateReference).toBe("MANDAT-2182-001");
   });
