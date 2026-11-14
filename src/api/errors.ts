@@ -40,6 +40,8 @@ import { PostalConflictError } from "@/domain/postal/errors";
 import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
+import { GrossDeviationError } from "@/domain/document/price-input";
+import { UsageError, type UsageErrorCode } from "@/domain/recurring/usage-error";
 import { describeError } from "@/lib/safe-error";
 
 /**
@@ -86,6 +88,14 @@ export class PayloadTooLargeError extends Error {
   }
 }
 
+/** Falscher Content-Type bei Routen, die einen JSON-Body selbst lesen -> 415. */
+export class UnsupportedMediaTypeError extends Error {
+  constructor(message = "Content-Type muss application/json sein.") {
+    super(message);
+    this.name = "UnsupportedMediaTypeError";
+  }
+}
+
 export type ApiErrorCode =
   | "VALIDATION"
   | "UNAUTHORIZED"
@@ -93,16 +103,21 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "PAYLOAD_TOO_LARGE"
+  | "UNSUPPORTED_MEDIA_TYPE"
   | "UNPROCESSABLE"
   | "RATE_LIMITED"
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS"
   | "EINVOICE_INVALID"
+  | "GROSS_DEVIATION"
+  | "GROSS_DEVIATION_TOO_LARGE"
+  | "GROSS_DISCOUNT_CONFLICT"
   | "INTERNAL";
 
 export interface ApiErrorBody {
   error: {
-    code: ApiErrorCode;
+    /** Bei Verbrauchsfehlern (422) der fachliche Code (z. B. NOT_USAGE_LINE, ALREADY_VOIDED). */
+    code: ApiErrorCode | UsageErrorCode;
     message: string;
     details?: unknown;
     /** Nur 401: maschinenlesbarer Grund (MISSING | UNKNOWN | REVOKED | EXPIRED). */
@@ -128,6 +143,8 @@ function statusToCode(status: number): ApiErrorCode | null {
       return "CONFLICT";
     case 413:
       return "PAYLOAD_TOO_LARGE";
+    case 415:
+      return "UNSUPPORTED_MEDIA_TYPE";
     case 422:
       return "UNPROCESSABLE";
     case 429:
@@ -169,11 +186,22 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   if (e instanceof PayloadTooLargeError) {
     return { status: 413, body: { error: { code: "PAYLOAD_TOO_LARGE", message: e.message } } };
   }
+  if (e instanceof UnsupportedMediaTypeError) {
+    return { status: 415, body: { error: { code: "UNSUPPORTED_MEDIA_TYPE", message: e.message } } };
+  }
   // Fix-Runde 1 (Koordinator-Ruling c, Task 3): muss VOR dem generischen NotFoundError-
   // Zweig stehen (unabhaengige Klasse, keine Ueberschneidung, aber Reihenfolge analog den
   // uebrigen spezifischen Vorab-Pruefungen in dieser Funktion).
   if (e instanceof EInvoiceInvalidError) {
     return { status: 409, body: { error: { code: "EINVOICE_INVALID", message: e.message, details: { issues: e.issues } } } };
+  }
+  if (e instanceof GrossDeviationError) {
+    return { status: 400, body: { error: { code: e.code, message: e.message } } };
+  }
+  // Phase 18f: Verbrauchserfassung. NOT_FOUND 404, CONFLICT 409, sonst 422 mit dem fachlichen Code.
+  if (e instanceof UsageError) {
+    const status = e.code === "NOT_FOUND" ? 404 : e.code === "CONFLICT" ? 409 : 422;
+    return { status, body: { error: { code: e.code, message: e.message } } };
   }
   if (e instanceof ValidationError) {
     return { status: 400, body: { error: { code: "VALIDATION", message: e.message } } };

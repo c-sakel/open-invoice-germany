@@ -11,13 +11,9 @@ import { loadDocumentSettings } from "@/domain/document/settings";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import type { CreateRecurringInput } from "@/schemas";
+import { RecurringError } from "@/domain/recurring/errors";
 
-export class RecurringError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RecurringError";
-  }
-}
+export { RecurringError };
 
 export async function createRecurring(orgId: string, input: CreateRecurringInput) {
   const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true, language: true } });

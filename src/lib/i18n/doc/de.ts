@@ -68,6 +68,9 @@ export const de: DocStrings = {
       giroCaption: "GiroCode",
     },
   },
+  lines: {
+    servicePeriod: (from, to) => `Leistungszeitraum: ${from} – ${to}`,
+  },
   columns: {
     pos: "Pos.",
     articleNumber: "Art.-Nr.",

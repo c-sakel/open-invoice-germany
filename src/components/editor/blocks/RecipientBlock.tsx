@@ -22,7 +22,7 @@ import { addressCountryLine } from "@/lib/countries";
 import { inputCls } from "@/components/forms/fields";
 import { emptyOptionLabel } from "@/lib/forms/optional-select";
 import { nextDiscountOnCustomerChange } from "@/lib/forms/discount-prefill";
-import { fromCents, fromMilli, fromPermille } from "@/lib/editor/parse";
+import { fromCents, fromMilli, fromPermille, fromPrice } from "@/lib/editor/parse";
 import { TakeOverPrompt, type TakeOverPrefillDTO, type TakeOverLineDTO } from "@/components/TakeOverPrompt";
 
 /** `CustomerOption` (Task 3, `CustomerPicker.tsx`) traegt keine Anschrift — fuer die
@@ -67,7 +67,7 @@ function toDraftLine(l: TakeOverLineDTO, allowedTaxRates: readonly number[]): Dr
     articleNumber: l.articleNumber ?? "",
     quantity: fromMilli(l.quantityMilli),
     unit: l.unit,
-    price: fromCents(l.unitNetPriceCents),
+    price: fromPrice(l),
     taxRate: clampTaxRate(l.taxRate, allowedTaxRates),
     discountPercent: fromPermille(l.discountPermille),
     discountAmount: fromCents(l.discountCents),

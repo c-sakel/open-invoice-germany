@@ -771,6 +771,36 @@ Keine Migration, kein neues Env. Export und Import teilen sich Schreiber und For
 - Rate-Limits je Organisation: Vorschau 20/min, Commit 5/min, Export 30/min; die Session-Route zusätzlich eine grobe Bremse vor dem Einlesen des Bodies. Die Session-Route akzeptiert nur Same-Origin-Anfragen (`Sec-Fetch-Site`/`Origin`) und prüft `Content-Length` vor `formData()`.
 - Das Anfrageprotokoll schwärzt den Schlüssel `csv` (`src/domain/api-log/redact.ts`).
 
+## 3g. Sub-Cent-Preise, Brutto-Eingabe und Verbrauchsabrechnung (Phase 18f)
+
+Migration `20261120090000_phase18f_usage` (SQLite) / `20261120090100_phase18f_usage` (Postgres), rein additiv; Tabellen 61 → 62.
+
+### Datenmodell
+- `unitNetPriceMilliCents Int?` (Einzelpreis in 1/1000 Cent) an `InvoiceLine`, `QuoteLine`, `RecurringInvoiceLine` (`prisma/schema.prisma:297`, `:484`, `:682`). Gesetzt = führend, `unitNetPriceCents` ist dann die kaufmännische Rundung (Schema-Refine in `src/schemas/index.ts:395`); `null` = Bestandsformat, ganzer Cent (`normalizeMilli`, `src/lib/money.ts:130`). Bestandsbelege bleiben byte-gleich (PDF-Regression unverändert).
+- `InvoiceLine.servicePeriodStart/-End` (`prisma/schema.prisma:485`): Snapshot des Leistungszeitraums je Position (BG-26).
+- `RecurringInvoiceLine.billing` (`FIXED` | `USAGE`, Standard `FIXED`) und `usageUnitLabel` (`prisma/schema.prisma:683`). Eine Verbrauchsposition speichert Menge 0.
+- `RecurringUsage` (`prisma/schema.prisma:692`): Verbrauchssatz mit `usageDate`, `periodStart/-End`, `quantityMilli`, `source` (UI/API/MCP), `externalId`, `createdBy`, `invoiceId`/`billedAt` (Abrechnung), `voidedAt/-By/-Reason` (Storno). FK-Regeln: Organisation und Abo `RESTRICT` (ein Abo mit Verbrauchssätzen ist nicht löschbar), `recurringLineId` und `invoiceId` `SET NULL`. `@@unique([recurringInvoiceId, externalId])`.
+- Abweichungen von der Spezifikation (Code schlägt Doku): (a) `recurringLineId` ist nullable, weil Abo-Zeilen gelöscht werden können; abgerechnete Verbräuche bleiben über `invoiceId` nachvollziehbar, und Abo-Zeilen behalten beim Bearbeiten ihre Id (Zeilen-Sync statt `deleteMany`, `planLineSync`, `src/domain/recurring/lines.ts:155`). (b) `externalId` ist je Abo eindeutig, nicht je Abo und Zeile. (c) Kein `DELETE` von Verbrauchssätzen: `DELETE …/usage/{usageId}` storniert weich. (d) Zusätzliche Spalten `usageDate`, `createdBy`, `billedAt`, `voidedAt`, `voidedBy`, `voidReason`, `InvoiceLine.servicePeriod*`. (e) Brutto-Eingabe wird je Steuersatz umgerechnet, nicht je Zeile, nur ohne Positions-/Belegrabatt und nicht mit Nettozeilen gemischt. (f) Verbrauch nur für `ACTIVE`-Abos; der Stichtag gehört zur endenden Periode `(S(k-1), S(k)]` (`src/domain/recurring/usage-period.ts:34`).
+
+### Rechenkern
+- `src/lib/money.ts`: `MAX_UNIT_PRICE_MILLI_CENTS` (`:101`), `mulDivRoundHalfUp` über BigInt (Half-Up), `milliCentsToCents`, `milliCentsToDecimal` (String-Arithmetik, 5 Stellen), `formatUnitPrice`, `parseUnitPriceInput` (`:182`, mehrdeutige Eingaben wie `1.234` und mehr als 5 Stellen werden abgelehnt).
+- `src/lib/pricing/line.ts`: `computeLineNet` rechnet bei gesetztem Milli-Preis `round(Menge × Milli / 1.000.000)`, sonst unverändert in Cent (`:41`); `lineGrossCents` (`:86`).
+- `src/lib/pricing/gross.ts#resolveGrossLines` (`:86`): rechnet Brutto-Zielbeträge je Steuersatz zurück (Netto je Satz, Verteilung proportional, Suche eines Milli-Preises, der das Zielnetto trifft; sonst nächster Milli-Preis mit tatsächlichem Netto, `exact: false`). Die Abweichung je Satz wird in `groups` ausgewiesen; über 1 Cent lehnt `resolvePriceInput` mit `GROSS_DEVIATION_TOO_LARGE` ab, der Belegrabatt ist im Brutto-Modus fest 0.
+- `src/domain/document/price-input.ts#resolvePriceInput` (`:105`): gemeinsame Eingabe für REST und MCP (Netto in Cent oder Milli, Brutto je Stück oder je Zeile; genau eine Preisform je Zeile). `grossResponseFields` (`:243`) liefert `grossTargetCents` und `grossDeviationCents`; `assertGrossPayment` (`:226`) lehnt eine abweichende Zahlung im atomaren Aufruf mit `GrossDeviationError` (HTTP 400 `GROSS_DEVIATION`, `src/api/errors.ts:197`) ab. Es gibt keinen Rundungsbetrag BT-114 (Ruling, COMPLIANCE.md § 16).
+- Kopierpfade (Storno, Gutschrift, Duplikat, Umwandlung, Teilrechnung, Übernahme, Vorlage) tragen den Milli-Preis über `linePriceFields` (`src/domain/document/lines.ts`).
+
+### E-Rechnung, PDF, Prüfer-Export
+- BT-146 mit 5 Nachkommastellen (`priceText`, `src/lib/einvoice/xrechnung.ts:193`, `src/lib/einvoice/cii.ts:114`), BT-131 bleibt zweistellig (BR-DEC-23). BG-26 je Position: UBL `cac:InvoicePeriod` direkt nach `LineExtensionAmount` (`xrechnung.ts:461`), CII `ram:BillingSpecifiedPeriod` nach `ApplicableTradeTax` (`cii.ts:203`); Datum als Berliner Kalendertag.
+- PDF: Einzelpreis mit Nachkommastellen nur bei Milli-Preis (`src/lib/pdf/invoice-pdf.ts:469`), der Leistungszeitraum steht unter der Zeile (`:442`).
+- Prüfer-Export: Spalte `einzelpreis_exakt` (Spaltentyp `amount5`, `src/domain/audit/export.ts:78`, `export-csv.ts:8`); `einzelpreis_netto` bleibt gerundet.
+
+### Verbrauch und Lauf
+- Domain: `src/domain/recurring/usage.ts` (`recordUsage`, `voidUsage`, `listUsage`, `collectBillableUsage`, `markUsageBilled`), `usage-period.ts` (Periode und Ankertag; Verbrauchsabos ohne `anchorDay` verankern am Tag des Startdatums, `effectiveAnchorDay`, `:21`), `usage-error.ts` (Codes `NOT_FOUND`, `NOT_ACTIVE`, `NOT_USAGE_LINE`, `PERIOD_BILLED`, `AFTER_END`, `IN_FUTURE`, `ALREADY_BILLED`, `ALREADY_VOIDED`, `CONFLICT`).
+- Sperre: `recordUsage` (`usage.ts:128`), `voidUsage` (`usage.ts:201`), Lauf (`run.ts:128`) und Abo-Update (`update.ts:25`) beginnen ihre Transaktion mit `lockRow(tx, "RecurringInvoice", id, orgId)` (`src/lib/db-lock.ts:17`). Damit gibt es je Abo höchstens einen Schreiber; Verbrauch wird nie doppelt abgerechnet.
+- Lauf (`run.ts:143`–`:234`): sammelt offene Verbräuche bis zum Stichtag je Position, setzt Menge und Leistungszeitraum der Rechnungszeilen, erzeugt die Rechnung über den gemeinsamen Erstellpfad und markiert die Sätze in **derselben** Transaktion als abgerechnet; der ChangeLog-Eintrag der Rechnung trägt `usageCount` und `usageQuantityMilli`. Ohne Verbrauch und ohne feste Position (`run.ts:155`) entsteht keine Rechnung: der Termin rückt weiter, das Ergebnis ist `skipped` (REST 200 `{skipped, periodDate}`, Scheduler zählt `emptyPeriods`, ActivityLog `USAGE_EMPTY_PERIOD`), `issuedCount` bleibt unverändert.
+- Guard: Verbrauchssätze sind unveränderlich; der geschützte Client lehnt `update`/`updateMany`/`upsert`/`delete`/`deleteMany` auf `recurringUsage` mit `RecurringUsageImmutabilityError` ab (`src/lib/db.ts:97`, `:334`). Abrechnung und Storno laufen nur über `dbInternal` in den Domain-Funktionen.
+- Zugänge: REST `src/app/api/v1/Recurring/[id]/usage/route.ts` und `[usageId]/route.ts`, Sitzungsrouten `src/app/api/recurring/[id]/usage/` (Origin-Prüfung, JSON Pflicht, Body 8 KB, 120 Schreibvorgänge je Minute und Organisation, `respond.ts:18`–`:28`), MCP `record_usage`/`list_usage`/`void_usage` (`src/mcp/tools/recurring.ts:276`, `:318`, `:349`), Oberfläche `src/app/abos/[id]/_parts/UsageSection.tsx`, `src/components/recurring/UsageForm.tsx`, `VoidUsageButton.tsx`.
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.

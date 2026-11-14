@@ -14,6 +14,7 @@ import { dbInternal } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 import { documentTemplatePayloadSchema, type DocumentTemplatePayload } from "@/schemas/template";
 import type { TagDocType } from "@/schemas/tag";
+import { linePriceFields } from "@/domain/document/lines";
 
 export interface SourcePayload {
   payload: DocumentTemplatePayload;
@@ -54,7 +55,7 @@ async function loadInvoicePayload(orgId: string, docId: string): Promise<SourceP
       articleNumber: l.articleNumber ?? undefined,
       quantityMilli: l.quantityMilli,
       unit: l.unit,
-      unitNetPriceCents: l.unitNetPriceCents,
+      ...linePriceFields(l),
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
       discountPermille: l.discountPermille,
@@ -93,7 +94,7 @@ async function loadQuotePayload(orgId: string, docId: string): Promise<SourcePay
       articleNumber: l.articleNumber ?? undefined,
       quantityMilli: l.quantityMilli,
       unit: l.unit,
-      unitNetPriceCents: l.unitNetPriceCents,
+      ...linePriceFields(l),
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
       discountPermille: l.discountPermille,

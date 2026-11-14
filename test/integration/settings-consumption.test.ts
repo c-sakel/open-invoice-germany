@@ -17,7 +17,7 @@ import { sendDocumentEmail } from "@/domain/email/send";
 import { prefillEmail } from "@/domain/email/compose";
 import { assignCustomerNumber, assignArticleNumber, ensureCustomerNumbers, ensureArticleNumbers, updateNumberRange } from "@/domain/numbering/ranges";
 import { createRecurring } from "@/domain/recurring/create";
-import { emitRecurringNow } from "@/domain/recurring/run";
+import { emitRecurringInvoice as emitRecurringNow } from "../helpers/emit-recurring";
 import { createMemoryProvider } from "@/lib/mail/memory";
 import type { CreateInvoiceInput } from "@/schemas";
 

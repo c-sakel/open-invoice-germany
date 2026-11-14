@@ -8,7 +8,7 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createRecurring } from "@/domain/recurring/create";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
-import { emitRecurringNow } from "@/domain/recurring/run";
+import { emitRecurringInvoice as emitRecurringNow } from "../helpers/emit-recurring";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { createRecurringSchema, updateRecurringSchema, type CreateRecurringInput } from "@/schemas";
 

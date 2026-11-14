@@ -15,6 +15,7 @@ import { parseRateMicros } from "@/domain/fx/decimal";
 import { DOC_LANGUAGES } from "@/lib/i18n/doc";
 import { OssCategorySchema } from "./oss";
 import { EAS_CODES, validateEndpoint } from "@/lib/einvoice/eas";
+import { MAX_UNIT_PRICE_MILLI_CENTS, milliCentsToCents } from "@/lib/money";
 
 /** Belegsprache (Phase 16b): de | en. */
 export const DocLanguageSchema = z.enum(DOC_LANGUAGES);
@@ -378,7 +379,7 @@ export type ProductInput = z.infer<typeof productSchema>;
 
 // ── Rechnung ─────────────────────────────────────────────────────────────
 // lineType default "ITEM" haelt bestehende Aufrufer (ohne das Feld) abwaertskompatibel.
-const invoiceLineBaseShape = {
+export const invoiceLineBaseShape = {
     lineType: LineType.default("ITEM"),
     productId: z.string().optional(),
     description: z.string().min(1),
@@ -389,6 +390,12 @@ const invoiceLineBaseShape = {
     quantityMilli: z.number().int(),
     unit: z.string().default("C62"),
     unitNetPriceCents: z.number().int(),
+    // Phase 18f: Einzelpreis in tausendstel Cent (z. B. 0,002 EUR = 200); gesetzt -> fuehrend,
+    // unitNetPriceCents muss dann die kaufmaennische Rundung davon sein.
+    unitNetPriceMilliCents: z.number().int().min(0).max(MAX_UNIT_PRICE_MILLI_CENTS).nullable().optional(),
+    // Phase 18f: Leistungszeitraum der Position (BG-26); nur beidseitig, Start <= Ende.
+    servicePeriodStart: z.coerce.date().optional(),
+    servicePeriodEnd: z.coerce.date().optional(),
     taxRate: TaxRate,
     discountPermille: z.number().int().min(0).max(1000).default(0),
     discountCents: z.number().int().nonnegative().default(0),
@@ -397,9 +404,36 @@ const invoiceLineBaseShape = {
 };
 
 const refineInvoiceLine = (
-  line: { lineType: z.infer<typeof LineType>; quantityMilli: number; unitNetPriceCents: number; discountPermille: number; discountCents: number; taxRate: number },
+  line: {
+    lineType: z.infer<typeof LineType>;
+    quantityMilli: number;
+    unitNetPriceCents: number;
+    unitNetPriceMilliCents?: number | null;
+    servicePeriodStart?: Date;
+    servicePeriodEnd?: Date;
+    discountPermille: number;
+    discountCents: number;
+    taxRate: number;
+  },
   ctx: z.RefinementCtx<typeof line>,
 ): void => {
+    const milli = line.unitNetPriceMilliCents;
+    if (milli !== null && milli !== undefined && line.lineType === "ITEM") {
+      const expected = milliCentsToCents(milli);
+      if (line.unitNetPriceCents !== expected) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Einzelpreis in Cent muss ${expected} sein (Rundung des Preises in tausendstel Cent)`,
+          path: ["unitNetPriceCents"],
+        });
+      }
+    }
+    const { servicePeriodStart: periodStart, servicePeriodEnd: periodEnd } = line;
+    if ((periodStart === undefined) !== (periodEnd === undefined)) {
+      ctx.addIssue({ code: "custom", message: "Leistungszeitraum nur mit Beginn und Ende", path: [periodStart === undefined ? "servicePeriodStart" : "servicePeriodEnd"] });
+    } else if (periodStart !== undefined && periodEnd !== undefined && periodStart.getTime() > periodEnd.getTime()) {
+      ctx.addIssue({ code: "custom", message: "Leistungszeitraum: Beginn darf nicht nach dem Ende liegen", path: ["servicePeriodEnd"] });
+    }
     if (line.lineType === "ITEM") {
       if (line.quantityMilli === 0) {
         ctx.addIssue({ code: "custom", message: "Menge darf nicht 0 sein", path: ["quantityMilli"] });
@@ -413,6 +447,12 @@ const refineInvoiceLine = (
     }
     if (line.unitNetPriceCents !== 0) {
       ctx.addIssue({ code: "custom", message: "Einzelpreis muss bei Nicht-Positionszeilen 0 sein", path: ["unitNetPriceCents"] });
+    }
+    if (milli !== null && milli !== undefined && milli !== 0) {
+      ctx.addIssue({ code: "custom", message: "Einzelpreis muss bei Nicht-Positionszeilen 0 sein", path: ["unitNetPriceMilliCents"] });
+    }
+    if (periodStart !== undefined || periodEnd !== undefined) {
+      ctx.addIssue({ code: "custom", message: "Leistungszeitraum nur bei Positionszeilen", path: ["servicePeriodStart"] });
     }
     if (line.discountPermille !== 0) {
       ctx.addIssue({ code: "custom", message: "Rabatt muss bei Nicht-Positionszeilen 0 sein", path: ["discountPermille"] });
@@ -434,6 +474,37 @@ export const invoiceLineInputSchema = z
 export const invoiceLineDerivableSchema = z
   .object({ ...invoiceLineBaseShape, taxCategory: TaxCategory.optional() })
   .superRefine(refineInvoiceLine);
+
+/**
+ * Abo-Zeile (Phase 18f): wie `invoiceLineDerivableSchema`, zusaetzlich Zeilen-Id (Bearbeiten
+ * haelt die Id stabil), Abrechnungsart und Anzeigeeinheit des Verbrauchs. USAGE-Zeilen haben
+ * Menge 0 — die Menge ergibt sich beim Lauf aus der Summe der offenen Verbraeuche.
+ */
+export const recurringLineInputSchema = z
+  .object({
+    ...invoiceLineBaseShape,
+    taxCategory: TaxCategory.optional(),
+    id: z.string().trim().min(1).max(64).optional(),
+    // Bewusst ohne Default (Output-Typ bleibt fuer Bestandsaufrufer kompatibel); fehlend = FIXED.
+    billing: z.enum(["FIXED", "USAGE"]).optional(),
+    usageUnitLabel: z.string().trim().min(1).max(40).optional(),
+  })
+  .superRefine((line, ctx) => {
+    if (line.billing !== "USAGE") {
+      refineInvoiceLine(line, ctx);
+      return;
+    }
+    if (line.lineType !== "ITEM") {
+      ctx.addIssue({ code: "custom", message: "Verbrauchsabrechnung nur bei Positionszeilen", path: ["billing"] });
+      return;
+    }
+    if (line.quantityMilli !== 0) {
+      ctx.addIssue({ code: "custom", message: "Menge ergibt sich aus dem Verbrauch", path: ["quantityMilli"] });
+    }
+    // Restliche Preis-/Rabattregeln wie bei jeder Position (Menge 0 ist hier gewollt).
+    refineInvoiceLine({ ...line, quantityMilli: 1 }, ctx);
+  });
+export type RecurringLineInput = z.infer<typeof recurringLineInputSchema>;
 
 /** Fehlende Positions-Kategorien aus dem Steuerschema ableiten (gleiche Funktion wie Editor/MCP). */
 export function resolveLineCategories<L extends { taxCategory?: z.infer<typeof TaxCategory> }>(
@@ -514,7 +585,7 @@ function refineSkontoTargets<T extends { skonto1Permille?: number; skonto1Days?:
 // Gemeinsame Kopffelder fuer createInvoiceSchema/updateInvoiceSchema (Phase 4b: Betreff,
 // Bestellnummer, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse — analog
 // den Feldern, die Quote seit Phase 3a traegt).
-const invoiceHeaderFields = {
+export const invoiceHeaderFields = {
   customerId: z.string().min(1),
   type: InvoiceType.default("INVOICE"),
   taxScheme: TaxScheme.default("REGULAR"),
@@ -676,7 +747,7 @@ const documentTextFields = {
   billingAddressId: z.string().nullable().optional(),
 };
 
-const documentObjectSchema = z.object({
+export const documentObjectSchema = z.object({
   kind: DocumentKind,
   customerId: z.string().min(1),
   taxScheme: TaxScheme.default("REGULAR"),
@@ -895,7 +966,7 @@ const recurringObjectSchema = z.object({
   showPeriodText: z.boolean().optional(),
   language: DocLanguageSchema.optional(),
   notes: z.string().optional(),
-  lines: z.array(invoiceLineDerivableSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }),
+  lines: z.array(recurringLineInputSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }),
 });
 export const createRecurringSchema = recurringObjectSchema.transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
@@ -931,7 +1002,7 @@ export const updateRecurringSchema = z.object({
   currency: currencyCodeSchema.optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
   // Kategorie optional: die Domain leitet sie aus dem Abo-Steuerschema ab (recurring/update.ts).
-  lines: z.array(invoiceLineDerivableSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }).optional(),
+  lines: z.array(recurringLineInputSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }).optional(),
 });
 export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
 

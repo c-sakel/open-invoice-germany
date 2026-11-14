@@ -181,6 +181,8 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten); optional `reason` (Stornogrund, steht in den Belegnotizen), nach Teilgutschriften nur der Rest, Hinweis auf fällige Erstattung | „Storniere RE-2026-00342." |
 | `cancel_invoices` | 1 bis 50 festgeschriebene Rechnungen (`invoices`: IDs oder Nummern, `reason` Pflicht) nacheinander stornieren; je Beleg eigene Storno-Gutschrift, Ergebnis je Beleg (`ok`/`failed`, Codes z. B. `NOT_CANCELLABLE`, `NOT_FOUND`), ein Fehler stoppt die übrigen nicht; kein Versand; höchstens 10 Aufrufe pro Minute | „Storniere RE-1001 und RE-1002 wegen Doppelerfassung." |
 
+**Preise (Phase 18f):** `unitPriceEuro` nimmt bis zu 5 Nachkommastellen an (`0.002`); mehr Stellen, negative Sub-Cent-Preise und Sub-Cent-Preise über 21.474,83 EUR sind ein Fehler und werden nie still gerundet (`src/mcp/tools/context.ts:46`). Alternativ `unitGrossPriceEuro` (Brutto je Einheit, höchstens 2 Nachkommastellen; schließt `unitPriceEuro` aus, nicht mit Rabatten, Umrechnung je Steuersatz, Abweichung bis 1 Cent je Satz wird in der Antwort ausgewiesen, größere Abweichungen wie 1.500 × 0,01 EUR werden abgelehnt; Belegrabatt im Brutto-Modus fest 0, ein Standardrabatt des Kunden greift nicht). `unitGrossPriceEuro` gilt in `create_invoice`, `update_invoice_draft` und `create_document`; in Tools ohne Bruttoumrechnung (z. B. Lieferschein, Abo) wird es mit klarer Fehlermeldung abgelehnt. `credit_invoice` (Teilgutschrift mit Positionen) und Lieferscheine rechnen in ganzen Cent und lehnen einen Sub-Cent-Preis ab. Bei `create_invoice` mit `finalize` und `payment` wird eine Zahlung, die nach einer Brutto-Abweichung nicht dem tatsächlichen Rechnungsbrutto entspricht, mit Fehlermeldung abgelehnt (`src/mcp/tools/invoices.ts:276`, gleiche Regel wie bei REST `GROSS_DEVIATION`).
+
 ### Teil-/Abschlags-/Schlussrechnungen
 
 | Tool | Zweck | Beispiel |
@@ -306,11 +308,14 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`; Positionen mit `lineType` `ITEM`/`HEADING`/`TEXT`/`SUBTOTAL`, `descriptionLong`, `articleNumber` und Rabatt wie bei `update_invoice_draft`) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
+| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`; Positionen mit `lineType` `ITEM`/`HEADING`/`TEXT`/`SUBTOTAL`, `descriptionLong`, `articleNumber` und Rabatt wie bei `update_invoice_draft`; je Position `billing` `FIXED`/`USAGE` und `usageUnitLabel` — bei `USAGE` ohne `quantity`, Abrechnung nach erfasstem Verbrauch; `unitPriceEuro` bis 5 Nachkommastellen) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
 | `list_recurring` | Abos auflisten (Filter u. a. Status) | „Welche Abos sind fällig?" |
 | `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort) | „Erzeuge die fälligen Rechnungen." |
 | `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich | „Ändere beim Wartungsvertrag von Müller den Preis auf 109 €." |
 | `set_recurring_state` | Status eines Abos auf `ACTIVE`/`PAUSED`/`ENDED` setzen (dünner Wrapper um `update_recurring_invoice`) | „Pausiere den Wartungsvertrag von Müller GmbH." |
+| `record_usage` | Verbrauch für eine Abo-Position mit Abrechnung nach Verbrauch erfassen (`quantity` bis 3 Nachkommastellen oder `quantityMilli`, optional `externalId` für Idempotenz) | „Erfasse 2,5 Aufrufe für das API-Abo." |
+| `list_usage` | Verbrauchssätze eines Abos auflisten, mit offener Menge je Position | „Zeig den Verbrauch des API-Abos." |
+| `void_usage` | Offenen Verbrauchssatz mit Pflichtgrund stornieren | „Storniere diesen Verbrauch, doppelt gemeldet." |
 
 ### Scheduler
 

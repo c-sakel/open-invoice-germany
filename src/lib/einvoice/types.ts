@@ -39,6 +39,11 @@ export interface EInvoiceLine {
   quantityMilli: number;
   unit: string; // UN/ECE Rec 20
   unitNetPriceCents: number;
+  /** Phase 18f: exakter Einzelpreis in tausendstel Cent (BT-146 mit 5 Nachkommastellen); fehlt bei Cent-Preisen. */
+  unitNetPriceMilliCents?: number | null;
+  /** Phase 18f: Leistungszeitraum der Position (BG-26, BT-134/BT-135); nur beidseitig gesetzt. */
+  servicePeriodStart?: Date | null;
+  servicePeriodEnd?: Date | null;
   lineNetCents: number;
   taxRate: number;
   taxCategory: string; // UNTDID 5305

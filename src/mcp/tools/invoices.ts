@@ -65,7 +65,8 @@ import {
   PaymentMethod,
 } from "@/schemas";
 import { OssCategorySchema } from "@/schemas/oss";
-import { docLineSchema, editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
+import { docLineSchema, editorLineSchema, ToolError, linePriceFields, describePriceInput, PRICE_NET_DESCRIPTION, PRICE_GROSS_DESCRIPTION, type McpToolsContext, type Result } from "./context";
+import { GrossDeviationError, assertGrossPatchDiscount, assertGrossPayment, resolvePriceInput } from "@/domain/document/price-input";
 
 /** Kartenfelder (BG-18) — dieselben Zod-Objekte wie REST/Editor; nie mehr als die letzten 4 Ziffern. */
 const cardFieldShape = {
@@ -91,7 +92,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             z.object({
               description: z.string(),
               quantity: z.number().describe("Menge, z. B. 3 oder 2.5"),
-              unitPriceEuro: z.number().optional().describe("Nettopreis je Einheit in Euro (oder productName nutzen)"),
+              unitPriceEuro: z.number().optional().describe(`${PRICE_NET_DESCRIPTION} (oder productName nutzen)`),
+              unitGrossPriceEuro: z.number().min(0).optional().describe(PRICE_GROSS_DESCRIPTION),
               productName: z.string().optional().describe("Name einer gespeicherten Leistung — Preis/Einheit/Steuersatz werden übernommen"),
               unit: z.string().optional(),
               taxRatePercent: TaxRate.optional(),
@@ -157,31 +159,33 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const products = await dbInternal.product.findMany({ where: { orgId: org.id, isArchived: false } });
 
         const lines = args.lines.map((l, idx) => {
-          let unitPriceEuro = l.unitPriceEuro;
+          let productCents: number | undefined;
           let unit = l.unit;
           let taxRatePercent: number | undefined = l.taxRatePercent;
           let description = l.description;
           let productId: string | undefined;
+          const ownPrice = linePriceFields(idx, l.unitPriceEuro, l.unitGrossPriceEuro, true);
           if (l.productName) {
             const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
             // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie bisher).
-            if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+            if (!p && !ownPrice) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
             if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt (auch bei eigenem Preis)
-            if (p && unitPriceEuro == null) {
-              unitPriceEuro = p.netPriceCents / 100;
+            if (p && !ownPrice) {
+              productCents = p.netPriceCents;
               unit = unit ?? p.unit;
               taxRatePercent = taxRatePercent ?? p.taxRate;
               description = description || p.name;
             }
           }
-          if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+          const price = ownPrice ?? (productCents !== undefined ? { unitNetPriceCents: productCents } : null);
+          if (!price) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro, unitGrossPriceEuro oder productName.`);
           return {
             productId,
             ossCategory: l.ossCategory,
             description,
             quantityMilli: ctx.qtyToMilli(l.quantity),
             unit: unit ?? "C62",
-            unitNetPriceCents: ctx.euroToCents(unitPriceEuro),
+            ...price,
             // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
             taxRate: isRegular ? (taxRatePercent ?? 19) : 0,
             taxCategory: category,
@@ -200,7 +204,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         const notes = notice && !noticeAccepted ? `${notice}${args.notes ? " — " + args.notes : ""}` : args.notes;
         const paymentMethod = args.paymentMethod ? await ctx.resolvePaymentMethod(org.id, args.paymentMethod) : null;
 
-        const input = createInvoiceSchema.parse({
+        const priced = resolvePriceInput({
           customerId: customer.id,
           type: "INVOICE",
           taxScheme: scheme,
@@ -227,6 +231,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           cardHolderName: args.cardHolderName,
           lines,
         });
+        const input = createInvoiceSchema.parse(priced.body);
         if (idemKey) {
           const key = idemKey;
           const payment = args.payment
@@ -237,6 +242,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
                 reference: args.payment.reference,
               })
             : undefined;
+          assertGrossPayment(priced, payment?.amountCents);
           let text = "";
           await createInvoiceComplete(org.id, input, {
             payment,
@@ -248,7 +254,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               const hint = r.warnings.length > 0 ? `\n\nHinweise (nicht blockierend):\n${r.warnings.map((w) => `- ${w}`).join("\n")}` : "";
               text =
                 `Festgeschrieben: ${inv.number} für ${customer.name} · Netto ${formatCents(inv.netTotalCents)} · USt ${formatCents(inv.taxTotalCents)} · Brutto ${formatCents(inv.grossTotalCents)}.${state}\n` +
-                `ID: ${inv.id}\nUnveränderbar (GoBD); Korrektur nur per Storno. Export mit export_invoice.${hint}`;
+                `ID: ${inv.id}\nUnveränderbar (GoBD); Korrektur nur per Storno. Export mit export_invoice.${hint}${describePriceInput(priced, inv.grossTotalCents)}`;
               await completeIdempotencyWithinTx(tx, org.id, key, 200, { text });
             },
           });
@@ -258,7 +264,8 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         return ctx.ok(
           `Entwurf angelegt für ${customer.name}.\n` +
             `ID: ${invoice.id}\nNetto: ${formatCents(invoice.netTotalCents)} · USt: ${formatCents(invoice.taxTotalCents)} · Brutto: ${formatCents(invoice.grossTotalCents)}\n` +
-            `Nächster Schritt: finalize_invoice (vergibt die Rechnungsnummer, macht GoBD-konform unveränderbar).`,
+            `Nächster Schritt: finalize_invoice (vergibt die Rechnungsnummer, macht GoBD-konform unveränderbar).` +
+            describePriceInput(priced, invoice.grossTotalCents),
         );
       } catch (e) {
         // Reservierung freigeben (nur IN_PROGRESS; eine bereits committete DONE-Zeile bleibt stehen).
@@ -266,6 +273,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         if (e instanceof IdempotencyConflictError || e instanceof IdempotencyInProgressError) return ctx.fail(e.message);
+        if (e instanceof GrossDeviationError) return ctx.fail(e.message);
         if (e instanceof FinalizeError) return ctx.fail(`Festschreiben nicht möglich:\n${e.message}`);
         if (e instanceof PaymentError) return ctx.fail(`Zahlung nicht möglich: ${e.message}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
@@ -747,7 +755,14 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       try {
         const org = await ctx.requireOrg();
         const inv = await ctx.resolveInvoice(org.id, args.invoice);
-        const lines = (await ctx.buildSimpleLines(org.id, args.lines)).map((l) => ({
+        const built = await ctx.buildSimpleLines(org.id, args.lines);
+        // Teilgutschriften rechnen in ganzen Cent: ein Sub-Cent-Preis wuerde sonst still gerundet.
+        built.forEach((l, i) => {
+          if ("unitNetPriceMilliCents" in l && l.unitNetPriceMilliCents != null) {
+            throw new ToolError(`Position ${i + 1}: Teilgutschriften unterstützen nur Preise in ganzen Cent (höchstens 2 Nachkommastellen).`);
+          }
+        });
+        const lines = built.map((l) => ({
           description: l.description,
           quantityMilli: l.quantityMilli,
           unit: l.unit,
@@ -828,12 +843,15 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.cardPanTruncated !== undefined) patch.cardPanTruncated = args.cardPanTruncated;
         if (args.cardNetwork !== undefined) patch.cardNetwork = args.cardNetwork;
         if (args.cardHolderName !== undefined) patch.cardHolderName = args.cardHolderName;
-        if (args.lines) patch.lines = await ctx.buildEditorLines(org.id, args.lines);
+        if (args.lines) patch.lines = await ctx.buildEditorLinesPriced(org.id, args.lines);
+        const priced = resolvePriceInput(patch);
+        assertGrossPatchDiscount(priced, inv);
 
-        const updated = await updateDraftInvoice(org.id, inv.id, patch, "mcp");
-        return ctx.ok(`Entwurf aktualisiert: ${updated.number ?? "Entwurf " + updated.id.slice(0, 8)} · Netto ${formatCents(updated.netTotalCents)} · Brutto ${formatCents(updated.grossTotalCents)}.`);
+        const updated = await updateDraftInvoice(org.id, inv.id, priced.body as typeof patch, "mcp");
+        return ctx.ok(`Entwurf aktualisiert: ${updated.number ?? "Entwurf " + updated.id.slice(0, 8)} · Netto ${formatCents(updated.netTotalCents)} · Brutto ${formatCents(updated.grossTotalCents)}.${describePriceInput(priced, updated.grossTotalCents)}`);
       } catch (e) {
         if (e instanceof InvoiceUpdateError) return ctx.fail(e.message);
+        if (e instanceof GrossDeviationError) return ctx.fail(e.message);
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

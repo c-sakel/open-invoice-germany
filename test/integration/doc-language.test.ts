@@ -13,7 +13,7 @@ import { createBusinessDocument } from "@/domain/document/create";
 import { createDeliveryNote } from "@/domain/delivery-note/create";
 import { convertDocument } from "@/domain/document/convert";
 import { createRecurring } from "@/domain/recurring/create";
-import { emitRecurringNow } from "@/domain/recurring/run";
+import { emitRecurringInvoice as emitRecurringNow } from "../helpers/emit-recurring";
 import { createDunning } from "@/domain/dunning/create";
 import { prefillEmail } from "@/domain/email/compose";
 import { saveMailSettings } from "@/domain/email/settings";

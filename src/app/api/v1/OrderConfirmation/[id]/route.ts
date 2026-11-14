@@ -6,6 +6,7 @@ import { serializeQuote } from "@/api/serializers/document";
 import { parseEmbed } from "@/api/serializers/common";
 import { updateDraftDocument } from "@/domain/document/update";
 import { updateDocumentSchema } from "@/schemas";
+import { apiDocumentUpdateBodyDocSchema, assertGrossPatchDiscount, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 
@@ -24,12 +25,14 @@ export const GET = withApi<{ id: string }>(async (req, ctx) => {
 }, { scope: "read" });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
-  const existing = await prisma.quote.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId, kind: "AUFTRAGSBESTAETIGUNG" }, select: { id: true } });
+  const existing = await prisma.quote.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId, kind: "AUFTRAGSBESTAETIGUNG" }, select: { id: true, documentDiscountPermille: true, documentDiscountCents: true, documentChargePermille: true, documentChargeCents: true } });
   if (!existing) throw new NotFoundError("Auftragsbestätigung nicht gefunden.");
-  const input = updateDocumentSchema.parse(ctx.body);
+  const priced = resolvePriceInput(ctx.body);
+  assertGrossPatchDiscount(priced, existing);
+  const input = updateDocumentSchema.parse(priced.body);
   await updateDraftDocument(ctx.orgId, ctx.params.id, input, ctx.actor);
   const full = await prisma.quote.findUniqueOrThrow({ where: { id: ctx.params.id } });
-  return apiData(serializeQuote(full, "OrderConfirmation", new Set()));
+  return apiData({ ...serializeQuote(full, "OrderConfirmation", new Set()), ...grossResponseFields(priced, full.grossTotalCents) });
 }, { scope: "write" });
 
 export const spec = {
@@ -46,8 +49,9 @@ export const spec = {
     method: "PATCH",
     summary: "Auftragsbestätigung aktualisieren (nur Entwurf)",
     scope: "write",
-    request: { body: updateDocumentSchema },
+    request: { body: apiDocumentUpdateBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 404, 409, 429],
+    errorNotes: { 400: "Bruttopreise: error.code GROSS_DEVIATION_TOO_LARGE bei mehr als 1 Cent Abweichung je Steuersatz; GROSS_DISCOUNT_CONFLICT bei gespeichertem Belegrabatt (Bruttopreise sind nicht mit Belegrabatt kombinierbar)." },
   },
 } satisfies Record<string, RouteSpec>;

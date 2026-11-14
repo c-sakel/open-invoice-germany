@@ -9,6 +9,7 @@ import { computeDraftTotals } from "@/lib/editor/totals";
 import { LineItemsEditor } from "@/components/editor/blocks/LineItemsEditor";
 import { EditorCurrencyContext } from "@/components/editor/currency-context";
 import { parseDecimalInput } from "@/lib/money";
+import { PRICE_FIELD_ERROR, toPrice } from "@/lib/editor/parse";
 
 interface CustomerOption {
   id: string;
@@ -144,22 +145,26 @@ export function NewRecurringForm({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const isUsage = (l: (typeof draft.lines)[number]) => l.lineType === "ITEM" && l.billing === "USAGE";
     const invalid = draft.lines.find(
       (l) =>
         !l.description.trim() ||
-        (l.lineType === "ITEM" && (parseDecimalInput(l.price, 2) === null || parseDecimalInput(l.quantity, 3) === null)),
+        (l.lineType === "ITEM" && toPrice(l.price) === null) ||
+        (l.lineType === "ITEM" && !isUsage(l) && parseDecimalInput(l.quantity, 3) === null),
     );
     if (invalid) {
       setError(
         !invalid.description.trim()
           ? "Jede Position braucht eine Beschreibung."
-          : "Betrag oder Menge nicht lesbar – bitte z. B. 1.234,56 oder 1234.56 eingeben (Geld höchstens 2, Mengen höchstens 3 Nachkommastellen).",
+          : invalid.lineType === "ITEM" && toPrice(invalid.price) === null
+            ? `${PRICE_FIELD_ERROR} – bitte z. B. 1.234,56 oder 0,002 eingeben.`
+            : "Menge nicht lesbar – bitte z. B. 2,5 eingeben (höchstens 3 Nachkommastellen).",
       );
       setBusy(false);
       return;
     }
 
-    const lineInputs = draftLinesToPayload(draft.lines, "REGULAR");
+    const lineInputs = draftLinesToPayload(draft.lines, "REGULAR", { recurring: true });
 
     if (mode === "edit") {
       // Fix-Runde 1: PATCH mit {patch: {...}} (updateRecurringSchema) — bewusst KEIN
@@ -382,7 +387,7 @@ export function NewRecurringForm({
       </div>
 
       <EditorCurrencyContext.Provider value={draft.currency || defaultCurrency}>
-        <LineItemsEditor draft={draft} dispatch={dispatch} products={products} taxRates={taxRates} mode="INVOICE" totals={totals} />
+        <LineItemsEditor draft={draft} dispatch={dispatch} products={products} taxRates={taxRates} mode="INVOICE" totals={totals} recurring />
       </EditorCurrencyContext.Provider>
 
       <label className="flex flex-col gap-1 text-sm">

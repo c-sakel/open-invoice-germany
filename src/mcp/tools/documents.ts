@@ -24,7 +24,8 @@ import { findLastDocumentForCustomer, buildTakeOverPrefill, type TakeOverDocumen
 import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/domain/errors";
 import { getDocumentFile } from "@/api/files";
 import { currencyCodeSchema, DocLanguageSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, updateDeliveryNoteSchema, convertDocumentBodySchema } from "@/schemas";
-import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
+import { docLineSchema, ToolError, describePriceInput, type McpToolsContext, type Result } from "./context";
+import { GrossDeviationError, resolvePriceInput } from "@/domain/document/price-input";
 
 const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
 
@@ -55,8 +56,8 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const customer = await ctx.resolveCustomer(org.id, args.customer);
-        const lines = await ctx.buildSimpleLines(org.id, args.lines);
-        const input = createDocumentSchema.parse({
+        const lines = await ctx.buildSimpleLinesPriced(org.id, args.lines);
+        const priced = resolvePriceInput({
           language: args.language,
           kind: args.kind,
           customerId: customer.id,
@@ -72,9 +73,12 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
           // Verhalten unveraendert: Artikelnummer nur fuer Lieferschein-Tools (Phase 17b).
           lines: lines.map((l) => ({ ...l, articleNumber: undefined })),
         });
+        const input = createDocumentSchema.parse(priced.body);
         const doc = await createBusinessDocument(org.id, input);
-        return ctx.ok(`${args.kind} angelegt: ${doc.number} für ${customer.name} · Brutto ${formatCents(doc.grossTotalCents)}.`);
+        return ctx.ok(`${args.kind} angelegt: ${doc.number} für ${customer.name} · Brutto ${formatCents(doc.grossTotalCents)}.${describePriceInput(priced, doc.grossTotalCents)}`);
       } catch (e) {
+        if (e instanceof GrossDeviationError) return ctx.fail(e.message);
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

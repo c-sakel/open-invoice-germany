@@ -20,7 +20,9 @@ export const jobs: Record<SchedulerJob, (now: Date) => Promise<Record<string, un
   recurring: async (now) => {
     const summaries = await runDueRecurring({ now });
     const generated = summaries.reduce((n, s) => n + s.emitted.length, 0);
-    return { generated, abos: summaries };
+    // Nicht "skipped": der Runner belegt diesen Schluessel fuer uebersprungene Jobs.
+    const emptyPeriods = summaries.reduce((n, s) => n + s.skipped.length, 0);
+    return { generated, emptyPeriods, abos: summaries };
   },
   dunning: async (now) => {
     const result = await runDunningJob(now);

@@ -7,6 +7,7 @@ import { parseEmbed } from "@/api/serializers/common";
 import { updateDraftInvoice } from "@/domain/invoice/update";
 import { updateInvoiceSchema } from "@/schemas";
 import { prisma } from "@/lib/db";
+import { apiInvoiceUpdateBodyDocSchema, assertGrossPatchDiscount, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 import { NotFoundError } from "@/domain/errors";
 
 export const runtime = "nodejs";
@@ -24,12 +25,14 @@ export const GET = withApi<{ id: string }>(async (req, ctx) => {
 }, { scope: "read" });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
-  const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true } });
+  const existing = await prisma.invoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId }, select: { id: true, documentDiscountPermille: true, documentDiscountCents: true, documentChargePermille: true, documentChargeCents: true } });
   if (!existing) throw new NotFoundError("Rechnung nicht gefunden.");
-  const input = updateInvoiceSchema.parse(ctx.body);
+  const priced = resolvePriceInput(ctx.body);
+  assertGrossPatchDiscount(priced, existing);
+  const input = updateInvoiceSchema.parse(priced.body);
   await updateDraftInvoice(ctx.orgId, ctx.params.id, input, ctx.actor);
   const full = await prisma.invoice.findUniqueOrThrow({ where: { id: ctx.params.id } });
-  return apiData(serializeInvoice(full, new Set()));
+  return apiData({ ...serializeInvoice(full, new Set()), ...grossResponseFields(priced, full.grossTotalCents) });
 }, { scope: "write" });
 
 export const spec = {
@@ -46,8 +49,9 @@ export const spec = {
     method: "PATCH",
     summary: "Rechnung aktualisieren (nur Entwurf)",
     scope: "write",
-    request: { body: updateInvoiceSchema },
+    request: { body: apiInvoiceUpdateBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 404, 409, 429],
+    errorNotes: { 400: "Bruttopreise: error.code GROSS_DEVIATION_TOO_LARGE bei mehr als 1 Cent Abweichung je Steuersatz; GROSS_DISCOUNT_CONFLICT bei gespeichertem Belegrabatt (Bruttopreise sind nicht mit Belegrabatt kombinierbar)." },
   },
 } satisfies Record<string, RouteSpec>;

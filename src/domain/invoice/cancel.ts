@@ -20,6 +20,7 @@ import { NotFoundError } from "@/domain/errors";
 import { finalizeWithinTx } from "./finalize";
 import { correctionFxOverride } from "@/domain/fx/correction";
 import { refundablePaidCents } from "./amounts";
+import { linePriceFields } from "@/domain/document/lines";
 
 /** Zeilentypen, die keinen Betrag tragen (§8: HEADING/TEXT/SUBTOTAL nie in Summen/XML). */
 const NON_ITEM_LINE_TYPES = new Set(["HEADING", "TEXT", "SUBTOTAL"]);
@@ -34,6 +35,9 @@ interface StornoCreateLine {
   quantityMilli: number;
   unit: string;
   unitNetPriceCents: number;
+  unitNetPriceMilliCents?: number | null;
+  servicePeriodStart?: Date | null;
+  servicePeriodEnd?: Date | null;
   taxRate: number;
   taxCategory: string;
   discountPermille: number;
@@ -47,7 +51,7 @@ interface StornoCreateLine {
  * 1:1-Abbild aller Original-Zeilen (Zeilentyp/Langtext/Artikelnummer erhalten, damit die
  * Struktur der Rechnung im Storno erkennbar bleibt — §8).
  */
-function mirrorLines(original: { lines: readonly { position: number; lineType: string; productId: string | null; description: string; descriptionLong: string | null; articleNumber: string | null; quantityMilli: number; unit: string; unitNetPriceCents: number; taxRate: number; taxCategory: string; discountPermille: number; discountCents: number; lineNetCents: number; ossCategory: string | null }[] }): StornoCreateLine[] {
+function mirrorLines(original: { lines: readonly { position: number; lineType: string; productId: string | null; description: string; descriptionLong: string | null; articleNumber: string | null; quantityMilli: number; unit: string; unitNetPriceCents: number; unitNetPriceMilliCents: number | null; servicePeriodStart: Date | null; servicePeriodEnd: Date | null; taxRate: number; taxCategory: string; discountPermille: number; discountCents: number; lineNetCents: number; ossCategory: string | null }[] }): StornoCreateLine[] {
   return original.lines.map((l) => {
     const isItem = !NON_ITEM_LINE_TYPES.has(l.lineType);
     return {
@@ -59,7 +63,10 @@ function mirrorLines(original: { lines: readonly { position: number; lineType: s
       articleNumber: l.articleNumber,
       quantityMilli: l.quantityMilli,
       unit: l.unit,
-      unitNetPriceCents: isItem ? -l.unitNetPriceCents : 0,
+      // Phase 18f: Cent- und Milli-Preis gespiegelt, Leistungszeitraum des Originals uebernommen.
+      ...(isItem ? linePriceFields(l, -1) : { unitNetPriceCents: 0, unitNetPriceMilliCents: null }),
+      servicePeriodStart: isItem ? l.servicePeriodStart : null,
+      servicePeriodEnd: isItem ? l.servicePeriodEnd : null,
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
       discountPermille: l.discountPermille,

@@ -89,6 +89,18 @@ class FinalInvoiceDeductionImmutabilityError extends Error {
   }
 }
 
+/**
+ * Phase 18f: `RecurringUsage` (Abo-Verbrauchssaetze) sind nach Erfassung unveraenderlich.
+ * create ueber den geschuetzten Client ist erlaubt; Verknuepfung mit der Rechnung (invoiceId/billedAt)
+ * und Storno (voidUsage) laufen ausschliesslich ueber `dbInternal` in den Domain-Services.
+ */
+export class RecurringUsageImmutabilityError extends Error {
+  constructor() {
+    super("Verbrauchssaetze sind nach Erfassung unveraenderlich; Storno nur ueber voidUsage");
+    this.name = "RecurringUsageImmutabilityError";
+  }
+}
+
 async function guardLineWhere(where: unknown): Promise<void> {
   const rows = await base.invoiceLine.findMany({
     where: (where ?? {}) as never,
@@ -317,6 +329,26 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new ArchivedDocumentImmutabilityError();
+      },
+    },
+    recurringUsage: {
+      async update() {
+        throw new RecurringUsageImmutabilityError();
+      },
+      async updateMany() {
+        throw new RecurringUsageImmutabilityError();
+      },
+      async updateManyAndReturn() {
+        throw new RecurringUsageImmutabilityError();
+      },
+      async upsert() {
+        throw new RecurringUsageImmutabilityError();
+      },
+      async delete() {
+        throw new RecurringUsageImmutabilityError();
+      },
+      async deleteMany() {
+        throw new RecurringUsageImmutabilityError();
       },
     },
     vatIdCheck: {

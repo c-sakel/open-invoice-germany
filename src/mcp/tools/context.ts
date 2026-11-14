@@ -10,7 +10,8 @@
 import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
-import { roundHalfUp } from "@/lib/money";
+import { MAX_UNIT_PRICE_MILLI_CENTS, formatCents, formatUnitPrice, roundHalfUp } from "@/lib/money";
+import { GROSS_DISCOUNT_NOTICE, type PriceInputResult } from "@/domain/document/price-input";
 import { LineType, TaxRate } from "@/schemas";
 import { OssCategorySchema, type OssCategory } from "@/schemas/oss";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
@@ -36,6 +37,90 @@ export function failUnknown(e: unknown): Result {
 }
 
 export const euroToCents = (e: number) => roundHalfUp(e * 100);
+/**
+ * Einzelpreis in Euro -> Cent + Milli-Cent (Phase 18f). Bis 5 Nachkommastellen, nie still gerundet:
+ * mehr Stellen sind ein Fehler. Gelesen wird die kuerzeste Dezimaldarstellung der Zahl (kein
+ * Float-Rechnen), damit 0.002 exakt 200 Milli-Cent ergibt. Preise ohne Sub-Cent-Anteil haben
+ * `unitNetPriceMilliCents: null`; Sub-Cent-Preise sind auf 21.474,83 EUR begrenzt (Int32).
+ */
+export function euroToUnitPrice(x: number): { unitNetPriceCents: number; unitNetPriceMilliCents: number | null } {
+  if (!Number.isFinite(x)) throw new ToolError("Der Preis ist keine gültige Zahl.");
+  if (Math.abs(x) > 9e13) throw new ToolError("Der Preis ist zu groß.");
+  const negative = x < 0;
+  let text = String(Math.abs(x));
+  if (/e/i.test(text)) text = Math.abs(x).toFixed(12);
+  const [intPart, fracRaw = ""] = text.split(".");
+  const frac = fracRaw.replace(/0+$/, "");
+  if (frac.length > 5) {
+    throw new ToolError("Der Preis darf höchstens 5 Nachkommastellen haben (er wird nie still gerundet).");
+  }
+  const milli = BigInt(intPart) * BigInt(100000) + BigInt(frac.padEnd(5, "0"));
+  const whole = milli % BigInt(1000) === BigInt(0);
+  if (!whole && negative) throw new ToolError("Negative Preise sind nur in ganzen Cent erlaubt.");
+  if (!whole && milli > BigInt(MAX_UNIT_PRICE_MILLI_CENTS)) {
+    throw new ToolError("Preise mit mehr als 2 Nachkommastellen sind auf 21.474,83 € begrenzt.");
+  }
+  const cents = Number((milli * BigInt(2) + BigInt(1000)) / BigInt(2000));
+  return { unitNetPriceCents: negative ? -cents : cents, unitNetPriceMilliCents: whole ? null : Number(milli) };
+}
+
+/** Bruttopreis in Euro -> Cent (hoechstens 2 Nachkommastellen, nie still gerundet). */
+export function euroToGrossCents(x: number): number {
+  const p = euroToUnitPrice(x);
+  if (p.unitNetPriceMilliCents !== null) throw new ToolError("Der Bruttopreis darf höchstens 2 Nachkommastellen haben.");
+  return p.unitNetPriceCents;
+}
+
+/**
+ * Preisfelder einer MCP-Zeile: Netto (`unitPriceEuro`, bis 5 Stellen) oder Brutto
+ * (`unitGrossPriceEuro`, wird spaeter je Steuersatz umgerechnet). `null`, wenn keins gesetzt ist
+ * (der Aufrufer faellt auf den Produktpreis zurueck oder meldet den fehlenden Preis).
+ */
+export function linePriceFields(
+  idx: number,
+  unitPriceEuro: number | undefined,
+  unitGrossPriceEuro: number | undefined,
+  allowGross: boolean,
+): { unitNetPriceCents: number; unitNetPriceMilliCents?: number } | { unitGrossPriceCents: number } | null {
+  if (unitPriceEuro != null && unitGrossPriceEuro != null) {
+    throw new ToolError(`Position ${idx + 1}: unitPriceEuro und unitGrossPriceEuro schließen sich aus.`);
+  }
+  if (unitGrossPriceEuro != null) {
+    if (!allowGross) throw new ToolError(`Position ${idx + 1}: unitGrossPriceEuro wird in diesem Tool nicht unterstützt (nur Nettopreise).`);
+    return { unitGrossPriceCents: euroToGrossCents(unitGrossPriceEuro) };
+  }
+  if (unitPriceEuro == null) return null;
+  const p = euroToUnitPrice(unitPriceEuro);
+  return p.unitNetPriceMilliCents === null
+    ? { unitNetPriceCents: p.unitNetPriceCents }
+    : { unitNetPriceCents: p.unitNetPriceCents, unitNetPriceMilliCents: p.unitNetPriceMilliCents };
+}
+
+/**
+ * Antworthinweis zu Sub-Cent-Einzelpreisen und Bruttoumrechnung (leer bei reinen Cent-Nettopreisen).
+ * `lines` sind die umgerechneten Zeilen (`priced.body.lines`), `actualGrossCents` das Rechnungsbrutto.
+ */
+export function describePriceInput(priced: PriceInputResult, actualGrossCents?: number): string {
+  const body = priced.body as { lines?: { lineType?: string; unitNetPriceCents?: number; unitNetPriceMilliCents?: number | null }[] };
+  const parts: string[] = [];
+  (body.lines ?? []).forEach((l, i) => {
+    if ((l.lineType ?? "ITEM") === "ITEM" && l.unitNetPriceMilliCents != null && l.unitNetPriceCents !== undefined) {
+      parts.push(`Position ${i + 1}: Einzelpreis ${formatUnitPrice({ unitNetPriceCents: l.unitNetPriceCents, unitNetPriceMilliCents: l.unitNetPriceMilliCents })} netto`);
+    }
+  });
+  if (priced.mode === "GROSS" && priced.grossTargetCents !== null) {
+    const gross = actualGrossCents ?? priced.grossTargetCents + (priced.predictedDeviationCents ?? 0);
+    const dev = gross - priced.grossTargetCents;
+    parts.push(
+      dev === 0
+        ? `Bruttopreise je Steuersatz in Netto umgerechnet; Brutto ${formatCents(gross)} entspricht dem Ziel (exakt).`
+        : `Bruttopreise je Steuersatz in Netto umgerechnet; Hinweis: Bruttosumme weicht um ${formatCents(dev)} ab (Ziel ${formatCents(priced.grossTargetCents)}, Rechnung ${formatCents(gross)}; nicht exakt).`,
+    );
+    parts.push(GROSS_DISCOUNT_NOTICE);
+  }
+  return parts.length > 0 ? `\n${parts.join("\n")}` : "";
+}
+
 export const qtyToMilli = (q: number) => roundHalfUp(q * 1000);
 
 export function parseDateInput(s?: string): Date | undefined {
@@ -146,12 +231,13 @@ export async function resolveDocForAttachment(orgId: string, docType: Attachment
 }
 
 /** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). Exportiert für Unit-Tests. */
-export async function buildSimpleLines(
+async function buildSimpleLinesImpl(
   orgId: string,
   inputLines: {
     description: string;
     quantity: number;
     unitPriceEuro?: number;
+    unitGrossPriceEuro?: number;
     productName?: string;
     unit?: string;
     taxRatePercent?: number;
@@ -159,29 +245,32 @@ export async function buildSimpleLines(
     discountAmount?: number;
     ossCategory?: OssCategory;
   }[],
+  allowGross: boolean,
 ) {
   const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
   return inputLines.map((l, idx) => {
-    let unitPriceEuro = l.unitPriceEuro;
+    let productCents: number | undefined;
     let unit = l.unit;
     let taxRate = l.taxRatePercent;
     let description = l.description;
     let productId: string | undefined;
     let articleNumber: string | undefined;
+    const ownPrice = linePriceFields(idx, l.unitPriceEuro, l.unitGrossPriceEuro, allowGross);
     if (l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
       // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie create_invoice).
-      if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      if (!p && !ownPrice) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
       if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt
       if (p?.articleNumber) articleNumber = p.articleNumber; // Phase 17b: Lieferschein-Tools reichen sie weiter
-      if (p && unitPriceEuro == null) {
-        unitPriceEuro = p.netPriceCents / 100;
+      if (p && !ownPrice) {
+        productCents = p.netPriceCents;
         unit = unit ?? p.unit;
         taxRate = taxRate ?? p.taxRate;
         description = description || p.name;
       }
     }
-    if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+    const price = ownPrice ?? (productCents !== undefined ? { unitNetPriceCents: productCents } : null);
+    if (!price) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro, unitGrossPriceEuro oder productName.`);
     return {
       productId,
       articleNumber,
@@ -189,7 +278,7 @@ export async function buildSimpleLines(
       description,
       quantityMilli: qtyToMilli(l.quantity),
       unit: unit ?? "C62",
-      unitNetPriceCents: euroToCents(unitPriceEuro),
+      ...price,
       // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
       taxRate: taxRate ?? 19,
       taxCategory: "S",
@@ -201,7 +290,7 @@ export async function buildSimpleLines(
 
 /** Wie buildSimpleLines, aber mit lineType (Phase 4b, §8): HEADING/TEXT/SUBTOTAL tragen
  *  nie einen Betrag und brauchen weder Menge noch Preis. Fuer update_invoice_draft. */
-export async function buildEditorLines(
+async function buildEditorLinesImpl(
   orgId: string,
   inputLines: {
     lineType?: "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL";
@@ -210,6 +299,7 @@ export async function buildEditorLines(
     articleNumber?: string;
     quantity?: number;
     unitPriceEuro?: number;
+    unitGrossPriceEuro?: number;
     productName?: string;
     unit?: string;
     taxRatePercent?: number;
@@ -217,6 +307,7 @@ export async function buildEditorLines(
     discountAmount?: number;
     ossCategory?: OssCategory;
   }[],
+  allowGross: boolean,
 ) {
   const products = await dbInternal.product.findMany({ where: { orgId, isArchived: false } });
   return inputLines.map((l, idx) => {
@@ -236,25 +327,27 @@ export async function buildEditorLines(
         discountCents: 0,
       };
     }
-    let unitPriceEuro = l.unitPriceEuro;
+    let productCents: number | undefined;
     let unit = l.unit;
     let taxRate = l.taxRatePercent;
     let description = l.description;
     let productId: string | undefined;
+    const ownPrice = linePriceFields(idx, l.unitPriceEuro, l.unitGrossPriceEuro, allowGross);
     if (l.productName) {
       const p = products.find((x) => x.name.toLowerCase() === l.productName!.toLowerCase());
       // Mit eigenem Preis bleibt ein unbekannter Produktname folgenlos (wie create_invoice).
-      if (!p && unitPriceEuro == null) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
+      if (!p && !ownPrice) throw new ToolError(`Produkt "${l.productName}" (Position ${idx + 1}) nicht gefunden.`);
       if (p) productId = p.id; // Phase 16e: OSS-Kategorie-Snapshot aus dem Produkt
-      if (p && unitPriceEuro == null) {
-        unitPriceEuro = p.netPriceCents / 100;
+      if (p && !ownPrice) {
+        productCents = p.netPriceCents;
         unit = unit ?? p.unit;
         taxRate = taxRate ?? p.taxRate;
         description = description || p.name;
       }
     }
     if (l.quantity == null) throw new ToolError(`Position ${idx + 1} (ITEM) braucht "quantity".`);
-    if (unitPriceEuro == null) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro oder productName.`);
+    const price = ownPrice ?? (productCents !== undefined ? { unitNetPriceCents: productCents } : null);
+    if (!price) throw new ToolError(`Position ${idx + 1} braucht unitPriceEuro, unitGrossPriceEuro oder productName.`);
     return {
       lineType: "ITEM" as const,
       productId,
@@ -264,7 +357,7 @@ export async function buildEditorLines(
       articleNumber: l.articleNumber,
       quantityMilli: qtyToMilli(l.quantity),
       unit: unit ?? "C62",
-      unitNetPriceCents: euroToCents(unitPriceEuro),
+      ...price,
       // Phase 12c: Fallback bleibt 19 — assertAllowedTaxRates entscheidet, ob der Satz freigegeben ist.
       taxRate: taxRate ?? 19,
       taxCategory: "S",
@@ -274,6 +367,34 @@ export async function buildEditorLines(
   });
 }
 
+/** Nur Nettopreise (Standard fuer alle Tools, die keine Bruttoumrechnung unterstuetzen). */
+function netOnly<T extends object>(l: T): Extract<T, { unitNetPriceCents: number }> {
+  if (!("unitNetPriceCents" in l)) throw new ToolError("Bruttopreise werden in diesem Tool nicht unterstützt.");
+  return l as Extract<T, { unitNetPriceCents: number }>;
+}
+
+/** Wandelt MCP-Positionen (mit €/Menge oder Katalog-Verweis) in DB-Positionen um (Schema REGULAR, Kategorie S). Exportiert für Unit-Tests. */
+export async function buildSimpleLines(orgId: string, inputLines: Parameters<typeof buildSimpleLinesImpl>[1]) {
+  return (await buildSimpleLinesImpl(orgId, inputLines, false)).map(netOnly);
+}
+
+/** Wie buildSimpleLines, lässt aber `unitGrossPriceEuro` zu (Zeile trägt dann `unitGrossPriceCents`); Aufrufer müssen `resolvePriceInput` anwenden. */
+export async function buildSimpleLinesPriced(orgId: string, inputLines: Parameters<typeof buildSimpleLinesImpl>[1]) {
+  return buildSimpleLinesImpl(orgId, inputLines, true);
+}
+
+export async function buildEditorLines(orgId: string, inputLines: Parameters<typeof buildEditorLinesImpl>[1]) {
+  return (await buildEditorLinesImpl(orgId, inputLines, false)).map(netOnly);
+}
+
+export async function buildEditorLinesPriced(orgId: string, inputLines: Parameters<typeof buildEditorLinesImpl>[1]) {
+  return buildEditorLinesImpl(orgId, inputLines, true);
+}
+
+export const PRICE_NET_DESCRIPTION = "Nettopreis je Einheit in Euro, bis 5 Nachkommastellen (z. B. 0.002); mehr Stellen sind ein Fehler";
+export const PRICE_GROSS_DESCRIPTION =
+  "Bruttopreis je Einheit in Euro (höchstens 2 Nachkommastellen) statt unitPriceEuro; nur ohne Rabatte, wird je Steuersatz in Netto umgerechnet (Abweichung max. 1 Cent je Satz wird ausgewiesen)";
+
 /** Positionsschema mit lineType (Ueberschrift/Text/Zwischensumme) fuer update_invoice_draft und create_recurring. */
 export const editorLineSchema = z.object({
   lineType: LineType.default("ITEM"),
@@ -281,7 +402,8 @@ export const editorLineSchema = z.object({
   descriptionLong: z.string().optional().describe("Rich-Text-Langbeschreibung (Markdown-Teilmenge)"),
   articleNumber: z.string().optional(),
   quantity: z.number().optional().describe("Menge (Pflicht bei ITEM)"),
-  unitPriceEuro: z.number().optional(),
+  unitPriceEuro: z.number().optional().describe(PRICE_NET_DESCRIPTION),
+  unitGrossPriceEuro: z.number().min(0).optional().describe(PRICE_GROSS_DESCRIPTION),
   productName: z.string().optional(),
   unit: z.string().optional(),
   taxRatePercent: TaxRate.optional(),
@@ -294,7 +416,8 @@ export const editorLineSchema = z.object({
 export const docLineSchema = z.object({
   description: z.string(),
   quantity: z.number(),
-  unitPriceEuro: z.number().optional(),
+  unitPriceEuro: z.number().optional().describe(PRICE_NET_DESCRIPTION),
+  unitGrossPriceEuro: z.number().min(0).optional().describe(PRICE_GROSS_DESCRIPTION),
   productName: z.string().optional(),
   unit: z.string().optional(),
   taxRatePercent: TaxRate.optional(),
@@ -326,6 +449,8 @@ export interface McpToolsContext {
   resolveDocForAttachment: typeof resolveDocForAttachment;
   buildSimpleLines: typeof buildSimpleLines;
   buildEditorLines: typeof buildEditorLines;
+  buildSimpleLinesPriced: typeof buildSimpleLinesPriced;
+  buildEditorLinesPriced: typeof buildEditorLinesPriced;
   /** Testinjektion (Facts Task 1): sonst nutzt send_email den echten, aus Settings geladenen Provider. */
   mailProvider?: MailProvider;
 }
@@ -350,6 +475,8 @@ export function createDefaultContext(overrides: Partial<McpToolsContext> = {}): 
     resolveDocForAttachment,
     buildSimpleLines,
     buildEditorLines,
+    buildSimpleLinesPriced,
+    buildEditorLinesPriced,
     ...overrides,
   };
 }

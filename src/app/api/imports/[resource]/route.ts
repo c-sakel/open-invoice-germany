@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
+import { isSameOriginRequest } from "@/lib/http/same-origin";
 import { csvResponse } from "@/lib/http/csv-response";
 import { jsonNoStore } from "@/lib/http/account-route";
 import { RateLimitError, rateLimit } from "@/lib/rate-limit";
@@ -34,20 +35,6 @@ const TEMPLATES: Record<"contacts" | "products", { file: string; columns: readon
     example: { name: "Beispielleistung", unit: "Std", netPrice: "95,00", taxRate: "19" },
   },
 };
-
-/** Nur same-origin: `Sec-Fetch-Site` (Browser) bzw. `Origin` gegen den Host; ohne beide (kein Browser) wie bisher Cookie-Auth. */
-export function isSameOriginRequest(req: Request): boolean {
-  const site = req.headers.get("sec-fetch-site");
-  if (site !== null) return site === "same-origin";
-  const origin = req.headers.get("origin");
-  if (origin === null) return true;
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
-  try {
-    return new URL(origin).host === host.split(",")[0].trim();
-  } catch {
-    return false;
-  }
-}
 
 function templateCsv(resource: "contacts" | "products"): string {
   const t = TEMPLATES[resource];

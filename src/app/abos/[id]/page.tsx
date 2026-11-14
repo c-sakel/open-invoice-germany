@@ -8,6 +8,8 @@ import { LineItemsTable } from "@/components/LineItemsTable";
 import { intervalLabel } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
+import { listUsage } from "@/domain/recurring/usage";
+import { UsageSection, USAGE_PAGE_SIZE } from "./_parts/UsageSection";
 
 export const dynamic = "force-dynamic";
 
@@ -44,12 +46,16 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.unitNetPriceMilliCents,
     taxRate: l.taxRate,
+    variableQuantityText: l.billing === "USAGE" ? `nach Verbrauch${l.usageUnitLabel ? ` (${l.usageUnitLabel})` : ""}` : undefined,
     lineNetCents:
-      l.lineType === "ITEM"
-        ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, discountPermille: l.discountPermille, discountCents: l.discountCents }).lineNetCents
+      l.lineType === "ITEM" && l.billing !== "USAGE"
+        ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, unitNetPriceMilliCents: l.unitNetPriceMilliCents, discountPermille: l.discountPermille, discountCents: l.discountCents }).lineNetCents
         : 0,
   }));
+  const hasUsage = rec.lines.some((l) => l.billing === "USAGE");
+  const usage = hasUsage ? await listUsage(org.id, rec.id, { limit: USAGE_PAGE_SIZE }) : null;
   const net = tableLines.reduce((sum, l) => sum + l.lineNetCents, 0);
   const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-well text-ink-soft" };
 
@@ -164,12 +170,23 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
       <LineItemsTable lines={tableLines} currency={rec.currency} />
       <div className="ml-auto max-w-xs text-sm">
         <div className="flex justify-between border-t border-rule pt-1 font-semibold">
-          <span>Netto je Rechnung</span>
+          <span>{hasUsage ? "Netto je Rechnung (ohne Verbrauch)" : "Netto je Rechnung"}</span>
           <span className="tabular">{formatCents(net, rec.currency)}</span>
         </div>
       </div>
 
       {rec.notes && <p className="text-sm text-ink-soft">{rec.notes}</p>}
+
+      {usage && (
+        <UsageSection
+          recurringId={rec.id}
+          recurringStatus={rec.status}
+          lines={rec.lines.map((l) => ({ id: l.id, description: l.description, usageUnitLabel: l.usageUnitLabel, billing: l.billing }))}
+          rows={usage.items}
+          total={usage.total}
+          open={usage.open}
+        />
+      )}
 
       <section className="space-y-3">
         <h2 className="font-semibold text-ink">Erzeugte Rechnungen ({rec.invoices.length})</h2>

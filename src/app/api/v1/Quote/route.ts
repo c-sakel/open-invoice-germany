@@ -16,6 +16,7 @@ import { parseEmbed } from "@/api/serializers/common";
 import { listQuotes, quoteListFilterSchema } from "@/domain/document/list";
 import { createBusinessDocument } from "@/domain/document/create";
 import { createDocumentSchema } from "@/schemas";
+import { apiDocumentBodyDocSchema, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -42,10 +43,11 @@ export const GET = withApi(async (req, ctx) => {
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {
-  const input = createDocumentSchema.parse({ ...(ctx.body as object), kind: "ANGEBOT" });
+  const priced = resolvePriceInput(ctx.body);
+  const input = createDocumentSchema.parse({ ...(priced.body as object), kind: "ANGEBOT" });
   const doc = await createBusinessDocument(ctx.orgId, input, { actor: ctx.actor });
   const full = await prisma.quote.findUniqueOrThrow({ where: { id: doc.id } });
-  return apiData(serializeQuote(full, "Quote", new Set()), 201);
+  return apiData({ ...serializeQuote(full, "Quote", new Set()), ...grossResponseFields(priced, full.grossTotalCents) }, 201);
 }, { scope: "write" });
 
 export const spec = {
@@ -64,8 +66,9 @@ export const spec = {
     method: "POST",
     summary: "Angebot anlegen (Entwurf)",
     scope: "write",
-    request: { body: createDocumentSchema },
+    request: { body: apiDocumentBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 429],
+    errorNotes: { 400: "Bruttopreise: error.code GROSS_DEVIATION_TOO_LARGE bei mehr als 1 Cent Abweichung je Steuersatz (Netto- oder Milli-Preis verwenden)." },
   },
 } satisfies Record<string, RouteSpec>;

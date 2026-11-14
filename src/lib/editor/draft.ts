@@ -15,7 +15,7 @@ import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, schemeNoticeFor, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
 import type { DocLanguage } from "@/lib/i18n/doc/types";
 import { SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
-import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
+import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero, priceFieldError, priceFieldsOrZero, normalizePriceInput, toPrice, PRICE_FIELD_ERROR } from "./parse";
 import { newLineKey } from "./ids";
 import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
 import type { TaxScheme } from "@/schemas";
@@ -39,6 +39,12 @@ export interface DraftLine {
   ossCategory?: string;
   /** Phase 17b: Quellbezug einer Lieferschein-Zeile (Teillieferung); bleibt beim Bearbeiten erhalten. */
   source?: { type: "QUOTE" | "INVOICE"; id: string; lineId: string } | null;
+  /** Phase 18f (nur Abo-Editor): Abrechnungsart; `undefined` = fest. */
+  billing?: "FIXED" | "USAGE";
+  /** Phase 18f (nur Abo-Editor): Anzeigeeinheit des Verbrauchs, z. B. "Aufrufe". */
+  usageUnitLabel?: string;
+  /** Phase 18f (nur Abo-Editor): Id der gespeicherten Abo-Zeile; haelt den Verbrauch beim Speichern. */
+  recurringLineId?: string;
 }
 
 export interface DraftState {
@@ -421,7 +427,8 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "duplicateLine": {
       const idx = state.lines.findIndex((l) => l.key === action.key);
       if (idx === -1) return state;
-      const copy: DraftLine = { ...state.lines[idx]!, key: newLineKey() };
+      // Die Kopie ist eine neue Abo-Zeile (ohne Id), sonst wuerde der Verbrauch doppelt zugeordnet.
+      const copy: DraftLine = { ...state.lines[idx]!, key: newLineKey(), recurringLineId: undefined };
       const lines = [...state.lines];
       lines.splice(idx + 1, 0, copy);
       return { ...state, lines, dirty: true };
@@ -465,7 +472,11 @@ function daysOrUndefined(s: string): number | undefined {
 }
 
 /** Zeilen des Entwurfs als Rechnungs-Payload (Rechnung und Abo-Vorlage teilen die Abbildung). */
-export type LinePayload = ReturnType<typeof draftLinePayload>;
+export type LinePayload = ReturnType<typeof draftLinePayload> & {
+  id?: string;
+  billing?: "FIXED" | "USAGE";
+  usageUnitLabel?: string;
+};
 
 function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
   const isRegular = taxScheme === "REGULAR";
@@ -476,7 +487,7 @@ function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
     articleNumber: l.articleNumber || undefined,
     quantityMilli: l.lineType === "ITEM" ? milliOrZero(l.quantity) : 0,
     unit: l.unit || "C62",
-    unitNetPriceCents: l.lineType === "ITEM" ? centsOrZero(l.price) : 0,
+    ...(l.lineType === "ITEM" ? priceFieldsOrZero(l.price) : { unitNetPriceCents: 0, unitNetPriceMilliCents: null }),
     taxRate: l.lineType === "ITEM" ? (isRegular ? l.taxRate : 0) : 0,
     taxCategory: SCHEME_CATEGORY[taxScheme] ?? "S",
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
@@ -487,8 +498,25 @@ function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
   };
 }
 
-export function draftLinesToPayload(lines: readonly DraftLine[], taxScheme: TaxScheme): LinePayload[] {
-  return lines.map((l) => draftLinePayload(l, taxScheme));
+/**
+ * `recurring` (Abo-Editor, Phase 18f) ergaenzt Zeilen-Id, Abrechnungsart und Einheitentext;
+ * Verbrauchszeilen tragen Menge 0 (die Menge ergibt sich beim Lauf aus dem Verbrauch).
+ * Ohne `recurring` bleibt die Nutzlast unveraendert.
+ */
+export function draftLinesToPayload(lines: readonly DraftLine[], taxScheme: TaxScheme, opts?: { recurring?: boolean }): LinePayload[] {
+  return lines.map((l) => {
+    const base = draftLinePayload(l, taxScheme);
+    if (!opts?.recurring) return base;
+    const usage = l.lineType === "ITEM" && l.billing === "USAGE";
+    const label = l.usageUnitLabel?.trim();
+    return {
+      ...base,
+      ...(usage ? { quantityMilli: 0 } : {}),
+      ...(l.recurringLineId ? { id: l.recurringLineId } : {}),
+      billing: usage ? ("USAGE" as const) : ("FIXED" as const),
+      ...(usage && label ? { usageUnitLabel: label } : {}),
+    };
+  });
 }
 
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {
@@ -571,7 +599,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
     articleNumber: l.articleNumber || undefined,
     quantityMilli: l.lineType === "ITEM" ? milliOrZero(l.quantity) : 0,
     unit: l.unit || "C62",
-    unitNetPriceCents: l.lineType === "ITEM" ? centsOrZero(l.price) : 0,
+    ...(l.lineType === "ITEM" ? priceFieldsOrZero(l.price) : { unitNetPriceCents: 0, unitNetPriceMilliCents: null }),
     taxRate: l.lineType === "ITEM" ? l.taxRate : 0,
     taxCategory: "S",
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
@@ -640,7 +668,7 @@ export function toDeliveryNotePayload(d: DraftState, isEdit = false): Record<str
         articleNumber: l.articleNumber || undefined,
         quantityMilli: milliOrZero(l.quantity),
         unit: l.unit,
-        unitNetPriceCents: centsOrZero(l.price),
+        unitNetPriceCents: priceFieldsOrZero(l.price).unitNetPriceCents, // Lieferschein: nur Cent (dokumentierte Grenze)
         taxRate: l.taxRate,
         ...(l.source ? { sourceType: l.source.type, sourceId: l.source.id, sourceLineId: l.source.lineId } : {}),
       })),
@@ -664,9 +692,8 @@ export function validateDraft(d: DraftState): string[] {
     if (quantityMilli === null || quantityMilli === 0) {
       problems.push(`Position ${idx + 1}: Menge muss angegeben werden (ungleich 0).`);
     }
-    const unitNetPriceCents = toCents(l.price);
-    if (unitNetPriceCents === null) {
-      problems.push(`Position ${idx + 1}: Preis ist ungültig (z. B. 1.234,56).`);
+    if (toPrice(l.price) === null) {
+      problems.push(`Position ${idx + 1}: ${priceFieldError(l.price) ?? PRICE_FIELD_ERROR} (z. B. 1.234,56 oder 0,002).`);
     }
     if (l.discountPercent.trim() && toPermille(l.discountPercent) === null) {
       problems.push(`Position ${idx + 1}: Rabatt in % ist ungültig (z. B. 2,5).`);
@@ -727,6 +754,10 @@ export interface InitialLineLike {
   ossCategory?: string | null;
   /** Gespeicherte Produktreferenz (Snapshot); bleibt beim Bearbeiten erhalten. */
   productId?: string | null;
+  /** Phase 18f (Abo-Editor): gespeicherte Zeilen-Id, Abrechnungsart und Einheitentext. */
+  recurringLineId?: string;
+  billing?: "FIXED" | "USAGE";
+  usageUnitLabel?: string | null;
 }
 
 /** Shape, das `src/app/rechnungen/[id]/bearbeiten/page.tsx` aus der geladenen Rechnung baut und an `draftFromInvoice` uebergibt. */
@@ -831,12 +862,14 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
     articleNumber: l.articleNumber ?? "",
     quantity: roundTrip(l.quantity, toMilli, fromMilli),
     unit: l.unit || "C62",
-    price: roundTrip(l.price, toCents, fromCents),
+    price: normalizePriceInput(l.price),
     taxRate: l.taxRate,
     discountPercent: roundTrip(l.discountPercent, toPermille, fromPermille),
     discountAmount: roundTrip(l.discountAmount, toCents, fromCents),
     productId: l.productId ?? null,
     ossCategory: l.ossCategory ?? undefined,
+    ...(l.recurringLineId ? { recurringLineId: l.recurringLineId } : {}),
+    ...(l.billing === "USAGE" ? { billing: "USAGE" as const, usageUnitLabel: l.usageUnitLabel ?? "" } : {}),
   };
 }
 

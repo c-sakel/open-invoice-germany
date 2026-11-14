@@ -27,7 +27,7 @@ const MONTH_FACTOR: Record<string, readonly [number, number]> = {
 };
 
 export function monthlyRunRateCents(
-  lines: { quantityMilli: number; unitNetPriceCents: number; discountPermille: number }[],
+  lines: { quantityMilli: number; unitNetPriceCents: number; unitNetPriceMilliCents?: number | null; discountPermille: number }[],
   interval: string,
   intervalCount: number,
 ): number {
@@ -46,7 +46,7 @@ export async function recurringRunRate(orgId: string, now: Date = new Date()): P
       currency: true,
       interval: true,
       intervalCount: true,
-      lines: { select: { quantityMilli: true, unitNetPriceCents: true, discountPermille: true } },
+      lines: { select: { quantityMilli: true, unitNetPriceCents: true, unitNetPriceMilliCents: true, discountPermille: true } },
     },
   });
   const rows = new Map<string, RunRateRow>();

@@ -37,7 +37,12 @@ export function RecurringActions({ id, status }: { id: string; status: string })
       setError(j.error ?? "Erzeugen fehlgeschlagen.");
       return;
     }
-    const j = (await res.json()) as { number: string | null; finalized: boolean };
+    const j = (await res.json()) as { number?: string | null; finalized?: boolean; skipped?: boolean; message?: string };
+    if (j.skipped) {
+      setInfo(j.message ?? "Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
+      router.refresh();
+      return;
+    }
     setInfo(j.number ? `Rechnung ${j.number} erzeugt.` : "Rechnungs-Entwurf erzeugt.");
     router.refresh();
   }

@@ -80,6 +80,7 @@ function toLineInput(l: {
   quantityMilli: number;
   unit: string;
   unitNetPriceCents: number;
+  unitNetPriceMilliCents?: number | null;
   taxRate: number;
   taxCategory: string;
   discountPermille: number;
@@ -97,6 +98,7 @@ function toLineInput(l: {
     // NICHT die Preise/Rabatte der Quelle (Task-2-Facts) — Menge-0-Workaround ist hier
     // nicht relevant, das gilt nur fuer HEADING/TEXT/SUBTOTAL (unveraendert 0).
     unitNetPriceCents: l.lineType === "ITEM" && !prices ? 0 : l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.lineType === "ITEM" && !prices ? null : (l.unitNetPriceMilliCents ?? null),
     taxRate: l.taxRate as InvoiceLineInput["taxRate"],
     taxCategory: l.taxCategory as InvoiceLineInput["taxCategory"],
     discountPermille: l.lineType === "ITEM" && !prices ? 0 : l.discountPermille,

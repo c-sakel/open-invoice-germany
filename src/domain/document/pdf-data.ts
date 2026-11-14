@@ -81,6 +81,8 @@ interface DocInput {
     quantityMilli: number;
     unit: string;
     unitNetPriceCents: number;
+    /** Phase 18f: Einzelpreis in tausendstel Cent (Rendering folgt mit dem PDF in Task 4). */
+    unitNetPriceMilliCents?: number | null;
     lineNetCents: number;
     taxRate: number;
     taxCategory: string;
@@ -197,6 +199,7 @@ export function buildDocEInvoiceData(q: DocInput): EInvoiceData {
       quantityMilli: l.quantityMilli,
       unit: l.unit,
       unitNetPriceCents: l.unitNetPriceCents,
+      unitNetPriceMilliCents: l.unitNetPriceMilliCents,
       lineNetCents: l.lineNetCents,
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,

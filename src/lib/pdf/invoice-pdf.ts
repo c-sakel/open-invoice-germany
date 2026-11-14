@@ -12,7 +12,7 @@
  * fest verdrahteter Zeichenlogik — `standard` ist die byte-fuer-byte-aequivalente Extraktion
  * des bisherigen (Phase-7-)Layouts.
  */
-import { formatCents, formatQuantity } from "@/lib/money";
+import { formatCents, formatQuantity, formatUnitPrice } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
 import { resolvePayeeName } from "@/lib/payee-name";
 import { parseRichText, renderRichTextPdf, renderPlainTextPdf, measureRichTextPdf } from "@/lib/richtext";
@@ -437,7 +437,14 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       const h = rowH + extraLines * lineHeight;
       // fix/pdf-umbrueche (B1): Kopfzeile (Titel + Betraege) nie allein am Seitenende —
       // Rabattzeile und die ersten zwei Zeilen des Langtexts muessen mit auf die Seite passen.
-      const longBlocks = line.descriptionLong && showDescription ? parseRichText(line.descriptionLong) : [];
+      // Phase 18f: Leistungszeitraum (BG-26) als eigener Absatz unter dem Langtext.
+      const periodText =
+        line.servicePeriodStart && line.servicePeriodEnd
+          ? t.lines.servicePeriod(formatDocDate(line.servicePeriodStart, lang), formatDocDate(line.servicePeriodEnd, lang))
+          : "";
+      // Ohne Beschreibungsspalte entfaellt der Langtext, der Leistungszeitraum bleibt (Pflichtangabe BG-26).
+      const longSource = (showDescription ? [line.descriptionLong ?? "", periodText] : [periodText]).filter(Boolean).join("\n\n");
+      const longBlocks = longSource ? parseRichText(longSource) : [];
       const longOpts = { x: descX, width: right - descX, fontSize: base - 2 };
       const lead = longBlocks.length > 0 ? measureRichTextPdf(doc, longBlocks, longOpts).leadHeight : 0;
       doc.font("Helvetica").fontSize(base - 1);
@@ -459,7 +466,7 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
       }
       doc.text(`${formatQuantity(line.quantityMilli, locale)}${colX.einheit == null ? ` ${unitLabel(line.unit, lang)}` : ""}`, tableX + colX.menge!, y, { width: colWidth.menge, align: "right" });
       if (colX.einheit != null) doc.text(unitLabel(line.unit, lang), tableX + colX.einheit, y, { width: colWidth.einheit });
-      if (colX.einzel != null) doc.text(money(line.unitNetPriceCents), tableX + colX.einzel, y, { width: colWidth.einzel, align: "right" });
+      if (colX.einzel != null) doc.text(line.unitNetPriceMilliCents != null ? formatUnitPrice(line, cur, locale) : money(line.unitNetPriceCents), tableX + colX.einzel, y, { width: colWidth.einzel, align: "right" });
       if (colX.ust != null) doc.text(`${line.taxRate}%`, tableX + colX.ust, y, { width: colWidth.ust, align: "right" });
       if (colX.rabatt != null && line.discountCents) {
         const cell = line.discountPermille ? `${formatQuantity(line.discountPermille * 100, locale)} %` : `–${money(Math.abs(line.discountCents))}`;

@@ -5,7 +5,7 @@
 export type CsvValue = string | number | null;
 
 /** Spaltentyp fuer die Beschreibung in `index.xml`. */
-export type CsvColumnType = "text" | "int" | "amount" | "quantity" | "date" | "datetime";
+export type CsvColumnType = "text" | "int" | "amount" | "amount5" | "quantity" | "date" | "datetime";
 
 export interface CsvColumn {
   name: string;
@@ -27,6 +27,16 @@ export function formatCentsDe(cents: number): string {
   const sign = cents < 0 ? "-" : "";
   const abs = Math.abs(cents);
   return `${sign}${Math.trunc(abs / 100)},${String(abs % 100).padStart(2, "0")}`;
+}
+
+/**
+ * Milli-Cent (tausendstel Cent) als deutsche Dezimalzahl in EUR mit fuenf Nachkommastellen
+ * (`200` -> `0,00200`). Reine Ganzzahl-/Stringarithmetik, kein Float.
+ */
+export function formatMilliCentsDe(milliCents: number): string {
+  const sign = milliCents < 0 ? "-" : "";
+  const abs = String(Math.abs(milliCents)).padStart(6, "0");
+  return `${sign}${abs.slice(0, -5)},${abs.slice(-5)}`;
 }
 
 /** Milli-Einheiten als deutsche Dezimalzahl mit drei Nachkommastellen (`1500` -> `1,500`). */

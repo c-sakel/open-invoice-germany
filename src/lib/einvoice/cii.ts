@@ -12,6 +12,7 @@ import { deductionsNoteText } from "./deduction-note";
 import { exemptionReasonCode, exemptionReasonText, hasNotSubjectToVat } from "./exemption";
 import { docStrings } from "@/lib/i18n/doc";
 import { fxOf, fxRateNoteText } from "./fx-note";
+import { milliCentsToDecimal } from "@/lib/money";
 import type { EInvoiceData, EInvoiceLine } from "./types";
 
 type XmlNode = ReturnType<typeof create>;
@@ -109,6 +110,11 @@ export function buildFacturXCII(data: EInvoiceData): string {
   const cur = data.currency;
   const isCredit = data.type === "CREDIT_NOTE";
   const amt = (cents: number) => money(isCredit ? Math.abs(cents) : cents);
+  // BT-146: exakter Milli-Preis mit 5 Nachkommastellen (Phase 18f), sonst zweistellig wie bisher.
+  const priceText = (l: EInvoiceLine): string =>
+    l.unitNetPriceMilliCents != null
+      ? milliCentsToDecimal(isCredit ? Math.abs(l.unitNetPriceMilliCents) : l.unitNetPriceMilliCents)
+      : amt(l.unitNetPriceCents);
   const fx = fxOf(data);
 
   const root = create({ version: "1.0", encoding: "UTF-8" }).ele("rsm:CrossIndustryInvoice", {
@@ -174,7 +180,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
       .ele("ram:SpecifiedLineTradeAgreement")
       .ele("ram:NetPriceProductTradePrice")
       .ele("ram:ChargeAmount")
-      .txt(amt(line.unitNetPriceCents))
+      .txt(priceText(line))
       .up()
       .up()
       .up();
@@ -191,6 +197,14 @@ export function buildFacturXCII(data: EInvoiceData): string {
     // EN 16931 BR-O-05: Kategorie O traegt keinen Positionssteuersatz (BT-152).
     if (line.taxCategory !== "O") ltax.ele("ram:RateApplicablePercent").txt(String(line.taxRate)).up();
     ltax.up();
+    // BG-26 (BT-134/BT-135) — Leistungszeitraum der Position. CII-XSD: nach ApplicableTradeTax,
+    // vor SpecifiedTradeAllowanceCharge.
+    if (line.servicePeriodStart && line.servicePeriodEnd) {
+      const period = ls.ele("ram:BillingSpecifiedPeriod");
+      period.ele("ram:StartDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(line.servicePeriodStart)).up().up();
+      period.ele("ram:EndDateTime").ele("udt:DateTimeString", { format: "102" }).txt(ciiDate(line.servicePeriodEnd)).up().up();
+      period.up();
+    }
     // BG-27 — Zeilenrabatt.
     if (line.discountCents) {
       appendAllowanceCharge(ls, {

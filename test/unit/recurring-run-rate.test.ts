@@ -14,5 +14,14 @@ describe("monthlyRunRateCents", () => {
   it("rundet einmal half-up (0,5 -> 1)", () => expect(monthlyRunRateCents(one(6), "YEARLY", 1)).toBe(1));
   it("summiert Zeilen vor der Skalierung", () =>
     expect(monthlyRunRateCents([...one(1), ...one(1), ...one(1), ...one(1), ...one(1), ...one(1)], "YEARLY", 1)).toBe(1));
+  it("beruecksichtigt den Einzelpreis in tausendstel Cent (Phase 18f)", () => {
+    // 10.000 Stueck a 0,002 EUR (200 Milli-Cent) = 20,00 EUR; der Cent-Preis allein waere 0.
+    const lines = [{ quantityMilli: 10_000_000, unitNetPriceCents: 0, unitNetPriceMilliCents: 200, discountPermille: 0 }];
+    expect(monthlyRunRateCents(lines, "MONTHLY", 1)).toBe(2000);
+  });
+  it("Verbrauchszeile (Menge 0) zaehlt mit 0", () => {
+    const lines = [...one(2900), { quantityMilli: 0, unitNetPriceCents: 0, unitNetPriceMilliCents: 200, discountPermille: 0 }];
+    expect(monthlyRunRateCents(lines, "MONTHLY", 1)).toBe(2900);
+  });
   it("unbekanntes Intervall wirft", () => expect(() => monthlyRunRateCents(one(1), "HOURLY", 1)).toThrow());
 });

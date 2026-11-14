@@ -15,6 +15,7 @@ import { NotFoundError } from "@/domain/errors";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { parseOss } from "@/domain/product/oss-snapshot";
 import { createFinalInvoiceSchema, type CreateFinalInvoiceInput, type CreateInvoiceInput } from "@/schemas";
+import { linePriceFields } from "@/domain/document/lines";
 
 export class FinalInvoiceError extends Error {
   constructor(message: string) {
@@ -100,7 +101,7 @@ export async function createFinalInvoice(orgId: string, rawInput: unknown, opts:
         articleNumber: l.articleNumber ?? undefined,
         quantityMilli: l.quantityMilli,
         unit: l.unit,
-        unitNetPriceCents: l.unitNetPriceCents,
+        ...linePriceFields(l),
         taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,

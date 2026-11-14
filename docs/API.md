@@ -308,6 +308,57 @@ curl -s -X POST "$BASE/api/v1/Invoice/bulk-cancel" \
 - Kein Versand der Stornorechnungen. Höchstens 10 Aufrufe pro Minute und Organisation (`429`).
 - Kein `Idempotency-Key` nötig: eine bereits stornierte Rechnung meldet beim Wiederholen `NOT_CANCELLABLE`.
 
+## Preise: Sub-Cent und Brutto (Phase 18f)
+
+Jede Rechnungs-, Angebots- und AB-Zeile (`POST`/`PATCH` auf `Invoice`, `Quote`, `OrderConfirmation`) nimmt **genau eine** Preisform an (`src/domain/document/price-input.ts:25`, `:105`):
+
+| Feld | Bedeutung |
+|---|---|
+| `unitNetPriceCents` | Netto je Einheit in ganzen Cent (wie bisher) |
+| `unitNetPriceMilliCents` | Netto je Einheit in tausendstel Cent, führend (0,002 EUR = `200`); `unitNetPriceCents` ist dann dessen Rundung und darf weggelassen werden, ein abweichender Wert wird abgelehnt. Bereich 0 bis 2.147.483.647 (= 21.474,83 EUR) |
+| `unitGrossPriceCents` | Brutto je Einheit in Cent, wird je Steuersatz in Netto umgerechnet |
+| `lineGrossCents` | Brutto der Zeile in Cent; hat Vorrang vor Menge × Bruttoeinzelpreis |
+
+Netto und Brutto lassen sich nicht in einer Zeile kombinieren; Bruttozeilen nicht mit Nettozeilen im selben Beleg, nicht mit Positions- oder Belegrabatt/-aufschlag, und nur mit Menge > 0 und gesetztem `taxRate`. Verstöße antworten `400` mit Pfad der Zeile. Positionszeitraum je Zeile: `servicePeriodStart`/`servicePeriodEnd` (nur Rechnung, beide oder keiner, Beginn <= Ende).
+
+Beispiel Sub-Cent (10.000 Aufrufe zu 0,002 EUR, Menge in tausendstel Einheiten):
+
+```json
+{ "description": "API-Aufrufe", "quantityMilli": 10000000, "unit": "C62",
+  "unitNetPriceMilliCents": 200, "taxRate": 19 }
+```
+
+Beispiel Brutto (1 × 9,99 EUR, 19 %):
+
+```json
+{ "description": "Artikel", "quantityMilli": 1000, "unit": "C62",
+  "unitGrossPriceCents": 999, "taxRate": 19 }
+```
+
+Bei Bruttoeingabe enthält die Antwort zusätzlich `grossTargetCents` (Summe der Zielbeträge), `grossExact`, `grossByTaxRate` (Ziel, Ergebnis, Abweichung und `exact` je Steuersatz), `grossNotices` und `grossDeviationCents` (`Rechnungsbrutto − Ziel`, `src/domain/document/price-input.ts:243`); bei Nettoeingabe fehlen beide Felder. Die Rückrechnung gilt je Steuersatz, die Abweichung beträgt höchstens 1 Cent je Satz: 1 × 9,99 EUR brutto ergibt 9,98 EUR Rechnungsbrutto (`grossDeviationCents: -1`), 2 × 9,99 EUR ergibt exakt 19,98 EUR (`0`). Ist bei großen Mengen (z. B. 1.500 × 0,01 EUR) keine Umrechnung mit höchstens 1 Cent Abweichung je Steuersatz möglich, antwortet die API mit `400` und `error.code = GROSS_DEVIATION_TOO_LARGE`; dann Netto- oder Milli-Preis verwenden. Im Brutto-Modus ist der Belegrabatt fest 0: ein Standardrabatt des Kunden greift nicht (Hinweis in `grossNotices`/`warnings`), `PATCH` mit Bruttozeilen auf einen Entwurf mit gespeichertem Belegrabatt wird mit `400 GROSS_DISCOUNT_CONFLICT` abgelehnt (ausdrückliches `documentDiscountPermille`/`documentDiscountCents` = 0 hebt den Rabatt auf); dasselbe gilt für einen gespeicherten Belegaufschlag (`documentChargePermille`/`documentChargeCents` = 0 hebt ihn auf). Ein Rundungsbetrag (BT-114) wird nicht ausgewiesen.
+
+**Atomarer Aufruf mit Zahlung:** Bei `finalize: true` und `payment.amountCents` wird die Anfrage **vor** der Transaktion mit `400` und `error.code = GROSS_DEVIATION` abgelehnt, wenn die Abweichung nicht 0 ist und der Zahlbetrag nicht dem tatsächlichen Rechnungsbrutto entspricht (`assertGrossPayment`, `src/domain/document/price-input.ts:226`). Die Meldung nennt den tatsächlichen Betrag; ohne `payment.amountCents` wird der volle Betrag gebucht.
+
+In den Antworten tragen Rechnungs- und Angebotszeilen `unitNetPriceMilliCents` (`null` bei ganzem Cent), Rechnungszeilen zusätzlich `servicePeriodStart`/`-End`. Abo-Zeilen tragen `id`, `billing` (`FIXED` | `USAGE`), `usageUnitLabel` und `unitNetPriceMilliCents`; im Request nehmen sie dieselben Felder an (`USAGE` nur für `ITEM`, Menge `0`; bleibt die `id` einer Zeile im `PUT` erhalten, bleibt ihr Verbrauch zugeordnet). Teilgutschrift und Lieferschein rechnen in ganzen Cent.
+
+## Verbrauch (`Recurring/{id}/usage`, Phase 18f)
+
+Verbrauch wird je Abo-Position mit `billing: USAGE` erfasst; der nächste Lauf rechnet die offene Menge ab (siehe [ANLEITUNG.md](ANLEITUNG.md), „Abrechnung nach Verbrauch“).
+
+| Aufruf | Zweck |
+|---|---|
+| `POST /api/v1/Recurring/{id}/usage` (Scope `write`) | Verbrauch erfassen: `recurringLineId`, `quantityMilli` (1 bis 2.147.483.647; 2,5 Einheiten = `2500`), optional `usageDate` (nicht in der Zukunft; Standard heute, Berliner Tag), `note` (max. 500), `externalId` (max. 100 sichtbare ASCII-Zeichen). Antwort `201` mit dem Satz |
+| `GET /api/v1/Recurring/{id}/usage` (Scope `read`) | Sätze, neueste zuerst. Query `status` (`open`, `billed`, `voided`, `all`), `limit` (1 bis 200, Standard 50), `cursor`. Antwort `data`, `total`, `limit`, `offset` (immer 0), `nextCursor`, `meta.open` (offene Menge je Position) |
+| `DELETE /api/v1/Recurring/{id}/usage/{usageId}` (Scope `write`) | Offenen Satz weich stornieren; Body `{ "reason": "…" }` (Pflicht, JSON, max. 4 KB, `Content-Type` Pflicht, sonst `415`; zu groß `413`) |
+
+Jeder Satz trägt `id`, `recurringLineId`, `usageDate`, `periodStart`, `periodEnd`, `quantityMilli`, `note`, `source` (`UI`/`API`/`MCP`), `externalId`, `status` (`open`/`billed`/`voided`), `invoiceId`, `invoiceNumber`, `voidReason`, `createdAt` (`src/api/serializers/recurring-usage.ts:11`). Die Periode ergibt sich aus Rhythmus und Termin des Abos; der Stichtag gehört zur endenden Periode.
+
+**Idempotenz per `externalId`** (je Abo eindeutig): dieselbe `externalId` mit gleicher Nutzlast liefert den bestehenden Satz mit `200` und `"replayed": true`, auch nach Pause oder Ende des Abos; mit anderer Nutzlast `409` (`CONFLICT`). Zusätzlich greift der allgemeine `Idempotency-Key` (siehe „Rate-Limit & Idempotenz“).
+
+**Fachfehler** `422` tragen den Code in `error.code`: `NOT_ACTIVE` (Abo nicht aktiv), `NOT_USAGE_LINE` (Position nicht nach Verbrauch), `PERIOD_BILLED` (Zeitraum bereits abgerechnet), `AFTER_END` (nach Abo-Ende oder nach der letzten Periode bei `maxRuns`), `IN_FUTURE`, `ALREADY_BILLED`, `ALREADY_VOIDED`; `404` `NOT_FOUND` (auch für fremde Organisation und fremde Ids), `409` `CONFLICT`. Ein ungültiger `cursor` ergibt `400`.
+
+**Lauf:** `POST /api/v1/Recurring/{id}/run` antwortet bei einem Verbrauchsabo ohne Verbrauch im Zeitraum mit `200` und `{ "skipped": true, "periodDate": "…" }` (statt einer Rechnung, `src/app/api/v1/Recurring/[id]/run/route.ts:35`); der Termin rückt weiter. Das Ergebnis des Laufs über mehrere Abos (`run-recurring`) führt solche Perioden unter `skipped` je Abo.
+
 ## Anfrageprotokoll
 
 Jede Antwort von `/api/v1/*` — Erfolg **und** Fehler — trägt den Header

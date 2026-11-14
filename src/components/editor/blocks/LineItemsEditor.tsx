@@ -62,6 +62,7 @@ export function LineItemsEditor({
   mode,
   totals,
   onProductCreated,
+  recurring = false,
 }: {
   draft: DraftState;
   dispatch: (action: DraftAction) => void;
@@ -71,6 +72,8 @@ export function LineItemsEditor({
   mode: EditorMode;
   totals: DraftTotals;
   onProductCreated?: (p: ProductOption) => void;
+  /** Phase 18f — Abo-Editor: Abrechnungsart je Position. */
+  recurring?: boolean;
 }) {
   const taxDisabled = mode === "INVOICE" && draft.taxScheme !== "REGULAR";
   const allowOtherTypes = mode !== "DELIVERY_NOTE";
@@ -178,6 +181,7 @@ export function LineItemsEditor({
                 key={line.key}
                 line={line}
                 mode={mode}
+                recurring={recurring}
                 taxRates={taxRates}
                 itemPos={itemPositions[index] ?? null}
                 isLast={index === draft.lines.length - 1}

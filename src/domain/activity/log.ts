@@ -98,6 +98,10 @@ export const ACTIVITY_TYPES = {
   BULK_CANCELLED: "Sammel-Storno",
   // Phase 18d: Sammelanlage von Kunden (src/domain/import/contacts-bulk.ts), entityType IMPORT, entityId = Sammel-Id.
   CONTACTS_BULK_CREATED: "Kunden-Sammelanlage",
+  // Phase 18f: Abo-Verbrauch (src/domain/recurring/usage.ts, run.ts), entityType RECURRING, entityId = Abo.
+  USAGE_RECORDED: "Verbrauch erfasst",
+  USAGE_VOIDED: "Verbrauch storniert",
+  USAGE_EMPTY_PERIOD: "Zeitraum ohne Verbrauch",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

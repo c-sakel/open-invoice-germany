@@ -148,6 +148,10 @@ interface SampleLine {
   lineType?: string;
   descriptionLong?: string | null;
   articleNumber?: string | null;
+  // Phase 18f — exakter Einzelpreis (tausendstel Cent, BT-146 mit 5 Stellen) und Leistungszeitraum (BG-26).
+  unitNetPriceMilliCents?: number;
+  servicePeriodStart?: Date;
+  servicePeriodEnd?: Date;
 }
 
 function buildSample(opts: {
@@ -213,10 +217,16 @@ function buildSample(opts: {
     const lineNetCents = computeLineNet({
       quantityMilli: l.quantityMilli,
       unitNetPriceCents: l.unitNetPriceCents,
+      unitNetPriceMilliCents: l.unitNetPriceMilliCents,
       discountPermille: l.discountPermille,
       discountCents: l.discountCents,
     }).lineNetCents;
-    return { ...l, unitNetPriceCents: l.unitNetPriceCents * sign, lineNetCents: lineNetCents * sign };
+    return {
+      ...l,
+      unitNetPriceCents: l.unitNetPriceCents * sign,
+      ...(l.unitNetPriceMilliCents !== undefined ? { unitNetPriceMilliCents: l.unitNetPriceMilliCents * sign } : {}),
+      lineNetCents: lineNetCents * sign,
+    };
   });
   // Phase 4b (§8): nur ITEM-Zeilen fliessen in die Steuerberechnung — HEADING/TEXT/
   // SUBTOTAL sind reine PDF-Gliederungszeilen (0-Betraege, kein eigenes Steuersatz-Bucket).
@@ -277,6 +287,8 @@ function buildSample(opts: {
       quantityMilli: l.quantityMilli,
       unit: l.unit,
       unitNetPriceCents: l.unitNetPriceCents,
+      ...(l.unitNetPriceMilliCents !== undefined ? { unitNetPriceMilliCents: l.unitNetPriceMilliCents } : {}),
+      ...(l.servicePeriodStart && l.servicePeriodEnd ? { servicePeriodStart: l.servicePeriodStart, servicePeriodEnd: l.servicePeriodEnd } : {}),
       lineNetCents: l.lineNetCents,
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
@@ -719,6 +731,38 @@ const lastschrift59 = () =>
     },
   });
 
+// 32) Phase 18f — Verbrauchsabrechnung: Grundgebuehr (Cent-Preis), API-Aufrufe 10.000 x 0,00200 EUR mit
+// Leistungszeitraum (BG-26) und Speicher 1,234 x 0,01234 EUR (-> 0,02 EUR); BT-146 mit 5 Nachkommastellen,
+// BG-14 am Beleg, 19 %. Testjahr 2186.
+const SUBCENT_PERIOD = { servicePeriodStart: new Date("2186-03-01"), servicePeriodEnd: new Date("2186-03-31") };
+const SUBCENT_LINES: SampleLine[] = [
+  { description: "Grundgebühr März", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 2900, taxRate: 19, taxCategory: "S" },
+  { description: "API-Aufrufe März", quantityMilli: 10_000_000, unit: "C62", unitNetPriceCents: 0, unitNetPriceMilliCents: 200, taxRate: 19, taxCategory: "S", ...SUBCENT_PERIOD },
+  { description: "Speicher März", quantityMilli: 1234, unit: "E34", unitNetPriceCents: 1, unitNetPriceMilliCents: 1234, taxRate: 19, taxCategory: "S", ...SUBCENT_PERIOD },
+];
+const SUBCENT_DATES = {
+  issueDate: new Date("2186-04-02"),
+  dueDate: new Date("2186-05-02"),
+  deliveryStart: new Date("2186-03-01"),
+  deliveryEnd: new Date("2186-03-31"),
+};
+const aboVerbrauchSubcent = () => buildSample({ number: "RE-2186-0001", ...SUBCENT_DATES, lines: SUBCENT_LINES });
+
+// 33) Phase 18f — Storno dazu (CreditNote): Preise und Betraege positiv im XML, Zeitraeume uebernommen.
+const aboVerbrauchSubcentStorno = () =>
+  buildSample({
+    number: "GS-2186-0001",
+    type: "CREDIT_NOTE",
+    sign: -1,
+    noPaymentTerms: true,
+    ...SUBCENT_DATES,
+    issueDate: new Date("2186-04-10"),
+    dueDate: new Date("2186-05-10"),
+    lines: SUBCENT_LINES,
+    precedingInvoiceNumber: "RE-2186-0001",
+    precedingInvoiceDate: new Date("2186-04-02"),
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -752,6 +796,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "reverse-charge-bt47": reverseChargeBt47,
   "karte-54": karte54,
   "lastschrift-59": lastschrift59,
+  "abo-verbrauch-subcent": aboVerbrauchSubcent,
+  "abo-verbrauch-subcent-storno": aboVerbrauchSubcentStorno,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);

@@ -39,7 +39,7 @@
 import { clampTaxRate, type DraftLine, type DraftAction, type LineType } from "@/lib/editor/draft";
 import { taxRateOptions } from "@/lib/editor/constants";
 import type { EditorMode } from "@/lib/editor/constants";
-import { toCents, toMilli, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
+import { toMilli, toPrice, priceFieldError, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
 import { computeLineNet } from "@/lib/pricing/line";
 import { inputDenseCls } from "@/components/forms/fields";
 import { RichTextField } from "../RichTextField";
@@ -90,6 +90,8 @@ interface LineRowProps {
    *  bestehenden `ProductPicker` dieser (neu angelegten) Zeile beim Mount, kein zweites
    *  Suchfeld. */
   autoFocusProduct?: boolean;
+  /** Phase 18f — Abo-Editor: Abrechnungsart je Position (fest / nach Verbrauch). */
+  recurring?: boolean;
 }
 
 export function LineRow({
@@ -114,6 +116,7 @@ export function LineRow({
   onRowKeyDown,
   onProductCreated,
   autoFocusProduct,
+  recurring = false,
 }: LineRowProps) {
   const sym = useEditorCurrencySymbol();
   const showDiscount = mode !== "DELIVERY_NOTE";
@@ -127,6 +130,10 @@ export function LineRow({
       e.preventDefault();
       onEnterLast();
     }
+  }
+  function onChangeBilling(billing: "FIXED" | "USAGE") {
+    if (billing === "USAGE") patch({ billing, quantity: "0", usageUnitLabel: line.usageUnitLabel ?? "" });
+    else patch({ billing, quantity: line.quantity.trim() === "0" ? "1" : line.quantity });
   }
   function onChangeType(lineType: LineType) {
     dispatch({ type: "setLine", key: line.key, patch: { lineType } });
@@ -142,14 +149,18 @@ export function LineRow({
     ? baseTaxOptions
     : [...baseTaxOptions, { value: line.taxRate, label: `${line.taxRate}% (nicht mehr zulässig)` }];
   const qtyMilli = toMilli(line.quantity);
-  const priceCents = toCents(line.price);
+  const price = toPrice(line.price);
+  const priceCents = price === null ? null : price.cents;
+  const priceError = line.lineType === "ITEM" ? priceFieldError(line.price) : null;
+  const usage = recurring && line.lineType === "ITEM" && line.billing === "USAGE";
   let amountLabel = "–";
   let grossHint: string | null = null;
-  if (line.lineType === "ITEM" && qtyMilli !== null && priceCents !== null) {
+  if (line.lineType === "ITEM" && !usage && qtyMilli !== null && priceCents !== null) {
     try {
       const { lineNetCents } = computeLineNet({
         quantityMilli: qtyMilli,
         unitNetPriceCents: priceCents,
+        unitNetPriceMilliCents: price?.milliCents ?? null,
         discountPermille: permilleOrZero(line.discountPercent),
         discountCents: centsOrZero(line.discountAmount),
       });
@@ -274,13 +285,48 @@ export function LineRow({
               )}
             </td>
             <td data-label="Menge" className={`order-3 col-span-2 ${cell}`}>
-              <input className={fieldCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
+              {recurring && (
+                <label className="mb-1 block text-[11px] text-ink-muted">
+                  Abrechnung
+                  <select
+                    className={`${fieldCls} mt-0.5`}
+                    aria-label="Abrechnung"
+                    value={usage ? "USAGE" : "FIXED"}
+                    onChange={(e) => onChangeBilling(e.target.value === "USAGE" ? "USAGE" : "FIXED")}
+                  >
+                    <option value="FIXED">fest</option>
+                    <option value="USAGE">nach Verbrauch</option>
+                  </select>
+                </label>
+              )}
+              {usage ? (
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-ink-soft">nach Verbrauch</span>
+                  <input
+                    className={fieldCls}
+                    aria-label="Einheitentext"
+                    placeholder="Einheitentext, z. B. Aufrufe"
+                    maxLength={40}
+                    value={line.usageUnitLabel ?? ""}
+                    onChange={(e) => patch({ usageUnitLabel: e.target.value })}
+                  />
+                </div>
+              ) : (
+                <input className={fieldCls} aria-label="Menge" value={line.quantity} onChange={(e) => patch({ quantity: e.target.value })} />
+              )}
             </td>
             <td data-label="Einheit" className={`order-3 col-span-2 ${cell}`}>
               <UnitSelect value={line.unit} onChange={(v) => patch({ unit: v })} />
             </td>
             <td data-label={grossDisplay ? "Preis (brutto)" : "Preis (netto)"} className={`order-3 col-span-2 ${cell}`}>
-              <input className={fieldCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
+              <input
+                className={fieldCls}
+                aria-label="Preis"
+                aria-invalid={priceError ? true : undefined}
+                value={line.price}
+                onChange={(e) => patch({ price: e.target.value })}
+              />
+              {priceError && <div role="alert" className="mt-0.5 text-[11px] text-red-700">{priceError}</div>}
               {grossHint && <div className="mt-0.5 text-[11px] text-ink-muted">{grossHint}</div>}
             </td>
             <td data-label="USt." className={`order-3 col-span-2 ${cell}`}>

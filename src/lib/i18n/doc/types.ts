@@ -113,6 +113,10 @@ export interface DocStrings {
     unit: string;
     discount: string;
   };
+  lines: {
+    /** Leistungszeitraum je Position (BG-26); Datumsangaben sind bereits formatiert. */
+    servicePeriod: (from: string, to: string) => string;
+  };
   totals: {
     subtotalNet: string;
     lessDiscount: string;

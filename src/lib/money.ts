@@ -87,3 +87,123 @@ export function parseQuantityToMilli(input: string): number {
   if (!Number.isFinite(value)) throw new Error(`Ungültige Menge: ${input}`);
   return roundHalfUp(value * MILLI);
 }
+
+// ---------------------------------------------------------------------------
+// Einzelpreise in tausendstel Cent ("Milli-Cent", Phase 18f)
+//
+// Ein Einzelpreis kann feiner als ein Cent sein (z. B. 0,002 EUR = 200 Milli-Cent).
+// Ganzzahlig gespeichert: 1 EUR = 100 Cent = 100.000 Milli-Cent. Produkte
+// (Menge x Preis) laufen ueber BigInt, damit nichts ueber 2^53 still ungenau wird.
+// ---------------------------------------------------------------------------
+
+export const MILLI_CENTS_PER_CENT = 1000;
+/** Obergrenze eines Einzelpreises in Milli-Cent (Int32, portabel in SQLite und Postgres). */
+export const MAX_UNIT_PRICE_MILLI_CENTS = 2_147_483_647;
+
+/**
+ * round(a * b / divisor) kaufmaennisch (Half-Up, |x.5| weg von 0) ueber BigInt.
+ * Wirft RangeError bei divisor <= 0, nicht ganzzahligen Eingaben oder wenn das Ergebnis
+ * keine sichere Ganzzahl ist.
+ */
+export function mulDivRoundHalfUp(a: number, b: number, divisor: number): number {
+  if (!Number.isInteger(a) || !Number.isInteger(b) || !Number.isInteger(divisor) || divisor <= 0) {
+    throw new RangeError(`mulDivRoundHalfUp erwartet Ganzzahlen und divisor > 0: ${a}, ${b}, ${divisor}`);
+  }
+  const num = BigInt(a) * BigInt(b);
+  const d = BigInt(divisor);
+  const negative = num < BigInt(0);
+  const abs = negative ? -num : num;
+  const q = (abs * BigInt(2) + d) / (BigInt(2) * d);
+  const result = negative ? -q : q;
+  if (result > BigInt(Number.MAX_SAFE_INTEGER) || result < -BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(`mulDivRoundHalfUp: Ergebnis ausserhalb des sicheren Ganzzahlbereichs (${a} * ${b} / ${divisor})`);
+  }
+  return Number(result);
+}
+
+/** Milli-Cent -> Cent (kaufmaennisch gerundet). */
+export function milliCentsToCents(milli: number): number {
+  return mulDivRoundHalfUp(milli, 1, MILLI_CENTS_PER_CENT);
+}
+
+/** `null`, wenn kein Milli-Preis vorliegt oder er ein ganzer Cent ist (Bestandsformat). */
+export function normalizeMilli(milli: number | null | undefined): number | null {
+  if (milli === null || milli === undefined) return null;
+  return milli % MILLI_CENTS_PER_CENT === 0 ? null : milli;
+}
+
+/** Milli-Cent als Dezimalstring mit 5 Nachkommastellen in EUR ("0.00200") — reine String-Arithmetik. */
+export function milliCentsToDecimal(milli: number): string {
+  const negative = milli < 0;
+  const abs = String(Math.abs(milli)).padStart(6, "0");
+  const text = `${abs.slice(0, -5)}.${abs.slice(-5)}`;
+  return negative ? `-${text}` : text;
+}
+
+interface UnitPriceLike {
+  unitNetPriceCents: number;
+  unitNetPriceMilliCents?: number | null;
+}
+
+function unitPriceMilli(p: UnitPriceLike): number {
+  return p.unitNetPriceMilliCents ?? p.unitNetPriceCents * MILLI_CENTS_PER_CENT;
+}
+
+/** Einzelpreis mit 2 bis 5 Nachkommastellen ("12,50 €", "0,002 €", "1.234,5678 €"). */
+export function formatUnitPrice(p: UnitPriceLike, currency = "EUR", locale = "de-DE"): string {
+  // Intl.NumberFormat v3 formatiert Dezimalstrings exakt (kein Float); die TS-Lib kennt das noch nicht.
+  const exact = milliCentsToDecimal(unitPriceMilli(p)) as unknown as number;
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 5,
+  }).format(exact);
+}
+
+/** Vorbelegung des Preisfelds im Editor: "0,002" bzw. "12,50" (ohne Tausendertrenner). */
+export function unitPriceToInput(p: UnitPriceLike, locale = "de-DE"): string {
+  const decimal = milliCentsToDecimal(unitPriceMilli(p));
+  const [int, frac] = decimal.split(".");
+  let trimmed = frac.replace(/0+$/, "");
+  if (trimmed.length < 2) trimmed = trimmed.padEnd(2, "0");
+  const separator = locale.toLowerCase().startsWith("de") ? "," : ".";
+  return `${int}${separator}${trimmed}`;
+}
+
+/**
+ * Parst eine Einzelpreis-Eingabe mit bis zu 5 Nachkommastellen (EUR). Trennerregeln wie
+ * `parseDecimalInput` (Komma = Dezimal, Punkte = Tausender; ein einzelner Punkt ohne Komma
+ * ist Dezimal, ausser "1.234" mit Ganzzahlteil != 0 — mehrdeutig -> null). Mehr als
+ * 5 Nachkommastellen, negative oder unsinnige Eingaben ergeben `null` (keine stille
+ * Rundung). Der Bruchteil wird nie ueber Number geparst. Ganze Cent-Preise (hoechstens
+ * 2 relevante Stellen) haben keine Obergrenze ausser dem sicheren Ganzzahlbereich.
+ */
+export function parseUnitPriceInput(input: string): { cents: number; milliCents: number | null } | null {
+  const cleaned = input.replace(/[\s€]/g, "");
+  if (cleaned === "") return null;
+  let intPart: string;
+  let fracPart = "";
+  if (cleaned.includes(",")) {
+    if (!/^\d{1,3}(\.\d{3})*,\d+$|^\d+,\d+$/.test(cleaned)) return null;
+    const [i, f] = cleaned.split(",");
+    intPart = i.replace(/\./g, "");
+    fracPart = f;
+  } else if ((cleaned.match(/\./g) ?? []).length > 1) {
+    if (!/^\d{1,3}(\.\d{3})+$/.test(cleaned)) return null;
+    intPart = cleaned.replace(/\./g, "");
+  } else {
+    if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
+    if (/^\d{1,3}\.\d{3}$/.test(cleaned) && !/^0\./.test(cleaned)) return null;
+    const [i, f] = cleaned.split(".");
+    intPart = i;
+    fracPart = f ?? "";
+  }
+  if (fracPart.length > 5) return null;
+  const milli = BigInt(intPart) * BigInt(100000) + BigInt(fracPart.padEnd(5, "0"));
+  const whole = milli % BigInt(1000) === BigInt(0);
+  if (!whole && milli > BigInt(MAX_UNIT_PRICE_MILLI_CENTS)) return null;
+  const cents = (milli * BigInt(2) + BigInt(1000)) / BigInt(2000);
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return { cents: Number(cents), milliCents: whole ? null : Number(milli) };
+}

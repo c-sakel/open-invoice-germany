@@ -311,6 +311,10 @@ function columnType(c: CsvColumn): string {
       return "<Numeric/>";
     case "amount":
       return "<Numeric><Accuracy>2</Accuracy></Numeric>";
+    case "amount5":
+      // Phase 18f: exakter Einzelpreis (tausendstel Cent = 5 Nachkommastellen in EUR); maschinelle
+      // Auswertbarkeit nach GoBD Rz. 158 ff. verlangt die ungerundete Angabe.
+      return "<Numeric><Accuracy>5</Accuracy></Numeric>";
     case "quantity":
       return "<Numeric><Accuracy>3</Accuracy></Numeric>";
     case "date":
