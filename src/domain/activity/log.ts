@@ -96,6 +96,8 @@ export const ACTIVITY_TYPES = {
   CSV_IMPORTED: "CSV-Import",
   // Phase 18c: Sammel-Storno (src/domain/invoice/bulk-cancel.ts), entityType INVOICE_BATCH, entityId = batchId.
   BULK_CANCELLED: "Sammel-Storno",
+  // Phase 18d: Sammelanlage von Kunden (src/domain/import/contacts-bulk.ts), entityType IMPORT, entityId = Sammel-Id.
+  CONTACTS_BULK_CREATED: "Kunden-Sammelanlage",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

@@ -62,7 +62,31 @@ export interface ValidatedRows<T> {
   taken: Set<string>;
 }
 
-export async function validateContactRows(db: ImportDb, orgId: string, rows: readonly ParsedRow[], index: ColumnIndex): Promise<ValidatedRows<CustomerInput>> {
+export interface ContactInputError {
+  ref: number;
+  /** Schemafeld (`customerSchema`), `null` bei feldlosen Fehlern. */
+  field: string | null;
+  message: string;
+}
+
+export interface ValidateContactInputsOptions {
+  /** Verweis auf den ersten Datensatz in Meldungen zu Duplikaten in derselben Eingabe (Standard: "Zeile n"). */
+  refLabel?: (ref: number) => string;
+}
+
+/**
+ * Gemeinsame Pruefung fuer CSV-Import (Phase 18b) und Sammelanlage (18d): Schema (`customerSchema`), Domainpruefung
+ * (Leitweg-ID), Zahlungsmethode der eigenen Organisation, Duplikate gegen Bestand (inkl. archivierter Kunden) und
+ * innerhalb der Eingabe. `input` ist schemanah (Feldnamen von `customerSchema`); unbekannte Schluessel (z. B. `orgId`, `id`)
+ * werden vom Schema verworfen. Meldungen enthalten nie Eingabewerte.
+ */
+export async function validateContactInputs(
+  db: ImportDb,
+  orgId: string,
+  items: readonly { ref: number; input: Record<string, unknown> }[],
+  options: ValidateContactInputsOptions = {},
+): Promise<{ valid: { ref: number; value: CustomerInput }[]; errors: ContactInputError[] }> {
+  const refLabel = options.refLabel ?? ((ref: number) => `Zeile ${ref}`);
   const existing = await db.customer.findMany({ where: { orgId }, select: { customerNumber: true, name: true, email: true } });
   const numbers = new Set<string>();
   const emailName = new Set<string>();
@@ -70,50 +94,94 @@ export async function validateContactRows(db: ImportDb, orgId: string, rows: rea
     if (c.customerNumber) numbers.add(c.customerNumber);
     if (c.email) emailName.add(`${c.email.toLowerCase()}\u0000${c.name.toLowerCase()}`);
   }
+  const methodIds = [...new Set(items.flatMap((it) => (typeof it.input.defaultPaymentMethodId === "string" && it.input.defaultPaymentMethodId ? [it.input.defaultPaymentMethodId] : [])))];
+  const ownMethods = new Set(
+    methodIds.length === 0 ? [] : (await db.paymentMethod.findMany({ where: { orgId, id: { in: methodIds } }, select: { id: true } })).map((m) => m.id),
+  );
   const seenNumber = new Map<string, number>();
   const seenEmailName = new Map<string, number>();
-  const valid: { line: number; value: CustomerInput }[] = [];
-  const errors: ImportRowError[] = [];
-  const explicit = new Set<string>();
+  const valid: { ref: number; value: CustomerInput }[] = [];
+  const errors: ContactInputError[] = [];
 
-  for (const row of rows) {
-    const problems: RowProblem[] = [];
-    const control = controlCharProblems(row.cells, index, CONTACT_IMPORT_COLUMNS);
-    const mapped = control.length > 0 ? { errors: control } : contactRowToInput(row.cells, index);
+  for (const item of items) {
+    const problems: { field: string | null; message: string }[] = [];
     let value: CustomerInput | null = null;
-    if ("errors" in mapped) problems.push(...mapped.errors);
-    else {
-      const parsed = customerSchema.safeParse(mapped.input);
-      if (!parsed.success) problems.push(...zodProblems(parsed.error, CONTACT_IMPORT_COLUMNS, KEY_MAP, ["countryCode"], mapped.input));
-      else {
-        try {
-          assertCustomerCreatable(parsed.data);
-          value = parsed.data;
-        } catch (e) {
-          if (!(e instanceof CustomerValidationError)) throw e;
-          problems.push({ column: h("leitwegId"), message: e.message });
-        }
+    const parsed = customerSchema.safeParse(item.input);
+    if (!parsed.success) {
+      // Spalten-Liste leer: `column` ist dann der Schemafeldname selbst.
+      for (const p of zodProblems(parsed.error, [], {}, ["countryCode"], item.input)) problems.push({ field: p.column === "" ? null : p.column, message: p.message });
+    } else {
+      try {
+        assertCustomerCreatable(parsed.data);
+        value = parsed.data;
+      } catch (e) {
+        if (!(e instanceof CustomerValidationError)) throw e;
+        problems.push({ field: "leitwegId", message: e.message });
       }
+    }
+    if (value?.defaultPaymentMethodId && !ownMethods.has(value.defaultPaymentMethodId)) {
+      problems.push({ field: "defaultPaymentMethodId", message: "Zahlungsmethode nicht gefunden." });
     }
     if (value) {
       const num = value.customerNumber?.trim();
       if (num) {
         const first = seenNumber.get(num);
-        if (numbers.has(num)) problems.push({ column: h("customerNumber"), message: "Kundennummer bereits vergeben" });
-        else if (first !== undefined) problems.push({ column: h("customerNumber"), message: `Kundennummer doppelt in Zeile ${first}` });
-        else seenNumber.set(num, row.line);
-        if (!numbers.has(num) && first === undefined) explicit.add(num);
+        if (numbers.has(num)) problems.push({ field: "customerNumber", message: "Kundennummer bereits vergeben" });
+        else if (first !== undefined) problems.push({ field: "customerNumber", message: `Kundennummer doppelt in ${refLabel(first)}` });
+        else seenNumber.set(num, item.ref);
       }
       if (value.email) {
         const key = `${value.email.toLowerCase()}\u0000${value.name.toLowerCase()}`;
         const first = seenEmailName.get(key);
-        if (emailName.has(key)) problems.push({ column: h("email"), message: "Kunde mit gleicher E-Mail und gleichem Namen vorhanden" });
-        else if (first !== undefined) problems.push({ column: h("email"), message: `Kunde mit gleicher E-Mail und gleichem Namen doppelt in Zeile ${first}` });
-        else seenEmailName.set(key, row.line);
+        if (emailName.has(key)) problems.push({ field: "email", message: "Kunde mit gleicher E-Mail und gleichem Namen vorhanden" });
+        else if (first !== undefined) problems.push({ field: "email", message: `Kunde mit gleicher E-Mail und gleichem Namen doppelt in ${refLabel(first)}` });
+        else seenEmailName.set(key, item.ref);
       }
     }
-    if (problems.length > 0 || !value) for (const p of problems) errors.push({ line: row.line, column: p.column, message: p.message });
-    else valid.push({ line: row.line, value });
+    if (problems.length > 0 || !value) for (const p of problems) errors.push({ ref: item.ref, field: p.field, message: p.message });
+    else valid.push({ ref: item.ref, value });
   }
-  return { valid, errors, taken: new Set([...numbers, ...explicit]) };
+  return { valid, errors };
+}
+
+/** Schemafeld -> CSV-Spaltenkopf (Fehlermeldungen des Imports). */
+function columnOfField(field: string | null): string {
+  return field === null ? "" : h(KEY_MAP[field] ?? field);
+}
+
+/** Bestehende plus ausdruecklich angegebene Kundennummern (fuer die Nummernkreis-Kollisionspruefung). */
+export async function takenNumbers(db: ImportDb, orgId: string, values: readonly CustomerInput[]): Promise<Set<string>> {
+  const existing = await db.customer.findMany({ where: { orgId }, select: { customerNumber: true } });
+  const taken = new Set<string>();
+  for (const c of existing) if (c.customerNumber) taken.add(c.customerNumber);
+  for (const v of values) {
+    const n = v.customerNumber?.trim();
+    if (n) taken.add(n);
+  }
+  return taken;
+}
+
+export async function validateContactRows(db: ImportDb, orgId: string, rows: readonly ParsedRow[], index: ColumnIndex): Promise<ValidatedRows<CustomerInput>> {
+  const mappedItems: { ref: number; input: Record<string, unknown> }[] = [];
+  const rowErrors = new Map<number, RowProblem[]>();
+  for (const row of rows) {
+    const control = controlCharProblems(row.cells, index, CONTACT_IMPORT_COLUMNS);
+    const mapped = control.length > 0 ? { errors: control } : contactRowToInput(row.cells, index);
+    if ("errors" in mapped) rowErrors.set(row.line, mapped.errors);
+    else mappedItems.push({ ref: row.line, input: mapped.input });
+  }
+  const res = await validateContactInputs(db, orgId, mappedItems);
+  const byLine = new Map<number, ImportRowError[]>();
+  for (const e of res.errors) {
+    const list = byLine.get(e.ref) ?? [];
+    list.push({ line: e.ref, column: columnOfField(e.field), message: e.message });
+    byLine.set(e.ref, list);
+  }
+  const errors: ImportRowError[] = [];
+  for (const row of rows) {
+    for (const p of rowErrors.get(row.line) ?? []) errors.push({ line: row.line, column: p.column, message: p.message });
+    errors.push(...(byLine.get(row.line) ?? []));
+  }
+  const valid = res.valid.map((v) => ({ line: v.ref, value: v.value }));
+  return { valid, errors, taken: await takenNumbers(db, orgId, valid.map((v) => v.value)) };
 }

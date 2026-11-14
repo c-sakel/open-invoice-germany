@@ -263,6 +263,7 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 |---|---|---|
 | `import_contacts` | Kunden aus CSV-Text (`csv`) anlegen; `dryRun` ist Standard `true` (nur Vorschau mit Fehlern je Zeile/Spalte, ohne Beispielzeilen), `dryRun: false` legt an und verlangt `expectedHash` (`fileHash` der Vorschau); optional `fileName`; dieselbe Datei (gleicher Inhalts-Hash) wird je Organisation innerhalb von 24 Stunden nur einmal importiert, `allowRepeat: true` hebt das bewusst auf | „Prüfe diese Kundenliste als CSV und importiere sie, wenn sie fehlerfrei ist." |
 | `import_products` | Produkte aus CSV-Text (`csv`) anlegen; sonst wie `import_contacts` | „Importiere diese Artikelliste als Produkte." |
+| `create_contacts` | 1 bis 100 Kunden (`contacts`, Felder wie `upsert_customer`) in einem Schritt anlegen, alles oder nichts (nur Anlage; Duplikate und Fehler lehnen die gesamte Sammelanlage ab); Fehler mit Index, Feld und Meldung je Eintrag (höchstens 20 angezeigt); höchstens 10 Aufrufe pro Minute | „Lege diese drei Kunden an." |
 
 ### Einstellungen
 

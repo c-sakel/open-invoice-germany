@@ -8,6 +8,8 @@
  * Rate-Limits je Organisation (UI, REST und MCP gleich): Vorschau 20/min, Commit 5/min.
  */
 import { z } from "zod";
+import type { Prisma, Customer } from "@/generated/prisma/client";
+import type { CustomerInput } from "@/schemas";
 import { dbInternal } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { lockOrganization } from "@/lib/db-lock";
@@ -16,7 +18,7 @@ import { createCustomerWithinTx } from "@/domain/customer/save";
 import { createProductWithinTx } from "@/domain/product/save";
 import { CONTACT_IMPORT_COLUMNS, PRODUCT_IMPORT_COLUMNS, mapHeader, type ImportColumn } from "./columns";
 import { CsvFormatError, CsvLimitError, MAX_IMPORT_BYTES, parseCsv, sha256Hex } from "./parse-csv";
-import { validateContactRows, type ValidatedRows } from "./contacts-import";
+import { takenNumbers, validateContactRows, type ValidatedRows } from "./contacts-import";
 import { validateProductRows } from "./products-import";
 import { clipHeaderName, sanitizeFileName, type ColumnIndex, type ImportRowError, type ParsedRow } from "./types";
 
@@ -78,6 +80,32 @@ export interface ImportContext {
   source: "UI" | "API" | "MCP";
   withSample?: boolean;
   now?: Date;
+}
+
+const COLLISION_MESSAGE = "Nummer aus dem Nummernkreis bereits vergeben — Nummernkreis anpassen";
+
+/**
+ * Legt bereits validierte Kunden seriell in der Transaktion `tx` an (Aufrufer sperrt vorher die Organisation).
+ * Vergibt der Nummernkreis eine bereits belegte Nummer, wird die `ref` in `collisions` gemeldet (der Aufrufer
+ * verwirft dann per Rollback die gesamte Anlage).
+ */
+export async function createContactsWithinTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  valid: readonly { ref: number; value: CustomerInput }[],
+): Promise<{ customers: Customer[]; collisions: number[] }> {
+  const taken = await takenNumbers(tx, orgId, valid.map((v) => v.value));
+  const customers: Customer[] = [];
+  const collisions: number[] = [];
+  for (const row of valid) {
+    const c = await createCustomerWithinTx(tx, orgId, row.value);
+    if (!row.value.customerNumber) {
+      if (c.customerNumber && taken.has(c.customerNumber)) collisions.push(row.ref);
+      if (c.customerNumber) taken.add(c.customerNumber);
+    }
+    customers.push(c);
+  }
+  return { customers, collisions };
 }
 
 const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
@@ -151,28 +179,23 @@ export async function runCsvImport(
     }
     const res = await validate(tx);
     if (res.errors.length > 0) throw new ImportRejectedError(preview(res.errors, res.valid.length));
-    const taken = res.taken;
-    // Kollisionen mit dem Nummernkreis sammeln (alle Zeilen laufen durch, der Rollback verwirft die Anlage).
     const collisions: ImportRowError[] = [];
-    const collide = (line: number, column: string): void => {
-      collisions.push({ line, column, message: "Nummer aus dem Nummernkreis bereits vergeben — Nummernkreis anpassen" });
-    };
     let count = 0;
-    for (const row of res.valid) {
-      if (resource === "contacts") {
-        const c = await createCustomerWithinTx(tx, orgId, row.value as Parameters<typeof createCustomerWithinTx>[2]);
-        if (!(row.value as { customerNumber?: string }).customerNumber) {
-          if (c.customerNumber && taken.has(c.customerNumber)) collide(row.line, "Kundennummer");
-          if (c.customerNumber) taken.add(c.customerNumber);
-        }
-      } else {
+    if (resource === "contacts") {
+      const contacts = res.valid as { line: number; value: CustomerInput }[];
+      const made = await createContactsWithinTx(tx, orgId, contacts.map((r) => ({ ref: r.line, value: r.value })));
+      for (const ref of made.collisions) collisions.push({ line: ref, column: "Kundennummer", message: COLLISION_MESSAGE });
+      count = made.customers.length;
+    } else {
+      const taken = res.taken;
+      for (const row of res.valid) {
         const p = await createProductWithinTx(tx, orgId, row.value as Parameters<typeof createProductWithinTx>[2]);
         if (!(row.value as { articleNumber?: string }).articleNumber) {
-          if (p.articleNumber && taken.has(p.articleNumber)) collide(row.line, "Artikelnummer");
+          if (p.articleNumber && taken.has(p.articleNumber)) collisions.push({ line: row.line, column: "Artikelnummer", message: COLLISION_MESSAGE });
           if (p.articleNumber) taken.add(p.articleNumber);
         }
+        count += 1;
       }
-      count += 1;
     }
     if (collisions.length > 0) throw new ImportRejectedError(preview(collisions, res.valid.length - collisions.length));
     // Protokoll in derselben Transaktion: Daten existieren nie ohne Audit-Eintrag.

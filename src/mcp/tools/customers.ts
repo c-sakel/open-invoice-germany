@@ -23,6 +23,8 @@ import { checkVatId, listVatIdChecks, VatCheckDisabledError, VatCheckRateLimitEr
 import { serializeVatIdCheck } from "@/api/serializers/vat-check";
 import { archiveCustomer } from "@/domain/customer/archive";
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
+import { CONTACTS_BULK_MAX, ContactsBulkRejectedError, createContactsBulk } from "@/domain/import/contacts-bulk";
+import { RateLimitError } from "@/lib/rate-limit";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
   customerFieldsSchema,
@@ -128,6 +130,37 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof CustomerValidationError) return ctx.fail(e.message);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── create_contacts (Phase 18d) ───────────────────────────────────────────────
+  server.registerTool(
+    "create_contacts",
+    {
+      title: "Kunden sammelweise anlegen",
+      description:
+        `Legt 1 bis ${CONTACTS_BULK_MAX} Kunden in einem Schritt an, alles oder nichts (nur Anlage, kein Update; Duplikate und Fehler lehnen die gesamte Sammelanlage ab). ` +
+        "Jeder Eintrag hat die Felder von upsert_customer (Pflicht: name, addressLine1, postalCode, city; optional type, countryCode, email, vatId, leitwegId, customerNumber, …); " +
+        "ohne customerNumber vergibt der Nummernkreis die Nummer. Fehler werden mit Index (ab 0), Feld und Meldung je Eintrag gemeldet.",
+      inputSchema: {
+        contacts: z.array(z.record(z.string(), z.unknown())).min(1).max(CONTACTS_BULK_MAX).describe("Kunden (Felder wie upsert_customer)"),
+      },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const created = await createContactsBulk(org.id, { contacts: args.contacts }, { actor: "mcp", source: "MCP" });
+        return ctx.ok(`${created.length} Kunden angelegt: ${created.map((c) => c.id).join(", ")}.`);
+      } catch (e) {
+        if (e instanceof ContactsBulkRejectedError) {
+          const lines = e.errors.slice(0, 20).map((r) => `Eintrag ${r.index}${r.field ? `, ${r.field}` : ""}: ${r.message}`);
+          return ctx.fail([`${e.message} ${e.errorCount} Fehler.`, ...lines].join("\n"));
+        }
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof RateLimitError) return ctx.fail("Zu viele Sammelanlagen — bitte kurz warten.");
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
