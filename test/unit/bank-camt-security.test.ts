@@ -54,7 +54,7 @@ describe("CAMT-Sicherheit", () => {
     expect(codeOf(() => assertSafeXml(deep(64)))).toBeUndefined();
     expect(codeOf(() => assertSafeXml(deep(65)))).toBe("TOO_DEEP");
     expect(codeOf(() => parseCamt(deep(65)))).toBe("TOO_DEEP");
-    expect(codeOf(() => assertSafeXml("<a/>".repeat(1000)))).toBeUndefined();
+    expect(codeOf(() => assertSafeXml(`<r>${"<a/>".repeat(1000)}</r>`))).toBeUndefined();
   });
 
   it("begrenzt Groesse, Kodierung und Archive", () => {
@@ -73,7 +73,7 @@ describe("CAMT-Sicherheit", () => {
     const pain = `<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"><CstmrCdtTrfInitn/></Document>`;
     expect(codeOf(() => parseCamt(pain))).toBe("UNSUPPORTED_VERSION");
     expect(codeOf(() => parseCamt("<Foo/>"))).toBe("NOT_CAMT");
-    expect(codeOf(() => parseCamt(""))).toBe("NOT_CAMT");
+    expect(codeOf(() => parseCamt(""))).toBe("MALFORMED");
   });
 
   it("lehnt mehr als 50.000 Ntry ab", () => {
@@ -108,6 +108,43 @@ describe("CAMT-Sicherheit", () => {
         expect((e as Error).message).not.toContain(secret);
         expect((e as Error).message).not.toContain(IBAN);
       }
+    }
+  });
+});
+
+describe("CAMT-Sicherheit: nur echtes XML", () => {
+  const spy = () => vi.spyOn(xml, "parseXmlTree");
+  const json = JSON.stringify({ Document: { "@xmlns": "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02", BkToCstmrStmt: { Stmt: { Acct: { Id: { IBAN: IBAN } } } } } });
+  const yaml = `Document:\n  "@xmlns": "urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"\n  BkToCstmrStmt: {}`;
+
+  it("lehnt JSON, YAML, Text ohne Tags und zwei Wurzelelemente ab, ohne den Parser aufzurufen", () => {
+    const s = spy();
+    try {
+      for (const bad of [json, yaml, "nur Text ohne Tags", "", "  \n", `${valid()}<zweite/>`, `<a/><b/>`, `x${valid()}`, `${valid()}\nrest`]) {
+        expect(codeOf(() => parseCamt(bad)), bad.slice(0, 30)).toBe("MALFORMED");
+      }
+      expect(s).not.toHaveBeenCalled();
+    } finally {
+      s.mockRestore();
+    }
+  });
+
+  it("XML-Deklaration nach Leerraum ist MALFORMED, mit fuehrendem Leerraum vor der Wurzel ohne Deklaration ok", () => {
+    expect(codeOf(() => parseCamt(`\n${valid()}`))).toBe("MALFORMED");
+    expect(codeOf(() => parseCamt(valid().replace(/^<\?xml[^>]*\?>\s*/, "\n  ")))).toBeUndefined();
+  });
+
+  it("parseXmlTree selbst nimmt kein JSON an", () => {
+    expect(codeOf(() => xml.parseXmlTree(json))).toBe("MALFORMED");
+  });
+
+  it("Nicht-UTF-8 nennt die Abhilfe", () => {
+    try {
+      decodeCamtBytes(new Uint8Array([0x3c, 0xe4, 0x3e]));
+      throw new Error("kein Fehler");
+    } catch (e) {
+      expect((e as CamtFormatError).message).toContain("UTF-8");
+      expect((e as CamtFormatError).message).toContain("exportieren");
     }
   });
 });

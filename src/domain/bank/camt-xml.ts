@@ -19,7 +19,10 @@ export function decodeCamtBytes(bytes: Uint8Array): string {
   try {
     text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
-    throw new CamtFormatError("Die Datei ist nicht UTF-8-kodiert.", "NOT_UTF8");
+    throw new CamtFormatError(
+      "Die Datei ist nicht UTF-8-kodiert. Bitte den Kontoauszug als CAMT im UTF-8-Format exportieren.",
+      "NOT_UTF8",
+    );
   }
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
@@ -42,11 +45,20 @@ function tagEnd(xml: string, from: number): number {
 
 /** Wirft bei DOCTYPE/ENTITY/Verarbeitungsanweisungen, zu tiefer Schachtelung oder offensichtlich kaputtem Markup. */
 export function assertSafeXml(xml: string): void {
+  const notXml = (): never => {
+    throw new CamtFormatError("Die Datei ist kein gueltiges XML.", "MALFORMED");
+  };
+  // Nur echtes XML: nach der BOM (bereits entfernt) und Leerraum muss ein Tag beginnen. Der Parser erkennt
+  // sonst JSON/YAML am Inhalt und wuerde die Pruefungen unten umgehen.
+  const start = xml.search(/\S/);
+  if (start === -1 || xml[start] !== "<") notXml();
   const stack: string[] = [];
+  let roots = 0;
   let i = 0;
   const n = xml.length;
   while (i < n) {
     const lt = xml.indexOf("<", i);
+    if (stack.length === 0 && /\S/.test(xml.slice(i, lt === -1 ? n : lt))) notXml(); // Text ausserhalb der Wurzel
     if (lt === -1) break;
     if (xml.startsWith("<!--", lt)) {
       const end = xml.indexOf("-->", lt + 4);
@@ -71,6 +83,7 @@ export function assertSafeXml(xml: string): void {
         i = end + 2;
         continue;
       }
+      if (lt === start && /^<\?xml[\s?]/.test(xml.slice(lt, lt + 8))) notXml(); // Deklaration nach Leerraum
       throw new CamtFormatError("Die Datei enthaelt nicht erlaubtes Markup (Verarbeitungsanweisung).", "FORBIDDEN_MARKUP");
     }
     const end = tagEnd(xml, lt + 1);
@@ -79,8 +92,11 @@ export function assertSafeXml(xml: string): void {
     if (!name) throw new CamtFormatError("Die Datei ist kein gueltiges XML.", "MALFORMED");
     if (xml[lt + 1] === "/") {
       if (stack.pop() !== name) throw new CamtFormatError("Die Datei ist kein gueltiges XML.", "MALFORMED");
-    } else if (xml[end - 1] !== "/") {
-      stack.push(name);
+    } else {
+      if (stack.length === 0 && ++roots > 1) notXml();
+      if (xml[end - 1] !== "/") stack.push(name);
+    }
+    if (xml[lt + 1] !== "/" && xml[end - 1] !== "/") {
       if (stack.length > MAX_XML_DEPTH) {
         throw new CamtFormatError("Die XML-Struktur ist zu tief verschachtelt.", "TOO_DEEP");
       }
@@ -92,6 +108,8 @@ export function assertSafeXml(xml: string): void {
 
 /** Parser-Aufruf (einzige Stelle, die das XML tatsaechlich einliest); nur nach `assertSafeXml` aufrufen. */
 export function parseXmlTree(xml: string): unknown {
+  // xmlbuilder2 erkennt das Format am Inhalt (XML/JSON/YAML); hier ist nur XML zulaessig.
+  if (!xml.trimStart().startsWith("<")) throw new CamtFormatError("Die Datei ist kein gueltiges XML.", "MALFORMED");
   try {
     return create(xml).end({ format: "object" });
   } catch {
