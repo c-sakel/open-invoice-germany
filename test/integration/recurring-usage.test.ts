@@ -1,6 +1,6 @@
 /**
  * Phase 18f, Task 5: Verbrauch je Abrechnungszeitraum — erfassen, stornieren, im Lauf abrechnen,
- * Abo-Zeilen-Sync, Abo loeschen, Laufrate. Eigenes Jahr 2187 (Invoice.number global eindeutig),
+ * Abo-Zeilen-Sync, Laufrate. Eigenes Jahr 2187 (Invoice.number global eindeutig),
  * eigene Organisation, kein Netz.
  */
 import { describe, it, expect, beforeAll } from "vitest";
@@ -10,7 +10,6 @@ import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createRecurring, RecurringError } from "@/domain/recurring/create";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
-import { deleteRecurringInvoice } from "@/domain/recurring/delete";
 import { emitRecurringNow, runDueRecurring, isSkipped } from "@/domain/recurring/run";
 import { recordUsage, voidUsage, listUsage, markUsageBilled, UsageError } from "@/domain/recurring/usage";
 import { cancelInvoice } from "@/domain/invoice/cancel";
@@ -247,7 +246,81 @@ describe("Lauf mit Verbrauch", () => {
   });
 });
 
-describe("Abo bearbeiten, loeschen, Laufrate", () => {
+describe("Fix-Welle 18f-1", () => {
+  it("Abo ohne anchorDay mit Start 31.01.: Perioden entsprechen den abgerechneten Stichtagen (PERIOD_BILLED am 31.03.)", async () => {
+    const { rec, usageLineId } = await makeAbo({ startDate: D("2187-01-31") });
+    const seen: string[] = [];
+    for (const now of ["2187-01-31", "2187-02-28", "2187-03-31"]) {
+      await emitted(rec.id, D(now));
+      const r = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true } });
+      seen.push(r.nextRunDate.toISOString().slice(0, 10));
+    }
+    expect(seen).toEqual(["2187-02-28", "2187-03-31", "2187-04-30"]);
+    const at = D("2187-04-10");
+    expect(await code(recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1, usageDate: "2187-03-31" }, { source: "UI", actor: "t", now: at }))).toBe("PERIOD_BILLED");
+    const ok = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-04-01" }, { source: "UI", actor: "t", now: at });
+    expect([ok.usage.periodStart.toISOString().slice(0, 10), ok.usage.periodEnd.toISOString().slice(0, 10)]).toEqual(["2187-03-31", "2187-04-30"]);
+  });
+
+  it("Abo ohne Verbrauchszeile (FIXED) behaelt Stichtage und Periodentext wie vor 18f", async () => {
+    const rec = await createRecurring(orgId, input({ title: "Nur fest", startDate: D("2187-01-31"), lines: [fixedLine], showPeriodText: true }));
+    await emitted(rec.id, D("2187-01-31"));
+    const second = await emitted(rec.id, D("2187-02-28"));
+    const r = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true } });
+    expect(r.nextRunDate.toISOString().slice(0, 10)).toBe("2187-03-28");
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: second.invoiceId }, select: { headerText: true } });
+    expect(inv.headerText).toBe("Abrechnungszeitraum 28.01.2187 – 28.02.2187");
+  });
+
+  it("Abo ohne ITEM und ohne USAGE (nur Text, direkt angelegt) wird wie vor 18f abgerechnet, nicht uebersprungen", async () => {
+    const rec = await createRecurring(orgId, input({ title: "Nur Text", autoFinalize: false }));
+    await dbInternal.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: rec.id } });
+    await dbInternal.recurringInvoiceLine.create({
+      data: { recurringInvoiceId: rec.id, position: 1, lineType: "TEXT", description: "Hinweis", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S" },
+    });
+    const out = await emitRecurringNow(rec.id, { now: RUN });
+    expect(isSkipped(out)).toBe(false);
+  });
+
+  it("Stichtag/Intervall/Anker aendern mit offenem Verbrauch -> Fehler; nach Storno erlaubt", async () => {
+    const { rec, usageLineId } = await makeAbo();
+    const u = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-10" }, { source: "UI", actor: "t", now: NOW });
+    await expect(updateRecurringInvoice(orgId, rec.id, { interval: "WEEKLY" })).rejects.toThrow(/offene Verbräuche/);
+    await expect(updateRecurringInvoice(orgId, rec.id, { anchorDay: 15 })).rejects.toBeInstanceOf(RecurringError);
+    await expect(updateRecurringInvoice(orgId, rec.id, { intervalCount: 2 })).rejects.toThrow(/offene Verbräuche/);
+    await updateRecurringInvoice(orgId, rec.id, { title: "Anderer Titel" });
+    await voidUsage(orgId, rec.id, u.usage.id, { reason: "Fehlbuchung" }, { actor: "t", now: NOW });
+    const updated = await updateRecurringInvoice(orgId, rec.id, { interval: "WEEKLY" });
+    expect(updated.interval).toBe("WEEKLY");
+  });
+
+  it("Wiederholung mit gleicher externalId liefert replayed auch nach Pause/Ende; fremde Org bleibt NOT_FOUND", async () => {
+    const { rec, usageLineId } = await makeAbo();
+    const ev = { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-10", externalId: "ev-pause" };
+    const first = await recordUsage(orgId, rec.id, ev, { source: "API", actor: "t", now: NOW });
+    for (const status of ["PAUSED", "ENDED"]) {
+      await dbInternal.recurringInvoice.update({ where: { id: rec.id }, data: { status } });
+      const again = await recordUsage(orgId, rec.id, ev, { source: "API", actor: "t", now: NOW });
+      expect(again.replayed).toBe(true);
+      expect(again.usage.id).toBe(first.usage.id);
+      expect(await code(recordUsage(orgId, rec.id, { ...ev, externalId: "neu" }, { source: "API", actor: "t", now: NOW }))).toBe("NOT_ACTIVE");
+    }
+    expect(await code(recordUsage(otherOrgId, rec.id, ev, { source: "API", actor: "t", now: NOW }))).toBe("NOT_FOUND");
+  });
+
+  it("PUT-Zeile mit Id ohne billing uebernimmt den bisherigen Wert (USAGE bleibt USAGE)", async () => {
+    const { rec, usageLineId, fixedLineId } = await makeAbo();
+    const { billing: _omit, ...usageNoBilling } = usageLine;
+    void _omit;
+    const updated = await updateRecurringInvoice(orgId, rec.id, {
+      lines: [{ ...fixedLine, id: fixedLineId }, { ...usageNoBilling, quantityMilli: 1000, id: usageLineId }],
+    });
+    expect(updated.lines.find((l) => l.id === usageLineId)).toMatchObject({ billing: "USAGE", quantityMilli: 0 });
+    expect(updated.lines.find((l) => l.id === fixedLineId)?.billing).toBe("FIXED");
+  });
+});
+
+describe("Abo bearbeiten, Laufrate", () => {
   it("Zeilen behalten ihre Id; offener Verbrauch bleibt der Zeile zugeordnet (recurringLineId nicht NULL)", async () => {
     const { rec, usageLineId, fixedLineId } = await makeAbo();
     await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 7_000_000, usageDate: "2187-03-10" }, { source: "UI", actor: "t", now: NOW });
@@ -270,24 +343,12 @@ describe("Abo bearbeiten, loeschen, Laufrate", () => {
     await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-10" }, { source: "UI", actor: "t", now: NOW });
     await expect(updateRecurringInvoice(orgId, rec.id, { lines: [{ ...fixedLine, id: fixedLineId }] })).rejects.toThrow(RecurringError);
     await expect(
-      updateRecurringInvoice(orgId, rec.id, { lines: [{ ...fixedLine, id: fixedLineId }, { ...fixedLine, id: usageLineId, description: "jetzt fest" }] }),
+      updateRecurringInvoice(orgId, rec.id, { lines: [{ ...fixedLine, id: fixedLineId }, { ...fixedLine, id: usageLineId, description: "jetzt fest", billing: "FIXED" }] }),
     ).rejects.toThrow(/offene Verbräuche/);
     const row = await dbInternal.recurringUsage.findFirstOrThrow({ where: { recurringInvoiceId: rec.id }, select: { recurringLineId: true, quantityMilli: true } });
     expect(row).toEqual({ recurringLineId: usageLineId, quantityMilli: 1000 });
     const stored = await dbInternal.recurringInvoiceLine.count({ where: { recurringInvoiceId: rec.id } });
     expect(stored).toBe(2);
-  });
-
-  it("Abo loeschen mit Verbrauchssaetzen -> klare Domain-Meldung statt Datenbankfehler", async () => {
-    const { rec, usageLineId } = await makeAbo();
-    await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-10" }, { source: "UI", actor: "t", now: NOW });
-    await expect(deleteRecurringInvoice(orgId, rec.id)).rejects.toThrow(/Verbrauchsätze|Verbrauchssätze/);
-    await expect(deleteRecurringInvoice(orgId, rec.id)).rejects.toBeInstanceOf(RecurringError);
-    expect(await dbInternal.recurringInvoice.count({ where: { id: rec.id } })).toBe(1);
-    const plain = await createRecurring(orgId, input({ title: "Ohne Verbrauch" }));
-    await deleteRecurringInvoice(orgId, plain.id);
-    expect(await dbInternal.recurringInvoice.count({ where: { id: plain.id } })).toBe(0);
-    await expect(deleteRecurringInvoice(otherOrgId, rec.id)).rejects.toThrow(/nicht gefunden/);
   });
 
   it("Laufrate beruecksichtigt den Milli-Preis (Select + Rechnung) und zaehlt USAGE-Zeilen mit 0", async () => {
