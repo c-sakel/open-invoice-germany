@@ -85,7 +85,8 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
   };
 
   try {
-    const existing = await dbInternal.organization.findFirst();
+    // Erste Einrichtung (noch keine Organisation) legt an; sonst wird die aktive Organisation geaendert.
+    const existing = await getActiveOrg().catch(() => null);
     const org = existing
       ? await dbInternal.organization.update({ where: { id: existing.id }, data })
       : await dbInternal.organization.create({ data });
