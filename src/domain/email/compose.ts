@@ -115,7 +115,7 @@ async function portalUrlForLog(orgId: string, docType: string, docId: string, te
       return baseUrl ? await revealPortalUrl(orgId, docId, baseUrl) : null;
     }
     const { ctx } = await buildTemplateContext(orgId, docType as EmailDocType, docId);
-    return ctx.portal?.url || null;
+    return (ctx.portal as { url?: string } | undefined)?.url || null;
   } catch {
     return null;
   }
