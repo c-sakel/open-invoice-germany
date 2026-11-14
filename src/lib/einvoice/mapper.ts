@@ -2,6 +2,7 @@
  * Bildet eine festgeschriebene Rechnung (Prisma) auf die framework-freie
  * EInvoiceData-Struktur ab — gemeinsame Quelle für XRechnung- und PDF-Export.
  */
+import { resolveSpecialMeans, parseDirectDebitSnapshot, DIRECT_DEBIT_CODE } from "./payment-means";
 import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot } from "@/domain/snapshot";
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
@@ -88,6 +89,11 @@ export interface MapInput {
   skonto2Days?: number | null;
   // Phase 4a — Snapshot der gewaehlten Zahlungsmethode (siehe finalize.ts). NULL,
   // wenn keine Zahlungsmethode gewaehlt war -> Fallback Org-Konto, Code 58.
+  // Phase 18e — Kartenfelder (BG-18) und Lastschrift-Snapshot (BG-19); optional wegen Alt-Aufrufern.
+  cardPanTruncated?: string | null;
+  cardHolderName?: string | null;
+  cardNetwork?: string | null;
+  directDebitSnapshotJson?: string | null;
   paymentMethodSnapshotJson?: string | null;
   // Phase 0: Snapshot der Parteien; bei Entwuerfen null -> Live-Relation.
   sellerSnapshotJson?: string | null;
@@ -289,12 +295,11 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
   // ohne ein irrefuehrendes Konto vorzutaeuschen. Verlangt der gewaehlte Methoden-Code
   // ein Konto (58/59/30 — BR-DE-23) und liegt weder ein Methoden- noch ein Org-Konto
   // vor, greift derselbe Fallback (protokolliert).
-  const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
-  // K2 — Allowlist exportierbarer PaymentMeans-Codes OHNE Zusatzgruppen (CardAccount/
-  // PaymentMandate), die die XRechnung/ZUGFeRD-Mapper nicht abbilden. Karte (48/54/55)
-  // und Lastschrift (59) fallen auf Code 1 zurueck — die brauchten je ein eigenes
-  // XML-Element (CardAccount bzw. PaymentMandate), das dieser Mapper nicht erzeugt.
-  const NON_EXPORTABLE_CODES = new Set(["48", "54", "55", "59"]);
+  // Phase 18e: 59 (Lastschrift) verlangt KEIN Zahlungsempfaenger-Konto mehr (BR-DE-25-b:
+  // BG-17 dort verboten); Kartencodes 48/54/55 -> BG-18 (BR-DE-24-a/b). Die Entscheidung
+  // trifft resolveSpecialMeans (gleiche Funktion wie der Festschreibe-Hinweis); bei
+  // unvollstaendigen Daten und bei Gutschriften bleibt es beim Rueckfall Code 1.
+  const ACCOUNT_REQUIRING_CODES = new Set(["58", "30"]);
   // Fix (Kontoinhaber): BT-85 (PayeeFinancialAccount/Name) ist der KONTOINHABER, nicht die
   // Bank (vorher stand hier `org.bankName`/`pm.bankName`, siehe Git-Historie) — leer faellt
   // auf den Firmennamen zurueck, unabhaengig davon, ob eine spezifische Zahlungsmethode
@@ -311,8 +316,23 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       const pm = pmParsed.data;
       const code = pm.untdidCode || "58";
       const iban = pm.bankIban ?? org.iban;
-      if (NON_EXPORTABLE_CODES.has(code)) {
-        console.warn(`mapper: PaymentMeans ${code} nicht exportierbar, Fallback 1`);
+      const special = resolveSpecialMeans({
+        code,
+        invoiceType: invoice.type,
+        card: {
+          cardPanTruncated: invoice.cardPanTruncated ?? null,
+          cardNetwork: invoice.cardNetwork ?? null,
+          cardHolderName: invoice.cardHolderName ?? null,
+        },
+        directDebit:
+          code === DIRECT_DEBIT_CODE ? parseDirectDebitSnapshot(invoice.directDebitSnapshotJson, ctx) : null,
+      });
+      if (special.kind === "card") {
+        paymentMeans = { code, card: special.card };
+      } else if (special.kind === "directDebit") {
+        paymentMeans = { code: DIRECT_DEBIT_CODE, directDebit: special.directDebit };
+      } else if (special.kind === "fallback") {
+        console.warn(`mapper: PaymentMeans ${code} von ${ctx} nicht exportierbar, Fallback 1`);
         paymentMeans = NO_ACCOUNT_FALLBACK;
       } else if (ACCOUNT_REQUIRING_CODES.has(code) && !iban) {
         console.warn(

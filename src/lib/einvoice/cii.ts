@@ -42,7 +42,7 @@ function typeCode(type: string): string {
   return "380";
 }
 // BR-DE-23: PayeePartyCreditorFinancialAccount nur bei Überweisung/Lastschrift.
-const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
+const ACCOUNT_REQUIRING_CODES = new Set(["58", "30"]); // 59: BG-19 statt BG-17 (BR-DE-25-b)
 
 /** Phase 4b (§8): nur ITEM-Zeilen gehen ins XML — HEADING/TEXT/SUBTOTAL sind reine
  * PDF-Gliederungszeilen. Fehlt lineType (Alt-Fixtures), wird ITEM angenommen. */
@@ -292,6 +292,10 @@ export function buildFacturXCII(data: EInvoiceData): string {
 
   // Abrechnung
   const set = tx.ele("ram:ApplicableHeaderTradeSettlement");
+  // BT-90 — Glaeubiger-ID nur bei BG-19; CII-XSD: erstes Kind der Abrechnung (vor TaxCurrencyCode).
+  if (data.paymentMeans?.directDebit) {
+    set.ele("ram:CreditorReferenceID").txt(data.paymentMeans.directDebit.creditorId).up();
+  }
   // BT-6 — Steuerwaehrung EUR; CII-XSD: TaxCurrencyCode unmittelbar VOR InvoiceCurrencyCode.
   if (fx) set.ele("ram:TaxCurrencyCode").txt("EUR").up();
   set.ele("ram:InvoiceCurrencyCode").txt(cur).up();
@@ -301,6 +305,16 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const pmMeans = data.paymentMeans;
     const pm = set.ele("ram:SpecifiedTradeSettlementPaymentMeans");
     pm.ele("ram:TypeCode").txt(pmMeans.code).up();
+    // CII-XSD PaymentMeans: TypeCode, FinancialCard, PayerPartyDebtorFinancialAccount, PayeePartyCreditorFinancialAccount.
+    if (pmMeans.card) {
+      const card = pm.ele("ram:ApplicableTradeSettlementFinancialCard");
+      card.ele("ram:ID").txt(pmMeans.card.panTruncated).up();
+      if (pmMeans.card.holderName) card.ele("ram:CardholderName").txt(pmMeans.card.holderName).up();
+      card.up();
+    }
+    if (pmMeans.directDebit) {
+      pm.ele("ram:PayerPartyDebtorFinancialAccount").ele("ram:IBANID").txt(pmMeans.directDebit.debtorIban).up().up();
+    }
     if (pmMeans.iban && ACCOUNT_REQUIRING_CODES.has(pmMeans.code)) {
       // BT-85 (Kontoinhaber, Fix): AccountName NACH IBANID (CII-Syntaxbindung
       // EN16931 fuer PayeePartyCreditorFinancialAccount) — nur der PRIMAERE Pfad
@@ -365,8 +379,13 @@ export function buildFacturXCII(data: EInvoiceData): string {
   }
   // BT-20 — Zahlungsbedingungen (Skonto-Syntax siehe mapper.ts).
   const paymentTermsNote = data.paymentTermsNote ?? data.paymentTerms;
-  if (paymentTermsNote) {
-    set.ele("ram:SpecifiedTradePaymentTerms").ele("ram:Description").txt(paymentTermsNote).up().up();
+  // BT-89 (Mandatsreferenz) lebt in SpecifiedTradePaymentTerms: Description vor DirectDebitMandateID.
+  const mandateRef = data.paymentMeans?.directDebit?.mandateReference;
+  if (paymentTermsNote || mandateRef) {
+    const terms = set.ele("ram:SpecifiedTradePaymentTerms");
+    if (paymentTermsNote) terms.ele("ram:Description").txt(paymentTermsNote).up();
+    if (mandateRef) terms.ele("ram:DirectDebitMandateID").txt(mandateRef).up();
+    terms.up();
   }
   const lineTotal = data.lineTotalCents ?? data.netTotalCents;
   const allowanceTotal = data.allowanceTotalCents ?? 0;

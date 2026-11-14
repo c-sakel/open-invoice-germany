@@ -55,7 +55,7 @@ function invoiceTypeCode(type: string): string {
 
 // BR-DE-23: PayeeFinancialAccount nur bei Überweisung/Lastschrift (58 SEPA-Überweisung,
 // 59 SEPA-Lastschrift, 30 Überweisung) — NICHT bei Barzahlung (10) o.ä.
-const ACCOUNT_REQUIRING_CODES = new Set(["58", "59", "30"]);
+const ACCOUNT_REQUIRING_CODES = new Set(["58", "30"]); // 59: BG-19 statt BG-17 (BR-DE-25-b)
 
 /** Phase 4b (§8): nur ITEM-Zeilen gehen ins XML — HEADING/TEXT/SUBTOTAL sind reine
  * PDF-Gliederungszeilen. Fehlt lineType (Alt-Fixtures), wird ITEM angenommen. */
@@ -100,7 +100,13 @@ function appendAllowanceCharge(
   ac.up();
 }
 
-function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: boolean, omitVatId = false) {
+function appendParty(
+  parent: XmlNode,
+  party: EInvoiceData["seller"],
+  isSeller: boolean,
+  omitVatId = false,
+  sepaCreditorId?: string | null,
+) {
   const p = parent.ele("cac:Party");
 
   // BT-34 / BT-49 — elektronische Adresse (Endpoint)
@@ -124,6 +130,10 @@ function appendParty(parent: XmlNode, party: EInvoiceData["seller"], isSeller: b
   const sellerId = (!party.vatId ? party.taxNumber : omitVatId ? (party.taxNumber ?? party.vatId) : null) ?? null;
   if (isSeller && sellerId) {
     p.ele("cac:PartyIdentification").ele("cbc:ID").txt(sellerId).up().up();
+  }
+  // BT-90 — Glaeubiger-ID (nur Verkaeufer, nur bei BG-19; BR-DE-30), nach BT-29.
+  if (isSeller && sepaCreditorId) {
+    p.ele("cac:PartyIdentification").ele("cbc:ID", { schemeID: "SEPA" }).txt(sepaCreditorId).up().up();
   }
 
   const postal = p.ele("cac:PostalAddress");
@@ -256,7 +266,13 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
 
   // EN 16931 BR-O-02: Beleg mit Kategorie O (nicht steuerbar) -> keine USt-IdNr. beider Parteien.
   const omitVatIds = hasNotSubjectToVat(data);
-  appendParty(root.ele("cac:AccountingSupplierParty"), data.seller, true, omitVatIds);
+  appendParty(
+    root.ele("cac:AccountingSupplierParty"),
+    data.seller,
+    true,
+    omitVatIds,
+    data.paymentMeans?.directDebit?.creditorId,
+  );
   appendParty(root.ele("cac:AccountingCustomerParty"), data.buyer, false, omitVatIds);
 
   // BG-13/BG-15 — MUSS nach den Parteien und vor PaymentMeans stehen (sonst XSD-fatal).
@@ -307,11 +323,26 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     // BT-9 bei Gutschriften (s. Kommentar oben bei cbc:IssueDate) — UBL-XSD-Reihenfolge
     // innerhalb PaymentMeansType: PaymentMeansCode, PaymentDueDate, ... PayeeFinancialAccount.
     if (isCredit && data.dueDate) pm.ele("cbc:PaymentDueDate").txt(isoDate(data.dueDate)).up();
+    // BG-18 (BR-DE-24-a): UBL-Reihenfolge Code, DueDate, CardAccount, PayeeFinancialAccount, PaymentMandate.
+    if (pmMeans.card) {
+      const card = pm.ele("cac:CardAccount");
+      card.ele("cbc:PrimaryAccountNumberID").txt(pmMeans.card.panTruncated).up();
+      card.ele("cbc:NetworkID").txt(pmMeans.card.network).up();
+      if (pmMeans.card.holderName) card.ele("cbc:HolderName").txt(pmMeans.card.holderName).up();
+      card.up();
+    }
     if (pmMeans.iban && ACCOUNT_REQUIRING_CODES.has(pmMeans.code)) {
       const acc = pm.ele("cac:PayeeFinancialAccount");
       acc.ele("cbc:ID").txt(pmMeans.iban).up();
       if (pmMeans.accountName) acc.ele("cbc:Name").txt(pmMeans.accountName).up();
       acc.up();
+    }
+    // BG-19 (BR-DE-25-a): Mandatsreferenz BT-89, belastetes Konto BT-91.
+    if (pmMeans.directDebit) {
+      const mandate = pm.ele("cac:PaymentMandate");
+      mandate.ele("cbc:ID").txt(pmMeans.directDebit.mandateReference).up();
+      mandate.ele("cac:PayerFinancialAccount").ele("cbc:ID").txt(pmMeans.directDebit.debtorIban).up().up();
+      mandate.up();
     }
     pm.up();
   } else if (data.iban) {
