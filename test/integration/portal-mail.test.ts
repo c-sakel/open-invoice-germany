@@ -34,6 +34,9 @@ import { resetRateLimits } from "@/lib/rate-limit";
 import { createPortalLink, revokePortalLink } from "@/domain/portal/link";
 import { savePortalSettings } from "@/domain/portal/settings";
 import { sendPortalLinkEmail } from "@/domain/portal/mail";
+import { sendDocumentEmail } from "@/domain/email/send";
+import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
+import { maskPortalLinks } from "@/domain/portal/mask";
 import { server } from "@/mcp/server";
 import { POST as sendPost } from "@/app/api/v1/Contact/[id]/portal-link/send/route";
 import type { CreateInvoiceInput } from "@/schemas";
@@ -230,6 +233,50 @@ describe("Platzhalter portal.url", () => {
     await dbInternal.emailTemplate.updateMany({ where: { orgId, docType: "INVOICE", language: "de", isDefault: true }, data: { body: "Ihr Portal: {{portal.url}}" } });
     const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
     expect(pre.body).toContain(`Ihr Portal: ${url}`);
+  });
+});
+
+describe("Portal-Link im Protokoll", () => {
+  it("Belegmail mit {{portal.url}}: Versand mit echtem Link, EmailLog/ChangeLog ohne Token, Wiederversand mit neuem Link", async () => {
+    const { url } = await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
+    const token = url.split("/portal/")[1]!;
+    await dbInternal.emailTemplate.updateMany({ where: { orgId, docType: "INVOICE", language: "de", isDefault: true }, data: { body: "Ihr Portal: {{portal.url}}", subject: "Portal {{portal.url}}" } });
+    const pre = await prefillEmail(orgId, { docType: "INVOICE", docId: invoiceId });
+    const prov = createMemoryProvider();
+    const res = await sendDocumentEmail(orgId, "tester", { ...pre, to: pre.to.join(","), cc: "", bcc: "", standardAttachments: [] }, [], prov);
+    expect(res.status).toBe("SENT");
+    expect(prov.sent[0]!.text).toContain(url);
+
+    const log = await dbInternal.emailLog.findUniqueOrThrow({ where: { id: res.logId }, select: { bodySnapshot: true, subject: true } });
+    expect(log.bodySnapshot).toContain("[Portal-Link]");
+    expect(log.bodySnapshot).not.toContain(token);
+    expect(log.subject).not.toContain(token);
+    const cl = await dbInternal.changeLog.findMany({ where: { orgId, entity: "EMAIL", entityId: res.logId }, select: { diffJson: true } });
+    expect(cl.length).toBeGreaterThan(0);
+    for (const c of cl) expect(JSON.stringify(c)).not.toContain(token);
+
+    const again = await prefillEmail(orgId, { logId: res.logId });
+    expect(again.body).toContain(`Ihr Portal: ${url}`);
+    expect(again.subject).toContain(url);
+    await revokePortalLink(orgId, customerId, { actor: "t" });
+    const none = await prefillEmail(orgId, { logId: res.logId });
+    expect(none.body).toContain("[Portal-Link]");
+    expect(none.body).not.toContain(token);
+  });
+
+  it("zentrale Maskierung greift in createQueuedEmailLog/finishEmailLog (auch Angebots-Benachrichtigung)", async () => {
+    const token = "a".repeat(43);
+    const text = `Link ${BASE}/portal/${token} und /portal/${token}.`;
+    expect(maskPortalLinks(text)).toBe("Link [Portal-Link] und [Portal-Link].");
+    const log = await createQueuedEmailLog({
+      orgId, docType: "ANGEBOT", docId: "x", fromEmail: "a@example.org", to: ["b@example.org"], cc: [], bcc: [],
+      subject: text, bodySnapshot: text, sentByUserId: "system",
+    });
+    await finishEmailLog({ orgId, logId: log.id, status: "SENT", providerId: "p", actor: "system", docType: "ANGEBOT", docId: "x", to: ["b@example.org"], cc: [], bcc: [], subject: text });
+    const row = await dbInternal.emailLog.findUniqueOrThrow({ where: { id: log.id }, select: { subject: true, bodySnapshot: true } });
+    expect(JSON.stringify(row)).not.toContain(token);
+    const cl = await dbInternal.changeLog.findMany({ where: { orgId, entity: "EMAIL", entityId: log.id }, select: { diffJson: true } });
+    expect(JSON.stringify(cl)).not.toContain(token);
   });
 });
 

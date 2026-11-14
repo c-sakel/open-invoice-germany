@@ -115,8 +115,8 @@ export async function sendPortalLinkEmail(
     cc: [],
     bcc: [],
     subject,
-    // Der Protokolltext enthaelt den Link nicht im Klartext (Token bleibt aus Protokollen heraus).
-    bodySnapshot: text.split(url).join("[Portal-Link]"),
+    // Das Protokoll maskiert den Link zentral (createQueuedEmailLog).
+    bodySnapshot: text,
     sentByUserId: opts.actor,
   });
 
