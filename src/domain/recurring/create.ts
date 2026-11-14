@@ -5,6 +5,7 @@
  */
 import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
+import { toRecurringLineRows } from "@/domain/recurring/lines";
 import { normalizeToNoon } from "@/lib/recurring";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
@@ -45,17 +46,7 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
 
   // Phase 16e: OSS-Kategorie-Snapshot (explizit > Produkt der Org > null) fuer den Abo-Lauf.
   const ossCategories = await resolveLineOssCategories(dbInternal, orgId, input.lines);
-  const lines = input.lines.map((l, i) => ({
-    position: i + 1,
-    description: l.description,
-    quantityMilli: l.quantityMilli,
-    unit: l.unit,
-    unitNetPriceCents: l.unitNetPriceCents,
-    taxRate: l.taxRate,
-    taxCategory: l.taxCategory,
-    discountPermille: l.discountPermille,
-    ossCategory: ossCategories[i],
-  }));
+  const lines = toRecurringLineRows(input.lines, ossCategories);
 
   return dbInternal.recurringInvoice.create({
     data: {

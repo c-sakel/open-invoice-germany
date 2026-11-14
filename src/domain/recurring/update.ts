@@ -7,6 +7,7 @@
  */
 import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
+import { itemTaxRates, toRecurringLineRows } from "@/domain/recurring/lines";
 import { normalizeToNoon } from "@/lib/recurring";
 import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
@@ -27,7 +28,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
       status: true,
       maxRuns: true,
       taxScheme: true,
-      lines: { select: { taxRate: true } },
+      lines: { select: { taxRate: true, lineType: true } },
     },
   });
   if (!existing) throw new NotFoundError("Abo nicht gefunden.");
@@ -66,7 +67,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
     // Phase 16e: OSS-Kategorie-Snapshot (explizit > Produkt der Org > null) fuer den Abo-Lauf.
     const ossCategories = input.lines ? await resolveLineOssCategories(tx, orgId, input.lines) : [];
     if (input.lines) {
-      await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: ratesOfLines(existing.lines) });
+      await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: itemTaxRates(existing.lines) });
       await tx.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: id } });
     }
 
@@ -93,17 +94,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.lines
           ? {
               lines: {
-                create: resolveLineCategories(input.lines, existing.taxScheme as TaxSchemeValue).map((l, i) => ({
-                  ossCategory: ossCategories[i],
-                  position: i + 1,
-                  description: l.description,
-                  quantityMilli: l.quantityMilli,
-                  unit: l.unit,
-                  unitNetPriceCents: l.unitNetPriceCents,
-                  taxRate: l.taxRate,
-                  taxCategory: l.taxCategory,
-                  discountPermille: l.discountPermille,
-                })),
+                create: toRecurringLineRows(resolveLineCategories(input.lines, existing.taxScheme as TaxSchemeValue), ossCategories),
               },
             }
           : {}),

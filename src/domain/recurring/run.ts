@@ -24,8 +24,7 @@ import { onInvoiceFinalizedOss, onRecurringFailed } from "@/domain/notifications
 import { linkDocuments } from "@/domain/relations";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
-import { ratesOfLines } from "@/domain/settings/tax-rates";
-import { parseOss } from "@/domain/product/oss-snapshot";
+import { itemTaxRates, recurringLinesToInvoiceLines } from "@/domain/recurring/lines";
 import { advanceDate, periodRange, type RecurInterval } from "@/lib/recurring";
 import { formatDateDe } from "@/lib/template/format";
 import { prefillEmail } from "@/domain/email/compose";
@@ -115,22 +114,10 @@ async function emitOne(
 
     const periodDate = rec.nextRunDate;
 
-    // Positionen 1:1 aus dem Abo — RecurringInvoiceLine kennt keine Gliederungszeilen,
-    // lineType bleibt immer ITEM. Netto-/Steuerberechnung (inkl. der W4-Rundung ueber
-    // computeLineNet) uebernimmt ab jetzt createDraftInvoiceWithinTx — kein zweiter,
-    // separat gerechneter Block mehr.
-    const lines: CreateInvoiceInput["lines"] = rec.lines.map((l) => ({
-      lineType: "ITEM",
-      description: l.description,
-      quantityMilli: l.quantityMilli,
-      unit: l.unit,
-      unitNetPriceCents: l.unitNetPriceCents,
-      taxRate: l.taxRate,
-      taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
-      discountPermille: l.discountPermille,
-      discountCents: 0,
-      ossCategory: parseOss(l.ossCategory),
-    }));
+    // Positionen 1:1 aus dem Abo (Phase 18c: inkl. Ueberschriften/Texte/Zwischensummen,
+    // Langtext, Artikelnummer, Festbetragsrabatt, Produktbezug). Netto-/Steuerberechnung
+    // (inkl. der W4-Rundung ueber computeLineNet) uebernimmt createDraftInvoiceWithinTx.
+    const lines: CreateInvoiceInput["lines"] = recurringLinesToInvoiceLines(rec.lines);
 
     // recurringInsertPeriodText (Phase 7, §33): Kopftext "Abrechnungszeitraum dd.mm.yyyy –
     // dd.mm.yyyy", nur wenn die Org-Einstellung aktiv ist. R4/R5 (Phase 14a, §43a):
@@ -186,7 +173,7 @@ async function emitOne(
       // erlaubt, auch wenn er/sie inzwischen aus der Org-Liste entfernt wurde(n) —
       // dasselbe Muster wie Duplikat/Konvertierung/Teilrechnung (Phase 12c), kein Bypass.
       // Sonst wuerde ein Bestandsabo mit inzwischen abgewaehltem Satz am Lauf scheitern.
-      inheritedTaxRates: ratesOfLines(rec.lines),
+      inheritedTaxRates: itemTaxRates(rec.lines),
       recurringInvoiceId: rec.id,
       // Abo-Kontext (recurring, period) im selben ChangeLog-CREATE-Eintrag UND im selben
       // ActivityLog-CREATED-Eintrag wie der gemeinsame Pfad (Fix-Welle 1, must) — kein

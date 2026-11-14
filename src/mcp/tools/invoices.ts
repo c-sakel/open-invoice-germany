@@ -41,14 +41,13 @@ import {
   createDownpaymentInvoiceSchema,
   createFinalInvoiceSchema,
   invoiceListFilterSchema,
-  LineType,
   currencyCodeSchema,
   cancelInvoiceSchema,
   partialCreditSchema,
   DocLanguageSchema,
 } from "@/schemas";
 import { OssCategorySchema } from "@/schemas/oss";
-import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
+import { docLineSchema, editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_invoice ───────────────────────────────────────────────────────────
@@ -663,24 +662,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         consumerRetentionHint: z.boolean().optional().describe("§ 14b Abs. 1 S. 5: Hinweis auf zweijaehrige Aufbewahrungspflicht (Bauleistung an Privatperson)"),
         language: DocLanguageSchema.optional().describe("Belegsprache de|en des Entwurfs"),
         fxOverrideRate: z.string().nullable().optional().describe("Kurs manuell (z. B. \"1,25\"); null entfernt den manuellen Kurs. Nur bei Fremdwaehrung."),
-        lines: z
-          .array(
-            z.object({
-              lineType: LineType.default("ITEM"),
-              description: z.string(),
-              descriptionLong: z.string().optional().describe("Rich-Text-Langbeschreibung (Markdown-Teilmenge)"),
-              articleNumber: z.string().optional(),
-              quantity: z.number().optional().describe("Menge (Pflicht bei ITEM)"),
-              unitPriceEuro: z.number().optional(),
-              productName: z.string().optional(),
-              unit: z.string().optional(),
-              taxRatePercent: TaxRate.optional(),
-              discountPercent: z.number().min(0).max(100).optional(),
-              discountAmount: z.number().min(0).optional(),
-              ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie der Position (nur Zaehlmodus BY_PRODUCT); ohne Angabe aus dem Produkt"),
-            }),
-          )
-          .optional(),
+        lines: z.array(editorLineSchema).optional(),
       },
     },
     async (args): Promise<Result> => {
