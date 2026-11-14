@@ -151,6 +151,17 @@ export class LayoutDesignVersionImmutabilityError extends Error {
 }
 
 /**
+ * Das Kundenportal-Abrufprotokoll ist ein Nachweis. `CustomerPortalEvent` ist append-only
+ * (nur `create`); die Loeschung nach Ablauf der Aufbewahrung laeuft ausschliesslich ueber `dbInternal`.
+ */
+export class CustomerPortalEventImmutableError extends Error {
+  constructor() {
+    super("Portal-Abrufprotokoll ist unveraenderlich (append-only).");
+    this.name = "CustomerPortalEventImmutableError";
+  }
+}
+
+/**
  * Phase 16d: Das Postversand-Protokoll ist ein Nachweis (GoBD). `PostalJobEvent` ist append-only
  * (nur `create`). `PostalJob` wird nie geloescht; nach dem Anlegen sind nur Status-, Preis-,
  * Verfolgungs- und Zeitfelder fortschreibbar — Belegbezug, Pruefsummen, Modus und Versandart
@@ -369,6 +380,26 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new VatIdCheckImmutableError();
+      },
+    },
+    customerPortalEvent: {
+      async update() {
+        throw new CustomerPortalEventImmutableError();
+      },
+      async updateMany() {
+        throw new CustomerPortalEventImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new CustomerPortalEventImmutableError();
+      },
+      async upsert() {
+        throw new CustomerPortalEventImmutableError();
+      },
+      async delete() {
+        throw new CustomerPortalEventImmutableError();
+      },
+      async deleteMany() {
+        throw new CustomerPortalEventImmutableError();
       },
     },
     postalJobEvent: {

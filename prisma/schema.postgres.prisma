@@ -76,6 +76,8 @@ model Organization {
   tags                   Tag[]
   postalSettings         PostalSettings?
   postalJobs             PostalJob[]
+  portalSettings         CustomerPortalSettings?
+  portalLinks            CustomerPortalLink[]
   sepaCreditorId         String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
 
@@ -112,9 +114,10 @@ model Customer {
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
 
-  quotes    Quote[]
-  invoices  Invoice[]
-  recurring RecurringInvoice[]
+  quotes      Quote[]
+  invoices    Invoice[]
+  recurring   RecurringInvoice[]
+  portalLinks CustomerPortalLink[]
 
   addresses              CustomerAddress[]
   contacts               ContactPerson[]
@@ -1671,4 +1674,57 @@ model PostalJobEvent {
   dataJson String    @default("{}")
 
   @@index([jobId, at])
+}
+
+/// Kundenportal: Einstellungen je Organisation (eigene Tabelle, nicht DocumentSettings).
+model CustomerPortalSettings {
+  id           String       @id @default(cuid())
+  orgId        String       @unique
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  enabled      Boolean      @default(false)
+  linkDays     Int          @default(365)
+  showDunnings Boolean      @default(true)
+  showEInvoice Boolean      @default(true)
+  mailSubject  String?
+  mailBody     String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+/// Kundenportal: persoenlicher Link. Klartext-Token nie gespeichert (tokenHash), tokenEnc fuer Wiederabruf.
+model CustomerPortalLink {
+  id           String                @id @default(cuid())
+  orgId        String
+  org          Organization          @relation(fields: [orgId], references: [id])
+  customerId   String
+  customer     Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  tokenHash    String                @unique
+  tokenEnc     String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokedBy    String?
+  revokeReason String? // MANUAL | ROTATED | CUSTOMER_ARCHIVED
+  createdBy    String
+  createdAt    DateTime              @default(now())
+  lastViewedAt DateTime?
+  viewCount    Int                   @default(0)
+  events       CustomerPortalEvent[]
+
+  @@index([orgId, customerId])
+}
+
+/// Kundenportal: Abrufprotokoll, append-only (Guard), ohne IP/User-Agent; Loeschung nur Cleanup nach 24 Monaten.
+model CustomerPortalEvent {
+  id       String             @id @default(cuid())
+  orgId    String
+  linkId   String
+  link     CustomerPortalLink @relation(fields: [linkId], references: [id], onDelete: Restrict)
+  at       DateTime           @default(now())
+  kind     String // VIEW | DOWNLOAD
+  docType  String? // INVOICE | DUNNING
+  docId    String?
+  fileKind String? // PDF | UBL
+
+  @@index([linkId, at])
+  @@index([orgId, at])
 }
