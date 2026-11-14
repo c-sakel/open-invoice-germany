@@ -94,6 +94,7 @@ Event-driven **webhooks** (`/api/v1/Webhook`, scope `admin`) deliver events like
 - **CSV export & import**: export documents and contacts as CSV; import contacts and products with a preview, formula-injection protection and a 24 h double-import lock.
 - **Bulk cancellation**: cancel several invoices from the list at once (max. 50, each with its own cancellation document, result report); also via REST/MCP.
 - **Optional HTML email**: sent alongside the plain-text part, off by default.
+- **Customer portal** (off by default): a personal, revocable link per customer (256-bit token, valid 365 days by default) opens a public page without login with the customer's finalised invoices, credit notes and sent dunning notices; PDF and e-invoice XML come from the write-once archive. Access log without IP (24 months); link creation, mail dispatch and settings also via REST and MCP.
 - **Postal dispatch via LetterXpress** (off by default, dry-run mode, confirmation per mode change and per document; dunning automation only with an explicit setting).
 - **API extras**: `updatedSince` and cursor pagination on lists, create + finalise + record payment in one call with a mandatory `Idempotency-Key` (24 h replay), bulk contacts (max. 100), bulk cancellation, gross-price input.
 - **Berlin time**: invoice, due and delivery dates in the e-invoice (BT-2/BT-9/BT-72), the Skonto deadline date and end, the month and year boundaries of reports and the OSS year follow the Berlin calendar day; overdue status and dunning still count UTC days.

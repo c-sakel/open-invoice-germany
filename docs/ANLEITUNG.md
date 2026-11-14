@@ -504,6 +504,35 @@ Tags sind ein freies Ordnungsmerkmal über Rechnungen, Angeboten/AB/Proforma und
 
 ---
 
+## 6f. Kundenportal
+
+Mit dem Kundenportal können Kunden ihre Belege selbst abrufen, ohne Konto und ohne Anhänge in jeder Mail. Das Portal ist **standardmäßig aus**.
+
+### Einschalten (`Einstellungen → Kundenportal`)
+
+- **Kundenportal einschalten:** Solange es ausgeschaltet ist, lassen sich keine Links anlegen, und bestehende Links zeigen nichts an.
+- **Gültigkeit neuer Links:** 1 bis 730 Tage, Standard 365.
+- **Versendete Mahnungen anzeigen** und **E-Rechnung (XML) zum Download anbieten:** je ein Schalter (Standard an).
+- **Mail mit dem Portal-Link:** eigener Betreff und Text (leer = eingebauter Text in der Sprache des Kunden). Platzhalter u. a. `{{portal.url}}`, `{{portal.validUntil}}`, `{{customer.name}}`, `{{company.name}}`.
+- Links entstehen aus der Umgebungsvariable `APP_BASE_URL`; ohne sie meldet die Oberfläche, dass keine Basisadresse gesetzt ist.
+
+### Link erzeugen, senden, widerrufen (`Kunden → <Kunde>`, Karte „Kundenportal")
+
+- **Link erzeugen:** legt einen neuen Link an. Ein bereits aktiver Link wird dabei widerrufen (Rotation). Der Link wird nur auf Knopfdruck angezeigt und kopiert; er steht nie in Listen oder Protokollen.
+- **Per Mail senden:** schickt den aktiven Link an die Rechnungs-E-Mail des Kunden oder an eine angegebene Adresse (höchstens 3 Mails je Kunde und Stunde). Im Versandprotokoll steht statt des Links nur „[Portal-Link]".
+- **Widerrufen:** der Link liefert sofort die Fehlerseite „nicht gefunden", ebenso nach Ablauf. Wird ein Kunde archiviert, wird sein Link automatisch widerrufen.
+- **Wer den Link kennt, sieht alle Belege dieses Kunden.** Gib ihn nur an den Kunden weiter; bei Verdacht auf Weitergabe neuen Link erzeugen.
+
+### Was der Kunde sieht
+
+Eine Seite in der Sprache des Kunden mit Firmenname, offenen Posten je Währung (davon überfällig) und einer Tabelle seiner **festgeschriebenen** Rechnungen, Gutschriften/Stornos und **versendeten** Mahnungen, jeweils mit Status und Download als PDF und (wenn eingeschaltet) E-Rechnung (XML). Die Dateien kommen unverändert aus dem Belegarchiv, es ist derselbe Stand wie bei der ersten Ausgabe. Entwürfe, interne Notizen, Tags, Abos und andere Kunden erscheinen nie. Das Portal ist nur eine Ansicht: der Kunde kann nichts eingeben und (noch) nicht online bezahlen.
+
+### Abrufprotokoll
+
+Auf der Kundenkarte stehen die letzten Abrufe. Protokolliert werden das Öffnen der Seite (höchstens einmal je Link und Berliner Kalendertag) und jeder Download, **ohne IP-Adresse und ohne Browserkennung**. Die Einträge sind unveränderlich und werden nach 24 Monaten gelöscht. Auch REST (`GET /api/v1/Contact/{id}/portal-events`) und MCP liefern sie.
+
+---
+
 ## 7. Per Sprache mit einem KI-Assistenten (MCP)
 
 Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — mit jedem MCP-fähigen KI-Assistenten. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.
