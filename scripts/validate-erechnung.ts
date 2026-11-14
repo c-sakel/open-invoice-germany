@@ -98,9 +98,7 @@ async function validateFile(target: string): Promise<boolean> {
   return false;
 }
 
-// Fixture-Set: die Bestandsregression ("base", nur UBL) PLUS 23 weitere Beispiele,
-// jeweils als UBL UND CII erzeugt (siehe scripts/generate-sample-xrechnung.ts) — macht
-// 24 Fixtures / 47 geprüfte XML-Dateien insgesamt.
+// Fixture-Set: alle 31 Fixtures (61 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
 const SAMPLE_NAMES = [
   "base",
   "line-discount",
@@ -131,6 +129,8 @@ const SAMPLE_NAMES = [
   "language-en-reverse-charge", // Phase 16b: Belegsprache en, BT-120 "Reverse charge", BT-20 englisch
   "endpoint-leitweg-0204", // Phase 17a: Kaeufer-Endpoint Leitweg-ID (0204), Verkaeufer 9930, BT-10 = Leitweg-ID
   "reverse-charge-bt47", // Phase 17a: AE ohne Kaeufer-USt-IdNr., BT-47 (BR-AE-02)
+  "karte-54", // Phase 18e: Karte mit Kartendaten (BG-18, BR-DE-24)
+  "lastschrift-59", // Phase 18e: Lastschrift mit Mandat (BG-19, BR-DE-25/30/31)
 ];
 
 async function main(): Promise<void> {

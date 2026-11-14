@@ -16,6 +16,7 @@ import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { validateXRechnung } from "@/lib/einvoice/en16931-core";
 import { buildEInvoiceData, type MapInput } from "@/lib/einvoice/mapper";
+import type { DirectDebitSnapshot } from "@/schemas";
 import { computeLineNet } from "@/lib/pricing/line";
 import { computeTaxBreakdown } from "@/lib/tax";
 import type { DocumentAdjustments } from "@/lib/pricing/allocate";
@@ -202,6 +203,10 @@ function buildSample(opts: {
   currency?: string;
   language?: string;
   fx?: { rateMicros: number; rateDate: Date; source: "BMF_MONTHLY" | "ECB_DAILY" | "MANUAL" };
+  // Phase 18e — Karte (BG-18) und Lastschrift-Snapshot (BG-19); abweichende Zahlungsbedingung (BT-20).
+  card?: { panTruncated: string; network: string; holderName: string };
+  directDebitSnapshot?: DirectDebitSnapshot;
+  paymentTerms?: string;
 }): EInvoiceData {
   const sign = opts.sign ?? 1;
   const lines = opts.lines.map((l) => {
@@ -242,7 +247,7 @@ function buildSample(opts: {
     netTotalEurCents: opts.fx ? toEurCents(totals.netTotalCents, opts.fx.rateMicros) : null,
     buyerReference: opts.buyerReference ?? "04011000-12345-86",
     orderNumber: opts.orderNumber ?? null,
-    paymentTerms: opts.skonto1 || opts.noPaymentTerms ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug.",
+    paymentTerms: opts.paymentTerms ?? (opts.skonto1 || opts.noPaymentTerms ? null : "Zahlbar innerhalb von 30 Tagen ohne Abzug."),
     notes: opts.notes ?? "Vielen Dank für Ihren Auftrag.",
     subject: opts.subject ?? null,
     netTotalCents: totals.netTotalCents,
@@ -256,6 +261,10 @@ function buildSample(opts: {
     skonto2Permille: opts.skonto2?.permille ?? null,
     skonto2Days: opts.skonto2?.days ?? null,
     paymentMethodSnapshotJson: opts.paymentMethod ? JSON.stringify(opts.paymentMethod) : null,
+    cardPanTruncated: opts.card?.panTruncated ?? null,
+    cardNetwork: opts.card?.network ?? null,
+    cardHolderName: opts.card?.holderName ?? null,
+    directDebitSnapshotJson: opts.directDebitSnapshot ? JSON.stringify(opts.directDebitSnapshot) : null,
     prepaidCents: opts.prepaidCents ?? 0,
     deductions: opts.deductions,
     sourceNumber: opts.sourceNumber ?? null,
@@ -679,6 +688,37 @@ const reverseChargeBt47 = () =>
     lines: [{ description: "Bauleistung", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 250000, taxRate: 0, taxCategory: "AE" }],
   });
 
+// 30) Phase 18e — Kartenzahlung mit Kartendaten (BG-18, Code 54): letzte 4 Ziffern, Netz, Inhaber.
+const karte54 = () =>
+  buildSample({
+    number: "RE-2183-0001",
+    issueDate: new Date("2183-03-02"),
+    dueDate: new Date("2183-04-01"),
+    deliveryDate: new Date("2183-03-01"),
+    lines: [{ description: "Beratung vor Ort", quantityMilli: 3000, unit: "HUR", unitNetPriceCents: 9500, taxRate: 19, taxCategory: "S" }],
+    paymentMethod: { code: "CARD", name: "Kreditkarte", invoiceText: "Zahlung per Karte.", untdidCode: "54", bankIban: null, bankBic: null, bankName: null },
+    card: { panTruncated: "1234", network: "VISA", holderName: "Erika Beispiel" },
+  });
+
+// 31) Phase 18e — SEPA-Lastschrift mit Mandat (BG-19, Code 59), keine Methoden-IBAN (BG-17 verboten, BR-DE-25-b).
+const lastschrift59 = () =>
+  buildSample({
+    number: "RE-2183-0002",
+    issueDate: new Date("2183-03-02"),
+    dueDate: new Date("2183-04-01"),
+    deliveryDate: new Date("2183-03-01"),
+    lines: [{ description: "Beratung vor Ort", quantityMilli: 3000, unit: "HUR", unitNetPriceCents: 9500, taxRate: 19, taxCategory: "S" }],
+    paymentMethod: { code: "SEPA", name: "SEPA-Lastschrift", invoiceText: "Einzug per SEPA-Lastschrift.", untdidCode: "59", bankIban: null, bankBic: null, bankName: null },
+    paymentTerms: "Einzug per SEPA-Lastschrift zum Fälligkeitsdatum.",
+    directDebitSnapshot: {
+      creditorId: "DE98ZZZ09999999999",
+      mandateReference: "MANDAT-2183-001",
+      mandateSignedAt: "2183-01-15",
+      debtorIban: "DE02120300000000202051",
+      debtorAccountName: "Erika Beispiel",
+    },
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -710,6 +750,8 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "language-en-reverse-charge": languageEnReverseCharge,
   "endpoint-leitweg-0204": endpointLeitweg0204,
   "reverse-charge-bt47": reverseChargeBt47,
+  "karte-54": karte54,
+  "lastschrift-59": lastschrift59,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
@@ -719,6 +761,10 @@ function buildXml(data: EInvoiceData, format: string): string {
 }
 
 function main(): void {
+  if (process.argv[2] === "--list") {
+    console.log(SAMPLE_NAMES.join(" "));
+    return;
+  }
   const out = process.argv[2] ?? "tmp/sample-xrechnung.xml";
   const sampleName = process.argv[3] ?? "base";
   const format = process.argv[4] ?? "ubl";
