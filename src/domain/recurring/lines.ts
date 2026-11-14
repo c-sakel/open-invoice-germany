@@ -9,7 +9,6 @@
  */
 import { normalizeLines } from "@/domain/document/lines";
 import { parseOss } from "@/domain/product/oss-snapshot";
-import { computeLineNet } from "@/lib/pricing/line";
 import type { CreateInvoiceInput, InvoiceLineInput, LineType } from "@/schemas";
 import type { OssCategory } from "@/schemas/oss";
 
@@ -108,19 +107,4 @@ export function itemTaxRates(rows: readonly { lineType: string; taxRate: number 
   const out = new Set<number>();
   for (const r of rows) if (toLineType(r.lineType) === "ITEM") out.add(r.taxRate);
   return [...out];
-}
-
-/** Netto je Lauf: Summe der Positionsnetto (inkl. Rabatte) aller ITEM-Zeilen. */
-export function recurringNetCents(rows: readonly RecurringStoredLine[]): number {
-  let sum = 0;
-  for (const r of rows) {
-    if (toLineType(r.lineType) !== "ITEM") continue;
-    sum += computeLineNet({
-      quantityMilli: r.quantityMilli,
-      unitNetPriceCents: r.unitNetPriceCents,
-      discountPermille: r.discountPermille,
-      discountCents: r.discountCents,
-    }).lineNetCents;
-  }
-  return sum;
 }

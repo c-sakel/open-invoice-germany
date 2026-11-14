@@ -21,7 +21,7 @@ import { saveDocumentSettings } from "@/domain/document/settings";
 import { createRecurring } from "@/domain/recurring/create";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { emitRecurringNow } from "@/domain/recurring/run";
-import { itemTaxRates, recurringNetCents } from "@/domain/recurring/lines";
+import { itemTaxRates } from "@/domain/recurring/lines";
 import { serializeRecurring } from "@/api/serializers/recurring";
 import { computeLineNet } from "@/lib/pricing/line";
 import { loadEInvoiceData } from "@/lib/einvoice/load";
@@ -100,8 +100,6 @@ describe("Abo mit Positionsbloecken", () => {
     expect(expectedA).toBe(24000 - 2400 - 500);
     expect(inv.lines.map((l) => l.lineNetCents)).toEqual([0, expectedA, 0, 3000, 0]);
     expect(inv.netTotalCents).toBe(expectedA + 3000);
-    const stored = await dbInternal.recurringInvoiceLine.findMany({ where: { recurringInvoiceId: rec.id }, orderBy: { position: "asc" } });
-    expect(recurringNetCents(stored)).toBe(inv.netTotalCents);
 
     const loaded = await loadEInvoiceData(emitted.invoiceId);
     expect(loaded).not.toBeNull();
