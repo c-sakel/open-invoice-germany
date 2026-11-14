@@ -5,6 +5,7 @@
  * Erfassung, Storno und Lauf serialisiert sind; die Abrechnung markiert die Saetze per
  * bedingtem `updateMany` (kein Satz kann zweimal abgerechnet werden).
  */
+import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
@@ -234,6 +235,11 @@ export async function listUsage(
   const q = listUsageQuerySchema.parse(raw ?? {});
   const rec = await dbInternal.recurringInvoice.findFirst({ where: { id: recurringId, orgId }, select: { id: true } });
   if (!rec) throw new UsageError("NOT_FOUND", NOT_FOUND_MESSAGE);
+  if (q.cursor) {
+    // Cursor-Satz muss zu Org und Abo gehoeren; fremd und erfunden sind nicht zu unterscheiden.
+    const anchor = await dbInternal.recurringUsage.findFirst({ where: { id: q.cursor, orgId, recurringInvoiceId: recurringId }, select: { id: true } });
+    if (!anchor) throw new z.ZodError([{ code: "custom", path: ["cursor"], message: "Ungültiger Cursor." }]);
+  }
   const statusWhere: Prisma.RecurringUsageWhereInput =
     q.status === "open"
       ? { invoiceId: null, voidedAt: null }

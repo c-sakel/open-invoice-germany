@@ -223,6 +223,19 @@ describe("REST: Auflisten und Stornieren", () => {
     expect((await list(otherRecId)).status).toBe(404);
   });
 
+  it("Cursor: fremder oder erfundener Satz -> 400 mit gleicher Meldung, eigener Satz gueltig", async () => {
+    const otherRec = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: otherRecId }, select: { lines: { select: { id: true, billing: true } } } });
+    const otherLine = otherRec.lines.find((l) => l.billing === "USAGE")?.id ?? "";
+    const foreign = (await json<{ data: UsageData }>(await post(otherRecId, { recurringLineId: otherLine, quantityMilli: 11 }, otherToken))).data;
+    const own = (await json<{ data: UsageData }>(await post(recId, { recurringLineId: usageLineId, quantityMilli: 12 }))).data;
+    const foreignRes = await list(recId, `?cursor=${foreign.id}`);
+    const fakeRes = await list(recId, "?cursor=gibt-es-nicht");
+    expect(foreignRes.status).toBe(400);
+    expect(fakeRes.status).toBe(400);
+    expect(JSON.stringify(await foreignRes.json())).toBe(JSON.stringify(await fakeRes.json()).replace("gibt-es-nicht", foreign.id));
+    expect((await list(recId, `?cursor=${own.id}`)).status).toBe(200);
+  });
+
   it("DELETE: ohne Grund 400, mit Grund voided, erneut 422 ALREADY_VOIDED, ungueltiges JSON 400", async () => {
     const d = (await json<{ data: UsageData }>(await post(recId, { recurringLineId: usageLineId, quantityMilli: 5 }))).data;
     expect((await del(recId, d.id)).status).toBe(400);
