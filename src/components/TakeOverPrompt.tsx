@@ -12,6 +12,7 @@ export interface TakeOverLineDTO {
   quantityMilli: number;
   unit: string;
   unitNetPriceCents: number;
+  unitNetPriceMilliCents?: number | null;
   taxRate: number;
   taxCategory: string;
   discountPermille: number;

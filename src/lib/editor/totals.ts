@@ -17,7 +17,7 @@ import { computeLineNet } from "@/lib/pricing/line";
 import { applyDocumentAdjustments, type RateBucket } from "@/lib/pricing/allocate";
 import { PricingError } from "@/lib/pricing/errors";
 import { computeSubtotals } from "@/domain/document/lines";
-import { toCents, toMilli, centsOrZero, permilleOrZero } from "./parse";
+import { toMilli, toPrice, centsOrZero, permilleOrZero } from "./parse";
 import { SCHEME_CATEGORY } from "./constants";
 import type { DraftState } from "./draft";
 
@@ -54,8 +54,8 @@ export function computeDraftTotals(d: DraftState): DraftTotals {
 
     const lineResults = itemLines.map((l) => {
       const quantityMilli = toMilli(l.quantity);
-      const unitNetPriceCents = toCents(l.price);
-      if (quantityMilli === null || unitNetPriceCents === null) {
+      const price = toPrice(l.price);
+      if (quantityMilli === null || price === null) {
         throw new Error(`Ungültige Eingabe in Position "${l.description || "(ohne Bezeichnung)"}".`);
       }
       // Fix 1: Rabatt-Prozent/-Betrag wie im Payload-Mapper (draft.ts) geklemmt statt
@@ -64,7 +64,7 @@ export function computeDraftTotals(d: DraftState): DraftTotals {
       // gar nicht widerspiegelt.
       const discountPermille = permilleOrZero(l.discountPercent);
       const discountCents = centsOrZero(l.discountAmount);
-      return computeLineNet({ quantityMilli, unitNetPriceCents, discountPermille, discountCents });
+      return computeLineNet({ quantityMilli, unitNetPriceCents: price.cents, unitNetPriceMilliCents: price.milliCents, discountPermille, discountCents });
     });
 
     const lineNetCents = lineResults.reduce((s, r) => s + r.lineNetCents, 0);

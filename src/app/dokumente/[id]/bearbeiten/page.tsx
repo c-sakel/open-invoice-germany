@@ -8,6 +8,7 @@ import { listAttachments } from "@/domain/attachment/manage";
 import { loadPrintSettings, effectivePrintOptions } from "@/domain/settings/print";
 import { printOptionsOverrideSchema } from "@/schemas";
 import { listLayouts } from "@/lib/pdf/layouts/registry";
+import { fromPrice } from "@/lib/editor/parse";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
       articleNumber: l.articleNumber ?? "",
       quantity: (l.quantityMilli / 1000).toString(),
       unit: l.unit,
-      price: (l.unitNetPriceCents / 100).toFixed(2),
+      price: fromPrice(l),
       taxRate: l.taxRate,
       discountPercent: (l.discountPermille / 10).toString(),
       discountAmount: (l.discountCents / 100).toFixed(2),

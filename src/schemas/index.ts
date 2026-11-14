@@ -15,6 +15,7 @@ import { parseRateMicros } from "@/domain/fx/decimal";
 import { DOC_LANGUAGES } from "@/lib/i18n/doc";
 import { OssCategorySchema } from "./oss";
 import { EAS_CODES, validateEndpoint } from "@/lib/einvoice/eas";
+import { MAX_UNIT_PRICE_MILLI_CENTS, milliCentsToCents } from "@/lib/money";
 
 /** Belegsprache (Phase 16b): de | en. */
 export const DocLanguageSchema = z.enum(DOC_LANGUAGES);
@@ -389,6 +390,12 @@ const invoiceLineBaseShape = {
     quantityMilli: z.number().int(),
     unit: z.string().default("C62"),
     unitNetPriceCents: z.number().int(),
+    // Phase 18f: Einzelpreis in tausendstel Cent (z. B. 0,002 EUR = 200); gesetzt -> fuehrend,
+    // unitNetPriceCents muss dann die kaufmaennische Rundung davon sein.
+    unitNetPriceMilliCents: z.number().int().min(0).max(MAX_UNIT_PRICE_MILLI_CENTS).nullable().optional(),
+    // Phase 18f: Leistungszeitraum der Position (BG-26); nur beidseitig, Start <= Ende.
+    servicePeriodStart: z.coerce.date().optional(),
+    servicePeriodEnd: z.coerce.date().optional(),
     taxRate: TaxRate,
     discountPermille: z.number().int().min(0).max(1000).default(0),
     discountCents: z.number().int().nonnegative().default(0),
@@ -397,9 +404,36 @@ const invoiceLineBaseShape = {
 };
 
 const refineInvoiceLine = (
-  line: { lineType: z.infer<typeof LineType>; quantityMilli: number; unitNetPriceCents: number; discountPermille: number; discountCents: number; taxRate: number },
+  line: {
+    lineType: z.infer<typeof LineType>;
+    quantityMilli: number;
+    unitNetPriceCents: number;
+    unitNetPriceMilliCents?: number | null;
+    servicePeriodStart?: Date;
+    servicePeriodEnd?: Date;
+    discountPermille: number;
+    discountCents: number;
+    taxRate: number;
+  },
   ctx: z.RefinementCtx<typeof line>,
 ): void => {
+    const milli = line.unitNetPriceMilliCents;
+    if (milli !== null && milli !== undefined && line.lineType === "ITEM") {
+      const expected = milliCentsToCents(milli);
+      if (line.unitNetPriceCents !== expected) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Einzelpreis in Cent muss ${expected} sein (Rundung des Preises in tausendstel Cent)`,
+          path: ["unitNetPriceCents"],
+        });
+      }
+    }
+    const { servicePeriodStart: periodStart, servicePeriodEnd: periodEnd } = line;
+    if ((periodStart === undefined) !== (periodEnd === undefined)) {
+      ctx.addIssue({ code: "custom", message: "Leistungszeitraum nur mit Beginn und Ende", path: [periodStart === undefined ? "servicePeriodStart" : "servicePeriodEnd"] });
+    } else if (periodStart !== undefined && periodEnd !== undefined && periodStart.getTime() > periodEnd.getTime()) {
+      ctx.addIssue({ code: "custom", message: "Leistungszeitraum: Beginn darf nicht nach dem Ende liegen", path: ["servicePeriodEnd"] });
+    }
     if (line.lineType === "ITEM") {
       if (line.quantityMilli === 0) {
         ctx.addIssue({ code: "custom", message: "Menge darf nicht 0 sein", path: ["quantityMilli"] });
@@ -413,6 +447,12 @@ const refineInvoiceLine = (
     }
     if (line.unitNetPriceCents !== 0) {
       ctx.addIssue({ code: "custom", message: "Einzelpreis muss bei Nicht-Positionszeilen 0 sein", path: ["unitNetPriceCents"] });
+    }
+    if (milli !== null && milli !== undefined && milli !== 0) {
+      ctx.addIssue({ code: "custom", message: "Einzelpreis muss bei Nicht-Positionszeilen 0 sein", path: ["unitNetPriceMilliCents"] });
+    }
+    if (periodStart !== undefined || periodEnd !== undefined) {
+      ctx.addIssue({ code: "custom", message: "Leistungszeitraum nur bei Positionszeilen", path: ["servicePeriodStart"] });
     }
     if (line.discountPermille !== 0) {
       ctx.addIssue({ code: "custom", message: "Rabatt muss bei Nicht-Positionszeilen 0 sein", path: ["discountPermille"] });

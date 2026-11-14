@@ -8,6 +8,7 @@
  * gelaufene Daten weiterreichen (z. B. beim Zusammenbauen aus mehreren Quellen).
  */
 import type { InvoiceLineInput, LineType } from "@/schemas";
+import { milliCentsToCents, normalizeMilli } from "@/lib/money";
 
 export interface NormalizedLine extends InvoiceLineInput {
   /** Fortlaufende Positionsnummer, 1-basiert, unabhaengig vom Zeilentyp. */
@@ -22,6 +23,8 @@ export function normalizeLines(lines: readonly InvoiceLineInput[]): NormalizedLi
   return lines.map((line, index) => {
     const lineType: LineType = line.lineType ?? "ITEM";
     const isItem = lineType === "ITEM";
+    // Phase 18f: defensiv auch fuer Aufrufer ohne Zod-Lauf — Cent-Preis ist die Rundung des Milli-Preises.
+    if (isItem) assertMilliConsistent(line);
 
     return {
       ...line,
@@ -29,11 +32,44 @@ export function normalizeLines(lines: readonly InvoiceLineInput[]): NormalizedLi
       position: index + 1,
       quantityMilli: isItem ? line.quantityMilli : 0,
       unitNetPriceCents: isItem ? line.unitNetPriceCents : 0,
+      unitNetPriceMilliCents: isItem ? normalizeMilli(line.unitNetPriceMilliCents) : null,
+      servicePeriodStart: isItem ? line.servicePeriodStart : undefined,
+      servicePeriodEnd: isItem ? line.servicePeriodEnd : undefined,
       discountPermille: isItem ? (line.discountPermille ?? 0) : 0,
       discountCents: isItem ? (line.discountCents ?? 0) : 0,
       taxRate: isItem ? line.taxRate : 0,
     };
   });
+}
+
+/**
+ * Wirft, wenn ein Milli-Preis gesetzt ist und `unitNetPriceCents` nicht dessen kaufmaennische
+ * Rundung ist (Invariante der Zeile, siehe Schema `refineInvoiceLine`).
+ */
+export function assertMilliConsistent(l: { unitNetPriceCents: number; unitNetPriceMilliCents?: number | null }): void {
+  const milli = l.unitNetPriceMilliCents;
+  if (milli === null || milli === undefined) return;
+  const expected = milliCentsToCents(milli);
+  if (l.unitNetPriceCents !== expected) {
+    throw new Error(`Einzelpreis in Cent (${l.unitNetPriceCents}) passt nicht zum Preis in tausendstel Cent (${milli}); erwartet ${expected}.`);
+  }
+}
+
+/**
+ * Preisfelder einer Quellzeile fuer alle Kopierpfade (Storno, Duplikat, Umwandlung, Vorlage ...):
+ * Cent-Preis und Milli-Preis bleiben zusammen; `sign` -1 spiegelt beide (Storno/Gutschrift).
+ * Bestandszeilen ohne Milli-Preis liefern `unitNetPriceMilliCents: null`.
+ */
+export function linePriceFields(
+  l: { unitNetPriceCents: number; unitNetPriceMilliCents?: number | null },
+  sign: 1 | -1 = 1,
+): { unitNetPriceCents: number; unitNetPriceMilliCents: number | null } {
+  const flip = (v: number): number => (v === 0 ? 0 : sign * v);
+  const milli = l.unitNetPriceMilliCents;
+  return {
+    unitNetPriceCents: flip(l.unitNetPriceCents),
+    unitNetPriceMilliCents: milli === null || milli === undefined ? null : flip(milli),
+  };
 }
 
 /** Minimale Zeilenform, die computeSubtotals benoetigt (Typ + bereits berechnetes Netto). */

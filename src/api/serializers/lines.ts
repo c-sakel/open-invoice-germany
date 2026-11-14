@@ -13,6 +13,7 @@ export function serializeQuoteLine(l: QuoteLine) {
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.unitNetPriceMilliCents,
     taxRate: l.taxRate,
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
@@ -33,11 +34,14 @@ export function serializeInvoiceLine(l: InvoiceLine) {
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.unitNetPriceMilliCents,
     taxRate: l.taxRate,
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
     discountCents: l.discountCents,
     lineNetCents: l.lineNetCents,
+    servicePeriodStart: l.servicePeriodStart ? l.servicePeriodStart.toISOString() : null,
+    servicePeriodEnd: l.servicePeriodEnd ? l.servicePeriodEnd.toISOString() : null,
     ossCategory: l.ossCategory,
   };
 }
@@ -73,6 +77,7 @@ export const quoteLineSchema = z.object({
   quantityMilli: z.number().int(),
   unit: z.string(),
   unitNetPriceCents: z.number().int(),
+  unitNetPriceMilliCents: z.number().int().nullable(),
   taxRate: z.number().int(),
   taxCategory: z.string(),
   discountPermille: z.number().int(),
@@ -82,6 +87,8 @@ export const quoteLineSchema = z.object({
 
 export const invoiceLineSchema = quoteLineSchema.extend({
   productId: z.string().nullable(),
+  servicePeriodStart: z.string().nullable(),
+  servicePeriodEnd: z.string().nullable(),
   ossCategory: z.string().nullable(),
 });
 

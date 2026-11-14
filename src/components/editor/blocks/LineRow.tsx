@@ -39,7 +39,7 @@
 import { clampTaxRate, type DraftLine, type DraftAction, type LineType } from "@/lib/editor/draft";
 import { taxRateOptions } from "@/lib/editor/constants";
 import type { EditorMode } from "@/lib/editor/constants";
-import { toCents, toMilli, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
+import { toMilli, toPrice, priceFieldError, centsOrZero, permilleOrZero, fromCents } from "@/lib/editor/parse";
 import { computeLineNet } from "@/lib/pricing/line";
 import { inputDenseCls } from "@/components/forms/fields";
 import { RichTextField } from "../RichTextField";
@@ -142,7 +142,9 @@ export function LineRow({
     ? baseTaxOptions
     : [...baseTaxOptions, { value: line.taxRate, label: `${line.taxRate}% (nicht mehr zulässig)` }];
   const qtyMilli = toMilli(line.quantity);
-  const priceCents = toCents(line.price);
+  const price = toPrice(line.price);
+  const priceCents = price === null ? null : price.cents;
+  const priceError = line.lineType === "ITEM" ? priceFieldError(line.price) : null;
   let amountLabel = "–";
   let grossHint: string | null = null;
   if (line.lineType === "ITEM" && qtyMilli !== null && priceCents !== null) {
@@ -150,6 +152,7 @@ export function LineRow({
       const { lineNetCents } = computeLineNet({
         quantityMilli: qtyMilli,
         unitNetPriceCents: priceCents,
+        unitNetPriceMilliCents: price?.milliCents ?? null,
         discountPermille: permilleOrZero(line.discountPercent),
         discountCents: centsOrZero(line.discountAmount),
       });
@@ -280,7 +283,14 @@ export function LineRow({
               <UnitSelect value={line.unit} onChange={(v) => patch({ unit: v })} />
             </td>
             <td data-label={grossDisplay ? "Preis (brutto)" : "Preis (netto)"} className={`order-3 col-span-2 ${cell}`}>
-              <input className={fieldCls} aria-label="Preis" value={line.price} onChange={(e) => patch({ price: e.target.value })} />
+              <input
+                className={fieldCls}
+                aria-label="Preis"
+                aria-invalid={priceError ? true : undefined}
+                value={line.price}
+                onChange={(e) => patch({ price: e.target.value })}
+              />
+              {priceError && <div role="alert" className="mt-0.5 text-[11px] text-red-700">{priceError}</div>}
               {grossHint && <div className="mt-0.5 text-[11px] text-ink-muted">{grossHint}</div>}
             </td>
             <td data-label="USt." className={`order-3 col-span-2 ${cell}`}>

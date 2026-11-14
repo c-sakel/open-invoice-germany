@@ -15,7 +15,7 @@ import { optionalSelectValue } from "@/lib/forms/optional-select";
 import { SCHEME_CATEGORY, schemeNoticeFor, FALLBACK_TAX_RATES, type EditorMode } from "./constants";
 import type { DocLanguage } from "@/lib/i18n/doc/types";
 import { SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
-import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero } from "./parse";
+import { toCents, toMilli, toPermille, fromCents, fromMilli, fromPermille, centsOrZero, milliOrZero, permilleOrZero, priceFieldError, priceFieldsOrZero, normalizePriceInput, toPrice, PRICE_FIELD_ERROR } from "./parse";
 import { newLineKey } from "./ids";
 import { blockRange, isNoopMove, slotToMoveTarget } from "./reorder";
 import type { TaxScheme } from "@/schemas";
@@ -476,7 +476,7 @@ function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
     articleNumber: l.articleNumber || undefined,
     quantityMilli: l.lineType === "ITEM" ? milliOrZero(l.quantity) : 0,
     unit: l.unit || "C62",
-    unitNetPriceCents: l.lineType === "ITEM" ? centsOrZero(l.price) : 0,
+    ...(l.lineType === "ITEM" ? priceFieldsOrZero(l.price) : { unitNetPriceCents: 0, unitNetPriceMilliCents: null }),
     taxRate: l.lineType === "ITEM" ? (isRegular ? l.taxRate : 0) : 0,
     taxCategory: SCHEME_CATEGORY[taxScheme] ?? "S",
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
@@ -571,7 +571,7 @@ export function toDocumentPayload(d: DraftState, isEdit: boolean): Record<string
     articleNumber: l.articleNumber || undefined,
     quantityMilli: l.lineType === "ITEM" ? milliOrZero(l.quantity) : 0,
     unit: l.unit || "C62",
-    unitNetPriceCents: l.lineType === "ITEM" ? centsOrZero(l.price) : 0,
+    ...(l.lineType === "ITEM" ? priceFieldsOrZero(l.price) : { unitNetPriceCents: 0, unitNetPriceMilliCents: null }),
     taxRate: l.lineType === "ITEM" ? l.taxRate : 0,
     taxCategory: "S",
     discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
@@ -640,7 +640,7 @@ export function toDeliveryNotePayload(d: DraftState, isEdit = false): Record<str
         articleNumber: l.articleNumber || undefined,
         quantityMilli: milliOrZero(l.quantity),
         unit: l.unit,
-        unitNetPriceCents: centsOrZero(l.price),
+        unitNetPriceCents: priceFieldsOrZero(l.price).unitNetPriceCents, // Lieferschein: nur Cent (dokumentierte Grenze)
         taxRate: l.taxRate,
         ...(l.source ? { sourceType: l.source.type, sourceId: l.source.id, sourceLineId: l.source.lineId } : {}),
       })),
@@ -664,9 +664,8 @@ export function validateDraft(d: DraftState): string[] {
     if (quantityMilli === null || quantityMilli === 0) {
       problems.push(`Position ${idx + 1}: Menge muss angegeben werden (ungleich 0).`);
     }
-    const unitNetPriceCents = toCents(l.price);
-    if (unitNetPriceCents === null) {
-      problems.push(`Position ${idx + 1}: Preis ist ungültig (z. B. 1.234,56).`);
+    if (toPrice(l.price) === null) {
+      problems.push(`Position ${idx + 1}: ${priceFieldError(l.price) ?? PRICE_FIELD_ERROR} (z. B. 1.234,56 oder 0,002).`);
     }
     if (l.discountPercent.trim() && toPermille(l.discountPercent) === null) {
       problems.push(`Position ${idx + 1}: Rabatt in % ist ungültig (z. B. 2,5).`);
@@ -831,7 +830,7 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
     articleNumber: l.articleNumber ?? "",
     quantity: roundTrip(l.quantity, toMilli, fromMilli),
     unit: l.unit || "C62",
-    price: roundTrip(l.price, toCents, fromCents),
+    price: normalizePriceInput(l.price),
     taxRate: l.taxRate,
     discountPercent: roundTrip(l.discountPercent, toPermille, fromPermille),
     discountAmount: roundTrip(l.discountAmount, toCents, fromCents),

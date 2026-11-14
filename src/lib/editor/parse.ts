@@ -5,7 +5,7 @@
  * muss ungültige Zwischenzustände beim Tippen abfangen können, ohne try/catch an
  * jeder Aufrufstelle (siehe `computeDraftTotals`/`validateDraft` in draft.ts/totals.ts).
  */
-import { parseDecimalInput } from "@/lib/money";
+import { parseDecimalInput, parseUnitPriceInput, unitPriceToInput } from "@/lib/money";
 
 /**
  * Euro-Eingabe ("12,50", "1.234,56", "12.50") -> Cent, oder `null` bei leerer/ungültiger Eingabe.
@@ -60,4 +60,38 @@ export function permilleOrZero(s: string): number {
   const p = toPermille(s);
   if (p === null) return 0;
   return Math.max(0, Math.min(1000, p));
+}
+
+// ── Einzelpreis (Phase 18f): bis zu 5 Nachkommastellen ─────────────────────────────────────
+
+/** Feldfehler des Preisfelds bei nicht lesbarer/mehrdeutiger Eingabe (leeres Feld ist kein Fehler). */
+export const PRICE_FIELD_ERROR = "Preis mehrdeutig oder mehr als 5 Nachkommastellen";
+
+/** Preis-Eingabe ("12,50", "0,002") -> Cent und (nur bei Sub-Cent-Preisen) Milli-Cent, sonst `null`. */
+export function toPrice(input: string): { cents: number; milliCents: number | null } | null {
+  return parseUnitPriceInput(input);
+}
+
+/** Fehlermeldung fuer das Preisfeld oder `null` (leer oder gueltig). */
+export function priceFieldError(input: string): string | null {
+  if (input.trim() === "") return null;
+  return toPrice(input) === null ? PRICE_FIELD_ERROR : null;
+}
+
+/** Payload-Felder des Preises; ungueltige/leere Eingabe -> 0 / `null` (wie `centsOrZero`). */
+export function priceFieldsOrZero(s: string): { unitNetPriceCents: number; unitNetPriceMilliCents: number | null } {
+  const p = toPrice(s);
+  return { unitNetPriceCents: p?.cents ?? 0, unitNetPriceMilliCents: p?.milliCents ?? null };
+}
+
+/** Anzeige-String des Preisfelds aus gespeicherten Werten ("0,002" bzw. "12,50"). */
+export function fromPrice(p: { unitNetPriceCents: number; unitNetPriceMilliCents?: number | null }): string {
+  return unitPriceToInput(p);
+}
+
+/** Preisfeld normalisieren (Round-Trip): lesbare Eingabe -> kanonische Anzeige, sonst unveraendert. */
+export function normalizePriceInput(s: string | undefined): string {
+  if (s === undefined || s.trim() === "") return "";
+  const p = toPrice(s);
+  return p === null ? s : fromPrice({ unitNetPriceCents: p.cents, unitNetPriceMilliCents: p.milliCents });
 }

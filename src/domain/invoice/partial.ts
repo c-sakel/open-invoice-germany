@@ -34,6 +34,7 @@ import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { parseOss } from "@/domain/product/oss-snapshot";
 import { createPartialInvoiceSchema, type CreatePartialInvoiceInput } from "@/schemas";
 import type { CreateInvoiceInput } from "@/schemas";
+import { linePriceFields } from "@/domain/document/lines";
 
 export class PartialInvoiceError extends Error {
   constructor(message: string) {
@@ -57,6 +58,8 @@ interface PartialSourceLine {
   // pauschal fehlschlagen, sondern erst dort, wo eine konkrete Zeile tatsaechlich
   // abgerechnet wird (`positionLinesForMode`/`assertAllLinesPriced`).
   unitNetPriceCents: number | null;
+  /** Phase 18f: Einzelpreis in tausendstel Cent (Angebot; Lieferschein erbt ihn ueber die Quellzeile). */
+  unitNetPriceMilliCents?: number | null;
   taxRate: number | null;
   taxCategory: string;
   lineNetCents: number;
@@ -102,6 +105,7 @@ interface PartialSource {
 interface OriginLine {
   quantityMilli: number;
   unitNetPriceCents: number;
+  unitNetPriceMilliCents: number | null;
   taxRate: number;
   taxCategory: string;
   ossCategory: string | null;
@@ -143,7 +147,7 @@ async function loadDeliveryNoteOrigin(
   const ids = n.lines
     .filter((l) => l.sourceLineId && (l.sourceId == null || l.sourceId === sourceId))
     .map((l) => l.sourceLineId as string);
-  const lineSelect = { id: true, quantityMilli: true, unitNetPriceCents: true, taxRate: true, taxCategory: true, ossCategory: true, discountPermille: true, discountCents: true } as const;
+  const lineSelect = { id: true, quantityMilli: true, unitNetPriceCents: true, unitNetPriceMilliCents: true, taxRate: true, taxCategory: true, ossCategory: true, discountPermille: true, discountCents: true } as const;
   const srcLines =
     ids.length === 0
       ? []
@@ -210,7 +214,7 @@ async function loadPartialSource(
           description: l.description,
           unit: l.unit,
           quantityMilli: l.quantityMilli,
-          unitNetPriceCents: l.unitNetPriceCents,
+          ...linePriceFields(l),
           taxRate: l.taxRate,
           taxCategory: l.taxCategory,
           lineNetCents: l.lineNetCents,
@@ -240,6 +244,9 @@ async function loadPartialSource(
     const src = l.sourceLineId ? origin?.lines.get(l.sourceLineId) : undefined;
     const sameRate = src != null && l.taxRate != null && l.taxRate === src.taxRate;
     const samePrice = sameRate && l.unitNetPriceCents != null && l.unitNetPriceCents === src.unitNetPriceCents;
+    // Phase 18f: der Lieferschein fuehrt nur den Cent-Preis; bei gleichem Cent-Preis gilt der
+    // (exakte) Milli-Preis der Quellposition, sonst bleibt es beim Cent-Preis.
+    const milli = samePrice ? src.unitNetPriceMilliCents : null;
     const inheritDiscount = samePrice && src.quantityMilli > 0;
     const discountPermille = inheritDiscount ? src.discountPermille : 0;
     const discountCents = inheritDiscount ? roundHalfUp((src.discountCents * l.quantityMilli) / src.quantityMilli) : 0;
@@ -249,12 +256,13 @@ async function loadPartialSource(
       unit: l.unit,
       quantityMilli: l.quantityMilli,
       unitNetPriceCents: l.unitNetPriceCents,
+      unitNetPriceMilliCents: milli,
       taxRate: l.taxRate,
       taxCategory: sameRate ? src.taxCategory : "S",
       ossCategory: sameRate ? src.ossCategory : null,
       lineNetCents:
         l.unitNetPriceCents != null
-          ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, discountPermille, discountCents }).lineNetCents
+          ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, unitNetPriceMilliCents: milli, discountPermille, discountCents }).lineNetCents
           : 0,
       discountPermille,
       discountCents,
@@ -292,6 +300,7 @@ interface BuiltLine {
   unit: string;
   quantityMilli: number;
   unitNetPriceCents: number;
+  unitNetPriceMilliCents?: number | null;
   taxRate: number;
   taxCategory: string;
   sourceLineId?: string;
@@ -439,6 +448,7 @@ function documentAdjustmentForBilledLines(
       computeLineNet({
         quantityMilli: l.quantityMilli,
         unitNetPriceCents: l.unitNetPriceCents,
+        unitNetPriceMilliCents: l.unitNetPriceMilliCents,
         discountPermille: l.discountPermille,
         discountCents: l.discountCents,
       }).lineNetCents,
@@ -494,6 +504,7 @@ function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialS
         unit: src.unit,
         quantityMilli: src.quantityMilli,
         unitNetPriceCents: src.unitNetPriceCents,
+        unitNetPriceMilliCents: src.unitNetPriceMilliCents ?? null,
         taxRate: src.taxRate,
         taxCategory: src.taxCategory,
         sourceLineId: lineId,
@@ -520,6 +531,7 @@ function positionLinesForMode(input: CreatePartialInvoiceInput, source: PartialS
         unit: src.unit,
         quantityMilli: q.quantityMilli,
         unitNetPriceCents: src.unitNetPriceCents,
+        unitNetPriceMilliCents: src.unitNetPriceMilliCents ?? null,
         taxRate: src.taxRate,
         taxCategory: src.taxCategory,
         sourceLineId: q.sourceLineId,
@@ -611,7 +623,7 @@ export async function createPartialInvoice(orgId: string, rawInput: unknown, opt
         description: l.description,
         quantityMilli: l.quantityMilli,
         unit: l.unit,
-        unitNetPriceCents: l.unitNetPriceCents,
+        ...linePriceFields(l),
         taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,

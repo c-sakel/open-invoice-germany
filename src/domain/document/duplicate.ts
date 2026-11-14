@@ -13,6 +13,7 @@ import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { parseOss } from "@/domain/product/oss-snapshot";
 import type { CreateInvoiceInput } from "@/schemas";
+import { linePriceFields } from "@/domain/document/lines";
 
 export type DuplicatableType = "QUOTE" | "DELIVERY_NOTE" | "INVOICE";
 
@@ -73,7 +74,7 @@ async function duplicateQuote(orgId: string, id: string, actor: string, now: Dat
             articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
-            unitNetPriceCents: l.unitNetPriceCents,
+            ...linePriceFields(l),
             taxRate: l.taxRate,
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
@@ -199,7 +200,7 @@ async function duplicateInvoice(orgId: string, id: string, actor: string, now: D
         articleNumber: l.articleNumber ?? undefined,
         quantityMilli: l.quantityMilli,
         unit: l.unit,
-        unitNetPriceCents: l.unitNetPriceCents,
+        ...linePriceFields(l),
         taxRate: l.taxRate as CreateInvoiceInput["lines"][number]["taxRate"],
         taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
         discountPermille: l.discountPermille,

@@ -44,10 +44,11 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.unitNetPriceMilliCents,
     taxRate: l.taxRate,
     lineNetCents:
       l.lineType === "ITEM"
-        ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, discountPermille: l.discountPermille, discountCents: l.discountCents }).lineNetCents
+        ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, unitNetPriceMilliCents: l.unitNetPriceMilliCents, discountPermille: l.discountPermille, discountCents: l.discountCents }).lineNetCents
         : 0,
   }));
   const net = tableLines.reduce((sum, l) => sum + l.lineNetCents, 0);

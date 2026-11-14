@@ -4,6 +4,7 @@ import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { loadDocumentSettings } from "@/domain/document/settings";
 import { NewRecurringForm, type RecurringInitialValues } from "@/components/NewRecurringForm";
+import { fromPrice } from "@/lib/editor/parse";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,7 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
       articleNumber: l.articleNumber ?? "",
       quantity: (l.quantityMilli / 1000).toString(),
       unit: l.unit,
-      price: (l.unitNetPriceCents / 100).toFixed(2),
+      price: fromPrice(l),
       taxRate: l.taxRate,
       discountPercent: (l.discountPermille / 10).toString(),
       discountAmount: (l.discountCents / 100).toFixed(2),

@@ -21,6 +21,7 @@ import { ratesOfLines } from "@/domain/settings/tax-rates";
 import { parseOss } from "@/domain/product/oss-snapshot";
 import { convertDocumentSchema, type ConvertDocumentInput, type TaxCategory } from "@/schemas";
 import type { Invoice, Quote, DeliveryNote } from "@/generated/prisma/client";
+import { linePriceFields } from "@/domain/document/lines";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -152,7 +153,7 @@ export async function convertDocumentToInvoice(orgId: string, documentId: string
             articleNumber: l.articleNumber,
             quantityMilli: l.quantityMilli,
             unit: l.unit,
-            unitNetPriceCents: l.unitNetPriceCents,
+            ...linePriceFields(l),
             taxRate: l.taxRate,
             taxCategory: l.taxCategory,
             discountPermille: l.discountPermille,
@@ -239,7 +240,7 @@ async function convertQuoteToOrderConfirmation(orgId: string, fromId: string, op
           articleNumber: l.articleNumber ?? undefined,
           quantityMilli: l.quantityMilli,
           unit: l.unit,
-          unitNetPriceCents: l.unitNetPriceCents,
+          ...linePriceFields(l),
           taxRate: l.taxRate,
           taxCategory: l.taxCategory as TaxCategory,
           discountPermille: l.discountPermille,

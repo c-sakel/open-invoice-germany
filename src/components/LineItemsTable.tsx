@@ -12,7 +12,7 @@
  */
 import { parseRichText, renderRichTextHtml } from "@/lib/richtext";
 import { computeSubtotals, type LineForSubtotal } from "@/domain/document/lines";
-import { formatCents, formatQuantity } from "@/lib/money";
+import { formatCents, formatQuantity, formatUnitPrice } from "@/lib/money";
 import { unitLabel } from "@/lib/units";
 import { docLocale, formatDocMoney, type DocLanguage, type DocStrings } from "@/lib/i18n/doc";
 
@@ -46,6 +46,8 @@ export interface LineItemsTableLine {
   quantityMilli: number;
   unit: string;
   unitNetPriceCents: number;
+  /** Phase 18f: Einzelpreis in tausendstel Cent (2 bis 5 Nachkommastellen in der Anzeige). */
+  unitNetPriceMilliCents?: number | null;
   taxRate: number;
   lineNetCents: number;
 }
@@ -67,6 +69,7 @@ export function LineItemsTable({
   lang?: DocLanguage;
 }) {
   const money = (cents: number) => (lang ? formatDocMoney(cents, currency, lang) : formatCents(cents, currency));
+  const unitPrice = (l: LineItemsTableLine) => formatUnitPrice(l, currency, lang ? docLocale(lang) : "de-DE");
   const qty = (milli: number) => (lang ? formatQuantity(milli, docLocale(lang)) : formatQuantity(milli));
   const normalized = lines.map((l) => ({ ...l, lineType: toLineType(l.lineType) }));
   const subtotals = computeSubtotals(normalized);
@@ -136,7 +139,7 @@ export function LineItemsTable({
                 <td className="tabular px-4 py-2 text-right">
                   {qty(l.quantityMilli)} {unitLabel(l.unit, lang ?? "de")}
                 </td>
-                <td className="tabular px-4 py-2 text-right">{money(l.unitNetPriceCents)}</td>
+                <td className="tabular px-4 py-2 text-right">{unitPrice(l)}</td>
                 <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
                 <td className="tabular px-4 py-2 text-right">{money(l.lineNetCents)}</td>
               </tr>

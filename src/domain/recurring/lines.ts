@@ -23,6 +23,8 @@ export type RecurringLineRow = {
   quantityMilli: number;
   unit: string;
   unitNetPriceCents: number;
+  /** Phase 18f: Einzelpreis in tausendstel Cent (Durchreichen; Verbrauchslogik folgt in Task 5). */
+  unitNetPriceMilliCents: number | null;
   taxRate: number;
   taxCategory: string;
   discountPermille: number;
@@ -40,6 +42,7 @@ export type RecurringStoredLine = {
   quantityMilli: number;
   unit: string;
   unitNetPriceCents: number;
+  unitNetPriceMilliCents?: number | null;
   taxRate: number;
   taxCategory: string;
   discountPermille: number;
@@ -70,6 +73,7 @@ export function toRecurringLineRows(lines: readonly InvoiceLineInput[], ossCateg
       quantityMilli: l.quantityMilli,
       unit: l.unit,
       unitNetPriceCents: l.unitNetPriceCents,
+      unitNetPriceMilliCents: l.unitNetPriceMilliCents ?? null,
       taxRate: l.taxRate,
       taxCategory: l.taxCategory,
       discountPermille: l.discountPermille,
@@ -93,6 +97,7 @@ export function recurringLinesToInvoiceLines(rows: readonly RecurringStoredLine[
       quantityMilli: isItem ? l.quantityMilli : 0,
       unit: l.unit,
       unitNetPriceCents: isItem ? l.unitNetPriceCents : 0,
+      unitNetPriceMilliCents: isItem ? (l.unitNetPriceMilliCents ?? null) : null,
       taxRate: isItem ? l.taxRate : 0,
       taxCategory: l.taxCategory as CreateInvoiceInput["lines"][number]["taxCategory"],
       discountPermille: isItem ? l.discountPermille : 0,

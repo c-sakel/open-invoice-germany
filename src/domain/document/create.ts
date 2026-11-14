@@ -66,6 +66,7 @@ export async function createBusinessDocumentWithinTx(
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.unitNetPriceMilliCents ?? null,
     taxRate: l.taxRate,
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
