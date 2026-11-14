@@ -24,6 +24,7 @@ import {
   formatCentsDe,
   formatDateDe,
   formatDateTimeDe,
+  formatMilliCentsDe,
   formatMilliDe,
   type CsvColumn,
   type CsvValue,
@@ -73,6 +74,8 @@ const INVOICE_COLUMNS: readonly CsvColumn[] = [
 const LINE_COLUMNS: readonly CsvColumn[] = [
   t("beleg"), { name: "position", type: "int" }, t("positionsart"), t("artikelnummer"), t("beschreibung"), { name: "menge", type: "quantity" }, t("einheit"),
   amount("einzelpreis_netto"), { name: "steuersatz", type: "int" }, t("steuerkategorie"), { name: "rabatt_promille", type: "int" }, amount("rabatt_betrag"), amount("zeilensumme_netto"),
+  // Phase 18f: ungerundeter Einzelpreis (5 Nachkommastellen), leer bei Cent-Preisen; Endspalte, Bestandsspalten unveraendert.
+  { name: "einzelpreis_exakt", type: "amount5" },
 ];
 const PAYMENT_COLUMNS: readonly CsvColumn[] = [
   t("beleg"), t("zahlung_id"), t("art"), amount("betrag"), date("datum"), t("methode"), t("referenz"), t("skonto"), t("korrigiert_zahlung"), t("grund"), t("erfasst_von"), t("anbieter"), t("erfasst_am"),
@@ -230,7 +233,7 @@ export async function buildAuditExport(
         lines: {
           orderBy: { position: "asc" },
           select: {
-            position: true, lineType: true, articleNumber: true, description: true, quantityMilli: true, unit: true, unitNetPriceCents: true,
+            position: true, lineType: true, articleNumber: true, description: true, quantityMilli: true, unit: true, unitNetPriceCents: true, unitNetPriceMilliCents: true,
             taxRate: true, taxCategory: true, discountPermille: true, discountCents: true, lineNetCents: true,
           },
         },
@@ -285,6 +288,7 @@ export async function buildAuditExport(
         await add("positionen.csv", [
           nr, l.position, l.lineType, l.articleNumber, l.description, formatMilliDe(l.quantityMilli), l.unit, formatCentsDe(l.unitNetPriceCents),
           l.taxRate, l.taxCategory, l.discountPermille, formatCentsDe(l.discountCents), formatCentsDe(l.lineNetCents),
+          l.unitNetPriceMilliCents === null ? null : formatMilliCentsDe(l.unitNetPriceMilliCents),
         ]);
       }
       for (const p of inv.payments) {

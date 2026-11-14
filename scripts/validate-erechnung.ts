@@ -98,7 +98,7 @@ async function validateFile(target: string): Promise<boolean> {
   return false;
 }
 
-// Fixture-Set: alle 31 Fixtures (61 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
+// Fixture-Set: alle 33 Fixtures (65 XML: base nur UBL), siehe scripts/generate-sample-xrechnung.ts.
 const SAMPLE_NAMES = [
   "base",
   "line-discount",
@@ -131,6 +131,8 @@ const SAMPLE_NAMES = [
   "reverse-charge-bt47", // Phase 17a: AE ohne Kaeufer-USt-IdNr., BT-47 (BR-AE-02)
   "karte-54", // Phase 18e: Karte mit Kartendaten (BG-18, BR-DE-24)
   "lastschrift-59", // Phase 18e: Lastschrift mit Mandat (BG-19, BR-DE-25/30/31)
+  "abo-verbrauch-subcent", // Phase 18f: BT-146 mit 5 Nachkommastellen, BG-26 Leistungszeitraum je Position
+  "abo-verbrauch-subcent-storno", // Phase 18f: Storno dazu (CreditNote, positive Preise)
 ];
 
 async function main(): Promise<void> {

@@ -7,6 +7,7 @@ import { parseSellerSnapshot, parseBuyerSnapshot, parseContactSnapshot } from "@
 import { buildDocumentTextContext } from "@/domain/email/context";
 import { renderTemplate } from "@/lib/template/render";
 import { roundHalfUp } from "@/lib/money";
+import { lineGrossCents } from "@/lib/pricing/line";
 import { skontoTerms, paymentTermsText, xrechnungSkontoNote } from "@/lib/pricing/skonto";
 import { resolvePayeeName } from "@/lib/payee-name";
 import { resolveBuyerEndpoint, resolveSellerEndpoint } from "./eas";
@@ -155,6 +156,9 @@ export interface MapInput {
     quantityMilli: number;
     unit: string;
     unitNetPriceCents: number;
+    unitNetPriceMilliCents?: number | null;
+    servicePeriodStart?: Date | null;
+    servicePeriodEnd?: Date | null;
     lineNetCents: number;
     taxRate: number;
     taxCategory: string;
@@ -168,6 +172,22 @@ export interface MapInput {
     descriptionLong?: string | null;
     articleNumber?: string | null;
   }>;
+}
+
+/**
+ * Menge x Einzelpreis vor Rabatt. Gutschrift-Zeilen tragen gespiegelte (negative) Preise, die der
+ * Rechenkern ablehnt — Milli-Preise werden daher ueber den Betrag gerechnet und das Vorzeichen
+ * wieder aufgesetzt; Cent-Preise behalten die bisherige Formel (Bestandsbelege byte-gleich).
+ */
+function grossOfLine(l: { quantityMilli: number; unitNetPriceCents: number; unitNetPriceMilliCents?: number | null }): number {
+  if (l.unitNetPriceMilliCents == null) return roundHalfUp((l.quantityMilli * l.unitNetPriceCents) / 1000);
+  const negative = l.unitNetPriceMilliCents < 0;
+  const gross = lineGrossCents({
+    quantityMilli: l.quantityMilli,
+    unitNetPriceCents: Math.abs(l.unitNetPriceCents),
+    unitNetPriceMilliCents: Math.abs(l.unitNetPriceMilliCents),
+  });
+  return negative ? -gross : gross;
 }
 
 const FX_SOURCES = new Set<string>(["BMF_MONTHLY", "ECB_DAILY", "MANUAL"]);
@@ -456,7 +476,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
       ...(customer.legalRegistrationId ? { legalRegistrationId: customer.legalRegistrationId } : {}),
     },
     lines: invoice.lines.map((l) => {
-      const grossLineCents = roundHalfUp((l.quantityMilli * l.unitNetPriceCents) / 1000);
+      const grossLineCents = grossOfLine(l);
       const discountCents = grossLineCents - l.lineNetCents;
       // MultiplierFactorNumeric nur bei REIN prozentualem Rabatt (kein zusaetzlicher
       // Festbetrag) — sonst ist die Prozent/Betrag-Beziehung nicht mehr exakt.
@@ -468,6 +488,10 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
         quantityMilli: l.quantityMilli,
         unit: l.unit,
         unitNetPriceCents: l.unitNetPriceCents,
+        ...(l.unitNetPriceMilliCents != null ? { unitNetPriceMilliCents: l.unitNetPriceMilliCents } : {}),
+        ...(l.servicePeriodStart && l.servicePeriodEnd
+          ? { servicePeriodStart: l.servicePeriodStart, servicePeriodEnd: l.servicePeriodEnd }
+          : {}),
         lineNetCents: l.lineNetCents,
         taxRate: l.taxRate,
         taxCategory: l.taxCategory,

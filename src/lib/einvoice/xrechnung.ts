@@ -7,7 +7,7 @@
  * Geschäftsregeln (siehe en16931-core.ts).
  */
 import { create } from "xmlbuilder2";
-import { roundHalfUp } from "@/lib/money";
+import { milliCentsToDecimal, roundHalfUp } from "@/lib/money";
 import { berlinDateKey } from "@/lib/berlin-time";
 import { parseRichText, plainText } from "@/lib/richtext";
 import { deductionsNoteText } from "./deduction-note";
@@ -189,6 +189,11 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     ? "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
     : "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
   const amt = (cents: number) => money(isCredit ? Math.abs(cents) : cents);
+  // BT-146: exakter Milli-Preis mit 5 Nachkommastellen (Phase 18f), sonst zweistellig wie bisher.
+  const priceText = (l: EInvoiceLine): string =>
+    l.unitNetPriceMilliCents != null
+      ? milliCentsToDecimal(isCredit ? Math.abs(l.unitNetPriceMilliCents) : l.unitNetPriceMilliCents)
+      : amt(l.unitNetPriceCents);
   const qty = (milli: number) => quantity(Math.abs(milli));
   const fx = fxOf(data);
 
@@ -451,6 +456,14 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     il.ele(qtyTag, { unitCode: line.unit }).txt(qty(line.quantityMilli)).up();
     il.ele("cbc:LineExtensionAmount", { currencyID: cur }).txt(amt(line.lineNetCents)).up();
 
+    // BG-26 (BT-134/BT-135) — Leistungszeitraum der Position, direkt nach LineExtensionAmount.
+    if (line.servicePeriodStart && line.servicePeriodEnd) {
+      const period = il.ele("cac:InvoicePeriod");
+      period.ele("cbc:StartDate").txt(isoDate(line.servicePeriodStart)).up();
+      period.ele("cbc:EndDate").txt(isoDate(line.servicePeriodEnd)).up();
+      period.up();
+    }
+
     // BG-27 — Zeilenrabatt. Reihenfolge laut UBL-XSD: ... LineExtensionAmount,
     // (InvoicePeriod/OrderLineReference), AllowanceCharge, Item, Price.
     if (line.discountCents) {
@@ -484,7 +497,7 @@ export function buildXRechnungUBL(data: EInvoiceData): string {
     ctc.up();
     item.up();
 
-    il.ele("cac:Price").ele("cbc:PriceAmount", { currencyID: cur }).txt(amt(line.unitNetPriceCents)).up().up();
+    il.ele("cac:Price").ele("cbc:PriceAmount", { currencyID: cur }).txt(priceText(line)).up().up();
     il.up();
   });
 
