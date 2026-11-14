@@ -19,6 +19,8 @@ export interface ChainNode {
   id: string;
   label: string;
   number: string | null;
+  /** Nur Abo-Knoten: interner Abo-Titel (nur fuer die App-Anzeige). */
+  title?: string;
   status: string;
   href: string | null;
   relation?: string;
@@ -36,6 +38,7 @@ const REVERSE_DIRECTION_RELATIONS = new Set(["PARTIAL_OF", "DOWNPAYMENT_OF", "FI
 
 interface NodeData {
   number: string | null;
+  title?: string;
   status: string;
   kind?: string;
   invoiceType?: string;
@@ -62,8 +65,8 @@ async function fetchNodeData(orgId: string, type: RefType, id: string): Promise<
       return d ? { number: d.number, status: `MAHNSTUFE_${d.level}`, invoiceId: d.invoiceId } : null;
     }
     case "RECURRING": {
-      const r = await dbInternal.recurringInvoice.findFirst({ where: { id, orgId }, select: { status: true } });
-      return r ? { number: null, status: r.status } : null;
+      const r = await dbInternal.recurringInvoice.findFirst({ where: { id, orgId }, select: { status: true, title: true } });
+      return r ? { number: null, status: r.status, title: r.title } : null;
     }
     default:
       return null;
@@ -176,6 +179,7 @@ async function buildNode(orgId: string, type: RefType, id: string, relation: str
     id,
     label: labelFor(type, data),
     number: data.number,
+    ...(data.title ? { title: data.title } : {}),
     status: data.status,
     href: hrefFor(type, id, data),
     ...(relation ? { relation } : {}),

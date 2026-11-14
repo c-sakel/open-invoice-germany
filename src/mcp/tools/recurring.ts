@@ -143,7 +143,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       }
       const recs = await dbInternal.recurringInvoice.findMany({
         where: { orgId: org.id, ...(status ? { status } : {}) },
-        include: { customer: { select: { name: true } }, _count: { select: { invoices: true } } },
+        include: { customer: { select: { name: true } } },
         orderBy: { nextRunDate: "asc" },
       });
       return ctx.ok(
@@ -155,7 +155,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             rhythm: intervalLabel(r.interval, r.intervalCount),
             status: r.status,
             nextRunDate: r.status === "ENDED" ? null : r.nextRunDate.toISOString().slice(0, 10),
-            issued: r._count.invoices,
+            issued: r.issuedCount,
             autoFinalize: r.autoFinalize,
             collectiveBilling: r.collectiveBilling,
             invoiceHeading: r.invoiceHeading,
@@ -217,7 +217,10 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             return `• ${label}: ${e.number ?? "Entwurf " + e.invoiceId.slice(0, 8)} (Periode ${e.periodDate.toISOString().slice(0, 10)})`;
           }),
         );
-        return ctx.ok(`${total} Rechnung(en) aus ${summaries.length} Abo(s) erzeugt:\n${lines.join("\n")}`);
+        const collectiveCount = summaries.reduce((n, s) => n + s.emitted.filter((e) => (e.collectiveRecurringIds?.length ?? 0) > 1).length, 0);
+        const covered = summaries.filter((s) => s.emitted.length > 0).length;
+        const sammel = collectiveCount > 0 ? ` (davon ${collectiveCount} Sammelrechnung(en))` : "";
+        return ctx.ok(`${total} Rechnung(en)${sammel} für ${covered} Abo(s) erzeugt:\n${lines.join("\n")}`);
       } catch (e) {
         if (e instanceof RecurringError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);

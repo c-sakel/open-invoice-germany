@@ -234,5 +234,9 @@ describe("MCP", () => {
     const res = await callTool("run_recurring", {});
     expect(res.isError).toBeFalsy();
     expect(text(res)).toMatch(/Sammelrechnung für 2 Abos/);
+    expect(text(res)).toMatch(/davon \d+ Sammelrechnung/);
+    const list = JSON.parse(text(await callTool("list_recurring", {}))) as { title: string; issued: number }[];
+    expect(list.find((r) => r.title === "SAMMEL-API-MCP-L1")?.issued).toBe(1);
+    expect(list.find((r) => r.title === "SAMMEL-API-MCP-L2")?.issued).toBe(1);
   });
 });
