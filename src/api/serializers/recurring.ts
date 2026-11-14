@@ -11,6 +11,7 @@ import { z } from "zod";
 
 export function serializeRecurringLine(l: RecurringInvoiceLine) {
   return {
+    id: l.id,
     position: l.position,
     lineType: l.lineType,
     productId: l.productId,
@@ -20,6 +21,9 @@ export function serializeRecurringLine(l: RecurringInvoiceLine) {
     quantityMilli: l.quantityMilli,
     unit: l.unit,
     unitNetPriceCents: l.unitNetPriceCents,
+    unitNetPriceMilliCents: l.unitNetPriceMilliCents,
+    billing: l.billing,
+    usageUnitLabel: l.usageUnitLabel,
     taxRate: l.taxRate,
     taxCategory: l.taxCategory,
     discountPermille: l.discountPermille,
@@ -62,6 +66,7 @@ export function serializeRecurring(r: RecurringInvoice & { lines?: RecurringInvo
 
 
 const recurringLineSchema = z.object({
+  id: z.string().describe("Zeilen-Id; beim Aendern mitsenden, damit Verbrauch der Zeile erhalten bleibt."),
   position: z.number().int(),
   lineType: z.string().describe("ITEM | HEADING | TEXT | SUBTOTAL"),
   productId: z.string().nullable(),
@@ -71,6 +76,9 @@ const recurringLineSchema = z.object({
   quantityMilli: z.number().int(),
   unit: z.string(),
   unitNetPriceCents: z.number().int(),
+  unitNetPriceMilliCents: z.number().int().nullable().describe("Einzelpreis in tausendstel Cent (z. B. 0,002 EUR = 200); null = Cent-Preis."),
+  billing: z.string().describe("FIXED | USAGE (nach Verbrauch; Menge ergibt sich beim Lauf aus dem erfassten Verbrauch)."),
+  usageUnitLabel: z.string().nullable().describe("Anzeigeeinheit des Verbrauchs, z. B. Aufrufe."),
   taxRate: z.number(),
   taxCategory: z.string(),
   discountPermille: z.number().int(),

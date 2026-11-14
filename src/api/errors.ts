@@ -41,6 +41,7 @@ import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
 import { GrossDeviationError } from "@/domain/document/price-input";
+import { UsageError, type UsageErrorCode } from "@/domain/recurring/usage-error";
 import { describeError } from "@/lib/safe-error";
 
 /**
@@ -104,7 +105,8 @@ export type ApiErrorCode =
 
 export interface ApiErrorBody {
   error: {
-    code: ApiErrorCode;
+    /** Bei Verbrauchsfehlern (422) der fachliche Code (z. B. NOT_USAGE_LINE, ALREADY_VOIDED). */
+    code: ApiErrorCode | UsageErrorCode;
     message: string;
     details?: unknown;
     /** Nur 401: maschinenlesbarer Grund (MISSING | UNKNOWN | REVOKED | EXPIRED). */
@@ -179,6 +181,11 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof GrossDeviationError) {
     return { status: 400, body: { error: { code: "GROSS_DEVIATION", message: e.message } } };
+  }
+  // Phase 18f: Verbrauchserfassung. NOT_FOUND 404, CONFLICT 409, sonst 422 mit dem fachlichen Code.
+  if (e instanceof UsageError) {
+    const status = e.code === "NOT_FOUND" ? 404 : e.code === "CONFLICT" ? 409 : 422;
+    return { status, body: { error: { code: e.code, message: e.message } } };
   }
   if (e instanceof ValidationError) {
     return { status: 400, body: { error: { code: "VALIDATION", message: e.message } } };

@@ -311,6 +311,9 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 | `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort) | „Erzeuge die fälligen Rechnungen." |
 | `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich | „Ändere beim Wartungsvertrag von Müller den Preis auf 109 €." |
 | `set_recurring_state` | Status eines Abos auf `ACTIVE`/`PAUSED`/`ENDED` setzen (dünner Wrapper um `update_recurring_invoice`) | „Pausiere den Wartungsvertrag von Müller GmbH." |
+| `record_usage` | Verbrauch für eine Abo-Position mit Abrechnung nach Verbrauch erfassen (`quantity` bis 3 Nachkommastellen oder `quantityMilli`, optional `externalId` für Idempotenz) | „Erfasse 2,5 Aufrufe für das API-Abo." |
+| `list_usage` | Verbrauchssätze eines Abos auflisten, mit offener Menge je Position | „Zeig den Verbrauch des API-Abos." |
+| `void_usage` | Offenen Verbrauchssatz mit Pflichtgrund stornieren | „Storniere diesen Verbrauch, doppelt gemeldet." |
 
 ### Scheduler
 

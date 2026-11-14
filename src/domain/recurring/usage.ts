@@ -230,7 +230,7 @@ export async function listUsage(
   orgId: string,
   recurringId: string,
   raw: unknown,
-): Promise<{ items: UsageView[]; nextCursor: string | null; open: { recurringLineId: string; quantityMilli: number; periodEnd: Date }[] }> {
+): Promise<{ items: UsageView[]; total: number; nextCursor: string | null; open: { recurringLineId: string; quantityMilli: number; periodEnd: Date }[] }> {
   const q = listUsageQuerySchema.parse(raw ?? {});
   const rec = await dbInternal.recurringInvoice.findFirst({ where: { id: recurringId, orgId }, select: { id: true } });
   if (!rec) throw new UsageError("NOT_FOUND", NOT_FOUND_MESSAGE);
@@ -242,8 +242,10 @@ export async function listUsage(
         : q.status === "voided"
           ? { voidedAt: { not: null } }
           : {};
+  const where: Prisma.RecurringUsageWhereInput = { orgId, recurringInvoiceId: recurringId, ...statusWhere };
+  const total = await dbInternal.recurringUsage.count({ where });
   const rows = await dbInternal.recurringUsage.findMany({
-    where: { orgId, recurringInvoiceId: recurringId, ...statusWhere },
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: q.limit + 1,
     ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
@@ -259,7 +261,7 @@ export async function listUsage(
   const open = grouped.flatMap((g) =>
     g.recurringLineId && g._max.periodEnd ? [{ recurringLineId: g.recurringLineId, quantityMilli: g._sum.quantityMilli ?? 0, periodEnd: g._max.periodEnd }] : [],
   );
-  return { items: page.map(toView), nextCursor: rows.length > q.limit ? (page[page.length - 1]?.id ?? null) : null, open };
+  return { items: page.map(toView), total, nextCursor: rows.length > q.limit ? (page[page.length - 1]?.id ?? null) : null, open };
 }
 
 export interface BillableLineUsage {
