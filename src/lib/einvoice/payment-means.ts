@@ -34,16 +34,16 @@ export function resolveSpecialMeans(i: {
   if (i.invoiceType === "CREDIT_NOTE") return { kind: "fallback", gap: null };
   if (isCard) {
     const c = i.card;
-    // Defensiv: nur genau 4 Ziffern (Datenschutz, nie mehr Kartenziffern).
-    if (!c || !c.cardPanTruncated || !/^\d{4}$/.test(c.cardPanTruncated) || !c.cardNetwork) return { kind: "fallback", gap: "karte-unvollstaendig" };
+    // Defensiv: nur genau 4 Ziffern (Datenschutz, nie mehr Kartenziffern); Leerzeichen-Strings gelten als fehlend.
+    if (!c || !c.cardPanTruncated || !/^\d{4}$/.test(c.cardPanTruncated) || !c.cardNetwork?.trim()) return { kind: "fallback", gap: "karte-unvollstaendig" };
     return {
       kind: "card",
-      card: { panTruncated: c.cardPanTruncated, network: c.cardNetwork, holderName: c.cardHolderName ?? null },
+      card: { panTruncated: c.cardPanTruncated, network: c.cardNetwork, holderName: c.cardHolderName?.trim() ? c.cardHolderName : null },
     };
   }
   const d = i.directDebit;
   // Leere Strings (Altdaten, direkter Aufruf ohne Schema) gelten als unvollstaendig.
-  if (!d || !d.creditorId || !d.mandateReference || !d.debtorIban)
+  if (!d || !d.creditorId.trim() || !d.mandateReference.trim() || !d.debtorIban.trim())
     return { kind: "fallback", gap: "lastschrift-unvollstaendig" };
   if (!i.dueDate) return { kind: "fallback", gap: "lastschrift-faelligkeit" };
   return { kind: "directDebit", directDebit: d };

@@ -91,6 +91,16 @@ describe("resolveSpecialMeans", () => {
         .toEqual({ kind: "fallback", gap: "karte-unvollstaendig" });
     }
   });
+  it("Whitespace-Strings gelten als fehlend", () => {
+    for (const k of ["creditorId", "mandateReference", "debtorIban"] as const) {
+      expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: { ...SNAPSHOT, [k]: "   " }, dueDate: DUE }))
+        .toEqual({ kind: "fallback", gap: "lastschrift-unvollstaendig" });
+    }
+    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardNetwork: "  " }, directDebit: null, dueDate: DUE }))
+      .toEqual({ kind: "fallback", gap: "karte-unvollstaendig" });
+    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardHolderName: " " }, directDebit: null, dueDate: DUE }))
+      .toEqual({ kind: "card", card: { panTruncated: "1234", network: "VISA", holderName: null } });
+  });
   it("Lastschrift ohne Faelligkeitsdatum -> Fallback mit eigenem Hinweis", () => {
     for (const dueDate of [null, undefined]) {
       expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: SNAPSHOT, dueDate }))
