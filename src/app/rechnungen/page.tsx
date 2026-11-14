@@ -19,6 +19,9 @@ import { Pagination } from "@/components/list/Pagination";
 import { RowActionsMenu } from "@/components/list/RowActionsMenu";
 import { StatusTabs } from "@/components/list/StatusTabs";
 import { ListHeadline, type HeadlineItem } from "@/components/list/ListHeadline";
+import { ListSelectionProvider, SelectionCheckbox } from "@/components/list/ListSelection";
+import { SelectionBar } from "@/components/list/SelectionBar";
+import { BulkCancelDialog } from "@/components/invoices/BulkCancelDialog";
 import { DataTable, type DataColumn } from "@/components/ui/DataTable";
 import { Card } from "@/components/ui/Card";
 import { StackedBar } from "@/components/charts/StackedBar";
@@ -82,6 +85,17 @@ function loadOverview(orgId: string, rawFilter: Record<string, unknown>, now: Da
   return runListFilter(rawFilter, (f) =>
     Promise.all([listInvoices(orgId, f, now), invoiceStatusTabCounts(orgId, withoutStatus(f), now), invoiceListHeadline(orgId, f, now)]),
   );
+}
+
+function invoiceActions(inv: InvoiceListRow) {
+  return availableActions({
+    kind: "INVOICE",
+    type: inv.type,
+    status: inv.effectiveStatus,
+    isDraft: inv.effectiveStatus === "DRAFT",
+    hasEmailLog: inv.hasEmailLog,
+    dunningState: inv.dunningState,
+  });
 }
 
 type SP = Record<string, string | string[] | undefined>;
@@ -215,7 +229,17 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
     { type: "select", name: "tag", label: "Tag", options: tags.map((t) => ({ value: t.id, label: t.name })) },
   ];
 
+  // Sammel-Storno (18c): waehlbar sind nur Zeilen, fuer die der Einzelstorno angeboten wird.
+  const selectableIds = result.rows.filter((inv) => invoiceActions(inv).includes("CANCEL")).map((inv) => inv.id);
+
   const columns: DataColumn<InvoiceListRow>[] = [
+    {
+      key: "select",
+      header: "Auswahl",
+      headerSrOnly: true,
+      mobile: "meta",
+      cell: (inv) => <SelectionCheckbox id={inv.id} label={`${inv.number ?? "Entwurf"} auswählen`} />,
+    },
     {
       key: "number",
       header: "Nummer",
@@ -300,14 +324,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
       align: "right",
       mobile: "meta",
       cell: (inv) => {
-        const actions = availableActions({
-          kind: "INVOICE",
-          type: inv.type,
-          status: inv.effectiveStatus,
-          isDraft: inv.effectiveStatus === "DRAFT",
-          hasEmailLog: inv.hasEmailLog,
-          dunningState: inv.dunningState,
-        });
+        const actions = invoiceActions(inv);
         return (
           <RowActionsMenu
             kind="INVOICE"
@@ -375,7 +392,9 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         </Card>
       )}
 
+      <ListSelectionProvider selectableIds={selectableIds}>
       <div className="rounded-[var(--radius-card)] bg-sheet px-2 shadow-[var(--shadow-card)] sm:px-3">
+        <SelectionBar noun={["Rechnung", "Rechnungen"]}>{(sel, clear) => <BulkCancelDialog ids={sel} onDone={clear} />}</SelectionBar>
         <DataTable
           caption="Rechnungen"
           rows={result.rows}
@@ -385,6 +404,7 @@ export default async function RechnungenPage({ searchParams }: { searchParams: P
         />
         <Pagination basePath="/rechnungen" searchParams={values} total={result.total} limit={result.limit} offset={result.offset} />
       </div>
+      </ListSelectionProvider>
     </div>
   );
 }

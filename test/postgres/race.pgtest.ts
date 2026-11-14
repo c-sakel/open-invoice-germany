@@ -1,4 +1,5 @@
 /**
+ * Phase 18c: Sammel-Storno (parallele Laeufe, seriell je Organisation).
  * Phase 17b, Task 8 — Parallel-Lasttest unter PostgreSQL (scripts/test-postgres-race.sh).
  * Je Szenario eine frische Organisation und frische Quelle; N parallele Aufrufe ueber die
  * Domainfunktionen. Ohne die Zeilensperre (lockRow) schlagen die Szenarien fehl.
@@ -17,6 +18,8 @@ import { createPartialInvoice } from "@/domain/invoice/partial";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { recordPayment } from "@/domain/invoice/payment";
 import { cancelInvoice } from "@/domain/invoice/cancel";
+import { cancelInvoicesBulk } from "@/domain/invoice/bulk-cancel";
+import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { savePostalSettings } from "@/domain/postal/settings";
 import { quotePostal, sendByPost } from "@/domain/postal/send";
@@ -167,6 +170,37 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(original.status).toBe("CANCELLED");
     const rel = await dbInternal.documentRelation.count({ where: { orgId: s.orgId, toType: "INVOICE", toId: inv.id, relationType: "REVERSES" } });
     expect(rel).toBe(1);
+  });
+  it("Sammel-Storno 5x parallel mit denselben 3 Rechnungen -> je Rechnung genau ein Stornobeleg, Kette gueltig", async () => {
+    const s = await newScenario();
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const q = await createBusinessDocument(s.orgId, { kind: "ANGEBOT", customerId: s.customerId, taxScheme: "REGULAR", currency: "EUR", lines: [item(1000)] }, { now: s.now });
+      ids.push((await invoiceFromQuote(s.orgId, q.id, s.now)).id);
+    }
+    const rs = await parallel(() => cancelInvoicesBulk(s.orgId, { ids, reason: "Race" }, { actor: "race", now: () => s.now }));
+    expect(rejected(rs).length, describeFailures(rs)).toBe(0);
+    expect(fulfilled(rs).reduce((sum, r) => sum + r.value.ok.length, 0)).toBe(3);
+    for (const id of ids) {
+      expect(await dbInternal.documentRelation.count({ where: { orgId: s.orgId, toType: "INVOICE", toId: id, relationType: "REVERSES" } })).toBe(1);
+    }
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+  it("Sammel-Storno 2x parallel mit disjunkten Ids (2 + 1) -> alle 3 ok, Kette gueltig", async () => {
+    const s = await newScenario();
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const q = await createBusinessDocument(s.orgId, { kind: "ANGEBOT", customerId: s.customerId, taxScheme: "REGULAR", currency: "EUR", lines: [item(1000)] }, { now: s.now });
+      ids.push((await invoiceFromQuote(s.orgId, q.id, s.now)).id);
+    }
+    const rs = await Promise.allSettled([
+      cancelInvoicesBulk(s.orgId, { ids: ids.slice(0, 2), reason: "Race A" }, { actor: "race", now: () => s.now }),
+      cancelInvoicesBulk(s.orgId, { ids: ids.slice(2), reason: "Race B" }, { actor: "race", now: () => s.now }),
+    ]);
+    expect(rejected(rs).length, describeFailures(rs)).toBe(0);
+    const results = fulfilled(rs).flatMap((r) => r.value.ok);
+    expect(results).toHaveLength(3);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
   it("Postversand LIVE: 4 parallele Auftraege knapp unter dem Monatsbudget -> hoechstens zwei (Fake-Transport, kein Netz)", async () => {
     const s = await newScenario();
