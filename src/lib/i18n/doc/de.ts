@@ -168,6 +168,11 @@ export const de: DocStrings = {
     accountHolder: "Kontoinhaber",
   },
   giro: { caption: "GiroCode – mit Banking-App scannen", captionShort: "GiroCode" },
+  paymentMeans: {
+    directDebit: (amount, date, ibanMasked, mandateReference, creditorId) =>
+      `Den Betrag von ${amount} ziehen wir ${date ? `am ${date}` : "zum Fälligkeitsdatum"} per SEPA-Lastschrift von Ihrem Konto ${ibanMasked} ein. Mandatsreferenz: ${mandateReference}, Gläubiger-ID: ${creditorId}.`,
+    card: (network, last4) => `Zahlung per Karte (${network}) **** ${last4}.`,
+  },
   page: (n, total) => `Seite ${n} von ${total}`,
   dunning: {
     salutation: "Sehr geehrte Damen und Herren,",

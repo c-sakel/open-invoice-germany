@@ -167,6 +167,11 @@ export const en: DocStrings = {
     accountHolder: "Account holder",
   },
   giro: { caption: "GiroCode – scan with your banking app", captionShort: "GiroCode" },
+  paymentMeans: {
+    directDebit: (amount, date, ibanMasked, mandateReference, creditorId) =>
+      `We will collect ${amount} ${date ? `on ${date}` : "on the due date"} by SEPA direct debit from your account ${ibanMasked}. Mandate reference: ${mandateReference}, creditor ID: ${creditorId}.`,
+    card: (network, last4) => `Payment by card (${network}) **** ${last4}.`,
+  },
   page: (n, total) => `Page ${n} of ${total}`,
   dunning: {
     salutation: "Dear Sir or Madam,",
