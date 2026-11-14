@@ -418,3 +418,19 @@ describe("Fix-Welle 18f-3: Stichtag gehoert zur endenden Periode", () => {
     expect(batch.find((s) => s.recurringId === rec.id)?.emitted).toHaveLength(1);
   });
 });
+
+describe("Fix-Welle 18f-3: Enddatum und Beenden mit offenen Verbraeuchen", () => {
+  it("frueheres Enddatum vor offenen Verbraeuchen und Status ENDED werden abgelehnt; nach Storno erlaubt", async () => {
+    const { rec, usageLineId } = await makeAbo({ startDate: D("2187-01-31") });
+    await emitted(rec.id, D("2187-02-01"));
+    const u = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-02-10" }, { source: "UI", actor: "t", now: D("2187-02-15") });
+    // Periodenende 28.02.: Enddatum davor -> abgelehnt, Enddatum danach erlaubt
+    await expect(updateRecurringInvoice(orgId, rec.id, { endDate: D("2187-02-15") })).rejects.toThrow(/Enddatum liegt vor offenen Verbräuchen/);
+    await expect(updateRecurringInvoice(orgId, rec.id, { status: "ENDED" })).rejects.toThrow(/nicht beendet werden/);
+    const ok = await updateRecurringInvoice(orgId, rec.id, { endDate: D("2187-12-31") });
+    expect(ok.status).toBe("ACTIVE");
+    await voidUsage(orgId, rec.id, u.usage.id, { reason: "Fehlbuchung" }, { actor: "t", now: D("2187-02-15") });
+    const ended = await updateRecurringInvoice(orgId, rec.id, { status: "ENDED" });
+    expect(ended.status).toBe("ENDED");
+  });
+});

@@ -84,6 +84,28 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         throw new RecurringError("Stichtag, Intervall oder Ankertag können nicht geändert werden, solange offene Verbräuche existieren. Verbräuche zuerst abrechnen oder stornieren.");
       }
     }
+    // Phase 18f: Ein frueheres Enddatum oder das Beenden des Abos wuerde offene Verbraeuche nach dem neuen
+    // Ende bzw. ueberhaupt nie mehr abrechnen — ablehnen statt still offen stehen lassen.
+    const endsEarlier = endDate !== undefined && endDate !== null && (existing.endDate === null || endDate.getTime() < existing.endDate.getTime());
+    const endsNow = input.status === "ENDED" && existing.status !== "ENDED";
+    if (endsEarlier || endsNow) {
+      const stranded = await tx.recurringUsage.count({
+        where: {
+          recurringInvoiceId: id,
+          orgId,
+          invoiceId: null,
+          voidedAt: null,
+          ...(endsNow ? {} : { periodEnd: { gt: endDate as Date } }),
+        },
+      });
+      if (stranded > 0) {
+        throw new RecurringError(
+          endsNow
+            ? "Das Abo kann nicht beendet werden, solange offene Verbräuche existieren. Verbräuche zuerst abrechnen oder stornieren."
+            : "Das Enddatum liegt vor offenen Verbräuchen, die dann nie abgerechnet würden. Verbräuche zuerst abrechnen oder stornieren.",
+        );
+      }
+    }
     const ossCategories = input.lines ? await resolveLineOssCategories(tx, orgId, input.lines) : [];
     let lineRows: ReturnType<typeof toRecurringLineRows> = [];
     let sync: ReturnType<typeof planLineSync> | null = null;
