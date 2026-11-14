@@ -148,6 +148,13 @@ Die Antwort kann ein Feld `warnings` (Liste von Texten) enthalten: `{ "data": { 
 - `GET /api/v1/Contact/{id}/vat-checks` listet das Prüfprotokoll (neueste zuerst, höchstens 50 Einträge; `total` ist die Gesamtzahl der Einträge des Kontakts).
 - `Settings.documents` kennt `viesCheckEnabled` (Prüfung freischalten, Standard `true`) und `viesCheckOnFinalize` (Prüfung beim Festschreiben, Standard `false`); `PATCH` ändert nur gesendete Felder.
 
+### Lastschriftmandat und Kartenangaben (Phase 18e)
+
+- **`Contact`** (`POST /api/v1/Contact`, `PATCH /api/v1/Contact/{id}`) kennt die Mandatsfelder `sepaMandateReference` (Mandatsreferenz, höchstens 35 Zeichen aus `A-Z a-z 0-9 + ? / - : ( ) . , '`), `sepaMandateSignedAt` (Datum der Unterschrift), `sepaDebitIban` (**nur Eingabe**) und `sepaDebitAccountName`. Referenz und IBAN gehören zusammen: ist eines der Mandatsfelder gesetzt, muss auch das andere vorhanden sein (sonst 400 `VALIDATION` mit Feldpfad). Referenz **und** IBAN beide leer entfernt das Mandat (Datum und Kontoinhaber werden mitgeleert; wer sie dabei mitsendet, erhält 400). Die Ausgabe enthält `sepaMandateReference`, `sepaMandateSignedAt` (`YYYY-MM-DD`), `sepaDebitAccountName` und `sepaDebitIbanMasked` (z. B. `DE02 **** 2051`) — **die volle IBAN wird nie ausgegeben**.
+- **`Invoice`** (`POST`, `PATCH` am Entwurf) nimmt `cardPanTruncated`, `cardNetwork` und `cardHolderName` an. Nur bei einer Zahlungsmethode mit UNTDID-Code `48`, `54` oder `55` wirksam, sonst werden sie auf `null` gesetzt; nach dem Festschreiben nicht mehr änderbar. **PAN-Regel:** `cardPanTruncated` akzeptiert 4 bis 10 Ziffern (Leerzeichen, `*`, `x`, `X`, `-`, `.` erlaubt) und speichert **nur die letzten 4**; mehr als 10 Ziffern ergibt 400, die Fehlermeldung wiederholt die Eingabe nie. Die Ausgabe enthält `cardPanTruncated`, `cardNetwork`, `cardHolderName` und `directDebit` (`{ mandateReference, creditorId, debtorIbanMasked }`, ab Festschreibung bei Lastschrift mit vollständigen Angaben, sonst `null`).
+- Das **Anfrageprotokoll** redigiert Schlüssel mit `iban`, `cardpan`, `cardholdername`, `sepadebitaccountname` und `mandate` (`[redaktiert]`).
+- Die interne Kunden-Übersicht (`GET /api/customers/{id}/overview`) liefert zusätzlich `sepaMandateReference`, `sepaMandateSignedAt` und `sepaDebitIbanMasked` (maskiert) im Block `customer`.
+
 ### 4. PDF und XRechnung abrufen
 
 ```bash

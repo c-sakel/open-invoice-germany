@@ -81,7 +81,7 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 |---|---|---|
 | `get_status` | Zustand der aktiven Organisation (Unternehmen eingerichtet? Kunden-/Produkt-/Rechnungszähler) | „Wie ist der Status meiner Instanz?" |
 | `list_api_requests` | Protokollierte REST-API-Anfragen auflisten (Phase 12d) — Zeit, Methode, Pfad, Status, Dauer, Schlüssel; standardmäßig leer, bis „Einstellungen → API → Anfrageprotokoll" eingeschaltet ist | „Zeig mir die letzten fehlgeschlagenen API-Aufrufe." |
-| `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
+| `setup_company` | Eigene Stammdaten anlegen/ändern (§ 14-Pflichtangaben: Name, Anschrift, Steuernummer/USt-IdNr., IBAN; optional `sepaCreditorId`, die SEPA-Gläubiger-ID für Lastschriften (BT-90) — wird geprüft und normalisiert; ohne Angabe bleibt der Bestand, das **Leeren geht nur in der Oberfläche**) | „Richte mein Unternehmen ein: Müller Handwerk GmbH, Lindenstr. 5, 21337 Lüneburg, Steuernummer 33/123/45678." |
 | `verify_audit_chain` | Hash-Kette des Änderungsprotokolls lückenlos prüfen, Prüfung protokollieren, bei Bruch alarmieren (Phase 16a) | „Prüfe die Hash-Kette des Änderungsprotokolls." |
 | `create_audit_export` | Prüfer-Export nach § 147 Abs. 6 AO (ZIP: CSV-Tabellen, `index.xml`, DTD, Kettenprüfung, archivierte Belege PDF/XML) für einen Zeitraum von höchstens drei Jahren in `exports/` schreiben | „Erzeuge den Prüfer-Export für 2025." |
 | `get_invoice_archive` | Archivstand einer Rechnung (PDF/CII/UBL mit SHA-256, Quelle, Zeitpunkt); archiviert nicht selbst | „Ist die Rechnung RE-50001 archiviert?" |
@@ -92,10 +92,10 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `list_customers` | Kunden auflisten | „Zeig mir alle Kunden." |
-| `upsert_customer` | Kunde anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter); gezieltes Ändern per ID: `update_customer` | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
+| `upsert_customer` | Kunde anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter); gezieltes Ändern per ID: `update_customer`; beide nehmen die Mandatsfelder `sepaMandateReference`, `sepaMandateSignedAt`, `sepaDebitIban` und `sepaDebitAccountName` an (Referenz und IBAN nur zusammen; beide leer entfernt das Mandat) | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
 | `update_customer` | Kunde gezielt per ID/Name patchen (anders als `upsert_customer` **kein** Anlegen; nur angegebene Felder ändern sich) | „Ändere bei Müller GmbH die E-Mail auf buchhaltung@mueller.de." |
 | `archive_customer` | Kunde archivieren (verschwindet aus `list_customers`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere den Kunden Alt-Kunde GmbH." |
-| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Nettoumsatz/letzte Aktivität) eines einzelnen Kunden | „Wie ist der Kontostand von Müller GmbH?" |
+| `get_customer_overview` | Kunden-KPIs (offen/überfällig/Nettoumsatz/letzte Aktivität) eines einzelnen Kunden; der Block `customer` enthält Mandatsreferenz, Unterschriftsdatum und die **maskierte** IBAN (`sepaDebitIbanMasked`, z. B. `DE02 **** 2051`), nie die volle IBAN | „Wie ist der Kontostand von Müller GmbH?" |
 | `list_customer_addresses` | Alle Adressen eines Kunden auflisten (Typ Rechnung/Lieferung/Sonstige, Standard-Kennzeichen) | „Welche Adressen hat Müller GmbH hinterlegt?" |
 | `upsert_customer_address` | Adresse anlegen (`id` weglassen) oder ändern (`id` angeben); `isDefault: true` setzt sie zum Standard des Typs | „Leg für Müller GmbH eine Lieferadresse an: Hafenstr. 2, 21335 Lüneburg." |
 | `delete_customer_address` | Adresse löschen (bestehende Beleg-Snapshots bleiben unverändert) | „Lösche die alte Lieferadresse von Müller GmbH." |
@@ -171,9 +171,9 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_invoice` | Rechnung als Entwurf (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
+| `create_invoice` | Rechnung als Entwurf (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung; bei einer Kartenmethode (UNTDID `48`/`54`/`55`) optional `cardPanTruncated` — nur die letzten 4 Ziffern, mehr als 10 Ziffern werden abgelehnt —, `cardNetwork` und `cardHolderName`, bei anderen Methoden werden sie verworfen) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
 | `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar; nicht blockierende Hinweise (fehlende elektronische Adresse, VIES-Ergebnis bei ig. Lieferung) stehen im Antworttext (Phase 17a) | „Schreib die Rechnung fest." |
-| `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType`; Rechnungstyp bleibt unveränderbar | „Setze bei der Entwurfsrechnung die Bestellnummer auf PO-4711." |
+| `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType`; die Kartenfelder `cardPanTruncated`, `cardNetwork`, `cardHolderName` wie bei `create_invoice` (ein Methodenwechsel auf Nicht-Karte leert sie); Rechnungstyp bleibt unveränderbar | „Setze bei der Entwurfsrechnung die Bestellnummer auf PO-4711." |
 | `get_invoice` | Rechnung anzeigen, inkl. Zahlungen mit ID (für `reverse_payment`) | „Zeig mir Rechnung RE-2026-00342." |
 | `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig und `credit` (Gutschriften), Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung) | „Welche Rechnungen sind überfällig?" |
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei (`exports/`) + Validierungsreport | „Exportier die XRechnung und das PDF." |
