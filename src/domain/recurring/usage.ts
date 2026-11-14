@@ -12,7 +12,7 @@ import { berlinCalendarDay } from "@/lib/berlin-time";
 import { normalizeToNoon } from "@/lib/recurring";
 import { logActivity } from "@/domain/activity/log";
 import { listUsageQuerySchema, recordUsageSchema, voidUsageSchema, type UsageSource } from "@/schemas/recurring-usage";
-import { resolveUsagePeriod } from "./usage-period";
+import { effectiveAnchorDay, resolveUsagePeriod } from "./usage-period";
 import { UsageError } from "./usage-error";
 
 export { UsageError } from "./usage-error";
@@ -133,17 +133,19 @@ export async function recordUsage(
           interval: true,
           intervalCount: true,
           anchorDay: true,
+          startDate: true,
           endDate: true,
           lines: { where: { id: input.recurringLineId }, select: { id: true, billing: true } },
         },
       });
+      // Wiederholung (gleiche externalId) liefert replayed, auch nach Pause/Ende (Org-Scope in findExisting).
+      const existing = await findExisting(tx);
+      if (existing) return { existing };
       const line = rec?.lines[0];
       if (!rec || !line) throw new UsageError("NOT_FOUND", NOT_FOUND_MESSAGE);
       if (rec.status !== "ACTIVE") throw new UsageError("NOT_ACTIVE", "Verbrauch kann nur für aktive Abos erfasst werden.");
       if (line.billing !== "USAGE") throw new UsageError("NOT_USAGE_LINE", "Die Position wird nicht nach Verbrauch abgerechnet.");
-      const existing = await findExisting(tx);
-      if (existing) return { existing };
-      const { periodStart, periodEnd } = resolveUsagePeriod(rec, usageDay);
+      const { periodStart, periodEnd } = resolveUsagePeriod({ ...rec, anchorDay: effectiveAnchorDay(rec, true) }, usageDay);
       const row = await tx.recurringUsage.create({
         data: {
           orgId,

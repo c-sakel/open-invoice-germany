@@ -12,6 +12,17 @@ import { UsageError } from "./usage-error";
 
 export const MAX_USAGE_PERIOD_STEPS = 400;
 
+/**
+ * Stichtags-Anker fuer Lauf, BG-14/BG-26 und Perioden-Rueckrechnung. Abos mit Verbrauchszeilen
+ * ohne festen `anchorDay` verankern am Tag des Startdatums (31.01. -> 28.02. -> 31.03. statt
+ * Abdriften auf 28.), damit die Rueckrechnung der Perioden exakt den abgerechneten Stichtagen
+ * entspricht. Abos ohne Verbrauchszeilen behalten ihr bisheriges Verhalten (nur `anchorDay`).
+ */
+export function effectiveAnchorDay(rec: { anchorDay: number | null; startDate: Date }, hasUsageLines: boolean): number | null {
+  if (rec.anchorDay !== null) return rec.anchorDay;
+  return hasUsageLines ? rec.startDate.getDate() : null;
+}
+
 export interface UsagePeriodRecurring {
   nextRunDate: Date;
   interval: string;

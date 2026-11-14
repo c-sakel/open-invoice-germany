@@ -34,6 +34,7 @@ import type { CreateInvoiceInput } from "@/schemas";
 import { RecurringError } from "./errors";
 import { collectBillableUsage, markUsageBilled } from "./usage";
 import { lockRow } from "@/lib/db-lock";
+import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
 import { logActivity } from "@/domain/activity/log";
 import { MAX_USAGE_QUANTITY_MILLI } from "@/schemas/recurring-usage";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
@@ -148,10 +149,12 @@ async function emitOne(
       usageQuantityMilli += u.quantityMilli;
     }
     const lines: CreateInvoiceInput["lines"] = recurringLinesToInvoiceLines(rec.lines, usage);
+    const hasUsageLines = rec.lines.some((l) => l.billing === "USAGE");
+    const anchorDay = effectiveAnchorDay(rec, hasUsageLines);
 
-    if (!lines.some((l) => l.lineType === "ITEM")) {
-      // Nur verbrauchsabhaengige Positionen und kein Verbrauch: keine Rechnung, Periode rueckt weiter.
-      const nextSkipped = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
+    if (hasUsageLines && !lines.some((l) => l.lineType === "ITEM")) {
+      // Verbrauchsabo ohne abrechenbare Position (kein Verbrauch): keine Rechnung, Periode rueckt weiter.
+      const nextSkipped = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
       const endedSkipped = rec.endDate ? nextSkipped > rec.endDate : false;
       await tx.recurringInvoice.update({
         where: { id: rec.id },
@@ -173,7 +176,7 @@ async function emitOne(
     // Settings-Default (recurringInsertPeriodText) wird nur noch beim Anlegen des Abos
     // uebernommen (createRecurring), nicht mehr live bei jedem Lauf gelesen.
     if (rec.showPeriodText) {
-      const { start } = periodRange(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
+      const { start } = periodRange(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
       headerText = `Abrechnungszeitraum ${formatDateDe(start)} – ${formatDateDe(periodDate)}`;
       deliveryStart = start;
       deliveryEnd = periodDate;
@@ -240,7 +243,7 @@ async function emitOne(
       finalized = true;
     }
 
-    const next = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
+    const next = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, anchorDay);
     // issuedCount VOR dem Erhoehen im naechsten Schritt ist die Anzahl der bereits
     // vorherigen Laeufe — nach DIESEM Lauf steht die Anzahl bei issuedCount + 1
     // (Task-1-Brief: "maxRuns -> ENDED wenn issuedCount >= maxRuns NACH Lauf").

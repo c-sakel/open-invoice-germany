@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveUsagePeriod, MAX_USAGE_PERIOD_STEPS } from "@/domain/recurring/usage-period";
+import { resolveUsagePeriod, effectiveAnchorDay, MAX_USAGE_PERIOD_STEPS } from "@/domain/recurring/usage-period";
 import { UsageError } from "@/domain/recurring/usage-error";
 
 const noon = (iso: string): Date => {
@@ -59,5 +59,34 @@ describe("resolveUsagePeriod", () => {
     const rec = { nextRunDate: noon("2187-03-10"), interval: "DAY", intervalCount: 1, anchorDay: null, endDate: null };
     expect(code(() => resolveUsagePeriod(rec, noon("2189-06-01")))).toBe("IN_FUTURE");
     expect(MAX_USAGE_PERIOD_STEPS).toBe(400);
+  });
+});
+
+describe("effectiveAnchorDay / Monatsende", () => {
+  it("Anker aus dem Startdatum nur fuer Verbrauchsabos ohne anchorDay", () => {
+    const startDate = noon("2187-01-31");
+    expect(effectiveAnchorDay({ anchorDay: null, startDate }, true)).toBe(31);
+    expect(effectiveAnchorDay({ anchorDay: null, startDate }, false)).toBeNull();
+    expect(effectiveAnchorDay({ anchorDay: 15, startDate }, true)).toBe(15);
+  });
+  it("Stichtag 30.04., Anker 31: Verbrauch am 31.03. ist abgerechnet, 01.04. gehoert in (31.03., 30.04.]", () => {
+    const rec = { nextRunDate: noon("2187-04-30"), interval: "MONTHLY", intervalCount: 1, anchorDay: 31, endDate: null };
+    expect(code(() => resolveUsagePeriod(rec, noon("2187-03-31")))).toBe("PERIOD_BILLED");
+    const p = resolveUsagePeriod(rec, noon("2187-04-01"));
+    expect([key(p.periodStart), key(p.periodEnd)]).toEqual(["2187-03-31", "2187-04-30"]);
+  });
+  it("Februar und Schaltjahr", () => {
+    const feb = { nextRunDate: noon("2187-02-28"), interval: "MONTHLY", intervalCount: 1, anchorDay: 31, endDate: null };
+    expect(key(resolveUsagePeriod(feb, noon("2187-02-10")).periodStart)).toBe("2187-01-31");
+    expect(code(() => resolveUsagePeriod(feb, noon("2187-01-31")))).toBe("PERIOD_BILLED");
+    const leap = { nextRunDate: noon("2188-02-29"), interval: "MONTHLY", intervalCount: 1, anchorDay: 31, endDate: null };
+    const p = resolveUsagePeriod(leap, noon("2188-03-01"));
+    expect([key(p.periodStart), key(p.periodEnd)]).toEqual(["2188-02-29", "2188-03-31"]);
+  });
+  it("Start 31.03. (Quartal): Perioden 31.03./30.06./30.09.", () => {
+    const rec = { nextRunDate: noon("2187-06-30"), interval: "QUARTERLY", intervalCount: 1, anchorDay: 31, endDate: null };
+    const p = resolveUsagePeriod(rec, noon("2187-07-01"));
+    expect([key(p.periodStart), key(p.periodEnd)]).toEqual(["2187-06-30", "2187-09-30"]);
+    expect(code(() => resolveUsagePeriod(rec, noon("2187-03-31")))).toBe("PERIOD_BILLED");
   });
 });
