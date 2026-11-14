@@ -39,6 +39,12 @@ export interface DraftLine {
   ossCategory?: string;
   /** Phase 17b: Quellbezug einer Lieferschein-Zeile (Teillieferung); bleibt beim Bearbeiten erhalten. */
   source?: { type: "QUOTE" | "INVOICE"; id: string; lineId: string } | null;
+  /** Phase 18f (nur Abo-Editor): Abrechnungsart; `undefined` = fest. */
+  billing?: "FIXED" | "USAGE";
+  /** Phase 18f (nur Abo-Editor): Anzeigeeinheit des Verbrauchs, z. B. "Aufrufe". */
+  usageUnitLabel?: string;
+  /** Phase 18f (nur Abo-Editor): Id der gespeicherten Abo-Zeile; haelt den Verbrauch beim Speichern. */
+  recurringLineId?: string;
 }
 
 export interface DraftState {
@@ -421,7 +427,8 @@ export function draftReducer(state: DraftState, action: DraftAction): DraftState
     case "duplicateLine": {
       const idx = state.lines.findIndex((l) => l.key === action.key);
       if (idx === -1) return state;
-      const copy: DraftLine = { ...state.lines[idx]!, key: newLineKey() };
+      // Die Kopie ist eine neue Abo-Zeile (ohne Id), sonst wuerde der Verbrauch doppelt zugeordnet.
+      const copy: DraftLine = { ...state.lines[idx]!, key: newLineKey(), recurringLineId: undefined };
       const lines = [...state.lines];
       lines.splice(idx + 1, 0, copy);
       return { ...state, lines, dirty: true };
@@ -465,7 +472,11 @@ function daysOrUndefined(s: string): number | undefined {
 }
 
 /** Zeilen des Entwurfs als Rechnungs-Payload (Rechnung und Abo-Vorlage teilen die Abbildung). */
-export type LinePayload = ReturnType<typeof draftLinePayload>;
+export type LinePayload = ReturnType<typeof draftLinePayload> & {
+  id?: string;
+  billing?: "FIXED" | "USAGE";
+  usageUnitLabel?: string;
+};
 
 function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
   const isRegular = taxScheme === "REGULAR";
@@ -487,8 +498,25 @@ function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
   };
 }
 
-export function draftLinesToPayload(lines: readonly DraftLine[], taxScheme: TaxScheme): LinePayload[] {
-  return lines.map((l) => draftLinePayload(l, taxScheme));
+/**
+ * `recurring` (Abo-Editor, Phase 18f) ergaenzt Zeilen-Id, Abrechnungsart und Einheitentext;
+ * Verbrauchszeilen tragen Menge 0 (die Menge ergibt sich beim Lauf aus dem Verbrauch).
+ * Ohne `recurring` bleibt die Nutzlast unveraendert.
+ */
+export function draftLinesToPayload(lines: readonly DraftLine[], taxScheme: TaxScheme, opts?: { recurring?: boolean }): LinePayload[] {
+  return lines.map((l) => {
+    const base = draftLinePayload(l, taxScheme);
+    if (!opts?.recurring) return base;
+    const usage = l.lineType === "ITEM" && l.billing === "USAGE";
+    const label = l.usageUnitLabel?.trim();
+    return {
+      ...base,
+      ...(usage ? { quantityMilli: 0 } : {}),
+      ...(l.recurringLineId ? { id: l.recurringLineId } : {}),
+      billing: usage ? ("USAGE" as const) : ("FIXED" as const),
+      ...(usage && label ? { usageUnitLabel: label } : {}),
+    };
+  });
 }
 
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {
@@ -726,6 +754,10 @@ export interface InitialLineLike {
   ossCategory?: string | null;
   /** Gespeicherte Produktreferenz (Snapshot); bleibt beim Bearbeiten erhalten. */
   productId?: string | null;
+  /** Phase 18f (Abo-Editor): gespeicherte Zeilen-Id, Abrechnungsart und Einheitentext. */
+  recurringLineId?: string;
+  billing?: "FIXED" | "USAGE";
+  usageUnitLabel?: string | null;
 }
 
 /** Shape, das `src/app/rechnungen/[id]/bearbeiten/page.tsx` aus der geladenen Rechnung baut und an `draftFromInvoice` uebergibt. */
@@ -836,6 +868,8 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
     discountAmount: roundTrip(l.discountAmount, toCents, fromCents),
     productId: l.productId ?? null,
     ossCategory: l.ossCategory ?? undefined,
+    ...(l.recurringLineId ? { recurringLineId: l.recurringLineId } : {}),
+    ...(l.billing === "USAGE" ? { billing: "USAGE" as const, usageUnitLabel: l.usageUnitLabel ?? "" } : {}),
   };
 }
 

@@ -50,6 +50,8 @@ export interface LineItemsTableLine {
   unitNetPriceMilliCents?: number | null;
   taxRate: number;
   lineNetCents: number;
+  /** Phase 18f (Abo-Detail): Verbrauchsposition; Text statt Menge, Netto erst beim Lauf bekannt. */
+  variableQuantityText?: string;
 }
 
 function richTextHtml(markdown: string): string {
@@ -137,11 +139,11 @@ export function LineItemsTable({
                 </td>
                 {showArticleNumber && <td className="px-4 py-2 text-ink-muted">{l.articleNumber}</td>}
                 <td className="tabular px-4 py-2 text-right">
-                  {qty(l.quantityMilli)} {unitLabel(l.unit, lang ?? "de")}
+                  {l.variableQuantityText ?? `${qty(l.quantityMilli)} ${unitLabel(l.unit, lang ?? "de")}`}
                 </td>
                 <td className="tabular px-4 py-2 text-right">{unitPrice(l)}</td>
                 <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
-                <td className="tabular px-4 py-2 text-right">{money(l.lineNetCents)}</td>
+                <td className="tabular px-4 py-2 text-right">{l.variableQuantityText ? "–" : money(l.lineNetCents)}</td>
               </tr>
             );
           })}

@@ -64,6 +64,9 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
       discountAmount: (l.discountCents / 100).toFixed(2),
       ossCategory: l.ossCategory,
       productId: l.productId,
+      recurringLineId: l.id,
+      billing: l.billing === "USAGE" ? ("USAGE" as const) : ("FIXED" as const),
+      usageUnitLabel: l.usageUnitLabel,
     })),
   };
 
