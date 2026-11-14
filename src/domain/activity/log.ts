@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -108,6 +108,14 @@ export const ACTIVITY_TYPES = {
   PORTAL_LINK_MAILED: "Portal-Link per E-Mail versendet",
   // Kundenportal-Einstellungen (entityType PORTAL, entityId = Organisation).
   PORTAL_SETTINGS_CHANGED: "Portal-Einstellungen geaendert",
+  // Bankabgleich (entityType BANK_IMPORT bzw. BANK_TRANSACTION).
+  BANK_STATEMENT_IMPORTED: "Kontoauszug importiert",
+  BANK_MATCH_CONFIRMED: "Bankumsatz zugeordnet",
+  BANK_MATCH_UNDONE: "Zuordnung aufgehoben",
+  BANK_RETURN_BOOKED: "Ruecklastschrift gebucht",
+  BANK_TRANSACTION_IGNORED: "Bankumsatz ignoriert",
+  BANK_TRANSACTION_REOPENED: "Bankumsatz wieder geoeffnet",
+  BANK_RETURN_DISMISSED: "Rueckbuchung ohne Gegenbuchung erledigt",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

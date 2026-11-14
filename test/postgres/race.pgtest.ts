@@ -1,4 +1,5 @@
 /**
+ * Bankabgleich: Bestaetigung parallel (gleicher Umsatz; zwei Umsaetze auf eine Rechnung), Importe parallel.
  * Phase 18f: Verbrauch (gleiche externalId parallel; Lauf parallel zur Erfassung, Praefix V18FR-).
  * Phase 18c: Sammel-Storno (parallele Laeufe, seriell je Organisation).
  * Phase 18d: POST /api/v1/Invoice mit finalize (Idempotenz in der Transaktion, gleicher und verschiedene Keys).
@@ -33,6 +34,12 @@ import { emitRecurringNow } from "@/domain/recurring/run";
 import { RecurringNotDueError } from "@/domain/recurring/errors";
 import { recordUsage, UsageError } from "@/domain/recurring/usage";
 import { createRecurringSchema } from "@/schemas";
+import { BankImportDuplicateError, importBankStatement } from "@/domain/bank/import";
+import { confirmBankMatch, undoBankMatch } from "@/domain/bank/confirm";
+import { BankAllocationError, BankConflictError } from "@/domain/bank/errors";
+import { PaymentError } from "@/domain/invoice/payment";
+import { reversePayment } from "@/domain/invoice/payment-reversal";
+import { buildCamt } from "../helpers/camt-builder";
 import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
 
 const N = 5;
@@ -396,6 +403,122 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: { in: abos.map((a) => a.id) }, status: { not: "DRAFT" } }, select: { number: true } });
     expect(invoices).toHaveLength(4);
     expect(new Set(invoices.map((i) => i.number)).size).toBe(4);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Kontoauszug: parallele Importe derselben und ueberlappender Dateien -> keine doppelten Umsaetze, kein Serverfehler", async () => {
+    const s = await newScenario();
+    const iban = "DE89370400440532013000";
+    const file = (extra: string, cents: number) =>
+      new TextEncoder().encode(
+        buildCamt({
+          format: "053",
+          version: 8,
+          iban,
+          entries: [
+            { date: "2150-03-02", txs: [{ amountCents: 3210, remittance: "RACE-GEMEINSAM" }] },
+            { date: "2150-03-02", txs: [{ amountCents: cents, remittance: extra }] },
+          ],
+        }),
+      );
+    const a = file("RACE-A", 101);
+    const b = file("RACE-B", 102);
+    const opts = { actor: "race", source: "API" as const };
+    const rs = await Promise.allSettled([a, a, b, b, a].map((f) => importBankStatement(s.orgId, f, opts)));
+    for (const r of rejected(rs)) expect(r.reason, String(r.reason)).toBeInstanceOf(BankImportDuplicateError);
+    expect(fulfilled(rs).length).toBeGreaterThanOrEqual(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId: s.orgId, remittance: "RACE-GEMEINSAM" } })).toBe(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId: s.orgId, remittance: "RACE-A" } })).toBe(1);
+    expect(await dbInternal.bankTransaction.count({ where: { orgId: s.orgId, remittance: "RACE-B" } })).toBe(1);
+  });
+
+  async function bankTxFor(orgId: string, cents: number): Promise<string> {
+    const imp = await dbInternal.bankStatementImport.create({
+      data: { orgId, fileSha256: `race-${orgId}-${cents}-${Math.random()}`, format: "CAMT053", schemaVersion: "camt.053.001.08", entryCount: 1, importedCount: 1, duplicateCount: 0, skippedCount: 0, createdBy: "race" },
+      select: { id: true },
+    });
+    const t = await dbInternal.bankTransaction.create({
+      data: {
+        orgId, importId: imp.id, accountIban: "DE89370400440532013000", fingerprint: `race-${Math.random()}`,
+        bookingDate: new Date("2150-03-05T00:00:00.000Z"), amountCents: cents, currency: "EUR", direction: "CRDT", remittance: "RACE", status: "OPEN",
+      },
+      select: { id: true },
+    });
+    return t.id;
+  }
+  const bankOpts = { actor: "race", createdBy: "api" as const };
+
+  it("Bankabgleich: 5x parallel derselbe Umsatz, voller Betrag -> genau eine Zahlung, Rest 409 oder PaymentError, Kette gueltig", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const txId = await bankTxFor(s.orgId, inv.grossTotalCents);
+    const input = { allocations: [{ invoiceId: inv.id, amountCents: inv.grossTotalCents }], expectedAllocatedCents: 0 };
+    const rs = await parallel(() => confirmBankMatch(s.orgId, txId, input, { ...bankOpts, now: s.now }));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    for (const f of rejected(rs)) {
+      expect(f.reason instanceof BankConflictError || f.reason instanceof PaymentError || f.reason instanceof BankAllocationError, String(f.reason)).toBe(true);
+    }
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id, kind: "PAYMENT" } })).toBe(1);
+    const row = await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: txId }, select: { allocatedCents: true, status: true } });
+    expect(row).toEqual({ allocatedCents: inv.grossTotalCents, status: "MATCHED" });
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Bankabgleich: zwei Umsaetze parallel auf dieselbe Rechnung (je voller Betrag) -> eine Zahlung, anderer Umsatz bleibt OPEN, Kette gueltig", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const t1 = await bankTxFor(s.orgId, inv.grossTotalCents);
+    const t2 = await bankTxFor(s.orgId, inv.grossTotalCents);
+    const allocations = [{ invoiceId: inv.id, amountCents: inv.grossTotalCents }];
+    const rs = await Promise.allSettled([t1, t2].map((t) => confirmBankMatch(s.orgId, t, { allocations, expectedAllocatedCents: 0 }, { ...bankOpts, now: s.now })));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    for (const f of rejected(rs)) expect(f.reason, String(f.reason)).toBeInstanceOf(PaymentError);
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id, kind: "PAYMENT" } })).toBe(1);
+    const statuses = (await dbInternal.bankTransaction.findMany({ where: { id: { in: [t1, t2] } }, select: { status: true } })).map((t) => t.status).sort();
+    expect(statuses).toEqual(["MATCHED", "OPEN"]);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Bankabgleich: manuelle Stornierung parallel zu Zuordnung zuruecknehmen -> genau eine Gegenbuchung, Umsatz OPEN, Kette gueltig", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const txId = await bankTxFor(s.orgId, inv.grossTotalCents);
+    const conf = await confirmBankMatch(s.orgId, txId, { allocations: [{ invoiceId: inv.id, amountCents: inv.grossTotalCents }], expectedAllocatedCents: 0 }, { ...bankOpts, now: s.now });
+    const paymentId = conf.payments[0]!.paymentId;
+    const match = await dbInternal.bankMatch.findFirstOrThrow({ where: { transactionId: txId, kind: "PAYMENT" }, select: { id: true } });
+    const rs: PromiseSettledResult<unknown>[] = await Promise.allSettled([
+      reversePayment(paymentId, { reason: "Parallel manuell" }, { actor: "race", orgId: s.orgId, now: s.now }),
+      undoBankMatch(s.orgId, txId, { matchId: match.id, reason: "Parallel Undo" }, { ...bankOpts, now: s.now }),
+    ]);
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(1);
+    for (const f of rejected(rs)) {
+      expect(f.reason instanceof BankConflictError || f.reason instanceof PaymentError, String(f.reason)).toBe(true);
+    }
+    const sum = await dbInternal.payment.aggregate({ where: { reversesPaymentId: paymentId, kind: "REVERSAL" }, _sum: { amountCents: true } });
+    expect(sum._sum.amountCents).toBe(-inv.grossTotalCents);
+    const row = await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: txId }, select: { allocatedCents: true, status: true } });
+    expect(row).toEqual({ allocatedCents: 0, status: "OPEN" });
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Bankabgleich: manuelle Teilstornierung parallel zur Bestaetigung des Restbetrags desselben Umsatzes -> kein Deadlock, allocatedCents = aktive Zahlungen", async () => {
+    const s = await newScenario();
+    const invA = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    const quoteB = await createBusinessDocument(s.orgId, { kind: "ANGEBOT", customerId: s.customerId, taxScheme: "REGULAR", currency: "EUR", lines: [item(10000)] }, { now: s.now });
+    const invB = await invoiceFromQuote(s.orgId, quoteB.id, s.now);
+    const txId = await bankTxFor(s.orgId, invA.grossTotalCents + 5000);
+    const conf = await confirmBankMatch(s.orgId, txId, { allocations: [{ invoiceId: invA.id, amountCents: invA.grossTotalCents }], expectedAllocatedCents: 0 }, { ...bankOpts, now: s.now });
+    const paymentId = conf.payments[0]!.paymentId;
+    const rs: PromiseSettledResult<unknown>[] = await Promise.allSettled([
+      reversePayment(paymentId, { amountCents: 3000, reason: "Teilrueckzahlung" }, { actor: "race", orgId: s.orgId, now: s.now }),
+      confirmBankMatch(s.orgId, txId, { allocations: [{ invoiceId: invB.id, amountCents: 5000 }], expectedAllocatedCents: invA.grossTotalCents }, { ...bankOpts, now: s.now }),
+    ]);
+    for (const f of rejected(rs)) {
+      expect(f.reason instanceof BankConflictError || f.reason instanceof PaymentError || f.reason instanceof BankAllocationError, String(f.reason)).toBe(true);
+    }
+    const active = await dbInternal.payment.aggregate({ where: { invoiceId: { in: [invA.id, invB.id] } }, _sum: { amountCents: true } });
+    const row = await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: txId }, select: { allocatedCents: true } });
+    expect(row.allocatedCents).toBe(active._sum.amountCents);
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 });

@@ -236,6 +236,9 @@ export function InvoiceStatusCard({
                         {p.isSkonto && (
                           <span className="ml-2 rounded bg-ledger/10 px-1.5 py-0.5 text-xs font-medium text-ledger">Skonto</span>
                         )}
+                        {p.provider === "BANK" && (
+                          <span className="ml-2 rounded bg-pen/10 px-1.5 py-0.5 text-xs font-medium text-pen">Bankabgleich</span>
+                        )}
                       </span>
                       <span className="flex items-center gap-3">
                         {p.reference && <span className="text-xs text-ink-muted">{p.reference}</span>}

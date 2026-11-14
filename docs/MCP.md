@@ -283,6 +283,24 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 | `import_products` | Produkte aus CSV-Text (`csv`) anlegen; sonst wie `import_contacts` | „Importiere diese Artikelliste als Produkte." |
 | `create_contacts` | 1 bis 100 Kunden (`contacts`, Felder wie `upsert_customer`) in einem Schritt anlegen, alles oder nichts (nur Anlage; Duplikate und Fehler lehnen die gesamte Sammelanlage ab); Fehler mit Index, Feld und Meldung je Eintrag (höchstens 20 angezeigt); höchstens 10 Aufrufe pro Minute | „Lege diese drei Kunden an." |
 
+### Bankabgleich
+
+Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dieselben Domainfunktionen und Schemas wie `/api/v1/BankStatement` und `/api/v1/BankTransaction`; IBANs sind maskiert. Gebucht wird nur auf ausdrückliche Anweisung (kein automatisches Buchen, ein Überschuss wird nie als Zahlung gebucht); Buchungen laufen über den Zahlungsdienst (Herkunft `BANK`).
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `import_bank_statement` | Kontoauszug als Base64 (`contentBase64`, dekodiert höchstens 2 MB) importieren; `dryRun` liefert nur die Vorschau; dieselbe Datei wird nur einmal importiert (`ALREADY_IMPORTED`) | „Prüfe diesen Kontoauszug." |
+| `list_bank_imports` | Importe auflisten (neueste zuerst, `limit`, `cursor`) | „Welche Kontoauszüge sind importiert?" |
+| `list_bank_transactions` | Umsätze auflisten (`status`, `from`, `to`, `limit`, `cursor`) | „Zeig die offenen Umsätze." |
+| `get_bank_transaction` | Umsatz mit allen Zuordnungen | „Zeig Umsatz …" |
+| `get_bank_suggestions` | Zuordnungsvorschläge mit Begründung und Sicherheit (bei Rückbuchungen die betroffenen Zahlungen); bucht nie | „Wohin gehört dieser Umsatz?" |
+| `confirm_bank_match` | Umsatz einer oder mehreren Rechnungen zuordnen und die Zahlungen buchen (`allocations`, `expectedAllocatedCents`) | „Ordne den Umsatz der Rechnung … zu." |
+| `confirm_unambiguous_bank_matches` | Alle (oder die genannten) Umsätze mit genau einem sicheren Vorschlag bestätigen; Ergebnisbericht mit übersprungenen Umsätzen, `truncated`/`remaining` bei mehr als 200; Vorschläge mit Skonto-Abzug nur einzeln | „Übernimm alle eindeutigen Zuordnungen." |
+| `ignore_bank_transaction` | Umsatz mit Grund ignorieren; Rückbuchung (RETURN) mit Grund als erledigt markieren (ohne Gegenbuchung) | „Ignoriere diesen Umsatz, private Überweisung." |
+| `reopen_bank_transaction` | Ignorierten Umsatz wieder öffnen (erledigte Rückbuchung zurück nach RETURN) | „Öffne den Umsatz wieder." |
+| `undo_bank_match` | Zuordnung per Gegenbuchung der Zahlung zurücknehmen (`matchId`, Grund) | „Nimm die Zuordnung zurück." |
+| `confirm_bank_return` | Rückbuchung bestätigen: gewählte Zahlung (`paymentId`) per Gegenbuchung stornieren (nur Rückgaben von Kundenzahlungen); Antwort mit `feeCents` (Rückgabegebühr, nie gebucht) und `partial` | „Bestätige die Rücklastschrift für Zahlung …" |
+
 ### Einstellungen
 
 | Tool | Zweck | Beispiel |
