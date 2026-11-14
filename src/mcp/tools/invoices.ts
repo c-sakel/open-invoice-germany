@@ -14,6 +14,16 @@ import { defaultCategoryForScheme } from "@/lib/tax";
 import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 import { createDraftInvoice } from "@/domain/invoice/create";
+import { createInvoiceComplete } from "@/domain/invoice/create-complete";
+import { PaymentError } from "@/domain/invoice/payment";
+import {
+  beginIdempotency,
+  completeIdempotencyWithinTx,
+  abandonIdempotency,
+  requireIdempotencyKey,
+  IdempotencyConflictError,
+  IdempotencyInProgressError,
+} from "@/api/idempotency";
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { collectFinalizeWarnings } from "@/domain/invoice/finalize-warnings";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
@@ -47,6 +57,8 @@ import {
   partialCreditSchema,
   DocLanguageSchema,
   invoiceCardFields,
+  atomicPaymentSchema,
+  PaymentMethod,
 } from "@/schemas";
 import { OssCategorySchema } from "@/schemas/oss";
 import { docLineSchema, editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
@@ -63,9 +75,11 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
   server.registerTool(
     "create_invoice",
     {
-      title: "Rechnung anlegen (Entwurf)",
+      title: "Rechnung anlegen (Entwurf oder atomar festgeschrieben)",
       description:
-        "Erstellt eine Rechnung als ENTWURF. Kunde per Name oder ID. Positionen mit Menge + Preis (oder Verweis auf eine gespeicherte Leistung via productName). Danach finalize_invoice zum Festschreiben.",
+        "Erstellt eine Rechnung als ENTWURF. Kunde per Name oder ID. Positionen mit Menge + Preis (oder Verweis auf eine gespeicherte Leistung via productName). Danach finalize_invoice zum Festschreiben. " +
+        "Mit finalize: true wird die Rechnung in EINER Transaktion angelegt, festgeschrieben und optional (payment) als bezahlt erfasst; idempotencyKey ist dann Pflicht (Wiederholung mit demselben Schluessel und denselben Argumenten liefert dieselbe Antwort, keine zweite Rechnung). " +
+        "Festgeschrieben = unveraenderbar (GoBD); eine Korrektur ist nur per Storno oder Gutschrift moeglich. Es wird nichts versendet.",
       inputSchema: {
         customer: z.string().describe("Kundenname oder Kunden-ID"),
         lines: z
@@ -106,11 +120,31 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           .optional()
           .describe("Kurs manuell (Einheiten Fremdwaehrung je 1 EUR, z. B. \"1,25\"), nur bei Fremdwaehrung; ersetzt die Kurstabelle, Quelle wird MANUAL (§ 16 Abs. 6 UStG)."),
         ...cardFieldShape,
+        finalize: z.boolean().optional().describe("true: Rechnung atomar anlegen UND festschreiben (unveraenderbar, vergibt die Rechnungsnummer); idempotencyKey Pflicht"),
+        payment: z
+          .object({
+            amountEuro: z.number().positive().optional().describe("Gezahlter Betrag in Euro; ohne Angabe der volle offene Betrag"),
+            paidAt: z.string().optional().describe("Zahlungsdatum YYYY-MM-DD oder 'heute'"),
+            method: PaymentMethod.optional(),
+            reference: z.string().optional(),
+          })
+          .optional()
+          .describe("Zahlung direkt erfassen (nur zusammen mit finalize: true)"),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe("Pflicht bei finalize: gleicher Schluessel + gleiche Argumente = gleiche Antwort, nie zwei Rechnungen"),
       },
     },
     async (args): Promise<Result> => {
+      let idemKey: string | null = null;
+      let reservedOrgId: string | null = null;
       try {
+        if (args.payment && !args.finalize) throw new ToolError("payment nur zusammen mit finalize: true.");
+        if (args.finalize) idemKey = `mcp:${requireIdempotencyKey(args.idempotencyKey, "idempotencyKey ist bei finalize Pflicht.")}`;
         const org = await ctx.requireOrg();
+        if (idemKey) {
+          const replay = await beginIdempotency(org.id, idemKey, "MCP", "create_invoice", JSON.stringify(args));
+          if (replay) return ctx.ok((replay.body as { text: string }).text);
+          reservedOrgId = org.id;
+        }
         const customer = await ctx.resolveCustomer(org.id, args.customer);
         const scheme = args.taxScheme ?? org.defaultTaxScheme ?? "REGULAR";
         const isRegular = scheme === "REGULAR";
@@ -188,6 +222,33 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
           cardHolderName: args.cardHolderName,
           lines,
         });
+        if (idemKey) {
+          const key = idemKey;
+          const payment = args.payment
+            ? atomicPaymentSchema.parse({
+                amountCents: args.payment.amountEuro != null ? ctx.euroToCents(args.payment.amountEuro) : undefined,
+                paidAt: ctx.parseDateInput(args.payment.paidAt),
+                method: args.payment.method,
+                reference: args.payment.reference,
+              })
+            : undefined;
+          let text = "";
+          await createInvoiceComplete(org.id, input, {
+            payment,
+            actor: "mcp",
+            createdBy: "mcp",
+            beforeCommit: async (tx, r) => {
+              const inv = r.invoice;
+              const state = inv.status === "PAID" ? " Status: bezahlt." : inv.status === "PARTIALLY_PAID" ? " Status: teilbezahlt." : "";
+              const hint = r.warnings.length > 0 ? `\n\nHinweise (nicht blockierend):\n${r.warnings.map((w) => `- ${w}`).join("\n")}` : "";
+              text =
+                `Festgeschrieben: ${inv.number} für ${customer.name} · Netto ${formatCents(inv.netTotalCents)} · USt ${formatCents(inv.taxTotalCents)} · Brutto ${formatCents(inv.grossTotalCents)}.${state}\n` +
+                `ID: ${inv.id}\nUnveränderbar (GoBD); Korrektur nur per Storno. Export mit export_invoice.${hint}`;
+              await completeIdempotencyWithinTx(tx, org.id, key, 200, { text });
+            },
+          });
+          return ctx.ok(text);
+        }
         const invoice = await createDraftInvoice(org.id, input);
         return ctx.ok(
           `Entwurf angelegt für ${customer.name}.\n` +
@@ -195,8 +256,14 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
             `Nächster Schritt: finalize_invoice (vergibt die Rechnungsnummer, macht GoBD-konform unveränderbar).`,
         );
       } catch (e) {
+        // Reservierung freigeben (nur IN_PROGRESS; eine bereits committete DONE-Zeile bleibt stehen).
+        if (reservedOrgId && idemKey) await abandonIdempotency(reservedOrgId, idemKey);
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
+        if (e instanceof IdempotencyConflictError || e instanceof IdempotencyInProgressError) return ctx.fail(e.message);
+        if (e instanceof FinalizeError) return ctx.fail(`Festschreiben nicht möglich:\n${e.message}`);
+        if (e instanceof PaymentError) return ctx.fail(`Zahlung nicht möglich: ${e.message}`);
+        if (e instanceof NotFoundError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }
     },

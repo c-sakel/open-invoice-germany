@@ -8,6 +8,9 @@
  * ganze Transaktion zurueck — es bleiben weder Entwurf noch verbrauchte Belegnummer (keine
  * Nummernluecke). Die Hinweise (VIES/Adresse) laufen VOR der Transaktion, weil sie das Netz
  * nutzen. Kein Versand: weder Mail noch Postversand.
+ *
+ * VatIdCheck (VIES-Pruefung der Hinweise) ist append-only und bleibt bei einem Rollback bestehen: die Pruefung
+ * ist ein tatsaechlich erfolgter Abruf und gehoert zum Nachweis, auch wenn die Rechnung nicht entsteht (gewollt).
  */
 import type { Prisma, Invoice, InvoiceLine, Payment } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";

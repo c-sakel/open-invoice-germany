@@ -243,6 +243,47 @@ describe("createInvoiceComplete", () => {
     }
   });
 
+  it("Zahlung genau = Brutto (explizit): PAID, offener Betrag 0", async () => {
+    const { orgId, customerId } = await makeOrg("Atomar M GmbH");
+    const r = await createInvoiceComplete(orgId, invoiceInput(customerId), { ...base, payment: { method: "TRANSFER", amountCents: 11900 } });
+    expect(r.invoice.status).toBe("PAID");
+    expect(r.invoice.paidAmountCents).toBe(r.invoice.grossTotalCents);
+    expect(r.invoice.payments).toHaveLength(1);
+  });
+
+  it("Null-Rechnung mit payment ohne Betrag: PaymentError (kein offener Betrag), Rollback", async () => {
+    const { orgId, customerId } = await makeOrg("Atomar N GmbH");
+    const zero = invoiceInput(customerId, {
+      lines: [{ lineType: "ITEM", description: "Gratis", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 0, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0 }],
+    } as Partial<CreateInvoiceInput>);
+    const before = await snapshot(orgId);
+    await expect(createInvoiceComplete(orgId, zero, { ...base, payment: { method: "TRANSFER" } })).rejects.toBeInstanceOf(PaymentError);
+    expect(await snapshot(orgId)).toEqual(before);
+  });
+
+  it("VIES-Pfad: Hinweis im Ergebnis und VatIdCheck-Zeile (trigger FINALIZE); die Zeile bleibt bei Rollback bestehen", async () => {
+    const { orgId } = await makeOrg("Atomar O GmbH");
+    await saveDocumentSettings(orgId, { viesCheckEnabled: true, viesCheckOnFinalize: true });
+    const eu = await dbInternal.customer.create({
+      data: { orgId, name: "AT Kunde", addressLine1: "Weg 1", postalCode: "1010", city: "Wien", type: "BUSINESS", countryCode: "AT", vatId: "ATU12345678", email: "a@example.org" },
+    });
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ valid: false, requestDate: "2192-03-10T10:00:00.000Z", requestIdentifier: "WAPIREQ2", userError: "INVALID" }), { status: 200 })) as unknown as typeof fetch;
+    const input = invoiceInput(eu.id, {
+      taxScheme: "IG_LEISTUNG",
+      notes: "Steuerschuldnerschaft des Leistungsempfängers",
+      lines: [{ lineType: "ITEM", description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 0, taxCategory: "K", discountPermille: 0, discountCents: 0 }],
+    } as Partial<CreateInvoiceInput>);
+    const r = await createInvoiceComplete(orgId, input, { ...base, fetchImpl, payment: { method: "TRANSFER", amountCents: 99999999 } }).catch((e: unknown) => e);
+    // Ueberzahlung -> Rollback; der VIES-Abruf lief VOR der Transaktion und bleibt als Nachweis (append-only).
+    expect(r).toBeInstanceOf(PaymentError);
+    const rows = await dbInternal.vatIdCheck.findMany({ where: { orgId, customerId: eu.id }, select: { trigger: true, status: true, invoiceId: true } });
+    expect(rows).toEqual([{ trigger: "FINALIZE", status: "INVALID", invoiceId: null }]);
+    expect(await dbInternal.invoice.count({ where: { orgId } })).toBe(0);
+
+    const ok = await createInvoiceComplete(orgId, input, { ...base, fetchImpl });
+    expect(ok.warnings.join(" ")).toContain("VIES meldet die USt-IdNr. ATU12345678 als ungültig");
+  });
+
   it("collectFinalizeWarningsFor: fremder Kunde -> leere Liste", async () => {
     const mine = await makeOrg("Atomar J1 GmbH");
     const other = await makeOrg("Atomar J2 GmbH");
