@@ -4,6 +4,6 @@
   "description": "Prisma-CLI fuer 'migrate deploy' im Container-Image (Dockerfile, Stage prisma-cli). Versionen muessen zu package-lock.json im Wurzelverzeichnis passen (test/unit/dockerfile.test.ts).",
   "dependencies": {
     "dotenv": "17.4.2",
-    "prisma": "6.19.3"
+    "prisma": "7.10.1"
   }
 }
