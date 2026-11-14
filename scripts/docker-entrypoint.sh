@@ -21,5 +21,15 @@ MELDUNG
   fi
 done
 
+# BEGIN server-actions-key
+# Next.js legt beim Bauen einen Schluessel fuer Server Actions ins Image. Ein oeffentliches
+# Image teilt ihn mit allen Installationen. Deshalb je Installation aus AUTH_SECRET ableiten
+# (stabil ueber Neustarts); ein ausdruecklich gesetzter Wert hat Vorrang.
+if [ -z "${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}" ] && [ -n "${AUTH_SECRET:-}" ]; then
+  NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(node -e 'process.stdout.write(require("node:crypto").createHmac("sha256", process.env.AUTH_SECRET).update("next-server-actions-key").digest("base64"))')"
+  export NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+fi
+# END server-actions-key
+
 sh ./scripts/db-prepare.sh
 exec node server.js
