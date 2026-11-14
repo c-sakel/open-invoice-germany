@@ -93,8 +93,8 @@ async function collectCustomerWarnings(
   invoiceId: string | undefined,
   middle: () => FinalizeWarning[],
   opts: { fetchImpl?: typeof fetch; now?: Date },
-): Promise<FinalizeWarning[]> {
-  const warnings: FinalizeWarning[] = [];
+  warnings: FinalizeWarning[],
+): Promise<void> {
   const now = opts.now ?? new Date();
 
   if (resolveBuyerEndpoint(customer) === null) {
@@ -130,30 +130,79 @@ async function collectCustomerWarnings(
       }
     }
   }
-  return warnings;
+}
+
+/** Felder, die die Zahlungsart-Hinweise (Karte/Lastschrift) brauchen. */
+export const MEANS_WARNING_SELECT = {
+  type: true,
+  dueDate: true,
+  cardPanTruncated: true,
+  cardNetwork: true,
+  cardHolderName: true,
+  paymentMethod: { select: { untdidCode: true } },
+  org: { select: { sepaCreditorId: true } },
+  customer: { select: WARNING_CUSTOMER_SELECT },
+} as const;
+
+interface MeansWarningInvoice {
+  type: string;
+  dueDate: Date | null;
+  cardPanTruncated: string | null;
+  cardNetwork: string | null;
+  cardHolderName: string | null;
+  paymentMethod: { untdidCode: string | null } | null;
+  org: { sepaCreditorId: string | null };
+  customer: WarningCustomer;
+}
+
+/**
+ * Phase 18e/18d: Karte/Lastschrift unvollstaendig -> gleiche Entscheidung wie der Mapper
+ * (resolveSpecialMeans); Festschreiben gelingt, die E-Rechnung faellt auf Code 1 zurueck.
+ * Einzige Entscheidungsstelle fuer Festschreiben (collectFinalizeWarnings) und atomare Anlage.
+ */
+export function paymentMeansWarnings(invoice: MeansWarningInvoice): FinalizeWarning[] {
+  const meansCode = invoice.paymentMethod?.untdidCode;
+  if (!meansCode) return [];
+  const special = resolveSpecialMeans({
+    code: meansCode,
+    invoiceType: invoice.type,
+    card: { cardPanTruncated: invoice.cardPanTruncated, cardNetwork: invoice.cardNetwork, cardHolderName: invoice.cardHolderName },
+    directDebit: meansCode === DIRECT_DEBIT_CODE ? buildDirectDebitSnapshot(invoice.org, invoice.customer) : null,
+    dueDate: invoice.dueDate,
+  });
+  return special.kind === "fallback" && special.gap ? [{ code: special.gap, message: finalizeWarningMessage(special.gap) }] : [];
+}
+
+/** Fuegt die Zahlungsart-Hinweise hinter einem fuehrenden "adresse"-Hinweis ein (Reihenfolge wie beim Festschreiben). */
+export function insertMeansWarnings(pre: FinalizeWarning[], means: FinalizeWarning[]): FinalizeWarning[] {
+  if (means.length === 0) return pre;
+  const at = pre.length > 0 && pre[0].code === "adresse" ? 1 : 0;
+  return [...pre.slice(0, at), ...means, ...pre.slice(at)];
 }
 
 /**
  * Phase 18d: Hinweise fuer einen noch nicht angelegten Beleg (Kunde + Steuerschema; Adresse und VIES).
  * Die belegspezifischen Karten-/Lastschrift-Hinweise brauchen den gespeicherten Entwurf und kommen
- * nur ueber `collectFinalizeWarnings`. Wirft nie; ohne Kunde der Org leere Liste.
+ * ueber `paymentMeansWarnings`. Wirft nie; ohne Kunde der Org leere Liste.
  */
 export async function collectFinalizeWarningsFor(
   orgId: string,
   target: { customerId: string; taxScheme: string; invoiceId?: string },
   opts: { fetchImpl?: typeof fetch; now?: Date } = {},
 ): Promise<FinalizeWarning[]> {
+  const warnings: FinalizeWarning[] = [];
   try {
     const customer = await dbInternal.customer.findFirst({
       where: { id: target.customerId, orgId },
       select: WARNING_CUSTOMER_SELECT,
     });
     if (!customer) return [];
-    return await collectCustomerWarnings(orgId, customer, target.taxScheme, target.invoiceId, () => [], opts);
+    await collectCustomerWarnings(orgId, customer, target.taxScheme, target.invoiceId, () => [], opts, warnings);
   } catch {
-    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern.
-    return [];
+    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern;
+    // bis dahin gesammelte Hinweise bleiben erhalten.
   }
+  return warnings;
 }
 
 export async function collectFinalizeWarnings(
@@ -161,43 +210,19 @@ export async function collectFinalizeWarnings(
   invoiceId: string,
   opts: { fetchImpl?: typeof fetch; now?: Date } = {},
 ): Promise<FinalizeWarning[]> {
+  const warnings: FinalizeWarning[] = [];
   try {
     const invoice = await dbInternal.invoice.findFirst({
       where: { id: invoiceId, orgId },
-      select: {
-        id: true,
-        status: true,
-        taxScheme: true,
-        type: true,
-        dueDate: true,
-        cardPanTruncated: true,
-        cardNetwork: true,
-        cardHolderName: true,
-        paymentMethod: { select: { untdidCode: true } },
-        org: { select: { sepaCreditorId: true } },
-        customer: { select: WARNING_CUSTOMER_SELECT },
-      },
+      select: { id: true, status: true, taxScheme: true, ...MEANS_WARNING_SELECT },
     });
     if (!invoice || invoice.status !== "DRAFT") return [];
     const customer = invoice.customer;
 
-    // Phase 18e: Karte/Lastschrift unvollstaendig -> gleiche Entscheidung wie der Mapper
-    // (resolveSpecialMeans); Festschreiben gelingt, die E-Rechnung faellt auf Code 1 zurueck.
-    const meansWarnings = (): FinalizeWarning[] => {
-      const meansCode = invoice.paymentMethod?.untdidCode;
-      if (!meansCode) return [];
-      const special = resolveSpecialMeans({
-        code: meansCode,
-        invoiceType: invoice.type,
-        card: { cardPanTruncated: invoice.cardPanTruncated, cardNetwork: invoice.cardNetwork, cardHolderName: invoice.cardHolderName },
-        directDebit: meansCode === DIRECT_DEBIT_CODE ? buildDirectDebitSnapshot(invoice.org, customer) : null,
-        dueDate: invoice.dueDate,
-      });
-      return special.kind === "fallback" && special.gap ? [{ code: special.gap, message: finalizeWarningMessage(special.gap) }] : [];
-    };
-    return await collectCustomerWarnings(orgId, customer, invoice.taxScheme, invoiceId, meansWarnings, opts);
+    await collectCustomerWarnings(orgId, customer, invoice.taxScheme, invoiceId, () => paymentMeansWarnings(invoice), opts, warnings);
   } catch {
-    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern.
-    return [];
+    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern;
+    // bis dahin gesammelte Hinweise bleiben erhalten (wie vor 18d).
   }
+  return warnings;
 }

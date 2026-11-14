@@ -3,7 +3,7 @@
  * (Invoice.number ist global eindeutig), Praefix D18D4-. Der Transaktions-Guard (tx-guard-setup)
  * ist in allen Tests aktiv: ein Zugriff ueber den globalen Client in der Transaktion schlaegt fehl.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveDocumentSettings } from "@/domain/document/settings";
@@ -210,6 +210,37 @@ describe("createInvoiceComplete", () => {
     const forTarget = await collectFinalizeWarningsFor(orgId, { customerId, taxScheme: "REGULAR" }, { now: NOW });
     expect(forTarget).toEqual(legacy);
     expect(forTarget.length).toBeGreaterThan(0);
+  });
+
+  it("Hinweise: Karte unvollstaendig -> Hinweis aus dem Entwurf, gleiche Liste und Reihenfolge wie beim Festschreiben", async () => {
+    const { orgId, customerId } = await makeOrg("Atomar K GmbH");
+    const card = await dbInternal.paymentMethod.findFirstOrThrow({ where: { orgId, code: "CREDIT_CARD" }, select: { id: true } });
+    const extra = { paymentMethodId: card.id, cardPanTruncated: "1234" } as Partial<CreateInvoiceInput>;
+    const r = await createInvoiceComplete(orgId, invoiceInput(customerId, extra), base);
+    expect(r.warnings.some((w) => w.includes("Kartenzahlung"))).toBe(true);
+
+    const draft = await createDraftInvoice(orgId, invoiceInput(customerId, extra), { actor: "test", now: NOW });
+    const legacy = (await collectFinalizeWarnings(orgId, draft.id, { now: NOW })).map((w) => w.message);
+    expect(r.warnings).toEqual(legacy);
+    expect(legacy[0]).toContain("keine elektronische Adresse");
+    expect(legacy[1]).toContain("Kartenzahlung");
+  });
+
+  it("collectFinalizeWarningsFor/collectFinalizeWarnings: Ausfall eines Teils behaelt bereits gesammelte Hinweise", async () => {
+    const { orgId } = await makeOrg("Atomar L GmbH");
+    await saveDocumentSettings(orgId, { viesCheckEnabled: true, viesCheckOnFinalize: true });
+    const customer = await dbInternal.customer.create({
+      data: { orgId, name: "EU Kunde", addressLine1: "Rue 1", postalCode: "75001", city: "Paris", type: "BUSINESS", vatId: "FR12345678901" },
+    });
+    const spy = vi.spyOn(dbInternal.vatIdCheck, "findFirst").mockRejectedValue(new Error("db weg"));
+    try {
+      const forTarget = await collectFinalizeWarningsFor(orgId, { customerId: customer.id, taxScheme: "IG_LEISTUNG" }, { now: NOW });
+      expect(forTarget.map((w) => w.code)).toEqual(["adresse"]);
+      const draft = await createDraftInvoice(orgId, invoiceInput(customer.id, { taxScheme: "IG_LEISTUNG" } as Partial<CreateInvoiceInput>), { actor: "test", now: NOW });
+      expect((await collectFinalizeWarnings(orgId, draft.id, { now: NOW })).map((w) => w.code)).toEqual(["adresse"]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("collectFinalizeWarningsFor: fremder Kunde -> leere Liste", async () => {

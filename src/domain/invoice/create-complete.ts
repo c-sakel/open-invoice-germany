@@ -14,7 +14,7 @@ import { dbInternal } from "@/lib/db";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { recordPaymentWithinTx, PaymentError, type PaymentCreatedBy } from "@/domain/invoice/payment";
-import { collectFinalizeWarningsFor } from "@/domain/invoice/finalize-warnings";
+import { collectFinalizeWarningsFor, insertMeansWarnings, paymentMeansWarnings, MEANS_WARNING_SELECT } from "@/domain/invoice/finalize-warnings";
 import { payableBaseCents } from "@/domain/invoice/amounts";
 import { onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { recordPaymentSchema, type AtomicPaymentInput, type CreateInvoiceInput } from "@/schemas";
@@ -42,13 +42,15 @@ export async function createInvoiceComplete(
 ): Promise<InvoiceCompleteResult> {
   const { payment, actor, createdBy, now } = opts;
 
-  const warnings = (
-    await collectFinalizeWarningsFor(orgId, { customerId: input.customerId, taxScheme: input.taxScheme }, { fetchImpl: opts.fetchImpl, now })
-  ).map((w) => w.message);
+  const preWarnings = await collectFinalizeWarningsFor(orgId, { customerId: input.customerId, taxScheme: input.taxScheme }, { fetchImpl: opts.fetchImpl, now });
 
   const result = await dbInternal.$transaction(
     async (tx): Promise<InvoiceCompleteResult> => {
       const draft = await createDraftInvoiceWithinTx(tx, orgId, input, { actor, now });
+      // Karte/Lastschrift-Hinweise (18e) aus dem gespeicherten Entwurf, ueber dieselbe Entscheidungsstelle
+      // wie beim Festschreiben (paymentMeansWarnings).
+      const stored = await tx.invoice.findUniqueOrThrow({ where: { id: draft.id }, select: MEANS_WARNING_SELECT });
+      const warnings = insertMeansWarnings(preWarnings, paymentMeansWarnings(stored)).map((w) => w.message);
       const fin = await finalizeWithinTx(tx, draft.id, { actor, now });
 
       let paymentId: string | null = null;
