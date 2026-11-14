@@ -292,31 +292,13 @@ export async function undoBankMatch(orgId: string, txId: string, raw: unknown, o
       if (bankTx.direction !== "CRDT" || !["OPEN", "PARTIAL", "MATCHED", "IGNORED"].includes(bankTx.status)) {
         throw new BankAllocationError("Die Zuordnung dieses Umsatzes kann nicht zurueckgenommen werden.");
       }
-      const already = await tx.bankMatch.count({ where: { orgId, transactionId: txId, kind: "UNDO", refMatchId: match.id } });
-      if (already > 0) throw new BankConflictError("Diese Zuordnung wurde bereits zurueckgenommen.");
+      // Rest der Zahlung (nach manuellen Teil-Gegenbuchungen): ist er 0, wurde die Zuordnung schon zurueckgenommen.
+      const payment = await tx.payment.findUnique({ where: { id: match.paymentId }, select: { amountCents: true } });
+      const reversedAgg = await tx.payment.aggregate({ where: { reversesPaymentId: match.paymentId, kind: "REVERSAL" }, _sum: { amountCents: true } });
+      if (!payment || payment.amountCents + (reversedAgg._sum.amountCents ?? 0) <= 0) throw new BankConflictError("Diese Zuordnung wurde bereits zurueckgenommen.");
 
+      // reversePaymentWithinTx schreibt Umsatz (allocatedCents/Status) und UNDO-Eintrag fort.
       const reversed = await reversePaymentWithinTx(tx, match.paymentId, { reason: input.reason }, { actor: opts.actor, orgId, now, createdBy: opts.createdBy });
-      const allocated = Math.max(0, bankTx.allocatedCents + reversed.reversal.amountCents);
-      const status = bankTx.status === "IGNORED" ? "IGNORED" : allocated === 0 ? "OPEN" : "PARTIAL";
-      const upd = await tx.bankTransaction.updateMany({
-        where: { id: txId, orgId, allocatedCents: bankTx.allocatedCents },
-        data: { allocatedCents: allocated, status },
-      });
-      if (upd.count === 0) throw new BankConflictError();
-      await tx.bankMatch.create({
-        data: {
-          orgId,
-          transactionId: txId,
-          invoiceId: match.invoiceId,
-          amountCents: -reversed.reversal.amountCents,
-          kind: "UNDO",
-          refMatchId: match.id,
-          reason: input.reason,
-          confirmedBy: opts.actor,
-          confirmedAt: now,
-        },
-        select: { id: true },
-      });
       await logActivity(tx, {
         orgId,
         entityType: "BANK_TRANSACTION",

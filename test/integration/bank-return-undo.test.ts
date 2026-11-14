@@ -81,14 +81,44 @@ describe("Bankabgleich: Zuordnung zuruecknehmen", () => {
     const p = await paid();
     await reversePayment(p.paymentId, { amountCents: 4000, reason: "Teilrueckzahlung" }, { actor: "tester", orgId: org.orgId, now: NOW });
     const v = await undoBankMatch(org.orgId, p.txId, { matchId: p.matchId, reason: "Rest zuruecknehmen" }, opts);
-    // allocated = Summe Zahlungen - Summe Rueckbuchungen: nur der tatsaechlich gegengebuchte Rest wird frei.
-    expect(v.allocatedCents).toBe(4000);
-    expect(v.status).toBe("PARTIAL");
+    // die manuelle Teilstornierung hat den Umsatz schon auf 7900 gesenkt; das Undo gibt den Rest frei.
+    expect(v.allocatedCents).toBe(0);
+    expect(v.status).toBe("OPEN");
     const sum = await dbInternal.payment.aggregate({ where: { reversesPaymentId: p.paymentId }, _sum: { amountCents: true } });
     expect(sum._sum.amountCents).toBe(-GROSS);
-    const undo = await dbInternal.bankMatch.findFirstOrThrow({ where: { transactionId: p.txId, kind: "UNDO" } });
-    expect(undo.amountCents).toBe(GROSS - 4000);
+    const undos = await dbInternal.bankMatch.findMany({ where: { transactionId: p.txId, kind: "UNDO" }, select: { amountCents: true }, orderBy: { amountCents: "asc" } });
+    expect(undos.map((u) => u.amountCents)).toEqual([4000, GROSS - 4000]);
     expect((await invoiceOf(p.inv.id)).paidAmountCents).toBe(0);
+  });
+
+  it("manuelle Stornierung einer Bankzahlung schreibt den Umsatz fort (Teil, Undo, Voll)", async () => {
+    const p = await paid(10000);
+    const txRow = () => dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: p.txId }, select: { allocatedCents: true, status: true } });
+    await reversePayment(p.paymentId, { amountCents: 4000, reason: "Teilrueckzahlung" }, { actor: "tester", orgId: org.orgId, now: NOW });
+    expect(await txRow()).toEqual({ allocatedCents: 6000, status: "PARTIAL" });
+    expect(await dbInternal.bankMatch.count({ where: { transactionId: p.txId, kind: "UNDO", refMatchId: p.matchId, amountCents: 4000 } })).toBe(1);
+    await undoBankMatch(org.orgId, p.txId, { matchId: p.matchId, reason: "Rest zuruecknehmen" }, opts);
+    expect(await txRow()).toEqual({ allocatedCents: 0, status: "OPEN" });
+    expect((await dbInternal.payment.aggregate({ where: { invoiceId: p.inv.id }, _sum: { amountCents: true } }))._sum.amountCents).toBe(0);
+    await expect(undoBankMatch(org.orgId, p.txId, { matchId: p.matchId, reason: "Nochmal" }, opts)).rejects.toBeInstanceOf(BankConflictError);
+
+    const q = await paid(10000);
+    await reversePayment(q.paymentId, { reason: "Komplett zurueck" }, { actor: "tester", orgId: org.orgId, now: NOW });
+    const row = await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: q.txId }, select: { allocatedCents: true, status: true } });
+    expect(row).toEqual({ allocatedCents: 0, status: "OPEN" });
+    expect((await verifyOrgChain(org.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Stornierung einer Zahlung ohne Bankbezug laesst Bankumsaetze unberuehrt", async () => {
+    const own = await paid(10000);
+    const inv = await mkInvoice(org, ISSUE);
+    const { recordPayment } = await import("@/domain/invoice/payment");
+    const manual = await recordPayment(inv.id, { amountCents: GROSS, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: org.orgId, now: NOW });
+    const matchesBefore = await dbInternal.bankMatch.count({ where: { orgId: org.orgId } });
+    await reversePayment(manual.recorded.id, { reason: "Irrtum" }, { actor: "tester", orgId: org.orgId, now: NOW });
+    expect(await dbInternal.bankMatch.count({ where: { orgId: org.orgId } })).toBe(matchesBefore);
+    const row = await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: own.txId }, select: { allocatedCents: true, status: true } });
+    expect(row).toEqual({ allocatedCents: 10000, status: "MATCHED" });
   });
 
   it("Undo einer Teilzuordnung laesst den Umsatz PARTIAL", async () => {

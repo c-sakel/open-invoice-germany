@@ -81,10 +81,17 @@ export async function reversePaymentWithinTx(
   tx: Prisma.TransactionClient,
   paymentId: string,
   input: ReversePaymentInput,
-  opts: { actor: string; orgId: string; now: Date; createdBy: PaymentCreatedBy },
+  opts: { actor: string; orgId: string; now: Date; createdBy: PaymentCreatedBy; syncBank?: boolean },
 ): Promise<ReversePaymentWithinTxResult> {
   const now = opts.now;
   const createdBy = opts.createdBy;
+  const syncBank = opts.syncBank !== false;
+  // Stammt die Zahlung aus dem Bankabgleich, wird der Bankumsatz VOR der Rechnung gesperrt (gleiche
+  // Reihenfolge wie im Bankpfad: Umsatz, dann Rechnung), damit keine Sperrkreuzung entsteht.
+  const bankMatch = syncBank
+    ? await tx.bankMatch.findFirst({ where: { orgId: opts.orgId, paymentId, kind: "PAYMENT" }, select: { id: true, transactionId: true, invoiceId: true } })
+    : null;
+  if (bankMatch) await lockRow(tx, "BankTransaction", bankMatch.transactionId, opts.orgId);
   // Zeilensperre (17b): zuerst nur die Rechnung der Zahlung ermitteln, sperren, dann alles weitere lesen.
   const ref = await tx.payment.findUnique({ where: { id: paymentId }, select: { invoiceId: true, invoice: { select: { orgId: true } } } });
   if (!ref || ref.invoice.orgId !== opts.orgId) throw new NotFoundError("Zahlung nicht gefunden.");
@@ -173,6 +180,37 @@ export async function reversePaymentWithinTx(
     at: now,
     diff: { paymentId: payment.id, amountCents: totalDelta, reason: input.reason, paidAmountCents: newPaid, status },
   });
+
+  // Bankabgleich: der Umsatz haelt nur noch die netto aktiven Zahlungsbetraege (Hauptzahlung ohne Skonto).
+  if (bankMatch) {
+    const bankTx = await tx.bankTransaction.findFirst({
+      where: { id: bankMatch.transactionId, orgId: opts.orgId },
+      select: { amountCents: true, allocatedCents: true, status: true },
+    });
+    if (bankTx) {
+      const allocated = Math.max(0, bankTx.allocatedCents - amountCents);
+      const nextStatus = bankTx.status === "IGNORED" ? "IGNORED" : allocated === 0 ? "OPEN" : allocated >= bankTx.amountCents ? "MATCHED" : "PARTIAL";
+      const upd = await tx.bankTransaction.updateMany({
+        where: { id: bankMatch.transactionId, orgId: opts.orgId, allocatedCents: bankTx.allocatedCents },
+        data: { allocatedCents: allocated, status: nextStatus },
+      });
+      if (upd.count === 0) throw new PaymentError("Der Bankumsatz wurde parallel geaendert; bitte erneut versuchen.");
+      await tx.bankMatch.create({
+        data: {
+          orgId: opts.orgId,
+          transactionId: bankMatch.transactionId,
+          invoiceId: bankMatch.invoiceId,
+          amountCents,
+          kind: "UNDO",
+          refMatchId: bankMatch.id,
+          reason: input.reason,
+          confirmedBy: opts.actor,
+          confirmedAt: now,
+        },
+        select: { id: true },
+      });
+    }
+  }
 
   for (const row of skontoReversal ? [reversal, skontoReversal] : [reversal]) {
     await emitEvent(tx, {
