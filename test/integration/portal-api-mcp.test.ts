@@ -42,6 +42,7 @@ let customerId: string;
 let otherCustomerId: string;
 let writeToken: string;
 let readToken: string;
+let adminToken: string;
 
 const BASE = "https://rechnung.example.test";
 function req(url: string, token: string, method = "GET", body?: unknown, rawBody?: string) {
@@ -65,6 +66,7 @@ beforeAll(async () => {
   });
   otherCustomerId = (await dbInternal.customer.create({ data: { orgId: other.id, name: "Fremdkunde", addressLine1: "Weg 1", postalCode: "54321", city: "Wien" } })).id;
   writeToken = (await createApiKey(orgId, { name: "w", scopes: ["read", "write"] })).token;
+  adminToken = (await createApiKey(orgId, { name: "a", scopes: ["read", "write", "admin"] })).token;
   readToken = (await createApiKey(orgId, { name: "r", scopes: ["read"] })).token;
 });
 
@@ -157,18 +159,21 @@ describe("REST portal-events", () => {
 describe("REST Settings/portal", () => {
   it("GET, Teil-Update, Scope, leerer Body, Validierung", async () => {
     const url = `${BASE}/api/v1/Settings/portal`;
-    const g = await settingsGet(req(url, readToken));
+    expect((await settingsGet(req(url, readToken))).status).toBe(403);
+    expect((await settingsGet(req(url, writeToken))).status).toBe(403);
+    const g = await settingsGet(req(url, adminToken));
     expect((await g.json()).data.objectName).toBe("PortalSettings");
-    const put = await settingsPut(req(url, writeToken, "PUT", { linkDays: 90, showDunnings: false }));
+    const put = await settingsPut(req(url, adminToken, "PUT", { linkDays: 90, showDunnings: false }));
     expect(put.status).toBe(200);
     const d = (await put.json()).data;
     expect(d.linkDays).toBe(90);
     expect(d.showDunnings).toBe(false);
     expect(d.enabled).toBe(true);
     expect((await settingsPut(req(url, readToken, "PUT", { linkDays: 5 }))).status).toBe(403);
-    expect((await settingsPut(req(url, writeToken, "PUT", {}))).status).toBe(400);
-    expect((await settingsPut(req(url, writeToken, "PUT", { linkDays: 9999 }))).status).toBe(400);
-    expect((await settingsPut(req(url, writeToken, "PUT", undefined, "{kaputt"))).status).toBe(400);
+    expect((await settingsPut(req(url, writeToken, "PUT", { linkDays: 5 }))).status).toBe(403);
+    expect((await settingsPut(req(url, adminToken, "PUT", {}))).status).toBe(400);
+    expect((await settingsPut(req(url, adminToken, "PUT", { linkDays: 9999 }))).status).toBe(400);
+    expect((await settingsPut(req(url, adminToken, "PUT", undefined, "{kaputt"))).status).toBe(400);
     await savePortalSettings(orgId, { linkDays: 365, showDunnings: true }, "test");
   });
 });

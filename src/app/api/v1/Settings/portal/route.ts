@@ -1,5 +1,5 @@
 /**
- * /api/v1/Settings/portal — Einstellungen des Kundenportals. Scope read (GET) bzw. write (PUT, Teil-Update).
+ * /api/v1/Settings/portal — Einstellungen des Kundenportals. Scope admin (wie die übrigen Einstellungen-Routen); PUT ist ein Teil-Update.
  */
 import { ZodError } from "zod";
 import { withApi } from "@/api/auth";
@@ -12,7 +12,7 @@ import { portalSettingsInputSchema } from "@/schemas/portal";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const GET = withApi(async (_req, ctx) => apiData(serializePortalSettings(await loadPortalSettings(ctx.orgId))), { scope: "read" });
+export const GET = withApi(async (_req, ctx) => apiData(serializePortalSettings(await loadPortalSettings(ctx.orgId))), { scope: "admin" });
 
 export const PUT = withApi(async (_req, ctx) => {
   const input = portalSettingsInputSchema.parse(ctx.body ?? {});
@@ -20,14 +20,14 @@ export const PUT = withApi(async (_req, ctx) => {
     throw new ZodError([{ code: "custom", path: [], message: "Mindestens ein Feld angeben." }]);
   }
   return apiData(serializePortalSettings(await savePortalSettings(ctx.orgId, input, ctx.actor)));
-}, { scope: "write" });
+}, { scope: "admin" });
 
 export const spec = {
   get: {
     path: "/api/v1/Settings/portal",
     method: "GET",
     summary: "Einstellungen des Kundenportals lesen",
-    scope: "read",
+    scope: "admin",
     response: apiDataResponseSchema(portalSettingsSchema),
     errors: [401, 403, 429],
   },
@@ -35,7 +35,7 @@ export const spec = {
     path: "/api/v1/Settings/portal",
     method: "PUT",
     summary: "Einstellungen des Kundenportals setzen (Teil-Update, fehlende Felder bleiben)",
-    scope: "write",
+    scope: "admin",
     request: { body: portalSettingsInputSchema },
     response: apiDataResponseSchema(portalSettingsSchema),
     errors: [400, 401, 403, 429],
