@@ -10,7 +10,7 @@ import { maskIban } from "@/lib/iban";
 import { directDebitSnapshotSchema } from "@/schemas";
 
 /** Lastschrift-Snapshot (BG-19) fuer die Ausgabe: nur Referenz, Glaeubiger-ID und maskierte IBAN. */
-function serializeDirectDebit(json: string | null): { mandateReference: string; creditorId: string; debtorIbanMasked: string } | null {
+export function serializeDirectDebit(json: string | null): { mandateReference: string; creditorId: string; debtorIbanMasked: string } | null {
   if (!json) return null;
   let raw: unknown;
   try {

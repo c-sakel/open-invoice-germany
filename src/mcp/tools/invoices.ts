@@ -9,6 +9,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PROJECT_ROOT } from "../bootstrap";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
+import { serializeDirectDebit } from "@/api/serializers/invoice";
 import { defaultCategoryForScheme } from "@/lib/tax";
 import { SCHEME_NOTICE_BY_LANG, SCHEME_NOTICE_ACCEPTED, normalizeNotice, swapSchemeNotice } from "@/domain/invoice/mandatory";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
@@ -297,6 +298,10 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               net: formatCents(inv.netTotalCents),
               tax: formatCents(inv.taxTotalCents),
               gross: formatCents(inv.grossTotalCents),
+              cardPanTruncated: inv.cardPanTruncated ?? null,
+              cardNetwork: inv.cardNetwork ?? null,
+              cardHolderName: inv.cardHolderName ?? null,
+              directDebit: serializeDirectDebit(inv.directDebitSnapshotJson ?? null),
               lines: inv.lines.map((l) => ({ description: l.description, qty: l.quantityMilli / 1000, unit: l.unit, net: formatCents(l.lineNetCents) })),
               payments: inv.payments.map((p) => ({
                 id: p.id,
