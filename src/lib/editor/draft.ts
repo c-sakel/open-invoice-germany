@@ -457,8 +457,32 @@ function daysOrUndefined(s: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/** Zeilen des Entwurfs als Rechnungs-Payload (Rechnung und Abo-Vorlage teilen die Abbildung). */
+export type LinePayload = ReturnType<typeof draftLinePayload>;
+
+function draftLinePayload(l: DraftLine, taxScheme: TaxScheme) {
+  const isRegular = taxScheme === "REGULAR";
+  return {
+    lineType: l.lineType,
+    description: l.description,
+    descriptionLong: l.descriptionLong || undefined,
+    articleNumber: l.articleNumber || undefined,
+    quantityMilli: l.lineType === "ITEM" ? milliOrZero(l.quantity) : 0,
+    unit: l.unit || "C62",
+    unitNetPriceCents: l.lineType === "ITEM" ? centsOrZero(l.price) : 0,
+    taxRate: l.lineType === "ITEM" ? (isRegular ? l.taxRate : 0) : 0,
+    taxCategory: SCHEME_CATEGORY[taxScheme] ?? "S",
+    discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
+    discountCents: l.lineType === "ITEM" ? centsOrZero(l.discountAmount) : 0,
+    ossCategory: l.lineType === "ITEM" ? l.ossCategory : undefined,
+  };
+}
+
+export function draftLinesToPayload(lines: readonly DraftLine[], taxScheme: TaxScheme): LinePayload[] {
+  return lines.map((l) => draftLinePayload(l, taxScheme));
+}
+
 export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string, unknown> {
-  const isRegular = d.taxScheme === "REGULAR";
   const notice = schemeNoticeFor(d.taxScheme, effectiveLanguage(d.language));
   // Fix 1 (Koordinator, Task 5): notice nur voranstellen, wenn `notes` noch KEINE fuer das
   // Schema zulaessige Formulierung enthaelt (SCHEME_NOTICE_ACCEPTED, dieselbe Pruefung wie
@@ -469,20 +493,7 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
   const hasAcceptedNotice = accepted.some((re) => re.test(normalizeNotice(d.notes)));
   const finalNotes = notice && !hasAcceptedNotice ? `${notice}${d.notes ? " — " + d.notes : ""}` : d.notes || undefined;
 
-  const lines = d.lines.map((l) => ({
-    lineType: l.lineType,
-    description: l.description,
-    descriptionLong: l.descriptionLong || undefined,
-    articleNumber: l.articleNumber || undefined,
-    quantityMilli: l.lineType === "ITEM" ? milliOrZero(l.quantity) : 0,
-    unit: l.unit || "C62",
-    unitNetPriceCents: l.lineType === "ITEM" ? centsOrZero(l.price) : 0,
-    taxRate: l.lineType === "ITEM" ? (isRegular ? l.taxRate : 0) : 0,
-    taxCategory: SCHEME_CATEGORY[d.taxScheme] ?? "S",
-    discountPermille: l.lineType === "ITEM" ? permilleOrZero(l.discountPercent) : 0,
-    discountCents: l.lineType === "ITEM" ? centsOrZero(l.discountAmount) : 0,
-    ossCategory: l.lineType === "ITEM" ? l.ossCategory : undefined,
-  }));
+  const lines = draftLinesToPayload(d.lines, d.taxScheme);
 
   const shared: Record<string, unknown> = {
     customerId: d.customerId,
@@ -689,7 +700,7 @@ export function validateDraft(d: DraftState): string[] {
 /** Zeilenform der Bearbeiten-Seiten (`InvoiceInitialLike`/`DocumentInitialLike` unten).
  *  M4 (Abschluss-Review): kein `export` mehr — kein Importer, die Seiten bauen ihre
  *  Zeilenobjekte inline innerhalb von `InvoiceInitialLike["lines"]`/`DocumentInitialLike["lines"]`. */
-interface InitialLineLike {
+export interface InitialLineLike {
   lineType: LineType;
   description: string;
   descriptionLong: string;
@@ -812,7 +823,7 @@ function initialLineToDraftLine(l: InitialLineLike): DraftLine {
   };
 }
 
-function initialLines(lines: InitialLineLike[] | undefined, allowedTaxRates: readonly number[]): DraftLine[] {
+export function draftLinesFromInitial(lines: InitialLineLike[] | undefined, allowedTaxRates: readonly number[]): DraftLine[] {
   return lines && lines.length ? lines.map(initialLineToDraftLine) : [emptyLine("ITEM", allowedTaxRates)];
 }
 
@@ -868,7 +879,7 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     skonto1Days: initial.skonto1Days ?? "",
     skonto2Percent: roundTrip(initial.skonto2Percent, toPermille, fromPermille),
     skonto2Days: initial.skonto2Days ?? "",
-    lines: initialLines(initial.lines, allowedTaxRates),
+    lines: draftLinesFromInitial(initial.lines, allowedTaxRates),
     dirty: false,
   };
 }
@@ -907,7 +918,7 @@ export function draftFromDocument(initial: DocumentInitialLike, taxRates: readon
     documentChargePercent: roundTrip(initial.documentChargePercent, toPermille, fromPermille),
     documentChargeAmount: roundTrip(initial.documentChargeAmount, toCents, fromCents),
     documentChargeReason: initial.documentChargeReason ?? "",
-    lines: initialLines(initial.lines, allowedTaxRates),
+    lines: draftLinesFromInitial(initial.lines, allowedTaxRates),
     dirty: false,
   };
 }
