@@ -1605,14 +1605,32 @@ INSERT INTO "CustomerPortalEvent" ("id","orgId","linkId","kind") VALUES ('pe37',
 SQL
 PS37=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"enabled\"::text || '|' || \"linkDays\" || '|' || \"showDunnings\"::text || '|' || \"showEInvoice\"::text from \"CustomerPortalSettings\" where id='ps37'")
 [ "$PS37" = "false|365|true|true" ] || fail "Portal-Einstellungen ohne Standardwerte ('$PS37'), erwartet false|365|true|true"
-docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q >/dev/null 2>&1 <<'SQL' && fail "Doppelter tokenHash wurde nicht abgewiesen"
+# Erwartet einen Fehler mit passender Ursache (SQL ueber stdin); ein Tippfehler im SQL darf den Test nicht gruen machen.
+pg_expect_error() {
+  local out
+  if out=$(docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q 2>&1); then
+    fail "$2 (es gab keinen Fehler)"
+  fi
+  echo "$out" | grep -Eq "$1" || fail "$2 — falsche Fehlerursache: $out"
+}
+pg_expect_error 'duplicate key value violates unique constraint "CustomerPortalLink_tokenHash_key"' "Doppelter tokenHash wurde nicht abgewiesen" <<'SQL'
 INSERT INTO "CustomerPortalLink" ("id","orgId","customerId","tokenHash","tokenEnc","expiresAt","createdBy")
   VALUES ('pl37dup','org37x','cust37x','hash37','enc37',NOW(),'user');
 SQL
-docker exec "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q \
-  -c "DELETE FROM \"Customer\" WHERE id='cust37x'" >/dev/null 2>&1 && fail "Kunde mit Portal-Link wurde geloescht (RESTRICT erwartet)"
+pg_expect_error 'duplicate key value violates unique constraint "CustomerPortalSettings_orgId_key"' "Zweite Portal-Einstellung je Organisation wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "CustomerPortalSettings" ("id","orgId","updatedAt") VALUES ('ps37dup','org37x',NOW());
+SQL
+pg_expect_error 'violates foreign key constraint "CustomerPortalEvent_linkId_fkey"' "Abrufereignis ohne Link wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "CustomerPortalEvent" ("id","orgId","linkId","kind") VALUES ('pe37bad','org37x','gibt-es-nicht','VIEW');
+SQL
+pg_expect_error 'violates foreign key constraint "CustomerPortalEvent_linkId_fkey"' "Link mit Abrufereignis wurde geloescht (RESTRICT erwartet)" <<'SQL'
+DELETE FROM "CustomerPortalLink" WHERE id='pl37';
+SQL
+pg_expect_error 'violates foreign key constraint "CustomerPortalLink_customerId_fkey"' "Kunde mit Portal-Link wurde geloescht (RESTRICT erwartet)" <<'SQL'
+DELETE FROM "Customer" WHERE id='cust37x';
+SQL
 COUNT37=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from information_schema.tables where table_schema='public'")
 [ "$COUNT37" = "$TABLES_EXPECTED" ] || fail "erwartet $TABLES_EXPECTED Tabellen nach Kundenportal, gefunden $COUNT37"
-echo "    ok — Portal-Einstellungen mit Standardwerten false|365|true|true, Link und Abrufereignis einfuegbar, doppelter tokenHash scheitert, Kunde mit Link nicht loeschbar (RESTRICT), ${TABLES_EXPECTED} Tabellen"
+echo "    ok — Portal-Einstellungen mit Standardwerten false|365|true|true, Link und Abrufereignis einfuegbar, doppelter tokenHash und doppelte Einstellung scheitern (unique), Ereignis ohne Link, Link mit Ereignis und Kunde mit Link nicht loeschbar (foreign key), ${TABLES_EXPECTED} Tabellen"
 
 echo "ALLE TESTS BESTANDEN"

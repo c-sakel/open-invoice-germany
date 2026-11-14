@@ -45,6 +45,9 @@ describe("CustomerPortalEvent-Guard", () => {
     await expect(prisma.customerPortalEvent.updateMany({ where: { id: eventId }, data: { kind: "X" } })).rejects.toThrow(
       CustomerPortalEventImmutableError,
     );
+    await expect(prisma.customerPortalEvent.updateManyAndReturn({ where: { id: eventId }, data: { kind: "X" } })).rejects.toThrow(
+      CustomerPortalEventImmutableError,
+    );
     await expect(
       prisma.customerPortalEvent.upsert({
         where: { id: eventId },
