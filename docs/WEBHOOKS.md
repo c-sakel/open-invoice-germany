@@ -13,7 +13,7 @@ Webhooks** oder per REST-API (`/api/v1/Webhook`, Scope `admin`) bzw. MCP
 | `invoice.cancelled` | Rechnung storniert (auf dem Original — die neu erzeugte Storno-Gutschrift löst zusätzlich ihr eigenes `invoice.finalized` aus) |
 | `invoice.paid` | Rechnung durch eine Zahlung (primär oder Skonto) vollständig bezahlt |
 | `payment.recorded` | Zahlung erfasst (immer, auch bei einer Teilzahlung oder der automatischen Skonto-Zahlung) |
-| `payment.reversed` | Zahlung per Gegenbuchung korrigiert (Phase 16a; auch bei Teil-Gegenbuchung, je Gegenbuchungszeile, Skonto-Gegenbuchung separat) |
+| `payment.reversed` | Zahlung per Gegenbuchung korrigiert (auch bei Teil-Gegenbuchung, je Gegenbuchungszeile, Skonto-Gegenbuchung separat) |
 | `quote.sent` | Angebot versendet |
 | `quote.accepted` | Angebot vom Kunden angenommen |
 | `quote.rejected` | Angebot vom Kunden abgelehnt |
@@ -199,7 +199,7 @@ Eine vollständige Absicherung würde die geprüfte Adresse an die tatsächliche
 Verbindung "pinnen" (eigener `lookup`/Agent statt der Standard-Namensauflösung
 von `fetch`) — mit der eingebauten `fetch`-API ist das nicht möglich; ein
 eigener HTTP-Client mit injizierbarem `lookup` wäre der Weg dorthin (Backlog,
-kein Bestandteil dieser Fix-Welle). Zusätzlich schützt `redirect: "manual"`
+nicht umgesetzt). Zusätzlich schützt `redirect: "manual"`
 (kein automatisches Folgen einer 3xx-Antwort) gegen den naheliegendsten
 Angriffsweg — ein zunächst öffentlicher Endpunkt, der per Redirect auf ein
 privates Ziel umleitet.
