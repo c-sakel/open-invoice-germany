@@ -59,6 +59,7 @@ let otherCustomerId = "";
 let invoiceId = "";
 let writeToken = "";
 let readToken = "";
+let sendToken = "";
 
 function req(url: string, token: string, body?: unknown) {
   const headers = new Headers({ authorization: `Bearer ${token}`, host: "rechnung.example.test", "content-type": "application/json" });
@@ -94,6 +95,7 @@ beforeAll(async () => {
   otherCustomerId = await mkCustomer(other.id, { name: "Fremdkunde", email: "fremd@example.org" });
   writeToken = (await createApiKey(orgId, { name: "w", scopes: ["read", "write"] })).token;
   readToken = (await createApiKey(orgId, { name: "r", scopes: ["read"] })).token;
+  sendToken = (await createApiKey(orgId, { name: "s", scopes: ["read", "send"] })).token;
 
   const draft = await createDraftInvoice(orgId, {
     customerId,
@@ -281,21 +283,23 @@ describe("Portal-Link im Protokoll", () => {
 });
 
 describe("REST und MCP send", () => {
-  it("REST: write-Key sendet, read-Key 403, fremder Kunde 404, ohne Link 409 NO_ACTIVE_LINK", async () => {
+  it("REST: send-Key sendet, write-Key und read-Key 403, fremder Kunde 404, ohne Link 409 NO_ACTIVE_LINK", async () => {
     await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
-    const ok = await sendPost(req(SEND(customerId), writeToken, { to: "rest@example.org" }), ctx1(customerId));
+    expect((await sendPost(req(SEND(customerId), writeToken, { to: "rest@example.org" }), ctx1(customerId))).status).toBe(403);
+    expect(mem.provider.sent).toHaveLength(0);
+    const ok = await sendPost(req(SEND(customerId), sendToken, { to: "rest@example.org" }), ctx1(customerId));
     expect(ok.status).toBe(200);
     const d = (await ok.json()).data as { status: string; to: string; emailLogId: string };
     expect(d).toMatchObject({ status: "SENT", to: "rest@example.org" });
     expect(mem.provider.sent).toHaveLength(1);
 
     expect((await sendPost(req(SEND(customerId), readToken, {}), ctx1(customerId))).status).toBe(403);
-    expect((await sendPost(req(SEND(otherCustomerId), writeToken, {}), ctx1(otherCustomerId))).status).toBe(404);
-    expect((await sendPost(req(SEND(customerId), writeToken, { to: "kaputt" }), ctx1(customerId))).status).toBe(400);
+    expect((await sendPost(req(SEND(otherCustomerId), sendToken, {}), ctx1(otherCustomerId))).status).toBe(404);
+    expect((await sendPost(req(SEND(customerId), sendToken, { to: "kaputt" }), ctx1(customerId))).status).toBe(400);
 
-    const none = await sendPost(req(SEND(customerEnId), writeToken, {}), ctx1(customerEnId));
+    const none = await sendPost(req(SEND(customerEnId), sendToken, {}), ctx1(customerEnId));
     await revokePortalLink(orgId, customerEnId, { actor: "t" });
-    const none2 = await sendPost(req(SEND(customerEnId), writeToken, {}), ctx1(customerEnId));
+    const none2 = await sendPost(req(SEND(customerEnId), sendToken, {}), ctx1(customerEnId));
     expect([none.status, none2.status]).toContain(409);
     expect((await none2.json()).error.reason).toBe("NO_ACTIVE_LINK");
   });

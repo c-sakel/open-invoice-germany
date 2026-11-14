@@ -25,14 +25,14 @@ export const POST = withApi<{ id: string }>(async (req, ctx) => {
     baseUrl: resolveBaseUrl(req.headers),
   });
   return apiData({ emailLogId: res.logId, status: res.status, to: res.to });
-}, { scope: "write" });
+}, { scope: "send" });
 
 export const spec = {
   send: {
     path: "/api/v1/Contact/{id}/portal-link/send",
     method: "POST",
     summary: "Aktiven Kundenportal-Link per E-Mail an den Kunden senden",
-    scope: "write",
+    scope: "send",
     request: { body: bodySchema },
     response: apiDataResponseSchema(responseSchema),
     errors: [400, 401, 403, 404, 409, 429],
