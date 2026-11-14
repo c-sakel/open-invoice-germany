@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
+import { listContactsApi } from "@/domain/customer/list";
+import { syncToolShape } from "./sync-shape";
 import { customerOverview } from "@/domain/customer/overview";
 import { listAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from "@/domain/customer/addresses";
 import { listContacts, createContact, updateContact, deleteContact, setDefaultContact } from "@/domain/customer/contacts";
@@ -21,6 +23,8 @@ import { checkVatId, listVatIdChecks, VatCheckDisabledError, VatCheckRateLimitEr
 import { serializeVatIdCheck } from "@/api/serializers/vat-check";
 import { archiveCustomer } from "@/domain/customer/archive";
 import { createCustomer, updateCustomer, CustomerValidationError } from "@/domain/customer/save";
+import { CONTACTS_BULK_MAX, ContactsBulkRejectedError, createContactsBulk } from "@/domain/import/contacts-bulk";
+import { RateLimitError } from "@/lib/rate-limit";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import {
   customerFieldsSchema,
@@ -38,10 +42,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
     "list_customers",
     {
       title: "Kunden auflisten",
-      description: "Listet die Kunden (optional gefiltert nach Namensteil).",
-      inputSchema: { query: z.string().optional().describe("Namensteil zum Filtern") },
+      description:
+        "Listet die Kunden (optional gefiltert nach Namensteil). Abgleich: mit updatedSince (ISO 8601 mit Zone) kommen geänderte Kunden aufsteigend nach updatedAt; nextCursor als cursor für die Folgeseite (limit 1-200, includeArchived).",
+      inputSchema: { query: z.string().optional().describe("Namensteil zum Filtern"), ...syncToolShape, includeArchived: z.boolean().optional() },
     },
-    async ({ query }): Promise<Result> => {
+    async ({ query, updatedSince, cursor, limit, includeArchived }): Promise<Result> => {
       // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
       // Kunden ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
       // andere Kunden-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
@@ -52,6 +57,25 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         org = await ctx.requireOrg();
       } catch {
         return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
+      // limit gilt nur im Abgleich; im Legacy-Pfad nicht still ignorieren (einfachste konsistente Variante: ablehnen).
+      if (limit !== undefined && updatedSince === undefined && cursor === undefined) {
+        return ctx.fail("Validierung fehlgeschlagen: limit nur zusammen mit updatedSince.");
+      }
+      if (updatedSince !== undefined || cursor !== undefined) {
+        try {
+          const result = await listContactsApi(org.id, { updatedSince, cursor, limit, includeArchived, ...(query ? { search: query } : {}) });
+          return ctx.ok(
+            JSON.stringify(
+              { total: result.total, nextCursor: result.nextCursor ?? null, rows: result.rows.map((c) => ({ id: c.id, name: c.name, city: c.city, type: c.type, vatId: c.vatId })) },
+              null,
+              2,
+            ),
+          );
+        } catch (e) {
+          if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+          return ctx.failUnknown(e);
+        }
       }
       const all = await dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())) : all;
@@ -106,6 +130,37 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       } catch (e) {
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof CustomerValidationError) return ctx.fail(e.message);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── create_contacts (Phase 18d) ───────────────────────────────────────────────
+  server.registerTool(
+    "create_contacts",
+    {
+      title: "Kunden sammelweise anlegen",
+      description:
+        `Legt 1 bis ${CONTACTS_BULK_MAX} Kunden in einem Schritt an, alles oder nichts (nur Anlage, kein Update; Duplikate und Fehler lehnen die gesamte Sammelanlage ab). ` +
+        "Jeder Eintrag hat die Felder von upsert_customer (Pflicht: name, addressLine1, postalCode, city; optional type, countryCode, email, vatId, leitwegId, customerNumber, …); " +
+        "ohne customerNumber vergibt der Nummernkreis die Nummer. Fehler werden mit Index (ab 0), Feld und Meldung je Eintrag gemeldet.",
+      inputSchema: {
+        contacts: z.array(z.record(z.string(), z.unknown())).min(1).max(CONTACTS_BULK_MAX).describe("Kunden (Felder wie upsert_customer)"),
+      },
+    },
+    async (args): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const created = await createContactsBulk(org.id, { contacts: args.contacts }, { actor: "mcp", source: "MCP" });
+        return ctx.ok(`${created.length} Kunden angelegt: ${created.map((c) => c.id).join(", ")}.`);
+      } catch (e) {
+        if (e instanceof ContactsBulkRejectedError) {
+          const lines = e.errors.slice(0, 20).map((r) => `Eintrag ${r.index}${r.field ? `, ${r.field}` : ""}: ${r.message}`);
+          return ctx.fail([`${e.message} ${e.errorCount} Fehler.`, ...lines].join("\n"));
+        }
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+        if (e instanceof RateLimitError) return ctx.fail("Zu viele Sammelanlagen — bitte kurz warten.");
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

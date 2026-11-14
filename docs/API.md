@@ -64,6 +64,10 @@ Fehler — einheitlich für jeden Endpunkt:
   einem Netzwerk-Retry). Ein abweichender Body unter demselben Schlüssel liefert
   `409 IDEMPOTENCY_MISMATCH`; ein zeitgleicher zweiter Request mit demselben
   Schlüssel liefert `409 IDEMPOTENCY_IN_PROGRESS` (kurz erneut senden).
+  Ein Schlüssel gilt **24 Stunden**; danach führt derselbe Schlüssel den Aufruf erneut aus.
+  Eine wiederholte (gespeicherte) Antwort trägt zusätzlich den Header
+  `Idempotent-Replayed: true`. Bei `POST /api/v1/Invoice` mit `finalize` und bei
+  `POST /api/v1/Contact/bulk` ist der Header **Pflicht** (fehlt er: `400`).
 
 ## Interaktive Dokumentation
 
@@ -189,6 +193,120 @@ Teilgutschrift möglich (jeweils 409). In der E-Rechnung des Originals zählen V
 nicht als bezahlt (BT-113). Hinweis: Eine Gutschrift über den vollen Betrag setzt das Original auf `PAID`, obwohl
 kein Geldeingang erfolgt ist (reine Verrechnung); als Obergrenze für Gutschriften gilt der Rechnungsbetrag
 (bei Schlussrechnungen der volle Bruttobetrag, nicht der um Abschläge reduzierte Zahlbetrag).
+
+### Kurzweg: anlegen, festschreiben und bezahlt buchen in einem Aufruf
+
+Statt der Schritte 2, 3 und 5 genügt ein Aufruf (siehe „Atomar anlegen“ unten):
+
+```bash
+curl -s -X POST "$BASE/api/v1/Invoice" \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: shop-bestellung-10001" \
+  -d '{
+        "customerId": "cl...",
+        "finalize": true,
+        "payment": { "method": "TRANSFER", "paidAt": "2076-09-04" },
+        "lines": [
+          { "description": "Beratung", "quantityMilli": 3000, "unit": "HUR",
+            "unitNetPriceCents": 9500, "taxRate": 19 }
+        ]
+      }'
+```
+
+## Atomar anlegen: `POST /api/v1/Invoice` mit `finalize` und `payment` (Phase 18d)
+
+Zusätzliche Body-Felder zum bekannten Rechnungsbody:
+
+| Feld | Bedeutung |
+|---|---|
+| `finalize` | `true`: Rechnung in **einer Transaktion** anlegen und festschreiben (vergibt die Rechnungsnummer, unveränderbar; Korrektur nur per Storno oder Gutschrift). Standard `false` (Entwurf wie bisher). |
+| `payment` | Optional, nur zusammen mit `finalize: true` (sonst `400`). Felder `method`, `paidAt`, `reference`, `note`, `amountCents`. Ohne `amountCents` wird der **offene Betrag** nach dem Festschreiben gebucht (volle Zahlung, Status `PAID`). Kein Skonto-Abzug; Überzahlung wird abgelehnt. |
+
+- **`Idempotency-Key` ist bei `finalize` Pflicht** (fehlt er oder ist er leer: `400 VALIDATION`).
+  Derselbe Schlüssel mit demselben Body liefert dieselbe Antwort (gleiche Rechnung, Header
+  `Idempotent-Replayed: true`); ein anderer Body unter demselben Schlüssel `409 IDEMPOTENCY_MISMATCH`.
+  Die gespeicherte Antwort wird in derselben Transaktion abgelegt: es gibt keine Rechnung ohne
+  wiederholbare Antwort.
+- **Alles oder nichts:** scheitert ein Schritt (Pflichtangabe beim Festschreiben, Betrag über dem offenen
+  Betrag, fremder Kunde), wird nichts gespeichert — weder Entwurf noch verbrauchte Rechnungsnummer
+  (keine Nummernlücke). Antwort dann `409` (Domänenfehler), `400` (Validierung) bzw. `404` (fremder oder unbekannter Kunde); ein Wiederholen mit
+  demselben Schlüssel führt den Aufruf erneut aus.
+- **Antwort `201`:** `{ "data": <Rechnung inkl. lines und payments>, "warnings": [ ... ] }`. `warnings`
+  sind nicht blockierende Hinweise (Adresse, VIES-Prüfung, Karten-/Lastschriftangaben), dieselben wie beim
+  Festschreiben. Es wird **nichts versendet** (weder E-Mail noch Post).
+- **GoBD:** je Schritt entstehen dieselben ChangeLog-Einträge wie bei den Einzelaufrufen (Anlegen,
+  Festschreiben, Zahlung); die Hash-Kette bleibt unverändert nachvollziehbar.
+- Steuerfragen (z. B. Drittland-Schema `NICHT_STEUERBAR` oder `AUSFUHR`, siehe Schritt 2) bleiben Sache der
+  anbindenden Integration; der atomare Aufruf prüft sie nicht anders als das Festschreiben.
+
+## Abgleich: `updatedSince` und `cursor` (Phase 18d)
+
+Die Listen `GET /api/v1/{Invoice,Quote,OrderConfirmation,DeliveryNote,Contact,Product}` unterstützen einen
+Abgleich geänderter Datensätze:
+
+```bash
+curl -s "$BASE/api/v1/Invoice?updatedSince=2076-09-01T00:00:00Z&limit=100" -H "$AUTH"
+# nächste Seite: &cursor=<nextCursor der Vorseite>
+```
+
+- `updatedSince` (ISO 8601 **mit Zone**) liefert alle Datensätze mit `updatedAt >= updatedSince`
+  (**inklusiv**, Millisekunden), aufsteigend nach `updatedAt`, bei Gleichstand nach `id`. `offset` und
+  `sort` sind im Abgleich nicht erlaubt (`400`); `cursor` gibt es nur zusammen mit `updatedSince`.
+- Die Antwort enthält zusätzlich `nextCursor`: der Cursor der Folgeseite, **nur bei voller Seite**, sonst
+  `null` (Ende); trifft das Ende genau auf eine Seitengrenze, kann die letzte Seite leer sein. `total` zählt das Fenster ab `updatedSince` und bleibt über die Folgeseiten stabil.
+- `limit` 1 bis 200 (Standard 50). Der Cursor ist undurchsichtig; ein ungültiger Cursor liefert `400`.
+- **Überlappung empfohlen:** `updatedAt` ist der Zeitpunkt der Änderung innerhalb der Transaktion, nicht des
+  Commits. Ein Client setzt sein nächstes `updatedSince` auf das größte gesehene `updatedAt` **minus
+  5 Minuten** und dedupliziert per `id`.
+- **Was `updatedAt` ändert:** jede Änderung am Datensatz selbst, bei Rechnungen auch Festschreiben, Zahlung
+  und deren Gegenbuchung sowie Storno (Zahlungen erscheinen also über `Invoice.updatedAt`; `Payment` hat
+  kein eigenes `updatedAt`).
+- **Was `updatedAt` nicht ändert:** Tag-Zuordnungen, Anhänge sowie Adressen und Ansprechpartner eines
+  Kontakts (eigene Tabellen).
+- `Contact`, `Product`, `Quote`, `OrderConfirmation` und `DeliveryNote` blenden archivierte Datensätze aus;
+  mit `includeArchived=true` kommen sie im Abgleich mit (Rechnungen kennen keine Archivierung).
+- `eInvoice` akzeptiert `true`/`false` und `1`/`0`.
+
+**Verhaltensänderung 18d (Kompatibilität):**
+
+- `eInvoice=1` wurde bisher wie `false` behandelt und gilt jetzt als `true`. Abfragen, die `eInvoice=1`
+  gesendet haben, liefern künftig die E-Rechnungen statt der übrigen Rechnungen.
+- Andere Werte (`TRUE`, `yes`, leer) wurden bisher wie `false` behandelt und liefern jetzt `400`.
+- `POST /api/v1/Invoice`: die Felder `finalize` und `payment` wurden bisher verworfen. Sie lösen jetzt
+  das Festschreiben (`finalize: true`, mit Pflicht-`Idempotency-Key`) bzw. bei `payment` ohne `finalize`
+  einen `400` aus. Integrationen (z. B. Webshop-Anbindungen) vor dem Deploy auf diese Felder prüfen.
+- `includeArchived=true` wird nicht mehr mit `400` abgelehnt, sondern wirkt im Abgleich.
+
+## Sammelanlage Kontakte: `POST /api/v1/Contact/bulk` (Phase 18d)
+
+Body `{ "contacts": [ { ... }, ... ] }` mit 1 bis 100 Einträgen (Felder wie `POST /api/v1/Contact`).
+
+- **Alles oder nichts, nur Anlage** (kein Update). `Idempotency-Key` ist Pflicht (`400` ohne). Erfolg `201`
+  mit `{ "data": { "created": <Anzahl>, "contacts": [ ... ] } }`.
+- Fehler in den Daten (Pflichtfelder, Duplikate, Steuerzeichen, Nummernkreis-Kollision) lehnen die gesamte
+  Anlage mit **`422 UNPROCESSABLE`** ab; `error.details` trägt `errorCount` und `errors` (je Eintrag
+  `index` ab 0, `field`, `message`, höchstens 200 aufgelistet). Meldungen enthalten keine Namen oder
+  E-Mail-Adressen. Mehr als 100 Einträge oder ein leeres Array: `400`.
+- Rate-Limit: höchstens 10 Aufrufe pro Minute und Organisation (`429`).
+- Protokoll: ein ActivityLog-Eintrag (`CONTACTS_BULK_CREATED`) in derselben Transaktion.
+
+## Sammel-Storno: `POST /api/v1/Invoice/bulk-cancel` (Phase 18d)
+
+```bash
+curl -s -X POST "$BASE/api/v1/Invoice/bulk-cancel" \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{ "ids": ["cl...", "cl..."], "reason": "Doppelerfassung" }'
+```
+
+- 1 bis 50 Rechnungs-IDs, `reason` Pflicht (1 bis 500 Zeichen), Scope `write`. Doppelte IDs werden
+  zusammengefasst.
+- Je Rechnung läuft der **Einzelstorno** nacheinander (eigene Storno-Gutschrift, eigener ChangeLog-Eintrag);
+  ein Fehler stoppt die übrigen nicht. Antwort `200`:
+  `{ "data": { "batchId", "ok": [ { id, number, creditNoteId, creditNoteNumber, refundDueCents } ],
+  "failed": [ { id, number, code, message } ] } }`. Codes: `NOT_FOUND` (auch fremde IDs), `NOT_CANCELLABLE`,
+  `FINALIZE_FAILED`, `BUSY` (Kettenkonflikt, erneut versuchen), `INTERNAL`.
+- Kein Versand der Stornorechnungen. Höchstens 10 Aufrufe pro Minute und Organisation (`429`).
+- Kein `Idempotency-Key` nötig: eine bereits stornierte Rechnung meldet beim Wiederholen `NOT_CANCELLABLE`.
 
 ## Anfrageprotokoll
 

@@ -67,6 +67,144 @@ export function parseWarningCodes(raw: string | undefined): FinalizeWarningCode[
   return out;
 }
 
+const WARNING_CUSTOMER_SELECT = {
+  id: true, vatId: true, email: true, leitwegId: true, peppolId: true, peppolScheme: true,
+  sepaMandateReference: true, sepaMandateSignedAt: true, sepaDebitIban: true, sepaDebitAccountName: true,
+} as const;
+
+interface WarningCustomer {
+  id: string;
+  vatId: string | null;
+  email: string | null;
+  leitwegId: string | null;
+  peppolId: string | null;
+  peppolScheme: string | null;
+  sepaMandateReference: string | null;
+  sepaMandateSignedAt: Date | null;
+  sepaDebitIban: string | null;
+  sepaDebitAccountName: string | null;
+}
+
+/** Gemeinsamer Kern: Adresse -> (belegspezifische Zahlungsart-Hinweise) -> VIES. Reihenfolge der Hinweise bleibt. */
+async function collectCustomerWarnings(
+  orgId: string,
+  customer: WarningCustomer,
+  taxScheme: string,
+  invoiceId: string | undefined,
+  middle: () => FinalizeWarning[],
+  opts: { fetchImpl?: typeof fetch; now?: Date },
+  warnings: FinalizeWarning[],
+): Promise<void> {
+  const now = opts.now ?? new Date();
+
+  if (resolveBuyerEndpoint(customer) === null) {
+    warnings.push({ code: "adresse", message: finalizeWarningMessage("adresse") });
+  }
+
+  warnings.push(...middle());
+
+  if (VIES_SCHEMES.has(taxScheme) && customer.vatId?.trim()) {
+    const vatId = normalizeVatId(customer.vatId);
+    const prefix = vatId.slice(0, 2);
+    const settings = await loadDocumentSettings(orgId);
+    if (settings.viesCheckEnabled && settings.viesCheckOnFinalize && prefix !== "DE" && EU_VAT_PREFIXES.has(prefix)) {
+      const recent = await dbInternal.vatIdCheck.findFirst({
+        where: { orgId, customerId: customer.id, vatId, status: "VALID", checkedAt: { gte: new Date(now.getTime() - RECENT_VALID_MS) } },
+        select: { id: true },
+      });
+      if (!recent) {
+        try {
+          const row = await checkVatId(orgId, customer.id, {
+            trigger: "FINALIZE",
+            ...(invoiceId ? { invoiceId } : {}),
+            fetchImpl: opts.fetchImpl,
+            timeoutMs: VIES_TIMEOUT_MS,
+            now: opts.now,
+          });
+          if (row.status === "INVALID") warnings.push({ code: "vies-ungueltig", message: finalizeWarningMessage("vies-ungueltig", vatId) });
+          else if (row.status === "ERROR") warnings.push({ code: "vies-fehler", message: finalizeWarningMessage("vies-fehler", vatId, row.errorCode ?? "unbekannt") });
+        } catch (e) {
+          if (e instanceof VatCheckRateLimitError) warnings.push({ code: "vies-limit", message: finalizeWarningMessage("vies-limit", vatId) });
+          else warnings.push({ code: "vies-fehler", message: finalizeWarningMessage("vies-fehler", vatId) });
+        }
+      }
+    }
+  }
+}
+
+/** Felder, die die Zahlungsart-Hinweise (Karte/Lastschrift) brauchen. */
+export const MEANS_WARNING_SELECT = {
+  type: true,
+  dueDate: true,
+  cardPanTruncated: true,
+  cardNetwork: true,
+  cardHolderName: true,
+  paymentMethod: { select: { untdidCode: true } },
+  org: { select: { sepaCreditorId: true } },
+  customer: { select: WARNING_CUSTOMER_SELECT },
+} as const;
+
+interface MeansWarningInvoice {
+  type: string;
+  dueDate: Date | null;
+  cardPanTruncated: string | null;
+  cardNetwork: string | null;
+  cardHolderName: string | null;
+  paymentMethod: { untdidCode: string | null } | null;
+  org: { sepaCreditorId: string | null };
+  customer: WarningCustomer;
+}
+
+/**
+ * Phase 18e/18d: Karte/Lastschrift unvollstaendig -> gleiche Entscheidung wie der Mapper
+ * (resolveSpecialMeans); Festschreiben gelingt, die E-Rechnung faellt auf Code 1 zurueck.
+ * Einzige Entscheidungsstelle fuer Festschreiben (collectFinalizeWarnings) und atomare Anlage.
+ */
+export function paymentMeansWarnings(invoice: MeansWarningInvoice): FinalizeWarning[] {
+  const meansCode = invoice.paymentMethod?.untdidCode;
+  if (!meansCode) return [];
+  const special = resolveSpecialMeans({
+    code: meansCode,
+    invoiceType: invoice.type,
+    card: { cardPanTruncated: invoice.cardPanTruncated, cardNetwork: invoice.cardNetwork, cardHolderName: invoice.cardHolderName },
+    directDebit: meansCode === DIRECT_DEBIT_CODE ? buildDirectDebitSnapshot(invoice.org, invoice.customer) : null,
+    dueDate: invoice.dueDate,
+  });
+  return special.kind === "fallback" && special.gap ? [{ code: special.gap, message: finalizeWarningMessage(special.gap) }] : [];
+}
+
+/** Fuegt die Zahlungsart-Hinweise hinter einem fuehrenden "adresse"-Hinweis ein (Reihenfolge wie beim Festschreiben). */
+export function insertMeansWarnings(pre: FinalizeWarning[], means: FinalizeWarning[]): FinalizeWarning[] {
+  if (means.length === 0) return pre;
+  const at = pre.length > 0 && pre[0].code === "adresse" ? 1 : 0;
+  return [...pre.slice(0, at), ...means, ...pre.slice(at)];
+}
+
+/**
+ * Phase 18d: Hinweise fuer einen noch nicht angelegten Beleg (Kunde + Steuerschema; Adresse und VIES).
+ * Die belegspezifischen Karten-/Lastschrift-Hinweise brauchen den gespeicherten Entwurf und kommen
+ * ueber `paymentMeansWarnings`. Wirft nie; ohne Kunde der Org leere Liste.
+ */
+export async function collectFinalizeWarningsFor(
+  orgId: string,
+  target: { customerId: string; taxScheme: string; invoiceId?: string },
+  opts: { fetchImpl?: typeof fetch; now?: Date } = {},
+): Promise<FinalizeWarning[]> {
+  const warnings: FinalizeWarning[] = [];
+  try {
+    const customer = await dbInternal.customer.findFirst({
+      where: { id: target.customerId, orgId },
+      select: WARNING_CUSTOMER_SELECT,
+    });
+    if (!customer) return [];
+    await collectCustomerWarnings(orgId, customer, target.taxScheme, target.invoiceId, () => [], opts, warnings);
+  } catch {
+    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern;
+    // bis dahin gesammelte Hinweise bleiben erhalten.
+  }
+  return warnings;
+}
+
 export async function collectFinalizeWarnings(
   orgId: string,
   invoiceId: string,
@@ -74,74 +212,17 @@ export async function collectFinalizeWarnings(
 ): Promise<FinalizeWarning[]> {
   const warnings: FinalizeWarning[] = [];
   try {
-    const now = opts.now ?? new Date();
     const invoice = await dbInternal.invoice.findFirst({
       where: { id: invoiceId, orgId },
-      select: {
-        id: true,
-        status: true,
-        taxScheme: true,
-        type: true,
-        dueDate: true,
-        cardPanTruncated: true,
-        cardNetwork: true,
-        cardHolderName: true,
-        paymentMethod: { select: { untdidCode: true } },
-        org: { select: { sepaCreditorId: true } },
-        customer: {
-          select: {
-            id: true, vatId: true, email: true, leitwegId: true, peppolId: true, peppolScheme: true,
-            sepaMandateReference: true, sepaMandateSignedAt: true, sepaDebitIban: true, sepaDebitAccountName: true,
-          },
-        },
-      },
+      select: { id: true, status: true, taxScheme: true, ...MEANS_WARNING_SELECT },
     });
-    if (!invoice || invoice.status !== "DRAFT") return warnings;
+    if (!invoice || invoice.status !== "DRAFT") return [];
     const customer = invoice.customer;
 
-    if (resolveBuyerEndpoint(customer) === null) {
-      warnings.push({ code: "adresse", message: finalizeWarningMessage("adresse") });
-    }
-
-    // Phase 18e: Karte/Lastschrift unvollstaendig -> gleiche Entscheidung wie der Mapper
-    // (resolveSpecialMeans); Festschreiben gelingt, die E-Rechnung faellt auf Code 1 zurueck.
-    const meansCode = invoice.paymentMethod?.untdidCode;
-    if (meansCode) {
-      const special = resolveSpecialMeans({
-        code: meansCode,
-        invoiceType: invoice.type,
-        card: { cardPanTruncated: invoice.cardPanTruncated, cardNetwork: invoice.cardNetwork, cardHolderName: invoice.cardHolderName },
-        directDebit: meansCode === DIRECT_DEBIT_CODE ? buildDirectDebitSnapshot(invoice.org, customer) : null,
-        dueDate: invoice.dueDate,
-      });
-      if (special.kind === "fallback" && special.gap) {
-        warnings.push({ code: special.gap, message: finalizeWarningMessage(special.gap) });
-      }
-    }
-
-    if (VIES_SCHEMES.has(invoice.taxScheme) && customer.vatId?.trim()) {
-      const vatId = normalizeVatId(customer.vatId);
-      const prefix = vatId.slice(0, 2);
-      const settings = await loadDocumentSettings(orgId);
-      if (settings.viesCheckEnabled && settings.viesCheckOnFinalize && prefix !== "DE" && EU_VAT_PREFIXES.has(prefix)) {
-        const recent = await dbInternal.vatIdCheck.findFirst({
-          where: { orgId, customerId: customer.id, vatId, status: "VALID", checkedAt: { gte: new Date(now.getTime() - RECENT_VALID_MS) } },
-          select: { id: true },
-        });
-        if (!recent) {
-          try {
-            const row = await checkVatId(orgId, customer.id, { trigger: "FINALIZE", invoiceId, fetchImpl: opts.fetchImpl, timeoutMs: VIES_TIMEOUT_MS, now: opts.now });
-            if (row.status === "INVALID") warnings.push({ code: "vies-ungueltig", message: finalizeWarningMessage("vies-ungueltig", vatId) });
-            else if (row.status === "ERROR") warnings.push({ code: "vies-fehler", message: finalizeWarningMessage("vies-fehler", vatId, row.errorCode ?? "unbekannt") });
-          } catch (e) {
-            if (e instanceof VatCheckRateLimitError) warnings.push({ code: "vies-limit", message: finalizeWarningMessage("vies-limit", vatId) });
-            else warnings.push({ code: "vies-fehler", message: finalizeWarningMessage("vies-fehler", vatId) });
-          }
-        }
-      }
-    }
+    await collectCustomerWarnings(orgId, customer, invoice.taxScheme, invoiceId, () => paymentMeansWarnings(invoice), opts, warnings);
   } catch {
-    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern.
+    // Warnungen sind Zusatzinformation und duerfen das Festschreiben nie verhindern;
+    // bis dahin gesammelte Hinweise bleiben erhalten (wie vor 18d).
   }
   return warnings;
 }

@@ -91,7 +91,7 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `list_customers` | Kunden auflisten | „Zeig mir alle Kunden." |
+| `list_customers` | Kunden auflisten. Abgleich: mit `updatedSince` (ISO 8601 mit Zone) kommen geänderte Datensätze aufsteigend nach `updatedAt`, `nextCursor` als `cursor` für die Folgeseite, `limit` 1 bis 200 (ohne `updatedSince` oder `cursor` wird `limit` abgelehnt), `includeArchived`; `sort`/`offset` sind im Abgleich nicht erlaubt | „Zeig mir alle Kunden." |
 | `upsert_customer` | Kunde anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter); gezieltes Ändern per ID: `update_customer`; beide nehmen die Mandatsfelder `sepaMandateReference`, `sepaMandateSignedAt`, `sepaDebitIban` und `sepaDebitAccountName` an (Referenz und IBAN nur zusammen; beide leer entfernt das Mandat) | „Leg den Kunden ‚Sparkasse Lüneburg' an, Adresse An der Münze 4–6, 21335 Lüneburg." |
 | `update_customer` | Kunde gezielt per ID/Name patchen (anders als `upsert_customer` **kein** Anlegen; nur angegebene Felder ändern sich) | „Ändere bei Müller GmbH die E-Mail auf buchhaltung@mueller.de." |
 | `archive_customer` | Kunde archivieren (verschwindet aus `list_customers`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere den Kunden Alt-Kunde GmbH." |
@@ -117,7 +117,7 @@ Der Assistent ruft im Hintergrund die passenden Tools auf (`setup_company` → `
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `list_products` | Leistungen/Produkte im Katalog auflisten | „Zeig mir alle gespeicherten Leistungen." |
+| `list_products` | Leistungen/Produkte im Katalog auflisten. Abgleich: mit `updatedSince` (ISO 8601 mit Zone) kommen geänderte Datensätze aufsteigend nach `updatedAt`, `nextCursor` als `cursor` für die Folgeseite, `limit` 1 bis 200 (ohne `updatedSince` oder `cursor` wird `limit` abgelehnt), `includeArchived`; `sort`/`offset` sind im Abgleich nicht erlaubt | „Zeig mir alle gespeicherten Leistungen." |
 | `upsert_product` | Produkt anlegen oder aktualisieren — Match per exaktem Namen (kein `id`-Parameter, inkl. §25a Differenzbesteuerung); gezieltes Ändern per ID: `update_product` | „Speichere die Leistung ‚Beratung' zu 95 € pro Stunde." |
 | `update_product` | Produkt gezielt per ID/Name patchen (anders als `upsert_product` **kein** Anlegen) | „Ändere den Preis von ‚Beratung' auf 105 € pro Stunde." |
 | `archive_product` | Produkt archivieren (verschwindet aus `list_products`/Picker, bleibt in Beleg-Snapshots erhalten) | „Archiviere die Leistung ‚Altprodukt'." |
@@ -156,7 +156,7 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `create_document` | Angebot / Auftragsbestätigung / Proforma anlegen (optional `currency`) | „Erstelle für Müller GmbH ein Angebot über 10 Stunden Beratung zu 95 Euro." |
-| `list_documents` | Angebote/AB/Proformas auflisten (Filter u. a. Status, Kunde) | „Welche Angebote sind noch offen?" |
+| `list_documents` | Angebote/AB/Proformas auflisten (Filter u. a. Status, Kunde). Abgleich: mit `updatedSince` (ISO 8601 mit Zone) kommen geänderte Datensätze aufsteigend nach `updatedAt`, `nextCursor` als `cursor` für die Folgeseite, `limit` 1 bis 200 (ohne `updatedSince` oder `cursor` wird `limit` abgelehnt), `includeArchived`; `sort`/`offset` sind im Abgleich nicht erlaubt | „Welche Angebote sind noch offen?" |
 | `get_quote` | Details eines Angebots/einer AB/Proforma anzeigen | „Zeig mir Angebot ANG-2026-00123." |
 | `get_delivery_note` | Details eines Lieferscheins anzeigen | „Zeig mir Lieferschein LS-2026-00045." |
 | `convert_document_to_invoice` | Dokument → Rechnungs-Entwurf | „Erstelle aus Angebot ANG-2026-00123 eine Rechnung." |
@@ -171,14 +171,15 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_invoice` | Rechnung als Entwurf (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung; bei einer Kartenmethode (UNTDID `48`/`54`/`55`) optional `cardPanTruncated` — nur die letzten 4 Ziffern, mehr als 10 Ziffern werden abgelehnt —, `cardNetwork` und `cardHolderName`, bei anderen Methoden werden sie verworfen) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
+| `create_invoice` | Rechnung als Entwurf; mit `finalize: true` atomar angelegt und festgeschrieben (unveränderbar, Korrektur nur per Storno), optional mit `payment` (`amountEuro`, `paidAt`, `method`, `reference`; ohne Betrag der volle offene Betrag) — dann ist `idempotencyKey` Pflicht (gleicher Schlüssel + gleiche Argumente liefern dieselbe Antwort, nie zwei Rechnungen; anderer Inhalt = Konflikt), es wird nichts versendet (optional `currency`, ISO-Code; Kette Kunde > Einstellung > EUR; Kunde per Name, Positionen in €/Menge oder via gespeicherter Leistung; bei einer Kartenmethode (UNTDID `48`/`54`/`55`) optional `cardPanTruncated` — nur die letzten 4 Ziffern, mehr als 10 Ziffern werden abgelehnt —, `cardNetwork` und `cardHolderName`, bei anderen Methoden werden sie verworfen) | „Erstelle eine Rechnung an Müller über 3 Stunden Beratung, Leistung heute." |
 | `finalize_invoice` | Festschreiben — prüft Pflichtangaben, vergibt Nummer, macht unveränderbar; nicht blockierende Hinweise (fehlende elektronische Adresse, VIES-Ergebnis bei ig. Lieferung) stehen im Antworttext (Phase 17a) | „Schreib die Rechnung fest." |
 | `update_invoice_draft` | Rechnungsentwurf bearbeiten (nur `DRAFT`) — Kopffelder (Betreff, Bestellnummer BT-13, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse) sowie Positionen inkl. `lineType`; die Kartenfelder `cardPanTruncated`, `cardNetwork`, `cardHolderName` wie bei `create_invoice` (ein Methodenwechsel auf Nicht-Karte leert sie); Rechnungstyp bleibt unveränderbar | „Setze bei der Entwurfsrechnung die Bestellnummer auf PO-4711." |
 | `get_invoice` | Rechnung anzeigen, inkl. Zahlungen mit ID (für `reverse_payment`) | „Zeig mir Rechnung RE-2026-00342." |
-| `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig und `credit` (Gutschriften), Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung) | „Welche Rechnungen sind überfällig?" |
+| `list_invoices` | Auflisten mit Filter (Status inkl. wirksamem Status fällig/überfällig und `credit` (Gutschriften), Belegtyp, Kunde, Zeitraum, Betrag, Nummer, Zahlungsart, E-Rechnung, Währung, Freitextsuche, Paginierung); Abgleich mit `updatedSince`/`cursor` (Antwort mit `nextCursor`, ohne `sort`/`offset`) | „Welche Rechnungen sind überfällig?" |
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei (`exports/`) + Validierungsreport | „Exportier die XRechnung und das PDF." |
 | `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben); verrechnet sich mit dem offenen Rest (Zahlungsart `CREDIT_NOTE`, kein Geldeingang), Summe aller Gutschriften höchstens Rechnungsbetrag | „Erstelle eine Teilgutschrift über 50 Euro zu RE-2026-00342." |
 | `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten); optional `reason` (Stornogrund, steht in den Belegnotizen), nach Teilgutschriften nur der Rest, Hinweis auf fällige Erstattung | „Storniere RE-2026-00342." |
+| `cancel_invoices` | 1 bis 50 festgeschriebene Rechnungen (`invoices`: IDs oder Nummern, `reason` Pflicht) nacheinander stornieren; je Beleg eigene Storno-Gutschrift, Ergebnis je Beleg (`ok`/`failed`, Codes z. B. `NOT_CANCELLABLE`, `NOT_FOUND`), ein Fehler stoppt die übrigen nicht; kein Versand; höchstens 10 Aufrufe pro Minute | „Storniere RE-1001 und RE-1002 wegen Doppelerfassung." |
 
 ### Teil-/Abschlags-/Schlussrechnungen
 
@@ -263,6 +264,7 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 |---|---|---|
 | `import_contacts` | Kunden aus CSV-Text (`csv`) anlegen; `dryRun` ist Standard `true` (nur Vorschau mit Fehlern je Zeile/Spalte, ohne Beispielzeilen), `dryRun: false` legt an und verlangt `expectedHash` (`fileHash` der Vorschau); optional `fileName`; dieselbe Datei (gleicher Inhalts-Hash) wird je Organisation innerhalb von 24 Stunden nur einmal importiert, `allowRepeat: true` hebt das bewusst auf | „Prüfe diese Kundenliste als CSV und importiere sie, wenn sie fehlerfrei ist." |
 | `import_products` | Produkte aus CSV-Text (`csv`) anlegen; sonst wie `import_contacts` | „Importiere diese Artikelliste als Produkte." |
+| `create_contacts` | 1 bis 100 Kunden (`contacts`, Felder wie `upsert_customer`) in einem Schritt anlegen, alles oder nichts (nur Anlage; Duplikate und Fehler lehnen die gesamte Sammelanlage ab); Fehler mit Index, Feld und Meldung je Eintrag (höchstens 20 angezeigt); höchstens 10 Aufrufe pro Minute | „Lege diese drei Kunden an." |
 
 ### Einstellungen
 

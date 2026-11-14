@@ -72,6 +72,8 @@ export interface ApiContext<TParams = Record<string, string>> {
   body: unknown;
   /** Phase 12d — auch als X-Request-Id auf der Antwort und in ApiRequestLog.requestId. */
   requestId: string;
+  /** Phase 18d: gueltiger Idempotency-Key (nur bei POST mit Header, getrimmt, 1..128 Zeichen). */
+  idempotencyKey?: string;
 }
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
@@ -163,6 +165,7 @@ export function withApi<TParams = Record<string, string>>(
 
       const idemKey = req.headers.get(IDEMPOTENCY_HEADER)?.trim() || undefined;
       const usesIdempotency = method === "POST" && idemKey !== undefined;
+      if (usesIdempotency) ctx.idempotencyKey = idemKey;
       if (usesIdempotency) {
         if (idemKey!.length < 1 || idemKey!.length > MAX_IDEMPOTENCY_KEY_LENGTH) throw invalidIdempotencyKeyError();
         // Reserve-First (Fix-Runde 1 S1): entweder eine bereits abgeschlossene Antwort
@@ -171,7 +174,9 @@ export function withApi<TParams = Record<string, string>>(
         // (409), bevor der Handler ueberhaupt startet. Siehe src/api/idempotency.ts.
         const replay = await beginIdempotency(ctx.orgId, idemKey!, method, url.pathname, rawBody);
         if (replay) {
-          return attachKeyExpiry(attachRateLimitHeader(NextResponse.json(replay.body, { status: replay.status }), remaining), apiKey);
+          const replayRes = NextResponse.json(replay.body, { status: replay.status });
+          replayRes.headers.set("Idempotent-Replayed", "true");
+          return attachKeyExpiry(attachRateLimitHeader(replayRes, remaining), apiKey);
         }
       }
 

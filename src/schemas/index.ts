@@ -3,6 +3,7 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
+import { syncFilterShape } from "@/domain/sync/updated-since";
 // Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
@@ -790,6 +791,32 @@ export const recordPaymentSchema = z.object({
 });
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
+// Phase 18d: Zahlung beim atomaren Anlegen + Festschreiben. Ohne Betrag: offener Betrag nach dem
+// Festschreiben (volle Zahlung). Kein Skonto-Abzug (isSkonto/applySkonto werden in der Domain fest gesetzt).
+export const atomicPaymentSchema = recordPaymentSchema
+  .pick({ paidAt: true, method: true, reference: true, note: true })
+  .extend({ amountCents: z.number().int().positive().optional() });
+export type AtomicPaymentInput = z.infer<typeof atomicPaymentSchema>;
+
+function refinePaymentNeedsFinalize(v: { finalize: boolean; payment?: unknown }, ctx: z.RefinementCtx): void {
+  if (v.payment && !v.finalize) {
+    ctx.addIssue({ code: "custom", path: ["payment"], message: "payment nur zusammen mit finalize: true." });
+  }
+}
+
+/** Body von POST /api/v1/Invoice (Route + OpenAPI); `createInvoiceSchema` bleibt unveraendert. */
+export const createInvoiceRequestSchema = z
+  .object({
+    ...invoiceHeaderFields,
+    lines: z.array(invoiceLineDerivableSchema).min(1),
+    finalize: z.boolean().default(false),
+    payment: atomicPaymentSchema.optional(),
+  })
+  .superRefine(refineSkontoTargets)
+  .superRefine(refinePaymentNeedsFinalize)
+  .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
+export type CreateInvoiceRequestInput = z.infer<typeof createInvoiceRequestSchema>;
+
 // Query von GET /api/invoices/[id]/skonto-check (Phase 4a) — reine Vorschau ohne Schreiben.
 export const skontoCheckQuerySchema = z.object({
   amountCents: z.coerce.number().int().positive(),
@@ -825,6 +852,7 @@ export const invoiceListFilterSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
   sort: z.enum(["issueDate_desc", "issueDate_asc", "dueDate_asc", "gross_desc", "number_desc"]).default("issueDate_desc"),
+  ...syncFilterShape,
 });
 export type InvoiceListFilter = z.infer<typeof invoiceListFilterSchema>;
 

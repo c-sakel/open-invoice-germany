@@ -138,6 +138,7 @@ model Customer {
   customFieldsJson        String? // Werte je CustomFieldDefinition.key, via Zod geparst (customFieldValuesSchema)
 
   @@index([orgId])
+  @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([orgId, customerNumber])
   sepaMandateReference String?   // Phase 18e: Mandatsreferenz (BT-89)
   sepaMandateSignedAt  DateTime? // Datum der Unterschrift (nur PDF-Vorabankuendigung)
@@ -185,6 +186,7 @@ model Product {
   updatedAt     DateTime     @updatedAt
 
   @@index([orgId])
+  @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([orgId, articleNumber])
 }
 
@@ -267,6 +269,7 @@ model Quote {
   shareLinks QuoteShareLink[]
 
   @@index([orgId])
+  @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([customerId])
   @@index([contactPersonId])
   @@index([billingAddressId])
@@ -411,6 +414,7 @@ model Invoice {
   downpaymentOfFinals FinalInvoiceDeduction[] @relation("DownpaymentInvoiceDeductions")
 
   @@index([orgId])
+  @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([customerId])
   @@index([recurringInvoiceId])
   @@index([paymentMethodId])
@@ -737,6 +741,7 @@ model DeliveryNote {
   lines DeliveryNoteLine[]
 
   @@index([orgId])
+  @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([customerId])
   @@index([shippingAddressId])
   @@index([contactPersonId])
@@ -1321,8 +1326,8 @@ model ApiKey {
 /// (S1): `status` startet IN_PROGRESS (durch das @@unique([orgId, key]) gegen Doppel-
 /// Reservierung abgesichert), wechselt nach dem Handler zu DONE (responseJson/statusCode
 /// gefuellt) oder die Zeile wird bei einem Fehler/5xx geloescht (Retry moeglich). Ablauf
-/// 24h fuer BEIDE Zustaende, Aufraeumen lazy beim naechsten Lesen desselben Schluessels
-/// (kein eigener Scheduler-Job). Siehe src/api/idempotency.ts fuer den vollen Ablauf.
+/// 24h fuer BEIDE Zustaende, Aufraeumen beim naechsten Lesen desselben Schluessels und
+/// zusaetzlich durch den Scheduler-Job src/domain/scheduler/cleanup.ts. Siehe src/api/idempotency.ts fuer den vollen Ablauf.
 model ApiIdempotency {
   id           String   @id @default(cuid())
   orgId        String

@@ -21,10 +21,13 @@ export interface PaginationParams {
 
 export interface ListOptions extends PaginationParams {
   total: number;
+  /** Nur im Abgleich (updatedSince): Cursor der Folgeseite oder null; Schluessel nur, wenn gesetzt. */
+  nextCursor?: string | null;
 }
 
 export function apiList<T>(items: T[], opts: ListOptions, status = 200): NextResponse {
-  return NextResponse.json({ data: items, total: opts.total, limit: opts.limit, offset: opts.offset }, { status });
+  const body = { data: items, total: opts.total, limit: opts.limit, offset: opts.offset, ...(opts.nextCursor !== undefined ? { nextCursor: opts.nextCursor } : {}) };
+  return NextResponse.json(body, { status });
 }
 
 const DEFAULT_LIMIT = 50;

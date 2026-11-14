@@ -29,6 +29,7 @@
  *      Replikation eines Serverfehlers).
  */
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 
@@ -55,6 +56,24 @@ export interface IdempotentReplay {
 
 function isUniqueConstraintError(e: unknown): boolean {
   return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+}
+
+/** Kanonische JSON-Darstellung (Objektschluessel rekursiv sortiert, undefined-Felder entfallen) — Hash-Basis fuer MCP-Argumente. */
+export function canonicalJson(value: unknown): string {
+  const normalize = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(normalize);
+    if (v !== null && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.keys(o)
+          .filter((k) => o[k] !== undefined)
+          .sort()
+          .map((k) => [k, normalize(o[k])]),
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(normalize(value));
 }
 
 export function hashIdempotentRequest(method: string, path: string, rawBody: string): string {
@@ -90,10 +109,20 @@ export async function beginIdempotency(orgId: string, key: string, method: strin
   }
 
   if (Date.now() - existing.createdAt.getTime() > TTL_MS) {
-    // Abgelaufen (gilt fuer IN_PROGRESS wie DONE): loeschen, erneut versuchen —
-    // der Aufrufer startet einen frischen Zyklus fuer diesen Schluessel.
-    await dbInternal.apiIdempotency.delete({ where: { orgId_key: { orgId, key } } }).catch(() => {});
-    return beginIdempotency(orgId, key, method, path, rawBody);
+    // Abgelaufen (gilt fuer IN_PROGRESS wie DONE): nur genau DIESE abgelaufene Zeile loeschen
+    // (createdAt als Gleichheitsbedingung) — eine inzwischen von einem anderen Request frisch
+    // reservierte Zeile bleibt unberuehrt. Danach genau ein erneuter Versuch zu reservieren;
+    // verliert dieser den Wettlauf (P2002), antwortet der Aufrufer wie sonst mit IN_PROGRESS.
+    await dbInternal.apiIdempotency.deleteMany({ where: { orgId, key, createdAt: existing.createdAt } });
+    try {
+      await dbInternal.apiIdempotency.create({
+        data: { orgId, key, requestHash, status: "IN_PROGRESS", responseJson: null, statusCode: null },
+      });
+      return null;
+    } catch (e) {
+      if (!isUniqueConstraintError(e)) throw e;
+      throw new IdempotencyInProgressError("Anfrage mit diesem Idempotency-Key wird gerade verarbeitet");
+    }
   }
 
   if (existing.requestHash !== requestHash) {
@@ -107,16 +136,42 @@ export async function beginIdempotency(orgId: string, key: string, method: strin
   throw new IdempotencyInProgressError("Anfrage mit diesem Idempotency-Key wird gerade verarbeitet");
 }
 
-/** Schliesst die Reservierung erfolgreich ab (status=DONE) — spaetere identische Requests replizieren diese Antwort. */
+/**
+ * Schliesst die Reservierung erfolgreich ab (status=DONE) — spaetere identische Requests replizieren diese Antwort.
+ * Nur eine IN_PROGRESS-Zeile wird beschrieben: wurde sie bereits in der Handler-Transaktion auf DONE gesetzt
+ * (`completeIdempotencyWithinTx`), ist der Aufruf ein folgenloser No-op (wirft nie nach dem Commit).
+ */
 export async function completeIdempotency(orgId: string, key: string, status: number, body: unknown): Promise<void> {
   const responseJson = JSON.stringify(body ?? null);
-  await dbInternal.apiIdempotency.update({
-    where: { orgId_key: { orgId, key } },
+  await dbInternal.apiIdempotency.updateMany({
+    where: { orgId, key, status: "IN_PROGRESS" },
     data: { status: "DONE", statusCode: status, responseJson },
   });
 }
 
-/** Entfernt eine IN_PROGRESS-Reservierung wieder (Handler warf oder lieferte 5xx) — ein Retry mit demselben Key laeuft danach normal. */
+/**
+ * Wie `completeIdempotency`, aber in der Transaktion des Handlers (Phase 18d): die gespeicherte Antwort wird
+ * zusammen mit den fachlichen Schreibvorgaengen committed oder verworfen. Die IN_PROGRESS-Zeile muss
+ * existieren (withApi/MCP reservieren zuerst); fehlt sie, wirft der Aufruf und die Transaktion rollt zurueck —
+ * es gibt dann keine Rechnung ohne Replay-Antwort.
+ */
+export async function completeIdempotencyWithinTx(tx: Prisma.TransactionClient, orgId: string, key: string, status: number, body: unknown): Promise<void> {
+  const responseJson = JSON.stringify(body ?? null);
+  const res = await tx.apiIdempotency.updateMany({
+    where: { orgId, key, status: "IN_PROGRESS" },
+    data: { status: "DONE", statusCode: status, responseJson },
+  });
+  if (res.count !== 1) throw new Error("Idempotenz-Reservierung nicht gefunden.");
+}
+
+/** Pflicht-Schluessel (z. B. bei finalize): fehlt er oder ist er leer, ZodError mit Pfad ["Idempotency-Key"]. */
+export function requireIdempotencyKey(key: string | undefined, message: string): string {
+  const trimmed = key?.trim();
+  if (!trimmed) throw new z.ZodError([{ code: "custom", path: ["Idempotency-Key"], message }]);
+  return trimmed;
+}
+
+/** Entfernt eine IN_PROGRESS-Reservierung wieder (Handler warf oder lieferte 5xx) — eine DONE-Zeile bleibt stehen. */
 export async function abandonIdempotency(orgId: string, key: string): Promise<void> {
-  await dbInternal.apiIdempotency.delete({ where: { orgId_key: { orgId, key } } }).catch(() => {});
+  await dbInternal.apiIdempotency.deleteMany({ where: { orgId, key, status: "IN_PROGRESS" } }).catch(() => {});
 }

@@ -66,7 +66,7 @@ export function zodProblems(
 }
 
 /** Steuerzeichen (C0/C1 ausser Tab, LF, CR; DEL) und NUL: nie in Stammdaten (Postgres lehnt NUL ab). */
-const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+export const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
 
 /** Zeilenfehler fuer Steuerzeichen in den zugeordneten Zellen (ohne Zellwert in der Meldung). */
 export function controlCharProblems(cells: readonly string[], index: ColumnIndex, columns: readonly ImportColumn[]): RowProblem[] {

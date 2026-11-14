@@ -10,6 +10,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { archiveProduct } from "@/domain/product/archive";
+import { listProductsApi } from "@/domain/product/list";
+import { syncToolShape } from "./sync-shape";
 import { createProduct, updateProduct } from "@/domain/product/save";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { productSchema, TaxRate } from "@/schemas";
@@ -35,10 +37,11 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
     "list_products",
     {
       title: "Produkte/Leistungen auflisten",
-      description: "Listet den Katalog der gespeicherten Produkte/Leistungen.",
-      inputSchema: { query: z.string().optional() },
+      description:
+        "Listet den Katalog der gespeicherten Produkte/Leistungen. Abgleich: mit updatedSince (ISO 8601 mit Zone) kommen geänderte Produkte aufsteigend nach updatedAt; nextCursor als cursor für die Folgeseite (limit 1-200, includeArchived).",
+      inputSchema: { query: z.string().optional(), ...syncToolShape, includeArchived: z.boolean().optional() },
     },
-    async ({ query }): Promise<Result> => {
+    async ({ query, updatedSince, cursor, limit, includeArchived }): Promise<Result> => {
       // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
       // Produkte ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
       // andere Produkt-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
@@ -49,6 +52,29 @@ export function registerProductTools(server: McpServer, ctx: McpToolsContext): v
         org = await ctx.requireOrg();
       } catch {
         return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
+      // limit gilt nur im Abgleich; im Legacy-Pfad nicht still ignorieren (einfachste konsistente Variante: ablehnen).
+      if (limit !== undefined && updatedSince === undefined && cursor === undefined) {
+        return ctx.fail("Validierung fehlgeschlagen: limit nur zusammen mit updatedSince.");
+      }
+      if (updatedSince !== undefined || cursor !== undefined) {
+        try {
+          const result = await listProductsApi(org.id, { updatedSince, cursor, limit, includeArchived, ...(query ? { search: query } : {}) });
+          return ctx.ok(
+            JSON.stringify(
+              {
+                total: result.total,
+                nextCursor: result.nextCursor ?? null,
+                rows: result.rows.map((p) => ({ id: p.id, name: p.name, unit: p.unit, netPrice: formatCents(p.netPriceCents), taxRate: p.taxRate, differential: p.differential })),
+              },
+              null,
+              2,
+            ),
+          );
+        } catch (e) {
+          if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+          return ctx.failUnknown(e);
+        }
       }
       const all = await dbInternal.product.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((p) => p.name.toLowerCase().includes(query.toLowerCase())) : all;

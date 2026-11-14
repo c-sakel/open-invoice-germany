@@ -1,5 +1,6 @@
 /**
  * Phase 18c: Sammel-Storno (parallele Laeufe, seriell je Organisation).
+ * Phase 18d: POST /api/v1/Invoice mit finalize (Idempotenz in der Transaktion, gleicher und verschiedene Keys).
  * Phase 17b, Task 8 — Parallel-Lasttest unter PostgreSQL (scripts/test-postgres-race.sh).
  * Je Szenario eine frische Organisation und frische Quelle; N parallele Aufrufe ueber die
  * Domainfunktionen. Ohne die Zeilensperre (lockRow) schlagen die Szenarien fehl.
@@ -24,6 +25,8 @@ import { createWebhookEndpoint } from "@/domain/webhook/endpoints";
 import { savePostalSettings } from "@/domain/postal/settings";
 import { quotePostal, sendByPost } from "@/domain/postal/send";
 import type { LxpTransport } from "@/lib/postal/transport";
+import { createApiKey } from "@/domain/api-key/create";
+import { POST as InvoicePost } from "@/app/api/v1/Invoice/route";
 import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
 
 const N = 5;
@@ -271,5 +274,47 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(fulfilled(rs).length, describeFailures(rs)).toBe(1);
     expect(rejected(rs).every((r) => r.reason instanceof ImportRejectedError || r.reason instanceof ImportAlreadyDoneError)).toBe(true);
     expect(await dbInternal.customer.count({ where: { orgId: s.orgId, customerNumber: "RACE-IMP-1" } })).toBe(1);
+  });
+  async function invoiceApiScenario() {
+    const s = await newScenario();
+    // Eigener Nummernkreis ohne Jahresreset mit orgbezogenem Praefix (Belegnummern sind instanzweit eindeutig).
+    await dbInternal.numberRange.upsert({
+      where: { orgId_docType_year: { orgId: s.orgId, docType: "INVOICE", year: 0 } },
+      create: { orgId: s.orgId, docType: "INVOICE", year: 0, currentValue: 0, prefix: `D18D5R-${s.orgId.slice(-6)}-`, pattern: "{PREFIX}{SEQ}", seqPadding: 4, isActive: true },
+      update: { currentValue: 0, prefix: `D18D5R-${s.orgId.slice(-6)}-`, isActive: true },
+    });
+    await dbInternal.numberRange.updateMany({ where: { orgId: s.orgId, docType: "INVOICE", year: { not: 0 } }, data: { isActive: false } });
+    const token = (await createApiKey(s.orgId, { name: "Race-Key", scopes: ["read", "write"] })).token;
+    const payload = { customerId: s.customerId, issueDate: s.now.toISOString(), deliveryDate: s.now.toISOString(), lines: [item(1000)], finalize: true, payment: { method: "TRANSFER" } };
+    const call = (key: string) =>
+      InvoicePost(
+        new Request("http://localhost/api/v1/Invoice", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "idempotency-key": key },
+          body: JSON.stringify(payload),
+        }),
+      );
+    return { ...s, call };
+  }
+
+  it("POST /api/v1/Invoice 5x parallel mit demselben Idempotency-Key -> genau eine Rechnung, 201 mit derselben id oder 409 IN_PROGRESS, Kette gueltig", async () => {
+    const s = await invoiceApiScenario();
+    const rs = await Promise.all(Array.from({ length: N }, () => s.call("race-same-key")));
+    const bodies = await Promise.all(rs.map(async (r) => ({ status: r.status, json: (await r.json()) as { data?: { id: string }; error?: { code: string } } })));
+    expect(bodies.filter((b) => b.status === 201).length).toBeGreaterThanOrEqual(1);
+    for (const b of bodies) expect(b.status === 201 || (b.status === 409 && b.json.error?.code === "IDEMPOTENCY_IN_PROGRESS")).toBe(true);
+    expect(new Set(bodies.filter((b) => b.status === 201).map((b) => b.json.data!.id)).size).toBe(1);
+    expect(await dbInternal.invoice.count({ where: { orgId: s.orgId, status: { not: "DRAFT" } } })).toBe(1);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("POST /api/v1/Invoice 5x parallel mit verschiedenen Keys -> 5 Rechnungen mit 5 Nummern, Kette gueltig", async () => {
+    const s = await invoiceApiScenario();
+    const rs = await Promise.all(Array.from({ length: N }, (_, i) => s.call(`race-key-${i}`)));
+    expect(rs.map((r) => r.status)).toEqual(Array(N).fill(201));
+    const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, status: { not: "DRAFT" } }, select: { number: true } });
+    expect(invoices).toHaveLength(N);
+    expect(new Set(invoices.map((i) => i.number)).size).toBe(N);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 });

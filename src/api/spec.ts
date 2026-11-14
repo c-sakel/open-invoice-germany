@@ -31,8 +31,10 @@ export function apiDataResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({ data: dataSchema });
 }
 
-export function apiListResponseSchema<T extends z.ZodTypeAny>(itemSchema: T) {
-  return z.object({ data: z.array(itemSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() });
+export function apiListResponseSchema<T extends z.ZodTypeAny>(itemSchema: T, opts: { sync?: boolean } = {}) {
+  const base = { data: z.array(itemSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() };
+  if (!opts.sync) return z.object(base);
+  return z.object({ ...base, nextCursor: z.string().nullable().optional().describe("Nur mit updatedSince: Cursor der Folgeseite, null = letzte Seite") });
 }
 
 export type ApiScope = "read" | "write" | "send" | "admin";
