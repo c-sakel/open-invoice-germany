@@ -118,12 +118,37 @@ describe("Portalseite", () => {
     expect(de).toContain("Offene Posten");
   });
 
-  it("schreibt ein VIEW-Ereignis", async () => {
-    const before = await dbInternal.customerPortalEvent.count({ where: { orgId, kind: "VIEW" } });
-    await pageHtml(token2);
-    const after = await dbInternal.customerPortalEvent.count({ where: { orgId, kind: "VIEW" } });
-    expect(after).toBeGreaterThanOrEqual(before);
-    expect(after).toBeGreaterThan(0);
+  it("schreibt je Link und Tag genau ein VIEW-Ereignis (frischer Link: +1, zweiter Aufruf am selben Tag weiter +1)", async () => {
+    const c = await dbInternal.customer.create({ data: { orgId, name: "View Kunde", addressLine1: "Weg 2", postalCode: "20095", city: "Hamburg" }, select: { id: true } });
+    const { url } = await createPortalLink(orgId, c.id, {}, { actor: "t", baseUrl: BASE });
+    const fresh = url.slice(`${BASE}/portal/`.length);
+    const count = () => dbInternal.customerPortalEvent.count({ where: { orgId, kind: "VIEW", link: { customerId: c.id } } });
+    expect(await count()).toBe(0);
+    await pageHtml(fresh);
+    expect(await count()).toBe(1);
+    await pageHtml(fresh);
+    expect(await count()).toBe(1);
+    const link = await dbInternal.customerPortalLink.findFirstOrThrow({ where: { customerId: c.id }, select: { viewCount: true } });
+    expect(link.viewCount).toBe(1);
+  });
+
+  it("ohne ermittelbare IP gilt ein Notlimit (kein fail-open) und je Token ein Seitenlimit", async () => {
+    hdrs.current = new Headers();
+    for (let i = 0; i < 60; i++) await pageHtml(token2);
+    vi.mocked(resolvePortalToken).mockClear();
+    expect(await pageHtml(token2)).toContain("Too many requests");
+    expect(resolvePortalToken).not.toHaveBeenCalled();
+    // Anderes Token ohne IP: weiterhin im gemeinsamen Notlimit (300), also noch erlaubt.
+    expect(await pageHtml(token1)).toContain("Open items");
+  });
+
+  it("Seitenlimit je Token auch bei wechselnden IPs", async () => {
+    for (let i = 0; i < 60; i++) {
+      hdrs.current = new Headers({ "x-forwarded-for": `198.51.100.${i + 1}` });
+      await pageHtml(token2);
+    }
+    hdrs.current = new Headers({ "x-forwarded-for": "198.51.100.200" });
+    expect(await pageHtml(token2)).toContain("Too many requests");
   });
 
   it("unbekanntes Token -> notFound", async () => {
@@ -148,6 +173,7 @@ describe("Download-Route", () => {
     expect(pdf.headers.get("content-disposition")).toContain("attachment");
     expect(pdf.headers.get("referrer-policy")).toBe("no-referrer");
     expect(pdf.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect(pdf.headers.get("x-content-type-options")).toBe("nosniff");
     expect(pdf.headers.get("cache-control")).toBe("private, no-store");
     expect(Buffer.from(await pdf.arrayBuffer()).equals(await getArchivedInvoiceFile(orgId, invK1, "PDF"))).toBe(true);
     const ubl = await GET(...req(token1, "INVOICE", invK1, "UBL"));
@@ -176,7 +202,14 @@ describe("Download-Route", () => {
       const { url } = await createPortalLink(orgId, c.id, { expiresInDays: 1 }, { actor: "t", now: new Date("2000-01-01T00:00:00Z"), baseUrl: BASE });
       return url.slice(`${BASE}/portal/`.length);
     })();
+    const foreignToken = await (async () => {
+      await savePortalSettings(otherOrgId, { enabled: true }, "t");
+      const c = await dbInternal.customer.create({ data: { orgId: otherOrgId, name: "Fremdkunde", addressLine1: "Weg 2", postalCode: "20095", city: "Hamburg" }, select: { id: true } });
+      const { url } = await createPortalLink(otherOrgId, c.id, {}, { actor: "t", now: FIX, baseUrl: BASE });
+      return url.slice(`${BASE}/portal/`.length);
+    })();
     const cases: Array<[string, string, string, string]> = [
+      [foreignToken, "INVOICE", invK1, "PDF"],
       ["b".repeat(43), "INVOICE", invK1, "PDF"],
       ["kurz", "INVOICE", invK1, "PDF"],
       [revokedUrl, "INVOICE", invK1, "PDF"],
@@ -198,7 +231,20 @@ describe("Download-Route", () => {
     } finally {
       await savePortalSettings(orgId, { enabled: true }, "t");
     }
-    expect(otherOrgId).not.toBe("");
+  });
+
+  it("Fehler beim Protokollieren verhindert den Download nicht", async () => {
+    const spy = vi.spyOn(dbInternal.customerPortalEvent, "create").mockRejectedValueOnce(new Error("db weg"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await GET(...req(token1, "INVOICE", invK1, "PDF"));
+      expect(res.status).toBe(200);
+      expect(err).toHaveBeenCalled();
+      expect(JSON.stringify(err.mock.calls)).not.toContain(token1);
+    } finally {
+      spy.mockRestore();
+      err.mockRestore();
+    }
   });
 
   it("31. Download je Token -> 429", async () => {
@@ -211,8 +257,11 @@ describe("Download-Route", () => {
   });
 
   it("IP-Limit: 61. Aufruf je IP -> 429", async () => {
-    for (let i = 0; i < 60; i++) await GET(...req("c".repeat(43), "INVOICE", invK1, "PDF", "192.0.2.250"));
-    expect((await GET(...req("c".repeat(43), "INVOICE", invK1, "PDF", "192.0.2.250"))).status).toBe(429);
+    const tok = (i: number) => String(i).padStart(43, "x");
+    for (let i = 0; i < 60; i++) expect((await GET(...req(tok(i), "INVOICE", invK1, "PDF", "192.0.2.250"))).status).toBe(404);
+    expect((await GET(...req(tok(60), "INVOICE", invK1, "PDF", "192.0.2.250"))).status).toBe(429);
+    // andere IP bleibt unberuehrt
+    expect((await GET(...req(tok(61), "INVOICE", invK1, "PDF", "192.0.2.251"))).status).toBe(404);
   });
 
   it("manipuliertes Archiv -> 500 neutral, Benachrichtigung ARCHIVE_TAMPERED", async () => {
