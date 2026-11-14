@@ -442,8 +442,9 @@ export async function renderInvoicePdf(data: EInvoiceData, theme: PdfTheme, opti
         line.servicePeriodStart && line.servicePeriodEnd
           ? t.lines.servicePeriod(formatDocDate(line.servicePeriodStart, lang), formatDocDate(line.servicePeriodEnd, lang))
           : "";
-      const longSource = [line.descriptionLong ?? "", periodText].filter(Boolean).join("\n\n");
-      const longBlocks = longSource && showDescription ? parseRichText(longSource) : [];
+      // Ohne Beschreibungsspalte entfaellt der Langtext, der Leistungszeitraum bleibt (Pflichtangabe BG-26).
+      const longSource = (showDescription ? [line.descriptionLong ?? "", periodText] : [periodText]).filter(Boolean).join("\n\n");
+      const longBlocks = longSource ? parseRichText(longSource) : [];
       const longOpts = { x: descX, width: right - descX, fontSize: base - 2 };
       const lead = longBlocks.length > 0 ? measureRichTextPdf(doc, longBlocks, longOpts).leadHeight : 0;
       doc.font("Helvetica").fontSize(base - 1);
