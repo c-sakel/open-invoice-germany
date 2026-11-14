@@ -32,6 +32,8 @@ export interface CleanupResult {
   apiIdempotencyDeleted: number;
   apiRequestLogsDeleted: number;
   portalEventsDeleted: number;
+  /** Abgelaufene Portal-Links, deren verschluesseltes Token geleert wurde. */
+  portalTokensCleared: number;
 }
 
 export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResult> {
@@ -53,11 +55,18 @@ export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResu
     where: { at: { lt: new Date(now.getTime() - PORTAL_EVENT_RETENTION_MS) } },
   });
 
+  // Abgelaufene Links: das wiederabrufbare Token wird nicht laenger gebraucht (nur Update, kein Loeschen).
+  const portalTokens = await dbInternal.customerPortalLink.updateMany({
+    where: { expiresAt: { lt: now }, tokenEnc: { not: "" } },
+    data: { tokenEnc: "" },
+  });
+
   return {
     emailsReconciled,
     webhookDeliveriesDeleted: webhookDeliveries.count,
     apiIdempotencyDeleted: apiIdempotency.count,
     apiRequestLogsDeleted,
     portalEventsDeleted: portalEvents.count,
+    portalTokensCleared: portalTokens.count,
   };
 }

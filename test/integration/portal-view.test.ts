@@ -162,6 +162,20 @@ describe("Portalansicht", () => {
     expect(hidden.documents.some((x) => x.docType === "DUNNING")).toBe(false);
   });
 
+  it("Mahnung zu stornierter Rechnung verschwindet aus Liste und Download", async () => {
+    const inv = await finalized(k2);
+    const dun = (await createDunning(inv, { now: LATER })).dunning.id;
+    await mailSent(dun);
+    const { url } = await createPortalLink(orgId, k2, {}, { actor: "t", now: FIX, baseUrl: BASE });
+    const link2 = await resolvePortalToken(url.slice(`${BASE}/portal/`.length), FIX);
+    if (!link2) throw new Error("Link nicht aufloesbar");
+    expect((await loadPortalView(link2, NOW)).documents.some((d) => d.id === dun)).toBe(true);
+    expect(await getPortalFile(link2, "DUNNING", dun, "PDF")).not.toBeNull();
+    await cancelInvoice(inv, { orgId, now: LATER });
+    expect((await loadPortalView(link2, NOW)).documents.some((d) => d.id === dun)).toBe(false);
+    expect(await getPortalFile(link2, "DUNNING", dun, "PDF")).toBeNull();
+  });
+
   it("Dateiliste ohne UBL bei showEInvoice=false", async () => {
     const view = await loadPortalView(linkK1, NOW);
     expect(view.documents.find((d) => d.id === invOpen)!.files).toEqual(["PDF", "UBL"]);
@@ -256,5 +270,19 @@ describe("Abrufprotokoll", () => {
     expect(result.portalEventsDeleted).toBeGreaterThanOrEqual(1);
     expect(await dbInternal.customerPortalEvent.findUnique({ where: { id: old.id } })).toBeNull();
     expect(await dbInternal.customerPortalEvent.findUnique({ where: { id: recent.id } })).not.toBeNull();
+  });
+
+  it("Aufraeumen leert das verschluesselte Token abgelaufener Links, aktive bleiben unberuehrt", async () => {
+    const mk = async (name: string, now: Date, days: number) => {
+      const c = await dbInternal.customer.create({ data: { orgId, name, addressLine1: "Weg 2", postalCode: "20095", city: "Hamburg" }, select: { id: true } });
+      return (await createPortalLink(orgId, c.id, { expiresInDays: days }, { actor: "t", now, baseUrl: BASE })).link.id;
+    };
+    const expired = await mk("Abgelaufen-Token", new Date("2000-01-01T00:00:00Z"), 1);
+    const active = await mk("Aktiv-Token", NOW, 30);
+    expect((await dbInternal.customerPortalLink.findUniqueOrThrow({ where: { id: expired }, select: { tokenEnc: true } })).tokenEnc).not.toBe("");
+    const result = await runCleanupJob(NOW);
+    expect(result.portalTokensCleared).toBeGreaterThanOrEqual(1);
+    expect((await dbInternal.customerPortalLink.findUniqueOrThrow({ where: { id: expired }, select: { tokenEnc: true } })).tokenEnc).toBe("");
+    expect((await dbInternal.customerPortalLink.findUniqueOrThrow({ where: { id: active }, select: { tokenEnc: true } })).tokenEnc).not.toBe("");
   });
 });

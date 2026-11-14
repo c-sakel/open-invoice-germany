@@ -85,8 +85,10 @@ describe("Portal-Link", () => {
     expect(old.revokedAt).toEqual(NOW);
     expect(old.revokeReason).toBe("ROTATED");
     expect(old.revokedBy).toBe("u");
+    expect(old.tokenEnc).toBe("");
     expect(await resolvePortalToken(tokenOf(first.url), NOW)).toBeNull();
     expect(await resolvePortalToken(tokenOf(second.url), NOW)).not.toBeNull();
+    expect((await dbInternal.customerPortalLink.findUniqueOrThrow({ where: { id: second.link.id }, select: { tokenEnc: true } })).tokenEnc).not.toBe("");
   });
 
   it("parallele Anlage -> genau ein aktiver Link", async () => {
@@ -197,6 +199,12 @@ describe("Portal-Link", () => {
     expect(after?.active).toBe(false);
     expect(after?.revokeReason).toBe("CUSTOMER_ARCHIVED");
     expect(await resolvePortalToken(tokenOf(url), NOW)).toBeNull();
+    expect((await dbInternal.customerPortalLink.findUniqueOrThrow({ where: { id: link.id }, select: { tokenEnc: true } })).tokenEnc).toBe("");
+    // Wiederherstellen des Kunden reaktiviert den widerrufenen Link nicht.
+    await dbInternal.customer.update({ where: { id: c }, data: { isArchived: false } });
+    expect(await resolvePortalToken(tokenOf(url), NOW)).toBeNull();
+    expect((await getPortalLinkStatus(orgId, c, NOW))?.active).toBe(false);
+    expect(await revealPortalUrl(orgId, c, BASE, NOW)).toBeNull();
     await expect(archiveCustomer(orgId, "unbekannt", "t")).rejects.toBeInstanceOf(NotFoundError);
     await expect(archiveCustomer(otherOrgId, c, "t")).rejects.toBeInstanceOf(NotFoundError);
   });

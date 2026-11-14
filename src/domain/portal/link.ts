@@ -98,7 +98,7 @@ export async function createPortalLink(
     if (active.length > 0) {
       await tx.customerPortalLink.updateMany({
         where: { orgId, customerId, revokedAt: null },
-        data: { revokedAt: now, revokedBy: opts.actor, revokeReason: "ROTATED" },
+        data: { revokedAt: now, revokedBy: opts.actor, revokeReason: "ROTATED", tokenEnc: "" },
       });
       for (const a of active) {
         await logActivity(tx, {
@@ -147,7 +147,7 @@ export async function revokePortalLinkInTx(
   if (active.length === 0) return null;
   await tx.customerPortalLink.updateMany({
     where: { orgId, customerId, revokedAt: null },
-    data: { revokedAt: now, revokedBy: opts.actor, revokeReason: reason },
+    data: { revokedAt: now, revokedBy: opts.actor, revokeReason: reason, tokenEnc: "" },
   });
   for (const a of active) {
     await logActivity(tx, {

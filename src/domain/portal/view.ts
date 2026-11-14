@@ -140,7 +140,7 @@ export async function loadPortalView(link: ResolvedPortalLink, now: Date = new D
 
   if (link.showDunnings) {
     const dunnings = await dbInternal.dunning.findMany({
-      where: { invoice: { orgId: link.orgId, customerId: link.customerId, status: { not: "DRAFT" } } },
+      where: { invoice: { orgId: link.orgId, customerId: link.customerId, status: { notIn: ["DRAFT", "CANCELLED"] } } },
       orderBy: [{ sentAt: "desc" }, { id: "desc" }],
       select: DUNNING_SELECT,
     });
@@ -205,7 +205,7 @@ export async function isVisible(link: ResolvedPortalLink, docType: string, docId
   if (docType === "DUNNING") {
     if (!link.showDunnings) return false;
     const d = await dbInternal.dunning.findFirst({
-      where: { id: docId, invoice: { orgId: link.orgId, customerId: link.customerId, status: { not: "DRAFT" } } },
+      where: { id: docId, invoice: { orgId: link.orgId, customerId: link.customerId, status: { notIn: ["DRAFT", "CANCELLED"] } } },
       select: { id: true },
     });
     if (!d) return false;
