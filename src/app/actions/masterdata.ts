@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
+import { getCurrentUserId } from "@/lib/auth/server";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { organizationSchema, customerSchema, productSchema, type CustomerInput } from "@/schemas";
 import { parseEuroToCents } from "@/lib/money";
@@ -220,7 +221,7 @@ export async function archiveCustomer(fd: FormData): Promise<void> {
   if (!id) return;
   const org = await getActiveOrg();
   try {
-    await archiveCustomerDomain(org.id, id);
+    await archiveCustomerDomain(org.id, id, (await getCurrentUserId()) ?? "system");
   } catch {
     // Unbekannte/fremde ID: wie zuvor stillschweigend ignorieren (Server Action ohne Rueckgabewert).
   }

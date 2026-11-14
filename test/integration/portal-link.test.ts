@@ -9,6 +9,7 @@ import { decryptSecret, PORTAL_TOKEN_PURPOSE } from "@/lib/crypto/secrets";
 import { NotFoundError } from "@/domain/errors";
 import { PortalError } from "@/domain/portal/errors";
 import { loadPortalSettings, savePortalSettings } from "@/domain/portal/settings";
+import { archiveCustomer } from "@/domain/customer/archive";
 import { createPortalLink, getPortalLinkStatus, resolvePortalToken, revealPortalUrl, revokePortalLink } from "@/domain/portal/link";
 
 const NOW = new Date("2195-03-01T10:00:00.000Z");
@@ -185,5 +186,18 @@ describe("Portal-Link", () => {
       select: { id: true },
     });
     expect(await loadPortalSettings(fresh.id)).toMatchObject({ enabled: false, linkDays: 365 });
+  });
+
+  it("Kunde archivieren widerruft den aktiven Link in derselben Transaktion", async () => {
+    const c = await newCustomer(orgId, "Archiv-Widerruf-Kunde");
+    const { url, link } = await createPortalLink(orgId, c, {}, { actor: "t", now: NOW, baseUrl: BASE });
+    await archiveCustomer(orgId, c, "t");
+    const after = await getPortalLinkStatus(orgId, c, NOW);
+    expect(after?.id).toBe(link.id);
+    expect(after?.active).toBe(false);
+    expect(after?.revokeReason).toBe("CUSTOMER_ARCHIVED");
+    expect(await resolvePortalToken(tokenOf(url), NOW)).toBeNull();
+    await expect(archiveCustomer(orgId, "unbekannt", "t")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(archiveCustomer(otherOrgId, c, "t")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

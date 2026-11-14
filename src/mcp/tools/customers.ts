@@ -222,7 +222,7 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       try {
         const org = await ctx.requireOrg();
         const existing = await ctx.resolveCustomer(org.id, customer);
-        await archiveCustomer(org.id, existing.id);
+        await archiveCustomer(org.id, existing.id, "mcp");
         return ctx.ok(`Kunde archiviert: ${existing.name}.`);
       } catch (e) {
         if (e instanceof ToolError) return ctx.fail(e.message);

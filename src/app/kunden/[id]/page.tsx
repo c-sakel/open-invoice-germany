@@ -21,6 +21,11 @@ import { CsvLink } from "@/components/ui/CsvLink";
 import { Kpi } from "@/components/ui/Kpi";
 import { MandateInfo, hasMandate } from "@/components/customers/MandateInfo";
 import { formatCents } from "@/lib/money";
+import { PortalLinkCard } from "@/components/customers/PortalLinkCard";
+import { loadPortalSettings } from "@/domain/portal/settings";
+import { getPortalLinkStatus } from "@/domain/portal/link";
+import { listPortalEvents } from "@/domain/portal/access";
+import { labelPortalEvents } from "@/domain/portal/event-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +56,13 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
     monthlyRevenue(org.id, { customerId: id, months: 24, currency }),
     paymentBehaviour(org.id, { customerId: id }),
   ]);
+
+  const [portalSettings, portalStatus, portalEventRows] = await Promise.all([
+    loadPortalSettings(org.id),
+    getPortalLinkStatus(org.id, id),
+    listPortalEvents(org.id, id, { limit: 10 }),
+  ]);
+  const portalEvents = await labelPortalEvents(org.id, portalEventRows.items);
 
   const { customer, kpis } = overview;
   const hasVatId = Boolean(customer.vatId?.trim());
@@ -121,6 +133,28 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
           <MandateInfo customer={customer} />
         </Card>
       )}
+
+      <Card title="Kundenportal">
+        <PortalLinkCard
+          customerId={id}
+          portalEnabled={portalSettings.enabled}
+          customerArchived={customer.isArchived}
+          link={
+            portalStatus
+              ? {
+                  active: portalStatus.active,
+                  createdAt: portalStatus.createdAt.toISOString(),
+                  expiresAt: portalStatus.expiresAt.toISOString(),
+                  revokedAt: portalStatus.revokedAt?.toISOString() ?? null,
+                  lastViewedAt: portalStatus.lastViewedAt?.toISOString() ?? null,
+                  viewCount: portalStatus.viewCount,
+                }
+              : null
+          }
+          events={portalEvents.map((e) => ({ id: e.id, at: e.at.toISOString(), kind: e.kind, fileKind: e.fileKind, docNumber: e.docNumber }))}
+          defaultRecipient={customer.invoiceEmail?.trim() || customer.email?.trim() || ""}
+        />
+      </Card>
 
       <Card title="Zahlungsverhalten">
         <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-8">

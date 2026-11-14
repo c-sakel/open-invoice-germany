@@ -4,6 +4,7 @@
  * im ActivityLog. Hoechstens ein aktiver Link je Kunde (Zeilensperre auf den Kunden).
  * `resolvePortalToken` liefert fuer jeden Ungueltigkeitsfall einheitlich null.
  */
+import type { Prisma } from "@prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
 import { logActivity } from "@/domain/activity/log";
@@ -118,38 +119,46 @@ export async function createPortalLink(
   return { link: toStatus(link, now), url: buildUrl(opts.baseUrl, token) };
 }
 
-export async function revokePortalLink(
+/** Widerruf innerhalb einer bestehenden Transaktion (z. B. beim Archivieren des Kunden). */
+export async function revokePortalLinkInTx(
+  tx: Prisma.TransactionClient,
   orgId: string,
   customerId: string,
   opts: { actor: string; now?: Date; reason?: "MANUAL" | "CUSTOMER_ARCHIVED" },
 ): Promise<PortalLinkStatus | null> {
   const now = opts.now ?? new Date();
   const reason = opts.reason ?? "MANUAL";
-  return dbInternal.$transaction(async (tx) => {
-    await lockRow(tx, "Customer", customerId, orgId);
-    const active = await tx.customerPortalLink.findMany({
-      where: { orgId, customerId, revokedAt: null },
-      select: { id: true },
-    });
-    if (active.length === 0) return null;
-    await tx.customerPortalLink.updateMany({
-      where: { orgId, customerId, revokedAt: null },
-      data: { revokedAt: now, revokedBy: opts.actor, revokeReason: reason },
-    });
-    for (const a of active) {
-      await logActivity(tx, {
-        orgId,
-        entityType: "CUSTOMER",
-        entityId: customerId,
-        type: "PORTAL_LINK_REVOKED",
-        actor: opts.actor,
-        at: now,
-        data: { linkId: a.id, reason },
-      });
-    }
-    const last = await tx.customerPortalLink.findUniqueOrThrow({ where: { id: active[0]!.id }, select: STATUS_SELECT });
-    return toStatus(last, now);
+  await lockRow(tx, "Customer", customerId, orgId);
+  const active = await tx.customerPortalLink.findMany({
+    where: { orgId, customerId, revokedAt: null },
+    select: { id: true },
   });
+  if (active.length === 0) return null;
+  await tx.customerPortalLink.updateMany({
+    where: { orgId, customerId, revokedAt: null },
+    data: { revokedAt: now, revokedBy: opts.actor, revokeReason: reason },
+  });
+  for (const a of active) {
+    await logActivity(tx, {
+      orgId,
+      entityType: "CUSTOMER",
+      entityId: customerId,
+      type: "PORTAL_LINK_REVOKED",
+      actor: opts.actor,
+      at: now,
+      data: { linkId: a.id, reason },
+    });
+  }
+  const last = await tx.customerPortalLink.findUniqueOrThrow({ where: { id: active[0]!.id }, select: STATUS_SELECT });
+  return toStatus(last, now);
+}
+
+export async function revokePortalLink(
+  orgId: string,
+  customerId: string,
+  opts: { actor: string; now?: Date; reason?: "MANUAL" | "CUSTOMER_ARCHIVED" },
+): Promise<PortalLinkStatus | null> {
+  return dbInternal.$transaction((tx) => revokePortalLinkInTx(tx, orgId, customerId, opts));
 }
 
 /** Status des juengsten Links des Kunden (aktiv oder zuletzt beendet); null ohne Link. */
