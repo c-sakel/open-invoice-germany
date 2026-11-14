@@ -26,7 +26,7 @@ import { createInvoiceSchema, type CreateInvoiceInput } from "@/schemas";
 import PortalPage from "@/app/portal/[token]/page";
 import { GET } from "@/app/api/public/portal/[token]/[docType]/[docId]/[fileKind]/route";
 
-const MARKER = "GEHEIM-19A";
+const MARKER = "GEHEIM-INTERN";
 const BASE = "https://rechnung.example.org";
 const FIX = new Date("2197-03-01T10:00:00.000Z");
 
