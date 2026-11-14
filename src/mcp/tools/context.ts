@@ -52,13 +52,13 @@ export function euroToUnitPrice(x: number): { unitNetPriceCents: number; unitNet
   const [intPart, fracRaw = ""] = text.split(".");
   const frac = fracRaw.replace(/0+$/, "");
   if (frac.length > 5) {
-    throw new ToolError(`Preis ${x}: höchstens 5 Nachkommastellen erlaubt (der Preis wird nie still gerundet).`);
+    throw new ToolError("Der Preis darf höchstens 5 Nachkommastellen haben (er wird nie still gerundet).");
   }
   const milli = BigInt(intPart) * BigInt(100000) + BigInt(frac.padEnd(5, "0"));
   const whole = milli % BigInt(1000) === BigInt(0);
-  if (!whole && negative) throw new ToolError(`Preis ${x}: negative Preise nur in ganzen Cent.`);
+  if (!whole && negative) throw new ToolError("Negative Preise sind nur in ganzen Cent erlaubt.");
   if (!whole && milli > BigInt(MAX_UNIT_PRICE_MILLI_CENTS)) {
-    throw new ToolError(`Preis ${x}: Preise mit mehr als 2 Nachkommastellen sind auf 21.474,83 € begrenzt.`);
+    throw new ToolError("Preise mit mehr als 2 Nachkommastellen sind auf 21.474,83 € begrenzt.");
   }
   const cents = Number((milli * BigInt(2) + BigInt(1000)) / BigInt(2000));
   return { unitNetPriceCents: negative ? -cents : cents, unitNetPriceMilliCents: whole ? null : Number(milli) };
@@ -67,7 +67,7 @@ export function euroToUnitPrice(x: number): { unitNetPriceCents: number; unitNet
 /** Bruttopreis in Euro -> Cent (hoechstens 2 Nachkommastellen, nie still gerundet). */
 export function euroToGrossCents(x: number): number {
   const p = euroToUnitPrice(x);
-  if (p.unitNetPriceMilliCents !== null) throw new ToolError(`Bruttopreis ${x}: höchstens 2 Nachkommastellen erlaubt.`);
+  if (p.unitNetPriceMilliCents !== null) throw new ToolError("Der Bruttopreis darf höchstens 2 Nachkommastellen haben.");
   return p.unitNetPriceCents;
 }
 
