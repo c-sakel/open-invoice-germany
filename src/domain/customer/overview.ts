@@ -5,6 +5,7 @@
  */
 import { dbInternal } from "@/lib/db";
 import { maskIban } from "@/lib/iban";
+import { berlinDateKey } from "@/lib/berlin-time";
 import { NotFoundError } from "@/domain/errors";
 import { listInvoices, type InvoiceListRow } from "@/domain/invoice/list";
 import { listQuotes, listDeliveryNotes, listRecurring, type QuoteListRow, type DeliveryNoteListRow, type RecurringListRow } from "@/domain/document/list";
@@ -32,7 +33,8 @@ export interface CustomerOverview {
     type: string;
     isArchived: boolean;
     sepaMandateReference: string | null;
-    sepaMandateSignedAt: Date | null;
+    /** Berliner Kalendertag YYYY-MM-DD (wie REST Contact). */
+    sepaMandateSignedAt: string | null;
     /** Maskiert (z. B. DE02 **** 2051); die volle IBAN verlaesst diese Funktion nie. */
     sepaDebitIbanMasked: string | null;
   };
@@ -101,7 +103,7 @@ export async function customerOverview(orgId: string, customerId: string, now: D
 
   const { sepaDebitIban, ...customerRest } = customer;
   return {
-    customer: { ...customerRest, sepaDebitIbanMasked: sepaDebitIban ? maskIban(sepaDebitIban) : null },
+    customer: { ...customerRest, sepaMandateSignedAt: customerRest.sepaMandateSignedAt ? berlinDateKey(customerRest.sepaMandateSignedAt) : null, sepaDebitIbanMasked: sepaDebitIban ? maskIban(sepaDebitIban) : null },
     kpis: { openCents, overdueCents, totalRevenueCents, lastActivityAt },
     invoices: invoiceList.rows,
     quotes: quoteList.rows,

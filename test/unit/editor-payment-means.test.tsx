@@ -79,7 +79,7 @@ describe("Stammdaten-Formulare (18e)", () => {
 
   it("Kundendetail zeigt Referenz, Datum und maskierte IBAN", () => {
     const html = renderToStaticMarkup(
-      <MandateInfo customer={{ sepaMandateReference: "MANDAT-2184-001", sepaMandateSignedAt: new Date("2184-03-05T10:00:00Z"), sepaDebitIbanMasked: "DE02 **** 2051" }} />,
+      <MandateInfo customer={{ sepaMandateReference: "MANDAT-2184-001", sepaMandateSignedAt: "2184-03-05", sepaDebitIbanMasked: "DE02 **** 2051" }} />,
     );
     expect(html).toContain("MANDAT-2184-001");
     expect(html).toContain("05.03.2184");

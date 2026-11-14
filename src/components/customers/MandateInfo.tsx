@@ -2,11 +2,11 @@
  * Phase 18e: Anzeige des SEPA-Lastschriftmandats auf der Kundendetailseite.
  * Die IBAN kommt ausschliesslich maskiert an (z. B. "DE02 **** 2051").
  */
-import { berlinDateKey } from "@/lib/berlin-time";
 
 export interface MandateInfoData {
   sepaMandateReference: string | null;
-  sepaMandateSignedAt: Date | null;
+  /** YYYY-MM-DD */
+  sepaMandateSignedAt: string | null;
   sepaDebitIbanMasked: string | null;
 }
 
@@ -14,8 +14,8 @@ export function hasMandate(c: MandateInfoData): boolean {
   return Boolean(c.sepaMandateReference?.trim() || c.sepaDebitIbanMasked);
 }
 
-function germanDate(d: Date): string {
-  const [y, m, day] = berlinDateKey(d).split("-");
+function germanDate(key: string): string {
+  const [y, m, day] = key.split("-");
   return `${day}.${m}.${y}`;
 }
 
