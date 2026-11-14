@@ -18,7 +18,7 @@ export const spec = {
   reopen: {
     path: "/api/v1/BankTransaction/{id}/reopen",
     method: "POST",
-    summary: "Ignorierten Umsatz wieder öffnen (ohne Zuordnung)",
+    summary: "Ignorierten Umsatz wieder öffnen (ohne Zuordnung); als erledigt markierte Rückbuchung zurück nach RETURN",
     scope: "write",
     response: apiDataResponseSchema(bankViewSchema),
     errors: [401, 403, 404, 409, 422, 429],

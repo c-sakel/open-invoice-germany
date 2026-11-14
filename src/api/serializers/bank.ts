@@ -212,7 +212,18 @@ export const bankConfirmResultSchema = z.object({
 export const bankUnambiguousResultSchema = z.object({
   confirmed: z.number().int(),
   skipped: z.array(z.object({ transactionId: z.string(), reason: z.string() })),
+  truncated: z.boolean(),
+  remaining: z.number().int(),
 });
+
+export const bankReturnResultSchema = bankViewSchema.extend({
+  feeCents: z.number().int(),
+  partial: z.boolean(),
+});
+
+export function serializeBankReturnResult(r: { transaction: Parameters<typeof serializeBankView>[0]; feeCents: number; partial: boolean }): z.infer<typeof bankReturnResultSchema> {
+  return { ...serializeBankView(r.transaction), feeCents: r.feeCents, partial: r.partial };
+}
 
 export const bankSuggestionSchema = z.object({
   allocations: z.array(z.object({ invoiceId: z.string(), number: z.string(), amountCents: z.number().int(), applySkonto: z.boolean() })),

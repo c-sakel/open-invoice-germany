@@ -185,13 +185,12 @@ describe("Bankabgleich: bestaetigen", () => {
     }
   });
 
-  it("Rueckbuchungs-Umsatz (RETURN) kann weder einzeln gebucht noch ignoriert werden", async () => {
+  it("Rueckbuchungs-Umsatz (RETURN) kann nicht als Zahlung gebucht werden", async () => {
     const inv = await mkInvoice(org, ISSUE);
     const txId = await mkBankTx(org, { amountCents: GROSS, bookingDate: BOOK, status: "RETURN", remittance: inv.number });
     await expect(
       confirmBankMatch(org.orgId, txId, { allocations: [{ invoiceId: inv.id, amountCents: GROSS }], expectedAllocatedCents: 0 }, opts),
     ).rejects.toBeInstanceOf(BankAllocationError);
-    await expect(ignoreBankTransaction(org.orgId, txId, { reason: "nicht relevant" }, opts)).rejects.toBeInstanceOf(BankAllocationError);
     expect(await payCount(inv.id)).toBe(0);
     expect((await view(txId)).status).toBe("RETURN");
   });
@@ -214,6 +213,7 @@ describe("Bankabgleich: Sammelbestaetigung", () => {
 
     const r = await confirmUnambiguous(o.orgId, {}, opts);
     expect(r.confirmed).toBe(3);
+    expect(r).toMatchObject({ truncated: false, remaining: 0 });
     expect((await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: possTx } })).status).toBe("OPEN");
     expect(await dbInternal.bankMatch.count({ where: { transactionId: possTx } })).toBe(0);
     for (const s of sure.slice(0, 3)) expect((await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: s.txId } })).status).toBe("MATCHED");
@@ -233,6 +233,20 @@ describe("Bankabgleich: Sammelbestaetigung", () => {
     expect(r.skipped.map((s) => s.transactionId)).toEqual([ret]);
     expect((await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: ret } })).status).toBe("RETURN");
     expect(await dbInternal.bankMatch.count({ where: { transactionId: ret } })).toBe(0);
+  });
+});
+
+describe("Bankabgleich: Sammelbestaetigung mit Skonto", () => {
+  it("sicherer Vorschlag mit Skonto-Abzug wird nicht gesammelt gebucht", async () => {
+    const o = await mkBankOrg("Bank Sammel Skonto GmbH", ISSUE);
+    const inv = await mkInvoice(o, ISSUE, { netCents: 30000, skonto: true });
+    const skontoCents = Math.round(inv.grossCents * 0.98);
+    const txId = await mkBankTx(o, { amountCents: skontoCents, bookingDate: BOOK, remittance: inv.number });
+    const r = await confirmUnambiguous(o.orgId, { transactionIds: [txId] }, opts);
+    expect(r.confirmed).toBe(0);
+    expect(r.skipped.map((s) => s.transactionId)).toEqual([txId]);
+    expect((await dbInternal.bankTransaction.findUniqueOrThrow({ where: { id: txId } })).status).toBe("OPEN");
+    expect(await dbInternal.payment.count({ where: { invoiceId: inv.id } })).toBe(0);
   });
 });
 

@@ -71,7 +71,15 @@ export async function returnSuggestions(orgId: string, txId: string): Promise<Re
   return [...out.values()];
 }
 
-export async function confirmBankReturn(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<BankTransactionView> {
+export interface BankReturnResult {
+  transaction: BankTransactionView;
+  /** Rueckgabegebuehr der Bank (Umsatz groesser als die gegengebuchte Zahlung); wird nie gebucht. */
+  feeCents: number;
+  /** Der Umsatz war kleiner als der Rest der Zahlung: nur ein Teil wurde gegengebucht. */
+  partial: boolean;
+}
+
+export async function confirmBankReturn(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<BankReturnResult> {
   const input = bankReturnInputSchema.parse(raw);
   const now = opts.now ?? new Date();
   const done = await withChangeLogRetry(() =>
@@ -79,10 +87,14 @@ export async function confirmBankReturn(orgId: string, txId: string, raw: unknow
       await lockRow(tx, "BankTransaction", txId, orgId);
       const bankTx = await tx.bankTransaction.findFirst({
         where: { id: txId, orgId },
-        select: { id: true, status: true, amountCents: true, currency: true, returnReason: true },
+        select: { id: true, status: true, direction: true, amountCents: true, currency: true, returnReason: true },
       });
       if (!bankTx) throw new NotFoundError("Bankumsatz nicht gefunden.");
       if (bankTx.status !== "RETURN") throw new BankAllocationError("Nur Rueckbuchungen koennen als Ruecklastschrift gebucht werden.");
+
+      if (bankTx.direction !== "DBIT") {
+        throw new BankAllocationError("Eine Rueckbuchung zu einer eigenen Ausgangsbuchung kann nicht gegen Kundenzahlungen gebucht werden; bitte als erledigt markieren.");
+      }
 
       const payment = await tx.payment.findFirst({
         where: { id: input.paymentId, kind: "PAYMENT", invoice: { orgId } },
@@ -125,7 +137,7 @@ export async function confirmBankReturn(orgId: string, txId: string, raw: unknow
         at: now,
         data: { paymentId: payment.id, invoiceId: payment.invoiceId, amountCents, returnAmountCents: bankTx.amountCents, reason },
       });
-      return { view: await loadView(tx, orgId, txId), reversed, paymentId: payment.id, reason };
+      return { view: await loadView(tx, orgId, txId), reversed, paymentId: payment.id, reason, feeCents: Math.max(0, bankTx.amountCents - amountCents), partial: bankTx.amountCents < rest };
     }, TX_OPTIONS),
   );
   try {
@@ -141,5 +153,5 @@ export async function confirmBankReturn(orgId: string, txId: string, raw: unknow
   } catch (e) {
     console.error("confirmBankReturn: Aktivitaetsprotokoll fehlgeschlagen", e);
   }
-  return done.view;
+  return { transaction: done.view, feeCents: done.feeCents, partial: done.partial };
 }

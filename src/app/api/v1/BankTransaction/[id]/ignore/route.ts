@@ -19,7 +19,7 @@ export const spec = {
   ignore: {
     path: "/api/v1/BankTransaction/{id}/ignore",
     method: "POST",
-    summary: "Offenen Umsatz mit Grund ignorieren",
+    summary: "Offenen Umsatz mit Grund ignorieren; Rückbuchungen (RETURN) werden mit Grund als erledigt markiert (RETURN_DONE, keine Gegenbuchung)",
     scope: "write",
     request: { body: bankIgnoreInputSchema },
     response: apiDataResponseSchema(bankViewSchema),

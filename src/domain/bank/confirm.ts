@@ -9,6 +9,7 @@ import { lockRow, lockRows } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
+import { describeError } from "@/lib/safe-error";
 import { PaymentError, recordPaymentWithinTx, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
 import { bankConfirmInputSchema, bankConfirmUnambiguousInputSchema, bankIgnoreInputSchema, bankUndoInputSchema } from "@/schemas/bank";
@@ -159,6 +160,7 @@ export async function confirmBankMatch(orgId: string, txId: string, raw: unknown
 
 function skipReason(e: unknown): string {
   if (e instanceof BankConflictError || e instanceof BankAllocationError || e instanceof PaymentError || e instanceof NotFoundError) return e.message;
+  console.error("Bankabgleich: Buchung fehlgeschlagen", describeError(e));
   return "Buchung fehlgeschlagen.";
 }
 
@@ -166,15 +168,19 @@ export async function confirmUnambiguous(
   orgId: string,
   raw: unknown,
   opts: BankActionOptions,
-): Promise<{ confirmed: number; skipped: Array<{ transactionId: string; reason: string }> }> {
+): Promise<{ confirmed: number; skipped: Array<{ transactionId: string; reason: string }>; truncated: boolean; remaining: number }> {
   const input = bankConfirmUnambiguousInputSchema.parse(raw ?? {});
   const explicit = input.transactionIds ? [...new Set(input.transactionIds)] : null;
-  const rows = await dbInternal.bankTransaction.findMany({
-    where: { orgId, status: "OPEN", direction: "CRDT", ...(explicit ? { id: { in: explicit } } : {}) },
+  const where = { orgId, status: "OPEN", direction: "CRDT", ...(explicit ? { id: { in: explicit } } : {}) };
+  const fetched = await dbInternal.bankTransaction.findMany({
+    where,
     select: { id: true, allocatedCents: true },
     orderBy: [{ bookingDate: "asc" }, { id: "asc" }],
-    take: UNAMBIGUOUS_MAX,
+    take: UNAMBIGUOUS_MAX + 1,
   });
+  const truncated = fetched.length > UNAMBIGUOUS_MAX;
+  const rows = fetched.slice(0, UNAMBIGUOUS_MAX);
+  const remaining = truncated ? Math.max(0, (await dbInternal.bankTransaction.count({ where })) - rows.length) : 0;
   const skipped: Array<{ transactionId: string; reason: string }> = [];
   if (explicit) {
     const found = new Set(rows.map((r) => r.id));
@@ -187,6 +193,10 @@ export async function confirmUnambiguous(
     const pick = sure.length === 1 ? sure[0]! : null;
     if (!pick) {
       if (explicit) skipped.push({ transactionId: row.id, reason: "Kein eindeutiger Vorschlag." });
+      continue;
+    }
+    if (pick.allocations.some((a) => a.applySkonto)) {
+      skipped.push({ transactionId: row.id, reason: "Skonto-Abzug nur einzeln mit Sicht bestaetigen." });
       continue;
     }
     try {
@@ -204,7 +214,7 @@ export async function confirmUnambiguous(
       skipped.push({ transactionId: row.id, reason: skipReason(e) });
     }
   }
-  return { confirmed, skipped };
+  return { confirmed, skipped, truncated, remaining };
 }
 
 export async function ignoreBankTransaction(orgId: string, txId: string, raw: unknown, opts: BankActionOptions): Promise<BankTransactionView> {
@@ -213,19 +223,19 @@ export async function ignoreBankTransaction(orgId: string, txId: string, raw: un
   return dbInternal.$transaction(async (tx) => {
     await lockRow(tx, "BankTransaction", txId, orgId);
     const bankTx = await loadView(tx, orgId, txId);
-    if (bankTx.status !== "OPEN" && bankTx.status !== "PARTIAL") {
-      throw new BankAllocationError("Nur offene oder teilweise zugeordnete Umsaetze koennen ignoriert werden.");
+    if (bankTx.status !== "OPEN" && bankTx.status !== "PARTIAL" && bankTx.status !== "RETURN") {
+      throw new BankAllocationError("Nur offene, teilweise zugeordnete oder Rueckbuchungs-Umsaetze koennen ignoriert bzw. erledigt werden.");
     }
     const upd = await tx.bankTransaction.updateMany({
       where: { id: txId, orgId, status: bankTx.status, allocatedCents: bankTx.allocatedCents },
-      data: { status: "IGNORED", ignoredReason: input.reason, ignoredBy: opts.actor, ignoredAt: now },
+      data: { status: bankTx.status === "RETURN" ? "RETURN_DONE" : "IGNORED", ignoredReason: input.reason, ignoredBy: opts.actor, ignoredAt: now },
     });
     if (upd.count === 0) throw new BankConflictError();
     await logActivity(tx, {
       orgId,
       entityType: "BANK_TRANSACTION",
       entityId: txId,
-      type: "BANK_TRANSACTION_IGNORED",
+      type: bankTx.status === "RETURN" ? "BANK_RETURN_DISMISSED" : "BANK_TRANSACTION_IGNORED",
       actor: opts.actor,
       at: now,
       data: { reason: input.reason, allocatedCents: bankTx.allocatedCents },
@@ -239,11 +249,14 @@ export async function reopenBankTransaction(orgId: string, txId: string, opts: B
   return dbInternal.$transaction(async (tx) => {
     await lockRow(tx, "BankTransaction", txId, orgId);
     const bankTx = await loadView(tx, orgId, txId);
-    if (bankTx.status !== "IGNORED") throw new BankAllocationError("Nur ignorierte Umsaetze koennen wieder geoeffnet werden.");
+    const dismissedReturn = bankTx.status === "RETURN_DONE" && bankTx.ignoredReason !== null;
+    if (bankTx.status !== "IGNORED" && !dismissedReturn) {
+      throw new BankAllocationError("Nur ignorierte oder als erledigt markierte Rueckbuchungen koennen wieder geoeffnet werden.");
+    }
     if (bankTx.allocatedCents !== 0) throw new BankAllocationError("Der Umsatz ist teilweise zugeordnet; zuerst die Zuordnung zuruecknehmen.");
     const upd = await tx.bankTransaction.updateMany({
-      where: { id: txId, orgId, status: "IGNORED", allocatedCents: 0 },
-      data: { status: "OPEN", ignoredReason: null, ignoredBy: null, ignoredAt: null },
+      where: { id: txId, orgId, status: bankTx.status, allocatedCents: 0 },
+      data: { status: dismissedReturn ? "RETURN" : "OPEN", ignoredReason: null, ignoredBy: null, ignoredAt: null },
     });
     if (upd.count === 0) throw new BankConflictError();
     await logActivity(tx, {
@@ -283,7 +296,7 @@ export async function undoBankMatch(orgId: string, txId: string, raw: unknown, o
       if (already > 0) throw new BankConflictError("Diese Zuordnung wurde bereits zurueckgenommen.");
 
       const reversed = await reversePaymentWithinTx(tx, match.paymentId, { reason: input.reason }, { actor: opts.actor, orgId, now, createdBy: opts.createdBy });
-      const allocated = Math.max(0, bankTx.allocatedCents - match.amountCents);
+      const allocated = Math.max(0, bankTx.allocatedCents + reversed.reversal.amountCents);
       const status = bankTx.status === "IGNORED" ? "IGNORED" : allocated === 0 ? "OPEN" : "PARTIAL";
       const upd = await tx.bankTransaction.updateMany({
         where: { id: txId, orgId, allocatedCents: bankTx.allocatedCents },

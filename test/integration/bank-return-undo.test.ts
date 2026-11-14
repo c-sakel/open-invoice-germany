@@ -4,7 +4,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { dbInternal } from "@/lib/db";
 import { BankAllocationError, BankConflictError } from "@/domain/bank/errors";
-import { confirmBankMatch, undoBankMatch } from "@/domain/bank/confirm";
+import { confirmBankMatch, ignoreBankTransaction, reopenBankTransaction, undoBankMatch } from "@/domain/bank/confirm";
 import { confirmBankReturn, returnSuggestions } from "@/domain/bank/return";
 import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { NotFoundError } from "@/domain/errors";
@@ -81,8 +81,9 @@ describe("Bankabgleich: Zuordnung zuruecknehmen", () => {
     const p = await paid();
     await reversePayment(p.paymentId, { amountCents: 4000, reason: "Teilrueckzahlung" }, { actor: "tester", orgId: org.orgId, now: NOW });
     const v = await undoBankMatch(org.orgId, p.txId, { matchId: p.matchId, reason: "Rest zuruecknehmen" }, opts);
-    expect(v.allocatedCents).toBe(0);
-    expect(v.status).toBe("OPEN");
+    // allocated = Summe Zahlungen - Summe Rueckbuchungen: nur der tatsaechlich gegengebuchte Rest wird frei.
+    expect(v.allocatedCents).toBe(4000);
+    expect(v.status).toBe("PARTIAL");
     const sum = await dbInternal.payment.aggregate({ where: { reversesPaymentId: p.paymentId }, _sum: { amountCents: true } });
     expect(sum._sum.amountCents).toBe(-GROSS);
     const undo = await dbInternal.bankMatch.findFirstOrThrow({ where: { transactionId: p.txId, kind: "UNDO" } });
@@ -108,8 +109,9 @@ describe("Bankabgleich: Ruecklastschrift", () => {
     const retTx = await mkBankTx(org, { amountCents: GROSS, bookingDate: BOOK, direction: "DBIT", status: "RETURN", endToEndId: "E2E-0042", returnReason: "AC04" });
     const sug = await returnSuggestions(org.orgId, retTx);
     expect(sug).toEqual([{ paymentId: p.paymentId, invoiceId: p.inv.id, number: p.inv.number, amountCents: GROSS, reason: "SAME_E2E" }]);
-    const v = await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts);
-    expect(v.status).toBe("RETURN_DONE");
+    const res = await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts);
+    expect(res.transaction.status).toBe("RETURN_DONE");
+    expect(res).toMatchObject({ feeCents: 0, partial: false });
     const rev = await dbInternal.payment.findFirstOrThrow({ where: { reversesPaymentId: p.paymentId } });
     expect(rev.reason).toContain("AC04");
     expect(rev.amountCents).toBe(-GROSS);
@@ -124,7 +126,8 @@ describe("Bankabgleich: Ruecklastschrift", () => {
     const retTx = await mkBankTx(org, { amountCents: GROSS + 600, bookingDate: BOOK, direction: "DBIT", status: "RETURN", returnReason: "MS03", remittance: `Rueckgabe ${p.inv.number}` });
     const sug = await returnSuggestions(org.orgId, retTx);
     expect(sug.map((s) => [s.paymentId, s.reason])).toEqual([[p.paymentId, "NUMBER"]]);
-    await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId, reason: "Konto aufgeloest" }, opts);
+    const res = await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId, reason: "Konto aufgeloest" }, opts);
+    expect(res).toMatchObject({ feeCents: 600, partial: false });
     const rev = await dbInternal.payment.findFirstOrThrow({ where: { reversesPaymentId: p.paymentId } });
     expect(rev.amountCents).toBe(-GROSS);
     expect(rev.reason).toContain("MS03");
@@ -143,5 +146,37 @@ describe("Bankabgleich: Ruecklastschrift", () => {
     const own = await paid();
     await expect(confirmBankReturn(org.orgId, openTx, { paymentId: own.paymentId }, opts)).rejects.toBeInstanceOf(BankAllocationError);
     await expect(returnSuggestions(other.orgId, retTx)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("Bankabgleich: Rueckbuchung ohne Gegenbuchung erledigen", () => {
+  it("Rueckbuchung mit CRDT ist nicht gegen Kundenzahlungen buchbar; erledigen mit Grund, reopen fuehrt nach RETURN", async () => {
+    const p = await paid();
+    const retTx = await mkBankTx(org, { amountCents: GROSS, bookingDate: BOOK, direction: "CRDT", status: "RETURN" });
+    await expect(confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts)).rejects.toBeInstanceOf(BankAllocationError);
+    expect(await dbInternal.payment.count({ where: { reversesPaymentId: p.paymentId } })).toBe(0);
+    await expect(ignoreBankTransaction(org.orgId, retTx, { reason: "ab" }, opts)).rejects.toThrow();
+    const done = await ignoreBankTransaction(org.orgId, retTx, { reason: "Rueckbuchung Ausgangsbuchung" }, opts);
+    expect(done.status).toBe("RETURN_DONE");
+    expect(done.ignoredReason).toBe("Rueckbuchung Ausgangsbuchung");
+    expect(await dbInternal.payment.count({ where: { reversesPaymentId: p.paymentId } })).toBe(0);
+    await expect(confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts)).rejects.toBeInstanceOf(BankAllocationError);
+    const re = await reopenBankTransaction(org.orgId, retTx, opts);
+    expect(re.status).toBe("RETURN");
+    expect(re.ignoredReason).toBeNull();
+  });
+
+  it("gegengebuchte Rueckbuchung (RETURN_DONE ohne Grund) laesst sich nicht wieder oeffnen", async () => {
+    const p = await paid();
+    const retTx = await mkBankTx(org, { amountCents: GROSS, bookingDate: BOOK, direction: "DBIT", status: "RETURN" });
+    await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts);
+    await expect(reopenBankTransaction(org.orgId, retTx, opts)).rejects.toBeInstanceOf(BankAllocationError);
+  });
+
+  it("Teil-Rueckgabe (Umsatz kleiner als Zahlung) meldet partial", async () => {
+    const p = await paid();
+    const retTx = await mkBankTx(org, { amountCents: 3000, bookingDate: BOOK, direction: "DBIT", status: "RETURN" });
+    const res = await confirmBankReturn(org.orgId, retTx, { paymentId: p.paymentId }, opts);
+    expect(res).toMatchObject({ feeCents: 0, partial: true });
   });
 });

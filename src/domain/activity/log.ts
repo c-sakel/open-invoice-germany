@@ -115,6 +115,7 @@ export const ACTIVITY_TYPES = {
   BANK_RETURN_BOOKED: "Ruecklastschrift gebucht",
   BANK_TRANSACTION_IGNORED: "Bankumsatz ignoriert",
   BANK_TRANSACTION_REOPENED: "Bankumsatz wieder geoeffnet",
+  BANK_RETURN_DISMISSED: "Rueckbuchung ohne Gegenbuchung erledigt",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

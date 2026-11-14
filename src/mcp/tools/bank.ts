@@ -23,6 +23,7 @@ import {
   serializeBankStatement,
   serializeBankTransaction,
   serializeBankView,
+  serializeBankReturnResult,
   serializeConfirmResult,
 } from "@/api/serializers/bank";
 import {
@@ -188,7 +189,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
       title: "Eindeutige Zuordnungen bestätigen",
       description:
         "Bestätigt alle offenen Umsätze (oder die genannten `transactionIds`, höchstens 200), für die es genau einen sicheren Vorschlag gibt, und bucht die Zahlungen. " +
-        "Liefert die Anzahl und die übersprungenen Umsätze mit Grund. Nur auf ausdrückliche Anweisung nutzen.",
+        "Vorschläge mit Skonto-Abzug werden nie hier gebucht (nur einzeln). Liefert die Anzahl, die übersprungenen Umsätze mit Grund sowie truncated/remaining, wenn mehr als das Limit vorliegt. Nur auf ausdrückliche Anweisung nutzen.",
       inputSchema: bankConfirmUnambiguousInputSchema.shape,
     },
     async (args): Promise<Result> => {
@@ -205,7 +206,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     "ignore_bank_transaction",
     {
       title: "Bankumsatz ignorieren",
-      description: "Markiert einen offenen oder teilweise zugeordneten Umsatz mit Grund als ignoriert (keine Buchung).",
+      description: "Markiert einen offenen oder teilweise zugeordneten Umsatz mit Grund als ignoriert (keine Buchung). Eine Rückbuchung (RETURN) wird so mit Grund als erledigt markiert (RETURN_DONE, ohne Gegenbuchung).",
       inputSchema: { transactionId: txId, ...bankIgnoreInputSchema.shape },
     },
     async ({ transactionId, ...body }): Promise<Result> => {
@@ -222,7 +223,7 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     "reopen_bank_transaction",
     {
       title: "Ignorierten Umsatz wieder öffnen",
-      description: "Öffnet einen ignorierten Umsatz ohne Zuordnung wieder.",
+      description: "Öffnet einen ignorierten Umsatz ohne Zuordnung wieder; eine als erledigt markierte Rückbuchung kehrt nach RETURN zurück.",
       inputSchema: { transactionId: txId },
     },
     async ({ transactionId }): Promise<Result> => {
@@ -257,13 +258,13 @@ export function registerBankTools(server: McpServer, ctx: McpToolsContext): void
     {
       title: "Rückbuchung bestätigen",
       description:
-        "Bestätigt eine Rückbuchung/Rücklastschrift (Umsatzstatus RETURN): die gewählte Zahlung (`paymentId` aus get_bank_suggestions) wird per Gegenbuchung storniert. Der Rückbuchungs-Umsatz selbst wird nie als Zahlung gebucht.",
+        "Bestätigt eine Rückbuchung/Rücklastschrift (Umsatzstatus RETURN): die gewählte Zahlung (`paymentId` aus get_bank_suggestions) wird per Gegenbuchung storniert. Der Rückbuchungs-Umsatz selbst wird nie als Zahlung gebucht. Nur bei Rückgaben einer Kundenzahlung (Soll); die Antwort enthält feeCents (Rückgabegebühr der Bank, wird nie gebucht) und partial. Rückbuchungen eigener Ausgangsbuchungen mit ignore_bank_transaction (Grund Pflicht) als erledigt markieren; reopen_bank_transaction führt sie wieder nach RETURN.",
       inputSchema: { transactionId: txId, ...bankReturnInputSchema.shape },
     },
     async ({ transactionId, ...body }): Promise<Result> => {
       try {
         const org = await ctx.requireOrg();
-        return json(serializeBankView(await confirmBankReturn(org.id, transactionId, body, { actor: "mcp", createdBy: "mcp" })));
+        return json(serializeBankReturnResult(await confirmBankReturn(org.id, transactionId, body, { actor: "mcp", createdBy: "mcp" })));
       } catch (e) {
         return bankFailure(ctx, e);
       }

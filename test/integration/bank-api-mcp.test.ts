@@ -252,7 +252,7 @@ describe("REST: Umsaetze, Vorschlaege, Zuordnung", () => {
     expect((await returnPost(post(`/api/v1/BankTransaction/${retTx}/return`, writeToken, { paymentId: "kein-cuid" }), idParams(retTx))).status).toBe(400);
     const ret = await returnPost(post(`/api/v1/BankTransaction/${retTx}/return`, writeToken, { paymentId }), idParams(retTx));
     expect(ret.status).toBe(200);
-    expect((await json(ret)).data.status).toBe("RETURN_DONE");
+    expect((await json(ret)).data).toMatchObject({ status: "RETURN_DONE", feeCents: 0, partial: false });
     expect((await returnPost(post(`/api/v1/BankTransaction/${retTx}/return`, writeToken, { paymentId }), idParams(retTx))).status).toBe(422);
   });
 });

@@ -295,11 +295,11 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 | `get_bank_transaction` | Umsatz mit allen Zuordnungen | „Zeig Umsatz …" |
 | `get_bank_suggestions` | Zuordnungsvorschläge mit Begründung und Sicherheit (bei Rückbuchungen die betroffenen Zahlungen); bucht nie | „Wohin gehört dieser Umsatz?" |
 | `confirm_bank_match` | Umsatz einer oder mehreren Rechnungen zuordnen und die Zahlungen buchen (`allocations`, `expectedAllocatedCents`) | „Ordne den Umsatz der Rechnung … zu." |
-| `confirm_unambiguous_bank_matches` | Alle (oder die genannten) Umsätze mit genau einem sicheren Vorschlag bestätigen; Ergebnisbericht mit übersprungenen Umsätzen | „Übernimm alle eindeutigen Zuordnungen." |
-| `ignore_bank_transaction` | Umsatz mit Grund ignorieren | „Ignoriere diesen Umsatz, private Überweisung." |
-| `reopen_bank_transaction` | Ignorierten Umsatz wieder öffnen | „Öffne den Umsatz wieder." |
+| `confirm_unambiguous_bank_matches` | Alle (oder die genannten) Umsätze mit genau einem sicheren Vorschlag bestätigen; Ergebnisbericht mit übersprungenen Umsätzen, `truncated`/`remaining` bei mehr als 200; Vorschläge mit Skonto-Abzug nur einzeln | „Übernimm alle eindeutigen Zuordnungen." |
+| `ignore_bank_transaction` | Umsatz mit Grund ignorieren; Rückbuchung (RETURN) mit Grund als erledigt markieren (ohne Gegenbuchung) | „Ignoriere diesen Umsatz, private Überweisung." |
+| `reopen_bank_transaction` | Ignorierten Umsatz wieder öffnen (erledigte Rückbuchung zurück nach RETURN) | „Öffne den Umsatz wieder." |
 | `undo_bank_match` | Zuordnung per Gegenbuchung der Zahlung zurücknehmen (`matchId`, Grund) | „Nimm die Zuordnung zurück." |
-| `confirm_bank_return` | Rückbuchung bestätigen: gewählte Zahlung (`paymentId`) per Gegenbuchung stornieren | „Bestätige die Rücklastschrift für Zahlung …" |
+| `confirm_bank_return` | Rückbuchung bestätigen: gewählte Zahlung (`paymentId`) per Gegenbuchung stornieren (nur Rückgaben von Kundenzahlungen); Antwort mit `feeCents` (Rückgabegebühr, nie gebucht) und `partial` | „Bestätige die Rücklastschrift für Zahlung …" |
 
 ### Einstellungen
 
