@@ -1314,3 +1314,6 @@ export * from "./tag";
 
 // ── Phase 16a: Zahlungskorrektur (Gegenbuchung) ──────────────────────────────
 export * from "./payment-correction";
+
+// ── Kundenportal ─────────────────────────────────────────────────────────────
+export * from "./portal";
