@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/session";
 import { userIdFromToken } from "@/lib/auth/server";
+import { portalSecurityHeaders } from "@/domain/portal/http";
 
 // Öffentlich erreichbar (ohne Anmeldung):
 // "/api/health" (Phase 16a, Task 8): Erreichbarkeitspruefung fuer Monitoring/Docker, liefert nur
@@ -24,7 +25,7 @@ const PUBLIC_EXACT = new Set(["/", "/api/health"]);
 // auch einen hypothetischen Pfad wie "/api/docsomething" mit durchgelassen haette.
 // /api/branding (Phase 12c, Task 2): liefert nur Favicon/Logo der Instanz — keine
 // personenbezogenen Daten, wird aber vor der Session gebraucht (Login-/Setup-Seite).
-const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/api/public/", "/api/v1/", "/api/docs", "/api/branding"];
+const PUBLIC_PREFIXES = ["/login", "/setup", "/api/auth", "/api/cron", "/angebot/", "/portal/", "/api/public/", "/api/v1/", "/api/docs", "/api/branding"];
 
 /** true, wenn `pathname` GENAU `prefix` ist ODER mit `prefix + "/"` beginnt — verhindert,
  *  dass ein Praefix ohne trailing slash (z. B. "/api/docs") auch einen unverwandten
@@ -38,7 +39,7 @@ function matchesPublicPrefix(pathname: string, prefix: string): boolean {
 // Präfixe, deren Seiten ohne interne Navigation/Layout ausgeliefert werden (Root-Layout
 // liest diesen Request-Header und rendert dann nur eine schlanke Hülle — kein Route-Group-
 // Umbau nötig, siehe Task-3-Addendum).
-const NO_NAV_PREFIXES = ["/angebot/", "/api/public/"];
+const NO_NAV_PREFIXES = ["/angebot/", "/portal/", "/api/public/"];
 export const PUBLIC_NO_NAV_HEADER = "x-oig-public";
 
 // Task 9 (R12): das Root-Layout (`src/app/layout.tsx`) braucht den Pfad, um eine
@@ -69,6 +70,10 @@ export async function proxy(req: NextRequest) {
       // G3: /angebot/ und /api/public/ liefern personenbezogene Angebotsdaten ohne Login
       // — CDN/Browser duerfen sie nicht zwischenspeichern.
       res.headers.set("cache-control", "private, no-store");
+      // Kundenportal: zusaetzlich kein Referer (Token in der URL) und keine Indexierung.
+      if (pathname.startsWith("/portal/") || pathname.startsWith("/api/public/portal/")) {
+        for (const [k, v] of Object.entries(portalSecurityHeaders())) res.headers.set(k, v);
+      }
       return res;
     }
     const res = NextResponse.next({ request: { headers } });

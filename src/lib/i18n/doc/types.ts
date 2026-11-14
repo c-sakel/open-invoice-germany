@@ -200,6 +200,26 @@ export interface DocStrings {
     total: string;
     payBy: (date: string) => string;
   };
+  /** Oeffentliches Kundenportal (Belegliste, Status, Downloads). */
+  publicPortal: {
+    title: string;
+    greeting: (customerName: string) => string;
+    openItemsHeading: string;
+    openAmount: string;
+    overdueAmount: string;
+    noOpenItems: string;
+    documentsHeading: string;
+    empty: string;
+    columns: { number: string; type: string; date: string; due: string; amount: string; open: string; status: string; download: string };
+    kinds: { INVOICE: string; CREDIT_NOTE: string; CORRECTION: string; DUNNING: string };
+    status: { OPEN: string; PARTIALLY_PAID: string; PAID: string; OVERDUE: string; CANCELLED: string; CREDIT: string; DUNNING: string };
+    downloadPdf: string;
+    downloadXml: string;
+    relatedTo: (number: string) => string;
+    expiresNotice: (date: string) => string;
+    privacy: string;
+    rateLimit: { title: string; hint: string };
+  };
   /** Oeffentliche Angebotsseite (Freigabelink) und ihre Entscheidungsmeldungen. */
   publicOffer: {
     downloadPdf: string;
