@@ -145,6 +145,16 @@ describe("Abo mit Positionsbloecken", () => {
     expect(again.title).toBe("Neu");
   });
 
+  it("Abo ohne ITEM-Zeile wird abgelehnt (Anlegen, Bearbeiten), mit einer ITEM-Zeile ok", async () => {
+    expect(() => createRecurringSchema.parse({ customerId, title: "Ohne Position", startDate: NOW, lines: [heading, text] })).toThrow(ZodError);
+    const rec = await createRecurring(orgId, input({ autoFinalize: false }));
+    await expect(updateRecurringInvoice(orgId, rec.id, { lines: [heading, text] })).rejects.toBeInstanceOf(ZodError);
+    const ok = await updateRecurringInvoice(orgId, rec.id, { lines: [heading, itemB] });
+    expect(ok.lines).toHaveLength(2);
+    // PUT/PATCH ohne lines bleibt gueltig.
+    expect((await updateRecurringInvoice(orgId, rec.id, { title: "Ohne lines" })).lines).toHaveLength(2);
+  });
+
   it("serializeRecurring: lines nur mit geladenen Zeilen", async () => {
     const rec = await createRecurring(orgId, input({ autoFinalize: false }));
     const withLines = serializeRecurring(rec);
@@ -173,6 +183,20 @@ describe("MCP create_recurring mit Bloecken", () => {
     const rec = await dbInternal.recurringInvoice.findFirstOrThrow({ where: { orgId, title: "MCP-Blockabo" }, include: { lines: { orderBy: { position: "asc" } } } });
     expect(rec.lines.map((l) => l.lineType)).toEqual(["HEADING", "ITEM"]);
     expect(rec.lines[1].unitNetPriceCents).toBe(2500);
+  });
+
+  it("nur Ueberschrift/Text ohne Position -> Fehler, nichts angelegt", async () => {
+    const res = await callTool("create_recurring", {
+      customer: "Bloecke-Kunde AG",
+      title: "MCP-Ohne-Position",
+      startDate: "2171-03-01",
+      interval: "MONTHLY",
+      intervalCount: 1,
+      paymentTermsDays: 14,
+      lines: [{ lineType: "HEADING", description: "Paket" }, { lineType: "TEXT", description: "Hinweis" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(await dbInternal.recurringInvoice.count({ where: { orgId, title: "MCP-Ohne-Position" } })).toBe(0);
   });
 
   it("ITEM ohne quantity -> lesbare Fehlermeldung", async () => {
