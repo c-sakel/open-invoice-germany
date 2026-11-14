@@ -56,7 +56,7 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     loadDocumentSettings(org.id),
   ]);
 
-  const paymentMethodOptions = paymentMethods.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays }));
+  const paymentMethodOptions = paymentMethods.filter((m) => m.isActive && m.code !== "SKONTO").map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays, untdidCode: m.untdidCode }));
   const contacts = contactRows.map((c) => ({ id: c.id, customerId: c.customerId, name: `${c.firstName} ${c.lastName}${c.role ? ` (${c.role})` : ""}`, isDefault: c.isDefault }));
   const addresses = addressRows.map((a) => ({
     id: a.id,
@@ -95,6 +95,9 @@ export default async function BearbeitenPage({ params }: { params: Promise<{ id:
     consumerRetentionHint: inv.consumerRetentionHint,
     paymentTerms: inv.paymentTerms ?? "",
     paymentMethodId: inv.paymentMethodId ?? "",
+    cardPanTruncated: inv.cardPanTruncated ?? "",
+    cardNetwork: inv.cardNetwork ?? "",
+    cardHolderName: inv.cardHolderName ?? "",
     headerText: inv.headerText ?? "",
     footerText: inv.footerText ?? "",
     documentDiscountPercent: (inv.documentDiscountPermille / 10).toString(),

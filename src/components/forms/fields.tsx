@@ -31,7 +31,10 @@ export function TextField({
   className,
   type = "text",
   onChange,
-}: BaseField & { type?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+  autoComplete,
+  inputMode,
+  maxLength,
+}: BaseField & { type?: string; autoComplete?: string; inputMode?: "text" | "numeric"; maxLength?: number; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
   return (
     <label className={`flex flex-col gap-1 text-sm ${className ?? ""}`}>
       <span className="font-medium text-ink-soft">
@@ -46,6 +49,9 @@ export function TextField({
         required={required}
         placeholder={placeholder}
         onChange={onChange}
+        autoComplete={autoComplete}
+        inputMode={inputMode}
+        maxLength={maxLength}
       />
       {hint && <span className="text-xs text-ink-muted">{hint}</span>}
     </label>

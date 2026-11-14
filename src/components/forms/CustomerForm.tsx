@@ -28,6 +28,11 @@ export interface CustomerFormData {
   defaultPaymentMethodId: string | null;
   notes: string | null;
   deliveryChannel?: string;
+  sepaMandateReference?: string | null;
+  /** YYYY-MM-DD */
+  sepaMandateSignedAt?: string | null;
+  sepaDebitIban?: string | null;
+  sepaDebitAccountName?: string | null;
 }
 
 export interface PaymentMethodOption {
@@ -114,6 +119,17 @@ export function CustomerForm({
         />
         <TextAreaField label="Notiz" name="notes" defaultValue={customer?.notes} className="sm:col-span-2" />
       </div>
+
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">SEPA-Lastschriftmandat</h2>
+        <p className="text-xs text-ink-muted">Nur für Kunden, die per Lastschrift zahlen. Mandatsreferenz und IBAN gehören zusammen.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField label="Mandatsreferenz" name="sepaMandateReference" defaultValue={customer?.sepaMandateReference} autoComplete="off" />
+          <TextField label="Datum der Unterschrift" name="sepaMandateSignedAt" type="date" defaultValue={customer?.sepaMandateSignedAt} />
+          <TextField label="IBAN des belasteten Kontos" name="sepaDebitIban" defaultValue={customer?.sepaDebitIban} autoComplete="off" />
+          <TextField label="Kontoinhaber/-in" name="sepaDebitAccountName" defaultValue={customer?.sepaDebitAccountName} autoComplete="off" />
+        </div>
+      </section>
 
       <SubmitButton>Kunde speichern</SubmitButton>
     </form>

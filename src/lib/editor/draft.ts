@@ -111,6 +111,10 @@ export interface DraftState {
   validUntil: string;
   shippingDate: string;
   paymentMethodId: string;
+  /** Phase 18e: Kartenangaben (nur letzte 4 Ziffern); bleiben im Entwurf, die Domain setzt sie bei anderer Methode auf null. */
+  cardPanTruncated: string;
+  cardNetwork: string;
+  cardHolderName: string;
   documentDiscountPercent: string;
   documentDiscountAmount: string;
   documentChargePercent: string;
@@ -298,6 +302,9 @@ export function emptyDraft(mode: EditorMode, defaults?: Partial<DraftState>): Dr
     validUntil: "",
     shippingDate: "",
     paymentMethodId: "",
+    cardPanTruncated: "",
+    cardNetwork: "",
+    cardHolderName: "",
     documentDiscountPercent: "",
     documentDiscountAmount: "",
     documentChargePercent: "0",
@@ -547,6 +554,9 @@ export function toInvoicePayload(d: DraftState, isEdit: boolean): Record<string,
     skonto2Permille: d.skonto2Percent ? permilleOrZero(d.skonto2Percent) : undefined,
     skonto2Days: daysOrUndefined(d.skonto2Days),
     paymentMethodId: d.paymentMethodId || undefined,
+    cardPanTruncated: d.cardPanTruncated.trim() || null,
+    cardNetwork: d.cardNetwork.trim() || null,
+    cardHolderName: d.cardHolderName.trim() || null,
     lines,
   };
 
@@ -750,6 +760,9 @@ export interface InvoiceInitialLike {
   consumerRetentionHint: boolean;
   paymentTerms: string;
   paymentMethodId: string;
+  cardPanTruncated?: string;
+  cardNetwork?: string;
+  cardHolderName?: string;
   // Fix 2 (Task-1-Review, Ruling nach Task 4): headerText/footerText existieren im
   // Schema/`createDraftInvoice`/`updateDraftInvoice` bereits und werden hier mit
   // uebernommen.
@@ -872,6 +885,9 @@ export function draftFromInvoice(initial: InvoiceInitialLike, taxRates: readonly
     consumerRetentionHint: initial.consumerRetentionHint ?? false,
     paymentTerms: initial.paymentTerms ?? "",
     paymentMethodId: initial.paymentMethodId ?? "",
+    cardPanTruncated: initial.cardPanTruncated ?? "",
+    cardNetwork: initial.cardNetwork ?? "",
+    cardHolderName: initial.cardHolderName ?? "",
     headerText: initial.headerText ?? "",
     footerText: initial.footerText ?? "",
     documentDiscountPercent: roundTrip(initial.documentDiscountPercent, toPermille, fromPermille),

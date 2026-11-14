@@ -19,6 +19,7 @@ import { DataTable } from "@/components/ui/DataTable";
 import { Card } from "@/components/ui/Card";
 import { CsvLink } from "@/components/ui/CsvLink";
 import { Kpi } from "@/components/ui/Kpi";
+import { MandateInfo, hasMandate } from "@/components/customers/MandateInfo";
 import { formatCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -112,6 +113,12 @@ export default async function KundeDetailPage({ params }: { params: Promise<{ id
               checkedAtLabel: new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(c.checkedAt),
             }))}
           />
+        </Card>
+      )}
+
+      {hasMandate(customer) && (
+        <Card title="SEPA-Lastschriftmandat">
+          <MandateInfo customer={customer} />
         </Card>
       )}
 

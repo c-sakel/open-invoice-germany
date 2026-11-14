@@ -71,7 +71,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
   // (detectSkonto) — im Rechnungs-Editor nie manuell waehlbar.
   const paymentMethodOptions = paymentMethods
     .filter((m) => m.isActive && m.code !== "SKONTO")
-    .map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays }));
+    .map((m) => ({ id: m.id, name: m.name, paymentTermsDays: m.paymentTermsDays, untdidCode: m.untdidCode }));
 
   if (customers.length === 0) {
     return (
