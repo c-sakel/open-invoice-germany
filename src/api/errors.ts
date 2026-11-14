@@ -40,6 +40,7 @@ import { PostalConflictError } from "@/domain/postal/errors";
 import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
+import { describeError } from "@/lib/safe-error";
 
 /**
  * Domain-Fehlerklassen (task-2-facts.md), die OHNE eigene `status`-Eigenschaft daherkommen
@@ -230,7 +231,7 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   if (e instanceof Error && DOMAIN_CONFLICT_ERROR_CLASSES.some((cls) => e instanceof cls)) {
     return { status: 409, body: { error: { code: "CONFLICT", message: e.message } } };
   }
-  console.error("[api] Unerwarteter Fehler:", e instanceof Error ? (e.stack ?? e.message) : e);
+  console.error("[api] Unerwarteter Fehler:", describeError(e));
   return { status: 500, body: { error: { code: "INTERNAL", message: "Interner Fehler." } } };
 }
 

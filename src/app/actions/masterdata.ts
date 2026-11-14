@@ -13,6 +13,7 @@ import { archiveProduct as archiveProductDomain } from "@/domain/product/archive
 import { createProduct, updateProduct } from "@/domain/product/save";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import type { ActionResult } from "./result";
+import { describeError } from "@/lib/safe-error";
 
 function str(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
@@ -91,7 +92,7 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
     // idempotent: Bestandsorganisationen ohne Systemdaten bekommen sie beim naechsten Speichern
     await ensureOrgMasterdata(dbInternal, org.id);
   } catch (e) {
-    console.error("saveOrganization:", e);
+    console.error("saveOrganization:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/einstellungen");
@@ -149,7 +150,7 @@ export async function saveCustomer(_prev: ActionResult, fd: FormData): Promise<A
     }
   } catch (e) {
     if (e instanceof CustomerValidationError) return { ok: false, error: e.message };
-    console.error("saveCustomer:", e);
+    console.error("saveCustomer:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
   revalidatePath("/kunden");
@@ -207,7 +208,7 @@ export async function createCustomerInline(input: CreateCustomerInlineInput): Pr
     };
   } catch (e) {
     if (e instanceof CustomerValidationError) return { ok: false, error: e.message };
-    console.error("createCustomerInline:", e);
+    console.error("createCustomerInline:", describeError(e));
     return { ok: false, error: "Speichern fehlgeschlagen." };
   }
 }
