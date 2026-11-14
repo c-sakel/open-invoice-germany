@@ -191,6 +191,10 @@ Migration `20261119100000_phase18d_api_indexes` (SQLite) bzw. `20261119100100_ph
 ### Abo-Positionen
 `RecurringInvoiceLine` trägt zusätzlich `lineType` (ITEM | HEADING | TEXT | SUBTOTAL, Standard ITEM), `productId` (nur Snapshot), `descriptionLong`, `articleNumber` und `discountCents` (Migration `phase18c_belegfluss`, SQLite + Postgres, additiv, keine neue Tabelle). `src/domain/recurring/lines.ts` wandelt Eingabe in Speicherzeilen (`toRecurringLineRows`, Gliederungszeilen ohne Beträge über `normalizeLines`) und beim Lauf zurück in Rechnungszeilen (`recurringLinesToInvoiceLines`); Steuersätze zählen nur für ITEM-Zeilen (`itemTaxRates`). `run.ts` kopiert die Zeilen in `createDraftInvoiceWithinTx`, Berechnung und Prüfung bleiben im gemeinsamen Rechnungspfad. `NewRecurringForm` nutzt `LineItemsEditor` der Rechnung.
 
+### Sammelrechnung für Abos
+
+`RecurringInvoice.collectiveBilling` und `invoiceHeading` sowie `InvoiceLine.recurringInvoiceId` (Herkunft je Position, intern, nicht Teil des festgeschriebenen Belegs). Die Gruppierung (`src/domain/recurring/collective.ts`, rein) wählt je Kunde und Berliner Stichtag die Abos mit gleichem Währungs-, Steuerschema-, Sprach-, Zahlungsziel-, Auto-Festschreiben-/Auto-Versand-Schlüssel (Mailvorlage nur bei Auto-Versand), höchstens 50. Der Lauf (`collective-run.ts`) sperrt zuerst die Organisation, dann das auslösende Abo, ermittelt die Gruppe unter der Sperre neu und sperrt die weiteren Abos in sortierter Reihenfolge. Die Rechnung entsteht über denselben Erstellpfad wie jede andere Rechnung (ein Beleg, ein ChangeLog-Eintrag, ein `invoice.created`). Der Scheduler-Lauf (`run.ts`) isoliert defekte Abos und fällt bei einem Fehler im Gruppenpfad auf Einzelrechnungen zurück.
+
 ### Teil-, Abschlags- und Schlussrechnungen
 
 **Drei neue Rechnungstypen** (`Invoice.type`: `PARTIAL`, `DOWNPAYMENT`, `FINAL`), alle regulär GoBD-Rechnungen (Entwurf → `finalizeWithinTx` → Storno/Gutschrift, kein Sonderpfad):

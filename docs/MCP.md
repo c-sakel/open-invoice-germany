@@ -339,6 +339,8 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 
 ### Abos (wiederkehrende Rechnungen)
 
+`create_recurring` und `update_recurring` nehmen `collectiveBilling` und `invoiceHeading` (Pflicht bei `collectiveBilling`, höchstens 200 Zeichen) entgegen, `list_recurring` zeigt beide Felder. `run_recurring` meldet Sammelrechnungen mit der Zahl der Abos und, falls die Gruppe auf einen Verbrauchspartner wartet, „zurückgestellt".
+
 | Tool | Zweck | Beispiel |
 |---|---|---|
 | `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`; Positionen mit `lineType` `ITEM`/`HEADING`/`TEXT`/`SUBTOTAL`, `descriptionLong`, `articleNumber` und Rabatt wie bei `update_invoice_draft`; je Position `billing` `FIXED`/`USAGE` und `usageUnitLabel` — bei `USAGE` ohne `quantity`, Abrechnung nach erfasstem Verbrauch; `unitPriceEuro` bis 5 Nachkommastellen; `collectiveBilling` mit Pflichtfeld `invoiceHeading` fasst mehrere fällige Abos desselben Kunden in einer Sammelrechnung zusammen) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |

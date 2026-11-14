@@ -485,6 +485,8 @@ Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`)
 
 ### Abo-Positionen (`Recurring`)
 
+**Sammelrechnung:** `POST` und `PATCH /api/v1/Recurring` nehmen `collectiveBilling` (boolean) und `invoiceHeading` (öffentliche Blocküberschrift, 1 bis 200 Zeichen ohne Steuer- oder Formatzeichen) entgegen; bei `collectiveBilling: true` ist `invoiceHeading` Pflicht. Beide Felder stehen in jeder Abo-Antwort. Rechnungspositionen tragen `recurringInvoiceId` (Id des Abos, aus dem der Block stammt, sonst `null`). `POST /api/v1/Recurring/{id}/run` fasst die fälligen Abos des Kunden zusammen (Gruppe höchstens 50 Abos, gleiche Stichtage und Konditionen); noch nicht fällige Verbrauchsabos bleiben dabei außen vor.
+
 `GET /api/v1/Recurring/{id}` sowie `POST` und `PATCH` liefern zusätzlich `lines` (nach `position` sortiert; die Liste `GET /api/v1/Recurring` enthält sie nicht). Jede Zeile trägt `position`, `lineType` (`ITEM` | `HEADING` | `TEXT` | `SUBTOTAL`), `productId` (nur Snapshot), `description`, `descriptionLong`, `articleNumber`, `quantityMilli`, `unit`, `unitNetPriceCents`, `taxRate`, `taxCategory`, `discountPermille`, `discountCents` und `ossCategory`. Im Request (`POST`, `PATCH`) gelten für `lines` dieselben Zeilenfelder und Regeln wie bei Rechnungen: Überschrift, Textblock und Zwischensumme tragen keine Menge, keinen Preis und keinen Rabatt. Jeder Lauf übernimmt die Zeilen in den Rechnungsentwurf.
 
 ## Weitere Ressourcen
