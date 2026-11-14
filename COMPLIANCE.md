@@ -1030,6 +1030,7 @@ Siehe `docs/LIMITATIONEN.md` — insbesondere: kein Mischen von Teil- und Abschl
 | Aufbewahrung 8 Jahre + Ablaufhemmung | strukturiertes XML revisionssicher 8 J.; **kein** Auto-Hard-Delete; offene Festsetzung/Bp verlängert → manueller Freigabe-Schritt vor Löschung | **Teilweise:** write-once-Belegarchiv (PDF/CII/UBL), keine automatische Löschung festgeschriebener Belege; kein Freigabe-Schritt für die Ablaufhemmung |
 | GoBD-Verfahrensdokumentation | Export/Vorlage zur Anwender-Verfahrensdoku bereitstellen (Software liefert sie nicht automatisch) | **Bewusst nicht umgesetzt** (liefert die Software nicht; Hinweise in COMPLIANCE § 6) |
 | DSGVO Löschung vs. Aufbewahrung | **Soft-Delete/Archiv-Flag** bei rechnungsrelevanten Daten; Hard-Delete blockieren bis Fristablauf; AVV-Hinweis bei Hosting | **Teilweise:** Archiv-Flag am Kunden, Löschschutz festgeschriebener Belege; kein AVV-Hinweis in der Software |
+| Kontoauszug und Zahlungseingang (§ 146 Abs. 4, § 147 AO) | Kontoauszug bleibt Buchungsbeleg der Buchhaltung; Zahlungen append-only mit Gegenbuchung; keine automatische Buchung; Gegenkonto-Daten nur soweit nötig | **Umgesetzt** (CAMT.053/.054, Zuordnung nur nach Bestätigung, Rücklastschrift per Gegenbuchung, Guard in `src/lib/db.ts`; siehe § 22) |
 | Übermittlung per Kundenportal | Download über ein Internetportal ist ein zulässiger Übermittlungsweg (UStAE 14.1 Abs. 4 S. 6, BMF 15.10.2025); Einigung mit dem Kunden zivilrechtlich; Abrufprotokoll datensparsam | **Umgesetzt** (Portal standardmäßig aus; Dateien aus dem Belegarchiv; Abrufprotokoll ohne IP, 24 Monate; Widerruf/Ablauf; siehe § 13) |
 | Mahnwesen Verzug/Zinsen | **Verbraucher-Flag** pro Schuldner steuert: 5/9 Pp, 40-€-Pauschale (nur B2B), Pflicht-30-Tage-Hinweis (B2C); Basiszins halbjahresgenau (1,27 % H1 2026) | **Teilweise:** Kundentyp Verbraucher steuert 5/9 Pp und 40-€-Pauschale (nur B2B, einmal je Rechnung), Basiszins halbjahresgenau; der B2C-30-Tage-Hinweis ist nicht umgesetzt |
 | Mahngebühren | erste Mahnung **kostenfrei** (Zahlungserinnerung), Mahnkosten erst ab 2. Mahnung; nur konkrete Porto-/Materialkosten | **Umgesetzt** (Gebühren erst ab Mahnstufe 2, erste Stufe kostenfrei) |
@@ -1306,6 +1307,32 @@ mit dem AGPL-3.0 die „SaaS-Lücke" der GPL schließt (siehe Abschnitt 4).
 - **Datenweitergabe an einen Dienstleister (DSGVO).** Bei Testmodus und Live werden Anschrift und Inhalt des Belegs (Rechnungs- oder Mahnungs-PDF) an den Briefdienst übertragen, der sie als **Auftragsverarbeiter** druckt und zustellt. Dafür ist ein **Auftragsverarbeitungsvertrag nach Art. 28 DSGVO** mit dem Anbieter nötig; er ist nicht Teil der Software und vom Betreiber vor Aktivierung abzuschließen. Die Aktivierung verlangt eine ausdrückliche Bestätigung in den Einstellungen, jeder Versand zusätzlich eine Bestätigung je Beleg bzw. je Sammelversand (Ausnahme: Mahnautomatik mit zweitem Schalter). Ab Werk ist der Postversand aus und überträgt nichts. Ob der Anbieter in einem Drittland verarbeitet, ist vom Betreiber zu prüfen (Art. 44 ff. DSGVO).
 - **Interne Notizen** gelangen nicht in das gesendete PDF (das Archiv-PDF enthält sie nie).
 - **Offen:** Rechtliche Bewertung des Postwegs als Zustellnachweis (z. B. für Mahnungen mit Fristwirkung) gehört mit dem Steuerberater/Anwalt geklärt.
+
+---
+
+## 22. Bankabgleich: Zahlungseingänge zuordnen, Rückbuchungen, Datenschutz
+
+**Umsetzung dieser Software:**
+
+- **Kontoauszüge bleiben Buchungsbelege der Buchhaltung.** Die App liest CAMT.053/.054 nur, um Zahlungseingänge Rechnungen zuzuordnen; sie bewahrt die Datei nicht auf und ersetzt nicht die Aufbewahrung des Kontoauszugs als Buchungsbeleg (§ 147 Abs. 1 Nr. 4 AO, § 257 HGB). Der Betreiber archiviert den Kontoauszug weiter in seiner Buchhaltung bzw. bei der Bank.
+- **Zahlungen append-only mit Gegenbuchung** (§ 146 Abs. 4 AO, GoBD Rz. 58, 64): Gebucht wird nur über die Zahlungsdienste (`recordPaymentWithinTx`, `reversePaymentWithinTx`), nie direkt. Zuordnungen (`BankMatch`) und Importe (`BankStatementImport`) sind append-only, Bankumsätze (`BankTransaction`) werden nie gelöscht und ändern nur Status und Zuordnungsstand. Eine Zuordnung wird per Gegenbuchung zurückgenommen, nicht gelöscht.
+- **Keine automatische Buchung.** Jede Zuordnung bestätigt der Betreiber; ein Überschuss über den offenen Rechnungsbetrag wird nie als Zahlung gebucht.
+- **Rückbuchungen und Rücklastschriften:** Der Zahlungseingang bleibt der Rechnung zugeordnet. Eine Rücklastschrift wird nach Bestätigung durch Gegenbuchung der gewählten Zahlung gebucht und hebt den Eingang auf; die Rechnung wird wieder offen. Rückgabegebühren der Bank werden nicht gebucht. Rückbuchungen zu eigenen Überweisungen werden nur als erledigt markiert. Storniert der Betreiber eine Bankzahlung manuell, führt die App den Zuordnungsbetrag des Bankumsatzes mit.
+- **Skonto** (§ 17 UStG, siehe § 11) wird nur auf ausdrückliche Bestätigung je Umsatz berücksichtigt, nie in der Sammelbestätigung; die Buchung läuft über dieselbe Skonto-Logik wie die manuelle Zahlungserfassung.
+- **Formate:** nur CAMT.053/.054 als UTF-8-XML, kein ZIP. XML mit DTD, Entities oder Verarbeitungsanweisungen wird abgelehnt (Schutz vor XXE und Entity-Expansion).
+
+**DSGVO:**
+
+| Grundsatz | Umsetzung | Norm |
+|-----------|-----------|------|
+| Gespeicherte Daten | Je Umsatz werden Name und IBAN des Gegenkontos, der Verwendungszweck (bis 500 Zeichen), Betrag, Datum und Bankreferenzen gespeichert. Der Verwendungszweck (gekürzt auf 140 Zeichen) steht zusätzlich als Zahlungsreferenz an der Zahlung. Gegenkonto-IBANs werden in Oberfläche, REST und MCP nur maskiert ausgegeben; der Lernspeicher „Gegenkonto → Kunde" enthält nur einen HMAC der IBAN | Art. 5 Abs. 1 lit. c, Art. 32 |
+| Zweck | Zuordnung von Zahlungseingängen zu Rechnungen und Nachweis der Zahlung (Forderungsverwaltung, Buchführung) | Art. 5 Abs. 1 lit. b |
+| Datenminimierung | Belastungen (Ausgänge), nicht gebuchte Einträge und die hochgeladene Datei werden verworfen und nicht gespeichert; nur Eingänge und Rückbuchungen gelangen in die Datenbank | Art. 5 Abs. 1 lit. c |
+| Rechtsgrundlage | Vertragserfüllung bzw. Durchsetzung der Forderung und gesetzliche Buchführungspflichten | Art. 6 Abs. 1 lit. b und c |
+| Aufbewahrung | Die Zahlung gehört zu den Rechnungs- und Buchungsdaten und wird wie diese aufbewahrt (§ 147 AO). Die App löscht Bankumsätze weder automatisch noch per Funktion; es gibt keinen Aufräumjob | Art. 5 Abs. 1 lit. e, Art. 17 Abs. 3 lit. b |
+| Löschung | Während der Aufbewahrungsfrist verdrängt sie das Löschbegehren (siehe § 13). Nach Fristablauf kann nur der Betreiber Daten mit direktem Datenbankzugriff entfernen; der Guard der Anwendung verhindert das Löschen im laufenden Betrieb bewusst | Art. 17 Abs. 3 lit. b |
+
+Gegenkonto-Name und IBAN können Privatpersonen betreffen. Der Betreiber führt den Bankabgleich in seinem Verzeichnis der Verarbeitungstätigkeiten (Art. 30) und sichert die Datenbank wie die übrigen Belegdaten (siehe § 20, Betrieb).
 
 ---
 

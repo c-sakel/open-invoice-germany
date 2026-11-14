@@ -2,7 +2,7 @@
 
 Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Stand: November 2026.
 
-Die Liste ist nach Themen gegliedert: Betrieb und Sicherheit, E-Rechnung, Zahlung/Mahnwesen/Abos, E-Mail- und Postversand, Kundenportal, Daten und Recht, Belege und Dokumentworkflow, Teil-/Abschlags-/Schlussrechnungen, Editor und PDF-Layout, Stammdaten und Oberfläche, REST-API/Webhooks, Auswertungen, GoBD-Betrieb, CSV-Import/-Export, Preise und Verbrauch sowie der bewusst nicht umgesetzte Funktionsumfang am Ende.
+Die Liste ist nach Themen gegliedert: Betrieb und Sicherheit, E-Rechnung, Zahlung/Mahnwesen/Abos, E-Mail- und Postversand, Kundenportal, Bankabgleich, Daten und Recht, Belege und Dokumentworkflow, Teil-/Abschlags-/Schlussrechnungen, Editor und PDF-Layout, Stammdaten und Oberfläche, REST-API/Webhooks, Auswertungen, GoBD-Betrieb, CSV-Import/-Export, Preise und Verbrauch sowie der bewusst nicht umgesetzte Funktionsumfang am Ende.
 
 Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist, wann die eigene Installation aktualisiert wurde.
 
@@ -268,6 +268,17 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Prüfer-Export:** `einzelpreis_netto` bleibt auf ganze Cent gerundet; der exakte Preis steht in der zusätzlichen Spalte `einzelpreis_exakt` (`src/domain/audit/export.ts`).
 - **Body-Limit in `withApi`.** Nur die Verbrauchs-Routen lesen den Body gestreamt mit Größengrenze und Content-Type-Pflicht (`src/api/read-json-limited.ts`); `withApi` selbst ist nicht umgestellt.
 - **Noch nicht vorhanden:** Sub-Cent-Preise für Produkte und Lieferscheine (bräuchte eine Migration), ein Nachtrags-Pfad im Abo, Staffelpreise.
+
+## Bankabgleich
+- **Nur CAMT.053 und CAMT.054** (XML, UTF-8, Version 02 bis 13). Kein MT940 (SWIFT-MT wird im Zahlungsverkehr abgelöst, die Banken liefern CAMT), kein camt.052, kein CSV-Kontoauszug, kein ZIP (Archive vorher entpacken), kein HBCI/FinTS und keine Bankanbindung per API.
+- **Keine automatische Buchung.** Jede Zuordnung wird von Hand oder per Sammelbestätigung eindeutiger Vorschläge bestätigt (höchstens 200 Umsätze je Aufruf). Ein Überschuss über den offenen Betrag wird nie als Zahlung gebucht.
+- **Skonto nur einzeln.** Vorschläge mit Skonto-Abzug erscheinen in der Sammelbestätigung nicht; sie werden einzeln bestätigt.
+- **Nur Zahlungseingänge und Rückbuchungen.** Belastungen werden nicht importiert; es gibt keine Kontoführung, keinen Saldo und keine Ausgangszahlungen. Die Datei selbst wird nicht aufbewahrt.
+- **Rückbuchungen:** Gegengebucht werden nur Rücklastschriften (Belastung mit Rückgabekennzeichen) gegen eine gewählte Kundenzahlung. Rückbuchungen zu eigenen Überweisungen (Gutschrift mit Rückbuchungskennzeichen) lassen sich nur als erledigt markieren. Rückgabegebühren der Bank werden gemeldet, aber nicht gebucht.
+- **Sammelumsätze ohne Einzelbuchungen** erscheinen als ein Umsatz; die App kann sie nicht auflösen. Wird dieselbe Sammelbuchung aus einer .053- und einer .054-Datei importiert, kann sie doppelt erscheinen (Ignorieren genügt).
+- **Fremdwährungen** werden importiert, aber nur Rechnungen derselben Währung vorgeschlagen.
+- **Grenzen:** Datei höchstens 10 MB, höchstens 50.000 gelesene Einträge und 20.000 neue Umsätze je Datei, XML mit DOCTYPE, Entities oder Verarbeitungsanweisungen wird abgelehnt. Die Bremse für Importe (10 je Minute und Organisation, 60 je Minute für den Upload-Pfad) liegt nur im Speicher und gilt je Instanz.
+- **Namensabgleich ist unscharf.** Er liefert höchstens „möglich"; „sicher" gilt nur bei genau einer vollständig genannten Rechnungsnummer mit passendem Betrag (offener Rest oder Skontobetrag) oder bei einer Sammelzahlung aus lauter vollständigen Nummern.
 
 ## Bewusst nicht umgesetzt
 Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenzung: keine Buchhaltungssoftware):
