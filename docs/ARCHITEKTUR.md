@@ -949,3 +949,13 @@ Diese Punkte sind bewusst oder bisher nicht umgesetzt (Details: `docs/LIMITATION
 - § 33 UStDV (Kleinbetragsrechnung) nur als Validierungsoption.
 - Kein DATEV-Export (bewusst nicht umgesetzt).
 - Kein RLS (Postgres-Row-Level-Security); Single-Tenant je Instanz.
+
+## Kundenportal: öffentlicher Pfad und Protokolle
+
+- **Zugang:** `/portal/<token>` und `/api/public/portal/<token>/...` ohne Anmeldung. Das Token hat 256 Bit; in der Datenbank liegen nur der SHA-256-Hash (Auflösung) und das verschlüsselte Token (Wiederabruf durch den Betreiber). Nach Widerruf, Rotation und Ablauf wird das verschlüsselte Token geleert (Ablauf im Aufräumjob). Jeder Ungültigkeitsfall liefert denselben 404.
+- **Links in Protokollen:** Portal-URLs stehen nie im Versandprotokoll. `createQueuedEmailLog` und `finishEmailLog` ersetzen jede URL `…/portal/<token>` in Betreff und Text durch `[Portal-Link]` (`src/domain/portal/mask.ts`); die versendete Mail trägt den echten Link. Beim Wiederversand aus dem Protokoll wird der Platzhalter durch den aktuell aktiven Link des Kunden ersetzt (leer, wenn es keinen gibt). Die Antworten zum Anlegen und Abrufen eines Links werden nie für Idempotenz-Replays gespeichert (ein `Idempotency-Key` wird bei diesen Routen ignoriert).
+- **Basisadresse:** Links entstehen ausschließlich aus `APP_BASE_URL` (kein Rückfall auf den Host-Header); ohne die Variable melden REST, MCP und Oberfläche `NO_BASE_URL`.
+- **Rate-Limits** (prozesslokal): je Client-IP 60/min; ohne ermittelbare IP gilt ein gemeinsamer Notschlüssel mit 300/min; zusätzlich je Token-Hash (Seite 60/min, Download 30/min). Die Seite kann bei Überschreitung keinen HTTP-Status 429 setzen und antwortet mit einem zweisprachigen Hinweis (Status 200); die Download-Route antwortet mit 429. Wer das Token kennt, kann den Link durch Dauerabruf vorübergehend drosseln.
+- **Portal-Mail:** höchstens 3 Mails je Kunde und Stunde (`429`/`RATE_LIMITED`); ein fehlgeschlagener Versand liefert in REST `409` mit der Protokoll-ID. Die Route verlangt den Scope `send`.
+- **Abrufprotokoll:** append-only (Guard), ohne IP und User-Agent, 24 Monate Aufbewahrung; ein Fehler beim Protokollieren verhindert den Download nicht (Fehlerklasse im Serverlog).
+

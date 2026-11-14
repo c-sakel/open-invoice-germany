@@ -163,6 +163,8 @@ describe("REST portal-link", () => {
     const res = await linkPost(req(LINK(customerId), writeToken, "POST", {}), ctx1(customerId));
     expect(res.status).toBe(409);
     expect((await res.json()).error.reason).toBe("PORTAL_DISABLED");
+    // fremder Kunde bleibt auch bei ausgeschaltetem Portal 404
+    expect((await linkPost(req(LINK(otherCustomerId), writeToken, "POST", {}), ctx1(otherCustomerId))).status).toBe(404);
   });
 });
 
@@ -185,6 +187,10 @@ describe("REST portal-events", () => {
     expect(p2.data).toHaveLength(1);
     expect(p2.nextCursor).toBeNull();
     expect((await eventsGet(req(`${url}?limit=0`, readToken), ctx1(customerId))).status).toBe(400);
+    // fremder oder unbekannter Cursor -> 400 statt 500
+    const bad = await eventsGet(req(`${url}?cursor=gibt-es-nicht`, readToken), ctx1(customerId));
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error.code).toBe("VALIDATION");
   });
 });
 

@@ -25,7 +25,7 @@ Konto-Sicherheit (Passwort, Zwei-Faktor-Anmeldung, Passwort-Reset) läuft nur ü
 |---------|-----------|
 | `read`  | Lesen (GET) |
 | `write` | Anlegen/Ändern/zustandsändernde Aktionen (finalisieren, stornieren, Zahlung erfassen, …) |
-| `send`  | E-Mail-Versand und Mahnungen (`/send`, `/dunning`) |
+| `send`  | E-Mail-Versand und Mahnungen (`/send`, `/dunning`, Portal-Link-Mail) |
 | `admin` | Einstellungen (`/Settings`), Basiszinssatz-Historie (`/BaseInterestRate`), API-Schlüsselverwaltung (`/ApiKey`) und Webhook-Endpunkte (`/Webhook`) |
 
 ## Antwortformat

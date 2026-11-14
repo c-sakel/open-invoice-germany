@@ -77,6 +77,9 @@ export async function createPortalLink(
 ): Promise<{ link: PortalLinkStatus; url: string }> {
   const input = createPortalLinkInputSchema.parse(raw ?? {});
   const now = opts.now ?? new Date();
+  // Erst die Kundenpruefung (fremder Kunde -> 404), dann der Portalstatus.
+  const known = await dbInternal.customer.findFirst({ where: { id: customerId, orgId }, select: { id: true } });
+  if (!known) throw new NotFoundError("Kunde nicht gefunden.");
   const settings = await loadPortalSettings(orgId);
   if (!settings.enabled) throw new PortalError("Das Kundenportal ist nicht aktiviert.", "PORTAL_DISABLED");
 
