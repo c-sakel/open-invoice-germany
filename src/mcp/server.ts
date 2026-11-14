@@ -48,7 +48,7 @@ import { registerCsvTools } from "./tools/csv";
 
 // Exportiert fuer Integrationstests (test/integration/mcp-*.test.ts): erlaubt,
 // registrierte Tool-Handler direkt aufzurufen, ohne einen Stdio-Transport zu starten.
-export const server = new McpServer({ name: "open-invoice-germany", version: "1.0.1" });
+export const server = new McpServer({ name: "open-invoice-germany", version: "1.1.0" });
 
 // Re-Export fuer bestehende Tests (test/integration/mcp-server.test.ts importiert
 // buildSimpleLines direkt aus "@/mcp/server").

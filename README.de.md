@@ -149,7 +149,7 @@ Die SQLite-Datei liegt unter `prisma/dev.db` und gehört nur dir. Beim ersten St
 
 ## Mit Docker (PostgreSQL)
 
-Ab Version 1.0.1 erscheint zu jedem Release ein fertiges Image für `linux/amd64` und `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (Tags `1.0.1`, `1.0`, `1`, `latest`).
+Ab Version 1.0.1 erscheint zu jedem Release ein fertiges Image für `linux/amd64` und `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (z. B. Tags `1.1.0`, `1.1`, `1`, `latest`).
 
 ```bash
 # .env neben docker-compose.yml anlegen (nie committen):

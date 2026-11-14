@@ -150,7 +150,7 @@ The SQLite file lives at `prisma/dev.db` and belongs to you alone. On first star
 
 ## With Docker (PostgreSQL)
 
-From version 1.0.1 on, every release publishes a ready-made image for `linux/amd64` and `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (tags `1.0.1`, `1.0`, `1`, `latest`).
+From version 1.0.1 on, every release publishes a ready-made image for `linux/amd64` and `linux/arm64`: **`ghcr.io/c-sakel/open-invoice-germany`** (e.g. tags `1.1.0`, `1.1`, `1`, `latest`).
 
 ```bash
 # .env next to docker-compose.yml (never commit it):
