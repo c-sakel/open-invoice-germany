@@ -4,6 +4,7 @@
  * Alles Schreibende laeuft in einer Transaktion unter Org-Sperre, Zeilensperren aller Mitglieder und
  * Ketten-Retry; Mailversand und Hooks folgen erst nach dem Commit.
  */
+import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockOrganization, lockRow, lockRows } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
@@ -67,6 +68,16 @@ export interface CollectiveRunOptions {
   maxMembers?: number;
   /** Wird mit den Mitgliedern der Gruppe aufgerufen, sobald sie feststehen (auch wenn die Transaktion danach scheitert). */
   onMembers?: (ids: string[]) => void;
+  /** Abos, die nicht Mitglied der Gruppe werden duerfen (z. B. als fehlerhaft erkannt). */
+  excludeIds?: ReadonlySet<string>;
+  /** Alles ausfuehren und am Ende zurueckrollen (Fehlerisolierung): kein Beleg, kein Fortschritt, keine Nachlaeufe. */
+  dryRun?: boolean;
+}
+
+class DryRunRollback extends Error {
+  constructor(readonly memberIds: string[]) {
+    super("dry-run");
+  }
 }
 
 export interface CollectiveRunResult {
@@ -97,7 +108,7 @@ export async function emitCollective(
   opts: CollectiveRunOptions,
 ): Promise<CollectiveRunResult> {
   const maxMembers = opts.maxMembers ?? COLLECTIVE_MAX_MEMBERS;
-  const run = await withChangeLogRetry(() => dbInternal.$transaction(async (tx): Promise<TxResult> => {
+  const work = async (tx: Prisma.TransactionClient): Promise<TxResult> => {
     const head = await tx.recurringInvoice.findUnique({ where: { id: triggerId }, select: { orgId: true } });
     if (!head) throw new RecurringError("Abo nicht gefunden.");
     const orgId = head.orgId;
@@ -113,7 +124,13 @@ export async function emitCollective(
       if (!trig) throw new RecurringError("Abo nicht gefunden.");
       if (trig.status !== "ACTIVE") throw new RecurringError("Abo ist nicht aktiv.");
       const others = await tx.recurringInvoice.findMany({
-        where: { orgId, customerId: trig.customerId, status: "ACTIVE", collectiveBilling: true, id: { not: triggerId } },
+        where: {
+          orgId,
+          customerId: trig.customerId,
+          status: "ACTIVE",
+          collectiveBilling: true,
+          id: { notIn: [triggerId, ...(opts.excludeIds ?? [])] },
+        },
         select: CANDIDATE_SELECT,
       });
       const group = selectCollectiveGroup(trig as CollectiveCandidate, others as CollectiveCandidate[], maxMembers);
@@ -273,7 +290,19 @@ export async function emitCollective(
       split,
       periodKey,
     };
-  }));
+  };
+
+  let run: TxResult;
+  try {
+    run = await withChangeLogRetry(() => dbInternal.$transaction(async (tx) => {
+      const r = await work(tx);
+      if (opts.dryRun) throw new DryRunRollback(r.memberIds);
+      return r;
+    }));
+  } catch (e) {
+    if (e instanceof DryRunRollback) return { outcome: { deferred: true }, memberIds: e.memberIds, endedIds: [] };
+    throw e;
+  }
 
   if ("deferred" in run.tx) return { outcome: { deferred: true }, memberIds: run.memberIds, endedIds: [] };
 
@@ -310,4 +339,27 @@ export async function emitCollective(
     outcome.emailError = sent.error;
   }
   return { outcome, memberIds: run.memberIds, endedIds: run.endedIds };
+}
+
+/**
+ * Fehlerisolierung: rechnet jedes Mitglied einzeln probeweise (Transaktion wird zurueckgerollt) und
+ * liefert die Mitglieder, die allein scheitern, mit ihrer Fehlermeldung. Leer, wenn die Ursache nicht
+ * an einem einzelnen Mitglied haengt.
+ */
+export async function findFaultyMembers(
+  memberIds: readonly string[],
+  now: Date,
+  actor: string,
+  excludeIds: ReadonlySet<string> = new Set(),
+): Promise<Map<string, string>> {
+  const faulty = new Map<string, string>();
+  for (const id of memberIds) {
+    const others = memberIds.filter((m) => m !== id);
+    try {
+      await emitCollective(id, now, actor, { mode: "batch", dryRun: true, excludeIds: new Set([...excludeIds, ...others]) });
+    } catch (e) {
+      faulty.set(id, e instanceof Error ? e.message : String(e));
+    }
+  }
+  return faulty;
 }

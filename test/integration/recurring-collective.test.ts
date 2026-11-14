@@ -263,26 +263,61 @@ describe("Sammelrechnung im Lauf", () => {
     expect(again.flatMap((s) => s.emitted)).toHaveLength(0);
   }, 120_000);
 
-  it("Fehler in einem Mitglied: keine Rechnung, Abos unveraendert, eine Benachrichtigung, Mitglied nicht erneut versucht", async () => {
-    const c = await customer();
+  async function defectiveUsageAbo(c: string, title: string) {
     const usageLine = { lineType: "ITEM", description: "Verbrauch", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, unitNetPriceMilliCents: 200, taxRate: 19, taxCategory: "S", discountPermille: 0, discountCents: 0, billing: "USAGE", usageUnitLabel: "Stk" };
-    const a = await abo(c, "F1", 1000);
-    const b = await abo(c, "F2", 0, { lines: [usageLine] });
+    const b = await abo(c, title, 0, { lines: [usageLine] });
     const usageLineId = b.lines.find((l) => l.billing === "USAGE")!.id;
-    for (const [d, q] of [["2205-03-01", 2_000_000_000], ["2205-03-01", 1_000_000_000]] as const) {
-      await recordUsage(orgId, b.id, { recurringLineId: usageLineId, quantityMilli: q, usageDate: d }, { source: "API", actor: "t", now: new Date("2205-03-02T10:00:00Z") });
+    for (const q of [2_000_000_000, 1_000_000_000]) {
+      await recordUsage(orgId, b.id, { recurringLineId: usageLineId, quantityMilli: q, usageDate: "2205-03-01" }, { source: "API", actor: "t", now: new Date("2205-03-02T10:00:00Z") });
     }
+    return b;
+  }
+
+  it("Fehler in einem Mitglied: uebrige werden abgerechnet, defektes bleibt faellig, eine Benachrichtigung", async () => {
+    const c = await customer();
+    const a = await abo(c, "F1", 1000);
+    const b = await defectiveUsageAbo(c, "F2");
     const now = new Date(a.nextRunDate.getTime() + 86_400_000);
     const sums = (await runDueRecurring({ now, orgId })).filter((s) => [a.id, b.id].includes(s.recurringId));
-    expect(sums.flatMap((s) => s.emitted)).toHaveLength(0);
-    expect(sums.filter((s) => s.error)).toHaveLength(1);
-    for (const r of [a, b]) {
-      const after = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: r.id }, select: { issuedCount: true, nextRunDate: true } });
-      expect(after.issuedCount).toBe(0);
-      expect(after.nextRunDate.getTime()).toBe(r.nextRunDate.getTime());
-    }
+    expect(sums.flatMap((s) => s.emitted)).toHaveLength(1);
+    expect(sums.filter((s) => s.error).map((s) => s.recurringId)).toEqual([b.id]);
+    const afterA = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: a.id }, select: { issuedCount: true } });
+    expect(afterA.issuedCount).toBe(1);
+    const afterB = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: b.id }, select: { issuedCount: true, nextRunDate: true } });
+    expect(afterB.issuedCount).toBe(0);
+    expect(afterB.nextRunDate.getTime()).toBe(b.nextRunDate.getTime());
     expect(await dbInternal.recurringUsage.count({ where: { recurringInvoiceId: b.id, invoiceId: null } })).toBe(2);
-    const notes = await dbInternal.notification.count({ where: { orgId, type: "RECURRING_FAILED", entityId: { in: [a.id, b.id] } } });
-    expect(notes).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "RECURRING_FAILED", entityId: b.id } })).toBe(1);
+    expect(await dbInternal.notification.count({ where: { orgId, type: "RECURRING_FAILED", entityId: a.id } })).toBe(0);
   });
+
+  it("defektes Mitglied als Ausloeser: die uebrigen Abos werden trotzdem abgerechnet", async () => {
+    const c = await customer();
+    const b = await defectiveUsageAbo(c, "G1");
+    const a = await abo(c, "G2", 1000);
+    const d = await abo(c, "G3", 2000);
+    const now = new Date(a.nextRunDate.getTime() + 86_400_000);
+    const sums = (await runDueRecurring({ now, orgId })).filter((s) => [a.id, b.id, d.id].includes(s.recurringId));
+    const coll = sums.flatMap((s) => s.emitted).filter((e) => e.collectiveRecurringIds);
+    expect(coll).toHaveLength(1);
+    expect(coll[0].collectiveRecurringIds).toEqual([a.id, d.id].sort());
+    expect(sums.filter((s) => s.error).map((s) => s.recurringId)).toEqual([b.id]);
+  });
+
+  it("Ueberhang mit defektem Mitglied: Folgeausloeser wird nicht blockiert", async () => {
+    const c = await customer();
+    const recs: { id: string; nextRunDate: Date }[] = [];
+    recs.push(await abo(c, "Y0", 100));
+    const bad = await defectiveUsageAbo(c, "Y1");
+    recs.push(bad);
+    for (let i = 2; i < 51; i++) recs.push(await abo(c, `Y${i}`, 100 + i));
+    const now = new Date(recs[0].nextRunDate.getTime() + 86_400_000);
+    const ids = recs.map((r) => r.id);
+    const sums = (await runDueRecurring({ now, orgId })).filter((s) => ids.includes(s.recurringId));
+    expect(sums.filter((s) => s.error).map((s) => s.recurringId)).toEqual([bad.id]);
+    const invoiceIds = new Set(sums.flatMap((s) => s.emitted).map((e) => e.invoiceId));
+    expect(invoiceIds.size).toBe(1);
+    const billed = await dbInternal.recurringInvoice.count({ where: { id: { in: ids }, issuedCount: 1 } });
+    expect(billed).toBe(50);
+  }, 240_000);
 });

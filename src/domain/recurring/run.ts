@@ -34,7 +34,7 @@ import {
   isRunDue,
   sendRecurringInvoiceEmail,
 } from "./run-parts";
-import { emitCollective } from "./collective-run";
+import { emitCollective, findFaultyMembers } from "./collective-run";
 import {
   isSkipped,
   type EmitOutcome,
@@ -173,6 +173,7 @@ export async function runDueRecurring(
     orderBy: [{ nextRunDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
 
+  const titles = new Map(due.map((d) => [d.id, d.title]));
   const summaries: RecurringRunSummary[] = [];
   const failed = new Set<string>();
   for (const rec of due) {
@@ -182,6 +183,7 @@ export async function runDueRecurring(
     let deferred = false;
     let error: string | undefined;
     let memberIds: string[] = [rec.id];
+    let isolations = 0;
     try {
       for (let i = 0; i < max; i++) {
         const cur = await dbInternal.recurringInvoice.findUnique({
@@ -190,18 +192,40 @@ export async function runDueRecurring(
         });
         if (!cur || cur.status !== "ACTIVE" || !isRunDue(cur.nextRunDate, now, cur.lines.length > 0)) break;
         if (cur.collectiveBilling) {
-          const res = await emitCollective(rec.id, now, actor, {
-            mode: "batch",
-            provider: opts.provider,
-            onMembers: (ids) => { memberIds = ids; },
-          });
-          if ("deferred" in res.outcome) {
-            deferred = true;
-            break;
+          try {
+            const res = await emitCollective(rec.id, now, actor, {
+              mode: "batch",
+              provider: opts.provider,
+              onMembers: (ids) => { memberIds = ids; },
+              excludeIds: failed,
+            });
+            if ("deferred" in res.outcome) {
+              deferred = true;
+              break;
+            }
+            if (isSkipped(res.outcome)) skipped.push(res.outcome.periodDate);
+            else emitted.push(res.outcome);
+            if (res.endedIds.includes(rec.id)) break;
+          } catch (e) {
+            // Fehlerisolierung: ein einzelnes fehlerhaftes Mitglied blockiert nicht die Gruppe. Es wird
+            // ausgeschlossen und gemeldet; die uebrigen Mitglieder werden als Rest-Gruppe erneut abgerechnet.
+            const group = memberIds;
+            if (group.length < 2 || isolations >= MAX_ISOLATIONS) throw e;
+            const faulty = await findFaultyMembers(group, now, actor, failed);
+            if (faulty.size === 0) throw e;
+            isolations += 1;
+            for (const [id, message] of faulty) {
+              failed.add(id);
+              const title = titles.get(id) ?? (await recurringTitle(id)) ?? id;
+              await onRecurringFailed(rec.orgId, { recurringId: id, title, message, at: now });
+              if (id !== rec.id) summaries.push({ recurringId: id, title, emitted: [], skipped: [], error: message });
+            }
+            if (faulty.has(rec.id)) {
+              error = faulty.get(rec.id);
+              break;
+            }
+            i -= 1;
           }
-          if (isSkipped(res.outcome)) skipped.push(res.outcome.periodDate);
-          else emitted.push(res.outcome);
-          if (res.endedIds.includes(rec.id)) break;
         } else {
           const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
           if (isSkipped(result)) skipped.push(result.periodDate);
@@ -218,4 +242,11 @@ export async function runDueRecurring(
     summaries.push({ recurringId: rec.id, title: rec.title, emitted, skipped, ...(deferred ? { deferred: true as const } : {}), ...(error ? { error } : {}) });
   }
   return summaries;
+}
+
+const MAX_ISOLATIONS = 5;
+
+async function recurringTitle(id: string): Promise<string | null> {
+  const r = await dbInternal.recurringInvoice.findUnique({ where: { id }, select: { title: true } });
+  return r?.title ?? null;
 }
