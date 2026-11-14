@@ -2,14 +2,17 @@
  * Phase 18e — die Fixture-Liste des Generators ist die einzige Quelle: Validator-Skript und CI
  * muessen dieselbe Menge pruefen. Kein DB-Zugriff.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 describe("E-Rechnung-Fixture-Liste", () => {
-  const listed = execFileSync("npx", ["tsx", "scripts/generate-sample-xrechnung.ts", "--list"], { encoding: "utf8" })
-    .trim()
-    .split(/\s+/);
+  let listed: string[] = [];
+  beforeAll(() => {
+    listed = execFileSync("npx", ["tsx", "scripts/generate-sample-xrechnung.ts", "--list"], { encoding: "utf8" })
+      .trim()
+      .split(/\s+/);
+  }, 120_000);
 
   it("entspricht SAMPLE_NAMES im Validator-Skript", () => {
     const src = readFileSync("scripts/validate-erechnung.ts", "utf8");
