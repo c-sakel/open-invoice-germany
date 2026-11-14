@@ -31,6 +31,7 @@ export const TEMPLATE_PLACEHOLDERS: { path: string; label: string }[] = [
   { path: "invoice.openAmount", label: "Offener Betrag" },
   { path: "offer.number", label: "Angebotsnummer" },
   { path: "offer.validUntil", label: "Angebot gültig bis" },
+  { path: "portal.url", label: "Kundenportal-Link" },
   { path: "dunning.level", label: "Mahnstufe" },
   { path: "dunning.stageName", label: "Name der Mahnstufe" },
   { path: "dunning.number", label: "Mahnungsnummer" },

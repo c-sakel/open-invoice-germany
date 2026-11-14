@@ -159,6 +159,7 @@ Das Kundenportal gibt Kunden über einen persönlichen Link Einsicht in ihre Rec
 |---|---|---|
 | `get_portal_link` | Status des Portal-Links eines Kunden lesen (ohne URL) | „Hat Müller GmbH einen aktiven Portal-Link?" |
 | `create_portal_link` | Portal-Link anlegen (ein aktiver Link wird widerrufen) und URL liefern | „Erzeuge einen Portal-Link für Müller GmbH." |
+| `send_portal_link` | Aktiven Portal-Link per E-Mail an den Kunden senden (Empfänger optional) | „Schick Müller GmbH den Portal-Link per Mail." |
 | `revoke_portal_link` | Aktiven Portal-Link widerrufen | „Sperre den Portal-Link von Müller GmbH." |
 | `list_portal_events` | Abrufprotokoll eines Kunden (ohne IP) | „Wann hat Müller GmbH das Portal zuletzt geöffnet?" |
 | `get_portal_settings` | Portal-Einstellungen lesen | „Ist das Kundenportal eingeschaltet?" |

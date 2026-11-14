@@ -8,6 +8,8 @@ import { serializePortalEvent, serializePortalLink, serializePortalSettings } fr
 import { NotFoundError } from "@/domain/errors";
 import { listPortalEvents } from "@/domain/portal/access";
 import { PortalError } from "@/domain/portal/errors";
+import { sendPortalLinkEmail } from "@/domain/portal/mail";
+import { MailNotConfiguredError } from "@/domain/email/settings";
 import { createPortalLink, getPortalLinkStatus, revokePortalLink } from "@/domain/portal/link";
 import { loadPortalSettings, savePortalSettings } from "@/domain/portal/settings";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
@@ -16,6 +18,7 @@ import { ToolError, type McpToolsContext, type Result } from "./context";
 
 function portalFail(ctx: McpToolsContext, e: unknown): Result {
   if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+  if (e instanceof MailNotConfiguredError) return ctx.fail(e.message);
   if (e instanceof PortalError) return ctx.fail(`${e.message} (${e.code})`);
   if (e instanceof NotFoundError) return ctx.fail(e.message);
   if (e instanceof ToolError) return ctx.fail(e.message);
@@ -60,6 +63,29 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
         const { link, url } = await createPortalLink(org.id, c.id, input, { actor: "mcp", baseUrl });
         const note = baseUrl ? "" : "\nHinweis: APP_BASE_URL ist nicht gesetzt, die URL ist ohne Server-Adresse.";
         return ctx.ok(`${JSON.stringify({ link: serializePortalLink(link), url }, null, 2)}${note}`);
+      } catch (e) {
+        return portalFail(ctx, e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "send_portal_link",
+    {
+      title: "Kundenportal-Link per E-Mail senden",
+      description:
+        "Sendet den aktiven Portal-Link per E-Mail an den Kunden (Empfaenger: to, sonst Rechnungs-E-Mail, sonst E-Mail des Kunden). Ohne aktiven Link NO_ACTIVE_LINK; zuerst create_portal_link.",
+      inputSchema: { customer: customerRef, to: z.string().trim().email().max(254).optional() },
+    },
+    async ({ customer, to }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        const c = await ctx.resolveCustomer(org.id, customer);
+        const baseUrl = appBaseUrlFromEnv();
+        if (!baseUrl) throw new ToolError("APP_BASE_URL ist nicht gesetzt; ohne Server-Adresse kann kein Link gesendet werden.");
+        const res = await sendPortalLinkEmail(org.id, c.id, { actor: "mcp", to, baseUrl });
+        const text = JSON.stringify({ emailLogId: res.logId, status: res.status, to: res.to }, null, 2);
+        return res.status === "SENT" ? ctx.ok(text) : ctx.fail(`Versand fehlgeschlagen: ${res.error ?? "unbekannt"}\n${text}`);
       } catch (e) {
         return portalFail(ctx, e);
       }
