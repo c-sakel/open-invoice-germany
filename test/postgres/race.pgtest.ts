@@ -30,8 +30,9 @@ import type { LxpTransport } from "@/lib/postal/transport";
 import { createApiKey } from "@/domain/api-key/create";
 import { POST as InvoicePost } from "@/app/api/v1/Invoice/route";
 import { createRecurring } from "@/domain/recurring/create";
-import { emitRecurringNow } from "@/domain/recurring/run";
-import { RecurringNotDueError } from "@/domain/recurring/errors";
+import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
+import { updateRecurringInvoice } from "@/domain/recurring/update";
+import { RecurringError, RecurringNotDueError } from "@/domain/recurring/errors";
 import { recordUsage, UsageError } from "@/domain/recurring/usage";
 import { createRecurringSchema } from "@/schemas";
 import { BankImportDuplicateError, importBankStatement } from "@/domain/bank/import";
@@ -403,6 +404,71 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: { in: abos.map((a) => a.id) }, status: { not: "DRAFT" } }, select: { number: true } });
     expect(invoices).toHaveLength(4);
     expect(new Set(invoices.map((i) => i.number)).size).toBe(4);
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  async function collectiveScenario(usage: boolean) {
+    const s = await newScenario();
+    const a = await createRecurring(
+      s.orgId,
+      createRecurringSchema.parse({ customerId: s.customerId, title: "SR-A", startDate: s.now, autoFinalize: true, collectiveBilling: true, invoiceHeading: "Block A", lines: [{ ...item(1000, 2900), description: "SR-Fest-A" }] }),
+    );
+    const b = await createRecurring(
+      s.orgId,
+      createRecurringSchema.parse({
+        customerId: s.customerId,
+        title: "SR-B",
+        startDate: s.now,
+        autoFinalize: true,
+        collectiveBilling: true,
+        invoiceHeading: "Block B",
+        lines: usage
+          ? [{ ...item(0, 0), description: "SR-API", unitNetPriceMilliCents: 200, billing: "USAGE" }]
+          : [{ ...item(1000, 1900), description: "SR-Fest-B" }],
+      }),
+    );
+    return { ...s, a, b };
+  }
+
+  it("Sammelrechnung: 3x Lauf + Jetzt-erzeugen fuer beide Abos parallel -> je Abo und Periode hoechstens eine Rechnung, Zaehler = Relationen, Kette gueltig", async () => {
+    const s = await collectiveScenario(false);
+    const tasks: Promise<unknown>[] = [];
+    for (let i = 0; i < 3; i++) tasks.push(runDueRecurring({ now: s.now, orgId: s.orgId, actor: "race" }));
+    tasks.push(emitRecurringNow(s.a.id, { now: s.now, actor: "race" }), emitRecurringNow(s.b.id, { now: s.now, actor: "race" }));
+    const rs = await Promise.allSettled(tasks);
+    for (const f of rejected(rs)) expect(f.reason instanceof RecurringNotDueError || /nicht aktiv|zurueckgestellt/.test(String(f.reason)), String(f.reason)).toBe(true);
+    for (const rec of [s.a, s.b]) {
+      const rels = await dbInternal.documentRelation.findMany({ where: { orgId: s.orgId, toId: rec.id, relationType: "GENERATED_BY" }, select: { fromId: true } });
+      const after = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { issuedCount: true } });
+      expect(after.issuedCount).toBe(rels.length);
+      const periods = await dbInternal.invoice.findMany({ where: { id: { in: rels.map((r) => r.fromId) } }, select: { deliveryDate: true } });
+      expect(new Set(periods.map((p) => p.deliveryDate?.getTime())).size).toBe(periods.length);
+    }
+    expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  it("Sammelrechnung: Lauf parallel zu 5x recordUsage und updateRecurringInvoice -> kein Deadlock, kein Satz doppelt, offene + abgerechnete Menge = erfasste Menge", async () => {
+    const s = await collectiveScenario(true);
+    const usageLineId = s.b.lines.find((l) => l.billing === "USAGE")?.id ?? "";
+    const day = s.now.toISOString().slice(0, 10);
+    const later = new Date(s.now.getTime() + 24 * 3_600_000);
+    const tasks: Promise<unknown>[] = [runDueRecurring({ now: later, orgId: s.orgId, actor: "race" })];
+    for (let i = 0; i < 5; i++) {
+      tasks.push(recordUsage(s.orgId, s.b.id, { recurringLineId: usageLineId, quantityMilli: 1_000_000 * (i + 1), usageDate: day, externalId: `sr-${i}` }, { source: "API", actor: "race", now: later }));
+    }
+    tasks.push(updateRecurringInvoice(s.orgId, s.b.id, { currency: "USD" }, "race"));
+    const rs = await Promise.allSettled(tasks);
+    for (const f of rejected(rs)) {
+      const ok = (f.reason instanceof UsageError && (f.reason.code === "PERIOD_BILLED" || f.reason.code === "NOT_ACTIVE")) || f.reason instanceof RecurringNotDueError || f.reason instanceof RecurringError;
+      expect(ok, String(f.reason)).toBe(true);
+    }
+    const usages = await dbInternal.recurringUsage.findMany({ where: { recurringInvoiceId: s.b.id }, select: { id: true, invoiceId: true, quantityMilli: true } });
+    const billed = usages.filter((u) => u.invoiceId !== null);
+    const open = usages.filter((u) => u.invoiceId === null);
+    expect(new Set(usages.map((u) => u.id)).size).toBe(usages.length);
+    const lines = await dbInternal.invoiceLine.findMany({ where: { recurringInvoiceId: s.b.id, description: "SR-API", invoice: { orgId: s.orgId } }, select: { quantityMilli: true } });
+    expect(lines.reduce((sum, l) => sum + l.quantityMilli, 0)).toBe(billed.reduce((sum, u) => sum + u.quantityMilli, 0));
+    expect(billed.reduce((sum, u) => sum + u.quantityMilli, 0) + open.reduce((sum, u) => sum + u.quantityMilli, 0)).toBe(usages.reduce((sum, u) => sum + u.quantityMilli, 0));
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
   });
 

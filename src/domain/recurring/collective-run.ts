@@ -1,0 +1,313 @@
+/**
+ * Lauf der Sammelrechnung: faellige Abos eines Kunden mit Sammelschalter, gleichem Stichtag und gleichen
+ * Schluesselfeldern werden in EINER Rechnung abgerechnet (je Abo ein Block mit Ueberschrift und Zwischensumme).
+ * Alles Schreibende laeuft in einer Transaktion unter Org-Sperre, Zeilensperren aller Mitglieder und
+ * Ketten-Retry; Mailversand und Hooks folgen erst nach dem Commit.
+ */
+import { dbInternal } from "@/lib/db";
+import { lockOrganization, lockRow, lockRows } from "@/lib/db-lock";
+import { withChangeLogRetry } from "@/lib/chain-retry";
+import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
+import { finalizeWithinTx } from "@/domain/invoice/finalize";
+import { linkDocuments } from "@/domain/relations";
+import { logActivity } from "@/domain/activity/log";
+import { onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
+import { resolveDocLanguage } from "@/lib/i18n/doc";
+import type { MailProvider } from "@/lib/mail/provider";
+import type { CreateInvoiceInput } from "@/schemas";
+import {
+  COLLECTIVE_MAX_MEMBERS,
+  assembleCollectiveLines,
+  collectiveHeaderText,
+  collectivePeriod,
+  selectCollectiveGroup,
+  type CollectiveBlock,
+  type CollectiveCandidate,
+  type CollectiveKeyField,
+} from "./collective";
+import { RecurringError, RecurringNotDueError } from "./errors";
+import { itemTaxRates } from "./lines";
+import {
+  DAY_MS,
+  advanceAfterEmit,
+  advanceEmptyPeriod,
+  applyFixedServicePeriod,
+  buildRunLines,
+  emitSingleInvoice,
+  isRunDue,
+  sendRecurringInvoiceEmail,
+  type EmitTxResult,
+  type RecWithLines,
+  type RunLines,
+} from "./run-parts";
+import type { EmitOutcome, EmittedInvoice, SkippedPeriod } from "./run-types";
+import { markUsageBilled } from "./usage";
+
+const CANDIDATE_SELECT = {
+  id: true,
+  customerId: true,
+  status: true,
+  collectiveBilling: true,
+  nextRunDate: true,
+  createdAt: true,
+  currency: true,
+  taxScheme: true,
+  language: true,
+  paymentTermsDays: true,
+  autoFinalize: true,
+  autoSend: true,
+  emailTemplateId: true,
+} as const;
+
+const MAX_GROUP_SETTLE_ROUNDS = 4;
+
+export interface CollectiveRunOptions {
+  mode: "batch" | "manual";
+  provider?: MailProvider;
+  maxMembers?: number;
+  /** Wird mit den Mitgliedern der Gruppe aufgerufen, sobald sie feststehen (auch wenn die Transaktion danach scheitert). */
+  onMembers?: (ids: string[]) => void;
+}
+
+export interface CollectiveRunResult {
+  outcome: EmitOutcome | { deferred: true };
+  memberIds: string[];
+  endedIds: string[];
+}
+
+interface TxResult {
+  tx: EmitTxResult | { deferred: true };
+  memberIds: string[];
+  endedIds: string[];
+  emptyIds: { id: string; periodDate: Date }[];
+  split: { id: string; reasons: CollectiveKeyField[] }[];
+  periodKey: string;
+}
+
+interface Block {
+  rec: RecWithLines;
+  built: RunLines;
+  periodDate: Date;
+}
+
+export async function emitCollective(
+  triggerId: string,
+  now: Date,
+  actor: string,
+  opts: CollectiveRunOptions,
+): Promise<CollectiveRunResult> {
+  const maxMembers = opts.maxMembers ?? COLLECTIVE_MAX_MEMBERS;
+  const run = await withChangeLogRetry(() => dbInternal.$transaction(async (tx): Promise<TxResult> => {
+    const head = await tx.recurringInvoice.findUnique({ where: { id: triggerId }, select: { orgId: true } });
+    if (!head) throw new RecurringError("Abo nicht gefunden.");
+    const orgId = head.orgId;
+    await lockOrganization(tx, orgId);
+    await lockRow(tx, "RecurringInvoice", triggerId, orgId);
+
+    // Gruppe bilden, Mitglieder sperren, erneut bilden (bis stabil): nach der Sperre gelesene Werte gelten.
+    const locked = new Set<string>([triggerId]);
+    let members: string[] = [triggerId];
+    let split: { id: string; reasons: CollectiveKeyField[] }[] = [];
+    for (let round = 0; round < MAX_GROUP_SETTLE_ROUNDS; round++) {
+      const trig = await tx.recurringInvoice.findFirst({ where: { id: triggerId, orgId }, select: CANDIDATE_SELECT });
+      if (!trig) throw new RecurringError("Abo nicht gefunden.");
+      if (trig.status !== "ACTIVE") throw new RecurringError("Abo ist nicht aktiv.");
+      const others = await tx.recurringInvoice.findMany({
+        where: { orgId, customerId: trig.customerId, status: "ACTIVE", collectiveBilling: true, id: { not: triggerId } },
+        select: CANDIDATE_SELECT,
+      });
+      const group = selectCollectiveGroup(trig as CollectiveCandidate, others as CollectiveCandidate[], maxMembers);
+      members = group.members;
+      split = group.split;
+      const fresh = members.filter((id) => !locked.has(id));
+      if (fresh.length === 0) break;
+      await lockRows(tx, orgId, fresh.map((id) => ({ table: "RecurringInvoice" as const, id })));
+      for (const id of fresh) locked.add(id);
+    }
+    if (members.some((id) => !locked.has(id))) throw new RecurringError("Sammelrechnung: Gruppe hat sich waehrend des Laufs geaendert, bitte erneut versuchen.");
+    opts.onMembers?.(members);
+
+    const rows = await tx.recurringInvoice.findMany({
+      where: { id: { in: members }, orgId },
+      include: { lines: { orderBy: { position: "asc" } } },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const recs: RecWithLines[] = [];
+    for (const id of members) {
+      const r = byId.get(id);
+      if (!r || r.status !== "ACTIVE") throw new RecurringError("Abo ist nicht aktiv.");
+      if (r.lines.length === 0) throw new RecurringError("Abo hat keine Positionen.");
+      recs.push(r);
+    }
+    const trigRec = recs.find((r) => r.id === triggerId);
+    if (!trigRec) throw new RecurringError("Abo nicht gefunden.");
+
+    // Faelligkeit: Scheduler nur, wenn ALLE Mitglieder faellig sind (sonst zurueckstellen, nichts schreiben);
+    // manuell ignorieren Festpreis-Mitglieder den Stichtag, Verbrauchsmitglieder muessen faellig sein.
+    for (const r of recs) {
+      const usage = r.lines.some((l) => l.billing === "USAGE");
+      const due = isRunDue(r.nextRunDate, now, usage);
+      if (opts.mode === "batch" && !due) {
+        return { tx: { deferred: true }, memberIds: members, endedIds: [], emptyIds: [], split: [], periodKey: "" };
+      }
+      if (opts.mode === "manual" && usage && !due) {
+        throw new RecurringNotDueError(
+          "Verbrauchsabo: Die Periode endet erst am Stichtag; abgerechnet wird ab dem Folgetag, damit kein Verbrauch verloren geht.",
+        );
+      }
+    }
+
+    const blocks: Block[] = [];
+    const emptyIds: { id: string; periodDate: Date }[] = [];
+    const endedIds: string[] = [];
+    for (const r of recs) {
+      const periodDate = r.nextRunDate;
+      const built = await buildRunLines(tx, r, periodDate, { fixedServicePeriod: false });
+      if (built.hasUsageLines && !built.hasItems) {
+        const { ended } = await advanceEmptyPeriod(tx, r, periodDate, built.anchorDay);
+        emptyIds.push({ id: r.id, periodDate });
+        if (ended) endedIds.push(r.id);
+      } else {
+        blocks.push({ rec: r, built, periodDate });
+      }
+    }
+
+    const periodKey = trigRec.nextRunDate.toISOString();
+    if (blocks.length === 0) {
+      const skipped: SkippedPeriod = { skipped: true, periodDate: trigRec.nextRunDate, reason: "NO_USAGE" };
+      return {
+        tx: { result: skipped, ended: endedIds.includes(triggerId), autoSend: false, orgId, emailTemplateId: null },
+        memberIds: members,
+        endedIds,
+        emptyIds,
+        split,
+        periodKey,
+      };
+    }
+
+    if (blocks.length === 1) {
+      const only = blocks[0];
+      const single = await emitSingleInvoice(tx, only.rec, only.built, only.periodDate, now, actor);
+      if (single.ended) endedIds.push(only.rec.id);
+      return { tx: single, memberIds: members, endedIds, emptyIds, split, periodKey };
+    }
+
+    // Mehrere Bloecke: eine Rechnung mit Ueberschrift/Zwischensumme je Abo.
+    const first = blocks[0].rec;
+    const collectiveBlocks: CollectiveBlock[] = blocks.map((b) => ({
+      recurringId: b.rec.id,
+      heading: b.rec.invoiceHeading && b.rec.invoiceHeading.trim() !== "" ? b.rec.invoiceHeading : b.rec.title,
+      showPeriodText: b.rec.showPeriodText,
+      periodStart: b.built.period.start,
+      periodEnd: b.built.period.end,
+      lines: b.rec.showPeriodText ? applyFixedServicePeriod(b.built.lines, b.built.period) : b.built.lines,
+    }));
+    const lang = resolveDocLanguage(first.language);
+    const { lines, origins } = assembleCollectiveLines(collectiveBlocks, lang);
+    const period = collectivePeriod(lines);
+    const notes = blocks.map((b) => b.rec.notes?.trim() ?? "").filter((n) => n !== "").join("\n\n");
+    const input: CreateInvoiceInput = {
+      customerId: first.customerId,
+      language: lang,
+      type: "INVOICE",
+      taxScheme: first.taxScheme as CreateInvoiceInput["taxScheme"],
+      currency: first.currency,
+      issueDate: now,
+      deliveryDate: trigRec.nextRunDate,
+      deliveryStart: period?.start,
+      deliveryEnd: period?.end,
+      dueDate: new Date(now.getTime() + first.paymentTermsDays * DAY_MS),
+      notes: notes === "" ? undefined : notes,
+      headerText: collectiveHeaderText(collectiveBlocks),
+      documentChargePermille: 0,
+      documentChargeCents: 0,
+      lines,
+    };
+    const usageCount = blocks.reduce((n, b) => n + b.built.usageCount, 0);
+    const usageQuantityMilli = blocks.reduce((n, b) => n + b.built.usageQuantityMilli, 0);
+    const blockIds = blocks.map((b) => b.rec.id).sort();
+    const invoice = await createDraftInvoiceWithinTx(tx, orgId, input, {
+      actor,
+      now,
+      inheritedTaxRates: [...new Set(blocks.flatMap((b) => itemTaxRates(b.rec.lines)))],
+      lineRecurringIds: origins,
+      changeLogExtra: {
+        collective: blockIds,
+        period: periodKey,
+        ...(usageCount > 0 ? { usageCount, usageQuantityMilli } : {}),
+      },
+    });
+
+    await markUsageBilled(tx, blocks.flatMap((b) => b.built.usageIds), invoice.id, now);
+    for (const b of blocks) {
+      await linkDocuments(tx, { orgId, fromType: "INVOICE", fromId: invoice.id, toType: "RECURRING", toId: b.rec.id, relationType: "GENERATED_BY" });
+    }
+
+    let number: string | null = invoice.number;
+    let finalized = false;
+    if (first.autoFinalize) {
+      const fin = await finalizeWithinTx(tx, invoice.id, { now, actor });
+      number = fin.number;
+      finalized = true;
+    }
+
+    const notices: string[] = [];
+    for (const b of blocks) {
+      const adv = await advanceAfterEmit(tx, b.rec, b.periodDate, now, b.built.anchorDay);
+      if (adv.ended) endedIds.push(b.rec.id);
+      if (adv.notice) notices.push(`${b.rec.title}: ${adv.notice}`);
+    }
+    const result: EmittedInvoice = {
+      invoiceId: invoice.id,
+      number,
+      periodDate: trigRec.nextRunDate,
+      finalized,
+      collectiveRecurringIds: blockIds,
+      ...(notices.length > 0 ? { notice: notices.join(" ") } : {}),
+    };
+    return {
+      tx: { result, ended: endedIds.includes(triggerId), autoSend: first.autoSend, orgId, emailTemplateId: first.emailTemplateId },
+      memberIds: members,
+      endedIds,
+      emptyIds,
+      split,
+      periodKey,
+    };
+  }));
+
+  if ("deferred" in run.tx) return { outcome: { deferred: true }, memberIds: run.memberIds, endedIds: [] };
+
+  const done = run.tx;
+  const outcome = done.result;
+  for (const e of run.emptyIds) {
+    await logActivity(dbInternal, {
+      orgId: done.orgId,
+      entityType: "RECURRING",
+      entityId: e.id,
+      type: "USAGE_EMPTY_PERIOD",
+      actor,
+      at: now,
+      data: { period: e.periodDate.toISOString() },
+    });
+  }
+  if ("skipped" in outcome) return { outcome, memberIds: run.memberIds, endedIds: run.endedIds };
+
+  for (const s of run.split) {
+    await logActivity(dbInternal, {
+      orgId: done.orgId,
+      entityType: "RECURRING",
+      entityId: s.id,
+      type: "COLLECTIVE_SPLIT",
+      actor,
+      at: now,
+      data: { period: run.periodKey, reasons: s.reasons, invoiceId: outcome.invoiceId },
+    });
+  }
+  if (outcome.finalized) await onInvoiceFinalizedOss(done.orgId, outcome.invoiceId, now);
+  if (done.autoSend && outcome.finalized) {
+    const sent = await sendRecurringInvoiceEmail(done.orgId, outcome.invoiceId, opts.provider, done.emailTemplateId);
+    outcome.emailStatus = sent.status;
+    outcome.emailError = sent.error;
+  }
+  return { outcome, memberIds: run.memberIds, endedIds: run.endedIds };
+}

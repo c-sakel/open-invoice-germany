@@ -102,6 +102,8 @@ export const ACTIVITY_TYPES = {
   USAGE_RECORDED: "Verbrauch erfasst",
   USAGE_VOIDED: "Verbrauch storniert",
   USAGE_EMPTY_PERIOD: "Zeitraum ohne Verbrauch",
+  // Sammelrechnung (src/domain/recurring/collective-run.ts), entityType RECURRING, entityId = Abo, data.reasons = abweichende Felder.
+  COLLECTIVE_SPLIT: "Nicht in Sammelrechnung zusammengefasst",
   // Kundenportal: Link-Ereignisse (entityType CUSTOMER, entityId = Kunde, data.linkId; nie das Token).
   PORTAL_LINK_CREATED: "Portal-Link erstellt",
   PORTAL_LINK_REVOKED: "Portal-Link widerrufen",
