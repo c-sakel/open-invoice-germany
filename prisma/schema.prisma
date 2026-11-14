@@ -78,6 +78,9 @@ model Organization {
   postalJobs             PostalJob[]
   portalSettings         CustomerPortalSettings?
   portalLinks            CustomerPortalLink[]
+  bankImports            BankStatementImport[]
+  bankTransactions       BankTransaction[]
+  bankHints              BankCounterpartyHint[]
   sepaCreditorId         String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
 
@@ -118,6 +121,7 @@ model Customer {
   invoices    Invoice[]
   recurring   RecurringInvoice[]
   portalLinks CustomerPortalLink[]
+  bankHints   BankCounterpartyHint[]
 
   addresses              CustomerAddress[]
   contacts               ContactPerson[]
@@ -414,6 +418,7 @@ model Invoice {
 
   lines                   InvoiceLine[]
   payments                Payment[]
+  bankMatches             BankMatch[]
   archivedDocuments       ArchivedDocument[]
   dunnings                Dunning[]
   finalDeductions         FinalInvoiceDeduction[] @relation("FinalInvoiceDeductions")
@@ -492,25 +497,26 @@ model InvoiceLine {
 }
 
 model Payment {
-  id                 String   @id @default(cuid())
+  id                 String     @id @default(cuid())
   invoiceId          String
-  invoice            Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice            Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   amountCents        Int
-  paidAt             DateTime @default(now())
-  method             String   @default("TRANSFER") // TRANSFER | CASH | CARD | SEPA
+  paidAt             DateTime   @default(now())
+  method             String     @default("TRANSFER") // TRANSFER | CASH | CARD | SEPA
   reference          String?
-  isSkonto           Boolean  @default(false) // §17-Fall: keine Rechnungsberichtigung nötig
+  isSkonto           Boolean    @default(false) // §17-Fall: keine Rechnungsberichtigung nötig
   // Bei isSkonto=true: die Zahlung, deren Skontoabzug hierdurch verbucht wird.
   skontoForPaymentId String?
   note               String? // Phase 8b (§42): freie Notiz zur Zahlung
-  createdAt          DateTime @default(now())
+  createdAt          DateTime   @default(now())
   // Phase 16a (GoBD): Zahlungen sind append-only; Korrekturen laufen als Gegenbuchung.
-  kind               String   @default("PAYMENT") // PAYMENT | REVERSAL
+  kind               String     @default("PAYMENT") // PAYMENT | REVERSAL
   reversesPaymentId  String? // bei kind=REVERSAL: die stornierte Zahlung
   reason             String? // Begruendung der Gegenbuchung
   provider           String? // Zahlungsanbieter bei automatisch gebuchten Zahlungen
   providerPaymentId  String? // Anbieter-Referenz (Idempotenz je Anbieter)
-  createdBy          String   @default("user") // user | scheduler | mcp | api | webhook
+  createdBy          String     @default("user") // user | scheduler | mcp | api | webhook
+  bankMatch          BankMatch?
 
   @@unique([provider, providerPaymentId])
   @@index([invoiceId])
@@ -1727,4 +1733,101 @@ model CustomerPortalEvent {
 
   @@index([linkId, at])
   @@index([orgId, at])
+}
+
+/// Kontoauszug-Import: nur Kennzahlen + Datei-Hash, nie die Rohdatei. Append-only (Guard).
+model BankStatementImport {
+  id             String            @id @default(cuid())
+  orgId          String
+  org            Organization      @relation(fields: [orgId], references: [id])
+  fileSha256     String
+  fileName       String? // bereinigt (sanitizeFileName), max. 200
+  format         String // CAMT053 | CAMT054
+  schemaVersion  String // z. B. camt.053.001.08
+  accountIban    String? // Konto der ersten Meldung
+  statementId    String?
+  seqNo          String?
+  periodFrom     DateTime?
+  periodTo       DateTime?
+  entryCount     Int // gelesene Umsaetze (inkl. verworfene)
+  importedCount  Int
+  duplicateCount Int
+  skippedCount   Int // Belastungen, nicht gebucht, Ruecklaeufer eigener Zahlungen
+  warningsJson   String? // z. B. UNKNOWN_ACCOUNT, MULTIPLE_ACCOUNTS
+  createdBy      String
+  createdAt      DateTime          @default(now())
+  transactions   BankTransaction[]
+
+  @@unique([orgId, fileSha256])
+  @@index([orgId, createdAt])
+}
+
+/// Umsatz aus dem Kontoauszug (Gutschrift oder Rueckgabe). Nur Statusfelder aenderbar (Guard), nie loeschen.
+model BankTransaction {
+  id               String              @id @default(cuid())
+  orgId            String
+  org              Organization        @relation(fields: [orgId], references: [id])
+  importId         String
+  import           BankStatementImport @relation(fields: [importId], references: [id], onDelete: Restrict)
+  accountIban      String
+  fingerprint      String // SHA-256 hex
+  bookingDate      DateTime // UTC-Mitternacht des Buchungstags
+  valueDate        DateTime?
+  amountCents      Int // immer positiv
+  currency         String
+  direction        String // CRDT | DBIT
+  counterpartyName String?
+  counterpartyIban String? // normalisiert, Anzeige nur maskiert
+  remittance       String              @default("") // <= 500 Zeichen
+  endToEndId       String?
+  acctSvcrRef      String?
+  bankTxCode       String?
+  returnReason     String? // RtrInf/Rsn/Cd
+  status           String              @default("OPEN") // OPEN | PARTIAL | MATCHED | IGNORED | RETURN | RETURN_DONE
+  allocatedCents   Int                 @default(0)
+  ignoredReason    String?
+  ignoredBy        String?
+  ignoredAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  matches          BankMatch[]
+
+  @@unique([orgId, fingerprint])
+  @@index([orgId, status, bookingDate])
+  @@index([importId])
+}
+
+/// Zuordnung Umsatz -> Rechnung/Zahlung, append-only (Guard). UNDO verweist auf das aufgehobene Match.
+model BankMatch {
+  id            String          @id @default(cuid())
+  orgId         String
+  transactionId String
+  transaction   BankTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  invoiceId     String
+  invoice       Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  paymentId     String?         @unique
+  payment       Payment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  amountCents   Int // positiv; bei UNDO/REVERSAL der zurueckgebuchte Betrag
+  kind          String // PAYMENT | SKONTO | REVERSAL | UNDO
+  refMatchId    String? // bei UNDO: aufgehobenes Match; bei REVERSAL: Match der Ursprungszahlung, falls bekannt
+  reason        String?
+  confirmedBy   String
+  confirmedAt   DateTime        @default(now())
+
+  @@index([orgId, invoiceId])
+  @@index([transactionId])
+}
+
+/// Gelernte Zuordnung Gegenkonto -> Kunde (nur HMAC der IBAN).
+model BankCounterpartyHint {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ibanHash   String
+  customerId String
+  customer   Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lastUsedAt DateTime
+  useCount   Int          @default(1)
+
+  @@unique([orgId, ibanHash])
 }
