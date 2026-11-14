@@ -329,6 +329,22 @@ describe("Fix-Welle 18f-3: Belegrabatt und Abweichungsgrenze", () => {
     expect((await dataOf(ok)).grossDeviationCents).toBe(0);
   });
 
+  it("PATCH mit Bruttozeilen auf Entwurf mit gespeichertem Belegaufschlag -> 400 GROSS_DISCOUNT_CONFLICT (REST + MCP); explizit 0 erlaubt", async () => {
+    const created = await dataOf(await postInvoice(body([line({ unitNetPriceCents: 1000 })], { documentChargePermille: 100 })));
+    const res = await patchInvoice(created.id, { lines: [line({ unitGrossPriceCents: 1190 })] });
+    expect(res.status).toBe(400);
+    const err = (await res.json()) as { error: { code: string; message: string } };
+    expect(err.error.code).toBe("GROSS_DISCOUNT_CONFLICT");
+    expect(err.error.message).toContain("Belegaufschlag");
+    expect(err.error.message).not.toMatch(/\d+ ?%|\d,\d\d/);
+    const upd = await callTool("update_invoice_draft", { invoice: created.id, lines: [{ description: "B", quantity: 1, unitGrossPriceEuro: 11.9, taxRatePercent: 19 }] });
+    expect(upd.isError).toBe(true);
+    expect(text(upd)).toContain("Belegaufschlag");
+    const ok = await patchInvoice(created.id, { documentChargePermille: 0, documentChargeCents: 0, lines: [line({ unitGrossPriceCents: 1190 })] });
+    expect(ok.status).toBe(200);
+    expect((await dataOf(ok)).grossDeviationCents).toBe(0);
+  });
+
   it("MCP create_invoice/create_document/update_invoice_draft: Standardrabatt greift im Brutto-Modus nicht", async () => {
     const r = await callTool("create_invoice", { customer: "Rabatt Kunde AG", lines: [{ description: "Brutto", quantity: 1, unitGrossPriceEuro: 11.9, taxRatePercent: 19 }] });
     expect(r.isError).toBeFalsy();

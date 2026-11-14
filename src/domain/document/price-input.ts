@@ -99,6 +99,8 @@ export interface PriceInputResult {
   groups: GrossGroupView[];
   /** Hatte der Aufrufer Belegrabattfelder gesetzt (auch 0)? Relevant fuer PATCH mit gespeichertem Rabatt. */
   discountExplicit: boolean;
+  /** Hatte der Aufrufer Belegaufschlagfelder gesetzt (auch 0)? Relevant fuer PATCH mit gespeichertem Aufschlag. */
+  chargeExplicit: boolean;
 }
 
 export type GrossErrorCode = "GROSS_DEVIATION" | "GROSS_DEVIATION_TOO_LARGE" | "GROSS_DISCOUNT_CONFLICT";
@@ -121,11 +123,20 @@ export const GROSS_DISCOUNT_NOTICE = "Bruttopreise: Belegrabatt ist 0; ein Stand
  * PATCH mit Bruttozeilen auf einen Entwurf mit gespeichertem Belegrabatt: ablehnen (das Brutto
  * waere sonst um den Rabatt falsch). Ein ausdruecklich gesetzter Rabatt 0 im Body hebt ihn auf.
  */
-export function assertGrossPatchDiscount(priced: PriceInputResult, stored: { documentDiscountPermille: number; documentDiscountCents: number }): void {
-  if (priced.mode !== "GROSS" || priced.discountExplicit) return;
-  if (stored.documentDiscountPermille !== 0 || stored.documentDiscountCents !== 0) {
+export function assertGrossPatchDiscount(
+  priced: PriceInputResult,
+  stored: { documentDiscountPermille: number; documentDiscountCents: number; documentChargePermille?: number; documentChargeCents?: number },
+): void {
+  if (priced.mode !== "GROSS") return;
+  if (!priced.discountExplicit && (stored.documentDiscountPermille !== 0 || stored.documentDiscountCents !== 0)) {
     throw new GrossDeviationError(
       "Bruttopreise sind nicht mit einem Belegrabatt kombinierbar; der Entwurf hat einen Belegrabatt. Belegrabatt mit documentDiscountPermille/documentDiscountCents = 0 entfernen oder Nettopreise verwenden.",
+      "GROSS_DISCOUNT_CONFLICT",
+    );
+  }
+  if (!priced.chargeExplicit && ((stored.documentChargePermille ?? 0) !== 0 || (stored.documentChargeCents ?? 0) !== 0)) {
+    throw new GrossDeviationError(
+      "Bruttopreise sind nicht mit einem Belegaufschlag kombinierbar; der Entwurf hat einen Belegaufschlag. Belegaufschlag mit documentChargePermille/documentChargeCents = 0 entfernen oder Nettopreise verwenden.",
       "GROSS_DISCOUNT_CONFLICT",
     );
   }
@@ -139,7 +150,7 @@ const without = (r: Rec, keys: string[]): Rec => Object.fromEntries(Object.entri
 const ONE_FORM = "Genau eine Preisangabe je Position (Netto in Cent/tausendstel Cent, Bruttoeinzelpreis oder Bruttozeilenbetrag).";
 
 export function resolvePriceInput(raw: unknown): PriceInputResult {
-  const passthrough: PriceInputResult = { body: raw, mode: "NET", grossTargetCents: null, predictedDeviationCents: null, groups: [], discountExplicit: false };
+  const passthrough: PriceInputResult = { body: raw, mode: "NET", grossTargetCents: null, predictedDeviationCents: null, groups: [], discountExplicit: false, chargeExplicit: false };
   if (!isRec(raw) || !Array.isArray(raw.lines)) return passthrough;
   const rawLines: unknown[] = raw.lines;
 
@@ -255,6 +266,7 @@ export function resolvePriceInput(raw: unknown): PriceInputResult {
         };
       });
       const discountExplicit = raw.documentDiscountPermille !== undefined || raw.documentDiscountCents !== undefined;
+      const chargeExplicit = raw.documentChargePermille !== undefined || raw.documentChargeCents !== undefined;
       return {
         // Belegrabatt fest 0 (ausdruecklich, damit der Standardrabatt des Kunden nicht greift).
         body: { ...raw, documentDiscountPermille: 0, documentDiscountCents: 0, lines: out },
@@ -270,6 +282,7 @@ export function resolvePriceInput(raw: unknown): PriceInputResult {
           exact: g.exact,
         })),
         discountExplicit,
+        chargeExplicit,
       };
     }
   }

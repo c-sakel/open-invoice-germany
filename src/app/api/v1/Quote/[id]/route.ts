@@ -25,7 +25,7 @@ export const GET = withApi<{ id: string }>(async (req, ctx) => {
 }, { scope: "read" });
 
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
-  const existing = await prisma.quote.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId, kind: "ANGEBOT" }, select: { id: true, documentDiscountPermille: true, documentDiscountCents: true } });
+  const existing = await prisma.quote.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId, kind: "ANGEBOT" }, select: { id: true, documentDiscountPermille: true, documentDiscountCents: true, documentChargePermille: true, documentChargeCents: true } });
   if (!existing) throw new NotFoundError("Angebot nicht gefunden.");
   const priced = resolvePriceInput(ctx.body);
   assertGrossPatchDiscount(priced, existing);
