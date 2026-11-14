@@ -56,6 +56,10 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
       } catch {
         return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
       }
+      // limit gilt nur im Abgleich; im Legacy-Pfad nicht still ignorieren (einfachste konsistente Variante: ablehnen).
+      if (limit !== undefined && updatedSince === undefined && cursor === undefined) {
+        return ctx.fail("Validierung fehlgeschlagen: limit nur zusammen mit updatedSince.");
+      }
       if (updatedSince !== undefined || cursor !== undefined) {
         try {
           const result = await listContactsApi(org.id, { updatedSince, cursor, limit, includeArchived, ...(query ? { search: query } : {}) });

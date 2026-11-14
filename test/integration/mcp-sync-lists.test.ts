@@ -130,6 +130,14 @@ describe("list_invoices mit updatedSince", () => {
 });
 
 describe("list_customers / list_products / list_documents", () => {
+  it("limit ohne updatedSince/cursor wird abgelehnt statt still ignoriert", async () => {
+    for (const t of ["list_customers", "list_products", "list_documents"]) {
+      const res = await callTool(t, { limit: 5 });
+      expect(res.isError).toBe(true);
+      expect(text(res)).toContain("limit");
+    }
+  });
+
   it("ohne neue Parameter byte-gleich zur bisherigen Ausgabe", async () => {
     for (const t of ["list_customers", "list_products", "list_documents"]) expect(text(await callTool(t, {}))).toBe(before[t]);
   });
@@ -163,5 +171,8 @@ describe("list_customers / list_products / list_documents", () => {
     expect((await drain("list_customers")).seen).not.toContain(customerIds[1]);
     expect((await drain("list_customers", { includeArchived: true })).seen).toContain(customerIds[1]);
     expect((await drain("list_products", { includeArchived: true })).seen).toContain(productIds[1]);
+    await dbInternal.quote.update({ where: { id: quoteIds[1] }, data: { archivedAt: STAMPS[1], updatedAt: STAMPS[1] } });
+    expect((await drain("list_documents")).seen).not.toContain(quoteIds[1]);
+    expect((await drain("list_documents", { includeArchived: true })).seen).toContain(quoteIds[1]);
   });
 });

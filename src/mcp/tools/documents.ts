@@ -87,10 +87,10 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
     {
       title: "Dokumente auflisten",
       description:
-        "Listet Angebote/Auftragsbestätigungen/Proforma (optional nach Art gefiltert). Abgleich: mit updatedSince (ISO 8601 mit Zone) kommen geänderte Belege aufsteigend nach updatedAt; nextCursor als cursor für die Folgeseite (limit 1-200).",
-      inputSchema: { kind: z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]).optional(), ...syncToolShape },
+        "Listet Angebote/Auftragsbestätigungen/Proforma (optional nach Art gefiltert). Abgleich: mit updatedSince (ISO 8601 mit Zone) kommen geänderte Belege aufsteigend nach updatedAt; nextCursor als cursor für die Folgeseite (limit 1-200, includeArchived).",
+      inputSchema: { kind: z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]).optional(), ...syncToolShape, includeArchived: z.boolean().optional() },
     },
-    async ({ kind, updatedSince, cursor, limit }): Promise<Result> => {
+    async ({ kind, updatedSince, cursor, limit, includeArchived }): Promise<Result> => {
       // Testbarkeit-Fix (Task 2, wie get_status in system.ts): ctx.requireOrg() statt
       // ungescoptem dbInternal.organization.findFirst() — respektiert die in Tests gemockte
       // aktive Org, Produktivverhalten (Single-Tenant) identisch.
@@ -100,9 +100,13 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
       } catch {
         return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
       }
+      // limit gilt nur im Abgleich; im Legacy-Pfad nicht still ignorieren (einfachste konsistente Variante: ablehnen).
+      if (limit !== undefined && updatedSince === undefined && cursor === undefined) {
+        return ctx.fail("Validierung fehlgeschlagen: limit nur zusammen mit updatedSince.");
+      }
       if (updatedSince !== undefined || cursor !== undefined) {
         try {
-          const result = await listQuotes(org.id, { updatedSince, cursor, limit, ...(kind ? { kind } : {}) });
+          const result = await listQuotes(org.id, { updatedSince, cursor, limit, includeArchived, ...(kind ? { kind } : {}) });
           return ctx.ok(
             JSON.stringify(
               {
