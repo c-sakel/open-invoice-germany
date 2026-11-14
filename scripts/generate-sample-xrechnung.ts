@@ -763,6 +763,27 @@ const aboVerbrauchSubcentStorno = () =>
     precedingInvoiceDate: new Date("2186-04-02"),
   });
 
+// 34) Sammelrechnung aus Abos: Bloecke "Wartung" und "Hosting" (HEADING/Positionen/SUBTOTAL), Leistungszeitraum
+// je Position (BG-26) und am Beleg (BG-14), Verbrauch mit 5 Nachkommastellen. Testjahr 2208.
+const P = (a: string, b: string) => ({ servicePeriodStart: new Date(a), servicePeriodEnd: new Date(b) });
+const sammelrechnungAbo = () =>
+  buildSample({
+    number: "RE-2208-0001",
+    issueDate: new Date("2208-04-02"),
+    dueDate: new Date("2208-05-02"),
+    deliveryStart: new Date("2208-01-01"),
+    deliveryEnd: new Date("2208-03-31"),
+    lines: [
+      { description: "Wartung", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "HEADING" },
+      { description: "Wartungsvertrag März", quantityMilli: 1000, unit: "C62", unitNetPriceCents: 4900, taxRate: 19, taxCategory: "S", ...P("2208-03-01", "2208-03-31") },
+      { description: "Zwischensumme Wartung", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "SUBTOTAL" },
+      { description: "Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "HEADING" },
+      { description: "Hosting Quartal", quantityMilli: 3000, unit: "C62", unitNetPriceCents: 1250, taxRate: 19, taxCategory: "S", ...P("2208-01-01", "2208-03-31") },
+      { description: "API-Aufrufe März", quantityMilli: 10_000_000, unit: "C62", unitNetPriceCents: 0, unitNetPriceMilliCents: 200, taxRate: 19, taxCategory: "S", ...P("2208-03-01", "2208-03-31") },
+      { description: "Zwischensumme Hosting", quantityMilli: 0, unit: "C62", unitNetPriceCents: 0, taxRate: 0, taxCategory: "S", lineType: "SUBTOTAL" },
+    ],
+  });
+
 // Namensraum aller Beispiele. "base" bleibt die reine Bestandsregression.
 const SAMPLES: Record<string, () => EInvoiceData> = {
   base: () => base,
@@ -798,6 +819,7 @@ const SAMPLES: Record<string, () => EInvoiceData> = {
   "lastschrift-59": lastschrift59,
   "abo-verbrauch-subcent": aboVerbrauchSubcent,
   "abo-verbrauch-subcent-storno": aboVerbrauchSubcentStorno,
+  "sammelrechnung-abo": sammelrechnungAbo,
 };
 
 export const SAMPLE_NAMES = Object.keys(SAMPLES);
