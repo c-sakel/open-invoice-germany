@@ -3,6 +3,7 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
+import { syncFilterShape } from "@/domain/sync/updated-since";
 // Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
 import { MAX_ATTACHMENT_FILE_BYTES } from "@/lib/attachments/mime";
@@ -825,6 +826,7 @@ export const invoiceListFilterSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
   sort: z.enum(["issueDate_desc", "issueDate_asc", "dueDate_asc", "gross_desc", "number_desc"]).default("issueDate_desc"),
+  ...syncFilterShape,
 });
 export type InvoiceListFilter = z.infer<typeof invoiceListFilterSchema>;
 

@@ -12,6 +12,7 @@ import { QuoteStatus, DeliveryNoteStatus } from "@/schemas";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { billingFilterIds } from "@/domain/document/billing-state";
 import { docIdsForTag } from "@/domain/tag/list";
+import { nextSyncCursor, resolveSyncWindow, syncWhere, SYNC_ORDER_BY, SYNC_SORT_SPEC, syncFilterShape } from "@/domain/sync/updated-since";
 import { collectByIdSet, compareBySort, countByIdSet, intersectIdSets, orderedIdsByIdSet, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
 
 /** Feste Ordnung der Angebots-/Lieferscheinlisten: `issueDate` absteigend, `id` aufsteigend als Tiebreak. */
@@ -60,6 +61,7 @@ export const quoteListFilterSchema = z.object({
   minCents: z.coerce.number().int().optional(),
   maxCents: z.coerce.number().int().optional(),
   ...tagFilterShape,
+  ...syncFilterShape,
 });
 export type QuoteListFilter = z.infer<typeof quoteListFilterSchema>;
 
@@ -86,6 +88,8 @@ export interface QuoteListResult {
   total: number;
   limit: number;
   offset: number;
+  /** Nur im Abgleich (updatedSince): Cursor der Folgeseite, null = letzte Seite. */
+  nextCursor?: string | null;
 }
 
 /**
@@ -260,12 +264,16 @@ export async function listQuotes(
   opts: { ids?: string[] } = {},
 ): Promise<QuoteListResult> {
   const filter = quoteListFilterSchema.parse(rawFilter);
+  const sync = resolveSyncWindow(rawFilter, filter);
 
-  const base = quoteFilterConditions(orgId, filter);
+  const countBase = quoteFilterConditions(orgId, filter);
+  if (sync) countBase.push(syncWhere({ since: sync.since, after: null }));
+  const base = sync && sync.after ? [...countBase, syncWhere(sync)] : countBase;
   const idSet = await quoteIdSet(orgId, filter, opts);
   const statusCond = quoteStatusWhere(filter.status, now);
-  const orderBy: Prisma.QuoteOrderByWithRelationInput[] = [{ issueDate: "desc" }, { id: "asc" }];
+  const orderBy: Prisma.QuoteOrderByWithRelationInput[] = sync ? [...SYNC_ORDER_BY] : [{ issueDate: "desc" }, { id: "asc" }];
   const select = {
+    updatedAt: true,
     id: true,
     number: true,
     kind: true,
@@ -281,13 +289,15 @@ export async function listQuotes(
   } as const;
 
   const [total, rows] = await Promise.all([
-    countByIdSet(idSet, (c) => prisma.quote.count({ where: quoteWith(base, c, statusCond) })),
+    countByIdSet(idSet, (c) => prisma.quote.count({ where: quoteWith(countBase, c, statusCond) })),
     pageByIdSet(idSet, {
       offset: filter.offset,
       limit: filter.limit,
-      compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
+      compare: sync
+        ? compareBySort<{ id: string; issueDate: Date; updatedAt: Date }>(SYNC_SORT_SPEC, (r) => r.updatedAt)
+        : compareBySort<{ id: string; issueDate: Date; updatedAt: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
       single: (c) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), orderBy, skip: filter.offset, take: filter.limit, select }),
-      keys: (c) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), select: { id: true, issueDate: true } }),
+      keys: (c) => prisma.quote.findMany({ where: quoteWith(base, c, statusCond), select: { id: true, issueDate: true, updatedAt: true } }),
       byIds: (pageIds) => prisma.quote.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
@@ -313,6 +323,7 @@ export async function listQuotes(
     total,
     limit: filter.limit,
     offset: filter.offset,
+    ...(sync ? { nextCursor: nextSyncCursor(rows, filter.limit) } : {}),
   };
 }
 
@@ -342,6 +353,7 @@ export const deliveryNoteListFilterSchema = z.object({
   // Seitenverhalten (Standard: nur nicht-archivierte Lieferscheine).
   includeArchived: z.boolean().optional(),
   ...tagFilterShape,
+  ...syncFilterShape,
 });
 export type DeliveryNoteListFilter = z.infer<typeof deliveryNoteListFilterSchema>;
 
@@ -361,6 +373,8 @@ export interface DeliveryNoteListResult {
   total: number;
   limit: number;
   offset: number;
+  /** Nur im Abgleich (updatedSince): Cursor der Folgeseite, null = letzte Seite. */
+  nextCursor?: string | null;
 }
 
 /**
@@ -438,12 +452,16 @@ export async function deliveryNoteListHeadline(orgId: string, rawFilter: unknown
 
 export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Promise<DeliveryNoteListResult> {
   const filter = deliveryNoteListFilterSchema.parse(rawFilter);
+  const sync = resolveSyncWindow(rawFilter, filter);
 
-  const base = deliveryNoteFilterConditions(orgId, filter);
+  const countBase = deliveryNoteFilterConditions(orgId, filter);
+  if (sync) countBase.push(syncWhere({ since: sync.since, after: null }));
+  const base = sync && sync.after ? [...countBase, syncWhere(sync)] : countBase;
   const idSet = await deliveryNoteIdSet(orgId, filter);
   const statusCond: Prisma.DeliveryNoteWhereInput | undefined = filter.status !== "all" ? { status: filter.status } : undefined;
-  const orderBy: Prisma.DeliveryNoteOrderByWithRelationInput[] = [{ issueDate: "desc" }, { id: "asc" }];
+  const orderBy: Prisma.DeliveryNoteOrderByWithRelationInput[] = sync ? [...SYNC_ORDER_BY] : [{ issueDate: "desc" }, { id: "asc" }];
   const select = {
+    updatedAt: true,
     id: true,
     number: true,
     status: true,
@@ -454,13 +472,15 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
   } as const;
 
   const [total, rows] = await Promise.all([
-    countByIdSet(idSet, (c) => prisma.deliveryNote.count({ where: deliveryNoteWith(base, c, statusCond) })),
+    countByIdSet(idSet, (c) => prisma.deliveryNote.count({ where: deliveryNoteWith(countBase, c, statusCond) })),
     pageByIdSet(idSet, {
       offset: filter.offset,
       limit: filter.limit,
-      compare: compareBySort<{ id: string; issueDate: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
+      compare: sync
+        ? compareBySort<{ id: string; issueDate: Date; updatedAt: Date }>(SYNC_SORT_SPEC, (r) => r.updatedAt)
+        : compareBySort<{ id: string; issueDate: Date; updatedAt: Date }>(ISSUE_DATE_DESC, (r) => r.issueDate),
       single: (c) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), orderBy, skip: filter.offset, take: filter.limit, select }),
-      keys: (c) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), select: { id: true, issueDate: true } }),
+      keys: (c) => prisma.deliveryNote.findMany({ where: deliveryNoteWith(base, c, statusCond), select: { id: true, issueDate: true, updatedAt: true } }),
       byIds: (pageIds) => prisma.deliveryNote.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
   ]);
@@ -481,6 +501,7 @@ export async function listDeliveryNotes(orgId: string, rawFilter: unknown): Prom
     total,
     limit: filter.limit,
     offset: filter.offset,
+    ...(sync ? { nextCursor: nextSyncCursor(rows, filter.limit) } : {}),
   };
 }
 

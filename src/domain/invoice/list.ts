@@ -12,6 +12,7 @@ import { effectiveInvoiceStatus, isPartiallyPaid, type EffectiveInvoiceStatus } 
 import { openAmountCents, payableBaseCents } from "@/domain/invoice/amounts";
 import { utcDateOnlyPlusDays } from "@/lib/date-only";
 import { docIdsForTag } from "@/domain/tag/list";
+import { nextSyncCursor, resolveSyncWindow, syncWhere, SYNC_ORDER_BY, SYNC_SORT_SPEC } from "@/domain/sync/updated-since";
 import { collectByIdSet, compareBySort, countByIdSet, orderedIdsByIdSet, pageByIdSet, type IdCond, type IdSet, type SortSpec } from "@/lib/id-filter";
 
 export interface InvoiceListRow {
@@ -53,6 +54,8 @@ export interface InvoiceListResult {
   total: number;
   limit: number;
   offset: number;
+  /** Nur im Abgleich (updatedSince): Cursor der Folgeseite, null = letzte Seite. */
+  nextCursor?: string | null;
 }
 
 /**
@@ -87,10 +90,10 @@ function statusWhere(status: InvoiceListFilter["status"], now: Date): Prisma.Inv
 interface InvoiceSortPlan {
   orderBy: Prisma.InvoiceOrderByWithRelationInput[];
   spec: SortSpec;
-  field: "issueDate" | "dueDate" | "grossTotalCents" | "number";
+  field: "issueDate" | "dueDate" | "grossTotalCents" | "number" | "updatedAt";
 }
 
-type InvoiceSortKey = { id: string; issueDate: Date; dueDate: Date | null; grossTotalCents: number; number: string | null };
+type InvoiceSortKey = { id: string; issueDate: Date; dueDate: Date | null; grossTotalCents: number; number: string | null; updatedAt: Date };
 
 function sortPlan(sort: InvoiceListFilter["sort"]): InvoiceSortPlan {
   switch (sort) {
@@ -361,13 +364,19 @@ export async function listInvoices(
   now: Date = new Date(),
 ): Promise<InvoiceListResult> {
   const filter = invoiceListFilterSchema.parse(rawFilter);
+  const sync = resolveSyncWindow(rawFilter, filter);
 
-  const base = invoiceFilterConditions(orgId, filter);
+  const countBase = invoiceFilterConditions(orgId, filter);
+  if (sync) countBase.push(syncWhere({ since: sync.since, after: null }));
+  const base = sync && sync.after ? [...countBase, syncWhere(sync)] : countBase;
   const idSet = await invoiceIdSet(orgId, filter);
   const statusCond = statusWhere(filter.status, now);
-  const plan = sortPlan(filter.sort);
+  const plan: InvoiceSortPlan = sync
+    ? { orderBy: [...SYNC_ORDER_BY], spec: SYNC_SORT_SPEC, field: "updatedAt" }
+    : sortPlan(filter.sort);
 
   const select = {
+    updatedAt: true,
     id: true,
     number: true,
     type: true,
@@ -385,7 +394,7 @@ export async function listInvoices(
   } as const;
 
   const [total, rows] = await Promise.all([
-    countByIdSet(idSet, (c) => prisma.invoice.count({ where: withCond(base, c, statusCond) })),
+    countByIdSet(idSet, (c) => prisma.invoice.count({ where: withCond(countBase, c, statusCond) })),
     pageByIdSet(idSet, {
       offset: filter.offset,
       limit: filter.limit,
@@ -394,7 +403,7 @@ export async function listInvoices(
       keys: (c) =>
         prisma.invoice.findMany({
           where: withCond(base, c, statusCond),
-          select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true },
+          select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true, updatedAt: true },
         }),
       byIds: (pageIds) => prisma.invoice.findMany({ where: { orgId, id: { in: pageIds } }, select }),
     }),
@@ -438,6 +447,7 @@ export async function listInvoices(
     total,
     limit: filter.limit,
     offset: filter.offset,
+    ...(sync ? { nextCursor: nextSyncCursor(rows, filter.limit) } : {}),
   };
 }
 
@@ -464,7 +474,7 @@ export async function listInvoiceIds(orgId: string, rawFilter: unknown, opts: { 
         where: withCond(base, c, statusCond),
         orderBy: plan.orderBy,
         take,
-        select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true },
+        select: { id: true, issueDate: true, dueDate: true, grossTotalCents: true, number: true, updatedAt: true },
       }),
   });
 }
