@@ -31,7 +31,7 @@ import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
 import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
-import { RecurringError } from "./errors";
+import { RecurringError, RecurringNotDueError } from "./errors";
 import { collectBillableUsage, markUsageBilled } from "./usage";
 import { lockOrganization, lockRow } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
@@ -153,7 +153,7 @@ async function emitOne(
     const periodDate = rec.nextRunDate;
     const hasUsageLines = rec.lines.some((l) => l.billing === "USAGE");
     if (hasUsageLines && !isRunDue(periodDate, now, true)) {
-      throw new RecurringError(
+      throw new RecurringNotDueError(
         "Verbrauchsabo: Die Periode endet erst am Stichtag; abgerechnet wird ab dem Folgetag, damit kein Verbrauch verloren geht.",
       );
     }

@@ -30,6 +30,7 @@ import { createApiKey } from "@/domain/api-key/create";
 import { POST as InvoicePost } from "@/app/api/v1/Invoice/route";
 import { createRecurring } from "@/domain/recurring/create";
 import { emitRecurringNow } from "@/domain/recurring/run";
+import { RecurringNotDueError } from "@/domain/recurring/errors";
 import { recordUsage, UsageError } from "@/domain/recurring/usage";
 import { createRecurringSchema } from "@/schemas";
 import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
@@ -362,8 +363,12 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
       tasks.push(recordUsage(s.orgId, s.rec.id, { recurringLineId: s.usageLineId, quantityMilli: 1_000_000 * (i + 1), usageDate: day, externalId: `ev-${i}` }, { source: "API", actor: "race", now: later }));
     }
     const rs = await Promise.allSettled(tasks);
-    // Erfassung nach dem Lauf der Periode scheitert fachlich (PERIOD_BILLED); alles andere ist ein Fehler.
-    for (const f of rejected(rs)) expect(f.reason instanceof UsageError && f.reason.code === "PERIOD_BILLED", String(f.reason)).toBe(true);
+    // Erfassung nach dem Lauf der Periode scheitert fachlich (PERIOD_BILLED); weitere Laeufe nach dem ersten finden
+    // die Folgeperiode noch nicht faellig (RecurringNotDueError). Alles andere ist ein Fehler.
+    for (const f of rejected(rs)) {
+      const ok = (f.reason instanceof UsageError && f.reason.code === "PERIOD_BILLED") || f.reason instanceof RecurringNotDueError;
+      expect(ok, String(f.reason)).toBe(true);
+    }
 
     const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: s.rec.id }, select: { id: true, deliveryDate: true } });
     expect(new Set(invoices.map((i) => i.deliveryDate?.getTime())).size).toBe(invoices.length);
