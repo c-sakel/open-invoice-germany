@@ -308,6 +308,10 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 
 Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`) an `Product` (Standard `NONE`) und an Positionen (Lese- und Schreibfeld; ohne Angabe übernimmt eine Position mit `productId` die Kategorie des Produkts als Snapshot, ohne Produkt bleibt sie leer). Die Belegeinstellungen (`/api/settings/documents`) tragen `ossCountMode` (Standard `ALL_EU_B2C`) und `ossWarnPercent` (ganze Zahl 1–99, Standard 80).
 
+### Abo-Positionen (`Recurring`, Phase 18c)
+
+`GET /api/v1/Recurring/{id}` sowie `POST` und `PATCH` liefern zusätzlich `lines` (nach `position` sortiert; die Liste `GET /api/v1/Recurring` enthält sie nicht). Jede Zeile trägt `position`, `lineType` (`ITEM` | `HEADING` | `TEXT` | `SUBTOTAL`), `productId` (nur Snapshot), `description`, `descriptionLong`, `articleNumber`, `quantityMilli`, `unit`, `unitNetPriceCents`, `taxRate`, `taxCategory`, `discountPermille`, `discountCents` und `ossCategory`. Im Request (`POST`, `PATCH`) gelten für `lines` dieselben Zeilenfelder und Regeln wie bei Rechnungen: Überschrift, Textblock und Zwischensumme tragen keine Menge, keinen Preis und keinen Rabatt. Jeder Lauf übernimmt die Zeilen in den Rechnungsentwurf.
+
 ## Weitere Ressourcen
 
 `Contact`, `ContactAddress`, `ContactPerson`, `Product`, `Quote`,

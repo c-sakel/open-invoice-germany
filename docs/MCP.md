@@ -304,7 +304,7 @@ Legt nur neue Kunden bzw. Produkte an (kein Update); alle Zeilen oder keine. Gle
 
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
+| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`; Positionen mit `lineType` `ITEM`/`HEADING`/`TEXT`/`SUBTOTAL`, `descriptionLong`, `articleNumber` und Rabatt wie bei `update_invoice_draft`) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
 | `list_recurring` | Abos auflisten (Filter u. a. Status) | „Welche Abos sind fällig?" |
 | `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort) | „Erzeuge die fälligen Rechnungen." |
 | `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich | „Ändere beim Wartungsvertrag von Müller den Preis auf 109 €." |

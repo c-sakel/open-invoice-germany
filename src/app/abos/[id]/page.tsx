@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
-import { formatCents, formatQuantity } from "@/lib/money";
-import { unitLabel } from "@/lib/units";
+import { formatCents } from "@/lib/money";
+import { computeLineNet } from "@/lib/pricing/line";
+import { LineItemsTable } from "@/components/LineItemsTable";
 import { intervalLabel } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
@@ -33,7 +34,23 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
   });
   if (!rec) notFound();
 
-  const net = rec.lines.reduce((s, l) => s + Math.round((l.quantityMilli * l.unitNetPriceCents) / 1000), 0);
+  // Netto je Rechnung: nur ITEM-Zeilen, mit Positionsrabatt (wie der Rechnungslauf).
+  const tableLines = rec.lines.map((l) => ({
+    id: l.id,
+    lineType: l.lineType,
+    description: l.description,
+    descriptionLong: l.descriptionLong,
+    articleNumber: l.articleNumber,
+    quantityMilli: l.quantityMilli,
+    unit: l.unit,
+    unitNetPriceCents: l.unitNetPriceCents,
+    taxRate: l.taxRate,
+    lineNetCents:
+      l.lineType === "ITEM"
+        ? computeLineNet({ quantityMilli: l.quantityMilli, unitNetPriceCents: l.unitNetPriceCents, discountPermille: l.discountPermille, discountCents: l.discountCents }).lineNetCents
+        : 0,
+  }));
+  const net = tableLines.reduce((sum, l) => sum + l.lineNetCents, 0);
   const s = STATUS_LABEL[rec.status] ?? { text: rec.status, cls: "bg-well text-ink-soft" };
 
   // Phase 14a, Task 1 (R1/R2): rein darstellender Block "Aus den Kundenvorgaben
@@ -144,30 +161,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
         </dl>
       </div>
 
-      <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
-        <table className="w-full text-sm">
-          <thead className="bg-paper text-left text-xs uppercase tracking-wide text-ink-muted">
-            <tr>
-              <th className="px-4 py-2">Beschreibung</th>
-              <th className="px-4 py-2 text-right">Menge</th>
-              <th className="px-4 py-2 text-right">Einzel</th>
-              <th className="px-4 py-2 text-right">USt</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-rule">
-            {rec.lines.map((l) => (
-              <tr key={l.id}>
-                <td className="px-4 py-2 text-ink-soft">{l.description}</td>
-                <td className="tabular px-4 py-2 text-right">
-                  {formatQuantity(l.quantityMilli)} {unitLabel(l.unit)}
-                </td>
-                <td className="tabular px-4 py-2 text-right">{formatCents(l.unitNetPriceCents, rec.currency)}</td>
-                <td className="tabular px-4 py-2 text-right">{l.taxRate}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LineItemsTable lines={tableLines} currency={rec.currency} />
       <div className="ml-auto max-w-xs text-sm">
         <div className="flex justify-between border-t border-rule pt-1 font-semibold">
           <span>Netto je Rechnung</span>

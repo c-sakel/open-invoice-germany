@@ -1,7 +1,26 @@
 /** SMTP-Provider (nodemailer). Fehlertexte werden von Zugangsdaten bereinigt. */
-import nodemailer from "nodemailer";
+import nodemailer, { type SendMailOptions } from "nodemailer";
 import type { DecryptedMailSettings } from "@/domain/email/settings";
-import { MailSendError, type MailProvider } from "./provider";
+import { MailSendError, type MailProvider, type OutgoingMail } from "./provider";
+
+/**
+ * Nachricht fuer nodemailer. Reihenfolge der Alternativen: nodemailer legt text vor html
+ * (RFC 2046 § 5.1.4: bevorzugte Darstellung zuletzt). html nur, wenn gesetzt.
+ */
+export function toNodemailerMessage(mail: OutgoingMail): SendMailOptions {
+  const msg: SendMailOptions = {
+    from: { name: mail.from.name, address: mail.from.address },
+    to: mail.to,
+    cc: mail.cc,
+    bcc: mail.bcc,
+    replyTo: mail.replyTo,
+    subject: mail.subject,
+    text: mail.text,
+    attachments: mail.attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
+  };
+  if (mail.html !== undefined) msg.html = mail.html;
+  return msg;
+}
 
 export function createSmtpProvider(s: DecryptedMailSettings): MailProvider {
   const transport = nodemailer.createTransport({
@@ -18,16 +37,7 @@ export function createSmtpProvider(s: DecryptedMailSettings): MailProvider {
   return {
     async send(mail) {
       try {
-        const info = await transport.sendMail({
-          from: { name: mail.from.name, address: mail.from.address },
-          to: mail.to,
-          cc: mail.cc,
-          bcc: mail.bcc,
-          replyTo: mail.replyTo,
-          subject: mail.subject,
-          text: mail.text,
-          attachments: mail.attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
-        });
+        const info = await transport.sendMail(toNodemailerMessage(mail));
         return { providerId: info.messageId ?? null };
       } catch (e) {
         const raw = e instanceof Error ? e.message : String(e);

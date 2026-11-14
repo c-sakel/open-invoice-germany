@@ -671,6 +671,12 @@ export const cancelInvoiceSchema = z.object({
 });
 export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
 
+// Phase 18c: Sammel-Storno (je Beleg ein eigener Storno, siehe src/domain/invoice/bulk-cancel.ts).
+export const BULK_CANCEL_MAX = 50;
+const bulkIds = z.array(z.string().trim().min(1).max(64)).min(1).max(BULK_CANCEL_MAX);
+export const bulkCancelSchema = z.object({ ids: bulkIds, reason: z.string().trim().min(1, "Bitte einen Grund angeben.").max(500) });
+export const bulkCancelPreviewSchema = z.object({ ids: bulkIds });
+
 /** Server-Action `cancelAction` (Storno-Dialog): Formularfelder -> validierte Eingabe. */
 export const cancelActionSchema = z.object({
   id: z.string().trim().min(1),
@@ -752,6 +758,10 @@ export type InvoiceListFilter = z.infer<typeof invoiceListFilterSchema>;
 export const RecurInterval = z.enum(["DAY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]);
 export type RecurInterval = z.infer<typeof RecurInterval>;
 
+/** Ein Abo braucht mindestens eine Position (ITEM); nur Ueberschrift/Text/Zwischensumme ergaebe 0-EUR-Rechnungen. */
+const recurringLinesRule = (lines: ReadonlyArray<{ lineType: z.infer<typeof LineType> }>): boolean => lines.some((l) => l.lineType === "ITEM");
+const RECURRING_LINES_MESSAGE = "Mindestens eine Position (kein reiner Text) erforderlich.";
+
 const recurringObjectSchema = z.object({
   customerId: z.string().min(1),
   title: z.string().min(1),
@@ -781,7 +791,7 @@ const recurringObjectSchema = z.object({
   showPeriodText: z.boolean().optional(),
   language: DocLanguageSchema.optional(),
   notes: z.string().optional(),
-  lines: z.array(invoiceLineDerivableSchema).min(1),
+  lines: z.array(invoiceLineDerivableSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }),
 });
 export const createRecurringSchema = recurringObjectSchema.transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
@@ -817,7 +827,7 @@ export const updateRecurringSchema = z.object({
   currency: currencyCodeSchema.optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
   // Kategorie optional: die Domain leitet sie aus dem Abo-Steuerschema ab (recurring/update.ts).
-  lines: z.array(invoiceLineDerivableSchema).min(1).optional(),
+  lines: z.array(invoiceLineDerivableSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }).optional(),
 });
 export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
 

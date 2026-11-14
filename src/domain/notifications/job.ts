@@ -20,6 +20,7 @@ import { loadMailSettings } from "@/domain/email/settings";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
 import { loadBrand } from "@/domain/settings/brand";
+import { withHtmlPart } from "@/domain/email/html-part";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
 
 const DUNNABLE_STATUSES = new Set(["FINALIZED", "SENT", "PARTIALLY_PAID"]);
@@ -192,16 +193,18 @@ async function sendDigestIfDue(orgId: string, now: Date, provider: MailProvider 
     const brand = await loadBrand(orgId);
 
     const lines = unread.map((n) => `- ${n.title}${n.body ? `: ${n.body}` : ""}`);
-    await prov.send({
-      from: { name: mailSettings.fromName, address: mailSettings.fromEmail },
-      to: [to],
-      cc: [],
-      bcc: [],
-      replyTo: mailSettings.replyTo ?? undefined,
-      subject: `Tagesuebersicht ${brand.appName}`,
-      text: `${unread.length} neue Benachrichtigung(en):\n\n${lines.join("\n")}`,
-      attachments: [],
-    });
+    await prov.send(
+      await withHtmlPart(orgId, mailSettings, {
+        from: { name: mailSettings.fromName, address: mailSettings.fromEmail },
+        to: [to],
+        cc: [],
+        bcc: [],
+        replyTo: mailSettings.replyTo ?? undefined,
+        subject: `Tagesuebersicht ${brand.appName}`,
+        text: `${unread.length} neue Benachrichtigung(en):\n\n${lines.join("\n")}`,
+        attachments: [],
+      }),
+    );
     await markDigestSent(orgId, now);
     result.digestsSent.push(orgId);
   } catch (e) {

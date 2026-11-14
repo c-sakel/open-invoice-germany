@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -94,6 +94,8 @@ export const ACTIVITY_TYPES = {
   POSTAL_FAILED: "Postversand fehlgeschlagen",
   // Phase 18b: CSV-Import von Kunden/Produkten (src/domain/import/run.ts), entityType IMPORT, entityId = Datei-Hash.
   CSV_IMPORTED: "CSV-Import",
+  // Phase 18c: Sammel-Storno (src/domain/invoice/bulk-cancel.ts), entityType INVOICE_BATCH, entityId = batchId.
+  BULK_CANCELLED: "Sammel-Storno",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;

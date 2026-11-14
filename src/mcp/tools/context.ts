@@ -11,7 +11,7 @@ import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { roundHalfUp } from "@/lib/money";
-import { TaxRate } from "@/schemas";
+import { LineType, TaxRate } from "@/schemas";
 import { OssCategorySchema, type OssCategory } from "@/schemas/oss";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
 import type { MailProvider } from "@/lib/mail/provider";
@@ -272,6 +272,22 @@ export async function buildEditorLines(
     };
   });
 }
+
+/** Positionsschema mit lineType (Ueberschrift/Text/Zwischensumme) fuer update_invoice_draft und create_recurring. */
+export const editorLineSchema = z.object({
+  lineType: LineType.default("ITEM"),
+  description: z.string(),
+  descriptionLong: z.string().optional().describe("Rich-Text-Langbeschreibung (Markdown-Teilmenge)"),
+  articleNumber: z.string().optional(),
+  quantity: z.number().optional().describe("Menge (Pflicht bei ITEM)"),
+  unitPriceEuro: z.number().optional(),
+  productName: z.string().optional(),
+  unit: z.string().optional(),
+  taxRatePercent: TaxRate.optional(),
+  discountPercent: z.number().min(0).max(100).optional(),
+  discountAmount: z.number().min(0).optional(),
+  ossCategory: OssCategorySchema.optional().describe("OSS-Kategorie der Position (nur Zaehlmodus BY_PRODUCT); ohne Angabe aus dem Produkt"),
+});
 
 /** Von mehreren Tool-Bereichen (documents/invoices) genutztes Positions-Eingabeschema. */
 export const docLineSchema = z.object({

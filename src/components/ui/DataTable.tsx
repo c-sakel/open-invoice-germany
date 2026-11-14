@@ -9,6 +9,8 @@ export interface DataColumn<T> {
   /** Rolle in der mobilen Kartenansicht: Titelzeile, Betrag rechts, Meta-Zeile oder ausgeblendet. */
   mobile: "title" | "amount" | "meta" | "hidden";
   cell: (row: T) => ReactNode;
+  /** Kopfzelle nur fuer Screenreader sichtbar (z. B. Auswahlspalte). */
+  headerSrOnly?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -41,7 +43,7 @@ export function DataTable<T>({ rows, columns, rowKey, rowHref, empty, caption }:
           <tr className="border-b border-rule-strong text-left text-[13px] font-medium text-ink-muted">
             {columns.map((c) => (
               <th key={c.key} scope="col" className={`px-3 py-2 font-medium ${isRight(c) ? "text-right" : "text-left"}`}>
-                {c.header}
+                {c.headerSrOnly ? <span className="sr-only">{c.header}</span> : c.header}
               </th>
             ))}
           </tr>

@@ -33,6 +33,7 @@ export async function saveMailSettingsAction(_prev: ActionResult, fd: FormData):
     defaultCc: str(fd, "defaultCc") ?? "",
     defaultBcc: str(fd, "defaultBcc") ?? "",
     copyToSelf: fd.get("copyToSelf") === "on",
+    htmlEnabled: fd.get("htmlEnabled") === "on",
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 

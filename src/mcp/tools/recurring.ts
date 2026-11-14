@@ -17,7 +17,7 @@ import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { currencyCodeSchema, DocLanguageSchema, createRecurringSchema, updateRecurringSchema } from "@/schemas";
-import { docLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
+import { editorLineSchema, ToolError, type McpToolsContext, type Result } from "./context";
 
 export function registerRecurringTools(server: McpServer, ctx: McpToolsContext): void {
   // ── create_recurring ─────────────────────────────────────────────────────────
@@ -26,11 +26,11 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     {
       title: "Abo / wiederkehrende Rechnung anlegen",
       description:
-        "Legt ein Abo an, aus dem nach Plan automatisch Rechnungen entstehen (z. B. monatlicher Wartungsvertrag). Kunde per Name, Positionen wie bei create_invoice. Mit run_recurring oder dem Cron-Lauf werden die fälligen Rechnungen erzeugt.",
+        "Legt ein Abo an, aus dem nach Plan automatisch Rechnungen entstehen (z. B. monatlicher Wartungsvertrag). Kunde per Name, Positionen wie bei create_invoice; Überschriften/Textblöcke/Zwischensummen (lineType HEADING/TEXT/SUBTOTAL, ohne Betrag) wie bei update_invoice_draft. Mit run_recurring oder dem Cron-Lauf werden die fälligen Rechnungen erzeugt.",
       inputSchema: {
         customer: z.string().describe("Kundenname oder -ID"),
         title: z.string().describe("Interne Bezeichnung, z. B. 'Wartungsvertrag Mustermann'"),
-        lines: z.array(docLineSchema).min(1),
+        lines: z.array(editorLineSchema).min(1),
         interval: z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]).default("MONTHLY"),
         intervalCount: z.number().int().min(1).max(48).default(1).describe("alle N Intervalle (z. B. 2 = alle 2 Monate)"),
         startDate: z.string().describe("Erster Stichtag YYYY-MM-DD oder 'heute'"),
@@ -48,7 +48,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       try {
         const org = await ctx.requireOrg();
         const customer = await ctx.resolveCustomer(org.id, args.customer);
-        const lines = await ctx.buildSimpleLines(org.id, args.lines);
+        const lines = await ctx.buildEditorLines(org.id, args.lines);
         const start = ctx.parseDateInput(args.startDate);
         if (!start) throw new ToolError("startDate konnte nicht gelesen werden (YYYY-MM-DD oder 'heute').");
         const input = createRecurringSchema.parse({

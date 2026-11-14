@@ -12,7 +12,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi<{ id: string }>(async (_req, ctx) => {
-  const row = await prisma.recurringInvoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId } });
+  const row = await prisma.recurringInvoice.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId },
+    include: { lines: { orderBy: { position: "asc" } } },
+  });
   if (!row) throw new NotFoundError("Abo nicht gefunden.");
   return apiData(serializeRecurring(row));
 }, { scope: "read" });

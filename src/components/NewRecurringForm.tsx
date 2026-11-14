@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { useRouter } from "next/navigation";
-import { taxRateOptions } from "@/lib/editor/constants";
 import { currencyOptions, currencySymbol } from "@/lib/currencies";
+import { draftLinesFromInitial, draftLinesToPayload, draftReducer, emptyDraft, type InitialLineLike } from "@/lib/editor/draft";
+import { shouldBlockEnterSubmit } from "@/lib/editor/enter-guard";
+import { computeDraftTotals } from "@/lib/editor/totals";
+import { LineItemsEditor } from "@/components/editor/blocks/LineItemsEditor";
+import { EditorCurrencyContext } from "@/components/editor/currency-context";
 import { parseDecimalInput } from "@/lib/money";
 
 interface CustomerOption {
@@ -19,18 +23,6 @@ interface ProductOption {
   netPriceCents: number;
   taxRate: number;
 }
-interface LineState {
-  description: string;
-  quantity: string;
-  unit: string;
-  price: string;
-  taxRate: number;
-}
-
-function emptyLine(defaultTaxRate: number): LineState {
-  return { description: "", quantity: "1", unit: "C62", price: "0", taxRate: defaultTaxRate };
-}
-
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -54,7 +46,7 @@ export interface RecurringInitialValues {
   showPeriodText: boolean;
   notes: string;
   currency: string;
-  lines: LineState[];
+  lines: InitialLineLike[];
 }
 
 export function NewRecurringForm({
@@ -103,8 +95,6 @@ export function NewRecurringForm({
   defaultCurrency?: string;
 }) {
   const router = useRouter();
-  const taxOptions = taxRateOptions(taxRates);
-  const defaultTaxRate = taxOptions[0]?.value ?? 19;
   const [title, setTitle] = useState(initial?.title ?? "");
   // Vorbelegter Kunde: derselbe Datensatz fuer customerId und Initialwaehrung.
   const presetCustomer = customers[0];
@@ -127,53 +117,49 @@ export function NewRecurringForm({
   );
   const [currencyTouched, setCurrencyTouched] = useState(mode === "edit");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [lines, setLines] = useState<LineState[]>(initial?.lines.length ? initial.lines : [emptyLine(defaultTaxRate)]);
+  const [draft, dispatch] = useReducer(draftReducer, undefined, () =>
+    emptyDraft("INVOICE", {
+      taxScheme: "REGULAR",
+      currency: initial?.currency ?? presetCustomer?.defaultCurrency ?? defaultCurrency,
+      allowedTaxRates: [...taxRates],
+      lines: draftLinesFromInitial(initial?.lines, taxRates),
+    }),
+  );
+  const totals = useMemo(() => computeDraftTotals(draft), [draft]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const toCents = (s: string) => parseDecimalInput(s, 2) ?? 0;
-  const toMilli = (s: string) => parseDecimalInput(s, 3) ?? 0;
-  const netCents = lines.reduce((sum, l) => sum + Math.round((toMilli(l.quantity) * toCents(l.price)) / 1000), 0);
+  // Waehrung des Formulars in den Entwurf spiegeln (Anzeige im Positionsraster).
+  function changeCurrency(value: string) {
+    setCurrency(value);
+    dispatch({ type: "set", field: "currency", value });
+  }
 
   function selectCustomer(id: string) {
     setCustomerId(id);
-    if (!currencyTouched) setCurrency(customers.find((c) => c.id === id)?.defaultCurrency ?? defaultCurrency);
-  }
-
-  function patchLine(i: number, patch: Partial<LineState>) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-  function applyProduct(i: number, productId: string) {
-    const p = products.find((x) => x.id === productId);
-    if (!p) return;
-    patchLine(i, { description: p.name, unit: p.unit, price: (p.netPriceCents / 100).toFixed(2), taxRate: p.taxRate });
-  }
-  // Wie LineRow.tsx (Editor): eine bereits gespeicherte Zeile (mode="edit") kann einen
-  // Satz tragen, der inzwischen nicht mehr in der Org-Liste steht — die Auswahl bleibt
-  // trotzdem sichtbar/waehlbar statt ihn stillschweigend zu verlieren (M4-Klasse).
-  function lineTaxOptions(rate: number) {
-    return taxOptions.some((o) => o.value === rate) ? taxOptions : [...taxOptions, { value: rate, label: `${rate}% (nicht mehr zulässig)` }];
+    if (!currencyTouched) changeCurrency(customers.find((c) => c.id === id)?.defaultCurrency ?? defaultCurrency);
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    if (lines.some((l) => parseDecimalInput(l.price, 2) === null || parseDecimalInput(l.quantity, 3) === null)) {
-      setError("Betrag oder Menge nicht lesbar – bitte z. B. 1.234,56 oder 1234.56 eingeben (Geld höchstens 2, Mengen höchstens 3 Nachkommastellen).");
+    const invalid = draft.lines.find(
+      (l) =>
+        !l.description.trim() ||
+        (l.lineType === "ITEM" && (parseDecimalInput(l.price, 2) === null || parseDecimalInput(l.quantity, 3) === null)),
+    );
+    if (invalid) {
+      setError(
+        !invalid.description.trim()
+          ? "Jede Position braucht eine Beschreibung."
+          : "Betrag oder Menge nicht lesbar – bitte z. B. 1.234,56 oder 1234.56 eingeben (Geld höchstens 2, Mengen höchstens 3 Nachkommastellen).",
+      );
       setBusy(false);
       return;
     }
 
-    const lineInputs = lines.map((l) => ({
-      description: l.description,
-      quantityMilli: toMilli(l.quantity),
-      unit: l.unit,
-      unitNetPriceCents: toCents(l.price),
-      taxRate: l.taxRate,
-      taxCategory: "S",
-      discountPermille: 0,
-    }));
+    const lineInputs = draftLinesToPayload(draft.lines, "REGULAR");
 
     if (mode === "edit") {
       // Fix-Runde 1: PATCH mit {patch: {...}} (updateRecurringSchema) — bewusst KEIN
@@ -247,7 +233,14 @@ export function NewRecurringForm({
   const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    <form
+      onSubmit={submit}
+      // Enter in Eingabefeldern (Positionstabelle, Kopf) sendet nicht ab; Speichern nur ueber den Button.
+      onKeyDown={(e) => {
+        if (shouldBlockEnterSubmit({ key: e.key, isComposing: e.nativeEvent.isComposing, target: e.target as HTMLInputElement })) e.preventDefault();
+      }}
+      className="space-y-6"
+    >
       {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{error}</div>}
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -283,7 +276,7 @@ export function NewRecurringForm({
             className={input}
             value={currency}
             onChange={(e) => {
-              setCurrency(e.target.value);
+              changeCurrency(e.target.value);
               setCurrencyTouched(true);
             }}
           >
@@ -388,44 +381,9 @@ export function NewRecurringForm({
         )}
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-ink">Positionen</h2>
-          <button type="button" onClick={() => setLines((ls) => [...ls, emptyLine(defaultTaxRate)])} className="text-sm font-medium text-pen hover:underline">
-            + Position
-          </button>
-        </div>
-        {lines.map((line, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2 rounded-[var(--radius-card)] border border-rule bg-sheet p-3">
-            <div className="col-span-12 flex flex-col gap-1 sm:col-span-5">
-              <input className={input} placeholder="Beschreibung" value={line.description} onChange={(e) => patchLine(i, { description: e.target.value })} required />
-              {products.length > 0 && (
-                <select className="rounded-[var(--radius-control)] border border-rule px-2 py-1 text-xs text-ink-muted" defaultValue="" onChange={(e) => applyProduct(i, e.target.value)}>
-                  <option value="">aus Katalog…</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <input className={`${input} col-span-4 sm:col-span-2`} placeholder="Menge" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} />
-            <input className={`${input} col-span-3 sm:col-span-1`} placeholder="Einh." value={line.unit} onChange={(e) => patchLine(i, { unit: e.target.value })} />
-            <input className={`${input} col-span-5 sm:col-span-2`} placeholder="Preis netto" value={line.price} onChange={(e) => patchLine(i, { price: e.target.value })} />
-            <select className={`${input} col-span-8 sm:col-span-1`} value={line.taxRate} onChange={(e) => patchLine(i, { taxRate: Number(e.target.value) })}>
-              {lineTaxOptions(line.taxRate).map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))} className="col-span-4 text-sm text-stamp hover:underline sm:col-span-1" disabled={lines.length === 1}>
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
+      <EditorCurrencyContext.Provider value={draft.currency || defaultCurrency}>
+        <LineItemsEditor draft={draft} dispatch={dispatch} products={products} taxRates={taxRates} mode="INVOICE" totals={totals} />
+      </EditorCurrencyContext.Provider>
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-ink-soft">Hinweis / Notiz (erscheint auf jeder Rechnung)</span>
@@ -434,7 +392,7 @@ export function NewRecurringForm({
 
       <div className="flex items-center justify-between border-t border-rule pt-4">
         <span className="text-sm text-ink-muted">
-          Nettosumme je Rechnung: <span className="tabular font-medium text-ink">{(netCents / 100).toFixed(2)} {currencySymbol(currency)}</span>
+          Nettosumme je Rechnung: <span className="tabular font-medium text-ink">{(totals.netCents / 100).toFixed(2)} {currencySymbol(currency)}</span>
         </span>
         <button type="submit" disabled={busy} className="rounded-md bg-pen px-5 py-2.5 text-sm font-medium text-on-accent hover:bg-pen-strong disabled:opacity-60">
           {busy ? "Speichert…" : mode === "edit" ? "Änderungen speichern" : "Abo anlegen"}

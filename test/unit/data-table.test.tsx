@@ -71,4 +71,16 @@ describe("DataTable", () => {
     expect(table).toMatch(/<td[^>]*><a [^>]*href="\/rechnungen\/1"[^>]*>RE-50001<\/a><\/td>/);
     expect(cardsPart(html)).toMatch(/<a [^>]*href="\/rechnungen\/1"[^>]*><span>RE-50001<\/span><\/a>/);
   });
+
+  it("headerSrOnly versteckt nur die Kopfzelle visuell", () => {
+    const cols: DataColumn<Row>[] = [
+      { key: "select", header: "Auswahl", headerSrOnly: true, mobile: "meta", cell: () => "x" },
+      ...COLUMNS,
+    ];
+    const html = renderToStaticMarkup(<DataTable rows={ROWS} columns={cols} rowKey={(r) => r.id} empty={EMPTY} caption="Rechnungen" />);
+    const th = html.slice(html.indexOf("<thead"), html.indexOf("</thead>"));
+    expect(th).toContain('<span class="sr-only">Auswahl</span>');
+    expect(cardsPart(html)).not.toContain("Auswahl");
+    expect(render()).not.toContain('<span class="sr-only">Auswahl</span>');
+  });
 });

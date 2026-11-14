@@ -228,7 +228,7 @@ SMTP only — no built-in Resend/SES integration (see [docs/ARCHITEKTUR.md](docs
 2. `AUTH_SECRET` (see `.env.example`) also serves as the encryption key for the stored SMTP password — set it before configuring mail, and re-enter the password if you ever rotate `AUTH_SECRET`.
 3. Click **Testmail senden** to verify the configuration before using it on real documents.
 4. Under **Einstellungen → Vorlagen**, adjust the built-in email templates (subject/body/signature) per document type, or add your own; placeholders like `{{document.number}}` are listed in the editor.
-5. Sending is currently plain text only, with no delivery/bounce tracking (status stays `SENT`) — see [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md) for the full list of email limitations.
+5. Mail is sent as plain text; an optional HTML part (off by default, **Einstellungen → E-Mail → HTML-Version mitsenden**) is added alongside it. There is no delivery/bounce tracking (status stays `SENT`) — see [docs/LIMITATIONEN.md](docs/LIMITATIONEN.md) for the full list of email limitations.
 
 ## Tests
 

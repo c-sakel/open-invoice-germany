@@ -51,11 +51,18 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
     notes: rec.notes ?? "",
     currency: rec.currency,
     lines: rec.lines.map((l) => ({
+      lineType: l.lineType as "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL",
       description: l.description,
+      descriptionLong: l.descriptionLong ?? "",
+      articleNumber: l.articleNumber ?? "",
       quantity: (l.quantityMilli / 1000).toString(),
       unit: l.unit,
       price: (l.unitNetPriceCents / 100).toFixed(2),
       taxRate: l.taxRate,
+      discountPercent: (l.discountPermille / 10).toString(),
+      discountAmount: (l.discountCents / 100).toFixed(2),
+      ossCategory: l.ossCategory,
+      productId: l.productId,
     })),
   };
 

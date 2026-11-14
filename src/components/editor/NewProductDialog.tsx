@@ -37,7 +37,12 @@ export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: Inlin
   }
 
   async function submit() {
-    if (!name.trim() || !netPrice.trim()) return;
+    // Kein `required` an den Feldern: Der Dialog sitzt auch in Formularen (Abo-Editor); ein
+    // verstecktes Pflichtfeld wuerde dort das Absenden des ganzen Formulars blockieren.
+    if (!name.trim() || !netPrice.trim()) {
+      setError("Bitte Bezeichnung und Nettopreis ausfüllen.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const result: CreateProductInlineResult = await createProductInline({
@@ -94,7 +99,7 @@ export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: Inlin
           {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-2 text-sm text-stamp">{error}</div>}
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-soft">Bezeichnung</span>
-            <input className={input} value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+            <input className={input} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-ink-soft">Artikelnummer (optional)</span>
@@ -107,7 +112,7 @@ export function NewProductDialog({ onCreated, taxRates }: { onCreated: (p: Inlin
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-ink-soft">Preis netto €</span>
-              <input className={input} value={netPrice} onChange={(e) => setNetPrice(e.target.value)} placeholder="0,00" required />
+              <input className={input} value={netPrice} onChange={(e) => setNetPrice(e.target.value)} placeholder="0,00" />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-ink-soft">USt-Satz</span>
