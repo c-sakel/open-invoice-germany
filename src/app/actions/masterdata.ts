@@ -86,7 +86,8 @@ export async function saveOrganization(_prev: ActionResult, fd: FormData): Promi
 
   try {
     // Erste Einrichtung (noch keine Organisation) legt an; sonst wird die aktive Organisation geaendert.
-    const existing = await getActiveOrg().catch(() => null);
+    // Nur "noch keine Organisation" gilt als Ersteinrichtung; DB-Fehler werden geworfen (sonst entstuende eine zweite Organisation).
+    const existing = await dbInternal.organization.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
     const org = existing
       ? await dbInternal.organization.update({ where: { id: existing.id }, data })
       : await dbInternal.organization.create({ data });
