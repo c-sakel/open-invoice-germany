@@ -132,6 +132,8 @@ Money as integer cents, quantities as integer milli-units, tax per EN-16931 grou
 
 ## Quick start (solo / SQLite — no server needed)
 
+Requirements: **Node.js ≥ 22.22.2** and npm; `unzip` only for `npm run validate:erechnung`.
+
 ```bash
 git clone https://github.com/c-sakel/open-invoice-germany.git
 cd open-invoice-germany

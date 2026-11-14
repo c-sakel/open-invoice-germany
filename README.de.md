@@ -131,6 +131,8 @@ Geldbeträge als Integer-Cent, Mengen als Integer-Milliunits, Steuer pro EN-1693
 
 ## Schnellstart (Solo / SQLite — kein Server nötig)
 
+Voraussetzungen: **Node.js ≥ 22.22.2** und npm; `unzip` nur für `npm run validate:erechnung`.
+
 ```bash
 git clone https://github.com/c-sakel/open-invoice-germany.git
 cd open-invoice-germany
