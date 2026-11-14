@@ -434,3 +434,46 @@ describe("Fix-Welle 18f-3: Enddatum und Beenden mit offenen Verbraeuchen", () =>
     expect(ended.status).toBe("ENDED");
   });
 });
+
+describe("Fix-Welle 18f-4: maxRuns und Verbrauch nach der letzten Periode", () => {
+  it("Erfassung nach dem Ende der letzten Periode (maxRuns) -> AFTER_END; innerhalb der letzten Periode erlaubt", async () => {
+    const { rec, usageLineId } = await makeAbo({ maxRuns: 1 });
+    const at = D("2187-04-20");
+    expect(await code(recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-04-10" }, { source: "UI", actor: "t", now: at }))).toBe("AFTER_END");
+    const ok = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-20" }, { source: "UI", actor: "t", now: at });
+    expect(ok.usage.status).toBe("open");
+    // mit maxRuns 2 ist die zweite Periode noch erlaubt
+    const two = await makeAbo({ maxRuns: 2 });
+    const ok2 = await recordUsage(orgId, two.rec.id, { recurringLineId: two.usageLineId, quantityMilli: 1000, usageDate: "2187-04-10" }, { source: "UI", actor: "t", now: at });
+    expect(ok2.usage.status).toBe("open");
+  });
+
+  it("Lauf mit erreichter maxRuns beendet das Abo nicht, solange Verbrauch nach dem Periodenende offen ist", async () => {
+    const { rec, usageLineId } = await makeAbo({ maxRuns: 1 });
+    await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-20" }, { source: "UI", actor: "t", now: NOW });
+    // Altbestand: Satz in der Folgeperiode (frueher erfasst, heute abgelehnt)
+    await dbInternal.recurringUsage.create({
+      data: {
+        orgId,
+        recurringInvoiceId: rec.id,
+        recurringLineId: usageLineId,
+        usageDate: D("2187-04-10"),
+        periodStart: D("2187-03-31"),
+        periodEnd: D("2187-04-30"),
+        quantityMilli: 500,
+        source: "UI",
+        createdBy: "t",
+      },
+    });
+    const first = await emitted(rec.id, RUN);
+    expect(first.notice).toMatch(/bleibt aktiv/);
+    const mid = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { status: true, issuedCount: true } });
+    expect(mid).toEqual({ status: "ACTIVE", issuedCount: 1 });
+    const second = await emitted(rec.id, D("2187-05-01"));
+    expect(second.notice).toBeUndefined();
+    const end = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { status: true } });
+    expect(end.status).toBe("ENDED");
+    const open = await dbInternal.recurringUsage.count({ where: { recurringInvoiceId: rec.id, invoiceId: null, voidedAt: null } });
+    expect(open).toBe(0);
+  });
+});

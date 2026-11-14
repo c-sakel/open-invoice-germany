@@ -29,6 +29,9 @@ export interface UsagePeriodRecurring {
   intervalCount: number;
   anchorDay: number | null;
   endDate: Date | null;
+  /** Mit maxRuns: Verbrauch nach dem Ende der letzten noch moeglichen Periode wird abgelehnt (AFTER_END). */
+  maxRuns?: number | null;
+  issuedCount?: number;
 }
 
 export function resolveUsagePeriod(rec: UsagePeriodRecurring, usageDay: Date): { periodStart: Date; periodEnd: Date } {
@@ -47,6 +50,15 @@ export function resolveUsagePeriod(rec: UsagePeriodRecurring, usageDay: Date): {
   }
   if (rec.endDate && periodEnd.getTime() > rec.endDate.getTime()) {
     throw new UsageError("AFTER_END", "Der Verbrauchstag liegt nach dem Ende des Abos.");
+  }
+  if (rec.maxRuns != null) {
+    // Verbleibende Laeufe ab nextRunDate: der letzte Stichtag ist S_0 + (remaining - 1) Intervalle.
+    const remaining = Math.max(1, rec.maxRuns - (rec.issuedCount ?? 0));
+    let lastEnd = rec.nextRunDate;
+    for (let i = 1; i < remaining; i++) lastEnd = advanceDate(lastEnd, interval, rec.intervalCount, rec.anchorDay);
+    if (periodEnd.getTime() > lastEnd.getTime()) {
+      throw new UsageError("AFTER_END", "Der Verbrauchstag liegt nach dem Ende der letzten Abrechnungsperiode des Abos (maxRuns).");
+    }
   }
   return { periodStart, periodEnd };
 }

@@ -68,6 +68,8 @@ export interface EmittedInvoice {
   /** Ergebnis des automatischen Versands (autoSend, Phase 7, §33) — fehlt, wenn autoSend aus ist. */
   emailStatus?: "SENT" | "FAILED" | "SKIPPED";
   emailError?: string;
+  /** Hinweis des Laufs (z. B. Abo bleibt trotz erreichter maxRuns aktiv, weil noch Verbrauch offen ist). */
+  notice?: string;
 }
 
 /** Periode ohne Verbrauch uebersprungen (nur Abos, deren Positionen alle nach Verbrauch abgerechnet werden). */
@@ -270,7 +272,15 @@ async function emitOne(
     // (Task-1-Brief: "maxRuns -> ENDED wenn issuedCount >= maxRuns NACH Lauf").
     const issuedCountAfter = rec.issuedCount + 1;
     const endedByDate = rec.endDate ? next > rec.endDate : false;
-    const endedByMaxRuns = rec.maxRuns != null && issuedCountAfter >= rec.maxRuns;
+    const reachedMaxRuns = rec.maxRuns != null && issuedCountAfter >= rec.maxRuns;
+    // Verbrauch nach dem Ende der letzten Periode (z. B. vor der Sperre erfasst) darf nicht still offen bleiben:
+    // das Abo bleibt dann aktiv und rechnet ihn im naechsten Lauf ab (auch ueber maxRuns hinaus).
+    const openAfterEnd = reachedMaxRuns && !endedByDate
+      ? await tx.recurringUsage.count({
+          where: { recurringInvoiceId: rec.id, orgId: rec.orgId, invoiceId: null, voidedAt: null, recurringLineId: { not: null }, periodEnd: { gt: periodDate } },
+        })
+      : 0;
+    const endedByMaxRuns = reachedMaxRuns && openAfterEnd === 0;
     const ended = endedByDate || endedByMaxRuns;
     await tx.recurringInvoice.update({
       where: { id: rec.id },
@@ -282,7 +292,13 @@ async function emitOne(
       },
     });
 
-    const result: EmittedInvoice = { invoiceId: invoice.id, number, periodDate, finalized };
+    const result: EmittedInvoice = {
+      invoiceId: invoice.id,
+      number,
+      periodDate,
+      finalized,
+      ...(openAfterEnd > 0 ? { notice: `Abo bleibt aktiv: maxRuns erreicht, aber ${openAfterEnd} offene Verbrauchserfassung(en) nach dem Periodenende.` } : {}),
+    };
     return { result, ended, autoSend: rec.autoSend, orgId: rec.orgId, emailTemplateId: rec.emailTemplateId };
   }));
 

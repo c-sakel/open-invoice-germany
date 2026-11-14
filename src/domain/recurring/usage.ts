@@ -136,6 +136,8 @@ export async function recordUsage(
           anchorDay: true,
           startDate: true,
           endDate: true,
+          maxRuns: true,
+          issuedCount: true,
           lines: { where: { id: input.recurringLineId }, select: { id: true, billing: true } },
         },
       });
