@@ -29,7 +29,7 @@ describe("originsFor (Phase 13a, Task 2)", () => {
   it("50 Zeilen kosten eine feste, zeilenzahl-unabhaengige Zahl Abfragen", async () => {
     findMany.mockResolvedValue([]);
     await originsFor("org1", "INVOICE", Array.from({ length: 50 }, (_, i) => `inv${i}`));
-    expect(findMany.mock.calls.length).toBeLessThanOrEqual(2); // ohne Treffer keine Quellabfrage
+    expect(findMany.mock.calls.length).toBeLessThanOrEqual(3); // Hauptabfrage + Sammelrechnungs-Relationen, ohne Treffer keine Quellabfrage
   });
 
   it("leere Id-Liste fragt gar nicht", async () => {
@@ -40,6 +40,7 @@ describe("originsFor (Phase 13a, Task 2)", () => {
   it("denormalisierte Quelle (sourceType/sourceId) -> Angebot mit Nummer", async () => {
     findMany
       .mockResolvedValueOnce([{ id: "inv1", sourceType: "QUOTE", sourceId: "q1", recurringInvoiceId: null }]) // Hauptabfrage
+      .mockResolvedValueOnce([]) // Sammelrechnungs-Relationen (GENERATED_BY): keine
       .mockResolvedValueOnce([{ id: "q1", kind: "ANGEBOT", number: "AN-1094" }]); // Nummernabfrage (Quote)
     const result = await originsFor("org1", "INVOICE", ["inv1"]);
     expect(result.get("inv1")).toEqual({ href: "/dokumente/q1", label: "aus Angebot AN-1094" });
@@ -48,6 +49,7 @@ describe("originsFor (Phase 13a, Task 2)", () => {
   it("recurringInvoiceId (ohne sourceType) -> Abo mit Titel", async () => {
     findMany
       .mockResolvedValueOnce([{ id: "inv2", sourceType: null, sourceId: null, recurringInvoiceId: "rec1" }]) // Hauptabfrage
+      .mockResolvedValueOnce([]) // Sammelrechnungs-Relationen (GENERATED_BY): keine
       .mockResolvedValueOnce([{ id: "rec1", title: "Wartungsvertrag Mustermann" }]); // Nummernabfrage (RecurringInvoice)
     const result = await originsFor("org1", "INVOICE", ["inv2"]);
     expect(result.get("inv2")).toEqual({ href: "/abos/rec1", label: "aus Abo Wartungsvertrag Mustermann" });
@@ -56,6 +58,7 @@ describe("originsFor (Phase 13a, Task 2)", () => {
   it("keine denormalisierte Quelle -> Fallback auf CONVERTED_TO, Entwurf ohne Nummer", async () => {
     findMany
       .mockResolvedValueOnce([{ id: "inv3", sourceType: null, sourceId: null, recurringInvoiceId: null }]) // Hauptabfrage
+      .mockResolvedValueOnce([]) // Sammelrechnungs-Relationen (GENERATED_BY): keine
       .mockResolvedValueOnce([{ fromType: "QUOTE", fromId: "q9", toId: "inv3" }]) // CONVERTED_TO
       .mockResolvedValueOnce([{ id: "q9", kind: "PROFORMA", number: null }]); // Nummernabfrage (Quote, noch Entwurf)
     const result = await originsFor("org1", "INVOICE", ["inv3"]);
@@ -65,6 +68,7 @@ describe("originsFor (Phase 13a, Task 2)", () => {
   it("kein Herkunftsbeleg -> kein Eintrag in der Map", async () => {
     findMany
       .mockResolvedValueOnce([{ id: "inv4", sourceType: null, sourceId: null, recurringInvoiceId: null }]) // Hauptabfrage
+      .mockResolvedValueOnce([]) // Sammelrechnungs-Relationen (GENERATED_BY): keine
       .mockResolvedValueOnce([]); // CONVERTED_TO: kein Treffer
     const result = await originsFor("org1", "INVOICE", ["inv4"]);
     expect(result.has("inv4")).toBe(false);
