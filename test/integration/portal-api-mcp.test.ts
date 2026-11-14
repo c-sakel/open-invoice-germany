@@ -72,7 +72,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   resetRateLimits();
-  delete process.env.APP_BASE_URL;
+  process.env.APP_BASE_URL = BASE;
   await savePortalSettings(orgId, { enabled: true }, "test");
 });
 
@@ -121,6 +121,22 @@ describe("REST portal-link", () => {
     const rev = await revealPost(mk(`${LINK(customerId)}/reveal`, "portal-idem-2"), ctx1(customerId));
     expect(rev.status).toBe(200);
     expect(await dbInternal.apiIdempotency.count({ where: { orgId, key: { in: ["portal-idem-1", "portal-idem-2"] } } })).toBe(0);
+  });
+
+  it("ohne APP_BASE_URL kein Rueckfall auf den Host-Header: 409 NO_BASE_URL (anlegen, reveal), UI-Aktionen und MCP gleich", async () => {
+    await linkPost(req(LINK(customerId), writeToken, "POST", {}), ctx1(customerId));
+    delete process.env.APP_BASE_URL;
+    const create = await linkPost(req(LINK(customerId), writeToken, "POST", {}), ctx1(customerId));
+    expect(create.status).toBe(409);
+    expect((await create.json()).error.reason).toBe("NO_BASE_URL");
+    const rev = await revealPost(req(`${LINK(customerId)}/reveal`, writeToken, "POST"), ctx1(customerId));
+    expect(rev.status).toBe(409);
+    expect((await rev.json()).error.reason).toBe("NO_BASE_URL");
+    const mcp = await callTool("create_portal_link", { customer: customerId });
+    expect(mcp.isError).toBe(true);
+    expect(mcp.content[0]!.text).toContain("NO_BASE_URL");
+    // fremder Kunde bleibt 404 (kein Hinweis auf die Konfiguration)
+    expect((await linkPost(req(LINK(otherCustomerId), writeToken, "POST", {}), ctx1(otherCustomerId))).status).toBe(404);
   });
 
   it("read-Key auf POST/DELETE/reveal -> 403", async () => {

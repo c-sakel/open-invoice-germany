@@ -14,6 +14,7 @@ import { createPortalLinkInputSchema } from "@/schemas/portal";
 import { PortalError } from "@/domain/portal/errors";
 import { loadPortalSettings } from "@/domain/portal/settings";
 import { generateToken, hashToken, isWellFormedPortalToken } from "@/domain/portal/token";
+import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 
 export interface PortalLinkStatus {
   id: string;
@@ -52,6 +53,16 @@ function toStatus(
   now: Date,
 ): PortalLinkStatus {
   return { ...row, active: row.revokedAt === null && row.expiresAt.getTime() > now.getTime() };
+}
+
+/**
+ * Basis-URL fuer Portal-Links: ausschliesslich APP_BASE_URL. Kein Rueckfall auf den Host-Header des Requests,
+ * damit ein manipulierter Host keinen Link auf eine fremde Adresse in Mails an Kunden bringt.
+ */
+export function requirePortalBaseUrl(): string {
+  const baseUrl = appBaseUrlFromEnv();
+  if (!baseUrl) throw new PortalError("APP_BASE_URL ist nicht gesetzt; ohne Server-Adresse kann kein Portal-Link erzeugt werden.", "NO_BASE_URL");
+  return baseUrl;
 }
 
 function buildUrl(baseUrl: string, token: string): string {

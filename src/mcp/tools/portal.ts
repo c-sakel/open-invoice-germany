@@ -10,9 +10,9 @@ import { listPortalEvents } from "@/domain/portal/access";
 import { PortalError } from "@/domain/portal/errors";
 import { sendPortalLinkEmail } from "@/domain/portal/mail";
 import { MailNotConfiguredError } from "@/domain/email/settings";
-import { createPortalLink, getPortalLinkStatus, revokePortalLink } from "@/domain/portal/link";
+import { createPortalLink, getPortalLinkStatus, requirePortalBaseUrl, revokePortalLink } from "@/domain/portal/link";
 import { loadPortalSettings, savePortalSettings } from "@/domain/portal/settings";
-import { appBaseUrlFromEnv } from "@/lib/http/base-url";
+import { RateLimitError } from "@/lib/rate-limit";
 import { createPortalLinkInputSchema, portalSettingsInputSchema } from "@/schemas/portal";
 import { ToolError, type McpToolsContext, type Result } from "./context";
 
@@ -20,6 +20,7 @@ function portalFail(ctx: McpToolsContext, e: unknown): Result {
   if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
   if (e instanceof MailNotConfiguredError) return ctx.fail(e.message);
   if (e instanceof PortalError) return ctx.fail(`${e.message} (${e.code})`);
+  if (e instanceof RateLimitError) return ctx.fail("Zu viele Portal-Mails an diesen Kunden (RATE_LIMITED). Bitte später erneut versuchen.");
   if (e instanceof NotFoundError) return ctx.fail(e.message);
   if (e instanceof ToolError) return ctx.fail(e.message);
   return ctx.failUnknown(e);
@@ -59,10 +60,8 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         const c = await ctx.resolveCustomer(org.id, customer);
-        const baseUrl = appBaseUrlFromEnv() ?? "";
-        const { link, url } = await createPortalLink(org.id, c.id, input, { actor: "mcp", baseUrl });
-        const note = baseUrl ? "" : "\nHinweis: APP_BASE_URL ist nicht gesetzt, die URL ist ohne Server-Adresse.";
-        return ctx.ok(`${JSON.stringify({ link: serializePortalLink(link), url }, null, 2)}${note}`);
+        const { link, url } = await createPortalLink(org.id, c.id, input, { actor: "mcp", baseUrl: requirePortalBaseUrl() });
+        return ctx.ok(JSON.stringify({ link: serializePortalLink(link), url }, null, 2));
       } catch (e) {
         return portalFail(ctx, e);
       }
@@ -81,9 +80,7 @@ export function registerPortalTools(server: McpServer, ctx: McpToolsContext): vo
       try {
         const org = await ctx.requireOrg();
         const c = await ctx.resolveCustomer(org.id, customer);
-        const baseUrl = appBaseUrlFromEnv();
-        if (!baseUrl) throw new ToolError("APP_BASE_URL ist nicht gesetzt; ohne Server-Adresse kann kein Link gesendet werden.");
-        const res = await sendPortalLinkEmail(org.id, c.id, { actor: "mcp", to, baseUrl });
+        const res = await sendPortalLinkEmail(org.id, c.id, { actor: "mcp", to, baseUrl: requirePortalBaseUrl() });
         const text = JSON.stringify({ emailLogId: res.logId, status: res.status, to: res.to }, null, 2);
         return res.status === "SENT" ? ctx.ok(text) : ctx.fail(`Versand fehlgeschlagen: ${res.error ?? "unbekannt"}\n${text}`);
       } catch (e) {

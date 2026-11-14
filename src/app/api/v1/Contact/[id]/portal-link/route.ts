@@ -7,8 +7,7 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { portalLinkSchema, portalLinkWithUrlSchema, serializePortalLink } from "@/api/serializers/portal";
 import { assertPortalCustomer } from "@/domain/portal/access";
-import { createPortalLink, getPortalLinkStatus, revokePortalLink } from "@/domain/portal/link";
-import { resolveBaseUrl } from "@/lib/http/base-url";
+import { createPortalLink, getPortalLinkStatus, requirePortalBaseUrl, revokePortalLink } from "@/domain/portal/link";
 import { createPortalLinkInputSchema } from "@/schemas/portal";
 
 export const runtime = "nodejs";
@@ -20,10 +19,11 @@ export const GET = withApi<{ id: string }>(async (_req, ctx) => {
   return apiData(status ? serializePortalLink(status) : null);
 }, { scope: "read" });
 
-export const POST = withApi<{ id: string }>(async (req, ctx) => {
+export const POST = withApi<{ id: string }>(async (_req, ctx) => {
+  await assertPortalCustomer(ctx.orgId, ctx.params.id);
   const { link, url } = await createPortalLink(ctx.orgId, ctx.params.id, ctx.body ?? {}, {
     actor: ctx.actor,
-    baseUrl: resolveBaseUrl(req.headers),
+    baseUrl: requirePortalBaseUrl(),
   });
   return apiData({ link: serializePortalLink(link), url }, 201);
 }, { scope: "write", noIdempotency: true });
@@ -51,7 +51,7 @@ export const spec = {
     request: { body: createPortalLinkInputSchema },
     response: apiDataResponseSchema(portalLinkWithUrlSchema),
     errors: [400, 401, 403, 404, 409, 429],
-    errorNotes: { 409: "reason PORTAL_DISABLED (Portal ausgeschaltet) oder CUSTOMER_ARCHIVED." },
+    errorNotes: { 409: "reason PORTAL_DISABLED (Portal ausgeschaltet), CUSTOMER_ARCHIVED oder NO_BASE_URL (APP_BASE_URL nicht gesetzt)." },
   },
   revoke: {
     path: "/api/v1/Contact/{id}/portal-link",

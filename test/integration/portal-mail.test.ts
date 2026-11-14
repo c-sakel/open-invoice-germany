@@ -114,6 +114,7 @@ beforeEach(async () => {
   mem.provider.sent.length = 0;
   // Links der Tests mit fester Zeit (2199) und Echtzeit nicht mischen: jeder Test startet ohne Link.
   await dbInternal.customerPortalLink.deleteMany({ where: { orgId } });
+  await dbInternal.emailLog.deleteMany({ where: { orgId, docType: "PORTAL" } });
   await savePortalSettings(orgId, { enabled: true, mailSubject: null, mailBody: null }, "test");
 });
 
@@ -279,6 +280,45 @@ describe("Portal-Link im Protokoll", () => {
     expect(JSON.stringify(row)).not.toContain(token);
     const cl = await dbInternal.changeLog.findMany({ where: { orgId, entity: "EMAIL", entityId: log.id }, select: { diffJson: true } });
     expect(JSON.stringify(cl)).not.toContain(token);
+  });
+});
+
+describe("Mailflut und Fehlerstatus", () => {
+  it("hoechstens 3 Portal-Mails je Kunde und Stunde: die vierte wirft RateLimitError, REST 429; anderer Kunde unberuehrt", async () => {
+    await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
+    await createPortalLink(orgId, customerEnId, {}, { actor: "t", baseUrl: BASE });
+    const prov = createMemoryProvider();
+    for (let i = 0; i < 3; i++) await sendPortalLinkEmail(orgId, customerId, { actor: "t", baseUrl: BASE, provider: prov });
+    await expect(sendPortalLinkEmail(orgId, customerId, { actor: "t", baseUrl: BASE, provider: prov })).rejects.toThrow(/Rate-Limit/);
+    expect(prov.sent).toHaveLength(3);
+    const rest = await sendPost(req(SEND(customerId), sendToken, {}), ctx1(customerId));
+    expect(rest.status).toBe(429);
+    const mcp = await tools()["send_portal_link"]!.handler({ customer: customerId });
+    expect(mcp.isError).toBe(true);
+    await sendPortalLinkEmail(orgId, customerEnId, { actor: "t", baseUrl: BASE, provider: prov });
+    expect(prov.sent).toHaveLength(4);
+  });
+
+  it("REST: fehlgeschlagener Versand liefert 409 mit Protokoll-ID statt 200", async () => {
+    await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
+    // Die Route nutzt den (gemockten) SMTP-Provider; der naechste Versand scheitert.
+    mem.provider.failNext("550 Mailbox unavailable");
+    const res = await sendPost(req(SEND(customerId), sendToken, {}), ctx1(customerId));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe("CONFLICT");
+    expect(body.error.message).toContain("Protokoll");
+    const log = await dbInternal.emailLog.findFirstOrThrow({ where: { orgId, docType: "PORTAL", docId: customerId }, select: { status: true } });
+    expect(log.status).toBe("FAILED");
+  });
+
+  it("REST send ohne APP_BASE_URL: 409 NO_BASE_URL, keine Mail", async () => {
+    await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
+    delete process.env.APP_BASE_URL;
+    const res = await sendPost(req(SEND(customerId), sendToken, {}), ctx1(customerId));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.reason).toBe("NO_BASE_URL");
+    expect(mem.provider.sent).toHaveLength(0);
   });
 });
 

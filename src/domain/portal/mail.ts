@@ -15,6 +15,7 @@ import { loadMailSettings, MailNotConfiguredError } from "@/domain/email/setting
 import { PortalError } from "@/domain/portal/errors";
 import { getPortalLinkStatus, revealPortalUrl } from "@/domain/portal/link";
 import { loadPortalSettings } from "@/domain/portal/settings";
+import { RateLimitError } from "@/lib/rate-limit";
 import { resolveDocLanguage, type DocLanguage } from "@/lib/i18n/doc";
 import { createSmtpProvider } from "@/lib/mail/smtp";
 import type { MailProvider } from "@/lib/mail/provider";
@@ -22,6 +23,9 @@ import { formatDateLang } from "@/lib/template/format";
 import { renderTemplate, type TemplateContext } from "@/lib/template/render";
 
 export const PORTAL_MAIL_DOC_TYPE = "PORTAL";
+/** Hoechstens so viele Portal-Mails je Kunde und Stunde (Schutz vor Mailflut und Doppelversand). */
+export const PORTAL_MAIL_MAX_PER_HOUR = 3;
+const HOUR_MS = 3_600_000;
 
 const recipientSchema = z.string().trim().email().max(254);
 
@@ -89,6 +93,19 @@ export async function sendPortalLinkEmail(
 
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
+
+  // Cooldown je Kunde ueber das Versandprotokoll (ueberlebt Neustarts); Zeitbasis ist die Echtzeit,
+  // weil EmailLog.createdAt vom Datenbankserver gesetzt wird.
+  const since = new Date(Date.now() - HOUR_MS);
+  const recent = await dbInternal.emailLog.findMany({
+    where: { orgId, docType: PORTAL_MAIL_DOC_TYPE, docId: customerId, createdAt: { gte: since } },
+    orderBy: { createdAt: "asc" },
+    select: { createdAt: true },
+    take: PORTAL_MAIL_MAX_PER_HOUR,
+  });
+  if (recent.length >= PORTAL_MAIL_MAX_PER_HOUR) {
+    throw new RateLimitError(Math.max(recent[0]!.createdAt.getTime() + HOUR_MS - Date.now(), 1000));
+  }
   const provider = opts.provider ?? createSmtpProvider(settings);
 
   const org = await dbInternal.organization.findUniqueOrThrow({
