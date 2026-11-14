@@ -14,7 +14,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { createInvoiceComplete } from "@/domain/invoice/create-complete";
 import { completeIdempotencyWithinTx, requireIdempotencyKey } from "@/api/idempotency";
 import { prisma } from "@/lib/db";
-import { apiInvoiceBodyDocSchema, assertGrossPayment, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
+import { apiInvoiceBodyDocSchema, GROSS_DISCOUNT_NOTICE, assertGrossPayment, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +60,7 @@ export const POST = withApi(async (_req, ctx) => {
     actor: ctx.actor,
     createdBy: "api",
     beforeCommit: async (tx, r) => {
-      body = { data: { ...serializeInvoice(r.invoice, new Set(["lines", "payments"])), ...grossResponseFields(priced, r.invoice.grossTotalCents) }, warnings: r.warnings };
+      body = { data: { ...serializeInvoice(r.invoice, new Set(["lines", "payments"])), ...grossResponseFields(priced, r.invoice.grossTotalCents) }, warnings: priced.mode === "GROSS" ? [...r.warnings, GROSS_DISCOUNT_NOTICE] : r.warnings };
       await completeIdempotencyWithinTx(tx, ctx.orgId, key, 201, body);
     },
   });
@@ -86,6 +86,6 @@ export const spec = {
     request: { body: apiInvoiceBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 404, 409, 429],
-    errorNotes: { 400: "Bruttopreise: bei Abweichung ueber 1 Cent je Steuersatz error.code GROSS_DEVIATION (Validierungsfehler 400)." },
+    errorNotes: { 400: "Bruttopreise: error.code GROSS_DEVIATION_TOO_LARGE bei mehr als 1 Cent Abweichung je Steuersatz (Netto- oder Milli-Preis verwenden); bei finalize + payment GROSS_DEVIATION, wenn die Zahlung nicht zum Rechnungsbrutto passt." },
   },
 } satisfies Record<string, RouteSpec>;

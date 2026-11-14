@@ -140,7 +140,7 @@ describe("Hilfen der Antwort", () => {
   it("grossResponseFields: leer bei Netto, sonst Ziel und tatsaechliche Abweichung", () => {
     expect(grossResponseFields(resolvePriceInput({ ...base, lines: [item({ unitNetPriceCents: 5 })] }), 6)).toEqual({});
     const g = resolvePriceInput({ ...base, lines: [item({ unitGrossPriceCents: 999 })] });
-    expect(grossResponseFields(g, 998)).toEqual({ grossTargetCents: 999, grossDeviationCents: -1 });
+    expect(grossResponseFields(g, 998)).toMatchObject({ grossTargetCents: 999, grossDeviationCents: -1, grossExact: false });
   });
 });
 

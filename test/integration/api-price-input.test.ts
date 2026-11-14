@@ -281,3 +281,88 @@ describe("MCP: Preise", () => {
     expect(text(r)).toContain("nicht unterstützt");
   });
 });
+
+describe("Fix-Welle 18f-3: Belegrabatt und Abweichungsgrenze", () => {
+  let discountCustomerId: string;
+  beforeAll(async () => {
+    discountCustomerId = (
+      await dbInternal.customer.create({
+        data: { orgId, name: "Rabatt Kunde AG", addressLine1: "Marktplatz 3", postalCode: "20095", city: "Hamburg", type: "BUSINESS", defaultDiscountPermille: 100 },
+      })
+    ).id;
+  });
+
+  it("REST Rechnung: Kunde mit Standardrabatt 10 % -> Brutto-Modus ohne Rabatt, Abweichung wie vorhergesagt, Hinweis in der Antwort", async () => {
+    const res = await postInvoice({ ...body([line({ unitGrossPriceCents: 1190 })]), customerId: discountCustomerId });
+    expect(res.status).toBe(201);
+    const raw = (await res.json()) as { data: InvoiceData & { grossExact?: boolean; grossNotices?: string[]; grossByTaxRate?: unknown[] } };
+    const d = raw.data;
+    expect(d.grossTotalCents).toBe(1190);
+    expect(d.grossDeviationCents).toBe(0);
+    expect(d.grossExact).toBe(true);
+    expect(d.grossByTaxRate).toHaveLength(1);
+    expect(d.grossNotices?.[0]).toContain("Standardrabatt");
+    const stored = await dbInternal.invoice.findUniqueOrThrow({ where: { id: d.id }, select: { documentDiscountPermille: true, documentDiscountCents: true } });
+    expect(stored).toEqual({ documentDiscountPermille: 0, documentDiscountCents: 0 });
+    // Netto-Rechnung bekommt den Standardrabatt weiterhin
+    const net = await dataOf(await postInvoice({ ...body([line({ unitNetPriceCents: 1000 })]), customerId: discountCustomerId }));
+    expect(net.netTotalCents).toBe(900);
+  });
+
+  it("REST Angebot mit Bruttozeile und Kunde mit Standardrabatt: kein Rabatt", async () => {
+    const res = await postQuote({ customerId: discountCustomerId, lines: [line({ unitGrossPriceCents: 1190 })] });
+    expect(res.status).toBe(201);
+    const d = await dataOf(res);
+    expect(d.grossTotalCents).toBe(1190);
+    expect(d.grossDeviationCents).toBe(0);
+  });
+
+  it("PATCH mit Bruttozeilen auf Entwurf mit gespeichertem Belegrabatt -> 400 ohne Werte; explizit 0 erlaubt", async () => {
+    const created = await dataOf(await postInvoice({ ...body([line({ unitNetPriceCents: 1000 })]), customerId: discountCustomerId }));
+    const res = await patchInvoice(created.id, { lines: [line({ unitGrossPriceCents: 1190 })] });
+    expect(res.status).toBe(400);
+    const err = (await res.json()) as { error: { code: string; message: string } };
+    expect(err.error.code).toBe("GROSS_DISCOUNT_CONFLICT");
+    expect(err.error.message).not.toMatch(/\d+ ?%|\d,\d\d/);
+    const ok = await patchInvoice(created.id, { documentDiscountPermille: 0, documentDiscountCents: 0, lines: [line({ unitGrossPriceCents: 1190 })] });
+    expect(ok.status).toBe(200);
+    expect((await dataOf(ok)).grossDeviationCents).toBe(0);
+  });
+
+  it("MCP create_invoice/create_document/update_invoice_draft: Standardrabatt greift im Brutto-Modus nicht", async () => {
+    const r = await callTool("create_invoice", { customer: "Rabatt Kunde AG", lines: [{ description: "Brutto", quantity: 1, unitGrossPriceEuro: 11.9, taxRatePercent: 19 }] });
+    expect(r.isError).toBeFalsy();
+    expect(text(r)).toContain("Brutto: 11,90 €");
+    expect(text(r)).toContain("Standardrabatt");
+    const doc = await callTool("create_document", { kind: "ANGEBOT", customer: "Rabatt Kunde AG", lines: [{ description: "B", quantity: 1, unitGrossPriceEuro: 11.9 }] });
+    expect(doc.isError).toBeFalsy();
+    expect(text(doc)).toContain("Brutto 11,90 €");
+    const net = await callTool("create_invoice", { customer: "Rabatt Kunde AG", lines: [{ description: "Netto", quantity: 1, unitPriceEuro: 10 }] });
+    const id = /ID: (\S+)/.exec(text(net))![1];
+    const upd = await callTool("update_invoice_draft", { invoice: id, lines: [{ description: "B", quantity: 1, unitGrossPriceEuro: 11.9, taxRatePercent: 19 }] });
+    expect(upd.isError).toBe(true);
+    expect(text(upd)).toContain("Belegrabatt");
+  });
+
+  it("Abweichung > 1 Cent je Steuersatz: 1.500 x 0,01 und 10.000 x 0,01 -> 400 GROSS_DEVIATION_TOO_LARGE, nichts geschrieben", async () => {
+    const before = await invoiceCount();
+    for (const qty of [1_500_000, 10_000_000]) {
+      const res = await postInvoice(body([line({ quantityMilli: qty, unitGrossPriceCents: 1 })]));
+      expect(res.status).toBe(400);
+      const err = (await res.json()) as { error: { code: string; message: string } };
+      expect(err.error.code).toBe("GROSS_DEVIATION_TOO_LARGE");
+      expect(err.error.message).toContain("Nettopreis");
+    }
+    expect(await invoiceCount()).toBe(before);
+    const mcp = await callTool("create_invoice", { customer: "Preis Kunde AG", lines: [{ description: "Menge", quantity: 1500, unitGrossPriceEuro: 0.01, taxRatePercent: 19 }] });
+    expect(mcp.isError).toBe(true);
+    expect(text(mcp)).toContain("hoechstens 1 Cent");
+    expect(await invoiceCount()).toBe(before);
+  });
+
+  it("Abweichung 0 bei grosser Menge: exact true, Antwort weist exakt aus", async () => {
+    const raw = (await (await postInvoice(body([line({ quantityMilli: 2_000_000, unitGrossPriceCents: 119 })]))).json()) as { data: { grossExact?: boolean; grossDeviationCents?: number } };
+    expect(raw.data.grossDeviationCents).toBe(0);
+    expect(raw.data.grossExact).toBe(true);
+  });
+});

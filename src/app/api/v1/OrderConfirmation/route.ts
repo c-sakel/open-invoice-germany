@@ -70,6 +70,6 @@ export const spec = {
     request: { body: apiDocumentBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 429],
-    errorNotes: { 400: "Bruttopreise: bei Abweichung ueber 1 Cent je Steuersatz error.code GROSS_DEVIATION (Validierungsfehler 400)." },
+    errorNotes: { 400: "Bruttopreise: error.code GROSS_DEVIATION_TOO_LARGE bei mehr als 1 Cent Abweichung je Steuersatz (Netto- oder Milli-Preis verwenden)." },
   },
 } satisfies Record<string, RouteSpec>;

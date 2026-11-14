@@ -25,7 +25,7 @@ import { NotFoundError, InvalidOperationError, EInvoiceInvalidError } from "@/do
 import { getDocumentFile } from "@/api/files";
 import { currencyCodeSchema, DocLanguageSchema, createDocumentSchema, createDeliveryNoteSchema, documentStatusActionSchema, updateDeliveryNoteSchema, convertDocumentBodySchema } from "@/schemas";
 import { docLineSchema, ToolError, describePriceInput, type McpToolsContext, type Result } from "./context";
-import { resolvePriceInput } from "@/domain/document/price-input";
+import { GrossDeviationError, resolvePriceInput } from "@/domain/document/price-input";
 
 const MAX_FILE_BASE64_BYTES = 10 * 1024 * 1024; // 10 MB, Global Constraint (plan-header.md)
 
@@ -77,6 +77,7 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         const doc = await createBusinessDocument(org.id, input);
         return ctx.ok(`${args.kind} angelegt: ${doc.number} für ${customer.name} · Brutto ${formatCents(doc.grossTotalCents)}.${describePriceInput(priced, doc.grossTotalCents)}`);
       } catch (e) {
+        if (e instanceof GrossDeviationError) return ctx.fail(e.message);
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

@@ -11,7 +11,9 @@
  * Beispiel: 2 x 9,99 EUR brutto bei 19 %: Ziel 19,98 -> Netto 16,79 -> Einzelpreis
  * 8,395 EUR (839.500 Milli-Cent); Brutto 16,79 + 3,19 = 19,98, Abweichung 0.
  * Eine Abweichung (max. 1 Cent je Steuersatz) wird ausgewiesen, nicht ueber BT-114
- * ausgeglichen (Ruling 2026-11-13, siehe COMPLIANCE § 16).
+ * ausgeglichen (Ruling 2026-11-13, siehe COMPLIANCE § 16). Ist sie bei grossen Mengen nicht
+ * mehr exakt loesbar und groesser als 1 Cent je Steuersatz, lehnt die API-Eingabe ab
+ * (GROSS_DEVIATION_TOO_LARGE, `price-input.ts`).
  */
 import { MAX_UNIT_PRICE_MILLI_CENTS, milliCentsToCents, mulDivRoundHalfUp, normalizeMilli, roundHalfUp } from "../money";
 import { computeTaxBreakdown } from "../tax";
@@ -37,8 +39,20 @@ export interface GrossResolvedLine {
   exact: boolean;
 }
 
+export interface GrossGroupResult {
+  taxCategory: string;
+  taxRate: number;
+  targetGrossCents: number;
+  resultGrossCents: number;
+  /** resultGrossCents - targetGrossCents der Gruppe */
+  deviationCents: number;
+  /** true, wenn alle Zeilen der Gruppe exakt loesbar waren und die Abweichung 0 ist. */
+  exact: boolean;
+}
+
 export interface GrossResolution {
   lines: GrossResolvedLine[];
+  groups: GrossGroupResult[];
   targetGrossCents: number;
   resultGrossCents: number;
   /** resultGrossCents - targetGrossCents */
@@ -98,6 +112,7 @@ export function resolveGrossLines(lines: readonly GrossLineInput[]): GrossResolu
   });
 
   const resolved: GrossResolvedLine[] = new Array<GrossResolvedLine>(lines.length);
+  const groupResults: GrossGroupResult[] = [];
   for (const g of groups.values()) {
     const groupTargets = g.indices.map((i) => targets[i]);
     const gross = groupTargets.reduce((a, b) => a + b, 0);
@@ -107,11 +122,23 @@ export function resolveGrossLines(lines: readonly GrossLineInput[]): GrossResolu
     g.indices.forEach((lineIdx, k) => {
       resolved[lineIdx] = { ...solveLine(lines[lineIdx].quantityMilli, lineNets[k]), targetGrossCents: targets[lineIdx] };
     });
+    const first = lines[g.indices[0]];
+    const resultGross = computeTaxBreakdown(
+      g.indices.map((i) => ({ lineNetCents: resolved[i].lineNetCents, taxRate: lines[i].taxRate, taxCategory: lines[i].taxCategory })),
+    ).grossTotalCents;
+    groupResults.push({
+      taxCategory: first.taxCategory,
+      taxRate: g.rate,
+      targetGrossCents: gross,
+      resultGrossCents: resultGross,
+      deviationCents: resultGross - gross,
+      exact: resultGross === gross && g.indices.every((i) => resolved[i].exact),
+    });
   }
 
   const targetGrossCents = targets.reduce((a, b) => a + b, 0);
   const resultGrossCents = computeTaxBreakdown(
     resolved.map((r, i) => ({ lineNetCents: r.lineNetCents, taxRate: lines[i].taxRate, taxCategory: lines[i].taxCategory })),
   ).grossTotalCents;
-  return { lines: resolved, targetGrossCents, resultGrossCents, deviationCents: resultGrossCents - targetGrossCents };
+  return { lines: resolved, groups: groupResults, targetGrossCents, resultGrossCents, deviationCents: resultGrossCents - targetGrossCents };
 }

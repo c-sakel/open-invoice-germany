@@ -80,18 +80,54 @@ export const apiDocumentUpdateBodyDocSchema = documentObjectSchema
     lines: z.array(apiLineDocSchema).min(1).optional(),
   });
 
+/** Brutto-Ausweis je Steuersatz (Vorhersage aus der Umrechnung). */
+export interface GrossGroupView {
+  taxCategory: string;
+  taxRate: number;
+  targetGrossCents: number;
+  grossCents: number;
+  deviationCents: number;
+  exact: boolean;
+}
+
 export interface PriceInputResult {
   body: unknown;
   mode: "NET" | "GROSS";
   grossTargetCents: number | null;
   predictedDeviationCents: number | null;
+  /** Nur im Brutto-Modus: Umrechnung je Steuersatz. */
+  groups: GrossGroupView[];
+  /** Hatte der Aufrufer Belegrabattfelder gesetzt (auch 0)? Relevant fuer PATCH mit gespeichertem Rabatt. */
+  discountExplicit: boolean;
 }
 
-/** Bruttozielbetrag und Rechnungsbrutto unterscheiden sich; Zahlung muss zum tatsaechlichen Brutto passen. */
+export type GrossErrorCode = "GROSS_DEVIATION" | "GROSS_DEVIATION_TOO_LARGE" | "GROSS_DISCOUNT_CONFLICT";
+
+/** Fehler der Bruttoeingabe (HTTP 400): Zahlung passt nicht zum Brutto, Abweichung zu gross oder Belegrabatt im Weg. */
 export class GrossDeviationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public readonly code: GrossErrorCode = "GROSS_DEVIATION",
+  ) {
     super(message);
     this.name = "GrossDeviationError";
+  }
+}
+
+/** Hinweis in Antwort/Warnungen bei Bruttoeingabe: der Standardrabatt des Kunden greift nicht. */
+export const GROSS_DISCOUNT_NOTICE = "Bruttopreise: Belegrabatt ist 0; ein Standardrabatt des Kunden wird nicht angewendet.";
+
+/**
+ * PATCH mit Bruttozeilen auf einen Entwurf mit gespeichertem Belegrabatt: ablehnen (das Brutto
+ * waere sonst um den Rabatt falsch). Ein ausdruecklich gesetzter Rabatt 0 im Body hebt ihn auf.
+ */
+export function assertGrossPatchDiscount(priced: PriceInputResult, stored: { documentDiscountPermille: number; documentDiscountCents: number }): void {
+  if (priced.mode !== "GROSS" || priced.discountExplicit) return;
+  if (stored.documentDiscountPermille !== 0 || stored.documentDiscountCents !== 0) {
+    throw new GrossDeviationError(
+      "Bruttopreise sind nicht mit einem Belegrabatt kombinierbar; der Entwurf hat einen Belegrabatt. Belegrabatt mit documentDiscountPermille/documentDiscountCents = 0 entfernen oder Nettopreise verwenden.",
+      "GROSS_DISCOUNT_CONFLICT",
+    );
   }
 }
 
@@ -103,7 +139,7 @@ const without = (r: Rec, keys: string[]): Rec => Object.fromEntries(Object.entri
 const ONE_FORM = "Genau eine Preisangabe je Position (Netto in Cent/tausendstel Cent, Bruttoeinzelpreis oder Bruttozeilenbetrag).";
 
 export function resolvePriceInput(raw: unknown): PriceInputResult {
-  const passthrough: PriceInputResult = { body: raw, mode: "NET", grossTargetCents: null, predictedDeviationCents: null };
+  const passthrough: PriceInputResult = { body: raw, mode: "NET", grossTargetCents: null, predictedDeviationCents: null, groups: [], discountExplicit: false };
   if (!isRec(raw) || !Array.isArray(raw.lines)) return passthrough;
   const rawLines: unknown[] = raw.lines;
 
@@ -202,6 +238,13 @@ export function resolvePriceInput(raw: unknown): PriceInputResult {
     }
     if (issues.length === 0 && valid) {
       const res = resolveGrossLines(inputs);
+      const tooLarge = res.groups.find((g) => Math.abs(g.deviationCents) > 1);
+      if (tooLarge) {
+        throw new GrossDeviationError(
+          `Die Umrechnung der Bruttopreise ist bei dieser Menge nicht exakt (Abweichung ${tooLarge.deviationCents} Cent bei ${tooLarge.taxRate} % Steuer, erlaubt ist hoechstens 1 Cent je Steuersatz). Nettopreis oder Preis in tausendstel Cent verwenden.`,
+          "GROSS_DEVIATION_TOO_LARGE",
+        );
+      }
       grossIdx.forEach((lineIdx, k) => {
         const rest = without(rawLines[lineIdx] as Rec, ["unitGrossPriceCents", "lineGrossCents", "unitNetPriceMilliCents"]);
         const r = res.lines[k];
@@ -211,7 +254,23 @@ export function resolvePriceInput(raw: unknown): PriceInputResult {
           ...(r.unitNetPriceMilliCents !== null ? { unitNetPriceMilliCents: r.unitNetPriceMilliCents } : {}),
         };
       });
-      return { body: { ...raw, lines: out }, mode: "GROSS", grossTargetCents: res.targetGrossCents, predictedDeviationCents: res.deviationCents };
+      const discountExplicit = raw.documentDiscountPermille !== undefined || raw.documentDiscountCents !== undefined;
+      return {
+        // Belegrabatt fest 0 (ausdruecklich, damit der Standardrabatt des Kunden nicht greift).
+        body: { ...raw, documentDiscountPermille: 0, documentDiscountCents: 0, lines: out },
+        mode: "GROSS",
+        grossTargetCents: res.targetGrossCents,
+        predictedDeviationCents: res.deviationCents,
+        groups: res.groups.map((g) => ({
+          taxCategory: g.taxCategory,
+          taxRate: g.taxRate,
+          targetGrossCents: g.targetGrossCents,
+          grossCents: g.resultGrossCents,
+          deviationCents: g.deviationCents,
+          exact: g.exact,
+        })),
+        discountExplicit,
+      };
     }
   }
 
@@ -240,11 +299,20 @@ export function assertGrossPayment(priced: PriceInputResult, paymentAmountCents:
  * Bei Netto-Eingabe leer (Antwortform unveraendert). Weicht die tatsaechliche Abweichung von der
  * vorhergesagten ab, wird der tatsaechliche Wert ausgewiesen (Log ohne Belegdaten).
  */
-export function grossResponseFields(priced: PriceInputResult, actualGrossCents: number): { grossTargetCents?: number; grossDeviationCents?: number } {
+export function grossResponseFields(
+  priced: PriceInputResult,
+  actualGrossCents: number,
+): { grossTargetCents?: number; grossDeviationCents?: number; grossExact?: boolean; grossByTaxRate?: GrossGroupView[]; grossNotices?: string[] } {
   if (priced.mode !== "GROSS" || priced.grossTargetCents === null) return {};
   const grossDeviationCents = actualGrossCents - priced.grossTargetCents;
   if (grossDeviationCents !== priced.predictedDeviationCents) {
     console.error("[api] Bruttoabweichung weicht von der Vorhersage ab");
   }
-  return { grossTargetCents: priced.grossTargetCents, grossDeviationCents };
+  return {
+    grossTargetCents: priced.grossTargetCents,
+    grossDeviationCents,
+    grossExact: grossDeviationCents === 0 && priced.groups.every((g) => g.exact),
+    grossByTaxRate: priced.groups,
+    grossNotices: [GROSS_DISCOUNT_NOTICE],
+  };
 }

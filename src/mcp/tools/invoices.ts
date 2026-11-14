@@ -66,7 +66,7 @@ import {
 } from "@/schemas";
 import { OssCategorySchema } from "@/schemas/oss";
 import { docLineSchema, editorLineSchema, ToolError, linePriceFields, describePriceInput, PRICE_NET_DESCRIPTION, PRICE_GROSS_DESCRIPTION, type McpToolsContext, type Result } from "./context";
-import { GrossDeviationError, assertGrossPayment, resolvePriceInput } from "@/domain/document/price-input";
+import { GrossDeviationError, assertGrossPatchDiscount, assertGrossPayment, resolvePriceInput } from "@/domain/document/price-input";
 
 /** Kartenfelder (BG-18) — dieselben Zod-Objekte wie REST/Editor; nie mehr als die letzten 4 Ziffern. */
 const cardFieldShape = {
@@ -845,11 +845,13 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (args.cardHolderName !== undefined) patch.cardHolderName = args.cardHolderName;
         if (args.lines) patch.lines = await ctx.buildEditorLinesPriced(org.id, args.lines);
         const priced = resolvePriceInput(patch);
+        assertGrossPatchDiscount(priced, inv);
 
         const updated = await updateDraftInvoice(org.id, inv.id, priced.body as typeof patch, "mcp");
         return ctx.ok(`Entwurf aktualisiert: ${updated.number ?? "Entwurf " + updated.id.slice(0, 8)} · Netto ${formatCents(updated.netTotalCents)} · Brutto ${formatCents(updated.grossTotalCents)}.${describePriceInput(priced, updated.grossTotalCents)}`);
       } catch (e) {
         if (e instanceof InvoiceUpdateError) return ctx.fail(e.message);
+        if (e instanceof GrossDeviationError) return ctx.fail(e.message);
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);

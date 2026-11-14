@@ -110,6 +110,8 @@ export type ApiErrorCode =
   | "IDEMPOTENCY_IN_PROGRESS"
   | "EINVOICE_INVALID"
   | "GROSS_DEVIATION"
+  | "GROSS_DEVIATION_TOO_LARGE"
+  | "GROSS_DISCOUNT_CONFLICT"
   | "INTERNAL";
 
 export interface ApiErrorBody {
@@ -194,7 +196,7 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
     return { status: 409, body: { error: { code: "EINVOICE_INVALID", message: e.message, details: { issues: e.issues } } } };
   }
   if (e instanceof GrossDeviationError) {
-    return { status: 400, body: { error: { code: "GROSS_DEVIATION", message: e.message } } };
+    return { status: 400, body: { error: { code: e.code, message: e.message } } };
   }
   // Phase 18f: Verbrauchserfassung. NOT_FOUND 404, CONFLICT 409, sonst 422 mit dem fachlichen Code.
   if (e instanceof UsageError) {

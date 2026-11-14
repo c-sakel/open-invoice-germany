@@ -11,7 +11,7 @@ import { z } from "zod";
 import { dbInternal } from "@/lib/db";
 import { getActiveOrg } from "@/lib/org";
 import { MAX_UNIT_PRICE_MILLI_CENTS, formatCents, formatUnitPrice, roundHalfUp } from "@/lib/money";
-import type { PriceInputResult } from "@/domain/document/price-input";
+import { GROSS_DISCOUNT_NOTICE, type PriceInputResult } from "@/domain/document/price-input";
 import { LineType, TaxRate } from "@/schemas";
 import { OssCategorySchema, type OssCategory } from "@/schemas/oss";
 import type { AttachmentDocType } from "@/domain/attachment/manage";
@@ -113,9 +113,10 @@ export function describePriceInput(priced: PriceInputResult, actualGrossCents?: 
     const dev = gross - priced.grossTargetCents;
     parts.push(
       dev === 0
-        ? `Bruttopreise je Steuersatz in Netto umgerechnet; Brutto ${formatCents(gross)} entspricht dem Ziel.`
-        : `Bruttopreise je Steuersatz in Netto umgerechnet; Hinweis: Bruttosumme weicht um ${formatCents(dev)} ab (Ziel ${formatCents(priced.grossTargetCents)}, Rechnung ${formatCents(gross)}).`,
+        ? `Bruttopreise je Steuersatz in Netto umgerechnet; Brutto ${formatCents(gross)} entspricht dem Ziel (exakt).`
+        : `Bruttopreise je Steuersatz in Netto umgerechnet; Hinweis: Bruttosumme weicht um ${formatCents(dev)} ab (Ziel ${formatCents(priced.grossTargetCents)}, Rechnung ${formatCents(gross)}; nicht exakt).`,
     );
+    parts.push(GROSS_DISCOUNT_NOTICE);
   }
   return parts.length > 0 ? `\n${parts.join("\n")}` : "";
 }
