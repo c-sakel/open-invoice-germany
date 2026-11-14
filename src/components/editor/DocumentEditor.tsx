@@ -104,9 +104,20 @@ interface SaveErrorIssue {
  *  mit Feldbezug auflisten statt nur "Validierung fehlgeschlagen" ohne jeden Hinweis zu
  *  zeigen. Andere Response-Form als PreviewSheet (rohe `issues`, kein `.flatten()`), daher
  *  ein eigener kleiner Helfer statt Wiederverwendung von `flattenDetails`. */
+/** Lesbare Feldnamen fuer die Kartenfelder (statt Feldpfad wie "cardPanTruncated"). */
+const ISSUE_FIELD_LABELS: Record<string, string> = {
+  cardPanTruncated: "Letzte 4 Ziffern",
+  cardNetwork: "Kartennetz",
+  cardHolderName: "Karteninhaber",
+};
+
 function flattenIssues(issues: SaveErrorIssue[] | undefined): string[] {
   if (!issues) return [];
-  return issues.map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message));
+  return issues.map((i) => {
+    const label = i.path.length > 0 ? ISSUE_FIELD_LABELS[String(i.path[i.path.length - 1])] : undefined;
+    if (label) return `${label}: ${i.message}`;
+    return i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message;
+  });
 }
 
 export function DocumentEditor({
