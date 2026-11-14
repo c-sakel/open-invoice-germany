@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { prefillEmail } from "@/domain/email/compose";
+import { PortalError } from "@/domain/portal/errors";
 import { DocumentNotFoundError } from "@/domain/email/context";
 import { MailNotConfiguredError } from "@/domain/email/settings";
 import { EmailDocType } from "@/schemas/email";
@@ -35,6 +36,9 @@ export async function GET(req: Request) {
   } catch (e) {
     if (e instanceof DocumentNotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 });
+    }
+    if (e instanceof PortalError) {
+      return NextResponse.json({ error: e.message, code: e.code }, { status: 409 });
     }
     if (e instanceof MailNotConfiguredError) {
       return NextResponse.json({ error: "MAIL_NOT_CONFIGURED" }, { status: 409 });

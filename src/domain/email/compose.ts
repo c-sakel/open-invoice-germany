@@ -17,7 +17,7 @@ import { revealShareLinkToken, createShareLink } from "@/domain/quote-share/link
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 import { PORTAL_LINK_MARKER, restorePortalLinks } from "@/domain/portal/mask";
-import { revealPortalUrl } from "@/domain/portal/link";
+import { PortalError } from "@/domain/portal/errors";
 import type { EmailDocType } from "@/schemas/email";
 
 export interface PrefillSource {
@@ -107,14 +107,10 @@ async function resolveOfferLink(orgId: string, docType: EmailDocType, docId: str
   }
 }
 
-async function portalUrlForLog(orgId: string, docType: string, docId: string, text: string): Promise<string | null> {
+async function portalUrlForLog(orgId: string, docType: EmailDocType, docId: string, text: string): Promise<string | null> {
   if (!text.includes(PORTAL_LINK_MARKER)) return null;
   try {
-    if (docType === "PORTAL") {
-      const baseUrl = appBaseUrlFromEnv();
-      return baseUrl ? await revealPortalUrl(orgId, docId, baseUrl) : null;
-    }
-    const { ctx } = await buildTemplateContext(orgId, docType as EmailDocType, docId);
+    const { ctx } = await buildTemplateContext(orgId, docType, docId);
     return (ctx.portal as { url?: string } | undefined)?.url || null;
   } catch {
     return null;
@@ -208,8 +204,12 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     if (!log) throw new DocumentNotFoundError("Versandprotokoll nicht gefunden");
     const docType = log.docType as EmailDocType;
     // Das Protokoll traegt statt der Portal-URL den Platzhalter; beim Wiederversand wird der Link
-    // neu aus dem aktuell aktiven Portal-Link des Kunden eingesetzt (leer, wenn es keinen gibt).
+    // neu aus dem aktuell aktiven Portal-Link des Kunden eingesetzt (ohne aktiven Link: Fehler).
     const portalUrl = await portalUrlForLog(orgId, docType, log.docId, log.subject + log.bodySnapshot);
+    // Ohne aktiven Portal-Link darf der Platzhalter nicht woertlich an den Kunden gehen.
+    if (!portalUrl && (log.subject + log.bodySnapshot).includes(PORTAL_LINK_MARKER)) {
+      throw new PortalError("Kein aktiver Portal-Link – bitte neuen Link anlegen.", "NO_ACTIVE_LINK");
+    }
     const attachments = await buildStandardAttachments(orgId, docType, log.docId);
     const documentAttachments = (await listAttachments(orgId, attachmentDocTypeFor(docType), log.docId)).map((a) => ({
       id: a.id,

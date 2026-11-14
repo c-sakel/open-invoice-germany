@@ -50,8 +50,8 @@ export interface CreateQueuedEmailLogInput {
 }
 
 /** Legt das EmailLog VOR dem eigentlichen Versand mit Status QUEUED an. */
-export async function createQueuedEmailLog(input: CreateQueuedEmailLogInput) {
-  return dbInternal.emailLog.create({
+export async function createQueuedEmailLog(input: CreateQueuedEmailLogInput, client: Pick<typeof dbInternal, "emailLog"> = dbInternal) {
+  return client.emailLog.create({
     data: {
       orgId: input.orgId,
       docType: input.docType,

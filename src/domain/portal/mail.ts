@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { dbInternal } from "@/lib/db";
+import { lockRow } from "@/lib/db-lock";
 import { logActivity } from "@/domain/activity/log";
 import { NotFoundError } from "@/domain/errors";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
@@ -94,18 +95,6 @@ export async function sendPortalLinkEmail(
   const settings = await loadMailSettings(orgId);
   if (!settings) throw new MailNotConfiguredError();
 
-  // Cooldown je Kunde ueber das Versandprotokoll (ueberlebt Neustarts); Zeitbasis ist die Echtzeit,
-  // weil EmailLog.createdAt vom Datenbankserver gesetzt wird.
-  const since = new Date(Date.now() - HOUR_MS);
-  const recent = await dbInternal.emailLog.findMany({
-    where: { orgId, docType: PORTAL_MAIL_DOC_TYPE, docId: customerId, createdAt: { gte: since } },
-    orderBy: { createdAt: "asc" },
-    select: { createdAt: true },
-    take: PORTAL_MAIL_MAX_PER_HOUR,
-  });
-  if (recent.length >= PORTAL_MAIL_MAX_PER_HOUR) {
-    throw new RateLimitError(Math.max(recent[0]!.createdAt.getTime() + HOUR_MS - Date.now(), 1000));
-  }
   const provider = opts.provider ?? createSmtpProvider(settings);
 
   const org = await dbInternal.organization.findUniqueOrThrow({
@@ -122,19 +111,35 @@ export async function sendPortalLinkEmail(
   const subject = renderTemplate(portal.mailSubject?.trim() || builtIn.subject, ctx).text.replace(/\s+/g, " ").trim().slice(0, 300);
   const text = renderTemplate(portal.mailBody?.trim() || builtIn.body, ctx).text;
 
-  const log = await createQueuedEmailLog({
-    orgId,
-    docType: PORTAL_MAIL_DOC_TYPE,
-    docId: customerId,
-    fromEmail: settings.fromEmail,
-    replyTo: settings.replyTo ?? null,
-    to: [to],
-    cc: [],
-    bcc: [],
-    subject,
-    // Das Protokoll maskiert den Link zentral (createQueuedEmailLog).
-    bodySnapshot: text,
-    sentByUserId: opts.actor,
+  // Cooldown je Kunde ueber das Versandprotokoll (ueberlebt Neustarts); Zeitbasis ist die Echtzeit,
+  // weil EmailLog.createdAt vom Datenbankserver gesetzt wird. Pruefung und Anlegen des Protokolls
+  // laufen unter der Kundenzeilensperre, damit parallele Aufrufe die Grenze nicht ueberschreiten.
+  const log = await dbInternal.$transaction(async (tx) => {
+    await lockRow(tx, "Customer", customerId, orgId);
+    const since = new Date(Date.now() - HOUR_MS);
+    const recent = await tx.emailLog.findMany({
+      where: { orgId, docType: PORTAL_MAIL_DOC_TYPE, docId: customerId, createdAt: { gte: since } },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+      take: PORTAL_MAIL_MAX_PER_HOUR,
+    });
+    if (recent.length >= PORTAL_MAIL_MAX_PER_HOUR) {
+      throw new RateLimitError(Math.max(recent[0]!.createdAt.getTime() + HOUR_MS - Date.now(), 1000));
+    }
+    return createQueuedEmailLog({
+      orgId,
+      docType: PORTAL_MAIL_DOC_TYPE,
+      docId: customerId,
+      fromEmail: settings.fromEmail,
+      replyTo: settings.replyTo ?? null,
+      to: [to],
+      cc: [],
+      bcc: [],
+      subject,
+      // Das Protokoll maskiert den Link zentral (createQueuedEmailLog).
+      bodySnapshot: text,
+      sentByUserId: opts.actor,
+    }, tx);
   });
 
   let result: "SENT" | "FAILED" = "SENT";

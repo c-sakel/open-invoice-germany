@@ -5,7 +5,10 @@
  */
 export const PORTAL_LINK_MARKER = "[Portal-Link]";
 
-const PORTAL_URL = /(?:https?:\/\/[^\s"'<>]*?)?\/portal\/[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g;
+/** Token = 32 Byte base64url ohne Padding (siehe portalTokenSchema). */
+export const PORTAL_TOKEN_LENGTH = Math.ceil((32 * 8) / 6);
+
+const PORTAL_URL = new RegExp(`(?:https?:\\/\\/[^\\s"'<>]*?)?\\/portal\\/[A-Za-z0-9_-]{${PORTAL_TOKEN_LENGTH}}(?![A-Za-z0-9_-])`, "g");
 
 /** Ersetzt jede Portal-URL (mit oder ohne Basis) im Text durch den Platzhalter. */
 export function maskPortalLinks(text: string): string {

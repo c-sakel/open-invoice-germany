@@ -262,9 +262,7 @@ describe("Portal-Link im Protokoll", () => {
     expect(again.body).toContain(`Ihr Portal: ${url}`);
     expect(again.subject).toContain(url);
     await revokePortalLink(orgId, customerId, { actor: "t" });
-    const none = await prefillEmail(orgId, { logId: res.logId });
-    expect(none.body).toContain("[Portal-Link]");
-    expect(none.body).not.toContain(token);
+    await expect(prefillEmail(orgId, { logId: res.logId })).rejects.toMatchObject({ code: "NO_ACTIVE_LINK" });
   });
 
   it("zentrale Maskierung greift in createQueuedEmailLog/finishEmailLog (auch Angebots-Benachrichtigung)", async () => {
@@ -284,6 +282,19 @@ describe("Portal-Link im Protokoll", () => {
 });
 
 describe("Mailflut und Fehlerstatus", () => {
+  it("parallele Aufrufe ueberschreiten die Stundengrenze nicht", async () => {
+    await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
+    const window = () => dbInternal.emailLog.count({ where: { orgId, docType: "PORTAL", docId: customerId, createdAt: { gte: new Date(Date.now() - 3600_000) } } });
+    const before = await window();
+    const prov = createMemoryProvider();
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, () => sendPortalLinkEmail(orgId, customerId, { actor: "t", baseUrl: BASE, provider: prov, now: NOW })),
+    );
+    const after = await window();
+    expect(after).toBeLessThanOrEqual(3);
+    expect(after - before).toBe(results.filter((r) => r.status === "fulfilled").length);
+  });
+
   it("hoechstens 3 Portal-Mails je Kunde und Stunde: die vierte wirft RateLimitError, REST 429; anderer Kunde unberuehrt", async () => {
     await createPortalLink(orgId, customerId, {}, { actor: "t", baseUrl: BASE });
     await createPortalLink(orgId, customerEnId, {}, { actor: "t", baseUrl: BASE });

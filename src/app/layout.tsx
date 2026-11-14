@@ -60,10 +60,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   if (isPublic) {
     const brand = await safeBrand();
+    // Das Kundenportal braucht eine breitere Belegtabelle als die Angebotsseite.
+    const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
+    const wide = pathname.startsWith("/portal/");
     return (
       <html lang="de">
         <body className="min-h-screen bg-paper text-ink font-sans antialiased">
-          <SlimShell brand={brand} maxWidth="3xl">{children}</SlimShell>
+          <SlimShell brand={brand} maxWidth={wide ? "5xl" : "3xl"}>{children}</SlimShell>
         </body>
       </html>
     );
