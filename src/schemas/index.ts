@@ -938,7 +938,15 @@ const recurringLinesRule = (lines: ReadonlyArray<{ lineType: z.infer<typeof Line
 const RECURRING_LINES_MESSAGE = "Mindestens eine Position (kein reiner Text) erforderlich.";
 
 const COLLECTIVE_HEADING_MESSAGE = "Blockueberschrift ist fuer Sammelrechnungen Pflicht.";
-const invoiceHeadingSchema = z.string().trim().min(1).max(200).regex(/^[^\p{Cc}\p{Cf}]*$/u, { message: "Keine Steuer- oder Formatzeichen erlaubt." });
+// Pruefung per refine statt regex: ein regex mit u-Flag landet in der OpenAPI-Datei als
+// ungueltiges "pattern" (Flag im Musterstring), refine wird nicht exportiert.
+const FORBIDDEN_HEADING_CHARS = /[\p{Cc}\p{Cf}]/u;
+const invoiceHeadingSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((s) => !FORBIDDEN_HEADING_CHARS.test(s), { message: "Keine Steuer- oder Formatzeichen erlaubt." });
 // Obergrenze 200 Zeichen: strenger als die Positionsbeschreibung (ohne Limit), passt in Zeile von PDF und XML.
 
 const recurringObjectSchema = z.object({
