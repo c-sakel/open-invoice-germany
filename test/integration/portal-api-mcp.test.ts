@@ -107,6 +107,22 @@ describe("REST portal-link", () => {
     expect(rev2.status).toBe(404);
   });
 
+  it("Idempotency-Key: Anlegen und reveal werden ignoriert, die URL landet nie in der Idempotenz-Tabelle", async () => {
+    const mk = (path: string, key: string) => {
+      const r = req(path, writeToken, "POST", {});
+      r.headers.set("idempotency-key", key);
+      return r;
+    };
+    const first = await linkPost(mk(LINK(customerId), "portal-idem-1"), ctx1(customerId));
+    expect(first.status).toBe(201);
+    const second = await linkPost(mk(LINK(customerId), "portal-idem-1"), ctx1(customerId));
+    expect(second.status).toBe(201);
+    expect(second.headers.get("Idempotent-Replayed")).toBeNull();
+    const rev = await revealPost(mk(`${LINK(customerId)}/reveal`, "portal-idem-2"), ctx1(customerId));
+    expect(rev.status).toBe(200);
+    expect(await dbInternal.apiIdempotency.count({ where: { orgId, key: { in: ["portal-idem-1", "portal-idem-2"] } } })).toBe(0);
+  });
+
   it("read-Key auf POST/DELETE/reveal -> 403", async () => {
     expect((await linkPost(req(LINK(customerId), readToken, "POST", {}), ctx1(customerId))).status).toBe(403);
     expect((await linkDelete(req(LINK(customerId), readToken, "DELETE"), ctx1(customerId))).status).toBe(403);

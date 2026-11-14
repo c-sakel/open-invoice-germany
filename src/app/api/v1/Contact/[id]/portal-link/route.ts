@@ -26,7 +26,7 @@ export const POST = withApi<{ id: string }>(async (req, ctx) => {
     baseUrl: resolveBaseUrl(req.headers),
   });
   return apiData({ link: serializePortalLink(link), url }, 201);
-}, { scope: "write" });
+}, { scope: "write", noIdempotency: true });
 
 export const DELETE = withApi<{ id: string }>(async (_req, ctx) => {
   await assertPortalCustomer(ctx.orgId, ctx.params.id);
@@ -46,7 +46,7 @@ export const spec = {
   create: {
     path: "/api/v1/Contact/{id}/portal-link",
     method: "POST",
-    summary: "Kundenportal-Link anlegen (ein aktiver Link wird widerrufen) und URL zurueckgeben",
+    summary: "Kundenportal-Link anlegen (ein aktiver Link wird widerrufen) und URL zurueckgeben; ein Idempotency-Key wird ignoriert (die URL wird nie fuer Replays gespeichert)",
     scope: "write",
     request: { body: createPortalLinkInputSchema },
     response: apiDataResponseSchema(portalLinkWithUrlSchema),

@@ -18,13 +18,13 @@ export const POST = withApi<{ id: string }>(async (req, ctx) => {
   const url = await revealPortalUrl(ctx.orgId, ctx.params.id, resolveBaseUrl(req.headers));
   if (!url) throw new NotFoundError("Kein aktiver Portal-Link vorhanden.");
   return apiData({ url });
-}, { scope: "write" });
+}, { scope: "write", noIdempotency: true });
 
 export const spec = {
   reveal: {
     path: "/api/v1/Contact/{id}/portal-link/reveal",
     method: "POST",
-    summary: "URL des aktiven Kundenportal-Links erneut abrufen",
+    summary: "URL des aktiven Kundenportal-Links erneut abrufen (ein Idempotency-Key wird ignoriert)",
     scope: "write",
     response: apiDataResponseSchema(portalUrlSchema),
     errors: [401, 403, 404, 429],
