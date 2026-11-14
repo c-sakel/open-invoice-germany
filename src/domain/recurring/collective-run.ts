@@ -167,7 +167,7 @@ export async function emitCollective(
     for (const id of members) {
       const r = byId.get(id);
       if (!r || r.status !== "ACTIVE") throw new RecurringError("Abo ist nicht aktiv.");
-      if (r.lines.length === 0) throw new RecurringError("Abo hat keine Positionen.");
+      if (r.lines.length === 0) throw new RecurringError(opts.mode === "manual" ? `Abo „${r.title}“ hat keine Positionen.` : "Abo hat keine Positionen.");
       recs.push(r);
     }
     const trigRec = recs.find((r) => r.id === triggerId);
@@ -198,7 +198,14 @@ export async function emitCollective(
     const endedIds: string[] = [];
     for (const r of recs) {
       const periodDate = r.nextRunDate;
-      const built = await buildRunLines(tx, r, periodDate, { fixedServicePeriod: false });
+      let built: Awaited<ReturnType<typeof buildRunLines>>;
+      try {
+        built = await buildRunLines(tx, r, periodDate, { fixedServicePeriod: false });
+      } catch (e) {
+        // Manuell gibt es keine Isolierung: der Fehler nennt das betroffene Abo (nur Name, keine Details).
+        if (opts.mode === "manual" && e instanceof RecurringError && r.id !== triggerId) throw new RecurringError(`Abo „${r.title}“: ${e.message}`);
+        throw e;
+      }
       if (built.hasUsageLines && !built.hasItems) {
         const { ended } = await advanceEmptyPeriod(tx, r, periodDate, built.anchorDay);
         emptyIds.push({ id: r.id, periodDate });
@@ -231,15 +238,17 @@ export async function emitCollective(
     // Mehrere Bloecke: eine Rechnung mit Ueberschrift/Zwischensumme je Abo.
     opts.failGroupPathForTest?.();
     const first = blocks[0].rec;
+    const lang = resolveDocLanguage(first.language);
+    // Der interne Abo-Titel steht nie auf dem Beleg: ohne Blockueberschrift gilt eine neutrale Ueberschrift.
+    const neutralHeading = lang === "en" ? "Subscription" : "Abonnement";
     const collectiveBlocks: CollectiveBlock[] = blocks.map((b) => ({
       recurringId: b.rec.id,
-      heading: b.rec.invoiceHeading && b.rec.invoiceHeading.trim() !== "" ? b.rec.invoiceHeading : b.rec.title,
+      heading: b.rec.invoiceHeading && b.rec.invoiceHeading.trim() !== "" ? b.rec.invoiceHeading : neutralHeading,
       showPeriodText: b.rec.showPeriodText,
       periodStart: b.built.period.start,
       periodEnd: b.built.period.end,
       lines: b.rec.showPeriodText ? applyFixedServicePeriod(b.built.lines, b.built.period) : b.built.lines,
     }));
-    const lang = resolveDocLanguage(first.language);
     const { lines, origins } = assembleCollectiveLines(collectiveBlocks, lang);
     const period = collectivePeriod(lines);
     // Abo-Hinweise sind oeffentlich (stehen auf der Rechnung); je Abo mit der Blockueberschrift voran, nie mit dem internen Abo-Titel.

@@ -7,8 +7,9 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { dbInternal, prisma, GobdImmutabilityError } from "@/lib/db";
 import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { createRecurring } from "@/domain/recurring/create";
-import { emitRecurringNow, runDueRecurring, isSkipped } from "@/domain/recurring/run";
+import { emitOne, emitRecurringNow, runDueRecurring, isSkipped } from "@/domain/recurring/run";
 import { emitCollective } from "@/domain/recurring/collective-run";
+import { RecurringNotDueError } from "@/domain/recurring/errors";
 import { recordUsage } from "@/domain/recurring/usage";
 import { createMemoryProvider } from "@/lib/mail/memory";
 import { saveMailSettings } from "@/domain/email/settings";
@@ -344,5 +345,38 @@ describe("Sammelrechnung im Lauf", () => {
     expect(notes[0].title).toContain("Sammelrechnung nicht moeglich");
     const again = (await runDueRecurring({ now: a.nextRunDate, orgId, failGroupPathForTest })).filter((s) => ids.includes(s.recurringId));
     expect(again.flatMap((s) => s.emitted)).toHaveLength(0);
+  });
+
+  it("Einzelabrechnung mit Faelligkeitspruefung: nicht faelliges Abo wird nicht vorgezogen", async () => {
+    const c = await customer();
+    const a = await abo(c, "N1", 1000);
+    const before = a.nextRunDate.getTime() - 86_400_000;
+    await expect(emitOne(a.id, new Date(before), "test", undefined, true)).rejects.toBeInstanceOf(RecurringNotDueError);
+    const after = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: a.id }, select: { issuedCount: true, nextRunDate: true } });
+    expect(after.issuedCount).toBe(0);
+    expect(after.nextRunDate.getTime()).toBe(a.nextRunDate.getTime());
+  });
+
+  it("fehlende Blockueberschrift: neutrale Ueberschrift, nie der interne Abo-Titel", async () => {
+    const c = await customer();
+    const a = await abo(c, "GEHEIMTITEL-X", 1000);
+    const b = await abo(c, "Y9", 2000);
+    await dbInternal.recurringInvoice.update({ where: { id: a.id }, data: { invoiceHeading: null } });
+    const out = (await run(a)).flatMap((s) => s.emitted).find((e) => e.collectiveRecurringIds);
+    expect(out).toBeDefined();
+    const lines = await invoiceLines(out!.invoiceId);
+    expect(lines.map((l) => l.description)).toContain("Abonnement");
+    expect(lines.filter((l) => l.lineType !== "ITEM").map((l) => l.description).join("|")).not.toContain("GEHEIMTITEL");
+    const inv = await dbInternal.invoice.findUniqueOrThrow({ where: { id: out!.invoiceId }, select: { notes: true, headerText: true } });
+    expect(`${inv.notes ?? ""}${inv.headerText ?? ""}`).not.toContain("GEHEIMTITEL");
+    expect(b.id).toBeTruthy();
+  });
+
+  it("manuell: Fehler eines Partner-Abos nennt dessen Namen", async () => {
+    const c = await customer();
+    const a = await abo(c, "M1", 1000);
+    const b = await abo(c, "M2", 2000);
+    await dbInternal.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: b.id } });
+    await expect(emitRecurringNow(a.id, { now: a.nextRunDate })).rejects.toThrow(/M2/);
   });
 });
