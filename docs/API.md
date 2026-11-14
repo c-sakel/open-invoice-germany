@@ -690,6 +690,25 @@ curl -s -X POST https://rechnung.example.org/api/v1/Contact/import \
   -d "$(jq -n --arg csv "$CSV" --arg h "<fileHash der Vorschau>" '{csv: $csv, dryRun: false, expectedHash: $h}')"
 ```
 
+## Bankabgleich
+
+Kontoauszüge (CAMT.053/.054, XML, UTF-8) importieren und Umsätze Rechnungen zuordnen. Gebucht wird nur nach ausdrücklicher Bestätigung (kein automatisches Buchen; ein Überschuss wird nie als Zahlung gebucht). Zahlungen aus dem Abgleich tragen im `Payment`-Objekt `provider: "BANK"` (sonst `null`). IBANs erscheinen nur maskiert, Beträge in Cent.
+
+| Endpunkt | Scope | Zweck |
+|---|---|---|
+| `POST /api/v1/BankStatement` | `write` | Import: `{ "contentBase64", "fileName"?, "dryRun"? }`, Datei dekodiert höchstens 10 MB, Body höchstens 14 MB (`413`). `201` importiert, `200` Vorschau, `409` `ALREADY_IMPORTED` (`details.importId`), `422` Dateifehler mit `error.reason` (z. B. `FORBIDDEN_MARKUP`, `ZIP_NOT_SUPPORTED`, `NOT_CAMT`). Das Anfrageprotokoll schwärzt `contentBase64`. |
+| `GET /api/v1/BankStatement` | `read` | Importe (neueste zuerst, `limit`, `cursor`) |
+| `GET /api/v1/BankTransaction` | `read` | Umsätze (`status`, `from`, `to`, `limit`, `cursor`) |
+| `GET /api/v1/BankTransaction/{id}` | `read` | Umsatz mit Zuordnungen |
+| `GET /api/v1/BankTransaction/{id}/suggestions` | `read` | Vorschläge bzw. bei Rückbuchungen die betroffenen Zahlungen; bucht nie |
+| `POST /api/v1/BankTransaction/{id}/confirm` | `write` | Zuordnen und Zahlungen buchen (`allocations`, `expectedAllocatedCents`); `409` bei paralleler Änderung |
+| `POST /api/v1/BankTransaction/confirm-unambiguous` | `write` | Eindeutige Vorschläge sammelhaft bestätigen (höchstens 200 je Aufruf), Ergebnisbericht |
+| `POST /api/v1/BankTransaction/{id}/ignore` / `reopen` | `write` | Ignorieren (Grund) / wieder öffnen |
+| `POST /api/v1/BankTransaction/{id}/undo` | `write` | Zuordnung per Gegenbuchung zurücknehmen (`matchId`, Grund) |
+| `POST /api/v1/BankTransaction/{id}/return` | `write` | Rückbuchung bestätigen (`paymentId`): Gegenbuchung der Zahlung |
+
+Lesen braucht `read`; alles, was importiert oder bucht, `write` — wie `POST /api/v1/Invoice/{id}/payment` und der CSV-Import. Die Oberfläche lädt über `POST /api/bank-statements` (Session, `multipart/form-data`, nur same-origin).
+
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 
 - Die meisten Aktions-Endpunkte (`/finalize`, `/cancel`, `/credit`, `/convert`,

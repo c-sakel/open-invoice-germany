@@ -42,6 +42,8 @@ Erreichbarkeit und Signierbarkeit.
 }
 ```
 
+Zahlungen aus dem Bankabgleich lösen `payment.recorded` bzw. `payment.reversed` wie jede andere Zahlung aus; im `Payment`-Objekt steht dann `provider: "BANK"` (sonst `null`).
+
 `data` ist derselbe Serializer-Schnappschuss wie die entsprechende REST-Ressource
 (`GET /api/v1/Invoice/{id}` u. Ä.) zum Zeitpunkt des Ereignisses — Geld als
 Integer-Cent, Daten als ISO 8601. `data` enthält **niemals** `internalNotes`

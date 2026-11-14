@@ -23,6 +23,13 @@ describe("lockRow", () => {
     expect(fn).toHaveBeenCalledWith('SELECT 1 FROM "Quote" WHERE "id" = $1 AND "orgId" = $2 FOR UPDATE', "q1", "o1");
   });
 
+  it("sperrt unter Postgres einen Bankumsatz der Organisation", async () => {
+    process.env.DATABASE_URL = "postgresql://u:p@localhost:5432/db";
+    const { tx, fn } = fakeTx();
+    await lockRow(tx, "BankTransaction", "t1", "o1");
+    expect(fn).toHaveBeenCalledWith('SELECT 1 FROM "BankTransaction" WHERE "id" = $1 AND "orgId" = $2 FOR UPDATE', "t1", "o1");
+  });
+
   it("ist unter SQLite ein No-op", async () => {
     process.env.DATABASE_URL = "file:./x.db";
     const { tx, fn } = fakeTx();

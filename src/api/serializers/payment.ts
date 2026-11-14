@@ -18,6 +18,7 @@ export function serializePayment(p: Payment) {
     kind: p.kind as "PAYMENT" | "REVERSAL",
     reversesPaymentId: p.reversesPaymentId,
     reason: p.reason,
+    provider: p.provider,
     createdBy: p.createdBy,
     createdAt: iso(p.createdAt),
   };
@@ -39,6 +40,7 @@ export const paymentSchema = z.object({
   kind: z.enum(["PAYMENT", "REVERSAL"]),
   reversesPaymentId: z.string().nullable(),
   reason: z.string().nullable(),
+  provider: z.string().nullable().describe("Herkunft einer automatisch gebuchten Zahlung, z. B. BANK (Bankabgleich); sonst null"),
   createdBy: z.string(),
   createdAt: z.string().nullable(),
 });

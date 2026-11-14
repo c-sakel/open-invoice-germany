@@ -1,9 +1,9 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { isPostgresUrl } from "@/lib/db";
 
-export type LockableTable = "Customer" | "Quote" | "Invoice" | "DeliveryNote" | "PostalSettings" | "RecurringInvoice";
+export type LockableTable = "Customer" | "Quote" | "Invoice" | "DeliveryNote" | "PostalSettings" | "RecurringInvoice" | "BankTransaction";
 
-const ALLOWED = new Set<LockableTable>(["Customer", "Quote", "Invoice", "DeliveryNote", "PostalSettings", "RecurringInvoice"]);
+const ALLOWED = new Set<LockableTable>(["Customer", "Quote", "Invoice", "DeliveryNote", "PostalSettings", "RecurringInvoice", "BankTransaction"]);
 
 /**
  * Zeilensperre (`SELECT ... FOR UPDATE`) auf die Quellzeile einer Transaktion.

@@ -63,6 +63,9 @@ export interface RecordPaymentOptions {
   now?: Date;
   orgId?: string;
   createdBy?: PaymentCreatedBy;
+  /** Zahlungsanbieter und Referenz (z. B. Bankabgleich); zusammen eindeutig, schuetzt vor Doppelbuchung. */
+  provider?: string;
+  providerPaymentId?: string;
 }
 
 export async function recordPayment(
@@ -144,6 +147,8 @@ export async function recordPaymentWithinTx(
       // Phase 8b (§42): freie Notiz zur Zahlung.
       note: input.note ?? null,
       createdBy,
+      ...(opts.provider !== undefined ? { provider: opts.provider } : {}),
+      ...(opts.providerPaymentId !== undefined ? { providerPaymentId: opts.providerPaymentId } : {}),
     },
   });
 

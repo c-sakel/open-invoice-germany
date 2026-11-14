@@ -1317,3 +1317,6 @@ export * from "./payment-correction";
 
 // ── Kundenportal ─────────────────────────────────────────────────────────────
 export * from "./portal";
+
+// ── Bankabgleich ─────────────────────────────────────────────────────────────
+export * from "./bank";

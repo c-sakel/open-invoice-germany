@@ -798,6 +798,21 @@ Migration `20261120090000_phase18f_usage` (SQLite) / `20261120090100_phase18f_us
 - Guard: Verbrauchssätze sind unveränderlich; der geschützte Client lehnt `update`/`updateMany`/`upsert`/`delete`/`deleteMany` auf `recurringUsage` mit `RecurringUsageImmutabilityError` ab (`src/lib/db.ts:97`, `:334`). Abrechnung und Storno laufen nur über `dbInternal` in den Domain-Funktionen.
 - Zugänge: REST `src/app/api/v1/Recurring/[id]/usage/route.ts` und `[usageId]/route.ts`, Sitzungsrouten `src/app/api/recurring/[id]/usage/` (Origin-Prüfung, JSON Pflicht, Body 8 KB, 120 Schreibvorgänge je Minute und Organisation, `respond.ts:18`–`:28`), MCP `record_usage`/`list_usage`/`void_usage` (`src/mcp/tools/recurring.ts:276`, `:318`, `:349`), Oberfläche `src/app/abos/[id]/_parts/UsageSection.tsx`, `src/components/recurring/UsageForm.tsx`, `VoidUsageButton.tsx`.
 
+## 3h. Bankabgleich
+
+Kontoauszüge (CAMT.053/.054) werden gelesen, Umsätze Rechnungen vorgeschlagen und nach Bestätigung als Zahlung gebucht. Es gibt keine Bankanbindung und keine automatische Buchung.
+
+- **Module** `src/domain/bank/`: `camt-xml.ts` (Vorprüfung), `camt-parse.ts` (CAMT → `ParsedCamt`, Beträge als Dezimalstring → Cent ohne Gleitkomma), `fingerprint.ts` (SHA-256 je Umsatz, laufend gezählt für gleiche Buchungen), `import.ts` (Vorschau/Import), `match.ts` (rein, deterministisch: Vorschläge und Rückgabehinweise), `suggest.ts` (Kontext laden, IBAN-HMAC), `confirm.ts` (bestätigen, aufteilen, Sammelbestätigung, ignorieren, wieder öffnen, zurücknehmen), `return.ts` (Rücklastschrift gegenbuchen), `list.ts`/`api.ts` (Listen, REST/MCP), `errors.ts` (Grenzen und Fehlercodes). Schemas in `src/schemas/bank.ts`, MCP in `src/mcp/tools/bank.ts`, Oberfläche `src/app/bankabgleich/` und `src/components/bank/`, Upload für die Oberfläche `POST /api/bank-statements`.
+- **Tabellen:** `BankStatementImport` (je Datei, `@@unique([orgId, fileSha256])`), `BankTransaction` (je Umsatz, `@@unique([orgId, fingerprint])`, Status `OPEN | PARTIAL | MATCHED | IGNORED | RETURN | RETURN_DONE`, `allocatedCents`), `BankMatch` (Zuordnung Umsatz → Rechnung/Zahlung, Art `PAYMENT | SKONTO | REVERSAL | UNDO`) und `BankCounterpartyHint` (gelernte Zuordnung IBAN-HMAC → Kunde). `Payment.provider` trägt für Zahlungen aus dem Abgleich den Wert `BANK`. Migrationen für SQLite und PostgreSQL liegen getrennt vor.
+- **Guard** (`src/lib/db.ts`): `BankStatementImport` und `BankMatch` sind append-only; `BankTransaction` wird nie gelöscht, nach dem Anlegen sind nur Status- und Zuordnungsfelder änderbar (Betrag, Fingerabdruck, Gegenkonto, Verwendungszweck nicht).
+- **XML-Sicherheit:** Dekodierung nur als striktes UTF-8 (ZIP-Kennung wird abgelehnt), Größe ≤ 10 MB, vor dem Parsen eine eigene Prüfung ohne DTD, Entities, Verarbeitungsanweisungen (außer der XML-Deklaration am Anfang), Text außerhalb der Wurzel und mit Schachtelungstiefe ≤ 64. Der Namensraum muss `camt.053.001.02–13` bzw. `camt.054.001.02–13` sein. Grenzen: ≤ 50.000 Einträge je Datei, ≤ 20.000 neue Umsätze je Import, Verwendungszweck ≤ 500 Zeichen.
+- **Buchen** ausschließlich über `recordPaymentWithinTx` und `reversePaymentWithinTx` (GoBD, Gegenbuchung statt Löschen). Die manuelle Stornierung einer Bankzahlung schreibt den Zuordnungsbetrag des Umsatzes fort (`syncBank`); die Rücklastschrift-Buchung setzt `syncBank: false`, weil sie die Zuordnung selbst führt. Ein Überschuss über den offenen Betrag wird nie gebucht.
+- **Sperrreihenfolge:** Import unter der Organisationssperre; Bestätigen, Zurücknehmen und Rücklastschrift sperren zuerst die Zeile des Bankumsatzes, danach die Rechnungen (`lockRow`/`lockRows`), jeweils mit Ketten-Retry (`withChangeLogRetry`). Die Sammelbestätigung bestätigt je Umsatz in einer eigenen Transaktion.
+- **Datenschutz im Code:** Die IBAN des Gegenkontos wird für den Lernspeicher nur als HMAC (`oig-bank-iban-v1`, abgeleitet aus `AUTH_SECRET`) abgelegt; ohne Schlüssel entfällt der Hinweis. IBANs verlassen die Domäne nur maskiert. Das Anfrageprotokoll schwärzt `contentBase64`.
+- **Bremsen** (im Speicher, je Instanz): 10 Importe je Minute und Organisation, 60 Upload-Anfragen je Minute.
+
+---
+
 ## 4. Lizenz-Empfehlung
 
 Ziel: (a) niemand zahlt mehr für Rechnungssoftware, (b) keine proprietäre Closed-Source-SaaS-Abzweigung, (c) maximale Community-Beiträge.

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr><MsgId>TEST-MSG-0003</MsgId><CreDtTm>2200-05-03T10:00:00Z</CreDtTm></GrpHdr>
+    <Ntfctn>
+      <Id>NTF-2200-05-001</Id>
+      <Acct><Id><IBAN>DE89370400440532013000</IBAN></Id></Acct>
+      <Ntry>
+        <Amt Ccy="EUR">500.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2200-05-02</Dt></BookgDt>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>E2E-0003</EndToEndId></Refs>
+          <RltdPties><Dbtr><Nm>Probe Handels GmbH</Nm></Dbtr><DbtrAcct><Id><IBAN>GB82WEST12345698765432</IBAN></Id></DbtrAcct></RltdPties>
+          <RmtInf><Ustrd>RE-50020</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">20.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2200-05-02</Dt></BookgDt>
+        <NtryDtls><TxDtls><RmtInf><Ustrd>Gebuehr</Ustrd></RmtInf></TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">80.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2200-05-03</Dt></BookgDt>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>E2E-0004</EndToEndId></Refs>
+          <RltdPties><Dbtr><Nm>Probe Handels GmbH</Nm></Dbtr></RltdPties>
+          <RtrInf><Rsn><Cd>MS03</Cd></Rsn></RtrInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

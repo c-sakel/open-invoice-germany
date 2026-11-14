@@ -202,6 +202,47 @@ function assertPostalJobUpdateAllowed(data: unknown): void {
 }
 
 /**
+ * Bankabgleich: `BankStatementImport` und `BankMatch` sind Nachweise und append-only (nur `create`).
+ * `BankTransaction` wird nie geloescht; nach dem Anlegen sind nur Status- und Zuordnungsfelder
+ * fortschreibbar — Betrag, Fingerabdruck und Gegenkonto bleiben unveraenderlich.
+ */
+export class BankStatementImportImmutableError extends Error {
+  constructor() {
+    super("Kontoauszug-Importe sind unveraenderlich (append-only).");
+    this.name = "BankStatementImportImmutableError";
+  }
+}
+
+export class BankMatchImmutableError extends Error {
+  constructor() {
+    super("Bank-Zuordnungen sind unveraenderlich (append-only).");
+    this.name = "BankMatchImmutableError";
+  }
+}
+
+export class BankTransactionImmutableError extends Error {
+  constructor(detail: string) {
+    super(`Bankumsatz ist ein Nachweis und nicht aenderbar: ${detail}`);
+    this.name = "BankTransactionImmutableError";
+  }
+}
+
+const BANK_TRANSACTION_MUTABLE_KEYS = new Set([
+  "status",
+  "allocatedCents",
+  "ignoredReason",
+  "ignoredBy",
+  "ignoredAt",
+  "updatedAt",
+]);
+
+function assertBankTransactionUpdateAllowed(data: unknown): void {
+  const keys = Object.keys((data ?? {}) as Record<string, unknown>);
+  const badKeys = keys.filter((k) => !BANK_TRANSACTION_MUTABLE_KEYS.has(k));
+  if (badKeys.length > 0) throw new BankTransactionImmutableError(badKeys.join(", "));
+}
+
+/**
  * Phase 17a: Das VIES-Pruefprotokoll (`VatIdCheck`) ist append-only; nur `create` ist erlaubt.
  */
 export class VatIdCheckImmutableError extends Error {
@@ -400,6 +441,69 @@ export const prisma = base.$extends({
       },
       async deleteMany() {
         throw new CustomerPortalEventImmutableError();
+      },
+    },
+    bankStatementImport: {
+      async update() {
+        throw new BankStatementImportImmutableError();
+      },
+      async updateMany() {
+        throw new BankStatementImportImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new BankStatementImportImmutableError();
+      },
+      async upsert() {
+        throw new BankStatementImportImmutableError();
+      },
+      async delete() {
+        throw new BankStatementImportImmutableError();
+      },
+      async deleteMany() {
+        throw new BankStatementImportImmutableError();
+      },
+    },
+    bankMatch: {
+      async update() {
+        throw new BankMatchImmutableError();
+      },
+      async updateMany() {
+        throw new BankMatchImmutableError();
+      },
+      async updateManyAndReturn() {
+        throw new BankMatchImmutableError();
+      },
+      async upsert() {
+        throw new BankMatchImmutableError();
+      },
+      async delete() {
+        throw new BankMatchImmutableError();
+      },
+      async deleteMany() {
+        throw new BankMatchImmutableError();
+      },
+    },
+    bankTransaction: {
+      async update({ args, query }) {
+        assertBankTransactionUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateMany({ args, query }) {
+        assertBankTransactionUpdateAllowed(args.data);
+        return query(args);
+      },
+      async updateManyAndReturn({ args, query }) {
+        assertBankTransactionUpdateAllowed(args.data);
+        return query(args);
+      },
+      async upsert() {
+        throw new BankTransactionImmutableError("upsert");
+      },
+      async delete() {
+        throw new BankTransactionImmutableError("delete");
+      },
+      async deleteMany() {
+        throw new BankTransactionImmutableError("deleteMany");
       },
     },
     postalJobEvent: {
