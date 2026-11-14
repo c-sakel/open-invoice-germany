@@ -151,6 +151,19 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | `cancel_postal_job` | Auftrag stornieren (nur binnen 15 Minuten, nur QUEUED/HOLD/DRAFT) | „Storniere den Brief." |
 | `resolve_postal_job` | Auftrag mit unklarem Ausgang (UNKNOWN) nach Prüfung beim Briefdienst manuell abschließen (`SENT`/`NOT_SENT`, mit Begründung, `confirm: true`); auch ein Testauftrag nach Ablauf der Stornofrist (nur `NOT_SENT`) | „Der Brief wurde laut Briefdienst nicht versendet — schließ den Auftrag ab." |
 
+### Kundenportal
+
+Das Kundenportal gibt Kunden über einen persönlichen Link Einsicht in ihre Rechnungen, Gutschriften und Mahnungen (PDF und E-Rechnung). Die Tools nutzen dieselben Zod-Schemas wie REST (`/api/v1/Contact/{id}/portal-link`, `/portal-events`, `/api/v1/Settings/portal`). Der Status enthält nie Token oder URL; die URL liefert nur `create_portal_link` (bzw. REST `reveal`). Ein ausgeschaltetes Portal meldet `PORTAL_DISABLED`.
+
+| Tool | Zweck | Beispiel |
+|---|---|---|
+| `get_portal_link` | Status des Portal-Links eines Kunden lesen (ohne URL) | „Hat Müller GmbH einen aktiven Portal-Link?" |
+| `create_portal_link` | Portal-Link anlegen (ein aktiver Link wird widerrufen) und URL liefern | „Erzeuge einen Portal-Link für Müller GmbH." |
+| `revoke_portal_link` | Aktiven Portal-Link widerrufen | „Sperre den Portal-Link von Müller GmbH." |
+| `list_portal_events` | Abrufprotokoll eines Kunden (ohne IP) | „Wann hat Müller GmbH das Portal zuletzt geöffnet?" |
+| `get_portal_settings` | Portal-Einstellungen lesen | „Ist das Kundenportal eingeschaltet?" |
+| `update_portal_settings` | Portal-Einstellungen im Teil-Update setzen | „Schalte das Kundenportal ein." |
+
 ### Angebote / Auftragsbestätigungen / Lieferscheine
 
 | Tool | Zweck | Beispiel |

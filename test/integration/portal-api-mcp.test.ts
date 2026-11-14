@@ -1,0 +1,214 @@
+/**
+ * REST und MCP des Kundenportals (Testjahr 2198; es entstehen keine Belege).
+ */
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+
+const orgStore: { id: string | null } = vi.hoisted(() => ({ id: null }));
+
+vi.mock("@/lib/org", () => ({
+  getActiveOrg: async () => {
+    if (!orgStore.id) throw new Error("Test-Org noch nicht gesetzt.");
+    return { id: orgStore.id };
+  },
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+vi.mock("@/lib/auth/server", () => ({ getCurrentUserId: async () => "tester" }));
+
+import { dbInternal } from "@/lib/db";
+import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
+import { createApiKey } from "@/domain/api-key/create";
+import { resetRateLimits } from "@/lib/rate-limit";
+import { savePortalSettings } from "@/domain/portal/settings";
+import { server } from "@/mcp/server";
+import { GET as linkGet, POST as linkPost, DELETE as linkDelete } from "@/app/api/v1/Contact/[id]/portal-link/route";
+import { POST as revealPost } from "@/app/api/v1/Contact/[id]/portal-link/reveal/route";
+import { GET as eventsGet } from "@/app/api/v1/Contact/[id]/portal-events/route";
+import { GET as settingsGet, PUT as settingsPut } from "@/app/api/v1/Settings/portal/route";
+
+interface ToolResult {
+  content: { type: string; text: string }[];
+  isError?: boolean;
+}
+type Handler = (a: Record<string, unknown>) => Promise<ToolResult>;
+const tools = () => (server as unknown as { _registeredTools: Record<string, { handler: Handler }> })._registeredTools;
+function callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+  const tool = tools()[name];
+  if (!tool) throw new Error(`MCP-Tool "${name}" ist nicht registriert.`);
+  return tool.handler(args);
+}
+
+let orgId: string;
+let customerId: string;
+let otherCustomerId: string;
+let writeToken: string;
+let readToken: string;
+
+const BASE = "https://rechnung.example.test";
+function req(url: string, token: string, method = "GET", body?: unknown, rawBody?: string) {
+  const headers = new Headers({ authorization: `Bearer ${token}`, host: "rechnung.example.test" });
+  if (body !== undefined || rawBody !== undefined) headers.set("content-type", "application/json");
+  return new Request(url, { method, headers, body: rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined) });
+}
+const ctx1 = (id: string) => ({ params: Promise.resolve({ id }) });
+const LINK = (id: string) => `${BASE}/api/v1/Contact/${id}/portal-link`;
+
+beforeAll(async () => {
+  const org = await dbInternal.organization.create({
+    data: { legalName: "Portal API GmbH", addressLine1: "Teststr. 1", postalCode: "12345", city: "Berlin" },
+  });
+  orgId = org.id;
+  orgStore.id = orgId;
+  await ensureOrgMasterdata(dbInternal, orgId);
+  customerId = (await dbInternal.customer.create({ data: { orgId, name: "Portal API Kunde", addressLine1: "Weg 1", postalCode: "54321", city: "Wien" } })).id;
+  const other = await dbInternal.organization.create({
+    data: { legalName: "Fremd Portal GmbH", addressLine1: "Teststr. 2", postalCode: "12345", city: "Berlin" },
+  });
+  otherCustomerId = (await dbInternal.customer.create({ data: { orgId: other.id, name: "Fremdkunde", addressLine1: "Weg 1", postalCode: "54321", city: "Wien" } })).id;
+  writeToken = (await createApiKey(orgId, { name: "w", scopes: ["read", "write"] })).token;
+  readToken = (await createApiKey(orgId, { name: "r", scopes: ["read"] })).token;
+});
+
+beforeEach(async () => {
+  resetRateLimits();
+  delete process.env.APP_BASE_URL;
+  await savePortalSettings(orgId, { enabled: true }, "test");
+});
+
+describe("REST portal-link", () => {
+  it("Status ohne Link ist null", async () => {
+    const res = await linkGet(req(LINK(customerId), readToken), ctx1(customerId));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toBeNull();
+  });
+
+  it("POST legt an (201, URL), GET liefert Status ohne URL/Hash, reveal liefert URL, DELETE widerruft", async () => {
+    const res = await linkPost(req(LINK(customerId), writeToken, "POST", { expiresInDays: 30 }), ctx1(customerId));
+    expect(res.status).toBe(201);
+    const created = (await res.json()).data as { link: { id: string; active: boolean }; url: string };
+    expect(created.url).toMatch(/^https:\/\/rechnung\.example\.test\/portal\/[A-Za-z0-9_-]{43}$/);
+    expect(created.link.active).toBe(true);
+
+    const st = await linkGet(req(LINK(customerId), readToken), ctx1(customerId));
+    const text = JSON.stringify(await st.json());
+    expect(text).not.toContain(created.url.split("/portal/")[1]);
+    expect(text).not.toMatch(/url|tokenHash|tokenEnc/);
+
+    const rev = await revealPost(req(`${LINK(customerId)}/reveal`, writeToken, "POST"), ctx1(customerId));
+    expect(rev.status).toBe(200);
+    expect((await rev.json()).data.url).toBe(created.url);
+
+    const del = await linkDelete(req(LINK(customerId), writeToken, "DELETE"), ctx1(customerId));
+    expect(del.status).toBe(200);
+    expect((await del.json()).data.active).toBe(false);
+
+    const rev2 = await revealPost(req(`${LINK(customerId)}/reveal`, writeToken, "POST"), ctx1(customerId));
+    expect(rev2.status).toBe(404);
+  });
+
+  it("read-Key auf POST/DELETE/reveal -> 403", async () => {
+    expect((await linkPost(req(LINK(customerId), readToken, "POST", {}), ctx1(customerId))).status).toBe(403);
+    expect((await linkDelete(req(LINK(customerId), readToken, "DELETE"), ctx1(customerId))).status).toBe(403);
+    expect((await revealPost(req(`${LINK(customerId)}/reveal`, readToken, "POST"), ctx1(customerId))).status).toBe(403);
+  });
+
+  it("fremder Kunde -> 404 auf allen Endpunkten", async () => {
+    expect((await linkGet(req(LINK(otherCustomerId), readToken), ctx1(otherCustomerId))).status).toBe(404);
+    expect((await linkPost(req(LINK(otherCustomerId), writeToken, "POST", {}), ctx1(otherCustomerId))).status).toBe(404);
+    expect((await linkDelete(req(LINK(otherCustomerId), writeToken, "DELETE"), ctx1(otherCustomerId))).status).toBe(404);
+    expect((await revealPost(req(`${LINK(otherCustomerId)}/reveal`, writeToken, "POST"), ctx1(otherCustomerId))).status).toBe(404);
+    expect((await eventsGet(req(`${BASE}/api/v1/Contact/${otherCustomerId}/portal-events`, readToken), ctx1(otherCustomerId))).status).toBe(404);
+  });
+
+  it("ungueltiges JSON und ungueltige Dauer -> 400", async () => {
+    expect((await linkPost(req(LINK(customerId), writeToken, "POST", undefined, "{kaputt"), ctx1(customerId))).status).toBe(400);
+    expect((await linkPost(req(LINK(customerId), writeToken, "POST", { expiresInDays: 0 }), ctx1(customerId))).status).toBe(400);
+  });
+
+  it("Portal aus -> 409 mit reason PORTAL_DISABLED", async () => {
+    await savePortalSettings(orgId, { enabled: false }, "test");
+    const res = await linkPost(req(LINK(customerId), writeToken, "POST", {}), ctx1(customerId));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.reason).toBe("PORTAL_DISABLED");
+  });
+});
+
+describe("REST portal-events", () => {
+  it("liefert das Protokoll ohne IP, mit limit und cursor", async () => {
+    const link = await dbInternal.customerPortalLink.findFirstOrThrow({ where: { orgId, customerId }, select: { id: true } });
+    for (let i = 0; i < 3; i++) {
+      await dbInternal.customerPortalEvent.create({
+        data: { orgId, linkId: link.id, kind: "DOWNLOAD", at: new Date(Date.UTC(2198, 0, 1 + i)), docType: "INVOICE", docId: `d${i}`, fileKind: "PDF" },
+      });
+    }
+    const url = `${BASE}/api/v1/Contact/${customerId}/portal-events`;
+    const p1 = await (await eventsGet(req(`${url}?limit=2`, readToken), ctx1(customerId))).json();
+    expect(p1.data).toHaveLength(2);
+    expect(p1.total).toBe(3);
+    expect(p1.nextCursor).toBeTruthy();
+    expect(JSON.stringify(p1)).not.toMatch(/ip|userAgent/i);
+    expect(p1.data[0].docId).toBe("d2");
+    const p2 = await (await eventsGet(req(`${url}?limit=2&cursor=${p1.nextCursor}`, readToken), ctx1(customerId))).json();
+    expect(p2.data).toHaveLength(1);
+    expect(p2.nextCursor).toBeNull();
+    expect((await eventsGet(req(`${url}?limit=0`, readToken), ctx1(customerId))).status).toBe(400);
+  });
+});
+
+describe("REST Settings/portal", () => {
+  it("GET, Teil-Update, Scope, leerer Body, Validierung", async () => {
+    const url = `${BASE}/api/v1/Settings/portal`;
+    const g = await settingsGet(req(url, readToken));
+    expect((await g.json()).data.objectName).toBe("PortalSettings");
+    const put = await settingsPut(req(url, writeToken, "PUT", { linkDays: 90, showDunnings: false }));
+    expect(put.status).toBe(200);
+    const d = (await put.json()).data;
+    expect(d.linkDays).toBe(90);
+    expect(d.showDunnings).toBe(false);
+    expect(d.enabled).toBe(true);
+    expect((await settingsPut(req(url, readToken, "PUT", { linkDays: 5 }))).status).toBe(403);
+    expect((await settingsPut(req(url, writeToken, "PUT", {}))).status).toBe(400);
+    expect((await settingsPut(req(url, writeToken, "PUT", { linkDays: 9999 }))).status).toBe(400);
+    expect((await settingsPut(req(url, writeToken, "PUT", undefined, "{kaputt"))).status).toBe(400);
+    await savePortalSettings(orgId, { linkDays: 365, showDunnings: true }, "test");
+  });
+});
+
+describe("MCP", () => {
+  it("registriert die sechs Portal-Tools", () => {
+    for (const n of ["get_portal_link", "create_portal_link", "revoke_portal_link", "list_portal_events", "get_portal_settings", "update_portal_settings"]) {
+      expect(tools()[n], n).toBeDefined();
+    }
+  });
+
+  it("create/get/revoke und Events", async () => {
+    process.env.APP_BASE_URL = BASE;
+    const created = await callTool("create_portal_link", { customer: customerId, expiresInDays: 10 });
+    expect(created.isError).toBeUndefined();
+    const body = JSON.parse(created.content[0]!.text) as { url: string; link: { active: boolean } };
+    expect(body.url).toMatch(/^https:\/\/rechnung\.example\.test\/portal\//);
+    const st = await callTool("get_portal_link", { customer: customerId });
+    expect(st.content[0]!.text).not.toContain(body.url.split("/portal/")[1]);
+    expect(JSON.parse(st.content[0]!.text).active).toBe(true);
+    const ev = await callTool("list_portal_events", { customer: customerId, limit: 1 });
+    expect(JSON.parse(ev.content[0]!.text).data).toHaveLength(1);
+    const rev = await callTool("revoke_portal_link", { customer: customerId });
+    expect(JSON.parse(rev.content[0]!.text).active).toBe(false);
+  });
+
+  it("Fehlertexte entsprechen REST: Portal aus, fremder Kunde", async () => {
+    await savePortalSettings(orgId, { enabled: false }, "test");
+    const off = await callTool("create_portal_link", { customer: customerId });
+    expect(off.isError).toBe(true);
+    expect(off.content[0]!.text).toContain("PORTAL_DISABLED");
+    const foreign = await callTool("get_portal_link", { customer: otherCustomerId });
+    expect(foreign.isError).toBe(true);
+  });
+
+  it("Settings lesen und Teil-Update, leer und ungueltig abgelehnt", async () => {
+    const up = await callTool("update_portal_settings", { enabled: true, linkDays: 120 });
+    expect(JSON.parse(up.content[0]!.text).linkDays).toBe(120);
+    expect(JSON.parse((await callTool("get_portal_settings")).content[0]!.text).enabled).toBe(true);
+    expect((await callTool("update_portal_settings", {})).isError).toBe(true);
+    await savePortalSettings(orgId, { linkDays: 365 }, "test");
+  });
+});

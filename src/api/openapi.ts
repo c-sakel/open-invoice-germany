@@ -57,6 +57,7 @@ import { tagSchema } from "./serializers/tag";
 import { documentTemplateSchema } from "./serializers/document-template";
 import { baseInterestRateSchema } from "./serializers/base-interest-rate";
 import { exchangeRateSchema } from "./serializers/exchange-rate";
+import { portalEventSchema, portalLinkSchema, portalSettingsSchema } from "./serializers/portal";
 import { postalJobSchema, postalSettingsSchema } from "./serializers/postal";
 
 const V1_ROOT = path.resolve(process.cwd(), "src/app/api/v1");
@@ -134,6 +135,9 @@ export const RESOURCE_SCHEMAS: Record<string, z.ZodTypeAny> = {
   ExchangeRate: exchangeRateSchema,
   PostalJob: postalJobSchema,
   PostalSettings: postalSettingsSchema,
+  PortalLink: portalLinkSchema,
+  PortalEvent: portalEventSchema,
+  PortalSettings: portalSettingsSchema,
 };
 
 /** `/api/v1/Invoice` oder `/api/v1/Invoice/{id}` -> "Invoice"; alles Tiefere (Aktionen,
