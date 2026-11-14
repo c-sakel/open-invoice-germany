@@ -27,6 +27,8 @@ import {
 import { finalizeInvoice, FinalizeError } from "@/domain/invoice/finalize";
 import { collectFinalizeWarnings } from "@/domain/invoice/finalize-warnings";
 import { cancelInvoice, CancelError } from "@/domain/invoice/cancel";
+import { cancelInvoicesBulk } from "@/domain/invoice/bulk-cancel";
+import { rateLimit, RateLimitError } from "@/lib/rate-limit";
 import { createPartialCreditNote, CreditError } from "@/domain/invoice/credit";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { createPartialInvoice, PartialInvoiceError } from "@/domain/invoice/partial";
@@ -54,6 +56,7 @@ import {
   invoiceListFilterSchema,
   currencyCodeSchema,
   cancelInvoiceSchema,
+  bulkCancelSchema,
   partialCreditSchema,
   DocLanguageSchema,
   invoiceCardFields,
@@ -322,6 +325,44 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         if (e instanceof FinalizeError) return ctx.fail(`Storno nicht möglich: ${e.message}`);
         if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof NotFoundError) return ctx.fail(e.message);
+        if (e instanceof ToolError) return ctx.fail(e.message);
+        return ctx.failUnknown(e);
+      }
+    },
+  );
+
+  // ── cancel_invoices (Phase 18d) ──────────────────────────────────────────────
+  server.registerTool(
+    "cancel_invoices",
+    {
+      title: "Mehrere Rechnungen stornieren",
+      description:
+        "Storniert 1 bis 50 festgeschriebene Rechnungen nacheinander (je Beleg eigene Storno-Gutschrift, Originale bleiben erhalten; kein Versand). " +
+        "Ergebnis je Beleg (ok/failed); ein Fehler stoppt die uebrigen nicht. Hoechstens 10 Aufrufe pro Minute.",
+      inputSchema: {
+        invoices: z.array(z.string()).min(1).max(50).describe("Rechnungs-IDs oder -Nummern (1 bis 50)"),
+        reason: bulkCancelSchema.shape.reason.describe("Stornogrund (Pflicht, max. 500 Zeichen) — landet in den Notizen der Stornobelege"),
+      },
+    },
+    async ({ invoices, reason }): Promise<Result> => {
+      try {
+        const org = await ctx.requireOrg();
+        rateLimit("api-bulk-cancel:" + org.id, { limit: 10, windowMs: 60_000 });
+        const ids: string[] = [];
+        for (const ref of invoices) {
+          try {
+            ids.push((await ctx.resolveInvoice(org.id, ref)).id);
+          } catch (e) {
+            // Unbekannt: Rohwert weiterreichen, die Domain meldet NOT_FOUND je Beleg.
+            if (e instanceof NotFoundError || e instanceof ToolError) ids.push(ref);
+            else throw e;
+          }
+        }
+        const result = await cancelInvoicesBulk(org.id, { ids, reason }, { actor: "mcp" });
+        return ctx.ok(JSON.stringify(result, null, 2));
+      } catch (e) {
+        if (e instanceof RateLimitError) return ctx.fail("Zu viele Sammel-Stornos — bitte kurz warten.");
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
         if (e instanceof ToolError) return ctx.fail(e.message);
         return ctx.failUnknown(e);
       }

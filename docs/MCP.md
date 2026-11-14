@@ -179,6 +179,7 @@ Die REST-Routen unterscheiden die Scopes `read` (Lesen), `write` (Angebot, Preis
 | `export_invoice` | PDF + XRechnung + ZUGFeRD in Datei (`exports/`) + Validierungsreport | „Exportier die XRechnung und das PDF." |
 | `credit_invoice` | Teilgutschrift / Teilerstattung (Original bleibt festgeschrieben); verrechnet sich mit dem offenen Rest (Zahlungsart `CREDIT_NOTE`, kein Geldeingang), Summe aller Gutschriften höchstens Rechnungsbetrag | „Erstelle eine Teilgutschrift über 50 Euro zu RE-2026-00342." |
 | `cancel_invoice` | Storno-Gutschrift (Original bleibt erhalten); optional `reason` (Stornogrund, steht in den Belegnotizen), nach Teilgutschriften nur der Rest, Hinweis auf fällige Erstattung | „Storniere RE-2026-00342." |
+| `cancel_invoices` | 1 bis 50 festgeschriebene Rechnungen (`invoices`: IDs oder Nummern, `reason` Pflicht) nacheinander stornieren; je Beleg eigene Storno-Gutschrift, Ergebnis je Beleg (`ok`/`failed`, Codes z. B. `NOT_CANCELLABLE`, `NOT_FOUND`), ein Fehler stoppt die übrigen nicht; kein Versand; höchstens 10 Aufrufe pro Minute | „Storniere RE-1001 und RE-1002 wegen Doppelerfassung." |
 
 ### Teil-/Abschlags-/Schlussrechnungen
 
