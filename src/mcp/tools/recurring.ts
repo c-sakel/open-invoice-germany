@@ -187,6 +187,14 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         const total = summaries.reduce((n, s) => n + s.emitted.length, 0);
         const skippedTotal = summaries.reduce((n, s) => n + s.skipped.length, 0);
         if (total === 0 && skippedTotal > 0) return ctx.ok("Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
+        const deferredCount = summaries.filter((s) => s.deferred).length;
+        const doneElsewhere = summaries.filter((s) => s.alreadyDone).length;
+        if (total === 0 && (deferredCount > 0 || doneElsewhere > 0)) {
+          const parts: string[] = [];
+          if (deferredCount > 0) parts.push(`${deferredCount} Abo(s) zurückgestellt (Sammelrechnung wartet auf ein Verbrauchsabo, Abrechnung am Folgetag)`);
+          if (doneElsewhere > 0) parts.push(`${doneElsewhere} Abo(s) bereits von einem parallelen Lauf erledigt`);
+          return ctx.ok(`Keine Rechnung erzeugt: ${parts.join("; ")}.`);
+        }
         if (total === 0) return ctx.ok("Keine fälligen Abos.");
         const lines = summaries.flatMap((s) =>
           s.emitted.map((e) => `• ${s.title}: ${e.number ?? "Entwurf " + e.invoiceId.slice(0, 8)} (Periode ${e.periodDate.toISOString().slice(0, 10)})`),

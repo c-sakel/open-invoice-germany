@@ -16,7 +16,7 @@ type Line = CreateInvoiceInput["lines"][number];
 
 function cand(id: string, over: Partial<CollectiveCandidate> = {}): CollectiveCandidate {
   return {
-    id, customerId: "c1", status: "ACTIVE", collectiveBilling: true,
+    id, orgId: "o1", customerId: "c1", status: "ACTIVE", collectiveBilling: true,
     nextRunDate: new Date("2205-03-01T00:00:00Z"), createdAt: new Date("2205-01-01T00:00:00Z"),
     currency: "EUR", taxScheme: "REGULAR", language: "de", paymentTermsDays: 14,
     autoFinalize: false, autoSend: false, emailTemplateId: null, ...over,
@@ -60,9 +60,9 @@ describe("splitReasons", () => {
     ["paymentTermsDays", { paymentTermsDays: 30 }],
     ["autoFinalize", { autoFinalize: true }],
     ["autoSend", { autoSend: true }],
-    ["emailTemplateId", { emailTemplateId: "t1" }],
+    ["emailTemplateId", { autoSend: true, emailTemplateId: "t1" }],
   ] as const)("Grund %s", (field, over) => {
-    expect(splitReasons(cand("a"), cand("b", over))).toEqual([field]);
+    expect(splitReasons(cand("a", { autoSend: field === "emailTemplateId" }), cand("b", over))).toEqual([field]);
   });
 });
 
@@ -81,7 +81,7 @@ describe("selectCollectiveGroup", () => {
       cand("k", { customerId: "c2" }),
       cand("d", { nextRunDate: new Date("2205-03-02T00:00:00Z") }),
     ]);
-    expect(r).toEqual({ members: ["a"], split: [] });
+    expect(r).toEqual({ members: ["a"], split: [], overflow: [] });
   });
   it("abweichende Waehrung -> split", () => {
     const a = cand("a");
@@ -171,5 +171,24 @@ describe("collectiveBlockRanges", () => {
       { recurringId: "A", from: 1, to: 2 },
       { recurringId: "B", from: 3, to: 4 },
     ]);
+  });
+});
+
+describe("selectCollectiveGroup: Ueberhang, Organisation, Mailvorlage", () => {
+  it("gibt den Ueberhang jenseits der Obergrenze zurueck", () => {
+    const t = cand("a", { createdAt: new Date("2205-01-01T00:00:00Z") });
+    const others = ["b", "c", "d"].map((id, i) => cand(id, { createdAt: new Date(`2205-01-0${i + 2}T00:00:00Z`) }));
+    const g = selectCollectiveGroup(t, others, 2);
+    expect(g.members).toEqual(["a", "b"]);
+    expect(g.overflow).toEqual(["c", "d"]);
+  });
+
+  it("Abo einer anderen Organisation -> Fehler", () => {
+    expect(() => selectCollectiveGroup(cand("a"), [cand("b", { orgId: "o2" })])).toThrow();
+  });
+
+  it("emailTemplateId trennt nur bei autoSend", () => {
+    expect(splitReasons(cand("a", { emailTemplateId: "t1" }), cand("b", { emailTemplateId: "t2" }))).toEqual([]);
+    expect(splitReasons(cand("a", { autoSend: true, emailTemplateId: "t1" }), cand("b", { autoSend: true, emailTemplateId: "t2" }))).toEqual(["emailTemplateId"]);
   });
 });

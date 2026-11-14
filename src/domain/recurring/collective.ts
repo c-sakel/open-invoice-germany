@@ -21,6 +21,7 @@ export type CollectiveKeyField =
 
 export interface CollectiveCandidate {
   id: string;
+  orgId: string;
   customerId: string;
   status: string;
   collectiveBilling: boolean;
@@ -52,7 +53,8 @@ export function stichtagKey(nextRunDate: Date): string {
 
 /** Abweichende Schluesselfelder (leer = gleiche Gruppe). Kunde und Stichtag sind Vorbedingung, kein Grund. */
 export function splitReasons(a: CollectiveCandidate, b: CollectiveCandidate): CollectiveKeyField[] {
-  return KEY_FIELDS.filter((f) => a[f] !== b[f]);
+  // Die Mailvorlage wirkt nur beim automatischen Versand; sonst trennt sie nicht.
+  return KEY_FIELDS.filter((f) => (f === "emailTemplateId" && !a.autoSend ? false : a[f] !== b[f]));
 }
 
 function byCreatedThenId(a: CollectiveCandidate, b: CollectiveCandidate): number {
@@ -64,13 +66,14 @@ function byCreatedThenId(a: CollectiveCandidate, b: CollectiveCandidate): number
 /**
  * Mitglieder der Gruppe (inkl. Ausloeser, sortiert nach createdAt, id, hoechstens `maxMembers`,
  * Ausloeser immer enthalten) sowie abweichende Abos desselben Kunden und Stichtags mit Gruenden.
+ * `overflow`: gleichartige Abos jenseits der Obergrenze (bleiben faellig und bilden die Folgegruppe).
  * Beruecksichtigt werden nur ACTIVE-Abos mit Sammelschalter.
  */
 export function selectCollectiveGroup(
   trigger: CollectiveCandidate,
   candidates: readonly CollectiveCandidate[],
   maxMembers: number = COLLECTIVE_MAX_MEMBERS,
-): { members: string[]; split: { id: string; reasons: CollectiveKeyField[] }[] } {
+): { members: string[]; split: { id: string; reasons: CollectiveKeyField[] }[]; overflow: string[] } {
   const day = stichtagKey(trigger.nextRunDate);
   const seen = new Set<string>([trigger.id]);
   const same: CollectiveCandidate[] = [];
@@ -78,6 +81,7 @@ export function selectCollectiveGroup(
   for (const c of [...candidates].sort(byCreatedThenId)) {
     if (seen.has(c.id)) continue;
     seen.add(c.id);
+    if (c.orgId !== trigger.orgId) throw new Error("Sammelrechnung: Abo einer anderen Organisation.");
     if (c.status !== "ACTIVE" || !c.collectiveBilling) continue;
     if (c.customerId !== trigger.customerId || stichtagKey(c.nextRunDate) !== day) continue;
     const reasons = splitReasons(trigger, c);
@@ -86,7 +90,8 @@ export function selectCollectiveGroup(
   }
   const limit = Math.max(1, maxMembers);
   const members = [trigger, ...same.slice(0, limit - 1)].sort(byCreatedThenId).map((c) => c.id);
-  return { members, split };
+  const overflow = same.slice(limit - 1).map((c) => c.id);
+  return { members, split, overflow };
 }
 
 export interface CollectiveBlock {

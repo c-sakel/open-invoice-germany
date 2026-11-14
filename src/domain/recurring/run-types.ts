@@ -42,6 +42,8 @@ export interface RecurringRunSummary {
   skipped: Date[];
   /** Die Gruppe einer Sammelrechnung wurde zurueckgestellt (ein Verbrauchsabo ist noch nicht faellig). */
   deferred?: true;
+  /** Beim Start des Laufs war das Abo nicht mehr faellig (ein paralleler Lauf hat es bereits abgerechnet). */
+  alreadyDone?: true;
   /** Fehlermeldung, falls der Lauf dieses Abos abgebrochen ist. Bereits erzeugte `emitted`-Eintraege bleiben gueltig. */
   error?: string;
 }

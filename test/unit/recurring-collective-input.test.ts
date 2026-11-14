@@ -34,6 +34,9 @@ describe("createRecurringSchema Sammelrechnung", () => {
   it("Steuerzeichen -> Fehler", () => {
     expect(headingIssue({ ...base, invoiceHeading: "A\nB" })).toBe(true);
   });
+  it("Bidi-/Formatzeichen -> Fehler", () => {
+    expect(headingIssue({ ...base, invoiceHeading: "A\u202EB" })).toBe(true);
+  });
   it("ohne Schalter ist die Ueberschrift optional", () => {
     expect(createRecurringSchema.safeParse(base).success).toBe(true);
     expect(createRecurringSchema.safeParse({ ...base, collectiveBilling: false }).success).toBe(true);

@@ -938,7 +938,8 @@ const recurringLinesRule = (lines: ReadonlyArray<{ lineType: z.infer<typeof Line
 const RECURRING_LINES_MESSAGE = "Mindestens eine Position (kein reiner Text) erforderlich.";
 
 const COLLECTIVE_HEADING_MESSAGE = "Blockueberschrift ist fuer Sammelrechnungen Pflicht.";
-const invoiceHeadingSchema = z.string().trim().min(1).max(200).regex(/^[^\p{Cc}]*$/u, { message: "Keine Steuerzeichen erlaubt." });
+const invoiceHeadingSchema = z.string().trim().min(1).max(200).regex(/^[^\p{Cc}\p{Cf}]*$/u, { message: "Keine Steuer- oder Formatzeichen erlaubt." });
+// Obergrenze 200 Zeichen: strenger als die Positionsbeschreibung (ohne Limit), passt in Zeile von PDF und XML.
 
 const recurringObjectSchema = z.object({
   customerId: z.string().min(1),

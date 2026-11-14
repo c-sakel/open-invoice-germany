@@ -46,6 +46,7 @@ import { markUsageBilled } from "./usage";
 
 const CANDIDATE_SELECT = {
   id: true,
+  orgId: true,
   customerId: true,
   status: true,
   collectiveBilling: true,
@@ -84,6 +85,8 @@ export interface CollectiveRunResult {
   outcome: EmitOutcome | { deferred: true };
   memberIds: string[];
   endedIds: string[];
+  /** Faellige gleichartige Abos jenseits der Obergrenze: bleiben unveraendert und bilden die Folgegruppe. */
+  overflowIds: string[];
 }
 
 interface TxResult {
@@ -108,6 +111,7 @@ export async function emitCollective(
   opts: CollectiveRunOptions,
 ): Promise<CollectiveRunResult> {
   const maxMembers = opts.maxMembers ?? COLLECTIVE_MAX_MEMBERS;
+  let overflowIds: string[] = [];
   const work = async (tx: Prisma.TransactionClient): Promise<TxResult> => {
     const head = await tx.recurringInvoice.findUnique({ where: { id: triggerId }, select: { orgId: true } });
     if (!head) throw new RecurringError("Abo nicht gefunden.");
@@ -123,6 +127,13 @@ export async function emitCollective(
       const trig = await tx.recurringInvoice.findFirst({ where: { id: triggerId, orgId }, select: CANDIDATE_SELECT });
       if (!trig) throw new RecurringError("Abo nicht gefunden.");
       if (trig.status !== "ACTIVE") throw new RecurringError("Abo ist nicht aktiv.");
+      if (!trig.collectiveBilling) {
+        // Schalter wurde bis zur Sperre ausgeschaltet: Einzelrechnung wie bei jedem Abo ohne Schalter.
+        members = [triggerId];
+        split = [];
+        overflowIds = [];
+        break;
+      }
       const others = await tx.recurringInvoice.findMany({
         where: {
           orgId,
@@ -136,6 +147,7 @@ export async function emitCollective(
       const group = selectCollectiveGroup(trig as CollectiveCandidate, others as CollectiveCandidate[], maxMembers);
       members = group.members;
       split = group.split;
+      overflowIds = group.overflow;
       const fresh = members.filter((id) => !locked.has(id));
       if (fresh.length === 0) break;
       await lockRows(tx, orgId, fresh.map((id) => ({ table: "RecurringInvoice" as const, id })));
@@ -160,17 +172,22 @@ export async function emitCollective(
     if (!trigRec) throw new RecurringError("Abo nicht gefunden.");
 
     // Faelligkeit: Scheduler nur, wenn ALLE Mitglieder faellig sind (sonst zurueckstellen, nichts schreiben);
-    // manuell ignorieren Festpreis-Mitglieder den Stichtag, Verbrauchsmitglieder muessen faellig sein.
-    for (const r of recs) {
+    // manuell ignorieren Festpreis-Mitglieder den Stichtag, noch nicht faellige Verbrauchsmitglieder
+    // bleiben ausserhalb der Gruppe (am Folgetag des Stichtags regulaer), ausser der Ausloeser selbst ist betroffen.
+    for (const r of [...recs]) {
       const usage = r.lines.some((l) => l.billing === "USAGE");
-      const due = isRunDue(r.nextRunDate, now, usage);
-      if (opts.mode === "batch" && !due) {
+      if (isRunDue(r.nextRunDate, now, usage)) continue;
+      if (opts.mode === "batch") {
         return { tx: { deferred: true }, memberIds: members, endedIds: [], emptyIds: [], split: [], periodKey: "" };
       }
-      if (opts.mode === "manual" && usage && !due) {
-        throw new RecurringNotDueError(
-          "Verbrauchsabo: Die Periode endet erst am Stichtag; abgerechnet wird ab dem Folgetag, damit kein Verbrauch verloren geht.",
-        );
+      if (usage) {
+        if (r.id === triggerId) {
+          throw new RecurringNotDueError(
+            "Verbrauchsabo: Die Periode endet erst am Stichtag; abgerechnet wird ab dem Folgetag, damit kein Verbrauch verloren geht.",
+          );
+        }
+        recs.splice(recs.indexOf(r), 1);
+        members = members.filter((id) => id !== r.id);
       }
     }
 
@@ -300,11 +317,11 @@ export async function emitCollective(
       return r;
     }));
   } catch (e) {
-    if (e instanceof DryRunRollback) return { outcome: { deferred: true }, memberIds: e.memberIds, endedIds: [] };
+    if (e instanceof DryRunRollback) return { outcome: { deferred: true }, memberIds: e.memberIds, endedIds: [], overflowIds };
     throw e;
   }
 
-  if ("deferred" in run.tx) return { outcome: { deferred: true }, memberIds: run.memberIds, endedIds: [] };
+  if ("deferred" in run.tx) return { outcome: { deferred: true }, memberIds: run.memberIds, endedIds: [], overflowIds };
 
   const done = run.tx;
   const outcome = done.result;
@@ -319,7 +336,7 @@ export async function emitCollective(
       data: { period: e.periodDate.toISOString() },
     });
   }
-  if ("skipped" in outcome) return { outcome, memberIds: run.memberIds, endedIds: run.endedIds };
+  if ("skipped" in outcome) return { outcome, memberIds: run.memberIds, endedIds: run.endedIds, overflowIds };
 
   for (const s of run.split) {
     await logActivity(dbInternal, {
@@ -338,7 +355,7 @@ export async function emitCollective(
     outcome.emailStatus = sent.status;
     outcome.emailError = sent.error;
   }
-  return { outcome, memberIds: run.memberIds, endedIds: run.endedIds };
+  return { outcome, memberIds: run.memberIds, endedIds: run.endedIds, overflowIds };
 }
 
 /**

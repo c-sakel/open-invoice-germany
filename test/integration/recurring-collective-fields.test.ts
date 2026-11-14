@@ -53,6 +53,11 @@ describe("Abo-Felder Sammelrechnung", () => {
     expect(r.invoiceHeading).toBe("Hosting");
   });
 
+  it("Anlegen mit Schalter ohne Ueberschrift (an Zod vorbei) -> RecurringError", async () => {
+    const input = { ...recurringInput(), collectiveBilling: true };
+    await expect(createRecurring(orgId, input)).rejects.toBeInstanceOf(RecurringError);
+  });
+
   it("Anlegen ohne Angabe: Schalter aus, keine Ueberschrift", async () => {
     const r = await createRecurring(orgId, recurringInput());
     expect(r.collectiveBilling).toBe(false);

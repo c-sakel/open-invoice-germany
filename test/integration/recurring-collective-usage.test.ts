@@ -74,14 +74,37 @@ describe("Sammelrechnung mit Verbrauch", () => {
     expect(u.invoiceId).toBe(out.invoiceId);
   });
 
-  it("emitRecurringNow(A) am Stichtag mit Verbrauchspartner -> RecurringNotDueError, nichts geschrieben", async () => {
+  it("emitRecurringNow(A) am Stichtag mit Verbrauchspartner: B bleibt ausserhalb der Gruppe, A einzeln", async () => {
     const c = await customer();
     const a = await abo(c, "A", [fixed("Fest", 1000)]);
     const b = await abo(c, "B", [usageLine]);
     await addUsage(b, 100);
-    await expect(emitRecurringNow(a.id, { now: a.nextRunDate })).rejects.toBeInstanceOf(RecurringNotDueError);
-    expect(await dbInternal.invoice.count({ where: { orgId, lines: { some: { recurringInvoiceId: { in: [a.id, b.id] } } } } })).toBe(0);
+    const out = await emitRecurringNow(a.id, { now: a.nextRunDate });
+    expect("invoiceId" in out && out.collectiveRecurringIds).toBeFalsy();
+    expect(await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: a.id }, select: { issuedCount: true } })).toEqual({ issuedCount: 1 });
     expect(await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: b.id }, select: { issuedCount: true } })).toEqual({ issuedCount: 0 });
+    expect(await dbInternal.recurringUsage.count({ where: { recurringInvoiceId: b.id, invoiceId: null } })).toBe(1);
+  });
+
+  it("emitRecurringNow(B) am Stichtag, B ist das nicht faellige Verbrauchsabo -> RecurringNotDueError, nichts geschrieben", async () => {
+    const c = await customer();
+    const a = await abo(c, "A", [fixed("Fest", 1000)]);
+    const b = await abo(c, "B", [usageLine]);
+    await addUsage(b, 100);
+    await expect(emitRecurringNow(b.id, { now: a.nextRunDate })).rejects.toBeInstanceOf(RecurringNotDueError);
+    expect(await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: a.id }, select: { issuedCount: true } })).toEqual({ issuedCount: 0 });
+  });
+
+  it("Mitglied spaeter am selben Tag faellig: Gruppe wird zurueckgestellt und laeuft am selben Tag nach", async () => {
+    const c = await customer();
+    const a = await abo(c, "A", [fixed("Fest", 1000)]);
+    const b = await abo(c, "B", [fixed("Fest 2", 2000)]);
+    await dbInternal.recurringInvoice.update({ where: { id: b.id }, data: { nextRunDate: new Date(a.nextRunDate.getTime() + 3 * 3_600_000) } });
+    const early = await runDueRecurring({ now: a.nextRunDate, orgId });
+    expect(early.filter((s) => [a.id, b.id].includes(s.recurringId)).flatMap((s) => s.emitted)).toHaveLength(0);
+    const later = await runDueRecurring({ now: new Date(a.nextRunDate.getTime() + 4 * 3_600_000), orgId });
+    const out = only(later.filter((s) => [a.id, b.id].includes(s.recurringId)).flatMap((s) => s.emitted));
+    expect(out.collectiveRecurringIds).toEqual([a.id, b.id].sort());
   });
 
   it("Verbrauchspartner ohne Verbrauch: Einzelform fuer A, B rueckt ohne Zaehler vor; beide leer -> uebersprungen", async () => {

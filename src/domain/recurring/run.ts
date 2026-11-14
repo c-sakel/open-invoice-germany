@@ -130,7 +130,8 @@ export async function emitRecurringNow(recurringId: string, opts: RunOptions = {
   const head = await dbInternal.recurringInvoice.findUnique({ where: { id: recurringId }, select: { collectiveBilling: true } });
   if (head?.collectiveBilling) {
     const { outcome } = await emitCollective(recurringId, now, actor, { mode: "manual", provider: opts.provider });
-    if ("deferred" in outcome) throw new RecurringNotDueError("Sammelrechnung zurückgestellt.");
+    // Im manuellen Modus wird nie zurueckgestellt (nicht faellige Verbrauchsmitglieder verlassen die Gruppe).
+    if ("deferred" in outcome) throw new RecurringError("Sammelrechnung: unerwartet zurueckgestellt.");
     return outcome;
   }
   const { result } = await emitOne(recurringId, now, actor, opts.provider);
@@ -181,6 +182,7 @@ export async function runDueRecurring(
     const emitted: EmittedInvoice[] = [];
     const skipped: Date[] = [];
     let deferred = false;
+    let alreadyDone = false;
     let error: string | undefined;
     let memberIds: string[] = [rec.id];
     let isolations = 0;
@@ -190,7 +192,10 @@ export async function runDueRecurring(
           where: { id: rec.id },
           select: { status: true, nextRunDate: true, collectiveBilling: true, lines: { where: { billing: "USAGE" }, select: { id: true }, take: 1 } },
         });
-        if (!cur || cur.status !== "ACTIVE" || !isRunDue(cur.nextRunDate, now, cur.lines.length > 0)) break;
+        if (!cur || cur.status !== "ACTIVE" || !isRunDue(cur.nextRunDate, now, cur.lines.length > 0)) {
+          if (i === 0) alreadyDone = true;
+          break;
+        }
         if (cur.collectiveBilling) {
           try {
             const res = await emitCollective(rec.id, now, actor, {
@@ -239,7 +244,7 @@ export async function runDueRecurring(
       const title = memberIds.length > 1 ? `${rec.title} (Sammelrechnung, ${memberIds.length} Abos)` : rec.title;
       await onRecurringFailed(rec.orgId, { recurringId: rec.id, title, message: error, at: now });
     }
-    summaries.push({ recurringId: rec.id, title: rec.title, emitted, skipped, ...(deferred ? { deferred: true as const } : {}), ...(error ? { error } : {}) });
+    summaries.push({ recurringId: rec.id, title: rec.title, emitted, skipped, ...(deferred ? { deferred: true as const } : {}), ...(alreadyDone ? { alreadyDone: true as const } : {}), ...(error ? { error } : {}) });
   }
   return summaries;
 }
