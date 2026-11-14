@@ -110,7 +110,7 @@ export function registerSystemTools(server: McpServer, ctx: McpToolsContext): vo
         bic: z.string().optional(),
         bankName: z.string().optional(),
         accountHolder: z.string().optional().describe("Kontoinhaber/-in fuer GiroCode/Fusszeile/E-Rechnung (leer = Firmenname)"),
-        sepaCreditorId: organizationFieldsSchema.shape.sepaCreditorId.describe("SEPA-Gläubiger-ID für Lastschriften (BT-90)"),
+        sepaCreditorId: organizationFieldsSchema.shape.sepaCreditorId.describe("SEPA-Gläubiger-ID für Lastschriften (BT-90); ohne Angabe bleibt der Bestand, Leeren nur in der Oberfläche"),
         smallBusiness: z.boolean().default(false).describe("Kleinunternehmer nach § 19 UStG"),
         defaultTaxScheme: TaxScheme.default("REGULAR"),
         electronicAddress: z.string().optional().describe("E-Rechnung-Adresse (BT-34); ohne Angabe bleibt der Bestand erhalten, bei Neuanlage gilt die E-Mail"),
