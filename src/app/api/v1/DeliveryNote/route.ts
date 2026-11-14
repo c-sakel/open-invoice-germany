@@ -2,6 +2,7 @@ import { z } from "zod";
 import { csvListResponse } from "@/api/csv-list";
 import { csvFormatQuery } from "@/domain/export";
 import { withApi } from "@/api/auth";
+import { queryObject } from "@/api/query";
 import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeDeliveryNote } from "@/api/serializers/delivery-note";
@@ -19,7 +20,7 @@ export const GET = withApi(async (req, ctx) => {
   const csv = await csvListResponse(ctx.orgId, "delivery-notes", searchParams);
   if (csv) return csv;
   const embed = parseEmbed(searchParams);
-  const result = await listDeliveryNotes(ctx.orgId, Object.fromEntries(searchParams));
+  const result = await listDeliveryNotes(ctx.orgId, queryObject(searchParams, ["includeArchived"]));
   const ids = result.rows.map((r) => r.id);
   const full = await prisma.deliveryNote.findMany({
     where: { id: { in: ids }, orgId: ctx.orgId },
@@ -44,10 +45,10 @@ export const spec = {
   list: {
     path: "/api/v1/DeliveryNote",
     method: "GET",
-    summary: "Lieferscheine auflisten (Paginierung/Filter/embed=customer,lines); format=csv liefert text/csv (max. 20.000 Zeilen)",
+    summary: "Lieferscheine auflisten (Paginierung/Filter/embed=customer,lines); Abgleich: updatedSince + cursor; format=csv liefert text/csv (max. 20.000 Zeilen)",
     scope: "read",
     request: { query: deliveryNoteListFilterSchema.extend(csvFormatQuery) },
-    response: apiListResponseSchema(z.unknown()),
+    response: apiListResponseSchema(z.unknown(), { sync: true }),
     errors: [400, 401, 403, 413, 429],
     alternateContent: { "text/csv": { description: "Bei format=csv: CSV (UTF-8 mit BOM, Semikolon, CRLF), gleiche Filter wie die Liste ohne Paginierung, max. 20.000 Zeilen" } },
   },

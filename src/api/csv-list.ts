@@ -21,6 +21,9 @@ export async function csvListResponse(
 ): Promise<NextResponse | null> {
   const { format } = formatSchema.parse({ format: searchParams.get("format") ?? undefined });
   if (format !== "csv") return null;
+  if (searchParams.has("updatedSince") || searchParams.has("cursor")) {
+    throw new z.ZodError([{ code: "custom", path: ["format"], message: "Abgleich nur als JSON.", input: undefined }]);
+  }
   const raw: Record<string, unknown> = Object.fromEntries(searchParams);
   for (const k of DROPPED_KEYS) delete raw[k];
   const result = await exportFromApiFilter(orgId, resource, prepare(raw));

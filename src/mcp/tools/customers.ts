@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
+import { listContactsApi } from "@/domain/customer/list";
+import { syncToolShape } from "./sync-shape";
 import { customerOverview } from "@/domain/customer/overview";
 import { listAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from "@/domain/customer/addresses";
 import { listContacts, createContact, updateContact, deleteContact, setDefaultContact } from "@/domain/customer/contacts";
@@ -38,10 +40,11 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
     "list_customers",
     {
       title: "Kunden auflisten",
-      description: "Listet die Kunden (optional gefiltert nach Namensteil).",
-      inputSchema: { query: z.string().optional().describe("Namensteil zum Filtern") },
+      description:
+        "Listet die Kunden (optional gefiltert nach Namensteil). Abgleich: mit updatedSince (ISO 8601 mit Zone) kommen geänderte Kunden aufsteigend nach updatedAt; nextCursor als cursor für die Folgeseite (limit 1-200, includeArchived).",
+      inputSchema: { query: z.string().optional().describe("Namensteil zum Filtern"), ...syncToolShape, includeArchived: z.boolean().optional() },
     },
-    async ({ query }): Promise<Result> => {
+    async ({ query, updatedSince, cursor, limit, includeArchived }): Promise<Result> => {
       // Testbarkeit-/Korrektheits-Fix (Task 2): fehlte bisher orgId im where — listete
       // Kunden ueber ALLE Organisationen hinweg statt nur der aktiven (anders als jedes
       // andere Kunden-Tool in dieser Datei, die alle ueber ctx.requireOrg()+orgId scopen).
@@ -52,6 +55,21 @@ export function registerCustomerTools(server: McpServer, ctx: McpToolsContext): 
         org = await ctx.requireOrg();
       } catch {
         return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
+      if (updatedSince !== undefined || cursor !== undefined) {
+        try {
+          const result = await listContactsApi(org.id, { updatedSince, cursor, limit, includeArchived, ...(query ? { search: query } : {}) });
+          return ctx.ok(
+            JSON.stringify(
+              { total: result.total, nextCursor: result.nextCursor ?? null, rows: result.rows.map((c) => ({ id: c.id, name: c.name, city: c.city, type: c.type, vatId: c.vatId })) },
+              null,
+              2,
+            ),
+          );
+        } catch (e) {
+          if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+          return ctx.failUnknown(e);
+        }
       }
       const all = await dbInternal.customer.findMany({ where: { orgId: org.id, isArchived: false }, orderBy: { name: "asc" } });
       const filtered = query ? all.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())) : all;

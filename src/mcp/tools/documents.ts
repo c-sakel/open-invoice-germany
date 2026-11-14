@@ -8,6 +8,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
 import { formatCents } from "@/lib/money";
+import { listQuotes } from "@/domain/document/list";
+import { syncToolShape } from "./sync-shape";
 import { createBusinessDocument } from "@/domain/document/create";
 import { convertDocument, ConvertError } from "@/domain/document/convert";
 import { createDeliveryNote, DeliveryNoteError } from "@/domain/delivery-note/create";
@@ -84,10 +86,11 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
     "list_documents",
     {
       title: "Dokumente auflisten",
-      description: "Listet Angebote/Auftragsbestätigungen/Proforma (optional nach Art gefiltert).",
-      inputSchema: { kind: z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]).optional() },
+      description:
+        "Listet Angebote/Auftragsbestätigungen/Proforma (optional nach Art gefiltert). Abgleich: mit updatedSince (ISO 8601 mit Zone) kommen geänderte Belege aufsteigend nach updatedAt; nextCursor als cursor für die Folgeseite (limit 1-200).",
+      inputSchema: { kind: z.enum(["ANGEBOT", "AUFTRAGSBESTAETIGUNG", "PROFORMA"]).optional(), ...syncToolShape },
     },
-    async ({ kind }): Promise<Result> => {
+    async ({ kind, updatedSince, cursor, limit }): Promise<Result> => {
       // Testbarkeit-Fix (Task 2, wie get_status in system.ts): ctx.requireOrg() statt
       // ungescoptem dbInternal.organization.findFirst() — respektiert die in Tests gemockte
       // aktive Org, Produktivverhalten (Single-Tenant) identisch.
@@ -96,6 +99,25 @@ export function registerDocumentTools(server: McpServer, ctx: McpToolsContext): 
         org = await ctx.requireOrg();
       } catch {
         return ctx.fail("Kein Unternehmen eingerichtet. Zuerst setup_company.");
+      }
+      if (updatedSince !== undefined || cursor !== undefined) {
+        try {
+          const result = await listQuotes(org.id, { updatedSince, cursor, limit, ...(kind ? { kind } : {}) });
+          return ctx.ok(
+            JSON.stringify(
+              {
+                total: result.total,
+                nextCursor: result.nextCursor ?? null,
+                rows: result.rows.map((d) => ({ id: d.id, number: d.number, kind: d.kind, customer: d.customerName, gross: formatCents(d.grossTotalCents), status: d.effectiveStatus })),
+              },
+              null,
+              2,
+            ),
+          );
+        } catch (e) {
+          if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => i.message).join("; ")}`);
+          return ctx.failUnknown(e);
+        }
       }
       const docs = await dbInternal.quote.findMany({
         where: { orgId: org.id, ...(kind ? { kind } : {}) },

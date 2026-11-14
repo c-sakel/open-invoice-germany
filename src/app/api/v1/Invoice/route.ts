@@ -2,6 +2,7 @@ import { z } from "zod";
 import { csvListResponse } from "@/api/csv-list";
 import { csvFormatQuery } from "@/domain/export";
 import { withApi } from "@/api/auth";
+import { queryObject } from "@/api/query";
 import { apiData, apiList } from "@/api/response";
 import { apiDataResponseSchema, apiListResponseSchema, type RouteSpec } from "@/api/spec";
 import { serializeInvoice } from "@/api/serializers/invoice";
@@ -14,18 +15,12 @@ import { prisma } from "@/lib/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function parseInvoiceQuery(searchParams: URLSearchParams): Record<string, unknown> {
-  const raw: Record<string, unknown> = Object.fromEntries(searchParams);
-  if ("eInvoice" in raw) raw.eInvoice = raw.eInvoice === "true";
-  return raw;
-}
-
 export const GET = withApi(async (req, ctx) => {
   const { searchParams } = new URL(req.url);
   const csv = await csvListResponse(ctx.orgId, "invoices", searchParams, (raw) => ("eInvoice" in raw ? { ...raw, eInvoice: raw.eInvoice === "true" } : raw));
   if (csv) return csv;
   const embed = parseEmbed(searchParams);
-  const result = await listInvoices(ctx.orgId, parseInvoiceQuery(searchParams) as InvoiceListFilter);
+  const result = await listInvoices(ctx.orgId, queryObject(searchParams, ["eInvoice"]) as InvoiceListFilter);
   // Die Liste liefert die volle Form von invoiceSchema: listInvoices (schmales select) dient nur
   // Filter/Sortierung/Paginierung, die Datensaetze werden in EINEM Query nachgeladen.
   const ids = result.rows.map((r) => r.id);
@@ -52,10 +47,10 @@ export const spec = {
   list: {
     path: "/api/v1/Invoice",
     method: "GET",
-    summary: "Rechnungen auflisten (Paginierung/Filter/embed=customer,lines,payments); format=csv liefert text/csv (max. 20.000 Zeilen)",
+    summary: "Rechnungen auflisten (Paginierung/Filter/embed=customer,lines,payments); Abgleich: updatedSince + cursor; format=csv liefert text/csv (max. 20.000 Zeilen)",
     scope: "read",
     request: { query: invoiceListFilterSchema.extend(csvFormatQuery) },
-    response: apiListResponseSchema(z.unknown()),
+    response: apiListResponseSchema(z.unknown(), { sync: true }),
     errors: [400, 401, 403, 413, 429],
     alternateContent: { "text/csv": { description: "Bei format=csv: CSV (UTF-8 mit BOM, Semikolon, CRLF), gleiche Filter wie die Liste ohne Paginierung, max. 20.000 Zeilen" } },
   },

@@ -354,6 +354,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
               total: result.total,
               limit: result.limit,
               offset: result.offset,
+              ...(result.nextCursor !== undefined ? { nextCursor: result.nextCursor } : {}),
               rows: result.rows.map((r) => ({
                 id: r.id,
                 number: r.number,
