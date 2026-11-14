@@ -38,8 +38,19 @@ import { effectiveAnchorDay } from "@/domain/recurring/usage-period";
 import { logActivity } from "@/domain/activity/log";
 import { MAX_USAGE_QUANTITY_MILLI } from "@/schemas/recurring-usage";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
+import { berlinCalendarDay, berlinParts, berlinMidnight } from "@/lib/berlin-time";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Faelligkeit eines Abo-Laufs. Abos MIT Verbrauchsposition werden erst am Berliner Kalendertag
+ * NACH dem Stichtag faellig (der Stichtag gehoert vollstaendig zur endenden Periode, Phase 18f);
+ * alle anderen Abos wie bisher ab `nextRunDate <= now`.
+ */
+export function isRunDue(nextRunDate: Date, now: Date, hasUsageLines: boolean): boolean {
+  if (!hasUsageLines) return nextRunDate.getTime() <= now.getTime();
+  return berlinCalendarDay(now).getTime() > berlinCalendarDay(nextRunDate).getTime();
+}
 
 export interface RunOptions {
   now?: Date;
@@ -135,6 +146,12 @@ async function emitOne(
     if (rec.lines.length === 0) throw new RecurringError("Abo hat keine Positionen.");
 
     const periodDate = rec.nextRunDate;
+    const hasUsageLines = rec.lines.some((l) => l.billing === "USAGE");
+    if (hasUsageLines && !isRunDue(periodDate, now, true)) {
+      throw new RecurringError(
+        "Verbrauchsabo: Die Periode endet erst am Stichtag; abgerechnet wird ab dem Folgetag, damit kein Verbrauch verloren geht.",
+      );
+    }
 
     // Positionen 1:1 aus dem Abo (Phase 18c: inkl. Ueberschriften/Texte/Zwischensummen,
     // Langtext, Artikelnummer, Festbetragsrabatt, Produktbezug). Netto-/Steuerberechnung
@@ -149,7 +166,6 @@ async function emitOne(
       usageQuantityMilli += u.quantityMilli;
     }
     const lines: CreateInvoiceInput["lines"] = recurringLinesToInvoiceLines(rec.lines, usage);
-    const hasUsageLines = rec.lines.some((l) => l.billing === "USAGE");
     const anchorDay = effectiveAnchorDay(rec, hasUsageLines);
 
     if (hasUsageLines && !lines.some((l) => l.lineType === "ITEM")) {
@@ -297,7 +313,7 @@ async function emitOne(
   return created;
 }
 
-/** Manuell: erzeugt sofort die nächste fällige Rechnung eines Abos (ignoriert den Stichtag). */
+/** Manuell: erzeugt sofort die nächste fällige Rechnung eines Abos (ignoriert den Stichtag; Verbrauchsabos erst ab dem Folgetag des Stichtags). */
 export async function emitRecurringNow(recurringId: string, opts: RunOptions = {}): Promise<EmitOutcome> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
@@ -335,8 +351,18 @@ export async function runDueRecurring(
   const actor = opts.actor ?? "recurring-runner";
   const max = opts.maxPerAbo ?? 24;
 
+  // Verbrauchsabos erst am Berliner Tag nach dem Stichtag (isRunDue): nextRunDate liegt vor Mitternacht des heutigen Tages.
+  const today = berlinParts(now);
+  const todayStart = berlinMidnight(today.year, today.month, today.day);
   const due = await dbInternal.recurringInvoice.findMany({
-    where: { status: "ACTIVE", nextRunDate: { lte: now }, ...(opts.orgId ? { orgId: opts.orgId } : {}) },
+    where: {
+      status: "ACTIVE",
+      OR: [
+        { nextRunDate: { lte: now }, lines: { none: { billing: "USAGE" } } },
+        { nextRunDate: { lt: todayStart }, lines: { some: { billing: "USAGE" } } },
+      ],
+      ...(opts.orgId ? { orgId: opts.orgId } : {}),
+    },
     select: { id: true, title: true, orgId: true },
     orderBy: { nextRunDate: "asc" },
   });
@@ -350,9 +376,9 @@ export async function runDueRecurring(
       for (let i = 0; i < max; i++) {
         const cur = await dbInternal.recurringInvoice.findUnique({
           where: { id: rec.id },
-          select: { status: true, nextRunDate: true },
+          select: { status: true, nextRunDate: true, lines: { where: { billing: "USAGE" }, select: { id: true }, take: 1 } },
         });
-        if (!cur || cur.status !== "ACTIVE" || cur.nextRunDate > now) break;
+        if (!cur || cur.status !== "ACTIVE" || !isRunDue(cur.nextRunDate, now, cur.lines.length > 0)) break;
         const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
         if (isSkipped(result)) skipped.push(result.periodDate);
         else emitted.push(result);

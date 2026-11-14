@@ -22,7 +22,7 @@ import { createRecurringSchema, type CreateRecurringInput } from "@/schemas";
 const START = new Date("2187-03-31T10:00:00.000Z");
 const D = (iso: string): Date => new Date(`${iso}T10:00:00.000Z`);
 const NOW = D("2187-03-25");
-const RUN = D("2187-03-31");
+const RUN = D("2187-04-01"); // Verbrauchsabos werden erst am Tag NACH dem Stichtag (31.03.) abgerechnet
 
 let orgId: string;
 let customerId: string;
@@ -189,11 +189,11 @@ describe("Lauf mit Verbrauch", () => {
     const next = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 3_000_000, usageDate: "2187-04-05" }, { source: "UI", actor: "t", now: D("2187-04-10") });
     expect(next.usage.periodEnd.toISOString().slice(0, 10)).toBe("2187-04-30");
     expect(await code(recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1, usageDate: "2187-03-30" }, { source: "UI", actor: "t", now: D("2187-04-10") }))).toBe("PERIOD_BILLED");
-    const second = await emitted(rec.id, D("2187-04-30"));
+    const second = await emitted(rec.id, D("2187-05-01"));
     const lines = await dbInternal.invoiceLine.findMany({ where: { invoiceId: second.invoiceId }, select: { quantityMilli: true } });
     expect(lines.map((l) => l.quantityMilli)).toEqual([1000, 3_000_000]);
 
-    const third = await emitted(rec.id, D("2187-05-31"));
+    const third = await emitted(rec.id, D("2187-06-01"));
     const lines3 = await dbInternal.invoiceLine.findMany({ where: { invoiceId: third.invoiceId }, select: { description: true } });
     expect(lines3.map((l) => l.description)).toEqual(["Grundgebühr"]);
   });
@@ -232,7 +232,7 @@ describe("Lauf mit Verbrauch", () => {
     await dbInternal.invoice.delete({ where: { id: d1.invoiceId } });
     const freed = await dbInternal.recurringUsage.findMany({ where: { recurringInvoiceId: draft.rec.id }, select: { invoiceId: true } });
     expect(freed.map((f) => f.invoiceId)).toEqual([null]);
-    const d2 = await emitted(draft.rec.id, D("2187-04-30"));
+    const d2 = await emitted(draft.rec.id, D("2187-05-01"));
     const l2 = await dbInternal.invoiceLine.findMany({ where: { invoiceId: d2.invoiceId }, orderBy: { position: "asc" }, select: { quantityMilli: true, servicePeriodStart: true } });
     expect(l2[1]?.quantityMilli).toBe(5_000_000);
     expect(l2[1]?.servicePeriodStart?.toISOString().slice(0, 10)).toBe("2187-02-28");
@@ -250,7 +250,7 @@ describe("Fix-Welle 18f-1", () => {
   it("Abo ohne anchorDay mit Start 31.01.: Perioden entsprechen den abgerechneten Stichtagen (PERIOD_BILLED am 31.03.)", async () => {
     const { rec, usageLineId } = await makeAbo({ startDate: D("2187-01-31") });
     const seen: string[] = [];
-    for (const now of ["2187-01-31", "2187-02-28", "2187-03-31"]) {
+    for (const now of ["2187-02-01", "2187-03-01", "2187-04-01"]) {
       await emitted(rec.id, D(now));
       const r = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true } });
       seen.push(r.nextRunDate.toISOString().slice(0, 10));
@@ -374,5 +374,47 @@ describe("Abo bearbeiten, Laufrate", () => {
     for (const f of readdirSync(dir)) {
       expect(readFileSync(join(dir, f), "utf8"), f).not.toMatch(/\bprisma\.recurringUsage/);
     }
+  });
+});
+
+describe("Fix-Welle 18f-3: Stichtag gehoert zur endenden Periode", () => {
+  it("Verbrauch am Stichtag 23:30 Berlin wird abgerechnet; Lauf am Stichtag rechnet nicht ab, am Folgetag schon", async () => {
+    const { rec, usageLineId } = await makeAbo();
+    // 31.03.2187 23:30 Berlin (MESZ) = 21:30 UTC — noch Stichtag
+    const lateOnStichtag = new Date("2187-03-31T21:30:00.000Z");
+    const u = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 7_000_000, usageDate: "2187-03-31" }, { source: "API", actor: "t", now: lateOnStichtag });
+    expect(u.usage.periodEnd.toISOString().slice(0, 10)).toBe("2187-03-31");
+
+    const before = await dbInternal.invoice.count({ where: { orgId, recurringInvoiceId: rec.id } });
+    const sameDay = await runDueRecurring({ now: lateOnStichtag, orgId });
+    expect(sameDay.find((s) => s.recurringId === rec.id)).toBeUndefined();
+    expect(await dbInternal.invoice.count({ where: { orgId, recurringInvoiceId: rec.id } })).toBe(before);
+    expect((await listUsage(orgId, rec.id, {})).items.find((i) => i.id === u.usage.id)?.status).toBe("open");
+
+    const nextDay = await runDueRecurring({ now: new Date("2187-03-31T22:30:00.000Z"), orgId });
+    const summary = nextDay.find((s) => s.recurringId === rec.id);
+    expect(summary?.error).toBeUndefined();
+    expect(summary?.emitted).toHaveLength(1);
+    const lines = await dbInternal.invoiceLine.findMany({ where: { invoiceId: summary?.emitted[0]?.invoiceId }, orderBy: { position: "asc" }, select: { quantityMilli: true } });
+    expect(lines[1]?.quantityMilli).toBe(7_000_000);
+    // PERIOD_BILLED erst nach dem Lauf
+    expect(await code(recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1, usageDate: "2187-03-31" }, { source: "API", actor: "t", now: new Date("2187-04-01T09:00:00.000Z") }))).toBe("PERIOD_BILLED");
+  });
+
+  it("Jetzt erzeugen vor Periodenende bei Verbrauchsabo -> Fehler, Restperiode bleibt erfassbar", async () => {
+    const { rec, usageLineId } = await makeAbo();
+    await expect(emitRecurringNow(rec.id, { now: NOW })).rejects.toBeInstanceOf(RecurringError);
+    await expect(emitRecurringNow(rec.id, { now: D("2187-03-31") })).rejects.toThrow(/Stichtag/);
+    const ok = await recordUsage(orgId, rec.id, { recurringLineId: usageLineId, quantityMilli: 1000, usageDate: "2187-03-31" }, { source: "UI", actor: "t", now: D("2187-03-31") });
+    expect(ok.usage.status).toBe("open");
+    const after = await dbInternal.recurringInvoice.findUniqueOrThrow({ where: { id: rec.id }, select: { nextRunDate: true, issuedCount: true } });
+    expect(after.issuedCount).toBe(0);
+    expect(after.nextRunDate.getTime()).toBe(rec.nextRunDate.getTime());
+  });
+
+  it("FIXED-Abo (ohne Verbrauchsposition) bleibt am Stichtag faellig wie bisher", async () => {
+    const rec = await createRecurring(orgId, input({ title: "Fest am Stichtag", lines: [fixedLine] }));
+    const batch = await runDueRecurring({ now: new Date("2187-03-31T13:00:00.000Z"), orgId });
+    expect(batch.find((s) => s.recurringId === rec.id)?.emitted).toHaveLength(1);
   });
 });
