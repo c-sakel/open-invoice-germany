@@ -15,6 +15,7 @@ import { normalizeLines } from "@/domain/document/lines";
 import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { resolveBuyerSnapshot } from "@/domain/document/snapshot-input";
 import { NotFoundError } from "@/domain/errors";
+import { normalizeCardFields } from "./direct-debit";
 import { assertAllowedTaxRates, ratesOfLines } from "@/domain/settings/tax-rates";
 import { updateInvoiceSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue } from "@/schemas";
 import type { Prisma } from "@/generated/prisma/client";
@@ -66,9 +67,16 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
       const address = await tx.customerAddress.findFirst({ where: { id: input.shippingAddressId, orgId, customerId: effectiveCustomerIdForContacts } });
       if (!address) throw new NotFoundError("Lieferadresse nicht gefunden.");
     }
+    // Phase 18e: wirksame Zahlungsmethode (neu gesetzt, sonst gespeichert) fuer die Kartenfelder.
+    let effectiveUntdidCode: string | null = null;
+    const effectiveMethodId = input.paymentMethodId !== undefined ? input.paymentMethodId : invoice.paymentMethodId;
     if (input.paymentMethodId) {
-      const method = await tx.paymentMethod.findFirst({ where: { id: input.paymentMethodId, orgId } });
+      const method = await tx.paymentMethod.findFirst({ where: { id: input.paymentMethodId, orgId }, select: { untdidCode: true } });
       if (!method) throw new NotFoundError("Zahlungsmethode nicht gefunden.");
+      effectiveUntdidCode = method.untdidCode;
+    } else if (effectiveMethodId) {
+      const method = await tx.paymentMethod.findFirst({ where: { id: effectiveMethodId, orgId }, select: { untdidCode: true } });
+      effectiveUntdidCode = method?.untdidCode ?? null;
     }
 
     const changedFields: string[] = [];
@@ -141,6 +149,20 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
     if (input.skonto2Permille !== undefined) { data.skonto2Permille = input.skonto2Permille; changedFields.push("skonto2Permille"); }
     if (input.skonto2Days !== undefined) { data.skonto2Days = input.skonto2Days; changedFields.push("skonto2Days"); }
     if (input.paymentMethodId !== undefined) { data.paymentMethodId = input.paymentMethodId; changedFields.push("paymentMethodId"); }
+
+    // Phase 18e: Kartenfelder (BG-18) nur bei Kartenmethode; Methodenwechsel auf Nicht-Karte
+    // leert sie. Nur im Entwurf schreibbar (Statuspruefung oben, Guard in src/lib/db.ts).
+    const cardInputGiven = input.cardPanTruncated !== undefined || input.cardNetwork !== undefined || input.cardHolderName !== undefined;
+    if (cardInputGiven || input.paymentMethodId !== undefined) {
+      const merged = normalizeCardFields(effectiveUntdidCode, {
+        cardPanTruncated: input.cardPanTruncated !== undefined ? input.cardPanTruncated : invoice.cardPanTruncated,
+        cardNetwork: input.cardNetwork !== undefined ? input.cardNetwork : invoice.cardNetwork,
+        cardHolderName: input.cardHolderName !== undefined ? input.cardHolderName : invoice.cardHolderName,
+      });
+      for (const key of ["cardPanTruncated", "cardNetwork", "cardHolderName"] as const) {
+        if (merged[key] !== invoice[key]) { data[key] = merged[key]; changedFields.push(key); }
+      }
+    }
 
     const adjustmentFieldChanged =
       input.documentDiscountPermille !== undefined ||
