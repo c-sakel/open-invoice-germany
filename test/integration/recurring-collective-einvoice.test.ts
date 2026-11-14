@@ -115,3 +115,69 @@ describe("Sammelrechnung — E-Rechnung und PDF", () => {
     expect(count(cii, /<ram:IncludedSupplyChainTradeLineItem>/g)).toBe(3);
   });
 });
+
+describe("Sammelrechnung — Zeitraum und Hinweise bei unterschiedlichen Rhythmen", () => {
+  let mixed: EmittedInvoice;
+  let monthlyId: string;
+  let quarterlyId: string;
+
+  beforeAll(async () => {
+    const c = await dbInternal.customer.create({
+      data: { orgId, name: "Rhythmuskunde", addressLine1: "Kundenweg 9", postalCode: "99908", city: "Teststadt", countryCode: "DE", type: "BUSINESS" },
+      select: { id: true },
+    });
+    const common = { customerId: c.id, startDate: START, collectiveBilling: true, autoFinalize: true, showPeriodText: true };
+    const monthly = await createRecurring(
+      orgId,
+      createRecurringSchema.parse({
+        ...common, title: "INTERNTITEL-MONAT", invoiceHeading: "Wartung", notes: "Bitte Zugang melden",
+        lines: [{ lineType: "ITEM", description: "Wartung monatlich", unitNetPriceCents: 1000, ...base }],
+      }),
+    );
+    const quarterly = await createRecurring(
+      orgId,
+      createRecurringSchema.parse({
+        ...common, title: "INTERNTITEL-QUARTAL", invoiceHeading: "Lizenz", interval: "QUARTERLY", notes: "Lizenzschluessel per Post",
+        lines: [{ lineType: "ITEM", description: "Lizenz Quartal", unitNetPriceCents: 3000, ...base }],
+      }),
+    );
+    const noNote = await createRecurring(
+      orgId,
+      createRecurringSchema.parse({
+        ...common, title: "INTERNTITEL-OHNE", invoiceHeading: "Support",
+        lines: [{ lineType: "ITEM", description: "Support", unitNetPriceCents: 500, ...base }],
+      }),
+    );
+    monthlyId = monthly.id;
+    quarterlyId = quarterly.id;
+    const sums = await runDueRecurring({ now: new Date(monthly.nextRunDate.getTime() + 86_400_000), orgId });
+    const found = sums.filter((s) => [monthly.id, quarterly.id, noNote.id].includes(s.recurringId)).flatMap((s) => s.emitted);
+    expect(found).toHaveLength(1);
+    mixed = found[0];
+    expect(mixed.collectiveRecurringIds).toHaveLength(3);
+  }, 120_000);
+
+  it("Kopfzeitraum (BG-14, BT-73/BT-74) = frueheste Start bis spaeteste Ende ueber alle Positionen", async () => {
+    const inv = await dbInternal.invoice.findFirstOrThrow({ where: { id: mixed.invoiceId, orgId }, select: { deliveryStart: true, deliveryEnd: true, lines: { where: { lineType: "ITEM" }, select: { description: true, servicePeriodStart: true, servicePeriodEnd: true } } } });
+    // Die abgelaufene Periode wird abgerechnet: Stichtag minus ein Rhythmus bis zum Stichtag (je Abo).
+    const byDesc = new Map(inv.lines.map((l) => [l.description, l]));
+    expect(byDesc.get("Wartung monatlich")!.servicePeriodStart!.toISOString().slice(0, 10)).toBe("2208-02-01");
+    expect(byDesc.get("Lizenz Quartal")!.servicePeriodStart!.toISOString().slice(0, 10)).toBe("2207-12-01");
+    for (const l of inv.lines) expect(l.servicePeriodEnd!.toISOString().slice(0, 10)).toBe("2208-03-01");
+    expect(inv.deliveryStart!.toISOString().slice(0, 10)).toBe("2207-12-01");
+    expect(inv.deliveryEnd!.toISOString().slice(0, 10)).toBe("2208-03-01");
+    const data = (await loadEInvoiceData(mixed.invoiceId, orgId))?.data;
+    const xml = buildXRechnungUBL(data!);
+    const dates = [...xml.matchAll(/<cbc:(?:Start|End)Date>([^<]*)/g)].map((m) => m[1]);
+    expect(dates.slice(0, 2)).toEqual(["2207-12-01", "2208-03-01"]);
+    expect(validateXRechnung(data!, xml).errors).toEqual([]);
+  });
+
+  it("Abo-Hinweise je Abo mit Blockueberschrift voran, ohne Hinweis keine Zeile, nie der interne Titel", async () => {
+    const inv = await dbInternal.invoice.findFirstOrThrow({ where: { id: mixed.invoiceId, orgId }, select: { notes: true } });
+    const parts = (inv.notes ?? "").split("\n\n").sort();
+    expect(parts).toEqual(["Lizenz: Lizenzschluessel per Post", "Wartung: Bitte Zugang melden"]);
+    expect(inv.notes).not.toContain("INTERNTITEL");
+    expect([monthlyId, quarterlyId].length).toBe(2);
+  });
+});

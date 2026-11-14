@@ -242,7 +242,15 @@ export async function emitCollective(
     const lang = resolveDocLanguage(first.language);
     const { lines, origins } = assembleCollectiveLines(collectiveBlocks, lang);
     const period = collectivePeriod(lines);
-    const notes = blocks.map((b) => b.rec.notes?.trim() ?? "").filter((n) => n !== "").join("\n\n");
+    // Abo-Hinweise sind oeffentlich (stehen auf der Rechnung); je Abo mit der Blockueberschrift voran, nie mit dem internen Abo-Titel.
+    const notes = blocks
+      .map((b) => {
+        const note = b.rec.notes?.trim() ?? "";
+        const heading = b.rec.invoiceHeading?.trim() ?? "";
+        return note !== "" && heading !== "" ? `${heading}: ${note}` : note;
+      })
+      .filter((n) => n !== "")
+      .join("\n\n");
     const input: CreateInvoiceInput = {
       customerId: first.customerId,
       language: lang,
