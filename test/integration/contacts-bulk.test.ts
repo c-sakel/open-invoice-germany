@@ -145,6 +145,14 @@ describe("createContactsBulk — Domain", () => {
     expect(logs[0]!.dataJson).not.toContain("Bulk Kunde");
   });
 
+  it("abgelehnte Sammelanlage (Rollback) schreibt keinen Activity-Eintrag, erfolgreiche genau einen", async () => {
+    const org = await makeOrg("Bulk Rollback GmbH", "D18D6B-");
+    await expect(createContactsBulk(org, { contacts: [base(1), base(2, { email: "kein-at" })] }, CTX)).rejects.toBeInstanceOf(ContactsBulkRejectedError);
+    expect(await dbInternal.activityLog.count({ where: { orgId: org, type: "CONTACTS_BULK_CREATED" } })).toBe(0);
+    await createContactsBulk(org, { contacts: [base(3)] }, CTX);
+    expect(await dbInternal.activityLog.count({ where: { orgId: org, type: "CONTACTS_BULK_CREATED" } })).toBe(1);
+  });
+
   it("Rate-Limit: 11. Aufruf in einer Minute -> RateLimitError", async () => {
     const org = await makeOrg("Bulk Limit GmbH", "D18D6R-");
     for (let i = 0; i < 10; i++) await createContactsBulk(org, { contacts: [base(i)] }, CTX);

@@ -66,16 +66,17 @@ export async function createContactsBulk(orgId: string, raw: unknown, ctx: { act
     if (made.collisions.length > 0) {
       throw new ContactsBulkRejectedError(made.collisions.map((index) => ({ index, field: "customerNumber", message: COLLISION_MESSAGE })));
     }
+    // Aktivitaet in derselben Transaktion (wie beim CSV-Import): Rollback verwirft auch den Eintrag.
+    await logActivity(tx, {
+      orgId,
+      entityType: "IMPORT",
+      entityId: randomUUID(),
+      type: "CONTACTS_BULK_CREATED",
+      actor: ctx.actor,
+      data: { created: made.customers.length, source: ctx.source },
+    });
     return made.customers;
   }, TX_OPTIONS);
 
-  await logActivity(dbInternal, {
-    orgId,
-    entityType: "IMPORT",
-    entityId: randomUUID(),
-    type: "CONTACTS_BULK_CREATED",
-    actor: ctx.actor,
-    data: { created: customers.length, source: ctx.source },
-  });
   return customers;
 }
