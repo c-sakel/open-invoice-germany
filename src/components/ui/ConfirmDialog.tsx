@@ -33,6 +33,10 @@ type ConfirmDialogProps = {
   cancelLabel?: string;
   tone?: "default" | "danger";
   busy?: boolean;
+  /** Bestaetigen-Knopf deaktivieren, ohne den Busy-Zustand (Label bleibt unveraendert). */
+  confirmDisabled?: boolean;
+  /** Nach jedem Schliessen (Abbrechen, Escape, close()) — das native close-Ereignis. */
+  onClose?: () => void;
   /** "md" = breiterer Dialog (z. B. mit Formularfeldern). */
   size?: "sm" | "md";
 } & ({ onConfirm: () => void; confirmHref?: never } | { confirmHref: string; onConfirm?: never });
@@ -43,7 +47,7 @@ const TONE_CLS: Record<"default" | "danger", string> = {
 };
 
 export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>(function ConfirmDialog(
-  { title, message, confirmLabel, cancelLabel = "Abbrechen", tone = "default", busy, size = "sm", onConfirm, confirmHref },
+  { title, message, confirmLabel, cancelLabel = "Abbrechen", tone = "default", busy, confirmDisabled, onClose, size = "sm", onConfirm, confirmHref },
   ref,
 ) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -75,6 +79,7 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
       aria-label={title ? undefined : "Bestätigung"}
       aria-describedby={messageId}
       data-size={size}
+      onClose={onClose}
       className="w-full max-w-sm rounded-lg border border-rule p-0 backdrop:bg-ink/40 data-[size=md]:max-w-md"
     >
       <div className="space-y-3 p-5">
@@ -97,7 +102,7 @@ export const ConfirmDialog = forwardRef<ConfirmDialogHandle, ConfirmDialogProps>
           ) : (
             <button
               type="button"
-              disabled={busy === true}
+              disabled={busy === true || confirmDisabled === true}
               className={confirmCls}
               onClick={() => {
                 if (!busyAware) dialogRef.current?.close();

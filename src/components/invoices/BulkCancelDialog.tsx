@@ -25,7 +25,12 @@ export function BulkCancelDialog({ ids, onDone }: { ids: string[]; onDone: () =>
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkCancelResult | null>(null);
 
+  // Offen-Zustand fuer den Fall, dass der Dialog waehrend der laufenden Anfrage geschlossen wird.
+  const openRef = useRef(false);
+
   async function open() {
+    openRef.current = true;
+    setReason("");
     setData(null);
     setLoadError(null);
     setSubmitError(null);
@@ -63,7 +68,11 @@ export function BulkCancelDialog({ ids, onDone }: { ids: string[]; onDone: () =>
       });
       const j = (await res.json().catch(() => ({}))) as Partial<BulkCancelResult> & { error?: string };
       if (!res.ok) setSubmitError(j.error ?? "Sammel-Storno fehlgeschlagen.");
-      else setResult({ batchId: j.batchId ?? "", ok: j.ok ?? [], failed: j.failed ?? [] });
+      else {
+        setResult({ batchId: j.batchId ?? "", ok: j.ok ?? [], failed: j.failed ?? [] });
+        // Dialog wurde waehrend der Anfrage geschlossen: Liste trotzdem aktualisieren, Auswahl leeren.
+        if (!openRef.current) finish();
+      }
     } catch {
       setSubmitError("Sammel-Storno fehlgeschlagen.");
     } finally {
@@ -71,10 +80,15 @@ export function BulkCancelDialog({ ids, onDone }: { ids: string[]; onDone: () =>
     }
   }
 
-  function close() {
-    ref.current?.close();
+  function finish() {
     onDone();
     router.refresh();
+  }
+
+  // Jedes Schliessen (Esc, Abbrechen, "Schliessen") bei vorhandenem Ergebnis verhaelt sich gleich.
+  function handleClosed() {
+    openRef.current = false;
+    if (result) finish();
   }
 
   const n = cancellable.length;
@@ -89,8 +103,10 @@ export function BulkCancelDialog({ ids, onDone }: { ids: string[]; onDone: () =>
         tone="danger"
         title={result ? "Ergebnis des Sammel-Stornos" : "Ausgewählte Rechnungen stornieren?"}
         confirmLabel={result ? "Schließen" : `${n} ${n === 1 ? "Rechnung" : "Rechnungen"} stornieren`}
-        busy={result ? false : busy || loading || !!loadError || !reasonOk || n === 0}
-        onConfirm={() => (result ? close() : void confirm())}
+        busy={busy}
+        confirmDisabled={!result && (loading || !!loadError || !reasonOk || n === 0)}
+        onClose={handleClosed}
+        onConfirm={() => (result ? ref.current?.close() : void confirm())}
         message={
           result ? (
             <div className="space-y-3">
