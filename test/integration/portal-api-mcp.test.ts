@@ -65,6 +65,8 @@ const ctx1 = (id: string) => ({ params: Promise.resolve({ id }) });
 const LINK = (id: string) => `${BASE}/api/v1/Contact/${id}/portal-link`;
 
 beforeAll(async () => {
+  // Portal-Links speichern das Token zusaetzlich verschluesselt (AUTH_SECRET); die CI setzt keins.
+  process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? "test-auth-secret-mindestens-16-zeichen";
   const org = await dbInternal.organization.create({
     data: { legalName: "Portal API GmbH", addressLine1: "Teststr. 1", postalCode: "12345", city: "Berlin" },
   });

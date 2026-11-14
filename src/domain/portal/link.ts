@@ -4,7 +4,7 @@
  * im ActivityLog. Hoechstens ein aktiver Link je Kunde (Zeilensperre auf den Kunden).
  * `resolvePortalToken` liefert fuer jeden Ungueltigkeitsfall einheitlich null.
  */
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
 import { logActivity } from "@/domain/activity/log";
