@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveUsagePeriod, effectiveAnchorDay, MAX_USAGE_PERIOD_STEPS } from "@/domain/recurring/usage-period";
+import { advanceDate, periodRange } from "@/lib/recurring";
 import { UsageError } from "@/domain/recurring/usage-error";
 
 const noon = (iso: string): Date => {
@@ -88,5 +89,51 @@ describe("effectiveAnchorDay / Monatsende", () => {
     const p = resolveUsagePeriod(rec, noon("2187-07-01"));
     expect([key(p.periodStart), key(p.periodEnd)]).toEqual(["2187-06-30", "2187-09-30"]);
     expect(code(() => resolveUsagePeriod(rec, noon("2187-03-31")))).toBe("PERIOD_BILLED");
+  });
+});
+
+describe("Periodenanker ueber mehrere Laeufe (Start am Monatsende)", () => {
+  const cases: { start: string; stichtage: string[] }[] = [
+    { start: "2187-01-31", stichtage: ["2187-01-31", "2187-02-28", "2187-03-31", "2187-04-30", "2187-05-31"] },
+    { start: "2187-01-30", stichtage: ["2187-01-30", "2187-02-28", "2187-03-30", "2187-04-30", "2187-05-30"] },
+    { start: "2187-01-29", stichtage: ["2187-01-29", "2187-02-28", "2187-03-29", "2187-04-29", "2187-05-29"] },
+    { start: "2188-01-31", stichtage: ["2188-01-31", "2188-02-29", "2188-03-31", "2188-04-30", "2188-05-31"] },
+    { start: "2188-01-30", stichtage: ["2188-01-30", "2188-02-29", "2188-03-30", "2188-04-30", "2188-05-30"] },
+    { start: "2188-01-29", stichtage: ["2188-01-29", "2188-02-29", "2188-03-29", "2188-04-29", "2188-05-29"] },
+  ];
+  for (const c of cases) {
+    it(`Start ${c.start}: Stichtage ${c.stichtage.slice(1, 4).join(" -> ")}, Perioden luecken- und ueberlappungsfrei, BG-14/BG-26 = Periodengrenzen`, () => {
+      const startDate = noon(c.start);
+      const anchor = effectiveAnchorDay({ anchorDay: null, startDate }, true);
+      expect(anchor).toBe(startDate.getDate());
+      // Lauf: nextRunDate wird je Lauf vom Stichtag aus fortgeschrieben (wie run.ts).
+      const days: Date[] = [startDate];
+      for (let i = 1; i < c.stichtage.length; i++) days.push(advanceDate(days[i - 1]!, "MONTHLY", 1, anchor));
+      expect(days.map(key)).toEqual(c.stichtage);
+      let prevEnd: Date | null = null;
+      for (const stichtag of days) {
+        const { start, end } = periodRange(stichtag, "MONTHLY", 1, anchor);
+        expect(key(end)).toBe(key(stichtag));
+        // BG-14 = Periodenbeginn, BG-26 = Periodenende je Position: lueckenlos an die Vorperiode (Beginn = Vor-Stichtag)
+        if (prevEnd) expect(key(start)).toBe(key(prevEnd));
+        expect(start.getTime()).toBeLessThan(end.getTime());
+        prevEnd = end;
+      }
+      // Verbrauchstage um jeden Stichtag fallen in genau eine Periode; der Stichtag gehoert zur endenden.
+      for (let i = 1; i < days.length; i++) {
+        const rec = { nextRunDate: days[i]!, interval: "MONTHLY", intervalCount: 1, anchorDay: anchor, endDate: null };
+        const inside = resolveUsagePeriod(rec, days[i]!);
+        expect([key(inside.periodStart), key(inside.periodEnd)]).toEqual([key(days[i - 1]!), key(days[i]!)]);
+        const next = resolveUsagePeriod(rec, advanceDate(days[i]!, "DAY", 1));
+        expect(key(next.periodStart)).toBe(key(days[i]!));
+        expect(key(next.periodEnd)).toBe(key(advanceDate(days[i]!, "MONTHLY", 1, anchor)));
+      }
+    });
+  }
+  it("FIXED-Abo ohne Anker (Regression): bisheriges Abdriften bleibt unveraendert", () => {
+    expect(effectiveAnchorDay({ anchorDay: null, startDate: noon("2187-01-31") }, false)).toBeNull();
+    const feb = advanceDate(noon("2187-01-31"), "MONTHLY", 1, null);
+    expect(key(feb)).toBe("2187-02-28");
+    expect(key(advanceDate(feb, "MONTHLY", 1, null))).toBe("2187-03-28");
   });
 });
