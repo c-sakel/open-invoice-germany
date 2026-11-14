@@ -68,3 +68,12 @@ export const bankListQuerySchema = z.object({
   cursor: z.string().max(200).optional(),
 });
 export type BankListQuery = z.infer<typeof bankListQuerySchema>;
+
+const bankIdSchema = z.string().cuid();
+
+/** Routen-Id eines Bankumsatzes: kein gueltiges Id-Format ist ein Validierungsfehler (400), keine Datenbankabfrage. */
+export function parseBankId(id: string): string {
+  const parsed = bankIdSchema.safeParse(id);
+  if (!parsed.success) throw new z.ZodError([{ code: "custom", path: ["id"], message: "Ungueltige Id." }]);
+  return parsed.data;
+}

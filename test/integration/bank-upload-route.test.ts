@@ -93,6 +93,13 @@ describe("Upload-Route /api/bank-statements", () => {
     expect(d.importId).toBeTruthy();
   });
 
+  it("ungueltiger mode -> 400, fehlender mode = Vorschau", async () => {
+    expect((await POST(await multipart({ file: file(xml("M1")), mode: "import" }))).status).toBe(400);
+    const res = await POST(await multipart({ file: file(xml("M2")) }));
+    expect(res.status).toBe(200);
+    expect((await body(res)).result?.status).toBe("preview");
+  });
+
   it("ZIP -> 422 mit Hinweis entpacken; keine Datei -> 400", async () => {
     const zip = { name: "auszug.zip", bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]) };
     const res = await POST(await multipart({ file: zip, mode: "preview" }));

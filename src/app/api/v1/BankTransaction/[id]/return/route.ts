@@ -7,13 +7,13 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { bankReturnResultSchema, serializeBankReturnResult } from "@/api/serializers/bank";
 import { confirmBankReturn } from "@/domain/bank/return";
-import { bankReturnInputSchema } from "@/schemas/bank";
+import { bankReturnInputSchema, parseBankId } from "@/schemas/bank";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) =>
-  apiData(serializeBankReturnResult(await confirmBankReturn(ctx.orgId, ctx.params.id, ctx.body, { actor: ctx.actor, createdBy: "api" }))),
+  apiData(serializeBankReturnResult(await confirmBankReturn(ctx.orgId, parseBankId(ctx.params.id), ctx.body, { actor: ctx.actor, createdBy: "api" }))),
 { scope: "write" });
 
 export const spec = {

@@ -184,3 +184,24 @@ export async function returnHintsForPage(orgId: string, transactionIds: string[]
   for (const r of rows) out.set(r.id, returnHints(r, paid));
   return out;
 }
+
+export interface OpenInvoiceHit {
+  id: string;
+  number: string;
+  customerName: string;
+  currency: string;
+  openCents: number;
+}
+
+const SEARCH_MAX = 20;
+
+/** Manuelle Auswahl: offene Rechnungen der Organisation nach Belegnummer oder Kundenname (ohne Gross-/Kleinschreibung), hoechstens 20. */
+export async function searchOpenInvoices(orgId: string, query: string): Promise<OpenInvoiceHit[]> {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0) return [];
+  const ctx = await loadMatchContext(orgId);
+  return ctx.invoices
+    .filter((i) => i.number.toLowerCase().includes(q) || i.customerName.toLowerCase().includes(q))
+    .slice(0, SEARCH_MAX)
+    .map((i) => ({ id: i.id, number: i.number, customerName: i.customerName, currency: i.currency, openCents: i.openCents }));
+}

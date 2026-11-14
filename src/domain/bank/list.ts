@@ -132,3 +132,52 @@ export async function getBankTransaction(orgId: string, id: string): Promise<{ t
   });
   return { transaction, matches };
 }
+
+export const BANK_TABS = ["OPEN", "PARTIAL", "MATCHED", "IGNORED", "RETURN"] as const;
+export type BankTab = (typeof BANK_TABS)[number];
+export const BANK_PAGE_SIZE = 50;
+
+/** Der Reiter „Rueckgaben" fasst offene und erledigte Rueckbuchungen zusammen. */
+const TAB_STATUSES: Record<BankTab, string[]> = {
+  OPEN: ["OPEN"],
+  PARTIAL: ["PARTIAL"],
+  MATCHED: ["MATCHED"],
+  IGNORED: ["IGNORED"],
+  RETURN: ["RETURN", "RETURN_DONE"],
+};
+
+export interface BankPage {
+  rows: BankTransactionRow[];
+  matches: Array<BankMatchRow & { transactionId: string }>;
+  total: number;
+  page: number;
+  pageCount: number;
+  counts: Record<BankTab, number>;
+}
+
+/** Eine Seite Umsaetze fuer die Oberflaeche (50 je Seite) samt Zuordnungen und Zaehlern je Reiter. */
+export async function listBankPage(orgId: string, tab: BankTab, page: number): Promise<BankPage> {
+  const grouped = await dbInternal.bankTransaction.groupBy({ by: ["status"], where: { orgId }, _count: { _all: true } });
+  const byStatus = new Map(grouped.map((g) => [g.status, g._count._all]));
+  const counts = Object.fromEntries(BANK_TABS.map((t) => [t, TAB_STATUSES[t].reduce((s, st) => s + (byStatus.get(st) ?? 0), 0)])) as Record<BankTab, number>;
+  const total = counts[tab];
+  const pageCount = Math.max(1, Math.ceil(total / BANK_PAGE_SIZE));
+  const current = Math.min(Math.max(1, Math.trunc(page) || 1), pageCount);
+  const rows = await dbInternal.bankTransaction.findMany({
+    where: { orgId, status: { in: TAB_STATUSES[tab] } },
+    select: BANK_TRANSACTION_SELECT,
+    orderBy: [{ bookingDate: "desc" }, { id: "desc" }],
+    take: BANK_PAGE_SIZE,
+    skip: (current - 1) * BANK_PAGE_SIZE,
+  });
+  const matches =
+    rows.length === 0
+      ? []
+      : await dbInternal.bankMatch.findMany({
+          where: { orgId, transactionId: { in: rows.map((r) => r.id) } },
+          select: { ...BANK_MATCH_SELECT, transactionId: true },
+          orderBy: [{ confirmedAt: "asc" }, { id: "asc" }],
+          take: 2000,
+        });
+  return { rows, matches, total, page: current, pageCount, counts };
+}

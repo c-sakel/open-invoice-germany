@@ -7,13 +7,13 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { bankConfirmResultSchema, serializeConfirmResult } from "@/api/serializers/bank";
 import { confirmBankMatch } from "@/domain/bank/confirm";
-import { bankConfirmInputSchema } from "@/schemas/bank";
+import { bankConfirmInputSchema, parseBankId } from "@/schemas/bank";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) =>
-  apiData(serializeConfirmResult(await confirmBankMatch(ctx.orgId, ctx.params.id, ctx.body, { actor: ctx.actor, createdBy: "api" }))),
+  apiData(serializeConfirmResult(await confirmBankMatch(ctx.orgId, parseBankId(ctx.params.id), ctx.body, { actor: ctx.actor, createdBy: "api" }))),
 { scope: "write" });
 
 export const spec = {

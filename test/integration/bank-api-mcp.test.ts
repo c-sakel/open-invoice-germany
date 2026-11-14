@@ -196,6 +196,10 @@ describe("REST: Umsaetze, Vorschlaege, Zuordnung", () => {
     const foreign = await json(await txGet(req(`/api/v1/BankTransaction/${txId}`, otherToken), idParams(txId)));
     const missing = await txGet(req("/api/v1/BankTransaction/clxxxxxxxxxxxxxxxxxxxxxxx", otherToken), idParams("clxxxxxxxxxxxxxxxxxxxxxxx"));
     expect(missing.status).toBe(404);
+    const badId = await txGet(req("/api/v1/BankTransaction/nicht-gueltig", readToken), idParams("nicht-gueltig"));
+    expect(badId.status).toBe(400);
+    const badIdPost = await ignorePost(post("/api/v1/BankTransaction/x%20y/ignore", writeToken, { reason: "Test" }), idParams("x y"));
+    expect(badIdPost.status).toBe(400);
     expect(foreign.error?.message).toBe((await json(missing)).error?.message);
     const foreignConfirm = await confirmPost(post(`/api/v1/BankTransaction/${txId}/confirm`, otherToken, { allocations: [{ invoiceId: inv.id, amountCents: GROSS }], expectedAllocatedCents: 0 }), idParams(txId));
     expect(foreignConfirm.status).toBe(404);

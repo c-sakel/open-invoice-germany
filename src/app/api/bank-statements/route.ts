@@ -4,6 +4,7 @@
  * kommt aus der Sitzung. Pruefreihenfolge wie beim CSV-Import: Same-Origin, Content-Type, Content-Length
  * (Pflicht, hoechstens 10 MB + 64 KB) VOR `formData()`, dann `File.size`. Es wird keine Datei gespeichert.
  */
+import { z } from "zod";
 import { getActiveOrg } from "@/lib/org";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { isSameOriginRequest } from "@/lib/http/same-origin";
@@ -39,7 +40,9 @@ export async function POST(req: Request) {
     const file = form.get("file");
     if (!(file instanceof File)) return jsonNoStore({ error: "Keine Datei übermittelt." }, { status: 400 });
     if (file.size > MAX_CAMT_BYTES) return jsonNoStore({ error: TOO_LARGE }, { status: 413 });
-    const mode = form.get("mode") === "commit" ? "commit" : "preview";
+    const parsedMode = z.enum(["preview", "commit"]).safeParse(form.get("mode") ?? "preview");
+    if (!parsedMode.success) return jsonNoStore({ error: "mode muss preview oder commit sein." }, { status: 400 });
+    const mode = parsedMode.data;
     const result = await importBankStatement(org.id, new Uint8Array(await file.arrayBuffer()), {
       actor: (await getCurrentUserId()) ?? "system",
       source: "UI",

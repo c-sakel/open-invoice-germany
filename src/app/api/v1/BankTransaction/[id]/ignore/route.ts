@@ -6,13 +6,13 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { bankViewSchema, serializeBankView } from "@/api/serializers/bank";
 import { ignoreBankTransaction } from "@/domain/bank/confirm";
-import { bankIgnoreInputSchema } from "@/schemas/bank";
+import { bankIgnoreInputSchema, parseBankId } from "@/schemas/bank";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const POST = withApi<{ id: string }>(async (_req, ctx) =>
-  apiData(serializeBankView(await ignoreBankTransaction(ctx.orgId, ctx.params.id, ctx.body, { actor: ctx.actor, createdBy: "api" }))),
+  apiData(serializeBankView(await ignoreBankTransaction(ctx.orgId, parseBankId(ctx.params.id), ctx.body, { actor: ctx.actor, createdBy: "api" }))),
 { scope: "write" });
 
 export const spec = {

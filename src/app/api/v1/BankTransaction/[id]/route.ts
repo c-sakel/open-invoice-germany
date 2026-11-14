@@ -6,12 +6,13 @@ import { apiData } from "@/api/response";
 import { apiDataResponseSchema, type RouteSpec } from "@/api/spec";
 import { bankTransactionDetailSchema, serializeBankMatch, serializeBankTransaction } from "@/api/serializers/bank";
 import { getBankTransaction } from "@/domain/bank/list";
+import { parseBankId } from "@/schemas/bank";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi<{ id: string }>(async (_req, ctx) => {
-  const r = await getBankTransaction(ctx.orgId, ctx.params.id);
+  const r = await getBankTransaction(ctx.orgId, parseBankId(ctx.params.id));
   return apiData({ transaction: serializeBankTransaction(r.transaction), matches: r.matches.map(serializeBankMatch) });
 }, { scope: "read" });
 
