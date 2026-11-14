@@ -88,6 +88,14 @@ export class PayloadTooLargeError extends Error {
   }
 }
 
+/** Falscher Content-Type bei Routen, die einen JSON-Body selbst lesen -> 415. */
+export class UnsupportedMediaTypeError extends Error {
+  constructor(message = "Content-Type muss application/json sein.") {
+    super(message);
+    this.name = "UnsupportedMediaTypeError";
+  }
+}
+
 export type ApiErrorCode =
   | "VALIDATION"
   | "UNAUTHORIZED"
@@ -95,6 +103,7 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "PAYLOAD_TOO_LARGE"
+  | "UNSUPPORTED_MEDIA_TYPE"
   | "UNPROCESSABLE"
   | "RATE_LIMITED"
   | "IDEMPOTENCY_MISMATCH"
@@ -132,6 +141,8 @@ function statusToCode(status: number): ApiErrorCode | null {
       return "CONFLICT";
     case 413:
       return "PAYLOAD_TOO_LARGE";
+    case 415:
+      return "UNSUPPORTED_MEDIA_TYPE";
     case 422:
       return "UNPROCESSABLE";
     case 429:
@@ -172,6 +183,9 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof PayloadTooLargeError) {
     return { status: 413, body: { error: { code: "PAYLOAD_TOO_LARGE", message: e.message } } };
+  }
+  if (e instanceof UnsupportedMediaTypeError) {
+    return { status: 415, body: { error: { code: "UNSUPPORTED_MEDIA_TYPE", message: e.message } } };
   }
   // Fix-Runde 1 (Koordinator-Ruling c, Task 3): muss VOR dem generischen NotFoundError-
   // Zweig stehen (unabhaengige Klasse, keine Ueberschneidung, aber Reihenfolge analog den

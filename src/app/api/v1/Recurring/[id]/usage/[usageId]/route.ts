@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { withApi } from "@/api/auth";
 import { apiData } from "@/api/response";
-import { PayloadTooLargeError } from "@/api/errors";
+import { readJsonLimited } from "@/api/read-json-limited";
 import type { RouteSpec } from "@/api/spec";
 import { serializeUsage, usageSchema } from "@/api/serializers/recurring-usage";
 import { voidUsage } from "@/domain/recurring/usage";
@@ -17,25 +17,8 @@ export const dynamic = "force-dynamic";
 
 const MAX_VOID_BODY_BYTES = 4096;
 
-async function readJsonBody(req: Request): Promise<unknown> {
-  const contentLength = req.headers.get("content-length");
-  if (contentLength && Number(contentLength) > MAX_VOID_BODY_BYTES) {
-    throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${MAX_VOID_BODY_BYTES} Bytes.`);
-  }
-  const raw = await req.text();
-  if (Buffer.byteLength(raw, "utf8") > MAX_VOID_BODY_BYTES) {
-    throw new PayloadTooLargeError(`Request-Body ueberschreitet das Limit von ${MAX_VOID_BODY_BYTES} Bytes.`);
-  }
-  if (!raw) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new z.ZodError([{ code: "custom", path: [], message: "Ungueltiges JSON im Request-Body." }]);
-  }
-}
-
 export const DELETE = withApi<{ id: string; usageId: string }>(async (req, ctx) => {
-  const body = await readJsonBody(req);
+  const body = await readJsonLimited(req, MAX_VOID_BODY_BYTES);
   const view = await voidUsage(ctx.orgId, ctx.params.id, ctx.params.usageId, body, { actor: ctx.actor });
   return apiData(serializeUsage(view));
 }, { scope: "write" });
@@ -48,6 +31,10 @@ export const spec = {
     scope: "write",
     request: { body: voidUsageSchema },
     response: z.object({ data: usageSchema }),
-    errors: [400, 401, 403, 404, 413, 422, 429],
+    errors: [400, 401, 403, 404, 413, 415, 422, 429],
+    errorNotes: {
+      404: "Abo oder Verbrauchssatz nicht gefunden (code NOT_FOUND).",
+      422: "Fachlicher Code in error.code: ALREADY_VOIDED (bereits storniert) oder ALREADY_BILLED (bereits abgerechnet).",
+    },
   },
 } satisfies Record<string, RouteSpec>;

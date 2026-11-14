@@ -52,5 +52,9 @@ export const spec = {
     request: { body: recordUsageSchema },
     response: usageRecordResponseSchema,
     errors: [400, 401, 403, 404, 409, 413, 422, 429],
+    errorNotes: {
+      409: "error.code CONFLICT: externalId wurde bereits mit anderen Daten verwendet.",
+      422: "Fachlicher Code in error.code: NOT_ACTIVE, NOT_USAGE_LINE, PERIOD_BILLED, AFTER_END, IN_FUTURE, ALREADY_BILLED, ALREADY_VOIDED.",
+    },
   },
 } satisfies Record<string, RouteSpec>;

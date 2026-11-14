@@ -241,6 +241,30 @@ describe("REST: Auflisten und Stornieren", () => {
     expect(row.voidedBy).toMatch(/^api:/);
   });
 
+  it("DELETE: Body wird gestreamt begrenzt (chunked ohne Content-Length > 4 KB -> 413), falscher Content-Type -> 415, gueltig -> 200", async () => {
+    const d = (await json<{ data: UsageData }>(await post(recId, { recurringLineId: usageLineId, quantityMilli: 7 }))).data;
+    const url = `http://localhost/api/v1/Recurring/${recId}/usage/${d.id}`;
+    const chunk = new TextEncoder().encode(`{"reason":"${"x".repeat(1500)}`);
+    const streamed = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < 4; i++) c.enqueue(chunk);
+        c.close();
+      },
+    });
+    const big = await UsageDelete(
+      new Request(url, { method: "DELETE", headers: headers(writeToken), body: streamed, duplex: "half" } as RequestInit & { duplex: "half" }),
+      params2(recId, d.id),
+    );
+    expect(big.status).toBe(413);
+    const h = headers(writeToken);
+    h.set("content-type", "text/plain");
+    const wrong = await UsageDelete(new Request(url, { method: "DELETE", headers: h, body: JSON.stringify({ reason: "x" }) }), params2(recId, d.id));
+    expect(wrong.status).toBe(415);
+    expect((await json<{ error: { code: string } }>(wrong)).error.code).toBe("UNSUPPORTED_MEDIA_TYPE");
+    const fine = await del(recId, d.id, { reason: "Gueltig" });
+    expect(fine.status).toBe(200);
+  });
+
   it("DELETE: abgerechneter Satz -> 422 ALREADY_BILLED; fremde Org und falsche Abo-Id -> 404", async () => {
     const d = (await json<{ data: UsageData }>(await post(recId, { recurringLineId: usageLineId, quantityMilli: 6 }))).data;
     const inv = await dbInternal.invoice.create({

@@ -50,6 +50,8 @@ export interface RouteSpec {
   request?: { query?: z.ZodTypeAny; body?: z.ZodTypeAny; params?: z.ZodTypeAny };
   response: z.ZodTypeAny;
   errors: number[];
+  /** Zusatztext je Fehlerstatus (z. B. fachliche Codes), wird an die Standardbeschreibung angehaengt. */
+  errorNotes?: Partial<Record<number, string>>;
   /** Weitere Antwort-Medientypen der Erfolgsantwort neben application/json (z. B. text/csv). */
   alternateContent?: Record<string, { description: string }>;
 }
