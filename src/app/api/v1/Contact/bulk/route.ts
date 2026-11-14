@@ -31,6 +31,8 @@ export const POST = withApi(async (_req, ctx) => {
   }
 }, { scope: "write" });
 
+// Drift-Hinweis: Der Spec-Body weicht bewusst von contactsBulkSchema der Domain ab — je Eintrag gilt hier das
+// customerSchema (Dokumentation/OpenAPI); die Domain validiert strenger bzw. zusaetzlich (Duplikate, Steuerzeichen, Referenzen).
 export const spec = {
   create: {
     path: "/api/v1/Contact/bulk",

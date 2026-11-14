@@ -1326,8 +1326,8 @@ model ApiKey {
 /// (S1): `status` startet IN_PROGRESS (durch das @@unique([orgId, key]) gegen Doppel-
 /// Reservierung abgesichert), wechselt nach dem Handler zu DONE (responseJson/statusCode
 /// gefuellt) oder die Zeile wird bei einem Fehler/5xx geloescht (Retry moeglich). Ablauf
-/// 24h fuer BEIDE Zustaende, Aufraeumen lazy beim naechsten Lesen desselben Schluessels
-/// (kein eigener Scheduler-Job). Siehe src/api/idempotency.ts fuer den vollen Ablauf.
+/// 24h fuer BEIDE Zustaende, Aufraeumen beim naechsten Lesen desselben Schluessels und
+/// zusaetzlich durch den Scheduler-Job src/domain/scheduler/cleanup.ts. Siehe src/api/idempotency.ts fuer den vollen Ablauf.
 model ApiIdempotency {
   id           String   @id @default(cuid())
   orgId        String
