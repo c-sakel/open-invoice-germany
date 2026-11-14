@@ -101,6 +101,33 @@ describe("create_invoice (MCP)", () => {
     expect(await count()).toBe(before + 1);
   });
 
+  it("idempotencyKey ohne finalize: Validierungsfehler statt stillem Ignorieren", async () => {
+    const before = await count();
+    const r = await callTool("create_invoice", args({ idempotencyKey: "mcp-k3" }));
+    expect(r.isError).toBe(true);
+    expect(text(r)).toContain("idempotencyKey");
+    expect(await count()).toBe(before);
+  });
+
+  it("Hash kanonisch: andere Schluesselreihenfolge derselben Argumente = Replay", async () => {
+    const before = await count();
+    const a = args({ finalize: true, idempotencyKey: "mcp-k4" });
+    const r = await callTool("create_invoice", a);
+    expect(r.isError).toBeFalsy();
+    const line = (a.lines as Record<string, unknown>[])[0];
+    const reordered = {
+      idempotencyKey: "mcp-k4",
+      finalize: true,
+      deliveryDate: a.deliveryDate,
+      lines: [{ taxRatePercent: line.taxRatePercent, unitPriceEuro: line.unitPriceEuro, quantity: line.quantity, description: line.description }],
+      customer: a.customer,
+    };
+    const again = await callTool("create_invoice", reordered);
+    expect(again.isError).toBeFalsy();
+    expect(text(again)).toBe(text(r));
+    expect(await count()).toBe(before + 1);
+  });
+
   it("Zahlung > Brutto: isError, keine Rechnung, Reservierung freigegeben", async () => {
     const before = await count();
     const r = await callTool("create_invoice", args({ finalize: true, idempotencyKey: "mcp-k2", payment: { amountEuro: 500 } }));
