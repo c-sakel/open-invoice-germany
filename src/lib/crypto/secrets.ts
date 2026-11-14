@@ -33,6 +33,9 @@ export const WEBHOOK_SECRET_PURPOSE = "oig-webhook-secret-v1";
 /** Eigener HKDF-Info-String fuer den Zugangsschluessel des Briefdienstes (Phase 16d). */
 export const POSTAL_KEY_PURPOSE = "oig-postal-key-v1";
 
+/** Eigener HKDF-Info-String fuer Kundenportal-Tokens (Wiederabruf des Links durch den Betreiber). */
+export const PORTAL_TOKEN_PURPOSE = "oig-portal-token-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();

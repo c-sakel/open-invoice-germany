@@ -80,6 +80,7 @@ describe("runCleanupJob", () => {
     const result = await runCleanupJob(NOW);
     expect(typeof result.emailsReconciled).toBe("number");
     expect(result.emailsReconciled).toBeGreaterThanOrEqual(0);
+    expect(typeof result.portalEventsDeleted).toBe("number");
   });
 
   it("ist Teil der Scheduler-Jobreihenfolge als letzter Job (nach webhooks)", async () => {

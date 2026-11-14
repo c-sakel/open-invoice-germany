@@ -23,12 +23,17 @@ import { reconcileStaleQueuedEmails } from "@/domain/email/email-log";
 
 export const WEBHOOK_DELIVERY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export const API_IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
+/** Abrufprotokoll des Kundenportals: 24 Monate (730 Tage). */
+export const PORTAL_EVENT_RETENTION_MS = 730 * 24 * 60 * 60 * 1000;
 
 export interface CleanupResult {
   emailsReconciled: number;
   webhookDeliveriesDeleted: number;
   apiIdempotencyDeleted: number;
   apiRequestLogsDeleted: number;
+  portalEventsDeleted: number;
+  /** Abgelaufene Portal-Links, deren verschluesseltes Token geleert wurde. */
+  portalTokensCleared: number;
 }
 
 export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResult> {
@@ -45,5 +50,23 @@ export async function runCleanupJob(now: Date = new Date()): Promise<CleanupResu
   });
   const apiRequestLogsDeleted = await purgeApiRequestLogs(now);
 
-  return { emailsReconciled, webhookDeliveriesDeleted: webhookDeliveries.count, apiIdempotencyDeleted: apiIdempotency.count, apiRequestLogsDeleted };
+  // Das Abrufprotokoll ist append-only (Guard); nur diese Aufbewahrungsloeschung nutzt dbInternal.
+  const portalEvents = await dbInternal.customerPortalEvent.deleteMany({
+    where: { at: { lt: new Date(now.getTime() - PORTAL_EVENT_RETENTION_MS) } },
+  });
+
+  // Abgelaufene Links: das wiederabrufbare Token wird nicht laenger gebraucht (nur Update, kein Loeschen).
+  const portalTokens = await dbInternal.customerPortalLink.updateMany({
+    where: { expiresAt: { lt: now }, tokenEnc: { not: "" } },
+    data: { tokenEnc: "" },
+  });
+
+  return {
+    emailsReconciled,
+    webhookDeliveriesDeleted: webhookDeliveries.count,
+    apiIdempotencyDeleted: apiIdempotency.count,
+    apiRequestLogsDeleted,
+    portalEventsDeleted: portalEvents.count,
+    portalTokensCleared: portalTokens.count,
+  };
 }

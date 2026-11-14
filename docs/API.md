@@ -25,7 +25,7 @@ Konto-Sicherheit (Passwort, Zwei-Faktor-Anmeldung, Passwort-Reset) läuft nur ü
 |---------|-----------|
 | `read`  | Lesen (GET) |
 | `write` | Anlegen/Ändern/zustandsändernde Aktionen (finalisieren, stornieren, Zahlung erfassen, …) |
-| `send`  | E-Mail-Versand und Mahnungen (`/send`, `/dunning`) |
+| `send`  | E-Mail-Versand und Mahnungen (`/send`, `/dunning`, Portal-Link-Mail) |
 | `admin` | Einstellungen (`/Settings`), Basiszinssatz-Historie (`/BaseInterestRate`), API-Schlüsselverwaltung (`/ApiKey`) und Webhook-Endpunkte (`/Webhook`) |
 
 ## Antwortformat
@@ -650,6 +650,24 @@ Rechnungen (`docType` `INVOICE`, alle Rechnungstypen) und Mahnungen (`DUNNING`) 
 - **Kontingent:** zusätzlich zum allgemeinen Limit höchstens 30 Postaktionen (Angebot, Preis, Versand, Storno) je Minute und Organisation, gemeinsam für REST und MCP (`429`).
 - Im Modus Testmodus landet der Auftrag in der Postbox des Briefdienstes und ist dort manuell versendbar (keine Sandbox); ein aktiver Testauftrag sperrt den Live-Versand desselben Belegs (`ALREADY_SENT`).
 - Webhook-Ereignisse: `postal.submitted`, `postal.done`, `postal.failed`, `postal.cancelled` (siehe [WEBHOOKS.md](WEBHOOKS.md)).
+
+## Kundenportal
+
+Ein Portal-Link gibt einem Kunden ohne Anmeldung Einsicht in seine festgeschriebenen Rechnungen, Gutschriften und versendeten Mahnungen (Seite `/portal/<token>`, Downloads unter `/api/public/portal/<token>/…`). Die Routen verwalten Link, Versand, Protokoll und Einstellungen.
+
+| Route | Scope | Zweck |
+|---|---|---|
+| `GET /api/v1/Contact/{id}/portal-link` | `read` | Status des jüngsten Links (`active`, `expiresAt`, `revokedAt`, `lastViewedAt`, `viewCount`); nie Token oder URL; `null` ohne Link |
+| `POST /api/v1/Contact/{id}/portal-link` | `write` | Link anlegen (Body optional `expiresInDays` 1–730); ein aktiver Link wird widerrufen; Antwort `201` mit `link` und `url` |
+| `POST /api/v1/Contact/{id}/portal-link/reveal` | `write` | URL des aktiven Links erneut abrufen (`404` ohne aktiven Link) |
+| `DELETE /api/v1/Contact/{id}/portal-link` | `write` | aktiven Link widerrufen |
+| `POST /api/v1/Contact/{id}/portal-link/send` | `send` | Link per E-Mail senden (Body optional `to`; sonst Rechnungs-E-Mail, dann E-Mail des Kunden); höchstens 3 Mails je Kunde und Stunde |
+| `GET /api/v1/Contact/{id}/portal-events` | `read` | Abrufprotokoll (neueste zuerst, ohne IP; `limit` 1–200, `cursor`) |
+| `GET`/`PUT /api/v1/Settings/portal` | `admin` | Einstellungen (`enabled`, `linkDays`, `showDunnings`, `showEInvoice`, `mailSubject`, `mailBody`); `PUT` ist ein Teil-Update |
+
+- **Fehler `409`** mit `reason` `PORTAL_DISABLED` (Portal aus), `CUSTOMER_ARCHIVED`, `NO_BASE_URL` (`APP_BASE_URL` nicht gesetzt), beim Senden zusätzlich `NO_ACTIVE_LINK` und `NO_RECIPIENT`; ein fehlgeschlagener Mailversand liefert `409` mit der Protokoll-ID in der Meldung.
+- **Kein Idempotenz-Replay** für Anlegen und `reveal`: ein `Idempotency-Key` wird ignoriert, weil die URL nie gespeichert und wiedergegeben wird.
+- **Öffentliche Pfade** brauchen keinen Schlüssel: jeder ungültige, widerrufene oder abgelaufene Link liefert denselben `404`; Rate-Limits je IP und Link, bei Überschreiten `429` auf der Download-Route.
 
 ## CSV-Export und -Import
 

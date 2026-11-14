@@ -26,6 +26,7 @@ export interface CustomerOverview {
     name: string;
     customerNumber: string | null;
     email: string | null;
+    invoiceEmail: string | null;
     vatId: string | null;
     leitwegId: string | null;
     peppolId: string | null;
@@ -48,7 +49,7 @@ export interface CustomerOverview {
 export async function customerOverview(orgId: string, customerId: string, now: Date = new Date()): Promise<CustomerOverview> {
   const customer = await dbInternal.customer.findFirst({
     where: { id: customerId, orgId },
-    select: { id: true, name: true, customerNumber: true, email: true, vatId: true, leitwegId: true, peppolId: true, peppolScheme: true, type: true, isArchived: true, sepaMandateReference: true, sepaMandateSignedAt: true, sepaDebitIban: true },
+    select: { id: true, name: true, customerNumber: true, email: true, invoiceEmail: true, vatId: true, leitwegId: true, peppolId: true, peppolScheme: true, type: true, isArchived: true, sepaMandateReference: true, sepaMandateSignedAt: true, sepaDebitIban: true },
   });
   if (!customer) throw new NotFoundError("Kunde nicht gefunden.");
 

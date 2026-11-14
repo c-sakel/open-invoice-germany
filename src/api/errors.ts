@@ -36,6 +36,7 @@ import { MailNotConfiguredError } from "@/domain/email/settings";
 import { TaxRateNotAllowedError } from "@/domain/settings/tax-rates";
 import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer/vat-check";
 import { CustomerValidationError } from "@/domain/customer/save";
+import { PortalError } from "@/domain/portal/errors";
 import { PostalConflictError } from "@/domain/postal/errors";
 import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
@@ -211,6 +212,10 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof InvalidOperationError) {
     return { status: 409, body: { error: { code: "CONFLICT", message: e.message } } };
+  }
+  // Kundenportal: PORTAL_DISABLED / CUSTOMER_ARCHIVED als 409 mit fachlichem Code in `reason`.
+  if (e instanceof PortalError) {
+    return { status: 409, body: { error: { code: "CONFLICT", message: e.message, reason: e.code } } };
   }
   // Phase 16d: Postversand. Feste Texte, nie die Meldung des Anbieters (kein Schluessel in Antworten).
   if (e instanceof PostalConflictError) {

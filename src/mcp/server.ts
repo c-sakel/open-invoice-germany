@@ -43,6 +43,7 @@ import { registerLayoutDesignTools } from "./tools/layout-design";
 import { registerAuditTools } from "./tools/audit";
 import { registerFxTools } from "./tools/fx";
 import { registerOssTools } from "./tools/oss";
+import { registerPortalTools } from "./tools/portal";
 import { registerPostalTools } from "./tools/postal";
 import { registerCsvTools } from "./tools/csv";
 
@@ -80,6 +81,7 @@ registerAuditTools(server, mcpContext);
 registerFxTools(server, mcpContext);
 registerOssTools(server, mcpContext);
 registerPostalTools(server, mcpContext);
+registerPortalTools(server, mcpContext);
 registerCsvTools(server, mcpContext);
 
 // ── Start ─────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgedeckt oder nur eingeschränkt. Stand: November 2026.
 
-Die Liste ist nach Themen gegliedert: Betrieb und Sicherheit, E-Rechnung, Zahlung/Mahnwesen/Abos, E-Mail- und Postversand, Daten und Recht, Belege und Dokumentworkflow, Teil-/Abschlags-/Schlussrechnungen, Editor und PDF-Layout, Stammdaten und Oberfläche, REST-API/Webhooks, Auswertungen, GoBD-Betrieb, CSV-Import/-Export, Preise und Verbrauch sowie der bewusst nicht umgesetzte Funktionsumfang am Ende.
+Die Liste ist nach Themen gegliedert: Betrieb und Sicherheit, E-Rechnung, Zahlung/Mahnwesen/Abos, E-Mail- und Postversand, Kundenportal, Daten und Recht, Belege und Dokumentworkflow, Teil-/Abschlags-/Schlussrechnungen, Editor und PDF-Layout, Stammdaten und Oberfläche, REST-API/Webhooks, Auswertungen, GoBD-Betrieb, CSV-Import/-Export, Preise und Verbrauch sowie der bewusst nicht umgesetzte Funktionsumfang am Ende.
 
 Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist, wann die eigene Installation aktualisiert wurde.
 
@@ -56,6 +56,15 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **HTML-Mail ist optional und eingeschränkt (Standard aus).** Mit „Einstellungen → E-Mail → HTML-Version mitsenden" geht zusätzlich zum unveränderten Text ein HTML-Teil mit (`multipart/alternative`, Text zuerst; mit Anhängen außen `multipart/mixed`). Er entsteht ausschließlich aus dem fertigen Text (`src/lib/mail/html.ts`, `src/domain/email/html-part.ts`): kein Logo und keine Bilder (ein Logo käme später nur als eingebetteter Anhang, nie als externe Adresse), keine Auswertung von Markdown-Formatierung (Vorlagen sind Klartext), Links nur als sichtbare `https:`-/`mailto:`-Adresse (`mailto:` mit `?`-Teil bleibt Text), Markenfarbe nur bei ausreichendem Kontrast zu Weiß. Das HTML-Dokument trägt immer `lang="de"`, auch bei englischen Belegen. Die Passwort-Reset-Mail bleibt reiner Text. Im ChangeLog-Eintrag des Versands steht der SHA-256 des HTML-Teils (`htmlSha256`); `EmailLog.bodySnapshot` bleibt der Text.
 - **`AUTH_SECRET`-Wechsel invalidiert das gespeicherte SMTP-Passwort** (Verschlüsselung per HKDF aus `AUTH_SECRET`, siehe `src/lib/crypto/secrets.ts`) — nach einem Secret-Wechsel muss das Passwort in den Mail-Einstellungen neu eingetragen werden.
 - **Zusatzanhänge werden nicht persistiert.** Im `EmailLog` werden nur Dateiname, Größe und SHA-256-Hash protokolliert, nicht der Dateiinhalt.
+
+## Kundenportal
+- **Token in Zugriffsprotokollen außerhalb der Anwendung.** Reverse-Proxy und CDN sehen den Pfad `/portal/<token>` samt IP; die Anwendung selbst protokolliert ihn nie. Dort Protokollierung für die Portalpfade abschalten (siehe BETRIEB-VORLAGE).
+- **Nur Ansicht und Download.** Der Kunde kann im Portal nichts eingeben, keine Rechnung reklamieren und (noch) nicht online bezahlen; ein „Jetzt bezahlen" folgt erst mit einer Online-Zahlung.
+- **Sichtbar ist alles, was zum Kunden gehört.** Festgeschriebene Rechnungen, Gutschriften/Stornos und versendete Mahnungen erscheinen auch dann, wenn die Rechnung nie per Mail verschickt wurde. Der Link gilt als Zugangsschlüssel: wer ihn kennt, sieht alle Belege des Kunden (Rotation oder Widerruf in der Kundenkarte).
+- **Kein Versand an den Kunden ohne Mailkonfiguration.** Der Link lässt sich auch kopieren; die Mail braucht SMTP und `APP_BASE_URL`. Ohne `APP_BASE_URL` entstehen keine Links (kein Rückfall auf den Host-Header).
+- **Rate-Limit nur im Speicher je Instanz** (Seite und Download je IP und je Link). Wer den Link kennt, kann ihn durch Dauerabruf vorübergehend drosseln. Die Seite antwortet bei Überschreitung mit Status 200 und einem Hinweistext, nur der Download mit 429.
+- **Abrufprotokoll ohne IP und Browserkennung**, die Seitenaufrufe sind je Link und Berliner Kalendertag auf einen Eintrag begrenzt. Es zeigt nicht, wer den Link nutzte. Aufbewahrung 24 Monate; ein Fehler beim Protokollieren verhindert den Download nicht.
+- **Dateien nur aus dem Archiv.** Fehlt eine Archivdatei oder weicht sie ab, ist der Download nicht verfügbar (Benachrichtigung `ARCHIVE_TAMPERED`). Mahnungen werden als PDF angeboten, nicht als E-Rechnung.
 
 ## Postversand
 - **Nur Rechnungen (auch Gutschriften/Stornos) und Mahnungen.** Angebote, Auftragsbestätigungen und Lieferscheine lassen sich nicht per Post senden. Gesendet wird ausschließlich das archivierte PDF; es gibt keinen Beleg ohne Archiv.

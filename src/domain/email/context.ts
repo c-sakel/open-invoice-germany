@@ -16,6 +16,9 @@ import type { TemplateContext } from "@/lib/template/render";
 import type { EmailDocType } from "@/schemas/email";
 import type { BuyerSnapshot, SellerSnapshot, ContactSnapshot } from "@/schemas";
 import { DOC_TYPE_LABEL, docTypeLabel } from "@/lib/email/doc-type-labels";
+import { revealPortalUrl } from "@/domain/portal/link";
+import { loadPortalSettings } from "@/domain/portal/settings";
+import { appBaseUrlFromEnv } from "@/lib/http/base-url";
 
 export { DOC_TYPE_LABEL };
 
@@ -178,6 +181,18 @@ export interface BuildTemplateContextOptions {
   offerLink?: string;
 }
 
+/**
+ * `{{portal.url}}`: URL des aktiven Portal-Links des Belegkunden. Leer, wenn das Portal ausgeschaltet ist,
+ * kein aktiver Link existiert oder APP_BASE_URL fehlt. Rein lesend (legt nie einen Link an).
+ */
+async function portalCtx(orgId: string, customerId: string): Promise<{ url: string }> {
+  const baseUrl = appBaseUrlFromEnv();
+  if (!baseUrl) return { url: "" };
+  const settings = await loadPortalSettings(orgId);
+  if (!settings.enabled) return { url: "" };
+  return { url: (await revealPortalUrl(orgId, customerId, baseUrl)) ?? "" };
+}
+
 /** Baut den Platzhalterkontext eines Belegs. Festgeschriebene Belege: Werte aus dem Snapshot. */
 export async function buildTemplateContext(
   orgId: string,
@@ -224,6 +239,7 @@ export async function buildTemplateContext(
           openAmount: formatMoneyLang(open, inv.currency, lang),
         },
         contact: contactCtx(contact, buyer),
+        portal: await portalCtx(orgId, inv.customerId),
       },
       // Empfaenger-Prioritaet (§28): Ansprechpartner-E-Mail > Customer.invoiceEmail > Customer.email.
       customerEmail: resolveRecipientEmail(contact, inv.customer.invoiceEmail, inv.customer.email),
@@ -281,6 +297,7 @@ export async function buildTemplateContext(
           total: formatMoneyLang(total, inv.currency, lang),
         },
         contact: contactCtx(contact, buyer),
+        portal: await portalCtx(orgId, inv.customerId),
       },
       customerEmail: resolveRecipientEmail(contact, inv.customer.invoiceEmail, inv.customer.email),
       customerCc: inv.customer.invoiceCc,
@@ -304,6 +321,7 @@ export async function buildTemplateContext(
         payment,
         document: docCtx("DELIVERY_NOTE", dn.number, dn.issueDate, dn.deliveryDate, null, null, null, "EUR", resolveDocLanguage(dn.language)),
         contact: contactCtx(contact, buyer),
+        portal: await portalCtx(orgId, dn.customerId),
       },
       // Lieferschein kennt keine eigene invoiceEmail/quoteEmail-Kundenvorgabe.
       customerEmail: resolveRecipientEmail(contact, null, dn.customer.email),
@@ -329,6 +347,7 @@ export async function buildTemplateContext(
       document: docCtx(docType, q.number, q.issueDate, q.validUntil, q.grossTotalCents, q.netTotalCents, q.taxTotalCents, q.currency, resolveDocLanguage(q.language)),
       offer: { number: q.number ?? "", validUntil: formatDateLang(q.validUntil, resolveDocLanguage(q.language)), link: docType === "ANGEBOT" ? (opts.offerLink ?? "") : "" },
       contact: contactCtx(contact, buyer),
+      portal: await portalCtx(orgId, q.customerId),
     },
     // Empfaenger-Prioritaet (§28): Ansprechpartner-E-Mail > Customer.quoteEmail > Customer.email.
     customerEmail: resolveRecipientEmail(contact, q.customer.quoteEmail, q.customer.email),
@@ -379,5 +398,6 @@ export function sampleTemplateContext(docType: EmailDocType): TemplateContext {
       total: formatMoneyDe(120700, "EUR"),
     },
     contact: { name: "Max Mustermann", firstName: "Max", lastName: "Mustermann", email: "max.mustermann@beispiel-ag.de", role: "Einkauf", phone: "+49 30 7654321" },
+    portal: { url: "https://beispiel.invalid/portal/beispiel-token" },
   };
 }

@@ -112,7 +112,7 @@ export const WITH_API_MARKER = Symbol.for("oig.withApi");
 
 export function withApi<TParams = Record<string, string>>(
   handler: ApiHandler<TParams>,
-  opts: { scope: ApiKeyScope; maxBodyBytes?: number },
+  opts: { scope: ApiKeyScope; maxBodyBytes?: number; noIdempotency?: boolean },
 ) {
   const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const wrapped = async (req: Request, routeCtx?: ApiRouteContext<TParams>): Promise<NextResponse> => {
@@ -164,7 +164,9 @@ export function withApi<TParams = Record<string, string>>(
       const ctx: ApiContext<TParams> = { orgId: apiKey.orgId, apiKey, actor, params, body, requestId };
 
       const idemKey = req.headers.get(IDEMPOTENCY_HEADER)?.trim() || undefined;
-      const usesIdempotency = method === "POST" && idemKey !== undefined;
+      // `noIdempotency`: Antworten mit Geheimnis (Portal-Link-URL) werden nie fuer das Replay gespeichert;
+      // der Header wird bei solchen Routen ignoriert.
+      const usesIdempotency = method === "POST" && idemKey !== undefined && !opts.noIdempotency;
       if (usesIdempotency) ctx.idempotencyKey = idemKey;
       if (usesIdempotency) {
         if (idemKey!.length < 1 || idemKey!.length > MAX_IDEMPOTENCY_KEY_LENGTH) throw invalidIdempotencyKeyError();

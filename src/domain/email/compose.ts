@@ -16,6 +16,8 @@ import { renderTemplate } from "@/lib/template/render";
 import { revealShareLinkToken, createShareLink } from "@/domain/quote-share/link";
 import { effectiveQuoteStatus } from "@/domain/document/status";
 import { appBaseUrlFromEnv } from "@/lib/http/base-url";
+import { PORTAL_LINK_MARKER, restorePortalLinks } from "@/domain/portal/mask";
+import { PortalError } from "@/domain/portal/errors";
 import type { EmailDocType } from "@/schemas/email";
 
 export interface PrefillSource {
@@ -105,6 +107,16 @@ async function resolveOfferLink(orgId: string, docType: EmailDocType, docId: str
   }
 }
 
+async function portalUrlForLog(orgId: string, docType: EmailDocType, docId: string, text: string): Promise<string | null> {
+  if (!text.includes(PORTAL_LINK_MARKER)) return null;
+  try {
+    const { ctx } = await buildTemplateContext(orgId, docType, docId);
+    return (ctx.portal as { url?: string } | undefined)?.url || null;
+  } catch {
+    return null;
+  }
+}
+
 async function templatesOf(orgId: string, docType: EmailDocType) {
   return dbInternal.emailTemplate.findMany({
     where: { orgId, docType },
@@ -191,6 +203,13 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
     const log = await dbInternal.emailLog.findFirst({ where: { id: source.logId, orgId } });
     if (!log) throw new DocumentNotFoundError("Versandprotokoll nicht gefunden");
     const docType = log.docType as EmailDocType;
+    // Das Protokoll traegt statt der Portal-URL den Platzhalter; beim Wiederversand wird der Link
+    // neu aus dem aktuell aktiven Portal-Link des Kunden eingesetzt (ohne aktiven Link: Fehler).
+    const portalUrl = await portalUrlForLog(orgId, docType, log.docId, log.subject + log.bodySnapshot);
+    // Ohne aktiven Portal-Link darf der Platzhalter nicht woertlich an den Kunden gehen.
+    if (!portalUrl && (log.subject + log.bodySnapshot).includes(PORTAL_LINK_MARKER)) {
+      throw new PortalError("Kein aktiver Portal-Link – bitte neuen Link anlegen.", "NO_ACTIVE_LINK");
+    }
     const attachments = await buildStandardAttachments(orgId, docType, log.docId);
     const documentAttachments = (await listAttachments(orgId, attachmentDocTypeFor(docType), log.docId)).map((a) => ({
       id: a.id,
@@ -206,8 +225,8 @@ export async function prefillEmail(orgId: string, source: PrefillSource | { logI
       to: JSON.parse(log.toJson) as string[],
       cc: JSON.parse(log.ccJson) as string[],
       bcc: JSON.parse(log.bccJson) as string[],
-      subject: log.subject,
-      body: log.bodySnapshot,
+      subject: restorePortalLinks(log.subject, portalUrl),
+      body: restorePortalLinks(log.bodySnapshot, portalUrl),
       signature: "",
       copyToSelf: settings.copyToSelf,
       attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),

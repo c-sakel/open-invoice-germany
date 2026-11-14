@@ -15,6 +15,7 @@ import { logActivity, type ActivityEntityType } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializeEmailLog } from "@/api/serializers/email-log";
 import { onEmailBounced } from "@/domain/notifications/hooks";
+import { maskPortalLinks } from "@/domain/portal/mask";
 
 /**
  * Bildet den Mail-Belegtyp (EmailLog.docType — INVOICE/CREDIT_NOTE/DUNNING/ANGEBOT/
@@ -49,8 +50,8 @@ export interface CreateQueuedEmailLogInput {
 }
 
 /** Legt das EmailLog VOR dem eigentlichen Versand mit Status QUEUED an. */
-export async function createQueuedEmailLog(input: CreateQueuedEmailLogInput) {
-  return dbInternal.emailLog.create({
+export async function createQueuedEmailLog(input: CreateQueuedEmailLogInput, client: Pick<typeof dbInternal, "emailLog"> = dbInternal) {
+  return client.emailLog.create({
     data: {
       orgId: input.orgId,
       docType: input.docType,
@@ -62,8 +63,9 @@ export async function createQueuedEmailLog(input: CreateQueuedEmailLogInput) {
       toJson: JSON.stringify(input.to),
       ccJson: JSON.stringify(input.cc),
       bccJson: JSON.stringify(input.bcc),
-      subject: input.subject,
-      bodySnapshot: input.bodySnapshot,
+      // Portal-Links (Token) nie im Protokoll: Betreff und Text tragen "[Portal-Link]".
+      subject: maskPortalLinks(input.subject),
+      bodySnapshot: maskPortalLinks(input.bodySnapshot),
       attachmentsJson: input.attachmentsJson ?? "[]",
       status: "QUEUED",
       warningsJson: input.warningsJson ?? "[]",
@@ -120,7 +122,7 @@ export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> 
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,
-        subject: input.subject,
+        subject: maskPortalLinks(input.subject),
         attachments: input.attachmentsMeta ?? [],
         error: input.error ?? null,
         ...(input.htmlSha256 ? { htmlSha256: input.htmlSha256 } : {}),
@@ -140,7 +142,7 @@ export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> 
           type: "SENT",
           actor: input.actor,
           at,
-          data: { subject: input.subject, to: input.to },
+          data: { subject: maskPortalLinks(input.subject), to: input.to },
         });
       }
     }

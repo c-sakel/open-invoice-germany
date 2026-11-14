@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -102,6 +102,12 @@ export const ACTIVITY_TYPES = {
   USAGE_RECORDED: "Verbrauch erfasst",
   USAGE_VOIDED: "Verbrauch storniert",
   USAGE_EMPTY_PERIOD: "Zeitraum ohne Verbrauch",
+  // Kundenportal: Link-Ereignisse (entityType CUSTOMER, entityId = Kunde, data.linkId; nie das Token).
+  PORTAL_LINK_CREATED: "Portal-Link erstellt",
+  PORTAL_LINK_REVOKED: "Portal-Link widerrufen",
+  PORTAL_LINK_MAILED: "Portal-Link per E-Mail versendet",
+  // Kundenportal-Einstellungen (entityType PORTAL, entityId = Organisation).
+  PORTAL_SETTINGS_CHANGED: "Portal-Einstellungen geaendert",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;
