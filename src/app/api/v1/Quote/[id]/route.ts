@@ -6,6 +6,7 @@ import { serializeQuote } from "@/api/serializers/document";
 import { parseEmbed } from "@/api/serializers/common";
 import { updateDraftDocument } from "@/domain/document/update";
 import { updateDocumentSchema } from "@/schemas";
+import { apiDocumentUpdateBodyDocSchema, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 import { prisma } from "@/lib/db";
 import { NotFoundError } from "@/domain/errors";
 
@@ -26,10 +27,11 @@ export const GET = withApi<{ id: string }>(async (req, ctx) => {
 export const PATCH = withApi<{ id: string }>(async (_req, ctx) => {
   const existing = await prisma.quote.findFirst({ where: { id: ctx.params.id, orgId: ctx.orgId, kind: "ANGEBOT" }, select: { id: true } });
   if (!existing) throw new NotFoundError("Angebot nicht gefunden.");
-  const input = updateDocumentSchema.parse(ctx.body);
+  const priced = resolvePriceInput(ctx.body);
+  const input = updateDocumentSchema.parse(priced.body);
   await updateDraftDocument(ctx.orgId, ctx.params.id, input, ctx.actor);
   const full = await prisma.quote.findUniqueOrThrow({ where: { id: ctx.params.id } });
-  return apiData(serializeQuote(full, "Quote", new Set()));
+  return apiData({ ...serializeQuote(full, "Quote", new Set()), ...grossResponseFields(priced, full.grossTotalCents) });
 }, { scope: "write" });
 
 export const spec = {
@@ -46,7 +48,7 @@ export const spec = {
     method: "PATCH",
     summary: "Angebot aktualisieren (nur Entwurf)",
     scope: "write",
-    request: { body: updateDocumentSchema },
+    request: { body: apiDocumentUpdateBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 404, 409, 429],
   },

@@ -14,6 +14,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { createInvoiceComplete } from "@/domain/invoice/create-complete";
 import { completeIdempotencyWithinTx, requireIdempotencyKey } from "@/api/idempotency";
 import { prisma } from "@/lib/db";
+import { apiInvoiceBodyDocSchema, assertGrossPayment, grossResponseFields, resolvePriceInput } from "@/domain/document/price-input";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,14 +41,16 @@ export const GET = withApi(async (req, ctx) => {
 }, { scope: "read" });
 
 export const POST = withApi(async (_req, ctx) => {
-  const request = createInvoiceRequestSchema.parse(ctx.body);
+  const priced = resolvePriceInput(ctx.body);
+  const request = createInvoiceRequestSchema.parse(priced.body);
   // finalize/payment werden vor der Domain abgetrennt: createInvoiceComplete/createDraftInvoice sehen nur die Rechnungsfelder.
   const { finalize, payment, ...rest } = request;
   const invoiceInput: CreateInvoiceInput = rest;
+  if (finalize) assertGrossPayment(priced, payment?.amountCents);
   if (!finalize) {
     const invoice = await createDraftInvoice(ctx.orgId, invoiceInput, { actor: ctx.actor });
     const full = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
-    return apiData(serializeInvoice(full, new Set()), 201);
+    return apiData({ ...serializeInvoice(full, new Set()), ...grossResponseFields(priced, full.grossTotalCents) }, 201);
   }
   const key = requireIdempotencyKey(ctx.idempotencyKey, "Idempotency-Key ist bei finalize Pflicht.");
   // Antwort wird in der Transaktion gebaut und als DONE gespeichert (Replay); nach dem Commit wird nichts nachgeladen.
@@ -57,7 +60,7 @@ export const POST = withApi(async (_req, ctx) => {
     actor: ctx.actor,
     createdBy: "api",
     beforeCommit: async (tx, r) => {
-      body = { data: serializeInvoice(r.invoice, new Set(["lines", "payments"])), warnings: r.warnings };
+      body = { data: { ...serializeInvoice(r.invoice, new Set(["lines", "payments"])), ...grossResponseFields(priced, r.invoice.grossTotalCents) }, warnings: r.warnings };
       await completeIdempotencyWithinTx(tx, ctx.orgId, key, 201, body);
     },
   });
@@ -78,9 +81,9 @@ export const spec = {
   create: {
     path: "/api/v1/Invoice",
     method: "POST",
-    summary: "Rechnung anlegen (Entwurf) oder mit finalize: true atomar festschreiben und optional Zahlung erfassen — Idempotency-Key Pflicht bei finalize",
+    summary: "Rechnung anlegen (Entwurf) oder mit finalize: true atomar festschreiben und optional Zahlung erfassen — Idempotency-Key Pflicht bei finalize. Zeilen: Netto in Cent oder tausendstel Cent, alternativ Bruttopreise (Antwort mit grossTargetCents/grossDeviationCents; 400 GROSS_DEVIATION, wenn die Zahlung nicht zum Rechnungsbrutto passt)",
     scope: "write",
-    request: { body: createInvoiceRequestSchema },
+    request: { body: apiInvoiceBodyDocSchema },
     response: apiDataResponseSchema(z.unknown()),
     errors: [400, 401, 403, 404, 409, 429],
   },

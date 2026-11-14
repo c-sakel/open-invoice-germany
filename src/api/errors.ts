@@ -40,6 +40,7 @@ import { PostalConflictError } from "@/domain/postal/errors";
 import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
+import { GrossDeviationError } from "@/domain/document/price-input";
 import { describeError } from "@/lib/safe-error";
 
 /**
@@ -98,6 +99,7 @@ export type ApiErrorCode =
   | "IDEMPOTENCY_MISMATCH"
   | "IDEMPOTENCY_IN_PROGRESS"
   | "EINVOICE_INVALID"
+  | "GROSS_DEVIATION"
   | "INTERNAL";
 
 export interface ApiErrorBody {
@@ -174,6 +176,9 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   // uebrigen spezifischen Vorab-Pruefungen in dieser Funktion).
   if (e instanceof EInvoiceInvalidError) {
     return { status: 409, body: { error: { code: "EINVOICE_INVALID", message: e.message, details: { issues: e.issues } } } };
+  }
+  if (e instanceof GrossDeviationError) {
+    return { status: 400, body: { error: { code: "GROSS_DEVIATION", message: e.message } } };
   }
   if (e instanceof ValidationError) {
     return { status: 400, body: { error: { code: "VALIDATION", message: e.message } } };

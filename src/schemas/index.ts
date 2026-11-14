@@ -379,7 +379,7 @@ export type ProductInput = z.infer<typeof productSchema>;
 
 // ── Rechnung ─────────────────────────────────────────────────────────────
 // lineType default "ITEM" haelt bestehende Aufrufer (ohne das Feld) abwaertskompatibel.
-const invoiceLineBaseShape = {
+export const invoiceLineBaseShape = {
     lineType: LineType.default("ITEM"),
     productId: z.string().optional(),
     description: z.string().min(1),
@@ -585,7 +585,7 @@ function refineSkontoTargets<T extends { skonto1Permille?: number; skonto1Days?:
 // Gemeinsame Kopffelder fuer createInvoiceSchema/updateInvoiceSchema (Phase 4b: Betreff,
 // Bestellnummer, interne Referenz, Ansprechpartner, Rechnungs-/Lieferadresse — analog
 // den Feldern, die Quote seit Phase 3a traegt).
-const invoiceHeaderFields = {
+export const invoiceHeaderFields = {
   customerId: z.string().min(1),
   type: InvoiceType.default("INVOICE"),
   taxScheme: TaxScheme.default("REGULAR"),
@@ -747,7 +747,7 @@ const documentTextFields = {
   billingAddressId: z.string().nullable().optional(),
 };
 
-const documentObjectSchema = z.object({
+export const documentObjectSchema = z.object({
   kind: DocumentKind,
   customerId: z.string().min(1),
   taxScheme: TaxScheme.default("REGULAR"),
