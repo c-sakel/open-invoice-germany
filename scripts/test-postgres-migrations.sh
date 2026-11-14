@@ -1722,7 +1722,7 @@ SQL
 npx prisma migrate deploy --config prisma.postgres.config.ts >/dev/null \
   || fail "Sammelrechnung-Migration ist auf der Bestands-DB fehlgeschlagen"
 REC39=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select \"collectiveBilling\" || '|' || coalesce(\"invoiceHeading\",'') from \"RecurringInvoice\" where id='rec39x'")
-[ "$REC39" = "f|" ] || fail "Abo ohne Standardwerte ('$REC39'), erwartet f|"
+[ "$REC39" = "false|" ] || fail "Abo ohne Standardwerte ('$REC39'), erwartet false|"
 IL39=$(docker exec "$CONTAINER" psql -U oig -d openinvoice -tAc "select count(*) from \"InvoiceLine\" where id='il39x' and \"recurringInvoiceId\" is null")
 [ "$IL39" = "1" ] || fail "Bestandsposition hat eine Abo-Herkunft"
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL' || fail "Sammelrechnung-Spalten nicht beschreibbar"
