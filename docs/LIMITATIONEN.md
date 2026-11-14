@@ -340,6 +340,12 @@ Damit niemand böse Überraschungen erlebt: Das hier ist (noch) **nicht** abgede
 - **Formelschutz:** Der Export stellt Textzellen mit Formelzeichen (`=`, `+`, `-`, `@`, auch nach unsichtbaren Zeichen) ein `'` voran; der Import entfernt dieses `'` wieder. Ein Wert, der selbst mit `'` vor einem Formelzeichen beginnt, verliert dadurch beim Import das `'`.
 - **Suche:** Die Kundensuche der Liste (Name, Nummer) unterscheidet sich vom Export-Filter `search`, der zusätzlich die E-Mail durchsucht.
 
+## Abgleich und atomare Anlage (Phase 18d)
+- **Parallele atomare Anlagen derselben Organisation** laufen serialisiert (Organisationssperre) und wiederholen die gesamte Transaktion bei einem Kettenkonflikt im ChangeLog (bis zu 4 Versuche). Bleibt der Konflikt bestehen, endet der Aufruf mit einem Fehler; ein erneuter Aufruf mit demselben `Idempotency-Key` ist gefahrlos.
+- **MCP-Listen `includeArchived`:** ohne `updatedSince` wird `includeArchived` in `list_customers`, `list_products` und `list_documents` still ignoriert; `list_documents` zeigt im bisherigen Pfad Archivierte, im Abgleich ohne `includeArchived` nicht.
+- **Sammelanlage Kontakte:** Die Idempotenz-Antwort wird nach dem Commit gespeichert (nicht in der Transaktion). Bricht der Prozess dazwischen ab, wiederholt der Aufruf nach 24 Stunden; Kontakte ohne E-Mail und Nummer würden dann doppelt angelegt. Das MCP-Tool `create_contacts` kennt keinen `idempotencyKey` (REST: Pflicht).
+- **Schlüsselnamensraum `mcp:`:** REST-Schlüssel mit dem Präfix `mcp:` können den MCP-Namensraum belegen; Folge ist höchstens ein Konflikt (`409`), keine Datenänderung.
+
 ## Funktionsumfang (geplant)
 DATEV-Export, OSS/ZM, USt-Voranmeldungs-Auswertung, Mehrbenutzer/Auth, nutzungsbasierte Abo-Abrechnung.
 

@@ -229,7 +229,7 @@ Zusätzliche Body-Felder zum bekannten Rechnungsbody:
   wiederholbare Antwort.
 - **Alles oder nichts:** scheitert ein Schritt (Pflichtangabe beim Festschreiben, Betrag über dem offenen
   Betrag, fremder Kunde), wird nichts gespeichert — weder Entwurf noch verbrauchte Rechnungsnummer
-  (keine Nummernlücke). Antwort dann `409` (Domänenfehler) bzw. `400` (Validierung); ein Wiederholen mit
+  (keine Nummernlücke). Antwort dann `409` (Domänenfehler), `400` (Validierung) bzw. `404` (fremder oder unbekannter Kunde); ein Wiederholen mit
   demselben Schlüssel führt den Aufruf erneut aus.
 - **Antwort `201`:** `{ "data": <Rechnung inkl. lines und payments>, "warnings": [ ... ] }`. `warnings`
   sind nicht blockierende Hinweise (Adresse, VIES-Prüfung, Karten-/Lastschriftangaben), dieselben wie beim
@@ -266,6 +266,16 @@ curl -s "$BASE/api/v1/Invoice?updatedSince=2076-09-01T00:00:00Z&limit=100" -H "$
 - `Contact`, `Product`, `Quote`, `OrderConfirmation` und `DeliveryNote` blenden archivierte Datensätze aus;
   mit `includeArchived=true` kommen sie im Abgleich mit (Rechnungen kennen keine Archivierung).
 - `eInvoice` akzeptiert `true`/`false` und `1`/`0`.
+
+**Verhaltensänderung 18d (Kompatibilität):**
+
+- `eInvoice=1` wurde bisher wie `false` behandelt und gilt jetzt als `true`. Abfragen, die `eInvoice=1`
+  gesendet haben, liefern künftig die E-Rechnungen statt der übrigen Rechnungen.
+- Andere Werte (`TRUE`, `yes`, leer) wurden bisher wie `false` behandelt und liefern jetzt `400`.
+- `POST /api/v1/Invoice`: die Felder `finalize` und `payment` wurden bisher verworfen. Sie lösen jetzt
+  das Festschreiben (`finalize: true`, mit Pflicht-`Idempotency-Key`) bzw. bei `payment` ohne `finalize`
+  einen `400` aus. Integrationen (z. B. Webshop-Anbindungen) vor dem Deploy auf diese Felder prüfen.
+- `includeArchived=true` wird nicht mehr mit `400` abgelehnt, sondern wirkt im Abgleich.
 
 ## Sammelanlage Kontakte: `POST /api/v1/Contact/bulk` (Phase 18d)
 
