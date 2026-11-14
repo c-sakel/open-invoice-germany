@@ -1,7 +1,8 @@
 /**
  * Gekuerzte Kartennummer (BT-87) und Kartennetz.
  *
- * Quelle: EN 16931 BR-51 (nur die letzten 4-6 Ziffern) und PCI DSS 3.4: die volle
+ * Quelle: EN 16931 BR-51 (BT-87 hoechstens 10 Zeichen, sinngemaess "first 6 and last 4"
+ * nach PCI DSS): hier werden nur die letzten 4 Ziffern gehalten, die volle
  * Kartennummer (PAN) wird nie erfasst oder gespeichert. Eingaben mit mehr als
  * 10 Ziffern werden abgelehnt; die Meldung enthaelt nie den Eingabewert.
  */
