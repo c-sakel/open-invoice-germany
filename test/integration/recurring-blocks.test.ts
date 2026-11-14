@@ -20,7 +20,7 @@ import { ensureOrgMasterdata } from "@/domain/masterdata/ensure";
 import { saveDocumentSettings } from "@/domain/document/settings";
 import { createRecurring } from "@/domain/recurring/create";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
-import { emitRecurringNow } from "@/domain/recurring/run";
+import { emitRecurringInvoice as emitRecurringNow } from "../helpers/emit-recurring";
 import { itemTaxRates } from "@/domain/recurring/lines";
 import { serializeRecurring } from "@/api/serializers/recurring";
 import { computeLineNet } from "@/lib/pricing/line";

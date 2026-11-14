@@ -13,8 +13,9 @@ import { dbInternal } from "../src/lib/db";
 async function main() {
   const summaries = await runDueRecurring();
   const total = summaries.reduce((n, s) => n + s.emitted.length, 0);
+  const skippedTotal = summaries.reduce((n, s) => n + s.skipped.length, 0);
   if (total === 0) {
-    console.log("Keine fälligen Abos.");
+    console.log(skippedTotal > 0 ? "Keine Verbräuche im Zeitraum — keine Rechnung erzeugt." : "Keine fälligen Abos.");
     return;
   }
   for (const s of summaries) {

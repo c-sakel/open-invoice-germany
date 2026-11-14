@@ -11,7 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { dbInternal } from "@/lib/db";
 import { createRecurring, RecurringError } from "@/domain/recurring/create";
-import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
+import { emitRecurringNow, isSkipped, runDueRecurring } from "@/domain/recurring/run";
 import { updateRecurringInvoice } from "@/domain/recurring/update";
 import { intervalLabel } from "@/lib/recurring";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
@@ -145,6 +145,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         if (recurring) {
           const match = await ctx.resolveRecurring(org.id, recurring);
           const res = await emitRecurringNow(match.id);
+          if (isSkipped(res)) return ctx.ok("Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
           return ctx.ok(
             `Rechnung erzeugt für Abo "${match.title}": ${res.number ?? "Entwurf " + res.invoiceId.slice(0, 8)}` +
               `${res.finalized ? " (festgeschrieben)" : " (Entwurf — finalize_invoice zum Festschreiben)"}.`,
@@ -152,6 +153,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         }
         const summaries = await runDueRecurring({ orgId: org.id });
         const total = summaries.reduce((n, s) => n + s.emitted.length, 0);
+        const skippedTotal = summaries.reduce((n, s) => n + s.skipped.length, 0);
+        if (total === 0 && skippedTotal > 0) return ctx.ok("Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
         if (total === 0) return ctx.ok("Keine fälligen Abos.");
         const lines = summaries.flatMap((s) =>
           s.emitted.map((e) => `• ${s.title}: ${e.number ?? "Entwurf " + e.invoiceId.slice(0, 8)} (Periode ${e.periodDate.toISOString().slice(0, 10)})`),

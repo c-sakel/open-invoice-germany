@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { emitRecurringNow } from "@/domain/recurring/run";
+import { emitRecurringNow, isSkipped } from "@/domain/recurring/run";
 import { RecurringError } from "@/domain/recurring/create";
 import { getActiveOrg } from "@/lib/org";
 import { dbInternal } from "@/lib/db";
 
 export const runtime = "nodejs";
+
+const NO_USAGE_MESSAGE = "Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.";
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -13,6 +15,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     const rec = await dbInternal.recurringInvoice.findFirst({ where: { id, orgId: org.id }, select: { id: true } });
     if (!rec) return NextResponse.json({ error: "Abo nicht gefunden." }, { status: 404 });
     const res = await emitRecurringNow(id);
+    if (isSkipped(res)) return NextResponse.json({ skipped: true, periodDate: res.periodDate, message: NO_USAGE_MESSAGE });
     return NextResponse.json({ invoiceId: res.invoiceId, number: res.number, finalized: res.finalized });
   } catch (e) {
     if (e instanceof RecurringError) return NextResponse.json({ error: e.message }, { status: 422 });

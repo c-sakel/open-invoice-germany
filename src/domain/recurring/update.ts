@@ -7,7 +7,8 @@
  */
 import { resolveLineOssCategories } from "@/domain/product/oss-snapshot";
 import { dbInternal } from "@/lib/db";
-import { itemTaxRates, toRecurringLineRows } from "@/domain/recurring/lines";
+import { itemTaxRates, planLineSync, toRecurringLineRows } from "@/domain/recurring/lines";
+import { lockRow } from "@/lib/db-lock";
 import { normalizeToNoon } from "@/lib/recurring";
 import { updateRecurringSchema, resolveLineCategories, type TaxScheme as TaxSchemeValue, type UpdateRecurringInput } from "@/schemas";
 import { NotFoundError, InvalidOperationError } from "@/domain/errors";
@@ -65,10 +66,31 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
 
   return dbInternal.$transaction(async (tx) => {
     // Phase 16e: OSS-Kategorie-Snapshot (explizit > Produkt der Org > null) fuer den Abo-Lauf.
+    // Phase 18f: Sperre vor dem Lesen der Zeilen/Verbraeuche (serialisiert gegen Erfassung und Lauf).
+    await lockRow(tx, "RecurringInvoice", id, orgId);
     const ossCategories = input.lines ? await resolveLineOssCategories(tx, orgId, input.lines) : [];
+    let lineRows: ReturnType<typeof toRecurringLineRows> = [];
+    let sync: ReturnType<typeof planLineSync> | null = null;
     if (input.lines) {
       await assertAllowedTaxRates(tx, orgId, ratesOfLines(input.lines), { existing: itemTaxRates(existing.lines) });
-      await tx.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: id } });
+      lineRows = toRecurringLineRows(resolveLineCategories(input.lines, existing.taxScheme as TaxSchemeValue), ossCategories);
+      // Phase 18f: Zeilen behalten ihre Id (Verbrauchssaetze verweisen darauf) — Abgleich statt deleteMany.
+      const stored = await tx.recurringInvoiceLine.findMany({ where: { recurringInvoiceId: id }, select: { id: true, billing: true } });
+      const open = await tx.recurringUsage.groupBy({
+        by: ["recurringLineId"],
+        where: { recurringInvoiceId: id, invoiceId: null, voidedAt: null, recurringLineId: { not: null } },
+        _count: { _all: true },
+      });
+      const openByLine = new Map(open.flatMap((g) => (g.recurringLineId ? [[g.recurringLineId, g._count._all] as const] : [])));
+      sync = planLineSync(
+        stored.map((l) => ({ id: l.id, billing: l.billing, openUsage: openByLine.get(l.id) ?? 0 })),
+        input.lines.map((l) => ({ id: l.id, billing: l.billing })),
+      );
+      if (sync.delete.length > 0) await tx.recurringInvoiceLine.deleteMany({ where: { recurringInvoiceId: id, id: { in: sync.delete } } });
+      for (const [index, row] of lineRows.entries()) {
+        const lineId = input.lines[index]?.id;
+        if (lineId !== undefined) await tx.recurringInvoiceLine.update({ where: { id: lineId }, data: row });
+      }
     }
 
     return tx.recurringInvoice.update({
@@ -91,13 +113,7 @@ export async function updateRecurringInvoice(orgId: string, id: string, raw: unk
         ...(input.currency !== undefined ? { currency: input.currency } : {}),
         ...(input.language !== undefined ? { language: input.language } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.lines
-          ? {
-              lines: {
-                create: toRecurringLineRows(resolveLineCategories(input.lines, existing.taxScheme as TaxSchemeValue), ossCategories),
-              },
-            }
-          : {}),
+        ...(sync && sync.create.length > 0 ? { lines: { create: sync.create.flatMap((index) => (lineRows[index] ? [lineRows[index]] : [])) } } : {}),
       },
       include: { lines: { orderBy: { position: "asc" } } },
     });

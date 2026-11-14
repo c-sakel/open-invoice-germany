@@ -31,7 +31,11 @@ import { prefillEmail } from "@/domain/email/compose";
 import { sendDocumentEmail } from "@/domain/email/send";
 import type { MailProvider } from "@/lib/mail/provider";
 import type { CreateInvoiceInput } from "@/schemas";
-import { RecurringError } from "./create";
+import { RecurringError } from "./errors";
+import { collectBillableUsage, markUsageBilled } from "./usage";
+import { lockRow } from "@/lib/db-lock";
+import { logActivity } from "@/domain/activity/log";
+import { MAX_USAGE_QUANTITY_MILLI } from "@/schemas/recurring-usage";
 import { resolveDocLanguage } from "@/lib/i18n/doc";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +55,19 @@ export interface EmittedInvoice {
   /** Ergebnis des automatischen Versands (autoSend, Phase 7, §33) — fehlt, wenn autoSend aus ist. */
   emailStatus?: "SENT" | "FAILED" | "SKIPPED";
   emailError?: string;
+}
+
+/** Periode ohne Verbrauch uebersprungen (nur Abos, deren Positionen alle nach Verbrauch abgerechnet werden). */
+export interface SkippedPeriod {
+  skipped: true;
+  periodDate: Date;
+  reason: "NO_USAGE";
+}
+
+export type EmitOutcome = EmittedInvoice | SkippedPeriod;
+
+export function isSkipped(outcome: EmitOutcome): outcome is SkippedPeriod {
+  return "skipped" in outcome;
 }
 
 /**
@@ -102,8 +119,12 @@ async function emitOne(
   now: Date,
   actor: string,
   provider?: MailProvider,
-): Promise<{ result: EmittedInvoice; ended: boolean; autoSend: boolean; orgId: string; emailTemplateId: string | null }> {
+): Promise<{ result: EmitOutcome; ended: boolean; autoSend: boolean; orgId: string; emailTemplateId: string | null }> {
   const created = await dbInternal.$transaction(async (tx) => {
+    // Phase 18f: Abo sperren (vor jedem Lesen) — serialisiert Lauf, Verbrauchserfassung und Zeilenbearbeitung.
+    const head = await tx.recurringInvoice.findUnique({ where: { id: recurringId }, select: { orgId: true } });
+    if (!head) throw new RecurringError("Abo nicht gefunden.");
+    await lockRow(tx, "RecurringInvoice", recurringId, head.orgId);
     const rec = await tx.recurringInvoice.findUnique({
       where: { id: recurringId },
       include: { lines: { orderBy: { position: "asc" } } },
@@ -117,7 +138,28 @@ async function emitOne(
     // Positionen 1:1 aus dem Abo (Phase 18c: inkl. Ueberschriften/Texte/Zwischensummen,
     // Langtext, Artikelnummer, Festbetragsrabatt, Produktbezug). Netto-/Steuerberechnung
     // (inkl. der W4-Rundung ueber computeLineNet) uebernimmt createDraftInvoiceWithinTx.
-    const lines: CreateInvoiceInput["lines"] = recurringLinesToInvoiceLines(rec.lines);
+    // Phase 18f: USAGE-Zeilen tragen die Summe der offenen Verbraeuche bis zum Stichtag.
+    const usage = await collectBillableUsage(tx, rec.id, periodDate);
+    let usageCount = 0;
+    let usageQuantityMilli = 0;
+    for (const u of usage.values()) {
+      if (u.quantityMilli > MAX_USAGE_QUANTITY_MILLI) throw new RecurringError("Verbrauchsmenge zu groß.");
+      usageCount += u.ids.length;
+      usageQuantityMilli += u.quantityMilli;
+    }
+    const lines: CreateInvoiceInput["lines"] = recurringLinesToInvoiceLines(rec.lines, usage);
+
+    if (!lines.some((l) => l.lineType === "ITEM")) {
+      // Nur verbrauchsabhaengige Positionen und kein Verbrauch: keine Rechnung, Periode rueckt weiter.
+      const nextSkipped = advanceDate(periodDate, rec.interval as RecurInterval, rec.intervalCount, rec.anchorDay);
+      const endedSkipped = rec.endDate ? nextSkipped > rec.endDate : false;
+      await tx.recurringInvoice.update({
+        where: { id: rec.id },
+        data: { nextRunDate: nextSkipped, status: endedSkipped ? "ENDED" : "ACTIVE" },
+      });
+      const skipped: SkippedPeriod = { skipped: true, periodDate, reason: "NO_USAGE" };
+      return { result: skipped, ended: endedSkipped, autoSend: false, orgId: rec.orgId, emailTemplateId: null };
+    }
 
     // recurringInsertPeriodText (Phase 7, §33): Kopftext "Abrechnungszeitraum dd.mm.yyyy –
     // dd.mm.yyyy", nur wenn die Org-Einstellung aktiv ist. R4/R5 (Phase 14a, §43a):
@@ -178,8 +220,15 @@ async function emitOne(
       // Abo-Kontext (recurring, period) im selben ChangeLog-CREATE-Eintrag UND im selben
       // ActivityLog-CREATED-Eintrag wie der gemeinsame Pfad (Fix-Welle 1, must) — kein
       // zweiter Eintrag je erzeugter Rechnung, in keinem der beiden Protokolle.
-      changeLogExtra: { recurring: rec.id, period: periodDate.toISOString() },
+      changeLogExtra: {
+        recurring: rec.id,
+        period: periodDate.toISOString(),
+        ...(usageCount > 0 ? { usageCount, usageQuantityMilli } : {}),
+      },
     });
+
+    // Doppelabrechnung ausgeschlossen: Abo-Sperre + bedingtes updateMany mit Zaehlerpruefung (Fehler -> Rollback).
+    await markUsageBilled(tx, [...usage.values()].flatMap((u) => u.ids), invoice.id, now);
 
     await linkDocuments(tx, { orgId: rec.orgId, fromType: "INVOICE", fromId: invoice.id, toType: "RECURRING", toId: rec.id, relationType: "GENERATED_BY" });
 
@@ -221,19 +270,32 @@ async function emitOne(
   // festgeschrieben sein (createRecurring erzwingt zwar autoFinalize bei autoSend, aber
   // ein Bestandsdatensatz aus der Zeit vor diesem Fix koennte autoSend=true/autoFinalize=false
   // noch kombiniert haben) — sonst ginge eine Rechnung mit Nummer/GiroCode "ENTWURF" raus.
-  if (created.result.finalized) await onInvoiceFinalizedOss(created.orgId, created.result.invoiceId, now);
+  const outcome = created.result;
+  if (isSkipped(outcome)) {
+    await logActivity(dbInternal, {
+      orgId: created.orgId,
+      entityType: "RECURRING",
+      entityId: recurringId,
+      type: "USAGE_EMPTY_PERIOD",
+      actor,
+      at: now,
+      data: { period: outcome.periodDate.toISOString() },
+    });
+    return created;
+  }
+  if (outcome.finalized) await onInvoiceFinalizedOss(created.orgId, outcome.invoiceId, now);
 
-  if (created.autoSend && created.result.finalized) {
-    const sent = await sendRecurringInvoiceEmail(created.orgId, created.result.invoiceId, provider, created.emailTemplateId);
-    created.result.emailStatus = sent.status;
-    created.result.emailError = sent.error;
+  if (created.autoSend && outcome.finalized) {
+    const sent = await sendRecurringInvoiceEmail(created.orgId, outcome.invoiceId, provider, created.emailTemplateId);
+    outcome.emailStatus = sent.status;
+    outcome.emailError = sent.error;
   }
 
   return created;
 }
 
 /** Manuell: erzeugt sofort die nächste fällige Rechnung eines Abos (ignoriert den Stichtag). */
-export async function emitRecurringNow(recurringId: string, opts: RunOptions = {}): Promise<EmittedInvoice> {
+export async function emitRecurringNow(recurringId: string, opts: RunOptions = {}): Promise<EmitOutcome> {
   const now = opts.now ?? new Date();
   const actor = opts.actor ?? "system";
   const { result } = await emitOne(recurringId, now, actor, opts.provider);
@@ -244,6 +306,8 @@ export interface RecurringRunSummary {
   recurringId: string;
   title: string;
   emitted: EmittedInvoice[];
+  /** Phase 18f: Stichtage, fuer die mangels Verbrauch keine Rechnung entstand. */
+  skipped: Date[];
   /** Fehlermeldung, falls der Lauf dieses Abos abgebrochen ist (Task-3-Ergaenzung: Fehler-
    *  Summary). Bereits erzeugte `emitted`-Eintraege bleiben gueltig — nur der naechste
    *  (fehlgeschlagene) Versuch dieses Abos wurde abgebrochen. */
@@ -277,6 +341,7 @@ export async function runDueRecurring(
   const summaries: RecurringRunSummary[] = [];
   for (const rec of due) {
     const emitted: EmittedInvoice[] = [];
+    const skipped: Date[] = [];
     let error: string | undefined;
     try {
       for (let i = 0; i < max; i++) {
@@ -286,14 +351,15 @@ export async function runDueRecurring(
         });
         if (!cur || cur.status !== "ACTIVE" || cur.nextRunDate > now) break;
         const { result, ended } = await emitOne(rec.id, now, actor, opts.provider);
-        emitted.push(result);
+        if (isSkipped(result)) skipped.push(result.periodDate);
+        else emitted.push(result);
         if (ended) break;
       }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       await onRecurringFailed(rec.orgId, { recurringId: rec.id, title: rec.title, message: error, at: now });
     }
-    summaries.push({ recurringId: rec.id, title: rec.title, emitted, ...(error ? { error } : {}) });
+    summaries.push({ recurringId: rec.id, title: rec.title, emitted, skipped, ...(error ? { error } : {}) });
   }
   return summaries;
 }

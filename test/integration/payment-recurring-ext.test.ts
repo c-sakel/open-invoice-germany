@@ -16,7 +16,8 @@ import { saveMailSettings } from "@/domain/email/settings";
 import { saveEmailTemplate } from "@/domain/email/templates";
 import { createMemoryProvider } from "@/lib/mail/memory";
 import { createRecurring } from "@/domain/recurring/create";
-import { emitRecurringNow, runDueRecurring } from "@/domain/recurring/run";
+import { runDueRecurring } from "@/domain/recurring/run";
+import { emitRecurringInvoice as emitRecurringNow } from "../helpers/emit-recurring";
 import { recordPaymentSchema, type CreateInvoiceInput } from "@/schemas";
 // Phase 14a, Task 1 (R1-R5) — Kundenvorgaben-Uebernahme, Steuersatz-Vererbung,
 // ChangeLog-Kette, Kopftext/BG-14.

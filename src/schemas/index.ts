@@ -475,6 +475,37 @@ export const invoiceLineDerivableSchema = z
   .object({ ...invoiceLineBaseShape, taxCategory: TaxCategory.optional() })
   .superRefine(refineInvoiceLine);
 
+/**
+ * Abo-Zeile (Phase 18f): wie `invoiceLineDerivableSchema`, zusaetzlich Zeilen-Id (Bearbeiten
+ * haelt die Id stabil), Abrechnungsart und Anzeigeeinheit des Verbrauchs. USAGE-Zeilen haben
+ * Menge 0 — die Menge ergibt sich beim Lauf aus der Summe der offenen Verbraeuche.
+ */
+export const recurringLineInputSchema = z
+  .object({
+    ...invoiceLineBaseShape,
+    taxCategory: TaxCategory.optional(),
+    id: z.string().trim().min(1).max(64).optional(),
+    // Bewusst ohne Default (Output-Typ bleibt fuer Bestandsaufrufer kompatibel); fehlend = FIXED.
+    billing: z.enum(["FIXED", "USAGE"]).optional(),
+    usageUnitLabel: z.string().trim().min(1).max(40).optional(),
+  })
+  .superRefine((line, ctx) => {
+    if (line.billing !== "USAGE") {
+      refineInvoiceLine(line, ctx);
+      return;
+    }
+    if (line.lineType !== "ITEM") {
+      ctx.addIssue({ code: "custom", message: "Verbrauchsabrechnung nur bei Positionszeilen", path: ["billing"] });
+      return;
+    }
+    if (line.quantityMilli !== 0) {
+      ctx.addIssue({ code: "custom", message: "Menge ergibt sich aus dem Verbrauch", path: ["quantityMilli"] });
+    }
+    // Restliche Preis-/Rabattregeln wie bei jeder Position (Menge 0 ist hier gewollt).
+    refineInvoiceLine({ ...line, quantityMilli: 1 }, ctx);
+  });
+export type RecurringLineInput = z.infer<typeof recurringLineInputSchema>;
+
 /** Fehlende Positions-Kategorien aus dem Steuerschema ableiten (gleiche Funktion wie Editor/MCP). */
 export function resolveLineCategories<L extends { taxCategory?: z.infer<typeof TaxCategory> }>(
   lines: readonly L[],
@@ -935,7 +966,7 @@ const recurringObjectSchema = z.object({
   showPeriodText: z.boolean().optional(),
   language: DocLanguageSchema.optional(),
   notes: z.string().optional(),
-  lines: z.array(invoiceLineDerivableSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }),
+  lines: z.array(recurringLineInputSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }),
 });
 export const createRecurringSchema = recurringObjectSchema.transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
@@ -971,7 +1002,7 @@ export const updateRecurringSchema = z.object({
   currency: currencyCodeSchema.optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
   // Kategorie optional: die Domain leitet sie aus dem Abo-Steuerschema ab (recurring/update.ts).
-  lines: z.array(invoiceLineDerivableSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }).optional(),
+  lines: z.array(recurringLineInputSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }).optional(),
 });
 export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
 

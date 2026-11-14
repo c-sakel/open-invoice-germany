@@ -12,7 +12,7 @@ import { cancelInvoice } from "@/domain/invoice/cancel";
 import { collectFinalizeWarnings, parseWarningCodes } from "@/domain/invoice/finalize-warnings";
 import { duplicateDocument } from "@/domain/document/duplicate";
 import { createRecurring } from "@/domain/recurring/create";
-import { emitRecurringNow } from "@/domain/recurring/run";
+import { emitRecurringInvoice as emitRecurringNow } from "../helpers/emit-recurring";
 import { verifyOrgChain } from "@/domain/audit/verify-chain";
 import { GobdImmutabilityError } from "@/lib/db";
 import { loadEInvoiceData } from "@/lib/einvoice/load";

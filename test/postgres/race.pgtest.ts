@@ -1,4 +1,5 @@
 /**
+ * Phase 18f: Verbrauch (gleiche externalId parallel; Lauf parallel zur Erfassung, Praefix V18FR-).
  * Phase 18c: Sammel-Storno (parallele Laeufe, seriell je Organisation).
  * Phase 18d: POST /api/v1/Invoice mit finalize (Idempotenz in der Transaktion, gleicher und verschiedene Keys).
  * Phase 17b, Task 8 — Parallel-Lasttest unter PostgreSQL (scripts/test-postgres-race.sh).
@@ -27,6 +28,10 @@ import { quotePostal, sendByPost } from "@/domain/postal/send";
 import type { LxpTransport } from "@/lib/postal/transport";
 import { createApiKey } from "@/domain/api-key/create";
 import { POST as InvoicePost } from "@/app/api/v1/Invoice/route";
+import { createRecurring } from "@/domain/recurring/create";
+import { emitRecurringNow } from "@/domain/recurring/run";
+import { recordUsage, UsageError } from "@/domain/recurring/usage";
+import { createRecurringSchema } from "@/schemas";
 import { runCsvImport, ImportRejectedError, ImportAlreadyDoneError } from "@/domain/import/run";
 
 const N = 5;
@@ -316,5 +321,56 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(invoices).toHaveLength(N);
     expect(new Set(invoices.map((i) => i.number)).size).toBe(N);
     expect((await verifyOrgChain(s.orgId, "UI")).valid).toBe(true);
+  });
+
+  async function usageScenario() {
+    const s = await newScenario();
+    const rec = await createRecurring(
+      s.orgId,
+      createRecurringSchema.parse({
+        customerId: s.customerId,
+        title: "V18FR-Verbrauch",
+        startDate: s.now,
+        autoFinalize: false,
+        lines: [
+          { ...item(1000, 2900), description: "V18FR-Grundgebuehr" },
+          { ...item(0, 0), description: "V18FR-API", unitNetPriceMilliCents: 200, billing: "USAGE" },
+        ],
+      }),
+    );
+    const usageLineId = rec.lines.find((l) => l.billing === "USAGE")?.id ?? "";
+    return { ...s, rec, usageLineId };
+  }
+
+  it("Verbrauch: 10x parallel recordUsage mit derselben externalId -> genau ein Satz, 9x replayed", async () => {
+    const s = await usageScenario();
+    const payload = { recurringLineId: s.usageLineId, quantityMilli: 1_000_000, usageDate: s.now.toISOString().slice(0, 10), externalId: "ev-race-1" };
+    const rs = await Promise.allSettled(Array.from({ length: 10 }, () => recordUsage(s.orgId, s.rec.id, payload, { source: "API", actor: "race", now: s.now })));
+    expect(fulfilled(rs), describeFailures(rs)).toHaveLength(10);
+    expect(fulfilled(rs).filter((r) => r.value.replayed)).toHaveLength(9);
+    expect(await dbInternal.recurringUsage.count({ where: { recurringInvoiceId: s.rec.id } })).toBe(1);
+  });
+
+  it("Verbrauch: 5x Lauf + 5x Erfassung parallel -> je Periode hoechstens eine Rechnung, kein Satz doppelt abgerechnet, Summen stimmen", async () => {
+    const s = await usageScenario();
+    const day = s.now.toISOString().slice(0, 10);
+    const tasks: Promise<unknown>[] = [];
+    for (let i = 0; i < 5; i++) {
+      tasks.push(emitRecurringNow(s.rec.id, { now: s.now, actor: "race" }));
+      tasks.push(recordUsage(s.orgId, s.rec.id, { recurringLineId: s.usageLineId, quantityMilli: 1_000_000 * (i + 1), usageDate: day, externalId: `ev-${i}` }, { source: "API", actor: "race", now: s.now }));
+    }
+    const rs = await Promise.allSettled(tasks);
+    // Erfassung nach dem Lauf der Periode scheitert fachlich (PERIOD_BILLED); alles andere ist ein Fehler.
+    for (const f of rejected(rs)) expect(f.reason instanceof UsageError && f.reason.code === "PERIOD_BILLED", String(f.reason)).toBe(true);
+
+    const invoices = await dbInternal.invoice.findMany({ where: { orgId: s.orgId, recurringInvoiceId: s.rec.id }, select: { id: true, deliveryDate: true } });
+    expect(new Set(invoices.map((i) => i.deliveryDate?.getTime())).size).toBe(invoices.length);
+    const usages = await dbInternal.recurringUsage.findMany({ where: { recurringInvoiceId: s.rec.id }, select: { id: true, invoiceId: true, quantityMilli: true, periodEnd: true } });
+    const billed = usages.filter((u) => u.invoiceId !== null);
+    expect(new Set(billed.map((u) => u.id)).size).toBe(billed.length);
+    const lines = await dbInternal.invoiceLine.findMany({ where: { invoiceId: { in: invoices.map((i) => i.id) }, description: "V18FR-API" }, select: { quantityMilli: true } });
+    expect(lines.reduce((sum, l) => sum + l.quantityMilli, 0)).toBe(billed.reduce((sum, u) => sum + u.quantityMilli, 0));
+    const lastEnd = Math.max(...invoices.map((i) => i.deliveryDate?.getTime() ?? 0));
+    expect(usages.filter((u) => u.invoiceId === null && u.periodEnd.getTime() <= lastEnd)).toHaveLength(0);
   });
 });
