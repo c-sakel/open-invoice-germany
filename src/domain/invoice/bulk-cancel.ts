@@ -9,6 +9,7 @@
  * keinen Sammelbeleg; das Ergebnis ist ein Bericht je Beleg.
  */
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@/generated/prisma/client";
 import { dbInternal } from "@/lib/db";
 import { runExclusive } from "@/lib/serial-queue";
 import { isChangeLogChainConflict } from "@/lib/chain-retry";
@@ -31,26 +32,37 @@ export function classifyCancelError(e: unknown): { code: BulkCancelCode; message
   if (e instanceof CancelError) return { code: "NOT_CANCELLABLE", message: e.message, retryable: false };
   if (e instanceof NotFoundError) return { code: "NOT_FOUND", message: NOT_FOUND_MESSAGE, retryable: false };
   if (e instanceof FinalizeError) return { code: "FINALIZE_FAILED", message: e.message, retryable: false };
-  // Kettenkonflikt (orgId+prevHash) oder anderer Unique-Konflikt: kurz wiederholen, danach BUSY.
-  if (isChangeLogChainConflict(e) || isUniqueConflict(e)) {
+  // Nur der ChangeLog-Kettenkonflikt (orgId+prevHash) wird kurz wiederholt, danach BUSY.
+  if (isChangeLogChainConflict(e)) {
     return { code: "BUSY", message: "Das System ist gerade ausgelastet — bitte erneut versuchen.", retryable: true };
   }
-  console.error("[bulk-cancel] unerwarteter Fehler", e);
+  // Rohfehler nie loggen (koennen Belegdaten enthalten): nur Klasse und Prisma-Code.
+  const cls = e instanceof Error ? e.name : "unknown";
+  const prismaCode = e instanceof Prisma.PrismaClientKnownRequestError ? e.code : undefined;
+  console.error("[bulk-cancel] unerwarteter Fehler", cls, prismaCode ?? "");
   return { code: "INTERNAL", message: "Storno fehlgeschlagen — Details im Serverprotokoll.", retryable: false };
-}
-
-function isUniqueConflict(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "P2002";
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function cancelInvoicesBulk(orgId: string, raw: unknown, opts: { actor?: string; now?: () => Date } = {}): Promise<BulkCancelResult> {
+/** Schmale Abhaengigkeiten (Standard: Produktivcode); nur fuer Fehlerinjektion in Unit-Tests. */
+export interface BulkCancelOptions {
+  actor?: string;
+  now?: () => Date;
+  cancel?: typeof cancelInvoice;
+  log?: typeof logActivity;
+  sleepMs?: (ms: number) => Promise<void>;
+}
+
+export async function cancelInvoicesBulk(orgId: string, raw: unknown, opts: BulkCancelOptions = {}): Promise<BulkCancelResult> {
   const input = bulkCancelSchema.parse(raw);
   const ids = [...new Set(input.ids)];
   const actor = opts.actor ?? "system";
   const now = opts.now ?? (() => new Date());
   const batchId = randomUUID();
+  const cancel = opts.cancel ?? cancelInvoice;
+  const log = opts.log ?? logActivity;
+  const wait = opts.sleepMs ?? sleep;
 
   const known = await dbInternal.invoice.findMany({ where: { orgId, id: { in: ids } }, select: { id: true, number: true } });
   const numbers = new Map(known.map((k) => [k.id, k.number]));
@@ -65,39 +77,44 @@ export async function cancelInvoicesBulk(orgId: string, raw: unknown, opts: { ac
         continue;
       }
       const number = numbers.get(id) ?? null;
-      let lastError: unknown;
+      let last: ReturnType<typeof classifyCancelError> | undefined;
       let done = false;
       for (let attempt = 0; attempt < MAX_ATTEMPTS && !done; attempt++) {
         try {
-          const res = await cancelInvoice(id, { orgId, reason: input.reason, actor, now: now(), batchId });
+          const res = await cancel(id, { orgId, reason: input.reason, actor, now: now(), batchId });
           ok.push({ id, number: res.originalNumber ?? number, creditNoteId: res.creditNote.id, creditNoteNumber: res.creditNote.number, refundDueCents: res.refundDueCents });
           done = true;
         } catch (e) {
-          lastError = e;
-          if (!classifyCancelError(e).retryable) break;
-          if (attempt + 1 < MAX_ATTEMPTS) await sleep(5 + Math.random() * 35 * (attempt + 1));
+          last = classifyCancelError(e);
+          if (!last.retryable) break;
+          if (attempt + 1 < MAX_ATTEMPTS) await wait(5 + Math.random() * 35 * (attempt + 1));
         }
       }
       if (!done) {
-        const c = classifyCancelError(lastError);
+        const c = last ?? { code: "INTERNAL" as const, message: "Storno fehlgeschlagen — Details im Serverprotokoll." };
         failed.push({ id, number: c.code === "NOT_FOUND" ? null : number, code: c.code, message: c.message });
       }
     }
 
-    await logActivity(dbInternal, {
-      orgId,
-      entityType: "INVOICE_BATCH",
-      entityId: batchId,
-      type: "BULK_CANCELLED",
-      actor,
-      at: now(),
-      data: {
-        batchId,
-        reason: input.reason,
-        ok: ok.map((o) => ({ id: o.id, number: o.number, creditNoteNumber: o.creditNoteNumber })),
-        failed: failed.map((f) => ({ id: f.id, number: f.number, code: f.code })),
-      },
-    });
+    try {
+      await log(dbInternal, {
+        orgId,
+        entityType: "INVOICE_BATCH",
+        entityId: batchId,
+        type: "BULK_CANCELLED",
+        actor,
+        at: now(),
+        data: {
+          batchId,
+          reason: input.reason,
+          ok: ok.map((o) => ({ id: o.id, number: o.number, creditNoteNumber: o.creditNoteNumber })),
+          failed: failed.map((f) => ({ id: f.id, number: f.number, code: f.code })),
+        },
+      });
+    } catch (e) {
+      // Das Protokoll ist Nebensache: die Stornos sind festgeschrieben, der Bericht muss ankommen.
+      console.error("[bulk-cancel] Aktivitaetsprotokoll fehlgeschlagen", e instanceof Error ? e.name : "unknown");
+    }
     return { batchId, ok, failed };
   });
 }

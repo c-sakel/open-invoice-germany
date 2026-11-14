@@ -23,6 +23,14 @@ describe("classifyCancelError", () => {
     expect(c.code).toBe("BUSY");
     expect(c.retryable).toBe(true);
   });
+  it("P2002 ohne prevHash -> INTERNAL, nicht wiederholbar", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const e = new Prisma.PrismaClientKnownRequestError("Unique", { code: "P2002", clientVersion: "x", meta: { target: ["number"] } });
+    const c = classifyCancelError(e);
+    spy.mockRestore();
+    expect(c.code).toBe("INTERNAL");
+    expect(c.retryable).toBe(false);
+  });
   it("unbekannter Fehler -> INTERNAL ohne Details", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const c = classifyCancelError(new Error("SQLITE intern xyz"));
