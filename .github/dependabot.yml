@@ -1,5 +1,5 @@
-# Haelt das gepinnte Basis-Image (Tag + Digest im Dockerfile) und die per SHA gepinnten
-# GitHub Actions aktuell. npm-Abhaengigkeiten bewusst nicht — die werden je Phase gepflegt.
+# Hält das gepinnte Basis-Image (Tag + Digest im Dockerfile) und die per SHA gepinnten
+# GitHub Actions aktuell. npm-Abhängigkeiten bewusst nicht — die werden gezielt von Hand gepflegt.
 version: 2
 updates:
   - package-ecosystem: docker
