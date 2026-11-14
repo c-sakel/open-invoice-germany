@@ -28,6 +28,8 @@ export const mailSettingsInputSchema = z.object({
   defaultCc: z.string().default(""),
   defaultBcc: z.string().default(""),
   copyToSelf: z.boolean().default(false),
+  /** HTML-Teil mitsenden. Bewusst OHNE Default: fehlt das Feld, bleibt der gespeicherte Wert (Merge). */
+  htmlEnabled: z.boolean().optional(),
 });
 export type MailSettingsInput = z.infer<typeof mailSettingsInputSchema>;
 

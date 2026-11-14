@@ -19,6 +19,7 @@ import { DeliveryNoteValidationError } from "@/domain/delivery-note/errors";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { setQuoteStatus, setDeliveryNoteStatus } from "@/domain/document/status";
 import { createSmtpProvider } from "@/lib/mail/smtp";
+import { withHtmlPart } from "@/domain/email/html-part";
 import type { MailProvider } from "@/lib/mail/provider";
 import { sendEmailInputSchema, type SendEmailRawInput } from "@/schemas/email";
 import { MAX_EMAIL_ATTACHMENTS_TOTAL_BYTES } from "@/lib/attachments/mime";
@@ -142,8 +143,9 @@ export async function sendDocumentEmail(
   let status: "SENT" | "FAILED" = "SENT";
   let providerId: string | null = null;
   let error: string | undefined;
+  let htmlSha256: string | undefined;
   try {
-    const res = await prov.send({
+    const mail = await withHtmlPart(orgId, settings, {
       from: { name: settings.fromName, address: settings.fromEmail },
       to: input.to,
       cc: input.cc,
@@ -153,6 +155,8 @@ export async function sendDocumentEmail(
       text,
       attachments,
     });
+    if (mail.html !== undefined) htmlSha256 = createHash("sha256").update(mail.html).digest("hex");
+    const res = await prov.send(mail);
     providerId = res.providerId;
   } catch (e) {
     status = "FAILED";
@@ -174,6 +178,7 @@ export async function sendDocumentEmail(
     bcc,
     subject: input.subject,
     attachmentsMeta,
+    htmlSha256,
   });
 
   // SENT-Hook (Addendum Task 4): erfolgreicher Versand setzt bei Angebot/AB/Proforma

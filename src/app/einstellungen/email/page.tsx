@@ -1,5 +1,6 @@
 import { getActiveOrg } from "@/lib/org";
 import { describeMailSettings } from "@/domain/email/settings";
+import { loadBrandingSettings } from "@/domain/settings/branding";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { MailSettingsForm } from "@/components/forms/MailSettingsForm";
 import { TestMailForm } from "@/components/forms/TestMailForm";
@@ -13,6 +14,7 @@ function deDateTime(d: Date | null) {
 export default async function MailSettingsPage() {
   const org = await getActiveOrg();
   const settings = await describeMailSettings(org.id);
+  const branding = await loadBrandingSettings(org.id);
   const authSecretMissing = !process.env.AUTH_SECRET || process.env.AUTH_SECRET.length < 16;
 
   return (
@@ -33,7 +35,7 @@ export default async function MailSettingsPage() {
         </p>
       )}
 
-      <MailSettingsForm settings={settings} />
+      <MailSettingsForm settings={settings} primaryColor={branding.primaryColor} />
       <TestMailForm />
     </div>
   );

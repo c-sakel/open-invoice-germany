@@ -5,6 +5,7 @@
  * NACH der Entscheidungs-Transaktion — `convertDocument` oeffnet eine eigene Transaktion,
  * ein Fehler dort darf die bereits verbuchte Entscheidung nicht zuruecknehmen.
  */
+import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { appendChangeLog } from "@/domain/audit";
@@ -18,6 +19,7 @@ import { decideOfferInputSchema } from "@/schemas/quote-share";
 import { loadMailSettings } from "@/domain/email/settings";
 import { createQueuedEmailLog, finishEmailLog } from "@/domain/email/email-log";
 import { createSmtpProvider } from "@/lib/mail/smtp";
+import { withHtmlPart } from "@/domain/email/html-part";
 import type { MailProvider } from "@/lib/mail/provider";
 
 export class AlreadyDecidedError extends Error {
@@ -211,8 +213,9 @@ export async function sendInternalNotification(
   let status: "SENT" | "FAILED" = "SENT";
   let providerId: string | null = null;
   let error: string | undefined;
+  let htmlSha256: string | undefined;
   try {
-    const res = await prov.send({
+    const mail = await withHtmlPart(orgId, settings, {
       from: { name: settings.fromName, address: settings.fromEmail },
       to: [to],
       cc: [],
@@ -222,6 +225,8 @@ export async function sendInternalNotification(
       text,
       attachments: [],
     });
+    if (mail.html !== undefined) htmlSha256 = createHash("sha256").update(mail.html).digest("hex");
+    const res = await prov.send(mail);
     providerId = res.providerId;
   } catch (e) {
     status = "FAILED";
@@ -242,5 +247,6 @@ export async function sendInternalNotification(
     cc: [],
     bcc: [],
     subject,
+    htmlSha256,
   });
 }

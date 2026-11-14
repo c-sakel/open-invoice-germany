@@ -88,6 +88,8 @@ export interface FinishEmailLogInput {
   bcc: string[];
   subject: string;
   attachmentsMeta?: unknown;
+  /** SHA-256 des gesendeten HTML-Teils (nur wenn ein HTML-Teil mitging); der HTML-Text selbst wird nicht gespeichert. */
+  htmlSha256?: string;
   at?: Date;
 }
 
@@ -121,6 +123,7 @@ export async function finishEmailLog(input: FinishEmailLogInput): Promise<void> 
         subject: input.subject,
         attachments: input.attachmentsMeta ?? [],
         error: input.error ?? null,
+        ...(input.htmlSha256 ? { htmlSha256: input.htmlSha256 } : {}),
       },
     });
 

@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { saveMailSettingsAction } from "@/app/actions/email";
 import type { ActionResult } from "@/app/actions/result";
+import { MailHtmlPreview } from "@/components/settings/MailHtmlPreview";
 import { TextField, SelectField, CheckboxField, SubmitButton, ErrorBanner } from "./fields";
 
 export interface MailSettingsFormData {
@@ -17,9 +18,10 @@ export interface MailSettingsFormData {
   defaultCc: string;
   defaultBcc: string;
   copyToSelf: boolean;
+  htmlEnabled: boolean;
 }
 
-export function MailSettingsForm({ settings }: { settings?: MailSettingsFormData | null }) {
+export function MailSettingsForm({ settings, primaryColor }: { settings?: MailSettingsFormData | null; primaryColor?: string | null }) {
   const [state, action] = useActionState<ActionResult, FormData>(saveMailSettingsAction, { ok: false });
 
   return (
@@ -63,6 +65,17 @@ export function MailSettingsForm({ settings }: { settings?: MailSettingsFormData
           <TextField label="Standard-BCC" name="defaultBcc" defaultValue={settings?.defaultBcc} hint="Kommagetrennt" />
           <CheckboxField label="Kopie an mich" name="copyToSelf" defaultChecked={settings?.copyToSelf} hint="Absenderadresse wird jeder gesendeten Mail als BCC hinzugefügt." />
         </div>
+      </section>
+
+      <section className="space-y-4 rounded-[var(--radius-card)] border border-rule bg-sheet p-5">
+        <h2 className="font-semibold text-ink">HTML-Version</h2>
+        <CheckboxField
+          label="HTML-Version mitsenden"
+          name="htmlEnabled"
+          defaultChecked={settings?.htmlEnabled ?? false}
+          hint="Die Textversion bleibt enthalten. Keine Bilder, keine externen Inhalte, kein Tracking. Formatierungen aus Vorlagen erscheinen als Text."
+        />
+        <MailHtmlPreview primaryColor={primaryColor ?? null} />
       </section>
 
       <SubmitButton>Einstellungen speichern</SubmitButton>
