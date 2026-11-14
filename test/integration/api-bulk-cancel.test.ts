@@ -182,4 +182,13 @@ describe("MCP cancel_invoices", () => {
     const log = await dbInternal.changeLog.findFirstOrThrow({ where: { orgId, entityId: a.id, action: "CANCEL" }, select: { actor: true } });
     expect(log.actor).toBe("mcp");
   });
+
+  it("11. Aufruf je Minute: Rate-Limit-Fehler, Domain wird nicht erreicht", async () => {
+    const a = await finalized(orgId, customerId);
+    for (let i = 0; i < 10; i++) await call({ invoices: ["XX-gibt-es-nicht"], reason: "Limit" });
+    const res = await call({ invoices: [a.id], reason: "Limit" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Zu viele");
+    expect(await dbInternal.changeLog.count({ where: { orgId, entityId: a.id, action: "CANCEL" } })).toBe(0);
+  });
 });

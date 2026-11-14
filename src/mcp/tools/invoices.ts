@@ -18,6 +18,7 @@ import { createInvoiceComplete } from "@/domain/invoice/create-complete";
 import { PaymentError } from "@/domain/invoice/payment";
 import {
   beginIdempotency,
+  canonicalJson,
   completeIdempotencyWithinTx,
   abandonIdempotency,
   requireIdempotencyKey,
@@ -141,10 +142,11 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
       let reservedOrgId: string | null = null;
       try {
         if (args.payment && !args.finalize) throw new ToolError("payment nur zusammen mit finalize: true.");
+        if (args.idempotencyKey !== undefined && !args.finalize) throw new ToolError("idempotencyKey nur zusammen mit finalize: true.");
         if (args.finalize) idemKey = `mcp:${requireIdempotencyKey(args.idempotencyKey, "idempotencyKey ist bei finalize Pflicht.")}`;
         const org = await ctx.requireOrg();
         if (idemKey) {
-          const replay = await beginIdempotency(org.id, idemKey, "MCP", "create_invoice", JSON.stringify(args));
+          const replay = await beginIdempotency(org.id, idemKey, "MCP", "create_invoice", canonicalJson(args));
           if (replay) return ctx.ok((replay.body as { text: string }).text);
           reservedOrgId = org.id;
         }
@@ -340,7 +342,7 @@ export function registerInvoiceTools(server: McpServer, ctx: McpToolsContext): v
         "Storniert 1 bis 50 festgeschriebene Rechnungen nacheinander (je Beleg eigene Storno-Gutschrift, Originale bleiben erhalten; kein Versand). " +
         "Ergebnis je Beleg (ok/failed); ein Fehler stoppt die uebrigen nicht. Hoechstens 10 Aufrufe pro Minute.",
       inputSchema: {
-        invoices: z.array(z.string()).min(1).max(50).describe("Rechnungs-IDs oder -Nummern (1 bis 50)"),
+        invoices: z.array(z.string().trim().min(1).max(64)).min(1).max(50).describe("Rechnungs-IDs oder -Nummern (1 bis 50)"),
         reason: bulkCancelSchema.shape.reason.describe("Stornogrund (Pflicht, max. 500 Zeichen) — landet in den Notizen der Stornobelege"),
       },
     },
