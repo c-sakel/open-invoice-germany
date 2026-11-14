@@ -306,6 +306,7 @@ export function buildFacturXCII(data: EInvoiceData): string {
     const pm = set.ele("ram:SpecifiedTradeSettlementPaymentMeans");
     pm.ele("ram:TypeCode").txt(pmMeans.code).up();
     // CII-XSD PaymentMeans: TypeCode, FinancialCard, PayerPartyDebtorFinancialAccount, PayeePartyCreditorFinancialAccount.
+    // CII (BG-18) kennt kein Kartennetz: network wird hier bewusst nicht ausgegeben (nur UBL: CardNetworkID).
     if (pmMeans.card) {
       const card = pm.ele("ram:ApplicableTradeSettlementFinancialCard");
       card.ele("ram:ID").txt(pmMeans.card.panTruncated).up();

@@ -20,6 +20,11 @@ describe("redactJson", () => {
       cardPanTruncated: REDACTED, sepaMandateReference: REDACTED, sepaDebitIban: REDACTED, name: "x",
     });
   });
+  it("schwaerzt Karteninhaber und Kontoinhaber der Lastschrift (Phase 18e)", () => {
+    expect(redactJson({ cardHolderName: "Erika Beispiel", sepaDebitAccountName: "Erika Beispiel", name: "x" })).toEqual({
+      cardHolderName: REDACTED, sepaDebitAccountName: REDACTED, name: "x",
+    });
+  });
   it("schwaerzt den Import-Body-Schluessel csv (Phase 18b)", () => {
     expect(redactJson({ csv: "Name;Straße\r\nGeheim AG;Weg 1", dryRun: true })).toEqual({ csv: REDACTED, dryRun: true });
   });

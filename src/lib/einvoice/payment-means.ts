@@ -32,14 +32,18 @@ export function resolveSpecialMeans(i: {
   if (i.invoiceType === "CREDIT_NOTE") return { kind: "fallback", gap: null };
   if (isCard) {
     const c = i.card;
-    if (!c || !c.cardPanTruncated || !c.cardNetwork) return { kind: "fallback", gap: "karte-unvollstaendig" };
+    // Defensiv: nur genau 4 Ziffern (Datenschutz, nie mehr Kartenziffern).
+    if (!c || !c.cardPanTruncated || !/^\d{4}$/.test(c.cardPanTruncated) || !c.cardNetwork) return { kind: "fallback", gap: "karte-unvollstaendig" };
     return {
       kind: "card",
       card: { panTruncated: c.cardPanTruncated, network: c.cardNetwork, holderName: c.cardHolderName ?? null },
     };
   }
-  if (!i.directDebit) return { kind: "fallback", gap: "lastschrift-unvollstaendig" };
-  return { kind: "directDebit", directDebit: i.directDebit };
+  const d = i.directDebit;
+  // Leere Strings (Altdaten, direkter Aufruf ohne Schema) gelten als unvollstaendig.
+  if (!d || !d.creditorId || !d.mandateReference || !d.debtorIban)
+    return { kind: "fallback", gap: "lastschrift-unvollstaendig" };
+  return { kind: "directDebit", directDebit: d };
 }
 
 /** Liest den Lastschrift-Snapshot; ungueltig -> Warnung OHNE Inhalt (IBAN!) und null. */

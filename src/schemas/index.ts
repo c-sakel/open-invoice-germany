@@ -107,10 +107,10 @@ export const invoiceCardFields = {
 
 /** Lastschrift-Snapshot am Beleg (BG-19/BT-89..91); mandateSignedAt als YYYY-MM-DD. */
 export const directDebitSnapshotSchema = z.object({
-  creditorId: z.string(),
-  mandateReference: z.string(),
+  creditorId: z.string().min(1),
+  mandateReference: z.string().min(1),
   mandateSignedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  debtorIban: z.string(),
+  debtorIban: z.string().min(1),
   debtorAccountName: z.string().nullable(),
 });
 export type DirectDebitSnapshot = z.infer<typeof directDebitSnapshotSchema>;

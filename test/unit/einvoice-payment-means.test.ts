@@ -80,6 +80,16 @@ describe("resolveSpecialMeans", () => {
     expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: null }))
       .toEqual({ kind: "fallback", gap: "lastschrift-unvollstaendig" });
   });
+  it("leere Snapshot-Strings und ungueltige Kartenziffern -> Fallback mit Hinweis", () => {
+    for (const k of ["creditorId", "mandateReference", "debtorIban"] as const) {
+      expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: { ...SNAPSHOT, [k]: "" } }))
+        .toEqual({ kind: "fallback", gap: "lastschrift-unvollstaendig" });
+    }
+    for (const pan of ["123", "12345", "12a4"]) {
+      expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardPanTruncated: pan }, directDebit: null }))
+        .toEqual({ kind: "fallback", gap: "karte-unvollstaendig" });
+    }
+  });
   it("Gutschrift: Fallback ohne Hinweis", () => {
     expect(resolveSpecialMeans({ code: "59", invoiceType: "CREDIT_NOTE", card: null, directDebit: SNAPSHOT }))
       .toEqual({ kind: "fallback", gap: null });
