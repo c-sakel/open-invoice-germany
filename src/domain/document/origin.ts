@@ -86,6 +86,26 @@ export async function originsFor(orgId: string, kind: OriginKind, ids: readonly 
 
   // Belege ohne denormalisierte Quelle: CONVERTED_TO zeigt VON der Quelle AUF den Beleg
   // (src/domain/document/convert.ts) — eine Abfrage fuer alle fehlenden Ids.
+  // Sammelrechnungen aus Abos: je beteiligtem Abo eine GENERATED_BY-Relation (VON der Rechnung AUF das Abo).
+  // Ab zwei Abos gilt ein eigener Hinweis (Link aufs erste Abo), sonst gilt die Einzelherkunft.
+  const collective = new Map<string, { count: number; firstId: string }>();
+  if (kind === "INVOICE") {
+    const rels = await prisma.documentRelation.findMany({
+      where: { orgId, relationType: "GENERATED_BY", fromType: "INVOICE", toType: "RECURRING", fromId: { in: idList } },
+      select: { fromId: true, toId: true },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const rel of rels) {
+      const cur = collective.get(rel.fromId);
+      if (cur) cur.count += 1;
+      else collective.set(rel.fromId, { count: 1, firstId: rel.toId });
+    }
+    for (const [invoiceId, c] of collective) {
+      if (c.count >= 2) source.set(invoiceId, { type: "RECURRING", id: c.firstId });
+      else if (!source.has(invoiceId)) source.set(invoiceId, { type: "RECURRING", id: c.firstId });
+    }
+  }
+
   const missing = idList.filter((id) => !source.has(id));
   if (missing.length > 0) {
     const rels = await prisma.documentRelation.findMany({
@@ -127,7 +147,9 @@ export async function originsFor(orgId: string, kind: OriginKind, ids: readonly 
   for (const [docId, ref] of source) {
     const row = rowById.get(`${ref.type}:${ref.id}`);
     if (!row) continue;
-    out.set(docId, { href: hrefFor(ref.type, ref.id), label: labelFor(ref.type, row) });
+    const group = collective.get(docId);
+    const label = group && group.count >= 2 ? `Sammelrechnung aus ${group.count} Abos` : labelFor(ref.type, row);
+    out.set(docId, { href: hrefFor(ref.type, ref.id), label });
   }
   return out;
 }

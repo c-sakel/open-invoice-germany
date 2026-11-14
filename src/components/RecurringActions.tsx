@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function RecurringActions({ id, status }: { id: string; status: string }) {
+export function RecurringActions({ id, status, collective = false }: { id: string; status: string; collective?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,13 +37,22 @@ export function RecurringActions({ id, status }: { id: string; status: string })
       setError(j.error ?? "Erzeugen fehlgeschlagen.");
       return;
     }
-    const j = (await res.json()) as { number?: string | null; finalized?: boolean; skipped?: boolean; message?: string };
+    const j = (await res.json()) as {
+      number?: string | null;
+      finalized?: boolean;
+      skipped?: boolean;
+      message?: string;
+      collectiveCount?: number;
+    };
     if (j.skipped) {
       setInfo(j.message ?? "Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
       router.refresh();
       return;
     }
-    setInfo(j.number ? `Rechnung ${j.number} erzeugt.` : "Rechnungs-Entwurf erzeugt.");
+    const what = j.number ? `Rechnung ${j.number}` : "Rechnungs-Entwurf";
+    if (j.collectiveCount && j.collectiveCount > 1) setInfo(`Sammelrechnung für ${j.collectiveCount} Abos erzeugt (${what}).`);
+    else if (collective) setInfo(`${what} erzeugt (kein weiteres Abo fällig — normale Einzelrechnung).`);
+    else setInfo(j.number ? `Rechnung ${j.number} erzeugt.` : "Rechnungs-Entwurf erzeugt.");
     router.refresh();
   }
 
@@ -73,6 +82,9 @@ export function RecurringActions({ id, status }: { id: string; status: string })
           </button>
         )}
       </div>
+      {collective && status === "ACTIVE" && (
+        <p className="text-xs text-ink-muted">Rechnet fällige Abos dieses Kunden mit Sammelschalter gemeinsam ab.</p>
+      )}
       {info && <p className="text-xs text-ledger">{info}</p>}
       {error && <p className="text-xs text-stamp">{error}</p>}
     </div>

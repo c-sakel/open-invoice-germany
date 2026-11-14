@@ -16,7 +16,12 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     if (!rec) return NextResponse.json({ error: "Abo nicht gefunden." }, { status: 404 });
     const res = await emitRecurringNow(id);
     if (isSkipped(res)) return NextResponse.json({ skipped: true, periodDate: res.periodDate, message: NO_USAGE_MESSAGE });
-    return NextResponse.json({ invoiceId: res.invoiceId, number: res.number, finalized: res.finalized });
+    return NextResponse.json({
+      invoiceId: res.invoiceId,
+      number: res.number,
+      finalized: res.finalized,
+      collectiveCount: res.collectiveRecurringIds?.length ?? 1,
+    });
   } catch (e) {
     if (e instanceof RecurringError) return NextResponse.json({ error: e.message }, { status: 422 });
     console.error("POST /api/recurring/[id]/run:", e);

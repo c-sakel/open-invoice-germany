@@ -534,6 +534,7 @@ export interface RecurringListRow {
   customerName: string;
   nextRunDate: Date;
   currency: string;
+  collectiveBilling: boolean;
 }
 
 export interface RecurringListResult {
@@ -600,6 +601,7 @@ export async function listRecurring(orgId: string, rawFilter: unknown): Promise<
         customer: { select: { name: true } },
         nextRunDate: true,
         currency: true,
+        collectiveBilling: true,
       },
     }),
   ]);
@@ -613,6 +615,7 @@ export async function listRecurring(orgId: string, rawFilter: unknown): Promise<
       customerName: r.customer.name,
       nextRunDate: r.nextRunDate,
       currency: r.currency,
+      collectiveBilling: r.collectiveBilling,
     })),
     total,
     limit: filter.limit,

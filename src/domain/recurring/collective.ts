@@ -46,6 +46,17 @@ const KEY_FIELDS: readonly CollectiveKeyField[] = [
   "emailTemplateId",
 ];
 
+/** Klartext je abweichendem Schluesselfeld (fuer die Anzeige, warum ein Abo nicht mit in die Sammelrechnung kommt). */
+export const COLLECTIVE_REASON_LABEL: Record<CollectiveKeyField, string> = {
+  currency: "Währung weicht ab",
+  taxScheme: "Steuerschema weicht ab",
+  language: "Sprache weicht ab",
+  paymentTermsDays: "Zahlungsziel weicht ab",
+  autoFinalize: "Festschreiben weicht ab",
+  autoSend: "Versand weicht ab",
+  emailTemplateId: "Mailvorlage weicht ab",
+};
+
 /** Berliner Kalendertag des Stichtags. */
 export function stichtagKey(nextRunDate: Date): string {
   return berlinDateKey(nextRunDate);

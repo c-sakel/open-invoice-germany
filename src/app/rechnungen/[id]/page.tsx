@@ -36,6 +36,8 @@ import { CorrectionSection } from "./_parts/CorrectionSection";
 import { PaymentSection } from "./_parts/PaymentSection";
 import { finalizeWarningMessage, parseWarningCodes } from "@/domain/invoice/finalize-warnings";
 import { normalizeVatId } from "@/lib/vat-id";
+import { collectiveBlockRanges } from "@/domain/recurring/collective";
+import { CollectiveOriginCard } from "./_parts/CollectiveOriginCard";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +134,21 @@ export default async function InvoiceDetail({
   const defaultPaymentMethodCode = invoice.customer.defaultPaymentMethod?.code ?? invoice.paymentMethod?.code ?? "TRANSFER";
 
   const attachments = await listAttachments(org.id, "INVOICE", invoice.id);
+
+  // Sammelrechnung: Herkunft je Positionsblock (Abo-Titel nur hier in der App, nie im Beleg).
+  const blockRanges = collectiveBlockRanges(invoice.lines);
+  const originTitles =
+    blockRanges.length > 0
+      ? new Map(
+          (
+            await dbInternal.recurringInvoice.findMany({
+              where: { orgId: org.id, id: { in: [...new Set(blockRanges.map((b) => b.recurringId))] } },
+              select: { id: true, title: true },
+            })
+          ).map((r) => [r.id, r.title]),
+        )
+      : new Map<string, string>();
+  const originBlocks = blockRanges.map((b) => ({ recurringId: b.recurringId, title: originTitles.get(b.recurringId) ?? "Abo", from: b.from, to: b.to }));
 
   // Phase 13d, Task 4 (Fix-Welle 1, should 5: jetzt Details-Karte statt nav-Slot): Tags
   // dieses Belegs plus die volle Tag-Liste der Organisation (Auswahlfeld in TagPicker).
@@ -289,6 +306,7 @@ export default async function InvoiceDetail({
             docId={invoice.id}
             initial={attachments.map((a) => ({ id: a.id, filename: a.filename, mime: a.mime, sizeBytes: a.sizeBytes }))}
           />
+          {originBlocks.length >= 2 && <CollectiveOriginCard blocks={originBlocks} />}
           <DocumentChain orgId={org.id} type="INVOICE" id={invoice.id} />
         </>
       }
