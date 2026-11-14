@@ -4,6 +4,7 @@ import { useMemo, useReducer, useState } from "react";
 import { useRouter } from "next/navigation";
 import { currencyOptions, currencySymbol } from "@/lib/currencies";
 import { draftLinesFromInitial, draftLinesToPayload, draftReducer, emptyDraft, type InitialLineLike } from "@/lib/editor/draft";
+import { shouldBlockEnterSubmit } from "@/lib/editor/enter-guard";
 import { computeDraftTotals } from "@/lib/editor/totals";
 import { LineItemsEditor } from "@/components/editor/blocks/LineItemsEditor";
 import { EditorCurrencyContext } from "@/components/editor/currency-context";
@@ -232,7 +233,14 @@ export function NewRecurringForm({
   const input = "rounded-md border border-rule-strong px-3 py-2 text-sm focus:border-pen";
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    <form
+      onSubmit={submit}
+      // Enter in Eingabefeldern (Positionstabelle, Kopf) sendet nicht ab; Speichern nur ueber den Button.
+      onKeyDown={(e) => {
+        if (shouldBlockEnterSubmit({ key: e.key, isComposing: e.nativeEvent.isComposing, target: e.target as HTMLInputElement })) e.preventDefault();
+      }}
+      className="space-y-6"
+    >
       {error && <div className="rounded-md border border-stamp/30 bg-stamp/10 p-3 text-sm text-stamp">{error}</div>}
 
       <div className="grid gap-4 sm:grid-cols-2">
