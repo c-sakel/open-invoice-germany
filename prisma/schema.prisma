@@ -44,15 +44,16 @@ model Organization {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  customers     Customer[]
-  layoutDesigns LayoutDesign[]
-  vatIdChecks   VatIdCheck[]
-  products      Product[]
-  quotes        Quote[]
-  invoices      Invoice[]
-  recurring     RecurringInvoice[]
-  numberRanges  NumberRange[]
-  changeLogs    ChangeLog[]
+  customers       Customer[]
+  layoutDesigns   LayoutDesign[]
+  vatIdChecks     VatIdCheck[]
+  products        Product[]
+  quotes          Quote[]
+  invoices        Invoice[]
+  recurring       RecurringInvoice[]
+  recurringUsages RecurringUsage[]
+  numberRanges    NumberRange[]
+  changeLogs      ChangeLog[]
 
   documentRelations      DocumentRelation[]
   deliveryNotes          DeliveryNote[]
@@ -75,7 +76,7 @@ model Organization {
   tags                   Tag[]
   postalSettings         PostalSettings?
   postalJobs             PostalJob[]
-  sepaCreditorId String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
+  sepaCreditorId         String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
 }
 
 /// Kunde / Leistungsempfänger.
@@ -126,24 +127,24 @@ model Customer {
   // Systemdefault) greift wie bei defaultPaymentTermsDays. Reiner Stammdaten-Zustand,
   // wirkt nie rueckwirkend auf bestehende Belege (Snapshots).
   defaultCurrency         String? // 3 Grossbuchstaben, z.B. EUR — sonst Beleg-Default
-  defaultDiscountPermille Int     @default(0) // 0..1000 (=0..100%), Vorschlag fuer neue Belege
+  defaultDiscountPermille Int       @default(0) // 0..1000 (=0..100%), Vorschlag fuer neue Belege
   invoiceEmail            String? // Rechnungsversand-Empfaenger, falls abweichend von email
   invoiceCc               String? // kommagetrennte CC-Adressen fuer Rechnungsversand
   quoteEmail              String? // Angebotsversand-Empfaenger, falls abweichend von email
-  eInvoicePreferred       Boolean @default(false) // Kunde bevorzugt XRechnung/ZUGFeRD
+  eInvoicePreferred       Boolean   @default(false) // Kunde bevorzugt XRechnung/ZUGFeRD
   orderReference          String? // Vorbelegung Bestellnummer (BT-13), siehe Invoice.orderNumber
   deliveryTermsText       String? // Vorschlag fuer Invoice/Quote.deliveryTerms
   paymentTermsText        String? // Vorschlag fuer Invoice/Quote.paymentTerms (Freitext, zusaetzlich zu defaultPaymentTermsDays)
-  language                String  @default("de") // ISO-639-1, Kleinbuchstaben
+  language                String    @default("de") // ISO-639-1, Kleinbuchstaben
   customFieldsJson        String? // Werte je CustomFieldDefinition.key, via Zod geparst (customFieldValuesSchema)
+  sepaMandateReference    String? // Phase 18e: Mandatsreferenz (BT-89)
+  sepaMandateSignedAt     DateTime? // Datum der Unterschrift (nur PDF-Vorabankuendigung)
+  sepaDebitIban           String? // belastetes Konto (BT-91), personenbezogen
+  sepaDebitAccountName    String? // Kontoinhaber, nur PDF
 
   @@index([orgId])
   @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
   @@index([orgId, customerNumber])
-  sepaMandateReference String?   // Phase 18e: Mandatsreferenz (BT-89)
-  sepaMandateSignedAt  DateTime? // Datum der Unterschrift (nur PDF-Vorabankuendigung)
-  sepaDebitIban        String?   // belastetes Konto (BT-91), personenbezogen
-  sepaDebitAccountName String?   // Kontoinhaber, nur PDF
 }
 
 /// Frei definierbare Kundenzusatzfelder je Organisation (§31). Werte liegen in
@@ -276,23 +277,24 @@ model Quote {
 }
 
 model QuoteLine {
-  id                String  @id @default(cuid())
-  quoteId           String
-  quote             Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  position          Int
-  lineType          String  @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (Phase 4b, §8: kein Menge-0-Workaround)
-  description       String
-  descriptionLong   String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge, Phase 4b)
-  articleNumber     String? // Artikelnummer-Snapshot zum Erfassungszeitpunkt
-  quantityMilli     Int // 1/1000 Einheit
-  unit              String  @default("C62")
-  unitNetPriceCents Int
-  taxRate           Int
-  taxCategory       String  @default("S")
-  discountPermille  Int     @default(0) // 0..1000 (= 0..100 %)
-  discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
-  lineNetCents      Int
-  ossCategory       String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
+  id                     String  @id @default(cuid())
+  quoteId                String
+  quote                  Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  position               Int
+  lineType               String  @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (Phase 4b, §8: kein Menge-0-Workaround)
+  description            String
+  descriptionLong        String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge, Phase 4b)
+  articleNumber          String? // Artikelnummer-Snapshot zum Erfassungszeitpunkt
+  quantityMilli          Int // 1/1000 Einheit
+  unit                   String  @default("C62")
+  unitNetPriceCents      Int
+  taxRate                Int
+  taxCategory            String  @default("S")
+  discountPermille       Int     @default(0) // 0..1000 (= 0..100 %)
+  discountCents          Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
+  lineNetCents           Int
+  ossCategory            String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
+  unitNetPriceMilliCents Int? // Phase 18f: Einzelpreis in 1/1000 Cent; gesetzt = fuehrend, unitNetPriceCents = Rundung
 
   @@index([quoteId])
 }
@@ -375,6 +377,7 @@ model Invoice {
   correctsInvoiceId         String? // Korrekturrechnung-Verknüpfung (§31 Abs.5 UStDV)
   recurringInvoiceId        String? // Herkunft: aus Abo/Dauerrechnung erzeugt
   recurringInvoice          RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
+  recurringUsages           RecurringUsage[]
   // Phase 5 (§13-15 UStG): Quelle bei type PARTIAL/DOWNPAYMENT/FINAL — QUOTE oder
   // DELIVERY_NOTE (Teilrechnung) bzw. QUOTE (Abschlag/Schluss). NULL bei INVOICE/
   // CREDIT_NOTE/CORRECTION. Die Relation selbst (PARTIAL_OF/DOWNPAYMENT_OF/FINAL_FOR)
@@ -406,12 +409,16 @@ model Invoice {
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
 
-  lines               InvoiceLine[]
-  payments            Payment[]
-  archivedDocuments   ArchivedDocument[]
-  dunnings            Dunning[]
-  finalDeductions     FinalInvoiceDeduction[] @relation("FinalInvoiceDeductions")
-  downpaymentOfFinals FinalInvoiceDeduction[] @relation("DownpaymentInvoiceDeductions")
+  lines                   InvoiceLine[]
+  payments                Payment[]
+  archivedDocuments       ArchivedDocument[]
+  dunnings                Dunning[]
+  finalDeductions         FinalInvoiceDeduction[] @relation("FinalInvoiceDeductions")
+  downpaymentOfFinals     FinalInvoiceDeduction[] @relation("DownpaymentInvoiceDeductions")
+  cardPanTruncated        String? // Phase 18e: letzte 4 Ziffern (BT-87), nie die volle Nummer
+  cardHolderName          String? // BT-88
+  cardNetwork             String? // UBL NetworkID (Pflicht in CardAccount), CII ohne Entsprechung
+  directDebitSnapshotJson String? // BG-19-Snapshot beim Festschreiben (directDebitSnapshotSchema), sonst NULL
 
   @@index([orgId])
   @@index([orgId, updatedAt]) // Phase 18d: Abgleich updatedSince
@@ -421,10 +428,6 @@ model Invoice {
   @@index([contactPersonId])
   @@index([billingAddressId])
   @@index([shippingAddressId])
-  cardPanTruncated        String? // Phase 18e: letzte 4 Ziffern (BT-87), nie die volle Nummer
-  cardHolderName          String? // BT-88
-  cardNetwork             String? // UBL NetworkID (Pflicht in CardAccount), CII ohne Entsprechung
-  directDebitSnapshotJson String? // BG-19-Snapshot beim Festschreiben (directDebitSnapshotSchema), sonst NULL
 }
 
 // Phase 5 (§14 Abs. 5 Satz 2 UStG): Snapshot einer auf einer Schlussrechnung
@@ -453,31 +456,34 @@ model FinalInvoiceDeduction {
 }
 
 model InvoiceLine {
-  id                String  @id @default(cuid())
-  invoiceId         String
-  invoice           Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  position          Int
-  lineType          String  @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (Phase 4b, §8: kein Menge-0-Workaround)
-  productId         String? // nur Snapshot-Referenz, kein Live-Lookup
-  description       String
-  descriptionLong   String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge, Phase 4b)
-  articleNumber     String? // Artikelnummer-Snapshot zum Erfassungszeitpunkt
-  quantityMilli     Int
-  unit              String  @default("C62")
-  unitNetPriceCents Int
-  taxRate           Int
-  taxCategory       String  @default("S")
-  discountPermille  Int     @default(0)
-  discountCents     Int     @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
-  lineNetCents      Int
+  id                     String    @id @default(cuid())
+  invoiceId              String
+  invoice                Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position               Int
+  lineType               String    @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (Phase 4b, §8: kein Menge-0-Workaround)
+  productId              String? // nur Snapshot-Referenz, kein Live-Lookup
+  description            String
+  descriptionLong        String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge, Phase 4b)
+  articleNumber          String? // Artikelnummer-Snapshot zum Erfassungszeitpunkt
+  quantityMilli          Int
+  unit                   String    @default("C62")
+  unitNetPriceCents      Int
+  taxRate                Int
+  taxCategory            String    @default("S")
+  discountPermille       Int       @default(0)
+  discountCents          Int       @default(0) // zusaetzlicher Festbetragsrabatt (Cent)
+  lineNetCents           Int
   // Phase 5 (Paragraph 13-15 UStG): Quellposition bei einer Teilrechnung (type PARTIAL,
   // mode POSITIONS/QUANTITIES) -- Id der QuoteLine/DeliveryNoteLine, gegen die
   // billedQuantities() die bereits abgerechnete Menge prueft. NULL bei allen anderen
   // Zeilen (Festbetrags-/Prozent-Teil-/Abschlagsrechnung, normale Rechnung).
-  sourceLineId      String?
+  sourceLineId           String?
   // Phase 16e, § 3c Abs. 4 UStG: Snapshot der OSS-Kategorie (NONE | GOODS_DISTANCE | ELECTRONIC_SERVICE);
   // NULL = vor 16e angelegt bzw. ohne Produkt.
-  ossCategory       String?
+  ossCategory            String?
+  unitNetPriceMilliCents Int? // Phase 18f: Einzelpreis in 1/1000 Cent; gesetzt = fuehrend, unitNetPriceCents = Rundung
+  servicePeriodStart     DateTime? // Phase 18f: Leistungszeitraum der Position (BG-26, BT-134)
+  servicePeriodEnd       DateTime? // BT-135
 
   @@index([invoiceId])
 }
@@ -647,6 +653,7 @@ model RecurringInvoice {
 
   lines    RecurringInvoiceLine[]
   invoices Invoice[]
+  usages   RecurringUsage[]
 
   @@index([orgId])
   @@index([customerId])
@@ -655,25 +662,62 @@ model RecurringInvoice {
 }
 
 model RecurringInvoiceLine {
-  id                 String           @id @default(cuid())
-  recurringInvoiceId String
-  recurringInvoice   RecurringInvoice @relation(fields: [recurringInvoiceId], references: [id], onDelete: Cascade)
-  position           Int
-  description        String
-  quantityMilli      Int
-  unit               String           @default("C62")
-  unitNetPriceCents  Int
-  taxRate            Int
-  taxCategory        String           @default("S")
-  discountPermille   Int              @default(0)
-  ossCategory        String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
-  lineType           String           @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (wie InvoiceLine, Phase 18c)
-  productId          String? // nur Snapshot-Referenz, kein Live-Lookup
-  descriptionLong    String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge)
-  articleNumber      String? // Artikelnummer-Snapshot
-  discountCents      Int              @default(0) // Festbetragsrabatt (Cent)
+  id                     String           @id @default(cuid())
+  recurringInvoiceId     String
+  recurringInvoice       RecurringInvoice @relation(fields: [recurringInvoiceId], references: [id], onDelete: Cascade)
+  position               Int
+  description            String
+  quantityMilli          Int
+  unit                   String           @default("C62")
+  unitNetPriceCents      Int
+  taxRate                Int
+  taxCategory            String           @default("S")
+  discountPermille       Int              @default(0)
+  ossCategory            String? // Phase 16e: Snapshot, wird in Rechnungspositionen uebernommen
+  lineType               String           @default("ITEM") // ITEM | HEADING | TEXT | SUBTOTAL (wie InvoiceLine, Phase 18c)
+  productId              String? // nur Snapshot-Referenz, kein Live-Lookup
+  descriptionLong        String? // Rich-Text-Langbeschreibung (Markdown-Teilmenge)
+  articleNumber          String? // Artikelnummer-Snapshot
+  discountCents          Int              @default(0) // Festbetragsrabatt (Cent)
+  unitNetPriceMilliCents Int? // Phase 18f: Einzelpreis in 1/1000 Cent
+  billing                String           @default("FIXED") // FIXED | USAGE (Phase 18f)
+  usageUnitLabel         String? // Anzeige, z. B. "API-Aufrufe"
+  usages                 RecurringUsage[]
 
   @@index([recurringInvoiceId])
+}
+
+/// Phase 18f: Verbrauchssatz eines Abos (Abrechnungsart USAGE). Append-only: nach Erfassung
+/// unveraenderlich (Guard in src/lib/db.ts), Storno nur ueber voidUsage (dbInternal).
+model RecurringUsage {
+  id                 String                @id @default(cuid())
+  orgId              String
+  org                Organization          @relation(fields: [orgId], references: [id])
+  recurringInvoiceId String
+  recurringInvoice   RecurringInvoice      @relation(fields: [recurringInvoiceId], references: [id], onDelete: Restrict)
+  recurringLineId    String?
+  recurringLine      RecurringInvoiceLine? @relation(fields: [recurringLineId], references: [id], onDelete: SetNull)
+  usageDate          DateTime
+  periodStart        DateTime
+  periodEnd          DateTime
+  quantityMilli      Int
+  note               String?
+  source             String // UI | API | MCP
+  externalId         String?
+  createdBy          String
+  createdAt          DateTime              @default(now())
+  invoiceId          String?
+  invoice            Invoice?              @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  billedAt           DateTime?
+  voidedAt           DateTime?
+  voidedBy           String?
+  voidReason         String?
+
+  @@unique([recurringInvoiceId, externalId])
+  @@index([recurringInvoiceId, invoiceId])
+  @@index([orgId, createdAt])
+  @@index([invoiceId])
+  @@index([recurringLineId])
 }
 
 /// Generische Verknuepfung zwischen Belegen (Phase 1). Polymorph ueber Typ+ID, daher ohne
