@@ -61,39 +61,46 @@ function render(over: Partial<MapInput>) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("resolveSpecialMeans", () => {
+  const DUE = new Date("2180-07-09");
   const card = { cardPanTruncated: "1234", cardNetwork: "VISA", cardHolderName: null };
   it("regulaere Codes", () => {
-    expect(resolveSpecialMeans({ code: "58", invoiceType: "INVOICE", card: null, directDebit: null })).toEqual({ kind: "regular" });
+    expect(resolveSpecialMeans({ code: "58", invoiceType: "INVOICE", card: null, directDebit: null, dueDate: DUE })).toEqual({ kind: "regular" });
   });
   it("Karte vollstaendig / unvollstaendig", () => {
-    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card, directDebit: null })).toEqual({
+    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card, directDebit: null, dueDate: DUE })).toEqual({
       kind: "card", card: { panTruncated: "1234", network: "VISA", holderName: null },
     });
-    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardNetwork: null }, directDebit: null }))
+    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardNetwork: null }, directDebit: null, dueDate: DUE }))
       .toEqual({ kind: "fallback", gap: "karte-unvollstaendig" });
-    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardPanTruncated: null }, directDebit: null }))
+    expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardPanTruncated: null }, directDebit: null, dueDate: DUE }))
       .toEqual({ kind: "fallback", gap: "karte-unvollstaendig" });
   });
   it("Lastschrift mit/ohne Snapshot", () => {
-    expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: SNAPSHOT }))
+    expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: SNAPSHOT, dueDate: DUE }))
       .toEqual({ kind: "directDebit", directDebit: SNAPSHOT });
-    expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: null }))
+    expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: null, dueDate: DUE }))
       .toEqual({ kind: "fallback", gap: "lastschrift-unvollstaendig" });
   });
   it("leere Snapshot-Strings und ungueltige Kartenziffern -> Fallback mit Hinweis", () => {
     for (const k of ["creditorId", "mandateReference", "debtorIban"] as const) {
-      expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: { ...SNAPSHOT, [k]: "" } }))
+      expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: { ...SNAPSHOT, [k]: "" }, dueDate: DUE }))
         .toEqual({ kind: "fallback", gap: "lastschrift-unvollstaendig" });
     }
     for (const pan of ["123", "12345", "12a4"]) {
-      expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardPanTruncated: pan }, directDebit: null }))
+      expect(resolveSpecialMeans({ code: "54", invoiceType: "INVOICE", card: { ...card, cardPanTruncated: pan }, directDebit: null, dueDate: DUE }))
         .toEqual({ kind: "fallback", gap: "karte-unvollstaendig" });
     }
   });
+  it("Lastschrift ohne Faelligkeitsdatum -> Fallback mit eigenem Hinweis", () => {
+    for (const dueDate of [null, undefined]) {
+      expect(resolveSpecialMeans({ code: "59", invoiceType: "INVOICE", card: null, directDebit: SNAPSHOT, dueDate }))
+        .toEqual({ kind: "fallback", gap: "lastschrift-faelligkeit" });
+    }
+  });
   it("Gutschrift: Fallback ohne Hinweis", () => {
-    expect(resolveSpecialMeans({ code: "59", invoiceType: "CREDIT_NOTE", card: null, directDebit: SNAPSHOT }))
+    expect(resolveSpecialMeans({ code: "59", invoiceType: "CREDIT_NOTE", card: null, directDebit: SNAPSHOT, dueDate: DUE }))
       .toEqual({ kind: "fallback", gap: null });
-    expect(resolveSpecialMeans({ code: "54", invoiceType: "CREDIT_NOTE", card, directDebit: null }))
+    expect(resolveSpecialMeans({ code: "54", invoiceType: "CREDIT_NOTE", card, directDebit: null, dueDate: DUE }))
       .toEqual({ kind: "fallback", gap: null });
   });
 });

@@ -326,6 +326,7 @@ export function buildEInvoiceData(invoice: MapInput): EInvoiceData {
         },
         directDebit:
           code === DIRECT_DEBIT_CODE ? parseDirectDebitSnapshot(invoice.directDebitSnapshotJson, ctx) : null,
+        dueDate: invoice.dueDate,
       });
       if (special.kind === "card") {
         paymentMeans = { code, card: special.card };

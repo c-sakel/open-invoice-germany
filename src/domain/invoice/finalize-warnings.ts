@@ -20,7 +20,7 @@ const RECENT_VALID_MS = 24 * 60 * 60 * 1000;
 const VIES_TIMEOUT_MS = 8_000;
 
 /** Bekannte Hinweiscodes. Nur diese Codes duerfen in der URL der Rechnungsseite stehen (kein Klartext). */
-export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit", "karte-unvollstaendig", "lastschrift-unvollstaendig"] as const;
+export const FINALIZE_WARNING_CODES = ["adresse", "vies-ungueltig", "vies-fehler", "vies-limit", "karte-unvollstaendig", "lastschrift-unvollstaendig", "lastschrift-faelligkeit"] as const;
 export type FinalizeWarningCode = (typeof FINALIZE_WARNING_CODES)[number];
 
 export interface FinalizeWarning {
@@ -43,6 +43,8 @@ export function finalizeWarningMessage(code: FinalizeWarningCode, vatId = "", de
       return `VIES-Abfragelimit erreicht — USt-IdNr. ${vatId} wurde nicht geprüft.`;
     case "karte-unvollstaendig":
       return "Kartenzahlung: letzte vier Ziffern oder Kartennetz fehlen – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
+    case "lastschrift-faelligkeit":
+      return "SEPA-Lastschrift: Fälligkeitsdatum fehlt (Vorabankündigung) – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
     case "lastschrift-unvollstaendig":
       return "SEPA-Lastschrift: Gläubiger-ID der Firma oder Mandat (Referenz, IBAN) des Kunden fehlen – die E-Rechnung weist die Zahlungsart als „nicht festgelegt“ (Code 1) aus.";
   }
@@ -80,6 +82,7 @@ export async function collectFinalizeWarnings(
         status: true,
         taxScheme: true,
         type: true,
+        dueDate: true,
         cardPanTruncated: true,
         cardNetwork: true,
         cardHolderName: true,
@@ -109,6 +112,7 @@ export async function collectFinalizeWarnings(
         invoiceType: invoice.type,
         card: { cardPanTruncated: invoice.cardPanTruncated, cardNetwork: invoice.cardNetwork, cardHolderName: invoice.cardHolderName },
         directDebit: meansCode === DIRECT_DEBIT_CODE ? buildDirectDebitSnapshot(invoice.org, customer) : null,
+        dueDate: invoice.dueDate,
       });
       if (special.kind === "fallback" && special.gap) {
         warnings.push({ code: special.gap, message: finalizeWarningMessage(special.gap) });

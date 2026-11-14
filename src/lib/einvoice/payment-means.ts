@@ -13,7 +13,7 @@ import type { EInvoicePaymentMeans } from "./types";
 export const CARD_MEANS_CODES: ReadonlySet<string> = new Set(["48", "54", "55"]);
 export const DIRECT_DEBIT_CODE = "59";
 
-export type SpecialMeansGap = "karte-unvollstaendig" | "lastschrift-unvollstaendig";
+export type SpecialMeansGap = "karte-unvollstaendig" | "lastschrift-unvollstaendig" | "lastschrift-faelligkeit";
 export type SpecialMeansResult =
   | { kind: "regular" }
   | { kind: "card"; card: NonNullable<EInvoicePaymentMeans["card"]> }
@@ -25,6 +25,8 @@ export function resolveSpecialMeans(i: {
   invoiceType: string;
   card: { cardPanTruncated: string | null; cardNetwork: string | null; cardHolderName: string | null } | null;
   directDebit: DirectDebitSnapshot | null;
+  /** Faelligkeitsdatum (BT-9); die Vorabankuendigung (Code 59) braucht es. */
+  dueDate: Date | null | undefined;
 }): SpecialMeansResult {
   const isCard = CARD_MEANS_CODES.has(i.code);
   const isDebit = i.code === DIRECT_DEBIT_CODE;
@@ -43,6 +45,7 @@ export function resolveSpecialMeans(i: {
   // Leere Strings (Altdaten, direkter Aufruf ohne Schema) gelten als unvollstaendig.
   if (!d || !d.creditorId || !d.mandateReference || !d.debtorIban)
     return { kind: "fallback", gap: "lastschrift-unvollstaendig" };
+  if (!i.dueDate) return { kind: "fallback", gap: "lastschrift-faelligkeit" };
   return { kind: "directDebit", directDebit: d };
 }
 
