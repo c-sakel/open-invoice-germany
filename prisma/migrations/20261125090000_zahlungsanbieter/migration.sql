@@ -72,6 +72,7 @@ CREATE TABLE "PaymentProviderAttempt" (
     "lastCheckedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "PaymentProviderAttempt_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT "PaymentProviderAttempt_payLinkId_fkey" FOREIGN KEY ("payLinkId") REFERENCES "InvoicePayLink" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -86,7 +87,8 @@ CREATE TABLE "PaymentProviderEvent" (
     "attemptId" TEXT,
     "receivedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "result" TEXT NOT NULL,
-    "detail" TEXT
+    "detail" TEXT,
+    CONSTRAINT "PaymentProviderEvent_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateIndex

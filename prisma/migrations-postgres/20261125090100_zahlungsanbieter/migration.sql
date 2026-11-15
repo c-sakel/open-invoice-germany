@@ -140,6 +140,12 @@ ALTER TABLE "InvoicePayLink" ADD CONSTRAINT "InvoicePayLink_orgId_fkey" FOREIGN 
 ALTER TABLE "InvoicePayLink" ADD CONSTRAINT "InvoicePayLink_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "PaymentProviderAttempt" ADD CONSTRAINT "PaymentProviderAttempt_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PaymentProviderEvent" ADD CONSTRAINT "PaymentProviderEvent_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PaymentProviderAttempt" ADD CONSTRAINT "PaymentProviderAttempt_payLinkId_fkey" FOREIGN KEY ("payLinkId") REFERENCES "InvoicePayLink"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- Zahlungsart ONLINE (Online-Zahlung, UNTDID 4461 Code 68) je Organisation nachziehen, vorhandene Eintraege bleiben unveraendert.

@@ -1857,6 +1857,14 @@ pg_expect_error 'duplicate key value violates unique constraint "PaymentProvider
 INSERT INTO "PaymentProviderEvent" ("id","orgId","provider","eventId","type","objectId","result")
   VALUES ('ev41dup','org41a','MOLLIE','tr_Test41:paid','payment','tr_Test41','IGNORED');
 SQL
+pg_expect_error 'violates foreign key constraint "PaymentProviderAttempt_orgId_fkey"' "Bezahlvorgang mit unbekannter Organisation wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "PaymentProviderAttempt" ("id","orgId","payLinkId","provider","amountCents","currency","updatedAt")
+  VALUES ('at41x','org41zz','pl41a','MOLLIE',1000,'EUR',NOW());
+SQL
+pg_expect_error 'violates foreign key constraint "PaymentProviderEvent_orgId_fkey"' "Ereignis mit unbekannter Organisation wurde nicht abgewiesen" <<'SQL'
+INSERT INTO "PaymentProviderEvent" ("id","orgId","provider","eventId","type","objectId","result")
+  VALUES ('ev41x','org41zz','MOLLIE','tr_Test41x:paid','payment','tr_Test41x','IGNORED');
+SQL
 pg_expect_error 'violates foreign key constraint "InvoicePayLink_invoiceId_fkey"' "Rechnung mit Bezahllink wurde geloescht (RESTRICT erwartet)" <<'SQL'
 DELETE FROM "Invoice" WHERE id='inv41a';
 SQL

@@ -83,6 +83,8 @@ model Organization {
   paymentProviderSettings PaymentProviderSettings?
   paymentProviderAccounts PaymentProviderAccount[]
   invoicePayLinks         InvoicePayLink[]
+  paymentProviderAttempts PaymentProviderAttempt[]
+  paymentProviderEvents   PaymentProviderEvent[]
   bankTransactions        BankTransaction[]
   bankHints               BankCounterpartyHint[]
   sepaCreditorId          String? // Phase 18e: SEPA-Glaeubiger-ID (BT-90), normalisiert
@@ -1955,6 +1957,7 @@ model InvoicePayLink {
 model PaymentProviderAttempt {
   id               String         @id @default(cuid())
   orgId            String
+  org              Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
   payLinkId        String
   payLink          InvoicePayLink @relation(fields: [payLinkId], references: [id], onDelete: Restrict)
   provider         String
@@ -1976,14 +1979,15 @@ model PaymentProviderAttempt {
 
 /// Verarbeitete Anbieter-Ereignisse, append-only; eventId = Objekt + beobachteter Zustand.
 model PaymentProviderEvent {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   provider   String
   eventId    String
   type       String
   objectId   String
   attemptId  String?
-  receivedAt DateTime @default(now())
+  receivedAt DateTime     @default(now())
   result     String // APPLIED | IGNORED | ERROR | TEST
   detail     String?
 

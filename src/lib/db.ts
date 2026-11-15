@@ -409,6 +409,81 @@ function assertOnlyKeys(data: unknown, allowed: ReadonlySet<string>, make: (deta
 const attemptErr = (d: string): Error => new PaymentProviderAttemptImmutableError(d);
 const payLinkErr = (d: string): Error => new InvoicePayLinkImmutableError(d);
 
+/** Status des Bezahlvorgangs nur vorwaerts; PAID, EXPIRED, CANCELED und FAILED sind endgueltig. */
+const PAYMENT_ATTEMPT_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  CREATING: ["CREATING", "OPEN", "PAID", "EXPIRED", "CANCELED", "FAILED"],
+  OPEN: ["OPEN", "PAID", "EXPIRED", "CANCELED", "FAILED"],
+  PAID: ["PAID"],
+  EXPIRED: ["EXPIRED"],
+  CANCELED: ["CANCELED"],
+  FAILED: ["FAILED"],
+};
+
+const PAY_LINK_DISABLE_REASONS: ReadonlySet<string> = new Set(["MANUAL", "INVOICE_CANCELLED"]);
+
+/**
+ * Bezahlvorgang: `providerObjectId` (Schluessel der Zuordnung Webhook -> Zahlung) und `checkoutUrl`
+ * (Ziel der Weiterleitung) werden genau einmal von NULL auf einen Text gesetzt; Status nur vorwaerts.
+ */
+async function guardPaymentAttemptUpdate(where: unknown, data: unknown): Promise<void> {
+  assertOnlyKeys(data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+  const record = (data ?? {}) as Record<string, unknown>;
+  const whereInput = where as Prisma.PaymentProviderAttemptWhereInput;
+  for (const key of ["providerObjectId", "checkoutUrl"] as const) {
+    if (!(key in record)) continue;
+    const next = unwrapSet(record[key]);
+    if (typeof next !== "string" || next.length === 0) throw attemptErr(`${key} nur von NULL auf einen Wert`);
+    const rows = await base.paymentProviderAttempt.findMany({ where: whereInput, select: { [key]: true } });
+    if (rows.some((r) => r[key] !== null)) throw attemptErr(`${key} nur von NULL auf einen Wert`);
+  }
+  if ("status" in record) {
+    const next = unwrapSet(record.status);
+    if (typeof next !== "string") throw attemptErr("status");
+    const rows = await base.paymentProviderAttempt.findMany({ where: whereInput, select: { status: true } });
+    for (const row of rows) {
+      if (!(PAYMENT_ATTEMPT_TRANSITIONS[row.status] ?? []).includes(next)) {
+        throw attemptErr(`Status ${row.status} -> ${next}`);
+      }
+    }
+  }
+}
+
+/**
+ * Bezahllink: ACTIVE -> DISABLED nur mit Zeit und Grund; DISABLED -> ACTIVE (Reaktivierung) nur nach
+ * manueller Deaktivierung und nur mit geleerten Feldern. Nach Storno (INVOICE_CANCELLED) ist der Link endgueltig aus.
+ * Zeit und Grund werden nie ohne Statuswechsel geaendert.
+ */
+async function guardPayLinkUpdate(where: unknown, data: unknown): Promise<void> {
+  assertOnlyKeys(data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+  const record = (data ?? {}) as Record<string, unknown>;
+  if (!("status" in record)) {
+    if ("disabledAt" in record || "disabledReason" in record) throw payLinkErr("disabledAt/disabledReason nur mit status");
+    return;
+  }
+  const next = unwrapSet(record.status);
+  const at = unwrapSet(record.disabledAt);
+  const reason = unwrapSet(record.disabledReason);
+  const rows = await base.invoicePayLink.findMany({
+    where: where as Prisma.InvoicePayLinkWhereInput,
+    select: { status: true, disabledReason: true },
+  });
+  if (next === "DISABLED") {
+    if (!(at instanceof Date) || typeof reason !== "string" || !PAY_LINK_DISABLE_REASONS.has(reason)) {
+      throw payLinkErr("DISABLED nur mit disabledAt und disabledReason");
+    }
+    if (rows.some((r) => r.status !== "ACTIVE")) throw payLinkErr("DISABLED nur aus ACTIVE");
+    return;
+  }
+  if (next === "ACTIVE") {
+    if (at !== null || reason !== null) throw payLinkErr("ACTIVE nur mit disabledAt und disabledReason NULL");
+    if (rows.some((r) => r.status === "DISABLED" && r.disabledReason !== "MANUAL")) {
+      throw payLinkErr("Reaktivierung nur nach manueller Deaktivierung");
+    }
+    return;
+  }
+  throw payLinkErr("status");
+}
+
 /**
  * Bankabgleich: `BankStatementImport` und `BankMatch` sind Nachweise und append-only (nur `create`).
  * `BankTransaction` wird nie geloescht; nach dem Anlegen sind nur Status- und Zuordnungsfelder
@@ -1159,19 +1234,19 @@ export const prisma = base.$extends({
     },
     paymentProviderAttempt: {
       async update({ args, query }) {
-        assertOnlyKeys(args.data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        await guardPaymentAttemptUpdate(args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
-        assertOnlyKeys(args.data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        await guardPaymentAttemptUpdate(args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
-        assertOnlyKeys(args.data, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        await guardPaymentAttemptUpdate(args.where, args.data);
         return query(args);
       },
       async upsert({ args, query }) {
-        assertOnlyKeys(args.update, PAYMENT_ATTEMPT_MUTABLE_KEYS, attemptErr);
+        await guardPaymentAttemptUpdate(args.where, args.update);
         return query(args);
       },
       async delete() {
@@ -1183,19 +1258,19 @@ export const prisma = base.$extends({
     },
     invoicePayLink: {
       async update({ args, query }) {
-        assertOnlyKeys(args.data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        await guardPayLinkUpdate(args.where, args.data);
         return query(args);
       },
       async updateMany({ args, query }) {
-        assertOnlyKeys(args.data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        await guardPayLinkUpdate(args.where, args.data);
         return query(args);
       },
       async updateManyAndReturn({ args, query }) {
-        assertOnlyKeys(args.data, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        await guardPayLinkUpdate(args.where, args.data);
         return query(args);
       },
       async upsert({ args, query }) {
-        assertOnlyKeys(args.update, INVOICE_PAY_LINK_MUTABLE_KEYS, payLinkErr);
+        await guardPayLinkUpdate(args.where, args.update);
         return query(args);
       },
       async delete() {

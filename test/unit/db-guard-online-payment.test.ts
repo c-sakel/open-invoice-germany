@@ -21,6 +21,8 @@ describe("PaymentProviderEvent", () => {
     const e = PaymentProviderEventImmutableError;
     await expect(prisma.paymentProviderEvent.update({ where: { id: eventId }, data: { detail: "x" } })).rejects.toBeInstanceOf(e);
     await expect(prisma.paymentProviderEvent.updateMany({ data: { detail: "x" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.paymentProviderEvent.updateManyAndReturn({ data: { detail: { set: "x" } } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.paymentProviderEvent.update({ where: { id: eventId }, data: { org: { connect: { id: orgId } } } })).rejects.toBeInstanceOf(e);
     await expect(prisma.paymentProviderEvent.upsert({ where: { id: eventId }, create: { orgId, provider: "MOLLIE", eventId: "x", type: "p", objectId: "o", result: "IGNORED" }, update: {} })).rejects.toBeInstanceOf(e);
     await expect(prisma.paymentProviderEvent.delete({ where: { id: eventId } })).rejects.toBeInstanceOf(e);
     await expect(prisma.paymentProviderEvent.deleteMany({})).rejects.toBeInstanceOf(e);
@@ -54,6 +56,47 @@ describe("PaymentProviderAttempt", () => {
   });
 });
 
+describe("PaymentProviderAttempt Schluesselfelder und Status", () => {
+  it("providerObjectId und checkoutUrl nur von NULL auf einen Wert", async () => {
+    const e = PaymentProviderAttemptImmutableError;
+    const fresh = (await dbInternal.paymentProviderAttempt.create({ data: { orgId, payLinkId, provider: "MOLLIE", amountCents: 700, currency: "EUR" }, select: { id: true } })).id;
+    for (const data of [{ providerObjectId: null }, { providerObjectId: { set: null } }, { checkoutUrl: null }, { providerObjectId: "" }]) {
+      await expect(prisma.paymentProviderAttempt.update({ where: { id: fresh }, data })).rejects.toBeInstanceOf(e);
+    }
+    await prisma.paymentProviderAttempt.update({ where: { id: fresh }, data: { providerObjectId: "tr_TestGuardNull", checkoutUrl: "https://pay.example.org/n" } });
+    // bereits gesetzt: jede weitere Aenderung abgelehnt, auch per Mehrfach- und Upsert-Pfad
+    await expect(prisma.paymentProviderAttempt.update({ where: { id: fresh }, data: { providerObjectId: "tr_Anderes" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.paymentProviderAttempt.update({ where: { id: fresh }, data: { checkoutUrl: "https://evil.example.org/" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.paymentProviderAttempt.updateMany({ where: { id: fresh }, data: { checkoutUrl: "https://evil.example.org/" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.paymentProviderAttempt.updateManyAndReturn({ where: { id: fresh }, data: { providerObjectId: { set: "tr_X" } } })).rejects.toBeInstanceOf(e);
+    await expect(
+      prisma.paymentProviderAttempt.upsert({ where: { id: fresh }, create: { orgId, payLinkId, provider: "MOLLIE", amountCents: 1, currency: "EUR" }, update: { providerObjectId: "tr_Y" } }),
+    ).rejects.toBeInstanceOf(e);
+    const row = await dbInternal.paymentProviderAttempt.findUniqueOrThrow({ where: { id: fresh }, select: { providerObjectId: true, checkoutUrl: true } });
+    expect(row).toEqual({ providerObjectId: "tr_TestGuardNull", checkoutUrl: "https://pay.example.org/n" });
+  });
+
+  it("Status nur vorwaerts, Endzustaende bleiben", async () => {
+    const e = PaymentProviderAttemptImmutableError;
+    const id = (await dbInternal.paymentProviderAttempt.create({ data: { orgId, payLinkId, provider: "MOLLIE", amountCents: 800, currency: "EUR" }, select: { id: true } })).id;
+    await prisma.paymentProviderAttempt.update({ where: { id }, data: { status: "OPEN" } });
+    await expect(prisma.paymentProviderAttempt.update({ where: { id }, data: { status: "CREATING" } })).rejects.toBeInstanceOf(e);
+    await prisma.paymentProviderAttempt.updateMany({ where: { id }, data: { status: { set: "PAID" } } });
+    for (const status of ["OPEN", "CREATING", "FAILED", "EXPIRED", "CANCELED"]) {
+      await expect(prisma.paymentProviderAttempt.update({ where: { id }, data: { status } })).rejects.toBeInstanceOf(e);
+      await expect(prisma.paymentProviderAttempt.updateMany({ where: { id }, data: { status } })).rejects.toBeInstanceOf(e);
+      await expect(prisma.paymentProviderAttempt.updateManyAndReturn({ where: { id }, data: { status } })).rejects.toBeInstanceOf(e);
+      await expect(
+        prisma.paymentProviderAttempt.upsert({ where: { id }, create: { orgId, payLinkId, provider: "MOLLIE", amountCents: 1, currency: "EUR" }, update: { status } }),
+      ).rejects.toBeInstanceOf(e);
+    }
+    // Zeitfelder bleiben auch im Endzustand schreibbar (gleicher Status)
+    await prisma.paymentProviderAttempt.update({ where: { id }, data: { status: "PAID", lastCheckedAt: new Date() } });
+    const failed = (await dbInternal.paymentProviderAttempt.create({ data: { orgId, payLinkId, provider: "MOLLIE", amountCents: 900, currency: "EUR", status: "FAILED" }, select: { id: true } })).id;
+    await expect(prisma.paymentProviderAttempt.update({ where: { id: failed }, data: { status: "OPEN" } })).rejects.toBeInstanceOf(e);
+  });
+});
+
 describe("InvoicePayLink", () => {
   it("Loeschen und Aenderung von Rechnung/Token gesperrt", async () => {
     const e = InvoicePayLinkImmutableError;
@@ -71,5 +114,31 @@ describe("InvoicePayLink", () => {
     await prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "DISABLED", disabledAt: at, disabledReason: "MANUAL" } });
     const row = await dbInternal.invoicePayLink.findUniqueOrThrow({ where: { id: payLinkId }, select: { status: true, disabledReason: true } });
     expect(row).toEqual({ status: "DISABLED", disabledReason: "MANUAL" });
+  });
+
+  it("Reaktivierung nur nach manueller Deaktivierung, Storno-Sperre endgueltig, Konsistenz von Zeit und Grund", async () => {
+    const e = InvoicePayLinkImmutableError;
+    // payLinkId steht nach dem Test davor auf DISABLED/MANUAL
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "ACTIVE" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "ACTIVE", disabledAt: new Date(), disabledReason: null } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "DISABLED", disabledAt: new Date(), disabledReason: "MANUAL" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { disabledReason: "INVOICE_CANCELLED" } })).rejects.toBeInstanceOf(e);
+    await prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "ACTIVE", disabledAt: null, disabledReason: null } });
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "DISABLED" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "DISABLED", disabledAt: new Date(), disabledReason: "WEIL" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data: { status: "GELB" } })).rejects.toBeInstanceOf(e);
+    await prisma.invoicePayLink.updateManyAndReturn({ where: { id: payLinkId }, data: { status: { set: "DISABLED" }, disabledAt: new Date(), disabledReason: "INVOICE_CANCELLED" } });
+    for (const data of [{ status: "ACTIVE", disabledAt: null, disabledReason: null }, { status: "DISABLED", disabledAt: new Date(), disabledReason: "MANUAL" }]) {
+      await expect(prisma.invoicePayLink.update({ where: { id: payLinkId }, data })).rejects.toBeInstanceOf(e);
+      await expect(prisma.invoicePayLink.updateMany({ where: { id: payLinkId }, data })).rejects.toBeInstanceOf(e);
+      await expect(prisma.invoicePayLink.updateManyAndReturn({ where: { id: payLinkId }, data })).rejects.toBeInstanceOf(e);
+    }
+  });
+
+  it("upsert prueft den Update-Zweig", async () => {
+    const e = InvoicePayLinkImmutableError;
+    const create = { orgId, invoiceId: "x", provider: "MOLLIE", tokenHash: "hash-guard-up", tokenEnc: "enc", createdBy: "test" };
+    await expect(prisma.invoicePayLink.upsert({ where: { id: payLinkId }, create, update: { tokenHash: "neu" } })).rejects.toBeInstanceOf(e);
+    await expect(prisma.invoicePayLink.upsert({ where: { id: payLinkId }, create, update: { status: "ACTIVE", disabledAt: null, disabledReason: null } })).rejects.toBeInstanceOf(e);
   });
 });
