@@ -47,7 +47,7 @@ Erreichbarkeit und Signierbarkeit.
 
 Zahlungen aus dem Bankabgleich lösen `payment.recorded` bzw. `payment.reversed` wie jede andere Zahlung aus; im `Payment`-Objekt steht dann `provider: "BANK"` (sonst `null`).
 
-Zahlungen über die Online-Zahlung lösen `payment.recorded` aus wie jede andere Zahlung (`method` `ONLINE`, `provider: "MOLLIE"`, `reference` = Zahlungsnummer des Anbieters); Erstattungen und Rückbuchungen des Anbieters lösen `payment.reversed` aus. Testzahlungen werden nie gebucht und lösen nichts aus.
+Zahlungen über die Online-Zahlung lösen `payment.recorded` aus wie jede andere Zahlung (`method` `ONLINE`, `provider` `"MOLLIE"` oder `"STRIPE"`, `reference` = Zahlungsnummer des Anbieters); Erstattungen und Rückbuchungen des Anbieters lösen `payment.reversed` aus. Testzahlungen werden nie gebucht und lösen nichts aus.
 
 `data` ist derselbe Serializer-Schnappschuss wie die entsprechende REST-Ressource
 (`GET /api/v1/Invoice/{id}` u. Ä.) zum Zeitpunkt des Ereignisses — Geld als

@@ -292,7 +292,16 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Höchstens 5 Aktionen je Regel**, jede Art einmal; höchstens 20 Läufe je Regel und Rechnung.
 
 ## Online-Zahlung
-- **Nur Mollie.** Weitere Zahlungsanbieter folgen nicht automatisch; die Schnittstelle ist darauf vorbereitet, ein weiterer Anbieter ist aber ein eigener Auftrag. Eine Anbindung von Stripe gibt es nicht.
+- **Nur Mollie und Stripe.** Weitere Zahlungsanbieter folgen nicht automatisch; die Schnittstelle ist darauf vorbereitet, ein weiterer Anbieter ist aber ein eigener Auftrag.
+- **Stripe: nur Snapshot-Ereignisse.** Das Ereignisziel muss das Format „Snapshot“ haben; „Thin“-Ereignisse werden nicht verarbeitet.
+- **Stripe: Webhook-Endpunkt von Hand.** Das Ereignisziel legt der Betreiber im Stripe-Dashboard an (Adresse und Ereignisliste zeigt die Oberfläche); die Anwendung legt es nicht per Schnittstelle an. Der Signaturschlüssel wird nur in der Oberfläche eingetragen.
+- **Stripe: Bodylimit 128 KiB.** Größere Benachrichtigungen werden abgelehnt (Mollie: 1 KiB, dort steht nur eine Kennung im Body). Der Reverse-Proxy muss mindestens 128 KiB erlauben.
+- **Stripe: keine eigene Checkout-Domain.** Der Kunde bezahlt auf der von Stripe gehosteten Seite; ein Preis in Kundenwährung (Adaptive Pricing) ist ausgeschaltet.
+- **Stripe: Zahlungsdatum = Zeitpunkt der Feststellung.** Stripe liefert an der Sitzung kein Zahlungsdatum; gebucht wird mit dem Zeitpunkt der Benachrichtigung oder des Abgleichs (bei SEPA-Lastschrift der Erfolgstag, nicht der Einreichungstag).
+- **Stripe: Gebühren werden nicht gebucht.**
+- **Stripe: gewonnener Dispute nur als Meldung.** Verlorene Disputes werden wie Rückbuchungen automatisch gegengebucht; bei einem gewonnenen bucht die Anwendung nichts neu, der Betreiber korrigiert von Hand.
+- **Stripe: Bestandslinks im Testkonto nicht verfügbar.** Links, die vor der Stripe-Anbindung angelegt wurden, gelten als im Livebetrieb ausgegeben; mit einem Testschlüssel zeigt die Bezahlseite „nicht verfügbar“ statt eines Test-Checkouts.
+- **Manuelle Gegenbuchung wird angerechnet.** Hat der Betreiber eine Online-Zahlung von Hand gegengebucht und erstattet der Anbieter später, wird die Erstattung auf diese Gegenbuchung angerechnet (keine zweite Gegenbuchung).
 - **Testmodus bucht nie.** Zahlungen mit einem Testschlüssel erzeugen nur eine Benachrichtigung und ein Protokoll; Testlinks erscheinen nie auf PDF, E-Rechnung, in Mails oder im Portal; ein im Livebetrieb auf den Beleg gedruckter Link führt bei einem später auf Test umgestellten Zugang zu „nicht verfügbar“ statt in einen Test-Checkout.
 - **Kein Skonto online.** Gebucht wird immer der volle offene Rest.
 - **Überzahlung und Erstattung beim Anbieter von Hand.** Ein Mehrbetrag wird nur gemeldet, nie als Zahlung gebucht; die Erstattung an den Kunden löst der Betreiber bei Mollie aus.

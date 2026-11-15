@@ -734,14 +734,14 @@ Einstellungen und Bezahllinks. Der API-Schlüssel des Anbieters und der Einschal
 | Endpunkt | Scope | Zweck |
 |---|---|---|
 | `GET /api/v1/Settings/onlinePayment` | `admin` | Standardanbieter, Anzeigeoptionen und je Anbieter Einschalter, Modus, Zahlarten, Währungen, Testergebnis |
-| `PUT /api/v1/Settings/onlinePayment` | `admin` | Teil-Update von `defaultProvider` (`NONE`/`MOLLIE`), `showOnPdf`, `showInMail`, `showInPortal`; andere Felder werden mit `400` abgelehnt |
+| `PUT /api/v1/Settings/onlinePayment` | `admin` | Teil-Update von `defaultProvider` (`NONE`/`MOLLIE`/`STRIPE`), `showOnPdf`, `showInMail`, `showInPortal`; andere Felder werden mit `400` abgelehnt |
 | `POST /api/v1/Settings/onlinePayment/{provider}/test` | `admin` | Verbindungstest (liest nur die Zahlarten, bucht nichts; höchstens alle 10 Sekunden) |
 | `GET /api/v1/Invoice/{id}/payLink` | `read` | Linkstatus, letzte Bezahlvorgänge und bei aktivem Link die Adresse (`url`) |
 | `POST /api/v1/Invoice/{id}/payLink` | `write` | Link anlegen oder reaktivieren (`201` neu, `200` vorhanden) |
 | `POST /api/v1/Invoice/{id}/payLink/refresh` | `write` | Status offener Vorgänge beim Anbieter abrufen und abgleichen |
 | `POST /api/v1/Invoice/{id}/payLink/disable` | `write` | Link deaktivieren |
 
-Ein `Idempotency-Key` wird bei diesen schreibenden Aufrufen ignoriert. Fehler `422` tragen einen `reason` (z. B. `INVOICE_STATE`, `LINK_CANCELLED`, `NONE`, `ACCOUNT_OFF`, `CURRENCY`, `DIRECT_DEBIT`, `PREPAID`, `NOT_PAYABLE`). Die Adresse steht nur im Feld `url`, nie im Anfrageprotokoll oder in Idempotenz-Antworten. Der Zahlungseingang selbst läuft über den Webhook des Anbieters (`/api/public/payments/...`, kein Teil der API); gebuchte Zahlungen erscheinen als `Payment` mit `provider` `MOLLIE`.
+Ein `Idempotency-Key` wird bei diesen schreibenden Aufrufen ignoriert. Fehler `422` tragen einen `reason` (z. B. `INVOICE_STATE`, `LINK_CANCELLED`, `NONE`, `ACCOUNT_OFF`, `CURRENCY`, `DIRECT_DEBIT`, `PREPAID`, `NOT_PAYABLE`). Die Adresse steht nur im Feld `url`, nie im Anfrageprotokoll oder in Idempotenz-Antworten. Der Zahlungseingang selbst läuft über den Webhook des Anbieters (`/api/public/payments/...`, kein Teil der API; bei Stripe mit Signaturprüfung über den Rohbody); gebuchte Zahlungen erscheinen als `Payment` mit `provider` `MOLLIE` oder `STRIPE`. In den Einstellungen steht je Anbieter `hasApiKey`; bei Stripe zusätzlich `hasWebhookSecret` (der Signaturschlüssel ist nur in der Oberfläche änderbar). Der Anbieter `{provider}` im Testpfad ist `MOLLIE` oder `STRIPE`.
 
 ## Fehlende Endpunkte / Grenzen (siehe auch [LIMITATIONEN.md](LIMITATIONEN.md))
 

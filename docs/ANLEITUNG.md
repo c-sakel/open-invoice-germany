@@ -446,7 +446,7 @@ Die Glocke im Kopfbereich zeigt die Anzahl ungelesener Benachrichtigungen und ei
 Eine Regel führt nach einer erfassten Zahlung feste Aktionen aus. Es gibt keine Skripte; die Aktionsarten sind abschließend. Die Zahlungsbestätigung läuft immer als letzter Schritt: Tag, Benachrichtigung, Webhook und Abo-Fortsetzung hängen nie vom Mailversand ab.
 
 - **Auslöser:** „Vollständig bezahlt" (Rechnung wird PAID) oder „Teilzahlung" (Rechnung bleibt offen, wird PARTIALLY_PAID). Eine Skonto-Folgezahlung löst nichts zusätzlich aus.
-- **Quellen:** optional eine Auswahl aus manuell, REST-Schnittstelle, MCP, Bankabgleich, Online (Mollie); ohne Auswahl gelten alle. Maßgeblich ist, wie die Zahlung gebucht wurde.
+- **Quellen:** optional eine Auswahl aus manuell, REST-Schnittstelle, MCP, Bankabgleich, Online (Mollie), Online (Stripe); ohne Auswahl gelten alle. Maßgeblich ist, wie die Zahlung gebucht wurde.
 - **Rechnungs-Tag (optional):** die Regel greift nur, wenn die Rechnung dieses Tag trägt.
 - **Wartezeit:** 0 bis 1440 Minuten (Voreinstellung 5). Die Aktionen laufen frühestens nach Ablauf, tatsächlich beim nächsten Lauf des eingebauten Schedulers (Job „payment-rules"). Eine Gegenbuchung oder ein Storno innerhalb der Wartezeit überspringt den Lauf („Zahlung gegengebucht", „Rechnung storniert"); ebenso werden noch nicht ausgeführte Läufe einer deaktivierten oder archivierten Regel übersprungen („Regel deaktiviert").
 - **Aktionen** (höchstens 5 je Regel, jede Art einmal): Zahlungsbestätigung per E-Mail an den Kunden, Tag an die Rechnung setzen, interne Benachrichtigung (Glocke), Webhook `payment_rule.triggered` senden, pausierte Abos der Rechnung fortsetzen.
@@ -603,9 +603,9 @@ Auch per REST (`/api/v1/BankStatement`, `/api/v1/BankTransaction`, siehe [API.md
 
 ---
 
-## 6h. Online-Zahlung (Mollie)
+## 6h. Online-Zahlung (Mollie und Stripe)
 
-Rechnungen können einen **Bezahllink** erhalten: Der Kunde öffnet ihn, sieht Rechnungsnummer und offenen Betrag und zahlt beim Zahlungsanbieter **Mollie**. Die Anbindung ist **standardmäßig aus**. Weitere Anbieter gibt es nicht.
+Rechnungen können einen **Bezahllink** erhalten: Der Kunde öffnet ihn, sieht Rechnungsnummer und offenen Betrag und zahlt beim Zahlungsanbieter **Mollie** oder **Stripe**. Die Anbindung ist **standardmäßig aus**. Weitere Anbieter gibt es nicht.
 
 ### Einrichten (`Einstellungen → Online-Zahlung`)
 
@@ -616,7 +616,31 @@ Rechnungen können einen **Bezahllink** erhalten: Der Kunde öffnet ihn, sieht R
 5. **Zahlarten und Währungen:** optional Kennungen der erlaubten Zahlarten (leer = alle aktiven Zahlarten bei Mollie) und die Währungen, für die Links entstehen (Standard nur EUR).
 6. **Standardanbieter und Anzeige:** Standardanbieter „Mollie" oder „Kein"; Schalter, ob der Link im Rechnungs-PDF, in E-Mails (über den Platzhalter) und im Kundenportal erscheint (je Standard an).
 
+Die Einrichtung gilt je Anbieter; die Oberfläche zeigt für Mollie und Stripe je einen eigenen Abschnitt. Die Beschreibung in diesem Abschnitt nennt Mollie; Abweichungen von Stripe stehen unter „Stripe einrichten“.
+
 Mollie ruft die Anwendung über eine Webhook-Adresse unter `/api/public/payments/mollie/<geheime Kennung>` auf. Sie wird bei jeder Zahlung automatisch mitgegeben und muss nicht bei Mollie eingetragen werden; sie muss aus dem Internet erreichbar sein.
+
+### Stripe einrichten
+
+Stripe wird im Abschnitt „Stripe“ derselben Seite eingerichtet. Die Anwendung nutzt Stripe Checkout (gehostete Bezahlseite von Stripe) mit Betrag und Währung genau wie auf der Rechnung (Preise in Kundenwährung sind aus); die Sitzung läuft nach 60 Minuten ab.
+
+1. **Voraussetzung:** wie oben `APP_BASE_URL` und `AUTH_SECRET`. **`APP_BASE_URL` muss vor dem Festschreiben gesetzt sein**, sonst entsteht beim Festschreiben kein Link auf dem Beleg.
+2. **API-Schlüssel eintragen:** Empfohlen ist ein eingeschränkter Schlüssel (`rk_live_…`, bzw. `rk_test_…`) mit den Rechten „Checkout Sessions schreiben“ sowie „PaymentIntents, Charges und Disputes lesen“. Ein vollständiger Schlüssel (`sk_live_…`/`sk_test_…`) wird ebenfalls akzeptiert. Der Schlüssel wird verschlüsselt gespeichert und nie wieder angezeigt; der Modus ergibt sich aus dem Schlüssel.
+3. **Ereignisziel im Stripe-Dashboard von Hand anlegen:** Die Anwendung legt es nicht per Schnittstelle an. Unter „Entwickler → Ereignisziele“ ein Ziel mit Format **Snapshot** (nicht „Thin“) anlegen, die in der Oberfläche angezeigte Adresse (`/api/public/payments/stripe/<geheime Kennung>`) eintragen und die dort aufgeführten **acht Ereignisse** auswählen: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.funds_withdrawn`, `charge.dispute.funds_reinstated`.
+4. **Signaturschlüssel eintragen:** Den Signaturschlüssel des Ereignisziels (`whsec_…`) trägst du in der Oberfläche ein; er wird verschlüsselt gespeichert und nie wieder angezeigt. Jeder Schlüsselwechsel (API-Schlüssel oder Signaturschlüssel) und das Entfernen des Signaturschlüssels schalten die Anbindung aus.
+5. **Verbindung prüfen:** liest höchstens eine Checkout-Sitzung; es wird nichts gebucht (mindestens 10 Sekunden zwischen zwei Tests).
+6. **Einschalten:** erst nach erfolgreichem Verbindungstest **und** hinterlegtem Signaturschlüssel möglich.
+
+Danach gilt wie bei Mollie: Voreinstellung „Stripe“ in den Einstellungen, an der Zahlungsart oder am Kunden wählen. Die Benachrichtigung wird zuerst über die Signatur (Rohdaten, Toleranz 5 Minuten, daher muss die Serveruhr per NTP stimmen) geprüft, trotzdem bucht die Anwendung nie aus ihrem Inhalt, sondern lädt Sitzung, Zahlung, Charge und Disputes selbst bei Stripe nach.
+
+Unterschiede zu Mollie:
+
+- **Zahlungsdatum:** Stripe liefert kein Zahlungsdatum an der Sitzung. Als Zahlungsdatum gilt der **Zeitpunkt der Feststellung** (Benachrichtigung oder Abgleich, meist Sekunden nach der Zahlung; bei SEPA-Lastschrift der Erfolgstag).
+- **Dispute (Zahlungsstreit):** Ein verlorener Dispute wird wie eine Rückbuchung automatisch gegengebucht. Ein **gewonnener** Dispute wird nur gemeldet; die Buchung korrigierst du von Hand. Gebühren von Stripe werden nicht gebucht.
+- **Testkonto:** Mit `rk_test_`/`sk_test_` bucht die Anwendung nie (wie bei Mollie). Bezahllinks, die vor dieser Funktion angelegt wurden (Bestand), gelten als im Livebetrieb ausgegeben und sind im Testkonto nicht verfügbar; die Bezahlseite zeigt „derzeit nicht verfügbar“.
+- **Manuelle Gegenbuchung:** Hast du eine Online-Zahlung von Hand gegengebucht und erstattet Stripe später, wird die Erstattung auf diese Gegenbuchung angerechnet; es entsteht keine zweite Gegenbuchung.
+- **Netz sperren:** `PAYMENT_NETWORK=0` sperrt auch Aufrufe zu Stripe.
+- **Datenschutz:** siehe „Datenschutz und Betrieb“; die Datenschutzrolle von Stripe klärst du vor dem Livebetrieb.
 
 ### Wann bekommt eine Rechnung einen Link?
 
@@ -645,11 +669,11 @@ Der Link `/zahlen/<Token>` zeigt Firmenname, Rechnungsnummer, Rechnungsdatum und
 - **E-Mail:** Platzhalter `{{invoice.paymentLink}}` in deinen Vorlagen (z. B. unter `Einstellungen → Textvorlagen`). Die Standardvorlagen bleiben unverändert; ergänze den Platzhalter in deiner Vorlage selbst. Er ist leer, wenn kein aktiver Livelink, die Mail-Anzeige aus, nichts offen oder die Rechnung storniert ist. Im Versandprotokoll und in der Hash-Kette steht statt des Links „[Zahlungslink]".
 - **Kundenportal:** Knopf „Jetzt bezahlen" bei offenen Rechnungen mit aktivem Link.
 - **Belegseite:** Abschnitt „Online-Zahlung" mit Linkstatus, Adresse (zum Kopieren und Öffnen), den letzten Bezahlvorgängen und „Status abrufen". Ein Vorgang mit „Anlage unklar" bedeutet: Beim Anbieter prüfen, ob eine Zahlung entstanden ist, und ggf. von Hand buchen.
-- **Regeln nach Zahlungseingang:** Quelle „Online (Mollie)" lässt sich als Filter wählen (6b).
+- **Regeln nach Zahlungseingang:** Quellen „Online (Mollie)“ und „Online (Stripe)“ lassen sich als Filter wählen (6b).
 
 ### Datenschutz und Betrieb
 
-An Mollie gehen nur Betrag, Währung, die Bezeichnung „Rechnung <Nummer>", die Rückkehr- und die Webhook-Adresse, nie Positionen, Kundenname oder interne Notizen. Welche Rolle Mollie datenschutzrechtlich hat (Auftragsverarbeitung oder eigene Verantwortlichkeit), richtet sich nach den Bedingungen von Mollie; kläre das **vor dem Einschalten im Livemodus** (siehe COMPLIANCE.md). Für den Reverse-Proxy: Pfade `/zahlen/` und `/api/public/payments/` ohne Zugriffsprotokoll führen, da das Token im Pfad steht (siehe `docs/BETRIEB-VORLAGE.md`). Mit `PAYMENT_NETWORK=0` sperrst du jeden Netzaufruf zu Mollie (Notbremse, auch für Tests).
+An Mollie gehen nur Betrag, Währung, die Bezeichnung „Rechnung <Nummer>", die Rückkehr- und die Webhook-Adresse, nie Positionen, Kundenname oder interne Notizen. Welche Rolle Mollie datenschutzrechtlich hat (Auftragsverarbeitung oder eigene Verantwortlichkeit), richtet sich nach den Bedingungen von Mollie; kläre das **vor dem Einschalten im Livemodus** (siehe COMPLIANCE.md). An Stripe gehen Betrag, Währung, Rechnungsnummer und die Rückkehradresse (Erfolg/Abbruch); Name, Anschrift und Zahlungsdaten erhebt Stripe beim Kunden selbst, nie Positionen oder interne Notizen. Für den Reverse-Proxy: Pfade `/zahlen/` und `/api/public/payments/` ohne Zugriffsprotokoll führen, da das Token im Pfad steht (siehe `docs/BETRIEB-VORLAGE.md`). Mit `PAYMENT_NETWORK=0` sperrst du jeden Netzaufruf zu Mollie und Stripe (Notbremse, auch für Tests).
 
 ---
 
