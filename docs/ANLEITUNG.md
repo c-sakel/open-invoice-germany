@@ -441,7 +441,7 @@ Verkaufst du an Privatkunden in anderen EU-Ländern (Rechnung ohne USt-IdNr.), s
 ### Benachrichtigungen (Glocke oben rechts, `/benachrichtigungen`)
 Die Glocke im Kopfbereich zeigt die Anzahl ungelesener Benachrichtigungen und eine Kurzliste; „**Alle anzeigen**" führt zur vollständigen Liste. Benachrichtigt wirst du u. a. bei: Rechnung heute fällig, Rechnung überfällig, nächste Mahnstufe erreicht, Angebot läuft bald ab, E-Mail nicht zustellbar, wiederkehrende Rechnung fehlgeschlagen, ungültige E-Rechnung, OSS-Schwelle erreicht. Unter „**Einstellungen → Benachrichtigungen**" schaltest du jeden dieser Typen einzeln an/aus und aktivierst optional einen **täglichen E-Mail-Digest** (eine Sammel-E-Mail statt einzelner Benachrichtigungen). Erzeugt werden Benachrichtigungen von einem dritten Scheduler-Job (`notifications`, nach `recurring`/`dunning`) — läuft automatisch mit dem eingebauten Scheduler/Cron aus Schritt 8, kein separater Aufruf nötig.
 
-### Aktionen nach Zahlungseingang (`Einstellungen → Automatisierung → Regeln nach Zahlungseingang`)
+### Aktionen nach Zahlungseingang (`Einstellungen → Nach Zahlungseingang`)
 
 Eine Regel führt nach einer erfassten Zahlung feste Aktionen aus. Es gibt keine Skripte; die Aktionsarten sind abschließend.
 
