@@ -22,6 +22,7 @@ import type { MailProvider } from "@/lib/mail/provider";
 import { loadBrand } from "@/domain/settings/brand";
 import { withHtmlPart } from "@/domain/email/html-part";
 import { checkOssNotifications } from "@/domain/reporting/oss-notify";
+import { checkKuNotifications } from "@/domain/reporting/ku-notify";
 import { datevStatus } from "@/domain/export/datev/late";
 import { berlinDateKey } from "@/lib/berlin-time";
 
@@ -175,6 +176,12 @@ async function processOssThreshold(orgId: string, now: Date, enabled: Set<Notifi
   if (created > 0) byType.OSS_THRESHOLD = (byType.OSS_THRESHOLD ?? 0) + created;
 }
 
+async function processKuThreshold(orgId: string, now: Date, enabled: Set<NotificationType>, byType: Record<string, number>): Promise<void> {
+  if (!enabled.has("KU_THRESHOLD")) return;
+  const created = await checkKuNotifications(orgId, now);
+  if (created > 0) byType.KU_THRESHOLD = (byType.KU_THRESHOLD ?? 0) + created;
+}
+
 /** Nachtraege in bereits exportierten DATEV-Monaten: eine Meldung je Berliner Tag, solange welche offen sind. */
 export async function processDatevLateItems(orgId: string, now: Date, enabled: Set<NotificationType>, byType: Record<string, number>): Promise<void> {
   if (!enabled.has("DATEV_LATE_ITEMS")) return;
@@ -250,6 +257,7 @@ export async function runNotificationsJob(now: Date = new Date(), opts: RunNotif
       await processDunningStages(org.id, now, enabled, result.byType);
       await processQuoteExpiring(org.id, now, enabled, result.byType);
       await processOssThreshold(org.id, now, enabled, result.byType);
+      await processKuThreshold(org.id, now, enabled, result.byType);
       try {
         await processDatevLateItems(org.id, now, enabled, result.byType);
       } catch (e) {

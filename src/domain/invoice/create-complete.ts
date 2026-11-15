@@ -22,7 +22,7 @@ import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { recordPaymentWithinTx, PaymentError, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { collectFinalizeWarningsFor, insertMeansWarnings, paymentMeansWarnings, MEANS_WARNING_SELECT } from "@/domain/invoice/finalize-warnings";
 import { payableBaseCents } from "@/domain/invoice/amounts";
-import { onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
+import { onInvoiceFinalizedKu, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { recordPaymentSchema, type AtomicPaymentInput, type CreateInvoiceInput } from "@/schemas";
 
 export interface InvoiceCompleteResult {
@@ -91,6 +91,7 @@ export async function createInvoiceComplete(
   // Nach dem Commit (der Hook darf das Ergebnis nie kippen): OSS-Schwelle pruefen.
   try {
     await onInvoiceFinalizedOss(orgId, result.invoice.id, now);
+    await onInvoiceFinalizedKu(orgId, now);
   } catch (e) {
     console.error("OSS-Pruefung nach atomarer Rechnung fehlgeschlagen", e instanceof Error ? e.name : "Fehler");
   }

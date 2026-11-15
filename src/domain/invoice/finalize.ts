@@ -15,7 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
-import { notifyOnlinePaymentWithinTx, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
+import { notifyOnlinePaymentWithinTx, onInvoiceFinalizedKu, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
@@ -508,5 +508,6 @@ export async function finalizeInvoice(invoiceId: string, opts: FinalizeOptions =
   const result = await dbInternal.$transaction((tx) => finalizeWithinTx(tx, invoiceId, opts));
   // Phase 16e: OSS-Schwelle erst nach dem Commit pruefen (der Hook wirft nie, Fehler werden dort geloggt).
   await onInvoiceFinalizedOss(result.orgId, invoiceId, opts.now);
+  await onInvoiceFinalizedKu(result.orgId, opts.now);
   return result;
 }

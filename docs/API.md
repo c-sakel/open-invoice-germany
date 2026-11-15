@@ -481,6 +481,10 @@ Typen, damit Konsumenten nicht zwischen Liste und Einzelobjekt unterscheiden mü
 
 `GET /api/v1/Report/oss` (Scope `read`) wertet die Bagatellgrenze des § 3c Abs. 4 UStG aus (gleicher Kern wie das MCP-Tool `get_oss_threshold`). Query: `year` (optional, Standard aktuelles Jahr in Berliner Zeit). Antwort `{ data }` mit `thresholdCents` (1.000.000), `warnPercent`, `mode` (`ALL_EU_B2C` | `BY_PRODUCT`), `level` (`OK` | `WARN` | `EXCEEDED`), `previousYearExceeded`, `current` und `previous` (je `year`, `netEurCents`, `percent`, `documentCount`, `skippedWithoutEur`, `byCountry`) sowie `notice` (Orientierungshinweis, keine Steuerberatung). Alle Beträge Integer-Cent.
 
+### Umsatzgrenzen der Kleinunternehmerregelung (`GET /api/v1/Report/smallBusiness`)
+
+`GET /api/v1/Report/smallBusiness` (Scope `read`) wertet die Umsatzgrenzen des § 19 Abs. 1 UStG aus (gleicher Kern wie das MCP-Tool `get_small_business_threshold`). Query: `year` (optional, Standard aktuelles Jahr in Berliner Zeit). Antwort `{ data }` mit `applies` (Regelung wird angewendet), `year`, `warnPercent`, `startYear`, `currentLimitCents` (2.500.000 im Aufnahmejahr, sonst 10.000.000), `previousYearLimitCents` (2.500.000), `level` (`OK` | `WARN` | `NEXT_YEAR_LOST` | `EXCEEDED`), `reasons`, `current` und `previous` (je `year`, `receivedCents` und `invoicedCents` netto in EUR, `externalCents` aus den Belegeinstellungen, `totalReceivedCents`, `totalInvoicedCents`, `documentCount`, `skippedWithoutEur`) sowie `notice`. Maßgeblich ist der vereinnahmte Umsatz; der berechnete Umsatz dient als Vorwarnung. Alle Beträge Integer-Cent.
+
 Weitere Felder: `ossCategory` (`NONE` | `GOODS_DISTANCE` | `ELECTRONIC_SERVICE`) an `Product` (Standard `NONE`) und an Positionen (Lese- und Schreibfeld; ohne Angabe übernimmt eine Position mit `productId` die Kategorie des Produkts als Snapshot, ohne Produkt bleibt sie leer). Die Belegeinstellungen (`/api/settings/documents`) tragen `ossCountMode` (Standard `ALL_EU_B2C`) und `ossWarnPercent` (ganze Zahl 1–99, Standard 80).
 
 ### Abo-Positionen (`Recurring`)

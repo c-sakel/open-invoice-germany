@@ -20,7 +20,7 @@
  * Kundenvorgaben statt leer zu bleiben.
  */
 import { dbInternal } from "@/lib/db";
-import { onCollectiveFallback, onInvoiceFinalizedOss, onRecurringFailed } from "@/domain/notifications/hooks";
+import { onCollectiveFallback, onInvoiceFinalizedKu, onInvoiceFinalizedOss, onRecurringFailed } from "@/domain/notifications/hooks";
 import type { MailProvider } from "@/lib/mail/provider";
 import { RecurringError, RecurringNotDueError } from "./errors";
 import { lockOrganization, lockRow } from "@/lib/db-lock";
@@ -118,7 +118,10 @@ export async function emitOne(
     });
     return created;
   }
-  if (outcome.finalized) await onInvoiceFinalizedOss(created.orgId, outcome.invoiceId, now);
+  if (outcome.finalized) {
+    await onInvoiceFinalizedOss(created.orgId, outcome.invoiceId, now);
+    await onInvoiceFinalizedKu(created.orgId, now);
+  }
 
   if (created.autoSend && outcome.finalized) {
     const sent = await sendRecurringInvoiceEmail(created.orgId, outcome.invoiceId, provider, created.emailTemplateId);
