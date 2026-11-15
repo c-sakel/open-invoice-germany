@@ -285,7 +285,7 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 ## Aktionen nach Zahlungseingang
 - **Kein PDF-Anhang** an der Zahlungsbestätigung; sie ist eine Mitteilung, keine Rechnung und keine Quittung.
 - **Verrechnung mit einer Gutschrift löst nichts aus.** Nur erfasste Zahlungen (manuell, API, MCP, Bankabgleich) lösen Regeln aus.
-- **Ausführung mit dem nächsten Scheduler-Lauf.** Nach Ablauf der Karenzzeit läuft eine Regel nicht sekundengenau; ohne laufenden Scheduler greift nur der Anstoß nach der Zahlung.
+- **Ausführung mit dem nächsten Scheduler-Lauf.** Nach Ablauf der Wartezeit läuft eine Regel nicht sekundengenau; ohne laufenden Scheduler greift nur der Anstoß nach der Zahlung.
 - **Eine Mail im Zustand „unklar" wird nie automatisch wiederholt**, damit kein Kunde zwei Bestätigungen erhält. Der Betreiber prüft das E-Mail-Protokoll und wiederholt bei Bedarf von Hand.
 - **Versandgrenzen:** 5 Bestätigungen je Kunde und 100 je Firma und Stunde; darüber wird der Lauf verschoben.
 - **Nichts wird rückgängig gemacht.** Eine Gegenbuchung oder ein Storno nach der Ausführung nimmt versendete Mails, Tags, Benachrichtigungen und fortgesetzte Abos nicht zurück; davor überspringt es den Lauf.
