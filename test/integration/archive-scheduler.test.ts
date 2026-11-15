@@ -81,7 +81,8 @@ async function drain(): Promise<void> {
 }
 const archivedCount = (ids: string[]) => dbInternal.archivedDocument.count({ where: { invoiceId: { in: ids }, kind: "PDF" } });
 
-describe("runArchiveJob", () => {
+// drain() holt die Archiv-Altlasten aller anderen Testdateien nach (PDF je Beleg) und waechst mit der Suite.
+describe("runArchiveJob", { timeout: 120_000 }, () => {
   it("archiviert festgeschriebene Rechnungen mit Quelle SCHEDULER, Entwuerfe nicht; zweiter Lauf archiviert nichts", async () => {
     // Erst die Altlasten anderer Testdateien nachholen, damit die Zaehlung exakt ist.
     await drain();
