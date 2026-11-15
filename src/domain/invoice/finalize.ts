@@ -434,7 +434,7 @@ export async function finalizeWithinTx(
       await notifyOnlinePaymentWithinTx(tx, invoice.orgId, {
         type: "ONLINE_PAYMENT_ISSUE",
         title: "Bezahllink nicht auf dem Beleg: APP_BASE_URL fehlt",
-        body: "Beim Festschreiben war APP_BASE_URL nicht gesetzt; der Bezahllink steht nicht auf dem Beleg, nur in Mail und Portal. APP_BASE_URL vor dem Festschreiben setzen.",
+        body: "Beim Festschreiben war APP_BASE_URL nicht gesetzt; der Bezahllink steht nicht auf dem Beleg. In Mail und Portal erscheint er erst, wenn APP_BASE_URL gesetzt ist. APP_BASE_URL vor dem Festschreiben setzen.",
         invoiceId,
         dedupeKey: `online:nobaseurl:${berlinDateKey(now)}`,
         at: now,

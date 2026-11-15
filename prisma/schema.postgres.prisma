@@ -1956,23 +1956,23 @@ model InvoicePayLink {
 
 /// Bezahlvorgang beim Anbieter (Anlage erst beim Klick, Betrag = offener Rest). Nie geloescht.
 model PaymentProviderAttempt {
-  id               String         @id @default(cuid())
-  orgId            String
-  org              Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  payLinkId        String
-  payLink          InvoicePayLink @relation(fields: [payLinkId], references: [id], onDelete: Restrict)
-  provider         String
-  providerObjectId String?
+  id                 String         @id @default(cuid())
+  orgId              String
+  org                Organization   @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  payLinkId          String
+  payLink            InvoicePayLink @relation(fields: [payLinkId], references: [id], onDelete: Restrict)
+  provider           String
+  providerObjectId   String?
   providerPaymentRef String? /// Zahlungs-Id beim Anbieter (Stripe: PaymentIntent), nur NULL -> Wert
-  checkoutUrl      String?
-  amountCents      Int
-  currency         String
-  expiresAt        DateTime?
-  status           String         @default("CREATING") // CREATING | OPEN | PAID | EXPIRED | CANCELED | FAILED
-  error            String?
-  lastCheckedAt    DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  checkoutUrl        String?
+  amountCents        Int
+  currency           String
+  expiresAt          DateTime?
+  status             String         @default("CREATING") // CREATING | OPEN | PAID | EXPIRED | CANCELED | FAILED
+  error              String?
+  lastCheckedAt      DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@unique([provider, providerObjectId])
   @@unique([provider, providerPaymentRef])

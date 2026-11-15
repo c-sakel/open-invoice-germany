@@ -209,6 +209,26 @@ describe("Erstattung nach manueller Gegenbuchung", () => {
     expect(await dbInternal.notification.count({ where: { orgId: s.o.orgId } })).toBe(notesBefore);
   });
 
+  it("Wiederholung desselben Zustands: keine zweite Buchung, kein zweites Ereignis", async () => {
+    const s = await setupPaid("Folge Wiederholt GmbH");
+    await reversePayment(s.payId, { amountCents: 1900, reason: "Manuelle Korrektur" }, { actor: "tester", orgId: s.o.orgId, now: NOW });
+    await reconcileAttempt(s.attemptId, state(s.objectId, s.attemptId, 1900), s.opts);
+    const count = () => dbInternal.paymentProviderEvent.count({ where: { orgId: s.o.orgId, objectId: s.objectId } });
+    const before = await count();
+    await reconcileAttempt(s.attemptId, state(s.objectId, s.attemptId, 1900), s.opts);
+    expect(await count()).toBe(before);
+    expect(await reversalsOf(s.invoiceId)).toEqual([-1900]);
+  });
+
+  it("Rueckbuchung mit manueller Gegenbuchung: Detail nennt Rueckbuchung und den Zuwachs", async () => {
+    const s = await setupPaid("Folge Rueckbuchung GmbH");
+    await reversePayment(s.payId, { amountCents: 1900, reason: "Manuelle Korrektur" }, { actor: "tester", orgId: s.o.orgId, now: NOW });
+    await reconcileAttempt(s.attemptId, { ...state(s.objectId, s.attemptId, 0), chargedBackCents: 1900 }, s.opts);
+    expect(await reversalsOf(s.invoiceId)).toEqual([-1900]);
+    const ev = await dbInternal.paymentProviderEvent.findMany({ where: { orgId: s.o.orgId, objectId: s.objectId }, select: { detail: true }, orderBy: { receivedAt: "asc" } });
+    expect(ev.at(-1)!.detail).toContain("Rueckbuchung bereits gegengebucht (1900 Cent)");
+  });
+
   it("hoehere Erstattung: genau die Differenz wird gegengebucht", async () => {
     const s = await setupPaid("Folge Differenz GmbH");
     await reversePayment(s.payId, { amountCents: 1900, reason: "Manuelle Korrektur" }, { actor: "tester", orgId: s.o.orgId, now: NOW });
@@ -237,6 +257,20 @@ describe("Festschreiben ohne APP_BASE_URL", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]!.title).toContain("APP_BASE_URL fehlt");
     expect(notes[0]!.dedupeKey).toBe(`online:nobaseurl:${YEAR}-03-10`);
+  });
+
+  it("am Folgetag neue Meldung; Text unabhaengig vom aktuellen Stand der URL", async () => {
+    const o = await makeOrg("Folge Zweitag GmbH", "LIVE");
+    delete process.env.APP_BASE_URL;
+    try {
+      await invoiceFor(o);
+      await invoiceFor(o, new Date(`${YEAR}-03-11T10:00:00.000Z`));
+    } finally {
+      process.env.APP_BASE_URL = BASE;
+    }
+    const notes = await dbInternal.notification.findMany({ where: { orgId: o.orgId, type: "ONLINE_PAYMENT_ISSUE" }, select: { dedupeKey: true, body: true } });
+    expect(notes.map((n) => n.dedupeKey).sort()).toEqual([`online:nobaseurl:${YEAR}-03-10`, `online:nobaseurl:${YEAR}-03-11`]);
+    expect(notes[0]!.body).toContain("erscheint er erst, wenn APP_BASE_URL gesetzt ist");
   });
 
   it("mit APP_BASE_URL keine Meldung", async () => {

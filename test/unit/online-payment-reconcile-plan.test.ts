@@ -40,6 +40,20 @@ describe("planReconcile", () => {
     expect(unchanged.coveredByManualCents).toBe(0);
   });
 
+  it("gedeckter Anteil ist der Zuwachs, nicht der kumulative Zielwert; Gutschrift + manuelle Rueckbuchung", () => {
+    const booked = { paymentId: "p1", amountCents: 11900, reversedCents: 2500 };
+    const inc = planReconcile(input({ booked, previousProviderCents: 1000, previousRefundedCents: 1000, state: state({ refundedCents: 2500 }) }));
+    expect(inc).toMatchObject({ reverse: null, coveredByManualCents: 1500 });
+    const credit = planReconcile(
+      input({ booked: { ...booked, reversedCents: 1900 }, hasCreditNote: true, state: state({ chargedBackCents: 1900 }) }),
+    );
+    expect(credit).toMatchObject({ reverse: null, coveredByManualCents: 1900 });
+    const again = planReconcile(
+      input({ booked: { ...booked, reversedCents: 1900 }, hasCreditNote: true, previousProviderCents: 1900, previousRefundedCents: 0, state: state({ chargedBackCents: 1900 }) }),
+    );
+    expect(again.coveredByManualCents).toBe(0);
+  });
+
   it("bezahlt und noch nicht gebucht: voller Betrag, keine Ueberzahlung", () => {
     const p = planReconcile(input());
     expect(p).toMatchObject({ result: "APPLIED", book: 11900, overpaidCents: 0, attemptStatus: "PAID", reverse: null, unassigned: null });

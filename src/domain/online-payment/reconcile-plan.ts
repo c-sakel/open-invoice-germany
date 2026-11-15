@@ -33,7 +33,7 @@ export interface ReconcilePlan {
   review: null | "REVERSAL_DECREASED" | "MISMATCH" | "MODE_MISMATCH" | "REFUND_WITH_CREDIT_NOTE";
   /** Erstattung beim Anbieter trotz Gutschrift (kumuliert, in Cent); nur mit review REFUND_WITH_CREDIT_NOTE. */
   refundNoticeCents: number;
-  /** Erstattung beim Anbieter ist durch eine manuelle Gegenbuchung bereits gedeckt (Cent); nur Protokoll, keine Buchung. */
+  /** Zuwachs bei Erstattung/Rueckbuchung beim Anbieter, der durch eine manuelle Gegenbuchung bereits gedeckt ist (Cent); nur Protokoll, keine Buchung. */
   coveredByManualCents: number;
 }
 
@@ -127,7 +127,8 @@ export function planReconcile(input: ReconcileInput): ReconcilePlan {
     plan.reverse = { cents: target - alreadyReversed, reason };
     plan.result = "APPLIED";
   } else if (target > 0 && providerCents > (input.previousProviderCents ?? 0)) {
-    plan.coveredByManualCents = target;
+    // Gemeldet wird der Zuwachs dieses Ereignisses (nicht der kumulative Zielwert).
+    plan.coveredByManualCents = Math.min(target, providerCents - (input.previousProviderCents ?? 0));
   }
   return plan;
 }
