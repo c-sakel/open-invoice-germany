@@ -17,7 +17,7 @@ export interface PaymentMethodFormData {
   bankBic: string | null;
   bankName: string | null;
   untdidCode: string;
-  /** NULL = keine Vorgabe | NONE | MOLLIE */
+  /** NULL = keine Vorgabe | NONE | MOLLIE | STRIPE */
   onlineProvider?: string | null;
   isSystem: boolean;
   isActive: boolean;
@@ -64,6 +64,7 @@ export function PaymentMethodForm({ method }: { method?: PaymentMethodFormData |
             { value: "", label: "Wie Voreinstellung" },
             { value: "NONE", label: "Keine" },
             { value: "MOLLIE", label: "Mollie" },
+            { value: "STRIPE", label: "Stripe" },
           ]}
           hint="Hat Vorrang vor der Vorgabe am Kunden und der Voreinstellung der Organisation."
         />

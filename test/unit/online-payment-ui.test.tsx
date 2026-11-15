@@ -7,6 +7,7 @@ vi.mock("@/app/einstellungen/online-zahlung/actions", () => ({
   saveProviderOptionsAction: async () => ({ ok: true }),
   setProviderApiKeyAction: async () => ({ ok: true }),
   setProviderEnabledAction: async () => ({ ok: true }),
+  setProviderWebhookSecretAction: async () => ({ ok: true }),
   testProviderConnectionAction: async () => ({ ok: true }),
 }));
 vi.mock("@/app/rechnungen/[id]/pay-link-actions", () => ({
@@ -54,6 +55,83 @@ function enabledSwitch(html: string): string {
   if (!m) throw new Error("Ein-Schalter nicht gefunden");
   return m[0];
 }
+
+const stripeAccount = (patch: Partial<ProviderAccountView> = {}) =>
+  account({ provider: "STRIPE", requiresWebhookSecret: true, ...patch });
+const bothForm = (stripe: ProviderAccountView, webhookUrl: string | null = null) =>
+  renderToStaticMarkup(
+    <OnlinePaymentSettingsForm
+      initial={{ ...settings(account()), accounts: [account(), stripe] }}
+      baseUrlSet
+      webhookUrls={{ STRIPE: webhookUrl }}
+      methodOptions={{ STRIPE: ["card", "sepa_debit"] }}
+    />,
+  );
+// Fiktive Werte erst zur Laufzeit zusammensetzen (keine Schluessel-Literale im Repo).
+const FAKE_SECRET = ["whsec", "x".repeat(30)].join("_");
+const FAKE_RESTRICTED = ["rk", "live", "y".repeat(30)].join("_");
+
+describe("Einstellungsformular Online-Zahlung mit Stripe", () => {
+  it("zeigt je Anbieter einen Abschnitt und Stripe in der Standardanbieter-Auswahl", () => {
+    const html = bothForm(stripeAccount());
+    expect(html).toContain('data-testid="provider-MOLLIE"');
+    expect(html).toContain('data-testid="provider-STRIPE"');
+    expect(html).toContain('<option value="STRIPE">Stripe</option>');
+    expect(html).toContain("Online-Zahlung mit Stripe einschalten");
+  });
+
+  it("Webhook-Adresse und Ereignisliste nur im Stripe-Abschnitt", () => {
+    const url = "https://rechnung.example.test/api/public/payments/stripe/pfad123";
+    const html = bothForm(stripeAccount({ hasApiKey: true }), url);
+    const [mollieHtml, stripeHtml] = html.split('data-testid="provider-STRIPE"');
+    expect(stripeHtml).toContain(url);
+    expect(mollieHtml).not.toContain(url);
+    for (const ev of ["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired", "charge.refunded", "charge.dispute.created", "charge.dispute.funds_withdrawn", "charge.dispute.funds_reinstated"]) {
+      expect(stripeHtml).toContain(ev);
+    }
+    expect(stripeHtml).toContain("Snapshot");
+    expect(stripeHtml).toContain("Adresse kopieren");
+    expect(mollieHtml).not.toContain("charge.refunded");
+  });
+
+  it("nennt den eingeschraenkten Schluessel rk_live_ mit den noetigen Rechten", () => {
+    const html = bothForm(stripeAccount());
+    expect(html).toContain("rk_live_");
+    expect(html).toContain("Checkout Sessions schreiben");
+    expect(html).toContain("PaymentIntents, Charges und Disputes lesen");
+  });
+
+  it("Ein-Schalter von Stripe bleibt ohne Signaturschluessel gesperrt", () => {
+    const base = { hasApiKey: true, mode: "LIVE" as const, lastTestOk: true };
+    const sw = (a: ProviderAccountView) => /<input[^>]*name="enabled"[^>]*checked=""|<input[^>]*name="enabled"[^>]*>/g.exec(bothForm(a)?.split('data-testid="provider-STRIPE"')[1] ?? "")?.[0] ?? "";
+    expect(sw(stripeAccount({ ...base, hasWebhookSecret: false }))).toContain("disabled");
+    expect(sw(stripeAccount({ ...base, hasWebhookSecret: true, lastTestOk: null }))).toContain("disabled");
+    expect(sw(stripeAccount({ ...base, hasWebhookSecret: true }))).not.toContain("disabled");
+  });
+
+  it("Signaturschluessel: Passwortfeld ohne Wert, nur Status 'hinterlegt', nie im Markup", () => {
+    const html = bothForm(stripeAccount({ hasApiKey: true, hasWebhookSecret: true, apiKeyLast4: "yyyy" }));
+    const field = /<input[^>]*name="webhookSecret"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(field).toContain('type="password"');
+    expect(field).toContain('value=""');
+    expect(html).toContain("Signaturschlüssel hinterlegt.");
+    expect(html).not.toContain(FAKE_SECRET);
+    expect(html).not.toContain(FAKE_RESTRICTED);
+    expect(bothForm(stripeAccount())).toContain("Noch kein Signaturschlüssel hinterlegt.");
+  });
+
+  it("Testmodus von Stripe wird gekennzeichnet; Methoden als Auswahl", () => {
+    const html = bothForm(stripeAccount({ hasApiKey: true, mode: "TEST" }));
+    expect(html).toContain("TESTMODUS (Stripe)");
+    expect(html).toContain("sepa_debit");
+  });
+
+  it("Mollie-Abschnitt hat weder Signaturfeld noch Ereignisliste", () => {
+    const html = form(account({ hasApiKey: true }));
+    expect(html).not.toContain('name="webhookSecret"');
+    expect(html).not.toContain("charge.refunded");
+  });
+});
 
 describe("Einstellungsformular Online-Zahlung", () => {
   it("zeigt den Schluessel nie im Markup: nur letzte 4 Zeichen, leeres Passwortfeld", () => {
@@ -169,6 +247,8 @@ describe("Navigation, Regeln, Formulare", () => {
     const html = renderToStaticMarkup(<PaymentRuleForm tags={[]} templates={[]} initial={{ ...emptyRuleFormState(), allSources: false, sources: ["MOLLIE"] }} />);
     expect(html).toContain("Online (Mollie)");
     expect(html).toMatch(/checked=""\/><span>Online \(Mollie\)/);
+    const stripeRule = renderToStaticMarkup(<PaymentRuleForm tags={[]} templates={[]} initial={{ ...emptyRuleFormState(), allSources: false, sources: ["STRIPE"] }} />);
+    expect(stripeRule).toMatch(/checked=""\/><span>Online \(Stripe\)/);
   });
 
   it("Kundenformular und Zahlungsart bieten Wie Voreinstellung / Keine / Mollie", () => {
@@ -176,10 +256,12 @@ describe("Navigation, Regeln, Formulare", () => {
     expect(customer).toContain('name="onlinePaymentProvider"');
     expect(customer).toContain("Wie Voreinstellung");
     expect(customer).toContain("Mollie");
+    expect(customer).toContain(">Stripe<");
     const pm = renderToStaticMarkup(
       <PaymentMethodForm method={{ id: "m", code: "X", name: "X", description: null, paymentTermsDays: null, invoiceText: null, bankAccountRef: null, bankIban: null, bankBic: null, bankName: null, untdidCode: "ZZZ", onlineProvider: "NONE", isSystem: false, isActive: true, sortOrder: 0 }} />,
     );
     expect(pm).toContain('name="onlineProvider"');
+    expect(pm).toContain(">Stripe<");
     expect(/<option value="NONE" selected/.test(pm) || pm.includes('value="NONE"')).toBe(true);
   });
 });

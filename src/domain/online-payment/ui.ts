@@ -3,6 +3,7 @@
  */
 import type { InvoicePayLinkView } from "./views";
 import type { ProviderAccountView } from "./settings";
+import type { OnlineProvider } from "@/lib/payment/types";
 
 export const ATTEMPT_STATUS_LABEL: Record<string, string> = {
   CREATING: "wird angelegt",
@@ -19,11 +20,28 @@ export const LINK_DISABLED_LABEL: Record<string, string> = {
   INVOICE_PAID: "Rechnung bezahlt",
 };
 
+export const PROVIDER_LABEL: Record<OnlineProvider, string> = { MOLLIE: "Mollie", STRIPE: "Stripe" };
+
+/** Ereignisse, die beim Ereignisziel im Stripe-Dashboard (Format Snapshot) auszuwaehlen sind. */
+export const STRIPE_WEBHOOK_EVENTS: readonly string[] = [
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
+  "checkout.session.expired",
+  "charge.refunded",
+  "charge.dispute.created",
+  "charge.dispute.funds_withdrawn",
+  "charge.dispute.funds_reinstated",
+];
+
 export const MODE_LABEL: Record<"TEST" | "LIVE", string> = { TEST: "Testmodus", LIVE: "Livemodus" };
 
-/** Einschalten ist nur mit Schluessel, gesetzter APP_BASE_URL und erfolgreichem Test des aktuellen Schluessels moeglich. */
-export function canEnableProvider(account: Pick<ProviderAccountView, "hasApiKey" | "lastTestOk">, baseUrlSet: boolean): boolean {
-  return account.hasApiKey && account.lastTestOk === true && baseUrlSet;
+/** Einschalten ist nur mit Schluessel, ggf. Signaturschluessel, gesetzter APP_BASE_URL und erfolgreichem Test moeglich. */
+export function canEnableProvider(
+  account: Pick<ProviderAccountView, "hasApiKey" | "lastTestOk" | "requiresWebhookSecret" | "hasWebhookSecret">,
+  baseUrlSet: boolean,
+): boolean {
+  return account.hasApiKey && account.lastTestOk === true && baseUrlSet && (!account.requiresWebhookSecret || account.hasWebhookSecret);
 }
 
 export interface PayLinkActions {
