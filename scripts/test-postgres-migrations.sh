@@ -26,6 +26,24 @@ run_with_timeout() {
   return $rc
 }
 
+# Bestands-Szenarien: eine Migration per psql einspielen und so verbuchen wie
+# "prisma migrate resolve --applied" (Pruefsumme = SHA-256 der migration.sql). Ersetzt
+# zwei npx-prisma-Aufrufe je Migration; die eigentliche Pruefung jedes Szenarios laeuft
+# weiterhin ueber "prisma migrate deploy". Voraussetzung: 0_init ist per Prisma verbucht
+# (legt _prisma_migrations an).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+apply_and_mark() {
+  local mig=$1 file="prisma/migrations-postgres/$1/migration.sql" sum
+  sum=$(sha256_of "$file")
+  { cat "$file"
+    printf '\n;\nINSERT INTO "_prisma_migrations" ("id","checksum","finished_at","migration_name","started_at","applied_steps_count") VALUES (gen_random_uuid()::text, '"'%s'"', now(), '"'%s'"', now(), 1);\n' "$sum" "$mig"
+  } | docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q >/dev/null \
+    || fail "Migration $mig liess sich nicht einspielen"
+}
+
 echo "==> Wegwerf-PostgreSQL starten"
 docker run -d --name "$CONTAINER" \
   -e POSTGRES_USER=oig -e POSTGRES_PASSWORD=test -e POSTGRES_DB=openinvoice \
@@ -248,9 +266,7 @@ npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >
 # Migration aendern ebenfalls Phase-7-Tabellen (BrandingSettings bzw. DocumentSettings) —
 # aus demselben Grund ausgeklammert.
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904044136_phase7_settings|20260904140030_phase8b_fixwave|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill|20260908090100_phase12a_giro_size|20260910090100_phase12c_branding_marke|20260910091100_phase12c_tax_rates|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -452,9 +468,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260904140030_phase8b_fixwave)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -592,9 +606,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260907075900_phase11b_layouts|20260907090333_phase11b_footermode_backfill)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -636,9 +648,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260908090100_phase12a_giro_size)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -670,9 +680,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260909090100_phase12b_differenz_category)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -717,9 +725,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910090100_phase12c_branding_marke)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -754,9 +760,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260910091100_phase12c_tax_rates)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -787,9 +791,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260911090100_phase12d_api_log)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -831,9 +833,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260912090100_account_holder)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -862,9 +862,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260913090100_phase13d_templates)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -892,9 +890,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260913092100_phase13d_tags)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -930,9 +926,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914090100_phase14a_base_interest_rate|20260914091100_phase14a_dunning_segments|20260914093100_hotfix_base_rate_source_text)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 # Bestands-DunningSettings mit 188 bp und OHNE baseRateValidFrom (NULL) — die Migration
 # muss dafuer genau einen BaseInterestRate-Eintrag mit validFrom=1970-01-01 anlegen
@@ -980,9 +974,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20260914092100_phase14a_login_hardening)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "User" ("id","email","passwordHash","createdAt") VALUES ('user25','bestand25@example.com','x:y',NOW());
@@ -1005,9 +997,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261111090100_phase16a_gobd_betrieb|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1050,9 +1040,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261112090100_phase16b_ausland|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1121,9 +1109,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261113090100_phase16e_oss|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1178,9 +1164,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261114090100_phase16g_layout|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1224,9 +1208,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261115090100_phase17a_erechnung|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1260,9 +1242,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261116090100_phase17d_auth|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "User" ("id","email","passwordHash","createdAt")
@@ -1338,9 +1318,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261117090100_phase16d_postal|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1403,9 +1381,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261118090100_phase18c_belegfluss|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1442,9 +1418,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261119090100_phase18e_payment_means|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1481,9 +1455,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261119100100_phase18d_api_indexes|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1517,9 +1489,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261120090100_phase18f_usage|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1583,9 +1553,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261121090100_kundenportal|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1641,9 +1609,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261122090100_bankabgleich|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1703,9 +1669,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261123090100_sammelrechnung|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1744,9 +1708,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261124090100_zahlungsaktionen|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1801,9 +1763,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261125090100_zahlungsanbieter|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1882,9 +1842,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261126090100_stripe|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
@@ -1927,9 +1885,7 @@ npx prisma db execute --url "$DATABASE_URL" \
   --file prisma/migrations-postgres/0_init/migration.sql >/dev/null
 npx prisma migrate resolve --config prisma.postgres.config.ts --applied 0_init >/dev/null
 for MIG in $(ls prisma/migrations-postgres | grep -v -E '^(0_init|migration_lock\.toml|20261127090100_datev)$' | sort); do
-  npx prisma db execute --url "$DATABASE_URL" \
-    --file "prisma/migrations-postgres/$MIG/migration.sql" >/dev/null
-  npx prisma migrate resolve --config prisma.postgres.config.ts --applied "$MIG" >/dev/null
+  apply_and_mark "$MIG"
 done
 docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO "Organization" ("id","legalName","addressLine1","postalCode","city","updatedAt")
