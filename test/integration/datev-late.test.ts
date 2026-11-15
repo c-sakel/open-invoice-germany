@@ -12,6 +12,7 @@ import { datevStatus, planDatevExport, readDatevExportFile, runDatevExport } fro
 import { recordPayment } from "@/domain/invoice/payment";
 import { reversePaymentWithinTx } from "@/domain/invoice/payment-reversal";
 import { runNotificationsJob } from "@/domain/notifications/job";
+import { confirmDatevMapping, saveDatevSettings } from "@/domain/export/datev/settings";
 import { have, mkDatevInvoice, mkDatevOrg, parseExtf, setupDatev, unzipBuffer, type DatevTestOrg } from "../helpers/datev-fixtures";
 
 const MAR = new Date("2096-03-10T10:00:00.000Z");
@@ -102,6 +103,37 @@ describe.skipIf(!have("unzip", "-v"))("Nachtraege", () => {
     try {
       const f = parseExtf(z.read("EXTF_Buchungsstapel_2096-03.csv"));
       expect(f.rows).toHaveLength(4); // Beleg + Zahlung + Gegenbuchung + spaeter Beleg
+    } finally {
+      z.cleanup();
+    }
+  });
+
+  it("Sicherheitsabstand: Beleg mit Festschreibezeit knapp vor dem Lauf, aber nicht im Lauf, erscheint als Nachtrag", async () => {
+    const o = await mkDatevOrg("Datev Abstand GmbH", "2224", MAR);
+    await setupDatev(o.orgId);
+    await mkDatevInvoice(o, { issue: MAR, netCents: 10000 });
+    await runDatevExport(o.orgId, { from: "2096-03", to: "2096-03", mode: "PERIOD" }, "tester", EXPORT_NOW);
+    // wartete beim Festschreiben auf die Sperre des Laufs: Zeitstempel vor dem Lauf, Beleg aber nicht in dessen Posten
+    await mkDatevInvoice(o, { issue: MAR, finalizeAt: new Date(EXPORT_NOW.getTime() - 1000), netCents: 3000 });
+    const st = await datevStatus(o.orgId, SUPP_NOW);
+    expect(st.pendingLate).toHaveLength(1);
+    expect(st.pendingLate[0]).toMatchObject({ month: "2096-03", count: 1 });
+  });
+
+  it("Wiederholung eines vor dem Einschalten des Zahlungsexports exportierten Monats enthaelt keine Zahlungen", async () => {
+    const o = await mkDatevOrg("Datev Wiederholung GmbH", "2224", MAR);
+    await setupDatev(o.orgId, { exportPayments: false });
+    const inv = await mkDatevInvoice(o, { issue: MAR, netCents: 10000 });
+    await recordPayment(inv.id, { amountCents: inv.grossCents, paidAt: MAR_PAY, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: o.orgId, now: MAR_PAY, provider: "BANK", providerPaymentId: "bk_dv2224w" });
+    await runDatevExport(o.orgId, { from: "2096-03", to: "2096-03", mode: "PERIOD" }, "tester", EXPORT_NOW);
+    await saveDatevSettings(o.orgId, { exportPayments: true }, "test", new Date("2096-04-10T10:00:00.000Z"));
+    await confirmDatevMapping(o.orgId, "mit dem Steuerberater abgestimmt", "test");
+    const view = await runDatevExport(o.orgId, { from: "2096-03", to: "2096-03", mode: "PERIOD", repeat: true }, "tester", SUPP_NOW);
+    const { bytes } = await readDatevExportFile(o.orgId, view.id);
+    const z = unzipBuffer(bytes);
+    try {
+      expect(parseExtf(z.read("EXTF_Buchungsstapel_2096-03.csv")).rows).toHaveLength(1);
+      expect(z.read("protokoll.csv").toString("utf8")).toContain("vor dem Einschalten des Zahlungsexports");
     } finally {
       z.cleanup();
     }

@@ -12,6 +12,8 @@ import { storedExportSchema } from "./stored";
 
 type Tx = Prisma.TransactionClient;
 
+const FINALIZE_MARGIN_MS = 24 * 60 * 60 * 1000;
+
 export interface ExportedMonth {
   month: string;
   exportId: string;
@@ -71,7 +73,9 @@ export async function supplementCandidates(
   const sorted = [...months].sort();
   const from = monthStartOf(sorted[0]);
   const to = monthStartOf(sorted[sorted.length - 1], 1);
-  // Vorfilter fuer Belege: was vor dem fruehesten Lauf der betroffenen Monate festgeschrieben wurde, steht sicher in dessen Posten.
+  // Vorfilter fuer Belege: was lange vor dem fruehesten Lauf der betroffenen Monate festgeschrieben wurde, steht sicher in dessen Posten.
+  // `finalizedAt` wird vor dem Commit gesetzt; ein Beleg, der waehrend eines Laufs auf dessen Sperre wartet, kann einen Zeitstempel
+  // knapp vor dem Lauf tragen und trotzdem nicht in den Posten stehen. Daher ein Sicherheitsabstand; der Schluesselabgleich entscheidet.
   let since: Date | null = null;
   for (const m of sorted) {
     const c = coverage.get(m);
@@ -81,6 +85,7 @@ export async function supplementCandidates(
     }
     if (since === null || c.createdAt.getTime() < since.getTime()) since = c.createdAt;
   }
+  if (since !== null) since = new Date(since.getTime() - FINALIZE_MARGIN_MS);
   const known = new Set((await db.datevExportItem.findMany({ where: { orgId, month: { in: sorted } }, select: { itemKey: true } })).map((i) => i.itemKey));
   const docs = (await listDocRefs(db, orgId, from, to, now, since)).filter((d) => months.has(monthOf(d.issueDate)) && !known.has(docItemKey(d.id)));
   const payMonths = new Set(
