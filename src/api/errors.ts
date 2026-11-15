@@ -38,6 +38,7 @@ import { VatCheckDisabledError, VatCheckRateLimitError } from "@/domain/customer
 import { CustomerValidationError } from "@/domain/customer/save";
 import { PortalError } from "@/domain/portal/errors";
 import { PostalConflictError } from "@/domain/postal/errors";
+import { PaymentRuleError } from "@/domain/payment-rule/errors";
 import { PostalDisabledError, PostalKeyUnreadableError, PostalNotConfiguredError } from "@/domain/postal/settings";
 import { LxpAuthError, LxpRequestError, LxpUnavailableError } from "@/lib/postal/letterxpress";
 import { PostalNetworkForbiddenError } from "@/lib/postal/transport";
@@ -236,6 +237,10 @@ export function mapApiError(e: unknown): { status: number; body: ApiErrorBody } 
   }
   if (e instanceof LxpUnavailableError) {
     return { status: 502, body: { error: { code: "INTERNAL", message: "Der Briefdienst ist nicht erreichbar.", reason: "provider_unavailable" } } };
+  }
+  // Regeln nach Zahlungseingang: Fachfehler der Verwaltung (Limit, Referenzen, Wiederholen) als 422.
+  if (e instanceof PaymentRuleError) {
+    return { status: 422, body: { error: { code: "UNPROCESSABLE", message: e.message } } };
   }
   if (e instanceof RateLimitError || e instanceof VatCheckRateLimitError) {
     return { status: 429, body: { error: { code: "RATE_LIMITED", message: e.message } } };

@@ -121,6 +121,63 @@ async function windowUntil(
   return new Date((last?.getTime() ?? since.getTime()) + HOUR_MS);
 }
 
+export interface BuiltConfirmation {
+  to: string;
+  subject: string;
+  text: string;
+  warnings: string[];
+  templateId: string | null;
+  lang: DocLanguage;
+  invoiceNumber: string | null;
+}
+
+/** Baut Empfaenger, Betreff und Text der Zahlungsbestaetigung rein lesend (gemeinsam fuer Versand und Trockenlauf). */
+export async function buildPaymentConfirmation(
+  orgId: string,
+  invoiceId: string,
+  context: z.infer<typeof contextSchema>,
+  paymentMethodCode: string | null,
+  templateId: string | null,
+): Promise<{ ok: true; built: BuiltConfirmation } | { ok: false; note: string }> {
+  const invoice = await dbInternal.invoice.findFirst({ where: { id: invoiceId, orgId }, select: { number: true, language: true } });
+  if (!invoice) return { ok: false, note: "Rechnung nicht gefunden" };
+  const lang = resolveDocLanguage(invoice.language);
+
+  let built: Awaited<ReturnType<typeof buildTemplateContext>>;
+  try {
+    built = await buildTemplateContext(orgId, "INVOICE", invoiceId);
+  } catch (e) {
+    if (e instanceof DocumentNotFoundError) return { ok: false, note: "Rechnung nicht gefunden" };
+    throw e;
+  }
+  const rawTo = built.customerEmail?.trim() ?? "";
+  if (rawTo === "") return { ok: false, note: "Kunde ohne E-Mail-Adresse" };
+  const parsedTo = recipientSchema.safeParse(rawTo);
+  if (!parsedTo.success) return { ok: false, note: "Empfaengeradresse ungueltig" };
+
+  const method = paymentMethodCode ? await dbInternal.paymentMethod.findFirst({ where: { orgId, code: paymentMethodCode }, select: { name: true } }) : null;
+  const ctx: TemplateContext = {
+    ...built.ctx,
+    paymentReceived: {
+      amount: formatMoneyLang(context.amountCents, context.currency, lang),
+      date: formatDateLang(new Date(context.paidAt), lang),
+      openAmount: formatMoneyLang(context.openAfterCents, context.currency, lang),
+      method: method?.name ?? paymentMethodCode ?? "",
+    },
+  };
+
+  const tpl = await pickTemplate(orgId, templateId, lang);
+  const fallback = BUILT_IN[lang][context.openAfterCents <= 0 ? "full" : "partial"];
+  const src = tpl ?? fallback;
+  const subjectR = renderTemplate(src.subject, ctx);
+  const bodyR = renderTemplate(src.body, ctx);
+  const sigR = renderTemplate(tpl?.signature ?? "", ctx);
+  const subject = subjectR.text.replace(/\s+/g, " ").trim().slice(0, SUBJECT_MAX);
+  const text = sigR.text.trim() ? `${bodyR.text}\n\n${sigR.text}` : bodyR.text;
+  const warnings = [...subjectR.warnings, ...bodyR.warnings, ...sigR.warnings].slice(0, 50).map((w) => w.slice(0, 300));
+  return { ok: true, built: { to: parsedTo.data, subject, text, warnings, templateId: tpl?.id ?? null, lang, invoiceNumber: invoice.number ?? context.invoiceNumber } };
+}
+
 export async function sendPaymentConfirmation(
   run: ConfirmationRun,
   action: { templateId: string | null },
@@ -134,45 +191,11 @@ export async function sendPaymentConfirmation(
   if (!settings) return { kind: "FAILED", error: "Keine Mail-Einstellungen hinterlegt.", retryable: true };
 
   const context = contextSchema.parse(JSON.parse(run.contextJson));
-  const invoice = await dbInternal.invoice.findFirst({ where: { id: run.invoiceId, orgId: run.orgId }, select: { number: true, language: true } });
-  if (!invoice) return { kind: "SKIPPED", note: "Rechnung nicht gefunden" };
-  const lang = resolveDocLanguage(invoice.language);
-
-  let built: Awaited<ReturnType<typeof buildTemplateContext>>;
-  try {
-    built = await buildTemplateContext(run.orgId, "INVOICE", run.invoiceId);
-  } catch (e) {
-    if (e instanceof DocumentNotFoundError) return { kind: "SKIPPED", note: "Rechnung nicht gefunden" };
-    throw e;
-  }
-  const rawTo = built.customerEmail?.trim() ?? "";
-  if (rawTo === "") return { kind: "SKIPPED", note: "Kunde ohne E-Mail-Adresse" };
-  const parsedTo = recipientSchema.safeParse(rawTo);
-  if (!parsedTo.success) return { kind: "SKIPPED", note: "Empfaengeradresse ungueltig" };
-  const to = parsedTo.data;
-
   const payment = await dbInternal.payment.findFirst({ where: { id: run.paymentId, invoice: { orgId: run.orgId } }, select: { method: true } });
-  const method = payment ? await dbInternal.paymentMethod.findFirst({ where: { orgId: run.orgId, code: payment.method }, select: { name: true } }) : null;
-  const ctx: TemplateContext = {
-    ...built.ctx,
-    paymentReceived: {
-      amount: formatMoneyLang(context.amountCents, context.currency, lang),
-      date: formatDateLang(new Date(context.paidAt), lang),
-      openAmount: formatMoneyLang(context.openAfterCents, context.currency, lang),
-      method: method?.name ?? payment?.method ?? "",
-    },
-  };
-
-  const tpl = await pickTemplate(run.orgId, action.templateId, lang);
-  const fallback = BUILT_IN[lang][context.openAfterCents <= 0 ? "full" : "partial"];
-  const src = tpl ?? fallback;
-  const subjectR = renderTemplate(src.subject, ctx);
-  const bodyR = renderTemplate(src.body, ctx);
-  const sigR = renderTemplate(tpl?.signature ?? "", ctx);
-  const subject = subjectR.text.replace(/\s+/g, " ").trim().slice(0, SUBJECT_MAX);
-  const text = sigR.text.trim() ? `${bodyR.text}\n\n${sigR.text}` : bodyR.text;
-  const warnings = [...subjectR.warnings, ...bodyR.warnings, ...sigR.warnings].slice(0, 50).map((w) => w.slice(0, 300));
-  const invoiceNumber = invoice.number ?? context.invoiceNumber;
+  const result = await buildPaymentConfirmation(run.orgId, run.invoiceId, context, payment?.method ?? null, action.templateId);
+  if (!result.ok) return { kind: "SKIPPED", note: result.note };
+  const { to, subject, text, warnings, lang, invoiceNumber } = result.built;
+  const tpl = { id: result.built.templateId };
 
   // Limits und Protokoll-Anlage gemeinsam unter der Kundensperre: parallele Laeufe ueberschreiten die Grenze nicht.
   const claimed = await dbInternal.$transaction(async (tx) => {
