@@ -9,6 +9,8 @@ import { intervalLabel } from "@/lib/recurring";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RecurringActions } from "@/components/RecurringActions";
 import { listUsage } from "@/domain/recurring/usage";
+import { listCollectivePartners, listRecurringInvoices } from "@/domain/recurring/list";
+import { CollectiveCard } from "./_parts/CollectiveCard";
 import { UsageSection, USAGE_PAGE_SIZE } from "./_parts/UsageSection";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +33,13 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
     include: {
       customer: { include: { defaultPaymentMethod: { select: { name: true } } } },
       lines: { orderBy: { position: "asc" } },
-      invoices: { orderBy: { issueDate: "desc" }, include: { customer: { select: { name: true } } } },
     },
   });
   if (!rec) notFound();
+  const [invoices, partners] = await Promise.all([
+    listRecurringInvoices(org.id, rec.id),
+    rec.collectiveBilling ? listCollectivePartners(org.id, rec.id) : Promise.resolve([]),
+  ]);
 
   // Netto je Rechnung: nur ITEM-Zeilen, mit Positionsrabatt (wie der Rechnungslauf).
   const tableLines = rec.lines.map((l) => ({
@@ -101,7 +106,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
           <Link href={`/abos/${rec.id}/bearbeiten`} className="rounded-md border border-rule-strong bg-sheet px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-paper">
             Bearbeiten
           </Link>
-          <RecurringActions id={rec.id} status={rec.status} />
+          <RecurringActions id={rec.id} status={rec.status} collective={rec.collectiveBilling} />
         </div>
       </div>
 
@@ -144,6 +149,8 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
           </dl>
         </div>
       </div>
+
+      {rec.collectiveBilling && <CollectiveCard heading={rec.invoiceHeading} partners={partners} />}
 
       <div className="rounded-[var(--radius-card)] border border-rule bg-sheet p-5 text-sm">
         <h2 className="mb-2 font-semibold text-ink">Aus den Kundenvorgaben übernommen</h2>
@@ -189,8 +196,8 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
       )}
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-ink">Erzeugte Rechnungen ({rec.invoices.length})</h2>
-        {rec.invoices.length === 0 ? (
+        <h2 className="font-semibold text-ink">Erzeugte Rechnungen ({invoices.length})</h2>
+        {invoices.length === 0 ? (
           <p className="text-sm text-ink-muted">Noch keine Rechnung erzeugt.</p>
         ) : (
           <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule bg-sheet">
@@ -205,7 +212,7 @@ export default async function AboDetail({ params }: { params: Promise<{ id: stri
                 </tr>
               </thead>
               <tbody className="divide-y divide-rule">
-                {rec.invoices.map((inv) => (
+                {invoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-paper">
                     <td className="px-4 py-2">
                       <Link href={`/rechnungen/${inv.id}`} className="font-medium text-pen hover:underline">

@@ -18,6 +18,9 @@ export { RecurringError };
 export async function createRecurring(orgId: string, input: CreateRecurringInput) {
   const customer = await dbInternal.customer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true, defaultCurrency: true, language: true } });
   if (!customer) throw new RecurringError("Kunde nicht gefunden.");
+  if (input.collectiveBilling === true && (input.invoiceHeading === undefined || input.invoiceHeading.trim() === "")) {
+    throw new RecurringError("Blockueberschrift ist fuer Sammelrechnungen Pflicht.");
+  }
   if (input.endDate && input.endDate < input.startDate) throw new RecurringError("Enddatum liegt vor dem Startdatum.");
 
   // Stichtage auf 12:00 lokal ankern (DST-/Zeitzonen-sichere Tagesanzeige).
@@ -67,6 +70,8 @@ export async function createRecurring(orgId: string, input: CreateRecurringInput
       emailTemplateId: input.emailTemplateId ?? null,
       showPeriodText,
       notes: input.notes ?? null,
+      collectiveBilling: input.collectiveBilling ?? false,
+      invoiceHeading: input.invoiceHeading ?? null,
       lines: { create: lines },
     },
     include: { lines: { orderBy: { position: "asc" } } },

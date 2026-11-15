@@ -43,6 +43,7 @@ export function serializeInvoiceLine(l: InvoiceLine) {
     servicePeriodStart: l.servicePeriodStart ? l.servicePeriodStart.toISOString() : null,
     servicePeriodEnd: l.servicePeriodEnd ? l.servicePeriodEnd.toISOString() : null,
     ossCategory: l.ossCategory,
+    recurringInvoiceId: l.recurringInvoiceId,
   };
 }
 
@@ -90,6 +91,7 @@ export const invoiceLineSchema = quoteLineSchema.extend({
   servicePeriodStart: z.string().nullable(),
   servicePeriodEnd: z.string().nullable(),
   ossCategory: z.string().nullable(),
+  recurringInvoiceId: z.string().nullable().describe("Herkunft der Position bei Sammelrechnungen: Id des Abos, aus dem der Block stammt."),
 });
 
 export const deliveryNoteLineSchema = z.object({

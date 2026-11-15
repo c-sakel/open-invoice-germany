@@ -34,14 +34,14 @@ export const POST = withApi<{ id: string }>(async (_req, ctx) => {
   const result = await emitRecurringNow(ctx.params.id, { actor: ctx.actor });
   if (isSkipped(result)) return apiData({ skipped: true as const, periodDate: result.periodDate.toISOString() }, 200);
   const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: result.invoiceId }, include: { lines: { orderBy: { position: "asc" } } } });
-  return apiData(serializeInvoice(invoice, new Set()), 201);
+  return apiData(serializeInvoice(invoice, new Set(["lines"])), 201);
 }, { scope: "write" });
 
 export const spec = {
   create: {
     path: "/api/v1/Recurring/{id}/run",
     method: "POST",
-    summary: "Faellige Rechnung fuer ein Abo sofort erzeugen (liefert die erzeugte Rechnung; ohne Verbrauch im Zeitraum 200 mit skipped)",
+    summary: "Faellige Rechnung fuer ein Abo sofort erzeugen (liefert die erzeugte Rechnung mit Positionen; bei Sammelrechnung gemeinsam mit den Abos der Gruppe, Herkunft je Position in lines[].recurringInvoiceId; ohne Verbrauch im Zeitraum 200 mit skipped)",
     scope: "write",
     response: apiDataResponseSchema(z.union([invoiceSchema, skippedRunSchema])),
     errors: [401, 403, 404, 409, 429],

@@ -937,6 +937,18 @@ export type RecurInterval = z.infer<typeof RecurInterval>;
 const recurringLinesRule = (lines: ReadonlyArray<{ lineType: z.infer<typeof LineType> }>): boolean => lines.some((l) => l.lineType === "ITEM");
 const RECURRING_LINES_MESSAGE = "Mindestens eine Position (kein reiner Text) erforderlich.";
 
+const COLLECTIVE_HEADING_MESSAGE = "Blockueberschrift ist fuer Sammelrechnungen Pflicht.";
+// Pruefung per refine statt regex: ein regex mit u-Flag landet in der OpenAPI-Datei als
+// ungueltiges "pattern" (Flag im Musterstring), refine wird nicht exportiert.
+const FORBIDDEN_HEADING_CHARS = /[\p{Cc}\p{Cf}]/u;
+const invoiceHeadingSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((s) => !FORBIDDEN_HEADING_CHARS.test(s), { message: "Keine Steuer- oder Formatzeichen erlaubt." });
+// Obergrenze 200 Zeichen: strenger als die Positionsbeschreibung (ohne Limit), passt in Zeile von PDF und XML.
+
 const recurringObjectSchema = z.object({
   customerId: z.string().min(1),
   title: z.string().min(1),
@@ -966,9 +978,19 @@ const recurringObjectSchema = z.object({
   showPeriodText: z.boolean().optional(),
   language: DocLanguageSchema.optional(),
   notes: z.string().optional(),
+  // Sammelrechnung: mit anderen faelligen Abos des Kunden in einer Rechnung abrechnen; die
+  // Blockueberschrift (oeffentlich, steht auf der Rechnung) ist dann Pflicht.
+  collectiveBilling: z.boolean().optional(),
+  invoiceHeading: invoiceHeadingSchema.optional(),
   lines: z.array(recurringLineInputSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }),
 });
-export const createRecurringSchema = recurringObjectSchema.transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
+export const createRecurringSchema = recurringObjectSchema
+  .superRefine((v, ctx) => {
+    if (v.collectiveBilling === true && v.invoiceHeading === undefined) {
+      ctx.addIssue({ code: "custom", path: ["invoiceHeading"], message: COLLECTIVE_HEADING_MESSAGE });
+    }
+  })
+  .transform((v) => ({ ...v, lines: resolveLineCategories(v.lines, v.taxScheme) }));
 export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
 
 export const updateRecurringStatusSchema = z.object({
@@ -1000,6 +1022,8 @@ export const updateRecurringSchema = z.object({
   language: DocLanguageSchema.optional(),
   notes: z.string().nullable().optional(),
   currency: currencyCodeSchema.optional(),
+  collectiveBilling: z.boolean().optional(),
+  invoiceHeading: invoiceHeadingSchema.nullable().optional(),
   status: z.enum(["ACTIVE", "PAUSED", "ENDED"]).optional(),
   // Kategorie optional: die Domain leitet sie aus dem Abo-Steuerschema ab (recurring/update.ts).
   lines: z.array(recurringLineInputSchema).min(1).refine(recurringLinesRule, { message: RECURRING_LINES_MESSAGE }).optional(),

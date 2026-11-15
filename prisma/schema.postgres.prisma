@@ -492,6 +492,7 @@ model InvoiceLine {
   unitNetPriceMilliCents Int? // Phase 18f: Einzelpreis in 1/1000 Cent; gesetzt = fuehrend, unitNetPriceCents = Rundung
   servicePeriodStart     DateTime? // Phase 18f: Leistungszeitraum der Position (BG-26, BT-134)
   servicePeriodEnd       DateTime? // BT-135
+  recurringInvoiceId     String? // Herkunft der Position bei Sammelrechnungen (Snapshot, kein Fremdschluessel)
 
   @@index([invoiceId])
 }
@@ -658,6 +659,8 @@ model RecurringInvoice {
   issuedCount      Int            @default(0)
   createdAt        DateTime       @default(now())
   language         String         @default("de") // Belegsprache (ISO-639-1): de | en
+  collectiveBilling Boolean       @default(false) // mit anderen faelligen Abos des Kunden in einer Rechnung abrechnen
+  invoiceHeading   String? // oeffentliche Blockueberschrift auf der Sammelrechnung (Pflicht bei collectiveBilling)
   updatedAt        DateTime       @updatedAt
 
   lines    RecurringInvoiceLine[]

@@ -7,7 +7,8 @@ import { DUNNING_LEVEL_TITLE } from "@/lib/dunning";
 function nodeName(node: ChainNode): string {
   if (node.number) return node.number;
   if (node.status === "UNBEKANNT") return "Beleg nicht verfügbar";
-  return node.type === "RECURRING" ? "Abo" : "Entwurf";
+  if (node.type === "RECURRING") return node.title ?? "Abo";
+  return "Entwurf";
 }
 
 /** Status je Knoten: Mahnungen/Zahlungen tragen Klartext statt eines Status-Enums. */

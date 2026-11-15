@@ -138,9 +138,14 @@ export default async function AbosPage({ searchParams }: { searchParams: Promise
               header: "Bezeichnung",
               mobile: "title",
               cell: (r) => (
-                <Link href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
-                  {r.title}
-                </Link>
+                <span>
+                  <Link href={`/abos/${r.id}`} className="break-words font-medium text-pen hover:underline">
+                    {r.title}
+                  </Link>
+                  {r.collectiveBilling && (
+                    <span className="ml-2 rounded bg-pen-wash px-1.5 py-0.5 text-xs font-medium text-pen">Sammelrechnung</span>
+                  )}
+                </span>
               ),
             },
             { key: "customer", header: "Kunde", mobile: "meta", cell: (r) => <span className="break-words text-ink-soft">{r.customerName}</span> },

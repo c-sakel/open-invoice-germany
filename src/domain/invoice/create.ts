@@ -37,6 +37,8 @@ export interface CreateOptions {
   // von createInvoiceSchema — nur src/domain/recurring/run.ts setzt dieses Feld, kein
   // Bypass ueber Formular/REST/MCP moeglich.
   recurringInvoiceId?: string;
+  // Herkunft je Position (Sammelrechnung): gleiche Laenge und Reihenfolge wie input.lines, intern.
+  lineRecurringIds?: readonly (string | null)[];
   // Phase 14a, Task 1 (Fix-Welle 1, must): zusaetzlicher Kontext (z. B. { recurring, period })
   // fuer den ChangeLog-Diff UND den ActivityLog-Eintrag (data) DIESES CREATE-Eintrags —
   // verhindert je einen zweiten Eintrag je erzeugter Rechnung, der Abo-Lauf muesste sonst
@@ -57,6 +59,9 @@ export async function createDraftInvoiceWithinTx(
   // normalizeLines vergibt Positionsnummern und erzwingt defensiv, dass Nicht-ITEM-Zeilen
   // (HEADING/TEXT/SUBTOTAL) keine Betraege tragen (Lastenheft §8) — Zod erzwingt das bereits
   // am Boundary, dies ist die zweite Verteidigungslinie fuer Aufrufer ohne Zod-Lauf.
+  if (opts.lineRecurringIds && opts.lineRecurringIds.length !== input.lines.length) {
+    throw new Error("lineRecurringIds muss genau eine Angabe je Position enthalten.");
+  }
   const normalized = normalizeLines(input.lines);
   await assertAllowedTaxRates(tx, orgId, ratesOfLines(normalized), { existing: opts.inheritedTaxRates });
   // Phase 16e: OSS-Kategorie als Snapshot (explizit > Produkt der Org > null); nur ITEM-Zeilen.
@@ -79,6 +84,7 @@ export async function createDraftInvoiceWithinTx(
     discountPermille: line.discountPermille,
     discountCents: line.discountCents,
     ossCategory: line.lineType === "ITEM" ? ossCategories[i] : null,
+    recurringInvoiceId: opts.lineRecurringIds?.[i] ?? null,
     // Nicht-ITEM-Zeilen tragen quantityMilli=0/unitNetPriceCents=0 -> lineNetCents ohnehin 0;
     // computeLineNet trotzdem nur fuer ITEM aufrufen (gleiche Regel wie bei der
     // Summenbildung unten, §8: Nicht-ITEM nie in Berechnung).

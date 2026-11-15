@@ -339,12 +339,14 @@ Kontoauszüge (CAMT.053/.054) importieren und Umsätze Rechnungen zuordnen. Dies
 
 ### Abos (wiederkehrende Rechnungen)
 
+`create_recurring` und `update_recurring_invoice` nehmen `collectiveBilling` und `invoiceHeading` (Pflicht bei `collectiveBilling`, höchstens 200 Zeichen) entgegen, `list_recurring` zeigt beide Felder. `run_recurring` meldet Sammelrechnungen mit der Zahl der Abos und, falls die Gruppe auf einen Verbrauchspartner wartet, „zurückgestellt".
+
 | Tool | Zweck | Beispiel |
 |---|---|---|
-| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`; Positionen mit `lineType` `ITEM`/`HEADING`/`TEXT`/`SUBTOTAL`, `descriptionLong`, `articleNumber` und Rabatt wie bei `update_invoice_draft`; je Position `billing` `FIXED`/`USAGE` und `usageUnitLabel` — bei `USAGE` ohne `quantity`, Abrechnung nach erfasstem Verbrauch; `unitPriceEuro` bis 5 Nachkommastellen) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
+| `create_recurring` | Abo / wiederkehrende Rechnung anlegen (optional `currency`; Positionen mit `lineType` `ITEM`/`HEADING`/`TEXT`/`SUBTOTAL`, `descriptionLong`, `articleNumber` und Rabatt wie bei `update_invoice_draft`; je Position `billing` `FIXED`/`USAGE` und `usageUnitLabel` — bei `USAGE` ohne `quantity`, Abrechnung nach erfasstem Verbrauch; `unitPriceEuro` bis 5 Nachkommastellen; `collectiveBilling` mit Pflichtfeld `invoiceHeading` fasst mehrere fällige Abos desselben Kunden in einer Sammelrechnung zusammen) | „Leg einen monatlichen Wartungsvertrag für Müller über 99 € an, ab dem 1. des nächsten Monats." |
 | `list_recurring` | Abos auflisten (Filter u. a. Status) | „Welche Abos sind fällig?" |
-| `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort) | „Erzeuge die fälligen Rechnungen." |
-| `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich | „Ändere beim Wartungsvertrag von Müller den Preis auf 109 €." |
+| `run_recurring` | Fällige Abo-Rechnungen erzeugen (alle, oder ein Abo sofort; Sammelrechnungen werden mit Anzahl der Abos gemeldet) | „Erzeuge die fälligen Rechnungen." |
+| `update_recurring_invoice` | Bestehendes Abo teilweise aktualisieren (Titel, Sammelrechnung `collectiveBilling`/`invoiceHeading`, Rhythmus inkl. täglich, Start-/Enddatum, maximale Läufe, Zahlungsfrist, Positionen, Auto-Festschreiben/-Versand, E-Mail-Vorlage, Leistungszeitraum-Text) — Merge, kein Kundenwechsel möglich | „Ändere beim Wartungsvertrag von Müller den Preis auf 109 €." |
 | `set_recurring_state` | Status eines Abos auf `ACTIVE`/`PAUSED`/`ENDED` setzen (dünner Wrapper um `update_recurring_invoice`) | „Pausiere den Wartungsvertrag von Müller GmbH." |
 | `record_usage` | Verbrauch für eine Abo-Position mit Abrechnung nach Verbrauch erfassen (`quantity` bis 3 Nachkommastellen oder `quantityMilli`, optional `externalId` für Idempotenz) | „Erfasse 2,5 Aufrufe für das API-Abo." |
 | `list_usage` | Verbrauchssätze eines Abos auflisten, mit offener Menge je Position | „Zeig den Verbrauch des API-Abos." |

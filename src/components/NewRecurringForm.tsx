@@ -47,6 +47,9 @@ export interface RecurringInitialValues {
   showPeriodText: boolean;
   notes: string;
   currency: string;
+  /** Sammelrechnung (Schalter) und oeffentliche Blockueberschrift; fehlt = aus. */
+  collectiveBilling?: boolean;
+  invoiceHeading?: string;
   lines: InitialLineLike[];
 }
 
@@ -118,6 +121,8 @@ export function NewRecurringForm({
   );
   const [currencyTouched, setCurrencyTouched] = useState(mode === "edit");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [collectiveBilling, setCollectiveBilling] = useState(initial?.collectiveBilling ?? false);
+  const [invoiceHeading, setInvoiceHeading] = useState(initial?.invoiceHeading ?? "");
   const [draft, dispatch] = useReducer(draftReducer, undefined, () =>
     emptyDraft("INVOICE", {
       taxScheme: "REGULAR",
@@ -164,6 +169,12 @@ export function NewRecurringForm({
       return;
     }
 
+    if (collectiveBilling && !invoiceHeading.trim()) {
+      setError("Für die Sammelrechnung ist eine Blocküberschrift erforderlich.");
+      setBusy(false);
+      return;
+    }
+
     const lineInputs = draftLinesToPayload(draft.lines, "REGULAR", { recurring: true });
 
     if (mode === "edit") {
@@ -183,6 +194,8 @@ export function NewRecurringForm({
         showPeriodText,
         notes: notes || null,
         currency,
+        collectiveBilling,
+        invoiceHeading: collectiveBilling ? invoiceHeading.trim() : null,
         lines: lineInputs,
       };
       const res = await fetch(`/api/recurring/${recurringId}`, {
@@ -218,6 +231,7 @@ export function NewRecurringForm({
       // (identisch zur hier angezeigten Vorbelegung).
       currency: currencyTouched ? currency : undefined,
       notes: notes || undefined,
+      ...(collectiveBilling ? { collectiveBilling: true, invoiceHeading: invoiceHeading.trim() } : {}),
       lines: lineInputs,
     };
     const res = await fetch("/api/recurring", {
@@ -383,6 +397,38 @@ export function NewRecurringForm({
               ))}
             </select>
           </label>
+        )}
+      </div>
+
+      <div className="space-y-3 rounded-md border border-rule bg-sheet p-4">
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" checked={collectiveBilling} onChange={(e) => setCollectiveBilling(e.target.checked)} />
+          <span className="font-medium text-ink-soft">Sammelrechnung</span>
+          <span className="text-ink-muted">mit anderen fälligen Abos dieses Kunden in einer Rechnung abrechnen</span>
+        </label>
+        {collectiveBilling && (
+          <>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-ink-soft">
+                Blocküberschrift auf der Rechnung <span className="text-stamp">*</span>
+              </span>
+              <input
+                className={input}
+                placeholder="z. B. Wartung"
+                value={invoiceHeading}
+                maxLength={200}
+                required
+                onChange={(e) => setInvoiceHeading(e.target.value)}
+              />
+              <span className="text-xs text-ink-muted">Steht öffentlich auf der Rechnung über den Positionen dieses Abos, mit Zwischensumme darunter.</span>
+            </label>
+            <p className="text-xs text-ink-muted">
+              Zusammengefasst werden aktive Abos desselben Kunden mit gleichem Stichtag und gleicher Währung, gleichem Steuerschema, gleicher Sprache,
+              gleichem Zahlungsziel sowie gleicher Einstellung für Festschreiben und Versand (bei automatischem Versand auch gleiche Mailvorlage).
+              Abos mit Verbrauchspositionen werden erst am Tag nach dem Stichtag abgerechnet; dann gilt das für die ganze Gruppe. Ist kein weiteres
+              Abo fällig, entsteht eine normale Rechnung.
+            </p>
+          </>
         )}
       </div>
 

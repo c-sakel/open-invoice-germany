@@ -51,6 +51,8 @@ export default async function AboBearbeitenPage({ params }: { params: Promise<{ 
     showPeriodText: rec.showPeriodText,
     notes: rec.notes ?? "",
     currency: rec.currency,
+    collectiveBilling: rec.collectiveBilling,
+    invoiceHeading: rec.invoiceHeading ?? "",
     lines: rec.lines.map((l) => ({
       lineType: l.lineType as "ITEM" | "HEADING" | "TEXT" | "SUBTOTAL",
       description: l.description,

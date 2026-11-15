@@ -50,7 +50,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     {
       title: "Abo / wiederkehrende Rechnung anlegen",
       description:
-        "Legt ein Abo an, aus dem nach Plan automatisch Rechnungen entstehen (z. B. monatlicher Wartungsvertrag). Kunde per Name, Positionen wie bei create_invoice, optional mit billing USAGE (Abrechnung nach Verbrauch, Verbrauch per record_usage); Überschriften/Textblöcke/Zwischensummen (lineType HEADING/TEXT/SUBTOTAL, ohne Betrag) wie bei update_invoice_draft. Mit run_recurring oder dem Cron-Lauf werden die fälligen Rechnungen erzeugt.",
+        "Legt ein Abo an, aus dem nach Plan automatisch Rechnungen entstehen (z. B. monatlicher Wartungsvertrag). Kunde per Name, Positionen wie bei create_invoice, optional mit billing USAGE (Abrechnung nach Verbrauch, Verbrauch per record_usage); Mit collectiveBilling und invoiceHeading werden mehrere fällige Abos des Kunden in einer Sammelrechnung zusammengefasst; Überschriften/Textblöcke/Zwischensummen (lineType HEADING/TEXT/SUBTOTAL, ohne Betrag) wie bei update_invoice_draft. Mit run_recurring oder dem Cron-Lauf werden die fälligen Rechnungen erzeugt.",
       inputSchema: {
         customer: z.string().describe("Kundenname oder -ID"),
         title: z.string().describe("Interne Bezeichnung, z. B. 'Wartungsvertrag Mustermann'"),
@@ -66,6 +66,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         currency: currencyCodeSchema.optional().describe("ISO-4217-Code (3 Grossbuchstaben, z. B. USD); ohne Angabe: Kunde > Einstellung > EUR"),
         language: DocLanguageSchema.optional().describe("Belegsprache de|en der erzeugten Rechnungen; ohne Angabe die Sprache des Kunden, sonst de."),
         notes: z.string().optional(),
+        collectiveBilling: z.boolean().optional().describe("true = mit anderen fälligen Abos desselben Kunden (gleiche Stichtage und Konditionen) in einer Sammelrechnung abrechnen; invoiceHeading ist dann Pflicht"),
+        invoiceHeading: z.string().optional().describe("Öffentliche Blockbezeichnung auf der Sammelrechnung (max. 200 Zeichen, Pflicht bei collectiveBilling)"),
       },
     },
     async (args): Promise<Result> => {
@@ -98,6 +100,8 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
           currency: args.currency,
           language: args.language,
           notes: args.notes,
+          collectiveBilling: args.collectiveBilling,
+          invoiceHeading: args.invoiceHeading,
           lines,
         });
         const rec = await createRecurring(org.id, input);
@@ -110,6 +114,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         // Fix 2 (Re-Review Phase 12c): sonst unter failUnknown ("Unerwarteter Fehler")
         // gefallen — dieselbe lesbare Meldung wie im Editor/UI (assertAllowedTaxRates,
         // domain/settings/tax-rates.ts).
+        if (e instanceof z.ZodError) return ctx.fail(`Validierung fehlgeschlagen: ${e.issues.map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ` : "") + i.message).join("; ")}`);
         if (e instanceof TaxRateNotAllowedError) return ctx.fail(e.message);
         if (e instanceof RecurringError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
@@ -138,7 +143,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
       }
       const recs = await dbInternal.recurringInvoice.findMany({
         where: { orgId: org.id, ...(status ? { status } : {}) },
-        include: { customer: { select: { name: true } }, _count: { select: { invoices: true } } },
+        include: { customer: { select: { name: true } } },
         orderBy: { nextRunDate: "asc" },
       });
       return ctx.ok(
@@ -150,8 +155,10 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
             rhythm: intervalLabel(r.interval, r.intervalCount),
             status: r.status,
             nextRunDate: r.status === "ENDED" ? null : r.nextRunDate.toISOString().slice(0, 10),
-            issued: r._count.invoices,
+            issued: r.issuedCount,
             autoFinalize: r.autoFinalize,
+            collectiveBilling: r.collectiveBilling,
+            invoiceHeading: r.invoiceHeading,
           })),
           null,
           2,
@@ -178,6 +185,13 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
           const match = await ctx.resolveRecurring(org.id, recurring);
           const res = await emitRecurringNow(match.id);
           if (isSkipped(res)) return ctx.ok("Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
+          const members = res.collectiveRecurringIds?.length ?? 0;
+          if (members > 1) {
+            return ctx.ok(
+              `Sammelrechnung ${res.number ?? "Entwurf " + res.invoiceId.slice(0, 8)} für ${members} Abos erzeugt` +
+                `${res.finalized ? " (festgeschrieben)" : " (Entwurf — finalize_invoice zum Festschreiben)"}.`,
+            );
+          }
           return ctx.ok(
             `Rechnung erzeugt für Abo "${match.title}": ${res.number ?? "Entwurf " + res.invoiceId.slice(0, 8)}` +
               `${res.finalized ? " (festgeschrieben)" : " (Entwurf — finalize_invoice zum Festschreiben)"}.`,
@@ -187,11 +201,26 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
         const total = summaries.reduce((n, s) => n + s.emitted.length, 0);
         const skippedTotal = summaries.reduce((n, s) => n + s.skipped.length, 0);
         if (total === 0 && skippedTotal > 0) return ctx.ok("Keine Verbräuche im Zeitraum — keine Rechnung erzeugt.");
+        const deferredCount = summaries.filter((s) => s.deferred).length;
+        const doneElsewhere = summaries.filter((s) => s.alreadyDone).length;
+        if (total === 0 && (deferredCount > 0 || doneElsewhere > 0)) {
+          const parts: string[] = [];
+          if (deferredCount > 0) parts.push(`${deferredCount} Abo(s) zurückgestellt (Sammelrechnung wartet auf ein Verbrauchsabo, Abrechnung am Folgetag)`);
+          if (doneElsewhere > 0) parts.push(`${doneElsewhere} Abo(s) bereits von einem parallelen Lauf erledigt`);
+          return ctx.ok(`Keine Rechnung erzeugt: ${parts.join("; ")}.`);
+        }
         if (total === 0) return ctx.ok("Keine fälligen Abos.");
         const lines = summaries.flatMap((s) =>
-          s.emitted.map((e) => `• ${s.title}: ${e.number ?? "Entwurf " + e.invoiceId.slice(0, 8)} (Periode ${e.periodDate.toISOString().slice(0, 10)})`),
+          s.emitted.map((e) => {
+            const members = e.collectiveRecurringIds?.length ?? 0;
+            const label = members > 1 ? `Sammelrechnung für ${members} Abos` : s.title;
+            return `• ${label}: ${e.number ?? "Entwurf " + e.invoiceId.slice(0, 8)} (Periode ${e.periodDate.toISOString().slice(0, 10)})`;
+          }),
         );
-        return ctx.ok(`${total} Rechnung(en) aus ${summaries.length} Abo(s) erzeugt:\n${lines.join("\n")}`);
+        const collectiveCount = summaries.reduce((n, s) => n + s.emitted.filter((e) => (e.collectiveRecurringIds?.length ?? 0) > 1).length, 0);
+        const covered = summaries.filter((s) => s.emitted.length > 0).length;
+        const sammel = collectiveCount > 0 ? ` (davon ${collectiveCount} Sammelrechnung(en))` : "";
+        return ctx.ok(`${total} Rechnung(en)${sammel} für ${covered} Abo(s) erzeugt:\n${lines.join("\n")}`);
       } catch (e) {
         if (e instanceof RecurringError) return ctx.fail(e.message);
         if (e instanceof ToolError) return ctx.fail(e.message);
@@ -206,7 +235,7 @@ export function registerRecurringTools(server: McpServer, ctx: McpToolsContext):
     {
       title: "Abo / wiederkehrende Rechnung aendern",
       description:
-        "Aendert ein bestehendes Abo (Titel, Rhythmus, Enddatum, maxRuns, Zahlungsziel, autoFinalize/autoSend, E-Mail-Vorlage, Leistungszeitraum-Text, Notizen, Status, Positionen). Positionen in Cent/Milli-Cent; mit der Zeilen-id aus get/Recurring bleibt der Verbrauch der Zeile erhalten, billing/usageUnitLabel setzen die Abrechnungsart. Bei offenem Verbrauch sind Zeitplanänderungen (Rhythmus, Stichtag, nächster Termin) abgelehnt.",
+        "Aendert ein bestehendes Abo (Titel, Sammelrechnung collectiveBilling/invoiceHeading, Rhythmus, Enddatum, maxRuns, Zahlungsziel, autoFinalize/autoSend, E-Mail-Vorlage, Leistungszeitraum-Text, Notizen, Status, Positionen). Positionen in Cent/Milli-Cent; mit der Zeilen-id aus get/Recurring bleibt der Verbrauch der Zeile erhalten, billing/usageUnitLabel setzen die Abrechnungsart. Bei offenem Verbrauch sind Zeitplanänderungen (Rhythmus, Stichtag, nächster Termin) abgelehnt.",
       inputSchema: { ...updateRecurringSchema.shape, recurring: z.string().describe("Abo-ID") },
     },
     async (args): Promise<Result> => {

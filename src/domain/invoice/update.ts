@@ -202,6 +202,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
             ossCategory: l.lineType === "ITEM" ? ossCategories[i] : null,
+            recurringInvoiceId: null,
             lineNetCents: l.lineType === "ITEM" ? computeLineNet(l).lineNetCents : 0,
           }))
         : invoice.lines.map((l) => ({
@@ -222,6 +223,7 @@ export async function updateDraftInvoice(orgId: string, id: string, rawInput: un
             discountPermille: l.discountPermille,
             discountCents: l.discountCents,
             ossCategory: l.ossCategory,
+            recurringInvoiceId: l.recurringInvoiceId,
             lineNetCents: l.lineNetCents,
           }));
       // Nicht-ITEM-Zeilen gehen nie in Summen/Steuerberechnung ein (§8).
