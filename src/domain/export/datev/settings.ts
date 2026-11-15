@@ -130,6 +130,36 @@ export function assertSettingsAccounts(s: DatevConfigSettings): void {
   person(s.debtorRangeStart, "Debitorenbereich Start");
 }
 
+/**
+ * Aenderung der Kontenlaenge: vergebene Debitorennummern und Zuordnungskonten muessen in die neuen Bereiche passen.
+ * Hinweis fuer den Buchungsschreiber: Sachkonten der Vorlagen sind 4-stellig und muessen beim Schreiben auf die
+ * eingestellte Kontenlaenge aufgefuellt werden (Padding mit Nullen rechts), nicht hier in der Zuordnung.
+ */
+async function assertAccountLengthChange(tx: Prisma.TransactionClient, orgId: string, length: number): Promise<void> {
+  const { sachMax, debtorMin, debtorMax } = accountRules(length);
+  const customers = await tx.customer.findMany({
+    where: { orgId, datevAccount: { not: null } },
+    select: { customerNumber: true, name: true, datevAccount: true },
+    orderBy: { datevAccount: "asc" },
+  });
+  const badDebtors = customers.filter((c) => c.datevAccount !== null && (c.datevAccount < debtorMin || c.datevAccount > debtorMax));
+  if (badDebtors.length > 0) {
+    const list = badDebtors.slice(0, 10).map((c) => `${c.datevAccount} (${c.customerNumber ?? c.name})`).join(", ");
+    throw new DatevError(
+      "ACCOUNT_OUT_OF_RANGE",
+      `Kontenlaenge ${length}: ${badDebtors.length} vergebene Debitorennummer(n) liegen ausserhalb ${debtorMin}..${debtorMax}: ${list}${badDebtors.length > 10 ? ", ..." : ""}.`,
+    );
+  }
+  const mapping = await tx.datevAccountMapping.findMany({ where: { orgId }, select: { kind: true, key: true, account: true } });
+  const badMapping = mapping.filter((m) => m.account < 1 || m.account > sachMax);
+  if (badMapping.length > 0) {
+    throw new DatevError(
+      "ACCOUNT_OUT_OF_RANGE",
+      `Kontenlaenge ${length}: Zuordnungskonten ausserhalb 1..${sachMax}: ${badMapping.slice(0, 10).map((m) => `${m.kind} ${m.key}`).join(", ")}.`,
+    );
+  }
+}
+
 function parseInput(raw: unknown): DatevSettingsInput {
   const r = datevSettingsInputSchema.safeParse(raw);
   if (!r.success) throw new DatevError("VALIDATION", r.error.issues.map((i) => `${i.path.join(".") || "Eingabe"}: ${i.message}`).join("; "));
@@ -153,6 +183,7 @@ export async function saveDatevSettings(orgId: string, rawInput: unknown, actor:
       }
     }
     assertSettingsAccounts(merged);
+    if (existing && merged.accountLength !== existing.accountLength) await assertAccountLengthChange(tx, orgId, merged.accountLength);
     const data = toConfig(merged);
     // confirmed* wird hier nie geschrieben: die Bestaetigung erlischt durch den Hashvergleich.
     await tx.datevSettings.upsert({ where: { orgId }, create: { orgId, ...data }, update: data, select: { id: true } });
@@ -167,6 +198,8 @@ export async function saveDatevSettings(orgId: string, rawInput: unknown, actor:
 /**
  * Bestaetigt die aktuelle Kontenzuordnung (nur Oberflaeche, Administrator). Der Hash wird hier aus den
  * gespeicherten Einstellungen und ALLEN Zuordnungszeilen berechnet, nie vom Aufrufer uebernommen.
+ * Zugriffsschutz: diese Funktion prueft keine Rolle. Aufrufer (Oberflaechen-Aktion) muss Administrator und
+ * Origin-Pruefung erzwingen; sie wird weder ueber REST noch ueber MCP angeboten.
  */
 export async function confirmDatevMapping(orgId: string, rawNote: unknown, actor: string): Promise<DatevSettingsView> {
   const n = datevConfirmNoteSchema.safeParse(rawNote);
@@ -191,6 +224,9 @@ export async function confirmDatevMapping(orgId: string, rawNote: unknown, actor
     const { sachMax } = accountRules(s.accountLength);
     const bad = mapping.find((m) => m.account < 1 || m.account > sachMax);
     if (bad) throw new DatevError("ACCOUNT_OUT_OF_RANGE", `Zuordnung ${bad.kind} ${bad.key}: Konto ${bad.account} liegt ausserhalb 1..${sachMax}.`);
+    if (!mapping.some((m) => m.kind === "REVENUE")) {
+      throw new DatevError("SETTINGS_INCOMPLETE", "Pflichtzuordnung fehlt: mindestens ein Erloeskonto muss zugeordnet sein.");
+    }
     const hash = datevConfigHash(s, mapping);
     await tx.datevSettings.update({ where: { orgId }, data: { confirmedHash: hash, confirmedAt: new Date(), confirmedNote: note }, select: { id: true } });
     await logActivity(tx, { orgId, entityType: "DATEV", entityId: orgId, type: "DATEV_MAPPING_CONFIRMED", actor, data: { note, mappingRows: mapping.length } });

@@ -32,6 +32,7 @@ export const datevSettingsInputSchema = z
     dictationCode: z
       .string()
       .refine((s) => /^([A-Z]{2}){0,2}$/.test(s), "Diktatkuerzel: 2 oder 4 Grossbuchstaben")
+      .transform((s) => (s === "" ? null : s))
       .nullable(),
     exportPayments: z.boolean(),
     exportDebtors: z.boolean(),

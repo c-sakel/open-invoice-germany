@@ -52,7 +52,9 @@ describe("Kontenvorlagen", () => {
         ]),
       );
       const { sachMax, debtorMin } = accountRules(4);
+      expect(rows.filter((r) => r.account === null).map((r) => r.key)).toEqual(["REGULAR|Z|0"]);
       for (const r of rows) {
+        if (r.account === null) continue;
         expect(r.account).toBeGreaterThanOrEqual(1);
         expect(r.account).toBeLessThanOrEqual(sachMax);
         expect(r.account).toBeLessThan(debtorMin);
@@ -70,8 +72,8 @@ describe("Kontenvorlagen", () => {
     const get = (chart: "SKR03" | "SKR04", key: string) => datevTemplateRows(chart).find((r) => r.key === key)?.account;
     expect(get("SKR03", "REGULAR|S|19")).toBe(8400);
     expect(get("SKR04", "REGULAR|S|19")).toBe(4400);
-    expect(get("SKR03", "KLEINUNTERNEHMER|E|0")).toBe(8192);
-    expect(get("SKR04", "KLEINUNTERNEHMER|E|0")).toBe(4184);
+    expect(get("SKR03", "KLEINUNTERNEHMER|E|0")).toBe(8195);
+    expect(get("SKR04", "KLEINUNTERNEHMER|E|0")).toBe(4185);
   });
 });
 

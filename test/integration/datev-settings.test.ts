@@ -149,6 +149,55 @@ describe("Vorlagen und Bestaetigung", () => {
   });
 });
 
+describe("Kontenrahmenwechsel und Pflichtzuordnung", () => {
+  it("Wechsel ersetzt Vorschlaege vollstaendig, manuelle Zeilen nur mit Bestaetigung", async () => {
+    const o = await mkOrg("Datev Wechsel GmbH");
+    await applyDatevTemplate(o, "SKR03", "t");
+    await saveDatevMapping(
+      o,
+      (await listDatevMapping(o)).map((r) => (r.kind === "REVENUE" && r.key === "REGULAR|S|7" ? { ...r, account: 8301 } : r)),
+      "t",
+    );
+    const res = await applyDatevTemplate(o, "SKR04", "t");
+    expect(res.keptEdited).toEqual(["REVENUE REGULAR|S|7"]);
+    const rows = await listDatevMapping(o);
+    expect(rows.find((r) => r.kind === "REVENUE" && r.key === "REGULAR|S|19")?.account).toBe(4400);
+    expect(rows.find((r) => r.kind === "REVENUE" && r.key === "REGULAR|S|7")?.account).toBe(8301);
+    expect(rows.find((r) => r.kind === "MONEY" && r.key === "PROVIDER:STRIPE")?.account).toBe(1460);
+    const s1 = await getDatevSettings(o);
+    expect(s1.chartOfAccounts).toBe("SKR04");
+    expect(s1.bankAccount).toBe(1800);
+    expect(s1.cashAccount).toBe(1600);
+    const res2 = await applyDatevTemplate(o, "SKR03", "t", { overwriteEdited: true });
+    expect(res2.keptEdited).toEqual([]);
+    const rows2 = await listDatevMapping(o);
+    expect(rows2.find((r) => r.kind === "REVENUE" && r.key === "REGULAR|S|7")?.account).toBe(8300);
+    expect(rows2.find((r) => r.kind === "REVENUE" && r.key === "REGULAR|S|19")?.account).toBe(8400);
+    expect(rows2.some((r) => r.key === "REGULAR|Z|0")).toBe(false); // ohne Vorschlag
+    expect(res2.withoutSuggestion).toContain("REVENUE REGULAR|Z|0");
+  });
+
+  it("Kontolaengenwechsel prueft vergebene Debitorennummern", async () => {
+    const o = await mkOrg("Datev Laenge GmbH");
+    await saveDatevSettings(o, { debtorRangeStart: 10000 }, "t");
+    const c = await mkCustomer(o, "Laenge Kunde", "K-1");
+    await setCustomerDatevAccount(o, c, 10001, "t");
+    await expectCode(saveDatevSettings(o, { accountLength: 5 }, "t"), "ACCOUNT_OUT_OF_RANGE");
+    expect((await getDatevSettings(o)).accountLength).toBe(4);
+  });
+
+  it("Bestaetigung ohne Erloeskonto wird abgelehnt", async () => {
+    const o = await mkOrg("Datev Leer GmbH");
+    await saveDatevSettings(o, { consultantNumber: 1234567, clientNumber: 11111, chartOfAccounts: "SKR03", debtorRangeStart: 10000 }, "t");
+    await expectCode(confirmDatevMapping(o, "Geprueft mit Steuerberater", "t"), "SETTINGS_INCOMPLETE");
+  });
+
+  it("leeres Diktatkuerzel wird zu null", async () => {
+    const o = await mkOrg("Datev Kuerzel GmbH");
+    expect((await saveDatevSettings(o, { dictationCode: "" }, "t")).dictationCode).toBeNull();
+  });
+});
+
 describe("Debitorennummern", () => {
   it("setzen: Bereich, Eindeutigkeit, Org-Scope, Sperre nach Exportposten", async () => {
     const o = await mkOrg("Datev Debitor GmbH");
