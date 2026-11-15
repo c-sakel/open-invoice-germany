@@ -27,6 +27,7 @@ export interface ActionRun {
   ruleName: string;
   paymentId: string;
   invoiceId: string;
+  customerId: string;
   trigger: string;
   source: string;
   context: RunContext;

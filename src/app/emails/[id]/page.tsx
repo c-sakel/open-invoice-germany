@@ -23,6 +23,11 @@ const STATUS_LABEL: Record<string, string> = {
 async function backLink(docType: string, docId: string): Promise<string | null> {
   if (docType === "INVOICE" || docType === "CREDIT_NOTE") return `/rechnungen/${docId}`;
   if (docType === "ANGEBOT" || docType === "AUFTRAGSBESTAETIGUNG" || docType === "PROFORMA") return `/dokumente/${docId}`;
+  if (docType === "PAYMENT_CONFIRMATION") {
+    // docId = Zahlung; Rechnung ueber die Zahlung (Protokoll liegt unter der Zahlung, nicht an der Rechnung).
+    const p = await dbInternal.payment.findUnique({ where: { id: docId }, select: { invoiceId: true } });
+    return p ? `/rechnungen/${p.invoiceId}` : null;
+  }
   if (docType === "DUNNING") {
     const d = await dbInternal.dunning.findUnique({ where: { id: docId }, select: { invoiceId: true } });
     return d ? `/rechnungen/${d.invoiceId}` : null;

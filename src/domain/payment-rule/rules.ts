@@ -16,11 +16,10 @@ import {
   type PaymentRuleInput,
 } from "@/schemas/payment-rule";
 import { z } from "zod";
+import { PAYMENT_CONFIRMATION_DOC_TYPE } from "./mail";
 import type { Prisma } from "@/generated/prisma/client";
 
 export const MAX_RULES_PER_ORG = 20;
-/** Vorlagentyp der Zahlungsbestaetigung (Mailvorlagen). */
-const PAYMENT_CONFIRMATION_DOC_TYPE = "PAYMENT_CONFIRMATION";
 
 export interface PaymentRuleView {
   id: string;

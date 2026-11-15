@@ -122,6 +122,7 @@ export const ACTIVITY_TYPES = {
   PAYMENT_RULE_SAVED: "Zahlungsregel gespeichert",
   PAYMENT_RULE_ARCHIVED: "Zahlungsregel archiviert",
   PAYMENT_RULE_EXECUTED: "Aktion nach Zahlungseingang",
+  PAYMENT_CONFIRMATION_SENT: "Zahlungsbestaetigung versendet",
   RECURRING_RESUMED_BY_RULE: "Abo nach Zahlungseingang fortgesetzt",
 } as const;
 

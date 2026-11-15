@@ -26,7 +26,7 @@ describe("Selbstheilung: Standard-E-Mail-Vorlagen", () => {
   it("legt alle Standardvorlagen an", async () => {
     const templates = await dbInternal.emailTemplate.findMany({ where: { orgId, language: "de" } });
     expect(templates).toHaveLength(DEFAULT_EMAIL_TEMPLATES.length);
-    expect(templates).toHaveLength(10);
+    expect(templates).toHaveLength(11);
   });
 
   it("je Nicht-DUNNING-Typ genau eine Vorlage mit isDefault", async () => {
@@ -50,7 +50,7 @@ describe("Selbstheilung: Standard-E-Mail-Vorlagen", () => {
   it("zweiter Aufruf aendert die Anzahl nicht", async () => {
     await ensureOrgMasterdata(dbInternal, orgId);
     const templates = await dbInternal.emailTemplate.findMany({ where: { orgId, language: "de" } });
-    expect(templates).toHaveLength(10);
+    expect(templates).toHaveLength(11);
   });
 
   it("vom Nutzer geaenderte Vorlage wird bei erneuter Selbstheilung nicht ueberschrieben", async () => {

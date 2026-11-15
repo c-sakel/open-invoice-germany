@@ -16,6 +16,7 @@ import { onPaymentRuleFailed } from "@/domain/notifications/hooks";
 import type { MailProvider } from "@/lib/mail/provider";
 import { paymentRuleActionSchema, type PaymentRuleAction } from "@/schemas/payment-rule";
 import { PaymentRuleError } from "./errors";
+import { sendPaymentConfirmation } from "./mail";
 import { performDbAction, actorOf, type ActionOutcome, type ActionRun, type RunContext } from "./actions";
 import { nextAttemptAfterFailure, nextOpenStep, type StepState } from "./steps";
 
@@ -23,8 +24,27 @@ export const RUN_LOCK_MS = 5 * 60_000;
 const DEFAULT_LIMIT = 50;
 const ERROR_MAX = 500;
 
+/** Ergebnis der Zahlungsbestaetigung: Schrittergebnis, Verschiebung (Versandgrenze) oder Fehler mit erneutem Versuch. */
+export type ConfirmationResult = ActionOutcome | { status: "DEFER"; until: Date; note: string } | { status: "FAILED"; error: string };
+
 /** Versand der Zahlungsbestaetigung; wird nur aufgerufen, nachdem der Claim `mailSentAt` gelungen ist. */
-export type ConfirmationSender = (input: { run: ActionRun; action: Extract<PaymentRuleAction, { type: "SEND_PAYMENT_CONFIRMATION" }>; now: Date; provider?: MailProvider }) => Promise<ActionOutcome>;
+export type ConfirmationSender = (input: { run: ActionRun; action: Extract<PaymentRuleAction, { type: "SEND_PAYMENT_CONFIRMATION" }>; now: Date; provider?: MailProvider }) => Promise<ConfirmationResult>;
+
+/** Standardversand ueber den Mailweg (Vorlage, Limits, Protokoll unter der Zahlung). Ohne Versand wird der Claim freigegeben. */
+export const sendConfirmationViaMail: ConfirmationSender = async ({ run, action, now, provider }) => {
+  const out = await sendPaymentConfirmation(
+    { id: run.id, orgId: run.orgId, invoiceId: run.invoiceId, paymentId: run.paymentId, customerId: run.customerId, contextJson: JSON.stringify(run.context), ruleId: run.ruleId },
+    { templateId: action.templateId },
+    { now, ...(provider ? { provider } : {}) },
+  );
+  if (out.kind === "SENT") return { status: "DONE", note: `E-Mail ${out.logId}` };
+  // Kein Versand erfolgt: Claim freigeben, damit der Lauf nicht auf das Mail-Limit zaehlt und ein Folgeversuch moeglich bleibt.
+  await dbInternal.paymentRuleRun.updateMany({ where: { id: run.id, orgId: run.orgId, mailSentAt: now }, data: { mailSentAt: null } });
+  if (out.kind === "ALREADY") return { status: "DONE", note: `bereits gesendet (E-Mail ${out.logId})` };
+  if (out.kind === "SKIPPED") return { status: "SKIPPED", note: out.note };
+  if (out.kind === "DEFER") return { status: "DEFER", until: out.until, note: out.note };
+  return out.retryable ? { status: "FAILED", error: out.error } : { status: "SKIPPED", note: out.error };
+};
 
 export interface ProcessOptions {
   now?: Date;
@@ -32,7 +52,7 @@ export interface ProcessOptions {
   limit?: number;
   provider?: MailProvider;
   runIds?: string[];
-  /** Zahlungsbestaetigung (Mailmodul); ohne Angabe wird der Schritt uebersprungen. */
+  /** Zahlungsbestaetigung; ohne Angabe der Versand ueber den Mailweg (`sendConfirmationViaMail`), in Tests ersetzbar. */
   sendConfirmation?: ConfirmationSender;
 }
 
@@ -83,7 +103,7 @@ function errorText(e: unknown): string {
   return truncate([d.name, d.code, d.message].filter((x): x is string => typeof x === "string" && x !== "").join(": "));
 }
 
-type Outcome = "done" | "failed" | "skipped" | "retry" | "lost";
+type Outcome = "done" | "failed" | "skipped" | "retry" | "deferred" | "lost";
 
 /** Grund, warum der Lauf nicht (weiter) ausgefuehrt werden darf; null = ausfuehren. */
 async function precheck(run: { orgId: string; ruleId: string; paymentId: string; invoiceId: string; trigger: string }): Promise<string | null> {
@@ -124,7 +144,7 @@ async function runClaimed(
   const context: RunContext = contextSchema.parse(JSON.parse(claimed.contextJson));
   const base: ActionRun = {
     id: claimed.id, orgId: claimed.orgId, ruleId: claimed.ruleId, ruleName: rule?.name ?? "", paymentId: claimed.paymentId,
-    invoiceId: claimed.invoiceId, trigger: claimed.trigger, source: claimed.source, context,
+    invoiceId: claimed.invoiceId, customerId: claimed.customerId, trigger: claimed.trigger, source: claimed.source, context,
   };
   const mine = { id: claimed.id, status: "RUNNING", lockedUntil: lock } as const;
 
@@ -154,6 +174,16 @@ async function runClaimed(
     const readSteps = fresh.stepsJson;
     try {
       const outcome = await runStep({ base, action, index, steps, readSteps, lock, now, mine, opts });
+      if (outcome.status === "DEFER") {
+        // Versandgrenze: Lauf spaeter erneut, dieser Versuch zaehlt nicht; Schritt bleibt offen.
+        steps[index] = { type: action.type, status: "PENDING", note: outcome.note };
+        const res = await prisma.paymentRuleRun.updateMany({
+          where: mine,
+          data: { status: "PENDING", nextAttemptAt: outcome.until, attempts: { decrement: 1 }, lockedUntil: null, lastError: null, stepsJson: JSON.stringify(steps) },
+        });
+        return res.count === 1 ? "deferred" : "lost";
+      }
+      if (outcome.status === "FAILED") throw new Error(outcome.error);
       steps[index] = { type: action.type, status: outcome.status, at: now.toISOString(), ...(outcome.note ? { note: outcome.note } : {}) };
       if (action.type === "SEND_PAYMENT_CONFIRMATION") {
         // Mail-Schritt: Zustand ausserhalb der Aktions-Transaktion, ebenfalls an Status und Sperre gebunden.
@@ -198,14 +228,13 @@ async function runStep(p: {
   now: Date;
   mine: { readonly id: string; readonly status: "RUNNING"; readonly lockedUntil: Date };
   opts: { provider?: MailProvider; sendConfirmation?: ConfirmationSender };
-}): Promise<ActionOutcome> {
+}): Promise<ConfirmationResult> {
   const { base, action, index, now } = p;
   if (action.type === "SEND_PAYMENT_CONFIRMATION") {
-    if (!p.opts.sendConfirmation) return { status: "SKIPPED", note: "noch nicht verfuegbar" };
     // Atomarer Claim: nur wer mailSentAt von NULL auf einen Wert setzt, versendet.
     const claim = await prisma.paymentRuleRun.updateMany({ where: { ...p.mine, mailSentAt: null }, data: { mailSentAt: now } });
     if (claim.count !== 1) return { status: "DONE", note: "bereits versendet oder Versand unklar, nicht wiederholt" };
-    return p.opts.sendConfirmation({ run: base, action, now, ...(p.opts.provider ? { provider: p.opts.provider } : {}) });
+    return (p.opts.sendConfirmation ?? sendConfirmationViaMail)({ run: base, action, now, ...(p.opts.provider ? { provider: p.opts.provider } : {}) });
   }
   const notifyEnabled = action.type === "NOTIFY" ? (await loadNotificationSettings(base.orgId)).enabledTypes.includes("PAYMENT_RULE") : true;
   return dbInternal.$transaction(async (tx) => {
@@ -251,6 +280,7 @@ export async function processPaymentRuleRuns(opts: ProcessOptions = {}): Promise
       else if (outcome === "failed") result.failed += 1;
       else if (outcome === "skipped") result.skipped += 1;
       else if (outcome === "retry") result.retry += 1;
+      else if (outcome === "deferred") result.deferred += 1;
     } catch (e) {
       // Unerwartet (z. B. kaputte JSON-Daten): Lauf endgueltig scheitern lassen, nie in der Schwebe lassen.
       console.error("Regel-Lauf fehlgeschlagen", describeError(e));
