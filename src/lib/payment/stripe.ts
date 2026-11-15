@@ -160,6 +160,8 @@ function paymentIntentOf(s: z.infer<typeof stripeSessionSchema>): { id: string |
   if (pi === null || pi === undefined) return { id: null, charge: null };
   if (typeof pi === "string") {
     if (!PAYMENT_INTENT_ID.test(pi)) throw new PaymentProviderError("invalid", "Unerwartete Antwort des Zahlungsanbieters.");
+    // Nicht expandiert: Erstattungsstand unbekannt, bei bezahlter Sitzung nie als 0 annehmen.
+    if (s.payment_status === "paid") throw new PaymentProviderError("invalid", "Unvollstaendige Antwort des Zahlungsanbieters.");
     return { id: pi, charge: null };
   }
   const c = pi.latest_charge;

@@ -330,7 +330,7 @@ describe("Stripe-Webhook: Signatur und Zuordnung", () => {
     const fake = fakeFor(second, sessionJson("session-paid", second));
     expect(await hook(s, completed(second), fake)).toEqual({ status: 200 });
     expect(await paymentsOf(s.invoiceId)).toHaveLength(0);
-    expect((await eventsOf(s.orgId)).some((e) => e.result === "IGNORED" && e.eventId.endsWith("#refconflict"))).toBe(true);
+    expect((await eventsOf(s.orgId)).some((e) => e.result === "IGNORED" && e.eventId.endsWith("#conflict"))).toBe(true);
     expect((await notesOf(s.orgId)).some((n) => n.body?.includes("anderen Bezahlvorgang"))).toBe(true);
   });
 });
@@ -399,7 +399,7 @@ describe("Stripe-Webhook: Erstattung und Streitfall", () => {
     expect(ids).toHaveLength(4);
   });
 
-  it("veralteter Abruf nach neuerem Stand: keine Verringerungsmeldung, Ereignis als veraltet protokolliert", async () => {
+  it("veralteter Abruf nach neuerem Stand: keine Verringerungsmeldung, Bestaetigungsabruf liefert Duplikat", async () => {
     const { s, a, session, fake } = await paidSetup("Stripe Hook Veraltet GmbH");
     const secret = FAKE_STRIPE_LIVE_KEY;
     const stale = await adapterFor("STRIPE").fetchPayment(secret, a.sessionId, fake.transport);

@@ -31,6 +31,8 @@ export interface ReconcileOpts {
   createdBy: PaymentCreatedBy;
   actor: string;
   now?: Date;
+  /** Nur fuer Tests: feste Uhr fuer die Ereigniszeit (sonst Zeitpunkt in der Transaktion). */
+  eventClock?: Date;
   /** Transport fuer den zweiten Abruf zur Bestaetigung einer verringerten Erstattung (Standard: echter Transport). */
   transport?: PaymentTransport;
 }
@@ -187,7 +189,7 @@ async function reconcileOnce(
         attemptedEventId = evId;
         // Reihenfolge der Ereignisse: Zeitpunkt unter der Sperre, nie vor dem juengsten vorhandenen Ereignis.
         const newest = recent[0]?.receivedAt;
-        const eventAt = opts.now ? now : new Date(Math.max(Date.now(), newest ? newest.getTime() + 1 : 0));
+        const eventAt = new Date(Math.max((opts.eventClock ?? new Date()).getTime(), newest ? newest.getTime() + 1 : 0));
 
         const inv = await tx.invoice.findFirst({
           where: { id: invoiceId, orgId },
@@ -326,7 +328,7 @@ async function reconcileOnce(
     if ("refConflict" in out) {
       try {
         await dbInternal.paymentProviderEvent.create({
-          data: { orgId, provider, eventId: `${eventId}#refconflict`, type: "payment.status", objectId: state.objectId, attemptId: attempt.id, receivedAt: now, result: "IGNORED", detail: "Zahlungs-Id bereits einem anderen Vorgang zugeordnet; nichts gebucht" },
+          data: { orgId, provider, eventId: `${eventId}#conflict`, type: "payment.status", objectId: state.objectId, attemptId: attempt.id, receivedAt: now, result: "IGNORED", detail: "Zahlungs-Id bereits einem anderen Vorgang zugeordnet; nichts gebucht" },
           select: { id: true },
         });
       } catch {

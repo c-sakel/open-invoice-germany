@@ -41,7 +41,7 @@ const methodIdSchema = z.string().refine((v) => /^[a-z0-9_]{1,32}$/.test(v), "Un
 
 export const providerOptionsInputSchema = z
   .strictObject({
-    allowedMethods: z.array(methodIdSchema).max(40).nullable(),
+    allowedMethods: z.array(methodIdSchema).max(60).nullable(),
     currencies: z.array(z.enum(TWO_DECIMAL_CURRENCIES)).min(1).max(TWO_DECIMAL_CURRENCIES.length),
   })
   .partial();

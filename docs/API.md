@@ -735,7 +735,7 @@ Einstellungen und Bezahllinks. Der API-Schlüssel des Anbieters und der Einschal
 |---|---|---|
 | `GET /api/v1/Settings/onlinePayment` | `admin` | Standardanbieter, Anzeigeoptionen und je Anbieter Einschalter, Modus, Zahlarten, Währungen, Testergebnis |
 | `PUT /api/v1/Settings/onlinePayment` | `admin` | Teil-Update von `defaultProvider` (`NONE`/`MOLLIE`/`STRIPE`), `showOnPdf`, `showInMail`, `showInPortal`; andere Felder werden mit `400` abgelehnt |
-| `POST /api/v1/Settings/onlinePayment/{provider}/test` | `admin` | Verbindungstest (liest nur die Zahlarten, bucht nichts; höchstens alle 10 Sekunden) |
+| `POST /api/v1/Settings/onlinePayment/{provider}/test` | `admin` | Verbindungstest (Mollie: liest nur die Zahlarten, Stripe: liest eine Checkout-Sitzung; bucht nichts; höchstens alle 10 Sekunden) |
 | `GET /api/v1/Invoice/{id}/payLink` | `read` | Linkstatus, letzte Bezahlvorgänge und bei aktivem Link die Adresse (`url`) |
 | `POST /api/v1/Invoice/{id}/payLink` | `write` | Link anlegen oder reaktivieren (`201` neu, `200` vorhanden) |
 | `POST /api/v1/Invoice/{id}/payLink/refresh` | `write` | Status offener Vorgänge beim Anbieter abrufen und abgleichen |

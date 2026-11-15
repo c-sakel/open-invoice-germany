@@ -636,8 +636,8 @@ Danach gilt wie bei Mollie: Voreinstellung „Stripe“ in den Einstellungen, an
 Unterschiede zu Mollie:
 
 - **Zahlungsdatum:** Stripe liefert kein Zahlungsdatum an der Sitzung. Als Zahlungsdatum gilt der **Zeitpunkt der Feststellung** (Benachrichtigung oder Abgleich, meist Sekunden nach der Zahlung; bei SEPA-Lastschrift der Erfolgstag).
-- **Dispute (Zahlungsstreit):** Ein verlorener Dispute wird wie eine Rückbuchung automatisch gegengebucht. Ein **gewonnener** Dispute wird nur gemeldet; die Buchung korrigierst du von Hand. Gebühren von Stripe werden nicht gebucht.
-- **Testkonto:** Mit `rk_test_`/`sk_test_` bucht die Anwendung nie (wie bei Mollie). Bezahllinks, die vor dieser Funktion angelegt wurden (Bestand), gelten als im Livebetrieb ausgegeben und sind im Testkonto nicht verfügbar; die Bezahlseite zeigt „derzeit nicht verfügbar“.
+- **Dispute (Zahlungsstreit):** Sobald Stripe den Betrag eines Disputes abzieht (meist bei Eröffnung), wird automatisch gegengebucht. Wird der Dispute gewonnen und der Betrag zurückgebucht, meldet die Anwendung das nur; die erneute Buchung erfolgt von Hand. Reine Anfragen ohne Abzug buchen nichts. Gebühren von Stripe werden nicht gebucht.
+- **Testkonto:** Mit `rk_test_`/`sk_test_` bucht die Anwendung nie (wie bei Mollie). Bezahllinks, die vor dem Update auf diese Version angelegt wurden (Bestand, gilt für alle Anbieter), gelten als im Livebetrieb ausgegeben und sind im Testkonto nicht verfügbar; die Bezahlseite zeigt „derzeit nicht verfügbar“.
 - **Manuelle Gegenbuchung:** Hast du eine Online-Zahlung von Hand gegengebucht und erstattet Stripe später, wird die Erstattung auf diese Gegenbuchung angerechnet; es entsteht keine zweite Gegenbuchung.
 - **Netz sperren:** `PAYMENT_NETWORK=0` sperrt auch Aufrufe zu Stripe.
 - **Datenschutz:** siehe „Datenschutz und Betrieb“; die Datenschutzrolle von Stripe klärst du vor dem Livebetrieb.

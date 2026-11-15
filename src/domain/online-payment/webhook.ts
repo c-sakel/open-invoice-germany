@@ -105,7 +105,10 @@ export async function handleProviderWebhook(
     }
     if (hook.kind === "IRRELEVANT") return { status: 200 };
     // Modus des Ereignisses muss zum Kontomodus passen (Live-Ereignisse nie an ein Testkonto und umgekehrt).
-    if (hook.livemode !== null && hook.livemode !== (account.mode === "LIVE")) return { status: 200 };
+    if (hook.livemode !== null && hook.livemode !== (account.mode === "LIVE")) {
+      console.warn("Zahlungsbenachrichtigung mit abweichendem Modus ignoriert");
+      return { status: 200 };
+    }
 
     // Vorgang nur ueber die eigene Datenbank; die Organisation stammt aus dem Zugang des Pfads, nie aus dem Body.
     const attempt = await dbInternal.paymentProviderAttempt.findUnique({

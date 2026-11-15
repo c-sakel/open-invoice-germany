@@ -159,6 +159,10 @@ describe("Stripe-Adapter", () => {
     const f = createStripeFake({ [`GET /checkout/sessions/${SID}`]: { status: 200, text: JSON.stringify(body) } });
     await expect(stripeAdapter.fetchPayment(LIVE, SID, f.transport)).rejects.toMatchObject({ kind: "invalid" });
   });
+  it("nicht expandierter PaymentIntent bei bezahlter Sitzung fuehrt zu Fehler statt Erstattung 0", async () => {
+    const f = createStripeFake({ [`GET /checkout/sessions/${SID}`]: { status: 200, text: stripeFixtureWith("session-paid", { payment_intent: "pi_FAKEaaaa0001" }) } });
+    await expect(stripeAdapter.fetchPayment(LIVE, SID, f.transport)).rejects.toMatchObject({ kind: "invalid" });
+  });
   it("createCheckout: abweichende client_reference_id wird abgelehnt", async () => {
     const fake = createStripeFake({ "POST /checkout/sessions": { status: 200, text: stripeFixtureWith("session-open", { client_reference_id: "att_other" }) } });
     await expect(stripeAdapter.createCheckout(TEST, req, fake.transport)).rejects.toMatchObject({ kind: "invalid" });
