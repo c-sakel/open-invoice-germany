@@ -23,22 +23,26 @@ const WINDOW_MS = 60_000;
 export interface WebhookDeps {
   transport?: PaymentTransport;
   now?: Date;
+  /** Nur fuer Tests: abweichende Grenzen je Minute. */
+  limits?: { ip?: number; path?: number };
 }
+
+/** Liest den Body erst nach Rate-Limit und Pfadpruefung; null = zu gross. */
+export type WebhookBodyReader = () => Promise<string | null>;
 
 export type WebhookStatus = 200 | 400 | 404 | 429 | 503;
 
 export async function handleProviderWebhook(
   providerRaw: string,
   webhookPathId: string,
-  rawBody: string,
+  body: string | WebhookBodyReader,
   headers: Headers,
   deps: WebhookDeps = {},
 ): Promise<{ status: WebhookStatus }> {
   const now = deps.now ?? new Date();
   const ip = clientIpFromHeaders(headers);
   try {
-    rateLimit(ip ? `pay-hook:ip:${ip}` : "pay-hook:ip:unknown", { limit: ip ? IP_LIMIT : PATH_LIMIT, windowMs: WINDOW_MS });
-    rateLimit(`pay-hook:path:${hashToken(webhookPathId)}`, { limit: PATH_LIMIT, windowMs: WINDOW_MS });
+    rateLimit(ip ? `pay-hook:ip:${ip}` : "pay-hook:ip:unknown", { limit: deps.limits?.ip ?? (ip ? IP_LIMIT : PATH_LIMIT), windowMs: WINDOW_MS });
   } catch (e) {
     if (e instanceof RateLimitError) return { status: 429 };
     throw e;
@@ -51,7 +55,15 @@ export async function handleProviderWebhook(
     if (!account || account.provider !== provider) return { status: 404 };
     const orgId = account.orgId;
 
-    if (Buffer.byteLength(rawBody, "utf8") > WEBHOOK_BODY_MAX) return { status: 400 };
+    // Pfad-Limit erst fuer bekannte Pfade (begrenzte Schluesselzahl).
+    try {
+      rateLimit(`pay-hook:path:${hashToken(webhookPathId)}`, { limit: deps.limits?.path ?? PATH_LIMIT, windowMs: WINDOW_MS });
+    } catch (e) {
+      if (e instanceof RateLimitError) return { status: 429 };
+      throw e;
+    }
+    const rawBody = typeof body === "string" ? body : await body();
+    if (rawBody === null || Buffer.byteLength(rawBody, "utf8") > WEBHOOK_BODY_MAX) return { status: 400 };
     const parsed = adapterFor(provider).parseWebhook(rawBody, headers);
     if (!parsed) return { status: 400 };
 

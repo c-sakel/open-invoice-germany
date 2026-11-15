@@ -4,6 +4,7 @@
  * (Zahlung) und `reversePaymentWithinTx` (Erstattung/Rueckbuchung, kumulativ). Orga-Zuordnung immer aus dem
  * eigenen Vorgang bzw. Link, nie aus Anbieterdaten.
  */
+import { randomUUID } from "node:crypto";
 import { dbInternal } from "@/lib/db";
 import { lockRow } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
@@ -79,7 +80,11 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
       dbInternal.$transaction(async (tx) => {
         await lockRow(tx, "Invoice", invoiceId, orgId);
         const dup = await tx.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
-        if (dup) return { duplicate: true as const };
+        if (dup) {
+          // Unveraenderter Zustand: Pruefzeitpunkt trotzdem fortschreiben, damit der Abgleich reihum laeuft.
+          await tx.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
+          return { duplicate: true as const };
+        }
 
         const inv = await tx.invoice.findFirst({
           where: { id: invoiceId, orgId },
@@ -216,7 +221,10 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const dupEvent = await dbInternal.paymentProviderEvent.findUnique({ where: { provider_eventId: { provider, eventId } }, select: { id: true } });
-      if (dupEvent) return { result: "IGNORED", paymentId: null, duplicate: true };
+      if (dupEvent) {
+        await dbInternal.paymentProviderAttempt.updateMany({ where: { id: attempt.id, orgId }, data: { lastCheckedAt: now } });
+        return { result: "IGNORED", paymentId: null, duplicate: true };
+      }
     }
     // Fehlerzeile ausserhalb der Transaktion (eigene Id, blockiert keine Wiederholung); Schluessel/Details nie im Text.
     try {
@@ -224,7 +232,7 @@ export async function reconcileAttempt(attemptId: string, state: ProviderPayment
         data: {
           orgId,
           provider,
-          eventId: `${eventId}#err-${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`,
+          eventId: `${eventId}#err-${randomUUID()}`,
           type: "payment.status",
           objectId: state.objectId,
           attemptId: attempt.id,

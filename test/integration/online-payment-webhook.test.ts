@@ -440,6 +440,96 @@ describe("Storno, Vollzahlung aus anderer Quelle, Scheduler", () => {
     expect(await paymentsOf(s.invoiceId)).toHaveLength(1);
   });
 
+  it("Replay gleicher Zustaende schreibt den Pruefzeitpunkt fort (25 offene Vorgaenge, Reihum statt Verdraengung)", async () => {
+    const s = await setup("Hook Reihum GmbH");
+    const old = new Date(NOW.getTime() - 60 * 60_000);
+    const states = new Map<string, string>();
+    for (let i = 0; i < 25; i += 1) {
+      const a = await newAttempt(s, { createdAt: old });
+      states.set(a.objectId, paymentJson(a.objectId, a.id, { status: "open" }));
+    }
+    const fake = fakeFor(states);
+    const t2 = new Date(NOW.getTime() + 20 * 60_000);
+    const t3 = new Date(NOW.getTime() + 40 * 60_000);
+    const mine = () => dbInternal.paymentProviderAttempt.count({ where: { orgId: s.orgId, lastCheckedAt: { not: null } } });
+    await processOnlinePaymentPolls({ now: NOW, transport: fake.transport });
+    expect(await mine()).toBe(20);
+    await processOnlinePaymentPolls({ now: t2, transport: fake.transport });
+    const rows = await dbInternal.paymentProviderAttempt.findMany({ where: { orgId: s.orgId }, select: { lastCheckedAt: true } });
+    expect(rows.every((r) => r.lastCheckedAt !== null)).toBe(true);
+    // Der zweite Lauf hat die 5 ungeprueften und 15 unveraenderte (Duplikat) fortgeschrieben.
+    expect(rows.filter((r) => r.lastCheckedAt?.getTime() === t2.getTime())).toHaveLength(20);
+    await processOnlinePaymentPolls({ now: t3, transport: fake.transport });
+    const stale = await dbInternal.paymentProviderAttempt.count({ where: { orgId: s.orgId, lastCheckedAt: { lt: t2 } } });
+    expect(stale).toBe(0);
+    expect(await dbInternal.paymentProviderAttempt.count({ where: { orgId: s.orgId, lastCheckedAt: t3 } })).toBe(20);
+  });
+
+  it("Nachpruefung: bezahlter Vorgang mit verlorenem Erstattungs-Webhook wird spaeter gegengebucht", async () => {
+    const s = await setup("Hook Nachpruefung GmbH");
+    const a = await newAttempt(s);
+    const states = new Map([[a.objectId, paymentJson(a.objectId, a.id)]]);
+    const fake = fakeFor(states);
+    await hook(s, a.objectId, fake);
+    expect(await paymentsOf(s.invoiceId)).toHaveLength(1);
+    states.set(a.objectId, paymentJson(a.objectId, a.id, { refunded: 11900 }));
+    const later = new Date(NOW.getTime() + 7 * 60 * 60_000);
+    await processOnlinePaymentPolls({ now: later, transport: fake.transport });
+    const pays = await paymentsOf(s.invoiceId);
+    expect(pays.map((p) => p.kind)).toEqual(["PAYMENT", "REVERSAL"]);
+  });
+
+  it("offener Vorgang nach 5 Tagen wird noch taeglich geprueft, nach 15 Tagen nicht mehr", async () => {
+    const s = await setup("Hook Spaet GmbH");
+    const day = 24 * 60 * 60_000;
+    const five = await newAttempt(s, { createdAt: new Date(NOW.getTime() - 5 * day) });
+    const fifteen = await newAttempt(s, { createdAt: new Date(NOW.getTime() - 15 * day) });
+    const fake = fakeFor(new Map([[five.objectId, paymentJson(five.objectId, five.id, { status: "expired" })], [fifteen.objectId, paymentJson(fifteen.objectId, fifteen.id, { status: "expired" })]]));
+    const res = await processOnlinePaymentPolls({ now: NOW, transport: fake.transport });
+    expect(res.checked).toBe(1);
+    const st = async (id: string) => (await dbInternal.paymentProviderAttempt.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
+    expect(await st(five.id)).toBe("EXPIRED");
+    expect(await st(fifteen.id)).toBe("OPEN");
+  });
+
+  it("Anlage unklar: einmaliger Hinweis mit Rechnungsnummer", async () => {
+    const s = await setup("Hook Unklar GmbH");
+    await newAttempt(s, { status: "CREATING", object: false, createdAt: new Date(NOW.getTime() - 11 * 60_000) });
+    const fake = fakeFor(new Map());
+    await processOnlinePaymentPolls({ now: NOW, transport: fake.transport });
+    await processOnlinePaymentPolls({ now: NOW, transport: fake.transport });
+    const notes = (await notesOf(s.orgId)).filter((n) => n.body.includes("Anlage") || n.body.includes("nicht sicher angelegt"));
+    expect(notes).toHaveLength(1);
+  });
+
+  it("Rate-Limit 429 (IP und Pfad) und uebergrosser Body (Reader) -> 400 ohne Netz", async () => {
+    const s = await setup("Hook Limit GmbH");
+    const fake = fakeFor(new Map());
+    const ipHeaders = new Headers({ "cf-connecting-ip": `203.0.113.${(objectCounter % 200) + 20}`, "x-real-ip": "198.51.100.77", "x-forwarded-for": "198.51.100.77" });
+    const call = (hdr: Headers, limits: { ip?: number; path?: number }) =>
+      handleProviderWebhook("mollie", s.webhookPath, "id=tr_Abcd1234", hdr, { transport: fake.transport, now: NOW, limits });
+    expect((await call(ipHeaders, { ip: 2 })).status).toBe(200);
+    expect((await call(ipHeaders, { ip: 2 })).status).toBe(200);
+    expect((await call(ipHeaders, { ip: 2 })).status).toBe(429);
+    const s2 = await setup("Hook Limit Pfad GmbH");
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const h = new Headers({ "cf-connecting-ip": `203.0.113.${100 + i}`, "x-real-ip": `198.51.100.${100 + i}`, "x-forwarded-for": `198.51.100.${100 + i}` });
+      statuses.push((await handleProviderWebhook("mollie", s2.webhookPath, "id=tr_Abcd1234", h, { transport: fake.transport, now: NOW, limits: { path: 2 } })).status);
+    }
+    expect(statuses).toContain(429);
+    expect(statuses[0]).toBe(200);
+    let read = false;
+    const big = await handleProviderWebhook("mollie", s.webhookPath, async () => { read = true; return null; }, new Headers(), { transport: fake.transport, now: NOW });
+    expect(big).toEqual({ status: 400 });
+    expect(read).toBe(true);
+    let readUnknown = false;
+    const unknown = await handleProviderWebhook("mollie", "wh-gibt-es-nicht-1234567", async () => { readUnknown = true; return ""; }, new Headers(), { transport: fake.transport, now: NOW });
+    expect(unknown).toEqual({ status: 404 });
+    expect(readUnknown).toBe(false);
+    expect(fake.calls).toHaveLength(0);
+  });
+
   it("Rueckkehrseite: refreshLatestAttempt gleicht den juengsten offenen Vorgang ab", async () => {
     const s = await setup("Hook Rueckkehr GmbH");
     const a = await newAttempt(s);
