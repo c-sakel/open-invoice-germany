@@ -249,6 +249,7 @@ export async function startCheckout(
         webhookUrl: `${baseUrl}/api/public/payments/${link.provider.toLowerCase()}/${secret.webhookPathId}`,
         locale: e.invoice.language,
         methods: parseMethods(account?.allowedMethodsJson ?? null),
+        now,
       },
       transport,
     );

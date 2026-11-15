@@ -1,0 +1,14 @@
+{
+  "object": "list",
+  "has_more": false,
+  "data": [
+    {
+      "id": "du_FAKEaaaa0001",
+      "object": "dispute",
+      "amount": 11900,
+      "status": "warning_needs_response",
+      "payment_intent": "pi_FAKEaaaa0001",
+      "balance_transactions": []
+    }
+  ]
+}

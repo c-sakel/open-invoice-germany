@@ -1,0 +1,23 @@
+{
+  "object": "list",
+  "has_more": false,
+  "data": [
+    {
+      "id": "du_FAKEaaaa0001",
+      "object": "dispute",
+      "amount": 11900,
+      "status": "won",
+      "payment_intent": "pi_FAKEaaaa0001",
+      "balance_transactions": [
+        {
+          "id": "txn_FAKE0",
+          "amount": -11900
+        },
+        {
+          "id": "txn_FAKE1",
+          "amount": 11900
+        }
+      ]
+    }
+  ]
+}

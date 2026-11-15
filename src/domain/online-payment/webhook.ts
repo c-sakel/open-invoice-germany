@@ -64,8 +64,10 @@ export async function handleProviderWebhook(
     }
     const rawBody = typeof body === "string" ? body : await body();
     if (rawBody === null || Buffer.byteLength(rawBody, "utf8") > WEBHOOK_BODY_MAX) return { status: 400 };
-    const parsed = adapterFor(provider).parseWebhook(rawBody, headers);
-    if (!parsed) return { status: 400 };
+    const hook = adapterFor(provider).parseWebhook(Buffer.from(rawBody, "utf8"), headers, { signingSecret: null, now });
+    if (hook.kind === "REJECT") return { status: 400 };
+    if (hook.kind === "IRRELEVANT" || !("objectId" in hook.ref)) return { status: 200 };
+    const parsed = { objectId: hook.ref.objectId };
 
     // Vorgang nur ueber die eigene Datenbank; die Organisation stammt aus dem Zugang des Pfads, nie aus dem Body.
     const attempt = await dbInternal.paymentProviderAttempt.findUnique({

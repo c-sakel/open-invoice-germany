@@ -1,0 +1,15 @@
+{
+  "id": "evt_FAKEaaaa0001",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "type": "charge.dispute.funds_withdrawn",
+  "livemode": true,
+  "created": 1794000000,
+  "data": {
+    "object": {
+      "id": "du_FAKEaaaa0001",
+      "object": "dispute",
+      "payment_intent": "pi_FAKEaaaa0001"
+    }
+  }
+}

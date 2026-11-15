@@ -129,6 +129,7 @@ function toState(p: z.infer<typeof molliePaymentSchema>): ProviderPaymentState {
     paidAt: parseDate(p.paidAt),
     expiresAt: parseDate(p.expiresAt),
     attemptId,
+    paymentRef: p.id,
   };
 }
 
@@ -137,6 +138,9 @@ export const mollieAdapter: PaymentProviderAdapter = {
   payoutPattern: /\bmollie\b/i,
   allowedHosts: ["api.mollie.com"],
   checkoutHosts: ["checkout.mollie.com", "www.mollie.com"],
+  webhookAuth: "fetch-only",
+  webhookBodyMax: 1024,
+  knownMethods: null,
 
   modeFromKey(key) {
     const m = /^(test|live)_[A-Za-z0-9]{26,}$/.exec(key);
@@ -214,11 +218,11 @@ export const mollieAdapter: PaymentProviderAdapter = {
     return { methods: m._embedded.methods.map((x) => x.id) };
   },
 
-  parseWebhook(rawBody) {
-    const params = new URLSearchParams(rawBody);
+  parseWebhook(raw) {
+    const params = new URLSearchParams(raw.toString("utf8"));
     const keys = [...params.keys()];
-    if (keys.length !== 1 || keys[0] !== "id" || params.getAll("id").length !== 1) return null;
+    if (keys.length !== 1 || keys[0] !== "id" || params.getAll("id").length !== 1) return { kind: "REJECT", reason: "FORMAT" };
     const id = params.get("id") ?? "";
-    return OBJECT_ID.test(id) ? { objectId: id } : null;
+    return OBJECT_ID.test(id) ? { kind: "REF", ref: { objectId: id }, livemode: null } : { kind: "REJECT", reason: "FORMAT" };
   },
 };

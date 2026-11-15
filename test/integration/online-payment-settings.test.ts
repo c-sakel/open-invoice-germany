@@ -51,13 +51,13 @@ describe("Einstellungen", () => {
   it("Defaults ohne Zeile, Teil-Update und Laden", async () => {
     const v0 = await loadOnlinePaymentSettings(orgId);
     expect(v0).toMatchObject({ defaultProvider: "NONE", showOnPdf: true, showInMail: true, showInPortal: true });
-    expect(v0.accounts).toHaveLength(1);
+    expect(v0.accounts.map((a) => a.provider)).toEqual(["MOLLIE", "STRIPE"]);
     expect(v0.accounts[0]).toMatchObject({ provider: "MOLLIE", enabled: false, hasApiKey: false, currencies: ["EUR"] });
     const v1 = await saveOnlinePaymentSettings(orgId, { defaultProvider: "MOLLIE", showInPortal: false }, "tester");
     expect(v1).toMatchObject({ defaultProvider: "MOLLIE", showOnPdf: true, showInPortal: false });
     const v2 = await saveOnlinePaymentSettings(orgId, { showOnPdf: false }, "tester");
     expect(v2).toMatchObject({ defaultProvider: "MOLLIE", showOnPdf: false, showInPortal: false });
-    await expect(saveOnlinePaymentSettings(orgId, { defaultProvider: "STRIPE" }, "tester")).rejects.toThrow();
+    await expect(saveOnlinePaymentSettings(orgId, { defaultProvider: "PAYPAL" }, "tester")).rejects.toThrow();
     // Org-Scope: die andere Organisation bleibt unberuehrt.
     expect((await loadOnlinePaymentSettings(otherOrgId)).defaultProvider).toBe("NONE");
   });

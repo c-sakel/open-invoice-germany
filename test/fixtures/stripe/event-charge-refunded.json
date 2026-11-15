@@ -1,0 +1,15 @@
+{
+  "id": "evt_FAKEaaaa0001",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "type": "charge.refunded",
+  "livemode": true,
+  "created": 1794000000,
+  "data": {
+    "object": {
+      "id": "ch_FAKEaaaa0001",
+      "object": "charge",
+      "payment_intent": "pi_FAKEaaaa0001"
+    }
+  }
+}

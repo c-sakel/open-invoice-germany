@@ -1,0 +1,11 @@
+{
+  "id": "evt_FAKEaaaa0002",
+  "object": "v2.core.event",
+  "type": "v1.billing.meter.error_report_triggered",
+  "created": "2026-11-15T10:00:00.000Z",
+  "related_object": {
+    "id": "mtr_FAKEaaaa0001",
+    "type": "billing.meter",
+    "url": "/v1/billing/meters/mtr_FAKEaaaa0001"
+  }
+}

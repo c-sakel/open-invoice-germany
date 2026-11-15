@@ -4,6 +4,7 @@ import type { ProviderPaymentState } from "@/lib/payment/types";
 
 const state = (o: Partial<ProviderPaymentState> = {}): ProviderPaymentState => ({
   objectId: "tr_Plan0001",
+  paymentRef: null,
   testMode: false,
   status: "PAID",
   amountCents: 11900,

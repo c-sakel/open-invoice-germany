@@ -1,0 +1,14 @@
+{
+  "id": "evt_FAKEaaaa0001",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "type": "checkout.session.completed",
+  "livemode": true,
+  "created": 1794000000,
+  "data": {
+    "object": {
+      "id": "cs_live_FAKEsession0001",
+      "object": "checkout.session"
+    }
+  }
+}

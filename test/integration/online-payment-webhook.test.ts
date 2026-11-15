@@ -606,7 +606,7 @@ describe("Geheimnisse und Bank", () => {
     const s = await setup("Hook Objekt GmbH");
     const a = await newAttempt(s);
     await expect(
-      reconcileAttempt(a.id, { objectId: "tr_Anderes0001", testMode: false, status: "PAID", amountCents: 11900, currency: "EUR", refundedCents: 0, chargedBackCents: 0, paidAt: NOW, expiresAt: null, attemptId: a.id }, { createdBy: "webhook", actor: "t", now: NOW }),
+      reconcileAttempt(a.id, { objectId: "tr_Anderes0001", testMode: false, status: "PAID", amountCents: 11900, currency: "EUR", refundedCents: 0, chargedBackCents: 0, paidAt: NOW, expiresAt: null, attemptId: a.id, paymentRef: null }, { createdBy: "webhook", actor: "t", now: NOW }),
     ).rejects.toThrow();
     expect(await paymentsOf(s.invoiceId)).toHaveLength(0);
   });

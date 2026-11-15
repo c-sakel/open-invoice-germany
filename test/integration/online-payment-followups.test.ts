@@ -177,6 +177,7 @@ describe("Erstattung nach manueller Gegenbuchung", () => {
     paidAt: NOW,
     expiresAt: null,
     attemptId,
+    paymentRef: objectId,
   });
 
   async function setupPaid(name: string) {

@@ -82,7 +82,7 @@ describe("Schemas der Online-Zahlung", () => {
 
   it("Einstellungen sind strikt, Teil-Update erlaubt", () => {
     expect(onlinePaymentSettingsInputSchema.safeParse({ showOnPdf: false }).success).toBe(true);
-    expect(onlinePaymentSettingsInputSchema.safeParse({ defaultProvider: "STRIPE" }).success).toBe(false);
+    expect(onlinePaymentSettingsInputSchema.safeParse({ defaultProvider: "PAYPAL" }).success).toBe(false);
     expect(onlinePaymentSettingsInputSchema.safeParse({ enabled: true }).success).toBe(false);
   });
 

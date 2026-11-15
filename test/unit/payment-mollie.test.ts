@@ -15,6 +15,7 @@ const req: CheckoutRequest = {
   webhookUrl: "https://rechnung.example.org/api/payment/webhook/MOLLIE",
   locale: "de",
   methods: null,
+  now: new Date("2026-11-15T10:00:00Z"),
 };
 
 describe("Mollie-Adapter", () => {
@@ -132,12 +133,13 @@ describe("Mollie-Adapter", () => {
 
   it("parseWebhook akzeptiert nur das Feld id", () => {
     const h = new Headers();
-    expect(mollieAdapter.parseWebhook("id=tr_TestAbc12345", h)).toEqual({ objectId: "tr_TestAbc12345" });
-    expect(mollieAdapter.parseWebhook('{"id":"tr_TestAbc12345"}', h)).toBeNull();
-    expect(mollieAdapter.parseWebhook("id=tr_TestAbc12345&x=1", h)).toBeNull();
-    expect(mollieAdapter.parseWebhook("id=tr_TestAbc12345&id=tr_Zweite12345", h)).toBeNull();
-    expect(mollieAdapter.parseWebhook("id=../etc", h)).toBeNull();
-    expect(mollieAdapter.parseWebhook("", h)).toBeNull();
+    const parse = (b: string) => mollieAdapter.parseWebhook(Buffer.from(b, "utf8"), h, { signingSecret: null, now: new Date() });
+    expect(parse("id=tr_TestAbc12345")).toEqual({ kind: "REF", ref: { objectId: "tr_TestAbc12345" }, livemode: null });
+    expect(parse('{"id":"tr_TestAbc12345"}')).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse("id=tr_TestAbc12345&x=1")).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse("id=tr_TestAbc12345&id=tr_Zweite12345")).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse("id=../etc")).toEqual({ kind: "REJECT", reason: "FORMAT" });
+    expect(parse("")).toEqual({ kind: "REJECT", reason: "FORMAT" });
   });
   it("modeFromKey, Waehrungen, Auszahlungsmuster", () => {
     expect(mollieAdapter.modeFromKey(FAKE_TEST_KEY)).toBe("TEST");

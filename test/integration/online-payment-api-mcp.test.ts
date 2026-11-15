@@ -303,7 +303,7 @@ describe("Contact und Zahlungsart: Vorgabe", () => {
       expect(r.status).toBe(200);
       expect(((await r.json()) as { data: { onlinePaymentProvider: string | null } }).data.onlinePaymentProvider).toBe(v);
     }
-    expect((await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: "STRIPE" }), p(customerId))).status).toBe(400);
+    expect((await contactPatch(req(url, writeToken, "PATCH", { onlinePaymentProvider: "PAYPAL" }), p(customerId))).status).toBe(400);
   });
 });
 

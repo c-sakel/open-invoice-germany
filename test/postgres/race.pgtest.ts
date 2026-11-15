@@ -640,6 +640,7 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
       paidAt: s.now,
       expiresAt: null,
       attemptId: attempt.id,
+      paymentRef: null,
     };
     const rs: PromiseSettledResult<unknown>[] = await Promise.allSettled([
       reconcileAttempt(attempt.id, state, { createdBy: "webhook", actor: "race", now: s.now }),
