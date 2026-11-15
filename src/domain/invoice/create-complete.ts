@@ -18,7 +18,6 @@ import { lockOrganization } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { kickPaymentRules } from "@/domain/payment-rule/kick";
 import { createDraftInvoiceWithinTx } from "@/domain/invoice/create";
-import { disablePayLinkWithinTx } from "@/domain/online-payment/pay-link";
 import { finalizeWithinTx } from "@/domain/invoice/finalize";
 import { recordPaymentWithinTx, PaymentError, type PaymentCreatedBy } from "@/domain/invoice/payment";
 import { collectFinalizeWarningsFor, insertMeansWarnings, paymentMeansWarnings, MEANS_WARNING_SELECT } from "@/domain/invoice/finalize-warnings";
@@ -75,8 +74,6 @@ export async function createInvoiceComplete(
           { actor, now, orgId, createdBy },
         );
         paymentId = recorded.recorded.id;
-        // Vollstaendig bezahlt: der Bezahllink wird nicht mehr gebraucht.
-        if (recorded.payment.status === "PAID") await disablePayLinkWithinTx(tx, orgId, fin.id, "INVOICE_PAID", actor, now ?? new Date());
       }
 
       const invoice = await tx.invoice.findUniqueOrThrow({

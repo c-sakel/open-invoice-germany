@@ -3,8 +3,9 @@
  * hier und nur fuer die jeweilige Ausgabe entschluesselt; er gelangt nie in Protokolle.
  *
  * Regeln:
- * - PDF/XML: Link genau dann, wenn der Link `onDocument` traegt (nur Live-Konto), die Rechnung kein Entwurf ist und
- *   `APP_BASE_URL` gesetzt ist. Ein spaeteres Deaktivieren aendert den Beleg nicht (Archivstand bleibt reproduzierbar).
+ * - PDF/XML: Link genau dann, wenn der Link `onDocument` traegt (nur Live-Konto) und aktiv ist, die Rechnung weder
+ *   Entwurf noch storniert noch voll bezahlt ist und `APP_BASE_URL` gesetzt ist. Bereits archivierte Belege bleiben
+ *   unveraendert (das Archiv gibt die erste Ausgabe wieder).
  * - Mail: genau dann, wenn ein aktives Live-Konto, Einstellung "in Mail zeigen", aktiver Link, offener Rest und nicht
  *   stornierte Rechnung vorliegen — unabhaengig von `onDocument` (das steuert nur PDF/E-Rechnung).
  * - Portal: relative Adresse der Bezahlseite, nur bei aktivem Link, Einstellung "im Portal zeigen", offenem Rest,
@@ -19,12 +20,12 @@ function payUrl(baseUrl: string, tokenEnc: string): string {
 }
 
 /** Link fuer PDF und E-Rechnung; null = kein Link auf dem Beleg. */
-export async function documentPayLinkUrl(orgId: string, invoice: { id: string; status: string }): Promise<string | null> {
-  if (invoice.status === "DRAFT") return null;
+export async function documentPayLinkUrl(orgId: string, invoice: { id: string; status: string }, openCents: number): Promise<string | null> {
+  if (invoice.status === "DRAFT" || invoice.status === "CANCELLED" || openCents <= 0) return null;
   const baseUrl = appBaseUrlFromEnv();
   if (!baseUrl) return null;
   const link = await dbInternal.invoicePayLink.findFirst({
-    where: { invoiceId: invoice.id, orgId, onDocument: true },
+    where: { invoiceId: invoice.id, orgId, onDocument: true, status: "ACTIVE" },
     select: { tokenEnc: true },
   });
   return link ? payUrl(baseUrl, link.tokenEnc) : null;

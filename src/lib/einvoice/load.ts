@@ -161,7 +161,7 @@ export async function loadEInvoiceData(invoiceId: string, orgId?: string) {
   // spaeteren Beleg entspricht. Festgeschriebene Belege lesen unveraendert nur ihren Snapshot.
   const liveDirectDebit =
     invoice.status === "DRAFT" && invoice.paymentMethodSnapshotJson == null ? await previewDirectDebit(invoice) : null;
-  const payLinkUrl = await documentPayLinkUrl(invoice.orgId, invoice);
+  const payLinkUrl = await documentPayLinkUrl(invoice.orgId, invoice, openAmountCents(invoice));
   const data = buildEInvoiceData({
     ...invoice,
     ...draftFx,

@@ -26,6 +26,7 @@ import { loadEInvoiceData } from "@/lib/einvoice/load";
 import { buildFacturXCII } from "@/lib/einvoice/cii";
 import { buildXRechnungUBL } from "@/lib/einvoice/xrechnung";
 import { renderInvoicePdf } from "@/lib/pdf/invoice-pdf";
+import { createInvoiceComplete } from "@/domain/invoice/create-complete";
 import { createInvoiceSchema } from "@/schemas";
 import { FAKE_LIVE_KEY, FAKE_TEST_KEY } from "../helpers/mollie-fake";
 import { parsePdf, testPdfTheme } from "../helpers/pdf-theme";
@@ -172,13 +173,48 @@ describe("Bezahllink in E-Rechnung und PDF", () => {
     expect(squash((await parsePdf(noGiroNoLink)).text)).not.toContain("Onlinebezahlen");
   });
 
-  it("deaktivierter Link bleibt im neu erzeugten PDF und XML", async () => {
+  it("deaktivierter Link erscheint nicht auf neu erzeugten Belegen", async () => {
     const s = await setup();
     const inv = await invoice(s);
     await disablePayLink(s.orgId, inv.id, "test");
     const data = await docs(s, inv.id);
-    expect(data.payLinkUrl).toBe(inv.url);
-    expect(buildXRechnungUBL(data)).toContain(`Online bezahlen: ${inv.url}`);
+    expect(data.payLinkUrl).toBeUndefined();
+    expect(buildXRechnungUBL(data)).not.toContain("Online bezahlen");
+  });
+
+  it("bezahlt vor der ersten Ausgabe: kein Link, kein QR, kein BT-20-Satz", async () => {
+    const s = await setup();
+    const inv = await invoice(s);
+    await recordPayment(inv.id, { amountCents: 11900, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: s.orgId, now: LATER });
+    const data = await docs(s, inv.id);
+    expect(data.payLinkUrl).toBeUndefined();
+    expect(buildXRechnungUBL(data)).not.toContain("Online bezahlen");
+    expect(buildFacturXCII(data)).not.toContain("Online bezahlen");
+    const pdf = await renderInvoicePdf(data, testPdfTheme());
+    expect(squash((await parsePdf(pdf)).text)).not.toContain("/zahlen/");
+    expect(imageCount(pdf)).toBe(0);
+  });
+
+  it("atomar angelegt und voll bezahlt (Webshop-Pfad): kein Link auf dem Beleg", async () => {
+    const s = await setup();
+    const r = await createInvoiceComplete(
+      s.orgId,
+      createInvoiceSchema.parse({
+        customerId: s.customerId,
+        issueDate: NOW,
+        dueDate: new Date(`${YEAR}-04-10`),
+        deliveryDate: new Date(`${YEAR}-03-05`),
+        lines: [{ description: "Beratung", quantityMilli: 1000, unit: "HUR", unitNetPriceCents: 10000, taxRate: 19, taxCategory: "S" }],
+      }),
+      { actor: "test", createdBy: "api", now: NOW, payment: { method: "TRANSFER" } },
+    );
+    expect(r.invoice.status).toBe("PAID");
+    const data = await docs(s, r.invoice.id);
+    expect(data.payLinkUrl).toBeUndefined();
+    expect(buildXRechnungUBL(data)).not.toContain("/zahlen/");
+    const pdf = await renderInvoicePdf({ ...data, iban: null }, testPdfTheme());
+    expect(squash((await parsePdf(pdf)).text)).not.toContain("/zahlen/");
+    expect(imageCount(pdf)).toBe(0);
   });
 
   it("Testmodus-Link erscheint nirgends auf dem Beleg", async () => {
@@ -234,8 +270,8 @@ describe("Mail-Platzhalter invoice.paymentLink", () => {
     await dbInternal.paymentProviderSettings.update({ where: { orgId: s.orgId }, data: { showOnPdf: false } });
     const a = await invoice(s);
     expect(await link(s, "INVOICE", a.id)).toBe(a.url);
-    expect(await documentPayLinkUrl(s.orgId, { id: a.id, status: "FINALIZED" })).toBeNull();
-    expect(await documentPayLinkUrl(s.orgId, { id: a.id, status: "DRAFT" })).toBeNull();
+    expect(await documentPayLinkUrl(s.orgId, { id: a.id, status: "FINALIZED" }, 100)).toBeNull();
+    expect(await documentPayLinkUrl(s.orgId, { id: a.id, status: "DRAFT" }, 100)).toBeNull();
   });
 
   it("Mail mit Platzhalter: kein Token in EmailLog/ChangeLog, Wiederversand mit gueltigem Link", async () => {
