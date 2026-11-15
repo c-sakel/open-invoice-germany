@@ -23,6 +23,8 @@ export const NOTIFICATION_TYPES = {
   POSTAL_FAILED: "Postversand fehlgeschlagen",
   POSTAL_PENDING: "Post-Versand wartet auf Bestaetigung",
   DUNNING_NOT_SENT: "Mahnung nicht versendet",
+  PAYMENT_RULE: "Regel nach Zahlungseingang",
+  PAYMENT_RULE_FAILED: "Regel nach Zahlungseingang fehlgeschlagen",
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

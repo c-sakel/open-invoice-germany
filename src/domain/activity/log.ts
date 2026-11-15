@@ -31,7 +31,7 @@ export type ActivityDbClient = Prisma.TransactionClient | PrismaClient;
 // keine entityId und der Versuch waere ohnehin nur ueber die E-Mail identifizierbar,
 // die laut R12 nie ins Protokoll darf; die IP-Bremse (src/lib/rate-limit.ts) deckt das
 // Durchprobieren unbekannter Adressen ab.
-export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION";
+export type ActivityEntityType = "INVOICE" | "QUOTE" | "DELIVERY_NOTE" | "CUSTOMER" | "RECURRING" | "API_KEY" | "TAG" | "TEMPLATE" | "USER" | "EXCHANGE_RATE" | "LAYOUT_DESIGN" | "POSTAL" | "IMPORT" | "INVOICE_BATCH" | "PORTAL" | "BANK_IMPORT" | "BANK_TRANSACTION" | "PAYMENT_RULE";
 
 /** Aktivitaetstypen (`ActivityLog.type`) mit deutschem Anzeigetext (Task-3-Brief). */
 export const ACTIVITY_TYPES = {
@@ -118,6 +118,10 @@ export const ACTIVITY_TYPES = {
   BANK_TRANSACTION_IGNORED: "Bankumsatz ignoriert",
   BANK_TRANSACTION_REOPENED: "Bankumsatz wieder geoeffnet",
   BANK_RETURN_DISMISSED: "Rueckbuchung ohne Gegenbuchung erledigt",
+  // Regeln nach Zahlungseingang (entityType PAYMENT_RULE, entityId = Regel; Ausfuehrung zusaetzlich an der Rechnung).
+  PAYMENT_RULE_SAVED: "Zahlungsregel gespeichert",
+  PAYMENT_RULE_ARCHIVED: "Zahlungsregel archiviert",
+  PAYMENT_RULE_EXECUTED: "Aktion nach Zahlungseingang",
 } as const;
 
 export type ActivityType = keyof typeof ACTIVITY_TYPES;
