@@ -33,6 +33,8 @@ export interface ReconcilePlan {
   review: null | "REVERSAL_DECREASED" | "MISMATCH" | "MODE_MISMATCH" | "REFUND_WITH_CREDIT_NOTE";
   /** Erstattung beim Anbieter trotz Gutschrift (kumuliert, in Cent); nur mit review REFUND_WITH_CREDIT_NOTE. */
   refundNoticeCents: number;
+  /** Erstattung beim Anbieter ist durch eine manuelle Gegenbuchung bereits gedeckt (Cent); nur Protokoll, keine Buchung. */
+  coveredByManualCents: number;
 }
 
 export function eventIdFor(s: ProviderPaymentState): string {
@@ -73,7 +75,7 @@ const REASON_BOTH = "Erstattung und Rueckbuchung beim Zahlungsanbieter (Chargeba
 
 export function planReconcile(input: ReconcileInput): ReconcilePlan {
   const { state, attempt, booked, invoice } = input;
-  const base: ReconcilePlan = { attemptStatus: statusFor(state.status), result: "IGNORED", book: null, overpaidCents: 0, unassigned: null, reverse: null, review: null, refundNoticeCents: 0 };
+  const base: ReconcilePlan = { attemptStatus: statusFor(state.status), result: "IGNORED", book: null, overpaidCents: 0, unassigned: null, reverse: null, review: null, refundNoticeCents: 0, coveredByManualCents: 0 };
 
   if (state.testMode !== input.accountTestMode) return { ...base, attemptStatus: null, result: "ERROR", review: "MODE_MISMATCH" };
   if (
@@ -124,6 +126,8 @@ export function planReconcile(input: ReconcileInput): ReconcilePlan {
     const reason = state.refundedCents > 0 && state.chargedBackCents > 0 ? REASON_BOTH : state.chargedBackCents > 0 ? REASON_CHARGEBACK : REASON_REFUND;
     plan.reverse = { cents: target - alreadyReversed, reason };
     plan.result = "APPLIED";
+  } else if (target > 0 && providerCents > (input.previousProviderCents ?? 0)) {
+    plan.coveredByManualCents = target;
   }
   return plan;
 }

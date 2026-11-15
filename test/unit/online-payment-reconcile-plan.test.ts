@@ -29,6 +29,16 @@ const input = (o: Partial<ReconcileInput> = {}): ReconcileInput => ({
 });
 
 describe("planReconcile", () => {
+  it("Erstattung bereits durch manuelle Gegenbuchung gedeckt: keine Buchung, coveredByManualCents", () => {
+    const booked = { paymentId: "p1", amountCents: 11900, reversedCents: 1900 };
+    const p = planReconcile(input({ booked, state: state({ refundedCents: 1900 }) }));
+    expect(p).toMatchObject({ reverse: null, coveredByManualCents: 1900, result: "IGNORED" });
+    const more = planReconcile(input({ booked, state: state({ refundedCents: 5000 }) }));
+    expect(more).toMatchObject({ reverse: { cents: 3100 }, coveredByManualCents: 0 });
+    const unchanged = planReconcile(input({ booked, previousProviderCents: 1900, previousRefundedCents: 1900, state: state({ refundedCents: 1900 }) }));
+    expect(unchanged.coveredByManualCents).toBe(0);
+  });
+
   it("bezahlt und noch nicht gebucht: voller Betrag, keine Ueberzahlung", () => {
     const p = planReconcile(input());
     expect(p).toMatchObject({ result: "APPLIED", book: 11900, overpaidCents: 0, attemptStatus: "PAID", reverse: null, unassigned: null });

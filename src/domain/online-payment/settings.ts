@@ -246,6 +246,10 @@ export async function setProviderEnabled(orgId: string, providerRaw: unknown, en
       if (acc.lastTestOk !== true) throw new OnlinePaymentError("Zum Einschalten ist ein erfolgreicher Verbindungstest noetig.", "NOT_TESTED");
     }
     await tx.paymentProviderAccount.update({ where: { id: acc.id }, data: { enabled } });
+    // Live-Konto aktiv: jeder bestehende Link darf nun ausgegeben werden (Mail/Portal geben Links nur bei aktivem Live-Konto aus).
+    if (enabled && acc.mode === "LIVE") {
+      await tx.invoicePayLink.updateMany({ where: { orgId, provider, liveIssued: false }, data: { liveIssued: true } });
+    }
     await logProvider(tx, orgId, acc.id, actor, { provider, changed: ["enabled"], enabled, mode: asMode(acc.mode) });
   });
   return loadOnlinePaymentSettings(orgId);

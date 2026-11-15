@@ -55,6 +55,7 @@ function detailFor(plan: ReconcilePlan, state: ProviderPaymentState): string {
   if (plan.overpaidCents > 0) parts.push(`Ueberzahlung ${plan.overpaidCents} Cent`);
   if (plan.unassigned) parts.push(plan.unassigned === "CANCELLED" ? "Rechnung storniert, nicht gebucht" : "nichts offen, nicht gebucht");
   if (plan.reverse) parts.push(`gegengebucht ${plan.reverse.cents} Cent`);
+  if (plan.coveredByManualCents > 0) parts.push(`Erstattung bereits gegengebucht (${plan.coveredByManualCents} Cent)`);
   if (plan.review) parts.push(`pruefen: ${plan.review}`);
   if (plan.result === "TEST") parts.push("Testmodus, nicht gebucht");
   return parts.join("; ").slice(0, 500);

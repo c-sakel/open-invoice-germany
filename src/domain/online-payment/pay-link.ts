@@ -73,7 +73,7 @@ export interface ResolveForFinalizeInput {
 export async function resolveProviderWithinTx(
   tx: Prisma.TransactionClient,
   input: ResolveForFinalizeInput,
-): Promise<{ provider: OnlineProvider; onDocument: boolean } | { provider: null; reason: string }> {
+): Promise<{ provider: OnlineProvider; onDocument: boolean; missingBaseUrl: boolean } | { provider: null; reason: string }> {
   const [settings, accounts] = await Promise.all([
     tx.paymentProviderSettings.findUnique({ where: { orgId: input.orgId }, select: { defaultProvider: true, showOnPdf: true } }),
     tx.paymentProviderAccount.findMany({
@@ -101,14 +101,16 @@ export async function resolveProviderWithinTx(
   if (res.provider === null) return res;
   // Testmodus-Links erscheinen nie auf Beleg/E-Rechnung/Mail; nur intern in der Belegansicht.
   const mode = accounts.find((a) => a.provider === res.provider)?.mode ?? null;
-  return { provider: res.provider, onDocument: mode === "LIVE" && (settings?.showOnPdf ?? true) && appBaseUrlFromEnv() !== null };
+  const wantsDocument = mode === "LIVE" && (settings?.showOnPdf ?? true);
+  const baseUrl = appBaseUrlFromEnv() !== null;
+  return { provider: res.provider, onDocument: wantsDocument && baseUrl, missingBaseUrl: wantsDocument && !baseUrl };
 }
 
 /** Beim Festschreiben: Anbieter aufloesen; null = kein Link. */
 export async function resolveForFinalizeWithinTx(
   tx: Prisma.TransactionClient,
   input: ResolveForFinalizeInput,
-): Promise<{ provider: OnlineProvider; onDocument: boolean } | null> {
+): Promise<{ provider: OnlineProvider; onDocument: boolean; missingBaseUrl: boolean } | null> {
   const res = await resolveProviderWithinTx(tx, input);
   return res.provider === null ? null : res;
 }
@@ -120,6 +122,11 @@ export async function createPayLinkWithinTx(
   // Org-Konsistenz: der Link gehoert immer zur Organisation der Rechnung (Attempt/Event erben spaeter die orgId des Links).
   const owner = await tx.invoice.findFirst({ where: { id: input.invoiceId, orgId: input.orgId }, select: { id: true } });
   if (!owner) throw new OnlinePaymentError("Rechnung nicht gefunden.", "NOT_FOUND");
+  // Ein im Testmodus angelegter Link gilt nie als im Livebetrieb ausgegeben (Standard der Spalte ist true).
+  const account = await tx.paymentProviderAccount.findUnique({
+    where: { orgId_provider: { orgId: input.orgId, provider: input.provider } },
+    select: { mode: true },
+  });
   const token = generateToken();
   const row = await tx.invoicePayLink.create({
     data: {
@@ -129,6 +136,7 @@ export async function createPayLinkWithinTx(
       tokenHash: hashToken(token),
       tokenEnc: encryptSecret(token, PAYLINK_TOKEN_PURPOSE),
       onDocument: input.onDocument,
+      liveIssued: account?.mode === "LIVE",
       createdBy: input.actor,
       createdAt: input.now,
     },
@@ -282,6 +290,7 @@ export interface ResolvedPayLink {
   status: "ACTIVE" | "DISABLED";
   disabledReason: string | null;
   onDocument: boolean;
+  liveIssued: boolean;
 }
 
 /** Token -> Link ueber den Hash; falsches oder formfalsches Token -> null (identisch). */
@@ -289,8 +298,8 @@ export async function resolvePayLinkByToken(token: string): Promise<ResolvedPayL
   if (!payLinkTokenSchema.safeParse(token).success) return null;
   const row = await dbInternal.invoicePayLink.findUnique({
     where: { tokenHash: hashToken(token) },
-    select: { id: true, orgId: true, invoiceId: true, provider: true, status: true, disabledReason: true, onDocument: true },
+    select: { id: true, orgId: true, invoiceId: true, provider: true, status: true, disabledReason: true, onDocument: true, liveIssued: true },
   });
   if (!row) return null;
-  return { id: row.id, orgId: row.orgId, invoiceId: row.invoiceId, provider: asProvider(row.provider), status: row.status === "ACTIVE" ? "ACTIVE" : "DISABLED", disabledReason: row.disabledReason, onDocument: row.onDocument };
+  return { id: row.id, orgId: row.orgId, invoiceId: row.invoiceId, provider: asProvider(row.provider), status: row.status === "ACTIVE" ? "ACTIVE" : "DISABLED", disabledReason: row.disabledReason, onDocument: row.onDocument, liveIssued: row.liveIssued };
 }

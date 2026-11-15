@@ -15,7 +15,7 @@ import { dbInternal } from "@/lib/db";
 import { computeTaxBreakdown, type TaxBreakdownEntry } from "@/lib/tax";
 import { assignDocumentNumber } from "@/domain/numbering/ranges";
 import { appendChangeLog } from "@/domain/audit";
-import { onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
+import { notifyOnlinePaymentWithinTx, onInvoiceFinalizedOss } from "@/domain/notifications/hooks";
 import { logActivity } from "@/domain/activity/log";
 import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
@@ -31,7 +31,7 @@ import { loadBrandingSettings } from "@/domain/settings/branding";
 import { resolveLayoutId, invoiceTypeToLayoutDocType } from "@/domain/settings/layout";
 import { resolveLayoutSelection } from "@/domain/layout-design/resolve";
 import { validateMandatoryFields } from "./mandatory";
-import { berlinCalendarDay } from "@/lib/berlin-time";
+import { berlinCalendarDay, berlinDateKey } from "@/lib/berlin-time";
 import { FinalizeError } from "./finalize-error";
 import { buildDirectDebitSnapshot } from "./direct-debit";
 import { DIRECT_DEBIT_CODE } from "@/lib/einvoice/payment-means";
@@ -429,6 +429,17 @@ export async function finalizeWithinTx(
   });
   if (payLinkChoice) {
     await createPayLinkWithinTx(tx, { orgId: invoice.orgId, invoiceId, provider: payLinkChoice.provider, onDocument: payLinkChoice.onDocument, actor, now });
+    if (payLinkChoice.missingBaseUrl) {
+      // Der Link steht dann nur in Mail/Portal; das festgeschriebene Dokument bleibt unveraendert (Archiv = Beleg).
+      await notifyOnlinePaymentWithinTx(tx, invoice.orgId, {
+        type: "ONLINE_PAYMENT_ISSUE",
+        title: "Bezahllink nicht auf dem Beleg: APP_BASE_URL fehlt",
+        body: "Beim Festschreiben war APP_BASE_URL nicht gesetzt; der Bezahllink steht nicht auf dem Beleg, nur in Mail und Portal. APP_BASE_URL vor dem Festschreiben setzen.",
+        invoiceId,
+        dedupeKey: `online:nobaseurl:${berlinDateKey(now)}`,
+        at: now,
+      });
+    }
   }
 
   // 5) Audit
