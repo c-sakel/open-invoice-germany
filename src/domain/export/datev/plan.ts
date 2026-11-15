@@ -252,7 +252,7 @@ export async function buildDatevRun(tx: Tx, orgId: string, req: DatevExportReque
     const payMonths = new Set(
       months.filter((m) => {
         const prior = coverage.get(m);
-        return prior === undefined || settings.exportPaymentsSince === null || prior.createdAt.getTime() >= settings.exportPaymentsSince.getTime();
+        return prior === undefined || settings.exportPaymentsSince === null || prior.firstCreatedAt.getTime() >= settings.exportPaymentsSince.getTime();
       }),
     );
     skippedPaymentMonths = settings.exportPayments ? months.filter((m) => !payMonths.has(m)) : [];

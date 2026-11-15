@@ -18,6 +18,8 @@ export interface ExportedMonth {
   month: string;
   exportId: string;
   createdAt: Date;
+  /** Zeitpunkt des ERSTEN Zeitraum-Laufs, der den Monat abdeckte (Wiederholungen aendern ihn nie). */
+  firstCreatedAt: Date;
   /** Inhalts-Pruefsumme des Stapels dieses Monats im juengsten Lauf (ohne Kopfzeile). */
   contentSha256: string | null;
 }
@@ -39,7 +41,8 @@ export async function exportedMonths(db: Tx, orgId: string): Promise<Map<string,
       /* unlesbares Protokoll: ohne Pruefsummen */
     }
     for (let m = run.fromMonth; m <= run.toMonth; m = nextMonth(m)) {
-      out.set(m, { month: m, exportId: run.id, createdAt: run.createdAt, contentSha256: hashes[m] ?? null });
+      const first = out.get(m)?.firstCreatedAt ?? run.createdAt;
+      out.set(m, { month: m, exportId: run.id, createdAt: run.createdAt, firstCreatedAt: first, contentSha256: hashes[m] ?? null });
     }
   }
   return out;
@@ -92,7 +95,7 @@ export async function supplementCandidates(
     sorted.filter((m) => {
       if (paymentsSince === null) return true;
       const c = coverage.get(m);
-      return c !== undefined && c.createdAt.getTime() >= paymentsSince.getTime();
+      return c !== undefined && c.firstCreatedAt.getTime() >= paymentsSince.getTime();
     }),
   );
   const payments =

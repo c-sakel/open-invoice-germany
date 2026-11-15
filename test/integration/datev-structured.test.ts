@@ -14,6 +14,7 @@ import { createDraftInvoice } from "@/domain/invoice/create";
 import { finalizeInvoice } from "@/domain/invoice/finalize";
 import { recordPayment } from "@/domain/invoice/payment";
 import { datevStatus, readDatevExportFile, runDatevExport } from "@/domain/export/datev/run";
+import { exportedMonths } from "@/domain/export/datev/late";
 import { confirmDatevMapping, getDatevSettings, saveDatevSettings } from "@/domain/export/datev/settings";
 import type { CreateInvoiceInput } from "@/schemas";
 import { have, mkDatevInvoice, mkDatevOrg, parseExtf, setupDatev, unzipBuffer, type DatevTestOrg } from "../helpers/datev-fixtures";
@@ -157,5 +158,22 @@ describe.skipIf(!have("unzip", "-v"))("Einschaltzeitpunkt des Zahlungsexports", 
 
     const off = await saveDatevSettings(org.orgId, { exportPayments: false }, "test", LATE);
     expect(off.exportPaymentsSince).toBeNull();
+  });
+
+  it("Wiederholung nach dem Einschalten macht den Monat nicht zahlungsfaehig", async () => {
+    const org = await mkDatevOrg("Datev Wiederholung GmbH", "2229", MAR);
+    await setupDatev(org.orgId, { exportPayments: false });
+    const a = await mkDatevInvoice(org, { issue: MAR, netCents: 10000 });
+    await recordPayment(a.id, { amountCents: a.grossCents, paidAt: MAR_PAY, method: "TRANSFER", isSkonto: false, applySkonto: false }, { orgId: org.orgId, now: MAR_PAY, provider: "BANK", providerPaymentId: "bk_dv2229a" });
+    await runDatevExport(org.orgId, { from: "2096-03", to: "2096-03", mode: "PERIOD" }, "tester", MAR_EXPORT);
+    await saveDatevSettings(org.orgId, { exportPayments: true }, "test", ENABLE);
+    await confirmDatevMapping(org.orgId, "mit dem Steuerberater abgestimmt", "test");
+    // Wiederholung nach dem Einschalten: Der juengste Lauf ist jetzt spaeter, der erste Lauf bleibt massgeblich.
+    await runDatevExport(org.orgId, { from: "2096-03", to: "2096-03", mode: "PERIOD", repeat: true }, "tester", APR_EXPORT);
+    const cov = await exportedMonths(dbInternal, org.orgId);
+    expect(cov.get("2096-03")?.firstCreatedAt.getTime()).toBe(MAR_EXPORT.getTime());
+    expect((await datevStatus(org.orgId, LATE)).pendingLate).toEqual([]);
+    const items = await dbInternal.datevExportItem.findMany({ where: { orgId: org.orgId, month: "2096-03", itemKey: { startsWith: "pay:" } }, select: { itemKey: true } });
+    expect(items).toEqual([]);
   });
 });
