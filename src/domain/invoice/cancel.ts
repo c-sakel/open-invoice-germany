@@ -18,6 +18,7 @@ import { emitEvent } from "@/domain/webhook/emit";
 import { serializeInvoice } from "@/api/serializers/invoice";
 import { NotFoundError } from "@/domain/errors";
 import { finalizeWithinTx } from "./finalize";
+import { disablePayLinkWithinTx } from "@/domain/online-payment/pay-link";
 import { correctionFxOverride } from "@/domain/fx/correction";
 import { refundablePaidCents } from "./amounts";
 import { linePriceFields } from "@/domain/document/lines";
@@ -340,6 +341,10 @@ export async function cancelInvoice(invoiceId: string, opts: CancelOptions) {
       where: { id: original.id },
       data: { status: "CANCELLED", reversedByInvoiceId: finalizedCredit.id },
     });
+
+    // Online-Zahlung: Bezahllink der stornierten Rechnung endgueltig deaktivieren (der Abbruch offener
+    // Vorgaenge beim Anbieter erfolgt ausserhalb der Transaktion).
+    await disablePayLinkWithinTx(tx, original.orgId, original.id, "INVOICE_CANCELLED", actor, now);
 
     await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalizedCredit.id, toType: "INVOICE", toId: original.id, relationType: "REVERSES" });
     await linkDocuments(tx, { orgId: original.orgId, fromType: "INVOICE", fromId: finalizedCredit.id, toType: "INVOICE", toId: original.id, relationType: "CORRECTS" });

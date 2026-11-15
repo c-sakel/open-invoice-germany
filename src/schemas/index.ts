@@ -3,6 +3,7 @@
  * Ersetzen zugleich die fehlenden Prisma-Enums (DB hält Strings).
  */
 import { z } from "zod";
+import { onlineProviderChoiceSchema } from "./online-payment";
 import { syncFilterShape } from "@/domain/sync/updated-since";
 // Fix-Runde 1, Befund 3: eine Quelle fuer das Groessenlimit je Anhang statt einer
 // zweiten Konstante hier (galt zuvor doppelt gepflegt fuer src/lib/attachments/mime.ts).
@@ -1111,6 +1112,8 @@ export const paymentMethodSchema = z.object({
   paymentTermsDays: z.number().int().min(0).optional(), invoiceText: z.string().optional(), bankAccountRef: z.string().optional(),
   bankIban: ibanInput, bankBic: z.string().optional(), bankName: z.string().optional(),
   untdidCode: z.enum(UNTDID_PAYMENT_MEANS_CODES).default("ZZZ"), isActive: z.boolean().default(true), sortOrder: z.number().int().default(0),
+  // Online-Zahlung: NULL/fehlt = keine Vorgabe (Kunde/Organisation entscheiden), NONE = nie ein Bezahllink.
+  onlineProvider: onlineProviderChoiceSchema.nullable().optional(),
 });
 export type PaymentMethodInput = z.infer<typeof paymentMethodSchema>;
 export const dunningStageSchema = z.object({
@@ -1347,3 +1350,6 @@ export * from "./bank";
 
 // ── Regeln nach Zahlungseingang ──────────────────────────────────────────────
 export * from "./payment-rule";
+
+// ── Online-Zahlung ───────────────────────────────────────────────────────────
+export * from "./online-payment";

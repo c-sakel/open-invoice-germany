@@ -36,6 +36,12 @@ export const POSTAL_KEY_PURPOSE = "oig-postal-key-v1";
 /** Eigener HKDF-Info-String fuer Kundenportal-Tokens (Wiederabruf des Links durch den Betreiber). */
 export const PORTAL_TOKEN_PURPOSE = "oig-portal-token-v1";
 
+/** Eigener HKDF-Info-String fuer API-Schluessel der Zahlungsanbieter. */
+export const PAYMENT_PROVIDER_KEY_PURPOSE = "oig-payment-provider-key-v1";
+
+/** Eigener HKDF-Info-String fuer Bezahllink-Tokens (Wiederabruf des Links durch den Betreiber). */
+export const PAYLINK_TOKEN_PURPOSE = "oig-paylink-token-v1";
+
 function key(purpose: string): Buffer {
   const secret = process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) throw new SecretsUnavailableError();
