@@ -178,6 +178,34 @@ describe("Parallele Zugriffe unter PostgreSQL", () => {
     expect(after.status).toBe("PAID");
   });
 
+  it("Zahlungsregeln: parallele Teilzahlungen (60,00 / 59,00 / 59,00 auf 119,00) -> je angenommener Zahlung genau ein Lauf, hoechstens ein PAID_FULL, passend zum Endstatus", async () => {
+    const s = await newScenario();
+    const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
+    for (const trigger of ["PAID_FULL", "PAID_PARTIAL"] as const) {
+      await dbInternal.paymentRule.create({
+        data: { orgId: s.orgId, name: `Race ${trigger}`, trigger, actionsJson: JSON.stringify([{ type: "EMIT_WEBHOOK" }]) },
+        select: { id: true },
+      });
+    }
+    const amounts = [6000, 5900, 5900];
+    const rs = await Promise.allSettled(
+      amounts.map((amountCents) =>
+        recordPayment(inv.id, { method: "TRANSFER", amountCents, isSkonto: false, applySkonto: false }, { orgId: s.orgId, now: s.now }),
+      ),
+    );
+    const ok = fulfilled(rs);
+    expect(ok.length, describeFailures(rs)).toBeGreaterThanOrEqual(2);
+    const payments = await dbInternal.payment.findMany({ where: { invoiceId: inv.id }, select: { id: true, amountCents: true } });
+    expect(payments).toHaveLength(ok.length);
+    const after = await dbInternal.invoice.findFirstOrThrow({ where: { id: inv.id }, select: { paidAmountCents: true, grossTotalCents: true, status: true } });
+    expect(payments.reduce((sum, p) => sum + p.amountCents, 0)).toBe(after.paidAmountCents);
+    expect(after.paidAmountCents).toBeLessThanOrEqual(after.grossTotalCents);
+    const runs = await dbInternal.paymentRuleRun.findMany({ where: { orgId: s.orgId }, select: { paymentId: true, trigger: true } });
+    expect(runs).toHaveLength(payments.length);
+    expect(new Set(runs.map((r) => r.paymentId))).toEqual(new Set(payments.map((p) => p.id)));
+    expect(runs.filter((r) => r.trigger === "PAID_FULL")).toHaveLength(after.status === "PAID" ? 1 : 0);
+  });
+
   it("Storno 5x parallel -> genau ein Stornobeleg, Original CANCELLED", async () => {
     const s = await newScenario();
     const inv = await invoiceFromQuote(s.orgId, s.quote.id, s.now);
