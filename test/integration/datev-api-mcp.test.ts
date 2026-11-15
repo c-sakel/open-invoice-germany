@@ -124,11 +124,14 @@ describe("Scopes", () => {
       expect((await MappingPut(req("http://x/api/v1/Settings/datev/mapping", { method: "PUT", token, body: { rows: [] } }))).status).toBe(403);
       expect((await TemplatePost(req("http://x/api/v1/Settings/datev/template", { method: "POST", token, body: { chart: "SKR03" } }))).status).toBe(403);
       expect((await ExportFile(req("http://x/api/v1/DatevExport/x/file", { token }), idCtx("x"))).status).toBe(403);
+      // Protokoll, Posten und Status enthalten Belegnummern und Betraege: ebenfalls nur admin.
+      expect((await ExportList(req("http://x/api/v1/DatevExport", { token }))).status).toBe(403);
+      expect((await ExportGet(req("http://x/api/v1/DatevExport/x", { token }), idCtx("x"))).status).toBe(403);
+      expect((await ExportStatus(req("http://x/api/v1/DatevExport/status", { token }))).status).toBe(403);
     }
   });
-  it("read darf Protokoll und Status lesen", async () => {
-    expect((await ExportList(req("http://x/api/v1/DatevExport", { token: readToken }))).status).toBe(200);
-    expect((await ExportStatus(req("http://x/api/v1/DatevExport/status", { token: readToken }))).status).toBe(200);
+  it("ohne Schluessel: 401", async () => {
+    expect((await ExportList(req("http://x/api/v1/DatevExport"))).status).toBe(401);
   });
 });
 
@@ -172,7 +175,7 @@ describe("Export", () => {
 
   it("Einstellungsaenderung per REST entwertet die Bestaetigung", async () => {
     await confirmDatevMapping(org.orgId, "mit dem Steuerberater abgestimmt", "test");
-    const status = async () => (await json<{ data: { confirmed: boolean } }>(await ExportStatus(req("http://x/api/v1/DatevExport/status", { token: readToken })))).data.confirmed;
+    const status = async () => (await json<{ data: { confirmed: boolean } }>(await ExportStatus(req("http://x/api/v1/DatevExport/status", { token: adminToken })))).data.confirmed;
     expect(await status()).toBe(true);
     await SettingsPut(req("http://x/api/v1/Settings/datev", { method: "PUT", token: adminToken, body: { dictationCode: "AB" } }));
     expect(await status()).toBe(false);
@@ -204,7 +207,9 @@ describe("Export", () => {
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toBe("application/zip");
     expect(file.headers.get("cache-control")).toBe("no-store");
-    expect(file.headers.get("content-disposition")).toContain("attachment");
+    expect(file.headers.get("content-disposition")).toMatch(/^attachment; filename="DATEV-Export_[0-9A-Za-z_-]+\.zip"$/);
+    expect(file.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(file.headers.get("content-length")).toBe(String((await file.clone().arrayBuffer()).byteLength));
     expect(sha256Hex(Buffer.from(await file.arrayBuffer()))).toBe(exportSha);
   });
 
@@ -218,19 +223,20 @@ describe("Export", () => {
   });
 
   it("Liste, Protokoll mit Posten (seitenweise), Status; fremde Org -> 404; ungueltige Seite -> 400", async () => {
-    const list = await json<{ data: { id: string }[]; total: number }>(await ExportList(req("http://x/api/v1/DatevExport", { token: readToken })));
+    const list = await json<{ data: { id: string }[]; total: number }>(await ExportList(req("http://x/api/v1/DatevExport", { token: adminToken })));
     expect(list.total).toBe(2);
     expect(list.data.map((e) => e.id)).toContain(exportId);
-    const one = await json<{ data: { id: string; items: { objectName: string; itemKey: string }[]; itemTotal: number } }>(await ExportGet(req(`http://x/api/v1/DatevExport/${exportId}?limit=1`, { token: readToken }), idCtx(exportId)));
+    const one = await json<{ data: { id: string; items: { objectName: string; itemKey: string }[]; itemTotal: number } }>(await ExportGet(req(`http://x/api/v1/DatevExport/${exportId}?limit=1`, { token: adminToken }), idCtx(exportId)));
     expect(one.data.id).toBe(exportId);
     expect(one.data.items).toHaveLength(1);
     expect(one.data.itemTotal).toBeGreaterThan(1);
     expect(one.data.items[0].objectName).toBe("DatevExportItem");
-    expect((await ExportGet(req(`http://x/api/v1/DatevExport/${exportId}?limit=0`, { token: readToken }), idCtx(exportId))).status).toBe(400);
-    const st = await json<{ data: { exportedMonths: { month: string }[] } }>(await ExportStatus(req("http://x/api/v1/DatevExport/status", { token: readToken })));
+    expect((await ExportGet(req(`http://x/api/v1/DatevExport/${exportId}?limit=0`, { token: adminToken }), idCtx(exportId))).status).toBe(400);
+    const st = await json<{ data: { exportedMonths: { month: string }[] } }>(await ExportStatus(req("http://x/api/v1/DatevExport/status", { token: adminToken })));
     expect(st.data.exportedMonths.map((m) => m.month)).toEqual(["2096-03"]);
     expect((await ExportGet(req(`http://x/api/v1/DatevExport/${exportId}`, { token: otherToken }), idCtx(exportId))).status).toBe(404);
     expect((await ExportFile(req(`http://x/api/v1/DatevExport/${exportId}/file`, { token: otherToken }), idCtx(exportId))).status).toBe(404);
+    expect((await ExportFile(req(`http://x/api/v1/DatevExport/${exportId}/file`), idCtx(exportId))).status).toBe(401);
     expect(JSON.stringify(one)).not.toContain("internalNotes");
   });
 });
@@ -257,6 +263,11 @@ describe("Debitorennummer am Kunden", () => {
     const bad = await patch(writeToken, secondCustomer, { datevAccount: null, name: "" });
     expect(bad.status).toBe(400);
     expect((await dbInternal.customer.findUniqueOrThrow({ where: { id: secondCustomer }, select: { datevAccount: true } })).datevAccount).toBe(20007);
+    // Scheitert ein uebriges Feld in der Pruefung gegen die Datenbank, bleibt auch die Nummer unveraendert.
+    const foreignMethod = await dbInternal.paymentMethod.findFirst({ where: { orgId: other.orgId }, select: { id: true } });
+    const rolled = await patch(writeToken, secondCustomer, { datevAccount: 20011, defaultPaymentMethodId: foreignMethod?.id ?? "fremd-unbekannt" });
+    expect(rolled.status).toBe(400);
+    expect((await dbInternal.customer.findUniqueOrThrow({ where: { id: secondCustomer }, select: { datevAccount: true } })).datevAccount).toBe(20007);
     // Fremde Org: nicht auffindbar.
     expect((await patch(otherToken, secondCustomer, { datevAccount: 20009 })).status).toBe(404);
     expect(otherCustomer).not.toBe("");
@@ -282,13 +293,48 @@ describe("MCP", () => {
     expect(await fs.readdir(outDir)).toEqual([]);
     const run = await callTool("export_datev", { ...PERIOD, repeat: true, outputDir: outDir });
     expect(run.isError).toBeFalsy();
-    const target = path.join(outDir, "datev-2096-03-2096-03.zip");
+    const files = await fs.readdir(outDir);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^datev-2096-03-2096-03-[0-9a-f]{8}\.zip$/);
+    const target = path.join(outDir, files[0]);
     const bytes = await fs.readFile(target);
     expect(text(run)).toContain(target);
     expect(bytes.subarray(0, 2).toString("latin1")).toBe("PK");
     const stored = await dbInternal.datevExport.findFirstOrThrow({ where: { orgId: org.orgId }, orderBy: { createdAt: "desc" }, select: { sha256: true } });
     expect(sha256Hex(bytes)).toBe(stored.sha256);
     expect(text(run)).not.toContain("internalNotes");
+  });
+
+  it("outputDir: relativ, mit .., nicht vorhanden oder Datei -> Fehler ohne Lauf; zweiter Lauf ueberschreibt nichts", async () => {
+    const countBefore = await dbInternal.datevExport.count({ where: { orgId: org.orgId } });
+    const aFile = path.join(outDir, (await fs.readdir(outDir))[0]);
+    for (const dir of ["relativ/pfad", `${outDir}/../${path.basename(outDir)}`, path.join(outDir, "gibt-es-nicht"), aFile]) {
+      const r = await callTool("export_datev", { ...PERIOD, repeat: true, outputDir: dir });
+      expect(r.isError, dir).toBe(true);
+      expect(text(r)).toContain("outputDir");
+    }
+    expect(await dbInternal.datevExport.count({ where: { orgId: org.orgId } })).toBe(countBefore);
+    const second = await callTool("export_datev", { ...PERIOD, repeat: true, outputDir: outDir });
+    expect(second.isError).toBeFalsy();
+    const files = await fs.readdir(outDir);
+    expect(files).toHaveLength(2);
+    expect(new Set(files).size).toBe(2);
+  });
+
+  it("Schreibfehler nach dem Lauf: Antwort nennt Export-Id und den erneuten Download", async () => {
+    if (process.getuid?.() === 0) return;
+    const ro = await fs.mkdtemp(path.join(os.tmpdir(), "oig-datev-ro-"));
+    await fs.chmod(ro, 0o500);
+    try {
+      const r = await callTool("export_datev", { ...PERIOD, repeat: true, outputDir: ro });
+      expect(r.isError).toBe(true);
+      const latest = await dbInternal.datevExport.findFirstOrThrow({ where: { orgId: org.orgId }, orderBy: { createdAt: "desc" }, select: { id: true } });
+      expect(text(r)).toContain(latest.id);
+      expect(text(r)).toContain(`/api/v1/DatevExport/${latest.id}/file`);
+    } finally {
+      await fs.chmod(ro, 0o700);
+      await fs.rm(ro, { recursive: true, force: true });
+    }
   });
 
   it("ohne repeat: Fehlertext mit Code; ungueltiger Zeitraum", async () => {
@@ -330,5 +376,85 @@ describe("MCP", () => {
     const r = await callTool("update_customer", { customer: org.customerId, datevAccount: 20010 });
     expect(r.isError).toBe(true);
     expect(text(r)).toContain("DEBTOR_LOCKED");
+  });
+});
+
+describe("Download fuer die Oberflaeche", () => {
+  it("Sitzungsroute: Org-Scope, attachment, sicherer Dateiname, kein inline; fremde und unbekannte Id -> 404", async () => {
+    const { GET: SessionFile } = await import("@/app/api/datev/[id]/file/route");
+    const row = await dbInternal.datevExport.findFirstOrThrow({ where: { orgId: org.orgId }, orderBy: { createdAt: "asc" }, select: { id: true, sha256: true } });
+    const res = await SessionFile(new Request(`http://x/api/datev/${row.id}/file`), idCtx(row.id));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    const disposition = res.headers.get("content-disposition") ?? "";
+    expect(disposition).toMatch(/^attachment; filename="DATEV-Export_[0-9A-Za-z_-]+\.zip"$/);
+    expect(disposition).not.toContain("inline");
+    expect(disposition).not.toMatch(/[\\/]|\.\./);
+    expect(sha256Hex(Buffer.from(await res.arrayBuffer()))).toBe(row.sha256);
+    orgStore.id = other.orgId;
+    try {
+      expect((await SessionFile(new Request("http://x"), idCtx(row.id))).status).toBe(404);
+      expect((await SessionFile(new Request("http://x"), idCtx("../../etc/passwd"))).status).toBe(404);
+    } finally {
+      orgStore.id = org.orgId;
+    }
+  });
+
+  it("die Sitzungsroute liegt nicht unter den oeffentlichen Praefixen (Anmeldung ueber den Proxy)", async () => {
+    const { PUBLIC_PREFIXES } = await import("@/proxy");
+    expect(PUBLIC_PREFIXES.some((p) => "/api/datev/x/file".startsWith(p))).toBe(false);
+  });
+});
+
+describe("Zeichen mit Formelwirkung bis in die ZIP", () => {
+  it("Kundenname mit weichem Trenner, Minuszeichen, Vollbreite-Gleichheitszeichen und ungleich: kein Zellanfang als Formel", async () => {
+    const { runDatevExport } = await import("@/domain/export/datev/run");
+    const { setupDatev, unzipBuffer } = await import("../helpers/datev-fixtures");
+    const u = await mkDatevOrg("Datev Zeichen GmbH", "2226", MAR);
+    const names = ["\u00AD=1+1", "\u2212cmd|' /c calc'!A0", "\uFF1DSUMME(A1)", "\u2260=2", "+HYPERLINK(\"http://x\")", "@SUM(1)"];
+    for (const [i, name] of names.entries()) {
+      const c = await mkCustomer(u, name, `U-${i}`);
+      await mkDatevInvoice(u, { customerId: c, issue: MAR, netCents: 1000 + i });
+    }
+    await setupDatev(u.orgId);
+    orgStore.id = u.orgId;
+    try {
+      const view = await runDatevExport(u.orgId, PERIOD, "test");
+      const { bytes } = await (await import("@/domain/export/datev/run")).readDatevExportFile(u.orgId, view.id);
+      const z = unzipBuffer(bytes);
+      try {
+        const deb = z.read("EXTF_Debitoren.csv").toString("latin1");
+        const cells = deb.split("\r\n").slice(2).flatMap((l) => l.split(";"));
+        const fold = (v: string) => v.replace(/^"/, "").replace(/"$/, "");
+        for (const cell of cells) {
+          const t = fold(cell);
+          expect(/^[=+\-@\t\r]/.test(t) && !/^-?\d+([.,]\d+)?$/.test(t), `Zelle: ${t}`).toBe(false);
+        }
+        expect(cells.filter((c) => /^"'/.test(c)).length).toBeGreaterThanOrEqual(1);
+        for (const name of z.names.filter((n) => n.startsWith("EXTF_Buchungsstapel"))) {
+          const stapel = z.read(name).toString("latin1");
+          for (const cell of stapel.split("\r\n").slice(2).flatMap((l) => l.split(";"))) {
+            const t = fold(cell);
+            expect(/^[=@]/.test(t), `Stapelzelle: ${t}`).toBe(false);
+          }
+        }
+      } finally {
+        z.cleanup();
+      }
+    } finally {
+      orgStore.id = org.orgId;
+    }
+  });
+});
+
+describe("Rate-Limit", () => {
+  it("11. Export-Aufruf je Minute und Organisation -> 429", async () => {
+    vi.setSystemTime(new Date(NOW.getTime() + 60 * 60_000));
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await post(adminToken, { ...PERIOD, dryRun: true })).status);
+    expect(statuses.slice(0, 10).every((s) => s !== 429)).toBe(true);
+    expect(statuses[10]).toBe(429);
   });
 });

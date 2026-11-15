@@ -29,7 +29,7 @@ function fit(value: string, max: number, label: string, notes: string[]): string
   if (startsWithFormula(value)) notes.push(`${label} beginnt mit einem Formelzeichen, Apostroph vorangestellt`);
   const cleaned = text(value, Number.MAX_SAFE_INTEGER);
   if (Array.from(cleaned).length > max) notes.push(`${label} auf ${max} Zeichen gekuerzt`);
-  const lost = unmappableChars(cleaned);
+  const lost = unmappableChars(value);
   if (lost.length > 0) notes.push(`${label} enthaelt Zeichen ausserhalb Windows-1252 (${lost.join(" ")}), als ? ausgegeben`);
   return text(cleaned, max);
 }

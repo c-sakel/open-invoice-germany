@@ -16,6 +16,7 @@ export const GET = withApi<{ id: string }>(async (_req, ctx) => {
       "content-length": String(bytes.length),
       "content-disposition": `attachment; filename="${filename}"`,
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
     },
   });
 }, { scope: "admin" });

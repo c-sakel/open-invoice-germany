@@ -1,6 +1,6 @@
 /**
  * /api/v1/DatevExport — DATEV-Export als Datei (Buchungsstapel, Debitoren, Protokoll; ZIP).
- * GET: Protokoll der Laeufe (Scope read). POST: Lauf oder Vorschau (`dryRun`), Scope admin (Bulk personenbezogener
+ * GET: Protokoll der Laeufe (Scope admin). POST: Lauf oder Vorschau (`dryRun`), Scope admin (Bulk personenbezogener
  * Daten, vergibt Debitorennummern). Die Bestaetigung der Kontenzuordnung gibt es nur in der Oberflaeche.
  */
 import { z } from "zod";
@@ -23,7 +23,7 @@ export const GET = withApi(async (req, ctx) => {
     dbInternal.datevExport.count({ where: { orgId: ctx.orgId } }),
   ]);
   return apiList(rows.map(serializeDatevExport), { total, limit: q.limit, offset: q.offset });
-}, { scope: "read" });
+}, { scope: "admin" });
 
 export const POST = withApi(async (_req, ctx) => {
   rateLimit(`datev-export:${ctx.orgId}`, { limit: 10, windowMs: 60_000 });
@@ -37,7 +37,7 @@ export const spec = {
     path: "/api/v1/DatevExport",
     method: "GET",
     summary: "Protokoll der DATEV-Exportlaeufe (neueste zuerst)",
-    scope: "read",
+    scope: "admin",
     request: { query: datevListQuerySchema },
     response: apiListResponseSchema(datevExportSchema),
     errors: [400, 401, 403, 429],

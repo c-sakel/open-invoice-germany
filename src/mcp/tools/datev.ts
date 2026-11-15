@@ -3,7 +3,7 @@
 // Kontenzuordnung gibt es nur in der Oberflaeche; jede Aenderung hier macht sie hinfaellig.
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
@@ -37,6 +37,25 @@ function datevFail(ctx: McpToolsContext, e: unknown): Result {
   return ctx.failUnknown(e);
 }
 
+/** Zielverzeichnis pruefen: absolut, ohne Traversal, existiert als Verzeichnis (Symlinks werden aufgeloest). Default: <Projekt>/exports. */
+function resolveOutputDir(outputDir: string | undefined): string {
+  if (!outputDir) {
+    const dir = path.join(PROJECT_ROOT, "exports");
+    mkdirSync(dir, { recursive: true });
+    return realpathSync(dir);
+  }
+  if (!path.isAbsolute(outputDir)) throw new DatevError("VALIDATION", "outputDir muss ein absoluter Pfad sein.");
+  if (outputDir.split(/[\\/]/).includes("..")) throw new DatevError("VALIDATION", "outputDir darf keine ..-Segmente enthalten.");
+  let real: string;
+  try {
+    real = realpathSync(outputDir);
+  } catch {
+    throw new DatevError("VALIDATION", "outputDir existiert nicht.");
+  }
+  if (!statSync(real).isDirectory()) throw new DatevError("VALIDATION", "outputDir ist kein Verzeichnis.");
+  return real;
+}
+
 const exportInput = datevExportRequestSchema.extend({
   outputDir: z.string().optional().describe("Zielverzeichnis (Default: <Projekt>/exports)"),
 });
@@ -47,7 +66,7 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
     {
       title: "DATEV-Export erzeugen",
       description:
-        "Erzeugt den DATEV-Export (ZIP: Buchungsstapel je Monat, Debitoren, Protokoll; Datei, kein Netzaufruf) fuer die Berliner Monate from..to (JJJJ-MM, ohne laufenden Monat) und schreibt ihn nach outputDir (Default <Projekt>/exports/datev-<from>-<to>[-nachtrag].zip). mode PERIOD = Zeitraum, SUPPLEMENT = Nachtraege in bereits exportierten Monaten. Bereits exportierte Monate nur mit repeat=true. dryRun=true liefert nur die Vorschau (Zaehler, Hinweise, Handbuchungen) und schreibt nichts. Ohne in der Oberflaeche bestaetigte Kontenzuordnung gesperrt (NOT_CONFIRMED).",
+        "Erzeugt den DATEV-Export (ZIP: Buchungsstapel je Monat, Debitoren, Protokoll; Datei, kein Netzaufruf) fuer die Berliner Monate from..to (JJJJ-MM, ohne laufenden Monat) und schreibt ihn nach outputDir (absolutes, existierendes Verzeichnis; Default <Projekt>/exports; Datei datev-<from>-<to>[-nachtrag]-<Export-Id>.zip, nie ueberschrieben). mode PERIOD = Zeitraum, SUPPLEMENT = Nachtraege in bereits exportierten Monaten. Bereits exportierte Monate nur mit repeat=true. dryRun=true liefert nur die Vorschau (Zaehler, Hinweise, Handbuchungen) und schreibt nichts. Ohne in der Oberflaeche bestaetigte Kontenzuordnung gesperrt (NOT_CONFIRMED).",
       inputSchema: exportInput.shape,
     },
     async (args): Promise<Result> => {
@@ -57,12 +76,17 @@ export function registerDatevTools(server: McpServer, ctx: McpToolsContext): voi
         const org = await ctx.requireOrg();
         rateLimit(`datev-export:${org.id}`, { limit: 10, windowMs: 60_000 });
         if (request.dryRun === true) return ctx.ok(JSON.stringify(serializeDatevPlan(await planDatevExport(org.id, request)), null, 2));
+        const dir = resolveOutputDir(outputDir);
         const view = await runDatevExport(org.id, request, "mcp");
-        const { bytes } = await readDatevExportFile(org.id, view.id);
-        const dir = outputDir ? path.resolve(outputDir) : path.join(PROJECT_ROOT, "exports");
-        mkdirSync(dir, { recursive: true });
-        const target = path.join(dir, `datev-${request.from}-${request.to}${request.mode === "SUPPLEMENT" ? "-nachtrag" : ""}.zip`);
-        writeFileSync(target, bytes);
+        const fileName = `datev-${request.from}-${request.to}${request.mode === "SUPPLEMENT" ? "-nachtrag" : ""}-${view.id.slice(0, 8)}.zip`;
+        const target = path.join(dir, fileName);
+        try {
+          const { bytes } = await readDatevExportFile(org.id, view.id);
+          writeFileSync(target, bytes, { flag: "wx" });
+        } catch (writeError) {
+          const reason = writeError instanceof Error ? writeError.message : "unbekannt";
+          return ctx.fail(`Der Export ist im Protokoll gespeichert (Id ${view.id}), die Datei konnte aber nicht geschrieben werden: ${reason}. Bitte per GET /api/v1/DatevExport/${view.id}/file erneut herunterladen; kein Wiederholungslauf noetig.`);
+        }
         return ctx.ok(`DATEV-Export geschrieben: ${target}\n${JSON.stringify(serializeDatevExport(view), null, 2)}`);
       } catch (e) {
         return datevFail(ctx, e);

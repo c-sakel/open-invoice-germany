@@ -14,26 +14,29 @@ type Tx = Prisma.TransactionClient;
  * Exportposten zu diesem Kunden existiert; Bereich und Eindeutigkeit werden geprueft.
  */
 export async function setCustomerDatevAccount(orgId: string, customerId: string, account: number | null, actor: string): Promise<void> {
+  await dbInternal.$transaction((tx) => setCustomerDatevAccountWithinTx(tx, orgId, customerId, account, actor));
+}
+
+/** Wie `setCustomerDatevAccount`, in der Transaktion des Aufrufers (nimmt die Organisationssperre selbst). */
+export async function setCustomerDatevAccountWithinTx(tx: Tx, orgId: string, customerId: string, account: number | null, actor: string): Promise<void> {
   if (account !== null && (!Number.isInteger(account) || account < 1)) throw new DatevError("VALIDATION", "Debitorennummer: ganze Zahl ab 1.");
-  await dbInternal.$transaction(async (tx) => {
-    await lockOrganization(tx, orgId);
-    const customer = await tx.customer.findFirst({ where: { id: customerId, orgId }, select: { id: true, datevAccount: true } });
-    if (!customer) throw new DatevError("NOT_FOUND", "Kunde nicht gefunden.");
-    if (customer.datevAccount === account) return;
-    const used = await tx.datevExportItem.findFirst({ where: { orgId, customerId }, select: { id: true } });
-    if (used) throw new DatevError("DEBTOR_LOCKED", "Die Debitorennummer ist nach dem ersten Export gesperrt.");
-    if (account !== null) {
-      const settings = await getDatevSettings(orgId, tx);
-      const { debtorMin, debtorMax } = accountRules(settings.accountLength);
-      if (account < debtorMin || account > debtorMax) {
-        throw new DatevError("ACCOUNT_OUT_OF_RANGE", `Debitorennummer muss zwischen ${debtorMin} und ${debtorMax} liegen.`);
-      }
-      const clash = await tx.customer.findFirst({ where: { orgId, datevAccount: account, NOT: { id: customerId } }, select: { id: true } });
-      if (clash) throw new DatevError("DEBTOR_DUPLICATE", "Die Debitorennummer ist bereits vergeben.");
+  await lockOrganization(tx, orgId);
+  const customer = await tx.customer.findFirst({ where: { id: customerId, orgId }, select: { id: true, datevAccount: true } });
+  if (!customer) throw new DatevError("NOT_FOUND", "Kunde nicht gefunden.");
+  if (customer.datevAccount === account) return;
+  const used = await tx.datevExportItem.findFirst({ where: { orgId, customerId }, select: { id: true } });
+  if (used) throw new DatevError("DEBTOR_LOCKED", "Die Debitorennummer ist nach dem ersten Export gesperrt.");
+  if (account !== null) {
+    const settings = await getDatevSettings(orgId, tx);
+    const { debtorMin, debtorMax } = accountRules(settings.accountLength);
+    if (account < debtorMin || account > debtorMax) {
+      throw new DatevError("ACCOUNT_OUT_OF_RANGE", `Debitorennummer muss zwischen ${debtorMin} und ${debtorMax} liegen.`);
     }
-    await tx.customer.update({ where: { id: customerId }, data: { datevAccount: account }, select: { id: true } });
-    await logActivity(tx, { orgId, entityType: "CUSTOMER", entityId: customerId, type: "DATEV_DEBTOR_ACCOUNT_SET", actor, data: { cleared: account === null } });
-  });
+    const clash = await tx.customer.findFirst({ where: { orgId, datevAccount: account, NOT: { id: customerId } }, select: { id: true } });
+    if (clash) throw new DatevError("DEBTOR_DUPLICATE", "Die Debitorennummer ist bereits vergeben.");
+  }
+  await tx.customer.update({ where: { id: customerId }, data: { datevAccount: account }, select: { id: true } });
+  await logActivity(tx, { orgId, entityType: "CUSTOMER", entityId: customerId, type: "DATEV_DEBTOR_ACCOUNT_SET", actor, data: { cleared: account === null } });
 }
 
 function compareNumbers(a: string | null, b: string | null): number {

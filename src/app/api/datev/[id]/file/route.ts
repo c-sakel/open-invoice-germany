@@ -21,6 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         "content-length": String(bytes.length),
         "content-disposition": `attachment; filename="${filename}"`,
         "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
       },
     });
   } catch (e) {
