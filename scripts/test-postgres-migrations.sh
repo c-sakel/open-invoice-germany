@@ -26,8 +26,8 @@ run_with_timeout() {
   return $rc
 }
 
-# Bestands-Szenarien: eine Migration per psql einspielen und so verbuchen wie
-# "prisma migrate resolve --applied" (Pruefsumme = SHA-256 der migration.sql). Ersetzt
+# Bestands-Szenarien: eine Migration per psql in EINER Transaktion einspielen und so verbuchen
+# wie "prisma migrate deploy" (Pruefsumme = SHA-256 der migration.sql). Ersetzt
 # zwei npx-prisma-Aufrufe je Migration; die eigentliche Pruefung jedes Szenarios laeuft
 # weiterhin ueber "prisma migrate deploy". Voraussetzung: 0_init ist per Prisma verbucht
 # (legt _prisma_migrations an).
@@ -40,7 +40,7 @@ apply_and_mark() {
   sum=$(sha256_of "$file")
   { cat "$file"
     printf '\n;\nINSERT INTO "_prisma_migrations" ("id","checksum","finished_at","migration_name","started_at","applied_steps_count") VALUES (gen_random_uuid()::text, '"'%s'"', now(), '"'%s'"', now(), 1);\n' "$sum" "$mig"
-  } | docker exec -i "$CONTAINER" psql -U oig -d openinvoice -v ON_ERROR_STOP=1 -q >/dev/null \
+  } | docker exec -i "$CONTAINER" psql -1 -U oig -d openinvoice -v ON_ERROR_STOP=1 -q >/dev/null \
     || fail "Migration $mig liess sich nicht einspielen"
 }
 
@@ -239,8 +239,8 @@ echo "    ok — beide Phase-6-Migrationen angewendet, DunningStage/DunningSetti
 
 echo "==> Fall 9 (Phase 7): DocumentSettings-Defaults fuer Bestandszeile, neue Tabellen, Customer-Index"
 # Eigenes Bestands-Szenario: DB exakt auf dem Stand VOR der Phase-7-Migration bringen
-# (0_init + alle Migrationen bis einschliesslich Phase 6, jede einzeln per db execute
-# angewendet und per "migrate resolve --applied" verbucht — KEIN "migrate deploy", das
+# (0_init + alle Migrationen bis einschliesslich Phase 6, jede einzeln per apply_and_mark
+# angewendet und verbucht — KEIN "migrate deploy", das
 # wuerde alle ausstehenden Migrationen inkl. Phase 7 in einem Rutsch anwenden). Die
 # Fix-Welle-Migration (phase8b_fixwave) wird HIER ebenfalls ausgeklammert (nicht nur
 # Phase 7): ihr Backfill liest DocumentSettings.recurringInsertPeriodText, eine Spalte,
@@ -392,7 +392,7 @@ echo "    ok — Phase-8a-Migration angewendet, CustomFieldDefinition-Unique (or
 echo "==> Fall 12 (Phase 8b): ActivityLog/Notification/NotificationSettings, RecurringInvoice-Erweiterungen, Payment.note"
 # Beide Phase-8b-Migrationen liegen bereits im Verzeichnis prisma/migrations-postgres und
 # wurden dadurch schon von der Schleife in Fall 9 (0_init + alle Migrationen bis auf
-# Phase 7 einzeln per db execute + "migrate resolve --applied") mit angewendet — kein
+# Phase 7 einzeln per apply_and_mark) mit angewendet — kein
 # weiterer deploy-Schritt hier noetig, analog Fall 11 (Phase 8a). Die Fix-Welle-Migration
 # (phase8b_fixwave, aus demselben Grund wie Phase 7 aus der Schleife ausgeklammert, siehe
 # Kommentar in Fall 9) wurde durch Fall 9s "migrate deploy" ebenfalls schon mit angewendet
@@ -457,7 +457,7 @@ echo "    ok — beide Phase-8b-Migrationen angewendet, ActivityLog/Notification
 echo "==> Fall 13 (Fix-Welle Phase 8b): showPeriodText-Backfill aus DocumentSettings.recurringInsertPeriodText, Notification.dedupeKey org-gescopt"
 # Eigenes Bestands-Szenario (analog Fall 9/Phase 7): DB exakt auf dem Stand VOR der
 # Fix-Welle-Migration bringen (0_init + alle Migrationen bis einschliesslich der zweiten
-# Phase-8b-Migration, jede einzeln per db execute + "migrate resolve --applied"), dann
+# Phase-8b-Migration, jede einzeln per apply_and_mark), dann
 # eine Organisation MIT abweichendem DocumentSettings.recurringInsertPeriodText (false)
 # und ein Abo mit dem ALTEN Spalten-Default (showPeriodText=true) anlegen — erst danach
 # per "migrate deploy" genau die Fix-Welle-Migration nachziehen, um zu pruefen, dass der

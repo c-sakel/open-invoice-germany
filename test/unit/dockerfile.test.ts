@@ -68,6 +68,8 @@ describe("Dockerfile", () => {
       expect(cli.dependencies[name]).toBe(lock.packages[`node_modules/${name}`].version);
       expect(cliLock.packages[`node_modules/${name}`].version).toBe(lock.packages[`node_modules/${name}`].version);
     }
+    // Sicherheits-Override (deepmerge-ts, Abhaengigkeit von @prisma/config) in beiden Lockfiles gleich.
+    expect(cliLock.packages["node_modules/deepmerge-ts"].version).toBe(lock.packages["node_modules/deepmerge-ts"].version);
   });
 });
 
