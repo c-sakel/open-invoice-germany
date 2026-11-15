@@ -18,7 +18,7 @@ export const spec = {
   retry: {
     path: "/api/v1/PaymentRuleRun/{id}/retry",
     method: "POST",
-    summary: "Fehlgeschlagenen Lauf wiederholen (nur Status FAILED, sonst 422)",
+    summary: "Fehlgeschlagenen Lauf wiederholen (nur Status FAILED, sonst 422); bei einem Mail-Schritt ist das ein Folgeversand, die erste Mail kann bereits zugestellt sein",
     scope: "admin",
     response: apiDataResponseSchema(paymentRuleRunSchema),
     errors: [401, 403, 404, 422, 429],

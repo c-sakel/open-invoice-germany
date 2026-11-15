@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { dbInternal } from "@/lib/db";
+import { describeError } from "@/lib/safe-error";
 import { lockRow } from "@/lib/db-lock";
 import { withChangeLogRetry } from "@/lib/chain-retry";
 import { logActivity } from "@/domain/activity/log";
@@ -36,7 +37,10 @@ export type ConfirmationOutcome =
   | { kind: "ALREADY"; logId: string }
   | { kind: "SKIPPED"; note: string }
   | { kind: "DEFER"; until: Date; note: string }
-  | { kind: "FAILED"; error: string; retryable: boolean };
+  /** `notSent`: sicher nichts an den Mailanbieter uebergeben (Claim darf freigegeben werden); sonst ist der Versand unklar. */
+  | { kind: "FAILED"; error: string; retryable: boolean; notSent: boolean };
+
+export const SEND_UNCLEAR_NOTE = "Versand unklar – E-Mail-Protokoll pruefen";
 
 export interface ConfirmationRun {
   id: string;
@@ -188,7 +192,7 @@ export async function sendPaymentConfirmation(
   if (early) return early;
 
   const settings = await loadMailSettings(run.orgId);
-  if (!settings) return { kind: "FAILED", error: "Keine Mail-Einstellungen hinterlegt.", retryable: true };
+  if (!settings) return { kind: "FAILED", error: "Keine Mail-Einstellungen hinterlegt.", retryable: true, notSent: true };
 
   const context = contextSchema.parse(JSON.parse(run.contextJson));
   const payment = await dbInternal.payment.findFirst({ where: { id: run.paymentId, invoice: { orgId: run.orgId } }, select: { method: true } });
@@ -220,40 +224,47 @@ export async function sendPaymentConfirmation(
       },
       tx,
     );
-    await tx.paymentRuleRun.updateMany({ where: { id: run.id, orgId: run.orgId }, data: { mailSentAt: now } });
     return { type: "log", logId: log.id } as const;
   });
   if (claimed.type === "out") return claimed.outcome;
 
-  let status: "SENT" | "FAILED" = "SENT";
-  let providerId: string | null = null;
-  let error: string | null = null;
-  let htmlSha256: string | undefined;
+  // Ab hier kann die Mail den Anbieter erreicht haben: jeder Fehler gilt als "Versand unklar" (kein Auto-Retry).
   try {
-    const provider = opts.provider ?? createSmtpProvider(settings);
-    const mail = await withHtmlPart(
-      run.orgId, settings,
-      { from: { name: settings.fromName, address: settings.fromEmail }, to: [to], cc: [], bcc: [], replyTo: settings.replyTo ?? undefined, subject, text, attachments: [] },
-      { lang },
-    );
-    if (mail.html !== undefined) htmlSha256 = createHash("sha256").update(mail.html).digest("hex");
-    providerId = (await provider.send(mail)).providerId;
-  } catch (e) {
-    status = "FAILED";
-    error = (e instanceof Error ? e.message : "Unbekannter Fehler").slice(0, 500);
-  }
+    let status: "SENT" | "FAILED" = "SENT";
+    let providerId: string | null = null;
+    let error: string | null = null;
+    let htmlSha256: string | undefined;
+    let reachedSend = false;
+    try {
+      const provider = opts.provider ?? createSmtpProvider(settings);
+      const mail = await withHtmlPart(
+        run.orgId, settings,
+        { from: { name: settings.fromName, address: settings.fromEmail }, to: [to], cc: [], bcc: [], replyTo: settings.replyTo ?? undefined, subject, text, attachments: [] },
+        { lang },
+      );
+      if (mail.html !== undefined) htmlSha256 = createHash("sha256").update(mail.html).digest("hex");
+      reachedSend = true;
+      providerId = (await provider.send(mail)).providerId;
+    } catch (e) {
+      status = "FAILED";
+      error = (e instanceof Error ? e.message : "Unbekannter Fehler").slice(0, 500);
+    }
 
-  const actor = `payment-rule:${run.ruleId}`;
-  await withChangeLogRetry(() =>
-    finishEmailLog({
-      orgId: run.orgId, logId: claimed.logId, status, providerId, error, actor, docType: PAYMENT_CONFIRMATION_DOC_TYPE, docId: run.paymentId,
-      docNumber: invoiceNumber, to: [to], cc: [], bcc: [], subject, attachmentsMeta: [], at: now, ...(htmlSha256 ? { htmlSha256 } : {}),
-    }),
-  );
-  if (status === "FAILED") return { kind: "FAILED", error: error ?? "Versand fehlgeschlagen", retryable: true };
-  await logActivity(dbInternal, {
-    orgId: run.orgId, entityType: "INVOICE", entityId: run.invoiceId, type: "PAYMENT_CONFIRMATION_SENT", actor, at: now,
-    data: { paymentId: run.paymentId, logId: claimed.logId, subject: maskPortalLinks(subject), to: [to] },
-  });
+    const actor = `payment-rule:${run.ruleId}`;
+    await withChangeLogRetry(() =>
+      finishEmailLog({
+        orgId: run.orgId, logId: claimed.logId, status, providerId, error, actor, docType: PAYMENT_CONFIRMATION_DOC_TYPE, docId: run.paymentId,
+        docNumber: invoiceNumber, to: [to], cc: [], bcc: [], subject, attachmentsMeta: [], at: now, ...(htmlSha256 ? { htmlSha256 } : {}),
+      }),
+    );
+    if (status === "FAILED") return { kind: "FAILED", error: reachedSend ? SEND_UNCLEAR_NOTE : (error ?? "Versand fehlgeschlagen"), retryable: !reachedSend, notSent: !reachedSend };
+    await logActivity(dbInternal, {
+      orgId: run.orgId, entityType: "INVOICE", entityId: run.invoiceId, type: "PAYMENT_CONFIRMATION_SENT", actor, at: now,
+      data: { paymentId: run.paymentId, logId: claimed.logId, subject: maskPortalLinks(subject), to: [to] },
+    });
+  } catch (e) {
+    console.error("Zahlungsbestaetigung: Verbuchung nach dem Versandversuch fehlgeschlagen", describeError(e));
+    return { kind: "FAILED", error: SEND_UNCLEAR_NOTE, retryable: false, notSent: false };
+  }
   return { kind: "SENT", logId: claimed.logId };
 }

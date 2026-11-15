@@ -365,7 +365,10 @@ describe("Mail hoechstens einmal", () => {
     await process(o2.orgId, NOW, { sendConfirmation: failing });
     await process(o2.orgId, at(2), { sendConfirmation: failing });
     expect(failing).toHaveBeenCalledTimes(1);
-    expect((await runsOf(o2.orgId))[0]!.status).toBe("DONE");
+    // Claim steht ohne Versandnachweis: Versand unklar, kein weiterer Versuch.
+    const unclear = (await runsOf(o2.orgId))[0]!;
+    expect(unclear.status).toBe("FAILED");
+    expect(unclear.lastError).toContain("Versand unklar");
   });
 });
 

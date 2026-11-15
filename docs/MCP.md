@@ -339,7 +339,7 @@ Dieselben Schemas und Domainfunktionen wie REST (`/api/v1/PaymentRule`, `/api/v1
 | `archive_payment_rule` | Regel archivieren (nie hart gelöscht, Läufe bleiben) | „Archiviere die Regel ‚Dankesmail'." |
 | `test_payment_rule` | Trockenlauf einer Regel gegen eine Rechnung inkl. Mailvorschau, schreibt nichts | „Würde die Regel ‚Dankesmail' für RE-50012 greifen?" |
 | `list_payment_rule_runs` | Läufe mit Status und Schritten auflisten (Filter status, ruleId, invoiceId, paymentId) | „Welche Regel-Läufe sind fehlgeschlagen?" |
-| `retry_payment_rule_run` | Fehlgeschlagenen Lauf wiederholen | „Wiederhole den Lauf xyz." |
+| `retry_payment_rule_run` | Fehlgeschlagenen Lauf wiederholen (ein Mail-Schritt wird als Folgeversand erneut gesendet) | „Wiederhole den Lauf xyz." |
 
 ### Webhooks
 

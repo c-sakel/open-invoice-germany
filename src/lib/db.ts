@@ -170,7 +170,8 @@ function assertDunningUpdateAllowed(data: unknown): void {
 /**
  * `PaymentRuleRun` ist Outbox und Nachweis: nie loeschbar, Zuordnung und Schnappschuss
  * (Regel, Zahlung, Rechnung, Kunde, Ausloeser, Quelle, Aktionen, Kontext, Org, Anlage) unveraenderlich.
- * Fortschreibbar sind nur Ausfuehrungsstand und Fehler; `mailSentAt` genau einmal (NULL -> Wert).
+ * Fortschreibbar sind nur Ausfuehrungsstand und Fehler; `mailSentAt` ueber den geschuetzten Client genau einmal
+ * (NULL -> Wert). Die einzige Ruecknahme ist `releaseMailClaim` (nur wenn sicher nichts an den Mailanbieter ging).
  */
 export class PaymentRuleRunImmutabilityError extends Error {
   constructor(detail: string) {
@@ -203,6 +204,24 @@ const PAYMENT_RULE_RUN_TRANSITIONS: Readonly<Record<string, readonly string[]>> 
 function unwrapSet(v: unknown): unknown {
   if (v !== null && typeof v === "object" && !(v instanceof Date) && "set" in v) return (v as { set: unknown }).set;
   return v;
+}
+
+/**
+ * Gibt den Versand-Claim (`mailSentAt`) eines Regel-Laufs frei. Ausschliesslich fuer Faelle, in denen sicher
+ * nichts an den Mailanbieter uebergeben wurde (uebersprungen, verschoben, Fehler vor dem Senden) und fuer die
+ * bewusst manuelle Wiederholung eines fehlgeschlagenen Mail-Schritts. Der Guard erlaubt NULL -> Wert nur
+ * einmal, deshalb laeuft diese benannte Ausnahme ueber den ungeschuetzten Client; `claimedAt` begrenzt sie
+ * auf den eigenen Claim.
+ */
+export async function releaseMailClaim(
+  client: Pick<Prisma.TransactionClient, "paymentRuleRun">,
+  target: { id: string; orgId: string; claimedAt?: Date },
+): Promise<number> {
+  const res = await client.paymentRuleRun.updateMany({
+    where: { id: target.id, orgId: target.orgId, mailSentAt: target.claimedAt ?? { not: null } },
+    data: { mailSentAt: null },
+  });
+  return res.count;
 }
 
 async function guardPaymentRuleRunUpdate(where: unknown, data: unknown): Promise<void> {

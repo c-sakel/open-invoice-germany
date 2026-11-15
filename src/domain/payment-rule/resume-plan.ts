@@ -21,11 +21,8 @@ export type SkipMissedPlan =
   | { kind: "BILL_FALLBACK"; reason: string }
   | { kind: "ENDS"; reason: string };
 
-/** Stichtage sind lokale Mittagswerte (normalizeToNoon); verglichen wird der Kalendertag. */
-function localKey(d: Date): string {
-  const p = (n: number): string => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+/** Stichtage sind Mittagswerte (normalizeToNoon); verglichen wird der Berliner Kalendertag. */
+const localKey = berlinDateKey;
 
 export function planSkipMissed(input: SkipMissedInput): SkipMissedPlan {
   const today = berlinDateKey(input.now);

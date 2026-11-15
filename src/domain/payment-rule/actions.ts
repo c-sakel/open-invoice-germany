@@ -130,13 +130,18 @@ export async function performDbAction(input: ActionInput): Promise<ActionOutcome
       const ids = await recurringIdsOf(tx, run.orgId, run.invoiceId);
       if (ids.length === 0) return { status: "SKIPPED", note: "keine Abos" };
       const notes: string[] = [];
+      let resumedAny = false;
+      let endedAny = false;
       for (const id of ids) {
         const r = await resumePausedRecurringWithinTx(tx, run.orgId, id, {
           missedPeriods: action.missedPeriods, now, actor: actorOf(run.ruleId), invoiceId: run.invoiceId,
         });
         notes.push(r.note);
+        if (r.resumed) resumedAny = true;
+        if (r.ended) endedAny = true;
       }
-      return { status: "DONE", note: notes.join("; ").slice(0, 300) };
+      // Nichts fortgesetzt und mindestens ein Abo endet im uebersprungenen Zeitraum: Schritt uebersprungen statt erledigt.
+      return { status: !resumedAny && endedAny ? "SKIPPED" : "DONE", note: notes.join("; ").slice(0, 300) };
     }
     case "SEND_PAYMENT_CONFIRMATION":
       return { status: "SKIPPED", note: "nicht als Datenbankaktion ausfuehrbar" };

@@ -11,7 +11,7 @@ import { reversePayment } from "@/domain/invoice/payment-reversal";
 import { listInvoices } from "@/domain/invoice/list";
 import { createPortalLink } from "@/domain/portal/link";
 import { savePortalSettings } from "@/domain/portal/settings";
-import { processPaymentRuleRuns } from "@/domain/payment-rule/execute";
+import { processPaymentRuleRuns, retryPaymentRuleRun } from "@/domain/payment-rule/execute";
 import { CONFIRMATION_MAX_PER_CUSTOMER_HOUR, CONFIRMATION_MAX_PER_ORG_HOUR } from "@/domain/payment-rule/mail";
 import { sampleTemplateContext } from "@/domain/email/context";
 import { createMemoryProvider } from "@/lib/mail/memory";
@@ -219,30 +219,56 @@ describe("Versand", () => {
     expect(steps(r2!.stepsJson)[0]!.note).toContain("Versandergebnis unbekannt");
   });
 
-  it("Provider wirft -> Lauf wird wiederholt und sendet beim naechsten Versuch; ohne Mail-Einstellungen -> Fehler", async () => {
+  it("Provider wirft nach der Uebergabe -> genau ein Versandversuch, Lauf FAILED, kein automatischer Folgeversuch", async () => {
     const o = await mkOrg();
     await mkRule(o.orgId);
     await paid(o);
     const prov = createMemoryProvider();
     prov.failNext("SMTP down");
     const r1 = await processPaymentRuleRuns({ orgId: o.orgId, now: NOW, provider: prov });
-    expect(r1).toMatchObject({ claimed: 1, retry: 1 });
+    expect(r1).toMatchObject({ claimed: 1, failed: 1, retry: 0 });
     expect((await logsOf(o.orgId))[0]).toMatchObject({ status: "FAILED", error: "SMTP down" });
+    const [failed] = await runs(o.orgId);
+    expect(failed!.status).toBe("FAILED");
+    expect(failed!.mailSentAt).not.toBeNull();
+    expect(steps(failed!.stepsJson)[0]).toMatchObject({ status: "FAILED", error: "Versand unklar – E-Mail-Protokoll pruefen" });
+    // Spaetere Laeufe fassen den Lauf nicht an; es bleibt bei einem Versandversuch.
+    expect(await processPaymentRuleRuns({ orgId: o.orgId, now: at(600), provider: prov })).toMatchObject({ claimed: 0 });
+    expect(prov.sent).toHaveLength(0);
+    expect(await logsOf(o.orgId)).toHaveLength(1);
+  });
+
+  it("Fehler vor dem Senden (keine Mail-Einstellungen) -> Claim frei, Folgeversuch sendet genau einmal", async () => {
+    const o = await mkOrg({ mail: false });
+    await mkRule(o.orgId);
+    await paid(o);
+    const prov = createMemoryProvider();
+    const r1 = await processPaymentRuleRuns({ orgId: o.orgId, now: NOW, provider: prov });
+    expect(r1).toMatchObject({ claimed: 1, retry: 1 });
     const [pending] = await runs(o.orgId);
     expect(pending!.status).toBe("PENDING");
     expect(pending!.mailSentAt).toBeNull();
+    expect(prov.sent).toHaveLength(0);
+    await saveMailSettings(o.orgId, { host: "localhost", port: 2525, security: "NONE", fromName: "Zahlungsmail GmbH", fromEmail: "rechnung@example.org", copyToSelf: false, defaultCc: "", defaultBcc: "" });
     const r2 = await processPaymentRuleRuns({ orgId: o.orgId, now: at(10), provider: prov });
     expect(r2).toMatchObject({ claimed: 1, done: 1 });
     expect(prov.sent).toHaveLength(1);
-    const logs = await logsOf(o.orgId);
-    expect(logs.map((l) => l.status)).toEqual(["FAILED", "SENT"]);
+    expect((await logsOf(o.orgId)).map((l) => l.status)).toEqual(["SENT"]);
+  });
 
-    const o2 = await mkOrg({ mail: false });
-    await mkRule(o2.orgId);
-    await paid(o2);
-    const r3 = await processPaymentRuleRuns({ orgId: o2.orgId, now: NOW, provider: prov });
-    expect(r3).toMatchObject({ claimed: 1, retry: 1 });
-    expect((await runs(o2.orgId))[0]!.status).toBe("PENDING");
+  it("manueller Retry nach unklarem Versand gibt den Claim frei (Folgeversand)", async () => {
+    const o = await mkOrg();
+    await mkRule(o.orgId);
+    await paid(o);
+    const prov = createMemoryProvider();
+    prov.failNext("SMTP down");
+    await processPaymentRuleRuns({ orgId: o.orgId, now: NOW, provider: prov });
+    const [failed] = await runs(o.orgId);
+    await retryPaymentRuleRun(o.orgId, failed!.id, "tester");
+    const [pending] = await runs(o.orgId);
+    expect(pending).toMatchObject({ status: "PENDING", mailSentAt: null });
+    const r = await processPaymentRuleRuns({ orgId: o.orgId, now: at(600), provider: prov });
+    expect(r).toMatchObject({ claimed: 1, done: 1 });
     expect(prov.sent).toHaveLength(1);
   });
 

@@ -11,6 +11,8 @@ export interface ResumeResult {
   note: string;
   skippedPeriods: number;
   nextRunDate?: Date;
+  /** Das Enddatum liegt im uebersprungenen Zeitraum: nichts fortgesetzt, Abo bleibt pausiert. */
+  ended?: boolean;
 }
 
 export async function resumePausedRecurringWithinTx(
@@ -49,7 +51,7 @@ export async function resumePausedRecurringWithinTx(
       now: opts.now,
       oldestOpenUsagePeriodEnd: open?.periodEnd ?? null,
     });
-    if (plan.kind === "ENDS") return { resumed: false, note: plan.reason, skippedPeriods: 0 };
+    if (plan.kind === "ENDS") return { resumed: false, note: plan.reason, skippedPeriods: 0, ended: true };
     if (plan.kind === "ADVANCE") {
       nextRunDate = plan.nextRunDate;
       skipped = plan.skipped;

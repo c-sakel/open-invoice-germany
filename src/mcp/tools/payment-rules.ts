@@ -128,7 +128,7 @@ export function registerPaymentRuleTools(server: McpServer, ctx: McpToolsContext
     "retry_payment_rule_run",
     {
       title: "Fehlgeschlagenen Regel-Lauf wiederholen",
-      description: "Setzt einen FAILED-Lauf wieder auf PENDING; nur der fehlgeschlagene Schritt wird erneut versucht. Andere Status werden abgelehnt.",
+      description: "Setzt einen FAILED-Lauf wieder auf PENDING; nur der fehlgeschlagene Schritt wird erneut versucht. Bei einem Mail-Schritt (Versand unklar) ist das ein Folgeversand: die erste Mail kann bereits zugestellt sein, vorher E-Mail-Protokoll pruefen. Andere Status werden abgelehnt.",
       inputSchema: { id: z.string().min(1) },
     },
     async ({ id }): Promise<Result> => {
