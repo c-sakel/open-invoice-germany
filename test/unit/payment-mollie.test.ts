@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mollieAdapter } from "@/lib/payment/mollie";
 import { adapterFor } from "@/lib/payment/registry";
-import { PaymentNetworkForbiddenError, defaultPaymentTransport } from "@/lib/payment/transport";
+import { PaymentNetworkForbiddenError, assertAllowedPaymentUrl, defaultPaymentTransport } from "@/lib/payment/transport";
 import { PaymentProviderError, type CheckoutRequest } from "@/lib/payment/types";
 import { FAKE_LIVE_KEY, FAKE_TEST_KEY, createMollieFake, mollieFixture } from "../helpers/mollie-fake";
 
@@ -139,5 +139,61 @@ describe("Mollie-Adapter", () => {
   });
   it("Standard-Transport ist unter Vitest gesperrt", async () => {
     await expect(defaultPaymentTransport()({ method: "GET", url: "https://api.mollie.com/v2/methods", headers: {} })).rejects.toBeInstanceOf(PaymentNetworkForbiddenError);
+  });
+
+  it("Transport erlaubt nur api.mollie.com ueber https", () => {
+    expect(() => assertAllowedPaymentUrl("https://api.mollie.com/v2/payments")).not.toThrow();
+    for (const bad of [
+      "https://evil.example.org/v2/payments",
+      "https://api.mollie.com.evil.example.org/v2",
+      "https://sub.api.mollie.com/v2",
+      "http://api.mollie.com/v2",
+      "https://user:pw@api.mollie.com/v2",
+      "https://api.mollie.com:8443/v2",
+      "kein-url",
+    ]) {
+      expect(() => assertAllowedPaymentUrl(bad), bad).toThrow(PaymentProviderError);
+    }
+  });
+  it("externalRequest ohne injizierten fetch ist unter Vitest gesperrt", async () => {
+    const { externalRequest, ExternalHttpError } = await import("@/lib/http/external");
+    await expect(externalRequest("https://api.mollie.com/v2/methods", { method: "GET" })).rejects.toBeInstanceOf(ExternalHttpError);
+  });
+  it("createCheckout lehnt Betrag <= 0 und nicht unterstuetzte Waehrung vor dem Aufruf ab", async () => {
+    const fake = createMollieFake({ "POST /payments": { status: 201, text: mollieFixture("payment-open") } });
+    for (const bad of [{ amountCents: 0 }, { amountCents: -5 }, { amountCents: 1.5 }, { currency: "JPY" }, { methods: ["ide al"] }]) {
+      await expect(mollieAdapter.createCheckout(FAKE_TEST_KEY, { ...req, ...bad }, fake.transport)).rejects.toMatchObject({ kind: "invalid" });
+    }
+    expect(fake.calls).toHaveLength(0);
+  });
+  it("createCheckout gleicht Betrag, Waehrung und Modus der Antwort ab", async () => {
+    const base = JSON.parse(mollieFixture("payment-open")) as Record<string, unknown>;
+    const variants = [
+      { ...base, amount: { currency: "EUR", value: "1.00" } },
+      { ...base, amount: { currency: "USD", value: "119.00" } },
+      { ...base, mode: "live" },
+    ];
+    for (const v of variants) {
+      const f = createMollieFake({ "POST /payments": { status: 201, text: JSON.stringify(v) } });
+      await expect(mollieAdapter.createCheckout(FAKE_TEST_KEY, req, f.transport)).rejects.toMatchObject({ kind: "invalid" });
+    }
+  });
+  it("fetchPayment lehnt abweichenden Modus ab", async () => {
+    const fake = createMollieFake({ "GET /payments/tr_TestAbc12345": { status: 200, text: mollieFixture("payment-paid") } });
+    await expect(mollieAdapter.fetchPayment(FAKE_LIVE_KEY, "tr_TestAbc12345", fake.transport)).rejects.toMatchObject({ kind: "invalid" });
+  });
+  it("unbekannter Anbieter-Status -> UNKNOWN statt Parsefehler", async () => {
+    const odd = JSON.stringify({ ...JSON.parse(mollieFixture("payment-open")), status: "neuer_status" });
+    const fake = createMollieFake({ "GET /payments/tr_TestAbc12345": { status: 200, text: odd } });
+    expect((await mollieAdapter.fetchPayment(FAKE_TEST_KEY, "tr_TestAbc12345", fake.transport))?.status).toBe("UNKNOWN");
+  });
+  it("cancelCheckout: 404 -> false; Beschreibung trennt keine Surrogatpaare", async () => {
+    const nf = createMollieFake();
+    expect(await mollieAdapter.cancelCheckout(FAKE_TEST_KEY, "tr_TestAbc12345", nf.transport)).toBe(false);
+    const fake = createMollieFake({ "POST /payments": { status: 201, text: mollieFixture("payment-open") } });
+    await mollieAdapter.createCheckout(FAKE_TEST_KEY, { ...req, description: "\u{1F600}".repeat(300) }, fake.transport);
+    const d = (JSON.parse(fake.calls[0]!.body ?? "") as { description: string }).description;
+    expect([...d]).toHaveLength(255);
+    expect(d).not.toContain("\uFFFD");
   });
 });

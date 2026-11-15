@@ -24,7 +24,8 @@ export interface CheckoutRequest {
 export interface ProviderPaymentState {
   objectId: string;
   testMode: boolean;
-  status: "OPEN" | "PAID" | "EXPIRED" | "CANCELED" | "FAILED";
+  /** UNKNOWN: vom Anbieter gemeldeter, uns unbekannter Status -> keine Buchung, nur Protokoll. */
+  status: "OPEN" | "PAID" | "EXPIRED" | "CANCELED" | "FAILED" | "UNKNOWN";
   amountCents: number;
   currency: string;
   refundedCents: number;
@@ -37,6 +38,8 @@ export interface ProviderPaymentState {
 export interface PaymentProviderAdapter {
   provider: OnlineProvider;
   payoutPattern: RegExp;
+  /** Hosts, die der Transport fuer diesen Anbieter erreichen darf (exakter Hostname, nur https). */
+  allowedHosts: readonly string[];
   modeFromKey(key: string): "TEST" | "LIVE" | null;
   supportsCurrency(currency: string): boolean;
   createCheckout(
@@ -44,7 +47,7 @@ export interface PaymentProviderAdapter {
     req: CheckoutRequest,
     t: PaymentTransport,
   ): Promise<{ objectId: string; checkoutUrl: string; expiresAt: Date | null }>;
-  /** 404 -> null */
+  /** 404 -> null; Modus der Antwort muss zum Schluessel passen (sonst invalid) */
   fetchPayment(key: string, objectId: string, t: PaymentTransport): Promise<ProviderPaymentState | null>;
   cancelCheckout(key: string, objectId: string, t: PaymentTransport): Promise<boolean>;
   testConnection(key: string, t: PaymentTransport): Promise<{ methods: string[] }>;

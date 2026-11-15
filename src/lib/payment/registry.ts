@@ -7,3 +7,8 @@ export function adapterFor(provider: OnlineProvider): PaymentProviderAdapter {
       return mollieAdapter;
   }
 }
+
+/** Alle Hosts, die ein registrierter Anbieter erreichen darf (Quelle fuer die Allowlist im Transport). */
+export function allowedPaymentHosts(): ReadonlySet<string> {
+  return new Set([mollieAdapter].flatMap((a) => [...a.allowedHosts]));
+}

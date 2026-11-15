@@ -22,7 +22,8 @@ export const mollieErrorSchema = z.object({
 export const molliePaymentSchema = z.object({
   id: z.string().regex(OBJECT_ID),
   mode: z.enum(["test", "live"]),
-  status: z.enum(["open", "pending", "authorized", "paid", "expired", "canceled", "failed"]),
+  // Bewusst z.string: ein neuer Anbieter-Status darf das Parsing nicht kippen (-> UNKNOWN, keine Buchung).
+  status: z.string().min(1).max(64),
   amount: amountSchema,
   amountRefunded: amountSchema.optional(),
   amountChargedBack: amountSchema.optional(),
@@ -88,9 +89,29 @@ function cents(a: { value: string } | undefined): number {
   }
 }
 
+function mapStatus(s: string): ProviderPaymentState["status"] {
+  switch (s) {
+    case "paid":
+      return "PAID";
+    case "expired":
+      return "EXPIRED";
+    case "canceled":
+      return "CANCELED";
+    case "failed":
+      return "FAILED";
+    case "open":
+    case "pending":
+    case "authorized":
+      return "OPEN";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+const METHOD_ID = /^[a-z0-9_]{1,32}$/;
+
 function toState(p: z.infer<typeof molliePaymentSchema>): ProviderPaymentState {
-  const status: ProviderPaymentState["status"] =
-    p.status === "paid" ? "PAID" : p.status === "expired" ? "EXPIRED" : p.status === "canceled" ? "CANCELED" : p.status === "failed" ? "FAILED" : "OPEN";
+  const status = mapStatus(p.status);
   const md = p.metadata;
   const attemptId =
     md && typeof md === "object" && "attemptId" in md && typeof (md as { attemptId: unknown }).attemptId === "string"
@@ -113,6 +134,7 @@ function toState(p: z.infer<typeof molliePaymentSchema>): ProviderPaymentState {
 export const mollieAdapter: PaymentProviderAdapter = {
   provider: "MOLLIE",
   payoutPattern: /\bmollie\b/i,
+  allowedHosts: ["api.mollie.com"],
 
   modeFromKey(key) {
     const m = /^(test|live)_[A-Za-z0-9]{26,}$/.exec(key);
@@ -124,9 +146,18 @@ export const mollieAdapter: PaymentProviderAdapter = {
   },
 
   async createCheckout(key, req: CheckoutRequest, t) {
+    if (!Number.isSafeInteger(req.amountCents) || req.amountCents <= 0) {
+      throw new PaymentProviderError("invalid", "Ungueltiger Betrag fuer die Online-Zahlung.");
+    }
+    if (!mollieAdapter.supportsCurrency(req.currency)) {
+      throw new PaymentProviderError("invalid", "Waehrung wird vom Zahlungsanbieter nicht unterstuetzt.");
+    }
+    if (req.methods?.some((m) => !METHOD_ID.test(m))) {
+      throw new PaymentProviderError("invalid", "Ungueltige Zahlungsmethode.");
+    }
     const body: Record<string, unknown> = {
       amount: { currency: req.currency, value: centsToDecimal(req.amountCents) },
-      description: req.description.slice(0, 255),
+      description: [...req.description].slice(0, 255).join(""),
       redirectUrl: req.redirectUrl,
       cancelUrl: req.cancelUrl,
       webhookUrl: req.webhookUrl,
@@ -137,6 +168,16 @@ export const mollieAdapter: PaymentProviderAdapter = {
     const res = await call(t, key, "POST", "/payments", { body: JSON.stringify(body), idempotencyKey: req.attemptId });
     if (res.status !== 201) fail(res.status);
     const p = parseJson(molliePaymentSchema, res.text);
+    // Antwort gegen die Anfrage abgleichen: Betrag, Waehrung und Modus (Schluessel) muessen passen.
+    const expectedMode = mollieAdapter.modeFromKey(key);
+    if (
+      cents(p.amount) !== req.amountCents ||
+      p.amount.currency !== req.currency ||
+      expectedMode === null ||
+      p.mode !== expectedMode.toLowerCase()
+    ) {
+      throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters passt nicht zur Anfrage.");
+    }
     const href = p._links?.checkout?.href;
     if (!href) throw new PaymentProviderError("invalid", "Antwort des Zahlungsanbieters ohne Bezahladresse.");
     let ok = false;
@@ -154,14 +195,19 @@ export const mollieAdapter: PaymentProviderAdapter = {
     const res = await call(t, key, "GET", `/payments/${objectId}`);
     if (res.status === 404) return null;
     if (res.status !== 200) fail(res.status);
-    return toState(parseJson(molliePaymentSchema, res.text));
+    const state = toState(parseJson(molliePaymentSchema, res.text));
+    const expectedMode = mollieAdapter.modeFromKey(key);
+    if (expectedMode === null || state.testMode !== (expectedMode === "TEST")) {
+      throw new PaymentProviderError("invalid", "Modus der Antwort passt nicht zum Schluessel.");
+    }
+    return state;
   },
 
   async cancelCheckout(key, objectId, t) {
     if (!OBJECT_ID.test(objectId)) throw new PaymentProviderError("invalid", "Ungueltige Objekt-Id.");
     const res = await call(t, key, "DELETE", `/payments/${objectId}`);
     if (res.status === 200) return true;
-    if (res.status === 422) return false;
+    if (res.status === 422 || res.status === 404) return false;
     return fail(res.status);
   },
 

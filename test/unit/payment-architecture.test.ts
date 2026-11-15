@@ -9,28 +9,33 @@ function files(dir: string): string[] {
     return statSync(p).isDirectory() ? files(p) : p.endsWith(".ts") ? [p] : [];
   });
 }
-const roots = ["src/lib/payment", "src/domain/online-payment"].map((r) => path.join(process.cwd(), r));
-const all = roots.flatMap(files);
+const all = files(path.join(process.cwd(), "src")).filter((f) => !f.includes(`${path.sep}generated${path.sep}`));
+const TRANSPORT = path.join("src", "lib", "payment", "transport.ts");
+const EXTERNAL = path.join("src", "lib", "http", "external.ts");
+const isPayment = (f: string) =>
+  f.includes(path.join("src", "lib", "payment") + path.sep) || /src[\\/]domain[\\/].*payment/i.test(f);
 
 describe("Architektur Online-Zahlung", () => {
   it("hat Quelldateien", () => {
-    expect(all.length).toBeGreaterThan(0);
+    expect(all.filter(isPayment).length).toBeGreaterThan(0);
   });
-  it("kein direkter Netzzugriff ausser ueber den Transport", () => {
-    for (const f of all) {
+  it("Anbieter-Code ruft das Netz nie direkt auf", () => {
+    for (const f of all.filter(isPayment)) {
       const src = readFileSync(f, "utf8");
-      expect(src, f).not.toMatch(/(^|[^.\w])fetch\(/);
-      expect(src, f).not.toMatch(/node:https?/);
+      expect(src, f).not.toMatch(/\bfetch\s*\(/);
+      expect(src, f).not.toMatch(/globalThis\.fetch|window\.fetch|\bXMLHttpRequest\b|\bWebSocket\b/);
+      expect(src, f).not.toMatch(/from\s+["'](node:)?(https?|net|tls|http2|undici)["']|require\(\s*["'](node:)?(https?|net|tls|undici)["']/);
     }
   });
-  it("externalRequest nur in transport.ts", () => {
+  it("externalRequest nur in transport.ts und external.ts (ganz src)", () => {
     for (const f of all) {
-      if (path.basename(f) === "transport.ts" && f.includes(path.join("lib", "payment"))) continue;
+      const rel = path.relative(process.cwd(), f);
+      if (rel === TRANSPORT || rel === EXTERNAL) continue;
       expect(readFileSync(f, "utf8"), f).not.toContain("externalRequest");
     }
   });
   it("keine Konsolenausgabe mit Schluessel", () => {
-    for (const f of all) {
+    for (const f of all.filter(isPayment)) {
       const src = readFileSync(f, "utf8");
       for (const m of src.matchAll(/console\.\w+\(([^)]*)\)/g)) {
         expect(m[1], f).not.toMatch(/apiKey|\bkey\b/i);

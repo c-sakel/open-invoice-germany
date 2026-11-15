@@ -119,6 +119,11 @@ export async function externalRequest(
   url: string,
   opts: ExternalRequestOptions,
 ): Promise<{ status: number; text: string }> {
+  // Netzsperre fuer Tests: ohne injizierten fetchImpl erreicht dieser Aufruf unter Vitest/NODE_ENV=test
+  // oder PAYMENT_NETWORK=0 nie das Netz (einziger Aufrufer sind die Zahlungsanbieter).
+  if (!opts.fetchImpl && (process.env.VITEST || process.env.NODE_ENV === "test" || process.env.PAYMENT_NETWORK === "0")) {
+    throw new ExternalHttpError("Netzzugriff in dieser Umgebung gesperrt.");
+  }
   const fetchImpl = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
