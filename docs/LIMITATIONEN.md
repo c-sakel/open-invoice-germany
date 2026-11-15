@@ -317,10 +317,25 @@ Datumsangaben zu Altbelegen beziehen sich auf den Programmstand; maßgeblich ist
 - **Rate-Limits nur im Prozess** und je Instanz (Bezahlseite, Webhook, Verbindungstest).
 - **Schlüssel und Einschalter nur in der Oberfläche,** nie per REST oder MCP.
 
+## DATEV-Export
+
+- **Nur Dateiexport.** Keine DATEV-Anbindung, kein Login, kein Belegtransfer; die Datei wird per Hand übergeben. Es entsteht keine Buchhaltung in der Anwendung.
+- **Keine Belegbilder im Stapel.** Die Belegnummer steht in Belegfeld 1 und der SHA-256 des archivierten PDF in der Beleginfo; Belegbilder liefert der Prüfer-Export.
+- **Kein Leistungsdatum, keine Fremdwährungsfelder.** Die Felder 3–6 sowie 115 und 116 bleiben leer; der Umsatz steht in EUR. Bei Automatikkonten ist eine Abweichung von 1 Cent je Beleg möglich.
+- **Keine DATEV-Anzahlungsautomatik** (Buchungstyp AA/SR). Abschlagsrechnungen laufen über die Konten „erhaltene Anzahlungen“ je Steuersatz.
+- **Von Hand zu buchen (Liste „Handbuchungen“ im Protokoll):** Differenzbesteuerung ohne zugeordnetes Konto, Zahlung in Fremdwährung, Skonto ohne Basiszahlung (auch Skonto unter 1,00 EUR), Storno/Gutschrift einer Schlussrechnung, Korrekturrechnung, ungültige oder zu lange USt-IdNr. des Käufers, negative Zahlung (Erstattung), Gegenbuchung ohne Originalzahlung.
+- **Zahlungsexport standardmäßig aus.** Wird er eingeschaltet, exportiert die Anwendung nur Zahlungen ab dem Einschaltzeitpunkt; ob die Kanzlei Zahlungen selbst aus dem Kontoauszug bucht, klärt der Betreiber vorher mit dem Steuerberater (sonst doppelte Geldbuchungen).
+- **Gebühren der Zahlungsanbieter und Erstattungen von Gutschriften** sind nicht enthalten.
+- **Das Skontokonto muss im DATEV-Stamm der Kanzlei angelegt sein**; die Anwendung schlägt keines vor.
+- **Debitorennummer nach dem Export fest.** Sie ist nur für Kunden mit Buchung im Lauf vergeben und danach nicht mehr änderbar.
+- **Jahre 2000–2099; das Wirtschaftsjahr beginnt am Monatsersten.** Nur abgeschlossene Monate, höchstens zwölf je Export.
+- **Zeichen außerhalb von Windows-1252** werden transliteriert (Akzentbuchstaben) oder als `?` ausgegeben und im Protokoll gemeldet (ohne den Klartext der Namen). Texte, die mit `=`, `+`, `-` oder `@` beginnen, erhalten einen Apostroph (Formelschutz).
+- **Das Festschreibekennzeichen ist immer 0**; die Kanzlei schreibt nach Prüfung fest.
+- **Abnahme mit dem DATEV-Prüfprogramm** (Windows) liegt beim Betreiber bzw. der Kanzlei; die Anwendung prüft das Format nur gegen die Formatbeschreibung.
+
 ## Bewusst nicht umgesetzt
 Diese Punkte sind keine Lücken, sondern bewusste Projektentscheidungen (Abgrenzung: keine Buchhaltungssoftware):
 
-- **DATEV-Export** — bewusst nicht umgesetzt; für die Übergabe an die Buchhaltung dienen die CSV-Exporte und der Prüfer-Export.
 - **Finanzbuchhaltung, Lohn, Bilanz, EÜR, Steuererklärung, Anlagenbuchhaltung, Warenwirtschaft/Lager.**
 - **Mehrbenutzer und Rollen** (ein Admin-Konto, siehe „Betrieb & Sicherheit").
 - **Qualifizierte USt-IdNr.-Bestätigung beim BZSt** (nur VIES, siehe „E-Rechnung").

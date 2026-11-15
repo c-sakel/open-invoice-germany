@@ -986,6 +986,17 @@ Dockerfile               # Next.js-standalone-Image, Nicht-root, Whitelist in .d
 
 ---
 
+## DATEV-Export (`src/domain/export/datev/`)
+
+Datenfluss: festgeschriebene Belege und Zahlungen -> Buchungen (`bookings.ts`, reine Funktionen) -> Dateien (Buchungsstapel je Monat, Debitorenstamm, Protokoll als ZIP, `format.ts`/`cp1252.ts`) -> Belegarchiv (write-once, `datev/` im Archiv-Volume). Der Export verändert nie einen Beleg und ruft nichts im Netz auf.
+
+- **Zuordnung:** Erlös-, Anzahlungs- und Geldkonten je Schlüssel (Steuerschema, Kategorie, Satz bzw. Anbieter/Zahlart). Die Bestätigung ist an einen Hash der Einstellungen und der Zuordnung gebunden; jede Änderung (auch per REST/MCP) macht sie hinfällig. Bestätigt wird nur in der Oberfläche.
+- **Posten-Schlüssel:** Jeder Beleg und jede Zahlung hat einen stabilen Schlüssel. Das Protokoll (`DatevExport` und Posten) ist append-only und trägt den SHA-256 der ZIP; die Datei wird beim Herunterladen gegen das Protokoll geprüft (`FILE_TAMPERED`).
+- **Nachträge:** Beleg- oder Zahlungsdatum in einem bereits exportierten Monat führt über den Posten-Schlüssel zu einem Nachtrag (`SUPPLEMENT`), nie zu einer stillen Änderung des früheren Exports. Wiederholungen bereits exportierter Monate nur mit ausdrücklicher Freigabe und eigenem Protokolleintrag.
+- **Handbuchungen:** Fälle ohne sichere Abbildung erscheinen als `MANUAL` mit Grund im Protokoll; der Export bricht deshalb nicht ab.
+
+---
+
 ## 6. Nicht umgesetzt
 
 Diese Punkte sind bewusst oder bisher nicht umgesetzt (Details: `docs/LIMITATIONEN.md`, Umsetzungsmatrix in `COMPLIANCE.md` § 15):
@@ -996,7 +1007,7 @@ Diese Punkte sind bewusst oder bisher nicht umgesetzt (Details: `docs/LIMITATION
 - Keine OZG-RE-Anbindung und kein Peppol-Versand.
 - Keine Margenaufzeichnung nach § 25a UStG (Differenzbesteuerung).
 - § 33 UStDV (Kleinbetragsrechnung) nur als Validierungsoption.
-- Kein DATEV-Export (bewusst nicht umgesetzt).
+- Keine DATEV-Anbindung und keine Finanzbuchhaltung; der DATEV-Export ist eine reine Dateiübergabe (Abschnitt „DATEV-Export“).
 - Kein RLS (Postgres-Row-Level-Security); Single-Tenant je Instanz.
 
 ## Kundenportal: öffentlicher Pfad und Protokolle

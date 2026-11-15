@@ -677,6 +677,32 @@ An Mollie gehen nur Betrag, Währung, die Bezeichnung „Rechnung <Nummer>", die
 
 ---
 
+## 6i. DATEV-Export (`Einstellungen → DATEV`)
+
+Der Export erzeugt eine **Datei für deinen Steuerberater** (Buchungsstapel im DATEV-Format). Die Anwendung ist keine Buchhaltung, meldet nichts an DATEV und ruft nichts im Netz ab. Die Einrichtung stimmst du mit dem Steuerberater ab.
+
+### Einrichten
+1. **Einstellungen:** Beraternummer, Mandantennummer, Sachkontenlänge, Wirtschaftsjahr, Debitoren (je Kunde ein Personenkonto oder ein Sammeldebitor), Bank- und Kassenkonto, optional Diktatkürzel. „Zahlungen exportieren“ ist **standardmäßig aus**: Bucht die Kanzlei die Zahlungen selbst aus dem Kontoauszug, würden Geldbuchungen doppelt entstehen. Beim Einschalten merkt sich die Anwendung den Zeitpunkt; exportiert werden nur Zahlungen ab dann.
+2. **Vorlage:** SKR03 oder SKR04 übernehmen. Die Vorlage ist **nur ein Vorschlag** und keine Bestätigung. Für Differenzbesteuerung gibt es bewusst kein Konto; das nennt der Steuerberater. Das Skontokonto muss im DATEV-Stamm der Kanzlei angelegt sein.
+3. **Bestätigen:** Die Kontenzuordnung ausdrucken, vom Steuerberater prüfen lassen, dann „Ich habe das mit dem Steuerberater geklärt.“ ankreuzen, „Abgestimmt mit / am“ ausfüllen und bestätigen. Das geht **nur in der Oberfläche** (nicht per REST oder MCP). Jede Änderung an Einstellungen oder Zuordnung macht die Bestätigung hinfällig; bis dahin ist der Export gesperrt.
+
+### Exportieren
+Unter „Export“ Von/Bis (Monat) wählen — nur abgeschlossene Monate, höchstens zwölf je Export. „Vorschau“ zeigt Zähler, Hinweise und Handbuchungen und schreibt nichts. „ZIP herunterladen“ erzeugt den Export und legt die Datei unveränderlich im Archiv ab. Die ZIP enthält je Monat einen Buchungsstapel, optional die Debitorenstammdaten und das Protokoll. Der Stapel wird **nie festgeschrieben** (Festschreibekennzeichen 0); das erledigt die Kanzlei nach Prüfung.
+
+### Handbuchungen
+Was die Anwendung nicht sicher buchen kann, steht mit Grund als Handbuchung im Protokoll: Differenzbesteuerung ohne Konto, Zahlung in Fremdwährung, Skonto ohne Basiszahlung, Storno einer Schlussrechnung, Korrekturrechnung, ungültige USt-IdNr. des Käufers, negative Zahlung (Erstattung) und eine Gegenbuchung ohne Originalzahlung. Diese Fälle bucht die Kanzlei von Hand.
+
+### Nachtrag und Wiederholung
+Wird nach einem Export ein Beleg oder eine Zahlung in einem bereits exportierten Monat nachgetragen, erscheint sie unter „Nachträge“ und wird mit Modus „Nachtrag“ in einer eigenen ZIP exportiert. Ob die Kanzlei den Nachtrag noch einarbeiten kann, klärst du mit ihr. Einen bereits exportierten Monat erneut zu exportieren geht nur mit ausdrücklicher Freigabe („Wiederholung“).
+
+### Gut zu wissen
+- Felder für Leistungsdatum und Fremdwährung bleiben leer, der Umsatz steht in EUR; bei Automatikkonten ist 1 Cent Abweichung je Beleg möglich.
+- Zeichen außerhalb von Windows-1252 werden ersetzt (Akzentbuchstaben transliteriert, sonst `?`); das Protokoll nennt die betroffenen Zeichen. Texte mit `=`, `+`, `-` oder `@` am Anfang erhalten einen Apostroph (Schutz vor Formeln in Tabellenkalkulationen).
+- Interne Notizen und Kontaktdaten (Mail, Telefon, IBAN) gehören nicht in den Export.
+- **Abnahme:** Prüfe die erste ZIP einmal mit dem DATEV-Prüfprogramm (Windows) beim Steuerberater, bevor du den Export regelmäßig nutzt.
+
+Auch per REST (`/api/v1/DatevExport`, Scope `admin`, siehe [API.md](API.md)) und MCP ([MCP.md](MCP.md)).
+
 ## 7. Per Sprache mit einem KI-Assistenten (MCP)
 
 Statt Formulare auszufüllen, kannst du OpenInvoice auch **per Sprache** über einen mitgelieferten **MCP-Server** bedienen — mit jedem MCP-fähigen KI-Assistenten. Einrichtung, Datenschutz-Hinweise (DSGVO/Art. 28) und die vollständige Tool-Liste stehen in **[docs/MCP.md](MCP.md)**; lies das dort zuerst, bevor du echte Kundendaten per Cloud-LLM verarbeiten lässt.

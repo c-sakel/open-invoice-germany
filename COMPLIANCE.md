@@ -1386,4 +1386,26 @@ Dies ist keine Rechts- oder Steuerberatung; die Einordnung (Anbieter-Vertrag, Da
 
 ---
 
+## 25. DATEV-Export: Datei für den Steuerberater
+
+**Umsetzung dieser Software:**
+
+- **Keine Finanzbuchhaltung.** Der Export ist eine Datei (Buchungsstapel im DATEV-Format, Debitorenstamm, Protokoll als ZIP); es gibt keine Anbindung, keinen Login und keinen Netzaufruf. Buchen, Festschreiben und die Voranmeldung bleiben beim Steuerberater.
+- **GoBD:** Der Export verändert keinen Beleg und keine Zahlung. Das Exportprotokoll ist unveränderlich (append-only) und trägt den SHA-256 der Datei; die ZIP liegt im write-once-Archiv, und der Download prüft sie gegen das Protokoll. Jeder Exportlauf steht im Änderungsprotokoll (Hash-Kette); Änderungen der Einstellungen, der Zuordnung und die Bestätigung stehen im Aktivitätsprotokoll. Der Stapel wird nie festgeschrieben (Festschreibekennzeichen 0).
+- **Bestätigung der Kontenzuordnung:** Die Zuordnung ist ein Vorschlag, bis der Betreiber sie nach Abstimmung mit dem Steuerberater in der Oberfläche bestätigt; die Bestätigung ist an einen Hash der Einstellungen gebunden und fällt bei jeder Änderung weg.
+- **Zahlungen:** Der Export von Zahlungen ist standardmäßig aus (Gefahr doppelter Geldbuchungen, wenn die Kanzlei Kontoauszüge selbst bucht).
+- **Handbuchungen und Nachträge:** Was nicht sicher abgebildet werden kann, wird als Handbuchung gemeldet; rückdatierte Buchungen in bereits exportierten Monaten werden als Nachtrag exportiert und gemeldet.
+
+**DSGVO:**
+
+| Grundsatz | Umsetzung | Norm |
+|-----------|-----------|------|
+| Rechtsgrundlage | Übermittlung der Buchungsdaten an den Steuerberater zur Erfüllung der Buchführungspflichten | Art. 6 Abs. 1 lit. c DSGVO i. V. m. § 140 AO, § 238 HGB |
+| Datenminimierung | Im Export stehen Belegnummer, Beträge, Konten, Datum, Name (Debitor) und USt-IdNr.; keine Mail-Adresse, keine Telefonnummer, keine IBAN, keine internen Notizen | Art. 5 Abs. 1 lit. c DSGVO |
+| Protokoll | Zeichenhinweise im Protokoll nennen nur die betroffenen Zeichen, nicht die Namen | Art. 5 Abs. 1 lit. c DSGVO |
+
+Dies ist keine Rechts- oder Steuerberatung; Kontenrahmen, Steuerschlüssel, Zahlungsexport und Behandlung von Nachträgen klärt der Betreiber mit dem Steuerberater.
+
+---
+
 *Ende COMPLIANCE.md — Stand 2026-11-15. Ohne Gewähr. Keine Steuer-/Rechtsberatung.*
